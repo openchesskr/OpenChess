@@ -9105,6 +9105,54 @@ const PLAY_SPECIAL_GAMES = [
   { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
   { key: "knight-race", gameType: "knight", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
 ];
+// (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
+// 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
+// 좁은 스크롤 영역 안에 평범한 카드로 그려져, 내 보드·상대 보드를 세로로 쌓으면 필연적으로 스크롤이
+// 필요했다. document.body로 포털한 뷰포트 전체 오버레이(다른 전체화면 오버레이, 예: 티어 로드맵과
+// 같은 패턴 — createPortal이 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에
+// 그리도록 해 준다)로 바꿔 사이트 헤더·하단 탭바를 가리고, 그 안에서 실제 대전 화면(noScroll)은
+// flexbox로 뷰포트 높이를 정확히 나눠 써 스크롤 없이 두 보드가 항상 한 화면에 다 보이게 한다(아래
+// useSquareFit 참고). 로비·매칭 대기·결과 화면은 내용 길이가 가변적이라(친구 목록 등) 그대로
+// 스크롤을 허용한다.
+function MinigameScreen({ title, onBack, children, noScroll }) {
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <div className="flex items-center justify-between" style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px" }}>
+        <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.ivoryHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi, textAlign: "center", flex: 1 }}>{title}</div>
+        <span style={{ width: 32, flexShrink: 0 }} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "0 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+// (v0.5.1 기능) 내 보드·상대 보드가 세로로 겹쳐도 뷰포트 안에 항상 다 들어오도록, 이 보드가 놓일
+// 자리(가로·세로 둘 다 flexbox가 정한 만큼)를 직접 재서 그 안에 꽉 차는 정사각형 한 변의 길이를
+// 구한다. useBoardSize(가로 폭만 잰다)와 달리 세로 제약까지 함께 본다 — 이 보드 슬롯 자체를
+// flex:1;minHeight:0으로 감싸 뷰포트의 남은 절반을 차지하도록만 해 두면, 나머지(그 절반 안에서
+// 실제로 정사각형이 얼마나 커질 수 있는지)는 이 훅이 ResizeObserver로 실측해 계산한다 — 폰트 크기·
+// 라벨 줄바꿈 등 주변 요소의 실제 렌더 결과에 따라 슬롯 크기가 달라져도 항상 정확하다.
+function useSquareFit(maxSize = 420) {
+  const [size, setSize] = useState(Math.min(maxSize, 280));
+  const roRef = useRef(null);
+  const setRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const s = Math.max(80, Math.floor(Math.min(r.width, r.height, maxSize)));
+      setSize((prev) => (Math.abs(prev - s) > 1 ? s : prev));
+    };
+    measure();
+    roRef.current = new ResizeObserver(measure);
+    roRef.current.observe(el);
+  }, [maxSize]);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  return [size, setRef];
+}
 // (v0.5.0 리디자인, 사용자 요청) 카드 그리드 대신 미니게임 하나당 한 줄을 차지하는 목록으로 바꾸고,
 // 게임마다 그 특성을 드러내는 아이콘·강조색(accent)을 따로 두어 한눈에 구분되게 했다.
 // (v0.5.0 기능, 사용자 요청) resume — 다른 화면에 있는 동안 전역 알람 박스(GlobalPvpInviteBanner)로
@@ -9178,11 +9226,11 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
 // 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
 // 모서리 없음)을 그대로 가져다 쓴다.
-function CoordRaceGrid({ onCell, flash, readOnly }) {
+function CoordRaceGrid({ onCell, flash, readOnly, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
-    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
@@ -9199,8 +9247,11 @@ function CoordRaceGrid({ onCell, flash, readOnly }) {
   );
 }
 // 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
+// (v0.5.1 UI, 사용자 요청) 미니게임 화면이 전체화면 어두운 배경으로 바뀌면서 밝은 잉크색(T.inkSoft)
+// 대신 옅은 아이보리로 바꿨다 — flexShrink:0도 함께 줘 두 보드가 flex:1로 남은 공간을 나눠 가질 때
+// 이 라벨 자신의 높이가 줄어들지 않게 한다.
 function MinigameBoardLabel({ text }) {
-  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{text}</div>;
+  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "rgba(244,238,226,.6)", marginBottom: 6, flexShrink: 0 }}>{text}</div>;
 }
 // (v0.5.0 기능, 사용자 요청) 전체 진행 상황을 점 한 줄로 보여주는 "게임다운" 스코어보드 — 좌표 인지
 // 게임(15라운드)·나이트 경주(Bo5) 둘 다 이 컴포넌트를 재사용한다. results[i]는 그 라운드가 이미
@@ -9208,10 +9259,12 @@ function MinigameBoardLabel({ text }) {
 // 라운드(= results 배열의 다음 자리)는 금색 테두리로 강조해 어디까지 왔는지 한눈에 보이게 한다.
 function MinigameScorePips({ results, total }) {
   return (
-    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10 }}>
+    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
       {Array.from({ length: total }, (_, i) => {
         const r = results[i];
-        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(0,0,0,.14)";
+        // (v0.5.1 UI, 사용자 요청) 전체화면 어두운 배경에서는 빈 슬롯이 rgba(0,0,0,.14)(검정 위에
+        // 검정)로는 거의 안 보였다 — 밝은 반투명 회색으로 바꿨다.
+        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(255,255,255,.16)";
         const active = i === results.length;
         return <span key={i} aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: bg, boxShadow: active ? "0 0 0 2px " + T.brass : "none", flexShrink: 0 }} />;
       })}
@@ -9222,7 +9275,7 @@ function MinigameScorePips({ results, total }) {
 // 동안에는 자리만 차지하고 비워 둔다.
 function CoordTargetLabel({ targetSq }) {
   return (
-    <div style={{ textAlign: "center", margin: "14px 0", minHeight: 44 }}>
+    <div style={{ textAlign: "center", margin: "10px 0", minHeight: 44, flexShrink: 0 }}>
       {targetSq && (
         <span style={{ display: "inline-block", padding: "6px 22px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</span>
       )}
@@ -9246,6 +9299,10 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const myScore = rounds.filter((r) => r.winner === myColor).length;
   const oppScore = rounds.filter((r) => r.winner === oppColor).length;
   const finished = game.status !== "active";
+  // (v0.5.1 UI, 사용자 요청) 상대 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
+  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
+  const [oppSize, oppFitRef] = useSquareFit();
+  const [mySize, myFitRef] = useSquareFit();
   // (v0.5.0 기능, 사용자 요청) 오답 클릭도 칸이 빨갛게, 정답은 초록색으로 잠깐 반짝이게 한다. 내
   // 클릭은 좌표가 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해
   // 반짝인다. 상대 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을
@@ -9303,29 +9360,40 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>상대 {oppScore}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
+      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 상대 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를 바꿨다.
+          두 보드 슬롯은 각각 flex:1로 남은 세로 공간을 절반씩 나눠 갖고, useSquareFit이 그 슬롯 안에서
+          실제로 꽉 차는 정사각형 크기를 재서 CoordRaceGrid에 전달한다. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="상대 보드" />
+        <div ref={oppFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CoordRaceGrid size={oppSize} onCell={() => { }} flash={oppFlash} readOnly />
+        </div>
+      </div>
+      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
       {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
           600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
           않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
-      <MinigameBoardLabel text="내 보드" />
-      <CoordRaceGrid onCell={onCell} flash={myFlash} />
-      <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <MinigameBoardLabel text="상대 보드" />
-      <CoordRaceGrid onCell={() => { }} flash={oppFlash} readOnly />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="내 보드" />
+        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CoordRaceGrid size={mySize} onCell={onCell} flash={myFlash} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -9357,6 +9425,8 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   const [botFlash, setBotFlash] = useState(null);
   const myFlashTimerRef = useRef(null);
   const botFlashTimerRef = useRef(null);
+  const [botSize, botFitRef] = useSquareFit();
+  const [mySize, myFitRef] = useSquareFit();
   useEffect(() => { setMyFlash(null); setBotFlash(null); }, [roundIdx]);
   useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(botFlashTimerRef.current); }, []);
   const startRound = useCallback(() => {
@@ -9395,26 +9465,34 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   if (finished) {
     const iWon = myScore > botScore, isDraw = myScore === botScore;
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>봇 {botScore}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      <MinigameBoardLabel text="내 보드" />
-      <CoordRaceGrid onCell={onCell} flash={myFlash} />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="봇 보드" />
+        <div ref={botFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CoordRaceGrid size={botSize} onCell={() => { }} flash={botFlash} readOnly />
+        </div>
+      </div>
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <MinigameBoardLabel text="봇 보드" />
-      <CoordRaceGrid onCell={() => { }} flash={botFlash} readOnly />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="내 보드" />
+        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CoordRaceGrid size={mySize} onCell={onCell} flash={myFlash} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -9457,12 +9535,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     onExit();
   };
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>좌표 인지 게임</div>
-        <span style={{ width: 30, flexShrink: 0 }} />
-      </div>
+    <MinigameScreen title="좌표 인지 게임" onBack={requestExit} noScroll={!!active}>
       {!active ? (
         waiting || myInvite ? (
           <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
@@ -9470,11 +9543,11 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
             timeControlLabel="좌표 인지 게임" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
         ) : (
           <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
+            <p style={{ fontSize: 12, color: "rgba(244,238,226,.65)", marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
             {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
             <div className="flex gap-2" style={{ marginBottom: 18 }}>
               <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
-              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
             <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
           </div>
@@ -9484,7 +9557,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           : <CoordRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
-        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
             <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
@@ -9495,7 +9568,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           </div>
         </div>
       )}
-    </div>
+    </MinigameScreen>
   );
 }
 // ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. 두 참가자에게 똑같은 시작 칸·
@@ -9531,11 +9604,11 @@ function knightNeighborsClient(sq, blocked) {
 // 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
 // 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
 // (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
-function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly }) {
+function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   return (
-    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto 12px", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
@@ -9552,7 +9625,7 @@ function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell
           <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={isBlocked || readOnly} className={readOnly ? undefined : "press"}
             style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
             {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
-            {isPos && <PieceGlyph type="N" color={pieceColor} size={24} style={{ position: "relative", zIndex: 1 }} />}
+            {isPos && <PieceGlyph type="N" color={pieceColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 1 }} />}
             {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
             {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
           </button>
@@ -9613,30 +9686,43 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  // (v0.5.1 UI, 사용자 요청) 상대 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
+  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
+  const [oppSize, oppFitRef] = useSquareFit();
+  const [mySize, myFitRef] = useSquareFit();
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
         <span>수 {movesUsed}/{round.moveBudget}</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
-      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      {/* (v0.5.0 리디자인, 사용자 요청) 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는
-          텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
-          써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
-          위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
-      <MinigameBoardLabel text="내 보드" />
-      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 상대 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를
+          바꿨다. 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는 텍스트 기호(♞) 대신
+          분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로 써서, 미니게임
+          보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸 위에 얹는 반투명
+          오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="상대 보드" />
+        <div ref={oppFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <KnightRaceGrid size={oppSize} pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: "rgba(244,238,226,.55)", fontWeight: 700, flexShrink: 0 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0", flexShrink: 0 }}>
         {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === myColor ? "이 라운드 승리!" : "이 라운드 패배")) :
           iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
-      {/* (v0.5.0 기능, 사용자 요청) 상대 보드 — 상대 나이트가 실시간으로(knight_move_ping) 움직이는
-          모습을 그대로 따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
-      <MinigameBoardLabel text="상대 보드" />
-      <KnightRaceGrid pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
-      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
+      {/* (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로(knight_move_ping) 움직이는 모습을 그대로
+          따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="내 보드" />
+        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <KnightRaceGrid size={mySize} pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -9775,23 +9861,36 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     if (nextMoves >= round.moveBudget) doMyReport(false, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  // (v0.5.1 UI, 사용자 요청) 봇 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
+  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
+  const [botSize, botFitRef] = useSquareFit();
+  const [mySize, myFitRef] = useSquareFit();
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
         <span>수 {movesUsed}/{round.moveBudget}</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
-      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      <MinigameBoardLabel text="내 보드" />
-      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 봇 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를 바꿨다. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="봇 보드" />
+        <div ref={botFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <KnightRaceGrid size={botSize} pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: "rgba(244,238,226,.55)", fontWeight: 700, flexShrink: 0 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0", flexShrink: 0 }}>
         {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
       </div>
-      <MinigameBoardLabel text="봇 보드" />
-      <KnightRaceGrid pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
-      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <MinigameBoardLabel text="내 보드" />
+        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <KnightRaceGrid size={mySize} pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -9821,19 +9920,19 @@ function KnightRaceBotBoard({ onExit, onStatusChange }) {
     const iWon = myWins > botWins;
     const isDraw = myWins === botWins;
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botWins}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>봇 {botWins}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -9868,19 +9967,19 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppWins}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>상대 {oppWins}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -9924,12 +10023,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     onExit();
   };
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>나이트 경주</div>
-        <span style={{ width: 30, flexShrink: 0 }} />
-      </div>
+    <MinigameScreen title="나이트 경주" onBack={requestExit} noScroll={!!active}>
       {!active ? (
         waiting || myInvite ? (
           <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
@@ -9937,11 +10031,11 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
             timeControlLabel="나이트 경주" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
         ) : (
           <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
+            <p style={{ fontSize: 12, color: "rgba(244,238,226,.65)", marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
             {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
             <div className="flex gap-2" style={{ marginBottom: 18 }}>
               <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
-              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
             <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
           </div>
@@ -9951,7 +10045,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           : <KnightRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
-        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
             <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
@@ -9962,7 +10056,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           </div>
         </div>
       )}
-    </div>
+    </MinigameScreen>
   );
 }
 function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume }) {
@@ -21066,6 +21160,9 @@ const CHANGELOG = [
       "폰이 승격할 때 뜨는 기물 선택 창이 승격하는 진영 색에 맞는 기물 아이콘(백이면 흰 기물, 흑이면 검은 기물)을 보여주도록 고쳤어요 — 예전엔 항상 검은 기물 아이콘만 떴어요. 선택 버튼도 더 크게, 체스보드 정중앙에 정확히 뜨도록 함께 다듬었어요.",
       "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
       "둘 수 있는 수가 1~2개뿐인 국면에서 보드 위 엔진 상위 줄 아래에 불필요한 빈 자리가 남아 마치 가운데 떠 있는 것처럼 보이던 문제를 고쳤어요 — 이제 실제로 있는 수만큼만 자리를 차지해요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임을 사이트 헤더·하단 탭바가 함께 보이던 플레이 탭 속 좁은 카드 대신, 화면 전체를 다 쓰는 별도 화면에서 플레이하도록 새로 디자인했어요 — 뒤로가기 버튼만 남기고 그 외에는 온전히 대전에만 집중할 수 있어요.",
+      "위 두 미니게임에서 모바일 화면일 때 내 보드가 아래쪽, 상대(또는 봇) 보드가 위쪽에 오도록 순서를 바꿨어요 — 스마트폰을 쥐고 있을 때 내 보드가 엄지손가락과 더 가까워요.",
+      "위 두 미니게임 모두 두 보드가 화면 크기에 맞춰 자동으로 커지거나 작아지며, 어떤 화면 크기에서도 스크롤 없이 두 보드가 한 번에 다 보이도록 다시 만들었어요 — 예전엔 화면이 작으면 아래쪽 보드를 보려고 스크롤을 내려야 했어요.",
     ]
   },
   {
