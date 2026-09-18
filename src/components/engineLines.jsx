@@ -296,7 +296,7 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
     </motion.div>
   );
 }
-export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font }) {
+export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font, maxLines }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   // (사용자 요청) 예전엔 lines도 없고 pending도 아니면(liveOn이 꺼졌거나 아직 첫 fetch 전) 이
@@ -309,7 +309,15 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
   // 차지하도록, 모자란 슬롯은 스켈레톤으로 채워 넣는다.
   // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(forced)이거나 애초에 분석 중이 아니면(!pending)
   // 어차피 스켈레톤이 계속 채워질 리 없으므로, 남은 자리를 로딩 스켈레톤 대신 빈 칸으로 둔다.
-  const missing = Math.max(0, 3 - (lines ? lines.length : 0));
+  // (버그 수정, 사용자 제보) 위 두 항목은 "3줄 고정"이 안 들썩이는 레이아웃을 위해 꼭 필요하다는
+  // 전제였는데, forced(합법 수 자체가 1~2개뿐인 국면)에서는 그 전제가 다르다 — 실제로 나올 수 있는
+  // 줄 수의 상한(legalMoveCount)을 이미 정확히 알고 있어 더 이상 들썩일 걱정이 없는데도, 항상 3줄
+  // 높이를 그대로 차지해 남는 빈 자리가 실제 줄들 아래(또는 둘러싸며) 눈에 띄는 여백으로 남아
+  // "가운데 떠 있는 것처럼" 보였다. 호출부가 실제 합법 수만큼만(예: 2개면 2) maxLines로 넘기면,
+  // 그 개수만큼만 자리를 차지해 있는 줄이 위에서부터 그대로 그 자리를 채운다 — maxLines를 안 넘기는
+  // 기존 호출부(집중 분석·게임 리뷰 등)는 지금까지처럼 항상 3줄로 그대로 동작한다.
+  const slots = Math.max(1, Math.min(3, maxLines || 3));
+  const missing = Math.max(0, slots - (lines ? lines.length : 0));
   // (버그 수정) flex 자식은 기본적으로 min-width:auto라, 안의 기보 텍스트(nowrap)가 길면 이
   // 텍스트 div가 자기 콘텐츠 폭만큼 커지려 하고(overflow-x:auto가 있어도 그 자체로는 이 기본값을
   // 못 이긴다) — 그 결과 줄(row)과 이 wrapper, 나아가 분석 탭 grid 컬럼까지 전부 그 폭에 맞춰
@@ -325,7 +333,7 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
   // 보드 그리드)가 다시는 흔들릴 수 없다.
   const rowH = large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small;
   return (
-    <div style={{ width, minWidth: 0, height: rowH * 3 + 2 * 2, margin: large ? "0 0 8px" : "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+    <div style={{ width, minWidth: 0, height: rowH * slots + 2 * Math.max(0, slots - 1), margin: large ? "0 0 8px" : "0 auto 8px", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
       {hasLines
         ? <>
           {lines.map((l, i) => {
@@ -350,7 +358,7 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
           })}
           {Array.from({ length: missing }, (_, i) => (forced || !pending) ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
         </>
-        : [0, 1, 2].map((i) => pending ? <EngineLineSkeleton key={i} large={large} /> : <EngineLineBlank key={i} large={large} />)}
+        : Array.from({ length: slots }, (_, i) => pending ? <EngineLineSkeleton key={i} large={large} /> : <EngineLineBlank key={i} large={large} />)}
     </div>
   );
 }
