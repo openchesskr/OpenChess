@@ -197,22 +197,33 @@ const ENGINE_PROFILES = {
     parts: 6,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
   },
   // (8z5dbt 세션 기능) 셋 중 가장 강력한 엔진 — Stockfish 18의 정식(비-Lite) 대형 신경망 빌드. npm
-  // 패키지가 이 빌드는 조각내지 않고 wasm 파일 하나(~113MB)로만 배포해서, Vercel의 배포 파일당
-  // 100MB 제한을 넘는다 — 예전엔 scripts/copy-engine.mjs가 빌드 시점에 100MB 미만 조각(-part-N.wasm)
-  // 으로 직접 쪼개 public/engine/18에 커밋해 뒀지만(약 216MB), 이러면 매 배포마다 그 216MB가 통째로
-  // 다시 패키징돼 Vercel Deployment Storage(무료 한도 10GB) 한도를 순식간에 넘겨버렸다.
-  // (v0.4.9 기능, 사용자 요청) scripts/upload-engine18-blob.mjs로 한 번만 Vercel Blob에 조각·부트
-  // 스크립트를 업로드해 두고, 여기서는 그 절대 URL만 참조한다 — public/engine/18은 더 이상 git에
-  // 커밋되지 않는다(.gitignore). boot-single.js/boot-mt.js는 self.location이 아니라 업로드 시점에
-  // 확정된 절대 URL만 참조하도록 다시 생성돼 있어서(App.jsx의 외부 URL 워커 생성 경로 — 467줄
-  // 부근 — 가 blob: 오브젝트 URL로 감싸 self.location을 실제 파일 위치와 다르게 만들기 때문), 이
-  // 절대 URL을 그대로 써도 문제없이 동작한다. 스톡피시18 npm 버전을 올릴 때만 그 업로드 스크립트를
-  // 다시 돌리고 아래 두 URL을 새로 받은 값으로 갱신하면 된다.
+  // 패키지가 이 빌드는 조각내지 않고 wasm 파일 하나(~108MB)로만 배포해서, Vercel의 배포 파일당
+  // 100MB 제한을 넘는다.
+  // (v0.4.9, 폐기됨) 빌드 시점마다 100MB 미만 조각으로 직접 쪼개 public/engine/18에 뒀었는데(단일+
+  // 멀티스레드 두 빌드 합쳐 약 216MB라 매 배포마다 다시 패키징돼 Vercel Deployment Storage 10GB
+  // 무료 한도 초과의 주범이 됨), 그래서 Vercel Blob 업로드로 옮겼다.
+  // (v0.5.1, 폐기됨) Vercel Blob → GitHub Release로 외부 저장소를 두 번 옮겨 봤지만 둘 다 실패했다 —
+  // Blob은 원인 불명의 다운로드 실패(재업로드해도 URL 동일, 194MB 전송까지 Network 탭으로 확인됐는데도
+  // 몇 분이 지나도 끝나지 않음), GitHub Release는 애초에 브라우저 fetch용 CORS 헤더 자체를 보내지
+  // 않아(release-assets.githubusercontent.com 응답에 Access-Control-Allow-Origin이 없음 — curl로
+  // 직접 확인) 모든 시도가 브라우저에서 조용히 막혔다. 외부 저장소가 계속 새로운 종류의 문제를 만들어,
+  // 사용자 요청으로 원래 방식(같은 출처에서 직접 서빙)으로 되돌렸다 — 같은 출처면 CORS 문제 자체가
+  // 없다. v0.4.9 때와 다른 점은 이제 멀티스레드(mtUrl) 빌드를 포기해서(이전 세션에서 이미 결정 —
+  // 신뢰성이 스레드 성능 이득보다 중요하다고 판단) 배포 용량 증가분이 절반(~108MB)뿐이라는 것 — 이미
+  // 같은 방식으로 서빙 중인 17.1(~80MB)과 비슷한 수준이라, 그 프로필이 이미 감수하고 있는 위험과
+  // 다르지 않다. 조각 나누기·재조립은 scripts/copy-engine.mjs가 빌드마다 다시 만든다(자세한 내용은
+  // 그 스크립트의 주석 참고) — 17.1과 달리 stockfish18 npm 로더는 조각 재조립 기능을 자체 지원하지
+  // 않아 self.fetch를 가로채는 방식을 쓴다.
   full18: {
     id: "full18", label: "Stockfish 18",
-    urls: ["https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-single.js"],
-    mtUrl: "https://kqdlwug2a77bgof7.public.blob.vercel-storage.com/engine/18/boot-mt.js",
-    parts: 2,   // 부팅 타임아웃을 넉넉히 주기 위한 표시(engineBootList 참고) — 실제 조각 이어붙이기는 boot-*.js 안에서 처리된다.
+    urls: [ENGINE_BASE + "engine/18/boot-single.js"],
+    // 신경망이 108MB라 느린 회선에서는 받는 데 시간이 걸릴 수 있어 넉넉히 둔다(v0.5.1).
+    bootTimeoutMs: 240000,
+    // analyzePoolSize/getAnalysisPool이 이 프로필을 "무거운 프로필"로 식별해 게임 리뷰용 풀 부팅
+    // 경합을 줄이도록(HEAVY_ENGINE_POOL_SIZE·HEAVY_ENGINE_BOOT_BATCH) parts를 그대로 쓴다(17.1과
+    // 같은 처리 — 실제 조각 수는 scripts/copy-engine.mjs가 계산하지만, 여기서는 "무겁다"는 표시로만
+    // 쓰이므로 정확한 개수가 아니어도 무방하다).
+    parts: 2,
   },
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
@@ -236,7 +247,16 @@ function engineBootList(profileId, threads) {
   // 달해, 다 받아 이어 붙이고 컴파일하는 데 기존 4초 부팅 타임아웃보다 오래 걸릴 수 있다 — 이
   // 타임아웃이 먼저 끝나 워커를 강제 종료하면 파일을 받던 중이라 "연결 실패"로 이어졌다. 신경망이
   // 조각나 있는 프로필(profile.parts)만 훨씬 넉넉한 타임아웃을 준다(가벼운 기존 두 엔진은 그대로 4초).
-  const bootTimeoutMs = profile.parts ? 45000 : 4000;
+  // (v0.5.1 버그 수정, 사용자 제보) "Stockfish 18을 고르면 항상 연결 실패로 멈춘다" — Stockfish
+  // 18(정식)의 신경망은 조각을 다 합치면 약 108MB로, 같은 조각 방식을 쓰는 17.1(약 80MB)보다도 크고
+  // 게다가 앱과 같은 출처가 아닌 외부 CDN(Vercel Blob)에서 받는다(위 ENGINE_PROFILES.full18 주석
+  // 참고) — 그런데도 그 17.1과 똑같이 45초 타임아웃을 나눠 쓰고 있었다. 45초 안에 108MB를 받으려면
+  // 최소 초당 2.4MB(≈19Mbps) 이상 꾸준히 나와야 하는데, 특히 첫 요청이라 캐시도 없는 외부 CDN
+  // 왕복까지 겹치면 흔한 가정용/모바일 환경에서도 이 기준을 못 채우는 경우가 많다 — 17.1의 옛
+  // 버그(README v0.2.0)와 정확히 같은 종류로, 다 받기도 전에 타임아웃이 먼저 끝나 워커를 강제
+  // 종료해 "연결 실패"로 보였다. profile에 개별 부팅 타임아웃을 지정할 수 있게 하고(bootTimeoutMs
+  // 필드, 없으면 기존처럼 parts 여부로 45초/4초 결정), full18만 90초로 넉넉히 늘렸다.
+  const bootTimeoutMs = profile.bootTimeoutMs != null ? profile.bootTimeoutMs : (profile.parts ? 45000 : 4000);
   const list = profile.urls.map((url) => ({ url, threads: 1, bootTimeoutMs }));
   if (profile.mtUrl && crossOriginIsolatedOK()) list.unshift({ url: profile.mtUrl, threads, bootTimeoutMs });
   return list;
@@ -297,12 +317,23 @@ const OVERLAY = {
   },
 };
 
-// (성능, 사용자 요청) 이미지 스캔 인식 시간 단축 — 휴대폰 카메라 사진은 흔히 3000px 이상·수 MB인데,
-// 체스판 배치나 PGN/FEN 텍스트를 읽는 데는 그렇게 큰 해상도가 필요 없다. 업로드 전송량과 비전 모델의
-// 처리 시간(이미지가 클수록 더 많은 타일/토큰으로 나눠 처리됨)을 함께 줄이기 위해, 서버로 보내기 전에
-// 클라이언트에서 먼저 적당한 크기로 축소·재압축한다. 이미 충분히 작거나(축소해도 이득이 없음) 축소에
-// 실패하면(구형 브라우저 등) 원본 파일을 그대로 쓴다 — 인식 성공 여부에는 영향이 없고 속도만 개선된다.
-async function downscaleImageFile(file, maxSide = 1280, quality = 0.85) {
+// (성능, 사용자 요청 → v0.5.1 추가 단축) 이미지 스캔 인식 시간 단축 — 휴대폰 카메라 사진은 흔히
+// 3000px 이상·수 MB인데, 체스판 배치나 PGN/FEN 텍스트를 읽는 데는 그렇게 큰 해상도가 필요 없다.
+// 업로드 전송량과 비전 모델의 처리 시간(이미지가 클수록 더 많은 타일/토큰으로 나눠 처리됨)을 함께
+// 줄이기 위해, 서버로 보내기 전에 클라이언트에서 먼저 적당한 크기로 축소·재압축한다. 이미 충분히
+// 작거나(축소해도 이득이 없음) 축소에 실패하면(구형 브라우저 등) 원본 파일을 그대로 쓴다 — 인식
+// 성공 여부에는 영향이 없고 속도만 개선된다.
+// (v0.5.1 성능, 사용자 요청) maxSide를 1280→768로 더 낮췄다 — Gemini를 비롯한 비전 모델은 이미지를
+// 내부적으로 ~768px 단위 타일로 잘라 처리하는데, 1280px는 그 경계를 넘어 2x2(4타일)로 처리돼
+// 768px 이하(1타일)보다 토큰 수·처리 시간이 몇 배로 늘어난다. 체스판은 8x8 격자라는 단순한 구조라
+// 768px로도 칸 하나당 90px 이상 확보되어 인식에 충분하고, 아래 재시도 로직(isSanePieceCounts 등)이
+// 여전히 오독을 걸러낸다.
+// (v0.5.1 성능, 사용자 요청 → 추가 단축) quality를 0.85→0.72로 더 낮췄다 — JPEG 압축률은 Gemini
+// 쪽 이미지 토큰 수(픽셀 크기로 결정됨)에는 영향이 없지만, 업로드 바이트 수(클라이언트→우리 서버,
+// 우리 서버→Gemini 두 구간 모두)를 줄여 왕복 전송 시간을 단축한다. 체스판은 색이 단순히 나뉜 8x8
+// 격자라 압축률을 더 낮춰도(자잘한 사진 디테일이 뭉개지는 것과 달리) 칸·기물의 윤곽 자체는 여전히
+// 뚜렷하게 남는다.
+async function downscaleImageFile(file, maxSide = 768, quality = 0.72) {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined") return null;
   let bitmap;
   try { bitmap = await createImageBitmap(file); } catch { return null; }
@@ -323,9 +354,20 @@ async function downscaleImageFile(file, maxSide = 1280, quality = 0.85) {
 // 서버(api/scan-board.js)가 확장됐다. 보드 편집기·퍼즐 만들기 마법사 양쪽에서 재사용하는 공용 호출
 // 함수 — 파일을 base64로 읽어 서버에 보내고, { type:"board", fen_board } 또는
 // { type:"text", recognized_text }를 그대로 돌려준다(실패 시 throw).
-async function scanImageFile(file) {
+// (v0.5.1 기능, 사용자 요청) 진행도를 퍼센티지로 실시간 표시 — onProgress(0~100)를 부른다. 다만
+// 실제로 "진행률"이라는 신호를 우리가 직접 관찰할 수 있는 구간은 업로드(클라이언트→우리 서버)뿐이다
+// (fetch의 요청 바디 전송률을 알 수 없어 XMLHttpRequest의 upload.onprogress로 바꿨다 — fetch API는
+// 표준적으로 업로드 진행률 이벤트를 제공하지 않는다). 그 뒤 우리 서버가 Gemini 응답을 기다리는
+// 구간은 이 클라이언트 입장에선 완전히 블랙박스라(중간 진행 신호가 전혀 오지 않는 단일 응답) 실제
+// 값이 아니라 "아직 진행 중"이라는 인상을 주기 위한 흉내(서서히 90%까지 다가가되 다 채우지는 않고,
+// 실제 응답이 오면 그제서야 100%로 점프) — 업로드 구간까지는 실측값, 그 뒤는 추정치라는 걸 분명히
+// 해 둔다.
+async function scanImageFile(file, onProgress) {
+  const report = (p) => onProgress && onProgress(Math.max(0, Math.min(100, Math.round(p))));
+  report(2);
   const shrunk = await downscaleImageFile(file);
   const effectiveFile = shrunk || file;
+  report(10);
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -334,13 +376,34 @@ async function scanImageFile(file) {
   });
   const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
   if (!m) throw new Error("이미지를 읽지 못했어요.");
-  const r = await fetch("/api/scan-board", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ image: m[2], mediaType: m[1] }),
+  report(14);
+  const body = JSON.stringify({ image: m[2], mediaType: m[1] });
+  const data = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let simTimer = null;
+    xhr.open("POST", "/api/scan-board");
+    xhr.setRequestHeader("content-type", "application/json");
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      report(14 + (e.loaded / e.total) * 36); // 업로드 구간: 14~50% (실측)
+    };
+    xhr.upload.onloadend = () => {
+      // 업로드는 끝났지만 서버가 Gemini 응답을 기다리는 동안은 신호가 없다 — 50%에서 시작해
+      // 90%까지 점점 느려지며 다가가는 것처럼 흉내 내다가(가짜), 실제 응답이 오면 곧장 100%.
+      let p = 50;
+      simTimer = setInterval(() => { p += (90 - p) * 0.08; report(p); }, 250);
+    };
+    xhr.onload = () => {
+      if (simTimer) clearInterval(simTimer);
+      let parsed = null;
+      try { parsed = JSON.parse(xhr.responseText); } catch { }
+      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식에 실패했어요.")); return; }
+      report(100);
+      resolve(parsed);
+    };
+    xhr.onerror = () => { if (simTimer) clearInterval(simTimer); reject(new Error("네트워크 오류로 이미지 인식에 실패했어요.")); };
+    xhr.send(body);
   });
-  const data = await r.json().catch(() => null);
-  if (!r.ok || !data) throw new Error((data && data.error) || "이미지 인식에 실패했어요.");
   return data;
 }
 function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
@@ -466,7 +529,7 @@ function useEngine(enginePref) {
       }
     }
     function tryNext() {
-      if (idx >= bootList.length) { offRef.current = true; setStatus("off"); pump(); return; }
+      if (idx >= bootList.length) { console.warn("[engine] all boot candidates exhausted, profile:", enginePref); offRef.current = true; setStatus("off"); pump(); return; }
       const { url, threads, bootTimeoutMs } = bootList[idx++];
       try {
         let w;
@@ -474,7 +537,10 @@ function useEngine(enginePref) {
         else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
         let booted = false;
         w.onmessage = (e) => { const line = typeof e.data === "string" ? e.data : ""; if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) { booted = true; ref.current = w; setStatus("ready"); pump(); } handleLine(line); };
-        w.onerror = () => { try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
+        // (v0.5.1 버그 수정) 부팅 실패 경로(여기·아래 타임아웃·바깥 catch) 전부가 지금까지 아무 로그도
+        // 남기지 않고 조용히 다음 후보로 넘어갔다 — 그래서 "엔진이 연결 실패로 멈춘다"는 제보가 와도
+        // 콘솔에서 원인(어떤 URL이, 왜 — 404/CORS 에러였는지 타임아웃이었는지)을 전혀 구분할 수 없었다.
+        w.onerror = (e) => { console.warn("[engine] boot failed:", url, e && e.message); try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
         // (성능) 스톡피시 WASM 빌드의 기본 Hash(치환 테이블)는 보통 16MB로 아주 작다 — 같은 국면을
@@ -484,8 +550,8 @@ function useEngine(enginePref) {
         // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
         w.postMessage("setoption name Hash value 64");
         w.postMessage("isready"); worker = w;
-        setTimeout(() => { if (!booted && !killed) { try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
-      } catch (_) { tryNext(); }
+        setTimeout(() => { if (!booted && !killed) { console.warn("[engine] boot timeout(" + (bootTimeoutMs || 4000) + "ms):", url); try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
+      } catch (e) { console.warn("[engine] boot threw:", url, e); tryNext(); }
     }
     tryNext();
     return () => {
@@ -3040,6 +3106,25 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
 // 붙여넣기와 똑같은 계약(onLoadFen(parseFenFull 결과))으로 그 포지션의 FEN 모드로 들어간다.
 const EDITOR_PALETTE_PIECES = ["K", "Q", "R", "B", "N", "P"];
 function editorEmptyBoard() { return Array.from({ length: 8 }, () => Array(8).fill(null)); }
+// (v0.5.1 기능, 사용자 요청 → 항상 켜짐으로 변경) 보드 편집기 — 그 캐슬링에 필요한 킹·룩이 표준
+// 시작 칸(백 K:e1·h1, Q:e1·a1 / 흑 k:e8·h8, q:e8·a8 — board[r][c]는 r=0이 랭크8, c=0이 파일a이므로
+// 각각 [7,4]/[7,7]/[7,0]과 [0,4]/[0,7]/[0,0])에 정확히 있지 않은 순간 그 권리를 자동으로 꺼 준다.
+// 반대(다시 제자리로 돌아오면 권리가 되살아나는 것)는 절대 하지 않는다 — 캐슬링 권리는 "그 기물이
+// 게임 시작 이후 한 번도 움직이지 않았다"는 과거 이력에 관한 정보라, 편집기 조작으로 우연히 다시
+// 표준 칸과 같은 배치가 됐다고 그 이력까지 되살아나는 건 아니기 때문이다(실제 체스 규칙과 같은
+// 태도 — updateCastleRights가 실제 대국에서 하는 일과 동일한 원칙, 다만 이쪽은 "한 수" 단위가
+// 아니라 "지금 이 순간의 배치"만 보고 판단한다는 점이 다르다). 처음엔 기본 꺼짐인 opt-in
+// 체크박스로 뒀다가, 사용자 요청으로 옵션 자체를 없애고 항상 적용되도록 바꿨다.
+function clearInvalidCastleRights(board, rights) {
+  const has = (r, c, color, type) => { const p = board[r][c]; return !!p && p.c === color && p.t === type; };
+  const wK = has(7, 4, "w", "K"), bK = has(0, 4, "b", "K");
+  return {
+    K: !!rights.K && wK && has(7, 7, "w", "R"),
+    Q: !!rights.Q && wK && has(7, 0, "w", "R"),
+    k: !!rights.k && bK && has(0, 7, "b", "R"),
+    q: !!rights.q && bK && has(0, 0, "b", "R"),
+  };
+}
 // (버그 수정) 예전엔 앙파상을 아예 다루지 않아, FEN을 직접 입력·붙여넣기·이미지 스캔해도 그 안의
 // 앙파상 타깃 필드가 항상 "-"로 버려졌다 — 그렇게 만든 포지션으로 곧장 PLAY를 열면(seed.fenRoot로
 // 그대로 전달됨) 원래는 가능해야 할 앙파상 캡처가 그 즉시 불가능해졌다. ep를 받아 그대로 필드에
@@ -3092,18 +3177,24 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRe
 }
 function BoardEditorModal({ initialFen, onClose, onApply }) {
   const narrow = useNarrow(760);
+  // (v0.5.1 버그 수정, 사용자 요청) 캐슬링 권리 자동 해제는 이제 옵션이 아니라 항상 켜져 있다 — 초기
+  // 배치를 불러오는 시점부터 이미 무효한 권리(킹·룩이 표준 시작 칸을 벗어났는데 권리는 남아 있는 FEN)가
+  // 있을 수 있으므로, startSnap 계산 시점에도 한 번 정리해 둔다.
   const startSnap = useMemo(() => {
     const p = (initialFen && parseFenFull(initialFen)) || parseFenFull(STANDARD_START_FEN);
-    return { board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null };
+    return { board: p.board, turn: p.turn, rights: clearInvalidCastleRights(p.board, p.rights), ep: p.ep || null };
   }, [initialFen]);
   // (기능) 되감기/빨리감기(◀◀▶▶)·되돌리기/다시하기(↶↷) — 스냅샷 배열 하나 + 인덱스로 관리해
   // board/turn/rights 세 state를 따로 두고 동기화하다 어긋나는 사고를 원천 차단한다.
   const [hist, setHist] = useState({ list: [startSnap], idx: 0 });
   const snap = hist.list[hist.idx];
   const { board, turn, rights, ep } = snap;
+  // (v0.5.1 기능, 사용자 요청 → 항상 켜짐으로 변경) "캐슬링 권리 자동 해제" — 처음엔 opt-in 체크박스로
+  // 뒀다가, 사용자 요청으로 옵션 자체를 없애고 항상 적용되도록 바꿨다. pushSnap을 거치는 모든 보드
+  // 변경(팔레트 배치·드래그·FEN 붙여넣기·이미지 스캔 등)이 무조건 이 검사를 받는다.
   const pushSnap = (patch) => setHist((h) => {
     const next = { ...h.list[h.idx], ...patch };
-    const list = [...h.list.slice(0, h.idx + 1), next];
+    const list = [...h.list.slice(0, h.idx + 1), { ...next, rights: clearInvalidCastleRights(next.board, next.rights) }];
     return { list, idx: list.length - 1 };
   });
   const canUndo = hist.idx > 0, canRedo = hist.idx < hist.list.length - 1;
@@ -3291,10 +3382,11 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   // 끝까지 재생해 최종 포지션을 보드에 적용한다(보드 편집기는 배치만 다루므로 수순 자체는 저장하지
   // 않는다).
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const onScanFile = async (file) => {
-    setScanning(true); setFenErr("");
+    setScanning(true); setScanProgress(0); setFenErr("");
     try {
-      const data = await scanImageFile(file);
+      const data = await scanImageFile(file, setScanProgress);
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
         if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
@@ -3324,7 +3416,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       }
       setFenErr("이미지에서 체스판이나 기보를 인식하지 못했어요.");
     } catch (e) { setFenErr((e && e.message) || "이미지 스캔에 실패했어요."); }
-    finally { setScanning(false); }
+    finally { setScanning(false); setScanProgress(0); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
@@ -3408,7 +3500,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   );
   const scanAndHistoryRow = (
     <div className="flex items-center justify-between">
-      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label="이미지 스캔" busyLabel="인식하는 중..."
+      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label="이미지 스캔" busyLabel={"인식하는 중... " + scanProgress + "%"}
         buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }} />
       <div className="flex items-center" style={{ gap: 4 }}>
         <button onClick={rewind} disabled={!canUndo} title="처음으로" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
@@ -3765,7 +3857,7 @@ function useCountUp(target, durationMs, decimals = 0) {
   }, [target, durationMs, decimals]);
   return target == null ? null : display;
 }
-function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
+function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
@@ -3792,7 +3884,9 @@ function MoveTile({ m, ply, onClick, onFocus, posGames, statsLoading, questBadge
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? "이론" : "…")}</span>
               </div>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
+            {!hideFocus && (
+              <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}><Play size={11} /> 분석</button>
+            )}
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
             {/* (사용자 요청) "a/b" 회수 표기가 자릿수가 많아지면 잘려 보이던 문제, 그리고 채택률(%)
@@ -7707,21 +7801,34 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
 }
 // (v0.2.1 기능) 리뷰 보드에서 자유롭게 두다가 폰이 끝 랭크에 닿았을 때의 승격 기물 선택 오버레이 —
 // 분석 탭 메인 보드의 프로모션 UI와 동일한 모양을 그대로 쓴다.
-function ReviewPromoPrompt({ onPick, onCancel }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
-      <div className="flex gap-2">
+// (v0.5.1 버그 수정, 사용자 제보) 예전엔 기물 아이콘 색이 항상 흑(color="b")으로 고정돼 있어, 백이
+// 승격할 때도 검은 기물 아이콘이 떴다 — 실제로 승격하는 진영 색을 promoPrompt.to의 랭크로 판단해
+// (도착 칸이 랭크8=board row 0이면 백, 랭크1=row 7이면 흑 — 이 컴포넌트를 호출하는 모든 곳이 이미
+// 이 규칙으로 승격을 감지해 promoPrompt를 만든다) 받아 오도록 color prop을 추가했다.
+// (v0.5.1 UI, 사용자 요청) 버튼·아이콘·글자 크기를 한 단계씩 키웠다(52→68px, 아이콘 26→34).
+// (v0.5.1 UI, 사용자 요청) "체스보드 정중앙에 표시" — 예전엔 이 컴포넌트를 담는 바깥 wrapper div가
+// 보드 자체보다 넓은 영역(잡힌 기물 줄·엔진 평가 줄 등을 포함)까지 함께 감싸고 있어, position:
+// absolute;inset:0으로는 그 wrapper 전체의 정중앙에 뜨지 실제 8x8 체스판의 정중앙에 뜨지 않았다.
+// 호출부가 Board의 gridRef(그 8x8 그리드 DOM 엘리먼트 자체, position:relative)를 얻어 portalTo로
+// 넘기면, 이 오버레이를 그 그리드 엘리먼트 안으로 포털(createPortal)해 그 엘리먼트의 inset:0(=보드
+// 자체의 정중앙)에 정확히 뜨도록 한다. 아직 그리드 참조를 못 받았으면(예: 최초 렌더 극초반) 기존처럼
+// 제자리에서 렌더해 안전하게 폴백한다.
+function ReviewPromoPrompt({ onPick, onCancel, color = "b", portalTo }) {
+  const content = (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, borderRadius: 4, zIndex: 30 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
+      <div className="flex gap-3">
         {["Q", "R", "B", "N"].map((t) => (
-          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <PieceGlyph type={t} color="b" size={26} />
-            <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
+          <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 68, height: 68, borderRadius: 12, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 4px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
+            <PieceGlyph type={t} color={color} size={34} />
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
           </button>
         ))}
       </div>
-      <button onClick={onCancel} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
+      <button onClick={onCancel} className="press" style={{ fontSize: 12, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 8, padding: "6px 16px", cursor: "pointer" }}>취소</button>
     </div>
   );
+  return portalTo ? createPortal(content, portalTo) : content;
 }
 // (v0.2.1) /review 전용 색 토큰 — 예전엔 순수 검정(#181818)+흰색이라 사이트의 따뜻한 브라운/크림
 // 테마와 이질감이 컸다. 집중분석 오버레이와 같은 어두운 브라운 그러데이션 배경 위에, 아이보리/브라스
@@ -8998,6 +9105,54 @@ const PLAY_SPECIAL_GAMES = [
   { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
   { key: "knight-race", gameType: "knight", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
 ];
+// (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
+// 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
+// 좁은 스크롤 영역 안에 평범한 카드로 그려져, 내 보드·상대 보드를 세로로 쌓으면 필연적으로 스크롤이
+// 필요했다. document.body로 포털한 뷰포트 전체 오버레이(다른 전체화면 오버레이, 예: 티어 로드맵과
+// 같은 패턴 — createPortal이 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에
+// 그리도록 해 준다)로 바꿔 사이트 헤더·하단 탭바를 가리고, 그 안에서 실제 대전 화면(noScroll)은
+// flexbox로 뷰포트 높이를 정확히 나눠 써 스크롤 없이 두 보드가 항상 한 화면에 다 보이게 한다(아래
+// useSquareFit 참고). 로비·매칭 대기·결과 화면은 내용 길이가 가변적이라(친구 목록 등) 그대로
+// 스크롤을 허용한다.
+function MinigameScreen({ title, onBack, children, noScroll }) {
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <div className="flex items-center justify-between" style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px" }}>
+        <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.ivoryHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi, textAlign: "center", flex: 1 }}>{title}</div>
+        <span style={{ width: 32, flexShrink: 0 }} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "0 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+// (v0.5.1 기능) 내 보드·상대 보드가 세로로 겹쳐도 뷰포트 안에 항상 다 들어오도록, 이 보드가 놓일
+// 자리(가로·세로 둘 다 flexbox가 정한 만큼)를 직접 재서 그 안에 꽉 차는 정사각형 한 변의 길이를
+// 구한다. useBoardSize(가로 폭만 잰다)와 달리 세로 제약까지 함께 본다 — 이 보드 슬롯 자체를
+// flex:1;minHeight:0으로 감싸 뷰포트의 남은 절반을 차지하도록만 해 두면, 나머지(그 절반 안에서
+// 실제로 정사각형이 얼마나 커질 수 있는지)는 이 훅이 ResizeObserver로 실측해 계산한다 — 폰트 크기·
+// 라벨 줄바꿈 등 주변 요소의 실제 렌더 결과에 따라 슬롯 크기가 달라져도 항상 정확하다.
+function useSquareFit(maxSize = 420) {
+  const [size, setSize] = useState(Math.min(maxSize, 280));
+  const roRef = useRef(null);
+  const setRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const s = Math.max(80, Math.floor(Math.min(r.width, r.height, maxSize)));
+      setSize((prev) => (Math.abs(prev - s) > 1 ? s : prev));
+    };
+    measure();
+    roRef.current = new ResizeObserver(measure);
+    roRef.current.observe(el);
+  }, [maxSize]);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  return [size, setRef];
+}
 // (v0.5.0 리디자인, 사용자 요청) 카드 그리드 대신 미니게임 하나당 한 줄을 차지하는 목록으로 바꾸고,
 // 게임마다 그 특성을 드러내는 아이콘·강조색(accent)을 따로 두어 한눈에 구분되게 했다.
 // (v0.5.0 기능, 사용자 요청) resume — 다른 화면에 있는 동안 전역 알람 박스(GlobalPvpInviteBanner)로
@@ -9048,14 +9203,19 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume }) {
   );
 }
 // ---- 좌표 인지 게임(coord) — 사용자 설계 1호 실시간 PvP 미니게임. 무작위 좌표가 나타나면 상대보다
-// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 라운드당 4초 제한, 더 많이 맞힌 쪽 승리·동점은
-// 무승부 — 규칙·서버 권위 판정은 supabase-setup.sql의 coord_reveal_next/coord_click/coord_finish
-// 참고). 매칭은 기존 체스 PvP와 같은 pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로
-// 바꿔 그대로 재사용한다 — 친구 초대는 아직 연결하지 않았다(랜덤 매칭만, 나중에 필요해지면 체스와
-// 같은 pvp_invite_friend를 그대로 재사용하면 된다).
+// 먼저 그 칸을 클릭해야 점수를 가져간다(15라운드, 더 많이 맞힌 쪽 승리 — 라운드 수가 홀수라 게임
+// 전체가 무승부로 끝나는 경우는 없다). 규칙·서버 권위 판정은 supabase-setup.sql의
+// coord_reveal_next/coord_click/coord_finish 참고). 매칭은 기존 체스 PvP와 같은
+// pvp_queue_join/pvp_queue_leave RPC를 game_type만 "coord"로 바꿔 그대로 재사용한다.
+// (v0.5.1 리디자인, 사용자 요청) 내 보드·상대 보드를 따로 그리는 대신, 보드 하나만 화면 정중앙에
+// 크게 쓰고 그 위에 나와 상대(또는 봇)의 클릭을 함께 표시한다 — 두 보드로 나누면 화면이 좁아지고
+// "누가 어디를 눌렀는지"를 두 화면을 번갈아 봐야 알 수 있었는데, 한 보드에 같이 표시하면 그 자리에서
+// 바로 비교된다. 또한 라운드 제한시간을 완전히 없앴다 — 예전엔 4초 안에 아무도 못 맞히면 그 라운드가
+// 무승부로 자동 종료됐는데, 이제는 오답을 눌러도(양쪽 다) 라운드가 끝나지 않고 누군가 정답을 맞힐
+// 때까지 계속 진행된다(coord_reveal_next/coord_click의 시간 기반 로직도 함께 제거 — 아래 SQL 주석
+// 참고).
 const COORD_GAME_TYPE = "coord";
 const COORD_TOTAL_ROUNDS = 15;
-const COORD_ROUND_MS = 4000;
 const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 대전 중 화면 — 매칭이 끝난 뒤(game이 확정된 뒤)만 렌더링된다. pvp_games 행 하나를 실시간
 // 구독하며, sans(라운드 기록 배열)만 보고 내 점수·상대 점수·지금 라운드를 그때그때 다시 계산한다 —
@@ -9071,29 +9231,83 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 아니다). (재지적) 칸끼리 간격을 두고 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와
 // 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근
 // 모서리 없음)을 그대로 가져다 쓴다.
-function CoordRaceGrid({ onCell, flash, readOnly }) {
+// (v0.5.1 리디자인, 사용자 요청) 이 라운드 동안 내가·상대(또는 봇)가 실제로 클릭해 본 칸을 전부
+// myClicks/oppClicks(각각 {sq, correct} 배열, 라운드가 바뀌면 초기화)로 받아, 같은 보드 위에 함께
+// 표시한다. (재요청) 점을 찍는 대신 그 칸 자체의 색이 바뀌도록 바꿨다 — 정답이면 초록, 오답이면
+// 빨강으로 칸 전체를 채우고, 누구 클릭인지는 칸 테두리 색(금색=나, 파란색=상대·봇)으로 구분한다.
+// 같은 칸을 양쪽이 다 눌렀으면 대각선으로 반씩 나눠 두 결과를 함께 보여준다. (재요청) 보드에는
+// 좌표축(파일 a~h, 랭크 1~8)과 시작 배치 그대로의 기물도 항상 함께 그린다 — 실제 체스판처럼 보이는
+// 배경 위에서 좌표를 찾는 감각을 기르는 게 이 게임의 취지라, 좌표축·기물이 늘 보여야 "b6이 나이트
+// 옆 칸"처럼 기물 위치를 기준으로 좌표를 가늠할 수 있다. 기물은 순수 배경 장식이라 클릭 판정에는
+// 관여하지 않는다(버튼 자체가 칸이라 기물 위를 눌러도 그 칸이 클릭된다).
+const COORD_START_BACK_RANK = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  const myBySq = {}; (myClicks || []).forEach((c) => { myBySq[c.sq] = c; });
+  const oppBySq = {}; (oppClicks || []).forEach((c) => { oppBySq[c.sq] = c; });
+  const cell = size / 8;
+  const coordFont = Math.max(9, cell * 0.16);
   return (
-    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
-        const isFlash = flash && flash.sq === sq;
+        const mine = myBySq[sq];
+        const opp = oppBySq[sq];
         const light = (r + c) % 2 === 0;
+        const pieceType = r === 0 ? COORD_START_BACK_RANK[c] : r === 1 ? "P" : r === 6 ? "P" : r === 7 ? COORD_START_BACK_RANK[c] : null;
+        const pieceColor = r <= 1 ? "b" : "w";
+        let overlayBg = null, borderColor = null;
+        if (mine && opp) {
+          const c1 = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          const c2 = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          overlayBg = "linear-gradient(135deg," + c1 + " 50%," + c2 + " 50%)";
+          borderColor = "#fff";
+        } else if (mine) {
+          overlayBg = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          borderColor = T.brassHi;
+        } else if (opp) {
+          overlayBg = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          borderColor = "#6FA8DC";
+        }
         return (
-          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={readOnly} className={readOnly ? undefined : "press"}
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
-            {isFlash && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: flash.correct ? "rgba(60,168,60,.8)" : "rgba(196,60,50,.8)" }} />}
+          <button key={sq} onClick={() => onCell(sq)} className="press"
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+            {pieceType && <PieceGlyph type={pieceType} color={pieceColor} size={cell * 0.72} style={{ position: "relative", zIndex: 1 }} />}
+            {overlayBg && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlayBg, boxShadow: "inset 0 0 0 2px " + borderColor, zIndex: 2 }} />}
+            {c === 0 && <span aria-hidden="true" style={{ position: "absolute", top: 1, left: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{rank}</span>}
+            {r === 7 && <span aria-hidden="true" style={{ position: "absolute", bottom: 0, right: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{file}</span>}
           </button>
         );
       }))}
     </div>
   );
 }
+// 보드 위 칸 색이 각각 무슨 뜻인지 알려주는 범례 — 금색 테두리 칸은 내 클릭, 파란 테두리 칸은
+// 상대(또는 봇) 클릭, 초록/빨강 채움은 그 클릭이 정답/오답이었는지를 나타낸다.
+function CoordClickLegend({ oppLabel }) {
+  const chip = (border, fill, label) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: fill, boxShadow: border ? "inset 0 0 0 2px " + border : "none", display: "inline-block", flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
+      {chip(T.brassHi, "rgba(255,255,255,.14)", "나")}
+      {chip("#6FA8DC", "rgba(255,255,255,.14)", oppLabel)}
+      {chip(null, "rgba(60,168,60,.92)", "정답")}
+      {chip(null, "rgba(196,60,50,.92)", "오답")}
+    </div>
+  );
+}
 // 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
+// (v0.5.1 UI, 사용자 요청) 미니게임 화면이 전체화면 어두운 배경으로 바뀌면서 밝은 잉크색(T.inkSoft)
+// 대신 옅은 아이보리로 바꿨다 — flexShrink:0도 함께 줘 두 보드가 flex:1로 남은 공간을 나눠 가질 때
+// 이 라벨 자신의 높이가 줄어들지 않게 한다.
 function MinigameBoardLabel({ text }) {
-  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{text}</div>;
+  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "rgba(244,238,226,.6)", marginBottom: 6, flexShrink: 0 }}>{text}</div>;
 }
 // (v0.5.0 기능, 사용자 요청) 전체 진행 상황을 점 한 줄로 보여주는 "게임다운" 스코어보드 — 좌표 인지
 // 게임(15라운드)·나이트 경주(Bo5) 둘 다 이 컴포넌트를 재사용한다. results[i]는 그 라운드가 이미
@@ -9101,10 +9315,12 @@ function MinigameBoardLabel({ text }) {
 // 라운드(= results 배열의 다음 자리)는 금색 테두리로 강조해 어디까지 왔는지 한눈에 보이게 한다.
 function MinigameScorePips({ results, total }) {
   return (
-    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10 }}>
+    <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
       {Array.from({ length: total }, (_, i) => {
         const r = results[i];
-        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(0,0,0,.14)";
+        // (v0.5.1 UI, 사용자 요청) 전체화면 어두운 배경에서는 빈 슬롯이 rgba(0,0,0,.14)(검정 위에
+        // 검정)로는 거의 안 보였다 — 밝은 반투명 회색으로 바꿨다.
+        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(255,255,255,.16)";
         const active = i === results.length;
         return <span key={i} aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: bg, boxShadow: active ? "0 0 0 2px " + T.brass : "none", flexShrink: 0 }} />;
       })}
@@ -9115,7 +9331,7 @@ function MinigameScorePips({ results, total }) {
 // 동안에는 자리만 차지하고 비워 둔다.
 function CoordTargetLabel({ targetSq }) {
   return (
-    <div style={{ textAlign: "center", margin: "14px 0", minHeight: 44 }}>
+    <div style={{ textAlign: "center", margin: "10px 0", minHeight: 44, flexShrink: 0 }}>
       {targetSq && (
         <span style={{ display: "inline-block", padding: "6px 22px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, fontSize: 26, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</span>
       )}
@@ -9139,37 +9355,32 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const myScore = rounds.filter((r) => r.winner === myColor).length;
   const oppScore = rounds.filter((r) => r.winner === oppColor).length;
   const finished = game.status !== "active";
-  // (v0.5.0 기능, 사용자 요청) 오답 클릭도 칸이 빨갛게, 정답은 초록색으로 잠깐 반짝이게 한다. 내
-  // 클릭은 좌표가 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해
-  // 반짝인다. 상대 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을
-  // realtime으로 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 상대 보드에 반짝인다.
-  const [myFlash, setMyFlash] = useState(null); // { sq, correct } | null
-  const [oppFlash, setOppFlash] = useState(null);
-  const myFlashTimerRef = useRef(null);
-  const oppFlashTimerRef = useRef(null);
+  // (v0.5.1 UI, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
+  // 실측해 정사각형 한 변 길이를 구한다.
+  const [boardSize, boardFitRef] = useSquareFit();
+  // (v0.5.1 기능, 사용자 요청) 라운드 동안 내가·상대가 실제로 눌러 본 칸을 전부 기록해 보드 위에
+  // 함께 표시한다(오답도 지워지지 않고 계속 남는다) — 라운드가 바뀌면 초기화한다. 내 클릭은 좌표가
+  // 이미 공개돼 있어(round.sq) 서버 응답을 기다리지 않고 그 자리에서 바로 판정해 추가한다. 상대
+  // 클릭은 coord_click이 (정답이든 오답이든) 매번 기록해 두는 round.clicks[상대색]을 realtime으로
+  // 받아, 그 at(시각)이 바뀔 때마다 "새 클릭이 있었다"로 보고 추가한다.
+  const [myClicks, setMyClicks] = useState([]); // [{ sq, correct }]
+  const [oppClicks, setOppClicks] = useState([]);
   const lastOppClickAtRef = useRef(null);
-  useEffect(() => { setMyFlash(null); setOppFlash(null); lastOppClickAtRef.current = null; }, [roundIdx]);
+  useEffect(() => { setMyClicks([]); setOppClicks([]); lastOppClickAtRef.current = null; }, [roundIdx]);
   useEffect(() => {
     const c = round && round.clicks && round.clicks[oppColor];
     if (!c || !c.at || c.at === lastOppClickAtRef.current) return;
     lastOppClickAtRef.current = c.at;
-    setOppFlash({ sq: c.sq, correct: c.correct });
-    clearTimeout(oppFlashTimerRef.current);
-    oppFlashTimerRef.current = setTimeout(() => setOppFlash(null), 550);
+    setOppClicks((cs) => (cs.some((x) => x.sq === c.sq) ? cs : [...cs, { sq: c.sq, correct: c.correct }]));
   }, [round, oppColor]);
-  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(oppFlashTimerRef.current); }, []);
-  // 라운드 자동 진행 — 서버가 기록한 revealedAt/resolvedAt 시각을 기준으로 로컬 타이머를 걸어, 시간이
-  // 다 됐거나(무승부 라운드) 이미 승자가 정해졌으면(짧게 결과를 보여준 뒤) coord_reveal_next로 다음
-  // 라운드를 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
+  // (v0.5.1 기능, 사용자 요청) 라운드 제한시간을 없앴다 — 누군가 정답을 맞혀 winner가 생길 때까지는
+  // 그대로 두고, winner가 생긴 뒤에만(짧게 결과를 보여준 뒤) coord_reveal_next로 다음 라운드를
+  // 요청한다. 두 참가자의 클라이언트가 거의 동시에 불러도 서버 쪽 행 잠금이 안전하게 막아준다.
   useEffect(() => {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
-    if (!round) return;
-    const revealedAt = new Date(round.revealedAt).getTime();
-    const now = Date.now();
-    const delay = round.winner
-      ? Math.max(600, 900 - (now - new Date(round.resolvedAt || round.revealedAt).getTime()))
-      : Math.max(0, revealedAt + COORD_ROUND_MS - now) + 150;
+    if (!round || !round.winner) return;
+    const delay = Math.max(500, 900 - (Date.now() - new Date(round.resolvedAt || round.revealedAt).getTime()));
     const t = setTimeout(() => {
       if (advanceLockRef.current) return;
       advanceLockRef.current = true;
@@ -9182,55 +9393,52 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   useEffect(() => {
     if (finished || rounds.length < COORD_TOTAL_ROUNDS) return;
     const last = rounds[rounds.length - 1];
-    if (last && (last.winner || last.resolvedAt)) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
+    if (last && last.winner) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
   }, [game.id, rounds.length, finished]);
   const onCell = (sq) => {
-    if (finished || !round || round.winner || myFlash) return;
+    if (finished || !round || round.winner) return;
     const correct = sq === round.sq;
-    setMyFlash({ sq, correct });
-    clearTimeout(myFlashTimerRef.current);
-    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    setMyClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct }]));
     sbRpc("coord_click", { p_game_id: game.id, p_round: roundIdx, p_sq: sq }).then((g) => g && setGame(g)).catch(() => { });
   };
   if (finished) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {oppScore}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppScore}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{roundIdx + 1}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>상대 {oppScore}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      {/* (v0.5.0 기능, 사용자 요청) 정답을 맞혀도 곧장 다음 좌표로 넘어가지 않고(위 useEffect의 최소
-          600ms 지연) 초록 반짝임이 보일 시간을 준 뒤 다음 라운드로 넘어간다. 오답은 라운드를 끝내지
-          않고 그 칸만 빨갛게 반짝인 뒤 계속 시도할 수 있다. */}
-      <MinigameBoardLabel text="내 보드" />
-      <CoordRaceGrid onCell={onCell} flash={myFlash} />
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={oppClicks} />
+      </div>
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <MinigameBoardLabel text="상대 보드" />
-      <CoordRaceGrid onCell={() => { }} flash={oppFlash} readOnly />
+      <CoordClickLegend oppLabel="상대" />
     </div>
   );
 }
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버(pvp_games)를 전혀 쓰지 않는 완전한 로컬 시뮬레이션.
 // 체스의 봇 대국과 같은 사상(네트워크 왕복 없이 클라이언트에서 그 자리에서 상대를 흉내 낸다)을 따른다.
 // 라운드마다 무작위 좌표를 하나 고르고, 봇은 무작위 반응 시간(사람이 이길 수 있을 정도로 관대한
-// 0.5~2.6초) 뒤에 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가, 시간(COORD_ROUND_MS)이 다
-// 지나도록 아무도 못 맞히면 무승부로 그 라운드가 끝난다.
+// 0.5~2.6초) 뒤에 정답을 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가 그 라운드를 가져간다.
+// (v0.5.1 기능, 사용자 요청) 제한시간을 없애 무승부 라운드 자체가 사라졌고(누군가 정답을 맞힐 때까지
+// 계속 진행), 봇도 가끔(35% 확률) 정답을 클릭하기 전에 오답을 한 번 눌러 보게 해서 "상대가 어디를
+// 누르든 보드에 표시된다"는 기능이 봇 대전에서도 실제로 보이게 했다.
 const COORD_BOT_REACT_MIN_MS = 500;
 const COORD_BOT_REACT_MAX_MS = 2600;
 function CoordRaceBotBoard({ onExit, onStatusChange }) {
-  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|"draw"|null }]
+  const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|null }]
   const timersRef = useRef([]);
   const clearTimers = () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
   useEffect(() => () => clearTimers(), []);
@@ -9243,15 +9451,10 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
   // "끝났다"는 사실을 부모(CoordRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가
   // "정말 나가시겠어요?"(기권 확인)를 계속 띄운다.
   useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
-  // (v0.5.0 기능, 사용자 요청) 오답은 라운드를 끝내지 않고 그 칸만 빨갛게, 정답은 초록색으로 반짝인
-  // 뒤 잠깐 멈췄다가 다음 좌표로 넘어간다. 봇이 정답을 "클릭"하는 순간에도 봇 보드에 초록 반짝임을
-  // 준다 — 봇은 항상 정답만 맞히므로(오답을 흉내 내지 않는다) 봇 보드에 빨간 반짝임은 없다.
-  const [myFlash, setMyFlash] = useState(null);
-  const [botFlash, setBotFlash] = useState(null);
-  const myFlashTimerRef = useRef(null);
-  const botFlashTimerRef = useRef(null);
-  useEffect(() => { setMyFlash(null); setBotFlash(null); }, [roundIdx]);
-  useEffect(() => () => { clearTimeout(myFlashTimerRef.current); clearTimeout(botFlashTimerRef.current); }, []);
+  const [boardSize, boardFitRef] = useSquareFit();
+  const [myClicks, setMyClicks] = useState([]); // [{ sq, correct }]
+  const [botClicks, setBotClicks] = useState([]);
+  useEffect(() => { setMyClicks([]); setBotClicks([]); }, [roundIdx]);
   const startRound = useCallback(() => {
     const sq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
     setRounds((rs) => [...rs, { sq, winner: null }]);
@@ -9261,14 +9464,19 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
       const copy = rs.slice(); copy[i] = { ...copy[i], winner };
       return copy;
     });
+    if (Math.random() < 0.35) {
+      const wrongDelay = 250 + Math.random() * 350;
+      timersRef.current.push(setTimeout(() => {
+        let wrongSq;
+        do { wrongSq = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8)); } while (wrongSq === sq);
+        setBotClicks((cs) => (cs.some((x) => x.sq === wrongSq) ? cs : [...cs, { sq: wrongSq, correct: false }]));
+      }, wrongDelay));
+    }
     const botDelay = COORD_BOT_REACT_MIN_MS + Math.random() * (COORD_BOT_REACT_MAX_MS - COORD_BOT_REACT_MIN_MS);
     timersRef.current.push(setTimeout(() => {
-      setBotFlash({ sq, correct: true });
-      clearTimeout(botFlashTimerRef.current);
-      botFlashTimerRef.current = setTimeout(() => setBotFlash(null), 550);
+      setBotClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct: true }]));
       resolve("b");
     }, botDelay));
-    timersRef.current.push(setTimeout(() => resolve("draw"), COORD_ROUND_MS));
   }, []);
   useEffect(() => { if (rounds.length === 0) startRound(); }, [startRound, rounds.length]);
   useEffect(() => {
@@ -9278,36 +9486,34 @@ function CoordRaceBotBoard({ onExit, onStatusChange }) {
     return () => clearTimeout(t);
   }, [round && round.winner, rounds.length, startRound]);
   const onCell = (sq) => {
-    if (!round || round.winner || myFlash) return;
+    if (!round || round.winner) return;
     const correct = sq === round.sq;
-    setMyFlash({ sq, correct });
-    clearTimeout(myFlashTimerRef.current);
-    myFlashTimerRef.current = setTimeout(() => setMyFlash(null), 550);
+    setMyClicks((cs) => (cs.some((x) => x.sq === sq) ? cs : [...cs, { sq, correct }]));
     if (correct) setRounds((rs) => { const i = rs.length - 1; const copy = rs.slice(); copy[i] = { ...copy[i], winner: "w" }; return copy; });
   };
   if (finished) {
     const iWon = myScore > botScore, isDraw = myScore === botScore;
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myScore} : {botScore}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myScore}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botScore}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myScore}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{Math.max(1, rounds.length)}/{COORD_TOTAL_ROUNDS}라운드</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>봇 {botScore}</div>
       </div>
-      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
-      <MinigameBoardLabel text="내 보드" />
-      <CoordRaceGrid onCell={onCell} flash={myFlash} />
+      <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={COORD_TOTAL_ROUNDS} />
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={botClicks} />
+      </div>
       <CoordTargetLabel targetSq={round && !round.winner ? round.sq : null} />
-      <MinigameBoardLabel text="봇 보드" />
-      <CoordRaceGrid onCell={() => { }} flash={botFlash} readOnly />
+      <CoordClickLegend oppLabel="봇" />
     </div>
   );
 }
@@ -9350,12 +9556,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     onExit();
   };
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>좌표 인지 게임</div>
-        <span style={{ width: 30, flexShrink: 0 }} />
-      </div>
+    <MinigameScreen title="좌표 인지 게임" onBack={requestExit} noScroll={!!active}>
       {!active ? (
         waiting || myInvite ? (
           <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
@@ -9363,11 +9564,11 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
             timeControlLabel="좌표 인지 게임" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
         ) : (
           <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
+            <p style={{ fontSize: 12, color: "rgba(244,238,226,.65)", marginBottom: 16, lineHeight: 1.5 }}>무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭하세요.<br />15라운드를 먼저 더 많이 맞히는 쪽이 승리해요.</p>
             {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
             <div className="flex gap-2" style={{ marginBottom: 18 }}>
               <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
-              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
             <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
           </div>
@@ -9377,7 +9578,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           : <CoordRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
-        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
             <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
@@ -9388,20 +9589,25 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           </div>
         </div>
       )}
-    </div>
+    </MinigameScreen>
   );
 }
-// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. 두 참가자에게 똑같은 시작 칸·
-// 목표 칸·이동 제한 수·제한시간이 주어지고, 각자 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를
-// 가져간다(5전 3선승, Bo5). 3라운드부터 방해 칸이 늘어 난이도가 오른다. 규칙·서버 권위 판정은
+// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. (v0.5.1 재설계, 사용자 요청) 두
+// 참가자의 나이트·목표 칸을 보드 하나에 함께 그린다 — 목표 칸을 기준으로 두 시작 칸을 점대칭(180도
+// 회전 대칭)으로 배치해 공정한 조건을 만든다(나이트 이동 벡터는 두 축 부호를 모두 뒤집어도 여전히
+// 유효한 나이트 수라, 점대칭인 두 칸은 목표까지의 최短 거리가 항상 정확히 같다). 예전의 "방해
+// 칸"(착지 자체가 금지된 칸) 대신, 서로 상대 색의 기물(비숍·룩)을 역시 점대칭으로 배치해 둔다 — 그
+// 기물이 실제로 공격하는 칸에 들어가면 나이트가 잡혀 그 경로로는 더 이상 목표에 도달할 수 없다. 각자
+// 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를 가져간다(5전 3선승, Bo5). 규칙·서버 권위 판정은
 // supabase-setup.sql의 knight_start_round/knight_report/knight_resolve_round 참고.
 const KNIGHT_GAME_TYPE = "knight";
 const KNIGHT_BO_TOTAL = 5;
 const KNIGHT_BO_TARGET = 3;
 // 서버(knight_neighbors)와 완전히 같은 규칙의 클라이언트용 나이트 이웃 계산 — 어떤 칸을 눌러도 되는지
 // (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
-// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고).
-function knightNeighborsClient(sq, blocked) {
+// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고). p_illegal은 이제 "방해 칸"이
+// 아니라 그 나이트 색 기준으로 위협 기물에게 잡히는(들어가면 안 되는) 칸 목록이다.
+function knightNeighborsClient(sq, illegal) {
   const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
   const deltas = [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]];
   const out = [];
@@ -9409,68 +9615,123 @@ function knightNeighborsClient(sq, blocked) {
     const nf = f + df, nr = r + dr;
     if (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
       const nsq = String.fromCharCode(97 + nf) + (nr + 1);
-      if (!blocked || !blocked.includes(nsq)) out.push(nsq);
+      if (!illegal || !illegal.includes(nsq)) out.push(nsq);
     }
   }
   return out;
 }
-// 라운드 하나 — 내 나이트의 위치·사용한 수는 이 컴포넌트만의 로컬 상태다(서버는 최종 요약 보고
-// 시점에야 알게 된다). roundIdx가 바뀔 때마다(다음 라운드) key로 통째로 새로 마운트돼 이 상태가
-// 깨끗이 리셋된다.
-// 8×8 나이트 이동 그리드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound)
-// 둘 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
+// (v0.5.1 신규) 칸 sq를 중심 칸 center 기준으로 점대칭(180도 회전) 이동한 칸을 구한다 — 보드 밖으로
+// 나가면 null. supabase-setup.sql의 knight_reflect_sq와 완전히 같은 공식.
+function knightReflectSq(sq, center) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const cf = center.charCodeAt(0) - 97, cr = parseInt(center.slice(1), 10) - 1;
+  const nf = 2 * cf - f, nr = 2 * cr - r;
+  if (nf < 0 || nf > 7 || nr < 0 || nr > 7) return null;
+  return String.fromCharCode(97 + nf) + (nr + 1);
+}
+// (v0.5.1 신규) 위협 기물(비숍/룩)이 실제로 지배(공격)하는 칸 — 다른 기물에 막히는 것은 고려하지
+// 않고 보드 끝까지 미끄러진다. supabase-setup.sql의 knight_attacked_squares와 완전히 같은 규칙.
+function knightAttackedSquares(sq, type) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const dirs = type === "R" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const out = [];
+  for (const [df, dr] of dirs) {
+    let nf = f + df, nr = r + dr;
+    while (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
+      out.push(String.fromCharCode(97 + nf) + (nr + 1));
+      nf += df; nr += dr;
+    }
+  }
+  return out;
+}
+// 8×8 나이트 경주 보드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound) 둘
+// 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
 // (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
 // 스킨을 읽어와 그린다 — ocean·grandmaster처럼 실제 이미지 스킨이면 그 이미지 그대로 보이는, 사이트
-// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
-// 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
-// (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
-function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly }) {
+// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). 칸끼리 간격을 두고 낱개 테두리·
+// 모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색
+// 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
+// (v0.5.1 리디자인, 사용자 요청) 내 보드·상대 보드로 나누던 것을 보드 하나로 합쳤다 — 내 나이트
+// (myColor)·상대 나이트(oppColor)·목표 칸·위협 기물(hazards)을 모두 같은 보드 위에 그린다. flip이
+// 참이면(내가 흑일 때) 보드를 180도 뒤집어, 시작 칸이 어느 색으로 배정됐든 항상 내 나이트가 내
+// 화면의 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로, 표준 체스처럼
+// "내 색이 흑이면 보드를 뒤집는다"는 규칙만으로 이게 보장된다).
+function KnightRaceGrid({ myPos, oppPos, target, hazards, legalTargets, illegalForMe, myColor, oppColor, onCell, flip, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  const hazBySq = {}; (hazards || []).forEach((h) => { hazBySq[h.sq] = h; });
+  const legalSet = new Set(legalTargets || []);
+  const illegalSet = new Set(illegalForMe || []);
+  const cells = [];
+  for (let vr = 0; vr < 8; vr++) for (let vc = 0; vc < 8; vc++) {
+    const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
+    const rank = 8 - r, file = COORD_FILES[c];
+    const sq = file + rank;
+    const isTarget = sq === target;
+    const isMe = sq === myPos;
+    const isOpp = sq === oppPos && !isMe;
+    const isMyIllegal = illegalSet.has(sq);
+    const isLegal = legalSet.has(sq);
+    const haz = hazBySq[sq];
+    const light = (r + c) % 2 === 0;
+    let overlay = null;
+    if (isMyIllegal) overlay = "rgba(196,60,50,.32)";
+    else if (isTarget) overlay = "rgba(60,138,60,.35)";
+    else if (isLegal) overlay = "rgba(196,154,80,.25)";
+    cells.push(
+      <button key={sq} onClick={() => onCell(sq)} disabled={isMyIllegal} className="press"
+        style={{ position: "relative", border: "none", borderRadius: 0, cursor: isMyIllegal ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+        {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+        {isTarget && !isMe && !isOpp && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+        {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
+        {isOpp && <PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 2, opacity: .88 }} />}
+        {isMe && <PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 3 }} />}
+      </button>
+    );
+  }
   return (
-    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", maxWidth: 320, aspectRatio: "1 / 1", margin: "0 auto 12px", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
-      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
-        const rank = 8 - r;
-        const sq = file + rank;
-        const isPos = sq === pos;
-        const isTarget = sq === target;
-        const isBlocked = (blocked || []).includes(sq);
-        const isLegal = legalTargets.includes(sq);
-        const light = (r + c) % 2 === 0;
-        let overlay = null;
-        if (isBlocked) overlay = "rgba(20,12,6,.6)";
-        else if (isTarget) overlay = "rgba(60,138,60,.35)";
-        else if (isLegal) overlay = "rgba(196,154,80,.25)";
-        return (
-          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={isBlocked || readOnly} className={readOnly ? undefined : "press"}
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
-            {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
-            {isPos && <PieceGlyph type="N" color={pieceColor} size={24} style={{ position: "relative", zIndex: 1 }} />}
-            {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
-            {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
-          </button>
-        );
-      }))}
+    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      {cells}
+    </div>
+  );
+}
+// 보드 위 색이 각각 무슨 뜻인지 알려주는 범례 — 빨강은 위협 기물에게 잡히는(들어가면 안 되는) 칸,
+// 금색은 지금 바로 이동할 수 있는 칸, 초록은 목표 칸이다.
+function KnightRaceLegend() {
+  const chip = (bg, label) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: bg, display: "inline-block", flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
+      {chip("rgba(196,60,50,.75)", "위협 칸(들어가면 잡혀요)")}
+      {chip("rgba(196,154,80,.6)", "이동 가능")}
+      {chip("rgba(60,138,60,.6)", "목표 칸")}
     </div>
   );
 }
 function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
-  const [pos, setPos] = useState(round.start);
+  const isWhite = myUid === game.white_uid;
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
+  const myStartSq = myColor === "w" ? round.whiteStart : round.blackStart;
+  const [pos, setPos] = useState(myStartSq);
   const [movesUsed, setMovesUsed] = useState(0);
   const [reported, setReported] = useState(false);
   const [timeLeftMs, setTimeLeftMs] = useState(() => round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime()));
   const reportedRef = useRef(false);
-  const isWhite = myUid === game.white_uid;
-  const myColor = isWhite ? "w" : "b";
-  const oppColor = isWhite ? "b" : "w";
   const myRep = round.reports && round.reports[myColor];
   const oppRep = round.reports && round.reports[oppColor];
   const iReported = !!myRep || reported;
+  const myIllegal = myColor === "w" ? round.wIllegal : round.bIllegal;
   // (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로 움직이는 걸 보여주기 위해, round.positions에
-  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 상대 보드에 그린다 — 판정과 무관한
+  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 같은 보드 위에 그린다 — 판정과 무관한
   // 순수 표시값이라(신뢰 모델은 knight_report와 동일) 검증 없이 그대로 믿는다.
+  const oppStartSq = oppColor === "w" ? round.whiteStart : round.blackStart;
   const oppPosInfo = round.positions && round.positions[oppColor];
-  const oppPos = (oppPosInfo && oppPosInfo.sq) || round.start;
+  const oppPos = (oppPosInfo && oppPosInfo.sq) || oppStartSq;
   const oppMovesUsed = (oppPosInfo && oppPosInfo.movesUsed) || 0;
   const doReport = useCallback((reached, finalSq, moves) => {
     if (reportedRef.current) return;
@@ -9495,7 +9756,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     const t = setInterval(() => { sbRpc("knight_resolve_round", { p_game_id: game.id }).then((g) => g && onGameUpdate(g)).catch(() => { }); }, 1200);
     return () => clearInterval(t);
   }, [iReported, round.winner, game.id, onGameUpdate]);
-  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, iReported]);
+  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, myIllegal || [])), [pos, myIllegal, iReported]);
   const onCell = (sq) => {
     if (iReported || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
@@ -9506,40 +9767,37 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
+  // 실측해 정사각형 한 변 길이를 구한다. flip: 내가 흑이면 보드를 뒤집어 내 나이트가 항상 화면
+  // 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로 이 규칙만으로 충분하다).
+  const [boardSize, boardFitRef] = useSquareFit();
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
-        <span>수 {movesUsed}/{round.moveBudget}</span>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
+        <span>수 {movesUsed}/{round.moveBudget} (상대 {oppMovesUsed})</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
-      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      {/* (v0.5.0 리디자인, 사용자 요청) 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는
-          텍스트 기호(♞) 대신 분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로
-          써서, 미니게임 보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸
-          위에 얹는 반투명 오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
-      <MinigameBoardLabel text="내 보드" />
-      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={myIllegal} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} />
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0 }}>
         {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === myColor ? "이 라운드 승리!" : "이 라운드 패배")) :
           iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
-      {/* (v0.5.0 기능, 사용자 요청) 상대 보드 — 상대 나이트가 실시간으로(knight_move_ping) 움직이는
-          모습을 그대로 따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
-      <MinigameBoardLabel text="상대 보드" />
-      <KnightRaceGrid pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
-      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
+      <KnightRaceLegend />
     </div>
   );
 }
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
-// 라운드 생성 규칙(walkLen·blockedCount·moveBudget·timeLimitMs)은 knight_start_round와 정확히 같은
-// 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와 같은 난이도 곡선을 겪게 한다. 봇은
-// 시작 칸에서 목표 칸까지 최단 나이트 경로(BFS)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고
-// 그 경로를 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상
-// 성공하고, 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다(라운드가 진행돼 방해 칸이
-// 늘어날수록 최단 경로도 조금씩 길어져 자연스럽게 더 어려워진다).
+// 라운드 생성 규칙(walkLen·hazardCount·moveBudget·timeLimitMs, 점대칭 시작 칸·위협 기물 배치)은
+// knight_start_round와 정확히 같은 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와
+// 같은 난이도 곡선·공정성을 겪게 한다. 봇은 자기 시작 칸(항상 흑 역할)에서 목표 칸까지 최단 나이트
+// 경로(BFS, 자신에게 위협적인 칸 제외)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고 그 경로를
+// 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상 성공하고,
+// 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다.
 function knightRandomWalkLocal(start, steps) {
   const path = [start]; let cur = start;
   for (let i = 0; i < steps; i++) {
@@ -9563,18 +9821,56 @@ function knightPickBlockedLocal(count, exclude) {
   }
   return result;
 }
+// supabase-setup.sql의 knight_start_round와 완전히 같은 생성 규칙 — 목표 칸을 중심에서 고르고, 그
+// 목표를 기준으로 점대칭인 두 시작 칸(백·흑)을 만든 뒤, 위협 기물도 (라운드가 진행될수록 늘어나는
+// 개수만큼) 점대칭으로 배치한다. 실패(점대칭 칸이 보드 밖으로 나감)하면 최대 40번 재시도하고, 그래도
+// 안 되면 위협 기물 없이 진행한다(항상 풀 수 있는 라운드가 최우선).
 function knightGenRoundLocal(roundIdx) {
-  let walkLen, blockedCount;
-  if (roundIdx < 2) { walkLen = 3; blockedCount = 0; }
-  else if (roundIdx < 4) { walkLen = 4; blockedCount = roundIdx - 1; }
-  else { walkLen = 5; blockedCount = 3; }
-  const start = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
-  const path = knightRandomWalkLocal(start, walkLen);
-  const target = path[path.length - 1];
-  const blocked = knightPickBlockedLocal(blockedCount, path);
-  return { start, target, blocked, moveBudget: path.length - 1 + 2, timeLimitMs: 25000 };
+  let walkLen, hazardCount;
+  if (roundIdx < 2) { walkLen = 3; hazardCount = 0; }
+  else if (roundIdx < 4) { walkLen = 4; hazardCount = 1; }
+  else { walkLen = 5; hazardCount = 2; }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const target = COORD_FILES[2 + Math.floor(Math.random() * 4)] + (3 + Math.floor(Math.random() * 4));
+    const walk = knightRandomWalkLocal(target, walkLen);
+    const cand1 = walk[walk.length - 1];
+    const cand2 = knightReflectSq(cand1, target);
+    if (!cand2) continue;
+    const walkMirror = walk.map((sq) => knightReflectSq(sq, target));
+    if (walkMirror.some((sq) => !sq)) continue;
+    let whiteStart, blackStart, whitePath, blackPath;
+    if (parseInt(cand1.slice(1), 10) <= parseInt(cand2.slice(1), 10)) {
+      whiteStart = cand1; whitePath = walk; blackStart = cand2; blackPath = walkMirror;
+    } else {
+      whiteStart = cand2; whitePath = walkMirror; blackStart = cand1; blackPath = walk;
+    }
+    let hazW = [], hazB = [];
+    if (hazardCount > 0) {
+      hazW = knightPickBlockedLocal(hazardCount, [...blackPath, target, whiteStart]);
+      if (hazW.length < hazardCount) continue;
+      hazB = hazW.map((sq) => knightReflectSq(sq, target));
+      if (hazB.some((sq) => !sq)) continue;
+    }
+    const hazards = [], wIllegal = [], bIllegal = [];
+    for (let i = 0; i < hazW.length; i++) {
+      const type = Math.random() < 0.5 ? "B" : "R";
+      hazards.push({ sq: hazW[i], type, color: "w" }, { sq: hazB[i], type, color: "b" });
+      // (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
+      // 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다 —
+      // 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에 포함시켜야 양쪽 집합이 항상 정확히
+      // 점대칭이 된다(supabase-setup.sql의 knight_start_round와 같은 수정).
+      bIllegal.push(...knightAttackedSquares(hazW[i], type).filter((sq) => knightReflectSq(sq, target)));
+      wIllegal.push(...knightAttackedSquares(hazB[i], type).filter((sq) => knightReflectSq(sq, target)));
+    }
+    return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, moveBudget: whitePath.length - 1 + 2, timeLimitMs: 25000 };
+  }
+  const target = "d4";
+  const walk = knightRandomWalkLocal(target, walkLen);
+  const whiteStart = walk[walk.length - 1];
+  const blackStart = knightReflectSq(whiteStart, target) || whiteStart;
+  return { target, whiteStart, blackStart, hazards: [], wIllegal: [], bIllegal: [], moveBudget: walk.length - 1 + 2, timeLimitMs: 25000 };
 }
-function knightShortestPathLocal(start, target, blocked) {
+function knightShortestPathLocal(start, target, illegal) {
   if (start === target) return [start];
   const visited = new Set([start]);
   let frontier = [[start]];
@@ -9582,7 +9878,7 @@ function knightShortestPathLocal(start, target, blocked) {
     const next = [];
     for (const path of frontier) {
       const cur = path[path.length - 1];
-      for (const nb of knightNeighborsClient(cur, blocked)) {
+      for (const nb of knightNeighborsClient(cur, illegal)) {
         if (nb === target) return [...path, nb];
         if (!visited.has(nb)) { visited.add(nb); next.push([...path, nb]); }
       }
@@ -9594,9 +9890,9 @@ function knightShortestPathLocal(start, target, blocked) {
 const KNIGHT_BOT_MOVE_MS_MIN = 650;
 const KNIGHT_BOT_MOVE_MS_MAX = 1250;
 function KnightRaceBotRound({ round, onRoundDone }) {
-  const [pos, setPos] = useState(round.start);
+  const [pos, setPos] = useState(round.whiteStart);
   const [movesUsed, setMovesUsed] = useState(0);
-  const [botPos, setBotPos] = useState(round.start);
+  const [botPos, setBotPos] = useState(round.blackStart);
   const [botMovesUsed, setBotMovesUsed] = useState(0);
   const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
   const [botReport, setBotReport] = useState(null);
@@ -9620,10 +9916,11 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     return () => clearInterval(t);
   }, [round.timeLimitMs, movesUsed, myReport, doMyReport]);
   // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
-  // 옮겨 다니는 모습을 "봇 보드"에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
+  // 옮겨 다니는 모습을 같은 보드 위에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
   // 그 경로의 각 수마다 0.65~1.25초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
+  // 봇은 항상 흑 역할이라 자신에게 위협적인 칸(bIllegal)을 피해 경로를 찾는다.
   useEffect(() => {
-    const path = knightShortestPathLocal(round.start, round.target, round.blocked);
+    const path = knightShortestPathLocal(round.blackStart, round.target, round.bIllegal);
     const moves = path ? path.length - 1 : Infinity;
     if (!path || moves > round.moveBudget) {
       timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: 0, atMs: round.timeLimitMs }), round.timeLimitMs));
@@ -9659,7 +9956,7 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     else winner = "draw";
     onRoundDone(winner);
   }, [myReport, botReport, onRoundDone]);
-  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, myReport]);
+  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.wIllegal || [])), [pos, round.wIllegal, myReport]);
   const onCell = (sq) => {
     if (myReport || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
@@ -9668,23 +9965,25 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     if (nextMoves >= round.moveBudget) doMyReport(false, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
+  // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다. 나는 항상 백 역할이라
+  // flip은 필요 없다(백은 서버 생성 규칙상 항상 목표보다 낮은 랭크에서 시작해 화면 아래쪽에 온다).
+  const [boardSize, boardFitRef] = useSquareFit();
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>
-        <span>수 {movesUsed}/{round.moveBudget}</span>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
+        <span>수 {movesUsed}/{round.moveBudget} (봇 {botMovesUsed})</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
-      <div style={{ height: 5, borderRadius: 999, background: "rgba(0,0,0,.08)", overflow: "hidden", marginBottom: 10 }}>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      <MinigameBoardLabel text="내 보드" />
-      <KnightRaceGrid pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
-      <div style={{ textAlign: "center", fontSize: 11.5, color: T.inkSoft, fontWeight: 700, marginBottom: 14 }}>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <KnightRaceGrid size={boardSize} myPos={pos} oppPos={botPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={round.wIllegal} myColor="w" oppColor="b" onCell={onCell} />
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0 }}>
         {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
       </div>
-      <MinigameBoardLabel text="봇 보드" />
-      <KnightRaceGrid pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
-      <div style={{ textAlign: "center", fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
+      <KnightRaceLegend />
     </div>
   );
 }
@@ -9714,19 +10013,19 @@ function KnightRaceBotBoard({ onExit, onStatusChange }) {
     const iWon = myWins > botWins;
     const isDraw = myWins === botWins;
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {botWins}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>봇 {botWins}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{Math.max(1, rounds.length)}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>봇 {botWins}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -9761,19 +10060,19 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     return (
-      <div style={{ textAlign: "center", padding: "24px 10px" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 10px" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{isDraw ? "무승부" : iWon ? "승리!" : "패배"}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, marginBottom: 18 }}>{myWins} : {oppWins}</div>
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     );
   }
   return (
-    <div>
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>나 {myWins}</div>
-        <div style={{ fontSize: 11, color: T.inkSoft }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>상대 {oppWins}</div>
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>나 {myWins}</div>
+        <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)" }}>{roundIdx + 1}/{KNIGHT_BO_TOTAL}라운드(Bo5)</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>상대 {oppWins}</div>
       </div>
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
@@ -9817,12 +10116,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     onExit();
   };
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-        <button onClick={requestExit} aria-label="목록으로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.06)", border: "1px solid #C9B58C", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>나이트 경주</div>
-        <span style={{ width: 30, flexShrink: 0 }} />
-      </div>
+    <MinigameScreen title="나이트 경주" onBack={requestExit} noScroll={!!active}>
       {!active ? (
         waiting || myInvite ? (
           <MatchmakingScreen active={waiting || !!myInvite} variant={myInvite ? "invite" : "queue"}
@@ -9830,11 +10124,11 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
             timeControlLabel="나이트 경주" onCancel={() => { if (waiting) leave(); if (myInvite) cancelInvite(); }} />
         ) : (
           <div style={{ textAlign: "center", padding: "16px 10px 4px" }}>
-            <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
+            <p style={{ fontSize: 12, color: "rgba(244,238,226,.65)", marginBottom: 16, lineHeight: 1.5 }}>나이트로 목표 칸(★)까지 상대보다 먼저 도달하세요.<br />5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.</p>
             {(err || inviteErr) && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10 }}>{err || inviteErr}</p>}
             <div className="flex gap-2" style={{ marginBottom: 18 }}>
               <button onClick={join} disabled={!myUid} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: !myUid ? "default" : "pointer" }}>{!myUid ? "로그인 후 이용할 수 있어요" : "대전 상대 찾기"}</button>
-              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
+              <button onClick={() => setBotGame(true)} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>봇과 플레이하기</button>
             </div>
             <FriendPvpRoster myUid={myUid} friendList={friendList} myInvite={myInvite} onInvite={sendInvite} onOpenProfile={onOpenProfile} />
           </div>
@@ -9844,7 +10138,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           : <KnightRaceBotBoard onExit={onExit} onStatusChange={setLiveStatus} />
       )}
       {confirmForfeit && (
-        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => setConfirmForfeit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
             <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>진행 중인 대전을 포기하게 되고, 상대가 승리해요.</p>
@@ -9855,7 +10149,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
           </div>
         </div>
       )}
-    </div>
+    </MinigameScreen>
   );
 }
 function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume }) {
@@ -9948,6 +10242,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     setTimeControl(tc);
     setClock(tc.initialSec != null ? { w: tc.initialSec * 1000, b: tc.initialSec * 1000 } : null);
     setStep("playing");
+    // (v0.5.1 버그 수정) 재접속·새로고침으로 이미 진행 중이던 대국을 이어받는 경우, 그사이(내가
+    // 화면을 벗어나 있던 동안) 상대가 시간 초과됐는데도 아무도 서버에 보고하지 못한 채 그대로
+    // active로 남아 있었을 수 있다 — 이어받는 즉시 서버 시계로 한 번 확인해 둔다(아직 시간이
+    // 남았으면 그냥 그대로, 이미 다 됐으면 곧장 결과가 확정돼 realtime으로 반영된다).
+    if (g.id != null) sbRpc("pvp_check_flag", { p_game_id: g.id }).catch(() => {});
   }, [myUid]);
   const joinPvpQueue = async () => {
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
@@ -10225,12 +10524,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     else if (clock.b <= 0) setFlagged("b");
   }, [clock, result, flagged]);
   // pvp 모드에서는 시간 초과도 서버에 보고한다 — 체크메이트와 같은 가드(pvpFinishedRef)를 공유해
-  // 중복 보고를 막는다. 자신을 패자로 보고하는 쪽만 성공한다(pvp_finish의 자기 승리 선언 방지).
+  // 중복 보고를 막는다.
+  // (v0.5.1 버그 수정) 예전엔 그냥 pvp_finish(자기 패배 자백만 허용)를 불렀는데, 진 쪽 클라이언트가
+  // 결과를 보고하기 전에 사라지면(탭을 닫는 등) 이긴 쪽의 이 호출은 "자기 승리 선언 금지" 가드에
+  // 막혀 조용히 실패해, 그 대국이 영원히 active로 남는 문제가 있었다(체크메이트의 옛 버전과 같은
+  // 종류의 좀비 버그 — README v0.4.5 참고). pvp_check_flag는 클라이언트가 주장하는 승패를 전혀 받지
+  // 않고 서버에 저장된 시계(pvp_move가 매 수마다 갱신하는 white_ms/black_ms/clock_synced_at)만으로
+  // "지금 정말 시간이 다 됐는지"를 스스로 계산하므로, 이긴 쪽·진 쪽 어느 클라이언트가 불러도(둘 다
+  // 사라지지만 않았다면 둘 다 거의 동시에 부른다) 안전하게 같은 결과로 확정된다.
   useEffect(() => {
     if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !flagged) return;
     pvpFinishedRef.current = true;
-    const status = flagged === "w" ? "black_won" : "white_won";
-    sbRpc("pvp_finish", { p_game_id: pvpGame.id, p_status: status }).catch(() => {});
+    sbRpc("pvp_check_flag", { p_game_id: pvpGame.id }).catch(() => {});
   }, [mode, pvpGame && pvpGame.id, flagged]);
 
   const go = useCallback((san) => {
@@ -10758,6 +11063,9 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조 — Board의
+  // gridRef 콜백 prop으로 채워진다(모바일/데스크톱 두 렌더 분기가 서로 배타적이라 하나로 공유해도 안전).
+  const [promoGridEl, setPromoGridEl] = useState(null);
   // (v0.2.4 버그 수정) "이 포지션|이 수"를 화면에 보여준 추천을 그대로 따라 뒀는지 기록해 두는
   // 참조 — playFree에서 채우고, 아래 exploreMove 채점 effect가 재검색 결과와 무관하게 신뢰한다.
   const forcedBestRef = useRef(null);
@@ -11424,8 +11732,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
                 <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
-                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+                  boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+                {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
               {/* (UI) 사용자 요청 — 코치 블록을 줄여 만든 여백으로, 모바일에서도 평가치 그래프를
@@ -11460,8 +11768,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
             <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              boardRef={desktopBoardSizeRef} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
-            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} />}
+              boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
             <button onClick={() => jump(0)} disabled={curPly <= 0 && !exploring && !exploreFuture.length} className="press" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid " + RV.border, background: "transparent", color: (curPly <= 0 && !exploring && !exploreFuture.length) ? RV.dim : RV.text, cursor: (curPly <= 0 && !exploring && !exploreFuture.length) ? "default" : "pointer" }}><ChevronsLeft size={16} /></button>
@@ -11547,6 +11855,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
+  const [promoGridEl, setPromoGridEl] = useState(null);
   const [lastMascot, setLastMascot] = useState(EXPLAIN[""]);
   const [lastQ, setLastQ] = useState(null);
   // (v0.2.2 버그 수정) 다음 수 블록(assignTiers)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때
@@ -11627,9 +11937,23 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // 보충이 전부 표준 시작 위치를 전제) 그 훅 자체를 fenRoot 인식하게 고치는 건 위험이 크다 — 대신
   // ReviewPage의 엔진 라인 effect(fenOfRoot·colorOfRoot·pvUciToSans(...,fenRoot) 패턴, 이미 FEN 인식)를
   // 그대로 옮겨온, 훨씬 단순한 별도 effect로 posEval·engineLines·curDepth만 채운다.
+  // (v0.5.1 기능, 사용자 요청 → 버그 수정) FEN 모드에서도 "다음 수" 블록을 보여준다 — 다만 이 위치는
+  // 이론 DB에 없으므로(book/adopt/games 같은 크라우드소싱 데이터 자체가 존재하지 않는다) 실제 후보
+  // 수는 이미 같은 요청으로 받아 둔 엔진 MultiPV 결과(위 engineLines가 쓰는 것과 같은 raw 배열,
+  // multipv 5)에서 그대로 뽑는다.
+  // (버그 수정, 사용자 제보) 처음엔 "순위 1위는 최선의 수(best), 나머지는 전부 좋은 수(good)"로만
+  // 단순하게 표시했는데, 이러면 실제 손실(loss)이나 희생 여부를 전혀 안 보므로 등급이 자주 틀렸다 —
+  // 1위가 아니어도 손실이 미미하면 최선급인데 "좋은 수"로만 뜨고, 반대로 진짜 희생 기반의 "탁월한
+  // 수"는 애초에 이 로직에 그 범주 자체가 없어 절대 뜰 수 없었다. classifyMoveKindDetailed(다른 세
+  // 호출부가 쓰는 표준 채점 로직)와 같은 규칙(tierOf(loss) → 희생 보정 → 결정난 승부 완화 → 언더
+  // 프로모션 보정)을 그대로 적용하되, 그 함수처럼 각 후보 수마다 별도로 engine.evaluate를 두 번씩
+  // 더 부르지 않는다 — 이미 받아 둔 이 MultiPV 배치 자체가 "이 위치에서 그 수를 뒀을 때"의 평가를
+  // 전부 담고 있으므로(raw[i].cp는 UCI 관례상 전부 "지금 둘 차례" 관점으로 서로 비교 가능한 같은
+  // 척도다), loss = raw[0]의 cp(mate면 ±1e5) − raw[i]의 cp로 바로 계산할 수 있다.
+  const [fenMoves, setFenMoves] = useState([]);
   const [fenEval, setFenEval] = useState({ posEval: null, engineLines: [], linesPending: false, curDepth: null });
   useEffect(() => {
-    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); return; }
+    if (!fenRoot || !liveOn || engine.status !== "ready") { setFenEval({ posEval: null, engineLines: [], linesPending: false, curDepth: null }); setFenMoves([]); return; }
     let cancelled = false;
     const fen = fenOfRoot(fenRoot, sans);
     const baseWhite = colorOfRoot(fenRoot, sans.length) === "w" ? 1 : -1;
@@ -11638,6 +11962,39 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
       : { cp: ev.cp * baseWhite };
     const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    // 엔진 라인과 같은 raw MultiPV 결과에서 각 줄의 첫 수만 뽑아 "다음 수" 블록 형태(MoveTile이
+    // 기대하는 필드)로 바꾼다 — book/adopt/games는 이 위치엔 존재하지 않는 데이터라 그대로 없앤다.
+    const board = boardOfRoot(fenRoot, sans);
+    const col = colorOfRoot(fenRoot, sans.length);
+    const cpOf = (pv) => pv.mate != null ? (pv.mate > 0 ? 1e5 : -1e5) : pv.cp;
+    const toMoveTiles = (raw) => {
+      const seen = new Set(); const out = [];
+      const bestCp = raw && raw[0] ? cpOf(raw[0]) : null;
+      (raw || []).forEach((pv, i) => {
+        if (!pv || !pv.pv || !pv.pv.length) return;
+        const san = pvUciToSans(sans, pv.pv, 1, fenRoot)[0];
+        if (!san || seen.has(san)) return;
+        seen.add(san);
+        const e = mkEv(pv);
+        let kind = "good";
+        if (bestCp != null) {
+          const thisCp = cpOf(pv);
+          const matched = i === 0;
+          const loss = matched ? 0 : bestCp - thisCp;
+          kind = tierOf(loss);
+          if (kind === "best" && !matched) kind = "excellent";
+          const decided = Math.abs(bestCp) > 200;
+          try {
+            if (["best", "excellent", "good"].includes(kind) && isSacrifice(board, san, col) && thisCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(sans, col, fenRoot)) kind = "brilliant";
+          } catch { }
+          if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+          const under = /=/.test(san) && !/=Q/.test(san);
+          if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+        }
+        out.push({ san, kind, evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
+      });
+      return out;
+    };
     // (버그 수정) 분석 풀(getAnalysisPool)이 돌려주는 워커 래퍼의 evaluateMulti는 공용 엔진(engine)과
     // 인자 개수가 다르다 — onProgress 없이 (fen,d,multipv,mt,onLines,slot) 6개뿐이다(callEvaluateMulti
     // 주석 참고). 순위 1위 줄(top)의 평가·depth를 posEval·curDepth로도 함께 쓴다.
@@ -11651,6 +12008,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
         posEval: (top && (top.cp != null || top.mate != null)) ? mkEv(top) : prev.posEval,
         curDepth: (top && top.depth != null && (prev.curDepth == null || top.depth > prev.curDepth)) ? top.depth : prev.curDepth,
       }));
+      const mt = toMoveTiles(raw);
+      if (mt.length) setFenMoves(mt);
     };
     (async () => {
       try {
@@ -11672,7 +12031,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     return () => { cancelled = true; };
   }, [fenRoot, key, liveOn, engine.status, engine.profile]);
   const { moves, posGames, statsLoading, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
-    ? { moves: [], posGames: null, statsLoading: false, engineNote: null, ...fenEval }
+    ? { moves: fenMoves, posGames: null, statsLoading: false, engineNote: null, ...fenEval }
     : mergedMoves;
   // (v0.2.2) 후보 블록에 지금 떠 있는 각 수의 확정 등급(pending 제외)을 pin — 아래 마지막 수 재평가
   // effect가 이 값을 그대로 재사용해 블록과 보드·현재 수 블록의 수 체계 아이콘을 일치시킨다. 등급은
@@ -11792,9 +12151,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     setLastQ({ to, kind: known ? mm.kind : "pending" });
     if (!known) {
       const onKind = (k) => { if (k) setLastQ((q) => (q && q.to && q.to[0] === to[0] && q.to[1] === to[1]) ? { ...q, kind: k } : q); };
-      evalMoveKind(prevSans, san, onKind).then(onKind);
+      // (버그 수정) FEN 모드에서 goFen이 fenMoves에 없는 수(사용자가 직접 둔, 다음 수 블록의 상위
+      // 몇 개 후보 밖의 수)로 이 fallback을 타면, fenRoot를 안 넘겨 evalMoveKind가 표준 시작
+      // 위치를 전제하고 완전히 엉뚱한 포지션을 평가하고 있었다 — 이 콜백은 fenRoot를 직접 클로저로
+      // 갖고 있으므로 그대로 넘긴다.
+      evalMoveKind(prevSans, san, onKind, fenRoot).then(onKind);
     }
-  }, [evalMoveKind]);
+  }, [evalMoveKind, fenRoot]);
 
   // (수 아이콘 지속 + UI5 정확도) 현재 포지션에 도달한 '마지막 수'의 품질을 항상 재계산.
   // 되돌리기/앞으로 등 어떤 방식으로 도달하든 보드 도착칸 아이콘과 헤더 수 체계가 정확히 표시되도록 엔진으로 티어를 다시 평가한다.
@@ -11814,12 +12177,15 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
     // 확인)으로 통일한다. (FEN 모드는 표준 시작 위치를 전제하는 이론 DB 자체가 대응되지 않으므로
     // 이 확인을 건너뛰고 바로 아래 엔진 등급 판정으로 넘어간다.)
     if (!fenRoot && isBookMoveAt(prev.join(" "), lastSan)) { setLastQ({ to, kind: "book" }); return; } // 이론 수는 항상 책 아이콘(평가치 아이콘으로 덮어쓰지 않음)
-    // (v0.2.2 버그 수정) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을 이미 본) 수라면, 블록이
-    // 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과 정확히 일치시킨다 —
-    // evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수(사용자가 직접 둔
-    // 비이론 수 등)만 아래 재평가 경로로 넘어간다. (FEN 모드는 후보 블록 자체가 없어 pinned가 항상
-    // 비어 있고, 자연히 아래 재평가 경로로만 간다.)
-    const pinned = !fenRoot && pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
+    // (v0.2.2 버그 수정 → v0.5.1 FEN 모드까지 확장) 이 마지막 수가 후보 블록에 떠 있던(=사용자가 등급을
+    // 이미 본) 수라면, 블록이 표시한 그 등급을 그대로 써서 보드·현재 수 블록의 아이콘을 다음 수 블록과
+    // 정확히 일치시킨다 — evalMoveKind로 다시 계산하지 않아 두 곳이 어긋나지 않는다. 블록에 없던 수
+    // (사용자가 직접 둔 비이론 수 등)만 아래 재평가 경로로 넘어간다. (버그 수정, 사용자 제보) FEN
+    // 모드는 처음엔 "후보 블록 자체가 없다"는 이유로 이 pin 자체를 건너뛰었는데, fenMoves(다음 수
+    // 블록)가 생긴 뒤에도 이 예외가 그대로 남아 있어 FEN 모드의 현재 수 블록이 항상 별도의 얕은
+    // 재탐색으로 다시 계산돼 다음 수 블록과 어긋났다 — goFen이 이제 fenMoves에서 찾은 등급을 pin해
+    // 두므로(위 goFen 참고) 여기서도 fenRoot 여부와 무관하게 pin을 그대로 신뢰한다.
+    const pinned = pinnedKindRef.current[prev.join(" ") + "|" + stripSuffix(lastSan)];
     if (pinned && pinned !== "pending") { setLastQ({ to, kind: pinned }); return; }
     setLastQ({ to, kind: "pending" });
     let cancelled = false;
@@ -11850,13 +12216,21 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // (사용자 요청) FEN 모드 전용 — 이론 후보(moves)·수 체계 평가(stampQ/evalMoveKind)·퀘스트 추적 없이
   // 그냥 그 수를 둔다. 이 값들은 전부 "표준 시작 위치에서의 이 sans"를 전제하므로, FEN 모드의 sans에
   // 그대로 적용하면 완전히 엉뚱한 포지션을 기준으로 평가해 버린다.
+  // (v0.5.1 버그 수정, 사용자 제보) FEN 모드에서 "다음 수" 블록(fenMoves)에 뜬 등급과, 그 수를 실제로
+  // 둔 뒤 보드·현재 수 블록에 뜨는 등급이 서로 달랐다("누가 봐도 최선 수인데 좋은 수로 뜬다" 등) —
+  // goFen이 stampQ를 아예 부르지 않아, 이 마지막 수 재평가 effect(아래)가 매번 독립적으로
+  // evalMoveKind(짧은 movetime의 별도 얕은 탐색)를 새로 돌려 fenMoves가 이미 계산해 둔(훨씬 깊은
+  // MultiPV 탐색 결과 기반) 등급과 어긋났다. 표준 모드의 go()가 이미 하는 것과 똑같이, fenMoves에서
+  // 이 수를 찾아 그 등급을 그대로 pin해 두 곳이 항상 일치하게 한다.
   const goFen = useCallback((san) => {
     if (gameDrawn) return;   // (v0.3.5 버그 수정) gameEndState가 fenRoot를 지원하게 되면서 FEN 모드도 이제 정확히 판정되므로, 표준 모드(go)와 똑같이 게이팅한다.
     playMoveSfx(san);
+    const fm = fenMoves.find((x) => stripSuffix(x.san) === stripSuffix(san));
+    stampQ(sans, board, color, san, fm);
     setSans([...sans, san]);
     setFuture((future.length && stripSuffix(future[0]) === stripSuffix(san)) ? future.slice(1) : []);
     setSel(null); setDrag(null);
-  }, [sans, future, gameDrawn]);
+  }, [sans, future, gameDrawn, fenMoves, board, color, stampQ]);
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
@@ -12049,7 +12423,11 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   const [curStatLoading, setCurStatLoading] = useState(false);
   useEffect(() => {
     let cc = false; setCurStat(null);
-    if (!lastSan || !liveOn) { setCurStatLoading(false); return; }
+    // (v0.5.1 버그 수정) FEN 모드의 sans는 "이 FEN부터 둔 수순"이라 표준 시작 위치 기준의 Lichess
+    // 조회(fetchLichess)와 무관하다 — liveOn만으로는 이 조회 자체를 막지 못해(liveOn은 실시간 엔진
+    // 평가용 플래그일 뿐), FEN 모드 현재 수 블록에 전혀 무관한 위치의 채택률·승률 통계가 섞여
+    // 들었다. fenRoot가 있으면 아예 조회하지 않는다.
+    if (!lastSan || !liveOn || fenRoot) { setCurStatLoading(false); return; }
     setCurStatLoading(true);
     fetchLichess(sans.slice(0, -1)).then((r) => {
       if (cc || !r) return;
@@ -12057,7 +12435,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
       if (mm) setCurStat({ wdl: mm.wdl, adopt: mm.adopt, games: mm.games, posTotal: r.posTotal });
     }).catch(() => { }).finally(() => { if (!cc) setCurStatLoading(false); });
     return () => { cc = true; };
-  }, [key, liveOn]);
+  }, [key, liveOn, fenRoot]);
   // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
   // 실제 값까지 세어 올라가는 애니메이션, 채택률 소수 둘째 자리 표기, 더 진한 강조색)을 이 "현재
   // 수 블록"에도 완전히 동일하게 적용한다.
@@ -12109,7 +12487,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
                 React는 DOM을 그 자리에서 순간이동시킬 뿐이었다 — FadeIn(motion.div layout)으로
                 감싸 순위가 바뀔 때 블록이 새 위치로 부드럽게 애니메이션되게 한다. */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => go(m.san, false)} onFocus={() => enterFocus(m)} questBadge={matchesQuestPath([...sans, m.san])} onQuestBadgeClick={onQuestBadgeClick ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
+                두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
+                전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
             {nb.length > 3 && (
               <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                 <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -12129,32 +12510,35 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
           최소 폭(min-content)만큼 억지로 넓어져 모바일에서 보드가 화면 밖으로 밀려나는 원인이었다. */}
       <div style={{ minWidth: 0 }}>
         <div style={{ position: "relative", background: "linear-gradient(160deg,#2E1B10,#1B0F07)", borderRadius: 14, padding: 14, border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)", minWidth: 0 }}>
-          {/* (사용자 요청) FEN 모드 안내 — 표준 시작 위치 기반 기능(분석·이론 후보·집중 분석 등)은
-              이 위치와 무관하므로, 눈에 띄는 배지 + 종료 버튼만 간단히 둔다. */}
-          {fenRoot && (
-            <div className="flex items-center justify-between" style={{ marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass }}>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi }}>FEN 모드 — 붙여넣은 포지션부터 자유롭게 두는 중이에요</span>
-              <button onClick={exitFenMode} className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
-            </div>
-          )}
           {/* (사용자 요청) FEN 모드에서는 상단 기보(SequenceBar)가 "이 포지션부터 둔 수순"만 보여줄 뿐
               어느 FEN에서 시작했는지는 화면 어디에도 남지 않았다 — 시작 포지션의 FEN 코드와, 그
-              위치부터 이어지는 PGN 기보를 각각 복사할 수 있는 줄을 기보 바로 위에 둔다. */}
+              위치부터 이어지는 PGN 기보를 각각 복사할 수 있는 줄을 기보 바로 위에 둔다.
+              (v0.5.1 UI, 사용자 요청) 예전엔 이 위에 "FEN 모드 — ..." 안내 배지 + 종료 버튼을 별도
+              박스로 뒀는데, FEN 코드 줄과 중복된 정보였다 — 안내 박스를 없애고 종료 버튼만 이 줄로
+              옮겼다. (v0.5.1 UI, 사용자 요청) FEN·PGN 두 줄을 별도 "column" 컨테이너로 감싸고, 종료
+              버튼은 그 컨테이너의 형제(sibling)로 밖에 둬 — 바깥 flex 컨테이너의 align-items:center
+              덕분에 종료 버튼이 저절로 두 줄을 합친 높이의 정중앙에 오게 한다(각 줄 안에 끼워 넣으면
+              그 줄 하나의 높이에만 맞춰지므로 정중앙이 아니게 된다). 두 줄 모두 이제 "라벨(28px 고정
+              폭) + 코드(flex) + 복사 버튼"으로 구조가 완전히 같아, 복사 버튼의 x좌표도 코드 길이와
+              무관하게 두 줄에서 항상 같은 자리에 온다. */}
           {fenRoot && (
-            <div style={{ marginBottom: 10, padding: "8px 11px", borderRadius: 9, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column", gap: 6 }}>
-              {[
-                { label: "FEN", key: "fen", value: fenRoot.raw },
-                { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
-              ].map((row) => (
-                <div key={row.key} className="flex items-center gap-2">
-                  <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
-                  <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
-                  <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
-                    title={row.label + " 복사"} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    {fenCopied === row.key ? <Check size={11} /> : <Copy size={11} />}
-                  </button>
-                </div>
-              ))}
+            <div style={{ marginBottom: 10, padding: "8px 11px", borderRadius: 9, background: "rgba(0,0,0,.18)", border: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                {[
+                  { label: "FEN", key: "fen", value: fenRoot.raw },
+                  { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
+                ].map((row) => (
+                  <div key={row.key} className="flex items-center gap-2">
+                    <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
+                    <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
+                    <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
+                      title={row.label + " 복사"} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      {fenCopied === row.key ? <Check size={11} /> : <Copy size={11} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={exitFenMode} title="FEN 모드 종료" className="press" style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>종료</button>
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -12194,21 +12578,10 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
+            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (
-              <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 4, zIndex: 30 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
-                <div className="flex gap-2">
-                  {["Q", "R", "B", "N"].map((t) => (
-                    <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 52, height: 52, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 3px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <PieceGlyph type={t} color="b" size={26} />
-                      <span style={{ fontSize: 8.5, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} className="press" style={{ fontSize: 10.5, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 7, padding: "4px 12px", cursor: "pointer" }}>취소</button>
-              </div>
+              <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
             )}
           </div>
           {/* (사용자 요청) 보드가 커진 만큼 그 아래 버튼들(뒤집기·초기화·PLAY·뒤로·앞으로)도 함께
@@ -12254,8 +12627,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
             <>
               {/* (18차 기능4) 주요 분기점이 설정된 위치는 기존 블록 그대로, 미설정 위치는 같은 디자인의
                   "수 추천" 블록(로고·텍스트만 교체)으로 이 위치의 추천 수와 그 이유를 보여준다.
-                  (18차 UI9) 마스코트는 현재 수 블록에서 이 블록의 우상단으로 이동. */}
-              {(() => {
+                  (18차 UI9) 마스코트는 현재 수 블록에서 이 블록의 우상단으로 이동.
+                  (v0.5.1 버그 수정) branchFor/recommendReasonFor가 순수하게 sans.join(" ")만으로
+                  키를 만드는데, FEN 모드도 아직 한 수도 안 뒀을 때는 sans가 똑같이 []라 표준 시작
+                  위치와 키가 겹친다 — 그 결과 전혀 무관한 FEN 포지션에서 "1.e4·1.d4가 압도적" 같은
+                  표준 오프닝 추천 문구가 그대로 노출됐다(실제 재현 확인). 이 카드 자체가 표준 시작
+                  위치의 큐레이션 데이터를 전제하므로 FEN 모드에서는 통째로 숨긴다. */}
+              {!fenRoot && (() => {
                 const branch = branchFor(key);
                 const rec = !branch ? (moves.find((m) => m.book && m.isMain) || moves.find((m) => m.book) || moves[0] || null) : null;
                 const recSan = rec ? (rec.disp || rec.san) : null;
@@ -12287,7 +12665,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
                   </div>
                 );
               })()}
-              {(canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
+              {!fenRoot && (canEdit || canAdd) && <BranchBanner sentKey={key} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} />}
               {/* 헤더(현재 수) 블록 — 마스코트 우상단 + 분석 버튼.
                   (17차) ply(=sans.length)는 "다음에 둘 차례"의 홀짝이므로, 직전에 두어진 수(이 블록이 보여주는 수)를
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
@@ -14727,7 +15105,16 @@ async function puzzleShare(p) {
     // 병합하지 않고 그냥 포기한다 — 이 퍼즐은 로컬 상태(setPuzzles)에는 이미 반영돼 있으니 이 세션
     // 안에서 풀이는 계속 가능하고, 서버 공유·번호 공유만 못 하게 된다.
     if (server && server.id && server.id !== p.id) { console.warn("퍼즐 번호 충돌(no=" + no + "), 서버 공유를 건너뜁니다:", p.id, "vs", server.id); return; }
-    const merged = server ? { ...p, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
+    // (v0.5.1 버그 수정, 사용자 제보) "퍼즐 이름을 바꿔도 밖에서는 예전 이름 그대로 보인다" — 원인은
+    // 여기 병합 로직이었다. 위 puzzleCreatorInfo 주석이 이미 경고한 것과 정확히 같은 종류의 함정을
+    // puzzle_set_name(v0.4.9)이 그 뒤 data 안에 이름을 저장하면서 다시 만들었다: p는 호출부가 들고
+    // 있던 그 시점의 스냅샷일 뿐인데(특히 daily_puzzle_cache에 한 번 저장된 "오늘의 퍼즐" 객체는
+    // 그날 처음 계산된 순간의 이름을 영구히 그대로 담고 있다 — resolveDailyPuzzleCached가 캐시
+    // 적중 시 매번 이 함수를 다시 부른다), server.name(방금 puzzle_set_name으로 바뀌었을 수 있는
+    // 실제 최신 이름)이 있는데도 `{...p}`가 그 뒤에 덮어써 매번 옛 이름으로 되돌리고 있었다.
+    // 이름은 puzzle_set_name RPC로만 바뀌고 이 함수(puzzleShare)를 거치지 않으므로, server에 이미
+    // 이름이 있으면 그걸 그대로 지킨다(새로 생성되는 행이라 server가 없을 때만 p.name을 쓴다).
+    const merged = server ? { ...p, name: server.name || p.name, themes: [...new Set([...themesOf(server), ...themesOf(p)])] } : p;
     const row = { no, data: merged };
     // (신규 기능) 사용자 요청 — 퍼즐 만들기 마법사 4단계의 공개/비공개 설정. is_public은 별도
     // 보호 컬럼(아래 puzzleSetVisibility 참고)이라 REST로 직접 update할 grant가 없으므로, 이미 있는
@@ -15176,7 +15563,16 @@ const dailyPuzzleResolveCache = new Map(); // dateStr -> Promise<puzzle|null>
 function resolveDailyPuzzleCached(dateStr, engine) {
   if (dailyPuzzleResolveCache.has(dateStr)) return dailyPuzzleResolveCache.get(dateStr);
   const p = fetchDailyPuzzleCache(dateStr).then((cached) => {
-    if (cached) { puzzleShare(cached); return cached; }
+    // (v0.5.1 버그 수정, 사용자 제보) daily_puzzle_cache.data는 그 날짜 몫이 처음 계산된 순간의
+    // 이름을 스냅샷으로 영구히 담고 있다 — 생성자가 나중에 puzzle_set_name으로 이름을 바꿔도 이
+    // 캐시 행 자체는 절대 다시 계산되지 않으므로(날짜별로 딱 한 번만 계산·저장), 캐시가 있는 한
+    // "오늘의 퍼즐" 카드는 옛 이름을 그대로 계속 보여준다(puzzleShare 쪽의 되돌림 버그는 위에서
+    // 이미 고쳤지만, 이 캐시 자체가 보여주는 값은 별개로 여전히 낡아 있다). 이름만은 puzzles
+    // 테이블이 항상 최신 진실 공급원이므로, 캐시를 쓰더라도 이름만 가벼운 puzzleFetch로 다시 얹는다.
+    if (cached) {
+      puzzleShare(cached);
+      return puzzleFetch(puzzleNo(cached.id)).then((live) => (live && live.name && live.name !== cached.name) ? { ...cached, name: live.name } : cached).catch(() => cached);
+    }
     // (v0.5.0 변경) 커뮤니티 선정 경로(daily_puzzle_picks)는 창작 시점에 이미 만들어진 라인을 그대로
     // 쓰므로 로컬 엔진이 필요 없다 — 개발자 오버라이드(daily_puzzles_dev, 드문 경로)만 여전히
     // genPuzzleTree를 돌려야 해서 엔진을 필요로 한다. 엔진이 아직 준비되지 않아 null이 나온 경우는
@@ -16151,7 +16547,7 @@ function PuzzleClearBanner({ trigger }) {
    · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
    · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
    · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onOpenProfile, onOpenLearnFen }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onPuzzleRenamed, onOpenProfile, onOpenLearnFen }) {
   // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
   // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
   const [confirmDeletePuzzle, setConfirmDeletePuzzle] = useState(false);
@@ -16230,7 +16626,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     setNameBusy(true);
     const ok = await puzzleSetName(puzzleNoForTag, v);
     setNameBusy(false);
-    if (ok) { setNameOverride(v); setEditingName(false); }
+    if (ok) { setNameOverride(v); setEditingName(false); onPuzzleRenamed && onPuzzleRenamed(puzzle.id, v); }
     else setNameErr("저장하지 못했어요 — 잠시 후 다시 시도해 주세요(1시간에 한 번만 바꿀 수 있어요).");
   };
   const [nowTick, setNowTick] = useState(Date.now());
@@ -16271,6 +16667,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // 구조적으로 풀 수 없었다. ReviewPage·PlayPage와 같은 promoPrompt 패턴을 그대로 들여와, 폰이
   // 마지막 랭크로 이동하는 수는 곧장 두지 않고 먼저 승격 기물을 고르게 한다.
   const [promoPrompt, setPromoPrompt] = useState(null); // { from, to } | null
+  // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
+  const [promoGridEl, setPromoGridEl] = useState(null);
   const [wrong, setWrong] = useState(null);     // { board, at:[r,c], from:[r,c], san }
   // (v0.1.2 기능) 오답을 두면 곧장 원위치로 되돌리는 대신, 그 수를 뒀을 때 상대(컴퓨터)가 어떻게
   // 응징하는지 최선 응수를 한 번 보여준 뒤 되돌린다 — wrongReply가 그 응수({san,from,to}), revertStage가
@@ -17084,9 +17482,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
               // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove} gridRef={setPromoGridEl}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
-            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} />}
+            {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
             </div>
             {/* (v0.2.6 버그 수정) 보드 바로 아래 안내 문구를 없애고, 그 자리에 평가치 막대를 표시한다.
                 생성 시 이미 계산해 둔 트리 노드의 ev를 그대로 써서(퍼즐 어디서든 같은 값), 새로 다시
@@ -18811,7 +19209,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -18875,17 +19273,18 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // (사용자 요청) 1단계 입력 박스에 이미지 스캔 버튼 추가 — 체스판 사진이면 FEN으로, PGN·FEN 텍스트
   // 사진이면 그 텍스트를 그대로 입력 박스에 채워 넣는다(그대로 "확인"을 눌러 검증하는 흐름은 동일).
   const [pcScanning, setPcScanning] = useState(false);
+  const [pcScanProgress, setPcScanProgress] = useState(0);
   const onPcScanFile = async (file) => {
-    setPcScanning(true); setPcErr("");
+    setPcScanning(true); setPcScanProgress(0); setPcErr("");
     try {
-      const data = await scanImageFile(file);
+      const data = await scanImageFile(file, setPcScanProgress);
       let text = null;
       if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
       else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
       if (!text) { setPcErr("이미지에서 체스판이나 기보를 인식하지 못했어요."); return; }
       setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
     } catch (e) { setPcErr((e && e.message) || "이미지 스캔에 실패했어요."); }
-    finally { setPcScanning(false); }
+    finally { setPcScanning(false); setPcScanProgress(0); }
   };
   const resetPuzzleCreate = () => {
     setPcInput(""); setPcParsed(null); setPcErr(""); setPcTheme(null);
@@ -19288,7 +19687,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onOpenProfile={onOpenProfile} onOpenLearnFen={onOpenLearnFen} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onPuzzleRenamed={onPuzzleRenamed} onOpenProfile={onOpenProfile} onOpenLearnFen={onOpenLearnFen} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -19407,7 +19806,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                 체스판 사진이나 PGN/FEN 텍스트 사진을 스캔하면 입력 박스가 채워지고, 그대로 "확인"을
                 눌러 검증한다. */}
             <div className="flex justify-end items-center" style={{ marginTop: 8, gap: 8 }}>
-              <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel="인식하는 중..."
+              <ImageSourceMenu onFile={onPcScanFile} disabled={pcScanning} busy={pcScanning} label="이미지 스캔" busyLabel={"인식하는 중... " + pcScanProgress + "%"}
                 buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, background: pcScanning ? "rgba(0,0,0,.06)" : "transparent", color: pcScanning ? T.inkSoft : T.ink, fontWeight: 700, fontSize: 12, border: "1px solid " + (pcScanning ? "#DCCBA8" : T.brass), cursor: pcScanning ? "default" : "pointer" }} />
               <button onClick={() => parsePcInput()} className="press" style={{ padding: "7px 14px", borderRadius: 9, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>확인</button>
             </div>
@@ -20839,6 +21238,30 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
+      "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일을 외부 저장소에서 받아오던 방식이 계속 말썽이어서, 다른 두 엔진처럼 사이트와 같은 곳에서 바로 받아오도록 되돌렸어요.",
+      "퍼즐 이름을 바꿔도 다른 화면(특히 오늘의 퍼즐)에서는 바꾸기 전 이름이 계속 보이던 문제를 고쳤어요.",
+      "실시간 대국에서 상대의 시간이 다 됐는데 상대가 결과를 보고하지 않고 화면을 나가버려도(인터넷이 끊기거나 탭을 닫는 등), 이제 내 승리가 확실하게 확정돼요 — 예전엔 이런 경우 대국이 끝나지 않은 것처럼 서버에 남아, 다음에 새 상대를 찾으면 그 끝난 대국으로 자꾸 되돌아가는 문제가 있었어요.",
+      "분석 탭에서 FEN을 붙여넣어 자유롭게 두는 'FEN 모드'에서도 이제 엔진이 계산한 다음 수 추천과 현재 수 정보가 떠요 — 예전엔 다음 수 칸이 항상 비어 있었고, 그 자리에 전혀 무관한 표준 오프닝 추천 문구가 잘못 섞여 보이기도 했어요.",
+      "이미지 스캔(체스판·PGN·FEN 사진 인식) 속도를 더 높였어요 — 사진을 서버로 보내기 전에 더 작은 크기로 줄이고, 인식이 애매해 다시 시도할 때도 여러 번을 순서대로 기다리는 대신 한꺼번에 보내도록 바꿨어요.",
+      "이미지 스캔이 'This model is currently experiencing high demand...'처럼 인식 엔진이 일시적으로 붐빌 때 나는 오류를 그대로 보여주며 곧장 실패하던 문제를 고쳤어요 — 이런 일시적인 오류는 이제 서버가 잠깐 쉬었다가 자동으로 한 번 더 시도해요.",
+      "이미지 스캔 속도를 한 번 더 높였고, 인식이 진행되는 동안 몇 %까지 됐는지 실시간으로 볼 수 있어요.",
+      "보드 편집기에서 이제 킹이나 룩을 시작 칸에서 벗어나게 두면 그 캐슬링 권리가 항상 자동으로 꺼져요.",
+      "분석 탭 'FEN 모드' 안내 박스를 없애고, 그 자리에 있던 종료 버튼을 FEN 코드 줄로 옮겼어요 — 복사 버튼 위치도 FEN·PGN 두 줄에서 항상 같은 자리에 오도록 정리했어요.",
+      "FEN 모드의 '다음 수' 블록에서 수 체계 아이콘(최선·탁월·좋은 수 등)이 부정확하게 뜨던 문제를 고쳤어요 — 예전엔 1순위 수만 무조건 '최선의 수', 나머지는 전부 '좋은 수'로만 표시했는데, 이제 실제 손실값과 희생 여부까지 반영해 정확한 등급으로 표시돼요.",
+      "폰이 승격할 때 뜨는 기물 선택 창이 승격하는 진영 색에 맞는 기물 아이콘(백이면 흰 기물, 흑이면 검은 기물)을 보여주도록 고쳤어요 — 예전엔 항상 검은 기물 아이콘만 떴어요. 선택 버튼도 더 크게, 체스보드 정중앙에 정확히 뜨도록 함께 다듬었어요.",
+      "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
+      "둘 수 있는 수가 1~2개뿐인 국면에서 보드 위 엔진 상위 줄 아래에 불필요한 빈 자리가 남아 마치 가운데 떠 있는 것처럼 보이던 문제를 고쳤어요 — 이제 실제로 있는 수만큼만 자리를 차지해요.",
+      "좌표 인지 게임·나이트 경주 두 미니게임을 사이트 헤더·하단 탭바가 함께 보이던 플레이 탭 속 좁은 카드 대신, 화면 전체를 다 쓰는 별도 화면에서 플레이하도록 새로 디자인했어요 — 뒤로가기 버튼만 남기고 그 외에는 온전히 대전에만 집중할 수 있어요.",
+      "좌표 인지 게임을 내 보드·상대 보드 두 개로 나누던 것을 보드 하나만 화면 정중앙에 크게 쓰는 방식으로 다시 디자인했어요 — 그 한 보드 위에 내가 누른 칸과 상대(또는 봇)가 누른 칸이 정답/오답 색(초록/빨강)으로 함께 표시돼요.",
+      "좌표 인지 게임에서 칸을 눌렀을 때 표시하는 방식을 그 칸 위에 점을 찍는 대신 칸 자체의 색이 바뀌도록 바꿨어요 — 내 클릭은 금색 테두리, 상대(또는 봇) 클릭은 파란 테두리로 구분되고, 두 색 의미는 보드 아래 범례로 안내돼요.",
+      "좌표 인지 게임 보드에 이제 좌표축(파일 a~h, 랭크 1~8)과 시작 배치 그대로의 기물이 항상 함께 보여요 — 실제 체스판처럼 보이는 배경 위에서 기물 위치를 기준으로도 좌표를 가늠할 수 있어요(기물은 순수 장식이라 클릭에는 영향을 주지 않아요).",
+      "좌표 인지 게임에서 오답을 눌러도(나·상대 모두) 그 라운드가 더 이상 끝나지 않아요 — 예전엔 4초 제한시간을 넘기면 아무도 못 맞혀도 무승부로 자동 종료됐는데, 이제는 누군가 정답을 맞힐 때까지 라운드가 계속 진행돼요.",
+      "나이트 경주도 내 보드·상대 보드로 나누던 것을 보드 하나로 합쳤어요 — 목표 칸을 기준으로 두 나이트의 시작 칸을 점대칭으로 배치해 항상 똑같이 공정한 조건에서 출발해요.",
+      "나이트 경주에서 '방해 칸'(그냥 못 밟는 칸) 대신, 서로 상대 색의 기물(비숍·룩)을 점대칭으로 배치했어요 — 그 기물이 실제로 공격하는 칸(보드 위에 빨갛게 표시돼요)에 내 나이트가 들어가면 잡혀서 그 경로로는 더 이상 목표에 도달할 수 없어요.",
+    ]
+  },
   {
     version: "0.5.0", date: "2026.9.12", dev: ["openchesskr", "G13sus4"], items: [
       "퍼즐 삭제, FEN 퍼즐 이름 변경이 안 되던 문제를 고쳤어요 — 같은 원인으로 조용히 실패하고 있던 계정 탈퇴·채팅 메시지 수정/대화 지우기·실시간 대국 대기열 취소 등 다른 몇몇 기능도 함께 정상화됐어요.",
@@ -22721,6 +23144,12 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           </span>
         </div>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>분석 엔진</div>
+        {/* (v0.5.1 기능) Stockfish 18은 신경망 파일이 108MB나 돼 느린 회선에서는 부팅에 몇 분씩 걸릴 수
+            있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
+            고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
+        {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>신경망 파일이 커서(108MB) 회선에 따라 부팅에 몇 분 걸릴 수 있어요.</div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
@@ -28446,6 +28875,18 @@ export default function App() {
     setDeletedPuzzles((p) => { const n = new Set(p); n.add(id); return n; });
     return true;
   }, []);
+  // (v0.5.1 버그 수정, 사용자 제보) "퍼즐 이름을 바꿔도 '내가 만든 퍼즐' 목록에는 예전 이름 그대로
+  // 보인다" — 그 목록(PuzzleTab이 받는 puzzles prop)은 이 앱 상태(puzzles, 계정 진행도로도 그대로
+  // 저장됨)를 그대로 보여줄 뿐인데, PuzzleSolver의 이름 변경(saveEditName)은 puzzle_set_name RPC로
+  // 서버만 갱신하고 이 로컬 상태는 전혀 건드리지 않았다 — PuzzleSolver 안에서만 쓰는 nameOverride
+  // state로 그 화면 자신은 바로 갱신됐지만, 그 값이 바깥의 puzzles 배열까지 전파되지 않아 목록
+  // 화면(같은 세션이든, 다음 로그인이든 — puzzles가 계정 진행도에 그대로 저장되므로)은 이름이 바뀐
+  // 사실 자체를 몰랐다. 이름이 바뀐 그 퍼즐 하나만 배열 안에서 찾아 patch한다(puzzleShare를 다시
+  // 거치지 않는다 — 이미 서버에는 puzzle_set_name으로 반영됐고, puzzleShare를 다시 부르면 그 자체가
+  // 방금 고친 "옛 스냅샷이 새 이름을 덮어쓰는" 버그의 또 다른 경로가 될 수 있다).
+  const onPuzzleRenamed = useCallback((id, name) => {
+    setPuzzles((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+  }, []);
   const onSolved = useCallback((id) => {
     const already = solved.has(id);
     if (!already) setSolved((p) => { const n = new Set(p); n.add(id); return n; });
@@ -29353,7 +29794,7 @@ export default function App() {
             (onOpenLearn → PuzzleSolver의 pickToLearn이 onClose도 함께 부름), App.jsx의
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
