@@ -12392,7 +12392,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} />} />
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (
               <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
             )}
@@ -21065,6 +21065,7 @@ const CHANGELOG = [
       "FEN 모드의 '다음 수' 블록에서 수 체계 아이콘(최선·탁월·좋은 수 등)이 부정확하게 뜨던 문제를 고쳤어요 — 예전엔 1순위 수만 무조건 '최선의 수', 나머지는 전부 '좋은 수'로만 표시했는데, 이제 실제 손실값과 희생 여부까지 반영해 정확한 등급으로 표시돼요.",
       "폰이 승격할 때 뜨는 기물 선택 창이 승격하는 진영 색에 맞는 기물 아이콘(백이면 흰 기물, 흑이면 검은 기물)을 보여주도록 고쳤어요 — 예전엔 항상 검은 기물 아이콘만 떴어요. 선택 버튼도 더 크게, 체스보드 정중앙에 정확히 뜨도록 함께 다듬었어요.",
       "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
+      "둘 수 있는 수가 1~2개뿐인 국면에서 보드 위 엔진 상위 줄 아래에 불필요한 빈 자리가 남아 마치 가운데 떠 있는 것처럼 보이던 문제를 고쳤어요 — 이제 실제로 있는 수만큼만 자리를 차지해요.",
     ]
   },
   {
