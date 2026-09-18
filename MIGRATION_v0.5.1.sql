@@ -275,4 +275,196 @@ begin
 end; $$;
 grant execute on function public.coord_click(bigint, int, text) to authenticated;
 
+-- ============================================================================
+-- 나이트 경주(knight) 재설계 — 보드 하나로 통합 + 위협 기물 기반 칸 제한 (v0.5.1 후속, 사용자 요청)
+-- ============================================================================
+-- 예전엔 "내 보드"·"상대 보드"를 따로 그리고, 라운드마다 무작위로 고른 "방해 칸"(착지 자체가 금지된
+-- 칸)이 있었다. 이제는 둘의 나이트·목표 칸을 한 보드 위에 함께 그리고(공정성을 위해 목표 칸을
+-- 기준으로 두 시작 칸을 점대칭으로 배치 — 나이트 이동은 두 축 부호를 모두 뒤집어도 유효해 최短 거리가
+-- 항상 같다), "방해 칸" 대신 서로 상대 색의 기물(비숍·룩)을 역시 점대칭으로 배치해 그 기물이 실제로
+-- 공격하는 칸에 들어가면 나이트가 잡히도록 바꿨다. round.blocked가 target/whiteStart/blackStart/
+-- hazards/wIllegal/bIllegal로 바뀌었다 — 자세한 설명은 supabase-setup.sql의 knight 섹션 주석 참고.
+
+create or replace function public.knight_reflect_sq(p_sq text, p_center text)
+returns text language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  cf int := ascii(substr(p_center,1,1)) - 97; cr int := substr(p_center,2)::int - 1;
+  nf int := 2*cf - f; nr int := 2*cr - r;
+begin
+  if nf < 0 or nf > 7 or nr < 0 or nr > 7 then return null; end if;
+  return chr(97+nf) || (nr+1)::text;
+end; $$;
+
+create or replace function public.knight_attacked_squares(p_sq text, p_type text)
+returns text[] language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]] else array[[1,1],[1,-1],[-1,1],[-1,-1]] end;
+  out text[] := '{}'; i int; step int; nf int; nr int;
+begin
+  for i in 1..4 loop
+    step := 1;
+    loop
+      nf := f + dirs[i][1]*step; nr := r + dirs[i][2]*step;
+      exit when nf < 0 or nf > 7 or nr < 0 or nr > 7;
+      out := out || (chr(97+nf) || (nr+1)::text);
+      step := step + 1;
+    end loop;
+  end loop;
+  return out;
+end; $$;
+
+create or replace function public.knight_start_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; r jsonb;
+  v_w_wins int := 0; v_b_wins int := 0; v_round_idx int;
+  v_walk_len int; v_hazard_count int; v_time_ms constant int := 25000;
+  v_target text; v_walk text[]; v_walk_mirror text[]; v_cand1 text; v_cand2 text;
+  v_white_start text; v_black_start text; v_white_path text[]; v_black_path text[];
+  v_haz_w text[]; v_haz_b text[]; v_ok boolean; v_try int; v_piece_type text; i int;
+  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[];
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) > 0 then
+    v_last := v_rounds -> (jsonb_array_length(v_rounds) - 1);
+    if (v_last ->> 'winner') is null then return v_game; end if;
+  end if;
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
+  end loop;
+  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
+  v_round_idx := jsonb_array_length(v_rounds);
+  if v_round_idx < 2 then v_walk_len := 3; v_hazard_count := 0;
+  elsif v_round_idx < 4 then v_walk_len := 4; v_hazard_count := 1;
+  else v_walk_len := 5; v_hazard_count := 2;
+  end if;
+  v_ok := false;
+  for v_try in 1..40 loop
+    v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
+    v_walk := public.knight_random_walk(v_target, v_walk_len);
+    v_cand1 := v_walk[array_length(v_walk,1)];
+    v_cand2 := public.knight_reflect_sq(v_cand1, v_target);
+    if v_cand2 is null then continue; end if;
+    v_walk_mirror := array(select public.knight_reflect_sq(x, v_target) from unnest(v_walk) x);
+    if array_position(v_walk_mirror, null) is not null then continue; end if;
+    if substr(v_cand1,2)::int <= substr(v_cand2,2)::int then
+      v_white_start := v_cand1; v_white_path := v_walk; v_black_start := v_cand2; v_black_path := v_walk_mirror;
+    else
+      v_white_start := v_cand2; v_white_path := v_walk_mirror; v_black_start := v_cand1; v_black_path := v_walk;
+    end if;
+    if v_hazard_count = 0 then
+      v_haz_w := '{}'; v_haz_b := '{}';
+    else
+      v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || array[v_target, v_white_start]);
+      if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
+      v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
+      if array_position(v_haz_b, null) is not null then continue; end if;
+    end if;
+    v_ok := true;
+    exit;
+  end loop;
+  if not v_ok then
+    v_target := 'd4';
+    v_white_path := public.knight_random_walk(v_target, v_walk_len);
+    v_white_start := v_white_path[array_length(v_white_path,1)];
+    v_black_start := coalesce(public.knight_reflect_sq(v_white_start, v_target), v_white_start);
+    v_haz_w := '{}'; v_haz_b := '{}';
+  end if;
+  v_hazards := '[]'::jsonb; v_w_illegal := '{}'; v_b_illegal := '{}';
+  for i in 1..coalesce(array_length(v_haz_w,1),0) loop
+    v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_piece_type, 'color', 'w');
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_piece_type, 'color', 'b');
+    v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+    v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+  end loop;
+  v_rounds := v_rounds || jsonb_build_object(
+    'target', v_target, 'whiteStart', v_white_start, 'blackStart', v_black_start,
+    'hazards', v_hazards, 'wIllegal', to_jsonb(v_w_illegal), 'bIllegal', to_jsonb(v_b_illegal),
+    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    'positions', jsonb_build_object('w', null, 'b', null),
+    'reports', jsonb_build_object('w', null, 'b', null), 'winner', null, 'resolvedAt', null
+  );
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.knight_start_round(bigint) to authenticated;
+
+create or replace function public.knight_resolve_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_round_idx int;
+  v_wrep jsonb; v_brep jsonb; v_grace constant int := 2000; v_winner text;
+  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int; v_w_remain int; v_b_remain int;
+  v_w_time numeric; v_b_time numeric; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) = 0 then return v_game; end if;
+  v_round_idx := jsonb_array_length(v_rounds) - 1;
+  v_round := v_rounds -> v_round_idx;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_wrep := v_round #> '{reports,w}'; if jsonb_typeof(v_wrep) = 'null' then v_wrep := null; end if;
+  v_brep := v_round #> '{reports,b}'; if jsonb_typeof(v_brep) = 'null' then v_brep := null; end if;
+  if not (v_wrep is not null and v_brep is not null)
+     and (v_round ->> 'startedAt')::timestamptz + ((v_round->>'timeLimitMs')::int + v_grace || ' ms')::interval > now() then
+    return v_game;
+  end if;
+  v_w_reached := coalesce((v_wrep ->> 'reached')::boolean, false);
+  v_b_reached := coalesce((v_brep ->> 'reached')::boolean, false);
+  if v_wrep is not null and v_brep is null then v_winner := 'w';
+  elsif v_brep is not null and v_wrep is null then v_winner := 'b';
+  elsif v_wrep is null and v_brep is null then v_winner := 'draw';
+  elsif v_w_reached and not v_b_reached then v_winner := 'w';
+  elsif v_b_reached and not v_w_reached then v_winner := 'b';
+  elsif v_w_reached and v_b_reached then
+    v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
+  else
+    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'wIllegal'))), 99);
+    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'bIllegal'))), 99);
+    if v_w_dist <> v_b_dist then
+      v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
+    else
+      v_w_remain := (v_round->>'moveBudget')::int - (v_wrep->>'movesUsed')::int;
+      v_b_remain := (v_round->>'moveBudget')::int - (v_brep->>'movesUsed')::int;
+      if v_w_remain <> v_b_remain then
+        v_winner := case when v_w_remain > v_b_remain then 'w' else 'b' end;
+      else
+        v_w_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
+        v_b_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
+        v_winner := case when v_w_time = v_b_time then 'draw' when v_w_time > v_b_time then 'w' else 'b' end;
+      end if;
+    end if;
+  end if;
+  v_round := jsonb_set(v_round, array['winner'], to_jsonb(v_winner));
+  v_round := jsonb_set(v_round, array['resolvedAt'], to_jsonb(now()));
+  v_rounds := jsonb_set(v_rounds, array[v_round_idx::text], v_round);
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
+  end loop;
+  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then
+    update public.pvp_games set sans = v_rounds,
+      status = case when v_w_wins > v_b_wins then 'white_won' when v_b_wins > v_w_wins then 'black_won' else 'draw' end,
+      result_reason = 'knight_score', updated_at = now()
+    where id = p_game_id returning * into v_game;
+  else
+    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  end if;
+  return v_game;
+end; $$;
+grant execute on function public.knight_resolve_round(bigint) to authenticated;
+
 -- SQL Editor에 이 파일 전체를 붙여넣고 RUN 하세요.
