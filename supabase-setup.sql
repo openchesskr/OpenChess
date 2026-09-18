@@ -1524,6 +1524,16 @@ grant select on public.pvp_games to authenticated;
 -- 매칭된 두 클라이언트가 서로 다른 값을 로컬에서 고르는 사고를 막기 위해, 실제 클럭은 이 서버
 -- 값(대기열이면 매칭 당시 time_control, 초대면 초대한 사람이 고른 값)을 그대로 따른다.
 alter table public.pvp_games add column if not exists time_control text not null default '600-0';
+-- (v0.5.1 기능) 시간 초과(플래그) 좀비 대국 근본 수정 — 체크메이트/스테일메이트는 pvp_finish_verified가
+-- sans만으로 서버가 독립 검증할 수 있지만, "시간이 다 됐다"는 sans만으로는 계산할 수 없다(실제 경과한
+-- 벽시계 시간이 필요). 그래서 각 진영의 남은 시간(ms)과 그 값이 마지막으로 맞춰진 시각을 서버에
+-- 권위 있게 들고 다니게 한다 — 매 수(pvp_move)마다 "그 사이 실제로 지난 시간"만큼 두는 쪽의 남은
+-- 시간에서 빼고 증가시간을 더해 갱신한다. 이러면 클라이언트의 로컬 시계를 전혀 신뢰하지 않고도(양쪽
+-- 다 사라져도) 서버 스스로 "지금 이 순간 정말 시간이 다 됐는지"를 계산할 수 있다 — 아래 pvp_check_flag
+-- 참고. 시계가 없는 게임(0-0, 코드/나이트 미니게임 매칭 등)은 둘 다 null로 남아 이 로직 전체를 건너뛴다.
+alter table public.pvp_games add column if not exists white_ms integer;
+alter table public.pvp_games add column if not exists black_ms integer;
+alter table public.pvp_games add column if not exists clock_synced_at timestamptz not null default now();
 -- (v0.4.7 기능, 사용자 요청) 합의 무승부 제안 — null이면 제안 없음, 값이 있으면 그 uid가 상대에게
 -- 무승부를 제안해 응답을 기다리는 중이라는 뜻. 어느 한쪽이 일방적으로 무승부를 선언할 수는 없고
 -- (아래 pvp_draw_accept 참고), 수를 두면(pvp_move) 자동으로 취소된다.
@@ -1578,9 +1588,76 @@ end $$;
 -- 즉시 패배 버그를 고치고 나서야 대기 화면이 5초 넘게 유지되며 처음 드러난 문제). insert를
 -- "on conflict (uid) do update"로 바꿔, 같은 사용자가 거의 동시에 여러 번 불러도 항상 안전하게
 -- 자기 자리만 갱신하도록(경쟁 상태 자체가 없도록) 한다.
+-- (v0.5.1 기능) 위 시계 컬럼을 채우는 헬퍼 — time_control("초기시간-증가시간")의 초기시간 부분을
+-- ms로 변환한다. 초기시간이 0이거나 형식이 이상하면(코드/나이트 미니게임의 "0-0" 등) null을 돌려줘
+-- "이 대국엔 서버 시계가 없다"는 뜻으로 쓴다.
+create or replace function public._pvp_initial_ms(p_time_control text)
+returns integer language sql immutable as $$
+  select case
+    when split_part(coalesce(p_time_control, ''), '-', 1) ~ '^[0-9]+$'
+      and split_part(p_time_control, '-', 1)::int > 0
+    then split_part(p_time_control, '-', 1)::int * 1000
+    else null
+  end;
+$$;
+
+-- (v0.5.1 기능) 시간 초과를 서버가 독립적으로 확정하는 핵심 로직 — pvp_move·pvp_check_flag·
+-- pvp_queue_join(재접속 시 좀비 판정)이 모두 이 함수 하나를 공유한다. 대국 행을 for update로 잠근 뒤,
+-- 지금 둘 차례인 진영의 남은 시간을 "마지막으로 시계를 맞춘 시각(clock_synced_at) 이후 실제로 지난
+-- 시간"만큼 깎아 계산해, 0 이하면 그 자리에서 상대 승리로 확정한다(클라이언트가 무엇을 주장하든
+-- 상관없이 서버에 저장된 타임스탬프만으로 계산하므로 어느 쪽이 불러도, 심지어 참가자가 아닌 시스템
+-- 경로가 불러도 안전하다). 아직 시간이 남아 있거나 애초에 서버 시계가 없는 대국(white_ms/black_ms가
+-- null)이면 대국을 그대로 돌려준다.
+create or replace function public._pvp_resolve_timeout(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_game public.pvp_games; v_ply int; v_white_turn boolean; v_elapsed_ms bigint; v_mover_ms int;
+begin
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found or v_game.status <> 'active' or v_game.white_ms is null or v_game.black_ms is null then
+    return v_game;
+  end if;
+  v_ply := jsonb_array_length(v_game.sans);
+  v_white_turn := (v_ply % 2) = 0;
+  v_mover_ms := case when v_white_turn then v_game.white_ms else v_game.black_ms end;
+  v_elapsed_ms := extract(epoch from (now() - v_game.clock_synced_at)) * 1000;
+  if v_mover_ms - v_elapsed_ms > 0 then return v_game; end if;
+  update public.pvp_games
+    set status = case when v_white_turn then 'black_won' else 'white_won' end,
+        result_reason = 'timeout', updated_at = now()
+    where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public._pvp_resolve_timeout(bigint) to authenticated;
+
+-- (v0.5.1 기능) 실시간 대국 화면이 주기적으로(그리고 자기 쪽 로컬 시계가 0에 닿는 순간) 불러 "정말
+-- 시간이 다 됐는지"를 서버에 확인·확정 요청한다. pvp_finish와 달리 자기 승리 선언 금지 가드가 없다 —
+-- 위 _pvp_resolve_timeout이 클라이언트가 넘긴 값을 전혀 쓰지 않고 서버에 저장된 시계만으로 계산하므로
+-- 이긴 쪽이 불러도, 진 쪽이 불러도 결과가 같다(악용 여지가 없다). 참가자 확인만 한다.
+drop function if exists public.pvp_check_flag(bigint) cascade;
+create or replace function public.pvp_check_flag(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id;
+  if not found then raise exception 'game not found'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  return public._pvp_resolve_timeout(p_game_id);
+end; $$;
+grant execute on function public.pvp_check_flag(bigint) to authenticated;
+
 drop function if exists public.pvp_queue_join() cascade;
 drop function if exists public.pvp_queue_join(text) cascade;
 -- (v0.4.8 기능) p_game_type 인자 추가 — 같은 time_control이면서 같은 game_type인 상대끼리만 짝짓는다.
+-- (v0.5.1 버그 수정) 재접속 시 "최근" 대국인지 판단하기 전에 먼저 _pvp_resolve_timeout으로 그 대국이
+-- 실제로 시간 초과되지 않았는지부터 서버 시계 기준으로 확정한다 — 예전엔 updated_at 2분 경과 여부라는
+-- 무딘 침묵 기준 하나로만 좀비를 판정해, 시간제어가 긴 대국(예: 60|30)에서 상대가 정상적으로 오래
+-- 생각 중이어도 좀비로 오판하거나(v0.4.5에서 좁혀 고침), 반대로 진짜 시간 초과가 났는데도 상대가
+-- 결과를 보고하지 못하고 사라지면(탭을 닫는 등) 승자가 다시 매칭을 시도할 때마다 계속 그 끝난 대국으로
+-- 되돌아가는(README v0.4.5 "다음 버전으로 미룬다"던 항목) 문제가 있었다. 이제 시간제어가 있는 대국은
+-- 침묵 시간을 추측하는 대신 서버 시계로 정말 끝났는지를 먼저 확정하므로, 그 즉시 status가 바뀌어
+-- 아래 "이미 active가 아니면" 분기를 타고 곧장 새 매칭으로 넘어간다. 시계가 없는 대국·아직 시간이
+-- 남은 대국에는 기존 2분 침묵 기준을 그대로 안전망으로 둔다.
 create or replace function public.pvp_queue_join(p_time_control text default '600-0', p_game_type text default 'chess')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_other uuid; v_game public.pvp_games; v_w uuid; v_b uuid;
@@ -1590,8 +1667,11 @@ begin
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
   if found then
-    if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
-    update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+    v_game := public._pvp_resolve_timeout(v_game.id);
+    if v_game.status = 'active' then
+      if v_game.updated_at > now() - interval '2 minutes' then return v_game; end if;
+      update public.pvp_games set status = 'aborted', updated_at = now() where id = v_game.id;
+    end if;
   end if;
   select uid into v_other from public.pvp_queue
     where uid <> v_me and time_control = p_time_control and game_type = p_game_type
@@ -1604,7 +1684,9 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, p_time_control, p_game_type) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now())
+    returning * into v_game;
   return v_game;
 end; $$;
 grant execute on function public.pvp_queue_join(text, text) to authenticated;
@@ -1620,15 +1702,27 @@ grant execute on function public.pvp_queue_leave() to authenticated;
 
 -- 수 두기 — 서버는 "지금이 내 차례인지"만 확인하고(합법성 자체는 클라이언트가 이미 검증한 SAN을
 -- 신뢰한다 — 앱 전반의 퍼즐·리뷰 채점과 같은 신뢰 모델), sans 배열에 이어 붙인다.
+-- (v0.5.1 버그 수정) 좀비 대국 근본 수정의 일부 — 수를 두기 전에 먼저 _pvp_resolve_timeout으로 내가
+-- 이미 시간 초과된 상태는 아닌지부터 서버 시계로 확인한다. 이 함수 호출 자체가 (시간 초과라면) 상태를
+-- 확정하는 update를 커밋하므로, 그 직후 곧장 raise exception으로 넘어가면 안 된다 — plpgsql에서 예외는
+-- "이 함수 호출 전체"를 하나의 (암시적) 트랜잭션으로 보고 롤백시키기 때문에, 방금 _pvp_resolve_timeout이
+-- 커밋해 둔 시간 초과 확정까지 함께 지워져 버려(실제로 재현 확인 — 시간 초과 후 아무 수나 다시 시도하면
+-- "game not active" 예외로 실패하는 건 맞지만 그 대국이 조용히 다시 active로 되돌아가 있었다) 결국 아무도
+-- 결과를 확정하지 못하는 좀비 대국이 그대로 남았다. 그래서 "이미 (내가 손대기 전부터) 끝나 있던 대국"과
+-- "방금 내가 확정한 시간 초과"를 구분한다 — 전자만 기존처럼 예외를 던지고(잃을 상태 변화가 없으므로
+-- 안전), 후자는 예외 없이 그 결과를 그대로 반환해 커밋을 보존한다.
 drop function if exists public.pvp_move(bigint, text) cascade;
 create or replace function public.pvp_move(p_game_id bigint, p_san text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_game public.pvp_games; v_ply int; v_white_turn boolean; v_expected uuid;
+declare v_me uuid := auth.uid(); v_pre public.pvp_games; v_game public.pvp_games; v_ply int; v_white_turn boolean; v_expected uuid;
+        v_inc_sec int; v_elapsed_ms bigint; v_mover_ms int; v_remaining_ms int;
 begin
   if v_me is null then raise exception 'auth required'; end if;
-  select * into v_game from public.pvp_games where id = p_game_id for update;
+  select * into v_pre from public.pvp_games where id = p_game_id;
   if not found then raise exception 'game not found'; end if;
-  if v_game.status <> 'active' then raise exception 'game not active'; end if;
+  if v_pre.status <> 'active' then raise exception 'game not active'; end if;
+  v_game := public._pvp_resolve_timeout(p_game_id);
+  if v_game.status <> 'active' then return v_game; end if;
   if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
   v_ply := jsonb_array_length(v_game.sans);
   v_white_turn := (v_ply % 2) = 0;
@@ -1636,8 +1730,21 @@ begin
   if v_me <> v_expected then raise exception 'not your turn'; end if;
   -- (v0.4.7 기능) 수를 두면 대기 중이던 무승부 제안은 자동으로 취소된다(표준적인 체스 클라이언트
   -- 동작과 동일 — 제안을 무시하고 그냥 다음 수를 두면 그 제안은 무효가 된다).
-  update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
-    where id = p_game_id returning * into v_game;
+  if v_game.white_ms is not null and v_game.black_ms is not null then
+    v_inc_sec := coalesce(nullif(split_part(v_game.time_control, '-', 2), '')::int, 0);
+    v_mover_ms := case when v_white_turn then v_game.white_ms else v_game.black_ms end;
+    v_elapsed_ms := extract(epoch from (now() - v_game.clock_synced_at)) * 1000;
+    v_remaining_ms := greatest(v_mover_ms - v_elapsed_ms, 0) + (v_inc_sec * 1000);
+    update public.pvp_games set
+        sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now(),
+        white_ms = case when v_white_turn then v_remaining_ms else v_game.white_ms end,
+        black_ms = case when v_white_turn then v_game.black_ms else v_remaining_ms end,
+        clock_synced_at = now()
+      where id = p_game_id returning * into v_game;
+  else
+    update public.pvp_games set sans = sans || to_jsonb(p_san), draw_offered_by = null, updated_at = now()
+      where id = p_game_id returning * into v_game;
+  end if;
   return v_game;
 end; $$;
 grant execute on function public.pvp_move(bigint, text) to authenticated;
@@ -1761,7 +1868,9 @@ begin
   end if;
   -- 상대가 이미 제안해 둔 상태에서 내가 불렀다 = 수락. 진영은 뒤바꿔(맞바꿈) 새 대국을 만든다.
   if random() < 0.5 then v_w := v_game.white_uid; v_b := v_game.black_uid; else v_w := v_game.black_uid; v_b := v_game.white_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_game.time_control, v_game.game_type) returning * into v_new;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, v_game.time_control, v_game.game_type, public._pvp_initial_ms(v_game.time_control), public._pvp_initial_ms(v_game.time_control), now())
+    returning * into v_new;
   update public.pvp_games set rematch_offered_by = null, rematch_game_id = v_new.id, updated_at = now() where id = p_game_id;
   return v_new;
 end; $$;
@@ -1920,7 +2029,9 @@ begin
     return v_inv;
   end if;
   if random() < 0.5 then v_w := v_inv.from_uid; v_b := v_inv.to_uid; else v_w := v_inv.to_uid; v_b := v_inv.from_uid; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type) values (v_w, v_b, v_inv.time_control, v_inv.game_type) returning * into v_game;
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
+    values (v_w, v_b, v_inv.time_control, v_inv.game_type, public._pvp_initial_ms(v_inv.time_control), public._pvp_initial_ms(v_inv.time_control), now())
+    returning * into v_game;
   update public.pvp_invites set status = 'accepted', game_id = v_game.id, updated_at = now() where id = p_invite_id returning * into v_inv;
   return v_inv;
 end; $$;
@@ -1946,8 +2057,9 @@ grant execute on function public.pvp_invite_cancel(bigint) to authenticated;
 -- ============================================================================
 -- 규칙: 무작위 좌표(칸)가 나타나면 두 참가자 중 먼저 그 칸을 클릭한 쪽이 그 라운드를 가져간다.
 -- 총 15라운드, 라운드마다 제한시간(4초) 안에 못 맞히면 아무도 못 가져간 채 다음 라운드로 넘어간다.
--- 15라운드가 끝난 뒤 더 많이 맞힌 쪽이 승리(동점이면 무승부) — 사용자가 이 게임에는 별도 타이브레이커를
--- 두지 않았다.
+-- 15라운드가 끝난 뒤 더 많이 맞힌 쪽이 승리 — 라운드 수가 홀수라 전체 게임이 무승부로 끝나는 경우는
+-- 없다. (v0.5.1 변경, 사용자 요청) 라운드에 제한시간이 없다 — 오답을 눌러도(양쪽 다) 그 라운드가
+-- 끝나지 않고, 누군가 정답을 맞힐 때까지 계속 진행된다(무승부 라운드 자체가 사라졌다).
 --
 -- 매칭(대기열 합류·친구 초대)은 기존 pvp_queue_join/pvp_invite_friend(p_game_type='coord')를 그대로
 -- 재사용한다 — 그 두 함수는 game_type을 몰라도 되게 이미 일반화돼 있다(대국 행을 만들 뿐, 체스에
@@ -1963,7 +2075,6 @@ returns public.pvp_games language plpgsql security definer set search_path = pub
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; v_last_idx int;
   v_total_rounds constant int := 15;
-  v_round_ms constant int := 4000; -- 라운드당 클릭 제한시간(ms)
   v_sq text;
 begin
   if v_me is null then raise exception 'auth required'; end if;
@@ -1976,13 +2087,11 @@ begin
   if jsonb_array_length(v_rounds) > 0 then
     v_last_idx := jsonb_array_length(v_rounds) - 1;
     v_last := v_rounds -> v_last_idx;
-    -- 아직 승자가 없는 마지막 라운드가 제한시간 안이면(=진행 중) 너무 이른 호출이니 그대로 반환한다.
-    if (v_last ->> 'winner') is null and (v_last ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval > now() then
+    -- (v0.5.1 변경, 사용자 요청) 제한시간이 없으므로, 마지막 라운드에 아직 승자가 없으면(=아직
+    -- 아무도 정답을 못 맞혔으면) 너무 이른 호출이니 그대로 반환한다 — 이 라운드는 누군가 coord_click
+    -- 으로 정답을 맞혀 winner를 채울 때까지 다음 라운드로 넘어가지 않는다.
+    if (v_last ->> 'winner') is null then
       return v_game;
-    end if;
-    -- 승자 없이 시간만 초과된 라운드는 무승부 라운드로 확정 표시한다.
-    if (v_last ->> 'winner') is null and (v_last ->> 'resolvedAt') is null then
-      v_rounds := jsonb_set(v_rounds, array[v_last_idx::text, 'resolvedAt'], to_jsonb(now()));
     end if;
   end if;
   if jsonb_array_length(v_rounds) >= v_total_rounds then
@@ -2000,17 +2109,17 @@ begin
 end; $$;
 grant execute on function public.coord_reveal_next(bigint) to authenticated;
 
--- 클릭 보고 — 이 라운드가 아직 안 끝났고 지금이 제한시간 안이면, 오답이어도 clicks.<색>에 이번
--- 시도를 항상 기록해 상대 화면에 실시간으로 보여준다(빨강/초록 피드백용) — 좌표가 맞을 때만 추가로
--- 승자로도 기록한다. 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다(시계
--- 오차·조작 방지) — 두 참가자가 거의 동시에 정답을 맞혀도 "for update" 행 잠금이 순서를 강제하므로,
--- 먼저 커밋되는 호출 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is not null"이라
--- 조용히 무시된다.
+-- 클릭 보고 — 이 라운드가 아직 안 끝났으면(제한시간은 v0.5.1부터 없다) 오답이어도 clicks.<색>에
+-- 이번 시도를 항상 기록해 상대 화면에 실시간으로 보여준다(정답/오답 표시용) — 좌표가 맞을 때만
+-- 추가로 승자로도 기록한다. 서버 시각(now())만 신뢰하고 클라이언트가 보낸 시각은 절대 쓰지 않는다
+-- (시계 오차·조작 방지) — 두 참가자가 거의 동시에 정답을 맞혀도 "for update" 행 잠금이 순서를
+-- 강제하므로, 먼저 커밋되는 호출 하나만 승자로 기록되고 그 뒤에 도착하는 호출은 이미 "winner is
+-- not null"이라 조용히 무시된다.
 create or replace function public.coord_click(p_game_id bigint, p_round int, p_sq text)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb;
-  v_round_ms constant int := 4000; v_mycolor text; v_correct boolean;
+  v_mycolor text; v_correct boolean;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2021,7 +2130,6 @@ begin
   if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
   v_round := v_rounds -> p_round;
   if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드
-  if (v_round ->> 'revealedAt')::timestamptz + (v_round_ms || ' ms')::interval < now() then return v_game; end if; -- 시간 초과
   v_correct := (v_round ->> 'sq' = p_sq);
   -- clicks 필드가 없는 옛 대국(이 기능 배포 전에 시작된 라운드)도 안전하게 다루도록 없으면 만든다.
   if v_round -> 'clicks' is null or jsonb_typeof(v_round -> 'clicks') <> 'object' then
@@ -2038,7 +2146,9 @@ end; $$;
 grant execute on function public.coord_click(bigint, int, text) to authenticated;
 
 -- 최종 승패 확정 — 총 라운드가 다 끝난 뒤에만 호출 가능하고, sans에 이미 기록된 라운드별 승자만 세어
--- 승패를 계산한다(동점이면 무승부). 참가자 아무나 불러도 결과가 항상 같다.
+-- 승패를 계산한다(v0.5.1부터 라운드에 제한시간이 없어 무승부 라운드가 나올 수 없고, 총 라운드 수도
+-- 15로 홀수라 v_w=v_b인 경우 자체가 생기지 않는다 — else 'draw' 분기는 이제 이론상 도달하지 않는
+-- 방어 코드로만 남는다). 참가자 아무나 불러도 결과가 항상 같다.
 create or replace function public.coord_finish(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
@@ -2088,23 +2198,44 @@ end; $$;
 grant execute on function public.coord_forfeit(bigint) to authenticated;
 
 -- ============================================================================
--- N+3.6) 나이트 경주(knight) — 플레이 페이지 "스페셜" 미니게임 PvP #2 (v0.5.0, 사용자 설계)
+-- N+3.6) 나이트 경주(knight) — 플레이 페이지 "스페셜" 미니게임 PvP #2 (v0.5.0, 사용자 설계 →
+-- v0.5.1 재설계)
 -- ============================================================================
--- 규칙: 같은 시작 칸·목표 칸·이동 제한 수·제한시간이 두 참가자에게 동일하게 주어지고(서버가 미리
--- 확정), 각자 자기 나이트로 그 목표 칸까지 먼저 도달하면 그 라운드를 가져간다. 라운드가 진행될수록
--- (3라운드부터) 방해 칸(착지 금지)이 추가돼 난이도가 오른다. 5전 3선승제(Bo5). 시간·수 제한 안에
--- 아무도 도달하지 못하면 타이브레이커: ①목표 칸까지 나이트 최단 거리 ②남은 수 ③남은 시간 순.
+-- 규칙: 두 참가자의 나이트·목표 칸을 한 보드 위에 함께 그린다(v0.5.1부터 — 예전엔 "내 보드"·
+-- "상대 보드"를 따로 그렸다). 공정성을 위해 목표 칸을 기준으로 두 나이트의 시작 칸을 점대칭(180도
+-- 회전 대칭)으로 배치한다 — 나이트의 이동 벡터(df,dr)는 부호를 두 축 모두 뒤집어도(-df,-dr) 여전히
+-- 유효한 나이트 수라서, 점대칭인 두 시작 칸은 목표 칸까지의 최短 나이트 거리가 항상 정확히 같다.
+-- 예전의 "방해 칸(착지 자체가 금지된 칸)" 대신, 서로 상대 색의 기물(비숍·룩)을 시작 칸 근처가 아닌
+-- 자리에 역시 점대칭으로 배치해 둔다 — 그 기물이 실제로 "지배"(공격)하는 칸에 내 나이트가 들어가면
+-- 그 기물에게 잡혀 더 이상 그 경로로 목표에 도달할 수 없다(자기 편 나이트를 위협하는 기물은 항상
+-- 상대 색이라 실제 체스의 포획 규칙과 같다). 목표 도달까지 이동 수·제한시간은 두 참가자에게 동일하게
+-- 주어진다(생성 시점에 보장해 둔 그 경로 하나만 두고 보면 두 참가자의 최短 거리가 항상 정확히
+-- 같다). 5전 3선승제(Bo5). 시간·수 제한 안에 아무도 도달하지 못하면 타이브레이커: ①목표 칸까지
+-- 나이트 최단 거리(자기 색 기준 위협 칸 제외) ②남은 수 ③남은 시간 순.
+--
+-- **알려진 한계**: 위협 기물이 있는 라운드(3라운드부터)에서는, 타이브레이커 ①(전체 보드 기준 최短
+-- 거리)이 아주 드물게(로컬 시뮬레이션 30회 중 1회 수준) 두 참가자 사이에 완전히 같지 않을 수 있다 —
+-- 목표 칸이 보드 정중앙이 아니라 위협 칸이 많아질수록 한쪽이 보드 가장자리를 살짝 더 잘 활용하는
+-- 우회 경로를 찾을 여지가 생기기 때문이다(생성 시점에 보장해 둔 "기본 경로"는 항상 대칭이지만, 그
+-- 경로 밖의 임의 우회로까지 완전히 대칭이라는 보장은 없다). 정작 중요한 "먼저 도달하는 쪽이 이긴다"는
+-- 규칙 자체(같은 목표·같은 이동 수 제한·같은 시간 제한)는 항상 대칭이며, 이 한계는 양쪽 다 실패했을
+-- 때만 개입하는 3순위 타이브레이커 안에서만 이론상 존재한다.
 --
 -- 매칭은 coord 게임과 동일하게 기존 pvp_queue_join/pvp_queue_leave(p_game_type='knight')를 그대로
 -- 재사용한다. pvp_games.sans에 라운드 기록 배열을 담는다:
---   [{ start, target, blocked:[...], moveBudget, timeLimitMs, startedAt,
+--   [{ target, whiteStart, blackStart, hazards:[{sq,type:"B"|"R",color:"w"|"b"}, ...],
+--      wIllegal:[...], bIllegal:[...], moveBudget, timeLimitMs, startedAt,
 --      reports:{ w:{reached,movesUsed,finalSq,at}|null, b:{...}|null }, winner:"w"|"b"|"draw"|null,
 --      resolvedAt }, ...]
--- 각 참가자는 자기 나이트의 실제 수순(어느 칸을 거쳐갔는지)은 서버에 보고하지 않는다 — 체스의
--- pvp_move가 SAN 합법성을 재검증하지 않고 신뢰하는 것과 같은 모델로, 최종 요약(도달 여부·사용한
--- 수·마지막 칸)만 knight_report로 한 번 보고하면 된다.
+-- hazards의 각 기물은 color와 반대 색 나이트를 위협한다(백 기물 = 흑 나이트 위협). wIllegal/bIllegal은
+-- 그 위협을 생성 시점에 미리 계산해 둔 "백/흑 나이트가 들어가면 잡히는 칸" 목록이다(매번 다시
+-- 계산하지 않도록 캐시). 각 참가자는 자기 나이트의 실제 수순(어느 칸을 거쳐갔는지)은 서버에 보고하지
+-- 않는다 — 체스의 pvp_move가 SAN 합법성을 재검증하지 않고 신뢰하는 것과 같은 모델로, 최종 요약(도달
+-- 여부·사용한 수·마지막 칸)만 knight_report로 한 번 보고하면 된다.
 
--- 나이트 이동 규칙 헬퍼 — 한 칸에서 갈 수 있는 이웃 칸(보드 밖·방해 칸 제외)을 계산한다.
+-- 나이트 이동 규칙 헬퍼 — 한 칸에서 갈 수 있는 이웃 칸(보드 밖 제외)을 계산한다. p_blocked는 이제
+-- "방해 칸"이 아니라 그 나이트 색 기준으로 위협받는(들어가면 잡히는) 칸 목록으로 쓰인다 — 이름은
+-- 유지했지만(호출부가 여전히 knight_distance 등에서 이 시그니처를 그대로 재사용) 의미가 바뀌었다.
 create or replace function public.knight_neighbors(p_sq text, p_blocked text[])
 returns text[] language plpgsql immutable as $$
 declare
@@ -2163,8 +2294,8 @@ begin
   return path;
 end; $$;
 
--- 무작위 방해 칸 p_count개를 p_exclude(시작·목표·생성 경로) 밖에서 고른다 — 그래서 생성 시점의
--- 정답 경로는 방해 칸이 추가된 뒤에도 항상 그대로 유효하다.
+-- 무작위 방해 칸(v0.5.1부터: 위협 기물을 둘 후보 칸) p_count개를 p_exclude(시작·목표·생성 경로) 밖에서
+-- 고른다 — 그래서 생성 시점의 정답 경로는 위협 기물이 추가된 뒤에도 항상 그대로 유효하다.
 create or replace function public.knight_pick_blocked(p_count int, p_exclude text[])
 returns text[] language plpgsql volatile as $$
 declare
@@ -2181,6 +2312,43 @@ begin
   return result;
 end; $$;
 
+-- (v0.5.1 신규) 칸 p_sq를 중심 칸 p_center 기준으로 점대칭(180도 회전) 이동한 칸을 구한다 — 보드
+-- 밖으로 나가면 null. 목표 칸을 중심으로 두 참가자의 시작 칸·위협 기물을 서로 점대칭으로 배치해
+-- "누가 더 유리한 조건을 받는" 일이 없도록 하는 데 쓴다(나이트 이동 벡터는 두 축 부호를 모두
+-- 뒤집어도 여전히 유효한 나이트 수라, 점대칭인 두 칸은 같은 목표까지 최短 나이트 거리가 항상 같다).
+create or replace function public.knight_reflect_sq(p_sq text, p_center text)
+returns text language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  cf int := ascii(substr(p_center,1,1)) - 97; cr int := substr(p_center,2)::int - 1;
+  nf int := 2*cf - f; nr int := 2*cr - r;
+begin
+  if nf < 0 or nf > 7 or nr < 0 or nr > 7 then return null; end if;
+  return chr(97+nf) || (nr+1)::text;
+end; $$;
+
+-- (v0.5.1 신규) 위협 기물(비숍/룩) p_sq가 실제로 지배(공격)하는 칸을 계산한다 — 다른 기물에 막히는
+-- 것은 고려하지 않고 보드 끝까지 미끄러진다(미니게임 성격상 다른 기물에 의한 차단까지 재현할 필요는
+-- 없다고 판단했다). 이 칸에 반대 색 나이트가 들어가면 잡힌다.
+create or replace function public.knight_attacked_squares(p_sq text, p_type text)
+returns text[] language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]] else array[[1,1],[1,-1],[-1,1],[-1,-1]] end;
+  out text[] := '{}'; i int; step int; nf int; nr int;
+begin
+  for i in 1..4 loop
+    step := 1;
+    loop
+      nf := f + dirs[i][1]*step; nr := r + dirs[i][2]*step;
+      exit when nf < 0 or nf > 7 or nr < 0 or nr > 7;
+      out := out || (chr(97+nf) || (nr+1)::text);
+      step := step + 1;
+    end loop;
+  end loop;
+  return out;
+end; $$;
+
 -- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
 -- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
 create or replace function public.knight_start_round(p_game_id bigint)
@@ -2188,8 +2356,11 @@ returns public.pvp_games language plpgsql security definer set search_path = pub
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; r jsonb;
   v_w_wins int := 0; v_b_wins int := 0; v_round_idx int;
-  v_walk_len int; v_blocked_count int; v_time_ms constant int := 25000;
-  v_path text[]; v_start text; v_target text; v_blocked text[];
+  v_walk_len int; v_hazard_count int; v_time_ms constant int := 25000;
+  v_target text; v_walk text[]; v_walk_mirror text[]; v_cand1 text; v_cand2 text;
+  v_white_start text; v_black_start text; v_white_path text[]; v_black_path text[];
+  v_haz_w text[]; v_haz_b text[]; v_ok boolean; v_try int; v_piece_type text; i int;
+  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[];
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2207,19 +2378,71 @@ begin
   end loop;
   if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
   v_round_idx := jsonb_array_length(v_rounds);
-  if v_round_idx < 2 then v_walk_len := 3; v_blocked_count := 0;
-  elsif v_round_idx < 4 then v_walk_len := 4; v_blocked_count := v_round_idx - 1;
-  else v_walk_len := 5; v_blocked_count := 3;
+  if v_round_idx < 2 then v_walk_len := 3; v_hazard_count := 0;
+  elsif v_round_idx < 4 then v_walk_len := 4; v_hazard_count := 1;
+  else v_walk_len := 5; v_hazard_count := 2;
   end if;
-  v_start := chr(97 + floor(random()*8)::int) || (floor(random()*8)::int + 1)::text;
-  v_path := public.knight_random_walk(v_start, v_walk_len);
-  v_target := v_path[array_length(v_path,1)];
-  v_blocked := public.knight_pick_blocked(v_blocked_count, v_path);
+  -- 목표 칸을 보드 중심 쪽(파일 c~f, 랭크 3~6)에서 골라, 그 목표를 기준으로 한 점대칭 칸이 보드
+  -- 밖으로 나갈 가능성을 낮춘다. 그래도 실패(보드 밖으로 나감)할 수 있어 최대 40번 재시도한다.
+  v_ok := false;
+  for v_try in 1..40 loop
+    v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
+    v_walk := public.knight_random_walk(v_target, v_walk_len);
+    v_cand1 := v_walk[array_length(v_walk,1)];
+    v_cand2 := public.knight_reflect_sq(v_cand1, v_target);
+    if v_cand2 is null then continue; end if;
+    v_walk_mirror := array(select public.knight_reflect_sq(x, v_target) from unnest(v_walk) x);
+    if array_position(v_walk_mirror, null) is not null then continue; end if;
+    -- 백 나이트가 항상 목표보다 랭크가 낮은(=화면 아래쪽) 시작 칸을 받도록 정렬한다 — 매 라운드
+    -- 생성이 대칭이라 유불리는 없지만, 이렇게 정해 두면 클라이언트가 "자기 색이 흑이면 보드를
+    -- 180도 뒤집어 보여준다"는 표준 체스 규칙만으로 항상 "내 나이트가 내 화면 아래쪽"을 보장한다.
+    if substr(v_cand1,2)::int <= substr(v_cand2,2)::int then
+      v_white_start := v_cand1; v_white_path := v_walk; v_black_start := v_cand2; v_black_path := v_walk_mirror;
+    else
+      v_white_start := v_cand2; v_white_path := v_walk_mirror; v_black_start := v_cand1; v_black_path := v_walk;
+    end if;
+    if v_hazard_count = 0 then
+      v_haz_w := '{}'; v_haz_b := '{}';
+    else
+      -- (색 표기는 "그 기물의 색"이다 — w색 기물은 흑 나이트를, b색 기물은 백 나이트를 위협한다.)
+      -- 흑을 위협할 기물(w색)은 흑의 보장된 경로(v_black_path) 밖에서 고르되, 백 나이트의 시작
+      -- 칸(v_white_start)과도 겹치지 않게 한다 — 안 그러면 흰 기물이 흰 나이트와 같은 칸에 겹쳐
+      -- 그려진다(점대칭 상대인 v_haz_b도 자동으로 v_black_start와 안 겹치게 된다).
+      v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || array[v_target, v_white_start]);
+      if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
+      v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
+      if array_position(v_haz_b, null) is not null then continue; end if;
+    end if;
+    v_ok := true;
+    exit;
+  end loop;
+  if not v_ok then
+    -- 극히 드문 재시도 실패 폴백 — 방해물 없이(항상 풀 수 있는 라운드가 최우선) 진행한다.
+    v_target := 'd4';
+    v_white_path := public.knight_random_walk(v_target, v_walk_len);
+    v_white_start := v_white_path[array_length(v_white_path,1)];
+    v_black_start := coalesce(public.knight_reflect_sq(v_white_start, v_target), v_white_start);
+    v_haz_w := '{}'; v_haz_b := '{}';
+  end if;
+  v_hazards := '[]'::jsonb; v_w_illegal := '{}'; v_b_illegal := '{}';
+  for i in 1..coalesce(array_length(v_haz_w,1),0) loop
+    v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_piece_type, 'color', 'w');
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_piece_type, 'color', 'b');
+    -- (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
+    -- 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다(한쪽
+    -- 기물의 공격선이 보드 가장자리에 더 가까워 더 멀리 뻗어나가는 반면, 반대쪽 기물의 공격선은 그
+    -- 반사점이 보드 밖으로 나가 버리는 경우). 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에
+    -- 포함시키면(반사가 안 되는 칸은 아예 제외) 양쪽의 위협 칸 집합이 항상 정확히 점대칭이 된다.
+    v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+    v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+  end loop;
   v_rounds := v_rounds || jsonb_build_object(
-    'start', v_start, 'target', v_target, 'blocked', to_jsonb(v_blocked),
-    'moveBudget', array_length(v_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    'target', v_target, 'whiteStart', v_white_start, 'blackStart', v_black_start,
+    'hazards', v_hazards, 'wIllegal', to_jsonb(v_w_illegal), 'bIllegal', to_jsonb(v_b_illegal),
+    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
     -- (v0.5.0 기능, 사용자 요청) positions — 각자 "지금 나이트가 어디 있는지"를 담아 두면, 상대
-    -- 클라이언트가 이 값을 realtime으로 받아 상대 보드 위에서 나이트가 실제로 움직이는 모습을
+    -- 클라이언트가 이 값을 realtime으로 받아 같은 보드 위에서 나이트가 실제로 움직이는 모습을
     -- 그 자리에서 보여줄 수 있다(knight_move_ping이 매 수마다 갱신). reports와 달리 이동 하나하나를
     -- 검증하지 않는 순수 표시용 값이라(신뢰 모델은 위 설명과 동일), 최종 판정(knight_resolve_round)은
     -- 여전히 reports만 본다.
@@ -2327,8 +2550,8 @@ begin
   elsif v_w_reached and v_b_reached then
     v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
   else
-    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
-    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
+    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'wIllegal'))), 99);
+    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'bIllegal'))), 99);
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
     else
