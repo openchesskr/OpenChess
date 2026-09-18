@@ -9233,14 +9233,21 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 모서리 없음)을 그대로 가져다 쓴다.
 // (v0.5.1 리디자인, 사용자 요청) 이 라운드 동안 내가·상대(또는 봇)가 실제로 클릭해 본 칸을 전부
 // myClicks/oppClicks(각각 {sq, correct} 배열, 라운드가 바뀌면 초기화)로 받아, 같은 보드 위에 함께
-// 표시한다 — 내 클릭은 칸 좌상단에 금색 테두리 점으로, 상대(봇) 클릭은 우하단에 파란 테두리 점으로,
-// 맞았으면 초록, 틀렸으면 빨강으로 채운다. 한 칸을 양쪽이 다 눌렀으면 두 점이 같은 칸에 함께 뜬다.
+// 표시한다. (재요청) 점을 찍는 대신 그 칸 자체의 색이 바뀌도록 바꿨다 — 정답이면 초록, 오답이면
+// 빨강으로 칸 전체를 채우고, 누구 클릭인지는 칸 테두리 색(금색=나, 파란색=상대·봇)으로 구분한다.
+// 같은 칸을 양쪽이 다 눌렀으면 대각선으로 반씩 나눠 두 결과를 함께 보여준다. (재요청) 보드에는
+// 좌표축(파일 a~h, 랭크 1~8)과 시작 배치 그대로의 기물도 항상 함께 그린다 — 실제 체스판처럼 보이는
+// 배경 위에서 좌표를 찾는 감각을 기르는 게 이 게임의 취지라, 좌표축·기물이 늘 보여야 "b6이 나이트
+// 옆 칸"처럼 기물 위치를 기준으로 좌표를 가늠할 수 있다. 기물은 순수 배경 장식이라 클릭 판정에는
+// 관여하지 않는다(버튼 자체가 칸이라 기물 위를 눌러도 그 칸이 클릭된다).
+const COORD_START_BACK_RANK = ["R", "N", "B", "Q", "K", "B", "N", "R"];
 function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const myBySq = {}; (myClicks || []).forEach((c) => { myBySq[c.sq] = c; });
   const oppBySq = {}; (oppClicks || []).forEach((c) => { oppBySq[c.sq] = c; });
-  const dotSize = Math.max(9, Math.round(size / 320 * 13));
+  const cell = size / 8;
+  const coordFont = Math.max(9, cell * 0.16);
   return (
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
@@ -9249,30 +9256,47 @@ function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
         const mine = myBySq[sq];
         const opp = oppBySq[sq];
         const light = (r + c) % 2 === 0;
+        const pieceType = r === 0 ? COORD_START_BACK_RANK[c] : r === 1 ? "P" : r === 6 ? "P" : r === 7 ? COORD_START_BACK_RANK[c] : null;
+        const pieceColor = r <= 1 ? "b" : "w";
+        let overlayBg = null, borderColor = null;
+        if (mine && opp) {
+          const c1 = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          const c2 = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          overlayBg = "linear-gradient(135deg," + c1 + " 50%," + c2 + " 50%)";
+          borderColor = "#fff";
+        } else if (mine) {
+          overlayBg = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          borderColor = T.brassHi;
+        } else if (opp) {
+          overlayBg = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          borderColor = "#6FA8DC";
+        }
         return (
           <button key={sq} onClick={() => onCell(sq)} className="press"
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: "pointer", padding: 0, ...boardSquareBg(sk, light, r, c) }}>
-            {mine && <span aria-hidden="true" style={{ position: "absolute", top: "10%", left: "10%", width: dotSize, height: dotSize, borderRadius: "50%", background: mine.correct ? "rgba(60,168,60,.92)" : "rgba(196,60,50,.92)", border: "1.5px solid " + T.brassHi, boxShadow: "0 1px 3px rgba(0,0,0,.6)" }} />}
-            {opp && <span aria-hidden="true" style={{ position: "absolute", bottom: "10%", right: "10%", width: dotSize, height: dotSize, borderRadius: "50%", background: opp.correct ? "rgba(60,168,60,.92)" : "rgba(196,60,50,.92)", border: "1.5px solid #6FA8DC", boxShadow: "0 1px 3px rgba(0,0,0,.6)" }} />}
+            style={{ position: "relative", border: "none", borderRadius: 0, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+            {pieceType && <PieceGlyph type={pieceType} color={pieceColor} size={cell * 0.72} style={{ position: "relative", zIndex: 1 }} />}
+            {overlayBg && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlayBg, boxShadow: "inset 0 0 0 2px " + borderColor, zIndex: 2 }} />}
+            {c === 0 && <span aria-hidden="true" style={{ position: "absolute", top: 1, left: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{rank}</span>}
+            {r === 7 && <span aria-hidden="true" style={{ position: "absolute", bottom: 0, right: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{file}</span>}
           </button>
         );
       }))}
     </div>
   );
 }
-// 보드 위 마커 색이 각각 무슨 뜻인지 알려주는 범례 — "나"는 금색 테두리(좌상단 점), 상대(또는 봇)는
-// 파란 테두리(우하단 점), 초록/빨강은 그 클릭이 정답/오답이었는지를 나타낸다.
+// 보드 위 칸 색이 각각 무슨 뜻인지 알려주는 범례 — 금색 테두리 칸은 내 클릭, 파란 테두리 칸은
+// 상대(또는 봇) 클릭, 초록/빨강 채움은 그 클릭이 정답/오답이었는지를 나타낸다.
 function CoordClickLegend({ oppLabel }) {
   const chip = (border, fill, label) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-      <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: fill, border: border ? "1.5px solid " + border : "none", display: "inline-block", flexShrink: 0 }} />
+      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: fill, boxShadow: border ? "inset 0 0 0 2px " + border : "none", display: "inline-block", flexShrink: 0 }} />
       {label}
     </span>
   );
   return (
     <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
-      {chip(T.brassHi, "rgba(255,255,255,.22)", "나")}
-      {chip("#6FA8DC", "rgba(255,255,255,.22)", oppLabel)}
+      {chip(T.brassHi, "rgba(255,255,255,.14)", "나")}
+      {chip("#6FA8DC", "rgba(255,255,255,.14)", oppLabel)}
       {chip(null, "rgba(60,168,60,.92)", "정답")}
       {chip(null, "rgba(196,60,50,.92)", "오답")}
     </div>
@@ -9568,17 +9592,22 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     </MinigameScreen>
   );
 }
-// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. 두 참가자에게 똑같은 시작 칸·
-// 목표 칸·이동 제한 수·제한시간이 주어지고, 각자 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를
-// 가져간다(5전 3선승, Bo5). 3라운드부터 방해 칸이 늘어 난이도가 오른다. 규칙·서버 권위 판정은
+// ---- 나이트 경주(knight) — 사용자 설계 2호 실시간 PvP 미니게임. (v0.5.1 재설계, 사용자 요청) 두
+// 참가자의 나이트·목표 칸을 보드 하나에 함께 그린다 — 목표 칸을 기준으로 두 시작 칸을 점대칭(180도
+// 회전 대칭)으로 배치해 공정한 조건을 만든다(나이트 이동 벡터는 두 축 부호를 모두 뒤집어도 여전히
+// 유효한 나이트 수라, 점대칭인 두 칸은 목표까지의 최短 거리가 항상 정확히 같다). 예전의 "방해
+// 칸"(착지 자체가 금지된 칸) 대신, 서로 상대 색의 기물(비숍·룩)을 역시 점대칭으로 배치해 둔다 — 그
+// 기물이 실제로 공격하는 칸에 들어가면 나이트가 잡혀 그 경로로는 더 이상 목표에 도달할 수 없다. 각자
+// 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를 가져간다(5전 3선승, Bo5). 규칙·서버 권위 판정은
 // supabase-setup.sql의 knight_start_round/knight_report/knight_resolve_round 참고.
 const KNIGHT_GAME_TYPE = "knight";
 const KNIGHT_BO_TOTAL = 5;
 const KNIGHT_BO_TARGET = 3;
 // 서버(knight_neighbors)와 완전히 같은 규칙의 클라이언트용 나이트 이웃 계산 — 어떤 칸을 눌러도 되는지
 // (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
-// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고).
-function knightNeighborsClient(sq, blocked) {
+// (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고). p_illegal은 이제 "방해 칸"이
+// 아니라 그 나이트 색 기준으로 위협 기물에게 잡히는(들어가면 안 되는) 칸 목록이다.
+function knightNeighborsClient(sq, illegal) {
   const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
   const deltas = [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]];
   const out = [];
@@ -9586,68 +9615,123 @@ function knightNeighborsClient(sq, blocked) {
     const nf = f + df, nr = r + dr;
     if (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
       const nsq = String.fromCharCode(97 + nf) + (nr + 1);
-      if (!blocked || !blocked.includes(nsq)) out.push(nsq);
+      if (!illegal || !illegal.includes(nsq)) out.push(nsq);
     }
   }
   return out;
 }
-// 라운드 하나 — 내 나이트의 위치·사용한 수는 이 컴포넌트만의 로컬 상태다(서버는 최종 요약 보고
-// 시점에야 알게 된다). roundIdx가 바뀔 때마다(다음 라운드) key로 통째로 새로 마운트돼 이 상태가
-// 깨끗이 리셋된다.
-// 8×8 나이트 이동 그리드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound)
-// 둘 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
+// (v0.5.1 신규) 칸 sq를 중심 칸 center 기준으로 점대칭(180도 회전) 이동한 칸을 구한다 — 보드 밖으로
+// 나가면 null. supabase-setup.sql의 knight_reflect_sq와 완전히 같은 공식.
+function knightReflectSq(sq, center) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const cf = center.charCodeAt(0) - 97, cr = parseInt(center.slice(1), 10) - 1;
+  const nf = 2 * cf - f, nr = 2 * cr - r;
+  if (nf < 0 || nf > 7 || nr < 0 || nr > 7) return null;
+  return String.fromCharCode(97 + nf) + (nr + 1);
+}
+// (v0.5.1 신규) 위협 기물(비숍/룩)이 실제로 지배(공격)하는 칸 — 다른 기물에 막히는 것은 고려하지
+// 않고 보드 끝까지 미끄러진다. supabase-setup.sql의 knight_attacked_squares와 완전히 같은 규칙.
+function knightAttackedSquares(sq, type) {
+  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
+  const dirs = type === "R" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const out = [];
+  for (const [df, dr] of dirs) {
+    let nf = f + df, nr = r + dr;
+    while (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
+      out.push(String.fromCharCode(97 + nf) + (nr + 1));
+      nf += df; nr += dr;
+    }
+  }
+  return out;
+}
+// 8×8 나이트 경주 보드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound) 둘
+// 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
 // (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
 // 스킨을 읽어와 그린다 — ocean·grandmaster처럼 실제 이미지 스킨이면 그 이미지 그대로 보이는, 사이트
-// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). (재지적) 칸끼리 간격을 두고
-// 낱개 테두리·모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀
-// (BOARD_GLOSS 금색 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
-function KnightRaceGrid({ pos, target, blocked, legalTargets, pieceColor, onCell, readOnly, size = 320 }) {
+// 어디서나 쓰는 바로 그 보드·기물이다(하드코딩된 classic이 아니다). 칸끼리 간격을 두고 낱개 테두리·
+// 모서리를 준 "타일 그리드" 모양도 실제 Board와 달랐다 — Board와 완전히 같은 틀(BOARD_GLOSS 금색
+// 테두리, 칸 사이 간격 0, 칸 자체엔 테두리·둥근 모서리 없음)을 그대로 가져다 쓴다.
+// (v0.5.1 리디자인, 사용자 요청) 내 보드·상대 보드로 나누던 것을 보드 하나로 합쳤다 — 내 나이트
+// (myColor)·상대 나이트(oppColor)·목표 칸·위협 기물(hazards)을 모두 같은 보드 위에 그린다. flip이
+// 참이면(내가 흑일 때) 보드를 180도 뒤집어, 시작 칸이 어느 색으로 배정됐든 항상 내 나이트가 내
+// 화면의 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로, 표준 체스처럼
+// "내 색이 흑이면 보드를 뒤집는다"는 규칙만으로 이게 보장된다).
+function KnightRaceGrid({ myPos, oppPos, target, hazards, legalTargets, illegalForMe, myColor, oppColor, onCell, flip, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  const hazBySq = {}; (hazards || []).forEach((h) => { hazBySq[h.sq] = h; });
+  const legalSet = new Set(legalTargets || []);
+  const illegalSet = new Set(illegalForMe || []);
+  const cells = [];
+  for (let vr = 0; vr < 8; vr++) for (let vc = 0; vc < 8; vc++) {
+    const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
+    const rank = 8 - r, file = COORD_FILES[c];
+    const sq = file + rank;
+    const isTarget = sq === target;
+    const isMe = sq === myPos;
+    const isOpp = sq === oppPos && !isMe;
+    const isMyIllegal = illegalSet.has(sq);
+    const isLegal = legalSet.has(sq);
+    const haz = hazBySq[sq];
+    const light = (r + c) % 2 === 0;
+    let overlay = null;
+    if (isMyIllegal) overlay = "rgba(196,60,50,.32)";
+    else if (isTarget) overlay = "rgba(60,138,60,.35)";
+    else if (isLegal) overlay = "rgba(196,154,80,.25)";
+    cells.push(
+      <button key={sq} onClick={() => onCell(sq)} disabled={isMyIllegal} className="press"
+        style={{ position: "relative", border: "none", borderRadius: 0, cursor: isMyIllegal ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+        {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+        {isTarget && !isMe && !isOpp && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+        {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
+        {isOpp && <PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 2, opacity: .88 }} />}
+        {isMe && <PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 3 }} />}
+      </button>
+    );
+  }
   return (
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
-      {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
-        const rank = 8 - r;
-        const sq = file + rank;
-        const isPos = sq === pos;
-        const isTarget = sq === target;
-        const isBlocked = (blocked || []).includes(sq);
-        const isLegal = legalTargets.includes(sq);
-        const light = (r + c) % 2 === 0;
-        let overlay = null;
-        if (isBlocked) overlay = "rgba(20,12,6,.6)";
-        else if (isTarget) overlay = "rgba(60,138,60,.35)";
-        else if (isLegal) overlay = "rgba(196,154,80,.25)";
-        return (
-          <button key={sq} onClick={() => !readOnly && onCell(sq)} disabled={isBlocked || readOnly} className={readOnly ? undefined : "press"}
-            style={{ position: "relative", border: "none", borderRadius: 0, cursor: readOnly ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
-            {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
-            {isPos && <PieceGlyph type="N" color={pieceColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ position: "relative", zIndex: 1 }} />}
-            {isTarget && !isPos && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
-            {isBlocked && <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "#fff" }}>✕</span>}
-          </button>
-        );
-      }))}
+      {cells}
+    </div>
+  );
+}
+// 보드 위 색이 각각 무슨 뜻인지 알려주는 범례 — 빨강은 위협 기물에게 잡히는(들어가면 안 되는) 칸,
+// 금색은 지금 바로 이동할 수 있는 칸, 초록은 목표 칸이다.
+function KnightRaceLegend() {
+  const chip = (bg, label) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: bg, display: "inline-block", flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
+      {chip("rgba(196,60,50,.75)", "위협 칸(들어가면 잡혀요)")}
+      {chip("rgba(196,154,80,.6)", "이동 가능")}
+      {chip("rgba(60,138,60,.6)", "목표 칸")}
     </div>
   );
 }
 function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
-  const [pos, setPos] = useState(round.start);
+  const isWhite = myUid === game.white_uid;
+  const myColor = isWhite ? "w" : "b";
+  const oppColor = isWhite ? "b" : "w";
+  const myStartSq = myColor === "w" ? round.whiteStart : round.blackStart;
+  const [pos, setPos] = useState(myStartSq);
   const [movesUsed, setMovesUsed] = useState(0);
   const [reported, setReported] = useState(false);
   const [timeLeftMs, setTimeLeftMs] = useState(() => round.timeLimitMs - (Date.now() - new Date(round.startedAt).getTime()));
   const reportedRef = useRef(false);
-  const isWhite = myUid === game.white_uid;
-  const myColor = isWhite ? "w" : "b";
-  const oppColor = isWhite ? "b" : "w";
   const myRep = round.reports && round.reports[myColor];
   const oppRep = round.reports && round.reports[oppColor];
   const iReported = !!myRep || reported;
+  const myIllegal = myColor === "w" ? round.wIllegal : round.bIllegal;
   // (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로 움직이는 걸 보여주기 위해, round.positions에
-  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 상대 보드에 그린다 — 판정과 무관한
+  // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 같은 보드 위에 그린다 — 판정과 무관한
   // 순수 표시값이라(신뢰 모델은 knight_report와 동일) 검증 없이 그대로 믿는다.
+  const oppStartSq = oppColor === "w" ? round.whiteStart : round.blackStart;
   const oppPosInfo = round.positions && round.positions[oppColor];
-  const oppPos = (oppPosInfo && oppPosInfo.sq) || round.start;
+  const oppPos = (oppPosInfo && oppPosInfo.sq) || oppStartSq;
   const oppMovesUsed = (oppPosInfo && oppPosInfo.movesUsed) || 0;
   const doReport = useCallback((reached, finalSq, moves) => {
     if (reportedRef.current) return;
@@ -9672,7 +9756,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     const t = setInterval(() => { sbRpc("knight_resolve_round", { p_game_id: game.id }).then((g) => g && onGameUpdate(g)).catch(() => { }); }, 1200);
     return () => clearInterval(t);
   }, [iReported, round.winner, game.id, onGameUpdate]);
-  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, iReported]);
+  const legalTargets = useMemo(() => (iReported ? [] : knightNeighborsClient(pos, myIllegal || [])), [pos, myIllegal, iReported]);
   const onCell = (sq) => {
     if (iReported || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
@@ -9683,53 +9767,37 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     if (nextMoves >= round.moveBudget) doReport(false, sq, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
-  // (v0.5.1 UI, 사용자 요청) 상대 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
-  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
-  const [oppSize, oppFitRef] = useSquareFit();
-  const [mySize, myFitRef] = useSquareFit();
+  // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
+  // 실측해 정사각형 한 변 길이를 구한다. flip: 내가 흑이면 보드를 뒤집어 내 나이트가 항상 화면
+  // 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로 이 규칙만으로 충분하다).
+  const [boardSize, boardFitRef] = useSquareFit();
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
-        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>수 {movesUsed}/{round.moveBudget} (상대 {oppMovesUsed})</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
       <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 상대 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를
-          바꿨다. 칸은 분석 탭과 같은 기본(classic) 보드 스킨을, 내 나이트는 텍스트 기호(♞) 대신
-          분석 탭 등 사이트 전체가 쓰는 PieceGlyph(classic 기물 스킨)를 그대로 써서, 미니게임
-          보드도 실제 체스판·기물처럼 보이게 한다. 목표(★)·방해 칸(✕) 표시는 칸 위에 얹는 반투명
-          오버레이로 바꿔 그 밑의 보드 무늬가 그대로 비친다. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="상대 보드" />
-        <div ref={oppFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <KnightRaceGrid size={oppSize} pos={oppPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor={oppColor} onCell={() => { }} readOnly />
-        </div>
-        <div style={{ textAlign: "center", fontSize: 11, color: "rgba(244,238,226,.55)", fontWeight: 700, flexShrink: 0 }}>상대 수 {oppMovesUsed}/{round.moveBudget}</div>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={myIllegal} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} />
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0", flexShrink: 0 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0 }}>
         {round.winner ? (round.winner === "draw" ? "이 라운드는 무승부예요" : (round.winner === myColor ? "이 라운드 승리!" : "이 라운드 패배")) :
           iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
-      {/* (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로(knight_move_ping) 움직이는 모습을 그대로
-          따라 그린다. 목표·방해 칸은 이 라운드 공용이라 내 보드와 같다. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="내 보드" />
-        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <KnightRaceGrid size={mySize} pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor={myColor} onCell={onCell} />
-        </div>
-      </div>
+      <KnightRaceLegend />
     </div>
   );
 }
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
-// 라운드 생성 규칙(walkLen·blockedCount·moveBudget·timeLimitMs)은 knight_start_round와 정확히 같은
-// 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와 같은 난이도 곡선을 겪게 한다. 봇은
-// 시작 칸에서 목표 칸까지 최단 나이트 경로(BFS)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고
-// 그 경로를 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상
-// 성공하고, 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다(라운드가 진행돼 방해 칸이
-// 늘어날수록 최단 경로도 조금씩 길어져 자연스럽게 더 어려워진다).
+// 라운드 생성 규칙(walkLen·hazardCount·moveBudget·timeLimitMs, 점대칭 시작 칸·위협 기물 배치)은
+// knight_start_round와 정확히 같은 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와
+// 같은 난이도 곡선·공정성을 겪게 한다. 봇은 자기 시작 칸(항상 흑 역할)에서 목표 칸까지 최단 나이트
+// 경로(BFS, 자신에게 위협적인 칸 제외)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고 그 경로를
+// 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상 성공하고,
+// 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다.
 function knightRandomWalkLocal(start, steps) {
   const path = [start]; let cur = start;
   for (let i = 0; i < steps; i++) {
@@ -9753,18 +9821,56 @@ function knightPickBlockedLocal(count, exclude) {
   }
   return result;
 }
+// supabase-setup.sql의 knight_start_round와 완전히 같은 생성 규칙 — 목표 칸을 중심에서 고르고, 그
+// 목표를 기준으로 점대칭인 두 시작 칸(백·흑)을 만든 뒤, 위협 기물도 (라운드가 진행될수록 늘어나는
+// 개수만큼) 점대칭으로 배치한다. 실패(점대칭 칸이 보드 밖으로 나감)하면 최대 40번 재시도하고, 그래도
+// 안 되면 위협 기물 없이 진행한다(항상 풀 수 있는 라운드가 최우선).
 function knightGenRoundLocal(roundIdx) {
-  let walkLen, blockedCount;
-  if (roundIdx < 2) { walkLen = 3; blockedCount = 0; }
-  else if (roundIdx < 4) { walkLen = 4; blockedCount = roundIdx - 1; }
-  else { walkLen = 5; blockedCount = 3; }
-  const start = COORD_FILES[Math.floor(Math.random() * 8)] + (1 + Math.floor(Math.random() * 8));
-  const path = knightRandomWalkLocal(start, walkLen);
-  const target = path[path.length - 1];
-  const blocked = knightPickBlockedLocal(blockedCount, path);
-  return { start, target, blocked, moveBudget: path.length - 1 + 2, timeLimitMs: 25000 };
+  let walkLen, hazardCount;
+  if (roundIdx < 2) { walkLen = 3; hazardCount = 0; }
+  else if (roundIdx < 4) { walkLen = 4; hazardCount = 1; }
+  else { walkLen = 5; hazardCount = 2; }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const target = COORD_FILES[2 + Math.floor(Math.random() * 4)] + (3 + Math.floor(Math.random() * 4));
+    const walk = knightRandomWalkLocal(target, walkLen);
+    const cand1 = walk[walk.length - 1];
+    const cand2 = knightReflectSq(cand1, target);
+    if (!cand2) continue;
+    const walkMirror = walk.map((sq) => knightReflectSq(sq, target));
+    if (walkMirror.some((sq) => !sq)) continue;
+    let whiteStart, blackStart, whitePath, blackPath;
+    if (parseInt(cand1.slice(1), 10) <= parseInt(cand2.slice(1), 10)) {
+      whiteStart = cand1; whitePath = walk; blackStart = cand2; blackPath = walkMirror;
+    } else {
+      whiteStart = cand2; whitePath = walkMirror; blackStart = cand1; blackPath = walk;
+    }
+    let hazW = [], hazB = [];
+    if (hazardCount > 0) {
+      hazW = knightPickBlockedLocal(hazardCount, [...blackPath, target, whiteStart]);
+      if (hazW.length < hazardCount) continue;
+      hazB = hazW.map((sq) => knightReflectSq(sq, target));
+      if (hazB.some((sq) => !sq)) continue;
+    }
+    const hazards = [], wIllegal = [], bIllegal = [];
+    for (let i = 0; i < hazW.length; i++) {
+      const type = Math.random() < 0.5 ? "B" : "R";
+      hazards.push({ sq: hazW[i], type, color: "w" }, { sq: hazB[i], type, color: "b" });
+      // (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
+      // 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다 —
+      // 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에 포함시켜야 양쪽 집합이 항상 정확히
+      // 점대칭이 된다(supabase-setup.sql의 knight_start_round와 같은 수정).
+      bIllegal.push(...knightAttackedSquares(hazW[i], type).filter((sq) => knightReflectSq(sq, target)));
+      wIllegal.push(...knightAttackedSquares(hazB[i], type).filter((sq) => knightReflectSq(sq, target)));
+    }
+    return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, moveBudget: whitePath.length - 1 + 2, timeLimitMs: 25000 };
+  }
+  const target = "d4";
+  const walk = knightRandomWalkLocal(target, walkLen);
+  const whiteStart = walk[walk.length - 1];
+  const blackStart = knightReflectSq(whiteStart, target) || whiteStart;
+  return { target, whiteStart, blackStart, hazards: [], wIllegal: [], bIllegal: [], moveBudget: walk.length - 1 + 2, timeLimitMs: 25000 };
 }
-function knightShortestPathLocal(start, target, blocked) {
+function knightShortestPathLocal(start, target, illegal) {
   if (start === target) return [start];
   const visited = new Set([start]);
   let frontier = [[start]];
@@ -9772,7 +9878,7 @@ function knightShortestPathLocal(start, target, blocked) {
     const next = [];
     for (const path of frontier) {
       const cur = path[path.length - 1];
-      for (const nb of knightNeighborsClient(cur, blocked)) {
+      for (const nb of knightNeighborsClient(cur, illegal)) {
         if (nb === target) return [...path, nb];
         if (!visited.has(nb)) { visited.add(nb); next.push([...path, nb]); }
       }
@@ -9784,9 +9890,9 @@ function knightShortestPathLocal(start, target, blocked) {
 const KNIGHT_BOT_MOVE_MS_MIN = 650;
 const KNIGHT_BOT_MOVE_MS_MAX = 1250;
 function KnightRaceBotRound({ round, onRoundDone }) {
-  const [pos, setPos] = useState(round.start);
+  const [pos, setPos] = useState(round.whiteStart);
   const [movesUsed, setMovesUsed] = useState(0);
-  const [botPos, setBotPos] = useState(round.start);
+  const [botPos, setBotPos] = useState(round.blackStart);
   const [botMovesUsed, setBotMovesUsed] = useState(0);
   const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
   const [botReport, setBotReport] = useState(null);
@@ -9810,10 +9916,11 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     return () => clearInterval(t);
   }, [round.timeLimitMs, movesUsed, myReport, doMyReport]);
   // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
-  // 옮겨 다니는 모습을 "봇 보드"에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
+  // 옮겨 다니는 모습을 같은 보드 위에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
   // 그 경로의 각 수마다 0.65~1.25초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
+  // 봇은 항상 흑 역할이라 자신에게 위협적인 칸(bIllegal)을 피해 경로를 찾는다.
   useEffect(() => {
-    const path = knightShortestPathLocal(round.start, round.target, round.blocked);
+    const path = knightShortestPathLocal(round.blackStart, round.target, round.bIllegal);
     const moves = path ? path.length - 1 : Infinity;
     if (!path || moves > round.moveBudget) {
       timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: 0, atMs: round.timeLimitMs }), round.timeLimitMs));
@@ -9849,7 +9956,7 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     else winner = "draw";
     onRoundDone(winner);
   }, [myReport, botReport, onRoundDone]);
-  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.blocked || [])), [pos, round.blocked, myReport]);
+  const legalTargets = useMemo(() => (myReport ? [] : knightNeighborsClient(pos, round.wIllegal || [])), [pos, round.wIllegal, myReport]);
   const onCell = (sq) => {
     if (myReport || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
@@ -9858,36 +9965,25 @@ function KnightRaceBotRound({ round, onRoundDone }) {
     if (nextMoves >= round.moveBudget) doMyReport(false, nextMoves);
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
-  // (v0.5.1 UI, 사용자 요청) 봇 보드/내 보드 각각이 화면 세로의 절반씩만 차지하도록, 그 슬롯을
-  // ResizeObserver로 실측해 정사각형 한 변 길이를 구한다.
-  const [botSize, botFitRef] = useSquareFit();
-  const [mySize, myFitRef] = useSquareFit();
+  // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다. 나는 항상 백 역할이라
+  // flip은 필요 없다(백은 서버 생성 규칙상 항상 목표보다 낮은 랭크에서 시작해 화면 아래쪽에 온다).
+  const [boardSize, boardFitRef] = useSquareFit();
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
-        <span>수 {movesUsed}/{round.moveBudget}</span>
+        <span>수 {movesUsed}/{round.moveBudget} (봇 {botMovesUsed})</span>
         <span>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
       <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
         <div style={{ width: (timePct * 100) + "%", height: "100%", background: timePct < 0.25 ? T.blunder : T.brass, transition: "width .2s linear" }} />
       </div>
-      {/* (v0.5.1 UI, 사용자 요청) 모바일에서 봇 보드가 위쪽, 내 보드가 아래쪽에 오도록 순서를 바꿨다. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="봇 보드" />
-        <div ref={botFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <KnightRaceGrid size={botSize} pos={botPos} target={round.target} blocked={round.blocked} legalTargets={[]} pieceColor="b" onCell={() => { }} readOnly />
-        </div>
-        <div style={{ textAlign: "center", fontSize: 11, color: "rgba(244,238,226,.55)", fontWeight: 700, flexShrink: 0 }}>봇 수 {botMovesUsed}/{round.moveBudget}</div>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <KnightRaceGrid size={boardSize} myPos={pos} oppPos={botPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={round.wIllegal} myColor="w" oppColor="b" onCell={onCell} />
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0", flexShrink: 0 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0 }}>
         {myReport && botReport ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
       </div>
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MinigameBoardLabel text="내 보드" />
-        <div ref={myFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <KnightRaceGrid size={mySize} pos={pos} target={round.target} blocked={round.blocked} legalTargets={legalTargets} pieceColor="w" onCell={onCell} />
-        </div>
-      </div>
+      <KnightRaceLegend />
     </div>
   );
 }
@@ -21158,8 +21254,12 @@ const CHANGELOG = [
       "FEN 모드에서 '다음 수' 블록에 뜬 등급(최선의 수 등)과, 그 수를 실제로 둔 뒤 현재 수 블록에 뜨는 등급이 서로 다르게 표시되던 문제를 고쳤어요 — 이제 두 블록이 항상 같은 등급을 보여줘요.",
       "둘 수 있는 수가 1~2개뿐인 국면에서 보드 위 엔진 상위 줄 아래에 불필요한 빈 자리가 남아 마치 가운데 떠 있는 것처럼 보이던 문제를 고쳤어요 — 이제 실제로 있는 수만큼만 자리를 차지해요.",
       "좌표 인지 게임·나이트 경주 두 미니게임을 사이트 헤더·하단 탭바가 함께 보이던 플레이 탭 속 좁은 카드 대신, 화면 전체를 다 쓰는 별도 화면에서 플레이하도록 새로 디자인했어요 — 뒤로가기 버튼만 남기고 그 외에는 온전히 대전에만 집중할 수 있어요.",
-      "좌표 인지 게임을 내 보드·상대 보드 두 개로 나누던 것을 보드 하나만 화면 정중앙에 크게 쓰는 방식으로 다시 디자인했어요 — 그 한 보드 위에 내가 누른 칸(금색 테두리 점)과 상대(또는 봇)가 누른 칸(파란 테두리 점)이 정답/오답 색(초록/빨강)과 함께 같이 표시돼요.",
+      "좌표 인지 게임을 내 보드·상대 보드 두 개로 나누던 것을 보드 하나만 화면 정중앙에 크게 쓰는 방식으로 다시 디자인했어요 — 그 한 보드 위에 내가 누른 칸과 상대(또는 봇)가 누른 칸이 정답/오답 색(초록/빨강)으로 함께 표시돼요.",
+      "좌표 인지 게임에서 칸을 눌렀을 때 표시하는 방식을 그 칸 위에 점을 찍는 대신 칸 자체의 색이 바뀌도록 바꿨어요 — 내 클릭은 금색 테두리, 상대(또는 봇) 클릭은 파란 테두리로 구분되고, 두 색 의미는 보드 아래 범례로 안내돼요.",
+      "좌표 인지 게임 보드에 이제 좌표축(파일 a~h, 랭크 1~8)과 시작 배치 그대로의 기물이 항상 함께 보여요 — 실제 체스판처럼 보이는 배경 위에서 기물 위치를 기준으로도 좌표를 가늠할 수 있어요(기물은 순수 장식이라 클릭에는 영향을 주지 않아요).",
       "좌표 인지 게임에서 오답을 눌러도(나·상대 모두) 그 라운드가 더 이상 끝나지 않아요 — 예전엔 4초 제한시간을 넘기면 아무도 못 맞혀도 무승부로 자동 종료됐는데, 이제는 누군가 정답을 맞힐 때까지 라운드가 계속 진행돼요.",
+      "나이트 경주도 내 보드·상대 보드로 나누던 것을 보드 하나로 합쳤어요 — 목표 칸을 기준으로 두 나이트의 시작 칸을 점대칭으로 배치해 항상 똑같이 공정한 조건에서 출발해요.",
+      "나이트 경주에서 '방해 칸'(그냥 못 밟는 칸) 대신, 서로 상대 색의 기물(비숍·룩)을 점대칭으로 배치했어요 — 그 기물이 실제로 공격하는 칸(보드 위에 빨갛게 표시돼요)에 내 나이트가 들어가면 잡혀서 그 경로로는 더 이상 목표에 도달할 수 없어요.",
     ]
   },
   {

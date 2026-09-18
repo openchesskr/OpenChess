@@ -2198,23 +2198,44 @@ end; $$;
 grant execute on function public.coord_forfeit(bigint) to authenticated;
 
 -- ============================================================================
--- N+3.6) 나이트 경주(knight) — 플레이 페이지 "스페셜" 미니게임 PvP #2 (v0.5.0, 사용자 설계)
+-- N+3.6) 나이트 경주(knight) — 플레이 페이지 "스페셜" 미니게임 PvP #2 (v0.5.0, 사용자 설계 →
+-- v0.5.1 재설계)
 -- ============================================================================
--- 규칙: 같은 시작 칸·목표 칸·이동 제한 수·제한시간이 두 참가자에게 동일하게 주어지고(서버가 미리
--- 확정), 각자 자기 나이트로 그 목표 칸까지 먼저 도달하면 그 라운드를 가져간다. 라운드가 진행될수록
--- (3라운드부터) 방해 칸(착지 금지)이 추가돼 난이도가 오른다. 5전 3선승제(Bo5). 시간·수 제한 안에
--- 아무도 도달하지 못하면 타이브레이커: ①목표 칸까지 나이트 최단 거리 ②남은 수 ③남은 시간 순.
+-- 규칙: 두 참가자의 나이트·목표 칸을 한 보드 위에 함께 그린다(v0.5.1부터 — 예전엔 "내 보드"·
+-- "상대 보드"를 따로 그렸다). 공정성을 위해 목표 칸을 기준으로 두 나이트의 시작 칸을 점대칭(180도
+-- 회전 대칭)으로 배치한다 — 나이트의 이동 벡터(df,dr)는 부호를 두 축 모두 뒤집어도(-df,-dr) 여전히
+-- 유효한 나이트 수라서, 점대칭인 두 시작 칸은 목표 칸까지의 최短 나이트 거리가 항상 정확히 같다.
+-- 예전의 "방해 칸(착지 자체가 금지된 칸)" 대신, 서로 상대 색의 기물(비숍·룩)을 시작 칸 근처가 아닌
+-- 자리에 역시 점대칭으로 배치해 둔다 — 그 기물이 실제로 "지배"(공격)하는 칸에 내 나이트가 들어가면
+-- 그 기물에게 잡혀 더 이상 그 경로로 목표에 도달할 수 없다(자기 편 나이트를 위협하는 기물은 항상
+-- 상대 색이라 실제 체스의 포획 규칙과 같다). 목표 도달까지 이동 수·제한시간은 두 참가자에게 동일하게
+-- 주어진다(생성 시점에 보장해 둔 그 경로 하나만 두고 보면 두 참가자의 최短 거리가 항상 정확히
+-- 같다). 5전 3선승제(Bo5). 시간·수 제한 안에 아무도 도달하지 못하면 타이브레이커: ①목표 칸까지
+-- 나이트 최단 거리(자기 색 기준 위협 칸 제외) ②남은 수 ③남은 시간 순.
+--
+-- **알려진 한계**: 위협 기물이 있는 라운드(3라운드부터)에서는, 타이브레이커 ①(전체 보드 기준 최短
+-- 거리)이 아주 드물게(로컬 시뮬레이션 30회 중 1회 수준) 두 참가자 사이에 완전히 같지 않을 수 있다 —
+-- 목표 칸이 보드 정중앙이 아니라 위협 칸이 많아질수록 한쪽이 보드 가장자리를 살짝 더 잘 활용하는
+-- 우회 경로를 찾을 여지가 생기기 때문이다(생성 시점에 보장해 둔 "기본 경로"는 항상 대칭이지만, 그
+-- 경로 밖의 임의 우회로까지 완전히 대칭이라는 보장은 없다). 정작 중요한 "먼저 도달하는 쪽이 이긴다"는
+-- 규칙 자체(같은 목표·같은 이동 수 제한·같은 시간 제한)는 항상 대칭이며, 이 한계는 양쪽 다 실패했을
+-- 때만 개입하는 3순위 타이브레이커 안에서만 이론상 존재한다.
 --
 -- 매칭은 coord 게임과 동일하게 기존 pvp_queue_join/pvp_queue_leave(p_game_type='knight')를 그대로
 -- 재사용한다. pvp_games.sans에 라운드 기록 배열을 담는다:
---   [{ start, target, blocked:[...], moveBudget, timeLimitMs, startedAt,
+--   [{ target, whiteStart, blackStart, hazards:[{sq,type:"B"|"R",color:"w"|"b"}, ...],
+--      wIllegal:[...], bIllegal:[...], moveBudget, timeLimitMs, startedAt,
 --      reports:{ w:{reached,movesUsed,finalSq,at}|null, b:{...}|null }, winner:"w"|"b"|"draw"|null,
 --      resolvedAt }, ...]
--- 각 참가자는 자기 나이트의 실제 수순(어느 칸을 거쳐갔는지)은 서버에 보고하지 않는다 — 체스의
--- pvp_move가 SAN 합법성을 재검증하지 않고 신뢰하는 것과 같은 모델로, 최종 요약(도달 여부·사용한
--- 수·마지막 칸)만 knight_report로 한 번 보고하면 된다.
+-- hazards의 각 기물은 color와 반대 색 나이트를 위협한다(백 기물 = 흑 나이트 위협). wIllegal/bIllegal은
+-- 그 위협을 생성 시점에 미리 계산해 둔 "백/흑 나이트가 들어가면 잡히는 칸" 목록이다(매번 다시
+-- 계산하지 않도록 캐시). 각 참가자는 자기 나이트의 실제 수순(어느 칸을 거쳐갔는지)은 서버에 보고하지
+-- 않는다 — 체스의 pvp_move가 SAN 합법성을 재검증하지 않고 신뢰하는 것과 같은 모델로, 최종 요약(도달
+-- 여부·사용한 수·마지막 칸)만 knight_report로 한 번 보고하면 된다.
 
--- 나이트 이동 규칙 헬퍼 — 한 칸에서 갈 수 있는 이웃 칸(보드 밖·방해 칸 제외)을 계산한다.
+-- 나이트 이동 규칙 헬퍼 — 한 칸에서 갈 수 있는 이웃 칸(보드 밖 제외)을 계산한다. p_blocked는 이제
+-- "방해 칸"이 아니라 그 나이트 색 기준으로 위협받는(들어가면 잡히는) 칸 목록으로 쓰인다 — 이름은
+-- 유지했지만(호출부가 여전히 knight_distance 등에서 이 시그니처를 그대로 재사용) 의미가 바뀌었다.
 create or replace function public.knight_neighbors(p_sq text, p_blocked text[])
 returns text[] language plpgsql immutable as $$
 declare
@@ -2273,8 +2294,8 @@ begin
   return path;
 end; $$;
 
--- 무작위 방해 칸 p_count개를 p_exclude(시작·목표·생성 경로) 밖에서 고른다 — 그래서 생성 시점의
--- 정답 경로는 방해 칸이 추가된 뒤에도 항상 그대로 유효하다.
+-- 무작위 방해 칸(v0.5.1부터: 위협 기물을 둘 후보 칸) p_count개를 p_exclude(시작·목표·생성 경로) 밖에서
+-- 고른다 — 그래서 생성 시점의 정답 경로는 위협 기물이 추가된 뒤에도 항상 그대로 유효하다.
 create or replace function public.knight_pick_blocked(p_count int, p_exclude text[])
 returns text[] language plpgsql volatile as $$
 declare
@@ -2291,6 +2312,43 @@ begin
   return result;
 end; $$;
 
+-- (v0.5.1 신규) 칸 p_sq를 중심 칸 p_center 기준으로 점대칭(180도 회전) 이동한 칸을 구한다 — 보드
+-- 밖으로 나가면 null. 목표 칸을 중심으로 두 참가자의 시작 칸·위협 기물을 서로 점대칭으로 배치해
+-- "누가 더 유리한 조건을 받는" 일이 없도록 하는 데 쓴다(나이트 이동 벡터는 두 축 부호를 모두
+-- 뒤집어도 여전히 유효한 나이트 수라, 점대칭인 두 칸은 같은 목표까지 최短 나이트 거리가 항상 같다).
+create or replace function public.knight_reflect_sq(p_sq text, p_center text)
+returns text language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  cf int := ascii(substr(p_center,1,1)) - 97; cr int := substr(p_center,2)::int - 1;
+  nf int := 2*cf - f; nr int := 2*cr - r;
+begin
+  if nf < 0 or nf > 7 or nr < 0 or nr > 7 then return null; end if;
+  return chr(97+nf) || (nr+1)::text;
+end; $$;
+
+-- (v0.5.1 신규) 위협 기물(비숍/룩) p_sq가 실제로 지배(공격)하는 칸을 계산한다 — 다른 기물에 막히는
+-- 것은 고려하지 않고 보드 끝까지 미끄러진다(미니게임 성격상 다른 기물에 의한 차단까지 재현할 필요는
+-- 없다고 판단했다). 이 칸에 반대 색 나이트가 들어가면 잡힌다.
+create or replace function public.knight_attacked_squares(p_sq text, p_type text)
+returns text[] language plpgsql immutable as $$
+declare
+  f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
+  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]] else array[[1,1],[1,-1],[-1,1],[-1,-1]] end;
+  out text[] := '{}'; i int; step int; nf int; nr int;
+begin
+  for i in 1..4 loop
+    step := 1;
+    loop
+      nf := f + dirs[i][1]*step; nr := r + dirs[i][2]*step;
+      exit when nf < 0 or nf > 7 or nr < 0 or nr > 7;
+      out := out || (chr(97+nf) || (nr+1)::text);
+      step := step + 1;
+    end loop;
+  end loop;
+  return out;
+end; $$;
+
 -- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
 -- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
 create or replace function public.knight_start_round(p_game_id bigint)
@@ -2298,8 +2356,11 @@ returns public.pvp_games language plpgsql security definer set search_path = pub
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; r jsonb;
   v_w_wins int := 0; v_b_wins int := 0; v_round_idx int;
-  v_walk_len int; v_blocked_count int; v_time_ms constant int := 25000;
-  v_path text[]; v_start text; v_target text; v_blocked text[];
+  v_walk_len int; v_hazard_count int; v_time_ms constant int := 25000;
+  v_target text; v_walk text[]; v_walk_mirror text[]; v_cand1 text; v_cand2 text;
+  v_white_start text; v_black_start text; v_white_path text[]; v_black_path text[];
+  v_haz_w text[]; v_haz_b text[]; v_ok boolean; v_try int; v_piece_type text; i int;
+  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[];
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2317,19 +2378,71 @@ begin
   end loop;
   if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
   v_round_idx := jsonb_array_length(v_rounds);
-  if v_round_idx < 2 then v_walk_len := 3; v_blocked_count := 0;
-  elsif v_round_idx < 4 then v_walk_len := 4; v_blocked_count := v_round_idx - 1;
-  else v_walk_len := 5; v_blocked_count := 3;
+  if v_round_idx < 2 then v_walk_len := 3; v_hazard_count := 0;
+  elsif v_round_idx < 4 then v_walk_len := 4; v_hazard_count := 1;
+  else v_walk_len := 5; v_hazard_count := 2;
   end if;
-  v_start := chr(97 + floor(random()*8)::int) || (floor(random()*8)::int + 1)::text;
-  v_path := public.knight_random_walk(v_start, v_walk_len);
-  v_target := v_path[array_length(v_path,1)];
-  v_blocked := public.knight_pick_blocked(v_blocked_count, v_path);
+  -- 목표 칸을 보드 중심 쪽(파일 c~f, 랭크 3~6)에서 골라, 그 목표를 기준으로 한 점대칭 칸이 보드
+  -- 밖으로 나갈 가능성을 낮춘다. 그래도 실패(보드 밖으로 나감)할 수 있어 최대 40번 재시도한다.
+  v_ok := false;
+  for v_try in 1..40 loop
+    v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
+    v_walk := public.knight_random_walk(v_target, v_walk_len);
+    v_cand1 := v_walk[array_length(v_walk,1)];
+    v_cand2 := public.knight_reflect_sq(v_cand1, v_target);
+    if v_cand2 is null then continue; end if;
+    v_walk_mirror := array(select public.knight_reflect_sq(x, v_target) from unnest(v_walk) x);
+    if array_position(v_walk_mirror, null) is not null then continue; end if;
+    -- 백 나이트가 항상 목표보다 랭크가 낮은(=화면 아래쪽) 시작 칸을 받도록 정렬한다 — 매 라운드
+    -- 생성이 대칭이라 유불리는 없지만, 이렇게 정해 두면 클라이언트가 "자기 색이 흑이면 보드를
+    -- 180도 뒤집어 보여준다"는 표준 체스 규칙만으로 항상 "내 나이트가 내 화면 아래쪽"을 보장한다.
+    if substr(v_cand1,2)::int <= substr(v_cand2,2)::int then
+      v_white_start := v_cand1; v_white_path := v_walk; v_black_start := v_cand2; v_black_path := v_walk_mirror;
+    else
+      v_white_start := v_cand2; v_white_path := v_walk_mirror; v_black_start := v_cand1; v_black_path := v_walk;
+    end if;
+    if v_hazard_count = 0 then
+      v_haz_w := '{}'; v_haz_b := '{}';
+    else
+      -- (색 표기는 "그 기물의 색"이다 — w색 기물은 흑 나이트를, b색 기물은 백 나이트를 위협한다.)
+      -- 흑을 위협할 기물(w색)은 흑의 보장된 경로(v_black_path) 밖에서 고르되, 백 나이트의 시작
+      -- 칸(v_white_start)과도 겹치지 않게 한다 — 안 그러면 흰 기물이 흰 나이트와 같은 칸에 겹쳐
+      -- 그려진다(점대칭 상대인 v_haz_b도 자동으로 v_black_start와 안 겹치게 된다).
+      v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || array[v_target, v_white_start]);
+      if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
+      v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
+      if array_position(v_haz_b, null) is not null then continue; end if;
+    end if;
+    v_ok := true;
+    exit;
+  end loop;
+  if not v_ok then
+    -- 극히 드문 재시도 실패 폴백 — 방해물 없이(항상 풀 수 있는 라운드가 최우선) 진행한다.
+    v_target := 'd4';
+    v_white_path := public.knight_random_walk(v_target, v_walk_len);
+    v_white_start := v_white_path[array_length(v_white_path,1)];
+    v_black_start := coalesce(public.knight_reflect_sq(v_white_start, v_target), v_white_start);
+    v_haz_w := '{}'; v_haz_b := '{}';
+  end if;
+  v_hazards := '[]'::jsonb; v_w_illegal := '{}'; v_b_illegal := '{}';
+  for i in 1..coalesce(array_length(v_haz_w,1),0) loop
+    v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_piece_type, 'color', 'w');
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_piece_type, 'color', 'b');
+    -- (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
+    -- 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다(한쪽
+    -- 기물의 공격선이 보드 가장자리에 더 가까워 더 멀리 뻗어나가는 반면, 반대쪽 기물의 공격선은 그
+    -- 반사점이 보드 밖으로 나가 버리는 경우). 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에
+    -- 포함시키면(반사가 안 되는 칸은 아예 제외) 양쪽의 위협 칸 집합이 항상 정확히 점대칭이 된다.
+    v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+    v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+  end loop;
   v_rounds := v_rounds || jsonb_build_object(
-    'start', v_start, 'target', v_target, 'blocked', to_jsonb(v_blocked),
-    'moveBudget', array_length(v_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    'target', v_target, 'whiteStart', v_white_start, 'blackStart', v_black_start,
+    'hazards', v_hazards, 'wIllegal', to_jsonb(v_w_illegal), 'bIllegal', to_jsonb(v_b_illegal),
+    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
     -- (v0.5.0 기능, 사용자 요청) positions — 각자 "지금 나이트가 어디 있는지"를 담아 두면, 상대
-    -- 클라이언트가 이 값을 realtime으로 받아 상대 보드 위에서 나이트가 실제로 움직이는 모습을
+    -- 클라이언트가 이 값을 realtime으로 받아 같은 보드 위에서 나이트가 실제로 움직이는 모습을
     -- 그 자리에서 보여줄 수 있다(knight_move_ping이 매 수마다 갱신). reports와 달리 이동 하나하나를
     -- 검증하지 않는 순수 표시용 값이라(신뢰 모델은 위 설명과 동일), 최종 판정(knight_resolve_round)은
     -- 여전히 reports만 본다.
@@ -2437,8 +2550,8 @@ begin
   elsif v_w_reached and v_b_reached then
     v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
   else
-    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
-    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'blocked'))), 99);
+    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'wIllegal'))), 99);
+    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'bIllegal'))), 99);
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
     else
