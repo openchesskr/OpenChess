@@ -14584,22 +14584,65 @@ function puzzleStartBoard(p) {
   const sans = fenRoot ? (p.mistakeSan ? [p.mistakeSan] : []) : [...((p && p.setupSans) || []), p && p.mistakeSan].filter(Boolean);
   return boardOfRoot(fenRoot, sans);
 }
+// (버그 수정, 사용자 제보) 시작 위치와 무관하게 이미 반수 80(흑 40수째)까지 진행된 실전 퍼즐이
+// 미들게임으로, 남은 기물이 양쪽 킹 포함 7개뿐인 FEN 퍼즐도 미들게임으로 표시되는 문제 — 이 함수가
+// puzzleStartBoard와 똑같은 방식(fenRoot면 mistakeSan 하나만, 아니면 setupSans+mistakeSan 전체)으로
+// 이 포지션에 도달하기까지의 반수(ply)를 구해 gamePhaseOf에 함께 넘긴다. FEN 퍼즐은 보드 편집기가
+// 풀무브 번호를 실제로 채워 넣지 않는 경우가 많아(항상 "1") 대개 0으로 계산되며, 그런 경우는 그냥
+// 국면 자체(기물 배치)만으로 판정된다 — 실전 퍼즐만 이 보정의 실질적인 영향을 받는다.
+function puzzleStartPly(p) {
+  if (p && p.fen) {
+    const parts = String(p.fen).trim().split(/\s+/);
+    const fullmove = parseInt(parts[5], 10);
+    const basePly = Number.isFinite(fullmove) && fullmove > 0 ? (fullmove - 1) * 2 + (parts[1] === "b" ? 1 : 0) : 0;
+    return basePly + (p.mistakeSan ? 1 : 0);
+  }
+  return [...((p && p.setupSans) || []), p && p.mistakeSan].filter(Boolean).length;
+}
+// (버그 수정, 사용자 제보) "완전히 같은 포지션인데 서로 다른 번호의 퍼즐이 생성된다" — 지금까지의
+// 중복 판정(checkPcDuplicate)은 p.id(FEN 퍼즐은 사용자가 입력한 FEN 원문 그대로, PGN 퍼즐은
+// 수순 SAN 문자열 그대로)가 글자 그대로 같아야만 중복으로 봤다. 그런데 같은 포지션이라도
+// (1) FEN 원문이 하프무브 시계·풀무브 번호·공백처럼 실제 국면과 무관한 부분만 다르거나,
+// (2) 서로 다른 대국이 수순 전위(transposition)로 완전히 같은 국면에 도달하면
+// id 문자열 자체가 달라 통과해 버린다 — #698655/#167801, #250990/#234484가 이 경로로 새로 생성된
+// 사례다. id 대신 "이 퍼즐을 실제로 풀기 시작하는 국면"(기물 배치+차례+캐슬링 권리+앙파상, 하프무브
+// 시계·풀무브 번호는 뺀다 — 둘 다 국면의 동일성과 무관)을 정규화한 FEN으로 다시 판정한다.
+function canonicalPositionFen(fenRoot, sans) {
+  return fenOfRoot(fenRoot, sans).trim().split(/\s+/).slice(0, 4).join(" ");
+}
+function puzzlePositionKey(p) {
+  try {
+    const fenRoot = p && p.fen ? parseFenFull(p.fen) : null;
+    const sans = fenRoot ? (p.mistakeSan ? [p.mistakeSan] : []) : [...((p && p.setupSans) || []), p && p.mistakeSan].filter(Boolean);
+    return canonicalPositionFen(fenRoot, sans);
+  } catch { return null; }
+}
 // 기물 점수(폰1·나이트3·비숍3·룩5·퀸9) + 남은 기물 수 + 폰들이 시작 랭크에서 얼마나 전진했는지를
 // 각각 0~1로 정규화해 평균 낸다 — 셋 다 높으면(기물 그대로, 폰도 안 움직임) 오프닝, 셋 다 낮으면
 // (기물 많이 빠지고 폰도 많이 전진) 엔드게임, 그 사이는 미들게임.
 const PUZZLE_PHASE_PIECE_VALUE = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
-function gamePhaseOf(board) {
-  let material = 0, count = 0, pawnAdvance = 0, pawnCount = 0;
+function gamePhaseOf(board, ply) {
+  let material = 0, count = 0, pawnAdvance = 0, pawnCount = 0, nonPawnMaterial = 0;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = board[r][c]; if (!p) continue;
     count++; material += PUZZLE_PHASE_PIECE_VALUE[p.t] || 0;
     if (p.t === "P") { pawnCount++; pawnAdvance += Math.abs((p.c === "w" ? 6 : 1) - r); }
+    else if (p.t !== "K") nonPawnMaterial += PUZZLE_PHASE_PIECE_VALUE[p.t];
   }
   const materialFrac = Math.min(1, material / 78); // 78 = 시작 위치 총 기물 점수(폰 제외 각 진영 39점씩)
   const countFrac = Math.min(1, count / 32);
+  // (버그 수정, 사용자 제보 #350094) 폰이 하나도 없거나 얼마 안 남으면 avgPawnAdvance가 0에 가까워져
+  // advanceFrac이 억지로 1(=오프닝처럼 폰이 안 움직임)에 붙는다 — 마이너·메이저 기물이 대부분 빠진
+  // 국면(비숍·나이트·룩·퀸 합산 점수가 시작의 1/4 이하)은 폰 전진 정도와 무관하게 항상 엔드게임으로
+  // 본다. nonPawnMaterial 62 = 양쪽 합산 시작값(나이트+비숍+룩+퀸, 각 진영 31점씩).
+  if (nonPawnMaterial / 62 <= 0.25 || count <= 10) return "endgame";
   const avgPawnAdvance = pawnCount ? pawnAdvance / pawnCount : 0;
   const advanceFrac = 1 - Math.min(1, avgPawnAdvance / 4);
-  const score = (materialFrac + countFrac + advanceFrac) / 3;
+  let score = (materialFrac + countFrac + advanceFrac) / 3;
+  // (버그 수정, 사용자 제보 #378316) 실전 대국에서 온 퍼즐은 이미 몇 수째인지도 알 수 있다 — 반수가
+  // 깊을수록(대략 20수째부터 조금씩, 40수째면 최대치) 기물 배치만으로는 미들게임처럼 보여도 점수를
+  // 끌어내려 엔드게임 쪽으로 기울인다.
+  if (ply != null) score -= Math.max(0, Math.min(0.35, (ply - 40) / 200));
   // (사용자 요청) 미들게임으로 봐야 할 퍼즐이 오프닝으로 표시되는 문제 — 오프닝 기준(상단 경계)을
   // 0.72→0.82로 높여 더 초반 국면만 오프닝으로 남기고, 미들게임 기준(하단 경계)을 0.4→0.28로 낮춰
   // 그만큼 넓어진 구간을 전부 미들게임이 흡수하게 한다(엔드게임 경계는 그대로 유지).
@@ -14607,7 +14650,7 @@ function gamePhaseOf(board) {
   if (score >= 0.28) return "middlegame";
   return "endgame";
 }
-function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p)); } catch { return null; } }
+function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p), puzzleStartPly(p)); } catch { return null; } }
 const GAME_PHASE_LABEL = { opening: "오프닝", middlegame: "미들게임", endgame: "엔드게임" };
 // PGN/FEN 배지와 완전히 같은 크기·색으로 국면 배지를 그린다(요청: "PGN 박스와 같은 크기의 박스").
 function GamePhaseBadge({ p, compact }) {
@@ -15140,6 +15183,19 @@ async function puzzleFetch(no) {
     return r ? { ...r.data, public: r.is_public !== false } : null;
   } catch { return null; }
 }
+// (버그 수정, 사용자 제보) checkPcDuplicate의 트랜스포지션 대응 — data.positionKey(생성 시점에
+// canonicalPositionFen으로 저장해 둔 정규화 국면 FEN, 위 puzzlePositionKey 주석 참고)가 일치하는
+// 행을 서버에서 직접 찾는다. 이 필드가 아직 없는(이 버전 이전에 만들어진) 옛 퍼즐은 여기 걸리지
+// 않는다 — 그 소급 정리는 개발자 도구의 "중복 퍼즐 검사·정리"가 puzzlePositionKey를 그 자리에서
+// 다시 계산해(저장된 필드에 의존하지 않는다) 담당한다.
+async function puzzleFetchByPositionKey(posKey) {
+  if (!SB_ON || !posKey) return null;
+  try {
+    const rows = await sbSelect("puzzles?select=data,is_public&data->>positionKey=eq." + encodeURIComponent(posKey) + "&limit=1");
+    const r = rows && rows[0];
+    return r ? { ...r.data, public: r.is_public !== false } : null;
+  } catch { return null; }
+}
 // (신규 기능) 사용자 요청 — 퍼즐 풀이 카드 2페이지(생성자 권한 박스)에서 공개/비공개를 나중에
 // 바꾼다. 실제 권한(생성자 본인 또는 개발자/공동개발자)은 서버(puzzle_set_visibility RPC)가 다시
 // 검사한다.
@@ -15211,6 +15267,23 @@ async function puzzleListAllNos() {
     catch { break; }
     if (!rows || !rows.length) break;
     out.push(...rows.map((r) => r.no));
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+  return out;
+}
+// (버그 수정, 사용자 제보) "중복 퍼즐 정리" 관제 도구용 — no·data·solves를 한 번에 페이지 단위로
+// 받아온다(위 손상 검사처럼 no마다 puzzleFetch를 따로 부르지 않는다 — 어느 쪽을 남길지 정하려면
+// solves도 함께 필요하고, 전체 스캔이라 요청 수를 줄이는 쪽이 낫다).
+async function puzzleListAllForDedup() {
+  if (!SB_ON) return [];
+  const out = []; const pageSize = 1000; let offset = 0;
+  for (;;) {
+    let rows;
+    try { rows = await sbSelect("puzzles?select=no,data,solves&order=no.asc&limit=" + pageSize + "&offset=" + offset); }
+    catch { break; }
+    if (!rows || !rows.length) break;
+    out.push(...rows);
     if (rows.length < pageSize) break;
     offset += pageSize;
   }
@@ -19358,10 +19431,22 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // id와 같을 때만 진짜 중복으로 판정한다 — 번호만 우연히 겹친 서로 다른 퍼즐은 통과시킨다.
   // (v0.4.4 개편, 사용자 요청) 이제 중복 여부(boolean)만이 아니라 실제 퍼즐 데이터를 돌려준다 — 있으면
   // 그 자리에서 곧장 "퍼즐 풀기"로 열 수 있어야 하기 때문이다.
-  const checkPcDuplicate = async (id) => {
+  // posKey(canonicalPositionFen) — id 문자열이 달라도 실제로 같은 국면에서 시작하는 퍼즐이면 잡아낸다
+  // (트랜스포지션·FEN 원문 차이 등 — 위 puzzlePositionKey 주석 참고). 서버 쪽은 이 필드가 저장돼
+  // 있는(=이 버전 이후에 만들어진) 퍼즐만 걸린다 — 옛 데이터는 아래 "중복 퍼즐 정리" 관제 도구로
+  // 소급 정리한다.
+  const checkPcDuplicate = async (id, posKey) => {
     const local = puzzles.find((p) => p.id === id) || (archivedPuzzles && archivedPuzzles[id]);
     if (local) return local;
+    if (posKey) {
+      const localByPos = puzzles.find((p) => puzzlePositionKey(p) === posKey)
+        || (archivedPuzzles && Object.values(archivedPuzzles).find((p) => puzzlePositionKey(p) === posKey));
+      if (localByPos) return localByPos;
+    }
     try { const remote = await puzzleFetch(puzzleNo(id)); if (remote && remote.id === id) return remote; } catch { }
+    if (posKey) {
+      try { const remoteByPos = await puzzleFetchByPositionKey(posKey); if (remoteByPos) return remoteByPos; } catch { }
+    }
     return null;
   };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
@@ -19391,8 +19476,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const pickPcThemeFen = async (theme) => {
     if (!pcParsed || pcParsed.kind !== "fen" || pcGenerating) return;
     const id = "fen:" + pcParsed.raw;
+    const posKey = canonicalPositionFen(pcParsed.fenRoot, []);
     setPcTheme(theme); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcExisting(null);
-    const dup = await checkPcDuplicate(id);
+    const dup = await checkPcDuplicate(id, posKey);
     if (dup) {
       const info = await puzzleCreatorInfo(puzzleNo(id)).catch(() => null);
       setPcExisting({ puzzle: dup, creatorUsername: info && info.username });
@@ -19405,11 +19491,15 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (!pcParsed || pcParsed.kind !== "pgn" || pcGenerating) return;
     const setupSans = pcParsed.sans.slice(0, m.ply), mistakeSan = m.san;
     const id = setupSans.join(" ") + "|" + mistakeSan;
+    // 희생 테마는 "선택한 수(mistakeSan) 자체"가 풀이자가 찾아야 할 첫 수라 그 직전 위치가 실제
+    // 풀이 시작 국면이다(submitPuzzleCreate의 fullSetupSans/isSacrifice 분기와 같은 기준) — 다른
+    // 테마는 mistakeSan까지 이미 두어진 뒤가 시작 국면이다.
+    const posKey = canonicalPositionFen(null, theme === "sacrifice" ? setupSans : [...setupSans, mistakeSan]);
     setPcTheme(theme); setPcSelectedMove(m); setPcGen(null); setPcGenErr(""); setPcExisting(null);
     // (v0.4.4 개편, 사용자 요청) 같은 포지션에 이미 다른 사람이 만든 퍼즐이 있으면, 다시 만드는 대신
     // "~님이 이미 이 퍼즐을 만들었어요!"를 보여주고 곧장 풀 수 있게 한다 — 굳이 새로 생성할
     // 필요가 없으므로 runPcGenerate(엔진 비용이 큼)를 아예 건너뛴다.
-    const dup = await checkPcDuplicate(id);
+    const dup = await checkPcDuplicate(id, posKey);
     if (dup) {
       const info = await puzzleCreatorInfo(puzzleNo(id)).catch(() => null);
       setPcExisting({ puzzle: dup, creatorUsername: info && info.username });
@@ -19426,7 +19516,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     setPcCreating(true);
     let pz;
     if (pcParsed.kind === "fen") {
-      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
+      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(pcParsed.fenRoot, []) };
     } else {
       const fullSetupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), sacSan = pcSelectedMove.san;
       // (v0.4.3 변경, 사용자 요청) 희생 테마는 "선택한 수(희생 수) 직전 수"를 컴퓨터의 응수로 자동
@@ -19438,7 +19528,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       const isSacrifice = pcTheme === "sacrifice";
       const setupSans = isSacrifice ? fullSetupSans.slice(0, -1) : fullSetupSans;
       const mistakeSan = isSacrifice ? (fullSetupSans.length ? fullSetupSans[fullSetupSans.length - 1] : null) : sacSan;
-      pz = { id: fullSetupSans.join(" ") + "|" + sacSan, themes: [pcTheme], name: puzzleName(pcTheme, fullSetupSans, sacSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic };
+      pz = { id: fullSetupSans.join(" ") + "|" + sacSan, themes: [pcTheme], name: puzzleName(pcTheme, fullSetupSans, sacSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(null, [...setupSans, mistakeSan].filter(Boolean)) };
     }
     onSavePuzzle(pz);
     resetPuzzleCreate();
@@ -19603,6 +19693,21 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 맞다 — pushState를 하나 더 쌓는 대신 history.back()으로 정확히 하나만 되돌린다(게임 리뷰의
   // closeReview와 같은 패턴).
   const closeActive = () => { setActive(null); try { if (/^\/puzzle\/\d{6}-\d+$/.test(window.location.pathname)) window.history.back(); } catch { } };
+  // (버그 수정, 사용자 제보) 퍼즐 풀이 카드를 닫으면 항상 목록 맨 위로 튕겨 올라갔다 — active가
+  // 생기면 이 컴포넌트가 아래 목록 JSX 대신 <PuzzleSolver>만 반환해(조기 반환) 목록이 통째로
+  // 언마운트됐다가, 닫을 때 다시 마운트되며 스크롤이 0으로 초기화되는 게 원인이었다. 목록이 보이는
+  // 동안(active가 없는 동안)의 window 스크롤 위치를 이 컴포넌트 자신의 ref(리렌더에도 유지됨)에
+  // 계속 저장해 뒀다가, active가 다시 null이 되는(닫히는) 순간 그 값으로 되돌린다.
+  const listScrollRef = useRef(0);
+  useEffect(() => {
+    if (active) return;
+    const onScroll = () => { listScrollRef.current = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [active]);
+  useLayoutEffect(() => {
+    if (!active) window.scrollTo({ top: listScrollRef.current, behavior: "auto" });
+  }, [active]);
   // (버그 수정) 트리가 비어(라인 0개) 실제로는 절대 풀 수 없는 퍼즐이 "미해결" 목록·테마 칩 개수에
   // 정상 퍼즐처럼 섞여 있었다 — 눌러 보면 그제서야 PuzzleSolver가 "퍼즐 데이터를 불러올 수
   // 없어요"를 띄웠다. 개발자(canEdit)는 이런 손상된 퍼즐을 찾아 삭제할 수 있어야 하므로 그대로
@@ -21238,6 +21343,16 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.2", date: "2026.9.19", dev: ["openchesskr", "G13sus4"], items: [
+      "퍼즐의 국면(오프닝/미들게임/엔드게임) 판정 기준을 다시 다듬었어요 — 실전 대국에서 온 퍼즐은 이미 몇 수째인지도 함께 반영하고, 남은 기물이 얼마 안 되면 폰이 안 움직였어도 항상 엔드게임으로 봐요.",
+      "퍼즐 탭에서 풀이 카드를 닫으면 항상 목록 맨 위로 튕겨 올라가던 문제를 고쳤어요 — 이제 닫으면 스크롤해 두었던 자리 그대로 돌아와요.",
+      "FEN 퍼즐 이름을 바꾼 뒤 카드를 닫으면 원래 이름으로 되돌아가 보이던 문제를 고쳤어요.",
+      "개발자·공동개발자의 퍼즐 생성자 회수·양도가 '성공'으로 뜨는데도 실제로는 표시가 안 바뀌던 문제를 고쳤어요.",
+      "같은 포지션의 퍼즐이 서로 다른 번호로 중복 생성되던 문제를 고쳤어요 — 대국 수순이 다르게 전위(transposition)되거나 FEN 표기가 살짝 달라도 같은 포지션이면 이제 새로 만들지 않고 기존 퍼즐로 안내해요. 개발자 도구 '퍼즐 컨트롤 센터'에 이미 생성된 중복을 찾아 하나만 남기고 정리하는 기능도 추가했어요.",
+      "FEN 퍼즐의 모든 라인을 풀어도 퍼즐 탭 카드가 초록색으로 바뀌지 않던 문제를 고쳤어요.",
+    ]
+  },
   {
     version: "0.5.1", date: "2026.9.13", dev: ["openchesskr", "G13sus4"], items: [
       "Stockfish 18 엔진을 고르면 항상 '연결 실패'로 멈추던 문제를 고쳤어요 — 신경망 파일을 외부 저장소에서 받아오던 방식이 계속 말썽이어서, 다른 두 엔진처럼 사이트와 같은 곳에서 바로 받아오도록 되돌렸어요.",
@@ -22885,6 +23000,21 @@ function usePuzzleScanRun() {
   }, []);
   return puzzleScanRun;
 }
+// (버그 수정, 사용자 제보) "중복된 포지션의 퍼즐이 서로 다른 번호로 여러 개 생성된다" — 만들 때의
+// 예방(위 checkPcDuplicate) 외에, 이미 생성돼 버린 중복도 한 번에 찾아 정리할 수 있는 안전장치가
+// 필요하다. 위 손상 검사와 같은 패턴(모듈 스코프 싱글턴 + 리스너)을 그대로 쓰되 별도 상태로 둔다
+// (손상 검사와 동시에 돌려도 서로 간섭하지 않도록).
+const puzzleDedupRun = { status: "idle", total: 0, checked: 0, groups: [], deleteDone: 0, deleteTarget: 0, deleteFailed: [], stop: false, listeners: new Set() };
+function puzzleDedupNotify() { for (const fn of puzzleDedupRun.listeners) fn(); }
+function usePuzzleDedupRun() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1);
+    puzzleDedupRun.listeners.add(fn);
+    return () => puzzleDedupRun.listeners.delete(fn);
+  }, []);
+  return puzzleDedupRun;
+}
 function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
   const run = usePuzzleScanRun();
   const { status, total, checked, corrupted, deleteDone, deleteFailed } = run;
@@ -22921,6 +23051,57 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       run.deleteDone += 1; puzzleScanNotify();
     }
     run.status = "deleted"; puzzleScanNotify();
+  };
+  // (버그 수정, 사용자 제보) 중복 퍼즐 검사 — puzzlePositionKey(위 canonicalPositionFen 주석 참고)로
+  // 전체 퍼즐을 다시 그룹 지어, 같은 국면인데 번호가 다른 행이 2개 이상이면 중복으로 본다. 저장된
+  // data.positionKey에 기대지 않고 그 자리에서 다시 계산하므로, 이 필드가 없는 옛 퍼즐도 그대로
+  // 잡아낸다(소급 정리).
+  const dedup = usePuzzleDedupRun();
+  const dedupScanning = dedup.status === "listing" || dedup.status === "scanning";
+  const dedupDeleting = dedup.status === "deleting";
+  const dedupScan = async () => {
+    if (dedupScanning || dedupDeleting) return;
+    dedup.stop = false;
+    dedup.groups = []; dedup.checked = 0; dedup.total = 0; dedup.deleteDone = 0; dedup.deleteTarget = 0; dedup.deleteFailed = [];
+    dedup.status = "listing"; puzzleDedupNotify();
+    const rows = await puzzleListAllForDedup();
+    dedup.total = rows.length; puzzleDedupNotify();
+    dedup.status = "scanning"; puzzleDedupNotify();
+    const byKey = new Map();
+    for (const r of rows) {
+      if (dedup.stop) { dedup.status = "stopped"; puzzleDedupNotify(); return; }
+      let key = null;
+      try { key = puzzlePositionKey(r.data); } catch { key = null; }
+      if (key) {
+        const arr = byKey.get(key) || [];
+        arr.push({ no: r.no, solves: r.solves || 0 });
+        byKey.set(key, arr);
+      }
+      dedup.checked += 1; puzzleDedupNotify();
+    }
+    // 그룹 안에서는 풀이 수가 가장 많은 행을 남기고(사람들이 실제로 그 번호로 이 퍼즐을 접했을
+    // 가능성이 가장 크다), 동률이면 번호가 가장 작은(먼저 생성된) 쪽을 남긴다.
+    dedup.groups = [...byKey.values()].filter((g) => g.length > 1).map((g) => {
+      const sorted = [...g].sort((a, b) => (b.solves - a.solves) || (a.no - b.no));
+      return { keep: sorted[0].no, remove: sorted.slice(1).map((x) => x.no) };
+    });
+    dedup.status = "scanned"; puzzleDedupNotify();
+  };
+  const dedupStop = () => { dedup.stop = true; };
+  const dedupRemoveCount = dedup.groups.reduce((s, g) => s + g.remove.length, 0);
+  const dedupDeleteAll = async () => {
+    if (dedup.status !== "scanned" || !dedupRemoveCount || dedupDeleting) return;
+    dedup.stop = false;
+    dedup.status = "deleting"; dedup.deleteDone = 0; dedup.deleteTarget = dedupRemoveCount; dedup.deleteFailed = []; puzzleDedupNotify();
+    for (const g of dedup.groups) {
+      for (const no of g.remove) {
+        if (dedup.stop) { dedup.status = "stopped"; puzzleDedupNotify(); return; }
+        const ok = await puzzleDeleteRemote(no);
+        if (!ok) dedup.deleteFailed = [...dedup.deleteFailed, no];
+        dedup.deleteDone += 1; puzzleDedupNotify();
+      }
+    }
+    dedup.status = "deleted"; puzzleDedupNotify();
   };
   const [ctlNo, setCtlNo] = useState("");
   const [ctlBusy, setCtlBusy] = useState(false);
@@ -22985,6 +23166,46 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       {deleteFailed.length > 0 && (
         <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
           말소 실패: {deleteFailed.map((no) => "#" + no).join(", ")}
+        </div>
+      )}
+
+      <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>중복 퍼즐 검사·정리</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>같은 포지션에서 시작하는 퍼즐이 서로 다른 번호로 여러 개 있으면, 풀이 수가 가장 많은 하나만 남기고 나머지를 지워요.</p>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+        {dedupScanning || dedupDeleting
+          ? <button onClick={dedupStop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
+          : <button onClick={dedupScan} className="press" style={btnStyle}>{dedup.status === "idle" ? "중복 퍼즐 검사" : "다시 검사"}</button>}
+        {dedup.status === "scanned" && dedupRemoveCount > 0 && (
+          <button onClick={dedupDeleteAll} disabled={dedupDeleting} className="press" style={{ ...darkBtnStyle, opacity: dedupDeleting ? .6 : 1 }}>중복 {dedupRemoveCount}개 정리(그룹 {dedup.groups.length}개)</button>
+        )}
+      </div>
+      {dedup.status !== "idle" && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
+            {dedup.status === "listing" ? "퍼즐 목록을 불러오는 중…"
+              : dedup.status === "scanning" ? "검사 중… — " + dedup.checked + " / " + dedup.total + " (중복 그룹 " + dedup.groups.length + "개 발견)"
+              : dedup.status === "scanned" ? (dedupRemoveCount ? "검사 완료 — 중복 그룹 " + dedup.groups.length + "개(정리 대상 " + dedupRemoveCount + "개)" : "검사 완료 — 중복 퍼즐 없음")
+              : dedup.status === "deleting" ? "정리 중… — " + dedup.deleteDone + " / " + dedup.deleteTarget
+              : dedup.status === "deleted" ? "정리 완료 — " + dedup.deleteDone + "개 지움" + (dedup.deleteFailed.length ? " (실패 " + dedup.deleteFailed.length + "건)" : "")
+              : dedup.status === "stopped" ? "중단됨" : ""}
+          </div>
+          {(dedupScanning || dedupDeleting) && (dedup.total > 0 || dedup.deleteTarget > 0) && (
+            <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
+              <div style={{ width: (100 * (dedupDeleting ? dedup.deleteDone / (dedup.deleteTarget || 1) : dedup.checked / (dedup.total || 1))) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
+            </div>
+          )}
+        </div>
+      )}
+      {dedup.status === "scanned" && dedup.groups.length > 0 && (
+        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
+          {dedup.groups.map((g) => "#" + g.keep + " 유지 ← " + g.remove.map((no) => "#" + no).join(", ")).join(" · ")}
+        </div>
+      )}
+      {dedup.deleteFailed.length > 0 && (
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
+          정리 실패: {dedup.deleteFailed.map((no) => "#" + no).join(", ")}
         </div>
       )}
 
@@ -28884,8 +29105,16 @@ export default function App() {
   // 사실 자체를 몰랐다. 이름이 바뀐 그 퍼즐 하나만 배열 안에서 찾아 patch한다(puzzleShare를 다시
   // 거치지 않는다 — 이미 서버에는 puzzle_set_name으로 반영됐고, puzzleShare를 다시 부르면 그 자체가
   // 방금 고친 "옛 스냅샷이 새 이름을 덮어쓰는" 버그의 또 다른 경로가 될 수 있다).
+  // (버그 수정, 사용자 제보) "FEN 퍼즐 이름 변경이 창을 닫으면 원래대로 돌아온다" — 위 patch가
+  // puzzles 배열만 갱신하고, 지금 열려 있는 퍼즐 화면이 실제로 들고 있는 puzzleActive(별도 top-level
+  // state, PuzzleSolver의 puzzle prop 그 자체)는 전혀 건드리지 않았다. PuzzleSolver 자신의
+  // nameOverride가 화면에 떠 있는 동안만 새 이름을 가려 보여주다가, 카드를 닫아 그 state가
+  // 사라지면 다시 puzzleActive.name(패치되지 않은 옛 이름)으로 되돌아갔다 — puzzles 배열이든
+  // archivedPuzzles든 puzzleActive든, 이 id를 들고 있는 모든 로컬 사본을 함께 patch한다.
   const onPuzzleRenamed = useCallback((id, name) => {
     setPuzzles((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+    setArchivedPuzzles((prev) => (prev[id] ? { ...prev, [id]: { ...prev[id], name } } : prev));
+    setPuzzleActive((prev) => (prev && prev.id === id ? { ...prev, name } : prev));
   }, []);
   const onSolved = useCallback((id) => {
     const already = solved.has(id);
@@ -29107,9 +29336,14 @@ export default function App() {
   useEffect(() => {
     // (20차 기능1) 트리 기준 전체 라인을 모두 해결하면(별 3개) '해결완료'로 승격. 현재 트리에 실제로
     // 존재하는 라인 태그만 집계해, 라인이 재생성돼 태그가 바뀐 과거 기록으로 잘못 승격되지 않도록 한다.
+    // (버그 수정, 사용자 제보) "FEN 퍼즐 라인을 다 풀어도 카드가 초록색이 안 된다" — PuzzleSolver
+    // 자신의 완료 판정(totalLines)은 Math.max(1, allLines.length)라 라인이 실제로 0개로 집계되는
+    // 트리(예: treeLinesOf가 요구하는 홀수 길이 조건에 걸리는 특이한 트리 형태)에서도 "1개 중 1개
+    // 완료"로 축하 화면을 띄웠는데, 여기 total은 그 보정 없이 0 그대로라 total > 0 가드에 막혀
+    // onSolved가 영원히 호출되지 않았다 — 두 판정이 완전히 같은 기준을 쓰도록 여기도 같은 보정을 쓴다.
     puzzles.forEach((p) => {
-      const total = treeLinesOf(puzzleTreeOf(p)).length;
-      if (total > 0 && solvedLineTagsOf(p, lineSolves[p.id]).size >= total && !solved.has(p.id)) onSolved(p.id);
+      const total = Math.max(1, treeLinesOf(puzzleTreeOf(p)).length);
+      if (solvedLineTagsOf(p, lineSolves[p.id]).size >= total && !solved.has(p.id)) onSolved(p.id);
     });
   }, [lineSolves, puzzles, solved, onSolved, contentVer]);
   // (v0.4.0 기능) 사용자 요청 — 뒤로가기 전반 정비. 자체 URL 경로가 없는 오버레이(검색·친구·채팅·
