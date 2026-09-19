@@ -1291,6 +1291,12 @@ begin
   if not v_exists then raise exception 'puzzle_not_found'; end if;
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
+    -- (버그 수정, 사용자 재제보) "회수·양도가 성공했다고 뜨는데 실제로는 안 바뀐다" — 양도(else 분기)는
+    -- 대상을 못 찾으면 user_not_found로 막았지만, 이 회수 분기는 개발자 계정('openchesskr') 프로필을
+    -- 못 찾는 경우를 전혀 검사하지 않았다 — 그러면 v_uid가 null인 채로 아래 update가 그대로 실행돼
+    -- creator_uid를 null로 지워버리면서도 예외 없이(=클라이언트에는 "성공"으로) 끝났다. v_creator_uid가
+    -- null이면 puzzleCreatorInfo가 "생성자 없음"으로 읽어 화면엔 아무것도 안 바뀐 것처럼 보인다.
+    if v_uid is null then raise exception 'dev_account_missing'; end if;
   else
     select id, username into v_uid, v_uname from public.profiles where username = lower(btrim(p_target_username));
     if v_uid is null then raise exception 'user_not_found'; end if;
