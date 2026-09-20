@@ -5602,6 +5602,38 @@ const MEC_PHRASES = {
   checkmateOnly: () => "체크메이트를 향한 유일한 길을 찾아냈어요!",
   checkmate: () => "체크메이트! 이 수로 게임이 끝나요.",
 };
+// (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
+// 돌려야 해 코치 카드에 자동으로 붙이지 못하고 온디맨드로 남겨 뒀던 항목) 지금 포지션에서 엔진이
+// 예상하는 이후 진행(PV)을 그대로 재생하면서, 같은 기물이 두 번 이상(=세 칸 이상 경로) 자리를
+// 옮기는 가지를 찾는다 — 여러 수에 걸쳐 목적지로 이동하는 "재배치 계획"의 가장 단순한 정의다.
+// PV 안에서 한 번이라도 이런 기물이 있으면 그중 가장 긴 경로를 고른다(여러 후보가 있으면 가장
+// 뚜렷한 계획일 가능성이 높다). 캐슬링은 킹·룩 두 기물이 동시에 움직여 "한 기물의 경로"로 보기
+// 애매하므로, 그 지점에서 진행 중이던 경로를 끊고 새 경로를 시작하지 않는다.
+function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
+  let board = boardOfRoot(fenRoot, prevSans);
+  let color = colorOfRoot(fenRoot, prevSans.length);
+  const paths = new Map(); // 지금 그 기물이 있는 칸("r,c") -> { piece, color, squares:[sqName,...] }
+  let best = null;
+  for (const san of pvSans) {
+    const info = sanSrc(board, san, color);
+    if (!info) break;
+    if (info.castle) { board = applySan(board, san, color); color = color === "w" ? "b" : "w"; continue; }
+    const fromKey = info.from.join(","), toKey = info.to.join(",");
+    const prior = paths.get(fromKey);
+    const path = prior
+      ? { piece: prior.piece, color: prior.color, squares: [...prior.squares, sqName(info.to[0], info.to[1])] }
+      : { piece: info.piece, color, squares: [sqName(info.from[0], info.from[1]), sqName(info.to[0], info.to[1])] };
+    paths.delete(fromKey);
+    paths.set(toKey, path);
+    if (path.squares.length >= 3 && (!best || path.squares.length > best.squares.length)) best = path;
+    board = applySan(board, san, color);
+    color = color === "w" ? "b" : "w";
+  }
+  return best;
+}
+function relocationPlanPhrase(plan) {
+  return (PIECE_KOR[plan.piece] || "기물") + "가 " + plan.squares.join(" → ") + "로 이동하는 재배치 계획이 보여요.";
+}
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
@@ -7755,7 +7787,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow, onShowPlan, planLoading, planText, canShowPlan }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -7790,10 +7822,20 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
           )}
+          {/* (신규 기능) "재배치 계획" 온디맨드 결과 — 매 수 자동으로 엔진을 돌리기엔 비용이 커서
+              버튼을 눌러야만 계산한다(README v0.4.9 개발자 기록에 남겨 뒀던 항목). */}
+          {move.kind !== "book" && (planLoading || planText) && (
+            <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4, fontStyle: planLoading ? "italic" : "normal" }}>
+              {planLoading ? "재배치 계획을 분석하는 중…" : planText}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
         <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> Show</button>
+        {onShowPlan && move.kind !== "book" && (
+          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title="여러 수에 걸친 기물 재배치 계획을 엔진으로 찾아봐요" className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}><Route size={narrow ? 13 : 16} /> 계획</button>
+        )}
         <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
     </div>
@@ -11476,6 +11518,30 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"/"수비자
   // 제거"). 문장 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
   const mecKeyword = mecThreatOut.current.keyword || null;
+  // (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
+  // 돌려야 해 자동으로 못 붙이고 온디맨드로 남겨 뒀던 항목) 코치 카드의 "재배치 계획" 버튼을 눌러야만
+  // 지금 포지션에서 멀티PV 1줄을 새로 돌려 relocationPlanFromPv로 분석한다 — 같은 포지션(effSans
+  // 문자열 그대로를 키로 씀, exploring 중인 자유 탐색 위치도 자연히 구분된다)을 다시 봐도 재요청하지
+  // 않도록 결과를 캐시한다.
+  const planKey = effSans.join(" ");
+  const [planByKey, setPlanByKey] = useState({}); // key -> { loading, plan (null=계획 없음, undefined=아직 안 물어봄) }
+  const planEntry = planByKey[planKey];
+  const onShowPlan = useCallback(async () => {
+    if (!engine || engine.status !== "ready" || planByKey[planKey]) return;
+    setPlanByKey((m) => ({ ...m, [planKey]: { loading: true, plan: undefined } }));
+    try {
+      const pvs = await engine.evaluateMulti(fenOfRoot(fenRoot, effSans), REVIEW_DEPTH, 1, REVIEW_MOVETIME_MS);
+      const pv = pvs && pvs[0];
+      const pvSans = pv && pv.pv ? pvUciToSans(effSans, pv.pv, 10, fenRoot) : [];
+      const plan = pvSans.length ? relocationPlanFromPv(fenRoot, effSans, pvSans) : null;
+      setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: plan || null } }));
+    } catch {
+      setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: null } }));
+    }
+  }, [engine, effSans, fenRoot, planKey, planByKey]);
+  const planText = planEntry && !planEntry.loading
+    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : "이 포지션에서는 뚜렷한 재배치 계획을 찾지 못했어요.")
+    : null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
   // 구조가 달라서(공격자 1개→수비자 1개로 교체되는 느낌을 내야 함) 공격자를 보여준 뒤 그 공격자를
@@ -11725,7 +11791,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -11788,7 +11854,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
               전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} />
           </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
@@ -21351,6 +21417,7 @@ const CHANGELOG = [
       "개발자·공동개발자의 퍼즐 생성자 회수·양도가 '성공'으로 뜨는데도 실제로는 표시가 안 바뀌던 문제를 고쳤어요.",
       "같은 포지션의 퍼즐이 서로 다른 번호로 중복 생성되던 문제를 고쳤어요 — 대국 수순이 다르게 전위(transposition)되거나 FEN 표기가 살짝 달라도 같은 포지션이면 이제 새로 만들지 않고 기존 퍼즐로 안내해요. 개발자 도구 '퍼즐 컨트롤 센터'에 이미 생성된 중복을 찾아 하나만 남기고 정리하는 기능도 추가했어요.",
       "FEN 퍼즐의 모든 라인을 풀어도 퍼즐 탭 카드가 초록색으로 바뀌지 않던 문제를 고쳤어요.",
+      "대국 리뷰 코치 카드에 '계획' 버튼이 생겼어요 — 누르면 엔진으로 지금 포지션 이후를 새로 분석해, 여러 수에 걸쳐 한 기물이 목적지로 이동하는 재배치 계획이 보이면 그 경로를 알려줘요.",
     ]
   },
   {
