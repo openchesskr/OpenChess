@@ -28019,6 +28019,127 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
     </div>
   );
 }
+// (기능7, 사용자 요청) PvP 관전 모드 — 친구의 진행 중인 실시간 대국을 참가자가 아닌 다른 로그인
+// 유저도 읽기 전용으로 볼 수 있게 한다. supabase-setup.sql의 "pvp games select own or spectate"
+// 정책이 status='active'인 pvp_games 행을 참가자 외에게도 읽기 허용해 둔 덕에, 이 컴포넌트는 그냥
+// 평범한 realtime 구독으로 그 행을 읽기만 하면 된다. 클럭도 참가자 쪽(PlayPage) 로직과 같은 원리 —
+// 서버가 매 수마다 갱신하는 white_ms/black_ms/clock_synced_at만으로 "지금 몇 초 남았는지"를 클라이언트가
+// 스스로 계산한다(서버에 폴링할 필요 없이 로컬 200ms 타이머로 표시만 갱신).
+function PvpSpectateModal({ gameId, onClose }) {
+  const [game, setGame] = useState(null);
+  const [profiles, setProfiles] = useState({});
+  const [err, setErr] = useState("");
+
+  const applyRow = useCallback((row) => { if (row) setGame(row); }, []);
+
+  useEffect(() => {
+    if (gameId == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await sbSelect("pvp_games?id=eq." + gameId + "&select=*");
+        if (cancelled) return;
+        if (rows && rows[0]) applyRow(rows[0]);
+        else setErr("대국을 찾을 수 없어요(이미 끝났거나 취소됐을 수 있어요).");
+      } catch { if (!cancelled) setErr("대국 정보를 불러오지 못했어요."); }
+    })();
+    return () => { cancelled = true; };
+  }, [gameId, applyRow]);
+
+  useRealtimeTable("pvp_games", gameId != null ? "id=eq." + gameId : null, async (payload) => {
+    let row = payload && payload.new;
+    if (!row) { try { const rows = await sbSelect("pvp_games?id=eq." + gameId + "&select=*"); row = rows && rows[0]; } catch { } }
+    if (row) applyRow(row);
+  }, gameId != null, 4000);
+
+  useEffect(() => {
+    if (!game) return;
+    const ids = [game.white_uid, game.black_uid].filter(Boolean);
+    if (!ids.length) return;
+    let cancelled = false;
+    usersProfiles(ids).then((m) => { if (!cancelled) setProfiles((prev) => ({ ...prev, ...m })); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [game && game.white_uid, game && game.black_uid]);
+
+  const sans = (game && game.sans) || [];
+  const board = useMemo(() => boardFromSans(sans), [sans]);
+  const whiteTurn = sans.length % 2 === 0;
+  const hasServerClock = !!game && game.white_ms != null && game.black_ms != null;
+
+  // 화면 표시용 로컬 카운트다운 — 대국이 active일 때만 매 200ms 다시 계산한다(참가자 쪽 클럭 effect와
+  // 동일한 간격). 서버 값(clock_synced_at) 자체는 새 수가 오는 realtime 갱신 때만 바뀐다.
+  const [displayClock, setDisplayClock] = useState(null);
+  useEffect(() => {
+    if (!hasServerClock) { setDisplayClock(null); return; }
+    if (game.status !== "active") { setDisplayClock({ w: game.white_ms, b: game.black_ms }); return; }
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - new Date(game.clock_synced_at).getTime());
+      setDisplayClock({ w: game.white_ms - (whiteTurn ? elapsed : 0), b: game.black_ms - (whiteTurn ? 0 : elapsed) });
+    };
+    tick();
+    const id = setInterval(tick, 200);
+    return () => clearInterval(id);
+  }, [hasServerClock, game && game.status, game && game.white_ms, game && game.black_ms, game && game.clock_synced_at, whiteTurn]);
+
+  // (코드 리뷰 수정) 참가자 둘 다 화면을 닫아 아무도 pvp_check_flag를 부르지 않은 채 시간이 다 되면,
+  // 서버가 영영 시간 초과를 확정하지 못해 관전자 화면도 status='active'인 채로 0:00에 멈춘다 —
+  // 이 함수는 "누가 불러도 결과가 같아 안전"하게 설계돼 있으므로(위 supabase-setup.sql 주석 참고),
+  // 관전자 쪽 시계가 바닥나면 관전자 클라이언트가 대신 한 번 확인 요청을 보낸다.
+  const flagCheckedRef = useRef(false);
+  useEffect(() => { flagCheckedRef.current = false; }, [game && game.id, game && game.status]);
+  useEffect(() => {
+    if (!displayClock || !game || game.status !== "active" || flagCheckedRef.current) return;
+    if (displayClock.w <= 0 || displayClock.b <= 0) {
+      flagCheckedRef.current = true;
+      sbRpc("pvp_check_flag", { p_game_id: game.id }).catch(() => {});
+    }
+  }, [displayClock, game && game.id, game && game.status]);
+
+  const whitePub = (profiles[game && game.white_uid] || {}).pub || {};
+  const blackPub = (profiles[game && game.black_uid] || {}).pub || {};
+  const whiteName = whitePub.nickname || (profiles[game && game.white_uid] || {}).username || "White";
+  const blackName = blackPub.nickname || (profiles[game && game.black_uid] || {}).username || "Black";
+  const narrow = useNarrow(640);
+  const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 400;
+
+  const resultLabel = game && game.status !== "active" ? ({ white_won: "백 승", black_won: "흑 승", draw: "무승부", aborted: "중단" }[game.status] || "종료") : null;
+
+  const playerRow = (name, pub, ms) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {pub.photo ? <img src={pub.photo} alt="" style={{ width: 26, height: 26, borderRadius: 7, objectFit: "cover", flexShrink: 0 }} />
+          : <span style={{ width: 26, height: 26, borderRadius: 7, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(name || "?")[0].toUpperCase()}</span>}
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      </span>
+      {ms != null && <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 14, fontWeight: 800, color: T.ink, padding: "3px 8px", borderRadius: 7, background: "#EFE3C8", border: "1px solid #DCCBA8", flexShrink: 0 }}>{fmtClock(Math.max(0, ms))}</span>}
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.68)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink }}><Eye size={17} />관전</span>
+          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+        </div>
+        <div style={{ padding: 16 }}>
+          {err ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{err}</div>
+            : !game ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : (
+              <>
+                {playerRow(blackName, blackPub, displayClock && displayClock.b)}
+                <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
+                  <Board board={board} flip={false} size={boardSize} showEval={false} showCoords interactive={false} />
+                </div>
+                {playerRow(whiteName, whitePub, displayClock && displayClock.w)}
+                {resultLabel && <div style={{ marginTop: 10, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brass }}>대국 종료 · {resultLabel}</div>}
+              </>
+            )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
@@ -28061,6 +28182,42 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
     });
     return { friends: f, incoming: inc, outgoing: out };
   }, [edges, meId]);
+  // (기능7) 친구 중 지금 실시간 대국 중인 사람을 찾아 uid -> game id로 매핑 — 목록 줄에 "관전" 버튼을
+  // 띄울지 판단하는 데만 쓴다. status='active' 행은 참가자가 아니어도 읽을 수 있게 RLS가 열려 있다.
+  // (코드 리뷰 수정) 위 friends와 별도로 "accepted 친구" 목록을 다시 계산하지 않고, 그대로 재사용한다.
+  const [friendActiveGames, setFriendActiveGames] = useState({}); // uid -> gameId
+  const [spectateGameId, setSpectateGameId] = useState(null);
+  useEffect(() => {
+    // (코드 리뷰 수정) 관전 버튼은 '친구' 탭에서만 보이는데, 다른 탭을 보는 동안에도 이 폴링이 계속
+    // 돌면 화면에 전혀 쓰이지 않는 쿼리를 15초마다 낭비하게 된다 — 친구 탭을 보고 있을 때만 돈다.
+    if (tab !== "friends" || !friends.length) { setFriendActiveGames({}); return; }
+    let cancelled = false;
+    const orExpr = "(white_uid.in.(" + friends.map(encodeURIComponent).join(",") + "),black_uid.in.(" + friends.map(encodeURIComponent).join(",") + "))";
+    const fetchActive = async () => {
+      try {
+        const rows = await sbSelect("pvp_games?status=eq.active&game_type=eq." + encodeURIComponent(PVP_GAME_TYPE) + "&or=" + orExpr + "&select=id,white_uid,black_uid");
+        if (cancelled) return;
+        const m = {};
+        // (코드 리뷰 수정) 두 자리 다 내 friends에 포함될 수 있는 건 "나 자신도 그 친구 목록에 있는"
+        // 경우뿐이라 사실상 없지만, 안전하게 "내가 참가 중인 대국은 애초에 관전 후보에서 뺀다" —
+        // 안 그러면 내가 친구 B와 직접 두고 있는 대국이 B의 관전 버튼으로도 떠, 지금 내가 두고 있는
+        // 대국을 또 다른 읽기 전용 창으로 여는 이상한 상태가 된다.
+        (rows || []).forEach((r) => {
+          if (r.white_uid === meId || r.black_uid === meId) return;
+          if (friends.includes(r.white_uid)) m[r.white_uid] = r.id;
+          if (friends.includes(r.black_uid)) m[r.black_uid] = r.id;
+        });
+        setFriendActiveGames(m);
+      } catch { if (!cancelled) setFriendActiveGames({}); }
+    };
+    fetchActive();
+    // (코드 리뷰 수정) 처음 한 번만 불러오면, 모달을 계속 켜 둔 채로 친구가 그 사이 새 대국을
+    // 시작하거나(관전 버튼이 안 뜸) 이미 끝내도(버튼이 죽은 채로 계속 남아 눌러도 "대국을 찾을 수
+    // 없어요"만 뜸) 목록이 갱신되지 않는다 — 친구 목록은 이 모달이 열려 있는 동안 자주 들여다볼
+    // 만한 화면이라, 15초마다 다시 확인한다(realtime 구독까지는 과함 — 버튼 유무만 맞으면 충분).
+    const id = setInterval(fetchActive, 15000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [friends, tab]);
 
   const relOf = (uid) => { if (friends.includes(uid)) return "friend"; if (outgoing.includes(uid)) return "sent"; if (incoming.includes(uid)) return "incoming"; return "none"; };
   const uname = (uid) => (profiles[uid] && profiles[uid].username) || uid;
@@ -28214,7 +28371,11 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
-                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>} /></FadeIn>
+                        <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>
+                          {/* (기능7, 사용자 요청) 친구가 지금 실시간 대국 중이면 참가하지 않고 구경만 할 수 있는 관전 버튼. */}
+                          {friendActiveGames[u] != null && <button onClick={() => setSpectateGameId(friendActiveGames[u])} aria-label="관전" title="관전" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Eye size={14} /></button>}
+                          <button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
+                        </>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
                   incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
@@ -28259,6 +28420,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
     </div>
     {/* (버그 수정) 친구 삭제는 되돌릴 수 없는 동작이라, 곧장 지우지 않고 한 번 더 확인받는다
         (로그아웃 확인 다이얼로그와 동일한 패턴) — 친구 모달(zIndex 82) 위에 뜨도록 더 높은 zIndex. */}
+    {spectateGameId != null && <PvpSpectateModal gameId={spectateGameId} onClose={() => setSpectateGameId(null)} />}
     {confirmRemove && (
       <div onClick={() => setConfirmRemove(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
