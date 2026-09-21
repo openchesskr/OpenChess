@@ -5632,7 +5632,7 @@ function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
   return best;
 }
 function relocationPlanPhrase(plan) {
-  return (PIECE_KOR[plan.piece] || "기물") + "가 " + plan.squares.join(" → ") + "로 이동하는 재배치 계획이 보여요.";
+  return josaIGa(PIECE_KOR[plan.piece] || "기물") + " " + plan.squares.join(" → ") + "로 이동하는 재배치 계획이 보여요.";
 }
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -11526,17 +11526,23 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const planKey = effSans.join(" ");
   const [planByKey, setPlanByKey] = useState({}); // key -> { loading, plan (null=계획 없음, undefined=아직 안 물어봄) }
   const planEntry = planByKey[planKey];
+  // (코드 리뷰 지적 반영) 버튼을 누른 뒤 응답이 오기 전에 화면을 벗어나면(ReviewPage 언마운트) 이
+  // 컴포넌트의 setPlanByKey가 그대로 불려 "언마운트된 컴포넌트에 상태 갱신" 경고가 났다 — 이 파일의
+  // 다른 비동기 엔진 호출들(예: 657·11367행 근처)과 같은 패턴으로 마운트 여부를 ref로 추적한다.
+  const planMountedRef = useRef(true);
+  useEffect(() => () => { planMountedRef.current = false; }, []);
   const onShowPlan = useCallback(async () => {
     if (!engine || engine.status !== "ready" || planByKey[planKey]) return;
     setPlanByKey((m) => ({ ...m, [planKey]: { loading: true, plan: undefined } }));
     try {
       const pvs = await engine.evaluateMulti(fenOfRoot(fenRoot, effSans), REVIEW_DEPTH, 1, REVIEW_MOVETIME_MS);
+      if (!planMountedRef.current) return;
       const pv = pvs && pvs[0];
       const pvSans = pv && pv.pv ? pvUciToSans(effSans, pv.pv, 10, fenRoot) : [];
       const plan = pvSans.length ? relocationPlanFromPv(fenRoot, effSans, pvSans) : null;
       setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: plan || null } }));
     } catch {
-      setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: null } }));
+      if (planMountedRef.current) setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: null } }));
     }
   }, [engine, effSans, fenRoot, planKey, planByKey]);
   const planText = planEntry && !planEntry.loading
