@@ -25,7 +25,7 @@ import {
   SFX_SRC, playSfx, playMoveSfx,
 } from "./lib/prefs.js";
 import {
-  startBoard, fenToBoard, looksLikeFen, parseFenFull, replayFromFen, fenLegalDests,
+  startBoard, fenToBoard, looksLikeFen, parseFenFull, replayFromFen, fenLegalDests, liveLegalDests,
   clearPath, canMove, sanSrc, applySan, replaySans, boardFromSans,
   epTargetFromMoveInfo, epTarget, sqName, updateCastleRights, castleRightsStr,
   sansToUci, boardToFen, sansToFen, boardOfRoot, fenOfRoot, colorOfRoot,
@@ -55,7 +55,7 @@ import {
 } from "./lib/chesscom.js";
 import {
   materialDiff, PIECE_VAL_MAT, isDevelopingMove, MINOR_HOME_SQUARES,
-  VAL, enemyMinAttacker, ownDefenders, lva, seeSquare, pawnDefendsSquare,
+  VAL, lva, seeSquare, pawnDefendsSquare,
   canCaptureSquareLegally, countLegalCapturesOnSquare, hangingLossSq, attacksPricier,
   attacksPricierIndependent, hasSaferSquare, attacksSquare, forkForcedTheOtherSide,
   isSacrifice, ownPriorMoveWasSacrifice, matePliesOf, fmtEvalCp, posEvalToWhite, tierOf,
@@ -10603,7 +10603,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const tryMove = useCallback((from, to) => {
     if (!userToMove) return false;
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    const dests = fenRoot ? fenLegalDests(from[0], from[1], activeColor, board, replay.rights, ep) : legalDests(board, from[0], from[1], activeColor, ep);
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], activeColor, board, replay.rights, ep) : liveLegalDests(sans, from[0], from[1], activeColor, board, ep);
     if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((activeColor === "w" && to[0] === 0) || (activeColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
@@ -10629,7 +10629,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const onPieceDrag = useCallback((sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (p && p.c === activeColor) { setDrag(sq); setSel(sq); } }, [board, activeColor, userToMove]);
   const onDrop = useCallback((sq) => { if (drag) { tryMove(drag, sq); setDrag(null); setSel(null); } }, [drag, tryMove]);
 
-  const legalTargets = userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], activeColor, board, replay.rights, ep) : legalDests(board, sel[0], sel[1], activeColor, ep)) : [];
+  const legalTargets = userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], activeColor, board, replay.rights, ep) : liveLegalDests(sans, sel[0], sel[1], activeColor, board, ep)) : [];
 
   // 봇 차례 — 유저 턴이 아니고 게임이 안 끝났으면 자동으로 둔다.
   useEffect(() => {
@@ -11219,7 +11219,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // 미룬 항목).
   const legalTargets = useMemo(() => {
     if (!sel) return [];
-    return fenRoot ? fenLegalDests(sel[0], sel[1], explColor, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], explColor, ep);
+    return fenRoot ? fenLegalDests(sel[0], sel[1], explColor, board, fenReplay.rights, ep) : liveLegalDests(effSans, sel[0], sel[1], explColor, board, ep);
   }, [sel, board, explColor, ep, fenRoot, fenReplay]);
   // (v0.2.3 기능 → v0.3.5) 분석 탭과 동일하게, 자유 탐색 중인 지금 위치가 스테일메이트·3회 동형
   // 반복으로 이미 끝나 있으면 더 이상 수를 둘 수 없게 막고 무승부로 표시한다. gameEndState가
@@ -11282,7 +11282,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   }, [gameDrawn, activeMove, engineLines, effSans, exploreSans, curPly, sans]);
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    const dests = fenRoot ? fenLegalDests(from[0], from[1], explColor, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], explColor, ep);
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], explColor, board, fenReplay.rights, ep) : liveLegalDests(effSans, from[0], from[1], explColor, board, ep);
     if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((explColor === "w" && to[0] === 0) || (explColor === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }
@@ -12162,7 +12162,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
   // FEN에서 유래한 캐슬링 권리로 한 번 더 걸러낸다(fenLegalDests).
   const legalTargets = useMemo(() => {
     if (!sel) return [];
-    return fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep);
+    return fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : liveLegalDests(sans, sel[0], sel[1], color, board, ep);
   }, [sel, board, color, ep, fenRoot, fenReplay]);
 
   // 수를 두면 항상 도착 칸에 수 체계 아이콘을 띄운다(블록에 없거나 아직 미평가면 우선 '분석 중', 엔진으로 갱신)
@@ -12306,7 +12306,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
 
   const tryMove = useCallback((from, to) => {
     if (from[0] === to[0] && from[1] === to[1]) return false;
-    const dests = fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], color, ep);
+    const dests = fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : liveLegalDests(sans, from[0], from[1], color, board, ep);
     if (!dests.some(([r, c]) => r === to[0] && c === to[1])) return false;
     const pc = board[from[0]][from[1]];
     if (pc && pc.t === "P" && ((color === "w" && to[0] === 0) || (color === "b" && to[0] === 7))) { setPromoPrompt({ from, to }); return true; }   // (기능5) 프로모션 선택
@@ -17007,7 +17007,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     // tryUserMove를 불러 포지션에 아무 변화도 없는 "제자리 수"까지 오답으로 판정되고 있었다. 여기서
     // 한 번만 확실히 걸러 모든 호출 경로(클릭·드래그)를 동시에 보호한다.
     if (from[0] === to[0] && from[1] === to[1]) { setSel(null); return; }
-    if (!(fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : legalDests(board, from[0], from[1], color, ep)).some(([r, c]) => r === to[0] && c === to[1])) return;
+    if (!(fenRoot ? fenLegalDests(from[0], from[1], color, board, fenReplay.rights, ep) : liveLegalDests(curSans, from[0], from[1], color, board, ep)).some(([r, c]) => r === to[0] && c === to[1])) return;
     // (버그 수정) 폰이 마지막 랭크로 이동하는 수는 promo가 아직 없으면 곧장 두지 않고 승격 기물을
     // 먼저 고르게 한다 — completePromo가 고른 기물로 다시 이 함수를 호출한다.
     const pc = board[from[0]][from[1]];
@@ -17029,7 +17029,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     const { from, to } = promoPrompt; setPromoPrompt(null);
     tryUserMove(from, to, piece);
   };
-  const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if ((fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
+  const onSquareClick = (sq) => { if (!userToMove) return; const p = board[sq[0]][sq[1]]; if (sel) { if ((fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : liveLegalDests(curSans, sel[0], sel[1], color, board, ep)).some(([r, c]) => r === sq[0] && c === sq[1])) { tryUserMove(sel, sq); return; } if (p && p.c === color) { setSel(sq); return; } setSel(null); } else if (p && p.c === color) setSel(sq); };
   // (UX4→v0.1.2) 재시도 버튼 없이, 오답을 두면 자동으로 원위치로 되돌아간다 — 다만 곧장 되돌리지
   // 않고, 그 오답을 뒀을 때 상대가 어떻게 응징하는지 엔진 최선 응수를 한 번 보여준 뒤(가능한 경우만)
   // 응수→오답 순으로 슬라이드 애니메이션과 함께 두 단계로 되돌린다. 엔진을 못 쓰는 상황(liveOn 꺼짐 등)은
@@ -17627,7 +17627,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               // 단계마다 독립된 연출만 보이도록 각 단계를 정확히 그 단계에서만 켠다 — 1단계: 도착
               // 칸만, 2단계: 기물 흔들림만, 3단계: 기물 흔들림+경로 반짝임(도착 칸 단독 표시는
               // 3단계에서 경로의 마지막 칸이 대신하므로 끈다).
-              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : legalDests(board, sel[0], sel[1], color, ep)) : []} showEval={false} interactive={userToMove} gridRef={setPromoGridEl}
+              : <Board board={wrong ? wrong.board : board} flip={userColor === "b"} size={boardSize} selected={sel} wrongAt={wrong ? wrong.at : null} lastQ={lastQpz} arrows={puzzleDangerArrows} showCoords onSquareClick={onSquareClick} onPieceDrag={(sq) => { const p = board[sq[0]][sq[1]]; if (userToMove && p && p.c === color) setSel(sq); }} onDrop={(sq) => { if (userToMove && sel) tryUserMove(sel, sq); }} onMove={(from, to) => { if (userToMove) tryUserMove(from, to); }} legalTargets={userToMove && sel ? (fenRoot ? fenLegalDests(sel[0], sel[1], color, board, fenReplay.rights, ep) : liveLegalDests(curSans, sel[0], sel[1], color, board, ep)) : []} showEval={false} interactive={userToMove} gridRef={setPromoGridEl}
                   hintTo={hintLevel === 1 && hintInfo ? hintInfo.to : null} hintFrom={(hintLevel === 2 || hintLevel === 3) && hintInfo ? hintInfo.from : null} hintPathSq={hintLevel === 3 && hintPath.length ? hintPath[hintStepIdx] : null} hintPathProgress={hintPathProgress} />}
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => setPromoPrompt(null)} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
             </div>
@@ -18739,11 +18739,11 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
     setMcPicked(oi);
     if (oi === beat.answer) setMcFeedback("correct"); else setMcFeedback("wrong");
   };
-  const legalTargets = (moveSel && beat && beat.kind === "move" && !moveDone) ? legalDests(board, moveSel[0], moveSel[1], color, null) : [];
+  const legalTargets = (moveSel && beat && beat.kind === "move" && !moveDone) ? liveLegalDests(runningSans, moveSel[0], moveSel[1], color, board, null) : [];
   const attemptMove = (from, to) => {
     if (!beat || beat.kind !== "move" || moveDone) return;
     if (from[0] === to[0] && from[1] === to[1]) { setMoveSel(null); return; }
-    if (!legalDests(board, from[0], from[1], color, null).some(([r, c]) => r === to[0] && c === to[1])) return;
+    if (!liveLegalDests(runningSans, from[0], from[1], color, board, null).some(([r, c]) => r === to[0] && c === to[1])) return;
     const san = buildSan(board, from[0], from[1], to[0], to[1], color, null);
     setMoveSel(null);
     if (!san) return;
@@ -18755,7 +18755,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
     if (!beat || beat.kind !== "move" || moveDone) return;
     const p = board[sq[0]][sq[1]];
     if (moveSel) {
-      if (legalDests(board, moveSel[0], moveSel[1], color, null).some(([r, c]) => r === sq[0] && c === sq[1])) { attemptMove(moveSel, sq); return; }
+      if (liveLegalDests(runningSans, moveSel[0], moveSel[1], color, board, null).some(([r, c]) => r === sq[0] && c === sq[1])) { attemptMove(moveSel, sq); return; }
       if (p && p.c === color) { setMoveSel(sq); return; }
       setMoveSel(null);
     } else if (p && p.c === color) setMoveSel(sq);
