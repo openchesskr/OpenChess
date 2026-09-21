@@ -7961,6 +7961,58 @@ async function reviewedAnalysisFetch(ccId, expectedLen, depth) {
     return a.result;
   } catch { return null; }
 }
+// (신규 기능, 사용자 요청) 약점 리포트 — 이미 리뷰해 본 대국들(reviewUnlocked)의 크라우드소싱
+// 분석 결과를 한 번에 모아 온다. reviewedAnalysisFetch처럼 한 판씩 묻지 않고 cc_id 여러 개를
+// in.() 한 번으로 묻는다 — 프로필을 열 때마다 리뷰한 대국 수만큼 왕복이 생기는 걸 피하기 위함.
+// expectedLen/depth 검증까지는 하지 않는다(리포트는 집계 통계라 어느 정도 정확도면 충분하고, 검증을
+// 걸면 엔진 설정이 바뀔 때마다 리포트가 통째로 비어 보일 수 있다 — reviewedAnalysisFetch의 그 엄격한
+// 재현성 검증은 "이 리뷰 화면에 지금 보여줄 값"에는 꼭 필요하지만 이 용도에는 과하다).
+async function reviewedAnalysesBatch(ccIds) {
+  if (!SB_ON || !ccIds.length) return {};
+  try {
+    const rows = await sbSelect("reviewed_games?cc_id=in.(" + ccIds.join(",") + ")&select=cc_id,analysis");
+    const map = {};
+    for (const r of rows || []) {
+      const a = r.analysis;
+      if (a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && a.result.moves) map[r.cc_id] = a.result;
+    }
+    return map;
+  } catch { return {}; }
+}
+// 리뷰된 대국들의 그레이딩 결과(analysesByCcId)를 오프닝별로 모아, "이 오프닝에서 게임당 평균 몇 번
+// 블런더가 나는가"를 계산한다 — 상대가 둔 수가 아니라 항상 "내가 둔 수"만 집계한다(game.color로
+// 어느 쪽이 나인지 판정). 표본이 너무 적은(2판 미만) 오프닝은 순위에서 제외해 우연한 한 판짜리
+// 블런더로 "이 오프닝이 약점"이라고 과대 해석하지 않게 한다.
+function weaknessReportFromAnalyses(games, analysesByCcId) {
+  // (버그 수정, 코드 리뷰 지적) 오프닝 이름을 그대로 일반 객체의 키로 쓰면, 혹시라도 그 이름이
+  // "__proto__" 같은 프로토타입 체인 특수 키와 겹칠 때 Object.prototype을 오염시킬 수 있다 —
+  // 실전에서 오프닝 이름이 그렇게 나올 일은 거의 없지만(사용자 입력이 아니라 chess.com ECO
+  // 이름이므로), 굳이 그 위험을 안고 갈 이유가 없어 Map으로 바꾼다.
+  const byOpening = new Map();
+  const kindTotals = {};
+  let gamesUsed = 0;
+  for (const g of games) {
+    const result = analysesByCcId[g.id];
+    if (!result) continue;
+    gamesUsed++;
+    const myWhite = g.color === "w";
+    const name = g.opening || "기타";
+    let ob = byOpening.get(name);
+    if (!ob) { ob = { name, n: 0, blunders: 0, mistakes: 0 }; byOpening.set(name, ob); }
+    ob.n++;
+    for (const m of result.moves) {
+      if (m.white !== myWhite || !m.kind) continue;
+      kindTotals[m.kind] = (kindTotals[m.kind] || 0) + 1;
+      if (m.kind === "blunder") ob.blunders++;
+      else if (m.kind === "mistake") ob.mistakes++;
+    }
+  }
+  const openings = [...byOpening.values()]
+    .filter((o) => o.n >= 2)
+    .map((o) => ({ ...o, blunderRate: o.blunders / o.n }))
+    .sort((a, b) => b.blunderRate - a.blunderRate || b.n - a.n);
+  return { openings, kindTotals, gamesUsed };
+}
 async function reviewedAnalysisShare(ccId, result, depth) {
   if (!SB_ON || !ccId || !result) return;
   try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
@@ -11742,8 +11794,10 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   const shareCardData = useMemo(() => {
     // (버그 수정, 코드 리뷰 지적) result는 useState(null)로 시작해 analyzeGame의 첫 결과가 올 때까지
     // null이다 — hasPlayerData만 보고 곧장 result.moves에 접근하면, 리뷰 진입 직후(분석이 아직
-    // 안 끝난 순간) 이 컴포넌트 전체가 크래시났다.
-    if (!hasPlayerData || !result) return null;
+    // 안 끝난 순간) 이 컴포넌트 전체가 크래시났다. resultDone도 함께 확인한다 — result는 첫 수가
+    // 채점되자마자(전체 분석이 끝나기 훨씬 전에) 이미 채워지므로, 이것만 보면 아직 다 안 끝난
+    // 정확도·블런더 수로 카드를 만들어 공유해 버릴 수 있다(화면에 최종적으로 보이는 값과 다름).
+    if (!hasPlayerData || !result || !resultDone) return null;
     const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
     const kindCounts = {};
     for (const m of result.moves) { if (m.kind) kindCounts[m.kind] = (kindCounts[m.kind] || 0) + 1; }
@@ -11761,7 +11815,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       opening: game.opening || null,
       brilliant: kindCounts.brilliant || 0, blunder: kindCounts.blunder || 0, mistake: kindCounts.mistake || 0,
     };
-  }, [hasPlayerData, game, result, sharpOn]);
+  }, [hasPlayerData, game, result, resultDone, sharpOn]);
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
@@ -21146,6 +21200,30 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
     if (onlyReviewed && reviewUnlocked) out = out.filter((g) => reviewUnlocked.has(reviewGameKey(g)));
     return out;
   }, [ready, chesscom && chesscom.games, timeFilter, colorFilter, onlyReviewed, reviewUnlocked]);
+  // (신규 기능, 사용자 요청) 약점 리포트 — 위 games(시간 규정·색 필터 적용됨)와 달리, 리포트는
+  // "지금 보고 있는 필터"가 아니라 항상 전체 그림을 보여주는 게 목적이라 그 필터들과 무관하게
+  // 리뷰해 본 전체 대국(reviewUnlocked) 중 최근 60판만 쓴다 — 60판 제한은 reviewedAnalysesBatch의
+  // in.() 쿼리 URL 길이·응답 크기를 억제하기 위함(그 이상은 흔치 않고, "최근 경향"이라는 취지에도
+  // 더 맞는다).
+  const reviewedGames = useMemo(() => {
+    if (!ready || !reviewUnlocked) return [];
+    return chesscom.games
+      .filter((g) => (g.rules || "chess") === "chess" && g.timeClass !== "daily" && g.id && reviewUnlocked.has(reviewGameKey(g)))
+      .sort((a, b) => (b.endTime || 0) - (a.endTime || 0))
+      .slice(0, 60);
+  }, [ready, chesscom && chesscom.games, reviewUnlocked]);
+  const [weaknessAnalyses, setWeaknessAnalyses] = useState({});
+  const [weaknessLoading, setWeaknessLoading] = useState(false);
+  useEffect(() => {
+    if (!reviewedGames.length) { setWeaknessAnalyses({}); return; }
+    let cancelled = false;
+    setWeaknessLoading(true);
+    reviewedAnalysesBatch(reviewedGames.map((g) => g.id))
+      .then((m) => { if (!cancelled) setWeaknessAnalyses(m); })
+      .finally(() => { if (!cancelled) setWeaknessLoading(false); });
+    return () => { cancelled = true; };
+  }, [reviewedGames]);
+  const weaknessReport = useMemo(() => weaknessReportFromAnalyses(reviewedGames, weaknessAnalyses), [reviewedGames, weaknessAnalyses]);
   // (v0.2.6 버그 수정) 레이팅은 어느 색으로 뒀든 하나로 합산 적용되므로, 흑/백 필터와는 무관하게
   // 항상 같은 값이어야 한다 — 레이팅 그래프에는 색 필터를 뺀(시간 규정만 적용된) 목록을 따로 넘긴다.
   const gamesForRating = useMemo(() => {
@@ -21370,6 +21448,34 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
               <div>
                 {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
               </div>
+            </div>
+          )}
+          {/* (신규 기능, 사용자 요청) 약점 리포트 — 리뷰해 본 대국들의 그레이딩 결과를 오프닝별로
+              모아, 게임당 평균 블런더가 가장 많이 나는 오프닝 상위 3개를 짚어준다. 표본(리뷰한 대국)
+              자체가 없으면 안내만, 있는데 2판 이상인 오프닝이 하나도 없으면(표본 부족) 조용히
+              숨긴다 — 어설픈 "1판=100% 약점" 판정을 보여주지 않기 위해서다(weaknessReportFromAnalyses
+              참고). */}
+          {reviewedGames.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 6 }}><Target size={13} /> 약점 리포트</div>
+              {weaknessLoading ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>리뷰 기록을 모으는 중…</p>
+                : weaknessReport.openings.length === 0
+                ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>같은 오프닝을 2판 이상 리뷰해야 경향을 알 수 있어요 — 대국을 더 리뷰해 보세요.</p>
+                : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {weaknessReport.openings.slice(0, 3).map((o) => (
+                      <button key={o.name} onClick={() => onOpenOpening && onOpenOpening(o.name)} className="press" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", textAlign: "left", cursor: onOpenOpening ? "pointer" : "default" }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: o.blunderRate > 0 ? T.blunder : T.inkSoft, flexShrink: 0 }}>게임당 블런더 {o.blunderRate.toFixed(1)}회 ({o.n}판)</span>
+                      </button>
+                    ))}
+                    {(weaknessReport.kindTotals.blunder || weaknessReport.kindTotals.mistake) > 0 && (
+                      <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>
+                        최근 리뷰한 {weaknessReport.gamesUsed}판 기준 — 블런더 {weaknessReport.kindTotals.blunder || 0}회 · 실수 {weaknessReport.kindTotals.mistake || 0}회
+                      </p>
+                    )}
+                  </div>
+                )}
             </div>
           )}
           {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국을 찾지 못했습니다.</p>}
