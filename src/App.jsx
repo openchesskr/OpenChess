@@ -1630,24 +1630,32 @@ function useChessCom(username) {
   // 트리 한 번 그릴 때마다 "노드 수 × 대국 수" 규모의 연산이 걸려 그게 바로 "체스닷컴 대국이 많으면
   // 렉 걸리는" 원인이었다. 대국이 바뀔 때 한 번만, 모든 대국의 모든 수순 접두어(prefix)를 문자열
   // Set에 담아 두면, 그 뒤로는 노드마다 O(1) 조회 한 번으로 "이 수순이 실제로 둔 적 있는가"를 알 수 있다.
-  const prefixSet = useMemo(() => {
-    const set = new Set();
+  // (신규 기능, 사용자 요청) "내 승률" 오버레이용 prefixStats(접두어별 승/무/패)도 같은 이유로 필요한데,
+  // (코드 리뷰 지적) 처음엔 이 목적으로 game.moves 전체를 한 번 더 도는 별도 useMemo를 뒀다 —
+  // prefixSet과 완전히 같은 순회를 두 번(대국 전체의 모든 반수 × 2) 하는 중복이라, 한 루프에서
+  // 둘 다 채우도록 합쳤다.
+  const { prefixSet, prefixStats } = useMemo(() => {
+    const set = new Set(), map = new Map();
     for (const g of state.games) {
       let key = "";
       for (let i = 0; i < g.moves.length; i++) {
         const s = stripSuffix(g.moves[i]);
         key = i === 0 ? s : key + " " + s;
         set.add(key);
+        let st = map.get(key);
+        if (!st) { st = { n: 0, w: 0, d: 0, l: 0 }; map.set(key, st); }
+        st.n++;
+        if (g.result === "win") st.w++; else if (g.result === "loss") st.l++; else st.d++;
       }
     }
-    return set;
+    return { prefixSet: set, prefixStats: map };
   }, [state.games]);
   // (v0.0.6 성능) 예전엔 매 렌더 { ...state, analyze }로 새 객체를 만들어 반환해, 이 훅을 쓰는 상위
   // 컴포넌트가 다른 이유로 리렌더될 때마다(도감 트리와 무관해도) chesscom 참조 자체가 바뀌었다 —
   // 이 참조가 OpeningSchematic의 items useMemo 의존성에 들어 있어, chesscom이 바뀐 게 없어도 매번
   // 수천 개 노드를 처음부터 다시 계산하게 만드는 또 다른 렉의 원인이었다. state/analyze/prefixSet이
   // 실제로 바뀔 때만 새 참조가 나오도록 고정한다.
-  return useMemo(() => ({ ...state, analyze, prefixSet }), [state, analyze, prefixSet]);
+  return useMemo(() => ({ ...state, analyze, prefixSet, prefixStats }), [state, analyze, prefixSet, prefixStats]);
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */
@@ -13150,9 +13158,17 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
     const selDelay = isSel && selectedTargetR ? (it.r / selectedTargetR) * selDuration : 0;
     const surgeDelay = electric ? (it.r || 0) / DEX_ELECTRIC_FLOW_SPEED : 0;
+    // (신규 기능, 사용자 요청) "내 승률" 오버레이 — 표본이 너무 적으면(3판 미만) 0%/100%로 튀어
+    // 오해를 살 수 있어 그 미만은 아예 표시하지 않는다. 색은 이 사이트의 기존 등급 색(최선=초록,
+    // 부정확=노랑, 블런더=빨강)을 그대로 재사용해 새 색 언어를 만들지 않는다.
+    const showWr = it.myN >= 3 && it.myWr != null;
+    const wrColor = it.myWr >= 60 ? T.best : it.myWr >= 40 ? T.inaccuracy : T.blunder;
     return (
       <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
+        {showWr && (
+          <span title={"내 승률 " + it.myWr + "% (" + it.myN + "판)"} style={{ position: "absolute", right: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, minWidth: 17, height: 17, padding: "0 3px", borderRadius: 9, background: wrColor, color: "#fff", fontSize: 8.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{it.myWr}%</span>
+        )}
         <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: SITE_FONT, fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
             {!it.unlocked && <Lock size={10} />}
@@ -13252,7 +13268,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 계산한 것(노드 수 × 평균 깊이만큼 중복). 배경 로딩 중엔 이 useMemo 전체가 220ms마다 다시
     // 돌므로(useOpeningTreeAuto의 bumpVersion), 이 중복이 로딩 내내 반복됐다 — 부모의 board를
     // 그대로 물려받아 이번 수 하나만 한 번 더 적용하도록(O(노드 수)) 바꾼다.
-    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey, board) => {
+    const visit = (san, path, depth, adopt, kind, evalCp, name, dir, parentGroupKey, board, normKey) => {
       const key = path.join(" ");
       // (사용자 요청, 버그 수정) 개발자가 SchematicEditor로 추가한 이론 수(CONTENT.treeAdds, addsFor)는
       // 리체스 탐색기 데이터(treeData)에 당연히 없어, 이 트리 순회가 treeData만 훑는 한 모식도에
@@ -13274,7 +13290,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         const fam = TITLE_OPENINGS.find((f) => f.rx.test(name));
         if (fam) { groupKey = key; groupFamLabel = fam.label; }
       }
-      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, groupFamLabel, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path) };
+      // (신규 기능, 사용자 요청) "내 승률" 오버레이 — chesscom.prefixStats(위 useChessCom, O(1) 조회)에서
+      // 이 노드까지의 수순으로 실제로 둔 내 대국의 승/무/패를 찾는다. dexIsUnlocked와 같은 이유로
+      // stripSuffix가 필요하다(+/# 표기 차이로 어긋나지 않도록). 표본이 너무 적으면(3판 미만)
+      // 0%/100%로 튀어 보여 오히려 오해를 살 수 있어 렌더 쪽에서 걸러 낸다(myN으로 함께 넘긴다).
+      // (코드 리뷰 지적) normKey는 부모가 이미 계산해 둔 값에 이번 수 하나만 이어 붙인다(위 board를
+      // 부모에게서 물려받는 것과 같은 이유) — path.map(stripSuffix).join(" ")를 노드마다 루트부터
+      // 다시 계산하면(최대 4000개 × 깊이) board 상속으로 막 없앤 것과 같은 종류의 중복이 된다.
+      const myStat = ccReady && chesscom.prefixStats ? chesscom.prefixStats.get(normKey) : null;
+      const it = { san, path, depth, key, adopt, kind, evalCp, name, dir, groupKey, groupFamLabel, hasChildren: !!(rawMoves && rawMoves.length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, path), myWr: myStat ? Math.round(100 * myStat.w / myStat.n) : null, myN: myStat ? myStat.n : 0 };
       const kids = [];
       if (rawMoves && rawMoves.length) {
         // (버그 수정) 예전엔 "자식 자신의 데이터가 이미 로드됐는지"(treeData.has(자식 키))로
@@ -13331,7 +13355,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
           const t = tiered.find((x) => x.san === m.san);
           const nm = nameOverride(key, m.san) ?? m.name ?? null;
           const childDir = path.length === 0 ? DIR_OF_ROOT[stripSuffix(m.san)] : dir;
-          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey, applySan(board, m.san, color)));
+          kids.push(visit(m.san, [...path, m.san], depth + 1, m.adopt || 0, t ? t.kind : (m.book ? "book" : "pending"), m.evalCp != null ? m.evalCp : null, nm, childDir, groupKey, applySan(board, m.san, color), normKey ? normKey + " " + stripSuffix(m.san) : stripSuffix(m.san)));
         }
       }
       if (depth >= 1) { if (!kids.length) leafList[dir].push(it); else it.kids = kids; }
@@ -13340,7 +13364,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       items.push(it);
       return it;
     };
-    visit(null, [], 0, 100, null, null, null, null, null, startBoard());
+    visit(null, [], 0, 100, null, null, null, null, null, startBoard(), "");
     // 방향별로, 지금 실제로 보이는 leaf들을 현재 형제 순서(DFS 순서) 그대로 훑으면서 좌표 캐시를
     // 채운다. 이미 캐시에 있는 값은 절대 다시 바꾸지 않는다(그래야 흔들리지 않는다) — 새로 나타난
     // leaf만, 바로 앞뒤로 이미 확정된 이웃의 캐시 값 "사이"를 보간해 끼워 넣는다. 자리를 넓히려고
