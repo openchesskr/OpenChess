@@ -11734,6 +11734,34 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   useEffect(() => { let cc = false; reviewGameIdentifier(game).then((id) => { if (!cc) setReviewId(id); }); return () => { cc = true; }; }, [game]);
   const [shareOpen, setShareOpen] = useState(false);
   const shareLabel = hasPlayerData ? (reviewPlayerInfo(game, "w").name + " vs " + reviewPlayerInfo(game, "b").name) : (fenRoot ? "FEN 포지션 분석" : "PGN 대국 리뷰");
+  // (신규 기능, 사용자 요청) 리뷰 요약 카드 이미지 공유용 데이터 — 아바타 이미지는 chess.com 서버가
+  // CORS 헤더를 내려주지 않아 canvas에 그리면 "오염된(tainted) 캔버스"가 돼 toBlob/toDataURL 자체가
+  // 막힌다(보안 정책) — 그래서 카드에는 이니셜 원만 쓰고 실제 아바타는 넣지 않는다. 정확성은 이미
+  // ReviewSummary가 쓰는 것과 같은 값(result.whiteAcc/blackAcc, 항상 보정 켜짐)을 그대로 재사용해
+  // 화면에 보이는 숫자와 카드 숫자가 어긋나지 않게 한다.
+  const shareCardData = useMemo(() => {
+    // (버그 수정, 코드 리뷰 지적) result는 useState(null)로 시작해 analyzeGame의 첫 결과가 올 때까지
+    // null이다 — hasPlayerData만 보고 곧장 result.moves에 접근하면, 리뷰 진입 직후(분석이 아직
+    // 안 끝난 순간) 이 컴포넌트 전체가 크래시났다.
+    if (!hasPlayerData || !result) return null;
+    const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
+    const kindCounts = {};
+    for (const m of result.moves) { if (m.kind) kindCounts[m.kind] = (kindCounts[m.kind] || 0) + 1; }
+    const resultText = !game.result ? null : game.result === "win" ? "승리" : game.result === "loss" ? "패배" : "무승부";
+    // (버그 수정, 코드 리뷰 지적) result.whiteAcc/blackAcc는 항상 sharpOn=true로 고정 계산된 값이라,
+    // 설정에서 "포지션 변동성 보정"을 꺼 둔 상태로 리뷰를 볼 때 화면에 보이는 정확도(핏·ReviewSummary가
+    // reviewPhaseAccuracy(...,sharpOn)로 다시 계산한 값)와 카드 숫자가 달라졌다 — 같은 함수·같은
+    // sharpOn으로 다시 계산해 항상 화면과 일치시킨다.
+    const whiteAcc = reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn);
+    const blackAcc = reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn);
+    return {
+      whiteName: whiteInfo.name, blackName: blackInfo.name,
+      whiteAcc, blackAcc,
+      myColor: game.color || null, resultText,
+      opening: game.opening || null,
+      brilliant: kindCounts.brilliant || 0, blunder: kindCounts.blunder || 0, mistake: kindCounts.mistake || 0,
+    };
+  }, [hasPlayerData, game, result, sharpOn]);
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
@@ -11825,7 +11853,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large font={SITE_FONT} />
             </div>
           )}
-        {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
+        {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} />}
       </div>
     );
   }
@@ -11902,7 +11930,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           )}
         </div>
       </div>
-      {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} />}
+      {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} />}
     </div>
   );
 }
@@ -17870,6 +17898,72 @@ function reviewShareUrl(reviewId) {
   const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
   return origin + "/review/" + reviewId;
 }
+// (신규 기능, 사용자 요청) 리뷰 요약을 SNS에 바로 올릴 수 있는 정사각형(1080×1080) 이미지 카드로
+// 내보낸다 — 순수 Canvas 2D API만 쓴다(html2canvas 같은 무거운 의존성을 새로 추가하지 않기 위해,
+// 이 프로젝트가 지금까지도 스크린샷/이미지 내보내기 기능이 필요할 때 써 온 방식은 없었으므로 가장
+// 가벼운 선택). 아바타 이미지는 그리지 않는다 — chess.com 서버 응답에 CORS 헤더가 없어 canvas에
+// 그리면 "오염된 캔버스"가 되어 이후 toBlob 호출 자체가 SecurityError로 막힌다.
+function drawReviewShareCard(ctx, W, H, data) {
+  const { whiteName, blackName, whiteAcc, blackAcc, myColor, resultText, opening, brilliant, blunder, mistake } = data;
+  // 배경 — 리뷰 페이지(RV.bg)와 같은 톤의 라디얼 그러데이션으로 브랜드 통일감을 준다.
+  const bg = ctx.createRadialGradient(W * 0.5, H * -0.1, W * 0.1, W * 0.5, H * 0.5, W * 0.9);
+  bg.addColorStop(0, "#34230F"); bg.addColorStop(0.65, "#150C06"); bg.addColorStop(1, "#0B0704");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // 옅은 대각선 해치 무늬(도감 모식도 배경과 같은 느낌) — 은은한 질감.
+  ctx.save();
+  ctx.strokeStyle = "rgba(196,154,80,.08)"; ctx.lineWidth = 1;
+  for (let x = -H; x < W; x += 26) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + H, H); ctx.stroke(); }
+  ctx.restore();
+  const cx = W / 2;
+  // 워드마크.
+  ctx.textAlign = "center"; ctx.fillStyle = "#E8CB86"; ctx.font = "700 34px Georgia, 'Noto Serif KR', serif";
+  ctx.fillText("♞ OpenChess", cx, 90);
+  // 결과.
+  if (resultText) {
+    ctx.font = "800 30px " + SITE_FONT;
+    ctx.fillStyle = resultText === "승리" ? "#8FB55E" : resultText === "패배" ? "#C8453B" : "#E0B53A";
+    ctx.fillText(resultText, cx, 150);
+  }
+  // 플레이어 이름 + vs.
+  ctx.font = "700 26px " + SITE_FONT; ctx.fillStyle = "#F4EEE2";
+  const wLabel = (myColor === "w" ? "● " : "") + whiteName, bLabel = (myColor === "b" ? "● " : "") + blackName;
+  ctx.fillText(wLabel + "  vs  " + bLabel, cx, 220);
+  // 정확도 — 카드의 시각적 중심. 흰/검 두 칸으로 나눠 크게 보여준다.
+  const boxY = 280, boxH = 220, gap = 24, boxW = (W - 100) / 2 - gap / 2;
+  const drawAccBox = (x, label, acc, hi) => {
+    ctx.fillStyle = hi ? "rgba(143,181,94,.14)" : "rgba(255,255,255,.05)";
+    ctx.strokeStyle = hi ? "#8FB55E" : "rgba(255,255,255,.18)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x, boxY, boxW, boxH, 18); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(235,221,196,.65)"; ctx.font = "700 16px " + SITE_FONT;
+    ctx.fillText(label, x + boxW / 2, boxY + 40);
+    ctx.fillStyle = "#F4EEE2"; ctx.font = "800 56px " + SITE_FONT;
+    ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "—", x + boxW / 2, boxY + 115);
+    ctx.fillStyle = "rgba(235,221,196,.5)"; ctx.font = "600 14px " + SITE_FONT;
+    ctx.fillText("정확도", x + boxW / 2, boxY + 150);
+  };
+  drawAccBox(50, whiteName, whiteAcc, (whiteAcc || 0) >= (blackAcc || 0));
+  drawAccBox(50 + boxW + gap, blackName, blackAcc, (blackAcc || 0) > (whiteAcc || 0));
+  // 오프닝 이름.
+  if (opening) {
+    ctx.font = "italic 700 22px Georgia, 'Noto Serif KR', serif"; ctx.fillStyle = "#C49A50";
+    ctx.fillText("✦ " + opening + " ✦", cx, boxY + boxH + 60);
+  }
+  // 수 등급 요약 칩 3개.
+  const chipY = boxY + boxH + 110;
+  const chips = [["탁월한 수", brilliant, "#16B5A6"], ["실수", mistake, "#D9822B"], ["블런더", blunder, "#C8453B"]];
+  ctx.font = "700 20px " + SITE_FONT;
+  const chipW = 220, totalW = chipW * 3, startX = cx - totalW / 2;
+  chips.forEach(([label, n, color], i) => {
+    const x = startX + i * chipW + chipW / 2;
+    ctx.fillStyle = color; ctx.fillText(String(n), x - 30, chipY);
+    ctx.fillStyle = "rgba(235,221,196,.75)"; ctx.font = "600 16px " + SITE_FONT;
+    ctx.fillText(label, x + 20, chipY);
+    ctx.font = "700 20px " + SITE_FONT;
+  });
+  // 하단 워터마크.
+  ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = "rgba(235,221,196,.4)";
+  ctx.fillText("openchess.kr", cx, H - 40);
+}
 // (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
 // 공유할 수 있게 한다. 각 앱마다 별도 SDK·API 키를 등록하는 대신, 표준 Web Share API
 // (navigator.share)에 이 퍼즐의 딥링크를 넘긴다 — 모바일 브라우저에서는 OS가 지금 이 기기에 설치된
@@ -17978,12 +18072,51 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 공유 시트. PuzzleShareSheet와 같은 두 축(외부 앱 공유 +
 // 인앱 친구 대화창 공유)을 그대로 따르되, 퍼즐과 달리 리뷰는 전역 번호·좋아요 같은 부가 데이터가
 // 없어 훨씬 단순하다 — reviewId(딥링크 식별자)만 있으면 두 공유 경로 모두 동작한다.
-function ReviewShareSheet({ reviewId, label, myUid, onClose }) {
+function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
   const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
   const [profiles, setProfiles] = useState({});
   const [sent, setSent] = useState(() => new Set());
   const [busy, setBusy] = useState(null); // 전송 중인 uid
   const [sendErr, setSendErr] = useState("");
+  // (신규 기능, 사용자 요청) 이미지 카드 미리보기 — 시트가 열리는 즉시 한 번만 만들어 <canvas>에
+  // 그대로 그려 둔다(버튼을 눌러야 비로소 만들면 "공유하기"를 눌렀을 때 한 박자 늦게 반응하는
+  // 것처럼 보임 — 카드 자체는 순수 계산이라 비용이 크지 않다). 실제 공유/다운로드 시점에는 이
+  // 미리보기와 완전히 같은 그리기 함수(drawReviewShareCard)로 새로 그린 고해상도 canvas에서 blob만
+  // 새로 뽑는다(미리보기 캔버스를 그대로 toBlob하면 화면 표시용으로 축소된 해상도가 그대로 내보내짐).
+  const previewRef = useRef(null);
+  useEffect(() => {
+    if (!cardData || !previewRef.current) return;
+    const canvas = previewRef.current;
+    canvas.width = 1080; canvas.height = 1080;
+    const ctx = canvas.getContext("2d");
+    if (ctx) drawReviewShareCard(ctx, 1080, 1080, cardData);
+  }, [cardData]);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardMsg, setCardMsg] = useState("");
+  const canNativeShareFiles = typeof navigator !== "undefined" && !!navigator.canShare && !!navigator.share;
+  const shareCardImage = async () => {
+    if (!cardData || cardBusy || !previewRef.current) return;
+    setCardBusy(true); setCardMsg("");
+    try {
+      // (버그 수정, 코드 리뷰 지적) previewRef가 이미 같은 1080×1080 전체 해상도로 그려 둔 캔버스라
+      // (CSS의 aspectRatio/width:100%는 화면 표시 크기만 줄일 뿐 canvas.width/height 자체는 그대로),
+      // 굳이 다시 그릴 필요 없이 그 캔버스를 그대로 toBlob한다.
+      const blob = await new Promise((resolve) => previewRef.current.toBlob((b) => resolve(b), "image/png"));
+      if (!blob) { setCardMsg("이미지를 만들지 못했어요."); return; }
+      const file = new File([blob], "openchess-review.png", { type: "image/png" });
+      if (canNativeShareFiles && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "OpenChess 리뷰", text: label || "OpenChess 대국 리뷰" }); return; }
+        catch { return; } // 사용자가 공유 시트에서 취소 — 조용히 종료
+      }
+      // 공유 API가 파일을 못 받는 환경(대부분의 데스크톱)은 바로 다운로드.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "openchess-review.png"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setCardMsg("이미지를 저장했어요.");
+    } catch { setCardMsg("이미지를 만들지 못했어요."); }
+    finally { setCardBusy(false); }
+  };
   useEffect(() => {
     let cc = false;
     (async () => {
@@ -18013,6 +18146,22 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose }) {
         </div>
         {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title="OpenChess 리뷰" text={"OpenChess 리뷰 — " + (label || "대국 리뷰 보기")} />
           : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>공유 링크를 만드는 중…</div>}
+        {/* (신규 기능, 사용자 요청) 이미지 카드 — 정확성·결과·오프닝을 한눈에 담은 정사각형 PNG를
+            SNS에 바로 올릴 수 있게(카카오톡·인스타그램 등은 링크보다 이미지가 훨씬 잘 퍼진다).
+            cardData가 없으면(FEN 모드 등 플레이어 정보가 없는 분석) 섹션 자체를 숨긴다. */}
+        {cardData && (
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>이미지 카드로 공유</div>
+            <canvas ref={previewRef} style={{ width: "100%", aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", marginBottom: 8 }} />
+            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+              <button onClick={shareCardImage} disabled={cardBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: cardBusy ? "default" : "pointer", opacity: cardBusy ? .6 : 1 }}>
+                {canNativeShareFiles ? <Share2 size={13} /> : <ImageIcon size={13} />}
+                {cardBusy ? "만드는 중…" : canNativeShareFiles ? "이미지로 공유" : "이미지 저장"}
+              </button>
+              {cardMsg && <span style={{ fontSize: 11, color: T.inkSoft }}>{cardMsg}</span>}
+            </div>
+          </div>
+        )}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
