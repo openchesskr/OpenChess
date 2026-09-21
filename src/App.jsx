@@ -7,7 +7,7 @@ import {
   ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake, Route,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
-  Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench,
+  Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench, Flame, Medal,
 } from "lucide-react";
 import {
   T, FILES, MOTION_EASE, BOARD_GLOSS, DRAG_SCROLL_MULT,
@@ -19198,6 +19198,47 @@ const DAILY_SLOT_W = DAILY_CARD_W + 28; // 카드 폭 + 여백 28px = 카드 사
 // (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
 // 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
 const DAILY_BOARD_SIZE = 190;
+// (신규 기능, 사용자 요청) 일일 퍼즐 스트릭 배지 — best(역대 최고 연속 일수)가 이 문턱을 넘으면
+// 그 즉시 영구히 "획득"으로 취급한다(count가 나중에 끊겨도 배지는 그대로 남는다 — 별도의 획득
+// 여부 저장이 필요 없는 이유). days는 오름차순으로 정렬돼 있어야 한다.
+const STREAK_BADGES = [
+  { days: 3, label: "3일 연속" },
+  { days: 7, label: "일주일 연속" },
+  { days: 14, label: "2주 연속" },
+  { days: 30, label: "한 달 연속" },
+  { days: 100, label: "100일 연속" },
+];
+// 퍼즐 탭 오늘의 퍼즐 캐러셀 바로 아래에 붙는 스트릭 표시줄 — 지금 이어지는 연속 일수(불꽃 아이콘)와
+// 배지 목록(달성한 건 금색, 못한 건 회색)을 한 줄로 보여준다. (버그 수정, 코드 리뷰 지적) dailyPuzzleStreak는
+// useState 초깃값이 이미 { count:0, best:0, lastDate:null }라 절대 null/undefined가 되지 않으므로
+// "streak가 없으면 숨긴다"는 없는 조건이었다 — 일일 퍼즐을 한 번도 안 푼 신규 유저에게 "0일 연속"이
+// 영구히 보이지 않도록, count·best가 둘 다 0인(아직 기록이 전혀 없는) 경우에만 숨긴다.
+function DailyStreakStrip({ streak }) {
+  if (!streak || (!streak.count && !streak.best)) return null;
+  const { count, best } = streak;
+  return (
+    <div className="flex items-center gap-2" style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,.22)", border: "1px solid #5A4630", flexWrap: "wrap" }}>
+      <span className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+        <Flame size={16} color={count > 0 ? "#E8874A" : "rgba(235,221,196,.35)"} fill={count > 0 ? "#E8874A" : "none"} />
+        <span style={{ fontSize: 13, fontWeight: 800, color: count > 0 ? T.ivoryHi : "rgba(235,221,196,.5)" }}>{count}일 연속</span>
+      </span>
+      {best > 0 && <span style={{ fontSize: 10.5, color: "rgba(235,221,196,.5)", flexShrink: 0 }}>최고 {best}일</span>}
+      <span style={{ width: 1, alignSelf: "stretch", background: "#5A4630", flexShrink: 0 }} />
+      <div className="flex items-center gap-1" style={{ flexWrap: "wrap" }}>
+        {STREAK_BADGES.map((b) => {
+          const earned = best >= b.days;
+          return (
+            <span key={b.days} title={b.label + (earned ? " 달성" : " (" + b.days + "일 필요)")} className="flex items-center gap-1" style={{ padding: "3px 7px", borderRadius: 999, background: earned ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.05)", border: "1px solid " + (earned ? T.brass : "rgba(255,255,255,.1)") }}>
+              <Medal size={11} color={earned ? T.brassHi : "rgba(235,221,196,.3)"} />
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: earned ? T.brassHi : "rgba(235,221,196,.3)" }}>{b.days}일</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
@@ -19354,7 +19395,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen }) {
+function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen, dailyPuzzleStreak }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -19960,6 +20001,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
           테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
+      <DailyStreakStrip streak={dailyPuzzleStreak} />
       {/* (사용자 요청) 퍼즐 만들기 기능을 학습 탭 보드 편집기 대신 이 탭에서 — "번호로 풀기" 검색
           UI 바로 위 줄에 퍼즐 풀기/퍼즐 만들기 선택 박스를 둔다. */}
       <div className="inline-flex items-center" style={{ marginBottom: 10, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }}>
@@ -28518,6 +28560,10 @@ export default function App() {
   // dailyPuzzleHideDate("오늘 하루 다시 보지 않기"를 누른 날짜)만 저장해 두면, 그 둘로 매번
   // "지금 띄워야 하는가"를 다시 계산할 수 있어 별도의 "오늘 봤음" 불리언 플래그가 필요 없다.
   const [dailyPuzzleLastShownAt, setDailyPuzzleLastShownAt] = useState(0);
+  // (신규 기능, 사용자 요청) 일일 퍼즐 연속 해결(스트릭) — count는 지금 이어지고 있는 연속 일수,
+  // best는 역대 최고 기록(배지 판정용, count가 끊겨도 그대로 남는다), lastDate는 마지막으로
+  // 반영된 날짜(YYYY-MM-DD, KST) — 오늘 이미 반영했는지 판단하고 중복 집계를 막는 데 쓴다.
+  const [dailyPuzzleStreak, setDailyPuzzleStreak] = useState({ count: 0, best: 0, lastDate: null });
   const [dailyPuzzleHideDate, setDailyPuzzleHideDate] = useState(null);
   const [puzzleNoticeOpen, setPuzzleNoticeOpen] = useState(false);
   // (v0.2.9 기능) 일일 퀘스트 전체 클리어 축하 팝업 — 아래 dailyQuest.clearAnnounced effect가 연다.
@@ -28902,7 +28948,7 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setPuzzleRating(d.puzzleRating || 800); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setPuzzleRating(d.puzzleRating || 800); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.dailyPuzzleStreak) setDailyPuzzleStreak(d.dailyPuzzleStreak); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true);
       // (UX1) 새로고침해도 현재 탭·집중 분석·퍼즐 진행 상황이 유지되도록 복원
       // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
       // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
@@ -28930,7 +28976,7 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.dailyPuzzleStreak) setDailyPuzzleStreak(pr.dailyPuzzleStreak); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -28987,8 +29033,8 @@ export default function App() {
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", bio: profile.bio || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, puzzleRating, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, lineClearOn, puzzleClearOn, coachBubbleOn })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, lineClearOn, puzzleClearOn, coachBubbleOn]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, lineClearOn, puzzleClearOn, coachBubbleOn }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, lineClearOn, puzzleClearOn, coachBubbleOn]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -29067,7 +29113,7 @@ export default function App() {
     // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
     // 잘못 판단해 공지 모달이 안 뜬다 — 계정의 실제 값(없으면 null)으로 항상 동기화한다.
     setDismissedAnnounceVersion(pr.dismissedAnnounceVersion || null);
-    setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt || 0); setDailyPuzzleHideDate(pr.dailyPuzzleHideDate || null);
+    setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt || 0); setDailyPuzzleHideDate(pr.dailyPuzzleHideDate || null); setDailyPuzzleStreak(pr.dailyPuzzleStreak || { count: 0, best: 0, lastDate: null });
     // (버그 수정) 이전엔 각 필드를 "없으면 직전 상태(p) 값 유지"로 병합했다 — 새 계정에 닉네임/사진이
     // 아직 없으면 직전 계정(또는 게스트) 것이 화면에 그대로 남아 보이는, 훨씬 눈에 띄는 형태의 같은
     // 버그였다. 병합 대신 이 계정의 실제 값(없으면 빈 값)으로 완전히 교체한다.
@@ -29748,6 +29794,21 @@ export default function App() {
     if (!dailyQuest || dailyQuest.date !== todayStr() || !todayPuzzle) return;
     if (solved.has(todayPuzzle.id)) claimQuestCoins("dailypuzzle", 10);
   }, [dailyQuest && dailyQuest.date, todayPuzzle && todayPuzzle.id, solved, claimQuestCoins]);
+  // (신규 기능, 사용자 요청) 일일 퍼즐 스트릭 — 오늘의 퍼즐을 풀면 그 즉시(위 코인 지급과 같은
+  // 조건) 연속 일수를 갱신한다. lastDate가 이미 오늘이면(재방문·재렌더) 중복 집계하지 않고, 어제였으면
+  // 이어서 +1, 그 외(하루 이상 건너뜀·최초 기록)면 1로 리셋한다. best는 count가 끊겨도 그대로 남아
+  // 배지(STREAK_BADGES) 판정 기준이 된다.
+  useEffect(() => {
+    if (!dailyQuest || dailyQuest.date !== todayStr() || !todayPuzzle) return;
+    if (!solved.has(todayPuzzle.id)) return;
+    const t = todayStr();
+    setDailyPuzzleStreak((s) => {
+      if (s.lastDate === t) return s;
+      const yesterday = todayStr(new Date(Date.now() - 24 * 3600e3));
+      const count = s.lastDate === yesterday ? s.count + 1 : 1;
+      return { count, best: Math.max(s.best || 0, count), lastDate: t };
+    });
+  }, [dailyQuest && dailyQuest.date, todayPuzzle && todayPuzzle.id, solved]);
   // (v0.1.0) 채팅의 퍼즐 공유 카드 "풀러 가기" — 그 번호의 퍼즐을 서버에서 불러와 곧장 퍼즐 풀이
   // 화면으로 이동하고, 이 퍼즐을 푸는 동안 얻는 XP의 10%가 공유해 준 친구에게 돌아가도록 출처를 기록한다.
   const onOpenSharedPuzzle = useCallback(async (m) => {
@@ -30103,7 +30164,7 @@ export default function App() {
             (onOpenLearn → PuzzleSolver의 pickToLearn이 onClose도 함께 부름), App.jsx의
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} />}
+        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} dailyPuzzleStreak={dailyPuzzleStreak} />}
         {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
