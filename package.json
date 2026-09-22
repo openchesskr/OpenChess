@@ -11,7 +11,8 @@
     "refresh": "node scripts/refresh-data.mjs",
     "list-external-game-urls": "node scripts/list-external-game-urls.mjs",
     "fetch-external-games": "node scripts/fetch-external-games.mjs",
-    "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs"
+    "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs",
+    "check:assets": "node scripts/check-unused-public-assets.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
