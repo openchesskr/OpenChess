@@ -7,7 +7,7 @@ export const QLABEL = { brilliant: "탁월한 수", best: "최선의 수", only:
 // (21차) 수 체계 아이콘 — 직접 제작한 원형 배지 이미지(chess.com 스타일)로 교체. "유일한 수"는
 // chess.com이 "Great Move"라 부르는 것과 같은 자리라 Great 이미지를 쓴다. "Inaccuarcy"는 실제
 // 업로드된 파일명의 오타를 그대로 반영한 것(파일을 다시 올리기 전까지는 이 철자를 유지해야 함).
-const BADGE_ICON_SRC = {
+export const BADGE_ICON_SRC = {
   brilliant: "/Move Classifications_Brilliant.png",
   only: "/Move Classifications_Great.png",
   best: "/Move Classifications_Best.png",
