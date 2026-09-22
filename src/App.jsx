@@ -84,7 +84,7 @@ import {
   SEQ_FONT, SITE_FONT, mateWhiteWins, EvalBadge, EvalBar,
   EngineLineSkeleton, EngineLineBlank, TypedMoveLine, dedupeEngineLines, EngineLineRow, EngineLines,
 } from "./components/engineLines.jsx";
-import { QLABEL, badgeIcon, PendingDots } from "./components/badges.jsx";
+import { QLABEL, badgeIcon, PendingDots, BADGE_ICON_SRC } from "./components/badges.jsx";
 import { KW, KeywordScroll, KeywordChip } from "./components/keywordScroll.jsx";
 import { BestMoveJumpButton, ListPager, NavBtn } from "./components/uiPrimitives.jsx";
 
@@ -11786,11 +11786,12 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   useEffect(() => { let cc = false; reviewGameIdentifier(game).then((id) => { if (!cc) setReviewId(id); }); return () => { cc = true; }; }, [game]);
   const [shareOpen, setShareOpen] = useState(false);
   const shareLabel = hasPlayerData ? (reviewPlayerInfo(game, "w").name + " vs " + reviewPlayerInfo(game, "b").name) : (fenRoot ? "FEN 포지션 분석" : "PGN 대국 리뷰");
-  // (신규 기능, 사용자 요청) 리뷰 요약 카드 이미지 공유용 데이터 — 아바타 이미지는 chess.com 서버가
-  // CORS 헤더를 내려주지 않아 canvas에 그리면 "오염된(tainted) 캔버스"가 돼 toBlob/toDataURL 자체가
-  // 막힌다(보안 정책) — 그래서 카드에는 이니셜 원만 쓰고 실제 아바타는 넣지 않는다. 정확성은 이미
-  // ReviewSummary가 쓰는 것과 같은 값(result.whiteAcc/blackAcc, 항상 보정 켜짐)을 그대로 재사용해
-  // 화면에 보이는 숫자와 카드 숫자가 어긋나지 않게 한다.
+  // (신규 기능, 사용자 요청) 리뷰 요약 카드 이미지 공유용 데이터. 정확성은 이미 ReviewSummary가 쓰는
+  // 것과 같은 값(result.whiteAcc/blackAcc, 항상 보정 켜짐)을 그대로 재사용해 화면에 보이는 숫자와
+  // 카드 숫자가 어긋나지 않게 한다.
+  // (v0.5.2, 사용자 요청 — 카드 디자인 고도화) whiteAvatarUrl/blackAvatarUrl과 moves(전체 수 배열,
+  // 수 등급별 목록을 카드에 그대로 그리기 위해)를 추가했다 — 아바타는 이미 이 컴포넌트가 갖고 있는
+  // whitePInfo.avatar/blackPInfo.avatar(useChesscomAvatar)를 그대로 넘긴다.
   const shareCardData = useMemo(() => {
     // (버그 수정, 코드 리뷰 지적) result는 useState(null)로 시작해 analyzeGame의 첫 결과가 올 때까지
     // null이다 — hasPlayerData만 보고 곧장 result.moves에 접근하면, 리뷰 진입 직후(분석이 아직
@@ -11799,8 +11800,6 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     // 정확도·블런더 수로 카드를 만들어 공유해 버릴 수 있다(화면에 최종적으로 보이는 값과 다름).
     if (!hasPlayerData || !result || !resultDone) return null;
     const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
-    const kindCounts = {};
-    for (const m of result.moves) { if (m.kind) kindCounts[m.kind] = (kindCounts[m.kind] || 0) + 1; }
     const resultText = !game.result ? null : game.result === "win" ? "승리" : game.result === "loss" ? "패배" : "무승부";
     // (버그 수정, 코드 리뷰 지적) result.whiteAcc/blackAcc는 항상 sharpOn=true로 고정 계산된 값이라,
     // 설정에서 "포지션 변동성 보정"을 꺼 둔 상태로 리뷰를 볼 때 화면에 보이는 정확도(핏·ReviewSummary가
@@ -11813,9 +11812,15 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       whiteAcc, blackAcc,
       myColor: game.color || null, resultText,
       opening: game.opening || null,
-      brilliant: kindCounts.brilliant || 0, blunder: kindCounts.blunder || 0, mistake: kindCounts.mistake || 0,
+      moves: result.moves,
+      whiteAvatarUrl: (whitePInfo && whitePInfo.avatar) || null,
+      blackAvatarUrl: (blackPInfo && blackPInfo.avatar) || null,
     };
-  }, [hasPlayerData, game, result, resultDone, sharpOn]);
+    // (코드 리뷰 수정) whitePInfo/blackPInfo 자체를 deps에 넣으면 안 된다 — 둘 다 매 렌더마다 스프레드로
+    // 새로 만들어지는 객체 리터럴이라 참조가 계속 바뀌어, 이 useMemo가 사실상 매 렌더 다시 계산되고
+    // (카드와 무관한 다른 상태 변화로 리렌더될 때마다) 아바타 URL이 안 바뀌었는데도 카드를 새로
+    // 그리게 만든다 — 실제로 값이 바뀔 때만 다시 계산되도록 아바타 URL(원시값)만 deps로 쓴다.
+  }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
@@ -17955,10 +17960,90 @@ function reviewShareUrl(reviewId) {
 // (신규 기능, 사용자 요청) 리뷰 요약을 SNS에 바로 올릴 수 있는 정사각형(1080×1080) 이미지 카드로
 // 내보낸다 — 순수 Canvas 2D API만 쓴다(html2canvas 같은 무거운 의존성을 새로 추가하지 않기 위해,
 // 이 프로젝트가 지금까지도 스크린샷/이미지 내보내기 기능이 필요할 때 써 온 방식은 없었으므로 가장
-// 가벼운 선택). 아바타 이미지는 그리지 않는다 — chess.com 서버 응답에 CORS 헤더가 없어 canvas에
-// 그리면 "오염된 캔버스"가 되어 이후 toBlob 호출 자체가 SecurityError로 막힌다.
-function drawReviewShareCard(ctx, W, H, data) {
-  const { whiteName, blackName, whiteAcc, blackAcc, myColor, resultText, opening, brilliant, blunder, mistake } = data;
+// 가벼운 선택). OpenChess 로고·기물 아이콘(PIECE_IMG_SETS.classic)·수 등급 배지(BADGE_ICON_SRC)는
+// 전부 같은 출처(public/)라 CORS 걱정 없이 바로 그릴 수 있다.
+// (v0.5.2, 사용자 요청 — 카드 디자인 고도화) chess.com 아바타는 다른 도메인이라 예전엔 아예 안
+// 그렸다(서버가 CORS 헤더를 안 내려주면 canvas가 "오염"돼 toBlob이 SecurityError로 막힘) — 이제
+// <img crossOrigin="anonymous">로 불러온다: 이 속성을 준 상태로 로드를 시도하면, 서버가 CORS를
+// 허용하지 않을 경우 오염된 이미지가 그려지는 게 아니라 로드 자체가 애초에 실패한다(onerror) —
+// 그러면 그 자리는 조용히 이니셜 원으로 대체한다. 성공하면(CORS를 허용하는 아바타 CDN이면) 실제
+// 사진이, 실패해도 이니셜 원이 나오므로 어느 쪽이든 canvas는 항상 안전(untainted)하다.
+// (코드 리뷰 수정) 실패(onerror)한 요청까지 null로 영구 캐시해 두면, 일시적인 네트워크 문제로 한 번
+// 실패한 아바타는 그 문제가 풀린 뒤에도 그 세션 내내 계속 이니셜 원으로만 나온다 — 실패는 캐시하지
+// 않고(다음에 다시 시도할 수 있게), 성공한 이미지만 캐시하되 세션이 길어져도 무한히 커지지 않도록
+// 오래된 항목부터 정리한다(FIFO, Map은 삽입 순서를 유지하므로 첫 키가 항상 가장 오래된 것).
+const shareCardImageCache = new Map();
+const SHARE_CARD_IMAGE_CACHE_MAX = 200;
+function loadImageSafe(src, crossOrigin) {
+  if (!src) return Promise.resolve(null);
+  const key = (crossOrigin || "") + "|" + src;
+  if (shareCardImageCache.has(key)) return shareCardImageCache.get(key);
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    if (crossOrigin) img.crossOrigin = crossOrigin;
+    img.onload = () => resolve(img);
+    img.onerror = () => { shareCardImageCache.delete(key); resolve(null); };
+    img.src = src;
+  });
+  shareCardImageCache.set(key, p);
+  if (shareCardImageCache.size > SHARE_CARD_IMAGE_CACHE_MAX) shareCardImageCache.delete(shareCardImageCache.keys().next().value);
+  return p;
+}
+// 주어진 폭을 넘으면 "…"으로 줄여 자른다 — 닉네임(chess.com은 최대 25자까지 허용)·오프닝 이름처럼
+// 길이를 예측할 수 없는 텍스트가 카드 밖으로 넘치거나 옆 요소와 겹치는 것을 막는다.
+function fitCanvasText(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + "…").width <= maxWidth) lo = mid; else hi = mid - 1;
+  }
+  return text.slice(0, lo) + "…";
+}
+// 원형으로 클리핑해 아바타(또는 실패 시 이니셜)를 그린다 — cover 방식으로 정사각 크롭.
+function drawShareAvatar(ctx, img, cx, cy, r, initial, ringColor) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+  if (img) {
+    const s = Math.max((r * 2) / img.width, (r * 2) / img.height);
+    const dw = img.width * s, dh = img.height * s;
+    ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
+  } else {
+    ctx.fillStyle = "#4A3418"; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.fillStyle = "#E8CB86"; ctx.font = "800 " + Math.round(r * 0.85) + "px " + SITE_FONT;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(initial, cx, cy + 2);
+    ctx.textBaseline = "alphabetic";
+  }
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.lineWidth = ringColor ? 4 : 2.5; ctx.strokeStyle = ringColor || "rgba(255,255,255,.3)"; ctx.stroke();
+}
+// (v0.5.2) 실제로 필요한 이미지(로고·양쪽 킹 아이콘·이번 대국에 실제로 등장한 등급의 배지·양쪽
+// 아바타)만 병렬로 미리 불러온 뒤, 순수 동기 함수 drawReviewShareCardSync에 넘겨 그린다 — 그려야
+// 할 내용(수 등급 표의 행 수 등)이 데이터에 따라 달라지므로 그리기 자체는 drawReviewShareCardSync
+// 안에서 계산·배치까지 전부 처리한다. 이미지 로딩(비동기)과 실제 그리기(동기)를 분리해 둔 이유는
+// 호출부(ReviewShareSheet)가 "로딩이 끝난 시점에 이 결과가 여전히 최신 요청인지"를 직접 확인한
+// 뒤에만 캔버스에 그리게 하기 위함 — 하나로 합쳐 두면 오래된 요청의 그리기 자체를 막을 방법이 없어,
+// 먼저 시작됐지만 나중에 끝난 요청이 최신 화면을 조용히 덮어쓸 수 있다.
+async function loadReviewShareCardAssets(data) {
+  const { moves = [] } = data;
+  const kindsPresent = new Set(moves.map((m) => m.kind).filter(Boolean));
+  const [logoImg, whiteKingImg, blackKingImg, whiteAvatarImg, blackAvatarImg, ...badgeImgs] = await Promise.all([
+    loadImageSafe("/OpenChessLogo.png"),
+    loadImageSafe(PIECE_IMG_SETS.classic.images.K.w.src),
+    loadImageSafe(PIECE_IMG_SETS.classic.images.K.b.src),
+    loadImageSafe(data.whiteAvatarUrl, "anonymous"),
+    loadImageSafe(data.blackAvatarUrl, "anonymous"),
+    ...ANALYSIS_KIND_ROWS.filter(([k]) => kindsPresent.has(k)).map(([k]) => loadImageSafe(BADGE_ICON_SRC[k])),
+  ]);
+  const badgeImgByKind = {};
+  ANALYSIS_KIND_ROWS.filter(([k]) => kindsPresent.has(k)).forEach(([k], i) => { badgeImgByKind[k] = badgeImgs[i]; });
+  return { logoImg, whiteKingImg, blackKingImg, whiteAvatarImg, blackAvatarImg, badgeImgByKind };
+}
+function drawReviewShareCardSync(ctx, W, H, data, assets) {
+  const { whiteName, blackName, whiteAcc, blackAcc, myColor, resultText, opening, moves = [] } = data;
+  const { logoImg, whiteKingImg, blackKingImg, whiteAvatarImg, blackAvatarImg, badgeImgByKind } = assets;
   // 배경 — 리뷰 페이지(RV.bg)와 같은 톤의 라디얼 그러데이션으로 브랜드 통일감을 준다.
   const bg = ctx.createRadialGradient(W * 0.5, H * -0.1, W * 0.1, W * 0.5, H * 0.5, W * 0.9);
   bg.addColorStop(0, "#34230F"); bg.addColorStop(0.65, "#150C06"); bg.addColorStop(1, "#0B0704");
@@ -17969,53 +18054,92 @@ function drawReviewShareCard(ctx, W, H, data) {
   for (let x = -H; x < W; x += 26) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + H, H); ctx.stroke(); }
   ctx.restore();
   const cx = W / 2;
-  // 워드마크.
-  ctx.textAlign = "center"; ctx.fillStyle = "#E8CB86"; ctx.font = "700 34px Georgia, 'Noto Serif KR', serif";
-  ctx.fillText("♞ OpenChess", cx, 90);
+  ctx.textAlign = "center";
+  // 워드마크 — 실제 OpenChess 로고 이미지(같은 출처라 CORS 걱정 없음). 못 불러왔을 때만 예전
+  // 텍스트 워드마크로 대체한다.
+  if (logoImg) {
+    const logoH = 54, logoW = logoH * (logoImg.width / logoImg.height);
+    ctx.drawImage(logoImg, cx - logoW / 2, 46, logoW, logoH);
+  } else {
+    ctx.fillStyle = "#E8CB86"; ctx.font = "700 34px Georgia, 'Noto Serif KR', serif";
+    ctx.fillText("♞ OpenChess", cx, 90);
+  }
   // 결과.
   if (resultText) {
-    ctx.font = "800 30px " + SITE_FONT;
+    ctx.font = "800 28px " + SITE_FONT;
     ctx.fillStyle = resultText === "승리" ? "#8FB55E" : resultText === "패배" ? "#C8453B" : "#E0B53A";
-    ctx.fillText(resultText, cx, 150);
+    ctx.fillText(resultText, cx, 155);
   }
-  // 플레이어 이름 + vs.
-  ctx.font = "700 26px " + SITE_FONT; ctx.fillStyle = "#F4EEE2";
-  const wLabel = (myColor === "w" ? "● " : "") + whiteName, bLabel = (myColor === "b" ? "● " : "") + blackName;
-  ctx.fillText(wLabel + "  vs  " + bLabel, cx, 220);
-  // 정확도 — 카드의 시각적 중심. 흰/검 두 칸으로 나눠 크게 보여준다.
-  const boxY = 280, boxH = 220, gap = 24, boxW = (W - 100) / 2 - gap / 2;
-  const drawAccBox = (x, label, acc, hi) => {
+  // 플레이어 카드 — 아바타(또는 이니셜) + 진영 킹 아이콘 + 이름 + 정확도. 내가 둔 쪽은 금색 링으로 강조.
+  const boxY = 195, boxH = 265, gap = 24, boxW = (W - 100) / 2 - gap / 2;
+  const drawPlayerBox = (x, name, acc, avatarImg, kingImg, hi, isMe) => {
     ctx.fillStyle = hi ? "rgba(143,181,94,.14)" : "rgba(255,255,255,.05)";
     ctx.strokeStyle = hi ? "#8FB55E" : "rgba(255,255,255,.18)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(x, boxY, boxW, boxH, 18); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "rgba(235,221,196,.65)"; ctx.font = "700 16px " + SITE_FONT;
-    ctx.fillText(label, x + boxW / 2, boxY + 40);
-    ctx.fillStyle = "#F4EEE2"; ctx.font = "800 56px " + SITE_FONT;
-    ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "—", x + boxW / 2, boxY + 115);
-    ctx.fillStyle = "rgba(235,221,196,.5)"; ctx.font = "600 14px " + SITE_FONT;
-    ctx.fillText("정확도", x + boxW / 2, boxY + 150);
+    const bcx = x + boxW / 2;
+    drawShareAvatar(ctx, avatarImg, bcx, boxY + 56, 40, (name || "?")[0].toUpperCase(), isMe ? "#E8CB86" : null);
+    // 이름 옆에 그 진영 킹 아이콘을 작게 붙여, 실제 오픈체스 기물 이미지가 카드에도 드러나게 한다.
+    // (코드 리뷰 발견 — 실기기 스크린샷으로 확인) 닉네임이 길면(chess.com은 최대 25자까지 허용) 카드
+    // 폭을 넘어 옆 칸까지 침범했다 — 박스 안쪽 여백을 뺀 폭으로 미리 줄여 자른다.
+    ctx.font = "700 22px " + SITE_FONT;
+    const kingW = kingImg ? 20 * (kingImg.width / kingImg.height) : 0;
+    const maxNameW = boxW - 32 - (kingImg ? kingW + 8 : 0);
+    const fitName = fitCanvasText(ctx, name, Math.max(40, maxNameW));
+    const nameW = ctx.measureText(fitName).width;
+    const groupW = nameW + (kingImg ? kingW + 8 : 0);
+    let gx = bcx - groupW / 2;
+    if (kingImg) { ctx.drawImage(kingImg, gx, boxY + 108, kingW, 20); gx += kingW + 8; }
+    ctx.fillStyle = "#F4EEE2"; ctx.textAlign = "left"; ctx.fillText(fitName, gx, boxY + 126); ctx.textAlign = "center";
+    ctx.fillStyle = "#F4EEE2"; ctx.font = "800 46px " + SITE_FONT;
+    ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "—", bcx, boxY + 190);
+    ctx.fillStyle = "rgba(235,221,196,.5)"; ctx.font = "600 13px " + SITE_FONT;
+    ctx.fillText("정확도", bcx, boxY + 222);
   };
-  drawAccBox(50, whiteName, whiteAcc, (whiteAcc || 0) >= (blackAcc || 0));
-  drawAccBox(50 + boxW + gap, blackName, blackAcc, (blackAcc || 0) > (whiteAcc || 0));
+  drawPlayerBox(50, whiteName, whiteAcc, whiteAvatarImg, whiteKingImg, (whiteAcc || 0) >= (blackAcc || 0), myColor === "w");
+  drawPlayerBox(50 + boxW + gap, blackName, blackAcc, blackAvatarImg, blackKingImg, (blackAcc || 0) > (whiteAcc || 0), myColor === "b");
   // 오프닝 이름.
+  let y = boxY + boxH + 44;
   if (opening) {
-    ctx.font = "italic 700 22px Georgia, 'Noto Serif KR', serif"; ctx.fillStyle = "#C49A50";
-    ctx.fillText("✦ " + opening + " ✦", cx, boxY + boxH + 60);
+    ctx.font = "italic 700 21px Georgia, 'Noto Serif KR', serif"; ctx.fillStyle = "#C49A50";
+    ctx.fillText(fitCanvasText(ctx, "✦ " + opening + " ✦", W - 100), cx, y);
+    y += 46;
+  } else { y += 10; }
+  // (v0.5.2, 사용자 요청) '분석' 탭에서 보이는 것과 똑같은 수 등급별(백/흑 각각 몇 수씩) 목록 —
+  // ANALYSIS_KIND_ROWS·QCOLOR·배지 이미지를 화면의 ReviewKindTable과 동일한 기준으로 재사용해
+  // 숫자가 항상 일치하게 한다. 실제로 이 대국에 등장한 등급만(둘 다 0인 행은 제외) 보여준다.
+  const countBy = (white, kind) => moves.filter((m) => m.white === white && m.kind === kind).length;
+  const rows = ANALYSIS_KIND_ROWS.map(([kind, label]) => ({ kind, label, w: countBy(true, kind), b: countBy(false, kind) })).filter((r) => r.w || r.b);
+  if (rows.length) {
+    const tableTop = y, tableBottom = H - 90, avail = tableBottom - tableTop;
+    const rowH = Math.max(30, Math.min(48, Math.floor(avail / rows.length)));
+    const tableH = rowH * rows.length;
+    let ry = tableTop + Math.max(0, (avail - tableH) / 2);
+    const tw = 900, tx = cx - tw / 2;
+    ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(tx, ry); ctx.lineTo(tx + tw, ry); ctx.stroke();
+    rows.forEach((r) => {
+      const midY = ry + rowH / 2;
+      ctx.font = "800 " + Math.min(20, rowH * 0.5) + "px " + SITE_FONT; ctx.textBaseline = "middle";
+      ctx.fillStyle = QCOLOR[r.kind] || "#E8CB86"; ctx.textAlign = "center";
+      ctx.fillText(String(r.w), tx + 55, midY);
+      ctx.fillText(String(r.b), tx + tw - 55, midY);
+      const badge = badgeImgByKind[r.kind];
+      const bs = Math.min(22, rowH * 0.6);
+      ctx.font = "700 " + Math.min(17, rowH * 0.44) + "px " + SITE_FONT;
+      const labelW = ctx.measureText(r.label).width;
+      const groupW = labelW + (badge ? bs + 8 : 0);
+      let lx = cx - groupW / 2;
+      if (badge) { ctx.drawImage(badge, lx, midY - bs / 2, bs, bs); lx += bs + 8; }
+      ctx.fillStyle = "rgba(235,221,196,.85)"; ctx.textAlign = "left";
+      ctx.fillText(r.label, lx, midY);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ry += rowH;
+      ctx.strokeStyle = "rgba(255,255,255,.08)";
+      ctx.beginPath(); ctx.moveTo(tx, ry); ctx.lineTo(tx + tw, ry); ctx.stroke();
+    });
   }
-  // 수 등급 요약 칩 3개.
-  const chipY = boxY + boxH + 110;
-  const chips = [["탁월한 수", brilliant, "#16B5A6"], ["실수", mistake, "#D9822B"], ["블런더", blunder, "#C8453B"]];
-  ctx.font = "700 20px " + SITE_FONT;
-  const chipW = 220, totalW = chipW * 3, startX = cx - totalW / 2;
-  chips.forEach(([label, n, color], i) => {
-    const x = startX + i * chipW + chipW / 2;
-    ctx.fillStyle = color; ctx.fillText(String(n), x - 30, chipY);
-    ctx.fillStyle = "rgba(235,221,196,.75)"; ctx.font = "600 16px " + SITE_FONT;
-    ctx.fillText(label, x + 20, chipY);
-    ctx.font = "700 20px " + SITE_FONT;
-  });
   // 하단 워터마크.
-  ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = "rgba(235,221,196,.4)";
+  ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = "rgba(235,221,196,.4)"; ctx.textAlign = "center";
   ctx.fillText("openchess.kr", cx, H - 40);
 }
 // (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
@@ -18138,18 +18262,33 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
   // 미리보기와 완전히 같은 그리기 함수(drawReviewShareCard)로 새로 그린 고해상도 canvas에서 blob만
   // 새로 뽑는다(미리보기 캔버스를 그대로 toBlob하면 화면 표시용으로 축소된 해상도가 그대로 내보내짐).
   const previewRef = useRef(null);
+  // (v0.5.2) drawReviewShareCard가 로고·기물·배지·아바타 이미지를 먼저 불러온 뒤 그리는 비동기
+  // 함수로 바뀌어, cardData가 빠르게 여러 번 바뀌면(분석이 아직 진행 중일 때는 그럴 일이 없지만
+  // 방어적으로) 먼저 시작된 그리기가 나중 것보다 늦게 끝나 화면에 이전 카드가 덮어써질 수 있다 —
+  // cancelled 플래그로 이 effect의 마지막 실행 결과만 반영한다.
+  const [cardReady, setCardReady] = useState(false);
   useEffect(() => {
     if (!cardData || !previewRef.current) return;
+    let cancelled = false;
+    setCardReady(false);
     const canvas = previewRef.current;
-    canvas.width = 1080; canvas.height = 1080;
-    const ctx = canvas.getContext("2d");
-    if (ctx) drawReviewShareCard(ctx, 1080, 1080, cardData);
+    loadReviewShareCardAssets(cardData).then((assets) => {
+      // (코드 리뷰 수정) 이미지 로딩이 끝난 시점에 cancelled를 확인한 "뒤"에만 실제로 그린다 —
+      // 예전엔 그리기 자체가 비동기 함수 안에 있어 이 확인이 그리기를 막지 못했고, 먼저 시작했지만
+      // 나중에 끝난(느린 이미지를 기다린) 오래된 요청이 최신 카드를 조용히 덮어쓸 수 있었다.
+      if (cancelled || !previewRef.current) return;
+      const ctx = canvas.getContext("2d");
+      canvas.width = 1080; canvas.height = 1080;
+      if (ctx) drawReviewShareCardSync(ctx, 1080, 1080, cardData, assets);
+      setCardReady(true);
+    });
+    return () => { cancelled = true; };
   }, [cardData]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardMsg, setCardMsg] = useState("");
   const canNativeShareFiles = typeof navigator !== "undefined" && !!navigator.canShare && !!navigator.share;
   const shareCardImage = async () => {
-    if (!cardData || cardBusy || !previewRef.current) return;
+    if (!cardData || cardBusy || !cardReady || !previewRef.current) return;
     setCardBusy(true); setCardMsg("");
     try {
       // (버그 수정, 코드 리뷰 지적) previewRef가 이미 같은 1080×1080 전체 해상도로 그려 둔 캔버스라
@@ -18206,11 +18345,11 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
         {cardData && (
           <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>이미지 카드로 공유</div>
-            <canvas ref={previewRef} style={{ width: "100%", aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", marginBottom: 8 }} />
+            <canvas ref={previewRef} style={{ width: "100%", aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", marginBottom: 8, opacity: cardReady ? 1 : 0.5, transition: "opacity .2s" }} />
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <button onClick={shareCardImage} disabled={cardBusy} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: cardBusy ? "default" : "pointer", opacity: cardBusy ? .6 : 1 }}>
+              <button onClick={shareCardImage} disabled={cardBusy || !cardReady} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: (cardBusy || !cardReady) ? "default" : "pointer", opacity: (cardBusy || !cardReady) ? .6 : 1 }}>
                 {canNativeShareFiles ? <Share2 size={13} /> : <ImageIcon size={13} />}
-                {cardBusy ? "만드는 중…" : canNativeShareFiles ? "이미지로 공유" : "이미지 저장"}
+                {cardBusy ? "만드는 중…" : !cardReady ? "카드 준비 중…" : canNativeShareFiles ? "이미지로 공유" : "이미지 저장"}
               </button>
               {cardMsg && <span style={{ fontSize: 11, color: T.inkSoft }}>{cardMsg}</span>}
             </div>
@@ -21771,7 +21910,7 @@ const CHANGELOG = [
       "퍼즐 추천 난이도가 최근 컨디션(정답률 흐름)과 풀이 경험치에 맞춰 스스로 조금씩 조정돼요 — 최근 잘 풀고 있으면 살짝 더 어려운 쪽으로, 어려워하면 살짝 쉬운 쪽으로.",
       "도감 오프닝 모식도에 chess.com 전적 기준 내 승률이 색으로 표시돼요.",
       "프로필의 chess.com 통계에 '약점 리포트'가 추가됐어요 — 리뷰한 대국들을 모아 블런더가 잦은 오프닝을 알려줘요.",
-      "대국 리뷰 요약을 SNS에 바로 올릴 수 있는 이미지 카드로 내보낼 수 있어요.",
+      "대국 리뷰 요약을 SNS에 바로 올릴 수 있는 이미지 카드로 내보낼 수 있어요 — OpenChess 로고·기물 아이콘, 실제 상대의 프로필 사진, 수 등급별 목록까지 함께 담겨요.",
       "친구의 진행 중인 실시간 대국을 참가하지 않고 구경만 할 수 있는 '관전' 기능이 생겼어요.",
     ]
   },
