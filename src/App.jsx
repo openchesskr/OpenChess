@@ -11821,7 +11821,8 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       metaText,
       whiteAcc, blackAcc,
       myColor: game.color || null, resultText,
-      opening: game.opening || null,
+      // (사용자 요청) 카드의 오프닝 이름은 영문으로 — 화면의 오프닝 배너(game.opening)와 별개로 계산한다.
+      opening: (!fenRoot && sans && sans.length ? openingNameEnOf(sans) : null) || (game.opening && !HANGUL_RX.test(game.opening) ? game.opening : null),
       moves: result.moves,
       whiteAvatarUrl: (whitePInfo && whitePInfo.avatar) || null,
       blackAvatarUrl: (blackPInfo && blackPInfo.avatar) || null,
@@ -15945,6 +15946,23 @@ function rerollQuestOpening(dq, idx, recentOpenings) {
 function openingNameOf(moves) {
   let name = null; const lim = Math.min(moves.length, 16);
   for (let i = 1; i <= lim; i++) { const n = effectiveOpeningNameAt(moves.slice(0, i)); if (n) name = n; }
+  return name;
+}
+// (v0.5.2, 사용자 요청) 리뷰 공유 이미지 카드는 오프닝 이름을 항상 영문으로 보여준다 — 스냅샷 원본
+// ECO 이름(nd.opening.name)은 영문이지만, 개발자가 도감에서 고친 이름(nameOverride)은 한글일 수 있다.
+// openingNameOf와 같은 규칙(수순을 따라가며 마지막으로 이름이 붙은 포지션)을 쓰되, 한글이 섞인
+// 이름은 건너뛰고 원본 영문 이름을 쓴다(영문으로 고친 오버라이드는 그대로 존중).
+const HANGUL_RX = /[ㄱ-ㆎ가-힣]/;
+function openingNameEnOf(moves) {
+  let name = null; const lim = Math.min(moves.length, 16);
+  for (let i = 1; i <= lim; i++) {
+    const path = moves.slice(0, i);
+    const nd = snapNode(path);
+    if (!nd || !nd.opening || !nd.opening.name) continue;
+    const ov = nameOverride(path.slice(0, -1).join(" "), path[i - 1]);
+    const cand = ov && !HANGUL_RX.test(ov) ? ov : nd.opening.name;
+    if (cand && !HANGUL_RX.test(cand)) name = cand;
+  }
   return name;
 }
 
