@@ -14,6 +14,15 @@ export const MINOR_HOME_SQUARES = new Set(["b1", "g1", "c1", "f1", "b8", "g8", "
 export function isDevelopingMove(uci, san) {
   if (san === "O-O" || san === "O-O-O") return true;
   if (san.includes("x") || san.includes("+") || san.includes("#")) return false;
+  // (버그 수정, 코드 리뷰 지적) MINOR_HOME_SQUARES는 나이트·비숍의 홈 칸인데, 이 함수는 출발 칸만
+  // 보고 판정해 캐슬링 이후 그 칸에 있게 된 룩(f1/f8/d1/d8 대신 O-O면 f1/f8, O-O-O면 d1/d8이지만
+  // 예전 판정은 b/c/f/g 전부를 봤다)이나 킹(g1/g8/c1/c8)이 나중에 다시 움직이는 실전 수까지 "마이너
+  // 기물 전개"로 잘못 분류했다 — 예를 들어 백이 O-O 이후 룩을 f1에서 e1로 옮기는 수(Rf1-e1, 흔한
+  // 중앙 룩 배치)가 puzzleCandidatesAt 필터(genPuzzleTree)에서 통째로 걸러져, 실제로 가장 배울 게
+  // 많은 수가 퍼즐 라인 후보에서 사라질 수 있었다. SAN 첫 글자로 실제 기물이 나이트(N)·비숍(B)인지
+  // 먼저 확인한다.
+  const piece = "KQRBN".includes(san[0]) ? san[0] : "P";
+  if (piece !== "N" && piece !== "B") return false;
   return MINOR_HOME_SQUARES.has((uci || "").slice(0, 2));
 }
 

@@ -1291,6 +1291,12 @@ begin
   if not v_exists then raise exception 'puzzle_not_found'; end if;
   if p_target_username is null or btrim(p_target_username) = '' then
     select id, username into v_uid, v_uname from public.profiles where username = 'openchesskr';
+    -- (버그 수정, 사용자 재제보) "회수·양도가 성공했다고 뜨는데 실제로는 안 바뀐다" — 양도(else 분기)는
+    -- 대상을 못 찾으면 user_not_found로 막았지만, 이 회수 분기는 개발자 계정('openchesskr') 프로필을
+    -- 못 찾는 경우를 전혀 검사하지 않았다 — 그러면 v_uid가 null인 채로 아래 update가 그대로 실행돼
+    -- creator_uid를 null로 지워버리면서도 예외 없이(=클라이언트에는 "성공"으로) 끝났다. v_creator_uid가
+    -- null이면 puzzleCreatorInfo가 "생성자 없음"으로 읽어 화면엔 아무것도 안 바뀐 것처럼 보인다.
+    if v_uid is null then raise exception 'dev_account_missing'; end if;
   else
     select id, username into v_uid, v_uname from public.profiles where username = lower(btrim(p_target_username));
     if v_uid is null then raise exception 'user_not_found'; end if;
@@ -1632,16 +1638,18 @@ grant execute on function public._pvp_resolve_timeout(bigint) to authenticated;
 -- (v0.5.1 기능) 실시간 대국 화면이 주기적으로(그리고 자기 쪽 로컬 시계가 0에 닿는 순간) 불러 "정말
 -- 시간이 다 됐는지"를 서버에 확인·확정 요청한다. pvp_finish와 달리 자기 승리 선언 금지 가드가 없다 —
 -- 위 _pvp_resolve_timeout이 클라이언트가 넘긴 값을 전혀 쓰지 않고 서버에 저장된 시계만으로 계산하므로
--- 이긴 쪽이 불러도, 진 쪽이 불러도 결과가 같다(악용 여지가 없다). 참가자 확인만 한다.
+-- 누가 불러도(이긴 쪽·진 쪽·참가자가 아닌 사람 누구든) 결과가 같다(악용 여지가 없다).
+-- (기능7 대비, 코드 리뷰 수정) 처음엔 참가자만 부를 수 있게 막아 뒀는데, 그러면 관전 모드에서
+-- "참가자 둘 다 탭을 닫아 아무도 부르지 않는 채로 시간이 다 되는" 경우 서버가 영영 그 사실을
+-- 확정하지 못해(관전 화면도 이 함수를 부를 수 없으니) 관전자 화면 시계가 0:00에서 멈춘 채 대국은
+-- 계속 'active'로 남는다. 위 주석대로 이 함수는 애초에 "누가 불러도 안전"하게 설계됐으므로, 참가자
+-- 제한을 없애 로그인한 누구나(관전자 포함) 불러 시간 초과를 확정할 수 있게 한다.
 drop function if exists public.pvp_check_flag(bigint) cascade;
 create or replace function public.pvp_check_flag(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_game public.pvp_games;
 begin
-  if v_me is null then raise exception 'auth required'; end if;
-  select * into v_game from public.pvp_games where id = p_game_id;
-  if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if auth.uid() is null then raise exception 'auth required'; end if;
+  if not exists (select 1 from public.pvp_games where id = p_game_id) then raise exception 'game not found'; end if;
   return public._pvp_resolve_timeout(p_game_id);
 end; $$;
 grant execute on function public.pvp_check_flag(bigint) to authenticated;
@@ -2756,6 +2764,28 @@ begin
   end if;
 end; $$;
 grant execute on function public.daily_puzzle_pick_run() to authenticated;
+
+-- ============================================================================
+-- N+7) PvP 관전 모드 (신규 기능, 사용자 요청) — 진행 중인(친구의) 실시간 대국을 참가자가 아닌
+-- 다른 로그인 유저도 읽기 전용으로 볼 수 있게 한다. 지금까지 pvp_games는 "참가자 본인만 select"
+-- 였는데(그 위 N+1 섹션), 관전은 그 원칙을 "진행 중(active)인 대국은 공개"로 한 번 완화한다 —
+-- 체스 사이트들의 일반적인 "라이브 대국은 누구나 볼 수 있다" 관례와 같은 선택이고, sans/시계 같은
+-- 대국 내용 자체가 노출될 뿐 계정 정보(이메일 등)는 여전히 노출되지 않는다.
+-- (코드 리뷰 수정) 처음엔 끝난 대국을 참가자만 계속 볼 수 있게 막았는데, 그러면 관전 중이던 대국이
+-- 체크메이트/시간초과 등으로 막 끝나는 그 순간 상태가 'active'에서 벗어나 이 정책을 더는 통과하지
+-- 못해 realtime 갱신도 폴백 폴링도 조용히 아무것도 못 받아오고, 관전자 화면은 끝나기 직전 위치에서
+-- 영원히 멈춘 채 결과도 못 본다. 끝난 직후 10분까지는 계속 공개해 관전자가 결과를 볼 수 있게 하고,
+-- 그 창을 넘기면(더는 "지금 보는" 용도가 아니게 되면) 다시 참가자만 볼 수 있게 좁힌다.
+-- (코드 리뷰 수정) 이 파일 전체를 다시 실행해도 안전해야 하는데(pg_cron 재등록 안내와 같은 원칙),
+-- 두 번째 실행부터는 위 N+1 섹션이 "own" 정책을 다시 만들어 두고 여기서 다시 드롭하므로, 이 정책
+-- 이름 자체도 미리 드롭해 두지 않으면 두 번째 CREATE POLICY가 "이미 있다" 오류로 실패해 그 뒤의
+-- 모든 문(pg_cron 스케줄 등)이 적용되지 않은 채 스크립트가 중단된다.
+drop policy if exists "pvp games select own" on public.pvp_games;
+drop policy if exists "pvp games select own or spectate" on public.pvp_games;
+create policy "pvp games select own or spectate" on public.pvp_games for select using (
+  auth.uid() = white_uid or auth.uid() = black_uid or status = 'active'
+  or (status <> 'active' and updated_at > now() - interval '10 minutes')
+);
 
 -- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:

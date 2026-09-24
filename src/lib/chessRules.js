@@ -41,7 +41,11 @@ export function parseFenFull(fen) {
   const rights = { K: castleField.includes("K"), Q: castleField.includes("Q"), k: castleField.includes("k"), q: castleField.includes("q") };
   const epField = parts[3];
   let ep = null;
-  if (epField && /^[a-h][1-8]$/.test(epField)) ep = [8 - parseInt(epField[1], 10), FILES.indexOf(epField[0])];
+  // (버그 수정, 코드 리뷰 지적) 앙파상 타깃 칸은 실제로 3랭크(흑이 방금 더블 푸시)나 6랭크(백이 방금
+  // 더블 푸시)에만 있을 수 있는데, 랭크 전체(1~8)를 다 허용해 "e4" 같은 있을 수 없는 칸도 그대로
+  // 받아들였다 — 붙여넣은/조작된 FEN에 이런 값이 있으면 legalDests·exposesKing이 실제로는 불가능한
+  // 앙파상 캡처를 합법으로 계산해 버린다.
+  if (epField && /^[a-h][36]$/.test(epField)) ep = [8 - parseInt(epField[1], 10), FILES.indexOf(epField[0])];
   // (v0.3.4 기능) raw — 원본 FEN 문자열 그대로. 게임 리뷰 고유 URL의 식별자로 이 값을 그대로
   // 쓰고(사용자 요청: "fen 코드를 그대로 쓰고"), 딥링크로 돌아왔을 때도 이 문자열만 있으면
   // parseFenFull을 다시 호출해 완전히 같은 시작 위치를 복원할 수 있다.
@@ -61,9 +65,9 @@ export function replayFromFen(fenRoot, sans) {
   return { board, rights, ep };
 }
 // legalDests의 캐슬링 판정은 지금 기물 배치(킹/룩이 원위치인지)만 볼 뿐 "캐슬링 권리를 실제로
-// 아직 갖고 있는지"는 전혀 확인하지 않는다(앱이 항상 표준 시작 위치에서만 재생돼 왔으므로 이제껏
-// 문제가 되지 않았다) — FEN 모드는 애초에 캐슬링 권리가 없는 위치로 시작할 수도 있으므로, 이 함수가
-// FEN에서 유래한 rights로 한 번 더 걸러낸다.
+// 아직 갖고 있는지"는 전혀 확인하지 않는다 — FEN 모드는 애초에 캐슬링 권리가 없는 위치로 시작할 수도
+// 있으므로, 이 함수가 FEN에서 유래한 rights로 한 번 더 걸러낸다. (버그 수정) "표준 시작 위치에서만
+// 재생돼 왔으므로 문제가 되지 않는다"던 예전 전제는 틀렸다 — 아래 liveLegalDests 주석 참고.
 export function fenLegalDests(fr, fc, color, board, rights, ep) {
   let dests = legalDests(board, fr, fc, color, ep);
   const p = board[fr][fc];
@@ -77,6 +81,17 @@ export function fenLegalDests(fr, fc, color, board, rights, ep) {
     });
   }
   return dests;
+}
+// (버그 수정, 코드 리뷰 지적) 위 fenLegalDests는 FEN 모드에서만 rights로 캐슬링을 한 번 더
+// 걸러낸다 — "앱이 항상 표준 시작 위치에서만 재생돼 왔으므로 문제가 되지 않았다"는 위 주석의 전제가
+// 틀렸다: 표준 시작 위치 게임에서도 킹이 홈 칸을 벗어났다가(체크 회피 등) 룩은 건드리지 않은 채
+// 그대로 되돌아오면, legalDests는 지금 board 배치만 보고 캐슬링 권리가 이미 사라졌다는 걸 전혀 알
+// 방법이 없어 다시 "합법"으로 계산한다 — PvP·봇 대국·퍼즐 풀이 등 표준 시작 위치를 쓰는 모든
+// 호출부(fenLegalDests를 안 쓰던 legalDests(board,...,ep) 직접 호출)가 전부 이 허점을 그대로 안고
+// 있었다. replaySans가 이미 매 수마다 캐슬링 권리를 계산·캐시해 두므로(updateCastleRights), 그
+// 결과를 fenLegalDests와 똑같은 방식으로 다시 적용하는 얇은 래퍼를 표준 시작 위치 전용으로 둔다.
+export function liveLegalDests(sans, fr, fc, color, board, ep) {
+  return fenLegalDests(fr, fc, color, board, replaySans(sans).rights, ep);
 }
 export function clearPath(b, r, c, dr, dc) {
   const sr = Math.sign(dr - r), sc = Math.sign(dc - c); let rr = r + sr, cc = c + sc;
@@ -408,13 +423,25 @@ export function buildSanBare(board, fr, fc, tr, tc, color, ep, promo) {
     if ((color === "w" && tr === 0) || (color === "b" && tr === 7)) san += "=" + (promo && /^[QRBN]$/.test(promo) ? promo : "Q");
     return san;
   }
-  let disamb = "";
+  // (버그 수정, 코드 리뷰 지적) 같은 종류의 기물이 세 개 이상(승진으로 흔히 생김) 같은 칸으로 갈 수
+  // 있을 때, 예전엔 이 루프가 매번 disamb를 덮어써 마지막으로 찾은 기물 기준으로만 파일/랭크 하나를
+  // 골랐다 — 예를 들어 한쪽은 파일이 같고 다른 쪽은 랭크가 같으면, 파일만(또는 랭크만) 적은 SAN이
+  // 여전히 두 후보 중 어느 쪽인지 가려내지 못했다(나중에 sanSrc로 되읽으면 엉뚱한 기물로 해석될 수
+  // 있음). 정식 SAN 표기 규칙대로 — 후보들과 파일이 겹치지 않으면 파일만, 파일은 겹치고 랭크는
+  // 안 겹치면 랭크만, 파일·랭크 둘 다 겹치는 후보가 있으면 칸 전체(파일+랭크)를 쓴다.
+  const others = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-    if ((r === fr && c === fc)) continue;
+    if (r === fr && c === fc) continue;
     const o = board[r][c];
-    if (o && o.c === color && o.t === p.t && canMove(board, p.t, color, r, c, tr, tc, isCap)) {
-      disamb = (c !== fc) ? FILES[fc] : (8 - fr) + "";
-    }
+    if (o && o.c === color && o.t === p.t && canMove(board, p.t, color, r, c, tr, tc, isCap)) others.push([r, c]);
+  }
+  let disamb = "";
+  if (others.length) {
+    const sameFile = others.some(([, c]) => c === fc);
+    const sameRank = others.some(([r]) => r === fr);
+    if (!sameFile) disamb = FILES[fc];
+    else if (!sameRank) disamb = (8 - fr) + "";
+    else disamb = FILES[fc] + (8 - fr);
   }
   return p.t + disamb + (isCap ? "x" : "") + dest;
 }
