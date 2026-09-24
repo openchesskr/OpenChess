@@ -3233,46 +3233,92 @@ grant select on public.daily_puzzle_picks to anon, authenticated;
 -- "그 퍼즐의 지금 creator_uid에게 아직 이 알림이 없으면" 되짚어 보내도록 해, 매일 밤(또는 개발자가
 -- 즉시 실행할 때마다) 놓친 알림이 있으면 스스로 복구한다(같은 퍼즐·같은 kind로 이미 알림이 있으면
 -- 다시 만들지 않아 중복 알림 걱정은 없다).
-create or replace function public.daily_puzzle_pick_run()
-returns void language plpgsql security definer set search_path = public as $$
-declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
+-- (v0.5.4 버그 수정, 사용자 제보 "일일 퍼즐이 안 뜬다") 후보를 puzzle_popularity_all()과 inner join하고
+-- 있었는데, 그 함수는 좋아요·리포스트·공유가 한 번이라도 있는 퍼즐만 돌려준다. 게다가 한 번 뽑힌 퍼즐은
+-- 다시 뽑지 않으므로, 반응이 있는 공개 퍼즐이 전부 한 번씩 뽑히고 나면 후보가 0개가 되어 그날부터 선정
+-- 자체가 조용히 멈췄다(v_no is null → return — daily_puzzle_picks에 그 날짜 행이 아예 안 생겨 클라이언트는
+-- "아직 미배정"으로만 본다). 이제 ① 반응이 없는 공개 퍼즐도 점수 0으로 후보에 넣고(left join) ② 그래도
+-- 모든 공개 퍼즐이 이미 한 번씩 뽑혔으면 가장 오래전에 뽑혔던 퍼즐부터 다시 쓴다. 또 선정된 퍼즐이 나중에
+-- 삭제돼 puzzle_no가 null이 된(on delete set null) 날짜도 다시 뽑는다. 뽑는 로직은 _daily_puzzle_pick_for
+-- 하나로 모아, 밤 스케줄(내일 몫)과 아래 daily_puzzle_pick_ensure_today(오늘 몫 자가 복구)가 함께 쓴다.
+create or replace function public._daily_puzzle_pick_for(p_date date)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_no bigint; v_score numeric; v_creator uuid; v_exists boolean;
   v_reward constant int := 30; -- (사용자 요청) 오늘의 퍼즐로 선정된 제작자에게 지급하는 OC 나이트 코인 보상
 begin
-  if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
-  v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
-  select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date;
+  select true, puzzle_no into v_exists, v_no from public.daily_puzzle_picks where date = p_date;
   if v_no is null then
-    select p.no, s.score into v_no, v_score
+    -- ① 아직 한 번도 안 뽑힌 공개 퍼즐 중 인기 점수가 가장 높은 것(반응이 없으면 0점 — 같은 점수면 번호순)
+    select p.no, coalesce(s.score, 0) into v_no, v_score
     from public.puzzles p
-    join public.puzzle_popularity_all() s on s.no = p.no
+    left join public.puzzle_popularity_all() s on s.no = p.no
     where p.is_public
       and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
-      and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
-    order by s.score desc, p.no asc
+      and not exists (select 1 from public.daily_puzzle_picks d where d.puzzle_no = p.no)
+    order by coalesce(s.score, 0) desc, p.no asc
     limit 1;
-    if v_no is null then return; end if;
-    insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
-    on conflict (date) do nothing;
-    get diagnostics v_rows = row_count; -- 동시 실행 등으로 이미 다른 확정이 먼저 반영됐으면(0) 그 확정된 값을 대신 읽는다
-    if v_rows = 0 then select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date; end if;
+    -- ② 모든 공개 퍼즐이 이미 한 번씩 뽑혔으면 — 가장 오래전(마지막 선정일이 가장 이른) 퍼즐을 다시 쓴다.
+    if v_no is null then
+      select p.no, coalesce(s.score, 0) into v_no, v_score
+      from public.puzzles p
+      join (select puzzle_no, max(date) as last_date from public.daily_puzzle_picks where puzzle_no is not null group by puzzle_no) d on d.puzzle_no = p.no
+      left join public.puzzle_popularity_all() s on s.no = p.no
+      where p.is_public
+        and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
+      order by d.last_date asc, coalesce(s.score, 0) desc, p.no asc
+      limit 1;
+    end if;
+    if v_no is null then return null; end if; -- 공개 퍼즐이 정말 하나도 없음
+    if coalesce(v_exists, false) then
+      -- 선정됐던 퍼즐이 삭제돼 비어 있던 날짜 — 다시 채운다(동시에 다른 호출이 먼저 채웠으면 그 값을 쓴다).
+      update public.daily_puzzle_picks set puzzle_no = v_no, score = v_score, picked_at = now() where date = p_date and puzzle_no is null;
+    else
+      insert into public.daily_puzzle_picks(date, puzzle_no, score) values (p_date, v_no, v_score) on conflict (date) do nothing;
+    end if;
+    select puzzle_no into v_no from public.daily_puzzle_picks where date = p_date; -- 동시 실행으로 먼저 확정된 값이 있으면 그걸 따른다
   end if;
-  if v_no is null then return; end if;
+  if v_no is null then return null; end if;
   -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
   -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
   -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
   -- 다른 SECURITY DEFINER 함수들과 같은 패턴. claimed:false로 시작해, 클라이언트의 "받기" 버튼을
   -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
   -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
+  -- 같은 퍼즐이 ②로 다시 뽑혀도 같은 no·kind의 알림이 이미 있으면 다시 만들지 않는다(보상 중복 방지).
   select creator_uid into v_creator from public.puzzles where no = v_no;
   if v_creator is not null and not exists (
     select 1 from public.notifications
     where to_uid = v_creator and kind = 'daily_puzzle_selected' and (payload ->> 'no')::bigint = v_no
   ) then
     insert into public.notifications(to_uid, kind, payload)
-    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
+    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', p_date, 'reward', v_reward, 'claimed', false));
   end if;
+  return v_no;
+end; $$;
+revoke all on function public._daily_puzzle_pick_for(date) from public, anon, authenticated;
+
+-- 매일 밤 KST 23:50에 다음 날짜(KST 기준) 몫을 확정한다(pg_cron). 개발자/공동개발자는 설정 탭 패널에서
+-- 테스트를 위해 직접 호출할 수 있고, 그 외 로그인 유저는 호출할 수 없다 — pg_cron은 postgres 소유자
+-- 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다. 이미 확정된 날짜라도 그 퍼즐 제작자에게
+-- 알림이 아직 없으면 되짚어 보낸다(creator_uid가 나중에 채워지는 경우의 놓친 알림 자가 복구).
+create or replace function public.daily_puzzle_pick_run()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  perform public._daily_puzzle_pick_for((now() at time zone 'Asia/Seoul')::date + 1);
 end; $$;
 grant execute on function public.daily_puzzle_pick_run() to authenticated;
+
+-- (v0.5.4 버그 수정) 오늘(KST) 몫 자가 복구 — pg_cron이 꺼져 있거나 밤 실행이 실패해(또는 위 후보 소진
+-- 버그로) 오늘 날짜 행이 없으면, 퍼즐 탭을 연 첫 사람의 호출로 그 자리에서 오늘 몫을 확정한다. 오늘
+-- 날짜만 다룰 수 있고 이미 확정돼 있으면 그 값을 그대로 돌려주기만 하므로, 누가 불러도 결과는 밤 스케줄과
+-- 같은 규칙의 한 번뿐인 확정이다.
+create or replace function public.daily_puzzle_pick_ensure_today()
+returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  return public._daily_puzzle_pick_for((now() at time zone 'Asia/Seoul')::date);
+end; $$;
+grant execute on function public.daily_puzzle_pick_ensure_today() to anon, authenticated;
 
 -- ============================================================================
 -- N+7) PvP 관전 모드 (신규 기능, 사용자 요청) — 진행 중인(친구의) 실시간 대국을 참가자가 아닌
