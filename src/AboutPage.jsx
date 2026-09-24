@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useInView } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play,
+  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy,
 } from "lucide-react";
 
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
@@ -962,6 +962,28 @@ const CAT = {
   security: { label: "보안", Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.5.4", date: "2026.9.24",
+    summary: "미니게임에 레이팅·전적·랭킹이 생겼어요 — 랜덤 매칭으로 레이팅을 올리고, 전체·친구 랭킹에서 순위를 확인하세요.",
+    mascot: {
+      intro: { char: "kokoa", expr: "wink", name: "KOKOA 코치", align: "left", text: "이제 미니게임에도 순위가 있어요!" },
+      outro: { char: "milku", expr: "think", name: "MILKU 코치", align: "right", text: "랭킹 1위 메달, 누가 먼저 가져갈까요?" },
+    },
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: "미니게임 레이팅 · 전체·친구 랭킹 · 로비 전적 바 · 결과 화면 레이팅 변화" },
+    sections: [
+      { cat: "feature", items: [
+        "네 미니게임마다 따로 레이팅이 생겼어요 — 1200점에서 시작해 랜덤 매칭에서 이기면 오르고 지면 내려가요. 처음 20판은 더 크게 움직여 금방 내 자리를 찾아가요.",
+        "미니게임 랭킹 — 각 미니게임 시작 화면의 '랭킹' 버튼에서 레이팅 순위와 혼자 플레이 기록 순위를 전체 또는 친구끼리 볼 수 있어요. 레이팅 순위에는 랜덤 매칭 3판을 마치면 올라가요.",
+        "혼자 플레이하기 최고 기록이 계정에 저장돼요 — 다른 기기에서도 이어지고, 로그인 전에 세운 기록도 로그인하면 올라가요.",
+        "친구 도전은 친선전이라 전적에만 남고 레이팅은 바뀌지 않아요.",
+      ] },
+      { cat: "ui", items: [
+        "미니게임 시작 화면 맨 위에 내 레이팅·전적(승·패·무, 연승)·혼자 플레이 최고 기록을 보여주는 칸과 랭킹 버튼이 생겼어요.",
+        "실시간 대전 결과 화면에 레이팅이 몇 점 바뀌었는지 올라가거나 내려가는 숫자로 보여줘요.",
+        "프로필에 미니게임별 레이팅·전적·혼자 최고 기록이, 스페셜 미니게임 목록에는 게임마다 내 레이팅이 표시돼요.",
+      ] },
+    ],
+  },
   {
     version: "0.5.3", date: "2026.9.24",
     summary: "새 미니게임 두 개 — 엉킨 내 기물 사이에서 룩을 탈출시켜 백랭크 메이트를 노리는 '러시아워'와, 3분 동안 강제 메이트 '공격 기회'를 더 많이 성공시키면 이기는 '공격 모드'가 생겼어요. 기존 좌표 인지 게임·나이트 경주도 카운트다운·효과음·진동·애니메이션·새 결과 화면으로 훨씬 생생해졌어요.",

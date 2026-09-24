@@ -1554,6 +1554,10 @@ alter table public.pvp_games add column if not exists rematch_game_id bigint ref
 -- 대국이 모두 이 값을 물려받게 해서, 나중에 새 게임 타입이 추가돼도 서로 다른 타입끼리 잘못 매칭되지
 -- 않게 한다. 지금은 모든 행이 'chess'뿐이라 실질적인 동작 변화는 없다.
 alter table public.pvp_games add column if not exists game_type text not null default 'chess';
+-- (v0.5.4) 미니게임 레이팅 — rated면 끝날 때 두 사람의 미니게임 레이팅이 바뀐다(랜덤 매칭만 true).
+-- rating_delta는 끝나는 순간 트리거(_minigame_on_game_end)가 채운다: {"w":{"before":1200,"after":1216},"b":{...}}.
+alter table public.pvp_games add column if not exists rated boolean not null default false;
+alter table public.pvp_games add column if not exists rating_delta jsonb;
 comment on column public.pvp_games.sans is
   '수순 토큰 배열 — game_type이 ''chess''일 때만 SAN 문자열이다. 다른 game_type이 추가되면 그 타입
    전용 인코딩을 담는 불투명한 배열로 취급할 것(하위 호환을 위해 컬럼명은 그대로 둔다).';
@@ -1692,8 +1696,9 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
-    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now())
+  -- (v0.5.4) 미니게임 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at, rated)
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), p_game_type <> 'chess')
     returning * into v_game;
   return v_game;
 end; $$;
@@ -2947,6 +2952,151 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.attack_forfeit(bigint) to authenticated;
+
+-- ============================================================================
+-- (v0.5.4) 미니게임 전적·레이팅·랭킹
+-- ============================================================================
+-- 게임(coord/knight/rush/attack)마다 한 사람당 한 행. 실시간 대전(pvp_games)이 끝나는 순간 아래
+-- 트리거가 두 사람의 전적(승·패·무·연승)을 올리고, 랜덤 매칭(rated)이면 Elo 레이팅도 바꾼다 —
+-- coord_finish·knight_resolve_round·rush_resolve_round·attack_finish·*_forfeit 등 대전을 끝내는
+-- 경로가 여럿이라, 각 RPC를 고치는 대신 "status가 active에서 결과로 바뀌는 순간" 하나에 건다.
+-- aborted(좀비 정리)는 결과가 아니므로 세지 않는다.
+-- 혼자 플레이하기 최고 기록(best_*)도 같은 행에 둔다 — 높을수록 좋은 점수 하나(best_score)로 줄세우고,
+-- 화면에 보여줄 원래 형태는 best_detail에 둔다(나이트 경주: {"reached":4,"ms":38200}).
+-- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
+create table if not exists public.minigame_stats (
+  uid uuid not null references auth.users(id) on delete cascade,
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack')),
+  rating int not null default 1200,
+  peak_rating int not null default 1200,
+  rated_games int not null default 0,
+  games int not null default 0,
+  wins int not null default 0,
+  losses int not null default 0,
+  draws int not null default 0,
+  streak int not null default 0,
+  best_streak int not null default 0,
+  best_score numeric,
+  best_detail jsonb,
+  best_at timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (uid, game)
+);
+create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
+create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
+alter table public.minigame_stats enable row level security;
+drop policy if exists "minigame stats select all" on public.minigame_stats;
+create policy "minigame stats select all" on public.minigame_stats for select using (true);
+grant select on public.minigame_stats to anon, authenticated;
+
+-- Elo — 처음 20판은 K=40으로 빨리 제자리를 찾고, 그 뒤로는 K=24. 레이팅은 100 아래로 내려가지 않는다.
+create or replace function public._minigame_elo(p_me int, p_opp int, p_score numeric, p_rated_games int)
+returns int language sql immutable as $$
+  select greatest(100, p_me + round((case when p_rated_games < 20 then 40 else 24 end)
+    * (p_score - 1.0 / (1.0 + power(10.0, (p_opp - p_me) / 400.0))))::int);
+$$;
+
+create or replace function public._minigame_on_game_end()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  w public.minigame_stats; b public.minigame_stats;
+  v_ws numeric; v_wr int; v_br int;
+begin
+  insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
+    on conflict (uid, game) do nothing;
+  select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
+  select * into b from public.minigame_stats where uid = new.black_uid and game = new.game_type for update;
+  v_ws := case new.status when 'white_won' then 1 when 'black_won' then 0 else 0.5 end;
+  v_wr := w.rating; v_br := b.rating;
+  if new.rated then
+    v_wr := public._minigame_elo(w.rating, b.rating, v_ws, w.rated_games);
+    v_br := public._minigame_elo(b.rating, w.rating, 1 - v_ws, b.rated_games);
+    new.rating_delta := jsonb_build_object(
+      'w', jsonb_build_object('before', w.rating, 'after', v_wr),
+      'b', jsonb_build_object('before', b.rating, 'after', v_br));
+  end if;
+  update public.minigame_stats set
+    rating = v_wr, peak_rating = greatest(peak_rating, v_wr),
+    rated_games = rated_games + (case when new.rated then 1 else 0 end),
+    games = games + 1,
+    wins = wins + (case when v_ws = 1 then 1 else 0 end),
+    losses = losses + (case when v_ws = 0 then 1 else 0 end),
+    draws = draws + (case when v_ws = 0.5 then 1 else 0 end),
+    streak = case when v_ws = 1 then streak + 1 else 0 end,
+    best_streak = greatest(best_streak, case when v_ws = 1 then streak + 1 else 0 end),
+    updated_at = now()
+  where uid = new.white_uid and game = new.game_type;
+  update public.minigame_stats set
+    rating = v_br, peak_rating = greatest(peak_rating, v_br),
+    rated_games = rated_games + (case when new.rated then 1 else 0 end),
+    games = games + 1,
+    wins = wins + (case when v_ws = 0 then 1 else 0 end),
+    losses = losses + (case when v_ws = 1 then 1 else 0 end),
+    draws = draws + (case when v_ws = 0.5 then 1 else 0 end),
+    streak = case when v_ws = 0 then streak + 1 else 0 end,
+    best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
+    updated_at = now()
+  where uid = new.black_uid and game = new.game_type;
+  return new;
+end; $$;
+-- BEFORE 트리거라 rating_delta를 같은 update 안에서 채운다 — 대전 화면이 구독 중인 그 한 번의 실시간
+-- 변경에 결과와 레이팅 변화가 함께 실려 온다(두 번째 update·재귀 트리거 없음).
+drop trigger if exists minigame_game_end_trigger on public.pvp_games;
+create trigger minigame_game_end_trigger
+  before update of status on public.pvp_games
+  for each row
+  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack'))
+  execute function public._minigame_on_game_end();
+
+-- 혼자 플레이하기 기록 제출 — 이전 기록보다 좋을 때만 바꾸고, 바뀌었는지 돌려준다. 클라이언트가 계산한
+-- 점수라 완전한 검증은 불가능하므로, 게임 규칙상 나올 수 없는 값만 막는다(좌표 30초 150개·나이트 5회
+-- 도달·러시아워 전체 별 수·공격 모드 3분 120회).
+create or replace function public.minigame_submit_best(p_game text, p_score numeric, p_detail jsonb default null)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_prev numeric;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_game not in ('coord', 'knight', 'rush', 'attack') then raise exception 'bad game'; end if;
+  if p_score is null or p_score <= 0 then return false; end if;
+  if (p_game = 'coord' and p_score > 150) or (p_game = 'attack' and p_score > 120) or (p_game = 'rush' and p_score > 300)
+     or (p_game = 'knight' and p_score > 5000000) then raise exception 'score out of range'; end if;
+  insert into public.minigame_stats(uid, game) values (v_me, p_game) on conflict (uid, game) do nothing;
+  select best_score into v_prev from public.minigame_stats where uid = v_me and game = p_game for update;
+  if v_prev is not null and v_prev >= p_score then return false; end if;
+  update public.minigame_stats set best_score = p_score, best_detail = p_detail, best_at = now(), updated_at = now()
+    where uid = v_me and game = p_game;
+  return true;
+end; $$;
+grant execute on function public.minigame_submit_best(text, numeric, jsonb) to authenticated;
+
+-- 랭킹 — p_kind: 'rating'(레이팅 대전 3판 이상) | 'best'(혼자 플레이 최고 기록), p_scope: 'all' | 'friends'
+-- (나 + 수락된 친구). 상위 p_limit명과, 그 안에 내가 없으면 내 행을 하나 더 붙여 돌려준다(is_me).
+-- 같은 점수는 먼저 달성한 사람이 앞선다.
+create or replace function public.minigame_leaderboard(p_game text, p_kind text default 'rating', p_scope text default 'all', p_limit int default 50)
+returns table (rank bigint, uid uuid, username text, pub jsonb, rating int, rated_games int, wins int, losses int, draws int, best_score numeric, best_detail jsonb, is_me boolean)
+language sql stable security definer set search_path = public as $$
+  with pool as (
+    select s.* from public.minigame_stats s
+    where s.game = p_game
+      and (case when p_kind = 'best' then s.best_score is not null else s.rated_games >= 3 end)
+      and (p_scope <> 'friends' or s.uid = auth.uid() or s.uid in (
+        select case when e.from_uid = auth.uid() then e.to_uid else e.from_uid end
+        from public.friend_edges e
+        where e.status = 'accepted' and (e.from_uid = auth.uid() or e.to_uid = auth.uid())))
+  ), ranked as (
+    select row_number() over (order by
+        case when p_kind = 'best' then p.best_score else p.rating end desc,
+        case when p_kind = 'best' then p.best_at else p.updated_at end asc) as rank, p.*
+    from pool p
+  )
+  select r.rank, r.uid, pr.username,
+    jsonb_build_object('nickname', pr.pub -> 'nickname', 'photo', pr.pub -> 'photo', 'displayId', pr.pub -> 'displayId', 'xp', pr.pub -> 'xp'),
+    r.rating, r.rated_games, r.wins, r.losses, r.draws, r.best_score, r.best_detail, r.uid = auth.uid()
+  from ranked r join public.profiles pr on pr.id = r.uid
+  where r.rank <= least(greatest(p_limit, 1), 100) or r.uid = auth.uid()
+  order by r.rank;
+$$;
+grant execute on function public.minigame_leaderboard(text, text, text, int) to anon, authenticated;
 
 -- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
