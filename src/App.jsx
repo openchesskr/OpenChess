@@ -4560,16 +4560,16 @@ function AnimatedMove({ sans, san, size = 140, extraArrows = [], loopMs = 2000, 
   // 정확히 같은 선 위에 정반대 방향으로 겹쳐 그려져 구분이 안 됐다 — 같은 두 칸을 잇는 화살표끼리
   // 묶어(칸 좌표 쌍을 방향 무관하게 정규화한 키), 그 선의 중심선을 기준으로 수직 방향으로 대칭
   // 평행이동시켜 나란한 두 선으로 보이게 한다.
-  const arrowGroups = useMemo(() => {
-    const groups = new Map();
-    extraArrows.forEach((a, i) => {
-      const fk = a.from[0] + "," + a.from[1], tk = a.to[0] + "," + a.to[1];
-      const key = fk < tk ? fk + "|" + tk : tk + "|" + fk;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(i);
-    });
-    return groups;
-  }, [extraArrows]);
+  // (v0.5.5 버그 수정) 예전엔 이 묶음을 useMemo로 계산했는데, 위의 `if (!geo || !geo.from) return` 조기 반환
+  // 뒤에 있어 수가 해석 불가 ↔ 가능으로 바뀌는 순간 훅 개수가 달라져 React가 "Rendered more hooks" 오류로
+  // 화면을 통째로 날릴 수 있었다(extraArrows 기본값 []가 매 렌더 새 배열이라 메모 효과도 없었음) — 일반 계산으로.
+  const arrowGroups = new Map();
+  extraArrows.forEach((a, i) => {
+    const fk = a.from[0] + "," + a.from[1], tk = a.to[0] + "," + a.to[1];
+    const key = fk < tk ? fk + "|" + tk : tk + "|" + fk;
+    if (!arrowGroups.has(key)) arrowGroups.set(key, []);
+    arrowGroups.get(key).push(i);
+  });
   const OFFSET_STEP = 0.16;
   const offsetArrows = extraArrows.map((a, i) => {
     const [x1, y1] = pxu(a.from[0], a.from[1]); const [x2, y2] = pxu(a.to[0], a.to[1]);
@@ -6674,8 +6674,14 @@ function normalizePlayerKey(name) {
   const first = s.slice(comma + 1).trim();
   return last + "|" + (first ? first[0] : "");
 }
-function FocusPanel({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
-  if (!fa.active) return null;
+// (v0.5.5 버그 수정) 예전엔 FocusPanel 본문 맨 앞에서 `if (!fa.active) return null`로 조기 반환한 뒤 수십 개의 훅을
+// 불러, 같은 인스턴스에서 active가 바뀌면 훅 개수가 달라져 React 오류가 날 수 있는 구조였다 — 조기 반환은
+// 얇은 껍데기에 두고 훅을 쓰는 본문은 FocusPanelBody로 분리한다.
+function FocusPanel(props) {
+  if (!props.fa.active) return null;
+  return <FocusPanelBody {...props} />;
+}
+function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
     explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
@@ -9747,7 +9753,7 @@ function rushSettleInfo(me, opp, result, par) {
   ];
   let reason;
   if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 이겼어요." : "상대가 더 적은 수로 메이트했어요.") : result === "me" ? "같은 수 — 더 빨리 풀어 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 풀었어요." : "수도 시간도 같아 비겼어요.";
-  else if (me && me.solved) reason = "나만 풀어 이겼어요.";
+  else if (me && me.solved) reason = opp ? "나만 풀어 이겼어요." : "상대가 더 적은 수로 따라잡을 수 없어 이겼어요.";
   else if (opp && opp.solved) reason = me && me.captured ? "룩이 잡혔어요 — 푼 상대가 이겼어요." : "상대만 풀었어요.";
   else reason = "둘 다 풀지 못해 무승부예요.";
   return { rows, reason: reason + (par ? " (최단 " + par + "수)" : "") };
@@ -11511,19 +11517,31 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
     const botSolves = Math.random() < (diff === "hard" ? 0.6 : diff === "normal" ? 0.75 : 0.85);
     const botMoves = level.par + (Math.random() < 0.25 ? 0 : 1 + Math.floor(Math.random() * 3));
     const botMs = Math.min(RUSH_ROUND_MS - 2000, 7000 + level.par * (5000 + Math.random() * 5000));
-    setRounds((rs) => [...rs, { level, startAt, me: null, bot: null, botMoves: 0, winner: null }]);
+    setRounds((rs) => [...rs, { level, startAt, me: null, bot: null, botMoves: 0, winner: null, plan: { solves: botSolves, moves: botMoves } }]);
     for (let k = 1; k <= botMoves; k++) {
-      timersRef.current.push(setTimeout(() => setRounds((rs) => { const c = rs.slice(); const r = c[n]; if (!r || r.bot) return rs; c[n] = { ...r, botMoves: k }; return c; }), 3000 + (botMs * k) / (botMoves + 0.5)));
+      timersRef.current.push(setTimeout(() => setRounds((rs) => { const c = rs.slice(); const r = c[n]; if (!r || r.bot || r.winner) return rs; c[n] = { ...r, botMoves: k }; return c; }), 3000 + (botMs * k) / (botMoves + 0.5)));
     }
-    timersRef.current.push(setTimeout(() => setRounds((rs) => { const c = rs.slice(); const r = c[n]; if (!r || r.bot) return rs; c[n] = { ...r, bot: botSolves ? { solved: true, moves: botMoves, ms: botMs } : { solved: false, moves: botMoves, ms: RUSH_ROUND_MS } }; return c; }), 3000 + (botSolves ? botMs : RUSH_ROUND_MS)));
+    timersRef.current.push(setTimeout(() => setRounds((rs) => { const c = rs.slice(); const r = c[n]; if (!r || r.bot || r.winner) return rs; c[n] = { ...r, bot: botSolves ? { solved: true, moves: botMoves, ms: botMs } : { solved: false, moves: botMoves, ms: RUSH_ROUND_MS } }; return c; }), 3000 + (botSolves ? botMs : RUSH_ROUND_MS)));
   }, []);
   useEffect(() => { if (rounds.length === 0) startRound(0); }, [rounds.length, startRound]);
   // 판정 — 내 결과와 봇 결과가 둘 다 나오면(봇이 늦으면 시간 초과까지 기다린다).
   useEffect(() => {
     if (!round || round.winner || !round.me) return;
     const me = round.me, bot = round.bot;
-    if (!bot) return; // 봇이 아직 푸는 중 — 봇이 더 적은 수로 풀 수도 있으니 결과를 기다린다
     let w;
+    if (!bot) {
+      // 봇이 아직 푸는 중 — 봇이 더 적은 수로 풀 수도 있으니 결과를 기다린다.
+      // (v0.5.5 버그 수정) 예전엔 봇이 끝날 때까지 무조건 기다려, 봇이 못 푸는 라운드면 내가 먼저 풀었거나 룩이
+      // 잡혀도 제한시간 2분이 다 찰 때까지 "결과를 기다리는 중..."에 멈춰 있었다. 봇의 결과는 라운드 시작 때
+      // 이미 정해져 있으니(plan), 봇이 끝까지 가도 승패가 바뀌지 않는 경우엔 바로 판정한다.
+      const plan = round.plan;
+      if (!plan) return;
+      if (me.solved && (!plan.solves || plan.moves > me.moves)) w = "me";
+      else if (!me.solved && !plan.solves) w = "draw";
+      else return;
+      setRounds((rs) => { const c = rs.slice(); c[idx] = { ...c[idx], winner: w }; return c; });
+      return;
+    }
     if (me.solved && !bot.solved) w = "me"; else if (bot.solved && !me.solved) w = "opp"; else if (!me.solved && !bot.solved) w = "draw";
     else if (me.moves !== bot.moves) w = me.moves < bot.moves ? "me" : "opp"; else w = me.ms <= bot.ms ? "me" : "opp";
     setRounds((rs) => { const c = rs.slice(); c[idx] = { ...c[idx], winner: w }; return c; });
