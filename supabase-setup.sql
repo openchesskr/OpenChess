@@ -2700,7 +2700,11 @@ end; $$;
 grant execute on function public.rush_ping(bigint, int, int) to authenticated;
 
 -- 결과 보고 — 라운드당 한 번(풀었을 때 또는 시간 초과·포기 시).
-create or replace function public.rush_report(p_game_id bigint, p_round int, p_solved boolean, p_moves int)
+-- (v0.5.4 규칙 변경, 사용자 요청) 주인공 룩이 상대 기물이 지배하는 칸에 들어가 잡히면 그 수를 되돌리지 않고
+-- 그 즉시 라운드 시도가 끝난다 — p_captured로 "잡혀서 끝났는지"를 함께 남겨 정산 화면에 보여준다(판정은
+-- 못 푼 것과 같다). 인자가 바뀌어 옛 4인자 판을 지운다(PostgREST 오버로드 모호성 방지).
+drop function if exists public.rush_report(bigint, int, boolean, int);
+create or replace function public.rush_report(p_game_id bigint, p_round int, p_solved boolean, p_moves int, p_captured boolean default false)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_mine jsonb;
 begin
@@ -2719,12 +2723,13 @@ begin
   if coalesce(p_solved, false) and (v_round ->> 'startedAt')::timestamptz + (((v_round ->> 'timeLimitMs')::int + 2000) || ' ms')::interval < now() then
     p_solved := false;
   end if;
-  v_round := jsonb_set(v_round, array['reports', v_mycolor], jsonb_build_object('solved', coalesce(p_solved, false), 'moves', greatest(0, coalesce(p_moves, 0)), 'at', now()));
+  v_round := jsonb_set(v_round, array['reports', v_mycolor], jsonb_build_object('solved', coalesce(p_solved, false) and not coalesce(p_captured, false), 'moves', greatest(0, coalesce(p_moves, 0)),
+    'captured', coalesce(p_captured, false), 'at', now()));
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.rush_report(bigint, int, boolean, int) to authenticated;
+grant execute on function public.rush_report(bigint, int, boolean, int, boolean) to authenticated;
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초)이 지났을 때만. 2선승 또는 3라운드 종료 시 매치 확정.
 create or replace function public.rush_resolve_round(p_game_id bigint)

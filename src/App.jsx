@@ -9638,6 +9638,120 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
     </div>
   );
 }
+// ============================================================ 라운드 정산 화면(v0.5.4) ============================================================
+// (v0.5.4 기능, 사용자 요청 "라운드가 끝날 때마다 정산 페이지를 똑같은 디자인 형식으로") 라운드제 미니게임
+// (나이트 경주 5전 3선승·러시아워 3판 2선승)에서 라운드가 확정될 때마다, 최종 결과 화면(MinigameResult)과
+// 같은 디자인(큰 제목·점수·통계 카드·금색 버튼)으로 그 라운드를 정산해 보여준다 — 나와 상대의 결과·이동 수·
+// 걸린 시간을 나란히 놓고 이긴 쪽을 강조하고, 왜 이겼는지(reason) 한 줄, 누적 스코어, 다음 라운드까지 남은
+// 시간 막대를 띄운다. 보드 위 라운드 배너를 잠깐(ROUND_SETTLE_DELAY) 보여준 뒤 넘어가, 마지막 수(도착·잡힘)
+// 장면이 묻히지 않게 한다. 실시간 대전은 두 사람이 같은 시각에 다음 라운드로 넘어가야 해서 건너뛰기 버튼이
+// 없고, 봇·혼자 모드만 "다음 라운드"로 바로 넘길 수 있다.
+const ROUND_SETTLE_DELAY = 900;
+const ROUND_SETTLE_MS = 4500;
+const ROUND_SETTLE_TOTAL = ROUND_SETTLE_DELAY + ROUND_SETTLE_MS;
+// 라운드 roundKey가 확정(resolved)된 순간부터의 단계 — "play"(진행 중) → "banner"(보드 위 배너) → "settle"
+// (정산 화면) → "done". 이미 오래전에 끝난 라운드(대전 재접속 등, resolvedAtMs가 한참 전)는 곧장 "done".
+function useRoundSettle(roundKey, resolved, resolvedAtMs) {
+  const [mark, setMark] = useState(null); // { key, t, skipped }
+  useEffect(() => {
+    if (!resolved) return;
+    setMark((m) => (m && m.key === roundKey ? m : { key: roundKey, t: resolvedAtMs && Date.now() - resolvedAtMs > ROUND_SETTLE_TOTAL + 2000 ? -Infinity : Date.now(), skipped: false }));
+  }, [resolved, roundKey, resolvedAtMs]);
+  const active = !!(resolved && mark && mark.key === roundKey && !mark.skipped && Date.now() - mark.t < ROUND_SETTLE_TOTAL);
+  const now = useNow(active, 150);
+  const skip = useCallback(() => setMark((m) => (m ? { ...m, skipped: true } : m)), []);
+  if (!resolved || !mark || mark.key !== roundKey) return { phase: resolved ? "banner" : "play", skip };
+  const el = now - mark.t;
+  if (mark.skipped || el >= ROUND_SETTLE_TOTAL) return { phase: "done", skip };
+  if (el < ROUND_SETTLE_DELAY) return { phase: "banner", skip };
+  return { phase: "settle", until: mark.t + ROUND_SETTLE_TOTAL, skip };
+}
+// rows: [{ label, me, opp, win: "me"|"opp"|null }] — opp가 없으면(혼자 플레이) 내 값만 한 칸으로 보여준다.
+function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, oppLabel, rows, reason, sub, until, onNext, nextLabel = "다음 라운드", solo }) {
+  useEffect(() => {
+    if (result === "me") { fx("roundWin"); buzz([30, 40, 30]); } else if (result === "opp") { fx("roundLose"); buzz(120); } else fx("roundDraw");
+  }, [result]);
+  const now = useNow(true, 100);
+  const left = Math.max(0, (until || now) - now);
+  const title = solo ? (result === "me" ? "도착 성공!" : "실패") : result === "me" ? "라운드 승리!" : result === "opp" ? "라운드 패배" : "라운드 무승부";
+  const color = result === "me" ? T.brassHi : result === "opp" ? "#E08A80" : "#D8C39A";
+  const cellStyle = (hl) => ({ padding: "8px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.16)" : "rgba(255,255,255,.06)", border: "1px solid " + (hl ? T.brassHi : "rgba(232,196,110,.2)"), textAlign: "center", minWidth: 0 });
+  return (
+    <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "16px 6px", overflowY: "auto" }}>
+      {result === "me" && <VictoryBurst />}
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".12em", color: "rgba(244,238,226,.55)", marginBottom: 4 }}>ROUND {roundNo}{roundTotal ? " / " + roundTotal : ""}</motion.div>
+      <motion.div initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
+        style={{ fontSize: 34, fontWeight: 900, color, fontFamily: SITE_FONT, textShadow: result === "me" ? "0 0 28px rgba(232,196,110,.55)" : "none", marginBottom: 4 }}>{title}</motion.div>
+      {!solo && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+          style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 14 }}>
+          <span>나</span>
+          <span style={{ fontSize: 30, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
+          <span>{oppLabel}</span>
+        </motion.div>
+      )}
+      {sub && <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)", marginBottom: 10 }}>{sub}</div>}
+      <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 6, marginBottom: 12 }}>
+        {!solo && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>
+            <span>나</span><span /><span>{oppLabel}</span>
+          </div>
+        )}
+        {rows.map((r, i) => (
+          <motion.div key={r.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.07 }}
+            style={{ display: "grid", gridTemplateColumns: solo ? "72px 1fr" : "1fr 72px 1fr", gap: 6, alignItems: "stretch" }}>
+            {!solo && <div style={cellStyle(r.win === "me")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.me}</div></div>}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>{r.label}</div>
+            {solo ? <div style={cellStyle(false)}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.me}</div></div>
+              : <div style={cellStyle(r.win === "opp")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.opp}</div></div>}
+          </motion.div>
+        ))}
+      </div>
+      {reason && <p style={{ fontSize: 11.5, color: "rgba(244,238,226,.72)", marginBottom: 14, maxWidth: 340, lineHeight: 1.5 }}>{reason}</p>}
+      <div style={{ width: "100%", maxWidth: 260, marginBottom: 10 }}>
+        <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.08)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: (100 * left / ROUND_SETTLE_MS) + "%", background: "linear-gradient(90deg,#A8842F," + T.brassHi + ")", transition: "width .1s linear" }} />
+        </div>
+        <div style={{ fontSize: 10.5, color: "rgba(244,238,226,.55)", marginTop: 5 }}>{nextLabel}까지 {Math.ceil(left / 1000)}초</div>
+      </div>
+      {onNext && <button onClick={onNext} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{nextLabel}</button>}
+    </div>
+  );
+}
+const fmtSec = (ms) => (ms == null ? "-" : (Math.max(0, ms) / 1000).toFixed(1) + "초");
+// 나이트 경주 한 라운드 정산 행·사유. me/opp: { reached, moves, ms, captured } | null(미보고).
+function knightSettleInfo(me, opp, result, par, solo) {
+  const st = (x) => (!x ? "미완료" : x.reached ? "도착" : x.captured ? "잡힘" : "실패");
+  const both = me && opp && me.reached && opp.reached;
+  const rows = [
+    { label: "결과", me: st(me), opp: st(opp), win: null },
+    { label: "이동 수", me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: "걸린 시간", me: me && me.reached ? fmtSec(me.ms) : "-", opp: opp && opp.reached ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
+  ];
+  let reason;
+  if (solo) reason = me && me.reached ? (me.moves <= par ? "최소 수로 도착했어요!" : "도착! 최소 " + par + "수로도 갈 수 있었어요.") : me && me.captured ? "상대 기물이 지배하는 칸에 들어가 나이트가 잡혔어요." : "제한 안에 도착하지 못했어요.";
+  else if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 도착해 이겼어요." : "상대가 더 적은 수로 도착했어요.") : result === "me" ? "같은 수 — 더 빨리 도착해 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 도착했어요." : "수도 시간도 같아 비겼어요.";
+  else if (me && me.reached) reason = opp && opp.captured ? "상대 나이트가 잡혔어요 — 도착한 내가 이겼어요." : "나만 도착해 이겼어요.";
+  else if (opp && opp.reached) reason = me && me.captured ? "나이트가 잡혔어요 — 도착한 상대가 이겼어요." : "상대만 도착했어요.";
+  else reason = "둘 다 도착하지 못했어요" + (result === "draw" ? " — 무승부예요." : " — 목표에 더 가까이 간 쪽이 이겼어요.");
+  return { rows, reason: reason + (par ? " (이 라운드 최소 " + par + "수)" : "") };
+}
+// 러시아워 한 라운드 정산 행·사유. me/opp: { solved, moves, ms, captured } | null.
+function rushSettleInfo(me, opp, result, par) {
+  const st = (x) => (!x ? "미완료" : x.solved ? "메이트" : x.captured ? "룩 잡힘" : "시간 초과");
+  const both = me && opp && me.solved && opp.solved;
+  const rows = [
+    { label: "결과", me: st(me), opp: st(opp), win: null },
+    { label: "이동 수", me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: "걸린 시간", me: me && me.solved ? fmtSec(me.ms) : "-", opp: opp && opp.solved ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
+  ];
+  let reason;
+  if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 이겼어요." : "상대가 더 적은 수로 메이트했어요.") : result === "me" ? "같은 수 — 더 빨리 풀어 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 풀었어요." : "수도 시간도 같아 비겼어요.";
+  else if (me && me.solved) reason = "나만 풀어 이겼어요.";
+  else if (opp && opp.solved) reason = me && me.captured ? "룩이 잡혔어요 — 푼 상대가 이겼어요." : "상대만 풀었어요.";
+  else reason = "둘 다 풀지 못해 무승부예요.";
+  return { rows, reason: reason + (par ? " (최단 " + par + "수)" : "") };
+}
 // 제한시간 막대 — 남은 비율이 25% 아래로 떨어지면 빨갛게 바뀌고 맥동한다.
 function MinigameTimeBar({ pct }) {
   const low = pct < 0.25;
@@ -10354,16 +10468,14 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
   const round = rounds[idx] || null;
   const finished = rounds.length >= KNIGHT_BO_TOTAL && round && round.winner;
   useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  const settle = useRoundSettle(idx, !!(round && round.winner));
   useEffect(() => {
     if (finished) return;
     if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
-    if (round && round.winner) {
-      const t = setTimeout(() => setRounds((rs) => [...rs, { ...knightGenRoundLocal(rs.length), winner: null }]), 1600);
-      return () => clearTimeout(t);
-    }
-  }, [rounds.length, round && round.winner, finished]);
+    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === idx + 1 ? [...rs, { ...knightGenRoundLocal(rs.length), winner: null }] : rs));
+  }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const onRoundDone = useCallback((winner, mine) => {
-    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const c = rs.slice(); c[i] = { ...c[i], winner, mine: mine ? { reached: mine.reached, moves: mine.moves, ms: mine.atMs } : null }; return c; });
+    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const c = rs.slice(); c[i] = { ...c[i], winner, mine: mine ? { reached: mine.reached, moves: mine.moves, ms: mine.atMs, captured: !!mine.captured } : null }; return c; });
   }, []);
   const reached = rounds.filter((r) => r.mine && r.mine.reached);
   const totalMs = reached.reduce((a, r) => a + r.mine.ms, 0);
@@ -10376,7 +10488,13 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
     if (isNew) saveMinigameBest("knight", cur);
     setBest({ prev, isNew });
   }, [finished, best]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (finished) {
+  if (settle.phase === "settle") {
+    const res = round.winner === "w" ? "me" : "opp";
+    const info = knightSettleInfo(round.mine, null, res, round.par, true);
+    return <MinigameRoundSettle solo roundNo={idx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} rows={info.rows.filter((r) => r.label !== "결과")} reason={info.reason}
+      sub={"지금까지 " + reached.length + "회 도착"} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+  }
+  if (finished && settle.phase === "done") {
     if (!best) return null;
     return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록!" : "기록"} scoreText={reached.length + " / " + KNIGHT_BO_TOTAL + " 도달"}
       rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : "opp", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? r.mine.moves + "수" : "실패" }))}
@@ -10779,9 +10897,9 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const timersRef = useRef([]);
   useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
   const [shakeControls, shake] = useBoardShake();
-  const doMyReport = useCallback((reached, moves) => {
+  const doMyReport = useCallback((reached, moves, wasCaptured) => {
     if (myReportRef.current) return;
-    const rep = { reached, moves, atMs: Date.now() - startRef.current };
+    const rep = { reached, moves, atMs: Date.now() - startRef.current, captured: !!wasCaptured };
     myReportRef.current = rep; setMyReport(rep);
   }, []);
   useEffect(() => {
@@ -10855,7 +10973,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     // 무승부로 단순화했다(실질적으로 거의 일어나지 않는 경로라 과설계를 피했다).
     else w = "draw";
     setWinner(w);
-    onRoundDone(w, myReport);
+    onRoundDone(w, myReport, botReport);
   }, [myReport, botReport, onRoundDone, winner]);
   const legalTargets = useMemo(() => (myReport || !started ? [] : knightNeighborsClient(pos, knightOwnBlocked(round, "w", botTaken))), [pos, round, botTaken, myReport, started]);
   const onCell = (sq) => {
@@ -10865,7 +10983,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     setPos(sq); setMovesUsed(nextMoves); setTaken(mv.taken);
     if (mv.tookPiece) { playSfx("capture"); fx("capture"); buzz(40); } else playSfx("move");
     // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
-    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves); return; }
+    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves, true); return; }
     if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doMyReport(true, nextMoves); return; }
     if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doMyReport(false, nextMoves); }
   };
@@ -10916,18 +11034,24 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   // (KnightRaceGame)에 알려야 한다 — 안 그러면 이미 끝난 대전인데도 뒤로가기가 "정말 나가시겠어요?"
   // (기권 확인)를 계속 띄운다.
   useEffect(() => { onStatusChange && onStatusChange(finished ? "finished" : "active"); }, [finished, onStatusChange]);
+  // (v0.5.4) 라운드가 끝나면 정산 화면(useRoundSettle)이 끝나거나 "다음 라운드"로 건너뛸 때 다음 라운드를 만든다.
+  const settle = useRoundSettle(roundIdx, !!(round && round.winner));
   useEffect(() => {
     if (finished) return;
     if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
-    if (round && round.winner) {
-      const t = setTimeout(() => setRounds((rs) => [...rs, { ...knightGenRoundLocal(rs.length), winner: null }]), 1800);
-      return () => clearTimeout(t);
-    }
-  }, [rounds.length, round && round.winner, finished]);
-  const onRoundDone = useCallback((winner, mine) => {
-    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner, mine: mine ? { reached: mine.reached, moves: mine.moves, ms: mine.atMs } : null }; return copy; });
+    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === roundIdx + 1 ? [...rs, { ...knightGenRoundLocal(rs.length), winner: null }] : rs));
+  }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onRoundDone = useCallback((winner, mine, bot) => {
+    const pack = (x) => (x ? { reached: x.reached, moves: x.moves, ms: x.atMs, captured: !!x.captured } : null);
+    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner, mine: pack(mine), bot: pack(bot) }; return copy; });
   }, []);
-  if (finished) {
+  if (settle.phase === "settle") {
+    const res = round.winner === "w" ? "me" : round.winner === "b" ? "opp" : "draw";
+    const info = knightSettleInfo(round.mine, round.bot, res, round.par);
+    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={botWins} oppLabel="봇"
+      rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+  }
+  if (finished && settle.phase === "done") {
     const iWon = myWins > botWins;
     const isDraw = myWins === botWins;
     return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={botWins} oppLabel="봇"
@@ -10941,6 +11065,12 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
+}
+// 서버 라운드 보고 → 정산용 { reached, moves, ms, captured } (보고가 없으면 null).
+function knightRepInfo(round, color) {
+  const rep = round && round.reports && round.reports[color];
+  if (!rep) return null;
+  return { reached: !!rep.reached, moves: rep.movesUsed || 0, ms: new Date(rep.at).getTime() - new Date(round.startedAt).getTime(), captured: !!rep.captured };
 }
 // 매칭이 끝난 뒤 대전 전체(라운드 진행 + 스코어보드 + 다음 라운드 자동 진행 + 최종 결과)를 관리한다.
 function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
@@ -10958,16 +11088,25 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const myWins = rounds.filter((r) => r.winner === (isWhite ? "w" : "b")).length;
   const oppWins = rounds.filter((r) => r.winner === (isWhite ? "b" : "w")).length;
   const finished = game.status !== "active";
-  // 라운드가 없거나(첫 진입) 방금 끝났으면(승자 있음) 잠깐 결과를 보여준 뒤 다음 라운드를 요청한다.
+  // 라운드가 없거나(첫 진입) 방금 끝났으면(승자 있음) 정산 화면을 보여준 뒤(v0.5.4) 다음 라운드를 요청한다.
   useEffect(() => {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
     if (round && round.winner) {
-      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, 1800);
+      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL);
       return () => clearTimeout(t);
     }
   }, [game.id, rounds.length, round && round.winner, finished]);
-  if (finished) {
+  const settle = useRoundSettle(roundIdx, !!(round && round.winner), round && round.resolvedAt ? Date.parse(round.resolvedAt) : null);
+  if (settle.phase === "settle") {
+    const oppColor = isWhite ? "b" : "w";
+    const res = round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw";
+    const info = knightSettleInfo(knightRepInfo(round, myColor), knightRepInfo(round, oppColor), res, round.par);
+    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={oppWins} oppLabel="상대"
+      rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+  }
+  // 마지막 라운드도 배너 → 정산을 거친 뒤 최종 결과로(기권 등 라운드 승자 없이 끝난 대전은 곧장 결과).
+  if (finished && (settle.phase === "done" || !(round && round.winner))) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     const mine = rounds.filter((r) => r.winner).map((r) => {
@@ -11067,14 +11206,19 @@ function rushMoveIds(ids, events) {
   for (const e of events) { out[e.to] = out[e.from]; out[e.from] = null; }
   return out;
 }
-function useRushPuzzle(level, { enabled = true, onSolved } = {}) {
+// (v0.5.4 규칙 변경, 사용자 요청 "나이트 경주처럼 상대 기물이 컨트롤하는 칸에 가면 그 즉시 룩이 잡히며
+// 라운드가 끝나도록") 주인공 룩이 잡히면(상대 기물이 지배하는 칸에 들어가 유인 포획을 당하거나, 체크 응수로
+// 잡히면) 예전처럼 그 수를 되돌려 주지 않는다 — 잡히는 장면을 그대로 보여주고 status를 "lost"로 두어 더
+// 이상 둘 수 없게 한 뒤 onFailed를 부른다(대전은 그 라운드 실패, 혼자 풀기는 실패 화면 → 다시 풀기).
+// 레벨의 par는 풀이기(rushSolve)가 원래 잡히는 수를 막다른 길로 다뤄 왔으므로 레벨을 다시 만들 필요가 없다.
+function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const start = useMemo(() => rushParse(level.spec), [level.spec]);
   const startIds = useMemo(() => rushInitialIds(start.board), [start]);
   const [hist, setHist] = useState(() => [{ state: start, ids: startIds, last: null }]);
   const [view, setView] = useState(() => rushView(start, startIds));
   const [selected, setSelected] = useState(-1);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("play"); // play | win
+  const [status, setStatus] = useState("play"); // play | win | lost(v0.5.4 — 주인공 룩이 잡힘)
   const [msg, setMsg] = useState(null); // { text, tone }
   const [hint, setHint] = useState(null);
   const [showDanger, setShowDanger] = useState(false);
@@ -11116,8 +11260,12 @@ function useRushPuzzle(level, { enabled = true, onSolved } = {}) {
     const finish = () => {
       if (res.status === "fail") {
         fx("wrong"); buzz([80, 50, 80]); shake();
-        flash("주인공 룩이 잡혔어요! 수를 되돌렸어요.", "bad");
-        setView(rushView(cur.state, cur.ids)); setBusy(false); return;
+        flash("주인공 룩이 잡혔어요!", "bad", 4000);
+        const ids = rushMoveIds(cur.ids, res.events);
+        setHist((h) => [...h, { state: res.state, ids, last: [from, to] }]);
+        setView(rushView(res.state, ids)); setBusy(false); setStatus("lost");
+        onFailed && onFailed(hist.length);
+        return;
       }
       if (res.status === "mateOther") {
         fx("wrong"); shake();
@@ -11206,14 +11354,15 @@ function RushRules({ compact }) {
       <div>• <b style={{ color: T.brassHi }}>왕관 표시 룩</b>을 엉킨 기물들 사이에서 빼내 상대 백랭크(맨 윗줄)에서 킹을 메이트하세요.</div>
       <div>• 다른 내 기물들은 실제 체스 규칙대로 움직여 길을 비켜 주거나, <b style={{ color: T.ivoryHi }}>희생</b>으로 상대 기물을 끌어낼 수 있어요.</div>
       <div>• 상대 기물은 가만히 있다가, <b style={{ color: T.ivoryHi }}>방금 움직인 내 기물</b>이 자기 공격 범위에 들어오면 잡으러 와요.</div>
-      <div>• 주인공 룩이 잡히면 그 수는 자동으로 되돌려져요. 더 적은 수로 풀수록 별이 많아요.</div>
+      <div>• 주인공 룩이 <b style={{ color: "#F4B2A6" }}>상대 기물이 지배하는 칸</b>에 들어가면 그 즉시 잡혀 라운드가 끝나요(혼자 풀기는 실패 — 다시 풀기). 더 적은 수로 풀수록 별이 많아요.</div>
     </div>
   );
 }
 // 퍼즐 한 판 화면(혼자 풀기) — 레벨 번호·난이도·수/par·별·다음 레벨.
 function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
   const [solvedMoves, setSolvedMoves] = useState(null);
-  const p = useRushPuzzle(level, { onSolved: (m) => { setSolvedMoves(m); onRecord(level.id, m); } });
+  const [failed, setFailed] = useState(false);
+  const p = useRushPuzzle(level, { onSolved: (m) => { setSolvedMoves(m); onRecord(level.id, m); }, onFailed: () => setTimeout(() => setFailed(true), 700) });
   const [boardSize, boardFitRef] = useSquareFit(460);
   const diff = RUSH_DIFFS.find((d) => d.key === level.diff);
   const best = progress[level.id];
@@ -11228,6 +11377,13 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
           <RushGrid view={p.view} selected={p.selected} targets={p.targets} hint={p.hint} danger={p.danger} onCell={p.onCell} size={boardSize} lastMove={p.lastMove} levelId={level.id} />
           <AnimatePresence>
+            {failed && solvedMoves == null && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,8,3,.66)", borderRadius: 6 }}>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: "#E08A80", fontFamily: SITE_FONT }}>룩이 잡혔어요</motion.div>
+                <div style={{ fontSize: 12, color: "rgba(244,238,226,.8)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 들어갔어요 — 이번 시도는 실패예요.</div>
+                <button onClick={() => { setFailed(false); p.restart(); }} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}><RotateCcw size={13} />다시 풀기</button>
+              </motion.div>
+            )}
             {solvedMoves != null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,8,3,.62)", borderRadius: 6 }}>
                 <VictoryBurst />
@@ -11289,8 +11445,8 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
   useEffect(() => { if (started) return; const t = setTimeout(() => setStarted(true), Math.max(0, startAt - Date.now())); return () => clearTimeout(t); }, [started, startAt]);
   const [done, setDone] = useState(false);
   const doneRef = useRef(false);
-  const finish = useCallback((solved, moves) => { if (doneRef.current) return; doneRef.current = true; setDone(true); onDone(solved, moves); }, [onDone]);
-  const p = useRushPuzzle(level, { enabled: started && !done, onSolved: (m) => finish(true, m) });
+  const finish = useCallback((solved, moves, captured) => { if (doneRef.current) return; doneRef.current = true; setDone(true); onDone(solved, moves, !!captured); }, [onDone]);
+  const p = useRushPuzzle(level, { enabled: started && !done, onSolved: (m) => finish(true, m), onFailed: (m) => finish(false, m, true) });
   const movesRef = useRef(0); movesRef.current = p.moves;
   useEffect(() => { if (onProgress && p.moves > 0) onProgress(p.moves); }, [p.moves]); // eslint-disable-line react-hooks/exhaustive-deps
   const now = useNow(started && !done, 200);
@@ -11314,7 +11470,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
-        {result ? "" : done ? (p.status === "win" ? "풀었어요! " + opp.label + "를 기다리는 중..." : "시간 초과 — 결과를 기다리는 중...") : (opp.solved ? opp.label + "가 이미 풀었어요 — 더 적은 수로 역전하세요!" : "목표: 최단 " + level.par + "수")}
+        {result ? "" : done ? (p.status === "win" ? "풀었어요! " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡혔어요 — 결과를 기다리는 중..." : "시간 초과 — 결과를 기다리는 중...") : (opp.solved ? opp.label + "가 이미 풀었어요 — 더 적은 수로 역전하세요!" : "목표: 최단 " + level.par + "수")}
       </div>
       <RushMsg msg={p.msg} />
       <RushToolbar p={p} />
@@ -11372,15 +11528,23 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
     else if (me.moves !== bot.moves) w = me.moves < bot.moves ? "me" : "opp"; else w = me.ms <= bot.ms ? "me" : "opp";
     setRounds((rs) => { const c = rs.slice(); c[idx] = { ...c[idx], winner: w }; return c; });
   }, [round, idx]);
+  // (v0.5.4) 정산 화면이 끝나거나 "다음 라운드"로 건너뛸 때 다음 라운드를 시작한다.
+  const settle = useRoundSettle(idx, !!(round && round.winner));
+  const startedNextRef = useRef(-1);
   useEffect(() => {
-    if (!round || !round.winner || finished) return;
-    const t = setTimeout(() => startRound(rounds.length), 2200);
-    return () => clearTimeout(t);
-  }, [round && round.winner, finished, rounds.length, startRound]);
-  const onDone = useCallback((solved, moves) => {
-    setRounds((rs) => { const c = rs.slice(); const r = c[c.length - 1]; if (!r || r.me) return rs; c[c.length - 1] = { ...r, me: { solved, moves, ms: Date.now() - r.startAt } }; return c; });
+    if (!round || !round.winner || finished || settle.phase !== "done" || startedNextRef.current === idx) return;
+    startedNextRef.current = idx;
+    startRound(rounds.length);
+  }, [round && round.winner, finished, rounds.length, startRound, settle.phase, idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onDone = useCallback((solved, moves, captured) => {
+    setRounds((rs) => { const c = rs.slice(); const r = c[c.length - 1]; if (!r || r.me) return rs; c[c.length - 1] = { ...r, me: { solved, moves, ms: Date.now() - r.startAt, captured: !!captured } }; return c; });
   }, []);
-  if (finished) {
+  if (settle.phase === "settle") {
+    const info = rushSettleInfo(round.me, round.bot, round.winner, round.level.par);
+    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={round.winner} myScore={myWins} oppScore={botWins} oppLabel="봇"
+      sub={RUSH_DIFFS[idx] ? RUSH_DIFFS[idx].label + " 퍼즐" : null} rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+  }
+  if (finished && settle.phase === "done") {
     const outcome = myWins > botWins ? "win" : botWins > myWins ? "lose" : "draw";
     return <MinigameResult outcome={outcome} myScore={myWins} oppScore={botWins} oppLabel="봇"
       rounds={rushRoundChips(rounds, "me", "opp", (r) => r.me)} stats={rushStatsOf(rounds.map((r) => r.me && { ...r.me, par: r.level.par }))} onExit={onExit} onRematch={onRematch} />;
@@ -11412,10 +11576,11 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("rush_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
     if (round && round.winner) {
-      const t = setTimeout(() => { sbRpc("rush_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, 2200);
+      const t = setTimeout(() => { sbRpc("rush_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL);
       return () => clearTimeout(t);
     }
   }, [game.id, rounds.length, round && round.winner, finished]);
+  const settle = useRoundSettle(idx, !!(round && round.winner), round && round.resolvedAt ? Date.parse(round.resolvedAt) : null);
   const myRep = round && round.reports && round.reports[me];
   const oppRep = round && round.reports && round.reports[opp];
   // 내가 보고를 마쳤는데 아직 라운드가 안 끝났으면 주기적으로 확정을 시도한다(knight와 같은 패턴).
@@ -11424,10 +11589,17 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const t = setInterval(() => { sbRpc("rush_resolve_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, 1200);
     return () => clearInterval(t);
   }, [round && round.winner, !!myRep, game.id]);
-  const onDone = useCallback((solved, moves) => {
-    sbRpc("rush_report", { p_game_id: game.id, p_round: idx, p_solved: solved, p_moves: moves }).then((g) => g && setGame(g)).catch(() => { });
+  const onDone = useCallback((solved, moves, captured) => {
+    sbRpc("rush_report", { p_game_id: game.id, p_round: idx, p_solved: solved, p_moves: moves, p_captured: !!captured }).then((g) => g && setGame(g)).catch(() => { });
   }, [game.id, idx]);
-  if (finished) {
+  if (settle.phase === "settle") {
+    const info_ = (c) => { const r = round.reports && round.reports[c]; return r ? { solved: !!r.solved, moves: r.moves || 0, ms: new Date(r.at).getTime() - new Date(round.startedAt).getTime(), captured: !!r.captured } : null; };
+    const res = round.winner === me ? "me" : round.winner === opp ? "opp" : "draw";
+    const info = rushSettleInfo(info_(me), info_(opp), res, rushLevelFor(round.diff, round.seed).par);
+    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={res} myScore={myWins} oppScore={oppWins} oppLabel="상대"
+      sub={RUSH_DIFFS[idx] ? RUSH_DIFFS[idx].label + " 퍼즐" : null} rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+  }
+  if (finished && (settle.phase === "done" || !(round && round.winner))) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const done = rounds.filter((r) => r.winner);
     return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
@@ -23463,6 +23635,8 @@ const CHANGELOG = [
       "나이트 경주 규칙이 바뀌었어요 — 상대 기물이 있는 칸에 도달하면 그 기물을 잡아 없앨 수 있고(그 기물이 막던 칸도 안전해져요), 상대 기물이 지배하는 빨간 칸은 이제 갈 수는 있지만 가는 순간 내 나이트가 잡혀 그 라운드가 끝나요. 내 색 기물 칸에는 설 수 없어요.",
       "나이트 경주가 훨씬 어려워졌어요 — 첫 라운드부터 상대 기물이 나오고, 목표까지 최소 3~6수가 필요하며, 2라운드부터는 눈에 보이는 가장 빠른 길이 위협 칸으로 막혀 있어요. 이동 수 제한은 최소 수 +1, 라운드당 제한시간은 15초예요.",
       "나이트 경주는 이제 더 적은 수로 도착한 쪽이 라운드를 가져가고, 수가 같으면 더 빨리 도착한 쪽이 이겨요.",
+      "러시아워에서 주인공 룩이 상대 기물이 지배하는 칸에 들어가면, 이제 수를 되돌려 주지 않고 그 즉시 잡혀 라운드가 끝나요(혼자 풀기는 실패 — 다시 풀기).",
+      "나이트 경주·러시아워는 라운드가 끝날 때마다 정산 화면이 떠요 — 나와 상대의 결과·이동 수·걸린 시간을 나란히 비교하고, 왜 이겼는지와 지금까지의 점수를 보여줘요.",
       "일일 퍼즐이 뜨지 않던 문제를 고쳤어요 — 이제 오늘의 퍼즐이 비어 있으면 퍼즐 탭을 열 때 바로 채워져요.",
       "분석 탭에서 FEN 모드를 종료하면 사이트가 멈춰 버리던 문제를 고쳤어요.",
     ]
