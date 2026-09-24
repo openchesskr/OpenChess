@@ -25,6 +25,25 @@ export default async function handler(req, res) {
     return;
   }
 
+  // (v0.5.3 기능) 공격 모드 개발자 도구 — 리체스 퍼즐 API에서 N수 메이트 퍼즐 하나를 가져온다.
+  // ?puzzle=next&angle=mateIn2 → /api/puzzle/next?angle=mateIn2, ?puzzle=<id> → /api/puzzle/<id>.
+  if (params.puzzle) {
+    const id = String(params.puzzle);
+    const angle = params.angle ? "?angle=" + encodeURIComponent(String(params.angle)) : "";
+    const url = id === "next" ? "https://lichess.org/api/puzzle/next" + angle : "https://lichess.org/api/puzzle/" + encodeURIComponent(id);
+    try {
+      const upstream = await fetch(url, { headers: { ...headers, Accept: "application/json" } });
+      const body = await upstream.text();
+      res.status(upstream.status);
+      res.setHeader("content-type", upstream.headers.get("content-type") || "application/json");
+      res.setHeader("cache-control", "no-store");
+      res.send(body);
+    } catch (e) {
+      res.status(502).json({ error: String(e) });
+    }
+    return;
+  }
+
   const base = master === "1"
     ? "https://explorer.lichess.org/masters"
     : "https://explorer.lichess.org/lichess";
