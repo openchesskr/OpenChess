@@ -28,7 +28,12 @@ export async function sbRpc(fn, args) {
   const text = await r.text();
   return text ? JSON.parse(text) : null;
 }
-export async function sbSelect(path) { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHeaders() }); if (!r.ok) throw new Error("sel " + r.status); return await r.json(); }
+// (버그 수정, 사용자 제보) "생성자 회수·양도가 성공했다고 뜨는데 표시가 안 바뀐다" — RPC로 막 바꾼
+// 값을 곧바로 이 GET으로 다시 읽어 화면에 반영하는 호출부(puzzleCreatorInfo 등)가 여럿인데, fetch
+// 기본 캐시 모드("default")는 서버가 명시적으로 no-store를 내려주지 않는 한 브라우저가 같은 URL의
+// 직전 응답을 그대로 재사용할 수 있다 — "쓰고 바로 읽기"에서 방금 쓴 값 대신 그 직전 값을 보여줄
+// 여지가 있었다. 이 클라이언트가 하는 모든 읽기는 항상 최신 상태를 봐야 하므로 캐시를 끈다.
+export async function sbSelect(path) { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHeaders(), cache: "no-store" }); if (!r.ok) throw new Error("sel " + r.status); return await r.json(); }
 export async function sbUpsert(table, row) { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHeaders(), Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(row) }); if (!r.ok) throw new Error("up " + r.status); }
 export async function sbInsert(table, row) { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: sbHeaders(), body: JSON.stringify(row) }); if (!r.ok) throw new Error("ins " + r.status); }
 // (18차 보충 UX4) id가 GENERATED ALWAYS AS IDENTITY 인 테이블(notifications/chat_messages)은 sbUpsert(POST +
