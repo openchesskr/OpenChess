@@ -2617,6 +2617,23 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   // 직접 드래그를 구현해, 기물을 손가락으로 집어 옮기는 제스처를 desktop 마우스 드래그와 동일하게
   // onPieceDrag/onDrop 콜백으로 연결한다(호출부는 손댈 필요 없음 — 기존 prop 그대로 재사용).
   const gridRef = useRef(null);
+  // (v0.5.4 버그 수정, 사용자 제보 "분석 탭 FEN 모드를 종료하면 사이트가 먹통") 격자 ref 콜백을 렌더마다
+  // 새로 만들면 React가 매 커밋마다 옛 콜백(null)→새 콜백(el)을 다시 불러, externalGridRef가 state setter
+  // (setPromoGridEl 등)인 곳에서는 null→el로 state가 매번 두 번 바뀌며 다시 렌더를 불렀다 — FEN 모드 종료처럼
+  // 여러 state가 한꺼번에 바뀌는 순간 이 되먹임이 끝나지 않아 "Maximum update depth exceeded"로 화면이
+  // 멈췄다. 콜백을 고정해 요소가 실제로 붙거나 떨어질 때만 불리게 한다.
+  const externalGridRefRef = useRef(externalGridRef);
+  externalGridRefRef.current = externalGridRef;
+  const setGridEl = useCallback((el) => {
+    gridRef.current = el;
+    const ext = externalGridRefRef.current;
+    if (typeof ext === "function") ext(el); else if (ext) ext.current = el;
+  }, []);
+  // externalGridRef 자체가 바뀌면(드묾) 이미 붙어 있는 요소를 새 쪽에도 한 번 알려 준다.
+  useEffect(() => {
+    if (!gridRef.current || !externalGridRef) return;
+    if (typeof externalGridRef === "function") externalGridRef(gridRef.current); else externalGridRef.current = gridRef.current;
+  }, [externalGridRef]);
   const dragStartRef = useRef(null);       // { r, c, x, y } — pointerdown 시점
   const suppressClickRef = useRef(false);  // 드래그가 실제로 일어났으면 뒤이어 오는 합성 click을 무시
   // (v0.3.9 버그 수정) 사용자 신고 "기물이 너무 무겁게 끌려온다" — ptrDrag에 손가락 좌표(x,y)까지
@@ -2796,7 +2813,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           비율이 달라진 상자에 맞춰 늘어나며 왜곡됐다(바다 스킨처럼 이어진 이미지 텍스처에서 특히 눈에
           띔). aspectRatio:"1/1"인 CSS 그리드로 바꾸면 실제 렌더링 폭이 얼마로 계산되든 높이가 항상
           똑같이 따라가 칸이 항상 정사각형으로 유지된다. */}
-      <div ref={(el) => { gridRef.current = el; if (typeof externalGridRef === "function") externalGridRef(el); else if (externalGridRef) externalGridRef.current = el; }} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)",
+      <div ref={setGridEl} style={{ position: "relative", borderRadius: 4, overflow: "visible", ...BOARD_GLOSS, boxSizing: "border-box", width: inner, maxWidth: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gridTemplateRows: "repeat(8, 1fr)",
         // (사용자 요청) 보드 위(또는 그 언저리)에서 손가락을 움직이면 항상 기물 드래그만 되고 페이지
         // 상하 스크롤로는 새지 않도록, 칸 하나하나가 아니라 보드 전체에 touch-action:none을 건다 —
         // 예전엔 기물 도형 크기(cell*0.74)만큼만 이 속성이 걸려 있어, 손가락이 기물을 살짝 벗어난
@@ -17506,8 +17523,14 @@ async function resolveDailyPuzzle(dateStr, engine) {
     const name = puzzleName("punish", setupSans, mistakeSan);
     return { id, themes: ["punish"], name, opening, setupSans, mistakeSan, solution: gen.lines[lineIdx].solution, lines: gen.lines, tree: gen.tree, steps: [], isDaily: true, date: dateStr };
   }
-  if (!pickNo) return null; // 아직 그 날짜 몫이 확정되지 않음(pg_cron이 KST 23:50에 확정) — 로딩/미배정으로 취급
-  const p = await puzzleFetch(pickNo);
+  // (v0.5.4 버그 수정, 사용자 제보 "일일 퍼즐이 안 뜬다") 오늘 몫이 비어 있으면(pg_cron 미실행·밤 실행 실패·
+  // 후보 소진 등) 기다리기만 하지 않고 서버에 오늘 몫 확정을 요청한다 — 이미 확정돼 있으면 그 값만 돌려준다.
+  let no = pickNo;
+  if (!no && dateStr === todayStr() && SB_ON) {
+    try { no = await sbRpc("daily_puzzle_pick_ensure_today", {}); } catch { no = null; }
+  }
+  if (!no) return null; // 그 날짜 몫이 없음(지난 날짜이거나 공개 퍼즐이 하나도 없음) — 미배정으로 취급
+  const p = await puzzleFetch(no);
   // (성능) 창작 시점에 이미 genPuzzleTree로 여러 응수 라인이 만들어져 puzzles.data에 그대로 저장돼
   // 있으므로, 로컬 엔진을 다시 돌릴 필요가 없다 — 날짜를 시드로 그 라인 중 하나만 결정적으로 고른다.
   if (!p || !p.lines || !p.lines.length) return null;
@@ -23440,6 +23463,8 @@ const CHANGELOG = [
       "나이트 경주 규칙이 바뀌었어요 — 상대 기물이 있는 칸에 도달하면 그 기물을 잡아 없앨 수 있고(그 기물이 막던 칸도 안전해져요), 상대 기물이 지배하는 빨간 칸은 이제 갈 수는 있지만 가는 순간 내 나이트가 잡혀 그 라운드가 끝나요. 내 색 기물 칸에는 설 수 없어요.",
       "나이트 경주가 훨씬 어려워졌어요 — 첫 라운드부터 상대 기물이 나오고, 목표까지 최소 3~6수가 필요하며, 2라운드부터는 눈에 보이는 가장 빠른 길이 위협 칸으로 막혀 있어요. 이동 수 제한은 최소 수 +1, 라운드당 제한시간은 15초예요.",
       "나이트 경주는 이제 더 적은 수로 도착한 쪽이 라운드를 가져가고, 수가 같으면 더 빨리 도착한 쪽이 이겨요.",
+      "일일 퍼즐이 뜨지 않던 문제를 고쳤어요 — 이제 오늘의 퍼즐이 비어 있으면 퍼즐 탭을 열 때 바로 채워져요.",
+      "분석 탭에서 FEN 모드를 종료하면 사이트가 멈춰 버리던 문제를 고쳤어요.",
     ]
   },
   {
