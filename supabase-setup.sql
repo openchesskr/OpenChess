@@ -2445,10 +2445,12 @@ begin
     v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
     v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
   end loop;
+  -- (v0.5.3 연출 강화) startedAt을 3초 뒤로 잡는다 — 두 클라이언트가 이 시각까지 "3·2·1" 카운트다운을
+  -- 보여주고 그 뒤에야 보드를 조작할 수 있게 해, 라운드 시작 순간을 양쪽이 같은 서버 시각으로 맞춘다.
   v_rounds := v_rounds || jsonb_build_object(
     'target', v_target, 'whiteStart', v_white_start, 'blackStart', v_black_start,
     'hazards', v_hazards, 'wIllegal', to_jsonb(v_w_illegal), 'bIllegal', to_jsonb(v_b_illegal),
-    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now(),
+    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now() + interval '3 seconds',
     -- (v0.5.0 기능, 사용자 요청) positions — 각자 "지금 나이트가 어디 있는지"를 담아 두면, 상대
     -- 클라이언트가 이 값을 realtime으로 받아 같은 보드 위에서 나이트가 실제로 움직이는 모습을
     -- 그 자리에서 보여줄 수 있다(knight_move_ping이 매 수마다 갱신). reports와 달리 이동 하나하나를
@@ -2610,6 +2612,341 @@ begin
   return v_game;
 end; $$;
 grant execute on function public.knight_forfeit(bigint) to authenticated;
+
+-- ============================================================================
+-- N+3.7) 러시아워(rush) — 플레이 페이지 "스페셜" 미니게임 PvP #3 (v0.5.3, 사용자 설계)
+-- ============================================================================
+-- "그로테스크 퍼즐 + 러시아워": 내 기물들로 엉켜 있는 포지션에서 주인공 룩을 탈출시켜 상대 백랭크로
+-- 보내 킹을 메이트한다. 규칙 엔진·레벨은 전부 클라이언트(src/lib/rushHour.js, src/data/rushLevels.json)
+-- 에 있다 — 서버는 라운드마다 "몇 번째 레벨인지"를 정하는 무작위 정수(seed)와 난이도만 기록하고, 두
+-- 클라이언트는 같은 배포본의 같은 레벨 목록에서 seed % (그 난이도 레벨 수)번째 레벨을 똑같이 꺼낸다.
+-- 3라운드(쉬움→보통→어려움), 2선승. 라운드당 제한시간 120초. 라운드 판정: 푼 쪽 > 못 푼 쪽, 둘 다
+-- 풀었으면 더 적은 수(되돌리기·초기화로 버린 수는 세지 않는다 — 최종 풀이 라인의 수), 같으면 서버가
+-- 기록한 보고 시각이 빠른 쪽, 둘 다 못 풀었으면 무승부 라운드. 신뢰 모델은 knight_report와 같다(수순
+-- 자체는 검증하지 않고 요약만 받는다 — 풀이 시각만은 서버 now()로 기록해 조작할 수 없다).
+--   sans: [{ "diff": "easy"|"normal"|"hard", "seed": int, "startedAt": ts, "timeLimitMs": 120000,
+--            "reports": {"w": {...}|null, "b": ...}, "progress": {"w": {"moves": n}, ...}, "winner": "w"|"b"|"draw"|null }]
+create or replace function public.rush_start_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_n int; v_diff text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  v_n := jsonb_array_length(v_rounds);
+  if v_n > 0 and (v_rounds -> (v_n - 1) ->> 'winner') is null then return v_game; end if; -- 진행 중인 라운드가 있다
+  if v_n >= 3 then return v_game; end if;
+  v_diff := (array['easy', 'normal', 'hard'])[v_n + 1];
+  v_rounds := v_rounds || jsonb_build_object(
+    'diff', v_diff, 'seed', floor(random() * 1000000)::int, 'startedAt', now() + interval '3 seconds', 'timeLimitMs', 120000,
+    'reports', jsonb_build_object('w', null, 'b', null), 'progress', jsonb_build_object('w', null, 'b', null), 'winner', null
+  );
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.rush_start_round(bigint) to authenticated;
+
+-- 진행 상황 중계(현재 수 개수) — 판정과 무관한 표시용이라 최신 값으로 덮어쓰기만 한다.
+create or replace function public.rush_ping(p_game_id bigint, p_round int, p_moves int)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'rush' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_round := jsonb_set(v_round, array['progress', v_mycolor], jsonb_build_object('moves', greatest(0, coalesce(p_moves, 0)), 'at', now()));
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.rush_ping(bigint, int, int) to authenticated;
+
+-- 결과 보고 — 라운드당 한 번(풀었을 때 또는 시간 초과·포기 시).
+create or replace function public.rush_report(p_game_id bigint, p_round int, p_solved boolean, p_moves int)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_mine jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'rush' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_rounds := v_game.sans;
+  if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
+  v_round := v_rounds -> p_round;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_mine := v_round #> array['reports', v_mycolor];
+  if v_mine is not null and jsonb_typeof(v_mine) <> 'null' then return v_game; end if;
+  -- 제한시간(+2초 여유)이 지난 뒤의 "풀었다" 보고는 인정하지 않는다.
+  if coalesce(p_solved, false) and (v_round ->> 'startedAt')::timestamptz + (((v_round ->> 'timeLimitMs')::int + 2000) || ' ms')::interval < now() then
+    p_solved := false;
+  end if;
+  v_round := jsonb_set(v_round, array['reports', v_mycolor], jsonb_build_object('solved', coalesce(p_solved, false), 'moves', greatest(0, coalesce(p_moves, 0)), 'at', now()));
+  v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
+  update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.rush_report(bigint, int, boolean, int) to authenticated;
+
+-- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초)이 지났을 때만. 2선승 또는 3라운드 종료 시 매치 확정.
+create or replace function public.rush_resolve_round(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_idx int;
+  v_w jsonb; v_b jsonb; v_ws boolean; v_bs boolean; v_winner text; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  v_rounds := v_game.sans;
+  if jsonb_array_length(v_rounds) = 0 then return v_game; end if;
+  v_idx := jsonb_array_length(v_rounds) - 1;
+  v_round := v_rounds -> v_idx;
+  if (v_round ->> 'winner') is not null then return v_game; end if;
+  v_w := v_round #> '{reports,w}'; if jsonb_typeof(v_w) = 'null' then v_w := null; end if;
+  v_b := v_round #> '{reports,b}'; if jsonb_typeof(v_b) = 'null' then v_b := null; end if;
+  if not (v_w is not null and v_b is not null)
+     and (v_round ->> 'startedAt')::timestamptz + (((v_round ->> 'timeLimitMs')::int + 2000) || ' ms')::interval > now() then
+    return v_game;
+  end if;
+  v_ws := coalesce((v_w ->> 'solved')::boolean, false);
+  v_bs := coalesce((v_b ->> 'solved')::boolean, false);
+  if v_ws and not v_bs then v_winner := 'w';
+  elsif v_bs and not v_ws then v_winner := 'b';
+  elsif not v_ws and not v_bs then v_winner := 'draw';
+  elsif (v_w ->> 'moves')::int <> (v_b ->> 'moves')::int then
+    v_winner := case when (v_w ->> 'moves')::int < (v_b ->> 'moves')::int then 'w' else 'b' end;
+  else
+    v_winner := case when (v_w ->> 'at')::timestamptz = (v_b ->> 'at')::timestamptz then 'draw'
+                     when (v_w ->> 'at')::timestamptz < (v_b ->> 'at')::timestamptz then 'w' else 'b' end;
+  end if;
+  v_round := jsonb_set(v_round, array['winner'], to_jsonb(v_winner));
+  v_round := jsonb_set(v_round, array['resolvedAt'], to_jsonb(now()));
+  v_rounds := jsonb_set(v_rounds, array[v_idx::text], v_round);
+  for r in select * from jsonb_array_elements(v_rounds) loop
+    if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
+  end loop;
+  if v_w_wins >= 2 or v_b_wins >= 2 or jsonb_array_length(v_rounds) >= 3 then
+    update public.pvp_games set sans = v_rounds,
+      status = case when v_w_wins > v_b_wins then 'white_won' when v_b_wins > v_w_wins then 'black_won' else 'draw' end,
+      result_reason = 'rush_score', updated_at = now()
+    where id = p_game_id returning * into v_game;
+  else
+    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  end if;
+  return v_game;
+end; $$;
+grant execute on function public.rush_resolve_round(bigint) to authenticated;
+
+create or replace function public.rush_forfeit(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set
+    status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
+    result_reason = 'rush_forfeit', updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.rush_forfeit(bigint) to authenticated;
+
+-- ============================================================================
+-- N+3.8) 공격 모드(attack) — 플레이 페이지 "스페셜" 미니게임 PvP #4 (v0.5.3, 사용자 설계)
+-- ============================================================================
+-- "FIFA Mobile 공격 모드 + 체스": 강제 체크메이트 수순이 있는 포지션을 "공격 기회"로 두 참가자에게
+-- 각자 계속 부여한다. 제한시간(3분) 동안 기회는 무제한 — 하나를 끝내면(성공/실패) 바로 다음 기회가
+-- 온다. 더 많이 메이트시킨 쪽이 승리.
+-- 공격 기회 등급: 메이트 수순이 짧을수록(간단하고 빠를수록) 좋은 등급 — S(1수 메이트)·A(2수)·B(3수)·
+-- C(4수). 등급은 서버가 정한다: 기본 분포 S 25%·A 35%·B 25%·C 15%에서, 대전 시작 시 스냅샷해 둔 두
+-- 참가자의 퍼즐 레이팅(profiles.pub.puzzleRating) 차이만큼 레이팅이 낮은 쪽은 좋은 등급(S·A) 확률이
+-- 올라가고 높은 쪽은 내려간다(400점 차이에서 최대 폭).
+-- 동점 타이브레이커: ① 가장 낮은 등급(C)부터 B→A→S 순으로 등급별 성공 횟수를 비교해 먼저 더 많은 쪽
+-- ② 등급별로도 전부 같으면, 불리한 확률로 플레이한(레이팅이 높은) 쪽 ③ 레이팅도 같으면 무승부.
+-- 포지션 풀: 저장소에 번들된 시드(src/data/attackPositions.json — 실전 마스터 대국에서 Stockfish로
+-- 검증해 뽑은 강제 메이트) + 개발자가 추가한 포지션(아래 attack_positions 테이블 — 직접 FEN 입력 또는
+-- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 두 클라이언트는 같은
+-- 풀(번들+테이블, id순 정렬)의 그 등급 목록에서 pick % 개수번째 포지션을 꺼낸다.
+--   sans[0] = { "h": 1, "startAt": ts, "endAt": ts, "wr": int, "br": int }  (헤더)
+--   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null }
+create table if not exists public.attack_positions (
+  id bigint generated always as identity primary key,
+  fen text not null,
+  moves jsonb not null,           -- UCI 수순 배열(공격·수비 번갈아, 마지막은 메이트 수)
+  mate_in int not null check (mate_in between 1 and 6),
+  source text,                    -- 'lichess:<퍼즐ID>' 또는 'dev'
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists idx_attack_positions_fen on public.attack_positions (fen);
+alter table public.attack_positions enable row level security;
+drop policy if exists "attack positions read"   on public.attack_positions;
+drop policy if exists "attack positions insert" on public.attack_positions;
+drop policy if exists "attack positions delete" on public.attack_positions;
+create policy "attack positions read"   on public.attack_positions for select using (true);
+create policy "attack positions insert" on public.attack_positions for insert with check (public.is_content_editor(auth.uid()));
+create policy "attack positions delete" on public.attack_positions for delete using (public.is_content_editor(auth.uid()));
+
+create or replace function public._attack_grade(p_my int, p_opp int)
+returns text language plpgsql as $$
+declare t numeric := greatest(-1, least(1, (coalesce(p_opp, 800) - coalesce(p_my, 800)) / 400.0));
+  ws numeric := 0.25 * (1 + 0.8 * t); wa numeric := 0.35 * (1 + 0.3 * t);
+  wb numeric := 0.25 * (1 - 0.3 * t); wc numeric := 0.15 * (1 - 0.8 * t); x numeric;
+begin
+  x := random() * (ws + wa + wb + wc);
+  if x < ws then return 'S'; end if;
+  if x < ws + wa then return 'A'; end if;
+  if x < ws + wa + wb then return 'B'; end if;
+  return 'C';
+end; $$;
+
+-- 대전 시작(헤더 생성) — 두 참가자 중 먼저 부르는 쪽이 만든다. 3초 카운트다운 뒤 3분.
+create or replace function public.attack_start(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_wr int; v_br int;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' or jsonb_array_length(v_game.sans) > 0 then return v_game; end if;
+  select coalesce((pub ->> 'puzzleRating')::int, 800) into v_wr from public.profiles where id = v_game.white_uid;
+  select coalesce((pub ->> 'puzzleRating')::int, 800) into v_br from public.profiles where id = v_game.black_uid;
+  update public.pvp_games set sans = jsonb_build_array(jsonb_build_object(
+      'h', 1, 'startAt', now() + interval '3 seconds', 'endAt', now() + interval '183 seconds', 'wr', coalesce(v_wr, 800), 'br', coalesce(v_br, 800))),
+    updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.attack_start(bigint) to authenticated;
+
+-- 다음 공격 기회 받기 — 내 직전 기회가 끝났을 때만(진행 중이면 그대로 반환), 시간 안에서만.
+create or replace function public.attack_next(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_h jsonb; v_c text; v_last jsonb; e jsonb; v_my int; v_opp int;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'attack' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_c := 'w'; elsif v_me = v_game.black_uid then v_c := 'b'; else raise exception 'not a participant'; end if;
+  if jsonb_array_length(v_game.sans) = 0 then return v_game; end if;
+  v_h := v_game.sans -> 0;
+  if now() >= (v_h ->> 'endAt')::timestamptz then return v_game; end if;
+  for e in select * from jsonb_array_elements(v_game.sans) loop
+    if e ->> 'c' = v_c then v_last := e; end if;
+  end loop;
+  if v_last is not null and (v_last -> 'ok' is null or jsonb_typeof(v_last -> 'ok') = 'null') then return v_game; end if;
+  v_my := case when v_c = 'w' then (v_h ->> 'wr')::int else (v_h ->> 'br')::int end;
+  v_opp := case when v_c = 'w' then (v_h ->> 'br')::int else (v_h ->> 'wr')::int end;
+  update public.pvp_games set sans = sans || jsonb_build_object(
+      'c', v_c, 'g', public._attack_grade(v_my, v_opp), 'pick', floor(random() * 1000000)::int, 'at', greatest(now(), (v_h ->> 'startAt')::timestamptz), 'ok', null, 'doneAt', null),
+    updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.attack_next(bigint) to authenticated;
+
+-- 내 공격 기회 결과 보고 — 내 것이고 아직 안 끝난 기회만. 종료 시각(+2초 여유) 뒤의 성공은 무효.
+create or replace function public.attack_report(p_game_id bigint, p_idx int, p_ok boolean)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_c text; v_e jsonb; v_ok boolean := coalesce(p_ok, false);
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'attack' or v_game.status <> 'active' then return v_game; end if;
+  if v_me = v_game.white_uid then v_c := 'w'; elsif v_me = v_game.black_uid then v_c := 'b'; else raise exception 'not a participant'; end if;
+  if p_idx < 1 or p_idx >= jsonb_array_length(v_game.sans) then return v_game; end if;
+  v_e := v_game.sans -> p_idx;
+  if v_e ->> 'c' <> v_c then return v_game; end if;
+  if v_e -> 'ok' is not null and jsonb_typeof(v_e -> 'ok') <> 'null' then return v_game; end if;
+  if v_ok and now() > ((v_game.sans -> 0 ->> 'endAt')::timestamptz + interval '2 seconds') then v_ok := false; end if;
+  v_e := v_e || jsonb_build_object('ok', v_ok, 'doneAt', now());
+  update public.pvp_games set sans = jsonb_set(sans, array[p_idx::text], v_e), updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.attack_report(bigint, int, boolean) to authenticated;
+
+-- 결과 확정 — 종료 시각(+3초 여유, 마지막 보고를 기다린다)이 지난 뒤에만. 규칙은 위 설명 참고.
+create or replace function public.attack_finish(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_h jsonb; e jsonb; g text; v_winner text;
+  v_w int := 0; v_b int := 0; v_wg jsonb := '{"S":0,"A":0,"B":0,"C":0}'; v_bg jsonb := '{"S":0,"A":0,"B":0,"C":0}';
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' or jsonb_array_length(v_game.sans) = 0 then return v_game; end if;
+  v_h := v_game.sans -> 0;
+  if now() < (v_h ->> 'endAt')::timestamptz + interval '3 seconds' then return v_game; end if;
+  for e in select * from jsonb_array_elements(v_game.sans) loop
+    if (e ->> 'ok') = 'true' then
+      if e ->> 'c' = 'w' then v_w := v_w + 1; v_wg := jsonb_set(v_wg, array[e ->> 'g'], to_jsonb((v_wg ->> (e ->> 'g'))::int + 1));
+      else v_b := v_b + 1; v_bg := jsonb_set(v_bg, array[e ->> 'g'], to_jsonb((v_bg ->> (e ->> 'g'))::int + 1)); end if;
+    end if;
+  end loop;
+  if v_w <> v_b then v_winner := case when v_w > v_b then 'w' else 'b' end;
+  else
+    foreach g in array array['C', 'B', 'A', 'S'] loop
+      if (v_wg ->> g)::int <> (v_bg ->> g)::int then
+        v_winner := case when (v_wg ->> g)::int > (v_bg ->> g)::int then 'w' else 'b' end;
+        exit;
+      end if;
+    end loop;
+    if v_winner is null then
+      v_winner := case when (v_h ->> 'wr')::int > (v_h ->> 'br')::int then 'w' when (v_h ->> 'br')::int > (v_h ->> 'wr')::int then 'b' else 'draw' end;
+    end if;
+  end if;
+  update public.pvp_games set
+    status = case v_winner when 'w' then 'white_won' when 'b' then 'black_won' else 'draw' end,
+    result_reason = 'attack_score', updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.attack_finish(bigint) to authenticated;
+
+create or replace function public.attack_forfeit(p_game_id bigint)
+returns public.pvp_games language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then raise exception 'game not found'; end if;
+  if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
+  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_game.status <> 'active' then return v_game; end if;
+  update public.pvp_games set
+    status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
+    result_reason = 'attack_forfeit', updated_at = now()
+  where id = p_game_id returning * into v_game;
+  return v_game;
+end; $$;
+grant execute on function public.attack_forfeit(bigint) to authenticated;
 
 -- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
