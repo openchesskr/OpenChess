@@ -9751,12 +9751,12 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버(pvp_games)를 전혀 쓰지 않는 완전한 로컬 시뮬레이션.
 // 체스의 봇 대국과 같은 사상(네트워크 왕복 없이 클라이언트에서 그 자리에서 상대를 흉내 낸다)을 따른다.
 // 라운드마다 무작위 좌표를 하나 고르고, 봇은 무작위 반응 시간(사람이 이길 수 있을 정도로 관대한
-// 0.5~2.6초) 뒤에 정답을 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가 그 라운드를 가져간다.
+// 0.9~3.6초 — v0.5.3에서 0.5~2.6초보다 느리게 낮춤, 사용자 요청) 뒤에 정답을 "클릭"한다 — 내가 그보다 먼저 실제로 클릭하면 내가 그 라운드를 가져간다.
 // (v0.5.1 기능, 사용자 요청) 제한시간을 없애 무승부 라운드 자체가 사라졌고(누군가 정답을 맞힐 때까지
-// 계속 진행), 봇도 가끔(35% 확률) 정답을 클릭하기 전에 오답을 한 번 눌러 보게 해서 "상대가 어디를
+// 계속 진행), 봇도 가끔(v0.5.3부터 50% 확률) 정답을 클릭하기 전에 오답을 한 번 눌러 보게 해서 "상대가 어디를
 // 누르든 보드에 표시된다"는 기능이 봇 대전에서도 실제로 보이게 했다.
-const COORD_BOT_REACT_MIN_MS = 500;
-const COORD_BOT_REACT_MAX_MS = 2600;
+const COORD_BOT_REACT_MIN_MS = 900;
+const COORD_BOT_REACT_MAX_MS = 3600;
 function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   const [rounds, setRounds] = useState([]); // [{ sq, winner: "w"|"b"|null }]
   const timersRef = useRef([]);
@@ -9787,7 +9787,7 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
       const copy = rs.slice(); copy[i] = { ...copy[i], winner };
       return copy;
     });
-    if (Math.random() < 0.35) {
+    if (Math.random() < 0.5) {
       const wrongDelay = 250 + Math.random() * 350;
       timersRef.current.push(setTimeout(() => {
         let wrongSq;
@@ -10150,7 +10150,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
 // 라운드 생성 규칙(walkLen·hazardCount·moveBudget·timeLimitMs, 점대칭 시작 칸·위협 기물 배치)은
 // knight_start_round와 정확히 같은 공식을 그대로 옮겨(knightGenRoundLocal), 봇 대전도 실전 PvP와
 // 같은 난이도 곡선·공정성을 겪게 한다. 봇은 자기 시작 칸(항상 흑 역할)에서 목표 칸까지 최단 나이트
-// 경로(BFS, 자신에게 위협적인 칸 제외)를 계산해, 한 수당 0.65~1.25초의 무작위 시간을 두고 그 경로를
+// 경로(BFS, 자신에게 위협적인 칸 제외)를 계산해, 한 수당 1.0~1.8초(v0.5.3에서 0.65~1.25초보다 느리게 낮춤)의 무작위 시간을 두고 그 경로를
 // 그대로 밟는다 — 생성 과정 자체가 항상 짧은 정답 경로를 하나 보장하므로 봇은 사실상 항상 성공하고,
 // 오직 사람보다 먼저 도착하는지만으로 라운드 승패가 갈린다.
 function knightRandomWalkLocal(start, steps) {
@@ -10242,8 +10242,8 @@ function knightShortestPathLocal(start, target, illegal) {
   }
   return null;
 }
-const KNIGHT_BOT_MOVE_MS_MIN = 650;
-const KNIGHT_BOT_MOVE_MS_MAX = 1250;
+const KNIGHT_BOT_MOVE_MS_MIN = 1000;
+const KNIGHT_BOT_MOVE_MS_MAX = 1800;
 function KnightRaceBotRound({ round, onRoundDone }) {
   const [pos, setPos] = useState(round.whiteStart);
   const [movesUsed, setMovesUsed] = useState(0);
@@ -10277,11 +10277,17 @@ function KnightRaceBotRound({ round, onRoundDone }) {
   useKnightRoundFx(timeLeftMs, started && !myReport);
   // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
   // 옮겨 다니는 모습을 같은 보드 위에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
-  // 그 경로의 각 수마다 0.65~1.25초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
+  // 그 경로의 각 수마다 1.0~1.8초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
   // 봇은 항상 흑 역할이라 자신에게 위협적인 칸(bIllegal)을 피해 경로를 찾는다.
   useEffect(() => {
     const lead = Math.max(0, startRef.current - Date.now());
-    const path = knightShortestPathLocal(round.blackStart, round.target, round.bIllegal);
+    let path = knightShortestPathLocal(round.blackStart, round.target, round.bIllegal);
+    // (v0.5.3 난이도 완화, 사용자 요청) 35% 확률로 봇이 첫 수에서 "헛걸음"을 한다 — 옆 칸으로 갔다가
+    // 되돌아오는 2수를 더 써서(수 제한 안에서만) 사람이 따라잡을 여지를 준다.
+    if (path && path.length - 1 + 2 <= round.moveBudget && Math.random() < 0.35) {
+      const side = knightNeighborsClient(path[0], round.bIllegal || []).filter((sq) => sq !== path[1] && sq !== round.target);
+      if (side.length) path = [path[0], side[Math.floor(Math.random() * side.length)], ...path];
+    }
     const moves = path ? path.length - 1 : Infinity;
     if (!path || moves > round.moveBudget) {
       timersRef.current.push(setTimeout(() => setBotReport({ reached: false, moves: 0, atMs: round.timeLimitMs }), lead + round.timeLimitMs));
@@ -10870,7 +10876,7 @@ function rushStatsOf(list) {
     { label: "최단 대비", value: solved.length ? "+" + solved.reduce((a, x) => a + (x.moves - x.par), 0) : "-" },
   ];
 }
-// 봇 대전 — 봇은 라운드마다 "par + 0~2수"를 "par × 3.5~7초 + 4초" 동안 푸는 것으로 흉내 낸다(어려운
+// 봇 대전 — 봇은 라운드마다 "par + 0~3수"를 "par × 5~10초 + 7초" 동안 푸는 것으로 흉내 낸다(어려운
 // 퍼즐일수록 오래 걸린다). 진행 상황(수 개수)도 실제로 두는 것처럼 조금씩 올라간다.
 function RushBotBoard({ onExit, onStatusChange, onRematch }) {
   const [rounds, setRounds] = useState([]); // [{ level, startAt, me: {solved,moves}|null, bot: {...}|null, botMoves, winner }]
@@ -10886,9 +10892,10 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
     const diff = RUSH_DIFFS[n].key;
     const level = rushLevelFor(diff, Math.floor(Math.random() * 1e6));
     const startAt = Date.now() + 3000;
-    const botSolves = Math.random() < (diff === "hard" ? 0.8 : 0.93);
-    const botMoves = level.par + (Math.random() < 0.45 ? 0 : 1 + Math.floor(Math.random() * 2));
-    const botMs = Math.min(RUSH_ROUND_MS - 2000, 4000 + level.par * (3500 + Math.random() * 3500));
+    // (v0.5.3 난이도 완화, 사용자 요청) 성공률·최단 수 확률을 낮추고 풀이 시간을 늘렸다.
+    const botSolves = Math.random() < (diff === "hard" ? 0.6 : diff === "normal" ? 0.75 : 0.85);
+    const botMoves = level.par + (Math.random() < 0.25 ? 0 : 1 + Math.floor(Math.random() * 3));
+    const botMs = Math.min(RUSH_ROUND_MS - 2000, 7000 + level.par * (5000 + Math.random() * 5000));
     setRounds((rs) => [...rs, { level, startAt, me: null, bot: null, botMoves: 0, winner: null }]);
     for (let k = 1; k <= botMoves; k++) {
       timersRef.current.push(setTimeout(() => setRounds((rs) => { const c = rs.slice(); const r = c[n]; if (!r || r.bot) return rs; c[n] = { ...r, botMoves: k }; return c; }), 3000 + (botMs * k) / (botMoves + 0.5)));
@@ -11320,9 +11327,10 @@ function attackResultProps(myList, oppList, myRating, oppRating) {
   };
 }
 const ATTACK_BOTS = [
-  { key: "easy", label: "쉬움", rating: 1000, speed: 1.5, acc: 0.72 },
-  { key: "normal", label: "보통", rating: 1500, speed: 1.0, acc: 0.85 },
-  { key: "hard", label: "어려움", rating: 2000, speed: 0.7, acc: 0.94 },
+  // (v0.5.3 난이도 완화, 사용자 요청) 세 단계 모두 풀이 속도를 늦추고(speed 배율↑) 정답률을 낮췄다.
+  { key: "easy", label: "쉬움", rating: 1000, speed: 2.1, acc: 0.58 },
+  { key: "normal", label: "보통", rating: 1500, speed: 1.45, acc: 0.72 },
+  { key: "hard", label: "어려움", rating: 2000, speed: 1.05, acc: 0.84 },
 ];
 // 봇 대전 — 봇의 기회·풀이 시간·성공 여부를 대전 시작 순간에 전부 미리 정해 두고(등급은 같은 가중
 // 공식), 시각이 되면 하나씩 반영한다. 등급이 낮을수록(긴 메이트) 오래 걸리고 실패 확률도 높다.
@@ -23080,6 +23088,7 @@ const CHANGELOG = [
       "새 미니게임 '공격 모드'가 생겼어요 — 3분 동안 강제 체크메이트 포지션('공격 기회')이 끝없이 나오고, 더 많이 메이트시킨 쪽이 이겨요. 짧은 메이트일수록 좋은 등급(S·A·B·C)이고, 퍼즐 레이팅이 낮은 쪽이 좋은 등급을 받을 확률이 더 높아요. 동점이면 낮은 등급부터 성공 수를 비교해요.",
       "좌표 인지 게임·나이트 경주가 훨씬 생생해졌어요 — 라운드 시작 전 3·2·1 카운트다운, 정답·오답·승패 효과음과 진동, 오답 때 보드 흔들림, 점수가 튀어 오르는 점수판, 라운드 결과 배너, 나이트가 칸 사이를 미끄러지는 애니메이션이 들어갔어요.",
       "미니게임 결과 화면을 새로 만들었어요 — 승리하면 금빛 파티클이 터지고, 라운드별 기록과 게임별 통계(좌표 게임은 평균·최고 반응속도, 나이트 경주는 평균 이동 수·최단 도달 시간 등)를 보여줘요. 봇 대전은 '다시 하기'로 바로 한 판 더 할 수 있어요.",
+      "네 미니게임 모두 봇이 조금 더 느리고 실수도 더 자주 하도록 난이도를 낮췄어요.",
       "좌표 인지 게임 봇 대전에서 내가 먼저 맞힌 라운드의 봇 클릭이 다음 라운드까지 남아, 새 라운드를 봇 득점으로 잘못 끝내던 문제를 고쳤어요.",
     ]
   },
