@@ -10288,7 +10288,16 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
     setErr(""); setWaiting(true);
     try {
       const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: gameType });
-      if (g) { setGame(g); setWaiting(false); }
+      // (v0.5.5 버그 수정, 사용자 제보 "매칭 버튼을 누르면 대기열로 안 가고 바로 패배") 대기열에 상대가 없으면
+      // pvp_queue_join은 SQL NULL을 돌려주는데, PostgREST는 이를 null이 아니라 "모든 필드가 null인 객체"로
+      // 직렬화한다 — `if (g)`가 이걸 매칭된 대전으로 오인해 status가 null(=active 아님)인 빈 대전을 열었고,
+      // 대전 화면이 곧장 "끝난 대전 → 패배"로 판정했다. 체스 PvP(joinPvpQueue)에서 v0.4.x에 고쳤던 것과 같은
+      // 버그가 v0.5.3에서 미니게임 매칭 훅을 새로 만들며 되살아난 것 — 실제 대전(id가 있고 active)만 받는다.
+      // 재접속 분기는 게임 종류와 무관하게 진행 중인 대전을 돌려주므로, 다른 게임(예: 체스)의 대전이면 열지 않는다.
+      if (g && g.id != null && g.status === "active") {
+        if (g.game_type && g.game_type !== gameType) { setErr("진행 중인 다른 대전이 있어요. 그 대전을 먼저 끝내 주세요."); setWaiting(false); return; }
+        setGame(g); setWaiting(false);
+      }
     } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
   }, [myUid, gameType]);
   const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
