@@ -37,6 +37,24 @@
 
 ## 버전 기록
 
+### OpenChess v0.5.4 — 2026/9/24
+
+**기능 — 미니게임 전적·레이팅·랭킹**
+사용자 요청("미니게임을 더 발전시키고 싶어" → 방향: 전적·레이팅·랭킹). 지금까지 미니게임은 실시간 대전을 해도 승패가 어디에도 남지 않았고, 혼자 플레이하기 최고 기록은 브라우저 localStorage에만 있어 기기를 바꾸면 사라졌다.
+
+- **DB(`supabase-setup.sql`)**: `minigame_stats`(uid·game당 한 행 — rating·peak_rating·rated_games·games·wins·losses·draws·streak·best_streak·best_score·best_detail·best_at) 테이블을 새로 두고, 누구나 읽을 수 있되(랭킹·프로필) 직접 쓰기 권한은 주지 않는다. `pvp_games`에 `rated`(레이팅 대전 여부)·`rating_delta`(끝난 순간의 양쪽 레이팅 전후) 컬럼 추가.
+- **대전 결과 반영은 트리거 하나로**: 미니게임 대전을 끝내는 경로가 `coord_finish`·`knight_resolve_round`·`rush_resolve_round`·`attack_finish`·각 `*_forfeit` 등 여럿이라, RPC마다 손대는 대신 `pvp_games`의 status가 `active`에서 결과(`white_won`/`black_won`/`draw`)로 바뀌는 순간에 거는 BEFORE UPDATE 트리거 `_minigame_on_game_end`로 전적·연승·레이팅을 올린다. BEFORE라 `rating_delta`를 같은 update 안에서 채워, 대전 화면이 구독 중인 그 한 번의 실시간 변경에 결과와 레이팅 변화가 함께 실려 온다(추가 update·재귀 트리거 없음). `aborted`(좀비 정리)는 결과가 아니라 세지 않는다.
+- **레이팅**: 게임별 Elo, 1200 시작, 처음 20판 K=40·이후 K=24, 하한 100(`_minigame_elo`). `pvp_queue_join`(랜덤 매칭)으로 만든 미니게임 대전만 `rated=true` — 친구 도전(`pvp_invite_respond`)·재대결(`pvp_rematch_offer`)은 같은 상대와 반복해 레이팅을 주고받는 걸 막기 위해 전적만 남긴다. 체스 PvP는 레이팅 대상이 아니다(트리거 조건에서 game_type으로 제외).
+- **혼자 플레이 기록**: `minigame_submit_best(game, score, detail)` — 이전보다 높을 때만 바꾼다. 나이트 경주는 {도달 수, 걸린 시간}이라 `도달 수 × 1,000,000 − ms` 하나로 합쳐 줄세우고 원래 값은 `best_detail`에 둔다. 러시아워는 전체 별 수를 올린다. 클라이언트가 계산한 점수라 완전한 검증은 불가능해, 규칙상 나올 수 없는 값(좌표 150개·공격 120회·별 300개 초과 등)만 막는다.
+- **로컬↔서버 기록 동기화**: 로비를 열 때 서버 기록과 localStorage 기록을 비교해, 로컬이 더 좋으면(로그인 전·v0.5.4 이전 기록) 서버로 올리고 서버가 더 좋으면(다른 기기 기록) 로컬로 받아 혼자 플레이 화면의 "이전 최고 기록"도 서버와 맞춘다.
+- **랭킹**: `minigame_leaderboard(game, kind, scope, limit)` — kind `rating`(레이팅 대전 3판 이상, 배치) / `best`(혼자 플레이 기록), scope `all` / `friends`(나 + 수락된 friend_edges). 상위 N명과, 그 안에 내가 없으면 내 행을 하나 더 붙여 돌려준다. 동점은 먼저 달성한 쪽이 앞선다. 프로필은 `pub`에서 닉네임·사진·displayId·xp만 골라 내려준다.
+
+**UI**
+- **로비 전적 바(`MinigameStatsBar`)**: 네 미니게임 로비 맨 위에 레이팅(배치 중이면 "배치 n/3", 이후 최고 레이팅)·전적(승·패·무, 2연승 이상이면 "n연승 중")·혼자 최고 기록과 랭킹 버튼. 대전·혼자 플레이를 마치고 로비로 돌아올 때마다 다시 읽는다.
+- **랭킹 화면(`MinigameLeaderboard`)**: 허브 안의 한 모드로, "레이팅 / 혼자 플레이 기록" · "전체 / 친구" 두 줄 세그먼트. 1~3위는 사이트 리더보드와 같은 `/rank-{1,2,3}.png` 메달, 내 행은 금색 테두리 + "나" 배지, 50위 밖이면 "⋮" 아래에 내 행을 따로 붙인다. 행을 누르면 그 사람 프로필이 열린다.
+- **결과 화면 레이팅 변화(`MinigameRatingChange`)**: 실시간 대전 결과에 이전 레이팅에서 새 레이팅으로 올라가는/내려가는 카운트업과 ▲/▼ 변화량. 친선전이면 "전적에만 남고 레이팅은 바뀌지 않아요" 안내.
+- **프로필·목록**: `PublicProfileStats`에 `MinigameProfileStats`(한 판이라도 했거나 기록이 있는 게임만 — 레이팅·전적·혼자 최고), 스페셜 미니게임 목록 카드 오른쪽에 내 레이팅(배치 완료한 게임만).
+
 ### OpenChess v0.5.3 — 2026/9/24
 
 **기능 — 스페셜 미니게임 3호 "러시아워"(혼자 풀기·봇·실시간 PvP·친구 도전)**

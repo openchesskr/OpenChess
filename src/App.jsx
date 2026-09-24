@@ -7,7 +7,7 @@ import {
   ChevronRight as Crumb, Star, ThumbsUp, ThumbsDown, Check, Play, ArrowLeft, RotateCcw, Search, X,
   Users, UserPlus, UserCheck, User, Clock, Eye, EyeOff, Copy, ClipboardPaste, Lightbulb, Bell, BellOff, Smile, Target, MessageCircle, HelpCircle, Maximize2, Trash2, ShoppingBag, Heart, Send, Repeat2, Volume2, VolumeX, Bookmark, Gem, Pin, PinOff, Share2, Handshake, Route, Undo2, Puzzle, Swords, Shuffle,
   Pencil, RotateCw, RefreshCw, ScanLine, Save, Filter,
-  Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench, Flame, Medal,
+  Camera, Image as ImageIcon, FolderOpen, Cloud, Wrench, Flame, Medal, Trophy, TrendingUp, TrendingDown,
 } from "lucide-react";
 import {
   T, FILES, MOTION_EASE, BOARD_GLOSS, DRAG_SCROLL_MULT,
@@ -9272,6 +9272,14 @@ function useSquareFit(maxSize = 420) {
 function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRating, canEditContent }) {
   const [activeKey, setActiveKey] = useState(null);
   const [resumeGame, setResumeGame] = useState(null);
+  // (v0.5.4) 목록 카드마다 내 미니게임 레이팅을 보여준다 — 게임을 마치고 목록으로 돌아올 때 다시 읽는다.
+  const [myStats, setMyStats] = useState({});
+  useEffect(() => {
+    if (!myUid || activeKey) return;
+    let cancelled = false;
+    fetchMinigameStats(myUid).then((st) => { if (!cancelled) setMyStats(st); }).catch(() => { });
+    return () => { cancelled = true; };
+  }, [myUid, activeKey]);
   useEffect(() => {
     if (!resume) return;
     const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === resume.gameType);
@@ -9304,6 +9312,12 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: T.ink }}>{g.name}{g.isNew && <span style={{ fontSize: 9, fontWeight: 900, padding: "1px 6px", borderRadius: 999, background: accent, color: "#fff", letterSpacing: ".04em" }}>NEW</span>}</span>
                 <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.desc}</span>
               </span>
+              {myStats[g.gameType] && myStats[g.gameType].rated_games >= MINIGAME_PLACEMENT && (
+                <span style={{ flexShrink: 0, textAlign: "right", lineHeight: 1.15 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myStats[g.gameType].rating}</span>
+                  <span style={{ display: "block", fontSize: 9, fontWeight: 700, color: T.inkSoft }}>레이팅</span>
+                </span>
+              )}
               <ChevronRight size={17} color={T.inkSoft} style={{ flexShrink: 0 }} />
             </button>
           );
@@ -9550,7 +9564,7 @@ function VictoryBurst() {
 }
 // outcome: "win" | "lose" | "draw". rounds: [{ result: "me"|"opp"|"draw", label, detail }].
 // stats: [{ label, value }]. onRematch가 있으면 "다시 하기" 버튼을 함께 보여준다.
-function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, note, onExit, onRematch, title: titleOverride, scoreText }) {
+function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, note, onExit, onRematch, title: titleOverride, scoreText, rating }) {
   useEffect(() => {
     if (outcome === "win") { fx("win"); buzz([40, 60, 40, 60, 120]); } else if (outcome === "lose") { fx("lose"); buzz(200); } else fx("roundDraw");
   }, [outcome]);
@@ -9570,6 +9584,9 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
           <span>{oppLabel}</span>
         </>)}
       </motion.div>
+      {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
+      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 12 }}>친선전 — 전적에만 남고 레이팅은 바뀌지 않아요</div>}
+      {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
           {rounds.map((r, i) => {
@@ -9730,7 +9747,7 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     const byForfeit = game.result_reason === "coord_forfeit";
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={oppScore} oppLabel="상대"
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={oppScore} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={coordRoundChips(rounds.filter((r) => r.winner), myColor, oppColor)} stats={stats}
       note={byForfeit ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
   }
@@ -9861,7 +9878,266 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
 // 대전·봇·혼자 모드에서 결과 화면의 "목록으로"(또는 기권)는 이 허브의 로비로 돌아온다.
 const MINIGAME_BEST_KEY = "occ_minigame_best";
 function loadMinigameBest(key) { try { return (JSON.parse(window.localStorage.getItem(MINIGAME_BEST_KEY) || "{}") || {})[key] ?? null; } catch { return null; } }
-function saveMinigameBest(key, value) { try { const all = JSON.parse(window.localStorage.getItem(MINIGAME_BEST_KEY) || "{}") || {}; all[key] = value; window.localStorage.setItem(MINIGAME_BEST_KEY, JSON.stringify(all)); } catch { } }
+function saveMinigameBestLocal(key, value) { try { const all = JSON.parse(window.localStorage.getItem(MINIGAME_BEST_KEY) || "{}") || {}; all[key] = value; window.localStorage.setItem(MINIGAME_BEST_KEY, JSON.stringify(all)); } catch { } }
+// (v0.5.4) 기록을 로컬에 남기는 동시에, 로그인해 있으면 서버(minigame_stats.best_*)에도 올려 랭킹에 반영한다.
+function saveMinigameBest(key, value) { saveMinigameBestLocal(key, value); submitMinigameBest(key, value); }
+// ============================================================ 미니게임 전적·레이팅·랭킹(v0.5.4) ============================================================
+// (v0.5.4 기능, 사용자 요청: "미니게임을 더 발전시키고 싶어" → 전적·레이팅·랭킹) 실시간 대전 결과는 서버
+// 트리거(_minigame_on_game_end)가 minigame_stats에 쌓고, 혼자 플레이하기 기록은 minigame_submit_best로
+// 올린다. 랜덤 매칭만 레이팅 대전이고 친구 도전·재대결은 전적만 남는다(pvp_games.rated). 레이팅 랭킹은
+// 레이팅 대전 MINIGAME_PLACEMENT판 이상부터 오른다 — 서버 minigame_leaderboard의 조건과 같아야 한다.
+const MINIGAME_PLACEMENT = 3;
+// 혼자 플레이 기록 → 서버가 줄세우는 "높을수록 좋은" 숫자 하나. 나이트 경주만 {도달 수, 걸린 시간}이라
+// 도달 수 ×100만 − 시간(ms)으로 합친다(도달 수가 같으면 빠른 쪽이 높다).
+function minigameBestScore(game, v) {
+  if (v == null) return null;
+  if (game === "knight") return v.reached > 0 ? v.reached * 1e6 - Math.min(999999, Math.round(v.ms || 0)) : null;
+  return typeof v === "number" && v > 0 ? v : null;
+}
+function minigameBestFromServer(game, score, detail) {
+  if (score == null) return null;
+  if (game === "knight") {
+    if (detail && detail.reached) return { reached: detail.reached, ms: detail.ms || 0 };
+    const reached = Math.ceil(score / 1e6);
+    return { reached, ms: reached * 1e6 - score };
+  }
+  return Number(score);
+}
+function minigameBestLabel(game, v) {
+  if (v == null) return null;
+  if (game === "knight") return v.reached + "회 도달 · " + ((v.ms || 0) / 1000).toFixed(1) + "초";
+  if (game === "coord") return v + "개";
+  if (game === "rush") return "★" + v;
+  if (game === "attack") return v + "회 메이트";
+  return String(v);
+}
+function submitMinigameBest(game, value) {
+  const score = minigameBestScore(game, value);
+  if (score == null || !SB_ON || !SB_TOKEN) return;
+  sbRpc("minigame_submit_best", { p_game: game, p_score: score, p_detail: game === "knight" ? value : null }).catch(() => { });
+}
+// 러시아워 혼자 풀기의 "기록"은 전체 별 수다(레벨별 최소 수는 로컬 진행도에만 둔다).
+function rushTotalStars(progress) { return RUSH_LEVELS.reduce((a, l) => a + (progress[l.id] ? rushStars(progress[l.id], l.par) : 0), 0); }
+function minigameLocalBest(game) { return game === "rush" ? (rushTotalStars(loadRushProgress()) || null) : loadMinigameBest(game); }
+async function fetchMinigameStats(uid) {
+  if (!SB_ON || !uid) return {};
+  const rows = await sbSelect("minigame_stats?uid=eq." + uid + "&select=game,rating,peak_rating,rated_games,games,wins,losses,draws,streak,best_streak,best_score,best_detail");
+  const out = {};
+  (rows || []).forEach((r) => { out[r.game] = r; });
+  return out;
+}
+// 내 전적 한 게임분 — tick이 바뀔 때마다(대전을 마치고 로비로 돌아올 때) 다시 읽는다. 읽은 김에 로컬 기록과
+// 서버 기록을 맞춘다: 로컬이 더 좋으면(로그인 전에 세운 기록·v0.5.4 이전 기록) 서버로 올리고, 서버가 더
+// 좋으면(다른 기기에서 세운 기록) 로컬에 받아 둔다 — 혼자 플레이 화면의 "이전 최고 기록"이 서버와 같아진다.
+function useMinigameMyStats(myUid, game, tick) {
+  const [row, setRow] = useState(null);
+  useEffect(() => {
+    if (!myUid) { setRow(null); return; }
+    let cancelled = false;
+    fetchMinigameStats(myUid).then((all) => {
+      if (cancelled) return;
+      const r = all[game] || null;
+      const serverBest = r ? minigameBestFromServer(game, r.best_score, r.best_detail) : null;
+      const localBest = minigameLocalBest(game);
+      const ls = minigameBestScore(game, localBest), ss = minigameBestScore(game, serverBest);
+      if (ls != null && (ss == null || ls > ss)) submitMinigameBest(game, localBest);
+      else if (ss != null && game !== "rush" && (ls == null || ss > ls)) saveMinigameBestLocal(game, serverBest);
+      setRow(r);
+    }).catch(() => { });
+    return () => { cancelled = true; };
+  }, [myUid, game, tick]);
+  return row;
+}
+function minigameRecordText(r) { return r ? r.wins + "승 " + r.losses + "패" + (r.draws ? " " + r.draws + "무" : "") : "0승 0패"; }
+// 로비 상단 — 내 레이팅·전적·혼자 최고 기록 + 랭킹 버튼.
+function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
+  const localBest = minigameLocalBest(game);
+  const serverBest = row ? minigameBestFromServer(game, row.best_score, row.best_detail) : null;
+  const best = (minigameBestScore(game, serverBest) || 0) > (minigameBestScore(game, localBest) || 0) ? serverBest : localBest;
+  const placed = row && row.rated_games >= MINIGAME_PLACEMENT;
+  const cell = (label, value, sub) => (
+    <div style={{ minWidth: 0, flex: 1, padding: "7px 4px", textAlign: "center" }}>
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      {sub && <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(244,238,226,.5)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", alignItems: "stretch", gap: 8, marginBottom: 12 }}>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(232,196,110,.22)" }}>
+        {myUid ? (<>
+          {cell("레이팅", row ? row.rating : 1200, placed ? "최고 " + row.peak_rating : "배치 " + Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT) + "/" + MINIGAME_PLACEMENT)}
+          {cell("전적", minigameRecordText(row), row && row.streak >= 2 ? row.streak + "연승 중" : row && row.best_streak >= 2 ? "최다 " + row.best_streak + "연승" : null)}
+          {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
+        </>) : (
+          <div style={{ flex: 1, padding: "10px 12px", fontSize: 11, color: "rgba(244,238,226,.65)", lineHeight: 1.5, display: "flex", alignItems: "center" }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
+        )}
+      </div>
+      <button onClick={onOpenRanking} className="press" aria-label="랭킹"
+        style={{ flexShrink: 0, width: 58, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.brassHi, cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
+        <Trophy size={18} />
+        <span style={{ fontSize: 10.5, fontWeight: 800 }}>랭킹</span>
+      </button>
+    </div>
+  );
+}
+function MinigameSegmented({ value, options, onChange }) {
+  return (
+    <div style={{ display: "flex", padding: 3, borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(232,196,110,.2)" }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <button key={o.key} onClick={() => !o.disabled && onChange(o.key)} disabled={o.disabled} className="press"
+            style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: o.disabled ? "default" : "pointer", opacity: o.disabled ? 0.4 : 1, fontSize: 11.5, fontWeight: 800,
+              background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : "rgba(244,238,226,.75)" }}>{o.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+// 랭킹 한 줄 — 1~3위는 사이트 리더보드와 같은 메달 이미지, 내 행은 금색 테두리.
+function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
+  const p = r.pub || {};
+  const name = p.nickname || p.displayId || r.username || "?";
+  const value = kind === "best" ? minigameBestLabel(game, minigameBestFromServer(game, r.best_score, r.best_detail)) : r.rating;
+  const sub = kind === "best" ? null : minigameRecordText(r);
+  return (
+    <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: Math.min(index, 12) * 0.03 }}
+      onClick={() => onOpenProfile && r.username && onOpenProfile(r.username)} className="press"
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 10, cursor: "pointer", textAlign: "left",
+        border: r.is_me ? "1.5px solid " + T.brassHi : "1px solid rgba(232,196,110,.14)", background: r.is_me ? "rgba(236,203,134,.14)" : "rgba(255,255,255,.035)" }}>
+      <span style={{ width: 34, height: 34, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+        {r.rank <= 3
+          ? <img src={"/rank-" + r.rank + ".png"} alt={r.rank + "위"} style={{ height: r.rank === 1 ? 34 : 29, width: "auto", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }} />
+          : <span style={{ fontSize: 13, fontWeight: 900, color: "rgba(244,238,226,.6)", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{r.rank}</span>}
+      </span>
+      {p.photo ? <img src={p.photo} alt="" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+        : <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{name[0].toUpperCase()}</span>}
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+          {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>나</span>}
+        </span>
+        {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.5)", marginTop: 1 }}>{sub}</span>}
+      </span>
+      <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: r.rank <= 3 ? T.brassHi : T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </motion.button>
+  );
+}
+function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
+  const [kind, setKind] = useState("rating");
+  const [scope, setScope] = useState("all");
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    if (!SB_ON) { setRows([]); return; }
+    let cancelled = false;
+    setRows(null); setErr(false);
+    sbRpc("minigame_leaderboard", { p_game: game, p_kind: kind, p_scope: scope, p_limit: 50 })
+      .then((r) => { if (!cancelled) setRows(Array.isArray(r) ? r : []); })
+      .catch(() => { if (!cancelled) { setRows([]); setErr(true); } });
+    return () => { cancelled = true; };
+  }, [game, kind, scope]);
+  const top = rows ? rows.filter((r) => r.rank <= 50) : [];
+  const meOutside = rows ? rows.find((r) => r.is_me && r.rank > 50) : null;
+  const empty = kind === "rating" ? "아직 랭킹에 오른 사람이 없어요 — 랜덤 매칭 " + MINIGAME_PLACEMENT + "판을 마치면 올라가요." : "아직 기록이 없어요 — 혼자 플레이하기로 첫 기록을 세워 보세요.";
+  return (
+    <div style={{ padding: "8px 2px 4px" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(244,238,226,.75)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}><ChevronLeft size={14} />로비</button>
+        <span style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={15} color={T.brassHi} />랭킹</span>
+        <span style={{ width: 40 }} />
+      </div>
+      <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+        <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: "레이팅" }, { key: "best", label: "혼자 플레이 기록" }]} />
+        <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: "전체" }, { key: "friends", label: "친구", disabled: !myUid }]} />
+      </div>
+      {rows == null ? (
+        <div style={{ textAlign: "center", padding: "28px 0" }}><PendingDots size={12} /></div>
+      ) : top.length === 0 ? (
+        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.6)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹을 불러오지 못했어요." : empty}</p>
+      ) : (
+        <div style={{ display: "grid", gap: 6 }}>
+          {top.map((r, i) => <MinigameRankRow key={r.uid} r={r} game={game} kind={kind} onOpenProfile={onOpenProfile} index={i} />)}
+          {meOutside && (<>
+            <div style={{ textAlign: "center", color: "rgba(244,238,226,.35)", fontSize: 12, lineHeight: 1 }}>⋮</div>
+            <MinigameRankRow r={meOutside} game={game} kind={kind} onOpenProfile={onOpenProfile} index={top.length} />
+          </>)}
+        </div>
+      )}
+      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(244,238,226,.45)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 바뀌어요 · 친구 도전은 전적에만 남아요</p>}
+    </div>
+  );
+}
+// 대전 결과 화면에 넘길 레이팅 변화 — 레이팅 대전이면 { before, after }, 친선전이면 { unrated: true }.
+function minigameRatingOf(game, myUid) {
+  if (!game || game.status === "active" || game.status === "aborted") return null;
+  if (!game.rated) return { unrated: true };
+  const d = game.rating_delta && game.rating_delta[myUid === game.white_uid ? "w" : "b"];
+  return d ? { before: d.before, after: d.after } : null;
+}
+function MinigameRatingChange({ rating }) {
+  const diff = rating.after - rating.before;
+  const shown = useRatingCountUp(rating.after, rating.before, 900);
+  const c = diff > 0 ? "#7FD48A" : diff < 0 ? "#F0948A" : "rgba(244,238,226,.7)";
+  const Arrow = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : null;
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.06)", border: "1px solid " + c, marginBottom: 14 }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>레이팅</span>
+      <span style={{ fontSize: 17, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12.5, fontWeight: 900, color: c, fontVariantNumeric: "tabular-nums" }}>{Arrow && <Arrow size={14} />}{diff > 0 ? "+" + diff : diff}</span>
+    </motion.div>
+  );
+}
+function useRatingCountUp(target, from, ms) {
+  const [v, setV] = useState(from);
+  useEffect(() => {
+    if (from === target) { setV(target); return; }
+    const t0 = performance.now(); let raf;
+    const step = (t) => { const k = Math.min(1, (t - t0) / ms); setV(Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)))); if (k < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, from, ms]);
+  return v;
+}
+// 프로필(내 프로필·다른 사람 프로필 공용)의 미니게임 전적 — 한 판이라도 했거나 기록이 있는 게임만 보여준다.
+function MinigameProfileStats({ uid }) {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    fetchMinigameStats(uid).then((s) => { if (!cancelled) setStats(s); }).catch(() => { });
+    return () => { cancelled = true; };
+  }, [uid]);
+  const list = stats ? PLAY_SPECIAL_GAMES.map((g) => ({ g, r: stats[g.gameType] })).filter((x) => x.r && (x.r.games > 0 || x.r.best_score != null)) : [];
+  if (!list.length) return null;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}><Trophy size={13} color={T.brass} /> 미니게임</div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {list.map(({ g, r }) => {
+          const GIcon = g.Icon || Lock;
+          const best = minigameBestFromServer(g.gameType, r.best_score, r.best_detail);
+          const placed = r.rated_games >= MINIGAME_PLACEMENT;
+          return (
+            <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 10, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)" }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{g.name}</span>
+                <span style={{ display: "block", fontSize: 10, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{minigameRecordText(r)}{best != null ? " · 혼자 최고 " + minigameBestLabel(g.gameType, best) : ""}</span>
+              </span>
+              <span style={{ flexShrink: 0, textAlign: "right" }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
+                <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? "레이팅" : "배치 중"}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function useMinigameMatch({ myUid, gameType, initialGame }) {
   const [game, setGame] = useState(initialGame || null);
   const [waiting, setWaiting] = useState(false);
@@ -9901,10 +10177,11 @@ function MinigameModeCard({ Icon, label, sub, onClick, disabled, primary, active
     </button>
   );
 }
-function MinigameLobby({ rules, lobbyExtra, myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer }) {
+function MinigameLobby({ rules, lobbyExtra, myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar }) {
   const [pickBot, setPickBot] = useState(false);
   return (
     <div style={{ padding: "12px 4px 4px" }}>
+      {statsBar}
       <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(244,238,226,.72)", padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.04)", border: "1px solid rgba(232,196,110,.18)", marginBottom: 12 }}>{rules}</div>
       {lobbyExtra}
       {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10, textAlign: "center" }}>{err}</p>}
@@ -9954,7 +10231,10 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   const [runKey, setRunKey] = useState(0);
   const [liveStatus, setLiveStatus] = useState(null);
   const [confirmForfeit, setConfirmForfeit] = useState(false);
-  const toLobby = useCallback(() => { m.setGame(null); setMode(null); setLiveStatus(null); }, [m.setGame]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (v0.5.4) 로비로 돌아올 때마다 statsTick을 올려 방금 끝난 대전·기록이 로비 전적 바에 바로 반영되게 한다.
+  const [statsTick, setStatsTick] = useState(0);
+  const myStats = useMinigameMyStats(myUid, gameType, statsTick);
+  const toLobby = useCallback(() => { m.setGame(null); setMode(null); setLiveStatus(null); setStatsTick((t) => t + 1); }, [m.setGame]); // eslint-disable-line react-hooks/exhaustive-deps
   const start = (next) => { setLiveStatus(null); setRunKey((k) => k + 1); setMode(next); };
   const rematch = useCallback(() => { setLiveStatus(null); setRunKey((k) => k + 1); }, []);
   const inGame = !!m.game || !!mode;
@@ -9975,6 +10255,7 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   if (m.game) body = renderPvp({ ...common, runKey: "pvp" + m.game.id, game: m.game });
   else if (mode && mode.kind === "bot") body = renderBot({ ...common, opt: mode.opt });
   else if (mode && mode.kind === "solo") body = renderSolo(common);
+  else if (mode && mode.kind === "rank") body = <MinigameLeaderboard game={gameType} myUid={myUid} onOpenProfile={onOpenProfile} onBack={toLobby} />;
   else if (m.waiting || m.myInvite) body = (
     <MatchmakingScreen active variant={m.myInvite ? "invite" : "queue"}
       opponent={m.myInvite ? { name: m.myInvite.toUsername || "상대", photo: m.myInvite.toPhoto } : null}
@@ -9982,10 +10263,11 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   );
   else body = (
     <MinigameLobby rules={rules} lobbyExtra={lobbyExtra} footer={footer} myUid={myUid} soloSub={soloSub} botSub={botSub} botOptions={botOptions}
+      statsBar={<MinigameStatsBar myUid={myUid} game={gameType} row={myStats} onOpenRanking={() => start({ kind: "rank" })} />}
       onSolo={() => start({ kind: "solo" })} onBot={(opt) => start({ kind: "bot", opt })} onRandom={m.join} err={m.err || m.inviteErr}
       roster={<FriendPvpRoster myUid={myUid} friendList={m.friendList} myInvite={m.myInvite} onInvite={m.sendInvite} onOpenProfile={onOpenProfile} />} />
   );
-  const noScroll = !!m.game || (mode && !(mode.kind === "solo" && soloScroll));
+  const noScroll = !!m.game || (mode && mode.kind !== "rank" && !(mode.kind === "solo" && soloScroll));
   return (
     <MinigameScreen title={title} onBack={requestExit} noScroll={!!noScroll}>
       {body}
@@ -10639,7 +10921,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
       const rep = r.reports && r.reports[myColor];
       return rep ? { reached: !!rep.reached, moves: rep.movesUsed, ms: new Date(rep.at).getTime() - new Date(r.startedAt).getTime() } : null;
     });
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대"
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={rounds.filter((r) => r.winner).map((r, i) => ({ result: r.winner === myColor ? "me" : r.winner === "draw" ? "draw" : "opp", label: "R" + (i + 1), detail: mine[i] && mine[i].reached ? mine[i].moves + "수" : "실패" }))}
       stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
   }
@@ -11095,7 +11377,7 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   if (finished) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const done = rounds.filter((r) => r.winner);
-    return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대"
+    return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={rushRoundChips(done, me, opp, (r) => r.reports && r.reports[me])}
       stats={rushStatsOf(done.map((r) => { const m = r.reports && r.reports[me]; return m && { ...m, par: rushLevelFor(r.diff, r.seed).par }; }))}
       note={game.result_reason === "rush_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
@@ -11121,7 +11403,8 @@ function RushPvpRoundWrap({ round, idx, gameId, onDone, result, opp }) {
 function RushSoloHub() {
   const [level, setLevel] = useState(null);
   const [progress, setProgress] = useState(loadRushProgress);
-  const record = useCallback((id, moves) => setProgress((p) => { const best = p[id] ? Math.min(p[id], moves) : moves; const np = { ...p, [id]: best }; saveRushProgress(np); return np; }), []);
+  // (v0.5.4) 풀 때마다 전체 별 수를 서버 기록으로도 올린다(서버는 더 높을 때만 바꾼다).
+  const record = useCallback((id, moves) => setProgress((p) => { const best = p[id] ? Math.min(p[id], moves) : moves; const np = { ...p, [id]: best }; saveRushProgress(np); submitMinigameBest("rush", rushTotalStars(np)); return np; }), []);
   const i = level ? RUSH_LEVELS.findIndex((l) => l.id === level.id) : -1;
   if (level) return <RushSoloPlay key={level.id} level={level} progress={progress} onRecord={record} onBack={() => setLevel(null)} onNext={i >= 0 && i < RUSH_LEVELS.length - 1 ? () => setLevel(RUSH_LEVELS[i + 1]) : null} />;
   return <div style={{ padding: "8px 2px" }}><RushLevelSelect progress={progress} onPick={setLevel} /></div>;
@@ -11502,7 +11785,7 @@ function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const props = attackResultProps(mine, theirs, myRating, oppRating);
     const iWon = (me === "w" && game.status === "white_won") || (me === "b" && game.status === "black_won");
     const outcome = game.status === "draw" ? "draw" : iWon ? "win" : "lose";
-    return <MinigameResult {...props} outcome={outcome} oppLabel="상대" note={game.result_reason === "attack_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : props.note} onExit={onExit} />;
+    return <MinigameResult {...props} outcome={outcome} oppLabel="상대" rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : props.note} onExit={onExit} />;
   }
   if (!head) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><PendingDots size={12} /></div>;
   return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel="상대" onResult={onResult}
@@ -23112,6 +23395,15 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
   {
+    version: "0.5.4", date: "2026.9.24", dev: ["openchesskr", "G13sus4"], items: [
+      "미니게임에 레이팅이 생겼어요 — 네 미니게임마다 따로, 1200점에서 시작해 랜덤 매칭에서 이기면 오르고 지면 내려가요. 대전이 끝나면 결과 화면에서 레이팅이 몇 점 바뀌었는지 바로 보여줘요. 친구 도전은 친선전이라 전적에만 남아요.",
+      "미니게임 랭킹이 생겼어요 — 각 미니게임 시작 화면의 '랭킹' 버튼을 누르면 레이팅 순위와 혼자 플레이 기록 순위를 전체 또는 친구끼리 볼 수 있어요. 레이팅 순위에는 랜덤 매칭 3판을 마치면 올라가요.",
+      "미니게임 시작 화면 맨 위에 내 레이팅·전적(승·패·무, 연승)·혼자 플레이 최고 기록이 보여요.",
+      "혼자 플레이하기 최고 기록이 이제 계정에 저장돼요 — 다른 기기에서도 그대로 이어지고, 로그인 전에 세운 기록도 로그인하면 올라가요.",
+      "프로필에 미니게임 레이팅과 전적이 표시되고, 스페셜 미니게임 목록에서도 게임마다 내 레이팅을 볼 수 있어요.",
+    ]
+  },
+  {
     version: "0.5.3", date: "2026.9.24", dev: ["openchesskr", "G13sus4"], items: [
       "새 미니게임 '러시아워'가 생겼어요 — 내 기물들 사이에 갇힌 룩(왕관 표시)을 빼내 상대 백랭크에서 킹을 메이트하는 퍼즐이에요. 다른 기물로 길을 비켜 주거나, 일부러 기물을 내줘 상대 수비 기물을 끌어내야 할 때도 있어요. 혼자 풀기(46개 레벨·별 3개 평가·힌트), 봇 대전, 실시간 대전, 친구 도전 모두 할 수 있어요.",
       "새 미니게임 '공격 모드'가 생겼어요 — 3분 동안 강제 체크메이트 포지션('공격 기회')이 끝없이 나오고, 더 많이 메이트시킨 쪽이 이겨요. 짧은 메이트일수록 좋은 등급(S·A·B·C)이고, 퍼즐 레이팅이 낮은 쪽이 좋은 등급을 받을 확률이 더 높아요. 동점이면 낮은 등급부터 성공 수를 비교해요.",
@@ -28568,6 +28860,8 @@ function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze,
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
+      {/* (v0.5.4) 미니게임 레이팅·전적·혼자 최고 기록 — 한 판이라도 한 게임만. */}
+      <MinigameProfileStats uid={ownerUid} />
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );
