@@ -9233,10 +9233,10 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile 
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 const PLAY_SPECIAL_GAMES = [
   { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: "나이트 경주", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: "러시아워", desc: "엉킨 내 기물들 사이에서 룩을 탈출시켜 백랭크 메이트 — 비켜 주고, 희생으로 수비 기물을 끌어내세요.", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: "공격 모드", desc: "3분 동안 쏟아지는 강제 메이트 '공격 기회'를 더 많이 성공시키는 쪽이 승리 — 짧은 메이트일수록 좋은 등급이에요.", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
+  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: "엉킨 내 기물들 사이에서 룩을 탈출시켜 백랭크 메이트 — 비켜 주고, 희생으로 수비 기물을 끌어내세요.", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
+  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: "3분 동안 쏟아지는 강제 메이트 '공격 기회'를 더 많이 성공시키는 쪽이 승리 — 짧은 메이트일수록 좋은 등급이에요.", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
 ];
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
@@ -9314,37 +9314,139 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
     const Game = active.Component;
     return <Game myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
   }
+  return <MinigameHubBoard stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
+}
+// ============================================================ 미니게임 목록 화면(v0.5.5 리디자인) ============================================================
+// (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 직접 그린 스케치를 그대로
+// 옮긴 "종이 위 잉크 드로잉" 한 장짜리 화면. 맨 위에 빗금(어두운 칸)으로 칠한 3줄짜리 체스보드 띠(좌표
+// 조준경·나이트가 놓여 있다), 가운데 팔각형 "OpenChess MiniGame" 엠블럼을 네 게임 칸이 둘러싸고, 맨 아래
+// 왼쪽은 다음 미니게임 자리, 오른쪽은 백랭크 러시아워의 룩 탈출 → 백랭크 메이트 경로 그림이다.
+// 글자·선 크기는 전부 컨테이너 폭 기준(cqw)이라 모바일·데스크톱 어디서나 스케치 비율이 그대로 유지된다.
+const MG_INK = "#2B1B10";
+const MG_HATCH = "repeating-linear-gradient(135deg, " + MG_INK + " 0 1.3px, transparent 1.3px 5.5px)";
+const MG_STRIP_COLS = 14, MG_STRIP_ROWS = 3;
+// 게임 칸 배치 — 스케치와 같은 자리·같은 줄바꿈.
+const MG_TILES = [
+  { gameType: "coord", lines: ["좌표 인지", "게임"], side: "left", row: 1 },
+  { gameType: "knight", lines: ["나이트", "레이스"], side: "right", row: 1 },
+  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], side: "left", row: 2 },
+  { gameType: "rush", lines: ["백랭크", "러시아워"], side: "right", row: 2 },
+];
+function MgCrosshair({ size }) {
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-        <Sparkles size={15} style={{ color: T.brass }} />
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>스페셜 미니게임</div>
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block" }}>
+      <circle cx="12" cy="12" r="6.2" fill="none" stroke={MG_INK} strokeWidth="1.9" />
+      <path d="M12 2.2v4.6M12 17.2v4.6M2.2 12h4.6M17.2 12h4.6" stroke={MG_INK} strokeWidth="1.9" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="1.5" fill={MG_INK} />
+    </svg>
+  );
+}
+// 맨 위 체스보드 띠 — 조준경 칸은 좌표 인지 게임, 나이트 칸은 나이트 레이스로 바로 들어간다.
+function MgBoardStrip({ onPick, width }) {
+  const cell = width / MG_STRIP_COLS;
+  const cells = [];
+  for (let r = 0; r < MG_STRIP_ROWS; r++) for (let c = 0; c < MG_STRIP_COLS; c++) {
+    const dark = (r + c) % 2 === 0;
+    const coord = r === 1 && c === 2, knight = r === 2 && c === 8;
+    const key = r + "-" + c;
+    const style = { position: "relative", aspectRatio: "1 / 1", background: dark ? MG_HATCH : "transparent", borderRight: c < MG_STRIP_COLS - 1 ? "1.5px solid " + MG_INK : "none", borderBottom: r < MG_STRIP_ROWS - 1 ? "1.5px solid " + MG_INK : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 };
+    if (coord || knight) {
+      cells.push(
+        <button key={key} onClick={() => onPick(coord ? "coord" : "knight")} aria-label={coord ? "좌표 인지 게임" : "나이트 레이스"} className="press mg-strip-piece" style={{ ...style, border: "none", borderRight: style.borderRight, borderBottom: style.borderBottom, cursor: "pointer" }}>
+          <span style={{ width: "86%", height: "86%", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, background: dark ? "rgba(241,230,208,.82)" : "transparent" }}>
+            {coord ? <MgCrosshair size="100%" /> : <PieceGlyph type="N" color="b" size={Math.max(10, cell * 0.8)} />}
+          </span>
+        </button>
+      );
+    } else cells.push(<div key={key} style={style} />);
+  }
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(" + MG_STRIP_COLS + ", 1fr)", borderBottom: "2px solid " + MG_INK }}>{cells}</div>;
+}
+// 가운데 팔각형 엠블럼 — 위·아래 변은 띠 아래선·셋째 줄 윗선에 붙고, 네 모서리를 깎은 대각선이 게임 칸을 파고든다.
+function MgOctagon() {
+  return (
+    <div style={{ position: "absolute", left: "26%", right: "26%", top: 0, bottom: 0, pointerEvents: "auto" }}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block" }} aria-hidden="true">
+        <polygon points="27,0 73,0 100,23 100,77 73,100 27,100 0,77 0,23" fill={T.paper} stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1.2cqw", fontFamily: SITE_FONT, fontStyle: "italic", fontWeight: 900, color: MG_INK, lineHeight: 1, letterSpacing: "-.02em", textAlign: "center" }}>
+        <span style={{ fontSize: "6.6cqw" }}>OpenChess</span>
+        <span style={{ fontSize: "6.6cqw" }}>MiniGame</span>
       </div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 14 }}>체스보드 위에서 즐기는 오리지널 미니게임들을 이 자리에서 만나보세요.</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {PLAY_SPECIAL_GAMES.map((g) => {
-          const GIcon = g.Icon || Lock;
-          const accent = g.accent || T.brass;
-          return (
-            <button key={g.key} onClick={() => setActiveKey(g.key)} className="press"
-              style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid " + accent, background: "linear-gradient(135deg, " + accent + "22, rgba(255,255,255,.5))", cursor: "pointer", textAlign: "left" }}>
-              <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + accent + ",#241509)", boxShadow: "0 3px 8px -2px rgba(0,0,0,.4)" }}>
-                <GIcon size={19} color="#fff" />
-              </span>
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: T.ink }}>{g.name}{g.isNew && <span style={{ fontSize: 9, fontWeight: 900, padding: "1px 6px", borderRadius: 999, background: accent, color: "#fff", letterSpacing: ".04em" }}>NEW</span>}</span>
-                <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.desc}</span>
-              </span>
-              {myStats[g.gameType] && myStats[g.gameType].rated_games >= MINIGAME_PLACEMENT && (
-                <span style={{ flexShrink: 0, textAlign: "right", lineHeight: 1.15 }}>
-                  <span style={{ display: "block", fontSize: 13, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myStats[g.gameType].rating}</span>
-                  <span style={{ display: "block", fontSize: 9, fontWeight: 700, color: T.inkSoft }}>레이팅</span>
-                </span>
-              )}
-              <ChevronRight size={17} color={T.inkSoft} style={{ flexShrink: 0 }} />
-            </button>
-          );
-        })}
+    </div>
+  );
+}
+function MgGameTile({ tile, stat, onPick }) {
+  const right = tile.side === "right";
+  const rated = stat && stat.rated_games >= MINIGAME_PLACEMENT;
+  return (
+    <button onClick={() => onPick(tile.gameType)} className="press mg-tile"
+      style={{ gridColumn: right ? 2 : 1, gridRow: tile.row, position: "relative", display: "flex", justifyContent: right ? "flex-end" : "flex-start", alignItems: "flex-start", padding: 0, border: "none", borderBottom: tile.row === 1 ? "2px solid " + MG_INK : "none", cursor: "pointer", textAlign: "left", minHeight: 0 }}>
+      {/* 팔각형에 가려지지 않는 바깥쪽 절반(컨테이너 폭의 26%)에만 글자를 둔다. */}
+      <span style={{ position: "absolute", top: 0, [right ? "right" : "left"]: 0, width: "26cqw", boxSizing: "border-box", padding: right ? "3.2cqw 1.8cqw 2.4cqw 2.6cqw" : "3.2cqw 1.4cqw 2.4cqw 3.4cqw", display: "flex", flexDirection: "column", gap: "1cqw", fontFamily: SITE_FONT, color: MG_INK }}>
+        <span style={{ fontSize: "4.1cqw", fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", wordBreak: "keep-all" }}>
+          {tile.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
+        </span>
+        {rated && <span style={{ fontSize: "2.5cqw", fontWeight: 800, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: MG_INK }}>{stat.rating}</b></span>}
+      </span>
+    </button>
+  );
+}
+// 오른쪽 아래 그림 — 엉킨 기물 사이를 빠져나온 룩이 파일을 타고 내려가 백랭크를 가로질러 킹을 메이트하는 경로.
+// viewBox(55×34)와 칸 비율을 똑같이 맞춰, 그 위에 절대위치로 얹는 기물(퍼센트 좌표)이 선과 정확히 겹친다.
+function MgRushArt({ onPick, width }) {
+  const pieceSize = Math.max(12, width * 0.066);
+  const at = (x, y) => ({ position: "absolute", left: (x / 55 * 100) + "%", top: (y / 34 * 100) + "%", transform: "translate(-50%,-50%)", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" });
+  const glyph = (type, color) => <PieceGlyph type={type} color={color} size={pieceSize} />;
+  return (
+    <button onClick={() => onPick("rush")} aria-label="백랭크 러시아워" className="press mg-tile" style={{ position: "relative", padding: 0, border: "none", borderLeft: "2px solid " + MG_INK, cursor: "pointer", aspectRatio: "55 / 34", width: "100%" }}>
+      <svg viewBox="0 0 55 34" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block" }} aria-hidden="true">
+        <defs>
+          <marker id="mg-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
+            <path d="M1 1 L8 5 L1 9" fill="none" stroke={MG_INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </marker>
+        </defs>
+        <g fill="none" stroke={MG_INK} strokeWidth="0.75" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M44.2 6.2 L38.6 6.4" markerEnd="url(#mg-arrow)" />
+          <path d="M37.4 8.6 L37.2 11.6 L32.4 11.9" markerEnd="url(#mg-arrow)" />
+          <path d="M29.6 13.8 L29.8 7.4" markerEnd="url(#mg-arrow)" />
+          <path d="M26.2 4.4 L8.6 4.2 L8.4 24.2" markerEnd="url(#mg-arrow)" />
+          <path d="M13.6 29.4 L43 29.2" markerEnd="url(#mg-arrow)" />
+        </g>
+      </svg>
+      <span style={at(48.2, 5.6)}>{glyph("R", "b")}</span>
+      <span style={at(9, 29.2)}>{glyph("R", "b")}</span>
+      <span style={at(48.8, 29)}>{glyph("K", "w")}</span>
+    </button>
+  );
+}
+function MinigameHubBoard({ stats, onPick }) {
+  // 기물 이미지 스킨은 size(px)로 크기를 계산하므로, 보드 폭을 실측해 칸 크기에 맞춘 px를 넘긴다.
+  const [width, setWidth] = useState(360);
+  const roRef = useRef(null);
+  const measureRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => { const w = el.clientWidth; if (w) setWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev)); };
+    measure();
+    roRef.current = new ResizeObserver(measure);
+    roRef.current.observe(el);
+  }, []);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  return (
+    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 14 }}>
+      <style>{".mg-tile{background:transparent;transition:background .15s ease}.mg-tile:hover{background:rgba(196,154,80,.16)}.mg-strip-piece:hover>span{background:rgba(196,154,80,.35)!important}"}</style>
+      <div ref={measureRef} style={{ containerType: "inline-size", maxWidth: 560, margin: "0 auto", border: "2px solid " + MG_INK, borderRadius: 3, overflow: "hidden", background: T.paper }}>
+        <MgBoardStrip onPick={onPick} width={width} />
+        {/* 네 게임 칸(2×2) + 그 위에 얹는 팔각형 — 두 줄 높이는 스케치처럼 폭의 약 26%씩. */}
+        <div style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gridTemplateRows: "26cqw 25cqw" }}>
+          {MG_TILES.map((t) => <MgGameTile key={t.gameType} tile={t} stat={stats && stats[t.gameType]} onPick={onPick} />)}
+          <MgOctagon />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "45% 55%", borderTop: "2px solid " + MG_INK }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-start", padding: "3cqw", fontFamily: SITE_FONT, fontSize: "2.4cqw", fontWeight: 700, color: "rgba(43,27,16,.38)" }}>다음 미니게임 준비 중…</div>
+          <MgRushArt onPick={onPick} width={width} />
+        </div>
       </div>
     </div>
   );
@@ -10541,7 +10643,7 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
 function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   const best = loadMinigameBest("knight");
   return (
-    <MinigameHub title="나이트 경주" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
+    <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
         <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ivoryHi }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ivoryHi }}>더 빨리</b> 도착한 쪽이 이겨요. 라운드당 15초, 5전 3선승이에요.</div>
         <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ivoryHi }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 빨간 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
@@ -11665,7 +11767,7 @@ function RushHourGame({ myUid, onExit, onOpenProfile, initialGame }) {
   const progress = loadRushProgress();
   const stars = RUSH_LEVELS.reduce((a, l) => a + (progress[l.id] ? rushStars(progress[l.id], l.par) : 0), 0);
   return (
-    <MinigameHub title="러시아워" gameType={RUSH_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="rush_forfeit"
+    <MinigameHub title="백랭크 러시아워" gameType={RUSH_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="rush_forfeit"
       rules={<RushRules compact />} soloScroll
       soloSub={RUSH_LEVELS.length + "레벨 · ★" + stars} botSub="3라운드 2선승"
       renderPvp={(p) => <RushPvpBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -12144,7 +12246,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   const [pool, reloadPool] = useAttackPool();
   const counts = pool ? ATTACK_GRADES.map((gi) => pool.byGrade[gi.g].length) : null;
   return (
-    <MinigameHub title="공격 모드" gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
+    <MinigameHub title="무한 체크메이트 게임" gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
         <div>• <b style={{ color: T.ivoryHi }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
         <div>• 한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어가요.</div>
