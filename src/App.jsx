@@ -9317,20 +9317,27 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
   return <MinigameHubBoard stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
 }
 // ============================================================ 미니게임 목록 화면(v0.5.5 리디자인) ============================================================
-// (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 직접 그린 스케치를 옮긴 한 장짜리
-// 화면. 가운데 팔각형 "OpenChess MiniGame" 엠블럼에서 위·아래·왼쪽·오른쪽으로 뻗은 경계가 화면 전체를 네 개의
-// 버튼(좌표 인지 게임 / 나이트 레이스 / 무한 체크메이트 게임 / 백랭크 러시아워)으로 나눈다. 맨 위 빗금 체스보드
-// 띠(조준경·나이트)는 위쪽 두 버튼 위에 얹힌 장식일 뿐이라 두 버튼 모양대로 잘려 그려지고, 누르면 그 아래
-// 버튼이 눌린다. 오른쪽 아래 버튼에는 룩이 파일을 타고 내려가 백랭크를 가로질러 킹을 메이트하는 경로 그림이
-// 들어간다. 모든 도형(네 버튼·팔각형)은 서로 간격을 두고 모서리를 둥글게 깎는다.
-// 좌표계는 SVG viewBox(100 × MG_H) 하나 — 글자·기물 오버레이도 같은 비율의 퍼센트 좌표로 얹는다.
-const MG_INK = "#2B1B10";
-const MG_H = 108;
-const MG_STRIP_COLS = 14, MG_STRIP_ROWS = 3;
-const MG_CELL = 100 / MG_STRIP_COLS;
-const MG_GAP = 1.8;          // 도형 사이 간격
-const MG_RADIUS = 3.2;       // 모서리 라운딩
-const MG_OCT = { L: 27, R: 73, T: MG_STRIP_ROWS * MG_CELL + MG_GAP, B: 79, c: 11 };  // 위 변은 띠 바로 아래(간격만큼) — 띠가 잘리지 않게
+// (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 그린 스케치를 옮긴 한 장짜리 화면.
+// 가운데 정육각형 "OpenChess MiniGame" 엠블럼에서 위·아래·왼쪽·오른쪽으로 뻗은 경계가 화면 전체를 네 개의 버튼
+// (좌표 인지 게임 / 나이트 레이스 / 무한 체크메이트 게임 / 백랭크 러시아워)으로 나눈다. 버튼·육각형은 다른 탭의
+// 크림색 카드(T.paper + #DCCBA8 테두리)와 같은 모양이고, 서로 간격을 두고 모서리를 둥글게 깎는다.
+// 위쪽 두 버튼 위에는 앱 체스보드(장착한 보드 스킨)로 그린 3줄짜리 띠가 두 버튼에 걸쳐 이어지고(조준경·나이트),
+// 아래쪽 두 버튼에는 그 게임의 실제 포지션을 앱 체스보드로 깔고 화살표로 수순을 보여준다 — 백랭크 러시아워는
+// 레벨 n6의 정답(나이트를 비킨 뒤 주인공 룩이 a1→f1→f4→e4→e8로 빠져나가 백랭크 메이트), 무한 체크메이트
+// 게임은 공격 기회 풀의 실전 1수 메이트(Praggnanandhaa–Keymer 2024, Qg7#).
+// 좌표계는 SVG viewBox(100 × MG_H) 하나 — 보드·글자 오버레이도 같은 비율의 퍼센트 좌표로 얹는다.
+const MG_GAP = 1.8;                 // 도형 사이 간격
+const MG_PAD = 3;                   // 버튼 안쪽 여백(보드·글자)
+const MG_RADIUS = 3.4;              // 모서리 라운딩
+const MG_STRIP = { rows: 3, cols: 7 };                               // 위쪽 버튼마다 3×7 — 두 버튼을 이어 3×14 띠
+const MG_STRIP_CELL = (50 - MG_GAP / 2 - 2 * MG_PAD) / MG_STRIP.cols;
+const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL;
+const MG_HEX_S = 18;                                                  // 정육각형 한 변(= 중심에서 꼭짓점까지)
+const MG_HEX_A = MG_HEX_S * Math.sqrt(3) / 2;                         // 중심에서 변까지(아포템)
+const MG_HEX_CY = MG_PAD + MG_STRIP_H + MG_PAD + MG_GAP + MG_HEX_A;
+const MG_BOARD_W = 50 - MG_GAP / 2 - 2 * MG_PAD;                      // 아래쪽 버튼의 8×8 보드 한 변
+const MG_BOARD_Y = MG_HEX_CY + MG_HEX_A + MG_GAP + MG_PAD;
+const MG_H = MG_BOARD_Y + MG_BOARD_W + MG_PAD;
 // 다각형 꼭짓점마다 양쪽 변을 r만큼(변 길이 절반 이내) 잘라 내고 꼭짓점을 제어점으로 한 곡선으로 잇는다.
 function mgRoundedPath(pts, r) {
   const n = pts.length;
@@ -9341,44 +9348,107 @@ function mgRoundedPath(pts, r) {
     const ra = Math.min(r, la / 2), rb = Math.min(r, lb / 2);
     const s = [p[0] + (a[0] - p[0]) * ra / la, p[1] + (a[1] - p[1]) * ra / la];
     const e = [p[0] + (b[0] - p[0]) * rb / lb, p[1] + (b[1] - p[1]) * rb / lb];
-    d += (i === 0 ? "M" : "L") + s[0].toFixed(2) + " " + s[1].toFixed(2) + "Q" + p[0] + " " + p[1] + " " + e[0].toFixed(2) + " " + e[1].toFixed(2);
+    d += (i === 0 ? "M" : "L") + s[0].toFixed(2) + " " + s[1].toFixed(2) + "Q" + p[0].toFixed(2) + " " + p[1].toFixed(2) + " " + e[0].toFixed(2) + " " + e[1].toFixed(2);
   }
   return d + "Z";
 }
 function mgShapes() {
-  const { L, R, T, B, c } = MG_OCT;
-  const g = MG_GAP, h = g / 2, M = (T + B) / 2, W = 100, H = MG_H;
-  // 팔각형을 간격만큼 바깥으로 민 윤곽(대각선 변도 평행 이동 — 깎인 길이는 g·tan(22.5°)만큼 늘어난다).
-  const Lo = L - g, Ro = R + g, To = T - g, Bo = B + g, co = c + g * 0.414;
-  const oct = [[L + c, T], [R - c, T], [R, T + c], [R, B - c], [R - c, B], [L + c, B], [L, B - c], [L, T + c]];
+  const g = MG_GAP, h = g / 2, W = 100, H = MG_H, cy = MG_HEX_CY, s = MG_HEX_S, a = MG_HEX_A;
+  // 육각형을 간격만큼 바깥으로 민 윤곽(아포템 +g, 한 변은 2g/√3만큼 길어진다).
+  const ao = a + g, so = s + 2 * g / Math.sqrt(3);
+  // 윤곽의 비스듬한 변(위 꼭짓점 → 옆 꼭짓점) 위에서 높이 y일 때의 x(중심에서 떨어진 거리).
+  const dx = (y) => so / 2 + (so / 2) * (1 - Math.abs(y - cy) / ao);
+  const upY = cy - h, dnY = cy + h;
   return {
-    oct,
-    coord: [[0, 0], [50 - h, 0], [50 - h, To], [Lo + co, To], [Lo, To + co], [Lo, M - h], [0, M - h]],
-    knight: [[50 + h, 0], [W, 0], [W, M - h], [Ro, M - h], [Ro, To + co], [Ro - co, To], [50 + h, To]],
-    attack: [[0, M + h], [Lo, M + h], [Lo, Bo - co], [Lo + co, Bo], [50 - h, Bo], [50 - h, H], [0, H]],
-    rush: [[50 + h, Bo], [Ro - co, Bo], [Ro, Bo - co], [Ro, M + h], [W, M + h], [W, H], [50 + h, H]],
+    hex: [[50 + s, cy], [50 + s / 2, cy + a], [50 - s / 2, cy + a], [50 - s, cy], [50 - s / 2, cy - a], [50 + s / 2, cy - a]],
+    coord: [[0, 0], [50 - h, 0], [50 - h, cy - ao], [50 - so / 2, cy - ao], [50 - dx(upY), upY], [0, upY]],
+    knight: [[50 + h, 0], [W, 0], [W, upY], [50 + dx(upY), upY], [50 + so / 2, cy - ao], [50 + h, cy - ao]],
+    attack: [[0, dnY], [50 - dx(dnY), dnY], [50 - so / 2, cy + ao], [50 - h, cy + ao], [50 - h, H], [0, H]],
+    rush: [[50 + h, cy + ao], [50 + so / 2, cy + ao], [50 + dx(dnY), dnY], [W, dnY], [W, H], [50 + h, H]],
   };
 }
-// 버튼 글자 자리(스케치와 같은 위치·줄바꿈) — x·y는 viewBox 좌표.
-const MG_LABELS = [
-  { gameType: "coord", lines: ["좌표 인지", "게임"], x: 4, y: MG_OCT.T + 5 },
-  { gameType: "knight", lines: ["나이트", "레이스"], x: MG_OCT.R + 3.5, y: MG_OCT.T + 5 },
-  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: 4, y: (MG_OCT.T + MG_OCT.B) / 2 + 5 },
-  { gameType: "rush", lines: ["백랭크", "러시아워"], x: MG_OCT.R + 3.5, y: (MG_OCT.T + MG_OCT.B) / 2 + 5 },
-];
+const MG_KEYS = ["coord", "knight", "attack", "rush"];
 const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스", attack: "무한 체크메이트 게임", rush: "백랭크 러시아워" };
-// 오른쪽 아래 경로 그림 — 예전 55×34 스케치 좌표를 러시아워 버튼의 팔각형 아래 영역으로 옮긴다.
-const mgArt = (x, y) => [51.5 + x * 0.84, MG_OCT.B + 1.5 + y * 0.8];
-const MG_ART_PATHS = [
-  [[44.2, 6.2], [38.6, 6.4]],
-  [[37.4, 8.6], [37.2, 11.6], [32.4, 11.9]],
-  [[29.6, 13.8], [29.8, 7.4]],
-  [[26.2, 4.4], [8.6, 4.2], [8.4, 24.2]],
-  [[13.6, 29.4], [43, 29.2]],
+// 버튼 글자 자리(스케치와 같은 위치·줄바꿈) — x·y는 viewBox 좌표.
+const MG_LABEL_UP_Y = MG_PAD + MG_STRIP_H + 2.6, MG_LABEL_DN_Y = MG_HEX_CY + MG_GAP / 2 + 2.6;
+const MG_LABELS = [
+  { gameType: "coord", lines: ["좌표 인지", "게임"], x: MG_PAD + 1, y: MG_LABEL_UP_Y },
+  { gameType: "knight", lines: ["나이트", "레이스"], x: 50 + MG_HEX_S + MG_GAP + 2.4, y: MG_LABEL_UP_Y },
+  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: MG_PAD + 1, y: MG_LABEL_DN_Y },
+  { gameType: "rush", lines: ["백랭크", "러시아워"], x: 50 + MG_HEX_S + MG_GAP + 2.4, y: MG_LABEL_DN_Y },
 ];
-const MG_ART_PIECES = [{ at: [48.2, 5.6], type: "R", color: "b" }, { at: [9, 29.2], type: "R", color: "b" }, { at: [48.8, 29], type: "K", color: "w" }];
+// 아래쪽 두 보드의 포지션(보드 배열 index = rank0*8 + file, 흰색이 아래)과 화살표 수순.
+const MG_RUSH_LEVEL = RUSH_LEVELS.find((l) => l.id === "n6") || RUSH_LEVELS[0];
+const MG_MATE_FEN = "6k1/p6p/2b4Q/1p2Rp1N/2qn4/8/PP3PPP/6K1";
+const mgSq = (name) => "abcdefgh".indexOf(name[0]) + (parseInt(name[1], 10) - 1) * 8;
+function mgFenBoard(fen) {
+  const board = new Array(64).fill(null);
+  fen.split(" ")[0].split("/").forEach((row, i) => {
+    let f = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { f += parseInt(ch, 10); continue; }
+      board[(7 - i) * 8 + f] = (ch === ch.toUpperCase() ? "w" : "b") + ch.toUpperCase();
+      f++;
+    }
+  });
+  return board;
+}
+// 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨·금색 광택 테두리를 그대로 쓴다. cells: [{ r, c, gr, gc }]를
+// 직접 받지 않고 rows×cols와 전역 좌표 오프셋(colOffset)만 받아, 두 조각을 이어 붙이면 체크 무늬가 이어진다.
+function MgBoardPiece({ rows, cols, colOffset = 0, cellPx, pieceAt, overlayAt, children }) {
+  const ctx = useContext(SkinContext);
+  const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
+  const cells = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const gc = c + colOffset;
+    const light = (r + gc) % 2 === 0;
+    const pc = pieceAt && pieceAt(r, gc);
+    const ov = overlayAt && overlayAt(r, gc);
+    cells.push(
+      <div key={r + "-" + c} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, r, gc) }}>
+        {ov}
+        {pc && <PieceGlyph type={pc[1]} color={pc[0]} size={cellPx * 0.8} style={{ position: "relative", zIndex: 2 }} />}
+      </div>
+    );
+  }
+  return (
+    <div style={{ position: "absolute", inset: 0, borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", display: "grid", gridTemplateColumns: "repeat(" + cols + ",1fr)", gridTemplateRows: "repeat(" + rows + ",1fr)" }}>
+      {cells}
+      {children}
+    </div>
+  );
+}
+// 보드 위 화살표(8×8 보드 칸 단위 좌표) — 분석 탭 화살표처럼 금색 몸통 + 어두운 외곽선.
+function MgArrows({ paths }) {
+  const ctr = (name) => { const i = mgSq(name); return [(i & 7) + 0.5, 7 - (i >> 3) + 0.5]; };
+  return (
+    <svg viewBox="0 0 8 8" width="100%" height="100%" style={{ position: "absolute", inset: 0, zIndex: 3, overflow: "visible" }} aria-hidden="true">
+      <defs>
+        {["gold", "soft", "green"].map((k) => (
+          <marker key={k} id={"mg-head-" + k} viewBox="0 0 10 10" refX="4.2" refY="5" markerUnits="userSpaceOnUse" markerWidth="0.62" markerHeight="0.62" orient="auto">
+            <path d="M0 0 L10 5 L0 10 Z" fill={k === "green" ? "#5FB35A" : k === "soft" ? "rgba(236,203,134,.75)" : T.brassHi} stroke="rgba(20,11,4,.75)" strokeWidth="1.1" strokeLinejoin="round" />
+          </marker>
+        ))}
+      </defs>
+      {paths.map((p, i) => {
+        const pts = p.squares.map(ctr);
+        // 시작점을 칸 가장자리 쪽으로 당겨, 출발 칸의 기물(주인공 룩 등)을 화살표가 가리지 않게 한다.
+        const [a, b] = pts, len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        pts[0] = [a[0] + (b[0] - a[0]) / len * 0.38, a[1] + (b[1] - a[1]) / len * 0.38];
+        const pointsStr = pts.map((q) => q.join(",")).join(" ");
+        const color = p.kind === "green" ? "#5FB35A" : p.kind === "soft" ? "rgba(236,203,134,.75)" : T.brassHi;
+        return (
+          <g key={i} fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points={pointsStr} stroke="rgba(20,11,4,.6)" strokeWidth={p.kind === "soft" ? 0.22 : 0.3} strokeDasharray={p.kind === "soft" ? "0.28 0.2" : "none"} />
+            <polyline points={pointsStr} stroke={color} strokeWidth={p.kind === "soft" ? 0.13 : 0.19} strokeDasharray={p.kind === "soft" ? "0.28 0.2" : "none"} markerEnd={"url(#mg-head-" + p.kind + ")"} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 function MinigameHubBoard({ stats, onPick }) {
-  // 기물 이미지 스킨은 size(px)로 크기를 계산하므로, 보드 폭을 실측해 px로 넘긴다.
+  // 기물 이미지 스킨은 size(px)로 크기를 계산하므로, 전체 폭을 실측해 칸 크기를 px로 넘긴다.
   const [width, setWidth] = useState(360);
   const roRef = useRef(null);
   const measureRef = useCallback((el) => {
@@ -9391,85 +9461,100 @@ function MinigameHubBoard({ stats, onPick }) {
   }, []);
   useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
   const [hover, setHover] = useState(null);
-  const shapes = useMemo(mgShapes, []);
   const paths = useMemo(() => {
-    const out = {};
-    ["coord", "knight", "attack", "rush"].forEach((k) => { out[k] = mgRoundedPath(shapes[k], MG_RADIUS); });
-    out.oct = mgRoundedPath(shapes.oct, MG_RADIUS * 1.2);
+    const sh = mgShapes(), out = {};
+    MG_KEYS.forEach((k) => { out[k] = mgRoundedPath(sh[k], MG_RADIUS); });
+    out.hex = mgRoundedPath(sh.hex, MG_RADIUS);
     return out;
-  }, [shapes]);
-  const pct = (x, y) => ({ left: x + "%", top: (y / MG_H * 100) + "%" });
-  const cells = [];
-  for (let r = 0; r < MG_STRIP_ROWS; r++) for (let c = 0; c < MG_STRIP_COLS; c++) {
-    if ((r + c) % 2 === 0) cells.push(<rect key={r + "-" + c} x={c * MG_CELL} y={r * MG_CELL} width={MG_CELL} height={MG_CELL} fill="url(#mg-hatch)" />);
-  }
+  }, []);
+  const rush = useMemo(() => {
+    const { board, hero } = rushParse(MG_RUSH_LEVEL.spec);
+    const name = (i) => "abcdefgh"[i & 7] + ((i >> 3) + 1);
+    let h = hero;
+    const heroPath = [name(hero)], others = [];
+    MG_RUSH_LEVEL.line.forEach(([f, t]) => { if (f === h) { heroPath.push(name(t)); h = t; } else others.push([name(f), name(t)]); });
+    const king = board.findIndex((p) => p === "bK");
+    return { board, hero, heroPath, others, king };
+  }, []);
+  const mate = useMemo(() => ({ board: mgFenBoard(MG_MATE_FEN), king: mgSq("g8") }), []);
+  const u = width / 100;                      // viewBox 1단위 = u px
+  const box = (x, y, w, hgt) => ({ position: "absolute", left: x + "%", top: (y / MG_H * 100) + "%", width: w + "%", height: (hgt / MG_H * 100) + "%" });
+  const stripCell = MG_STRIP_CELL * u, boardCell = MG_BOARD_W / 8 * u;
   const onKey = (k) => (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(k); } };
+  const at8 = (board) => (r, c) => board[(7 - r) * 8 + c];
+  const redSq = (idx) => (r, c) => ((7 - r) * 8 + c === idx ? <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.7) 0%, rgba(229,52,42,.25) 70%)" }} /> : null);
+  const labelFont = "clamp(13px, 3.6cqw, 26px)";
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 14 }}>
-      <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", maxWidth: 560, margin: "0 auto", aspectRatio: "100 / " + MG_H }}>
-        <svg viewBox={"0 0 100 " + MG_H} width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
-          <defs>
-            <pattern id="mg-hatch" patternUnits="userSpaceOnUse" width="1.25" height="1.25" patternTransform="rotate(45)">
-              <line x1="0" y1="0" x2="0" y2="1.25" stroke={MG_INK} strokeWidth="0.32" />
-            </pattern>
-            <clipPath id="mg-top-clip"><path d={paths.coord} /><path d={paths.knight} /></clipPath>
-            <marker id="mg-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerUnits="userSpaceOnUse" markerWidth="3" markerHeight="3" orient="auto-start-reverse">
-              <path d="M1 1 L8 5 L1 9" fill="none" stroke={MG_INK} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </marker>
-          </defs>
-          {["coord", "knight", "attack", "rush"].map((k) => (
-            <path key={k} d={paths[k]} role="button" tabIndex={0} aria-label={MG_NAMES[k]} onClick={() => onPick(k)} onKeyDown={onKey(k)}
-              onMouseEnter={() => setHover(k)} onMouseLeave={() => setHover((v) => (v === k ? null : v))}
-              fill={hover === k ? "#EEDDB8" : "#FBF4E6"} stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke"
-              style={{ cursor: "pointer", transition: "fill .15s ease", outline: "none" }} />
-          ))}
-          {/* 체스보드 띠 — 위쪽 두 버튼 모양대로 잘린 장식(클릭은 그대로 아래 버튼으로 통과). */}
-          <g clipPath="url(#mg-top-clip)" style={{ pointerEvents: "none" }}>
-            {cells}
-            <g stroke={MG_INK} strokeWidth="1.2" vectorEffect="non-scaling-stroke">
-              {Array.from({ length: MG_STRIP_COLS - 1 }, (_, i) => <line key={"v" + i} x1={(i + 1) * MG_CELL} y1="0" x2={(i + 1) * MG_CELL} y2={MG_STRIP_ROWS * MG_CELL} vectorEffect="non-scaling-stroke" />)}
-              {Array.from({ length: MG_STRIP_ROWS }, (_, i) => <line key={"h" + i} x1="0" y1={(i + 1) * MG_CELL} x2="100" y2={(i + 1) * MG_CELL} vectorEffect="non-scaling-stroke" />)}
-            </g>
-            {/* 조준경(좌표 인지 게임) — 둘째 줄 셋째 칸 */}
-            <g transform={"translate(" + (2.5 * MG_CELL) + " " + (1.5 * MG_CELL) + ")"}>
-              <circle r={MG_CELL * 0.32} fill="#FBF4E6" />
-              <circle r={MG_CELL * 0.22} fill="none" stroke={MG_INK} strokeWidth="0.55" />
-              <path d={"M0 " + (-MG_CELL * 0.42) + "V" + (-MG_CELL * 0.26) + "M0 " + (MG_CELL * 0.26) + "V" + (MG_CELL * 0.42) + "M" + (-MG_CELL * 0.42) + " 0H" + (-MG_CELL * 0.26) + "M" + (MG_CELL * 0.26) + " 0H" + (MG_CELL * 0.42)} stroke={MG_INK} strokeWidth="0.55" strokeLinecap="round" />
-              <circle r={MG_CELL * 0.055} fill={MG_INK} />
-            </g>
-          </g>
-          {/* 가운데 팔각형 엠블럼 */}
-          <path d={paths.oct} fill="#FBF4E6" stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke" style={{ pointerEvents: "none" }} />
-          {/* 백랭크 러시아워 경로 그림 */}
-          <g fill="none" stroke={MG_INK} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
-            {MG_ART_PATHS.map((pts, i) => <polyline key={i} points={pts.map((p) => mgArt(p[0], p[1]).join(",")).join(" ")} vectorEffect="non-scaling-stroke" markerEnd="url(#mg-arrow)" />)}
-          </g>
-        </svg>
-        {/* 오버레이(글자·기물)는 전부 pointer-events:none — 누르면 그 아래 SVG 버튼이 눌린다. */}
-        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT, color: MG_INK }}>
-          <span style={{ position: "absolute", ...pct(8.5 * MG_CELL, 2.5 * MG_CELL), transform: "translate(-50%,-50%)", display: "flex" }}>
-            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: width * MG_CELL / 100 * 0.84, height: width * MG_CELL / 100 * 0.84, borderRadius: "50%", background: "#FBF4E6" }}>
-              <PieceGlyph type="N" color="b" size={Math.max(10, width * MG_CELL / 100 * 0.78)} />
-            </span>
-          </span>
-          {MG_ART_PIECES.map((pc, i) => { const [x, y] = mgArt(pc.at[0], pc.at[1]); return <span key={i} style={{ position: "absolute", ...pct(x, y), transform: "translate(-50%,-50%)", display: "flex" }}><PieceGlyph type={pc.type} color={pc.color} size={Math.max(12, width * 0.058)} /></span>; })}
-          <div style={{ position: "absolute", left: MG_OCT.L + "%", right: (100 - MG_OCT.R) + "%", top: (MG_OCT.T / MG_H * 100) + "%", bottom: ((MG_H - MG_OCT.B) / MG_H * 100) + "%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1.2cqw", fontStyle: "italic", fontWeight: 900, lineHeight: 1, letterSpacing: "-.02em", textAlign: "center" }}>
-            <span style={{ fontSize: "6.4cqw" }}>OpenChess</span>
-            <span style={{ fontSize: "6.4cqw" }}>MiniGame</span>
-          </div>
-          {MG_LABELS.map((lb) => {
-            const st = stats && stats[lb.gameType];
-            const rated = st && st.rated_games >= MINIGAME_PLACEMENT;
-            return (
-              <div key={lb.gameType} style={{ position: "absolute", ...pct(lb.x, lb.y), width: "22cqw", display: "flex", flexDirection: "column", gap: "1cqw" }}>
-                <span style={{ fontSize: "4.1cqw", fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", wordBreak: "keep-all" }}>
-                  {lb.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
-                </span>
-                {rated && <span style={{ fontSize: "2.5cqw", fontWeight: 800, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: MG_INK }}>{st.rating}</b></span>}
-              </div>
-            );
-          })}
+    <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "100 / " + MG_H.toFixed(2),
+      // 데스크톱에서는 크게 쓰되, 헤더·토글·하단 탭바를 뺀 화면 높이 안에 한 번에 다 들어오게 폭을 제한한다(최소 460px).
+      maxWidth: "min(100%, max(460px, calc((100dvh - 250px) * " + (100 / MG_H).toFixed(4) + ")))" }}>
+      <style>{".mg-btn{cursor:pointer;outline:none;transition:fill .15s ease,stroke .15s ease}.mg-btn:focus-visible{stroke:" + T.brass + ";stroke-width:3px}"}</style>
+      <svg viewBox={"0 0 100 " + MG_H.toFixed(2)} width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
+        <defs>
+          <filter id="mg-shadow" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="0" dy="0.8" stdDeviation="1.1" floodColor="#000" floodOpacity="0.45" />
+          </filter>
+        </defs>
+        {MG_KEYS.map((k) => (
+          <path key={k} d={paths[k]} className="mg-btn" role="button" tabIndex={0} aria-label={MG_NAMES[k]} onClick={() => onPick(k)} onKeyDown={onKey(k)}
+            onMouseEnter={() => setHover(k)} onMouseLeave={() => setHover((v) => (v === k ? null : v))}
+            fill={hover === k ? "#F7EEDC" : T.paper} stroke={hover === k ? T.brass : "#DCCBA8"} strokeWidth="1" vectorEffect="non-scaling-stroke" filter="url(#mg-shadow)" />
+        ))}
+        <path d={paths.hex} fill={T.paper} stroke="#DCCBA8" strokeWidth="1" vectorEffect="non-scaling-stroke" filter="url(#mg-shadow)" style={{ pointerEvents: "none" }} />
+      </svg>
+      {/* 오버레이(보드·글자)는 전부 pointer-events:none — 누르면 그 아래 SVG 버튼이 눌린다. */}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT }}>
+        {/* 위쪽 체스보드 띠 — 두 버튼에 걸쳐 체크 무늬가 이어진다. 조준경(좌표 인지 게임)·나이트(나이트 레이스). */}
+        <div style={box(MG_PAD, MG_PAD, MG_STRIP.cols * MG_STRIP_CELL, MG_STRIP_H)}>
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell}
+            overlayAt={(r, c) => (r === 1 && c === 2 ? (
+              <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(22,181,166,.42)", boxShadow: "inset 0 0 0 2px " + T.brilliant, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Target size={Math.max(12, stripCell * 0.66)} color="#fff" strokeWidth={2.4} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.5))" }} />
+              </span>) : null)} />
         </div>
+        <div style={box(50 + MG_GAP / 2 + MG_PAD, MG_PAD, MG_STRIP.cols * MG_STRIP_CELL, MG_STRIP_H)}>
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} pieceAt={(r, c) => (r === 2 && c === 8 ? "bN" : null)} />
+        </div>
+        {/* 가운데 정육각형 엠블럼 */}
+        <div style={{ ...box(50 - MG_HEX_S, MG_HEX_CY - MG_HEX_A, 2 * MG_HEX_S, 2 * MG_HEX_A), display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.8cqw", lineHeight: 1, letterSpacing: "-.02em", textAlign: "center", fontWeight: 900 }}>
+          <span style={{ fontSize: "5cqw", color: T.ink }}>OpenChess</span>
+          <span style={{ fontSize: "5cqw", color: T.brass }}>MiniGame</span>
+        </div>
+        {/* 무한 체크메이트 게임 — 실전 1수 메이트(Qg7#) */}
+        <div style={box(MG_PAD, MG_BOARD_Y, MG_BOARD_W, MG_BOARD_W)}>
+          <MgBoardPiece rows={8} cols={8} cellPx={boardCell} pieceAt={at8(mate.board)} overlayAt={redSq(mate.king)}>
+            <MgArrows paths={[{ squares: ["h6", "g7"], kind: "green" }]} />
+          </MgBoardPiece>
+        </div>
+        {/* 백랭크 러시아워 — 레벨 n6: 나이트를 비킨 뒤(점선) 주인공 룩이 꺾어 올라가 백랭크 메이트 */}
+        <div style={box(50 + MG_GAP / 2 + MG_PAD, MG_BOARD_Y, MG_BOARD_W, MG_BOARD_W)}>
+          <MgBoardPiece rows={8} cols={8} cellPx={boardCell} pieceAt={at8(rush.board)}
+            overlayAt={(r, c) => {
+              const i = (7 - r) * 8 + c;
+              if (i === rush.king) return redSq(rush.king)(r, c);
+              if (i !== rush.hero) return null;
+              return (
+                <span aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
+                  <span style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 10px 2px rgba(236,203,134,.75)" }} />
+                  <Crown size={Math.max(7, boardCell * 0.28)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />
+                </span>
+              );
+            }}>
+            <MgArrows paths={[...rush.others.map((sq) => ({ squares: sq, kind: "soft" })), { squares: rush.heroPath, kind: "gold" }]} />
+          </MgBoardPiece>
+        </div>
+        {MG_LABELS.map((lb) => {
+          const st = stats && stats[lb.gameType];
+          const rated = st && st.rated_games >= MINIGAME_PLACEMENT;
+          return (
+            <div key={lb.gameType} style={{ position: "absolute", left: lb.x + "%", top: (lb.y / MG_H * 100) + "%", display: "flex", flexDirection: "column", gap: "0.8cqw", color: T.ink }}>
+              <span style={{ fontSize: labelFont, fontWeight: 800, lineHeight: 1.18, letterSpacing: "-.02em", wordBreak: "keep-all" }}>
+                {lb.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
+              </span>
+              {rated && <span style={{ fontSize: "clamp(10px, 2.3cqw, 15px)", fontWeight: 700, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: T.ink }}>{st.rating}</b></span>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -12884,9 +12969,10 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   return (
-    <div style={{ maxWidth: 460, margin: "0 auto" }}>
+    // (v0.5.5, 사용자 요청) 스페셜(미니게임 목록)은 데스크톱에서 크게 보이도록 폭을 넓힌다 — 토글은 그대로 460px.
+    <div style={{ maxWidth: pageMode === "special" ? 880 : 460, margin: "0 auto" }}>
         {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단에 고정. */}
-        <div className="inline-flex" style={{ width: "100%", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
+        <div className="inline-flex" style={{ width: "100%", maxWidth: 460, display: "flex", margin: "0 auto", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
           <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
           <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
         </div>
