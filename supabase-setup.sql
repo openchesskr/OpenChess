@@ -2373,7 +2373,7 @@ declare
   v_target text; v_walk text[]; v_walk_mirror text[]; v_cand1 text; v_cand2 text;
   v_white_start text; v_black_start text; v_white_path text[]; v_black_path text[];
   v_haz_w text[]; v_haz_b text[]; v_ok boolean; v_try int; v_piece_type text; i int;
-  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[];
+  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[]; v_types text[]; v_placed boolean; v_try2 int;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2414,18 +2414,32 @@ begin
     else
       v_white_start := v_cand2; v_white_path := v_walk_mirror; v_black_start := v_cand1; v_black_path := v_walk;
     end if;
-    if v_hazard_count = 0 then
-      v_haz_w := '{}'; v_haz_b := '{}';
-    else
-      -- (색 표기는 "그 기물의 색"이다 — w색 기물은 흑 나이트를, b색 기물은 백 나이트를 위협한다.)
-      -- 흑을 위협할 기물(w색)은 흑의 보장된 경로(v_black_path) 밖에서 고르되, 백 나이트의 시작
-      -- 칸(v_white_start)과도 겹치지 않게 한다 — 안 그러면 흰 기물이 흰 나이트와 같은 칸에 겹쳐
-      -- 그려진다(점대칭 상대인 v_haz_b도 자동으로 v_black_start와 안 겹치게 된다).
-      v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || array[v_target, v_white_start]);
-      if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
-      v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
-      if array_position(v_haz_b, null) is not null then continue; end if;
-    end if;
+    -- (v0.5.4) 기물 배치만 최대 20번 다시 뽑는다 — 보장 경로가 상대 기물이 지배하는 칸을 지나면 그
+    -- 라운드는 이동 수 제한(경로+2) 안에 못 풀 수도 있어서다. 점대칭이라 백 쪽만 확인하면 된다.
+    v_placed := false;
+    for v_try2 in 1..20 loop
+      v_haz_w := '{}'; v_haz_b := '{}'; v_types := '{}'; v_w_illegal := '{}'; v_b_illegal := '{}';
+      if v_hazard_count > 0 then
+        -- (색 표기는 "그 기물의 색"이다 — w색 기물은 흑 나이트를, b색 기물은 백 나이트를 위협한다.)
+        -- 자기 색 기물 칸에는 나이트가 설 수 없으므로(v0.5.4) 두 보장 경로 모두를 피해 고른다
+        -- (v_white_path에 v_white_start가 들어 있다). 점대칭 상대 v_haz_b도 자동으로 두 경로를 피한다.
+        v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || v_white_path || array[v_target]);
+        if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
+        v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
+        if array_position(v_haz_b, null) is not null then continue; end if;
+      end if;
+      for i in 1..coalesce(array_length(v_haz_w,1),0) loop
+        v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
+        v_types := v_types || v_piece_type;
+        -- (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
+        -- 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다 —
+        -- 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에 포함시켜 양쪽 집합을 정확히 점대칭으로 맞춘다.
+        v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+        v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+      end loop;
+      if not (v_white_path && v_w_illegal) then v_placed := true; exit; end if;
+    end loop;
+    if not v_placed then continue; end if;
     v_ok := true;
     exit;
   end loop;
@@ -2435,20 +2449,12 @@ begin
     v_white_path := public.knight_random_walk(v_target, v_walk_len);
     v_white_start := v_white_path[array_length(v_white_path,1)];
     v_black_start := coalesce(public.knight_reflect_sq(v_white_start, v_target), v_white_start);
-    v_haz_w := '{}'; v_haz_b := '{}';
+    v_haz_w := '{}'; v_haz_b := '{}'; v_types := '{}'; v_w_illegal := '{}'; v_b_illegal := '{}';
   end if;
-  v_hazards := '[]'::jsonb; v_w_illegal := '{}'; v_b_illegal := '{}';
+  v_hazards := '[]'::jsonb;
   for i in 1..coalesce(array_length(v_haz_w,1),0) loop
-    v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
-    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_piece_type, 'color', 'w');
-    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_piece_type, 'color', 'b');
-    -- (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
-    -- 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다(한쪽
-    -- 기물의 공격선이 보드 가장자리에 더 가까워 더 멀리 뻗어나가는 반면, 반대쪽 기물의 공격선은 그
-    -- 반사점이 보드 밖으로 나가 버리는 경우). 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에
-    -- 포함시키면(반사가 안 되는 칸은 아예 제외) 양쪽의 위협 칸 집합이 항상 정확히 점대칭이 된다.
-    v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
-    v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_types[i], 'color', 'w');
+    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_types[i], 'color', 'b');
   end loop;
   -- (v0.5.3 연출 강화) startedAt을 3초 뒤로 잡는다 — 두 클라이언트가 이 시각까지 "3·2·1" 카운트다운을
   -- 보여주고 그 뒤에야 보드를 조작할 수 있게 해, 라운드 시작 순간을 양쪽이 같은 서버 시각으로 맞춘다.
@@ -2469,9 +2475,27 @@ begin
 end; $$;
 grant execute on function public.knight_start_round(bigint) to authenticated;
 
--- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과) 라운드당 한 번만 허용한다(이미 보고했으면
+-- (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 이제 "못 가는 칸"을 만드는 벽이 아니다 — 나이트가 상대
+-- 기물 칸에 도달하면 그 기물을 잡아 없애고(그 기물이 지배하던 칸도 함께 안전해진다), 상대 기물이
+-- 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다(p_captured). 자기 색 기물 칸에는
+-- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다 —
+-- knight_start_round의 wIllegal/bIllegal과 같은 공식(점대칭 반사점이 보드 안인 칸만).
+create or replace function public.knight_danger(p_round jsonb, p_color text, p_taken text[])
+returns text[] language sql immutable as $$
+  select coalesce(array_agg(distinct a), '{}')
+  from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h,
+       unnest(public.knight_attacked_squares(h ->> 'sq', h ->> 'type')) a
+  where h ->> 'color' <> p_color
+    and not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
+    and public.knight_reflect_sq(a, p_round ->> 'target') is not null;
+$$;
+
+-- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과·잡힘) 라운드당 한 번만 허용한다(이미 보고했으면
 -- 조용히 무시). 실제 이동 수순 자체는 검증하지 않고(신뢰 모델은 위 설명 참고) 요약만 기록한다.
-create or replace function public.knight_report(p_game_id bigint, p_round int, p_reached boolean, p_moves_used int, p_final_sq text)
+-- (v0.5.4) p_captured(내 나이트가 잡혔는지)·p_taken(내가 잡은 상대 기물 칸) 추가 — 인자가 바뀌어
+-- 옛 5인자 판을 지운다(남겨 두면 PostgREST가 두 판 중 무엇을 부를지 모호해진다).
+drop function if exists public.knight_report(bigint, int, boolean, int, text);
+create or replace function public.knight_report(p_game_id bigint, p_round int, p_reached boolean, p_moves_used int, p_final_sq text, p_captured boolean default false, p_taken text[] default '{}')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_reports jsonb; v_mine jsonb;
@@ -2489,20 +2513,23 @@ begin
   v_mine := v_reports -> v_mycolor;
   if v_mine is not null and jsonb_typeof(v_mine) <> 'null' then return v_game; end if; -- 이미 보고함
   v_reports := jsonb_set(v_reports, array[v_mycolor], jsonb_build_object(
-    'reached', coalesce(p_reached, false), 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'finalSq', p_final_sq, 'at', now()
+    'reached', coalesce(p_reached, false) and not coalesce(p_captured, false), 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'finalSq', p_final_sq,
+    'captured', coalesce(p_captured, false), 'taken', to_jsonb(coalesce(p_taken, '{}')), 'at', now()
   ));
   v_round := jsonb_set(v_round, array['reports'], v_reports);
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.knight_report(bigint, int, boolean, int, text) to authenticated;
+grant execute on function public.knight_report(bigint, int, boolean, int, text, boolean, text[]) to authenticated;
 
 -- (v0.5.0 기능, 사용자 요청) 내 나이트 위치 실시간 중계 — 이동할 때마다(knight_report와 별개로) 호출해
 -- positions.<내색>만 갱신한다. 판정에는 전혀 관여하지 않는 순수 표시용이라(지금 위치를 검증 없이
 -- 그대로 믿고 상대 화면에 보여주기만 한다) 이미 라운드가 끝났거나 이미 보고를 마쳤어도 조용히
 -- 무시하면 그만이라 knight_report처럼 엄격한 "한 번만" 가드가 필요 없다 — 그냥 최신 위치로 덮어쓴다.
-create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int)
+-- (v0.5.4) p_taken — 지금까지 잡은 상대 기물 칸도 함께 알려, 상대 화면에서도 그 기물이 사라지게 한다.
+drop function if exists public.knight_move_ping(bigint, int, text, int);
+create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int, p_taken text[] default '{}')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text;
@@ -2519,12 +2546,12 @@ begin
   if v_round -> 'positions' is null or jsonb_typeof(v_round -> 'positions') <> 'object' then
     v_round := jsonb_set(v_round, array['positions'], jsonb_build_object('w', null, 'b', null));
   end if;
-  v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'at', now()));
+  v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'taken', to_jsonb(coalesce(p_taken, '{}')), 'at', now()));
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.knight_move_ping(bigint, int, text, int) to authenticated;
+grant execute on function public.knight_move_ping(bigint, int, text, int, text[]) to authenticated;
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
 -- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 서버가
@@ -2565,8 +2592,11 @@ begin
   elsif v_w_reached and v_b_reached then
     v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
   else
-    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'wIllegal'))), 99);
-    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'bIllegal'))), 99);
+    -- (v0.5.4) 잡힌 나이트는 가장 먼 것으로 친다. 거리는 내가 잡은 기물을 뺀 남은 위협 칸을 피해 잰다.
+    v_w_dist := case when coalesce((v_wrep->>'captured')::boolean, false) then 99 else coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target',
+      public.knight_danger(v_round, 'w', array(select jsonb_array_elements_text(coalesce(v_wrep->'taken', '[]'::jsonb))))), 99) end;
+    v_b_dist := case when coalesce((v_brep->>'captured')::boolean, false) then 99 else coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target',
+      public.knight_danger(v_round, 'b', array(select jsonb_array_elements_text(coalesce(v_brep->'taken', '[]'::jsonb))))), 99) end;
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
     else

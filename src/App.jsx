@@ -10394,7 +10394,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     <MinigameHub title="나이트 경주" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
         <div>• 나이트로 목표 칸(★)까지 <b style={{ color: T.ivoryHi }}>상대보다 먼저</b> 도달하세요 — 5전 3선승이에요.</div>
-        <div>• 라운드가 진행될수록 상대 색 위협 기물이 늘어나요. 빨간 칸에 들어가면 잡혀요.</div>
+        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ivoryHi }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 빨간 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
         <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ivoryHi }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
       </>}
       soloSub={best ? "5라운드 · 최고 " + best.reached + "회" : "5라운드 기록 도전"} botSub="5전 3선승"
@@ -10455,6 +10455,26 @@ function knightAttackedSquares(sq, type) {
   }
   return out;
 }
+// (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 더 이상 "못 가는 칸"을 만드는 벽이 아니다.
+// ① 나이트가 상대 기물(색이 다른 hazards) 칸에 도달하면 그 기물을 잡아 없앤다 — 그 기물이 지배하던 칸도
+//    함께 안전해진다. ② 상대 기물이 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다.
+// ③ 자기 색 기물 칸에는 설 수 없다(실제 체스처럼). 서버 knight_danger와 같은 공식이다.
+function knightDangerFor(round, color, taken) {
+  const out = new Set();
+  (round.hazards || []).forEach((h) => {
+    if (h.color === color || (taken || []).includes(h.sq)) return;
+    knightAttackedSquares(h.sq, h.type).forEach((sq) => { if (knightReflectSq(sq, round.target)) out.add(sq); });
+  });
+  return [...out];
+}
+// color 나이트가 설 수 없는 칸 — 아직 남아 있는 자기 색 기물(상대 나이트가 잡아 간 것은 빼고).
+function knightOwnBlocked(round, color, oppTaken) { return (round.hazards || []).filter((h) => h.color === color && !(oppTaken || []).includes(h.sq)).map((h) => h.sq); }
+// 한 수를 두었을 때 — 상대 기물을 잡았는지(tookPiece), 그 뒤 내 나이트가 잡혔는지(captured).
+function knightApplyMove(round, color, taken, sq) {
+  const tookPiece = (round.hazards || []).some((h) => h.sq === sq && h.color !== color && !(taken || []).includes(sq));
+  const nextTaken = tookPiece ? [...(taken || []), sq] : (taken || []);
+  return { taken: nextTaken, tookPiece, captured: knightDangerFor(round, color, nextTaken).includes(sq) };
+}
 // 8×8 나이트 경주 보드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound) 둘
 // 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
 // (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
@@ -10467,12 +10487,15 @@ function knightAttackedSquares(sq, type) {
 // 참이면(내가 흑일 때) 보드를 180도 뒤집어, 시작 칸이 어느 색으로 배정됐든 항상 내 나이트가 내
 // 화면의 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로, 표준 체스처럼
 // "내 색이 흑이면 보드를 뒤집는다"는 규칙만으로 이게 보장된다).
-function KnightRaceGrid({ myPos, oppPos, target, hazards, legalTargets, illegalForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "" }) {
+// (v0.5.4) dangerForMe — 들어가면 잡히는 칸(빨강, 이제 누를 수는 있다), removed — 잡혀서 사라진 기물 칸,
+// myCaptured/oppCaptured — 그 나이트가 잡혀 시도가 끝났으면 흐리게 + 빨간 X로 그린다.
+function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets, dangerForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "", myCaptured, oppCaptured }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
-  const hazBySq = {}; (hazards || []).forEach((h) => { hazBySq[h.sq] = h; });
+  const removedSet = new Set(removed || []);
+  const hazBySq = {}; (hazards || []).forEach((h) => { if (!removedSet.has(h.sq)) hazBySq[h.sq] = h; });
   const legalSet = new Set(legalTargets || []);
-  const illegalSet = new Set(illegalForMe || []);
+  const illegalSet = new Set(dangerForMe || []);
   const cells = [];
   for (let vr = 0; vr < 8; vr++) for (let vc = 0; vc < 8; vc++) {
     const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
@@ -10489,14 +10512,18 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, legalTargets, illegalF
     if (isMyIllegal) overlay = "rgba(196,60,50,.32)";
     else if (isTarget) overlay = "rgba(60,138,60,.35)";
     else if (isLegal) overlay = "rgba(196,154,80,.25)";
+    // 잡을 수 있는 상대 기물 — 이동 가능한 칸 위의 상대 색 기물은 금색 테두리로 "잡을 수 있다"를 알린다.
+    const canTake = isLegal && haz && haz.color === oppColor;
     cells.push(
-      <button key={sq} onClick={() => onCell(sq)} disabled={isMyIllegal} className="press"
-        style={{ position: "relative", border: "none", borderRadius: 0, cursor: isMyIllegal ? "default" : isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
+      <button key={sq} onClick={() => onCell(sq)} className="press"
+        style={{ position: "relative", border: "none", borderRadius: 0, cursor: isLegal ? "pointer" : "default", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
         {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
+        {isLegal && isMyIllegal && <span aria-hidden="true" style={{ position: "absolute", inset: 2, border: "2px dashed rgba(240,148,138,.9)", borderRadius: 3 }} />}
+        {canTake && <motion.span aria-hidden="true" animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.1, repeat: Infinity }} style={{ position: "absolute", inset: 2, border: "2px solid " + T.brassHi, borderRadius: "50%" }} />}
         {isTarget && !isMe && !isOpp && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
         {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
-        {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: .88 }} /></motion.div>}
-        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} /></motion.div>}
+        {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: oppCaptured ? .35 : .88 }} />{oppCaptured && <KnightCapturedMark />}</motion.div>}
+        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: myCaptured ? .35 : 1 }} />{myCaptured && <KnightCapturedMark />}</motion.div>}
         {isTarget && (isMe || isOpp) && <motion.span aria-hidden="true" initial={{ scale: 0.4, opacity: 0.9 }} animate={{ scale: 1.6, opacity: 0 }} transition={{ duration: 0.8, repeat: Infinity }} style={{ position: "absolute", inset: "12%", borderRadius: "50%", border: "2px solid " + T.brassHi, zIndex: 4 }} />}
       </button>
     );
@@ -10507,18 +10534,23 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, legalTargets, illegalF
     </div>
   );
 }
+function KnightCapturedMark() {
+  return <motion.span initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 420, damping: 18 }}
+    style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F0655A", fontWeight: 900, fontSize: "130%", textShadow: "0 1px 3px rgba(0,0,0,.8)" }}><X size="80%" strokeWidth={3.5} /></motion.span>;
+}
 // 보드 위 색이 각각 무슨 뜻인지 알려주는 범례 — 빨강은 위협 기물에게 잡히는(들어가면 안 되는) 칸,
 // 금색은 지금 바로 이동할 수 있는 칸, 초록은 목표 칸이다.
 function KnightRaceLegend() {
   const chip = (bg, label) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: bg, display: "inline-block", flexShrink: 0 }} />
+      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, display: "inline-block", flexShrink: 0, ...(typeof bg === "string" ? { background: bg } : bg) }} />
       {label}
     </span>
   );
   return (
     <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
-      {chip("rgba(196,60,50,.75)", "위협 칸(들어가면 잡혀요)")}
+      {chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
+      {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물(도달하면 잡아요)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
       {chip("rgba(60,138,60,.6)", "목표 칸")}
     </div>
@@ -10542,6 +10574,8 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const [pos, setPos] = useState(myStartSq);
   const [movesUsed, setMovesUsed] = useState(0);
   const [reported, setReported] = useState(false);
+  const [taken, setTaken] = useState([]); // (v0.5.4) 내가 잡은 상대 기물 칸
+  const [captured, setCaptured] = useState(false); // (v0.5.4) 내 나이트가 잡혔는지
   const startMs = new Date(round.startedAt).getTime();
   const [timeLeftMs, setTimeLeftMs] = useState(() => Math.min(round.timeLimitMs, round.timeLimitMs - (Date.now() - startMs)));
   // (v0.5.3 연출 강화) 서버가 startedAt을 3초 뒤로 잡아 두므로 그때까지는 카운트다운만 보여주고 조작을 막는다.
@@ -10551,7 +10585,6 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const myRep = round.reports && round.reports[myColor];
   const oppRep = round.reports && round.reports[oppColor];
   const iReported = !!myRep || reported;
-  const myIllegal = myColor === "w" ? round.wIllegal : round.bIllegal;
   // (v0.5.0 기능, 사용자 요청) 상대 나이트가 실시간으로 움직이는 걸 보여주기 위해, round.positions에
   // 서버가 그때그때 기록해 둔 상대의 "지금 위치"를 그대로 읽어 같은 보드 위에 그린다 — 판정과 무관한
   // 순수 표시값이라(신뢰 모델은 knight_report와 동일) 검증 없이 그대로 믿는다.
@@ -10559,12 +10592,14 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const oppPosInfo = round.positions && round.positions[oppColor];
   const oppPos = (oppPosInfo && oppPosInfo.sq) || oppStartSq;
   const oppMovesUsed = (oppPosInfo && oppPosInfo.movesUsed) || 0;
+  const oppTaken = (oppRep && oppRep.taken) || (oppPosInfo && oppPosInfo.taken) || [];
+  const myDanger = useMemo(() => knightDangerFor(round, myColor, taken), [round, myColor, taken]);
   useEffect(() => { if (oppMovesUsed > 0) fx("tap"); }, [oppMovesUsed]);
   const [shakeControls, shake] = useBoardShake();
-  const doReport = useCallback((reached, finalSq, moves) => {
+  const doReport = useCallback((reached, finalSq, moves, wasCaptured, takenSqs) => {
     if (reportedRef.current) return;
     reportedRef.current = true; setReported(true);
-    sbRpc("knight_report", { p_game_id: game.id, p_round: roundIdx, p_reached: reached, p_moves_used: moves, p_final_sq: finalSq }).then((g) => g && onGameUpdate(g)).catch(() => { });
+    sbRpc("knight_report", { p_game_id: game.id, p_round: roundIdx, p_reached: reached, p_moves_used: moves, p_final_sq: finalSq, p_captured: !!wasCaptured, p_taken: takenSqs || [] }).then((g) => g && onGameUpdate(g)).catch(() => { });
   }, [game.id, roundIdx, onGameUpdate]);
   // 제한시간 카운트다운 — 내가 아직 안 끝냈다면 0.2초마다 갱신하고, 다 되면 지금 위치·사용한 수
   // 그대로 실패로 자동 보고한다(시간 초과도 "시도했다"로 인정 — 위 SQL의 미보고 패널티 참고).
@@ -10573,10 +10608,10 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     const t = setInterval(() => {
       const left = round.timeLimitMs - (Date.now() - startMs);
       setTimeLeftMs(left);
-      if (left <= 0) { fx("wrong"); shake(); doReport(false, pos, movesUsed); clearInterval(t); }
+      if (left <= 0) { fx("wrong"); shake(); doReport(false, pos, movesUsed, false, taken); clearInterval(t); }
     }, 200);
     return () => clearInterval(t);
-  }, [startMs, round.timeLimitMs, pos, movesUsed, iReported, doReport, started, shake]);
+  }, [startMs, round.timeLimitMs, pos, movesUsed, taken, iReported, doReport, started, shake]);
   useKnightRoundFx(timeLeftMs, started && !iReported);
   // 이미 보고했는데 아직 이 라운드 승자가 안 정해졌으면(상대가 아직 진행 중이거나 미보고) 주기적으로
   // 확정을 시도한다 — 서버가 "둘 다 보고했거나 시간이 다 됐을 때"만 실제로 확정하므로 안전하다.
@@ -10585,17 +10620,19 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
     const t = setInterval(() => { sbRpc("knight_resolve_round", { p_game_id: game.id }).then((g) => g && onGameUpdate(g)).catch(() => { }); }, 1200);
     return () => clearInterval(t);
   }, [iReported, round.winner, game.id, onGameUpdate]);
-  const legalTargets = useMemo(() => (iReported || !started ? [] : knightNeighborsClient(pos, myIllegal || [])), [pos, myIllegal, iReported, started]);
+  const legalTargets = useMemo(() => (iReported || !started ? [] : knightNeighborsClient(pos, knightOwnBlocked(round, myColor, oppTaken))), [pos, round, myColor, oppTaken, iReported, started]);
   const onCell = (sq) => {
-    if (iReported || !started) return;
-    if (!legalTargets.includes(sq)) { if (sq !== pos && (myIllegal || []).includes(sq)) { fx("wrong"); shake(); buzz(60); } return; }
+    if (iReported || !started || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
-    setPos(sq); setMovesUsed(nextMoves);
-    playSfx("move");
+    const mv = knightApplyMove(round, myColor, taken, sq);
+    setPos(sq); setMovesUsed(nextMoves); setTaken(mv.taken);
+    if (mv.tookPiece) { playSfx("capture"); fx("capture"); buzz(40); } else playSfx("move");
     // 이 수를 상대에게 실시간으로 중계한다(판정과 무관한 표시용 — 실패해도 그냥 무시).
-    sbRpc("knight_move_ping", { p_game_id: game.id, p_round: roundIdx, p_sq: sq, p_moves_used: nextMoves }).catch(() => { });
-    if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doReport(true, sq, nextMoves); return; }
-    if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doReport(false, sq, nextMoves); }
+    sbRpc("knight_move_ping", { p_game_id: game.id, p_round: roundIdx, p_sq: sq, p_moves_used: nextMoves, p_taken: mv.taken }).catch(() => { });
+    // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
+    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doReport(false, sq, nextMoves, true, mv.taken); return; }
+    if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doReport(true, sq, nextMoves, false, mv.taken); return; }
+    if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doReport(false, sq, nextMoves, false, mv.taken); }
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
   // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
@@ -10612,13 +10649,14 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
-          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={myIllegal} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} roundKey={roundIdx} />
+          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} removed={[...taken, ...oppTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} roundKey={roundIdx}
+            myCaptured={captured || !!(myRep && myRep.captured)} oppCaptured={!!(oppRep && oppRep.captured)} />
           <MinigameCountdown startAt={startMs} />
           <MinigameRoundBanner result={roundResult} roundKey={roundIdx} />
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {round.winner ? "" : iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
+        {round.winner ? "" : captured ? "나이트가 잡혔어요 — 상대를 기다리는 중..." : iReported ? "상대를 기다리는 중..." : (oppRep ? "상대가 이미 시도를 마쳤어요 — 서둘러요!" : "목표 칸(★)까지 나이트를 움직여 보세요")}
       </div>
       <KnightRaceLegend />
     </div>
@@ -10677,24 +10715,31 @@ function knightGenRoundLocal(roundIdx) {
     } else {
       whiteStart = cand2; whitePath = walkMirror; blackStart = cand1; blackPath = walk;
     }
-    let hazW = [], hazB = [];
-    if (hazardCount > 0) {
-      hazW = knightPickBlockedLocal(hazardCount, [...blackPath, target, whiteStart]);
-      if (hazW.length < hazardCount) continue;
-      hazB = hazW.map((sq) => knightReflectSq(sq, target));
-      if (hazB.some((sq) => !sq)) continue;
+    // (v0.5.4) 기물 배치만 최대 20번 다시 뽑는다 — 보장 경로가 상대 기물이 지배하는 칸을 지나면 이동 수
+    // 제한 안에 못 풀 수 있어서다(서버 knight_start_round와 같은 규칙).
+    let placed = null;
+    for (let t2 = 0; t2 < 20 && !placed; t2++) {
+      let hazW = [], hazB = [];
+      if (hazardCount > 0) {
+        // 자기 색 기물 칸엔 설 수 없으므로(v0.5.4) 두 보장 경로를 모두 피해 고른다.
+        hazW = knightPickBlockedLocal(hazardCount, [...blackPath, ...whitePath, target]);
+        if (hazW.length < hazardCount) continue;
+        hazB = hazW.map((sq) => knightReflectSq(sq, target));
+        if (hazB.some((sq) => !sq)) continue;
+      }
+      const hazards = [], wIllegal = [], bIllegal = [];
+      for (let i = 0; i < hazW.length; i++) {
+        const type = Math.random() < 0.5 ? "B" : "R";
+        hazards.push({ sq: hazW[i], type, color: "w" }, { sq: hazB[i], type, color: "b" });
+        // (버그 수정) 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에 넣어야 양쪽 집합이 정확히 점대칭이
+        // 된다(supabase-setup.sql의 knight_start_round와 같은 수정).
+        bIllegal.push(...knightAttackedSquares(hazW[i], type).filter((sq) => knightReflectSq(sq, target)));
+        wIllegal.push(...knightAttackedSquares(hazB[i], type).filter((sq) => knightReflectSq(sq, target)));
+      }
+      if (!whitePath.some((sq) => wIllegal.includes(sq))) placed = { hazards, wIllegal, bIllegal };
     }
-    const hazards = [], wIllegal = [], bIllegal = [];
-    for (let i = 0; i < hazW.length; i++) {
-      const type = Math.random() < 0.5 ? "B" : "R";
-      hazards.push({ sq: hazW[i], type, color: "w" }, { sq: hazB[i], type, color: "b" });
-      // (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
-      // 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다 —
-      // 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에 포함시켜야 양쪽 집합이 항상 정확히
-      // 점대칭이 된다(supabase-setup.sql의 knight_start_round와 같은 수정).
-      bIllegal.push(...knightAttackedSquares(hazW[i], type).filter((sq) => knightReflectSq(sq, target)));
-      wIllegal.push(...knightAttackedSquares(hazB[i], type).filter((sq) => knightReflectSq(sq, target)));
-    }
+    if (!placed) continue;
+    const { hazards, wIllegal, bIllegal } = placed;
     return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, moveBudget: whitePath.length - 1 + 2, timeLimitMs: 25000 };
   }
   const target = "d4";
@@ -10727,6 +10772,11 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const [movesUsed, setMovesUsed] = useState(0);
   const [botPos, setBotPos] = useState(round.blackStart);
   const [botMovesUsed, setBotMovesUsed] = useState(0);
+  // (v0.5.4) 잡은 기물·잡힘 — 나(백)는 흑 기물을, 봇(흑)은 백 기물을 잡는다.
+  const [taken, setTaken] = useState([]);
+  const [botTaken, setBotTaken] = useState([]);
+  const [captured, setCaptured] = useState(false);
+  const myDanger = useMemo(() => knightDangerFor(round, "w", taken), [round, taken]);
   const [myReport, setMyReport] = useState(null); // { reached, moves, atMs }
   const [botReport, setBotReport] = useState(null);
   const [timeLeftMs, setTimeLeftMs] = useState(round.timeLimitMs);
@@ -10760,11 +10810,13 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   useEffect(() => {
     if (solo) return; // (v0.5.3) 혼자 플레이하기 — 봇 없이 나만 시간·수 제한과 싸운다
     const lead = Math.max(0, startRef.current - Date.now());
-    let path = knightShortestPathLocal(round.blackStart, round.target, round.bIllegal);
+    // (v0.5.4) 봇은 위협 칸과 자기 색(흑) 기물 칸을 피하고, 경로 위의 백 기물은 지나가며 잡는다.
+    const botAvoid = [...(round.bIllegal || []), ...knightOwnBlocked(round, "b", [])];
+    let path = knightShortestPathLocal(round.blackStart, round.target, botAvoid);
     // (v0.5.3 난이도 완화, 사용자 요청) 35% 확률로 봇이 첫 수에서 "헛걸음"을 한다 — 옆 칸으로 갔다가
     // 되돌아오는 2수를 더 써서(수 제한 안에서만) 사람이 따라잡을 여지를 준다.
     if (path && path.length - 1 + 2 <= round.moveBudget && Math.random() < 0.35) {
-      const side = knightNeighborsClient(path[0], round.bIllegal || []).filter((sq) => sq !== path[1] && sq !== round.target);
+      const side = knightNeighborsClient(path[0], botAvoid).filter((sq) => sq !== path[1] && sq !== round.target);
       if (side.length) path = [path[0], side[Math.floor(Math.random() * side.length)], ...path];
     }
     const moves = path ? path.length - 1 : Infinity;
@@ -10781,7 +10833,8 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
       stepsWithinTime = i + 1;
       const stepSq = path[i + 1];
       const fireAt = lead + cumulative;
-      timersRef.current.push(setTimeout(() => { setBotPos(stepSq); setBotMovesUsed(i + 1); fx("tap"); }, fireAt));
+      const takes = (round.hazards || []).some((h) => h.sq === stepSq && h.color === "w");
+      timersRef.current.push(setTimeout(() => { setBotPos(stepSq); setBotMovesUsed(i + 1); if (takes) { setBotTaken((t) => [...t, stepSq]); fx("capture"); } else fx("tap"); }, fireAt));
     }
     if (stepsWithinTime === moves) {
       const at = cumulative;
@@ -10806,13 +10859,15 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     setWinner(w);
     onRoundDone(w, myReport);
   }, [myReport, botReport, onRoundDone, winner]);
-  const legalTargets = useMemo(() => (myReport || !started ? [] : knightNeighborsClient(pos, round.wIllegal || [])), [pos, round.wIllegal, myReport, started]);
+  const legalTargets = useMemo(() => (myReport || !started ? [] : knightNeighborsClient(pos, knightOwnBlocked(round, "w", botTaken))), [pos, round, botTaken, myReport, started]);
   const onCell = (sq) => {
-    if (myReport || !started) return;
-    if (!legalTargets.includes(sq)) { if (sq !== pos && (round.wIllegal || []).includes(sq)) { fx("wrong"); shake(); buzz(60); } return; }
+    if (myReport || !started || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
-    setPos(sq); setMovesUsed(nextMoves);
-    playSfx("move");
+    const mv = knightApplyMove(round, "w", taken, sq);
+    setPos(sq); setMovesUsed(nextMoves); setTaken(mv.taken);
+    if (mv.tookPiece) { playSfx("capture"); fx("capture"); buzz(40); } else playSfx("move");
+    // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
+    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves); return; }
     if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doMyReport(true, nextMoves); return; }
     if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doMyReport(false, nextMoves); }
   };
@@ -10830,13 +10885,13 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
-          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} legalTargets={legalTargets} illegalForMe={round.wIllegal} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} />
+          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} />
           <MinigameCountdown startAt={startRef.current} />
           <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공!" : "실패") : null} />
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {winner ? "" : myReport ? "봇이 시도하는 중..." : "목표 칸(★)까지 나이트를 움직여 보세요"}
+        {winner ? "" : myReport ? (captured ? "나이트가 잡혔어요 — " : "") + (solo ? "" : "봇이 시도하는 중...") : "목표 칸(★)까지 나이트를 움직여 보세요"}
       </div>
       <KnightRaceLegend />
     </div>
@@ -23401,6 +23456,7 @@ const CHANGELOG = [
       "미니게임 시작 화면 맨 위에 내 레이팅·전적(승·패·무, 연승)·혼자 플레이 최고 기록이 보여요.",
       "혼자 플레이하기 최고 기록이 이제 계정에 저장돼요 — 다른 기기에서도 그대로 이어지고, 로그인 전에 세운 기록도 로그인하면 올라가요.",
       "프로필에 미니게임 레이팅과 전적이 표시되고, 스페셜 미니게임 목록에서도 게임마다 내 레이팅을 볼 수 있어요.",
+      "나이트 경주 규칙이 바뀌었어요 — 상대 기물이 있는 칸에 도달하면 그 기물을 잡아 없앨 수 있고(그 기물이 막던 칸도 안전해져요), 상대 기물이 지배하는 빨간 칸은 이제 갈 수는 있지만 가는 순간 내 나이트가 잡혀 그 라운드가 끝나요. 내 색 기물 칸에는 설 수 없어요.",
     ]
   },
   {
