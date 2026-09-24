@@ -9317,111 +9317,68 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
   return <MinigameHubBoard stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
 }
 // ============================================================ 미니게임 목록 화면(v0.5.5 리디자인) ============================================================
-// (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 직접 그린 스케치를 그대로
-// 옮긴 "종이 위 잉크 드로잉" 한 장짜리 화면. 맨 위에 빗금(어두운 칸)으로 칠한 3줄짜리 체스보드 띠(좌표
-// 조준경·나이트가 놓여 있다), 가운데 팔각형 "OpenChess MiniGame" 엠블럼을 네 게임 칸이 둘러싸고, 맨 아래
-// 왼쪽은 다음 미니게임 자리, 오른쪽은 백랭크 러시아워의 룩 탈출 → 백랭크 메이트 경로 그림이다.
-// 글자·선 크기는 전부 컨테이너 폭 기준(cqw)이라 모바일·데스크톱 어디서나 스케치 비율이 그대로 유지된다.
+// (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 직접 그린 스케치를 옮긴 한 장짜리
+// 화면. 가운데 팔각형 "OpenChess MiniGame" 엠블럼에서 위·아래·왼쪽·오른쪽으로 뻗은 경계가 화면 전체를 네 개의
+// 버튼(좌표 인지 게임 / 나이트 레이스 / 무한 체크메이트 게임 / 백랭크 러시아워)으로 나눈다. 맨 위 빗금 체스보드
+// 띠(조준경·나이트)는 위쪽 두 버튼 위에 얹힌 장식일 뿐이라 두 버튼 모양대로 잘려 그려지고, 누르면 그 아래
+// 버튼이 눌린다. 오른쪽 아래 버튼에는 룩이 파일을 타고 내려가 백랭크를 가로질러 킹을 메이트하는 경로 그림이
+// 들어간다. 모든 도형(네 버튼·팔각형)은 서로 간격을 두고 모서리를 둥글게 깎는다.
+// 좌표계는 SVG viewBox(100 × MG_H) 하나 — 글자·기물 오버레이도 같은 비율의 퍼센트 좌표로 얹는다.
 const MG_INK = "#2B1B10";
-const MG_HATCH = "repeating-linear-gradient(135deg, " + MG_INK + " 0 1.3px, transparent 1.3px 5.5px)";
+const MG_H = 108;
 const MG_STRIP_COLS = 14, MG_STRIP_ROWS = 3;
-// 게임 칸 배치 — 스케치와 같은 자리·같은 줄바꿈.
-const MG_TILES = [
-  { gameType: "coord", lines: ["좌표 인지", "게임"], side: "left", row: 1 },
-  { gameType: "knight", lines: ["나이트", "레이스"], side: "right", row: 1 },
-  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], side: "left", row: 2 },
-  { gameType: "rush", lines: ["백랭크", "러시아워"], side: "right", row: 2 },
-];
-function MgCrosshair({ size }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block" }}>
-      <circle cx="12" cy="12" r="6.2" fill="none" stroke={MG_INK} strokeWidth="1.9" />
-      <path d="M12 2.2v4.6M12 17.2v4.6M2.2 12h4.6M17.2 12h4.6" stroke={MG_INK} strokeWidth="1.9" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="1.5" fill={MG_INK} />
-    </svg>
-  );
-}
-// 맨 위 체스보드 띠 — 조준경 칸은 좌표 인지 게임, 나이트 칸은 나이트 레이스로 바로 들어간다.
-function MgBoardStrip({ onPick, width }) {
-  const cell = width / MG_STRIP_COLS;
-  const cells = [];
-  for (let r = 0; r < MG_STRIP_ROWS; r++) for (let c = 0; c < MG_STRIP_COLS; c++) {
-    const dark = (r + c) % 2 === 0;
-    const coord = r === 1 && c === 2, knight = r === 2 && c === 8;
-    const key = r + "-" + c;
-    const style = { position: "relative", aspectRatio: "1 / 1", background: dark ? MG_HATCH : "transparent", borderRight: c < MG_STRIP_COLS - 1 ? "1.5px solid " + MG_INK : "none", borderBottom: r < MG_STRIP_ROWS - 1 ? "1.5px solid " + MG_INK : "none", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 };
-    if (coord || knight) {
-      cells.push(
-        <button key={key} onClick={() => onPick(coord ? "coord" : "knight")} aria-label={coord ? "좌표 인지 게임" : "나이트 레이스"} className="press mg-strip-piece" style={{ ...style, border: "none", borderRight: style.borderRight, borderBottom: style.borderBottom, cursor: "pointer" }}>
-          <span style={{ width: "86%", height: "86%", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 3, background: dark ? "rgba(241,230,208,.82)" : "transparent" }}>
-            {coord ? <MgCrosshair size="100%" /> : <PieceGlyph type="N" color="b" size={Math.max(10, cell * 0.8)} />}
-          </span>
-        </button>
-      );
-    } else cells.push(<div key={key} style={style} />);
+const MG_CELL = 100 / MG_STRIP_COLS;
+const MG_GAP = 1.8;          // 도형 사이 간격
+const MG_RADIUS = 3.2;       // 모서리 라운딩
+const MG_OCT = { L: 27, R: 73, T: MG_STRIP_ROWS * MG_CELL + MG_GAP, B: 79, c: 11 };  // 위 변은 띠 바로 아래(간격만큼) — 띠가 잘리지 않게
+// 다각형 꼭짓점마다 양쪽 변을 r만큼(변 길이 절반 이내) 잘라 내고 꼭짓점을 제어점으로 한 곡선으로 잇는다.
+function mgRoundedPath(pts, r) {
+  const n = pts.length;
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+    const la = Math.hypot(p[0] - a[0], p[1] - a[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    const ra = Math.min(r, la / 2), rb = Math.min(r, lb / 2);
+    const s = [p[0] + (a[0] - p[0]) * ra / la, p[1] + (a[1] - p[1]) * ra / la];
+    const e = [p[0] + (b[0] - p[0]) * rb / lb, p[1] + (b[1] - p[1]) * rb / lb];
+    d += (i === 0 ? "M" : "L") + s[0].toFixed(2) + " " + s[1].toFixed(2) + "Q" + p[0] + " " + p[1] + " " + e[0].toFixed(2) + " " + e[1].toFixed(2);
   }
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(" + MG_STRIP_COLS + ", 1fr)", borderBottom: "2px solid " + MG_INK }}>{cells}</div>;
+  return d + "Z";
 }
-// 가운데 팔각형 엠블럼 — 위·아래 변은 띠 아래선·셋째 줄 윗선에 붙고, 네 모서리를 깎은 대각선이 게임 칸을 파고든다.
-function MgOctagon() {
-  return (
-    <div style={{ position: "absolute", left: "26%", right: "26%", top: 0, bottom: 0, pointerEvents: "auto" }}>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block" }} aria-hidden="true">
-        <polygon points="27,0 73,0 100,23 100,77 73,100 27,100 0,77 0,23" fill={T.paper} stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1.2cqw", fontFamily: SITE_FONT, fontStyle: "italic", fontWeight: 900, color: MG_INK, lineHeight: 1, letterSpacing: "-.02em", textAlign: "center" }}>
-        <span style={{ fontSize: "6.6cqw" }}>OpenChess</span>
-        <span style={{ fontSize: "6.6cqw" }}>MiniGame</span>
-      </div>
-    </div>
-  );
+function mgShapes() {
+  const { L, R, T, B, c } = MG_OCT;
+  const g = MG_GAP, h = g / 2, M = (T + B) / 2, W = 100, H = MG_H;
+  // 팔각형을 간격만큼 바깥으로 민 윤곽(대각선 변도 평행 이동 — 깎인 길이는 g·tan(22.5°)만큼 늘어난다).
+  const Lo = L - g, Ro = R + g, To = T - g, Bo = B + g, co = c + g * 0.414;
+  const oct = [[L + c, T], [R - c, T], [R, T + c], [R, B - c], [R - c, B], [L + c, B], [L, B - c], [L, T + c]];
+  return {
+    oct,
+    coord: [[0, 0], [50 - h, 0], [50 - h, To], [Lo + co, To], [Lo, To + co], [Lo, M - h], [0, M - h]],
+    knight: [[50 + h, 0], [W, 0], [W, M - h], [Ro, M - h], [Ro, To + co], [Ro - co, To], [50 + h, To]],
+    attack: [[0, M + h], [Lo, M + h], [Lo, Bo - co], [Lo + co, Bo], [50 - h, Bo], [50 - h, H], [0, H]],
+    rush: [[50 + h, Bo], [Ro - co, Bo], [Ro, Bo - co], [Ro, M + h], [W, M + h], [W, H], [50 + h, H]],
+  };
 }
-function MgGameTile({ tile, stat, onPick }) {
-  const right = tile.side === "right";
-  const rated = stat && stat.rated_games >= MINIGAME_PLACEMENT;
-  return (
-    <button onClick={() => onPick(tile.gameType)} className="press mg-tile"
-      style={{ gridColumn: right ? 2 : 1, gridRow: tile.row, position: "relative", display: "flex", justifyContent: right ? "flex-end" : "flex-start", alignItems: "flex-start", padding: 0, border: "none", borderBottom: tile.row === 1 ? "2px solid " + MG_INK : "none", cursor: "pointer", textAlign: "left", minHeight: 0 }}>
-      {/* 팔각형에 가려지지 않는 바깥쪽 절반(컨테이너 폭의 26%)에만 글자를 둔다. */}
-      <span style={{ position: "absolute", top: 0, [right ? "right" : "left"]: 0, width: "26cqw", boxSizing: "border-box", padding: right ? "3.2cqw 1.8cqw 2.4cqw 2.6cqw" : "3.2cqw 1.4cqw 2.4cqw 3.4cqw", display: "flex", flexDirection: "column", gap: "1cqw", fontFamily: SITE_FONT, color: MG_INK }}>
-        <span style={{ fontSize: "4.1cqw", fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", wordBreak: "keep-all" }}>
-          {tile.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
-        </span>
-        {rated && <span style={{ fontSize: "2.5cqw", fontWeight: 800, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: MG_INK }}>{stat.rating}</b></span>}
-      </span>
-    </button>
-  );
-}
-// 오른쪽 아래 그림 — 엉킨 기물 사이를 빠져나온 룩이 파일을 타고 내려가 백랭크를 가로질러 킹을 메이트하는 경로.
-// viewBox(55×34)와 칸 비율을 똑같이 맞춰, 그 위에 절대위치로 얹는 기물(퍼센트 좌표)이 선과 정확히 겹친다.
-function MgRushArt({ onPick, width }) {
-  const pieceSize = Math.max(12, width * 0.066);
-  const at = (x, y) => ({ position: "absolute", left: (x / 55 * 100) + "%", top: (y / 34 * 100) + "%", transform: "translate(-50%,-50%)", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" });
-  const glyph = (type, color) => <PieceGlyph type={type} color={color} size={pieceSize} />;
-  return (
-    <button onClick={() => onPick("rush")} aria-label="백랭크 러시아워" className="press mg-tile" style={{ position: "relative", padding: 0, border: "none", borderLeft: "2px solid " + MG_INK, cursor: "pointer", aspectRatio: "55 / 34", width: "100%" }}>
-      <svg viewBox="0 0 55 34" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block" }} aria-hidden="true">
-        <defs>
-          <marker id="mg-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
-            <path d="M1 1 L8 5 L1 9" fill="none" stroke={MG_INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </marker>
-        </defs>
-        <g fill="none" stroke={MG_INK} strokeWidth="0.75" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M44.2 6.2 L38.6 6.4" markerEnd="url(#mg-arrow)" />
-          <path d="M37.4 8.6 L37.2 11.6 L32.4 11.9" markerEnd="url(#mg-arrow)" />
-          <path d="M29.6 13.8 L29.8 7.4" markerEnd="url(#mg-arrow)" />
-          <path d="M26.2 4.4 L8.6 4.2 L8.4 24.2" markerEnd="url(#mg-arrow)" />
-          <path d="M13.6 29.4 L43 29.2" markerEnd="url(#mg-arrow)" />
-        </g>
-      </svg>
-      <span style={at(48.2, 5.6)}>{glyph("R", "b")}</span>
-      <span style={at(9, 29.2)}>{glyph("R", "b")}</span>
-      <span style={at(48.8, 29)}>{glyph("K", "w")}</span>
-    </button>
-  );
-}
+// 버튼 글자 자리(스케치와 같은 위치·줄바꿈) — x·y는 viewBox 좌표.
+const MG_LABELS = [
+  { gameType: "coord", lines: ["좌표 인지", "게임"], x: 4, y: MG_OCT.T + 5 },
+  { gameType: "knight", lines: ["나이트", "레이스"], x: MG_OCT.R + 3.5, y: MG_OCT.T + 5 },
+  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: 4, y: (MG_OCT.T + MG_OCT.B) / 2 + 5 },
+  { gameType: "rush", lines: ["백랭크", "러시아워"], x: MG_OCT.R + 3.5, y: (MG_OCT.T + MG_OCT.B) / 2 + 5 },
+];
+const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스", attack: "무한 체크메이트 게임", rush: "백랭크 러시아워" };
+// 오른쪽 아래 경로 그림 — 예전 55×34 스케치 좌표를 러시아워 버튼의 팔각형 아래 영역으로 옮긴다.
+const mgArt = (x, y) => [51.5 + x * 0.84, MG_OCT.B + 1.5 + y * 0.8];
+const MG_ART_PATHS = [
+  [[44.2, 6.2], [38.6, 6.4]],
+  [[37.4, 8.6], [37.2, 11.6], [32.4, 11.9]],
+  [[29.6, 13.8], [29.8, 7.4]],
+  [[26.2, 4.4], [8.6, 4.2], [8.4, 24.2]],
+  [[13.6, 29.4], [43, 29.2]],
+];
+const MG_ART_PIECES = [{ at: [48.2, 5.6], type: "R", color: "b" }, { at: [9, 29.2], type: "R", color: "b" }, { at: [48.8, 29], type: "K", color: "w" }];
 function MinigameHubBoard({ stats, onPick }) {
-  // 기물 이미지 스킨은 size(px)로 크기를 계산하므로, 보드 폭을 실측해 칸 크기에 맞춘 px를 넘긴다.
+  // 기물 이미지 스킨은 size(px)로 크기를 계산하므로, 보드 폭을 실측해 px로 넘긴다.
   const [width, setWidth] = useState(360);
   const roRef = useRef(null);
   const measureRef = useCallback((el) => {
@@ -9433,19 +9390,85 @@ function MinigameHubBoard({ stats, onPick }) {
     roRef.current.observe(el);
   }, []);
   useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  const [hover, setHover] = useState(null);
+  const shapes = useMemo(mgShapes, []);
+  const paths = useMemo(() => {
+    const out = {};
+    ["coord", "knight", "attack", "rush"].forEach((k) => { out[k] = mgRoundedPath(shapes[k], MG_RADIUS); });
+    out.oct = mgRoundedPath(shapes.oct, MG_RADIUS * 1.2);
+    return out;
+  }, [shapes]);
+  const pct = (x, y) => ({ left: x + "%", top: (y / MG_H * 100) + "%" });
+  const cells = [];
+  for (let r = 0; r < MG_STRIP_ROWS; r++) for (let c = 0; c < MG_STRIP_COLS; c++) {
+    if ((r + c) % 2 === 0) cells.push(<rect key={r + "-" + c} x={c * MG_CELL} y={r * MG_CELL} width={MG_CELL} height={MG_CELL} fill="url(#mg-hatch)" />);
+  }
+  const onKey = (k) => (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(k); } };
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 14 }}>
-      <style>{".mg-tile{background:transparent;transition:background .15s ease}.mg-tile:hover{background:rgba(196,154,80,.16)}.mg-strip-piece:hover>span{background:rgba(196,154,80,.35)!important}"}</style>
-      <div ref={measureRef} style={{ containerType: "inline-size", maxWidth: 560, margin: "0 auto", border: "2px solid " + MG_INK, borderRadius: 3, overflow: "hidden", background: T.paper }}>
-        <MgBoardStrip onPick={onPick} width={width} />
-        {/* 네 게임 칸(2×2) + 그 위에 얹는 팔각형 — 두 줄 높이는 스케치처럼 폭의 약 26%씩. */}
-        <div style={{ position: "relative", display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gridTemplateRows: "26cqw 25cqw" }}>
-          {MG_TILES.map((t) => <MgGameTile key={t.gameType} tile={t} stat={stats && stats[t.gameType]} onPick={onPick} />)}
-          <MgOctagon />
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "45% 55%", borderTop: "2px solid " + MG_INK }}>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "flex-start", padding: "3cqw", fontFamily: SITE_FONT, fontSize: "2.4cqw", fontWeight: 700, color: "rgba(43,27,16,.38)" }}>다음 미니게임 준비 중…</div>
-          <MgRushArt onPick={onPick} width={width} />
+      <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", maxWidth: 560, margin: "0 auto", aspectRatio: "100 / " + MG_H }}>
+        <svg viewBox={"0 0 100 " + MG_H} width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
+          <defs>
+            <pattern id="mg-hatch" patternUnits="userSpaceOnUse" width="1.25" height="1.25" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="1.25" stroke={MG_INK} strokeWidth="0.32" />
+            </pattern>
+            <clipPath id="mg-top-clip"><path d={paths.coord} /><path d={paths.knight} /></clipPath>
+            <marker id="mg-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerUnits="userSpaceOnUse" markerWidth="3" markerHeight="3" orient="auto-start-reverse">
+              <path d="M1 1 L8 5 L1 9" fill="none" stroke={MG_INK} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </marker>
+          </defs>
+          {["coord", "knight", "attack", "rush"].map((k) => (
+            <path key={k} d={paths[k]} role="button" tabIndex={0} aria-label={MG_NAMES[k]} onClick={() => onPick(k)} onKeyDown={onKey(k)}
+              onMouseEnter={() => setHover(k)} onMouseLeave={() => setHover((v) => (v === k ? null : v))}
+              fill={hover === k ? "#EEDDB8" : "#FBF4E6"} stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke"
+              style={{ cursor: "pointer", transition: "fill .15s ease", outline: "none" }} />
+          ))}
+          {/* 체스보드 띠 — 위쪽 두 버튼 모양대로 잘린 장식(클릭은 그대로 아래 버튼으로 통과). */}
+          <g clipPath="url(#mg-top-clip)" style={{ pointerEvents: "none" }}>
+            {cells}
+            <g stroke={MG_INK} strokeWidth="1.2" vectorEffect="non-scaling-stroke">
+              {Array.from({ length: MG_STRIP_COLS - 1 }, (_, i) => <line key={"v" + i} x1={(i + 1) * MG_CELL} y1="0" x2={(i + 1) * MG_CELL} y2={MG_STRIP_ROWS * MG_CELL} vectorEffect="non-scaling-stroke" />)}
+              {Array.from({ length: MG_STRIP_ROWS }, (_, i) => <line key={"h" + i} x1="0" y1={(i + 1) * MG_CELL} x2="100" y2={(i + 1) * MG_CELL} vectorEffect="non-scaling-stroke" />)}
+            </g>
+            {/* 조준경(좌표 인지 게임) — 둘째 줄 셋째 칸 */}
+            <g transform={"translate(" + (2.5 * MG_CELL) + " " + (1.5 * MG_CELL) + ")"}>
+              <circle r={MG_CELL * 0.32} fill="#FBF4E6" />
+              <circle r={MG_CELL * 0.22} fill="none" stroke={MG_INK} strokeWidth="0.55" />
+              <path d={"M0 " + (-MG_CELL * 0.42) + "V" + (-MG_CELL * 0.26) + "M0 " + (MG_CELL * 0.26) + "V" + (MG_CELL * 0.42) + "M" + (-MG_CELL * 0.42) + " 0H" + (-MG_CELL * 0.26) + "M" + (MG_CELL * 0.26) + " 0H" + (MG_CELL * 0.42)} stroke={MG_INK} strokeWidth="0.55" strokeLinecap="round" />
+              <circle r={MG_CELL * 0.055} fill={MG_INK} />
+            </g>
+          </g>
+          {/* 가운데 팔각형 엠블럼 */}
+          <path d={paths.oct} fill="#FBF4E6" stroke={MG_INK} strokeWidth="2" vectorEffect="non-scaling-stroke" style={{ pointerEvents: "none" }} />
+          {/* 백랭크 러시아워 경로 그림 */}
+          <g fill="none" stroke={MG_INK} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+            {MG_ART_PATHS.map((pts, i) => <polyline key={i} points={pts.map((p) => mgArt(p[0], p[1]).join(",")).join(" ")} vectorEffect="non-scaling-stroke" markerEnd="url(#mg-arrow)" />)}
+          </g>
+        </svg>
+        {/* 오버레이(글자·기물)는 전부 pointer-events:none — 누르면 그 아래 SVG 버튼이 눌린다. */}
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT, color: MG_INK }}>
+          <span style={{ position: "absolute", ...pct(8.5 * MG_CELL, 2.5 * MG_CELL), transform: "translate(-50%,-50%)", display: "flex" }}>
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: width * MG_CELL / 100 * 0.84, height: width * MG_CELL / 100 * 0.84, borderRadius: "50%", background: "#FBF4E6" }}>
+              <PieceGlyph type="N" color="b" size={Math.max(10, width * MG_CELL / 100 * 0.78)} />
+            </span>
+          </span>
+          {MG_ART_PIECES.map((pc, i) => { const [x, y] = mgArt(pc.at[0], pc.at[1]); return <span key={i} style={{ position: "absolute", ...pct(x, y), transform: "translate(-50%,-50%)", display: "flex" }}><PieceGlyph type={pc.type} color={pc.color} size={Math.max(12, width * 0.058)} /></span>; })}
+          <div style={{ position: "absolute", left: MG_OCT.L + "%", right: (100 - MG_OCT.R) + "%", top: (MG_OCT.T / MG_H * 100) + "%", bottom: ((MG_H - MG_OCT.B) / MG_H * 100) + "%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1.2cqw", fontStyle: "italic", fontWeight: 900, lineHeight: 1, letterSpacing: "-.02em", textAlign: "center" }}>
+            <span style={{ fontSize: "6.4cqw" }}>OpenChess</span>
+            <span style={{ fontSize: "6.4cqw" }}>MiniGame</span>
+          </div>
+          {MG_LABELS.map((lb) => {
+            const st = stats && stats[lb.gameType];
+            const rated = st && st.rated_games >= MINIGAME_PLACEMENT;
+            return (
+              <div key={lb.gameType} style={{ position: "absolute", ...pct(lb.x, lb.y), width: "22cqw", display: "flex", flexDirection: "column", gap: "1cqw" }}>
+                <span style={{ fontSize: "4.1cqw", fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", wordBreak: "keep-all" }}>
+                  {lb.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
+                </span>
+                {rated && <span style={{ fontSize: "2.5cqw", fontWeight: 800, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: MG_INK }}>{st.rating}</b></span>}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
