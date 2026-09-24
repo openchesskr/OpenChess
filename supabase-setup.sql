@@ -1554,6 +1554,10 @@ alter table public.pvp_games add column if not exists rematch_game_id bigint ref
 -- 대국이 모두 이 값을 물려받게 해서, 나중에 새 게임 타입이 추가돼도 서로 다른 타입끼리 잘못 매칭되지
 -- 않게 한다. 지금은 모든 행이 'chess'뿐이라 실질적인 동작 변화는 없다.
 alter table public.pvp_games add column if not exists game_type text not null default 'chess';
+-- (v0.5.4) 미니게임 레이팅 — rated면 끝날 때 두 사람의 미니게임 레이팅이 바뀐다(랜덤 매칭만 true).
+-- rating_delta는 끝나는 순간 트리거(_minigame_on_game_end)가 채운다: {"w":{"before":1200,"after":1216},"b":{...}}.
+alter table public.pvp_games add column if not exists rated boolean not null default false;
+alter table public.pvp_games add column if not exists rating_delta jsonb;
 comment on column public.pvp_games.sans is
   '수순 토큰 배열 — game_type이 ''chess''일 때만 SAN 문자열이다. 다른 game_type이 추가되면 그 타입
    전용 인코딩을 담는 불투명한 배열로 취급할 것(하위 호환을 위해 컬럼명은 그대로 둔다).';
@@ -1692,8 +1696,9 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at)
-    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now())
+  -- (v0.5.4) 미니게임 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at, rated)
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), p_game_type <> 'chess')
     returning * into v_game;
   return v_game;
 end; $$;
@@ -2357,18 +2362,76 @@ begin
   return out;
 end; $$;
 
+-- (v0.5.4 난이도 대폭 상향, 사용자 요청) 라운드 하나를 만든다 — src/App.jsx의 knightTryGenLocal/
+-- knightGenRoundLocal과 완전히 같은 규칙. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이
+-- 되돌아가면 실제 최단 거리가 1~2수에 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을
+-- 피한 실제 최단 수(par)"를 knight_distance로 재서 라운드별 범위에 들어올 때만 채택한다.
+--   라운드 1: par 3~4, 기물 1쌍 / 2·3: par 4~5, 2쌍 / 4·5: par 5~6, 3쌍
+-- 2라운드부터는 기물이 없을 때의 최단 거리보다 par가 반드시 길어야 한다(눈에 보이는 가장 빠른 길이 위협
+-- 칸으로 막혀 돌아가거나, 상대 기물을 잡아 길을 열어야 한다). 이동 수 제한은 par+1, 제한시간 15초.
+-- 시작 칸·기물은 목표를 중심으로 점대칭이고, 백·흑 양쪽 par를 모두 재서 같을 때만 채택한다. 조건에 맞는 라운드를 400번 안에 못 찾으면(4·5라운드에서 약 7%) 한 단계 낮은 조건으로 다시 뽑는다.
+create or replace function public._knight_gen_round(p_round_idx int)
+returns jsonb language plpgsql volatile as $$
+declare
+  v_specs int[][] := array[[3,4,1,0],[4,5,2,1],[4,5,2,1],[5,6,3,1],[5,6,3,1]]; -- minDist, maxDist, pairs, detour
+  k int; v_try int; v_t int; i int;
+  v_min int; v_max int; v_pairs int; v_detour boolean;
+  v_target text; v_ws text; v_bs text; v_sq text; v_m text; v_used text[];
+  v_haz_w text[]; v_haz_b text[]; v_hazards jsonb; v_type text; v_round jsonb;
+  v_w_ill text[]; v_b_ill text[]; v_par int; v_plain int;
+begin
+  for k in reverse least(greatest(p_round_idx, 0), 4) + 1 .. 1 loop
+    v_min := v_specs[k][1]; v_max := v_specs[k][2]; v_pairs := v_specs[k][3]; v_detour := v_specs[k][4] = 1;
+    for v_try in 1..400 loop
+      v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
+      v_ws := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
+      v_bs := public.knight_reflect_sq(v_ws, v_target);
+      if v_bs is null or v_ws = v_target or substr(v_ws,2)::int > substr(v_bs,2)::int then continue; end if;
+      v_used := array[v_ws, v_bs, v_target]; v_haz_w := '{}'; v_haz_b := '{}';
+      for i in 1..v_pairs loop
+        for v_t in 1..50 loop
+          v_sq := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
+          v_m := public.knight_reflect_sq(v_sq, v_target);
+          if v_m is null or v_sq = v_m or v_sq = any(v_used) or v_m = any(v_used) then continue; end if;
+          v_used := v_used || array[v_sq, v_m]; v_haz_w := v_haz_w || v_sq; v_haz_b := v_haz_b || v_m;
+          exit;
+        end loop;
+      end loop;
+      if coalesce(array_length(v_haz_w,1),0) < v_pairs then continue; end if;
+      v_hazards := '[]'::jsonb;
+      for i in 1..v_pairs loop
+        v_type := case when random() < 0.5 then 'B' else 'R' end;
+        v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_type, 'color', 'w')
+                               || jsonb_build_object('sq', v_haz_b[i], 'type', v_type, 'color', 'b');
+      end loop;
+      v_round := jsonb_build_object('target', v_target, 'hazards', v_hazards);
+      v_w_ill := public.knight_danger(v_round, 'w', '{}');
+      v_b_ill := public.knight_danger(v_round, 'b', '{}');
+      if v_target = any(v_w_ill) or v_ws = any(v_w_ill) then continue; end if;
+      v_par := public.knight_distance(v_ws, v_target, v_w_ill || v_haz_w);
+      if v_par is null or v_par < v_min or v_par > v_max then continue; end if;
+      -- 반사점이 보드 밖인 칸 때문에 점대칭만으로는 양쪽 최단 수가 같다는 보장이 없어, 흑 쪽도 재서 같을 때만 쓴다.
+      if public.knight_distance(v_bs, v_target, v_b_ill || v_haz_b) is distinct from v_par then continue; end if;
+      if v_detour then
+        v_plain := least(public.knight_distance(v_ws, v_target, '{}'), public.knight_distance(v_bs, v_target, '{}'));
+        if v_par <= v_plain then continue; end if;
+      end if;
+      return jsonb_build_object('target', v_target, 'whiteStart', v_ws, 'blackStart', v_bs, 'hazards', v_hazards,
+        'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', 15000);
+    end loop;
+  end loop;
+  return jsonb_build_object('target', 'd4', 'whiteStart', 'a1', 'blackStart', 'g7', 'hazards', '[]'::jsonb,
+    'wIllegal', '[]'::jsonb, 'bIllegal', '[]'::jsonb, 'par', 2, 'moveBudget', 3, 'timeLimitMs', 15000);
+end; $$;
+
 -- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
 -- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
+-- 라운드 내용은 _knight_gen_round가 만든다.
 create or replace function public.knight_start_round(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_last jsonb; r jsonb;
-  v_w_wins int := 0; v_b_wins int := 0; v_round_idx int;
-  v_walk_len int; v_hazard_count int; v_time_ms constant int := 25000;
-  v_target text; v_walk text[]; v_walk_mirror text[]; v_cand1 text; v_cand2 text;
-  v_white_start text; v_black_start text; v_white_path text[]; v_black_path text[];
-  v_haz_w text[]; v_haz_b text[]; v_ok boolean; v_try int; v_piece_type text; i int;
-  v_hazards jsonb; v_w_illegal text[]; v_b_illegal text[];
+  v_w_wins int := 0; v_b_wins int := 0;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2385,88 +2448,40 @@ begin
     if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
   end loop;
   if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
-  v_round_idx := jsonb_array_length(v_rounds);
-  if v_round_idx < 2 then v_walk_len := 3; v_hazard_count := 0;
-  elsif v_round_idx < 4 then v_walk_len := 4; v_hazard_count := 1;
-  else v_walk_len := 5; v_hazard_count := 2;
-  end if;
-  -- 목표 칸을 보드 중심 쪽(파일 c~f, 랭크 3~6)에서 골라, 그 목표를 기준으로 한 점대칭 칸이 보드
-  -- 밖으로 나갈 가능성을 낮춘다. 그래도 실패(보드 밖으로 나감)할 수 있어 최대 40번 재시도한다.
-  v_ok := false;
-  for v_try in 1..40 loop
-    v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
-    v_walk := public.knight_random_walk(v_target, v_walk_len);
-    v_cand1 := v_walk[array_length(v_walk,1)];
-    v_cand2 := public.knight_reflect_sq(v_cand1, v_target);
-    if v_cand2 is null then continue; end if;
-    v_walk_mirror := array(select public.knight_reflect_sq(x, v_target) from unnest(v_walk) x);
-    if array_position(v_walk_mirror, null) is not null then continue; end if;
-    -- 백 나이트가 항상 목표보다 랭크가 낮은(=화면 아래쪽) 시작 칸을 받도록 정렬한다 — 매 라운드
-    -- 생성이 대칭이라 유불리는 없지만, 이렇게 정해 두면 클라이언트가 "자기 색이 흑이면 보드를
-    -- 180도 뒤집어 보여준다"는 표준 체스 규칙만으로 항상 "내 나이트가 내 화면 아래쪽"을 보장한다.
-    if substr(v_cand1,2)::int <= substr(v_cand2,2)::int then
-      v_white_start := v_cand1; v_white_path := v_walk; v_black_start := v_cand2; v_black_path := v_walk_mirror;
-    else
-      v_white_start := v_cand2; v_white_path := v_walk_mirror; v_black_start := v_cand1; v_black_path := v_walk;
-    end if;
-    if v_hazard_count = 0 then
-      v_haz_w := '{}'; v_haz_b := '{}';
-    else
-      -- (색 표기는 "그 기물의 색"이다 — w색 기물은 흑 나이트를, b색 기물은 백 나이트를 위협한다.)
-      -- 흑을 위협할 기물(w색)은 흑의 보장된 경로(v_black_path) 밖에서 고르되, 백 나이트의 시작
-      -- 칸(v_white_start)과도 겹치지 않게 한다 — 안 그러면 흰 기물이 흰 나이트와 같은 칸에 겹쳐
-      -- 그려진다(점대칭 상대인 v_haz_b도 자동으로 v_black_start와 안 겹치게 된다).
-      v_haz_w := public.knight_pick_blocked(v_hazard_count, v_black_path || array[v_target, v_white_start]);
-      if coalesce(array_length(v_haz_w,1),0) < v_hazard_count then continue; end if;
-      v_haz_b := array(select public.knight_reflect_sq(x, v_target) from unnest(v_haz_w) x);
-      if array_position(v_haz_b, null) is not null then continue; end if;
-    end if;
-    v_ok := true;
-    exit;
-  end loop;
-  if not v_ok then
-    -- 극히 드문 재시도 실패 폴백 — 방해물 없이(항상 풀 수 있는 라운드가 최우선) 진행한다.
-    v_target := 'd4';
-    v_white_path := public.knight_random_walk(v_target, v_walk_len);
-    v_white_start := v_white_path[array_length(v_white_path,1)];
-    v_black_start := coalesce(public.knight_reflect_sq(v_white_start, v_target), v_white_start);
-    v_haz_w := '{}'; v_haz_b := '{}';
-  end if;
-  v_hazards := '[]'::jsonb; v_w_illegal := '{}'; v_b_illegal := '{}';
-  for i in 1..coalesce(array_length(v_haz_w,1),0) loop
-    v_piece_type := case when random() < 0.5 then 'B' else 'R' end;
-    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_piece_type, 'color', 'w');
-    v_hazards := v_hazards || jsonb_build_object('sq', v_haz_b[i], 'type', v_piece_type, 'color', 'b');
-    -- (버그 수정) 목표 칸이 보드 정중앙이 아니라서, 미끄러지는 기물의 공격 범위를 그냥 보드 끝까지
-    -- 계산하면 두 위협 기물이 점대칭이어도 실제 "위협받는 칸" 집합까지는 점대칭이 아닐 수 있다(한쪽
-    -- 기물의 공격선이 보드 가장자리에 더 가까워 더 멀리 뻗어나가는 반면, 반대쪽 기물의 공격선은 그
-    -- 반사점이 보드 밖으로 나가 버리는 경우). 그 칸의 점대칭 반사점이 보드 안에 있는 칸만 위협 칸에
-    -- 포함시키면(반사가 안 되는 칸은 아예 제외) 양쪽의 위협 칸 집합이 항상 정확히 점대칭이 된다.
-    v_b_illegal := v_b_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_w[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
-    v_w_illegal := v_w_illegal || array(select s from unnest(public.knight_attacked_squares(v_haz_b[i], v_piece_type)) s where public.knight_reflect_sq(s, v_target) is not null);
-  end loop;
   -- (v0.5.3 연출 강화) startedAt을 3초 뒤로 잡는다 — 두 클라이언트가 이 시각까지 "3·2·1" 카운트다운을
   -- 보여주고 그 뒤에야 보드를 조작할 수 있게 해, 라운드 시작 순간을 양쪽이 같은 서버 시각으로 맞춘다.
-  v_rounds := v_rounds || jsonb_build_object(
-    'target', v_target, 'whiteStart', v_white_start, 'blackStart', v_black_start,
-    'hazards', v_hazards, 'wIllegal', to_jsonb(v_w_illegal), 'bIllegal', to_jsonb(v_b_illegal),
-    'moveBudget', array_length(v_white_path,1) - 1 + 2, 'timeLimitMs', v_time_ms, 'startedAt', now() + interval '3 seconds',
-    -- (v0.5.0 기능, 사용자 요청) positions — 각자 "지금 나이트가 어디 있는지"를 담아 두면, 상대
-    -- 클라이언트가 이 값을 realtime으로 받아 같은 보드 위에서 나이트가 실제로 움직이는 모습을
-    -- 그 자리에서 보여줄 수 있다(knight_move_ping이 매 수마다 갱신). reports와 달리 이동 하나하나를
-    -- 검증하지 않는 순수 표시용 값이라(신뢰 모델은 위 설명과 동일), 최종 판정(knight_resolve_round)은
-    -- 여전히 reports만 본다.
+  -- positions — 각자 "지금 나이트가 어디 있는지"(knight_move_ping이 매 수마다 갱신, 판정과 무관한 표시용).
+  v_rounds := v_rounds || (public._knight_gen_round(jsonb_array_length(v_rounds)) || jsonb_build_object(
+    'startedAt', now() + interval '3 seconds',
     'positions', jsonb_build_object('w', null, 'b', null),
     'reports', jsonb_build_object('w', null, 'b', null), 'winner', null, 'resolvedAt', null
-  );
+  ));
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
 grant execute on function public.knight_start_round(bigint) to authenticated;
 
--- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과) 라운드당 한 번만 허용한다(이미 보고했으면
+-- (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 이제 "못 가는 칸"을 만드는 벽이 아니다 — 나이트가 상대
+-- 기물 칸에 도달하면 그 기물을 잡아 없애고(그 기물이 지배하던 칸도 함께 안전해진다), 상대 기물이
+-- 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다(p_captured). 자기 색 기물 칸에는
+-- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다 —
+-- knight_start_round의 wIllegal/bIllegal과 같은 공식(점대칭 반사점이 보드 안인 칸만).
+create or replace function public.knight_danger(p_round jsonb, p_color text, p_taken text[])
+returns text[] language sql immutable as $$
+  select coalesce(array_agg(distinct a), '{}')
+  from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h,
+       unnest(public.knight_attacked_squares(h ->> 'sq', h ->> 'type')) a
+  where h ->> 'color' <> p_color
+    and not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
+    and public.knight_reflect_sq(a, p_round ->> 'target') is not null;
+$$;
+
+-- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과·잡힘) 라운드당 한 번만 허용한다(이미 보고했으면
 -- 조용히 무시). 실제 이동 수순 자체는 검증하지 않고(신뢰 모델은 위 설명 참고) 요약만 기록한다.
-create or replace function public.knight_report(p_game_id bigint, p_round int, p_reached boolean, p_moves_used int, p_final_sq text)
+-- (v0.5.4) p_captured(내 나이트가 잡혔는지)·p_taken(내가 잡은 상대 기물 칸) 추가 — 인자가 바뀌어
+-- 옛 5인자 판을 지운다(남겨 두면 PostgREST가 두 판 중 무엇을 부를지 모호해진다).
+drop function if exists public.knight_report(bigint, int, boolean, int, text);
+create or replace function public.knight_report(p_game_id bigint, p_round int, p_reached boolean, p_moves_used int, p_final_sq text, p_captured boolean default false, p_taken text[] default '{}')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_reports jsonb; v_mine jsonb;
@@ -2484,20 +2499,23 @@ begin
   v_mine := v_reports -> v_mycolor;
   if v_mine is not null and jsonb_typeof(v_mine) <> 'null' then return v_game; end if; -- 이미 보고함
   v_reports := jsonb_set(v_reports, array[v_mycolor], jsonb_build_object(
-    'reached', coalesce(p_reached, false), 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'finalSq', p_final_sq, 'at', now()
+    'reached', coalesce(p_reached, false) and not coalesce(p_captured, false), 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'finalSq', p_final_sq,
+    'captured', coalesce(p_captured, false), 'taken', to_jsonb(coalesce(p_taken, '{}')), 'at', now()
   ));
   v_round := jsonb_set(v_round, array['reports'], v_reports);
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.knight_report(bigint, int, boolean, int, text) to authenticated;
+grant execute on function public.knight_report(bigint, int, boolean, int, text, boolean, text[]) to authenticated;
 
 -- (v0.5.0 기능, 사용자 요청) 내 나이트 위치 실시간 중계 — 이동할 때마다(knight_report와 별개로) 호출해
 -- positions.<내색>만 갱신한다. 판정에는 전혀 관여하지 않는 순수 표시용이라(지금 위치를 검증 없이
 -- 그대로 믿고 상대 화면에 보여주기만 한다) 이미 라운드가 끝났거나 이미 보고를 마쳤어도 조용히
 -- 무시하면 그만이라 knight_report처럼 엄격한 "한 번만" 가드가 필요 없다 — 그냥 최신 위치로 덮어쓴다.
-create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int)
+-- (v0.5.4) p_taken — 지금까지 잡은 상대 기물 칸도 함께 알려, 상대 화면에서도 그 기물이 사라지게 한다.
+drop function if exists public.knight_move_ping(bigint, int, text, int);
+create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int, p_taken text[] default '{}')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text;
@@ -2514,16 +2532,16 @@ begin
   if v_round -> 'positions' is null or jsonb_typeof(v_round -> 'positions') <> 'object' then
     v_round := jsonb_set(v_round, array['positions'], jsonb_build_object('w', null, 'b', null));
   end if;
-  v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'at', now()));
+  v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'taken', to_jsonb(coalesce(p_taken, '{}')), 'at', now()));
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.knight_move_ping(bigint, int, text, int) to authenticated;
+grant execute on function public.knight_move_ping(bigint, int, text, int, text[]) to authenticated;
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
--- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 서버가
--- 기록한 보고 시각이 빠른 쪽, 둘 다 도달 못 했으면 거리→남은 수→남은 시간 순 타이브레이커로 정한다.
+-- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 더 적은 수,
+-- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 거리→남은 수→남은 시간 순 타이브레이커로 정한다.
 -- 이 라운드 결과로 한쪽이 3승(Bo5)에 닿거나 5라운드를 다 치렀으면 매치 결과도 함께 확정한다.
 create or replace function public.knight_resolve_round(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
@@ -2558,10 +2576,19 @@ begin
   elsif v_w_reached and not v_b_reached then v_winner := 'w';
   elsif v_b_reached and not v_w_reached then v_winner := 'b';
   elsif v_w_reached and v_b_reached then
-    v_winner := case when (v_wrep->>'at')::timestamptz <= (v_brep->>'at')::timestamptz then 'w' else 'b' end;
+    -- (v0.5.4, 사용자 요청) 둘 다 도착했으면 더 적은 수, 수가 같으면 서버가 기록한 도착(보고) 시각이 빠른 쪽.
+    if (v_wrep->>'movesUsed')::int <> (v_brep->>'movesUsed')::int then
+      v_winner := case when (v_wrep->>'movesUsed')::int < (v_brep->>'movesUsed')::int then 'w' else 'b' end;
+    else
+      v_winner := case when (v_wrep->>'at')::timestamptz = (v_brep->>'at')::timestamptz then 'draw'
+        when (v_wrep->>'at')::timestamptz < (v_brep->>'at')::timestamptz then 'w' else 'b' end;
+    end if;
   else
-    v_w_dist := coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'wIllegal'))), 99);
-    v_b_dist := coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target', array(select jsonb_array_elements_text(v_round->'bIllegal'))), 99);
+    -- (v0.5.4) 잡힌 나이트는 가장 먼 것으로 친다. 거리는 내가 잡은 기물을 뺀 남은 위협 칸을 피해 잰다.
+    v_w_dist := case when coalesce((v_wrep->>'captured')::boolean, false) then 99 else coalesce(public.knight_distance(v_wrep->>'finalSq', v_round->>'target',
+      public.knight_danger(v_round, 'w', array(select jsonb_array_elements_text(coalesce(v_wrep->'taken', '[]'::jsonb))))), 99) end;
+    v_b_dist := case when coalesce((v_brep->>'captured')::boolean, false) then 99 else coalesce(public.knight_distance(v_brep->>'finalSq', v_round->>'target',
+      public.knight_danger(v_round, 'b', array(select jsonb_array_elements_text(coalesce(v_brep->'taken', '[]'::jsonb))))), 99) end;
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
     else
@@ -2673,7 +2700,11 @@ end; $$;
 grant execute on function public.rush_ping(bigint, int, int) to authenticated;
 
 -- 결과 보고 — 라운드당 한 번(풀었을 때 또는 시간 초과·포기 시).
-create or replace function public.rush_report(p_game_id bigint, p_round int, p_solved boolean, p_moves int)
+-- (v0.5.4 규칙 변경, 사용자 요청) 주인공 룩이 상대 기물이 지배하는 칸에 들어가 잡히면 그 수를 되돌리지 않고
+-- 그 즉시 라운드 시도가 끝난다 — p_captured로 "잡혀서 끝났는지"를 함께 남겨 정산 화면에 보여준다(판정은
+-- 못 푼 것과 같다). 인자가 바뀌어 옛 4인자 판을 지운다(PostgREST 오버로드 모호성 방지).
+drop function if exists public.rush_report(bigint, int, boolean, int);
+create or replace function public.rush_report(p_game_id bigint, p_round int, p_solved boolean, p_moves int, p_captured boolean default false)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_mine jsonb;
 begin
@@ -2692,12 +2723,13 @@ begin
   if coalesce(p_solved, false) and (v_round ->> 'startedAt')::timestamptz + (((v_round ->> 'timeLimitMs')::int + 2000) || ' ms')::interval < now() then
     p_solved := false;
   end if;
-  v_round := jsonb_set(v_round, array['reports', v_mycolor], jsonb_build_object('solved', coalesce(p_solved, false), 'moves', greatest(0, coalesce(p_moves, 0)), 'at', now()));
+  v_round := jsonb_set(v_round, array['reports', v_mycolor], jsonb_build_object('solved', coalesce(p_solved, false) and not coalesce(p_captured, false), 'moves', greatest(0, coalesce(p_moves, 0)),
+    'captured', coalesce(p_captured, false), 'at', now()));
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
-grant execute on function public.rush_report(bigint, int, boolean, int) to authenticated;
+grant execute on function public.rush_report(bigint, int, boolean, int, boolean) to authenticated;
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초)이 지났을 때만. 2선승 또는 3라운드 종료 시 매치 확정.
 create or replace function public.rush_resolve_round(p_game_id bigint)
@@ -2949,6 +2981,151 @@ end; $$;
 grant execute on function public.attack_forfeit(bigint) to authenticated;
 
 -- ============================================================================
+-- (v0.5.4) 미니게임 전적·레이팅·랭킹
+-- ============================================================================
+-- 게임(coord/knight/rush/attack)마다 한 사람당 한 행. 실시간 대전(pvp_games)이 끝나는 순간 아래
+-- 트리거가 두 사람의 전적(승·패·무·연승)을 올리고, 랜덤 매칭(rated)이면 Elo 레이팅도 바꾼다 —
+-- coord_finish·knight_resolve_round·rush_resolve_round·attack_finish·*_forfeit 등 대전을 끝내는
+-- 경로가 여럿이라, 각 RPC를 고치는 대신 "status가 active에서 결과로 바뀌는 순간" 하나에 건다.
+-- aborted(좀비 정리)는 결과가 아니므로 세지 않는다.
+-- 혼자 플레이하기 최고 기록(best_*)도 같은 행에 둔다 — 높을수록 좋은 점수 하나(best_score)로 줄세우고,
+-- 화면에 보여줄 원래 형태는 best_detail에 둔다(나이트 경주: {"reached":4,"ms":38200}).
+-- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
+create table if not exists public.minigame_stats (
+  uid uuid not null references auth.users(id) on delete cascade,
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack')),
+  rating int not null default 1200,
+  peak_rating int not null default 1200,
+  rated_games int not null default 0,
+  games int not null default 0,
+  wins int not null default 0,
+  losses int not null default 0,
+  draws int not null default 0,
+  streak int not null default 0,
+  best_streak int not null default 0,
+  best_score numeric,
+  best_detail jsonb,
+  best_at timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (uid, game)
+);
+create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
+create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
+alter table public.minigame_stats enable row level security;
+drop policy if exists "minigame stats select all" on public.minigame_stats;
+create policy "minigame stats select all" on public.minigame_stats for select using (true);
+grant select on public.minigame_stats to anon, authenticated;
+
+-- Elo — 처음 20판은 K=40으로 빨리 제자리를 찾고, 그 뒤로는 K=24. 레이팅은 100 아래로 내려가지 않는다.
+create or replace function public._minigame_elo(p_me int, p_opp int, p_score numeric, p_rated_games int)
+returns int language sql immutable as $$
+  select greatest(100, p_me + round((case when p_rated_games < 20 then 40 else 24 end)
+    * (p_score - 1.0 / (1.0 + power(10.0, (p_opp - p_me) / 400.0))))::int);
+$$;
+
+create or replace function public._minigame_on_game_end()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  w public.minigame_stats; b public.minigame_stats;
+  v_ws numeric; v_wr int; v_br int;
+begin
+  insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
+    on conflict (uid, game) do nothing;
+  select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
+  select * into b from public.minigame_stats where uid = new.black_uid and game = new.game_type for update;
+  v_ws := case new.status when 'white_won' then 1 when 'black_won' then 0 else 0.5 end;
+  v_wr := w.rating; v_br := b.rating;
+  if new.rated then
+    v_wr := public._minigame_elo(w.rating, b.rating, v_ws, w.rated_games);
+    v_br := public._minigame_elo(b.rating, w.rating, 1 - v_ws, b.rated_games);
+    new.rating_delta := jsonb_build_object(
+      'w', jsonb_build_object('before', w.rating, 'after', v_wr),
+      'b', jsonb_build_object('before', b.rating, 'after', v_br));
+  end if;
+  update public.minigame_stats set
+    rating = v_wr, peak_rating = greatest(peak_rating, v_wr),
+    rated_games = rated_games + (case when new.rated then 1 else 0 end),
+    games = games + 1,
+    wins = wins + (case when v_ws = 1 then 1 else 0 end),
+    losses = losses + (case when v_ws = 0 then 1 else 0 end),
+    draws = draws + (case when v_ws = 0.5 then 1 else 0 end),
+    streak = case when v_ws = 1 then streak + 1 else 0 end,
+    best_streak = greatest(best_streak, case when v_ws = 1 then streak + 1 else 0 end),
+    updated_at = now()
+  where uid = new.white_uid and game = new.game_type;
+  update public.minigame_stats set
+    rating = v_br, peak_rating = greatest(peak_rating, v_br),
+    rated_games = rated_games + (case when new.rated then 1 else 0 end),
+    games = games + 1,
+    wins = wins + (case when v_ws = 0 then 1 else 0 end),
+    losses = losses + (case when v_ws = 1 then 1 else 0 end),
+    draws = draws + (case when v_ws = 0.5 then 1 else 0 end),
+    streak = case when v_ws = 0 then streak + 1 else 0 end,
+    best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
+    updated_at = now()
+  where uid = new.black_uid and game = new.game_type;
+  return new;
+end; $$;
+-- BEFORE 트리거라 rating_delta를 같은 update 안에서 채운다 — 대전 화면이 구독 중인 그 한 번의 실시간
+-- 변경에 결과와 레이팅 변화가 함께 실려 온다(두 번째 update·재귀 트리거 없음).
+drop trigger if exists minigame_game_end_trigger on public.pvp_games;
+create trigger minigame_game_end_trigger
+  before update of status on public.pvp_games
+  for each row
+  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack'))
+  execute function public._minigame_on_game_end();
+
+-- 혼자 플레이하기 기록 제출 — 이전 기록보다 좋을 때만 바꾸고, 바뀌었는지 돌려준다. 클라이언트가 계산한
+-- 점수라 완전한 검증은 불가능하므로, 게임 규칙상 나올 수 없는 값만 막는다(좌표 30초 150개·나이트 5회
+-- 도달·러시아워 전체 별 수·공격 모드 3분 120회).
+create or replace function public.minigame_submit_best(p_game text, p_score numeric, p_detail jsonb default null)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_prev numeric;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_game not in ('coord', 'knight', 'rush', 'attack') then raise exception 'bad game'; end if;
+  if p_score is null or p_score <= 0 then return false; end if;
+  if (p_game = 'coord' and p_score > 150) or (p_game = 'attack' and p_score > 120) or (p_game = 'rush' and p_score > 300)
+     or (p_game = 'knight' and p_score > 5000000) then raise exception 'score out of range'; end if;
+  insert into public.minigame_stats(uid, game) values (v_me, p_game) on conflict (uid, game) do nothing;
+  select best_score into v_prev from public.minigame_stats where uid = v_me and game = p_game for update;
+  if v_prev is not null and v_prev >= p_score then return false; end if;
+  update public.minigame_stats set best_score = p_score, best_detail = p_detail, best_at = now(), updated_at = now()
+    where uid = v_me and game = p_game;
+  return true;
+end; $$;
+grant execute on function public.minigame_submit_best(text, numeric, jsonb) to authenticated;
+
+-- 랭킹 — p_kind: 'rating'(레이팅 대전 3판 이상) | 'best'(혼자 플레이 최고 기록), p_scope: 'all' | 'friends'
+-- (나 + 수락된 친구). 상위 p_limit명과, 그 안에 내가 없으면 내 행을 하나 더 붙여 돌려준다(is_me).
+-- 같은 점수는 먼저 달성한 사람이 앞선다.
+create or replace function public.minigame_leaderboard(p_game text, p_kind text default 'rating', p_scope text default 'all', p_limit int default 50)
+returns table (rank bigint, uid uuid, username text, pub jsonb, rating int, rated_games int, wins int, losses int, draws int, best_score numeric, best_detail jsonb, is_me boolean)
+language sql stable security definer set search_path = public as $$
+  with pool as (
+    select s.* from public.minigame_stats s
+    where s.game = p_game
+      and (case when p_kind = 'best' then s.best_score is not null else s.rated_games >= 3 end)
+      and (p_scope <> 'friends' or s.uid = auth.uid() or s.uid in (
+        select case when e.from_uid = auth.uid() then e.to_uid else e.from_uid end
+        from public.friend_edges e
+        where e.status = 'accepted' and (e.from_uid = auth.uid() or e.to_uid = auth.uid())))
+  ), ranked as (
+    select row_number() over (order by
+        case when p_kind = 'best' then p.best_score else p.rating end desc,
+        case when p_kind = 'best' then p.best_at else p.updated_at end asc) as rank, p.*
+    from pool p
+  )
+  select r.rank, r.uid, pr.username,
+    jsonb_build_object('nickname', pr.pub -> 'nickname', 'photo', pr.pub -> 'photo', 'displayId', pr.pub -> 'displayId', 'xp', pr.pub -> 'xp'),
+    r.rating, r.rated_games, r.wins, r.losses, r.draws, r.best_score, r.best_detail, r.uid = auth.uid()
+  from ranked r join public.profiles pr on pr.id = r.uid
+  where r.rank <= least(greatest(p_limit, 1), 100) or r.uid = auth.uid()
+  order by r.rank;
+$$;
+grant execute on function public.minigame_leaderboard(text, text, text, int) to anon, authenticated;
+
+-- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
 -- ============================================================================
 -- Apple/Facebook 로그인 자체는 Supabase 대시보드 설정(Authentication → Providers)만으로 동작한다 —
@@ -3061,46 +3238,92 @@ grant select on public.daily_puzzle_picks to anon, authenticated;
 -- "그 퍼즐의 지금 creator_uid에게 아직 이 알림이 없으면" 되짚어 보내도록 해, 매일 밤(또는 개발자가
 -- 즉시 실행할 때마다) 놓친 알림이 있으면 스스로 복구한다(같은 퍼즐·같은 kind로 이미 알림이 있으면
 -- 다시 만들지 않아 중복 알림 걱정은 없다).
-create or replace function public.daily_puzzle_pick_run()
-returns void language plpgsql security definer set search_path = public as $$
-declare v_date date; v_no bigint; v_score numeric; v_creator uuid; v_rows int;
+-- (v0.5.4 버그 수정, 사용자 제보 "일일 퍼즐이 안 뜬다") 후보를 puzzle_popularity_all()과 inner join하고
+-- 있었는데, 그 함수는 좋아요·리포스트·공유가 한 번이라도 있는 퍼즐만 돌려준다. 게다가 한 번 뽑힌 퍼즐은
+-- 다시 뽑지 않으므로, 반응이 있는 공개 퍼즐이 전부 한 번씩 뽑히고 나면 후보가 0개가 되어 그날부터 선정
+-- 자체가 조용히 멈췄다(v_no is null → return — daily_puzzle_picks에 그 날짜 행이 아예 안 생겨 클라이언트는
+-- "아직 미배정"으로만 본다). 이제 ① 반응이 없는 공개 퍼즐도 점수 0으로 후보에 넣고(left join) ② 그래도
+-- 모든 공개 퍼즐이 이미 한 번씩 뽑혔으면 가장 오래전에 뽑혔던 퍼즐부터 다시 쓴다. 또 선정된 퍼즐이 나중에
+-- 삭제돼 puzzle_no가 null이 된(on delete set null) 날짜도 다시 뽑는다. 뽑는 로직은 _daily_puzzle_pick_for
+-- 하나로 모아, 밤 스케줄(내일 몫)과 아래 daily_puzzle_pick_ensure_today(오늘 몫 자가 복구)가 함께 쓴다.
+create or replace function public._daily_puzzle_pick_for(p_date date)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_no bigint; v_score numeric; v_creator uuid; v_exists boolean;
   v_reward constant int := 30; -- (사용자 요청) 오늘의 퍼즐로 선정된 제작자에게 지급하는 OC 나이트 코인 보상
 begin
-  if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
-  v_date := ((now() at time zone 'Asia/Seoul')::date + 1);
-  select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date;
+  select true, puzzle_no into v_exists, v_no from public.daily_puzzle_picks where date = p_date;
   if v_no is null then
-    select p.no, s.score into v_no, v_score
+    -- ① 아직 한 번도 안 뽑힌 공개 퍼즐 중 인기 점수가 가장 높은 것(반응이 없으면 0점 — 같은 점수면 번호순)
+    select p.no, coalesce(s.score, 0) into v_no, v_score
     from public.puzzles p
-    join public.puzzle_popularity_all() s on s.no = p.no
+    left join public.puzzle_popularity_all() s on s.no = p.no
     where p.is_public
       and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
-      and p.no not in (select puzzle_no from public.daily_puzzle_picks where puzzle_no is not null)
-    order by s.score desc, p.no asc
+      and not exists (select 1 from public.daily_puzzle_picks d where d.puzzle_no = p.no)
+    order by coalesce(s.score, 0) desc, p.no asc
     limit 1;
-    if v_no is null then return; end if;
-    insert into public.daily_puzzle_picks(date, puzzle_no, score) values (v_date, v_no, v_score)
-    on conflict (date) do nothing;
-    get diagnostics v_rows = row_count; -- 동시 실행 등으로 이미 다른 확정이 먼저 반영됐으면(0) 그 확정된 값을 대신 읽는다
-    if v_rows = 0 then select puzzle_no into v_no from public.daily_puzzle_picks where date = v_date; end if;
+    -- ② 모든 공개 퍼즐이 이미 한 번씩 뽑혔으면 — 가장 오래전(마지막 선정일이 가장 이른) 퍼즐을 다시 쓴다.
+    if v_no is null then
+      select p.no, coalesce(s.score, 0) into v_no, v_score
+      from public.puzzles p
+      join (select puzzle_no, max(date) as last_date from public.daily_puzzle_picks where puzzle_no is not null group by puzzle_no) d on d.puzzle_no = p.no
+      left join public.puzzle_popularity_all() s on s.no = p.no
+      where p.is_public
+        and jsonb_typeof(p.data -> 'lines') = 'array' and jsonb_array_length(p.data -> 'lines') > 0
+      order by d.last_date asc, coalesce(s.score, 0) desc, p.no asc
+      limit 1;
+    end if;
+    if v_no is null then return null; end if; -- 공개 퍼즐이 정말 하나도 없음
+    if coalesce(v_exists, false) then
+      -- 선정됐던 퍼즐이 삭제돼 비어 있던 날짜 — 다시 채운다(동시에 다른 호출이 먼저 채웠으면 그 값을 쓴다).
+      update public.daily_puzzle_picks set puzzle_no = v_no, score = v_score, picked_at = now() where date = p_date and puzzle_no is null;
+    else
+      insert into public.daily_puzzle_picks(date, puzzle_no, score) values (p_date, v_no, v_score) on conflict (date) do nothing;
+    end if;
+    select puzzle_no into v_no from public.daily_puzzle_picks where date = p_date; -- 동시 실행으로 먼저 확정된 값이 있으면 그걸 따른다
   end if;
-  if v_no is null then return; end if;
+  if v_no is null then return null; end if;
   -- (사용자 요청) 선정된 퍼즐의 제작자에게 알림 + 보상을 준다 — 이 함수가 SECURITY DEFINER(테이블
   -- 소유자 권한)로 실행되므로 notifications의 "notif insert auth" RLS(본인 관련 kind만 클라이언트가
   -- 직접 insert 가능)를 그대로 우회해 다른 사람(제작자)에게도 알림을 만들 수 있다 — puzzle_delete 등
   -- 다른 SECURITY DEFINER 함수들과 같은 패턴. claimed:false로 시작해, 클라이언트의 "받기" 버튼을
   -- 눌러야 보상이 지급된 것으로 표시된다(실제 코인 지급 자체는 이 앱의 다른 보상과 동일하게
   -- 클라이언트 progress에 반영 — user_progress 전체가 이미 클라이언트 신뢰 구조임, 20번 섹션 참고).
+  -- 같은 퍼즐이 ②로 다시 뽑혀도 같은 no·kind의 알림이 이미 있으면 다시 만들지 않는다(보상 중복 방지).
   select creator_uid into v_creator from public.puzzles where no = v_no;
   if v_creator is not null and not exists (
     select 1 from public.notifications
     where to_uid = v_creator and kind = 'daily_puzzle_selected' and (payload ->> 'no')::bigint = v_no
   ) then
     insert into public.notifications(to_uid, kind, payload)
-    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', v_date, 'reward', v_reward, 'claimed', false));
+    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', p_date, 'reward', v_reward, 'claimed', false));
   end if;
+  return v_no;
+end; $$;
+revoke all on function public._daily_puzzle_pick_for(date) from public, anon, authenticated;
+
+-- 매일 밤 KST 23:50에 다음 날짜(KST 기준) 몫을 확정한다(pg_cron). 개발자/공동개발자는 설정 탭 패널에서
+-- 테스트를 위해 직접 호출할 수 있고, 그 외 로그인 유저는 호출할 수 없다 — pg_cron은 postgres 소유자
+-- 권한으로 실행돼 auth.uid()가 null이라 이 검사에 걸리지 않는다. 이미 확정된 날짜라도 그 퍼즐 제작자에게
+-- 알림이 아직 없으면 되짚어 보낸다(creator_uid가 나중에 채워지는 경우의 놓친 알림 자가 복구).
+create or replace function public.daily_puzzle_pick_run()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and not public.is_content_editor(auth.uid()) then raise exception 'not_authorized'; end if;
+  perform public._daily_puzzle_pick_for((now() at time zone 'Asia/Seoul')::date + 1);
 end; $$;
 grant execute on function public.daily_puzzle_pick_run() to authenticated;
+
+-- (v0.5.4 버그 수정) 오늘(KST) 몫 자가 복구 — pg_cron이 꺼져 있거나 밤 실행이 실패해(또는 위 후보 소진
+-- 버그로) 오늘 날짜 행이 없으면, 퍼즐 탭을 연 첫 사람의 호출로 그 자리에서 오늘 몫을 확정한다. 오늘
+-- 날짜만 다룰 수 있고 이미 확정돼 있으면 그 값을 그대로 돌려주기만 하므로, 누가 불러도 결과는 밤 스케줄과
+-- 같은 규칙의 한 번뿐인 확정이다.
+create or replace function public.daily_puzzle_pick_ensure_today()
+returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  return public._daily_puzzle_pick_for((now() at time zone 'Asia/Seoul')::date);
+end; $$;
+grant execute on function public.daily_puzzle_pick_ensure_today() to anon, authenticated;
 
 -- ============================================================================
 -- N+7) PvP 관전 모드 (신규 기능, 사용자 요청) — 진행 중인(친구의) 실시간 대국을 참가자가 아닌
