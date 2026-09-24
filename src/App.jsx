@@ -9404,7 +9404,9 @@ function mgFenBoard(fen) {
 // 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨을 그대로 쓴다. rows×cols와 전역 좌표 오프셋(rowOffset·colOffset,
 // 위에서 아래·왼쪽에서 오른쪽)을 받아, 조각끼리 이어 붙이거나 8×8의 일부를 잘라도 체크 무늬가 실제 보드와 같다.
 // 테두리 없이 그려, 버튼 윤곽(clip-path)이 그대로 보드의 가장자리가 된다.
-function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceAt, overlayAt, children }) {
+// roundCorners: 이 조각의 네 귀퉁이 중 버튼의 둥근 모서리에 붙는 쪽({ tl, tr, bl, br }) — 그 귀퉁이 칸의 기물은
+// 둥근 모서리에 잘리지 않도록 모서리 반대쪽으로 살짝 옮기고 줄인다(예: 러시아워 보드 오른쪽 위 e8의 흑 킹).
+function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceAt, overlayAt, roundCorners, children }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const cells = [];
@@ -9413,10 +9415,13 @@ function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceA
     const light = (gr + gc) % 2 === 0;
     const pc = pieceAt && pieceAt(gr, gc);
     const ov = overlayAt && overlayAt(gr, gc);
+    const rc = roundCorners || {};
+    const corner = r === 0 && c === 0 ? rc.tl && [1, 1] : r === 0 && c === cols - 1 ? rc.tr && [-1, 1] : r === rows - 1 && c === 0 ? rc.bl && [1, -1] : r === rows - 1 && c === cols - 1 ? rc.br && [-1, -1] : null;
+    const nudge = corner ? { transform: "translate(" + corner[0] * 9 + "%," + corner[1] * 9 + "%) scale(.86)" } : null;
     cells.push(
       <div key={r + "-" + c} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", ...boardSquareBg(sk, light, gr, gc) }}>
         {ov}
-        {pc && <PieceGlyph type={pc[1]} color={pc[0]} size={cellPx * 0.8} style={{ position: "relative", zIndex: 2 }} />}
+        {pc && <PieceGlyph type={pc[1]} color={pc[0]} size={cellPx * 0.8} style={{ position: "relative", zIndex: 2, ...nudge }} />}
       </div>
     );
   }
@@ -9523,24 +9528,24 @@ function MinigameHubBoard({ stats, onPick }) {
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", clipPath: clip, WebkitClipPath: clip }}>
         {/* 위쪽 체스보드 띠 — 두 버튼에 걸쳐 체크 무늬가 이어진다. 조준경(좌표 인지 게임)·나이트(나이트 레이스). */}
         <div style={box(-MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell}
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}
             overlayAt={(r, c) => (r === 1 && c === 2 ? (
               <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(22,181,166,.42)", boxShadow: "inset 0 0 0 2px " + T.brilliant, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Target size={Math.max(12, stripCell * 0.66)} color="#fff" strokeWidth={2.4} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.5))" }} />
               </span>) : null)} />
         </div>
         <div style={box(50 + MG_GAP / 2 - MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} pieceAt={(r, c) => (r === 3 && c === 9 ? "bN" : null)} />
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }} pieceAt={(r, c) => (r === 3 && c === 9 ? "bN" : null)} />
         </div>
         {/* 무한 체크메이트 게임 — 실전 1수 메이트(Qg7#)의 e–h 파일 */}
         <div style={box(-MG_BLEED, cropY, mgCropW(MG_MATE_FILES), cropH)}>
-          <MgBoardPiece rows={8} cols={MG_MATE_FILES[1] - MG_MATE_FILES[0] + 1} colOffset={MG_MATE_FILES[0]} cellPx={cropCell} pieceAt={at8(mate.board)} overlayAt={redSq(mate.king)}>
+          <MgBoardPiece rows={8} cols={MG_MATE_FILES[1] - MG_MATE_FILES[0] + 1} roundCorners={{ tl: true, bl: true }} colOffset={MG_MATE_FILES[0]} cellPx={cropCell} pieceAt={at8(mate.board)} overlayAt={redSq(mate.king)}>
             <MgArrows win={mateWin} paths={[{ squares: ["h6", "g7"], kind: "green" }]} />
           </MgBoardPiece>
         </div>
         {/* 백랭크 러시아워 — 레벨 h1: 나이트가 비킨 뒤 주인공 룩이 a2→a1→d1→d5→a5→a8로 꺾어 올라가 백랭크 메이트 */}
         <div style={box(100 + MG_BLEED - mgCropW(MG_RUSH_FILES), cropY, mgCropW(MG_RUSH_FILES), cropH)}>
-          <MgBoardPiece rows={8} cols={MG_RUSH_FILES[1] - MG_RUSH_FILES[0] + 1} colOffset={MG_RUSH_FILES[0]} cellPx={cropCell} pieceAt={at8(rush.board)}
+          <MgBoardPiece rows={8} cols={MG_RUSH_FILES[1] - MG_RUSH_FILES[0] + 1} roundCorners={{ tr: true, br: true }} colOffset={MG_RUSH_FILES[0]} cellPx={cropCell} pieceAt={at8(rush.board)}
             overlayAt={(r, c) => {
               const i = (7 - r) * 8 + c;
               if (i === rush.king) return redSq(rush.king)(r, c);
