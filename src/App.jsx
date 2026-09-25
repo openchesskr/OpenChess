@@ -9009,7 +9009,7 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
         <OrbitingQualityIcons size={288} />
         <motion.div
           animate={{ y: [0, -6, 0] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-          style={{ position: "absolute", inset: 108, borderRadius: "50%", background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 22px -6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.08)", zIndex: 200 }}
+          style={{ position: "absolute", inset: 108, borderRadius: "50%", background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 22px -6px rgba(0,0,0,.6), inset 0 1px 2px rgba(255,255,255,.55)", zIndex: 200 }}
         >
           {isInvite ? (
             opponent && opponent.photo ? <img src={opponent.photo} alt="" style={{ width: 74, height: 74, borderRadius: "50%", objectFit: "cover" }} />
@@ -9017,12 +9017,12 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
           ) : <PieceGlyph type="N" color="w" size={58} />}
         </motion.div>
       </div>
-      <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 5, textAlign: "center" }}>
+      <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 5, textAlign: "center" }}>
         {isInvite ? "@" + oppName + "님의 응답을 기다리는 중" : "상대를 찾는 중"}
       </div>
-      {timeControlLabel && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 14 }}>{timeControlLabel}</div>}
+      {timeControlLabel && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 14 }}>{timeControlLabel}</div>}
       <div style={{ fontSize: 22, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".02em", marginBottom: 22 }}>{fmtClock(elapsed * 1000)}</div>
-      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
     </motion.div>
   );
 }
@@ -9219,6 +9219,8 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile 
   );
 }
 // ============================================================ 스페셜 미니게임 플랫폼 ============================================================
+// (v0.5.5) 미니게임 화면을 크림색 계열로 밝게 바꾸면서, 옅은 금색(T.brassHi) 글자·아이콘은 밝은 배경에서 잘 안 보여 진한 금색을 쓴다.
+const MG_GOLD = "#A97A2C";
 // (v0.5.0 기능, 사용자 설계) 플레이 페이지 "스페셜" 토글 — 체스보드 위 오리지널 미니게임들을 모아
 // 보여주는 자리. 사용자가 설계한 4개 미니게임은 전부 실시간 PvP라 "최고 기록·점수 보상" 같은 단일
 // 플레이 개념이 없다 — 매칭·대전·종료·헤더를 게임 컴포넌트가 전부 직접 그린다(체스 PvP와 같은
@@ -9249,10 +9251,10 @@ const PLAY_SPECIAL_GAMES = [
 // 스크롤을 허용한다.
 function MinigameScreen({ title, onBack, children, noScroll }) {
   return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
       <div className="flex items-center justify-between" style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px" }}>
-        <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.ivoryHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi, textAlign: "center", flex: 1 }}>{title}</div>
+        <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{title}</div>
         <span style={{ width: 32, flexShrink: 0 }} />
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: "0 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
@@ -9376,11 +9378,11 @@ const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스",
 // 버튼 글자 자리 — 보드 반대편(가운데 가로선 쪽)에 둔다: 위 버튼은 보드 아래, 아래 버튼은 보드 위. 육각형 홈을
 // 피하도록 왼쪽 버튼은 왼쪽 정렬, 오른쪽 버튼은 오른쪽 정렬(x는 정렬한 쪽 끝, top은 viewBox 좌표).
 const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED;            // 버튼 안에 보이는 보드 높이
-const MG_LABEL_UP_TOP = MG_STRIP_H + 2.6, MG_LABEL_DN_TOP = 50 + MG_GAP / 2 + MG_PAD;
+const MG_LABEL_UP_TOP = MG_STRIP_H + 2.4, MG_LABEL_DN_TOP = 50 + MG_GAP / 2 + 2.2;
 const MG_LABELS = [
   { gameType: "coord", lines: ["좌표 인지", "게임"], x: MG_PAD + 1, top: MG_LABEL_UP_TOP },
   { gameType: "knight", lines: ["나이트", "레이스"], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true },
-  { gameType: "attack", lines: ["무한 체크메이트", "게임"], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
+  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
   { gameType: "rush", lines: ["백랭크", "러시아워"], x: 100 - MG_PAD - 1, top: MG_LABEL_DN_TOP, right: true },
 ];
 // 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨을 그대로 쓴다. rows×cols와 전역 좌표 오프셋(rowOffset·colOffset,
@@ -9446,6 +9448,30 @@ function MgCoordPings({ cellPx }) {
     </div>
   );
 }
+// (v0.5.5, 사용자 요청) 버튼 속 화살표 — 분석 탭 보드 화살표와 같은 형식(T.arrow 금색 직선 몸통 + 삼각형 화살촉, 약간 투명).
+// routes: 칸 좌표([열, 줄]) 배열들 — 한 경로가 여러 칸을 꺾어 지나가면 몸통은 이어 그리고 화살촉은 마지막 칸에만 단다.
+function MgArrowSvg({ routes, color = T.arrow, opacity = 0.9, cols = MG_STRIP.cols, rows = MG_STRIP.rows }) {
+  const W = 0.15, HEAD = 0.36, HW = HEAD * 0.62;
+  return (
+    <svg viewBox={"0 0 " + cols + " " + rows} width="100%" height="100%" style={{ position: "absolute", inset: 0, zIndex: 3 }} aria-hidden="true">
+      {routes.map((route, i) => {
+        const pts = route.map(([c, r]) => [c + 0.5, r + 0.5]);
+        if (pts.length < 2) return null;
+        const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+        const len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+        const bx = x2 - ux * HEAD, by = y2 - uy * HEAD, nx = -uy, ny = ux;
+        const shaft = [...pts.slice(0, -1), [bx, by]].map((q) => q.join(",")).join(" ");
+        const head = x2 + "," + y2 + " " + (bx + nx * HW) + "," + (by + ny * HW) + " " + (bx - nx * HW) + "," + (by - ny * HW);
+        return (
+          <g key={i} opacity={opacity}>
+            <polyline points={shaft} fill="none" stroke={color} strokeWidth={W} strokeLinecap="round" strokeLinejoin="round" />
+            <polygon points={head} fill={color} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 function mgReducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } }
 // (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 목표 칸(금색 별)이 계속 바뀌고, 나이트가 그때마다 최단 경로로 한 칸씩
 // 뛰어간다(점선이 남은 경로). 도착하면 별이 터지듯 번쩍이고 잠시 뒤 다른 칸에 새 목표가 뜬다. 둥근 버튼 모서리에
@@ -9498,12 +9524,8 @@ function MgKnightRun({ cellPx }) {
   const trail = [st.pos, ...st.path];
   return (
     <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-      {trail.length > 1 && (
-        <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-          <polyline points={trail.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" />
-          {st.path.slice(0, -1).map(([c, r], i) => <circle key={i} cx={c + 0.5} cy={r + 0.5} r="0.09" fill={T.brassHi} />)}
-        </svg>
-      )}
+      {/* 남은 경로 — 나이트가 뛸 한 수 한 수를 분석 탭 화살표로(다음 한 수만 진하게). */}
+      {trail.length > 1 && <MgArrowSvg routes={trail.slice(0, -1).map((p, i) => [p, trail[i + 1]])} />}
       <div key={"t" + st.tgt} style={{ position: "absolute", left: st.target[0] * w + "%", top: st.target[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center", animation: "mgPop .35s cubic-bezier(.2,.9,.3,1.3)" }}>
         <span className="mg-anim" style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: arrived ? "rgba(236,203,134,.6)" : "rgba(236,203,134,.28)", animation: arrived ? "mgBurst .5s ease-out" : "mgTargetPulse 1.4s ease-in-out infinite", transition: "background .2s" }} />
         <Star size={Math.max(10, cellPx * 0.46)} color={T.brassHi} fill={T.brassHi} style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6))" }} />
@@ -9545,11 +9567,7 @@ function MgLoopScene({ cellPx, mover, moverAnim, loopMs, king, flashAnim, trail,
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   return (
     <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-      {trail && (
-        <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-          <polyline points={trail.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={trail.color || T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
-        </svg>
-      )}
+      {trail && <MgArrowSvg routes={[trail]} />}
       <div style={{ position: "absolute", left: king[0] * w + "%", top: king[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
         <span className="mg-anim" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.75) 0%, rgba(229,52,42,.28) 72%)", opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }} />
         <span className="mg-anim" style={{ position: "relative", zIndex: 1, margin: "4% 8% 0 0", fontSize: Math.max(8, cellPx * 0.26), fontWeight: 900, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.8)", fontFamily: SITE_FONT, opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }}>#</span>
@@ -9561,6 +9579,43 @@ function MgLoopScene({ cellPx, mover, moverAnim, loopMs, king, flashAnim, trail,
         {hero && <Crown size={Math.max(7, cellPx * 0.26)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />}
       </div>
     </div>
+  );
+}
+// (v0.5.5, 사용자 요청) 플레이 탭 맨 위 "일반 대국" 버튼 — 미니게임 버튼들과 같은 크림색 카드에, 왼쪽은 시작 포지션 체스보드
+// (앱 보드·기물 스킨, 카드 모서리에 여백 없이 붙음, 첫 수 e2→e4를 분석 탭 화살표로), 오른쪽은 이름. 누르면 설정 창이 열린다.
+const MG_START_BACK = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+function PlayNormalButton({ onClick }) {
+  const [width, setWidth] = useState(360);
+  const roRef = useRef(null);
+  const measureRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => { const w = el.clientWidth; if (w) setWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev)); };
+    measure();
+    roRef.current = new ResizeObserver(measure);
+    roRef.current.observe(el);
+  }, []);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  const [hover, setHover] = useState(false);
+  const boardFrac = 0.46;
+  const cellPx = (width * boardFrac) / 8;
+  const pieceAt = (r, c) => (r === 0 ? "b" + MG_START_BACK[c] : r === 1 ? "bP" : r === 6 ? "wP" : r === 7 ? "w" + MG_START_BACK[c] : null);
+  return (
+    <button ref={measureRef} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="press" aria-label="일반 대국"
+      style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", aspectRatio: "1 / " + boardFrac, padding: 0, border: "1px solid " + (hover ? T.brass : "#DCCBA8"), borderRadius: 14, overflow: "hidden", background: hover ? "#F7EEDC" : T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)", cursor: "pointer", textAlign: "left", transition: "background .15s ease, border-color .15s ease" }}>
+      <span style={{ position: "relative", width: boardFrac * 100 + "%", height: "100%", flexShrink: 0 }}>
+        <MgBoardPiece rows={8} cols={8} cellPx={cellPx} pieceAt={pieceAt} roundCorners={{ tl: true, bl: true }}>
+          <MgArrowSvg cols={8} rows={8} routes={[[[4, 6], [4, 4]]]} />
+        </MgBoardPiece>
+      </span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: "2cqw", padding: "0 5cqw", fontFamily: SITE_FONT, color: T.ink }}>
+        <span style={{ fontSize: "clamp(18px, 6.2cqw, 44px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1 }}>일반 대국</span>
+        <span style={{ fontSize: "clamp(11px, 2.8cqw, 18px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.4 }}>봇 · 랜덤 매칭 · 친구와 대국</span>
+        <span style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, marginTop: "1cqw", padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.7cqw, 17px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
+          <Play size={14} fill="#241509" />대국 시작
+        </span>
+      </span>
+    </button>
   );
 }
 function MinigameHubBoard({ stats, onPick }) {
@@ -9593,7 +9648,7 @@ function MinigameHubBoard({ stats, onPick }) {
   const topY = -MG_BLEED, botY = 100 + MG_BLEED - stripH, leftX = -MG_BLEED, rightX = 50 + MG_GAP / 2 - MG_BLEED;
   // 장면의 칸 좌표는 조각 기준([열, 줄])이고 pieceAt은 체크 무늬용 전역 열(colOffset 포함)을 받으므로 오프셋을 뺀다.
   const pieceMap = (m, colOffset) => (r, c) => m[(c - colOffset) + "," + r] || null;
-  const labelFont = "clamp(12px, 3.4cqw, 24px)";
+  const labelFont = "clamp(15px, 4.6cqw, 34px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
       // 데스크톱에서는 크게 쓴다(일반 대국 화면 아래에 오므로 화면 높이 제한은 두지 않는다).
@@ -9634,7 +9689,7 @@ function MinigameHubBoard({ stats, onPick }) {
         <div style={box(leftX, botY, stripW, stripH)}>
           <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={1} cellPx={stripCell} roundCorners={{ bl: true, br: true }} pieceAt={pieceMap(MG_MATE.pieces, 1)}>
             <MgLoopScene cellPx={stripCell} mover={MG_MATE.mover} moverAnim="mgMateQ" loopMs={MG_MATE_MS} king={MG_MATE.king} flashAnim="mgMateFlash"
-              trail={Object.assign([MG_MATE.mover.from, MG_MATE.mover.to], { color: "#7CC977" })} />
+              trail={[MG_MATE.mover.from, MG_MATE.mover.to]} />
           </MgBoardPiece>
         </div>
         <div style={box(rightX, botY, stripW, stripH)}>
@@ -9646,8 +9701,8 @@ function MinigameHubBoard({ stats, onPick }) {
       {/* 글자 레이어 — 가운데 엠블럼과 네 버튼 이름. */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT }}>
         <div style={{ ...box(50 - MG_HEX_S, MG_HEX_CY - MG_HEX_A, 2 * MG_HEX_S, 2 * MG_HEX_A), display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.9cqw", lineHeight: 1, letterSpacing: "-.02em", textAlign: "center", fontWeight: 900 }}>
-          <span style={{ fontSize: "4.6cqw", color: T.ink }}>OpenChess</span>
-          <span style={{ fontSize: "4.6cqw", color: T.brass }}>MiniGame</span>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", width: "72%", height: "auto", filter: "drop-shadow(0 1px 1px rgba(90,58,34,.25))" }} />
+          <span style={{ fontSize: "4.4cqw", color: T.brass }}>MiniGame</span>
         </div>
         {MG_LABELS.map((lb) => {
           const st = stats && stats[lb.gameType];
@@ -9655,10 +9710,15 @@ function MinigameHubBoard({ stats, onPick }) {
           const pos = { ...(lb.right ? { right: (100 - lb.x) + "%" } : { left: lb.x + "%" }), top: lb.top + "%" };
           return (
             <div key={lb.gameType} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: lb.right ? "flex-end" : "flex-start", textAlign: lb.right ? "right" : "left", gap: "0.6cqw", color: T.ink }}>
-              <span style={{ fontSize: labelFont, fontWeight: 800, lineHeight: 1.18, letterSpacing: "-.02em", whiteSpace: "nowrap" }}>
-                {lb.lines.map((l) => <span key={l} style={{ display: "block" }}>{l}</span>)}
+              <span style={{ fontSize: labelFont, fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", whiteSpace: "nowrap" }}>
+                {lb.lines.map((l, i) => (
+                  <span key={l} style={{ display: "flex", alignItems: "center", gap: "1.2cqw", justifyContent: lb.right ? "flex-end" : "flex-start" }}>
+                    {l}
+                    {/* 레이팅(배치 완료한 게임만)은 마지막 줄 옆 작은 칩으로 — 보드 쪽으로 줄이 늘어나지 않게 */}
+                    {rated && i === lb.lines.length - 1 && <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, padding: "0.2em 0.6em", borderRadius: 999, background: "rgba(196,154,80,.18)", color: MG_GOLD, letterSpacing: 0, fontVariantNumeric: "tabular-nums" }}>{st.rating}</span>}
+                  </span>
+                ))}
               </span>
-              {rated && <span style={{ fontSize: "clamp(10px, 2.3cqw, 15px)", fontWeight: 700, color: T.inkSoft, fontVariantNumeric: "tabular-nums" }}>레이팅 <b style={{ color: T.ink }}>{st.rating}</b></span>}
             </div>
           );
         })}
@@ -9705,6 +9765,15 @@ const COORD_FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 // 옆 칸"처럼 기물 위치를 기준으로 좌표를 가늠할 수 있다. 기물은 순수 배경 장식이라 클릭 판정에는
 // 관여하지 않는다(버튼 자체가 칸이라 기물 위를 눌러도 그 칸이 클릭된다).
 const COORD_START_BACK_RANK = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+// (v0.5.5 연출, 사용자 요청) 내가 누른 칸: 목록 버튼과 같은 청록 칸 + 조준경이 먼저 튀어나와 조준하고(COORD_AIM_MS),
+// 그 뒤에 정답이면 초록 칸 + 체크, 오답이면 빨간 칸 + X가 떠오른다. 상대(봇) 클릭은 예전처럼 곧장 결과만 보인다.
+const COORD_AIM_MS = 380;
+const COORD_OK_BG = "rgba(46,160,67,.78)", COORD_NG_BG = "rgba(200,60,50,.76)";
+const COORD_GRID_CSS = "@keyframes ccAimSq{0%{opacity:0}20%{opacity:1}100%{opacity:1}}"
+  + "@keyframes ccAim{0%{opacity:0;transform:scale(.3) rotate(-70deg)}60%{opacity:1;transform:scale(1.15) rotate(0)}100%{opacity:1;transform:scale(1)}}"
+  + "@keyframes ccResult{0%{opacity:0;transform:scale(.55)}60%{opacity:1;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}"
+  + "@keyframes ccFade{0%{opacity:1}100%{opacity:0}}"
+  + "@media (prefers-reduced-motion: reduce){.cc-anim{animation-duration:1ms!important;animation-delay:0ms!important}}";
 function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
@@ -9714,6 +9783,7 @@ function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const coordFont = Math.max(9, cell * 0.16);
   return (
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      <style>{COORD_GRID_CSS}</style>
       {Array.from({ length: 8 }, (_, r) => r).flatMap((r) => COORD_FILES.map((file, c) => {
         const rank = 8 - r;
         const sq = file + rank;
@@ -9724,22 +9794,27 @@ function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
         const pieceColor = r <= 1 ? "b" : "w";
         let overlayBg = null, borderColor = null;
         if (mine && opp) {
-          const c1 = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
-          const c2 = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          const c1 = mine.correct ? COORD_OK_BG : COORD_NG_BG;
+          const c2 = opp.correct ? COORD_OK_BG : COORD_NG_BG;
           overlayBg = "linear-gradient(135deg," + c1 + " 50%," + c2 + " 50%)";
           borderColor = "#fff";
         } else if (mine) {
-          overlayBg = mine.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
-          borderColor = T.brassHi;
+          overlayBg = mine.correct ? COORD_OK_BG : COORD_NG_BG;
+          borderColor = mine.correct ? "#2E8F3E" : T.blunder;
         } else if (opp) {
-          overlayBg = opp.correct ? "rgba(60,168,60,.72)" : "rgba(196,60,50,.72)";
+          overlayBg = opp.correct ? COORD_OK_BG : COORD_NG_BG;
           borderColor = "#6FA8DC";
         }
         return (
           <button key={sq} onClick={() => onCell(sq)} className="press"
             style={{ position: "relative", border: "none", borderRadius: 0, cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", ...boardSquareBg(sk, light, r, c) }}>
             {pieceType && <PieceGlyph type={pieceType} color={pieceColor} size={cell * 0.72} style={{ position: "relative", zIndex: 1 }} />}
-            {overlayBg && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlayBg, boxShadow: "inset 0 0 0 2px " + borderColor, zIndex: 2 }} />}
+            {/* 내 클릭: 조준(청록 칸 + 조준경) → COORD_AIM_MS 뒤 결과. 상대 클릭은 곧장 결과. */}
+            {mine && <span aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, zIndex: 2, background: "rgba(22,181,166,.45)", boxShadow: "inset 0 0 0 2px " + T.brilliant, animation: "ccAimSq " + COORD_AIM_MS + "ms ease-out both, ccFade 180ms ease-in " + COORD_AIM_MS + "ms forwards" }} />}
+            {mine && <span aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", animation: "ccAim " + COORD_AIM_MS + "ms cubic-bezier(.2,.9,.3,1.2) both, ccFade 180ms ease-in " + COORD_AIM_MS + "ms forwards" }}><MgCrosshair size={Math.max(14, cell * 0.7)} /></span>}
+            {overlayBg && <span aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, background: overlayBg, boxShadow: "inset 0 0 0 2px " + borderColor, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", animation: mine ? "ccResult 280ms cubic-bezier(.2,.9,.3,1.3) " + COORD_AIM_MS + "ms both" : "none" }}>
+              {mine && !opp && (mine.correct ? <Check size={Math.max(12, cell * 0.5)} color="#fff" strokeWidth={3.2} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }} /> : <X size={Math.max(12, cell * 0.5)} color="#fff" strokeWidth={3.2} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }} />)}
+            </span>}
             {c === 0 && <span aria-hidden="true" style={{ position: "absolute", top: 1, left: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{rank}</span>}
             {r === 7 && <span aria-hidden="true" style={{ position: "absolute", bottom: 0, right: 2, fontSize: coordFont, fontWeight: 800, color: light ? "rgba(90,58,34,.75)" : "rgba(244,238,226,.75)", zIndex: 3, pointerEvents: "none" }}>{file}</span>}
           </button>
@@ -9758,9 +9833,9 @@ function CoordClickLegend({ oppLabel }) {
     </span>
   );
   return (
-    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
-      {chip(T.brassHi, "rgba(255,255,255,.14)", "나")}
-      {chip("#6FA8DC", "rgba(255,255,255,.14)", oppLabel)}
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
+      {chip(MG_GOLD, "rgba(90,58,34,.14)", "나")}
+      {chip("#6FA8DC", "rgba(90,58,34,.14)", oppLabel)}
       {chip(null, "rgba(60,168,60,.92)", "정답")}
       {chip(null, "rgba(196,60,50,.92)", "오답")}
     </div>
@@ -9771,7 +9846,7 @@ function CoordClickLegend({ oppLabel }) {
 // 대신 옅은 아이보리로 바꿨다 — flexShrink:0도 함께 줘 두 보드가 flex:1로 남은 공간을 나눠 가질 때
 // 이 라벨 자신의 높이가 줄어들지 않게 한다.
 function MinigameBoardLabel({ text }) {
-  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "rgba(244,238,226,.6)", marginBottom: 6, flexShrink: 0 }}>{text}</div>;
+  return <div style={{ textAlign: "center", fontSize: 11, fontWeight: 800, color: "rgba(90,58,34,.70)", marginBottom: 6, flexShrink: 0 }}>{text}</div>;
 }
 // (v0.5.0 기능, 사용자 요청) 전체 진행 상황을 점 한 줄로 보여주는 "게임다운" 스코어보드 — 좌표 인지
 // 게임(15라운드)·나이트 경주(Bo5) 둘 다 이 컴포넌트를 재사용한다. results[i]는 그 라운드가 이미
@@ -9784,7 +9859,7 @@ function MinigameScorePips({ results, total }) {
         const r = results[i];
         // (v0.5.1 UI, 사용자 요청) 전체화면 어두운 배경에서는 빈 슬롯이 rgba(0,0,0,.14)(검정 위에
         // 검정)로는 거의 안 보였다 — 밝은 반투명 회색으로 바꿨다.
-        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(255,255,255,.16)";
+        const bg = r === "me" ? T.best : r === "opp" ? T.blunder : r === "draw" ? "#9C8563" : "rgba(90,58,34,.16)";
         const active = i === results.length;
         return <span key={i} aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: bg, boxShadow: active ? "0 0 0 2px " + T.brass : "none", flexShrink: 0 }} />;
       })}
@@ -9828,10 +9903,10 @@ function MinigameCountdown({ startAt }) {
   }, [label, active]);
   if (!active) return null;
   return (
-    <div aria-live="polite" style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: left > 0 ? "rgba(15,8,3,.55)" : "transparent", backdropFilter: left > 0 ? "blur(2px)" : "none", borderRadius: 6, pointerEvents: left > 0 ? "auto" : "none", transition: "background .25s" }}>
+    <div aria-live="polite" style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: left > 0 ? "rgba(250,244,230,.72)" : "transparent", backdropFilter: left > 0 ? "blur(2px)" : "none", borderRadius: 6, pointerEvents: left > 0 ? "auto" : "none", transition: "background .25s" }}>
       <AnimatePresence mode="popLayout">
         <motion.div key={label} initial={{ scale: 2.2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={{ duration: 0.32, ease: MOTION_EASE }}
-          style={{ fontSize: label === "시작!" ? 44 : 84, fontWeight: 900, color: label === "시작!" ? T.brassHi : T.ivoryHi, fontFamily: SITE_FONT, textShadow: "0 4px 24px rgba(0,0,0,.6), 0 0 30px " + (label === "시작!" ? "rgba(232,196,110,.6)" : "rgba(255,255,255,.25)") }}>
+          style={{ fontSize: label === "시작!" ? 44 : 84, fontWeight: 900, color: label === "시작!" ? T.brass : T.ink, fontFamily: SITE_FONT, textShadow: "0 3px 14px rgba(90,58,34,.25), 0 0 30px " + (label === "시작!" ? "rgba(232,196,110,.6)" : "rgba(255,255,255,.25)") }}>
           {label}
         </motion.div>
       </AnimatePresence>
@@ -9852,14 +9927,14 @@ function MinigameScoreHeader({ myScore, oppScore, oppLabel, center }) {
   const lead = myScore > oppScore ? "me" : oppScore > myScore ? "opp" : null;
   const side = (label, score, color, isLead, align) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: align === "right" ? "row-reverse" : "row", minWidth: 0 }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: isLead ? T.ivoryHi : "rgba(244,238,226,.6)", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: isLead ? T.ink : "rgba(90,58,34,.70)", whiteSpace: "nowrap" }}>{label}</span>
       <ScorePop value={score} color={color} />
     </div>
   );
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 12, background: "linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02))", border: "1px solid rgba(232,196,110,.22)", flexShrink: 0 }}>
-      {side("나", myScore, T.brassHi, lead === "me", "left")}
-      <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)", fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>{center}</div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 12, background: "linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,.45))", border: "1px solid rgba(150,112,58,.37)", flexShrink: 0 }}>
+      {side("나", myScore, MG_GOLD, lead === "me", "left")}
+      <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>{center}</div>
       {oppLabel ? side(oppLabel, oppScore, "#8FC1EC", lead === "opp", "right") : <span style={{ minWidth: 20 }} />}
     </div>
   );
@@ -9879,7 +9954,7 @@ function MinigameRoundBanner({ result, roundKey, text }) {
       <AnimatePresence>
         {result && (
           <motion.div key={roundKey} initial={{ y: 20, scale: 0.7, opacity: 0 }} animate={{ y: 0, scale: 1, opacity: 1 }} exit={{ y: -16, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 20 }}
-            style={{ padding: "10px 22px", borderRadius: 14, background: "linear-gradient(180deg,rgba(36,21,9,.94),rgba(20,11,4,.94))", border: "2px solid " + color, boxShadow: "0 10px 30px -6px rgba(0,0,0,.7), 0 0 24px " + color + "55", fontSize: 18, fontWeight: 900, color, whiteSpace: "nowrap", fontFamily: SITE_FONT }}>{label}</motion.div>
+            style={{ padding: "10px 22px", borderRadius: 14, background: "linear-gradient(180deg,#FFFAEE,#F3E6CB)", border: "2px solid " + color, boxShadow: "0 10px 26px -8px rgba(90,58,34,.45), 0 0 24px " + color + "55", fontSize: 18, fontWeight: 900, color, whiteSpace: "nowrap", fontFamily: SITE_FONT }}>{label}</motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -9910,22 +9985,22 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
   }, [outcome]);
   // (v0.5.3) 혼자 플레이하기는 승패가 없어 title(예: "신기록!", "기록")·scoreText(예: "12개")로 바꿔 쓴다.
   const title = titleOverride || (outcome === "win" ? "승리!" : outcome === "lose" ? "패배" : "무승부");
-  const color = outcome === "win" ? T.brassHi : outcome === "lose" ? "#E08A80" : "#D8C39A";
+  const color = outcome === "win" ? MG_GOLD : outcome === "lose" ? T.blunder : "#9C8563";
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "20px 6px", overflowY: "auto" }}>
       {outcome === "win" && <VictoryBurst />}
       <motion.div initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
         style={{ fontSize: 40, fontWeight: 900, color, fontFamily: SITE_FONT, textShadow: outcome === "win" ? "0 0 28px rgba(232,196,110,.55)" : "none", marginBottom: 4 }}>{title}</motion.div>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 14 }}>
-        {scoreText != null ? <span style={{ fontSize: 32, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{scoreText}</span> : (<>
+        style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(90,58,34,.80)", marginBottom: 14 }}>
+        {scoreText != null ? <span style={{ fontSize: 32, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{scoreText}</span> : (<>
           <span>나</span>
-          <span style={{ fontSize: 32, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
+          <span style={{ fontSize: 32, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
           <span>{oppLabel}</span>
         </>)}
       </motion.div>
       {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
-      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 12 }}>친선전 — 전적에만 남고 레이팅은 바뀌지 않아요</div>}
+      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>친선전 — 전적에만 남고 레이팅은 바뀌지 않아요</div>}
       {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
@@ -9934,7 +10009,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
             return (
               <motion.div key={i} initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.25 + i * 0.04 }}
                 title={r.detail || ""}
-                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 10.5, fontWeight: 800, color: T.ivoryHi }}>
+                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 10.5, fontWeight: 800, color: T.ink }}>
                 <div style={{ opacity: 0.7 }}>{r.label || i + 1}</div>
                 {r.detail && <div style={{ fontSize: 9.5, opacity: 0.85, marginTop: 1 }}>{r.detail}</div>}
               </motion.div>
@@ -9946,16 +10021,16 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
         <div style={{ display: "grid", gridTemplateColumns: "repeat(" + Math.min(3, stats.length) + ", minmax(0,1fr))", gap: 8, width: "100%", maxWidth: 360, marginBottom: 16 }}>
           {stats.map((s, i) => (
             <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.06 }}
-              style={{ padding: "8px 6px", borderRadius: 10, background: "rgba(255,255,255,.06)", border: "1px solid rgba(232,196,110,.2)" }}>
-              <div style={{ fontSize: 16, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{s.label}</div>
+              style={{ padding: "8px 6px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.35)" }}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{s.value}</div>
+              <div style={{ fontSize: 10, color: "rgba(90,58,34,.70)", marginTop: 2 }}>{s.label}</div>
             </motion.div>
           ))}
         </div>
       )}
-      {note && <p style={{ fontSize: 11, color: "rgba(244,238,226,.6)", marginBottom: 14, maxWidth: 340, lineHeight: 1.5 }}>{note}</p>}
+      {note && <p style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginBottom: 14, maxWidth: 340, lineHeight: 1.5 }}>{note}</p>}
       <div style={{ display: "flex", gap: 8 }}>
-        {onRematch && <button onClick={onRematch} className="press" style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><RotateCcw size={14} />다시 하기</button>}
+        {onRematch && <button onClick={onRematch} className="press" style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><RotateCcw size={14} />다시 하기</button>}
         <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
       </div>
     </div>
@@ -9997,45 +10072,45 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
   const now = useNow(true, 100);
   const left = Math.max(0, (until || now) - now);
   const title = solo ? (result === "me" ? "도착 성공!" : "실패") : result === "me" ? "라운드 승리!" : result === "opp" ? "라운드 패배" : "라운드 무승부";
-  const color = result === "me" ? T.brassHi : result === "opp" ? "#E08A80" : "#D8C39A";
-  const cellStyle = (hl) => ({ padding: "8px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.16)" : "rgba(255,255,255,.06)", border: "1px solid " + (hl ? T.brassHi : "rgba(232,196,110,.2)"), textAlign: "center", minWidth: 0 });
+  const color = result === "me" ? MG_GOLD : result === "opp" ? T.blunder : "#9C8563";
+  const cellStyle = (hl) => ({ padding: "8px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.16)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), textAlign: "center", minWidth: 0 });
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "16px 6px", overflowY: "auto" }}>
       {result === "me" && <VictoryBurst />}
-      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".12em", color: "rgba(244,238,226,.55)", marginBottom: 4 }}>ROUND {roundNo}{roundTotal ? " / " + roundTotal : ""}</motion.div>
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".12em", color: "rgba(90,58,34,.65)", marginBottom: 4 }}>ROUND {roundNo}{roundTotal ? " / " + roundTotal : ""}</motion.div>
       <motion.div initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
         style={{ fontSize: 34, fontWeight: 900, color, fontFamily: SITE_FONT, textShadow: result === "me" ? "0 0 28px rgba(232,196,110,.55)" : "none", marginBottom: 4 }}>{title}</motion.div>
       {!solo && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-          style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(244,238,226,.7)", marginBottom: 14 }}>
+          style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(90,58,34,.80)", marginBottom: 14 }}>
           <span>나</span>
-          <span style={{ fontSize: 30, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
+          <span style={{ fontSize: 30, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
           <span>{oppLabel}</span>
         </motion.div>
       )}
-      {sub && <div style={{ fontSize: 11, color: "rgba(244,238,226,.6)", marginBottom: 10 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginBottom: 10 }}>{sub}</div>}
       <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 6, marginBottom: 12 }}>
         {!solo && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.55)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
             <span>나</span><span /><span>{oppLabel}</span>
           </div>
         )}
         {rows.map((r, i) => (
           <motion.div key={r.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.07 }}
             style={{ display: "grid", gridTemplateColumns: solo ? "72px 1fr" : "1fr 72px 1fr", gap: 6, alignItems: "stretch" }}>
-            {!solo && <div style={cellStyle(r.win === "me")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.me}</div></div>}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>{r.label}</div>
-            {solo ? <div style={cellStyle(false)}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.me}</div></div>
-              : <div style={cellStyle(r.win === "opp")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{r.opp}</div></div>}
+            {!solo && <div style={cellStyle(r.win === "me")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{r.label}</div>
+            {solo ? <div style={cellStyle(false)}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>
+              : <div style={cellStyle(r.win === "opp")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.opp}</div></div>}
           </motion.div>
         ))}
       </div>
-      {reason && <p style={{ fontSize: 11.5, color: "rgba(244,238,226,.72)", marginBottom: 14, maxWidth: 340, lineHeight: 1.5 }}>{reason}</p>}
+      {reason && <p style={{ fontSize: 11.5, color: "rgba(90,58,34,.82)", marginBottom: 14, maxWidth: 340, lineHeight: 1.5 }}>{reason}</p>}
       <div style={{ width: "100%", maxWidth: 260, marginBottom: 10 }}>
-        <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.08)", overflow: "hidden" }}>
+        <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.55)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: (100 * left / ROUND_SETTLE_MS) + "%", background: "linear-gradient(90deg,#A8842F," + T.brassHi + ")", transition: "width .1s linear" }} />
         </div>
-        <div style={{ fontSize: 10.5, color: "rgba(244,238,226,.55)", marginTop: 5 }}>{nextLabel}까지 {Math.ceil(left / 1000)}초</div>
+        <div style={{ fontSize: 10.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{nextLabel}까지 {Math.ceil(left / 1000)}초</div>
       </div>
       {onNext && <button onClick={onNext} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{nextLabel}</button>}
     </div>
@@ -10079,7 +10154,7 @@ function rushSettleInfo(me, opp, result, par) {
 function MinigameTimeBar({ pct }) {
   const low = pct < 0.25;
   return (
-    <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
+    <div style={{ height: 6, borderRadius: 999, background: "rgba(90,58,34,.12)", overflow: "hidden", marginBottom: 8, flexShrink: 0 }}>
       <motion.div animate={low ? { opacity: [1, 0.55, 1] } : { opacity: 1 }} transition={low ? { duration: 0.7, repeat: Infinity } : { duration: 0.2 }}
         style={{ width: (Math.max(0, Math.min(1, pct)) * 100) + "%", height: "100%", background: low ? T.blunder : "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")", transition: "width .2s linear" }} />
     </div>
@@ -10093,7 +10168,7 @@ function CoordTargetLabel({ targetSq, roundIdx }) {
       <AnimatePresence mode="popLayout">
         {targetSq && (
           <motion.span key={roundIdx + ":" + targetSq} initial={{ scale: 1.9, opacity: 0, y: -6 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", stiffness: 460, damping: 22 }}
-            style={{ display: "inline-block", padding: "6px 24px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 0 22px rgba(232,196,110,.28)", fontSize: 28, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</motion.span>
+            style={{ display: "inline-block", padding: "6px 24px", borderRadius: 12, background: "linear-gradient(180deg,#FFFAEE,#F3E6CB)", border: "1px solid " + T.brass, boxShadow: "0 0 22px rgba(232,196,110,.28)", fontSize: 28, fontWeight: 800, color: MG_GOLD, fontFamily: "ui-monospace,monospace", letterSpacing: ".04em" }}>{targetSq}</motion.span>
         )}
       </AnimatePresence>
     </div>
@@ -10108,9 +10183,15 @@ function useCoordFeedback(roundIdx, targetSq) {
   const [misses, setMisses] = useState(0);
   const [shakeControls, shake] = useBoardShake();
   useEffect(() => { if (targetSq) { shownAtRef.current = Date.now(); fx("whoosh"); } }, [roundIdx, targetSq]);
+  // (v0.5.5 연출, 사용자 요청) 누른 칸에 조준경이 먼저 조준하고(COORD_AIM_MS) 그 뒤에 정답·오답 연출(효과음·진동·흔들림)이
+  // 나온다 — 반응속도는 클릭한 순간 기준으로 잰다.
   const onMyClick = useCallback((correct) => {
-    if (correct) { fx("correct"); buzz(25); setReactions((rs) => [...rs, Date.now() - shownAtRef.current]); }
-    else { fx("wrong"); buzz([60, 40, 60]); shake(); setMisses((m) => m + 1); }
+    const rt = Date.now() - shownAtRef.current;
+    if (correct) setReactions((rs) => [...rs, rt]); else setMisses((m) => m + 1);
+    setTimeout(() => {
+      if (correct) { fx("correct"); buzz(25); }
+      else { fx("wrong"); buzz([60, 40, 60]); shake(); }
+    }, COORD_AIM_MS);
   }, [shake]);
   const stats = useMemo(() => {
     const avg = reactions.length ? Math.round(reactions.reduce((a, b) => a + b, 0) / reactions.length) : null;
@@ -10411,24 +10492,24 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   const placed = row && row.rated_games >= MINIGAME_PLACEMENT;
   const cell = (label, value, sub) => (
     <div style={{ minWidth: 0, flex: 1, padding: "7px 4px", textAlign: "center" }}>
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(244,238,226,.55)", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      {sub && <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(244,238,226,.5)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      {sub && <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,58,34,.60)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
     </div>
   );
   return (
     <div style={{ display: "flex", alignItems: "stretch", gap: 8, marginBottom: 12 }}>
-      <div style={{ flex: 1, minWidth: 0, display: "flex", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(232,196,110,.22)" }}>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.37)" }}>
         {myUid ? (<>
           {cell("레이팅", row ? row.rating : 1200, placed ? "최고 " + row.peak_rating : "배치 " + Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT) + "/" + MINIGAME_PLACEMENT)}
           {cell("전적", minigameRecordText(row), row && row.streak >= 2 ? row.streak + "연승 중" : row && row.best_streak >= 2 ? "최다 " + row.best_streak + "연승" : null)}
           {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
         </>) : (
-          <div style={{ flex: 1, padding: "10px 12px", fontSize: 11, color: "rgba(244,238,226,.65)", lineHeight: 1.5, display: "flex", alignItems: "center" }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
+          <div style={{ flex: 1, padding: "10px 12px", fontSize: 11, color: "rgba(90,58,34,.75)", lineHeight: 1.5, display: "flex", alignItems: "center" }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
         )}
       </div>
       <button onClick={onOpenRanking} className="press" aria-label="랭킹"
-        style={{ flexShrink: 0, width: 58, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.brassHi, cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
+        style={{ flexShrink: 0, width: 58, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: MG_GOLD, cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
         <Trophy size={18} />
         <span style={{ fontSize: 10.5, fontWeight: 800 }}>랭킹</span>
       </button>
@@ -10437,13 +10518,13 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
 }
 function MinigameSegmented({ value, options, onChange }) {
   return (
-    <div style={{ display: "flex", padding: 3, borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(232,196,110,.2)" }}>
+    <div style={{ display: "flex", padding: 3, borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.35)" }}>
       {options.map((o) => {
         const on = o.key === value;
         return (
           <button key={o.key} onClick={() => !o.disabled && onChange(o.key)} disabled={o.disabled} className="press"
             style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: "none", cursor: o.disabled ? "default" : "pointer", opacity: o.disabled ? 0.4 : 1, fontSize: 11.5, fontWeight: 800,
-              background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : "rgba(244,238,226,.75)" }}>{o.label}</button>
+              background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : "rgba(90,58,34,.85)" }}>{o.label}</button>
         );
       })}
     </div>
@@ -10459,22 +10540,22 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
     <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: Math.min(index, 12) * 0.03 }}
       onClick={() => onOpenProfile && r.username && onOpenProfile(r.username)} className="press"
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 10, cursor: "pointer", textAlign: "left",
-        border: r.is_me ? "1.5px solid " + T.brassHi : "1px solid rgba(232,196,110,.14)", background: r.is_me ? "rgba(236,203,134,.14)" : "rgba(255,255,255,.035)" }}>
+        border: r.is_me ? "1.5px solid " + T.brassHi : "1px solid rgba(150,112,58,.29)", background: r.is_me ? "rgba(236,203,134,.14)" : "rgba(255,255,255,.035)" }}>
       <span style={{ width: 34, height: 34, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         {r.rank <= 3
           ? <img src={"/rank-" + r.rank + ".png"} alt={r.rank + "위"} style={{ height: r.rank === 1 ? 34 : 29, width: "auto", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }} />
-          : <span style={{ fontSize: 13, fontWeight: 900, color: "rgba(244,238,226,.6)", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{r.rank}</span>}
+          : <span style={{ fontSize: 13, fontWeight: 900, color: "rgba(90,58,34,.70)", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{r.rank}</span>}
       </span>
       {p.photo ? <img src={p.photo} alt="" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
         : <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{name[0].toUpperCase()}</span>}
       <span style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 800, color: T.ink }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
           {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>나</span>}
         </span>
-        {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(244,238,226,.5)", marginTop: 1 }}>{sub}</span>}
+        {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
       </span>
-      <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: r.rank <= 3 ? T.brassHi : T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: r.rank <= 3 ? MG_GOLD : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </motion.button>
   );
 }
@@ -10498,8 +10579,8 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   return (
     <div style={{ padding: "8px 2px 4px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(244,238,226,.75)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}><ChevronLeft size={14} />로비</button>
-        <span style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={15} color={T.brassHi} />랭킹</span>
+        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}><ChevronLeft size={14} />로비</button>
+        <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={15} color={MG_GOLD} />랭킹</span>
         <span style={{ width: 40 }} />
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
@@ -10509,17 +10590,17 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
       {rows == null ? (
         <div style={{ textAlign: "center", padding: "28px 0" }}><PendingDots size={12} /></div>
       ) : top.length === 0 ? (
-        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.6)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹을 불러오지 못했어요." : empty}</p>
+        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.70)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹을 불러오지 못했어요." : empty}</p>
       ) : (
         <div style={{ display: "grid", gap: 6 }}>
           {top.map((r, i) => <MinigameRankRow key={r.uid} r={r} game={game} kind={kind} onOpenProfile={onOpenProfile} index={i} />)}
           {meOutside && (<>
-            <div style={{ textAlign: "center", color: "rgba(244,238,226,.35)", fontSize: 12, lineHeight: 1 }}>⋮</div>
+            <div style={{ textAlign: "center", color: "rgba(90,58,34,.45)", fontSize: 12, lineHeight: 1 }}>⋮</div>
             <MinigameRankRow r={meOutside} game={game} kind={kind} onOpenProfile={onOpenProfile} index={top.length} />
           </>)}
         </div>
       )}
-      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(244,238,226,.45)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 바뀌어요 · 친구 도전은 전적에만 남아요</p>}
+      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 바뀌어요 · 친구 도전은 전적에만 남아요</p>}
     </div>
   );
 }
@@ -10533,13 +10614,13 @@ function minigameRatingOf(game, myUid) {
 function MinigameRatingChange({ rating }) {
   const diff = rating.after - rating.before;
   const shown = useRatingCountUp(rating.after, rating.before, 900);
-  const c = diff > 0 ? "#7FD48A" : diff < 0 ? "#F0948A" : "rgba(244,238,226,.7)";
+  const c = diff > 0 ? "#3F8A3A" : diff < 0 ? T.blunder : "rgba(90,58,34,.80)";
   const Arrow = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : null;
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.06)", border: "1px solid " + c, marginBottom: 14 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(244,238,226,.6)" }}>레이팅</span>
-      <span style={{ fontSize: 17, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.55)", border: "1px solid " + c, marginBottom: 14 }}>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>레이팅</span>
+      <span style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12.5, fontWeight: 900, color: c, fontVariantNumeric: "tabular-nums" }}>{Arrow && <Arrow size={14} />}{diff > 0 ? "+" + diff : diff}</span>
     </motion.div>
   );
@@ -10631,9 +10712,9 @@ function MinigameModeCard({ Icon, label, sub, onClick, disabled, primary, active
   return (
     <button onClick={onClick} disabled={disabled} className="press"
       style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, minHeight: 92, padding: "12px 6px", borderRadius: 12, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1,
-        border: "1px solid " + (active ? T.brassHi : primary ? "transparent" : "rgba(232,196,110,.45)"),
+        border: "1px solid " + (active ? T.brassHi : primary ? "transparent" : "rgba(150,112,58,.60)"),
         background: primary ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : active ? "rgba(236,203,134,.2)" : "rgba(196,154,80,.1)",
-        color: primary ? "#241509" : T.ivoryHi }}>
+        color: primary ? "#241509" : T.ink }}>
       <Icon size={20} />
       <span style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2 }}>{label}</span>
       {sub && <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.72, lineHeight: 1.25 }}>{sub}</span>}
@@ -10645,7 +10726,7 @@ function MinigameLobby({ rules, lobbyExtra, myUid, soloSub, botSub, botOptions, 
   return (
     <div style={{ padding: "12px 4px 4px" }}>
       {statsBar}
-      <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(244,238,226,.72)", padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.04)", border: "1px solid rgba(232,196,110,.18)", marginBottom: 12 }}>{rules}</div>
+      <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.45)", border: "1px solid rgba(150,112,58,.33)", marginBottom: 12 }}>{rules}</div>
       {lobbyExtra}
       {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10, textAlign: "center" }}>{err}</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginBottom: pickBot && botOptions ? 8 : 18 }}>
@@ -10658,8 +10739,8 @@ function MinigameLobby({ rules, lobbyExtra, myUid, soloSub, botSub, botOptions, 
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(" + botOptions.length + ",minmax(0,1fr))", gap: 6, marginBottom: 18 }}>
               {botOptions.map((b) => (
-                <button key={b.key} onClick={() => onBot(b)} className="press" style={{ padding: "8px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                  {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 1 }}>{b.sub}</div>}
+                <button key={b.key} onClick={() => onBot(b)} className="press" style={{ padding: "8px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                  {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.70)", marginTop: 1 }}>{b.sub}</div>}
                 </button>
               ))}
             </div>
@@ -10752,6 +10833,7 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch }) {
   const [score, setScore] = useState(0);
   const [myClicks, setMyClicks] = useState([]);
   const [done, setDone] = useState([]); // 맞힌 좌표들(결과 칩용)
+  const [flashes, setFlashes] = useState([]); // 방금 맞힌 칸(연출용, 잠깐만 남는다)
   const { onMyClick, shakeControls, stats } = useCoordFeedback(n, started && !over ? target : null);
   useEffect(() => { onStatusChange && onStatusChange(over ? "finished" : "active"); }, [over, onStatusChange]);
   const [best, setBest] = useState(null); // { prev, isNew }
@@ -10767,7 +10849,13 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch }) {
     if (!started || over || myClicks.some((x) => x.sq === sq)) return;
     const correct = sq === target;
     onMyClick(correct);
-    if (correct) { setScore((v) => v + 1); setDone((d) => [...d, sq]); setMyClicks([]); setN((v) => v + 1); setTarget(coordRandSq(sq)); }
+    if (correct) {
+      setScore((v) => v + 1); setDone((d) => [...d, sq]); setMyClicks([]); setN((v) => v + 1); setTarget(coordRandSq(sq));
+      // (v0.5.5) 맞히면 곧장 다음 좌표로 넘어가므로, 맞힌 칸은 조준 → 초록 연출이 끝날 때까지 잠깐 따로 남겨 둔다.
+      const id = Date.now() + Math.random();
+      setFlashes((fs) => [...fs, { sq, correct: true, id }]);
+      setTimeout(() => setFlashes((fs) => fs.filter((f) => f.id !== id)), COORD_AIM_MS + 650);
+    }
     else setMyClicks((cs) => [...cs, { sq, correct: false }]);
   };
   if (over) {
@@ -10779,16 +10867,16 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch }) {
   const left = endAt - Math.max(now, startAt);
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? "#F0948A" : T.ivoryHi, fontVariantNumeric: "tabular-nums" }}>{Math.ceil(left / 1000)}초</span>} />
+      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? T.blunder : T.ink, fontVariantNumeric: "tabular-nums" }}>{Math.ceil(left / 1000)}초</span>} />
       <MinigameTimeBar pct={left / COORD_SOLO_MS} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
-          <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={[]} />
+          <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={[...myClicks, ...flashes.filter((f) => !myClicks.some((c) => c.sq === f.sq))]} oppClicks={[]} />
           <MinigameCountdown startAt={startAt} />
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={started ? target : null} roundIdx={n} />
-      <div style={{ textAlign: "center", fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0 }}>{loadMinigameBest("coord") == null ? "첫 기록에 도전하세요!" : "최고 기록 " + loadMinigameBest("coord") + "개"}</div>
+      <div style={{ textAlign: "center", fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>{loadMinigameBest("coord") == null ? "첫 기록에 도전하세요!" : "최고 기록 " + loadMinigameBest("coord") + "개"}</div>
     </div>
   );
 }
@@ -10845,9 +10933,9 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="좌표 인지 게임" gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
       rules={<>
-        <div>• 무작위 좌표가 나타나면 그 칸을 <b style={{ color: T.ivoryHi }}>상대보다 먼저</b> 클릭하세요. 15라운드 동안 더 많이 맞힌 쪽이 이겨요.</div>
+        <div>• 무작위 좌표가 나타나면 그 칸을 <b style={{ color: T.ink }}>상대보다 먼저</b> 클릭하세요. 15라운드 동안 더 많이 맞힌 쪽이 이겨요.</div>
         <div>• 오답을 눌러도 라운드는 끝나지 않아요 — 누군가 정답을 맞힐 때까지 계속돼요.</div>
-        <div>• 혼자 플레이하기는 <b style={{ color: T.ivoryHi }}>30초 타임어택</b> — 몇 개를 맞히는지 기록에 도전해요.</div>
+        <div>• 혼자 플레이하기는 <b style={{ color: T.ink }}>30초 타임어택</b> — 몇 개를 맞히는지 기록에 도전해요.</div>
       </>}
       soloSub={loadMinigameBest("coord") == null ? "30초 타임어택" : "30초 · 최고 " + loadMinigameBest("coord") + "개"} botSub="15라운드"
       renderPvp={(p) => <CoordRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -10860,9 +10948,9 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ivoryHi }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ivoryHi }}>더 빨리</b> 도착한 쪽이 이겨요. 라운드당 15초, 5전 3선승이에요.</div>
-        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ivoryHi }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 빨간 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
-        <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ivoryHi }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
+        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 라운드당 15초, 5전 3선승이에요.</div>
+        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 빨간 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
+        <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
       </>}
       soloSub={best ? "5라운드 · 최고 " + best.reached + "회" : "5라운드 기록 도전"} botSub="5전 3선승"
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -11015,7 +11103,7 @@ function KnightRaceLegend() {
     </span>
   );
   return (
-    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(244,238,226,.55)", flexShrink: 0, marginTop: 6 }}>
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
       {chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
       {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물(도달하면 잡아요)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
@@ -11109,9 +11197,9 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   const roundResult = round.winner ? (round.winner === myColor ? "me" : round.winner === "draw" ? "draw" : "opp") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
-        <span>내 수 <b style={{ color: T.ivoryHi }}>{movesUsed}</b>/{round.moveBudget} · 상대 {oppMovesUsed}</span>
-        <span style={{ color: timePct < 0.25 ? "#F0948A" : "rgba(244,238,226,.8)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
+        <span>내 수 <b style={{ color: T.ink }}>{movesUsed}</b>/{round.moveBudget} · 상대 {oppMovesUsed}</span>
+        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -11122,7 +11210,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
           <MinigameRoundBanner result={roundResult} roundKey={roundIdx} />
         </motion.div>
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
         {round.winner ? "" : captured ? "나이트가 잡혔어요 — 상대를 기다리는 중..." : iReported ? "상대를 기다리는 중..." : (oppRep ? (oppRep.reached ? "상대가 " + oppRep.movesUsed + "수로 도착했어요 — 더 적은 수로 가면 이겨요!" : "상대가 시도를 마쳤어요 — 서둘러요!") : "가장 적은 수로 목표 칸(★)까지 가 보세요")}
       </div>
       <KnightRaceLegend />
@@ -11326,9 +11414,9 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const roundResult = winner ? (winner === "w" ? "me" : winner === "b" ? "opp" : "draw") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(244,238,226,.65)", fontWeight: 700, flexShrink: 0 }}>
-        <span>내 수 <b style={{ color: T.ivoryHi }}>{movesUsed}</b>/{round.moveBudget}{solo ? "" : " · 봇 " + botMovesUsed}</span>
-        <span style={{ color: timePct < 0.25 ? "#F0948A" : "rgba(244,238,226,.8)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
+        <span>내 수 <b style={{ color: T.ink }}>{movesUsed}</b>/{round.moveBudget}{solo ? "" : " · 봇 " + botMovesUsed}</span>
+        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
       </div>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -11338,7 +11426,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
           <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공!" : "실패") : null} />
         </motion.div>
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
         {winner ? "" : myReport ? (captured ? "나이트가 잡혔어요 — " : "") + (solo ? "" : "봇이 시도하는 중...") : "가장 적은 수로 목표 칸(★)까지 가 보세요"}
       </div>
       <KnightRaceLegend />
@@ -11667,7 +11755,7 @@ function RushMsg({ msg }) {
 function RushToolbar({ p, allowHint }) {
   const btn = (onClick, Icon, label, disabled, active) => (
     <button onClick={onClick} disabled={disabled} className="press"
-      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px 0", borderRadius: 9, border: "1px solid " + (active ? T.brassHi : "rgba(232,196,110,.3)"), background: active ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.05)", color: disabled ? "rgba(244,238,226,.3)" : T.ivoryHi, fontSize: 11.5, fontWeight: 800, cursor: disabled ? "default" : "pointer" }}>
+      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px 0", borderRadius: 9, border: "1px solid " + (active ? T.brassHi : "rgba(150,112,58,.45)"), background: active ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.55)", color: disabled ? "rgba(90,58,34,.40)" : T.ink, fontSize: 11.5, fontWeight: 800, cursor: disabled ? "default" : "pointer" }}>
       <Icon size={14} />{label}
     </button>
   );
@@ -11682,10 +11770,10 @@ function RushToolbar({ p, allowHint }) {
 }
 function RushRules({ compact }) {
   return (
-    <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(244,238,226,.72)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.04)", border: compact ? "none" : "1px solid rgba(232,196,110,.18)" }}>
-      <div>• <b style={{ color: T.brassHi }}>왕관 표시 룩</b>을 엉킨 기물들 사이에서 빼내 상대 백랭크(맨 윗줄)에서 킹을 메이트하세요.</div>
-      <div>• 다른 내 기물들은 실제 체스 규칙대로 움직여 길을 비켜 주거나, <b style={{ color: T.ivoryHi }}>희생</b>으로 상대 기물을 끌어낼 수 있어요.</div>
-      <div>• 상대 기물은 가만히 있다가, <b style={{ color: T.ivoryHi }}>방금 움직인 내 기물</b>이 자기 공격 범위에 들어오면 잡으러 와요.</div>
+    <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.45)", border: compact ? "none" : "1px solid rgba(150,112,58,.33)" }}>
+      <div>• <b style={{ color: MG_GOLD }}>왕관 표시 룩</b>을 엉킨 기물들 사이에서 빼내 상대 백랭크(맨 윗줄)에서 킹을 메이트하세요.</div>
+      <div>• 다른 내 기물들은 실제 체스 규칙대로 움직여 길을 비켜 주거나, <b style={{ color: T.ink }}>희생</b>으로 상대 기물을 끌어낼 수 있어요.</div>
+      <div>• 상대 기물은 가만히 있다가, <b style={{ color: T.ink }}>방금 움직인 내 기물</b>이 자기 공격 범위에 들어오면 잡으러 와요.</div>
       <div>• 주인공 룩이 <b style={{ color: "#F4B2A6" }}>상대 기물이 지배하는 칸</b>에 들어가면 그 즉시 잡혀 라운드가 끝나요(혼자 풀기는 실패 — 다시 풀기). 더 적은 수로 풀수록 별이 많아요.</div>
     </div>
   );
@@ -11701,31 +11789,31 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
-        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(244,238,226,.75)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><ChevronLeft size={14} />레벨 목록</button>
+        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><ChevronLeft size={14} />레벨 목록</button>
         <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? " · 희생" : ""}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.75)" }}>수 <b style={{ color: T.ivoryHi }}>{p.moves}</b> · 목표 {level.par}수{best ? " · 최고 " + best : ""}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>수 <b style={{ color: T.ink }}>{p.moves}</b> · 목표 {level.par}수{best ? " · 최고 " + best : ""}</span>
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
           <RushGrid view={p.view} selected={p.selected} targets={p.targets} hint={p.hint} danger={p.danger} onCell={p.onCell} size={boardSize} lastMove={p.lastMove} levelId={level.id} />
           <AnimatePresence>
             {failed && solvedMoves == null && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,8,3,.66)", borderRadius: 6 }}>
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: "#E08A80", fontFamily: SITE_FONT }}>룩이 잡혔어요</motion.div>
-                <div style={{ fontSize: 12, color: "rgba(244,238,226,.8)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 들어갔어요 — 이번 시도는 실패예요.</div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: T.blunder, fontFamily: SITE_FONT }}>룩이 잡혔어요</motion.div>
+                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 들어갔어요 — 이번 시도는 실패예요.</div>
                 <button onClick={() => { setFailed(false); p.restart(); }} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}><RotateCcw size={13} />다시 풀기</button>
               </motion.div>
             )}
             {solvedMoves != null && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(15,8,3,.62)", borderRadius: 6 }}>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
                 <VictoryBurst />
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: T.brassHi, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>체크메이트!</motion.div>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: MG_GOLD, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>체크메이트!</motion.div>
                 <div style={{ display: "flex", gap: 4, margin: "8px 0 4px" }}>
-                  {[1, 2, 3].map((k) => <motion.span key={k} initial={{ scale: 0, rotate: -60 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.2 + k * 0.15, type: "spring", stiffness: 400, damping: 14 }}><Star size={28} color={T.brassHi} fill={k <= rushStars(solvedMoves, level.par) ? T.brassHi : "transparent"} /></motion.span>)}
+                  {[1, 2, 3].map((k) => <motion.span key={k} initial={{ scale: 0, rotate: -60 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.2 + k * 0.15, type: "spring", stiffness: 400, damping: 14 }}><Star size={28} color={MG_GOLD} fill={k <= rushStars(solvedMoves, level.par) ? MG_GOLD : "transparent"} /></motion.span>)}
                 </div>
-                <div style={{ fontSize: 12, color: "rgba(244,238,226,.8)", marginBottom: 12 }}>{solvedMoves}수 (최단 {level.par}수)</div>
+                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", marginBottom: 12 }}>{solvedMoves}수 (최단 {level.par}수)</div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => { setSolvedMoves(null); p.restart(); }} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>다시 풀기</button>
+                  <button onClick={() => { setSolvedMoves(null); p.restart(); }} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>다시 풀기</button>
                   {onNext && <button onClick={onNext} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>다음 레벨</button>}
                 </div>
               </motion.div>
@@ -11744,8 +11832,8 @@ function RushLevelSelect({ progress, onPick }) {
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>혼자 풀기</span>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={13} fill={T.brassHi} color={T.brassHi} />{stars} / {total * 3}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>혼자 풀기</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: MG_GOLD, display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={13} fill={MG_GOLD} color={MG_GOLD} />{stars} / {total * 3}</span>
       </div>
       {RUSH_DIFFS.map((d) => (
         <div key={d.key} style={{ marginBottom: 12 }}>
@@ -11756,10 +11844,10 @@ function RushLevelSelect({ progress, onPick }) {
               const st = best ? rushStars(best, l.par) : 0;
               return (
                 <button key={l.id} onClick={() => onPick(l)} className="press"
-                  style={{ padding: "7px 0 5px", borderRadius: 9, border: "1px solid " + (best ? d.color : "rgba(232,196,110,.22)"), background: best ? d.color + "22" : "rgba(255,255,255,.04)", color: T.ivoryHi, cursor: "pointer" }}>
+                  style={{ padding: "7px 0 5px", borderRadius: 9, border: "1px solid " + (best ? d.color : "rgba(150,112,58,.37)"), background: best ? d.color + "22" : "rgba(255,255,255,.45)", color: T.ink, cursor: "pointer" }}>
                   <div style={{ fontSize: 13, fontWeight: 900 }}>{l.id.slice(1)}</div>
                   <div style={{ display: "flex", justifyContent: "center", gap: 1, marginTop: 2 }}>
-                    {[1, 2, 3].map((k) => <Star key={k} size={8} color={k <= st ? T.brassHi : "rgba(244,238,226,.3)"} fill={k <= st ? T.brassHi : "transparent"} />)}
+                    {[1, 2, 3].map((k) => <Star key={k} size={8} color={k <= st ? MG_GOLD : "rgba(90,58,34,.40)"} fill={k <= st ? MG_GOLD : "transparent"} />)}
                   </div>
                 </button>
               );
@@ -11789,9 +11877,9 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
   const diff = RUSH_DIFFS.find((d) => d.key === level.diff);
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(244,238,226,.7)", fontWeight: 700, flexShrink: 0 }}>
-        <span><b style={{ color: diff.color }}>{diff.label}</b> · 내 수 <b style={{ color: T.ivoryHi }}>{p.moves}</b> · {opp.label} {opp.solved ? "완료 " + opp.moves + "수" : opp.done ? "실패" : (opp.moves || 0) + "수"}</span>
-        <span style={{ fontVariantNumeric: "tabular-nums", color: left < timeLimitMs * 0.25 ? "#F0948A" : "rgba(244,238,226,.85)" }}>{Math.ceil(left / 1000)}초</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.80)", fontWeight: 700, flexShrink: 0 }}>
+        <span><b style={{ color: diff.color }}>{diff.label}</b> · 내 수 <b style={{ color: T.ink }}>{p.moves}</b> · {opp.label} {opp.solved ? "완료 " + opp.moves + "수" : opp.done ? "실패" : (opp.moves || 0) + "수"}</span>
+        <span style={{ fontVariantNumeric: "tabular-nums", color: left < timeLimitMs * 0.25 ? T.blunder : "rgba(90,58,34,.95)" }}>{Math.ceil(left / 1000)}초</span>
       </div>
       <MinigameTimeBar pct={left / timeLimitMs} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -11801,7 +11889,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
           <MinigameRoundBanner result={result} roundKey={roundKey} />
         </motion.div>
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(244,238,226,.65)", fontWeight: 700, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
         {result ? "" : done ? (p.status === "win" ? "풀었어요! " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡혔어요 — 결과를 기다리는 중..." : "시간 초과 — 결과를 기다리는 중...") : (opp.solved ? opp.label + "가 이미 풀었어요 — 더 적은 수로 역전하세요!" : "목표: 최단 " + level.par + "수")}
       </div>
       <RushMsg msg={p.msg} />
@@ -12138,18 +12226,14 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
       setK((x) => x + 2); rerender();
     }, 420));
   };
-  const movesLeft = Math.ceil((pos.moves.length - k) / 2);
   return (
     <motion.div animate={shakeControls} style={{ position: "relative" }}>
       <AttackGrid chess={chess} flip={attacker === "b"} selected={selected} targets={targets} onCell={onCell} size={size} lastMove={lastMove} hintMove={hintMove} mated={state === "win"} />
-      <div style={{ position: "absolute", top: 6, left: 6, zIndex: 5, pointerEvents: "none", padding: "3px 8px", borderRadius: 8, background: "rgba(20,11,4,.78)", border: "1px solid " + attackGradeInfo(grade).color, fontSize: 10.5, fontWeight: 800, color: T.ivoryHi, display: "flex", alignItems: "center", gap: 5 }}>
-        <AttackGradeBadge grade={grade} />{attacker === "w" ? "백" : "흑"} 차례 · {movesLeft}수 안에 메이트
-      </div>
       <AnimatePresence>
         {state === "win" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
             <VictoryBurst />
-            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(20,11,4,.9)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>체크메이트! +1</motion.div>
+            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(255,250,238,.95)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>체크메이트! +1</motion.div>
           </motion.div>
         )}
         {state === "fail" && (
@@ -12173,10 +12257,10 @@ function attackDecide(me, opp, myRating, oppRating) {
 }
 function AttackLedger({ tally, label }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "rgba(244,238,226,.65)", fontWeight: 700 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "rgba(90,58,34,.75)", fontWeight: 700 }}>
       <span style={{ minWidth: 24 }}>{label}</span>
       {ATTACK_GRADES.map((gi) => (
-        <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><AttackGradeBadge grade={gi.g} /><b style={{ color: T.ivoryHi, fontVariantNumeric: "tabular-nums" }}>{tally[gi.g]}</b></span>
+        <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><AttackGradeBadge grade={gi.g} /><b style={{ color: T.ink, fontVariantNumeric: "tabular-nums" }}>{tally[gi.g]}</b></span>
       ))}
     </div>
   );
@@ -12195,30 +12279,35 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myTally.total} oppScore={oppTally ? oppTally.total : 0} oppLabel={oppTally ? oppLabel : null}
-        center={<span style={{ fontSize: 17, fontWeight: 900, color: left < 30000 ? "#F0948A" : T.ivoryHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{attackClock(left)}</span>} />
+        center={<span style={{ fontSize: 17, fontWeight: 900, color: left < 30000 ? T.blunder : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{attackClock(left)}</span>} />
       <MinigameTimeBar pct={left / (endAt - startAt)} />
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4, marginBottom: 6, flexShrink: 0 }}>
         <AttackLedger tally={myTally} label="나" />
         {oppTally && <AttackLedger tally={oppTally} label={oppLabel} />}
       </div>
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ position: "relative" }}>
-          {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
-            : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.04)" }}><PendingDots size={12} /></div>}
-          <MinigameCountdown startAt={startAt} />
-          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15,8,3,.6)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>시간 종료!</div>}
-        </div>
-      </div>
-      <div style={{ textAlign: "center", minHeight: 30, marginTop: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      {/* (v0.5.5, 사용자 요청) 등급·차례·몇 수 메이트인지는 보드를 가리지 않게 보드 위쪽 줄에 둔다(예전엔 보드 왼쪽 위 칸을 덮었다). */}
+      <div style={{ minHeight: 38, marginBottom: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <AnimatePresence mode="popLayout">
-          {current && !over && (
-            <motion.div key={current.key} initial={{ y: 12, opacity: 0, scale: 0.85 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}>
-              <span style={{ fontSize: 11, color: "rgba(244,238,226,.6)", fontWeight: 700, marginRight: 8 }}>공격 기회 #{current.n}</span>
+          {current && pos && !over && (
+            <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
               <AttackGradeBadge grade={current.g} big />
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
             </motion.div>
           )}
         </AnimatePresence>
-        {waitingNote && <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.65)" }}>{waitingNote}</span>}
+      </div>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ position: "relative" }}>
+          {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
+            : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.45)" }}><PendingDots size={12} /></div>}
+          <MinigameCountdown startAt={startAt} />
+          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>시간 종료!</div>}
+        </div>
+      </div>
+      <div style={{ textAlign: "center", minHeight: 22, marginTop: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {waitingNote && <span style={{ fontSize: 11.5, color: "rgba(90,58,34,.75)" }}>{waitingNote}</span>}
       </div>
     </div>
   );
@@ -12424,30 +12513,30 @@ function AttackDevPanel({ pool, onChanged }) {
     if (!p.dbId) return;
     try { await sbDelete("attack_positions?id=eq." + p.dbId); onChanged(); } catch { setMsg("삭제하지 못했어요."); }
   };
-  const inp = { width: "100%", boxSizing: "border-box", padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(232,196,110,.35)", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 11.5, fontFamily: "ui-monospace,monospace" };
+  const inp = { width: "100%", boxSizing: "border-box", padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(150,112,58,.50)", background: "rgba(0,0,0,.25)", color: T.ink, fontSize: 11.5, fontFamily: "ui-monospace,monospace" };
   return (
-    <div style={{ marginTop: 16, textAlign: "left", border: "1px dashed rgba(232,196,110,.4)", borderRadius: 10, padding: 10 }}>
-      <button onClick={() => setOpen((v) => !v)} className="press" style={{ background: "transparent", border: "none", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, padding: 0 }}>
+    <div style={{ marginTop: 16, textAlign: "left", border: "1px dashed rgba(150,112,58,.55)", borderRadius: 10, padding: 10 }}>
+      <button onClick={() => setOpen((v) => !v)} className="press" style={{ background: "transparent", border: "none", color: MG_GOLD, fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, padding: 0 }}>
         <Wrench size={13} />개발자: 공격 기회 포지션 관리 {pool ? "(번들 " + (pool.all.length - pool.dev.length) + " + 추가 " + pool.dev.length + ")" : ""}{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
       {open && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 11, color: "rgba(244,238,226,.7)" }}>리체스 퍼즐 API에서 가져오기</div>
+          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)" }}>리체스 퍼즐 API에서 가져오기</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[1, 2, 3, 4].map((n) => <button key={n} disabled={busy} onClick={() => addLichess(n)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid " + attackGradeInfo(attackGradeOfMate(n)).color, background: "rgba(255,255,255,.05)", color: T.ivoryHi, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{n}수 메이트</button>)}
+            {[1, 2, 3, 4].map((n) => <button key={n} disabled={busy} onClick={() => addLichess(n)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid " + attackGradeInfo(attackGradeOfMate(n)).color, background: "rgba(255,255,255,.55)", color: T.ink, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{n}수 메이트</button>)}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(244,238,226,.7)", marginTop: 4 }}>FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분 — 공격·수비 번갈아, 메이트 수로 끝)</div>
+          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)", marginTop: 4 }}>FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분 — 공격·수비 번갈아, 메이트 수로 끝)</div>
           <input value={fen} onChange={(e) => setFen(e.target.value)} placeholder="FEN" style={inp} />
           <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="예: Qh7+ Kf8 Qh8#" style={inp} />
           <button disabled={busy || !fen.trim() || !line.trim()} onClick={addManual} className="press" style={{ padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>검증 후 추가</button>
-          {msg && <div style={{ fontSize: 11.5, color: T.brassHi }}>{msg}</div>}
+          {msg && <div style={{ fontSize: 11.5, color: MG_GOLD }}>{msg}</div>}
           {pool && pool.dev.length > 0 && (
-            <div style={{ maxHeight: 160, overflowY: "auto", borderTop: "1px solid rgba(232,196,110,.2)", paddingTop: 6 }}>
+            <div style={{ maxHeight: 160, overflowY: "auto", borderTop: "1px solid rgba(150,112,58,.35)", paddingTop: 6 }}>
               {pool.dev.map((p) => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(244,238,226,.75)", padding: "3px 0" }}>
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
                   <AttackGradeBadge grade={attackGradeOfMate(p.mateIn)} />
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src} · {p.fen}</span>
-                  <button onClick={() => remove(p)} className="press" aria-label="삭제" style={{ background: "transparent", border: "none", color: "#E08A80", cursor: "pointer" }}><Trash2 size={13} /></button>
+                  <button onClick={() => remove(p)} className="press" aria-label="삭제" style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
                 </div>
               ))}
             </div>
@@ -12463,15 +12552,15 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   return (
     <MinigameHub title="무한 체크메이트 게임" gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
-        <div>• <b style={{ color: T.ivoryHi }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
+        <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
         <div>• 한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어가요.</div>
-        <div>• 짧은 메이트일수록 좋은 등급이고, <b style={{ color: T.ivoryHi }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 더 높아요.</div>
+        <div>• 짧은 메이트일수록 좋은 등급이고, <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 더 높아요.</div>
         <div>• 동점이면 낮은 등급(C→B→A→S)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(244,238,226,.7)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? " · " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? " · " + counts[i] : ""}</span>
           ))}
         </div>
       }
@@ -12491,6 +12580,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 아직 실제 미니게임은 없어 레이아웃(카드 그리드)만 먼저 만들어 둔다 — 나중에 게임이 정해지면
   // PLAY_SPECIAL_GAMES 배열에 항목만 추가하면 된다. step(setup/playing) 등 기존 상태는 이 토글과
   // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
+  // (v0.5.5, 사용자 요청) 일반 대국 설정(타임 컨트롤·상대)은 체스보드 버튼을 누르면 뜨는 별도 창에서 고른다 — 대국이
+  // 시작되면(step → playing) 창을 닫고, 창을 닫을 때 진행 중이던 매칭 대기·친구 도전은 취소한다.
+  const [setupOpen, setSetupOpen] = useState(false);
   // (v0.5.5, 사용자 요청) "일반/스페셜" 토글을 없애고 일반 대국 화면 아래에 미니게임 목록을 함께 보여준다 —
   // 전역 알람 박스에서 미니게임 친구 도전장을 수락하면(specialResume) PlaySpecialGames가 곧장 그 대국을 연다.
   const [step, setStep] = useState("setup"); // "setup" | "playing"
@@ -13073,12 +13165,21 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // (v0.5.0 리디자인, 사용자 요청) 예전엔 이 페이지 전체가 화면을 덮는 별도 오버레이(고정 배경 +
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
+  const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
+  useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   return (
     // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
     // 일반 대국 부분만 460px로 가운데에 둔다.
     <div style={{ maxWidth: 880, margin: "0 auto" }}>
-        <div style={{ maxWidth: 460, margin: "0 auto" }}>
+        <div style={{ maxWidth: step === "setup" ? 780 : 460, margin: "0 auto" }}>
         {step === "setup" ? (
+          <>
+            {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
+            <PlayNormalButton onClick={() => setSetupOpen(true)} />
+            {setupOpen && (
+              <MinigameScreen title="일반 대국" onBack={closeSetup}>
+                <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
+                {
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
              (MatchmakingScreen)이다 — 지금 벌어지고 있는 일에 화면 전체가 반응하는 느낌을 준다. */
@@ -13195,6 +13296,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             )}
           </div>
           )
+                }
+                </div>
+              </MinigameScreen>
+            )}
+          </>
         ) : (
           <div>
             {/* (사용자 요청) chess.com 대국 화면과 같은 구성 — 맨 위 수순 스트립(누르면 그 시점으로
@@ -13283,12 +13389,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         </div>
         {/* (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
             그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
-        <div style={{ display: step === "setup" ? "block" : "none", marginTop: 28 }}>
-          <div style={{ maxWidth: 780, margin: "0 auto 12px", display: "flex", alignItems: "center", gap: 8 }}>
-            <Sparkles size={16} color={T.brassHi} />
-            <span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>미니게임</span>
-            <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.55)", fontWeight: 600 }}>체스보드 위 오리지널 미니게임</span>
-          </div>
+        <div style={{ display: step === "setup" ? "block" : "none", marginTop: 14 }}>
           <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} />
         </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
