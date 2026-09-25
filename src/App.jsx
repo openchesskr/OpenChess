@@ -25,7 +25,7 @@ import {
   SFX_SRC, playSfx, playMoveSfx,
 } from "./lib/prefs.js";
 import { fx, buzz } from "./lib/minigameFx.js";
-import { rushParse, rushApply, rushSolve, rushTargetsFrom, rushAttacked } from "./lib/rushHour.js";
+import { rushParse, rushApply, rushTargetsFrom, rushAttacked } from "./lib/rushHour.js";
 import RUSH_LEVELS from "./data/rushLevels.json";
 import HUB_SCENES from "./data/hubScenes.json";
 import { Chess } from "chess.js";
@@ -9335,17 +9335,21 @@ function useFriendPvpInvite({ myUid, gameType, onMatched }) {
 }
 // 친구 로스터 UI — 체스 PvP 설정 화면의 "친구와 플레이하기" 목록과 똑같은 마크업·동작을 미니게임
 // 설정 화면에서도 그대로 쓴다.
-function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile }) {
+// lobby: (v0.5.6) 미니게임 준비 화면용 — 제목을 준비 화면의 섹션 제목 모양으로, 목록 상자를 준비 화면 카드 모양으로 그린다.
+function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile, lobby }) {
+  const boxRadius = lobby ? 14 : 10;
   return (
     <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-        <User size={14} color={T.brass} />
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
-      </div>
+      {lobby ? <MgLobbyLabel>친구와 플레이하기</MgLobbyLabel> : (
+        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+          <User size={14} color={T.brass} />
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+        </div>
+      )}
       {!myUid ? (
-        <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+        <div style={{ padding: "16px 10px", borderRadius: boxRadius, border: "1px dashed " + (lobby ? "rgba(150,112,58,.35)" : "#C9B58C"), fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
       ) : (
-        <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
+        <div style={{ border: "1px solid " + (lobby ? MG_LOBBY_LINE : "#DCCBA8"), borderRadius: boxRadius, maxHeight: 280, overflowY: "auto", background: lobby ? MG_LOBBY_CARD : "rgba(255,255,255,.4)" }}>
           {friendList.length === 0 ? (
             <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 플레이할 친구가 없어요.</div>
           ) : friendList.map((f, i) => (
@@ -9405,13 +9409,77 @@ const PLAY_SPECIAL_GAMES = [
 // flexbox로 뷰포트 높이를 정확히 나눠 써 스크롤 없이 두 보드가 항상 한 화면에 다 보이게 한다(아래
 // useSquareFit 참고). 로비·매칭 대기·결과 화면은 내용 길이가 가변적이라(친구 목록 등) 그대로
 // 스크롤을 허용한다.
-function MinigameScreen({ title, onBack, children, noScroll }) {
+// (v0.5.6, 사용자 요청) 미니게임 보드 드래그 무브 — 나이트 레이스·백랭크 러시아워·무한 체크메이트 게임의 보드(칸마다 버튼인 8×8
+// 격자)에 분석 탭 Board와 같은 방식(Pointer Events, 마우스·터치·펜 공통)의 끌어 놓기를 붙인다. 탭으로 선택 → 탭으로 목적지도
+// 그대로 된다. 격자 요소에 bind를 펼쳐 붙이고(스타일에 touchAction: "none"도 — 끄는 동안 화면이 스크롤되지 않게), 칸 키(보드마다 "e4" 또는 0~63)는 cellAt(화면 줄, 화면 열)이 정한다.
+//   canDrag(key)      이 칸의 기물을 집을 수 있는지(내 차례·내 기물)
+//   onStart(key)      임계값을 넘어 실제로 끌기 시작한 순간(선택 표시·이동 가능 칸을 띄울 때)
+//   onDrop(from, to)  놓은 칸(to는 보드 밖이면 null) — 보통 격자의 onCell(to)로 이어 준다
+//   renderPiece(key, px)  손가락을 따라다니는 고스트 기물
+// 끌기가 끝나면 뒤이어 오는 합성 click은 버린다(놓은 칸 버튼이 한 번 더 눌리는 것 방지). dragFrom은 끄는 동안 원래 칸 기물을 흐리게 할 때 쓴다.
+function useGridDrag({ size, cellAt, canDrag, onStart, onDrop, renderPiece }) {
+  const cbRef = useRef(null);
+  cbRef.current = { size, cellAt, canDrag, onStart, onDrop, renderPiece };
+  const startRef = useRef(null);      // { key, x, y, id }
+  const suppressRef = useRef(false);
+  const ghostRef = useRef(null);
+  const [dragFrom, setDragFrom] = useState(null);
+  const [ghostAt, setGhostAt] = useState(null); // 끌기 시작 순간의 좌표(이후엔 ghostRef에 직접 쓴다)
+  const keyAt = (el, x, y) => {
+    const r = el.getBoundingClientRect(), cell = r.width / 8;
+    const vc = Math.floor((x - r.left) / cell), vr = Math.floor((y - r.top) / cell);
+    if (vc < 0 || vc > 7 || vr < 0 || vr > 7) return null;
+    return cbRef.current.cellAt(vr, vc);
+  };
+  const end = () => { startRef.current = null; setDragFrom(null); setGhostAt(null); };
+  const bind = {
+    onPointerDown: (e) => {
+      if (e.button != null && e.button !== 0) return;
+      const key = keyAt(e.currentTarget, e.clientX, e.clientY);
+      startRef.current = key != null && cbRef.current.canDrag(key) ? { key, x: e.clientX, y: e.clientY, id: e.pointerId, dragging: false } : null;
+    },
+    onPointerMove: (e) => {
+      const st = startRef.current;
+      if (!st || st.id !== e.pointerId) return;
+      if (!st.dragging) {
+        if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 6) return;
+        st.dragging = true;
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+        cbRef.current.onStart && cbRef.current.onStart(st.key);
+        setDragFrom(st.key); setGhostAt({ x: e.clientX, y: e.clientY });
+        return;
+      }
+      const g = ghostRef.current;
+      if (g) { g.style.left = e.clientX + "px"; g.style.top = e.clientY + "px"; }
+    },
+    onPointerUp: (e) => {
+      const st = startRef.current;
+      if (!st || st.id !== e.pointerId) return;
+      if (st.dragging) {
+        suppressRef.current = true;
+        setTimeout(() => { suppressRef.current = false; }, 0);
+        const to = keyAt(e.currentTarget, e.clientX, e.clientY);
+        end();
+        if (to !== st.key) cbRef.current.onDrop(st.key, to);
+      } else startRef.current = null;
+    },
+    onPointerCancel: () => end(),
+    onClickCapture: (e) => { if (suppressRef.current) { suppressRef.current = false; e.stopPropagation(); e.preventDefault(); } },
+  };
+  const cell = size / 8;
+  const ghost = dragFrom != null && ghostAt ? createPortal(
+    <div ref={ghostRef} aria-hidden="true" style={{ position: "fixed", left: ghostAt.x, top: ghostAt.y, width: cell, height: cell, marginLeft: -cell / 2, marginTop: -cell, zIndex: 400, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 8px 14px rgba(0,0,0,.45))" }}>
+      {cbRef.current.renderPiece(dragFrom, cell * 0.9)}
+    </div>, document.body) : null;
+  return { bind, dragFrom, ghost };
+}
+function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
       <div className="flex items-center justify-between" style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px" }}>
         <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{title}</div>
-        <span style={{ width: 32, flexShrink: 0 }} />
+        {headerRight || <span style={{ width: 32, flexShrink: 0 }} />}
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: "0 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
         {children}
@@ -10809,29 +10877,31 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   const serverBest = row ? minigameBestFromServer(game, row.best_score, row.best_detail) : null;
   const best = (minigameBestScore(game, serverBest) || 0) > (minigameBestScore(game, localBest) || 0) ? serverBest : localBest;
   const placed = row && row.rated_games >= MINIGAME_PLACEMENT;
-  const cell = (label, value, sub) => (
-    <div style={{ minWidth: 0, flex: 1, padding: "7px 4px", textAlign: "center" }}>
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      {sub && <div style={{ fontSize: 9.5, fontWeight: 700, color: "rgba(90,58,34,.60)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+  const cell = (label, value, sub, first) => (
+    <div style={{ minWidth: 0, flex: 1, padding: "2px 6px", textAlign: "center", borderLeft: first ? "none" : "1px solid " + MG_LOBBY_LINE }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.55)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
     </div>
   );
   return (
-    <div style={{ display: "flex", alignItems: "stretch", gap: 8, marginBottom: 12 }}>
-      <div style={{ flex: 1, minWidth: 0, display: "flex", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.37)" }}>
-        {myUid ? (<>
-          {cell("레이팅", row ? row.rating : 1200, placed ? "최고 " + row.peak_rating : "배치 " + Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT) + "/" + MINIGAME_PLACEMENT)}
+    <div style={{ ...MG_LOBBY_CARD_STYLE, padding: "12px 14px 14px" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: myUid ? 12 : 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>내 기록</span>
+        <button onClick={onOpenRanking} className="press" aria-label="랭킹"
+          style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px 4px 9px", borderRadius: 999, border: "1px solid rgba(169,122,44,.35)", background: "rgba(196,154,80,.1)", color: MG_GOLD, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
+          <Trophy size={12} />랭킹<ChevronRight size={12} />
+        </button>
+      </div>
+      {myUid ? (
+        <div style={{ display: "flex" }}>
+          {cell("레이팅", row ? row.rating : 1200, placed ? "최고 " + row.peak_rating : "배치 " + Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT) + "/" + MINIGAME_PLACEMENT, true)}
           {cell("전적", minigameRecordText(row), row && row.streak >= 2 ? row.streak + "연승 중" : row && row.best_streak >= 2 ? "최다 " + row.best_streak + "연승" : null)}
           {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
-        </>) : (
-          <div style={{ flex: 1, padding: "10px 12px", fontSize: 11, color: "rgba(90,58,34,.75)", lineHeight: 1.5, display: "flex", alignItems: "center" }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
-        )}
-      </div>
-      <button onClick={onOpenRanking} className="press" aria-label="랭킹"
-        style={{ flexShrink: 0, width: 58, borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: MG_GOLD, cursor: "pointer", display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3 }}>
-        <Trophy size={18} />
-        <span style={{ fontSize: 10.5, fontWeight: 800 }}>랭킹</span>
-      </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
+      )}
     </div>
   );
 }
@@ -11027,47 +11097,103 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
   const invite = useFriendPvpInvite({ myUid, gameType, onMatched: setGame });
   return { game, setGame, waiting, join, leave, err, friendList: invite.friendList, myInvite: invite.myInvite, sendInvite: invite.sendInvite, cancelInvite: invite.cancelInvite, inviteErr: invite.err };
 }
-function MinigameModeCard({ Icon, label, sub, onClick, disabled, primary, active }) {
+// (v0.5.6 리디자인, 사용자 요청 "준비 화면을 더 세련되고 깔끔하게") 미니게임 준비 화면 — 폭을 520px로 모아 가운데에 두고,
+// 내 기록 카드 → 플레이 모드(한 줄에 하나씩: 아이콘 타일·이름·설명·화살표) → 친구와 플레이하기 순으로 섹션을 나눈다. 규칙 설명은
+// 화면에 늘 펼쳐 두지 않고 우상단 ? 버튼(MinigameHelpButton)을 눌렀을 때만 말풍선으로 보여 준다.
+const MG_LOBBY_LINE = "rgba(150,112,58,.2)";
+const MG_LOBBY_CARD = "rgba(255,255,255,.62)";
+const MG_LOBBY_CARD_STYLE = { borderRadius: 14, background: MG_LOBBY_CARD, border: "1px solid " + MG_LOBBY_LINE, boxShadow: "0 1px 2px rgba(90,58,34,.06), 0 6px 18px -12px rgba(90,58,34,.35)" };
+const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s ease,transform .08s ease}.mg-row:not(:disabled):hover{border-color:rgba(169,122,44,.55)!important;background:rgba(255,255,255,.85)!important}"
+  + ".mg-row.primary:not(:disabled):hover{background:linear-gradient(180deg,#D6B064,#B48E3C)!important}";
+function MgLobbyLabel({ children }) {
+  return <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.6)", letterSpacing: ".02em", margin: "0 2px 8px" }}>{children}</div>;
+}
+function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable }) {
   return (
-    <button onClick={onClick} disabled={disabled} className="press"
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, minHeight: 92, padding: "12px 6px", borderRadius: 12, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1,
-        border: "1px solid " + (active ? T.brassHi : primary ? "transparent" : "rgba(150,112,58,.60)"),
-        background: primary ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : active ? "rgba(236,203,134,.2)" : "rgba(196,154,80,.1)",
-        color: primary ? "#241509" : T.ink }}>
-      <Icon size={20} />
-      <span style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2 }}>{label}</span>
-      {sub && <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.72, lineHeight: 1.25 }}>{sub}</span>}
+    <button onClick={onClick} disabled={disabled} className={"press mg-row" + (primary ? " primary" : "")} aria-expanded={expandable ? !!open : undefined}
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 14px 11px 11px", textAlign: "left", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1,
+        ...MG_LOBBY_CARD_STYLE, ...(primary ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "1px solid rgba(120,84,30,.5)" } : null),
+        ...(open ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderColor: "rgba(169,122,44,.55)" } : null) }}>
+      <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
+        background: primary ? "rgba(36,21,9,.14)" : "rgba(196,154,80,.15)", color: primary ? "#241509" : MG_GOLD }}><Icon size={19} /></span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: primary ? "#241509" : T.ink, lineHeight: 1.25 }}>{label}</span>
+        {sub && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: primary ? "rgba(36,21,9,.7)" : "rgba(90,58,34,.6)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
+      </span>
+      <ChevronRight size={17} style={{ flexShrink: 0, color: primary ? "#241509" : "rgba(90,58,34,.45)", transform: open ? "rotate(90deg)" : "none", transition: "transform .2s ease" }} />
     </button>
   );
 }
-function MinigameLobby({ rules, lobbyExtra, myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar }) {
+function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar }) {
   const [pickBot, setPickBot] = useState(false);
+  const botOpen = pickBot && !!botOptions;
   return (
-    <div style={{ padding: "12px 4px 4px" }}>
+    <div style={{ width: "100%", maxWidth: 520, margin: "0 auto", padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <style>{MG_LOBBY_CSS}</style>
       {statsBar}
-      <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.45)", border: "1px solid rgba(150,112,58,.33)", marginBottom: 12 }}>{rules}</div>
-      {lobbyExtra}
-      {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 10, textAlign: "center" }}>{err}</p>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginBottom: pickBot && botOptions ? 8 : 18 }}>
-        <MinigameModeCard Icon={User} label="혼자 플레이하기" sub={soloSub} onClick={onSolo} />
-        <MinigameModeCard Icon={Cpu} label="봇과 플레이하기" sub={botSub} active={pickBot && !!botOptions} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
-        <MinigameModeCard Icon={Shuffle} label="랜덤 매칭" sub={myUid ? "실시간 대전" : "로그인 필요"} onClick={onRandom} disabled={!myUid} primary />
+      <div>
+        <MgLobbyLabel>플레이 모드</MgLobbyLabel>
+        {err && <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 2px 8px" }}>{err}</p>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <MinigameModeRow Icon={User} label="혼자 플레이하기" sub={soloSub} onClick={onSolo} />
+          <div>
+            <MinigameModeRow Icon={Cpu} label="봇과 플레이하기" sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
+            <AnimatePresence initial={false}>
+              {botOpen && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(" + botOptions.length + ",minmax(0,1fr))", gap: 6, padding: 8, borderRadius: "0 0 14px 14px", border: "1px solid rgba(169,122,44,.55)", borderTop: "none", background: "rgba(255,255,255,.45)" }}>
+                    {botOptions.map((b) => (
+                      <button key={b.key} onClick={() => onBot(b)} className="press mg-row" style={{ padding: "9px 0", borderRadius: 10, border: "1px solid " + MG_LOBBY_LINE, background: MG_LOBBY_CARD, color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+                        {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.6)", marginTop: 2 }}>{b.sub}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <MinigameModeRow Icon={Shuffle} label="랜덤 매칭" sub={myUid ? "실시간 대전 상대 찾기" : "로그인하면 이용할 수 있어요"} onClick={onRandom} disabled={!myUid} primary />
+        </div>
       </div>
-      <AnimatePresence initial={false}>
-        {pickBot && botOptions && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(" + botOptions.length + ",minmax(0,1fr))", gap: 6, marginBottom: 18 }}>
-              {botOptions.map((b) => (
-                <button key={b.key} onClick={() => onBot(b)} className="press" style={{ padding: "8px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                  {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.70)", marginTop: 1 }}>{b.sub}</div>}
-                </button>
-              ))}
+      {roster}
+      {footer}
+    </div>
+  );
+}
+// (v0.5.6, 사용자 요청) 준비 화면 우상단 ? 버튼 — 누를 때만 게임 방법(예전엔 준비 화면에 늘 펼쳐 두던 규칙 설명)을 버튼에서
+// 내려오는 말풍선으로 보여 준다. 바깥을 누르거나 Esc·닫기 버튼으로 닫는다.
+function MinigameHelpButton({ title, children }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
+      <button onClick={() => setOpen((v) => !v)} aria-label="게임 방법" aria-expanded={open} className="press"
+        style={{ width: 32, height: 32, borderRadius: 9, background: open ? T.brass : "rgba(255,255,255,.55)", border: "1px solid " + (open ? "rgba(120,84,30,.5)" : "rgba(90,58,34,.18)"), color: open ? "#241509" : T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 15, fontWeight: 900, fontFamily: SITE_FONT, transition: "background .15s ease" }}>?</button>
+      <AnimatePresence>
+        {open && (
+          <motion.div role="dialog" aria-label={title + " 게임 방법"} initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.16, ease: MOTION_EASE }}
+            style={{ position: "absolute", top: 42, right: 0, zIndex: 20, width: "min(360px, calc(100vw - 28px))", transformOrigin: "calc(100% - 16px) -10px" }}>
+            {/* 말풍선 꼬리 — ? 버튼 가운데를 가리킨다 */}
+            <span aria-hidden="true" style={{ position: "absolute", top: -6, right: 11, width: 11, height: 11, background: "#FFFDF8", borderLeft: "1px solid " + MG_LOBBY_LINE, borderTop: "1px solid " + MG_LOBBY_LINE, transform: "rotate(45deg)", borderTopLeftRadius: 2 }} />
+            <div style={{ borderRadius: 14, background: "#FFFDF8", border: "1px solid " + MG_LOBBY_LINE, boxShadow: "0 18px 40px -14px rgba(60,36,14,.45), 0 2px 6px rgba(60,36,14,.08)", padding: "13px 15px 14px", maxHeight: "min(70dvh, 560px)", overflowY: "auto" }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 900, color: T.ink }}>게임 방법</span>
+                <button onClick={() => setOpen(false)} aria-label="닫기" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "none", background: "transparent", color: "rgba(90,58,34,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={15} /></button>
+              </div>
+              <div className="mg-help-body" style={{ textAlign: "left", fontSize: 12.5, lineHeight: 1.7, color: "rgba(90,58,34,.88)" }}>{children}</div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      {roster}
-      {footer}
+      <style>{".mg-help-body>div+div,.mg-help-body>div>div+div{margin-top:6px}"}</style>
     </div>
   );
 }
@@ -11124,15 +11250,17 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
       opponent={m.myInvite ? { name: m.myInvite.toUsername || "상대", photo: m.myInvite.toPhoto } : null}
       timeControlLabel={title} onCancel={() => { if (m.waiting) m.leave(); if (m.myInvite) m.cancelInvite(); }} />
   );
-  else body = (
-    <MinigameLobby rules={rules} lobbyExtra={lobbyExtra} footer={footer} myUid={myUid} soloSub={soloSub} botSub={botSub} botOptions={botOptions}
+  const inLobby = !m.game && !mode && !m.waiting && !m.myInvite;
+  if (inLobby) body = (
+    <MinigameLobby footer={footer} myUid={myUid} soloSub={soloSub} botSub={botSub} botOptions={botOptions}
       statsBar={<MinigameStatsBar myUid={myUid} game={gameType} row={myStats} onOpenRanking={() => start({ kind: "rank" })} />}
       onSolo={() => start({ kind: "solo" })} onBot={(opt) => start({ kind: "bot", opt })} onRandom={m.join} err={m.err || m.inviteErr}
-      roster={<FriendPvpRoster myUid={myUid} friendList={m.friendList} myInvite={m.myInvite} onInvite={m.sendInvite} onOpenProfile={onOpenProfile} />} />
+      roster={<FriendPvpRoster lobby myUid={myUid} friendList={m.friendList} myInvite={m.myInvite} onInvite={m.sendInvite} onOpenProfile={onOpenProfile} />} />
   );
   const noScroll = !!m.game || (mode && mode.kind !== "rank" && !(mode.kind === "solo" && soloScroll));
   return (
-    <MinigameScreen title={title} onBack={requestExit} noScroll={!!noScroll}>
+    <MinigameScreen title={title} onBack={requestExit} noScroll={!!noScroll}
+      headerRight={inLobby ? <MinigameHelpButton title={title}>{rules}{lobbyExtra && <div style={{ marginTop: 12 }}>{lobbyExtra}</div>}</MinigameHelpButton> : null}>
       {body}
       {confirmForfeit && <MinigameForfeitConfirm onCancel={() => setConfirmForfeit(false)} onConfirm={doForfeit} bot={!m.game} />}
     </MinigameScreen>
@@ -11383,6 +11511,12 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
   if (oppCaptured && !shared) addCatcher(oppPos, oppColor, "opp");
   const viewRC = (sq) => { const r = 8 - parseInt(sq.slice(1), 10), c = sq.charCodeAt(0) - 97; return flip ? [7 - r, 7 - c] : [r, c]; };
   const legalSet = new Set(legalTargets || []);
+  const drag = useGridDrag({
+    size, cellAt: (vr, vc) => { const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc; return COORD_FILES[c] + (8 - r); },
+    canDrag: (sq) => sq === myPos && !myCaptured && legalSet.size > 0,
+    onDrop: (from, to) => { if (to) onCell(to); },
+    renderPiece: (sq, px) => <PieceGlyph type="N" color={myColor} size={px * 0.8} />,
+  });
   // (v0.5.5, 사용자 요청) 상대 기물이 통제하는 칸(들어가면 잡히는 칸)은 설정 탭 "통제 칸 표시"를 켰을 때만 보인다 — 규칙은 그대로다.
   const { dangerOn } = useContext(MinigamePrefsContext);
   const illegalSet = new Set(dangerOn ? (dangerForMe || []) : []);
@@ -11420,15 +11554,16 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
         {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
         {isShared && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "absolute", inset: 0, zIndex: myCaptured ? 4 : 2, display: "flex", alignItems: "center", justifyContent: "center" }}><KnightCaughtGlyph color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={oppCaptured} base={.88} />{myCaptured && <KnightCapturedMark />}</motion.div>}
         {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><KnightCaughtGlyph color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={oppCaptured} base={.88} />{oppCaptured && !catchers.some((x) => x.who === "opp") && <KnightCapturedMark />}</motion.div>}
-        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><KnightCaughtGlyph color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={myCaptured} base={1} />{(isShared ? oppCaptured : myCaptured && !catchers.some((x) => x.who === "me")) && <KnightCapturedMark />}</motion.div>}
+        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex", opacity: drag.dragFrom === sq ? 0.35 : 1 }}><KnightCaughtGlyph color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={myCaptured} base={1} />{(isShared ? oppCaptured : myCaptured && !catchers.some((x) => x.who === "me")) && <KnightCapturedMark />}</motion.div>}
 
       </button>
     );
   }
   return (
-    <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+    <div {...drag.bind} style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", touchAction: "none" }}>
       <style>{KNIGHT_GRID_CSS}</style>
       {cells}
+      {drag.ghost}
       {catchers.map((h) => {
         const [fr, fc] = viewRC(h.sq), [tr, tc] = viewRC(h.to), cell = size / 8;
         return (
@@ -11990,7 +12125,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
 // 엉켜 있는 포지션에서 주인공 룩(금빛 테두리)을 탈출시켜 상대 백랭크로 보내 킹을 체크메이트한다.
 // 규칙 엔진은 src/lib/rushHour.js(레벨 생성기와 공유), 레벨은 src/data/rushLevels.json(생성기가 BFS로
 // 풀이·최소 수(par)를 검증해 둔 것만) — 자세한 규칙은 rushHour.js 머리 주석 참고.
-// 모드: 혼자 풀기(레벨 선택·별 3개 평가·힌트), 봇과 플레이하기, 실시간 PvP(대전 상대 찾기·친구 도전).
+// 모드: 혼자 풀기(레벨 선택·별 3개 평가), 봇과 플레이하기, 실시간 PvP(대전 상대 찾기·친구 도전).
 // 대전은 3라운드(쉬움→보통→어려움) 2선승 — 같은 퍼즐을 동시에 풀어, 푼 쪽 > 못 푼 쪽, 둘 다 풀면 더
 // 적은 수, 같으면 더 빨리 푼 쪽이 라운드를 가져간다(되돌리기·초기화로 버린 수는 세지 않는다).
 const RUSH_GAME_TYPE = "rush";
@@ -12010,12 +12145,19 @@ function saveRushProgress(p) { try { window.localStorage.setItem(RUSH_PROGRESS_K
 const rushStars = (moves, par) => (moves <= par ? 3 : moves <= par + 2 ? 2 : 1);
 
 // 보드 — 기물마다 고유 id를 붙여(layoutId) 내 수·상대의 유인 포획이 칸 사이를 미끄러지듯 움직인다.
-function RushGrid({ view, selected, targets, hint, danger, onCell, size = 320, lastMove, levelId }) {
+function RushGrid({ view, selected, targets, danger, onCell, canDrag, size = 320, lastMove, levelId }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const targetSet = new Set(targets || []);
   const dangerSet = new Set(danger || []);
   const cell = size / 8;
+  const drag = useGridDrag({
+    size, cellAt: (vr, c) => (7 - vr) * 8 + c,
+    canDrag: (i) => (canDrag ? canDrag(i) : !!(view.board[i] && view.board[i][0] === "w")),
+    onStart: (i) => { if (i !== selected) onCell(i); },
+    onDrop: (from, to) => { if (to != null) onCell(to); },
+    renderPiece: (i, px) => (view.board[i] ? <PieceGlyph type={view.board[i][1]} color={view.board[i][0]} size={px * 0.87} /> : null),
+  });
   const cells = [];
   for (let vr = 0; vr < 8; vr++) for (let c = 0; c < 8; c++) {
     const rank0 = 7 - vr;
@@ -12026,7 +12168,6 @@ function RushGrid({ view, selected, targets, hint, danger, onCell, size = 320, l
     const isHero = i === view.hero;
     const isSel = i === selected;
     const isTarget = targetSet.has(i);
-    const isHint = hint && (hint[0] === i || hint[1] === i);
     const isLast = lastMove && (lastMove[0] === i || lastMove[1] === i);
     cells.push(
       <button key={i} onClick={() => onCell(i)} className="press"
@@ -12035,9 +12176,8 @@ function RushGrid({ view, selected, targets, hint, danger, onCell, size = 320, l
         {isLast && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(236,203,134,.32)", pointerEvents: "none" }} />}
         {dangerSet.has(i) && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(196,60,50,.28)", pointerEvents: "none" }} />}
         {isSel && <span aria-hidden="true" style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 3px " + T.brassHi, background: "rgba(236,203,134,.25)", pointerEvents: "none" }} />}
-        {isHint && <motion.span aria-hidden="true" animate={{ opacity: [0.35, 0.9, 0.35] }} transition={{ duration: 1.1, repeat: Infinity }} style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 3px #7FD6FF", pointerEvents: "none" }} />}
         {p && (
-          <motion.div layoutId={"rush-" + levelId + "-" + id} transition={{ type: "spring", stiffness: 480, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
+          <motion.div layoutId={"rush-" + levelId + "-" + id} transition={{ type: "spring", stiffness: 480, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", opacity: drag.dragFrom === i ? 0.35 : 1 }}>
             {isHero && <motion.span aria-hidden="true" animate={{ opacity: [0.55, 1, 0.55] }} transition={{ duration: 1.8, repeat: Infinity }} style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 14px 3px rgba(236,203,134,.75)" }} />}
             <PieceGlyph type={p[1]} color={p[0]} size={cell * 0.78} style={{ position: "relative" }} />
             {isHero && <Crown aria-hidden="true" size={Math.max(9, cell * 0.24)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 2, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />}
@@ -12051,13 +12191,14 @@ function RushGrid({ view, selected, targets, hint, danger, onCell, size = 320, l
   }
   return (
     <LayoutGroup id="rush-board">
-      <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      <div {...drag.bind} style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", touchAction: "none" }}>
         {cells}
+        {drag.ghost}
       </div>
     </LayoutGroup>
   );
 }
-// 퍼즐 한 판의 조작 상태 — 선택·이동·되돌리기·초기화·힌트, 상대 응수(유인 포획)의 단계적 연출까지.
+// 퍼즐 한 판의 조작 상태 — 선택·이동(탭·드래그)·되돌리기·초기화, 상대 응수(유인 포획)의 단계적 연출까지.
 // 화면용 view는 { board, hero, ids } — ids는 칸마다 기물 고유 번호(애니메이션용)로, 엔진 상태와 함께
 // 이벤트 순서대로 옮겨 둔다.
 function rushView(state, ids) { return { board: state.board, hero: state.hero, ids }; }
@@ -12081,7 +12222,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("play"); // play | win | lost(v0.5.4 — 주인공 룩이 잡힘)
   const [msg, setMsg] = useState(null); // { text, tone }
-  const [hint, setHint] = useState(null);
+  // (v0.5.6, 사용자 요청) 혼자 풀기의 힌트 기능은 없앴다.
   // (v0.5.5, 사용자 요청) 통제(위험) 칸 표시는 설정 탭 "통제 칸 표시"를 켰을 때만 — 켜져 있으면 처음부터 보이고 도구 모음 버튼으로 끌 수 있다.
   const { dangerOn } = useContext(MinigamePrefsContext);
   const [showDanger, setShowDanger] = useState(dangerOn);
@@ -12091,7 +12232,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   useEffect(() => {
     timersRef.current.forEach(clearTimeout); timersRef.current = [];
     setHist([{ state: start, ids: startIds, last: null }]); setView(rushView(start, startIds));
-    setSelected(-1); setBusy(false); setStatus("play"); setMsg(null); setHint(null);
+    setSelected(-1); setBusy(false); setStatus("play"); setMsg(null);
   }, [start, startIds]);
   const cur = hist[hist.length - 1];
   const moves = hist.length - 1;
@@ -12111,7 +12252,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
     setSelected(-1);
   };
   const doMove = (from, to) => {
-    setSelected(-1); setHint(null);
+    setSelected(-1);
     const res = rushApply(cur.state, from, to);
     const first = res.events[0];
     playSfx(first.captured ? "capture" : "move");
@@ -12161,26 +12302,20 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const undo = () => {
     if (busy || status !== "play" || hist.length <= 1) return;
     const h = hist.slice(0, -1);
-    setHist(h); setView(rushView(h[h.length - 1].state, h[h.length - 1].ids)); setSelected(-1); setHint(null); fx("whoosh");
+    setHist(h); setView(rushView(h[h.length - 1].state, h[h.length - 1].ids)); setSelected(-1); fx("whoosh");
   };
   const reset = () => {
     if (busy || status !== "play") return;
-    setHist([{ state: start, ids: startIds, last: null }]); setView(rushView(start, startIds)); setSelected(-1); setHint(null); fx("whoosh");
+    setHist([{ state: start, ids: startIds, last: null }]); setView(rushView(start, startIds)); setSelected(-1); fx("whoosh");
   };
   // 풀고 난 뒤 "다시 풀기" — win 상태에서도 처음 포지션·play 상태로 완전히 되돌린다.
   const restart = () => {
     timersRef.current.forEach(clearTimeout); timersRef.current = [];
     setHist([{ state: start, ids: startIds, last: null }]); setView(rushView(start, startIds));
-    setSelected(-1); setHint(null); setBusy(false); setMsg(null); setStatus("play"); fx("whoosh");
+    setSelected(-1); setBusy(false); setMsg(null); setStatus("play"); fx("whoosh");
   };
-  const askHint = () => {
-    if (busy || status !== "play") return;
-    const sol = rushSolve(cur.state, 9, 150000);
-    if (!sol || !sol.line.length) { flash("이 포지션에서는 풀 수 없어요 — 되돌려 보세요.", "bad"); return; }
-    setHint(sol.line[0]);
-    flash("최단 풀이까지 " + sol.par + "수 남았어요.", "info");
-  };
-  return { view, selected, targets, hint, danger, showDanger, setShowDanger, onCell, undo, reset, restart, askHint, moves, status, msg, shakeControls, lastMove: cur.last, busy };
+  const canDrag = (i) => enabled && !busy && status === "play" && !!(cur.state.board[i] && cur.state.board[i][0] === "w");
+  return { view, selected, targets, danger, showDanger, setShowDanger, onCell, canDrag, undo, reset, restart, moves, status, msg, shakeControls, lastMove: cur.last, busy };
 }
 const RUSH_PIECE_SUBJ = { P: "폰이", N: "나이트가", B: "비숍이", R: "룩이", Q: "퀸이", K: "킹이" };
 function RushMsg({ msg }) {
@@ -12195,7 +12330,7 @@ function RushMsg({ msg }) {
     </div>
   );
 }
-function RushToolbar({ p, allowHint }) {
+function RushToolbar({ p }) {
   const { dangerOn } = useContext(MinigamePrefsContext);
   const btn = (onClick, Icon, label, disabled, active) => (
     <button onClick={onClick} disabled={disabled} className="press"
@@ -12208,7 +12343,6 @@ function RushToolbar({ p, allowHint }) {
       {btn(p.undo, Undo2, "되돌리기", p.moves === 0 || p.status !== "play")}
       {btn(p.reset, RotateCcw, "처음부터", p.moves === 0 || p.status !== "play")}
       {dangerOn && btn(() => p.setShowDanger((v) => !v), Eye, "위험 칸", false, p.showDanger)}
-      {allowHint && btn(p.askHint, Lightbulb, "힌트", p.status !== "play")}
     </div>
   );
 }
@@ -12239,7 +12373,7 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
-          <RushGrid view={p.view} selected={p.selected} targets={p.targets} hint={p.hint} danger={p.danger} onCell={p.onCell} size={boardSize} lastMove={p.lastMove} levelId={level.id} />
+          <RushGrid view={p.view} selected={p.selected} targets={p.targets} danger={p.danger} onCell={p.onCell} canDrag={p.canDrag} size={boardSize} lastMove={p.lastMove} levelId={level.id} />
           <AnimatePresence>
             {failed && solvedMoves == null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
@@ -12266,7 +12400,7 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
         </motion.div>
       </div>
       <RushMsg msg={p.msg} />
-      <RushToolbar p={p} allowHint />
+      <RushToolbar p={p} />
     </div>
   );
 }
@@ -12328,7 +12462,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
       <MinigameTimeBar pct={left / timeLimitMs} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
-          <RushGrid view={p.view} selected={p.selected} targets={p.targets} danger={p.danger} onCell={p.onCell} size={boardSize} lastMove={p.lastMove} levelId={level.id + ":" + roundKey} />
+          <RushGrid view={p.view} selected={p.selected} targets={p.targets} danger={p.danger} onCell={p.onCell} canDrag={p.canDrag} size={boardSize} lastMove={p.lastMove} levelId={level.id + ":" + roundKey} />
           <MinigameCountdown startAt={startAt} />
           <MinigameRoundBanner result={result} roundKey={roundKey} />
         </motion.div>
@@ -12579,7 +12713,7 @@ function useAttackPool() {
 const attackPick = (pool, grade, pick) => { const list = (pool && pool.byGrade[grade]) || []; return list.length ? list[Math.abs(pick | 0) % list.length] : null; };
 const uciOf = (m) => m.from + m.to + (m.promotion || "");
 // 체스판 — chess.js 보드를 사이트 스킨으로 그린다. 공격 측이 항상 아래쪽.
-function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hintMove, mated, mark, moveFx }) {
+function AttackGrid({ chess, flip, selected, targets, onCell, canDrag, size, lastMove, hintMove, mated, mark, moveFx }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const b = chess.board();
@@ -12587,6 +12721,13 @@ function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hi
   const cell = size / 8;
   const inCheck = chess.inCheck();
   const turn = chess.turn();
+  const drag = useGridDrag({
+    size, cellAt: (vr, vc) => { const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc; return "abcdefgh"[c] + (8 - r); },
+    canDrag: (sq) => !!(canDrag && canDrag(sq)),
+    onStart: (sq) => { if (sq !== selected) onCell(sq); },
+    onDrop: (from, to) => { if (to) onCell(to); },
+    renderPiece: (sq, px) => { const pc = chess.get(sq); return pc ? <PieceGlyph type={pc.type.toUpperCase()} color={pc.color} size={px * 0.89} /> : null; },
+  });
   const cells = [];
   for (let vr = 0; vr < 8; vr++) for (let vc = 0; vc < 8; vc++) {
     const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
@@ -12605,7 +12746,7 @@ function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hi
         {selected === sq && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(236,203,134,.3)", boxShadow: "inset 0 0 0 3px " + T.brassHi }} />}
         {isHint && <motion.span aria-hidden="true" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 3px #7FD6FF", background: "rgba(127,214,255,.2)" }} />}
         {kingInCheck && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: mated ? "radial-gradient(circle, rgba(220,40,30,.95) 0%, rgba(220,40,30,.35) 70%)" : "radial-gradient(circle, rgba(230,60,40,.8) 0%, rgba(230,60,40,0) 72%)" }} />}
-        {p && <PieceGlyph type={p.type.toUpperCase()} color={p.color} size={cell * 0.8} style={{ position: "relative", zIndex: 1 }} />}
+        {p && <PieceGlyph type={p.type.toUpperCase()} color={p.color} size={cell * 0.8} style={{ position: "relative", zIndex: 1, opacity: drag.dragFrom === sq ? 0.35 : 1 }} />}
         {/* (v0.5.5) 둔 칸 — 조준(청록 칸 + 조준경) → 정답 초록+체크 / 오답 빨강+X (좌표 인지 게임과 같은 이펙트) */}
         {mark && mark.sq === sq && (mark.ok == null ? (
           <span key={"aim" + mark.key} aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(22,181,166,.42)", boxShadow: "inset 0 0 0 2px " + T.brilliant, animation: "ccAimSq " + COORD_AIM_MS + "ms ease-out both" }}>
@@ -12624,7 +12765,7 @@ function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hi
       </button>
     );
   }
-  return <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}><style>{COORD_GRID_CSS}</style>{cells}</div>;
+  return <div {...drag.bind} style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", touchAction: "none" }}><style>{COORD_GRID_CSS}</style>{cells}{drag.ghost}</div>;
 }
 function AttackGradeBadge({ grade, big }) {
   const gi = attackGradeInfo(grade);
@@ -12727,7 +12868,7 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
   };
   return (
     <motion.div animate={shakeControls} style={{ position: "relative" }}>
-      <AttackGrid chess={chess} flip={attacker === "b"} selected={selected} targets={targets} onCell={onCell} size={size} lastMove={lastMove} hintMove={hintMove} mated={state === "win"} mark={mark} moveFx={moveFx} />
+      <AttackGrid chess={chess} flip={attacker === "b"} selected={selected} targets={targets} onCell={onCell} canDrag={(sq) => { const pc = chess.get(sq); return enabled && state === "play" && chess.turn() === attacker && !!pc && pc.color === attacker; }} size={size} lastMove={lastMove} hintMove={hintMove} mated={state === "win"} mark={mark} moveFx={moveFx} />
       <AnimatePresence>
         {state === "win" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
