@@ -2670,12 +2670,22 @@ function MoveClassFx({ kind, cell, vc = 0, vr = 0, clipTop = false }) {
   const def = MOVE_FX[kind];
   const color = QCOLOR[kind];
   if (!def || !color) return null;
-  const D = MOVE_FX_END, a = MOVE_FX_IN / D, b = MOVE_FX_HOLD / D;
+  return (
+    <SquareFx color={color} label={def.label} cell={cell} vc={vc} vr={vr} clipTop={clipTop} badge={badgeIcon(kind, cell * 0.38)}
+      glyph={/* 아이콘처럼 기호 바로 아래로 짧게 떨어지는 진한 그림자를 준다. */
+        <img src={def.src} alt="" draggable={false} width={cell * def.glyph} height={cell * def.glyph}
+          style={{ display: "block", filter: "drop-shadow(0 " + Math.max(1, cell * 0.022).toFixed(1) + "px 0 rgba(0,0,0,.28))" }} />} />
+  );
+}
+// (v0.5.6) 칸 이펙트 공통 틀 — 수 등급 이펙트(MoveClassFx)와 대국 종료 이펙트(GameEndFx)가 함께 쓴다. 칸을 color로 진하게 덮고
+// 가운데에 큰 glyph, 오른쪽 위에 label 알약을 띄웠다가, 알약이 badge를 담은 원형 배지로 줄어든다. timing: [나타남, 유지 끝, 전체](초).
+function SquareFx({ color, label, labelColor, glyph, badge, cell, vc = 0, vr = 0, clipTop = false, timing = [MOVE_FX_IN, MOVE_FX_HOLD, MOVE_FX_END] }) {
+  const D = timing[2], a = timing[0] / D, b = timing[1] / D;
   const bs = cell * 0.44 + 4;                     // 배지 바깥 지름(테두리 포함) — Board 평소 배지와 같다
   const top = clipTop && vr === 0 ? cell * 0.03 : -cell * 0.18;
   const badgeLeft = clipTop && vc === 7 ? cell - bs - cell * 0.03 : cell * 1.18 - bs;
   const fs = Math.max(9, cell * 0.22), padX = cell * 0.17;
-  const pillW = Math.max(bs, moveFxTextWidth(def.label, fs) + padX * 2);
+  const pillW = Math.max(bs, moveFxTextWidth(label, fs) + padX * 2);
   const pillLeft = vc >= 5 ? badgeLeft + bs - pillW : cell * 0.3;
   const ease = [0.4, 0, 0.2, 1];
   return (
@@ -2684,19 +2694,69 @@ function MoveClassFx({ kind, cell, vc = 0, vr = 0, clipTop = false }) {
         style={{ position: "absolute", inset: 0, background: color }} />
       <motion.div initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: [0, 1, 1, 0, 0], scale: [0.5, 1, 1, 0.8, 0.8] }} transition={{ duration: D, times: [0, a, b, b + 0.08, 1], ease: "easeOut" }}
         style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {/* 아이콘처럼 기호 바로 아래로 짧게 떨어지는 진한 그림자를 준다. */}
-        <img src={def.src} alt="" draggable={false} width={cell * def.glyph} height={cell * def.glyph}
-          style={{ display: "block", filter: "drop-shadow(0 " + Math.max(1, cell * 0.022).toFixed(1) + "px 0 rgba(0,0,0,.28))" }} />
+        {glyph}
       </motion.div>
       <motion.div initial={{ opacity: 0, left: pillLeft, width: pillW, scale: 0.6, backgroundColor: "#ffffff" }}
         animate={{ opacity: [0, 1, 1, 1], scale: [0.6, 1, 1, 1], left: [pillLeft, pillLeft, pillLeft, badgeLeft], width: [pillW, pillW, pillW, bs], backgroundColor: ["#ffffff", "#ffffff", "#ffffff", color] }}
         transition={{ duration: D, times: [0, a, b, 1], ease }}
         style={{ position: "absolute", top, height: bs, borderRadius: 999, boxSizing: "border-box", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)", overflow: "hidden", transformOrigin: vc >= 5 ? "100% 50%" : "0% 50%", zIndex: 2 }}>
         <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0, 0] }} transition={{ duration: D, times: [0, a, b, b + 0.05, 1] }}
-          style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{def.label}</motion.span>
+          style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: labelColor || color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{label}</motion.span>
         <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 1] }} transition={{ duration: D, times: [0, b + 0.1, 1] }}
-          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: bs - 4, display: "flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, cell * 0.38)}</motion.span>
+          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: bs - 4, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</motion.span>
       </motion.div>
+    </div>
+  );
+}
+// ---- (v0.5.6, 사용자 요청 — chess.com 대국 종료 연출 참고) 대국 종료 이펙트 ----
+// 체크메이트: 진 킹 칸은 빨강 + 큰 "체크메이트" 기호(킹 + #) + "체크메이트" 알약 → 빨간 배지, 이긴 킹 칸은 초록 + 큰 흰 왕관 + "승자"
+// 알약 → 초록 배지. 스테일메이트·3회 동형 반복: 두 킹 칸 모두 회색 + 큰 "½" + "스테일메이트"/"3회 동형" 알약 → 회색 ½ 배지.
+// 이펙트가 끝나면 배지는 두 킹 칸 오른쪽 위에 그대로 남는다(GameEndBadge).
+const GAME_END_COLOR = { mate: "#DD4B3E", win: "#7FB14B", draw: "#9A948C" };
+const GAME_END_IN = 0.14, GAME_END_HOLD = 1.25, GAME_END_END = 1.5;
+const GAME_END_MS = Math.round(GAME_END_END * 1000) + 60;
+// 체크메이트 기호 — 킹 실루엣 오른쪽 아래에 "#"를 겹친다(chess.com 체크메이트 아이콘과 같은 뜻).
+function MateGlyph({ size, color = "#1C1917", hashColor = "#fff" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block", overflow: "visible" }}>
+      <rect x="10.9" y="0.8" width="2.2" height="5.6" rx=".6" fill={color} />
+      <rect x="8.9" y="2.5" width="6.2" height="2.1" rx=".6" fill={color} />
+      <path d="M12 6.9c-1.35 0-2.3 1-2.3 2.2 0 .45.12.85.35 1.2C8.8 9.1 7.3 8.6 5.9 9.1 3.9 9.8 3.4 12.3 4.9 14.3L7 17.2h10l2.1-2.9c1.5-2 1-4.5-1-5.2-1.4-.5-2.9 0-4.15 1.2.23-.35.35-.75.35-1.2 0-1.2-.95-2.2-2.3-2.2z" fill={color} />
+      <rect x="6.4" y="17.9" width="11.2" height="2.3" rx="1" fill={color} />
+      <rect x="5.4" y="20.7" width="13.2" height="2.2" rx="1" fill={color} />
+      <text x="19.2" y="23" textAnchor="middle" fontSize="13" fontWeight="900" fill={color} stroke={hashColor} strokeWidth="2" paintOrder="stroke" strokeLinejoin="round" fontFamily="Arial Black, Arial, sans-serif">#</text>
+    </svg>
+  );
+}
+function HalfGlyph({ size, color = "#fff" }) {
+  return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>½</span>;
+}
+function gameEndRole(endFx, pieceColor) {
+  if (!endFx) return null;
+  if (endFx.kind === "checkmate") return pieceColor === endFx.loser ? "mate" : "win";
+  if (endFx.kind === "stalemate" || endFx.kind === "threefold") return "draw";
+  return null;
+}
+function gameEndBadgeIcon(role, px) {
+  if (role === "mate") return <MateGlyph size={px * 0.9} hashColor={GAME_END_COLOR.mate} />;
+  if (role === "win") return <Crown size={px * 0.78} color="#fff" fill="#fff" strokeWidth={1.6} />;
+  return <HalfGlyph size={px * 0.78} />;
+}
+function GameEndFx({ role, endFx, cell, vc, vr, clipTop }) {
+  const color = GAME_END_COLOR[role];
+  const label = role === "mate" ? "체크메이트" : role === "win" ? "승자" : endFx.kind === "stalemate" ? "스테일메이트" : "3회 동형";
+  const glyph = role === "mate" ? <MateGlyph size={cell * 0.7} hashColor={color} />
+    : role === "win" ? <Crown size={cell * 0.6} color="#fff" fill="#fff" strokeWidth={1.4} style={{ filter: "drop-shadow(0 1px 0 rgba(0,0,0,.25))" }} />
+    : <HalfGlyph size={cell * 0.62} />;
+  return <SquareFx color={color} label={label} labelColor={role === "draw" ? "#6F6962" : color} glyph={glyph} badge={gameEndBadgeIcon(role, cell * 0.38)}
+    cell={cell} vc={vc} vr={vr} clipTop={clipTop} timing={[GAME_END_IN, GAME_END_HOLD, GAME_END_END]} />;
+}
+// 이펙트가 끝난 뒤 킹 칸 오른쪽 위에 남는 배지(수 등급 배지와 같은 자리·크기).
+// left: 마지막 수를 킹이 둬서 오른쪽 위에 수 등급 배지가 이미 있으면 왼쪽 위로 옮긴다.
+function GameEndBadge({ role, cell, left }) {
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, [left ? "left" : "right"]: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: GAME_END_COLOR[role], display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", pointerEvents: "none", zIndex: 6 }}>
+      {gameEndBadgeIcon(role, cell * 0.38)}
     </div>
   );
 }
@@ -2716,7 +2776,7 @@ function MoveFxSlide({ dx, dy, pieceColor, cell, children }) {
     </motion.div>
   );
 }
-function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef, reserveEvalGap = false }) {
+function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef, reserveEvalGap = false, endFx }) {
   const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[boardSkin || ctx.boardSkin] || BOARD_SKINS.classic;
@@ -2740,6 +2800,23 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const lastQKey = lastQ && lastQ.to ? lastQ.to[0] + "," + lastQ.to[1] + ":" + lastQ.kind : "";
   const qKeyRef = useRef(undefined);
   const [moveFxState, setMoveFxState] = useState(null); // { id, to, kind, from }
+  // (v0.5.6) 대국 종료 이펙트 — endFx({ kind: "checkmate", loser } | { kind: "stalemate" | "threefold" })가 새로 생기면 두 킹 칸에서
+  // 한 번 재생하고(처음 그려질 때부터 있던 종료는 재생 없이 배지만), 끝나면 배지만 남긴다. 재생 여부는 수 등급 이펙트와 같은 설정을 따른다.
+  const endKey = endFx && endFx.kind ? endFx.kind + ":" + (endFx.loser || "") : "";
+  const endKeyRef = useRef(undefined);
+  const [endAnimId, setEndAnimId] = useState(null);
+  useLayoutEffect(() => {
+    const prev = endKeyRef.current;
+    endKeyRef.current = endKey;
+    if (!endKey) { setEndAnimId(null); return; }
+    if (prev === undefined || prev === endKey) return;
+    setEndAnimId(moveFxOn ? Date.now() : null);
+  }, [endKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!endAnimId) return undefined;
+    const t = setTimeout(() => setEndAnimId(null), GAME_END_MS);
+    return () => clearTimeout(t);
+  }, [endAnimId]);
   useLayoutEffect(() => {
     const prev = qKeyRef.current;
     qKeyRef.current = lastQKey;
@@ -2983,6 +3060,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           // 된다"는 문제로 이어졌다.
           const draggable = interactive && !!onPieceDrag && !!p;
           const fxHere = moveFxState && moveFxState.to[0] === r && moveFxState.to[1] === c && lastQ && lastQ.kind === moveFxState.kind ? moveFxState : null;
+          const endRole = p && p.t === "K" ? gameEndRole(endFx, p.c) : null;
           const fxSlide = fxHere && fxHere.from && p ? (() => { const [fr, fc] = tx(fxHere.from[0], fxHere.from[1]); return { dx: (fc - ci) * cell, dy: (fr - ri) * cell }; })() : null;
           const pieceEl = p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: draggable ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />;
           return (
@@ -2995,7 +3073,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               // (버그 수정) 기물을 하단(받침 기준) 정렬했더니, 폰처럼 짧은 기물은 칸 위쪽에 큰 빈
               // 공간이 남아 정중앙이 아니라 아래로 치우쳐 보였다(특히 바다 스킨처럼 기물 높이 편차가
               // 큰 스킨에서 두드러짐) — 모든 기물을 칸의 실제 정중앙에 오도록 되돌린다.
-              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none", zIndex: fxHere ? 7 : undefined }}>
+              style={{ minWidth: 0, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", ...boardSquareBg(sk, light, r, c), position: "relative", cursor: interactive && onSquareClick ? "pointer" : "default", boxShadow: isSel ? "inset 0 0 0 3px " + T.only : isTarget ? "inset 0 0 0 3px rgba(62,124,196,.45)" : "none", zIndex: fxHere || (endRole && endAnimId) ? 7 : undefined }}>
               {/* (버그 수정) 좌표 글자 크기가 칸 크기와 무관하게 9px로 고정돼 있어, 보드가 커지면
                   (특히 텍스처가 있는 바다 스킨에서) 칸에 비해 좌표가 지나치게 작아 보이고 위치도
                   왜곡된 것처럼 어색해 보였다 — 다른 장식 요소들처럼 칸 크기(cell)에 비례하도록 맞춘다. */}
@@ -3012,6 +3090,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               )}
               {fxHere && <div style={{ position: "absolute", inset: 0, background: QCOLOR[fxHere.kind], opacity: 0.5, pointerEvents: "none" }} />}
               {fxHere && <MoveClassFx key={"fx" + fxHere.id} kind={fxHere.kind} cell={cell} vc={ci} vr={ri} />}
+              {endRole && (endAnimId ? <GameEndFx key={"end" + endAnimId} role={endRole} endFx={endFx} cell={cell} vc={ci} vr={ri} /> : <GameEndBadge role={endRole} cell={cell} left={!!(lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind])} />)}
               {!fxHere && lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -13517,13 +13596,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 결과를 열어 봤는지"를 비교해야, 사용자가 닫은 뒤 클럭 틱 같은 무관한 리렌더로 다시 열리지 않는다.
   const resultKey = result ? result.end + ":" + (result.color || "") + ":" + (result.status || "") : null;
   const [resultModalOpen, setResultModalOpen] = useState(false);
+  const { moveFx: playMoveFxOn } = useContext(VisualPrefsContext);
   const shownResultKeyRef = useRef(null);
   useEffect(() => {
     if (!resultKey) { shownResultKeyRef.current = null; setResultModalOpen(false); return; }
     if (shownResultKeyRef.current === resultKey) return;
     shownResultKeyRef.current = resultKey;
-    setResultModalOpen(true);
-  }, [resultKey]);
+    // (v0.5.6) 체크메이트·스테일메이트·3회 동형 반복은 보드의 대국 종료 이펙트를 끝까지 보여 준 뒤 결과 창을 연다.
+    const boardFx = playMoveFxOn && result && (result.end === "checkmate" || result.end === "stalemate" || result.end === "threefold");
+    if (!boardFx) { setResultModalOpen(true); return undefined; }
+    const t = setTimeout(() => setResultModalOpen(true), GAME_END_MS + 250);
+    return () => clearTimeout(t);
+  }, [resultKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // (사용자 요청) 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인 동안은, 뒤로가기·페이지 나가기
   // 요청이 오면(App 루트가 popstate/닫기 버튼에서 이 값을 읽는다) 곧장 나가는 대신 "정말 기권할지"
   // 확인 알림을 한 번 띄운다 — App 루트는 컴포넌트 트리 밖(브라우저 popstate)에서도 이 값을 읽어야
@@ -13977,7 +14061,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             </div>
             {playerBar(true)}
             <div style={{ width: "100%", maxWidth: boardSize, margin: "6px auto" }}>
-              <Board board={displayBoard} flip={flip} size={boardSize} selected={isLive ? sel : null} legalTargets={isLive ? legalTargets : []} onSquareClick={isLive ? onSquareClick : undefined} onPieceDrag={isLive ? onPieceDrag : undefined} onDrop={isLive ? onDrop : undefined} interactive={isLive && userToMove} showEval={false} showCoords />
+              <Board board={displayBoard} flip={flip} size={boardSize} selected={isLive ? sel : null} legalTargets={isLive ? legalTargets : []} onSquareClick={isLive ? onSquareClick : undefined} onPieceDrag={isLive ? onPieceDrag : undefined} onDrop={isLive ? onDrop : undefined} interactive={isLive && userToMove} showEval={false} showCoords
+                endFx={isLive && endState.end ? { kind: endState.end, loser: endState.color } : null} />
             </div>
             {playerBar(false)}
             {promoPrompt && (
@@ -14903,7 +14988,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
@@ -14939,7 +15024,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               동일하게 그 보드 칸(막대 제외)에 붙어 실제 렌더된 폭을 재고, useBoardSize가 8px 격자에
               맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={rdBoardOverride || board} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
               boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
           </div>
@@ -15750,7 +15835,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, onLearned, che
               좌우로 나란히 놓이는 데스크톱)에서만 흘러넘침 없이 기존처럼 360px로 묶어 옆 칼럼과
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
-            <BoardWithMaterial board={board} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
+            <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
               belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (
               <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
