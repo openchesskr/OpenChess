@@ -3,7 +3,7 @@
  *
  *  src/App.jsx에 들어 있는 오프닝 스냅샷(SNAP)으로 도감 트리 구조(이론 수만, e4=위쪽 팔·d4=아래쪽 팔, 스냅샷 순서를 가운데부터 좌우로)를
  *  만들고 src/lib/dexTreeLayout.js로 실제와 같은 설정으로 배치한 뒤, 다음을 검사한다. 하나라도 어기면 빌드를 멈춘다.
- *   · 블록끼리 겹침 0 (여백 포함)
+ *   · 블록끼리 겹침 0 (블록 아래 전적 칩 자리 포함)
  *   · 라벨–블록, 라벨–라벨 겹침 0
  *   · 연결선(회로 배선형)이 다른 블록을 지나감 0
  *   · 링 간격(부모·자녀 거리)이 깊어질수록 줄어들지 않음(사용자 규칙)
@@ -12,7 +12,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { layoutDexTree, placeDexLabels, dexEdgeGeometry } from "../src/lib/dexTreeLayout.js";
+import { layoutDexTree, placeDexLabels, dexEdgeGeometry, DEX_LAYOUT } from "../src/lib/dexTreeLayout.js";
 import { ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, SCHEMATIC_ZOOM_LABEL_BASE } from "../src/lib/schematicGeometry.js";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -63,7 +63,7 @@ const problems = [];
 // 공간 격자
 const G = 240, grid = new Map();
 const add = (o) => { for (let gx = Math.floor(o.l / G); gx <= Math.floor((o.l + o.w) / G); gx++) for (let gy = Math.floor(o.t / G); gy <= Math.floor((o.t + o.h) / G); gy++) { const k = gx + "," + gy; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(o); } };
-nodes.forEach((n) => add({ kind: "block", n, l: n.x, t: n.y, w: boxW, h: boxH }));
+nodes.forEach((n) => add({ kind: "block", n, l: n.x, t: n.y, w: boxW, h: boxH + DEX_LAYOUT.CHIP_BELOW })); // 전적 칩 자리 포함
 labels.forEach((g) => add({ kind: "label", g, l: g.left, t: g.top, w: g.w, h: 20 }));
 const seen = new Set();
 let bb = 0, lb = 0, ll = 0;
