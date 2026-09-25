@@ -1711,6 +1711,42 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12, fenRo
   }
   return { kind, bestSan: matched ? null : bestSan, beforeCp: bestCp };
 }
+// (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
+// 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
+// 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
+async function classifyMoveKindQuick(engine, fenRoot, prevSans, san, movetime = 700, slot) {
+  if (!engine || engine.status !== "ready") return null;
+  const col = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
+  const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : x.cp);
+  const pvs = await engine.evaluateMulti(fenOfRoot(fenRoot, prevSans), MAX_SEARCH_DEPTH, 2, movetime, undefined, undefined, slot);
+  const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
+  if (!p0) return null;
+  const bestCp = cpOf(p0), secondCp = p1 ? cpOf(p1) : null;
+  const bestSan = p0.uci ? uciToSan(boardOfRoot(fenRoot, prevSans), p0.uci, col) : null;
+  const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
+  let ourCp;
+  if (/#/.test(san)) ourCp = 1e5;
+  else {
+    const after = await engine.evaluate(fenOfRoot(fenRoot, [...prevSans, san]), MAX_SEARCH_DEPTH, undefined, movetime, slot);
+    if (!after) return null;
+    ourCp = -cpOf(after);
+  }
+  const loss = matched ? 0 : bestCp - ourCp;
+  let kind = tierOf(loss);
+  if (kind === "best" && !matched) kind = "excellent";
+  const badlyLosing = bestCp <= -200;
+  try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant"; } catch { }
+  if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+  if (/=/.test(san) && !/=Q/.test(san) && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+  const gap = secondCp == null ? 9999 : bestCp - secondCp;
+  let singleRecapture = false;
+  try { const rc = recaptureFact(prevSans, san, col, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
+  const secondStillWinningBig = secondCp != null && secondCp >= 200;
+  if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
+  return kind;
+}
+// 앱 전역 엔진(useEngine) — 보드 컴포넌트 깊숙한 곳(미니게임)에서도 수 등급을 매길 수 있게 컨텍스트로 내려 준다.
+const EngineContext = createContext(null);
 async function classifyMoveKind(engine, prevSans, san, depth = 12, fenRoot) {
   const r = await classifyMoveKindDetailed(engine, prevSans, san, depth, fenRoot);
   return r ? r.kind : null;
@@ -12622,26 +12658,46 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
   // (v0.5.5 연출, 사용자 요청) 둔 칸에 곧바로 정답(초록+체크)·오답(빨강+X) 이펙트가 뜬다(좌표 인지 게임과 달리 조준경 단계는 없다).
   // 이펙트가 끝날 때까지는 다른 칸을 누를 수 없다(state "aim").
   const [mark, setMark] = useState(null); // { sq, ok: null(조준)|true|false, key }
-  // (v0.5.5, 사용자 요청) 메이트를 완성하면 그 포지션 등급(S 탁월·A 유일·B 최선)의 수 등급 이펙트를 도착 칸에 띄운다 — 설정 탭 "시각 효과".
+  // (v0.5.5, 사용자 요청) 내가 둔 수를 엔진으로 채점해(분석 탭과 같은 규칙) 탁월·유일·최선이면 도착 칸에 수 등급 이펙트를 띄운다 —
+  // 메이트를 완성한 수든 중간 수든 상관없다. 설정 탭 "시각 효과"로 끌 수 있다.
   const { moveFx: moveFxOn } = useContext(VisualPrefsContext);
+  const engine = useContext(EngineContext);
+  const fenRoot = useMemo(() => { try { return parseFenFull(pos.fen); } catch { return null; } }, [pos.fen]);
   const [moveFx, setMoveFx] = useState(null); // { sq, kind, key }
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
+  const moveSeqRef = useRef(0); // 몇 번째 수인지 — 채점이 늦게 끝나 이미 다음 수를 뒀으면 그 결과는 버린다
+  const gradeMove = (prevSans, san) => (moveFxOn && fenRoot && engine && engine.status === "ready" && !mgReducedMotion()
+    ? classifyMoveKindQuick(engine, fenRoot, prevSans, san, 600, "attack-grade").catch(() => null)
+    : Promise.resolve(null));
   const later = (ms, f) => timersRef.current.push(setTimeout(f, ms));
   const tryMove = (from, to) => {
     setSelected(null);
     const expected = pos.moves[k] || "";
     const promo = expected.slice(0, 4) === from + to && expected[4] ? expected[4] : "q";
+    const prevSans = chess.history();
     let mv;
     try { mv = chess.move({ from, to, promotion: promo }); } catch { mv = null; }
     if (!mv) return;
+    setMoveFx(null);
+    const movedAt = Date.now();
+    const seq = ++moveSeqRef.current;
     setLastMove([from, to]); rerender();
     playSfx(mv.captured ? "capture" : "move");
     const key = Date.now();
     setState("aim");
     const A = 0;
     if (chess.isCheckmate()) {
-      const fxKind = moveFxOn && !mgReducedMotion() && MOVE_FX[attackGradeInfo(grade).kind] ? attackGradeInfo(grade).kind : null;
-      later(A, () => { if (fxKind) setMoveFx({ sq: to, kind: fxKind, key }); else setMark({ sq: to, ok: true, key }); setState("win"); fx("correct"); buzz([40, 40, 40]); });
-      later(A + (fxKind ? MOVE_FX_MS + 250 : 900), () => onResult(true));
+      later(A, () => { setMark({ sq: to, ok: true, key }); setState("win"); fx("correct"); buzz([40, 40, 40]); });
+      // 다음 포지션으로 넘어가기 전에 등급을 기다린다(최대 1.6초) — 이펙트 등급이면 이펙트가 끝난 뒤에 넘어간다.
+      let moved = false;
+      const next = (ms) => { if (moved || !aliveRef.current) return; moved = true; later(ms, () => onResult(true)); };
+      gradeMove(prevSans, mv.san).then((kind) => {
+        if (!aliveRef.current || moved) return;
+        if (MOVE_FX[kind]) { setMark(null); setMoveFx({ sq: to, kind, key }); next(MOVE_FX_MS + 250); }
+        else next(Math.max(0, 900 - (Date.now() - movedAt)));
+      });
+      later(1600, () => next(0));
       return;
     }
     if (uciOf(mv) !== expected && mv.from + mv.to !== expected.slice(0, 4)) {
@@ -12650,9 +12706,14 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
       later(A + 2000, () => onResult(false));
       return;
     }
-    // 정답 — 초록으로 확인해 준 뒤 수비 측 응수를 이어서 둔다.
+    // 정답 — 초록으로 확인해 준 뒤 수비 측 응수를 이어서 둔다. 등급은 응수를 기다리게 하지 않고, 나오는 대로 그 칸에 이펙트를 띄운다.
     const reply = pos.moves[k + 1];
     later(A, () => { setMark({ sq: to, ok: true, key }); fx("tap"); });
+    gradeMove(prevSans, mv.san).then((kind) => {
+      if (!aliveRef.current || !MOVE_FX[kind] || seq !== moveSeqRef.current) return;
+      setMark((m) => (m && m.key === key ? null : m));
+      setMoveFx({ sq: to, kind, key });
+    });
     if (!reply) { later(A, () => setState("fail")); later(A + 900, () => onResult(false)); return; }
     later(A + 520, () => {
       try { const r = chess.move({ from: reply.slice(0, 2), to: reply.slice(2, 4), promotion: reply[4] || "q" }); if (r) { setLastMove([r.from, r.to]); playSfx(r.captured ? "capture" : "move"); } } catch { }
@@ -33228,6 +33289,7 @@ export default function App() {
   }, [loaded]);
 
   return (
+    <EngineContext.Provider value={engine}>
     <SkinContext.Provider value={skinValue}>
     <MinigamePrefsContext.Provider value={mgPrefs}><VisualPrefsContext.Provider value={visualPrefs}>
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: SITE_FONT }}>
@@ -33499,5 +33561,6 @@ export default function App() {
     </div>
     </VisualPrefsContext.Provider></MinigamePrefsContext.Provider>
     </SkinContext.Provider>
+    </EngineContext.Provider>
   );
 }
