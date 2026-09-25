@@ -47,7 +47,7 @@ import {
 } from "./lib/pgn.js";
 import {
   SB_URL, SB_KEY, SB_ON, SB_TOKEN, sbHeaders, sbClient, setSbToken,
-  sbRpc, sbSelect, sbUpsert, sbInsert, sbPatch, sbDelete, pvpFinishVerified,
+  sbRpc, sbRpcRow, sbSelect, sbUpsert, sbInsert, sbPatch, sbDelete, pvpFinishVerified,
 } from "./lib/supabaseClient.js";
 import {
   LICHESS_API, WIKI_API, lichessFetchWithRetry, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS,
@@ -10998,7 +10998,7 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
     if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
     setErr(""); setWaiting(true);
     try {
-      const g = await sbRpc("pvp_queue_join", { p_time_control: "0-0", p_game_type: gameType });
+      const g = await sbRpcRow("pvp_queue_join", { p_time_control: "0-0", p_game_type: gameType });
       // (v0.5.5 버그 수정, 사용자 제보 "매칭 버튼을 누르면 대기열로 안 가고 바로 패배") 대기열에 상대가 없으면
       // pvp_queue_join은 SQL NULL을 돌려주는데, PostgREST는 이를 null이 아니라 "모든 필드가 null인 객체"로
       // 직렬화한다 — `if (g)`가 이걸 매칭된 대전으로 오인해 status가 null(=active 아님)인 빈 대전을 열었고,
@@ -13173,7 +13173,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
-      const g = await sbRpc("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
+      const g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
       // (버그 수정, 사용자 제보) pvp_queue_join은 매칭할 상대가 없으면(대기열에만 합류) SQL NULL을
       // 반환하는데, PostgREST가 단일 row를 반환하는 함수의 NULL을 순수 JSON null이 아니라 "모든 필드가
       // null인 객체"(예: {id:null, white_uid:null, ...})로 직렬화한다 — 이 객체는 `if (g)`로는 참(truthy)이라,
@@ -24580,6 +24580,26 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.5", date: "2026.9.25", dev: ["openchesskr", "G13sus4"], items: [
+      "플레이 탭이 새로워졌어요 — 일반 대국과 미니게임을 한 화면에 모았고, 미니게임 네 개는 가운데 로고를 둘러싼 네 개의 버튼으로 바뀌었어요. 버튼 속 보드에서는 게임마다 조준경, 나이트 추격, 실전 체크메이트, 백랭크 러시아워 장면이 계속 움직여요.",
+      "일반 대국 버튼 보드에서는 매번 다른 마스터 대국이 재생되고, 누르면 따로 뜨는 창에서 시간을 골라 대국을 시작해요.",
+      "미니게임 이름이 바뀌었어요 — 나이트 레이스, 백랭크 러시아워, 무한 체크메이트 게임.",
+      "미니게임 화면이 모두 밝은 크림색으로 바뀌었어요.",
+      "탁월한 수·유일한 수·최선의 수를 두면 보드 위에 특별한 이펙트가 떠요 — 칸이 등급 색으로 빛나고 '탁월합니다' 같은 이름표가 뜬 뒤 작은 배지로 줄어들어요. 분석·학습·퍼즐 탭, 게임 리뷰, 무한 체크메이트 게임에서 볼 수 있고, 설정 탭의 '시각 효과'에서 끌 수 있어요.",
+      "무한 체크메이트 게임은 내가 둔 수를 엔진이 바로 채점해, 탁월·유일·최선이면 이펙트를 보여줘요. 포지션 등급은 알파벳 대신 아이콘으로 보여줘요.",
+      "좌표 인지 게임은 칸을 누르면 조준경이 떴다가 정답은 초록 체크, 오답은 빨간 X로 알려줘요.",
+      "나이트 레이스에서 상대 나이트를 잡을 수 있어요 — 상대 나이트가 있는 칸으로 뛰어들면 잡히고, 잡힌 쪽은 그 라운드가 끝나요.",
+      "나이트 레이스에서 나이트가 잡히면 그 칸을 지키던 상대 기물이 날아와 잡는 모습이 보여요.",
+      "나이트 레이스 제한시간이 1라운드 5초부터 라운드마다 늘어나요 — 대신 뒤로 갈수록 기물이 최대 5쌍까지 늘고 목표도 훨씬 멀어져요.",
+      "나이트 레이스·백랭크 러시아워에서 상대 기물이 지키는 칸은 이제 기본으로 숨겨져요 — 설정 탭 '미니게임 설정'에서 다시 켤 수 있어요.",
+      "나이트 레이스는 목표 칸에 도착하거나 잡힌 뒤 그 장면을 끝까지 보여주고 나서 정산 화면이 떠요. 혼자 플레이에서는 내 진영 기물이 나오지 않아요.",
+      "미니게임 랜덤 매칭을 누르면 대기열로 가지 않고 곧장 패배가 뜨던 문제를 고쳤어요.",
+      "무한 체크메이트 게임이 시작하자마자 동작하지 않던 문제를 고쳤어요 — 이제 포지션을 다 불러온 뒤에 카운트다운이 시작돼요.",
+      "무한 체크메이트 버튼 속 장면이 실제로는 메이트가 아닌데 메이트로 넘어가던 문제를 고쳤어요.",
+      "백랭크 러시아워 봇 대전에서 봇이 못 푸는 라운드는 결과가 한참 늦게 뜨던 문제를 고쳤어요.",
+    ]
+  },
   {
     version: "0.5.4", date: "2026.9.24", dev: ["openchesskr", "G13sus4"], items: [
       "미니게임에 레이팅이 생겼어요 — 네 미니게임마다 따로, 1200점에서 시작해 랜덤 매칭에서 이기면 오르고 지면 내려가요. 대전이 끝나면 결과 화면에서 레이팅이 몇 점 바뀌었는지 바로 보여줘요. 친구 도전은 친선전이라 전적에만 남아요.",
