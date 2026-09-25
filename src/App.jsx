@@ -9375,6 +9375,8 @@ function mgShapes() {
   };
 }
 const MG_KEYS = ["coord", "knight", "attack", "rush"];
+// (v0.5.5) 미니게임 설정(설정 탭) — App 루트가 채워 넣고, 미니게임 화면(포털 안에서도)이 읽는다.
+const MinigamePrefsContext = createContext({ dangerOn: false });
 const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스", attack: "무한 체크메이트 게임", rush: "백랭크 러시아워" };
 // 버튼 글자 자리 — 보드 반대편(가운데 가로선 쪽)에 둔다: 위 버튼은 보드 아래, 아래 버튼은 보드 위. 육각형 홈을
 // 피하도록 왼쪽 버튼은 왼쪽 정렬, 오른쪽 버튼은 오른쪽 정렬(x는 정렬한 쪽 끝, top은 viewBox 좌표).
@@ -11144,7 +11146,9 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
   const removedSet = new Set(removed || []);
   const hazBySq = {}; (hazards || []).forEach((h) => { if (!removedSet.has(h.sq)) hazBySq[h.sq] = h; });
   const legalSet = new Set(legalTargets || []);
-  const illegalSet = new Set(dangerForMe || []);
+  // (v0.5.5, 사용자 요청) 상대 기물이 통제하는 칸(들어가면 잡히는 칸)은 설정 탭 "통제 칸 표시"를 켰을 때만 보인다 — 규칙은 그대로다.
+  const { dangerOn } = useContext(MinigamePrefsContext);
+  const illegalSet = new Set(dangerOn ? (dangerForMe || []) : []);
   const cells = [];
   for (let vr = 0; vr < 8; vr++) for (let vc = 0; vc < 8; vc++) {
     const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
@@ -11200,6 +11204,7 @@ function KnightCapturedMark() {
 // 보드 위 색이 각각 무슨 뜻인지 알려주는 범례 — 빨강은 위협 기물에게 잡히는(들어가면 안 되는) 칸,
 // 금색은 지금 바로 이동할 수 있는 칸, 초록은 목표 칸이다.
 function KnightRaceLegend() {
+  const { dangerOn } = useContext(MinigamePrefsContext);
   const chip = (bg, label) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
       <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, display: "inline-block", flexShrink: 0, ...(typeof bg === "string" ? { background: bg } : bg) }} />
@@ -11208,7 +11213,7 @@ function KnightRaceLegend() {
   );
   return (
     <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
-      {chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
+      {dangerOn && chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
       {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물(도달하면 잡아요)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={11} color={MG_GOLD} fill={T.brassHi} />목표 칸</span>
@@ -11225,7 +11230,7 @@ function useKnightRoundFx(timeLeftMs, active) {
     if (sec <= 5 && sec >= 1 && lastSecRef.current !== sec) { lastSecRef.current = sec; fx("warn"); }
   }, [timeLeftMs, active]);
 }
-function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
+function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed }) {
   const isWhite = myUid === game.white_uid;
   const myColor = isWhite ? "w" : "b";
   const oppColor = isWhite ? "b" : "w";
@@ -11298,7 +11303,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate }) {
   // 실측해 정사각형 한 변 길이를 구한다. flip: 내가 흑이면 보드를 뒤집어 내 나이트가 항상 화면
   // 아래쪽에 오도록 한다(서버가 백을 항상 목표보다 낮은 랭크에 배정해 두므로 이 규칙만으로 충분하다).
   const [boardSize, boardFitRef] = useSquareFit();
-  const roundResult = round.winner ? (round.winner === myColor ? "me" : round.winner === "draw" ? "draw" : "opp") : null;
+  const roundResult = round.winner && revealed ? (round.winner === myColor ? "me" : round.winner === "draw" ? "draw" : "opp") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
@@ -11407,6 +11412,7 @@ function knightShortestPathLocal(start, target, illegal) {
   return null;
 }
 const KNIGHT_BOT_MOVE_MS_MIN = 1000;
+const KNIGHT_ARRIVE_MS = 900;   // 목표 도착·잡힘 연출이 끝까지 보이도록 결과(배너·정산)를 늦추는 시간
 const KNIGHT_BOT_MOVE_MS_MAX = 1800;
 function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const [pos, setPos] = useState(round.whiteStart);
@@ -11429,10 +11435,14 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const timersRef = useRef([]);
   useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
   const [shakeControls, shake] = useBoardShake();
-  const doMyReport = useCallback((reached, moves, wasCaptured) => {
+  // (v0.5.5, 사용자 요청) 목표 도착·잡힘은 나이트가 칸에 닿고 도착 연출(번쩍임·X)이 끝까지 보인 뒤(delayMs)에 결과로 반영한다 —
+  // 기록 시간은 누른 순간 기준, 입력은 곧바로 막는다(myReportRef).
+  const doMyReport = useCallback((reached, moves, wasCaptured, delayMs = 0) => {
     if (myReportRef.current) return;
     const rep = { reached, moves, atMs: Date.now() - startRef.current, captured: !!wasCaptured };
-    myReportRef.current = rep; setMyReport(rep);
+    myReportRef.current = rep;
+    if (delayMs > 0) timersRef.current.push(setTimeout(() => setMyReport(rep), delayMs));
+    else setMyReport(rep);
   }, []);
   useEffect(() => {
     if (myReport || !started) return;
@@ -11509,14 +11519,14 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   }, [myReport, botReport, onRoundDone, winner]);
   const legalTargets = useMemo(() => (myReport || !started ? [] : knightNeighborsClient(pos, knightOwnBlocked(round, "w", botTaken))), [pos, round, botTaken, myReport, started]);
   const onCell = (sq) => {
-    if (myReport || !started || !legalTargets.includes(sq)) return;
+    if (myReportRef.current || !started || !legalTargets.includes(sq)) return;
     const nextMoves = movesUsed + 1;
     const mv = knightApplyMove(round, "w", taken, sq);
     setPos(sq); setMovesUsed(nextMoves); setTaken(mv.taken);
     if (mv.tookPiece) { playSfx("capture"); fx("capture"); buzz(40); } else playSfx("move");
     // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
-    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves, true); return; }
-    if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doMyReport(true, nextMoves); return; }
+    if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves, true, KNIGHT_ARRIVE_MS); return; }
+    if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doMyReport(true, nextMoves, false, KNIGHT_ARRIVE_MS); return; }
     if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doMyReport(false, nextMoves); }
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
@@ -11625,11 +11635,22 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
     if (round && round.winner) {
-      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL);
+      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL + KNIGHT_ARRIVE_MS);
       return () => clearTimeout(t);
     }
   }, [game.id, rounds.length, round && round.winner, finished]);
-  const settle = useRoundSettle(roundIdx, !!(round && round.winner), round && round.resolvedAt ? Date.parse(round.resolvedAt) : null);
+  // (v0.5.5, 사용자 요청) 승자가 정해져도 나이트 도착 애니메이션이 끝까지 재생된 뒤에 배너·정산을 띄운다.
+  // 새로고침 등으로 이미 한참 전에 끝난 라운드라면 기다리지 않는다.
+  const hasWinner = !!(round && round.winner);
+  const resolvedAtMs = round && round.resolvedAt ? Date.parse(round.resolvedAt) : null;
+  const [revealKey, setRevealKey] = useState(null);
+  useEffect(() => {
+    if (!hasWinner) return;
+    const t = setTimeout(() => setRevealKey(roundIdx), KNIGHT_ARRIVE_MS);
+    return () => clearTimeout(t);
+  }, [hasWinner, roundIdx]);
+  const revealed = hasWinner && (revealKey === roundIdx || !!(resolvedAtMs && Date.now() - resolvedAtMs > KNIGHT_ARRIVE_MS + 2000));
+  const settle = useRoundSettle(roundIdx, revealed, resolvedAtMs ? resolvedAtMs + KNIGHT_ARRIVE_MS : null);
   if (settle.phase === "settle") {
     const oppColor = isWhite ? "b" : "w";
     const res = round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw";
@@ -11653,7 +11674,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel="상대" center={(roundIdx + 1) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 3선승"} />
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
-      {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
+      {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} revealed={revealed} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
 }
@@ -11753,7 +11774,9 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const [status, setStatus] = useState("play"); // play | win | lost(v0.5.4 — 주인공 룩이 잡힘)
   const [msg, setMsg] = useState(null); // { text, tone }
   const [hint, setHint] = useState(null);
-  const [showDanger, setShowDanger] = useState(false);
+  // (v0.5.5, 사용자 요청) 통제(위험) 칸 표시는 설정 탭 "통제 칸 표시"를 켰을 때만 — 켜져 있으면 처음부터 보이고 도구 모음 버튼으로 끌 수 있다.
+  const { dangerOn } = useContext(MinigamePrefsContext);
+  const [showDanger, setShowDanger] = useState(dangerOn);
   const [shakeControls, shake] = useBoardShake();
   const timersRef = useRef([]);
   useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
@@ -11767,11 +11790,11 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const flash = (text, tone, ms = 1800) => { setMsg({ text, tone, k: Date.now() }); const t = setTimeout(() => setMsg((m) => (m && m.text === text ? null : m)), ms); timersRef.current.push(t); };
   const targets = selected >= 0 && !busy ? rushTargetsFrom(cur.state, selected) : [];
   const danger = useMemo(() => {
-    if (!showDanger) return [];
+    if (!showDanger || !dangerOn) return [];
     const out = [];
     for (let i = 0; i < 64; i++) if (!(cur.state.board[i] && cur.state.board[i][0] === "b") && rushAttacked(cur.state.board, i, "b")) out.push(i);
     return out;
-  }, [showDanger, cur.state]);
+  }, [showDanger, dangerOn, cur.state]);
   const onCell = (i) => {
     if (!enabled || busy || status !== "play") return;
     const p = cur.state.board[i];
@@ -11865,6 +11888,7 @@ function RushMsg({ msg }) {
   );
 }
 function RushToolbar({ p, allowHint }) {
+  const { dangerOn } = useContext(MinigamePrefsContext);
   const btn = (onClick, Icon, label, disabled, active) => (
     <button onClick={onClick} disabled={disabled} className="press"
       style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "8px 0", borderRadius: 9, border: "1px solid " + (active ? T.brassHi : "rgba(150,112,58,.45)"), background: active ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.55)", color: disabled ? "rgba(90,58,34,.40)" : T.ink, fontSize: 11.5, fontWeight: 800, cursor: disabled ? "default" : "pointer" }}>
@@ -11875,7 +11899,7 @@ function RushToolbar({ p, allowHint }) {
     <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
       {btn(p.undo, Undo2, "되돌리기", p.moves === 0 || p.status !== "play")}
       {btn(p.reset, RotateCcw, "처음부터", p.moves === 0 || p.status !== "play")}
-      {btn(() => p.setShowDanger((v) => !v), Eye, "위험 칸", false, p.showDanger)}
+      {dangerOn && btn(() => p.setShowDanger((v) => !v), Eye, "위험 칸", false, p.showDanger)}
       {allowHint && btn(p.askHint, Lightbulb, "힌트", p.status !== "play")}
     </div>
   );
@@ -26132,7 +26156,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn,
+function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
@@ -26332,7 +26356,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>포지션 변동성 보정</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 국면의 실수를 더 엄격하게 반영해요</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 포지션의 실수를 더 엄격하게 반영해요</div>
           </div>
           <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -26360,6 +26384,19 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             </div>
           </React.Fragment>
         ))}
+      </div>
+
+      {/* (v0.5.5, 사용자 요청) 미니게임 설정 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을
+          보드에 빨갛게 표시할지. 기본값은 꺼짐(스스로 읽어 내는 게 미니게임의 재미라), 퍼즐 설정과 같이 계정에 저장된다. */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>미니게임 설정</div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>통제 칸 표시</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸을 보여줘요</div>
+          </div>
+          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label="통제 칸 표시" className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
       </div>
 
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
@@ -31858,6 +31895,10 @@ export default function App() {
   // (사용자 요청) 코치 말풍선은 기본값을 꺼짐으로 바꾸고, 화면 안의 토글 버튼은 없앴다 — 오직 이
   // 설정(설정 탭)으로만 켤 수 있다. 저장된 값이 명시적으로 true일 때만 켜진 상태로 복원한다.
   const [coachBubbleOn, setCoachBubbleOn] = useState(false);
+  // (v0.5.5, 사용자 요청) 설정 탭 "미니게임 설정" — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸을 보드에 표시할지.
+  // 기본값은 꺼짐, 코치 말풍선과 같은 경로(로컬 캐시 + user_progress)로 계정에 저장된다.
+  const [mgDangerOn, setMgDangerOn] = useState(false);
+  const mgPrefs = useMemo(() => ({ dangerOn: mgDangerOn }), [mgDangerOn]);
   const chesscom = useChessCom(profile.chesscom);
   // (v0.2.4 성능 → v0.3.5) 게임 리뷰용 분석 엔진 풀을 사용자가 실제로 리뷰를 열기 전에 유휴 시간에
   // 미리 부팅해 둔다 — depth·movetime은 그대로고(analyzeGame 등은 여전히 이 풀을 getAnalysisPool로
@@ -31909,7 +31950,7 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setPuzzleRating(d.puzzleRating || 800); if (d.puzzleMomentum != null) setPuzzleMomentum(d.puzzleMomentum); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.dailyPuzzleStreak) setDailyPuzzleStreak(d.dailyPuzzleStreak); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true);
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setPuzzleRating(d.puzzleRating || 800); if (d.puzzleMomentum != null) setPuzzleMomentum(d.puzzleMomentum); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(new Set(d.titles || [])); if (d.currentTitle) setCurrentTitle(d.currentTitle); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.dailyPuzzleStreak) setDailyPuzzleStreak(d.dailyPuzzleStreak); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true); if (d.mgDangerOn === true) setMgDangerOn(true);
       // (UX1) 새로고침해도 현재 탭·집중 분석·퍼즐 진행 상황이 유지되도록 복원
       // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
       // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
@@ -31937,7 +31978,7 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.puzzleMomentum != null) setPuzzleMomentum(pr.puzzleMomentum); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.dailyPuzzleStreak) setDailyPuzzleStreak(pr.dailyPuzzleStreak); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.puzzleMomentum != null) setPuzzleMomentum(pr.puzzleMomentum); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(new Set(pr.titles)); if (pr.currentTitle) setCurrentTitle(pr.currentTitle); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.dailyPuzzleStreak) setDailyPuzzleStreak(pr.dailyPuzzleStreak); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); if (pr.mgDangerOn === true) setMgDangerOn(true); const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -31994,8 +32035,8 @@ export default function App() {
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", bio: profile.bio || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, puzzleRating, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
@@ -32895,6 +32936,7 @@ export default function App() {
 
   return (
     <SkinContext.Provider value={skinValue}>
+    <MinigamePrefsContext.Provider value={mgPrefs}>
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: SITE_FONT }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
@@ -33141,7 +33183,7 @@ export default function App() {
             <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
           </div>
         )}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
@@ -33162,6 +33204,7 @@ export default function App() {
         )}
       </nav>
     </div>
+    </MinigamePrefsContext.Provider>
     </SkinContext.Provider>
   );
 }
