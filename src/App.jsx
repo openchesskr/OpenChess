@@ -27,6 +27,7 @@ import {
 import { fx, buzz } from "./lib/minigameFx.js";
 import { rushParse, rushApply, rushSolve, rushTargetsFrom, rushAttacked } from "./lib/rushHour.js";
 import RUSH_LEVELS from "./data/rushLevels.json";
+import HUB_SCENES from "./data/hubScenes.json";
 import { Chess } from "chess.js";
 import {
   startBoard, fenToBoard, looksLikeFen, parseFenFull, replayFromFen, fenLegalDests, liveLegalDests,
@@ -89,7 +90,7 @@ import {
   EngineLineSkeleton, EngineLineBlank, TypedMoveLine, dedupeEngineLines, EngineLineRow, EngineLines,
 } from "./components/engineLines.jsx";
 import { QLABEL, badgeIcon, PendingDots } from "./components/badges.jsx";
-import { QCOLOR, ANALYSIS_KIND_ROWS } from "./lib/moveKinds.js";
+import { QCOLOR, ANALYSIS_KIND_ROWS, BADGE_ICON_SRC } from "./lib/moveKinds.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "./lib/shareCard.js";
 import { KW, KeywordScroll, KeywordChip } from "./components/keywordScroll.jsx";
 import { BestMoveJumpButton, ListPager, NavBtn } from "./components/uiPrimitives.jsx";
@@ -9538,46 +9539,66 @@ function MgKnightRun({ cellPx }) {
     </div>
   );
 }
-// (v0.5.5 연출, 사용자 요청) 아래쪽 두 보드 — 한 기물이 CSS 키프레임으로 칸 사이를 미끄러지고, 메이트 순간 킹 칸이
-// 빨갛게 번쩍인 뒤 처음으로 돌아가길 반복한다. 움직이는 기물은 한 칸 크기 요소를 translate(열×100%, 줄×100%)로 옮긴다.
-// 칸 좌표는 [열, 줄](위에서부터). 버튼 둥근 모서리 귀퉁이 칸(아래 두 모서리)에는 움직이는 기물이 서지 않게 짰다.
-const MG_MATE_MS = 3800, MG_RUSH_MS = 4600;
-// 무한 체크메이트 게임: Praggnanandhaa–Keymer 2024의 b–h 파일 × 8–5랭크 — Qh6-g7#(Nh5가 받친다).
-const MG_MATE = {
-  pieces: { "5,0": "bK", "6,1": "bP", "1,2": "bB", "0,3": "bP", "3,3": "wR", "4,3": "bP", "6,3": "wN" },
-  mover: { type: "Q", color: "w", from: [6, 2], to: [5, 1] }, king: [5, 0],
-};
-// 백랭크 러시아워: 주인공 룩이 위(폰)·왼쪽(비숍)이 막혀 있다 — 옆으로 빠져나와(c→) d파일을 타고 올라가 d8에서 백랭크 메이트
-// (f7·g7·h7 폰이 킹의 퇴로를 막는다). 파일은 a–g로 둬 오른쪽 보드와 체크 무늬가 이어진다.
-const MG_RUSH = {
-  pieces: { "5,0": "bK", "4,1": "bP", "5,1": "bP", "6,1": "bP", "1,2": "wN", "5,2": "wP", "0,3": "wP", "2,3": "wB", "6,3": "wP" },
-  route: [[5, 3], [3, 3], [3, 0]], king: [5, 0],
-};
-function mgKeyframes(name, stops) { return "@keyframes " + name + "{" + stops.map(([p, v]) => p + "%{" + v + "}").join("") + "}"; }
-const mgAt = (c, r) => "transform:translate(" + c * 100 + "%," + r * 100 + "%)";
-const MG_LOOP_CSS =
-  mgKeyframes("mgMateQ", [[0, mgAt(6, 2) + ";opacity:0"], [8, mgAt(6, 2) + ";opacity:1"], [34, mgAt(6, 2)], [50, mgAt(5, 1)], [88, mgAt(5, 1) + ";opacity:1"], [96, mgAt(5, 1) + ";opacity:0"], [100, mgAt(6, 2) + ";opacity:0"]])
-  + mgKeyframes("mgMateFlash", [[0, "opacity:0"], [49, "opacity:0"], [54, "opacity:1"], [88, "opacity:1"], [96, "opacity:0"], [100, "opacity:0"]])
-  + mgKeyframes("mgRushR", [[0, mgAt(5, 3) + ";opacity:0"], [6, mgAt(5, 3) + ";opacity:1"], [18, mgAt(5, 3)], [36, mgAt(3, 3)], [46, mgAt(3, 3)], [62, mgAt(3, 0)], [88, mgAt(3, 0) + ";opacity:1"], [95, mgAt(3, 0) + ";opacity:0"], [100, mgAt(5, 3) + ";opacity:0"]])
-  + mgKeyframes("mgRushFlash", [[0, "opacity:0"], [61, "opacity:0"], [66, "opacity:1"], [88, "opacity:1"], [95, "opacity:0"], [100, "opacity:0"]])
-  + "@keyframes mgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
+// (v0.5.5 연출, 사용자 요청) 아래쪽 두 보드 — src/data/hubScenes.json(scripts/build-hub-scenes.mjs가 4×7 창에 들어오는 것만
+// 골라 둔 장면)에서 무작위로 하나씩 골라, 수순의 기물이 한 칸씩 미끄러지고(잡힌 기물은 사라진다) 메이트 순간 킹 칸이
+// 빨갛게 번쩍인 뒤 다른 장면으로 넘어가길 반복한다. 무한 체크메이트는 실전 1·2수 메이트, 러시아워는 주인공 룩(금색 링·왕관)이
+// 빠져나가 백랭크 메이트하는 퍼즐. 남은 수순은 분석 탭 화살표로 보인다. 움직임 줄이기 설정이면 첫 장면에서 멈춘다.
+const MG_SCENE_MS = 760;
+const MG_LOOP_CSS = "@keyframes mgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
   + "@keyframes mgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
-  + "@keyframes mgHop{0%{transform:translateY(0)}45%{transform:translateY(-30%) scale(1.1)}100%{transform:translateY(0)}}";
-function MgLoopScene({ cellPx, mover, moverAnim, loopMs, king, flashAnim, trail, hero }) {
+  + "@keyframes mgHop{0%{transform:translateY(0)}45%{transform:translateY(-30%) scale(1.1)}100%{transform:translateY(0)}}"
+  + "@keyframes mgSceneIn{0%{opacity:0}100%{opacity:1}}"
+  + "@keyframes mgMateFlash{0%{opacity:0}30%{opacity:1}100%{opacity:1}}";
+function mgSceneStart(sc, n) {
+  const pieces = sc.p.map(([code, c, r], i) => ({ id: n + "-" + i, color: code[0], t: code[1], c, r }));
+  const heroP = sc.h ? pieces.find((p) => p.c === sc.h[0] && p.r === sc.h[1]) : null;
+  return { n, sc, pieces, step: 0, phase: "intro", hold: 1, hero: heroP ? heroP.id : null };
+}
+function MgScenePlayer({ scenes, cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
+  const pick = (not) => { let i = Math.floor(Math.random() * scenes.length); if (scenes.length > 1 && i === not) i = (i + 1) % scenes.length; return i; };
+  const [st, setSt] = useState(() => { const i = pick(-1); return { ...mgSceneStart(scenes[i], 0), idx: i }; });
+  useEffect(() => {
+    if (mgReducedMotion()) return undefined;
+    const id = setInterval(() => setSt((s) => {
+      if (s.hold > 0) return { ...s, hold: s.hold - 1 };
+      if (s.phase === "intro" || s.phase === "play") {
+        if (s.step >= s.sc.m.length) return { ...s, phase: "mate", hold: 3 };
+        const [fc, fr, tc, tr] = s.sc.m[s.step];
+        const pieces = s.pieces.filter((p) => !(p.c === tc && p.r === tr)).map((p) => (p.c === fc && p.r === fr ? { ...p, c: tc, r: tr } : p));
+        return { ...s, pieces, step: s.step + 1, phase: "play" };
+      }
+      if (s.phase === "mate") return { ...s, phase: "out", hold: 0 };
+      const i = pick(s.idx);
+      return { ...mgSceneStart(scenes[i], s.n + 1), idx: i };
+    }), MG_SCENE_MS);
+    return () => clearInterval(id);
+  }, [scenes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const remaining = st.sc.m.slice(st.step).map(([a, b, c, d]) => [[a, b], [c, d]]);
+  const mated = st.phase === "mate" || st.phase === "out";
+  const [kc, kr] = st.sc.k;
   return (
-    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-      {trail && <MgArrowSvg routes={[trail]} />}
-      <div style={{ position: "absolute", left: king[0] * w + "%", top: king[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
-        <span className="mg-anim" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.75) 0%, rgba(229,52,42,.28) 72%)", opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }} />
-        <span className="mg-anim" style={{ position: "relative", zIndex: 1, margin: "4% 8% 0 0", fontSize: Math.max(8, cellPx * 0.26), fontWeight: 900, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.8)", fontFamily: SITE_FONT, opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }}>#</span>
-      </div>
-      {/* 움직임 줄이기 설정이면(.mg-anim) 애니메이션 없이 출발 칸에 선다. */}
-      <div className="mg-anim" style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + mover.from[0] * 100 + "%," + mover.from[1] * 100 + "%)", animation: moverAnim + " " + loopMs + "ms ease-in-out infinite", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.4))" }}>
-        {hero && <span style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 10px 2px rgba(236,203,134,.75)" }} />}
-        <PieceGlyph type={mover.type} color={mover.color} size={cellPx * 0.8} style={{ position: "relative" }} />
-        {hero && <Crown size={Math.max(7, cellPx * 0.26)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />}
-      </div>
+    <div key={st.n} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3, animation: "mgSceneIn .35s ease-out", opacity: st.phase === "out" ? 0 : 1, transition: "opacity .3s ease" }}>
+      {mated && (
+        <div style={{ position: "absolute", left: kc * w + "%", top: kr * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "flex-start", justifyContent: "flex-end", animation: "mgMateFlash .4s ease-out both" }}>
+          <span style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.75) 0%, rgba(229,52,42,.28) 72%)" }} />
+          <span style={{ position: "relative", zIndex: 3, margin: "4% 8% 0 0", fontSize: Math.max(8, cellPx * 0.26), fontWeight: 900, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.8)", fontFamily: SITE_FONT }}>#</span>
+        </div>
+      )}
+      {!mated && remaining.length > 0 && <MgArrowSvg routes={remaining} />}
+      {st.pieces.map((p) => {
+        const isHero = p.id === st.hero;
+        const corner = p.r === MG_STRIP.rows - 1 && (p.c === 0 || p.c === MG_STRIP.cols - 1);
+        return (
+          <div key={p.id} style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + p.c * 100 + "%," + p.r * 100 + "%)", transition: "transform " + Math.round(MG_SCENE_MS * 0.62) + "ms cubic-bezier(.4,.1,.3,1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", transform: corner ? "translate(" + (p.c === 0 ? 9 : -9) + "%,-9%) scale(.86)" : "none" }}>
+              {isHero && <span style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 10px 2px rgba(236,203,134,.75)" }} />}
+              <PieceGlyph type={p.t} color={p.color} size={cellPx * 0.8} style={{ position: "relative", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.3))" }} />
+              {isHero && <Crown size={Math.max(7, cellPx * 0.26)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -9722,8 +9743,6 @@ function MinigameHubBoard({ stats, onPick }) {
   const onKey = (k) => (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(k); } };
   const stripCell = MG_STRIP_CELL * u, stripW = MG_STRIP.cols * MG_STRIP_CELL, stripH = MG_STRIP.rows * MG_STRIP_CELL;
   const topY = -MG_BLEED, botY = 100 + MG_BLEED - stripH, leftX = -MG_BLEED, rightX = 50 + MG_GAP / 2 - MG_BLEED;
-  // 장면의 칸 좌표는 조각 기준([열, 줄])이고 pieceAt은 체크 무늬용 전역 열(colOffset 포함)을 받으므로 오프셋을 뺀다.
-  const pieceMap = (m, colOffset) => (r, c) => m[(c - colOffset) + "," + r] || null;
   const labelFont = "clamp(16px, 5.3cqw, 40px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
@@ -9763,14 +9782,13 @@ function MinigameHubBoard({ stats, onPick }) {
         </div>
         {/* 아래쪽 체스보드 띠 — 위와 같은 4×7 두 개가 이어진다. 무한 체크메이트(b–h 파일)·백랭크 러시아워(a–g 파일). */}
         <div style={box(leftX, botY, stripW, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={1} cellPx={stripCell} roundCorners={{ bl: true, br: true }} pieceAt={pieceMap(MG_MATE.pieces, 1)}>
-            <MgLoopScene cellPx={stripCell} mover={MG_MATE.mover} moverAnim="mgMateQ" loopMs={MG_MATE_MS} king={MG_MATE.king} flashAnim="mgMateFlash"
-              trail={[MG_MATE.mover.from, MG_MATE.mover.to]} />
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={1} cellPx={stripCell} roundCorners={{ bl: true, br: true }}>
+            <MgScenePlayer scenes={HUB_SCENES.mate} cellPx={stripCell} />
           </MgBoardPiece>
         </div>
         <div style={box(rightX, botY, stripW, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols + 1} cellPx={stripCell} roundCorners={{ bl: true, br: true }} pieceAt={pieceMap(MG_RUSH.pieces, MG_STRIP.cols + 1)}>
-            <MgLoopScene cellPx={stripCell} mover={{ type: "R", color: "w", from: MG_RUSH.route[0] }} moverAnim="mgRushR" loopMs={MG_RUSH_MS} king={MG_RUSH.king} flashAnim="mgRushFlash" trail={MG_RUSH.route} hero />
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols + 1} cellPx={stripCell} roundCorners={{ bl: true, br: true }}>
+            <MgScenePlayer scenes={HUB_SCENES.rush} cellPx={stripCell} />
           </MgBoardPiece>
         </div>
       </div>
@@ -12164,11 +12182,13 @@ function RushHourGame({ myUid, onExit, onOpenProfile, initialGame }) {
 // 어느 시점이든 그 수로 바로 체크메이트가 되면(더 빠른 메이트 포함) 성공으로 인정한다.
 const ATTACK_GAME_TYPE = "attack";
 const ATTACK_MATCH_MS = 180000;
+// (v0.5.5, 사용자 요청) 화면에서는 S·A·B·C 글자 대신 리뷰의 수 등급 아이콘으로 보여준다 — 탁월(S)·유일(A)·최선(B)·우수(C).
+// 내부 값(서버 _attack_grade·집계 키)은 그대로 S·A·B·C다.
 const ATTACK_GRADES = [
-  { g: "S", mate: 1, color: "#E8C46E", label: "1수 메이트" },
-  { g: "A", mate: 2, color: "#B98CF0", label: "2수 메이트" },
-  { g: "B", mate: 3, color: "#6FA8DC", label: "3수 메이트" },
-  { g: "C", mate: 4, color: "#A08E76", label: "4수 이상 메이트" },
+  { g: "S", mate: 1, kind: "brilliant", name: "탁월", color: QCOLOR.brilliant, label: "1수 메이트" },
+  { g: "A", mate: 2, kind: "only", name: "유일", color: QCOLOR.only, label: "2수 메이트" },
+  { g: "B", mate: 3, kind: "best", name: "최선", color: QCOLOR.best, label: "3수 메이트" },
+  { g: "C", mate: 4, kind: "excellent", name: "우수", color: QCOLOR.excellent, label: "4수 이상 메이트" },
 ];
 const attackGradeInfo = (g) => ATTACK_GRADES.find((x) => x.g === g) || ATTACK_GRADES[3];
 const attackGradeOfMate = (n) => (n <= 1 ? "S" : n === 2 ? "A" : n === 3 ? "B" : "C");
@@ -12209,7 +12229,7 @@ function useAttackPool() {
 const attackPick = (pool, grade, pick) => { const list = (pool && pool.byGrade[grade]) || []; return list.length ? list[Math.abs(pick | 0) % list.length] : null; };
 const uciOf = (m) => m.from + m.to + (m.promotion || "");
 // 체스판 — chess.js 보드를 사이트 스킨으로 그린다. 공격 측이 항상 아래쪽.
-function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hintMove, mated }) {
+function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hintMove, mated, mark }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const b = chess.board();
@@ -12233,20 +12253,34 @@ function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hi
         {isHint && <motion.span aria-hidden="true" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 3px #7FD6FF", background: "rgba(127,214,255,.2)" }} />}
         {kingInCheck && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: mated ? "radial-gradient(circle, rgba(220,40,30,.95) 0%, rgba(220,40,30,.35) 70%)" : "radial-gradient(circle, rgba(230,60,40,.8) 0%, rgba(230,60,40,0) 72%)" }} />}
         {p && <PieceGlyph type={p.type.toUpperCase()} color={p.color} size={cell * 0.8} style={{ position: "relative", zIndex: 1 }} />}
+        {/* (v0.5.5) 둔 칸 — 조준(청록 칸 + 조준경) → 정답 초록+체크 / 오답 빨강+X (좌표 인지 게임과 같은 이펙트) */}
+        {mark && mark.sq === sq && (mark.ok == null ? (
+          <span key={"aim" + mark.key} aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(22,181,166,.42)", boxShadow: "inset 0 0 0 2px " + T.brilliant, animation: "ccAimSq " + COORD_AIM_MS + "ms ease-out both" }}>
+            <span className="cc-anim" style={{ display: "flex", animation: "ccAim " + COORD_AIM_MS + "ms cubic-bezier(.2,.9,.3,1.2) both" }}><MgCrosshair size={Math.max(14, cell * 0.7)} /></span>
+          </span>
+        ) : (
+          <span key={"res" + mark.key} aria-hidden="true" className="cc-anim" style={{ position: "absolute", inset: 0, zIndex: 3, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", background: mark.ok ? "rgba(46,160,67,.5)" : "rgba(200,60,50,.55)", boxShadow: "inset 0 0 0 2px " + (mark.ok ? "#2E8F3E" : T.blunder), animation: "ccResult 280ms cubic-bezier(.2,.9,.3,1.3) both" }}>
+            <span style={{ margin: "3% 3% 0 0", width: "38%", height: "38%", borderRadius: "50%", background: mark.ok ? "#2E9F45" : T.blunder, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }}>
+              {mark.ok ? <Check size={Math.max(9, cell * 0.26)} color="#fff" strokeWidth={3.4} /> : <X size={Math.max(9, cell * 0.26)} color="#fff" strokeWidth={3.4} />}
+            </span>
+          </span>
+        ))}
         {tset.has(sq) && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, width: p ? "88%" : "30%", height: p ? "88%" : "30%", borderRadius: "50%", background: p ? "transparent" : "rgba(40,24,10,.35)", boxShadow: p ? "inset 0 0 0 3px rgba(40,24,10,.45)" : "none" }} />}
         {vc === 0 && <span aria-hidden="true" style={{ position: "absolute", top: 1, left: 2, zIndex: 3, fontSize: Math.max(8, cell * 0.15), fontWeight: 800, color: light ? "rgba(90,58,34,.7)" : "rgba(244,238,226,.7)" }}>{8 - r}</span>}
         {vr === 7 && <span aria-hidden="true" style={{ position: "absolute", bottom: 0, right: 2, zIndex: 3, fontSize: Math.max(8, cell * 0.15), fontWeight: 800, color: light ? "rgba(90,58,34,.7)" : "rgba(244,238,226,.7)" }}>{"abcdefgh"[c]}</span>}
       </button>
     );
   }
-  return <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>{cells}</div>;
+  return <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}><style>{COORD_GRID_CSS}</style>{cells}</div>;
 }
-function AttackGradeBadge({ grade, big }) {
+function AttackGradeBadge({ grade, big, withName }) {
   const gi = attackGradeInfo(grade);
+  const sz = big ? 30 : 20;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span style={{ width: big ? 30 : 18, height: big ? 30 : 18, borderRadius: big ? 9 : 5, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg," + gi.color + ",#241509)", border: "1px solid " + gi.color, color: "#fff", fontWeight: 900, fontSize: big ? 16 : 10.5, textShadow: "0 1px 2px rgba(0,0,0,.6)", boxShadow: big ? "0 0 16px " + gi.color + "66" : "none" }}>{grade}</span>
-      {big && <span style={{ fontSize: 12, fontWeight: 800, color: gi.color }}>{gi.label}</span>}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title={gi.name + " · " + gi.label}>
+      <img src={BADGE_ICON_SRC[gi.kind]} alt={gi.name} draggable={false} style={{ width: sz, height: sz, display: "block", filter: big ? "drop-shadow(0 0 8px " + gi.color + "88)" : "none" }} />
+      {(withName || big) && <span style={{ fontSize: big ? 12.5 : 11, fontWeight: 800, color: gi.color }}>{gi.name}</span>}
+      {big && <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{gi.label}</span>}
     </span>
   );
 }
@@ -12274,6 +12308,10 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     if (p && p.color === attacker) { setSelected(sq === selected ? null : sq); fx("tap"); return; }
     setSelected(null);
   };
+  // (v0.5.5 연출, 사용자 요청) 좌표 인지 게임과 같은 이펙트 — 둔 칸에 조준경이 먼저 조준하고(COORD_AIM_MS) 그 뒤에 정답(초록+체크)·
+  // 오답(빨강+X)이 뜬다. 조준하는 동안은 다른 칸을 누를 수 없다(state "aim").
+  const [mark, setMark] = useState(null); // { sq, ok: null(조준)|true|false, key }
+  const later = (ms, f) => timersRef.current.push(setTimeout(f, ms));
   const tryMove = (from, to) => {
     setSelected(null);
     const expected = pos.moves[k] || "";
@@ -12283,28 +12321,32 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     if (!mv) return;
     setLastMove([from, to]); rerender();
     playSfx(mv.captured ? "capture" : "move");
+    const key = Date.now();
+    setMark({ sq: to, ok: null, key }); setState("aim");
+    const A = COORD_AIM_MS;
     if (chess.isCheckmate()) {
-      setState("win"); fx("correct"); buzz([40, 40, 40]);
-      timersRef.current.push(setTimeout(() => onResult(true), 900));
+      later(A, () => { setMark({ sq: to, ok: true, key }); setState("win"); fx("correct"); buzz([40, 40, 40]); });
+      later(A + 900, () => onResult(true));
       return;
     }
     if (uciOf(mv) !== expected && mv.from + mv.to !== expected.slice(0, 4)) {
-      setState("fail"); fx("wrong"); buzz([80, 50, 80]); shake();
-      timersRef.current.push(setTimeout(() => { chess.undo(); setLastMove(null); setHintMove([expected.slice(0, 2), expected.slice(2, 4)]); rerender(); }, 450));
-      timersRef.current.push(setTimeout(() => onResult(false), 1700));
+      later(A, () => { setMark({ sq: to, ok: false, key }); setState("fail"); fx("wrong"); buzz([80, 50, 80]); shake(); });
+      later(A + 650, () => { chess.undo(); setMark(null); setLastMove(null); setHintMove([expected.slice(0, 2), expected.slice(2, 4)]); rerender(); });
+      later(A + 1800, () => onResult(false));
       return;
     }
-    // 정답 — 수비 측 응수를 이어서 둔다.
+    // 정답 — 초록으로 확인해 준 뒤 수비 측 응수를 이어서 둔다.
     const reply = pos.moves[k + 1];
-    if (!reply) { setState("fail"); timersRef.current.push(setTimeout(() => onResult(false), 900)); return; }
-    timersRef.current.push(setTimeout(() => {
+    later(A, () => { setMark({ sq: to, ok: true, key }); fx("tap"); });
+    if (!reply) { later(A, () => setState("fail")); later(A + 900, () => onResult(false)); return; }
+    later(A + 520, () => {
       try { const r = chess.move({ from: reply.slice(0, 2), to: reply.slice(2, 4), promotion: reply[4] || "q" }); if (r) { setLastMove([r.from, r.to]); playSfx(r.captured ? "capture" : "move"); } } catch { }
-      setK((x) => x + 2); rerender();
-    }, 420));
+      setMark(null); setK((x) => x + 2); setState("play"); rerender();
+    });
   };
   return (
     <motion.div animate={shakeControls} style={{ position: "relative" }}>
-      <AttackGrid chess={chess} flip={attacker === "b"} selected={selected} targets={targets} onCell={onCell} size={size} lastMove={lastMove} hintMove={hintMove} mated={state === "win"} />
+      <AttackGrid chess={chess} flip={attacker === "b"} selected={selected} targets={targets} onCell={onCell} size={size} lastMove={lastMove} hintMove={hintMove} mated={state === "win"} mark={mark} />
       <AnimatePresence>
         {state === "win" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -12326,7 +12368,7 @@ function attackTally(list) { const t = { S: 0, A: 0, B: 0, C: 0, total: 0, tries
 function attackDecide(me, opp, myRating, oppRating) {
   if (me.total !== opp.total) return { winner: me.total > opp.total ? "me" : "opp", reason: null };
   for (const g of ["C", "B", "A", "S"]) {
-    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점 — " + g + "등급 성공 수로 승부가 갈렸어요(낮은 등급부터 비교)." };
+    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점 — " + attackGradeInfo(g).name + " 등급 성공 수로 승부가 갈렸어요(낮은 등급부터 비교)." };
   }
   if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: "등급별 성공 수까지 같아, 불리한 확률로 싸운(레이팅이 높은) 쪽이 승리했어요." };
   return { winner: "draw", reason: "모든 기록이 같아 무승부예요." };
@@ -12367,7 +12409,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           {current && pos && !over && (
             <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
-              <AttackGradeBadge grade={current.g} />
+              <AttackGradeBadge grade={current.g} withName />
               <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
             </motion.div>
@@ -12394,11 +12436,11 @@ function attackResultProps(myList, oppList, myRating, oppRating) {
   return {
     outcome: d.winner === "me" ? "win" : d.winner === "opp" ? "lose" : "draw",
     myScore: me.total, oppScore: opp.total,
-    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: e.g })),
+    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: attackGradeInfo(e.g).name })),
     stats: [
       { label: "성공 / 시도", value: me.total + " / " + me.tries },
-      { label: "S·A 성공", value: me.S + me.A },
-      { label: "B·C 성공", value: me.B + me.C },
+      { label: "탁월·유일 성공", value: me.S + me.A },
+      { label: "최선·우수 성공", value: me.B + me.C },
     ],
     note: d.reason,
   };
@@ -12637,12 +12679,12 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
         <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
         <div>• 한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어가요.</div>
         <div>• 짧은 메이트일수록 좋은 등급이고, <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 더 높아요.</div>
-        <div>• 동점이면 낮은 등급(C→B→A→S)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
+        <div>• 동점이면 낮은 등급(우수→최선→유일→탁월)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? " · " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} withName />{gi.label}{counts ? " · " + counts[i] : ""}</span>
           ))}
         </div>
       }
