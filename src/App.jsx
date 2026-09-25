@@ -2636,15 +2636,20 @@ function BoardWithMaterial({ board, flip, textColor = "rgba(255,255,255,.7)", to
 const HINT_GOLD_GRADIENT = "linear-gradient(135deg, rgba(255,229,150,.98), rgba(216,163,58,.97))";
 const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(255,255,255,.55)";
 // (v0.5.5 기능, 사용자 요청) 수 등급 이펙트 — 탁월한 수·유일한 수·최선의 수를 두면(체스닷컴 게임 리뷰와 같은 연출) 도착 칸이 등급
-// 색으로 진하게 덮이고 가운데에 큰 흰 기호(!!, !, ★)가, 오른쪽 위에 등급 이름 알약("탁월합니다")이 뜬다. 약 1.1초 뒤 알약이
+// 색으로 진하게 덮이고 가운데에 큰 흰 기호(!!, !, ★)가, 오른쪽 위에 등급 이름 알약("탁월한 수")이 뜬다. 약 1.1초 뒤 알약이
 // 오른쪽 위 원형 배지로 줄어들며 색이 바뀌고, 칸 색·큰 기호가 평소 하이라이트로 가라앉는다 — 끝 모습이 Board의 평소 배지와
 // 같은 자리·크기라 이펙트가 사라져도 이어져 보인다. 설정 탭 "시각 효과"에서 끌 수 있다(VisualPrefsContext).
 const VisualPrefsContext = createContext({ moveFx: true });
+// (v0.5.6) 가운데 큰 기호는 글꼴 문자(!!)·lucide 별 대신, 수 체계 아이콘 PNG에서 흰 기호만 그대로 떼어낸 이미지(public/move-fx/)를
+// 쓴다 — 아이콘과 모양이 똑같다. 이미지는 기호에 딱 맞게 잘라 정사각형 가운데에 둔 것이고, glyph는 그 한 변이 칸의 몇 배인지다
+// (원래 아이콘 속 비율 0.632·0.653을 그대로 유지해 !!·!·★의 상대 크기가 아이콘과 같다).
 const MOVE_FX = {
-  brilliant: { label: "탁월합니다", glyph: "!!" },
-  only: { label: "유일한 수", glyph: "!" },
-  best: { label: "최선의 수", glyph: "star" },
+  brilliant: { label: "탁월한 수", src: "/move-fx/brilliant.png", glyph: 0.6 },
+  only: { label: "유일한 수", src: "/move-fx/only.png", glyph: 0.6 },
+  best: { label: "최선의 수", src: "/move-fx/best.png", glyph: 0.62 },
 };
+// 이펙트는 1.3초만 뜨므로 처음 재생 때 이미지를 받느라 기호가 빠지지 않게 미리 받아 둔다(세 장 합쳐 약 22KB).
+if (typeof window !== "undefined") Object.values(MOVE_FX).forEach((d) => { const im = new Image(); im.src = d.src; });
 const MOVE_FX_IN = 0.12, MOVE_FX_HOLD = 1.12, MOVE_FX_END = 1.34;   // 초 — 나타남 / 알약이 배지로 줄어들기 시작 / 끝
 const MOVE_FX_MS = Math.round(MOVE_FX_END * 1000) + 40;
 // 알약 폭 — 글자 폭을 캔버스로 재서 글자에 딱 맞춘다(재지 못하면 글자 수로 어림).
@@ -2678,16 +2683,16 @@ function MoveClassFx({ kind, cell, vc = 0, vr = 0, clipTop = false }) {
         style={{ position: "absolute", inset: 0, background: color }} />
       <motion.div initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: [0, 1, 1, 0, 0], scale: [0.5, 1, 1, 0.8, 0.8] }} transition={{ duration: D, times: [0, a, b, b + 0.08, 1], ease: "easeOut" }}
         style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {def.glyph === "star"
-          ? <Star size={cell * 0.56} color="#fff" fill="#fff" strokeWidth={1.5} style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,.18))" }} />
-          : <span style={{ color: "#fff", fontSize: cell * 0.6, fontWeight: 900, lineHeight: 1, letterSpacing: "-0.08em", fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, textShadow: "0 1px 2px rgba(0,0,0,.18)", marginLeft: def.glyph.length > 1 ? "-0.08em" : 0 }}>{def.glyph}</span>}
+        {/* 아이콘처럼 기호 바로 아래로 짧게 떨어지는 진한 그림자를 준다. */}
+        <img src={def.src} alt="" draggable={false} width={cell * def.glyph} height={cell * def.glyph}
+          style={{ display: "block", filter: "drop-shadow(0 " + Math.max(1, cell * 0.022).toFixed(1) + "px 0 rgba(0,0,0,.28))" }} />
       </motion.div>
       <motion.div initial={{ opacity: 0, left: pillLeft, width: pillW, scale: 0.6, backgroundColor: "#ffffff" }}
         animate={{ opacity: [0, 1, 1, 1], scale: [0.6, 1, 1, 1], left: [pillLeft, pillLeft, pillLeft, badgeLeft], width: [pillW, pillW, pillW, bs], backgroundColor: ["#ffffff", "#ffffff", "#ffffff", color] }}
         transition={{ duration: D, times: [0, a, b, 1], ease }}
         style={{ position: "absolute", top, height: bs, borderRadius: 999, boxSizing: "border-box", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)", overflow: "hidden", transformOrigin: vc >= 5 ? "100% 50%" : "0% 50%", zIndex: 2 }}>
         <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0, 0] }} transition={{ duration: D, times: [0, a, b, b + 0.05, 1] }}
-          style={{ position: "absolute", left: padX, top: 0, bottom: 0, display: "flex", alignItems: "center", color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{def.label}</motion.span>
+          style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{def.label}</motion.span>
         <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 1] }} transition={{ duration: D, times: [0, b + 0.1, 1] }}
           style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: bs - 4, display: "flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, cell * 0.38)}</motion.span>
       </motion.div>
