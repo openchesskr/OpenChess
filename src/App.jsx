@@ -2679,6 +2679,15 @@ function MoveClassFx({ kind, cell, vc = 0, vr = 0, clipTop = false }) {
 }
 // (v0.5.6) 칸 이펙트 공통 틀 — 수 등급 이펙트(MoveClassFx)와 대국 종료 이펙트(GameEndFx)가 함께 쓴다. 칸을 color로 진하게 덮고
 // 가운데에 큰 glyph, 오른쪽 위에 label 알약을 띄웠다가, 알약이 badge를 담은 원형 배지로 줄어든다. timing: [나타남, 유지 끝, 전체](초).
+// (v0.5.6 성능, 사용자 제보 "모션이 덜 부드럽다") framer-motion은 opacity·transform(문자열)·clipPath·filter만 브라우저 합성기(WAAPI,
+// GPU)로 돌리고, 그 밖의 값(left·width·backgroundColor, 그리고 x·scale 같은 개별 transform)은 매 프레임 JS로 계산한다. 예전엔
+// 알약을 left·width·backgroundColor로 줄여, 엔진 평가로 보드가 자주 다시 그려지는 동안 프레임이 밀려 끊겨 보였다. 이제 모든 움직임을
+// 합성기 값으로만 만든다 — 알약은 폭을 고정한 채 clipPath로 오른쪽 끝 원만 남기고 transform으로 배지 자리까지 옮기며, 색 변화는
+// 흰 알약 위에 등급 색 층을 opacity로 겹친다. 그림자는 clipPath에 잘리지 않도록 바깥 래퍼의 drop-shadow로 준다.
+const FX_EASE = [0.4, 0, 0.2, 1];
+// 합성기(WAAPI)로 도는 키프레임 애니메이션에 ease를 하나만 주면 framer가 그 곡선을 "전체 타임라인"에 걸어 times가 틀어진다(구간
+// 비율이 휘어 기호가 일찍 사라지는 등) — 구간마다 같은 곡선을 주도록 키프레임 수 - 1개짜리 배열로 넘긴다.
+const fxEase = (n, e = FX_EASE) => Array.from({ length: n - 1 }, () => e);
 function SquareFx({ color, label, labelColor, glyph, badge, cell, vc = 0, vr = 0, clipTop = false, timing = [MOVE_FX_IN, MOVE_FX_HOLD, MOVE_FX_END] }) {
   const D = timing[2], a = timing[0] / D, b = timing[1] / D;
   const bs = cell * 0.44 + 4;                     // 배지 바깥 지름(테두리 포함) — Board 평소 배지와 같다
@@ -2687,24 +2696,32 @@ function SquareFx({ color, label, labelColor, glyph, badge, cell, vc = 0, vr = 0
   const fs = Math.max(9, cell * 0.22), padX = cell * 0.17;
   const pillW = Math.max(bs, moveFxTextWidth(label, fs) + padX * 2);
   const pillLeft = vc >= 5 ? badgeLeft + bs - pillW : cell * 0.3;
-  const ease = [0.4, 0, 0.2, 1];
+  const cut = (pillW - bs).toFixed(2);
+  const shift = (badgeLeft - (pillLeft + pillW - bs)).toFixed(2);   // 알약 오른쪽 끝 원 → 배지 자리
+  const clipOpen = "inset(0px 0px 0px 0px round 999px)", clipBadge = "inset(0px 0px 0px " + cut + "px round 999px)";
+  const tf = (x, sc) => "translateX(" + x + "px) scale(" + sc + ")";
   return (
     <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 7, pointerEvents: "none" }}>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: [0, 0.9, 0.9, 0] }} transition={{ duration: D, times: [0, a, b, 1], ease: "easeOut" }}
-        style={{ position: "absolute", inset: 0, background: color }} />
-      <motion.div initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: [0, 1, 1, 0, 0], scale: [0.5, 1, 1, 0.8, 0.8] }} transition={{ duration: D, times: [0, a, b, b + 0.08, 1], ease: "easeOut" }}
-        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: [0, 0.9, 0.9, 0] }} transition={{ duration: D, times: [0, a, b, 1], ease: fxEase(4, "easeOut") }}
+        style={{ position: "absolute", inset: 0, background: color, willChange: "opacity" }} />
+      <motion.div initial={{ opacity: 0, transform: "scale(0.5)" }} animate={{ opacity: [0, 1, 1, 0, 0], transform: ["scale(0.5)", "scale(1)", "scale(1)", "scale(0.8)", "scale(0.8)"] }}
+        transition={{ duration: D, times: [0, a, b, b + 0.08, 1], ease: [[0.2, 0.9, 0.3, 1.15], "linear", "easeIn", "linear"] }}
+        style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
         {glyph}
       </motion.div>
-      <motion.div initial={{ opacity: 0, left: pillLeft, width: pillW, scale: 0.6, backgroundColor: "#ffffff" }}
-        animate={{ opacity: [0, 1, 1, 1], scale: [0.6, 1, 1, 1], left: [pillLeft, pillLeft, pillLeft, badgeLeft], width: [pillW, pillW, pillW, bs], backgroundColor: ["#ffffff", "#ffffff", "#ffffff", color] }}
-        transition={{ duration: D, times: [0, a, b, 1], ease }}
-        style={{ position: "absolute", top, height: bs, borderRadius: 999, boxSizing: "border-box", border: "2px solid #fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)", overflow: "hidden", transformOrigin: vc >= 5 ? "100% 50%" : "0% 50%", zIndex: 2 }}>
-        <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0, 0] }} transition={{ duration: D, times: [0, a, b, b + 0.05, 1] }}
-          style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: labelColor || color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{label}</motion.span>
-        <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 1] }} transition={{ duration: D, times: [0, b + 0.1, 1] }}
-          style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: bs - 4, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</motion.span>
-      </motion.div>
+      <div style={{ position: "absolute", left: pillLeft, top, width: pillW, height: bs, zIndex: 2, filter: "drop-shadow(0 2px 3px rgba(0,0,0,.33))" }}>
+        <motion.div initial={{ opacity: 0, transform: tf(0, 0.6), clipPath: clipOpen }}
+          animate={{ opacity: [0, 1, 1, 1], transform: [tf(0, 0.6), tf(0, 1), tf(0, 1), tf(shift, 1)], clipPath: [clipOpen, clipOpen, clipOpen, clipBadge] }}
+          transition={{ duration: D, times: [0, a, b, 1], ease: fxEase(4) }}
+          style={{ position: "absolute", inset: 0, borderRadius: 999, background: "#fff", overflow: "hidden", transformOrigin: vc >= 5 ? "100% 50%" : "0% 50%", willChange: "transform, clip-path, opacity" }}>
+          <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 1] }} transition={{ duration: D, times: [0, b, 1], ease: fxEase(3) }}
+            style={{ position: "absolute", inset: 2, borderRadius: 999, background: color }} />
+          <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0, 0] }} transition={{ duration: D, times: [0, a, b, b + 0.05, 1], ease: fxEase(5, "linear") }}
+            style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: labelColor || color, fontSize: fs, fontWeight: 900, whiteSpace: "nowrap", fontFamily: SITE_FONT, letterSpacing: "-0.02em" }}>{label}</motion.span>
+          <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 0, 1] }} transition={{ duration: D, times: [0, b + 0.1, 1], ease: fxEase(3, "linear") }}
+            style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: bs, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</motion.span>
+        </motion.div>
+      </div>
     </div>
   );
 }
@@ -2758,11 +2775,11 @@ function MoveFxSlide({ dx, dy, pieceColor, cell, children }) {
   const ang = Math.atan2(dy, dx) * 180 / Math.PI;
   const tail = pieceColor === "w" ? "rgba(255,255,255,.95)" : "rgba(20,14,8,.5)";
   return (
-    <motion.div initial={{ x: dx, y: dy }} animate={{ x: 0, y: 0 }} transition={{ duration: 0.15, ease: [0.25, 0.8, 0.35, 1] }}
-      style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
+    <motion.div initial={{ transform: "translate(" + dx + "px," + dy + "px)" }} animate={{ transform: "translate(0px,0px)" }} transition={{ duration: 0.15, ease: [0.25, 0.8, 0.35, 1] }}
+      style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1, willChange: "transform" }}>
       {dist > 1 && (
-        <motion.span aria-hidden="true" initial={{ opacity: 0.9, scaleX: 0 }} animate={{ opacity: [0.9, 0.9, 0], scaleX: [0, 1, 0.35] }} transition={{ duration: 0.42, times: [0, 0.36, 1], ease: "easeOut" }}
-          style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(dist, cell * 1.6), height: cell * 0.36, marginTop: -cell * 0.18, transformOrigin: "0% 50%", rotate: ang, background: "linear-gradient(to right, " + tail + ", rgba(0,0,0,0))", borderRadius: 999, filter: "blur(" + Math.max(1.5, cell * 0.035) + "px)", pointerEvents: "none", zIndex: -1 }} />
+        <motion.span aria-hidden="true" initial={{ opacity: 0.9, transform: "rotate(" + ang + "deg) scaleX(0)" }} animate={{ opacity: [0.9, 0.9, 0], transform: [0, 1, 0.35].map((k) => "rotate(" + ang + "deg) scaleX(" + k + ")") }} transition={{ duration: 0.42, times: [0, 0.36, 1], ease: fxEase(3, "easeOut") }}
+          style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(dist, cell * 1.6), height: cell * 0.36, marginTop: -cell * 0.18, transformOrigin: "0% 50%", background: "linear-gradient(to right, " + tail + ", rgba(0,0,0,0))", borderRadius: 999, filter: "blur(" + Math.max(1.5, cell * 0.035) + "px)", pointerEvents: "none", zIndex: -1 }} />
       )}
       {children}
     </motion.div>
