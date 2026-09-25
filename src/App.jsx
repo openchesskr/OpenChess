@@ -9322,10 +9322,12 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
 // 안쪽 모서리를 가운데 정육각형 "OpenChess MiniGame" 엠블럼이 같은 모양으로 파고든다. 버튼·육각형은 다른 탭의
 // 크림색 카드(T.paper + #DCCBA8 테두리)와 같은 모양이고, 서로 간격을 두고 모서리를 둥글게 깎는다.
 // 각 버튼의 바깥 모서리에는 앱 체스보드(장착한 보드·기물 스킨)를 여백 없이 붙여, 버튼의 둥근 윤곽대로 잘라 그린다
-// (보드 레이어 전체를 네 버튼 윤곽을 합친 clip-path로 자른다). 위쪽 두 버튼은 두 버튼에 걸쳐 이어지는 4×14 띠
-// (조준경·나이트), 아래쪽 두 버튼은 실제 포지션을 수순이 지나는 파일만 세로로 잘라 크게 — 무한 체크메이트
-// 게임은 공격 기회 풀의 실전 1수 메이트(Praggnanandhaa–Keymer 2024, Qg7#), 백랭크 러시아워는 레벨 h1의 정답
-// (나이트가 비킨 뒤의 포지션에서 주인공 룩이 a2→a1→d1→d5→a5→a8로 꺾어 올라가 백랭크 메이트).
+// (보드 레이어 전체를 네 버튼 윤곽을 합친 clip-path로 자른다). 위쪽 두 버튼은 맨 위에, 아래쪽 두 버튼은 맨 아래에
+// 4×7 보드를 두어 위·아래 모두 두 버튼에 걸쳐 체크 무늬가 이어지는 4×14 띠로 보이고, 이름은 그 반대편(가운데 쪽)에
+// 둔다. 네 보드 모두 움직인다 — 좌표 인지 게임은 칸 곳곳에 조준경이 튀어나오고, 나이트 레이스는 목표 칸이 계속
+// 바뀌며 나이트가 최단 경로로 뛰어가고, 무한 체크메이트 게임은 실전 1수 메이트(Praggnanandhaa–Keymer 2024,
+// Qg7#)를 퀸이 두는 장면을, 백랭크 러시아워는 막힌 주인공 룩이 옆으로 빠져나와 파일을 타고 올라가 백랭크 메이트
+// 하는 장면을 반복한다. 움직임 줄이기 설정이면 모두 멈춘 채로 보인다.
 // 좌표계는 SVG viewBox(100×100) 하나 — 보드·글자 오버레이도 같은 퍼센트 좌표로 얹는다.
 const MG_GAP = 1.8;                 // 도형 사이 간격
 const MG_PAD = 3;                   // 글자 여백
@@ -9333,17 +9335,11 @@ const MG_RADIUS = 3.4;              // 모서리 라운딩
 const MG_H = 100;                                                     // 네 정사각형 2×2 → 전체도 정사각형
 const MG_SQ = 50 - MG_GAP / 2;                                        // 버튼 정사각형 한 변
 const MG_BLEED = 0.6;                                                 // 보드를 버튼 밖으로 살짝 넘겨 그려 가장자리 틈을 없앤다(clip이 잘라 냄)
-const MG_STRIP = { rows: 4, cols: 7 };                               // 위쪽 버튼마다 4×7 — 두 버튼을 이어 4×14 띠
+const MG_STRIP = { rows: 4, cols: 7 };                               // 버튼마다 4×7 — 위·아래 모두 두 버튼을 이어 4×14 띠
 const MG_STRIP_CELL = (MG_SQ + 2 * MG_BLEED) / MG_STRIP.cols;
 const MG_HEX_S = 17;                                                  // 정육각형 한 변(= 중심에서 꼭짓점까지)
 const MG_HEX_A = MG_HEX_S * Math.sqrt(3) / 2;                         // 중심에서 변까지(아포템)
 const MG_HEX_CY = 50;
-// 아래쪽 두 보드: 1–8랭크 세로 띠. 수순의 출발·도착 칸이 버튼의 둥근 바깥 모서리에 걸려 잘리지 않도록, 러시아워는
-// 경로가 안쪽(a파일)에 모이는 a–e, 체크메이트는 킹 쪽 e–h(바깥 모서리 e1·e8은 빈 칸)를 자른다. 체크메이트 쪽은 긴
-// 이름("체크메이트")이 보드 옆에 들어가야 해 한 파일 좁다.
-const MG_MATE_FILES = [4, 7], MG_RUSH_FILES = [0, 4];
-const MG_CROP_CELL = (MG_SQ + 2 * MG_BLEED) / 8;
-const mgCropW = (files) => (files[1] - files[0] + 1) * MG_CROP_CELL;
 // 다각형 꼭짓점마다 양쪽 변을 r만큼(변 길이 절반 이내) 잘라 내고 꼭짓점을 제어점으로 한 곡선으로 잇는다.
 // k로 좌표를 배율 조정해 같은 모양의 px 경로(clip-path용)도 만든다.
 function mgRoundedPath(pts, r, k = 1) {
@@ -9377,30 +9373,16 @@ function mgShapes() {
 }
 const MG_KEYS = ["coord", "knight", "attack", "rush"];
 const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스", attack: "무한 체크메이트 게임", rush: "백랭크 러시아워" };
-// 버튼 글자 자리 — 위 버튼은 띠 바로 아래 바깥쪽, 아래 버튼은 세로 보드 옆 안쪽 아래. 육각형 홈을 피하도록
-// 정렬 방향(right)을 고른다. x는 왼쪽 정렬이면 글자 왼쪽 끝, 오른쪽 정렬이면 오른쪽 끝, y는 top(아래 버튼은 bottom).
+// 버튼 글자 자리 — 보드 반대편(가운데 가로선 쪽)에 둔다: 위 버튼은 보드 아래, 아래 버튼은 보드 위. 육각형 홈을
+// 피하도록 왼쪽 버튼은 왼쪽 정렬, 오른쪽 버튼은 오른쪽 정렬(x는 정렬한 쪽 끝, top은 viewBox 좌표).
+const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED;            // 버튼 안에 보이는 보드 높이
+const MG_LABEL_UP_TOP = MG_STRIP_H + 2.6, MG_LABEL_DN_TOP = 50 + MG_GAP / 2 + MG_PAD;
 const MG_LABELS = [
-  { gameType: "coord", lines: ["좌표 인지", "게임"], x: MG_PAD + 1, top: MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED + 2.6 },
-  { gameType: "knight", lines: ["나이트", "레이스"], x: 100 - MG_PAD - 1, top: MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED + 2.6, right: true },
-  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: 50 - MG_GAP / 2 - MG_PAD, bottom: MG_PAD + 0.6, right: true },
-  { gameType: "rush", lines: ["백랭크", "러시아워"], x: 50 + MG_GAP / 2 + MG_PAD, bottom: MG_PAD + 0.6 },
+  { gameType: "coord", lines: ["좌표 인지", "게임"], x: MG_PAD + 1, top: MG_LABEL_UP_TOP },
+  { gameType: "knight", lines: ["나이트", "레이스"], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true },
+  { gameType: "attack", lines: ["무한 체크메이트", "게임"], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
+  { gameType: "rush", lines: ["백랭크", "러시아워"], x: 100 - MG_PAD - 1, top: MG_LABEL_DN_TOP, right: true },
 ];
-// 아래쪽 두 보드의 포지션(보드 배열 index = rank0*8 + file)과 화살표 수순.
-const MG_RUSH_LEVEL = RUSH_LEVELS.find((l) => l.id === "h1") || RUSH_LEVELS[0];
-const MG_MATE_FEN = "6k1/p6p/2b4Q/1p2Rp1N/2qn4/8/PP3PPP/6K1";
-const mgSq = (name) => "abcdefgh".indexOf(name[0]) + (parseInt(name[1], 10) - 1) * 8;
-function mgFenBoard(fen) {
-  const board = new Array(64).fill(null);
-  fen.split(" ")[0].split("/").forEach((row, i) => {
-    let f = 0;
-    for (const ch of row) {
-      if (/\d/.test(ch)) { f += parseInt(ch, 10); continue; }
-      board[(7 - i) * 8 + f] = (ch === ch.toUpperCase() ? "w" : "b") + ch.toUpperCase();
-      f++;
-    }
-  });
-  return board;
-}
 // 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨을 그대로 쓴다. rows×cols와 전역 좌표 오프셋(rowOffset·colOffset,
 // 위에서 아래·왼쪽에서 오른쪽)을 받아, 조각끼리 이어 붙이거나 8×8의 일부를 잘라도 체크 무늬가 실제 보드와 같다.
 // 테두리 없이 그려, 버튼 윤곽(clip-path)이 그대로 보드의 가장자리가 된다.
@@ -9430,36 +9412,6 @@ function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceA
       {cells}
       {children}
     </div>
-  );
-}
-// 보드 위 화살표(칸 단위 좌표) — 분석 탭 화살표처럼 금색 몸통 + 어두운 외곽선. win: 보드에 보이는 파일·랭크 범위.
-function MgArrows({ paths, win }) {
-  const nf = win.files[1] - win.files[0] + 1, nr = win.ranks[1] - win.ranks[0] + 1;
-  const ctr = (name) => { const i = mgSq(name); return [(i & 7) - win.files[0] + 0.5, win.ranks[1] - (i >> 3) + 0.5]; };
-  return (
-    <svg viewBox={"0 0 " + nf + " " + nr} width="100%" height="100%" style={{ position: "absolute", inset: 0, zIndex: 3, overflow: "visible" }} aria-hidden="true">
-      <defs>
-        {["gold", "green"].map((k) => (
-          <marker key={k} id={"mg-head-" + k} viewBox="0 0 10 10" refX="4.2" refY="5" markerUnits="userSpaceOnUse" markerWidth="0.62" markerHeight="0.62" orient="auto">
-            <path d="M0 0 L10 5 L0 10 Z" fill={k === "green" ? "#5FB35A" : T.brassHi} stroke="rgba(20,11,4,.75)" strokeWidth="1.1" strokeLinejoin="round" />
-          </marker>
-        ))}
-      </defs>
-      {paths.map((p, i) => {
-        const pts = p.squares.map(ctr);
-        // 시작점을 칸 가장자리 쪽으로 당겨, 출발 칸의 기물(주인공 룩 등)을 화살표가 가리지 않게 한다.
-        const [a, b] = pts, len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-        pts[0] = [a[0] + (b[0] - a[0]) / len * 0.38, a[1] + (b[1] - a[1]) / len * 0.38];
-        const pointsStr = pts.map((q) => q.join(",")).join(" ");
-        const color = p.kind === "green" ? "#5FB35A" : T.brassHi;
-        return (
-          <g key={i} fill="none" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points={pointsStr} stroke="rgba(20,11,4,.6)" strokeWidth="0.3" />
-            <polyline points={pointsStr} stroke={color} strokeWidth="0.19" markerEnd={"url(#mg-head-" + p.kind + ")"} />
-          </g>
-        );
-      })}
-    </svg>
   );
 }
 // (v0.5.5 연출, 사용자 요청) 좌표 인지 게임 띠 — 칸 곳곳에 조준경이 차례로 튀어나왔다 사라지며 그 칸의 좌표를
@@ -9494,46 +9446,119 @@ function MgCoordPings({ cellPx }) {
     </div>
   );
 }
-// (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 나이트가 L자로 세 번 뛰어 목표 칸(맥동하는 금색 별)에 닿는 걸 반복한다.
-// 지나갈 길은 점선으로 미리 보이고, 칸마다 잠깐 멈췄다가 살짝 떠오르며 다음 칸으로 뛴다.
-const MG_KNIGHT_ROUTE = [[1, 3], [3, 2], [4, 0], [6, 1]];   // [열, 줄] — 모두 합법적인 나이트 이동
-const MG_KNIGHT_MS = 4200;
+function mgReducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } }
+// (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 목표 칸(금색 별)이 계속 바뀌고, 나이트가 그때마다 최단 경로로 한 칸씩
+// 뛰어간다(점선이 남은 경로). 도착하면 별이 터지듯 번쩍이고 잠시 뒤 다른 칸에 새 목표가 뜬다. 둥근 버튼 모서리에
+// 걸리는 귀퉁이 칸(위 두 모서리)에는 가지도 서지도 않는다.
+const MG_KNIGHT_JUMPS = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+const MG_KNIGHT_AVOID = new Set(["0,0", MG_STRIP.cols - 1 + ",0"]);
+const MG_HOP_MS = 560;
+function mgKnightPath(from, to) {
+  const key = (p) => p[0] + "," + p[1];
+  const prev = new Map([[key(from), null]]);
+  const q = [from];
+  while (q.length) {
+    const cur = q.shift();
+    if (key(cur) === key(to)) break;
+    for (const [dc, dr] of MG_KNIGHT_JUMPS) {
+      const nx = [cur[0] + dc, cur[1] + dr];
+      if (nx[0] < 0 || nx[1] < 0 || nx[0] >= MG_STRIP.cols || nx[1] >= MG_STRIP.rows || MG_KNIGHT_AVOID.has(key(nx)) || prev.has(key(nx))) continue;
+      prev.set(key(nx), cur); q.push(nx);
+    }
+  }
+  if (!prev.has(key(to))) return [];
+  const path = [];
+  for (let p = to; p && key(p) !== key(from); p = prev.get(key(p))) path.unshift(p);
+  return path;
+}
+function mgPickTarget(from) {
+  const cands = [];
+  for (let r = 0; r < MG_STRIP.rows; r++) for (let c = 0; c < MG_STRIP.cols; c++) {
+    if (MG_KNIGHT_AVOID.has(c + "," + r) || (c === from[0] && r === from[1])) continue;
+    const n = mgKnightPath(from, [c, r]).length;
+    if (n >= 2 && n <= 3) cands.push([c, r]);
+  }
+  return cands.length ? cands[Math.floor(Math.random() * cands.length)] : [1, 3];
+}
 function MgKnightRun({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
-  const [tc, tr] = MG_KNIGHT_ROUTE[MG_KNIGHT_ROUTE.length - 1];
-  // 칸마다 머무는 구간 + 뛰는 구간을 번갈아 둔 CSS 키프레임 — 나이트 요소 자체가 한 칸 크기라 translate(열×100%, 줄×100%)로
-  // 칸 단위 이동이 된다. 뛰는 도중에는 안쪽 요소가 살짝 떠오른다. 마지막 칸에서 조금 더 머문 뒤 처음으로 돌아간다.
-  const { move, hop } = useMemo(() => {
-    const seg = 80 / (MG_KNIGHT_ROUTE.length - 1);
-    const mv = [], hp = [];
-    const at = (c, r) => "transform:translate(" + c * 100 + "%," + r * 100 + "%)";
-    MG_KNIGHT_ROUTE.forEach(([c, r], i) => {
-      const t0 = i * seg;
-      mv.push(t0.toFixed(2) + "%{" + at(c, r) + "}", (t0 + seg * 0.45).toFixed(2) + "%{" + at(c, r) + "}");
-      hp.push(t0.toFixed(2) + "%{transform:translateY(0)}", (t0 + seg * 0.45).toFixed(2) + "%{transform:translateY(0)}");
-      if (i < MG_KNIGHT_ROUTE.length - 1) hp.push((t0 + seg * 0.72).toFixed(2) + "%{transform:translateY(-32%) scale(1.08)}");
-    });
-    const [sc, sr] = MG_KNIGHT_ROUTE[0];
-    mv.push("97%{" + at(tc, tr) + "}", "100%{" + at(sc, sr) + "}");
-    hp.push("97%{transform:translateY(0)}", "100%{transform:translateY(0)}");
-    return { move: "@keyframes mgKnightMove{" + mv.join("") + "}", hop: "@keyframes mgKnightHop{" + hp.join("") + "}" };
-  }, [tc, tr]);
+  // rest: 도착 뒤·새 목표를 띄운 뒤 잠깐 멈추는 박자 수. hop: 뛸 때마다 올려 안쪽 요소의 떠오르는 애니메이션을 다시 건다.
+  const [st, setSt] = useState(() => ({ pos: [1, 3], target: [6, 1], path: mgKnightPath([1, 3], [6, 1]), hop: 0, rest: 1, tgt: 0 }));
+  useEffect(() => {
+    if (mgReducedMotion()) return undefined;
+    const id = setInterval(() => setSt((s) => {
+      if (s.rest > 0) return { ...s, rest: s.rest - 1 };
+      if (s.path.length) { const [n, ...rest] = s.path; return { ...s, pos: n, path: rest, hop: s.hop + 1, rest: rest.length ? 0 : 2 }; }
+      const t = mgPickTarget(s.pos);
+      return { ...s, target: t, path: mgKnightPath(s.pos, t), tgt: s.tgt + 1, rest: 1 };
+    }), MG_HOP_MS);
+    return () => clearInterval(id);
+  }, []);
+  const arrived = !st.path.length && st.pos[0] === st.target[0] && st.pos[1] === st.target[1];
+  const trail = [st.pos, ...st.path];
   return (
     <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-      <style>{move + hop}</style>
-      <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-        <polyline points={MG_KNIGHT_ROUTE.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
-        {MG_KNIGHT_ROUTE.slice(0, -1).map(([c, r], i) => <circle key={i} cx={c + 0.5} cy={r + 0.5} r="0.09" fill={T.brassHi} />)}
-      </svg>
-      <div style={{ position: "absolute", left: tc * w + "%", top: tr * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span className="mg-anim" style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: "rgba(236,203,134,.28)", animation: "mgTargetPulse 1.4s ease-in-out infinite" }} />
+      {trail.length > 1 && (
+        <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+          <polyline points={trail.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" />
+          {st.path.slice(0, -1).map(([c, r], i) => <circle key={i} cx={c + 0.5} cy={r + 0.5} r="0.09" fill={T.brassHi} />)}
+        </svg>
+      )}
+      <div key={"t" + st.tgt} style={{ position: "absolute", left: st.target[0] * w + "%", top: st.target[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center", animation: "mgPop .35s cubic-bezier(.2,.9,.3,1.3)" }}>
+        <span className="mg-anim" style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: arrived ? "rgba(236,203,134,.6)" : "rgba(236,203,134,.28)", animation: arrived ? "mgBurst .5s ease-out" : "mgTargetPulse 1.4s ease-in-out infinite", transition: "background .2s" }} />
         <Star size={Math.max(10, cellPx * 0.46)} color={T.brassHi} fill={T.brassHi} style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6))" }} />
       </div>
-      {/* 움직임을 줄이는 설정이면(.mg-anim) 애니메이션 없이 출발 칸에 선다. */}
-      <div className="mg-anim" style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + MG_KNIGHT_ROUTE[0][0] * 100 + "%," + MG_KNIGHT_ROUTE[0][1] * 100 + "%)", animation: "mgKnightMove " + MG_KNIGHT_MS + "ms ease-in-out infinite" }}>
-        <div className="mg-anim" style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.45))", animation: "mgKnightHop " + MG_KNIGHT_MS + "ms ease-in-out infinite" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + st.pos[0] * 100 + "%," + st.pos[1] * 100 + "%)", transition: "transform " + (MG_HOP_MS * 0.72) + "ms cubic-bezier(.45,.05,.3,1)" }}>
+        <div key={"h" + st.hop} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.45))", animation: st.hop ? "mgHop " + (MG_HOP_MS * 0.72) + "ms ease-out" : "none" }}>
           <PieceGlyph type="N" color="b" size={cellPx * 0.82} />
         </div>
+      </div>
+    </div>
+  );
+}
+// (v0.5.5 연출, 사용자 요청) 아래쪽 두 보드 — 한 기물이 CSS 키프레임으로 칸 사이를 미끄러지고, 메이트 순간 킹 칸이
+// 빨갛게 번쩍인 뒤 처음으로 돌아가길 반복한다. 움직이는 기물은 한 칸 크기 요소를 translate(열×100%, 줄×100%)로 옮긴다.
+// 칸 좌표는 [열, 줄](위에서부터). 버튼 둥근 모서리 귀퉁이 칸(아래 두 모서리)에는 움직이는 기물이 서지 않게 짰다.
+const MG_MATE_MS = 3800, MG_RUSH_MS = 4600;
+// 무한 체크메이트 게임: Praggnanandhaa–Keymer 2024의 b–h 파일 × 8–5랭크 — Qh6-g7#(Nh5가 받친다).
+const MG_MATE = {
+  pieces: { "5,0": "bK", "6,1": "bP", "1,2": "bB", "0,3": "bP", "3,3": "wR", "4,3": "bP", "6,3": "wN" },
+  mover: { type: "Q", color: "w", from: [6, 2], to: [5, 1] }, king: [5, 0],
+};
+// 백랭크 러시아워: 주인공 룩이 위(폰)·왼쪽(비숍)이 막혀 있다 — 옆으로 빠져나와(c→) d파일을 타고 올라가 d8에서 백랭크 메이트
+// (f7·g7·h7 폰이 킹의 퇴로를 막는다). 파일은 a–g로 둬 오른쪽 보드와 체크 무늬가 이어진다.
+const MG_RUSH = {
+  pieces: { "5,0": "bK", "4,1": "bP", "5,1": "bP", "6,1": "bP", "1,2": "wN", "5,2": "wP", "0,3": "wP", "2,3": "wB", "6,3": "wP" },
+  route: [[5, 3], [3, 3], [3, 0]], king: [5, 0],
+};
+function mgKeyframes(name, stops) { return "@keyframes " + name + "{" + stops.map(([p, v]) => p + "%{" + v + "}").join("") + "}"; }
+const mgAt = (c, r) => "transform:translate(" + c * 100 + "%," + r * 100 + "%)";
+const MG_LOOP_CSS =
+  mgKeyframes("mgMateQ", [[0, mgAt(6, 2) + ";opacity:0"], [8, mgAt(6, 2) + ";opacity:1"], [34, mgAt(6, 2)], [50, mgAt(5, 1)], [88, mgAt(5, 1) + ";opacity:1"], [96, mgAt(5, 1) + ";opacity:0"], [100, mgAt(6, 2) + ";opacity:0"]])
+  + mgKeyframes("mgMateFlash", [[0, "opacity:0"], [49, "opacity:0"], [54, "opacity:1"], [88, "opacity:1"], [96, "opacity:0"], [100, "opacity:0"]])
+  + mgKeyframes("mgRushR", [[0, mgAt(5, 3) + ";opacity:0"], [6, mgAt(5, 3) + ";opacity:1"], [18, mgAt(5, 3)], [36, mgAt(3, 3)], [46, mgAt(3, 3)], [62, mgAt(3, 0)], [88, mgAt(3, 0) + ";opacity:1"], [95, mgAt(3, 0) + ";opacity:0"], [100, mgAt(5, 3) + ";opacity:0"]])
+  + mgKeyframes("mgRushFlash", [[0, "opacity:0"], [61, "opacity:0"], [66, "opacity:1"], [88, "opacity:1"], [95, "opacity:0"], [100, "opacity:0"]])
+  + "@keyframes mgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
+  + "@keyframes mgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
+  + "@keyframes mgHop{0%{transform:translateY(0)}45%{transform:translateY(-30%) scale(1.1)}100%{transform:translateY(0)}}";
+function MgLoopScene({ cellPx, mover, moverAnim, loopMs, king, flashAnim, trail, hero }) {
+  const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
+      {trail && (
+        <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+          <polyline points={trail.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={trail.color || T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+        </svg>
+      )}
+      <div style={{ position: "absolute", left: king[0] * w + "%", top: king[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}>
+        <span className="mg-anim" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.75) 0%, rgba(229,52,42,.28) 72%)", opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }} />
+        <span className="mg-anim" style={{ position: "relative", zIndex: 1, margin: "4% 8% 0 0", fontSize: Math.max(8, cellPx * 0.26), fontWeight: 900, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.8)", fontFamily: SITE_FONT, opacity: 0, animation: flashAnim + " " + loopMs + "ms ease-in-out infinite" }}>#</span>
+      </div>
+      {/* 움직임 줄이기 설정이면(.mg-anim) 애니메이션 없이 출발 칸에 선다. */}
+      <div className="mg-anim" style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + mover.from[0] * 100 + "%," + mover.from[1] * 100 + "%)", animation: moverAnim + " " + loopMs + "ms ease-in-out infinite", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.4))" }}>
+        {hero && <span style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 10px 2px rgba(236,203,134,.75)" }} />}
+        <PieceGlyph type={mover.type} color={mover.color} size={cellPx * 0.8} style={{ position: "relative" }} />
+        {hero && <Crown size={Math.max(7, cellPx * 0.26)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />}
       </div>
     </div>
   );
@@ -9562,25 +9587,12 @@ function MinigameHubBoard({ stats, onPick }) {
   const u = width / 100;                      // viewBox 1단위 = u px
   // 보드 레이어를 네 버튼 윤곽 그대로 자르는 px 경로(버튼 모양·라운딩과 정확히 같다).
   const clip = useMemo(() => "path('" + MG_KEYS.map((k) => mgRoundedPath(shapes[k], MG_RADIUS, u)).join(" ") + "')", [shapes, u]);
-  const rush = useMemo(() => {
-    const { board, hero } = rushParse(MG_RUSH_LEVEL.spec);
-    const name = (i) => "abcdefgh"[i & 7] + ((i >> 3) + 1);
-    let h = hero;
-    const heroPath = [name(hero)], others = [];
-    // 룩 경로만 또렷하게 보이도록, 길을 비켜 주는 다른 기물의 수는 미리 둔 포지션에서 시작한다(나이트가 이미 비킨 상태).
-    const pos = board.slice();
-    MG_RUSH_LEVEL.line.forEach(([f, t]) => { if (f === h) { heroPath.push(name(t)); h = t; } else { others.push([name(f), name(t)]); pos[t] = pos[f]; pos[f] = null; } });
-    return { board: pos, hero, heroPath, others, king: board.findIndex((p) => p === "bK") };
-  }, []);
-  const mate = useMemo(() => ({ board: mgFenBoard(MG_MATE_FEN), king: mgSq("g8") }), []);
   const box = (x, y, w, hgt) => ({ position: "absolute", left: x + "%", top: (y / MG_H * 100) + "%", width: w + "%", height: (hgt / MG_H * 100) + "%" });
   const onKey = (k) => (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(k); } };
-  const at8 = (board) => (r, c) => board[(7 - r) * 8 + c];
-  const redSq = (idx) => (r, c) => ((7 - r) * 8 + c === idx ? <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.7) 0%, rgba(229,52,42,.25) 70%)" }} /> : null);
-  const mateWin = { files: MG_MATE_FILES, ranks: [0, 7] }, rushWin = { files: MG_RUSH_FILES, ranks: [0, 7] };
-  const stripCell = MG_STRIP_CELL * u, cropCell = MG_CROP_CELL * u;
-  const stripY = -MG_BLEED, stripH = MG_STRIP.rows * MG_STRIP_CELL;
-  const cropY = 50 + MG_GAP / 2 - MG_BLEED, cropH = 8 * MG_CROP_CELL;
+  const stripCell = MG_STRIP_CELL * u, stripW = MG_STRIP.cols * MG_STRIP_CELL, stripH = MG_STRIP.rows * MG_STRIP_CELL;
+  const topY = -MG_BLEED, botY = 100 + MG_BLEED - stripH, leftX = -MG_BLEED, rightX = 50 + MG_GAP / 2 - MG_BLEED;
+  // 장면의 칸 좌표는 조각 기준([열, 줄])이고 pieceAt은 체크 무늬용 전역 열(colOffset 포함)을 받으므로 오프셋을 뺀다.
+  const pieceMap = (m, colOffset) => (r, c) => m[(c - colOffset) + "," + r] || null;
   const labelFont = "clamp(12px, 3.4cqw, 24px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
@@ -9590,6 +9602,7 @@ function MinigameHubBoard({ stats, onPick }) {
         + "@keyframes mgPing{0%{opacity:0;transform:scale(.3) rotate(-60deg)}10%{opacity:1;transform:scale(1.15) rotate(0)}17%{transform:scale(1)}32%{opacity:1;transform:scale(1)}40%{opacity:0;transform:scale(.7)}100%{opacity:0;transform:scale(.7)}}"
         + "@keyframes mgSqFlash{0%{opacity:0}8%{opacity:1}32%{opacity:1}40%{opacity:0}100%{opacity:0}}"
         + "@keyframes mgTargetPulse{0%,100%{transform:scale(.86);opacity:.65}50%{transform:scale(1);opacity:1}}"
+        + MG_LOOP_CSS
         + "@media (prefers-reduced-motion: reduce){.mg-anim{animation:none!important}}"}</style>
       <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
         <defs>
@@ -9607,37 +9620,26 @@ function MinigameHubBoard({ stats, onPick }) {
       {/* 보드 레이어 — 네 버튼 윤곽으로 잘라 버튼 바깥 모서리에 여백 없이 붙인다. 클릭은 아래 SVG 버튼으로 통과. */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", clipPath: clip, WebkitClipPath: clip }}>
         {/* 위쪽 체스보드 띠 — 두 버튼에 걸쳐 체크 무늬가 이어진다. 조준경(좌표 인지 게임)·나이트(나이트 레이스). */}
-        <div style={box(-MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
+        <div style={box(leftX, topY, stripW, stripH)}>
           <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}>
             <MgCoordPings cellPx={stripCell} />
           </MgBoardPiece>
         </div>
-        <div style={box(50 + MG_GAP / 2 - MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
+        <div style={box(rightX, topY, stripW, stripH)}>
           <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}>
             <MgKnightRun cellPx={stripCell} />
           </MgBoardPiece>
         </div>
-        {/* 무한 체크메이트 게임 — 실전 1수 메이트(Qg7#)의 e–h 파일 */}
-        <div style={box(-MG_BLEED, cropY, mgCropW(MG_MATE_FILES), cropH)}>
-          <MgBoardPiece rows={8} cols={MG_MATE_FILES[1] - MG_MATE_FILES[0] + 1} roundCorners={{ tl: true, bl: true }} colOffset={MG_MATE_FILES[0]} cellPx={cropCell} pieceAt={at8(mate.board)} overlayAt={redSq(mate.king)}>
-            <MgArrows win={mateWin} paths={[{ squares: ["h6", "g7"], kind: "green" }]} />
+        {/* 아래쪽 체스보드 띠 — 위와 같은 4×7 두 개가 이어진다. 무한 체크메이트(b–h 파일)·백랭크 러시아워(a–g 파일). */}
+        <div style={box(leftX, botY, stripW, stripH)}>
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={1} cellPx={stripCell} roundCorners={{ bl: true, br: true }} pieceAt={pieceMap(MG_MATE.pieces, 1)}>
+            <MgLoopScene cellPx={stripCell} mover={MG_MATE.mover} moverAnim="mgMateQ" loopMs={MG_MATE_MS} king={MG_MATE.king} flashAnim="mgMateFlash"
+              trail={Object.assign([MG_MATE.mover.from, MG_MATE.mover.to], { color: "#7CC977" })} />
           </MgBoardPiece>
         </div>
-        {/* 백랭크 러시아워 — 레벨 h1: 나이트가 비킨 뒤 주인공 룩이 a2→a1→d1→d5→a5→a8로 꺾어 올라가 백랭크 메이트 */}
-        <div style={box(100 + MG_BLEED - mgCropW(MG_RUSH_FILES), cropY, mgCropW(MG_RUSH_FILES), cropH)}>
-          <MgBoardPiece rows={8} cols={MG_RUSH_FILES[1] - MG_RUSH_FILES[0] + 1} roundCorners={{ tr: true, br: true }} colOffset={MG_RUSH_FILES[0]} cellPx={cropCell} pieceAt={at8(rush.board)}
-            overlayAt={(r, c) => {
-              const i = (7 - r) * 8 + c;
-              if (i === rush.king) return redSq(rush.king)(r, c);
-              if (i !== rush.hero) return null;
-              return (
-                <span aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-                  <span style={{ position: "absolute", inset: "8%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 10px 2px rgba(236,203,134,.75)" }} />
-                  <Crown size={Math.max(7, cropCell * 0.28)} color={T.brassHi} style={{ position: "absolute", top: 1, right: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.7))" }} />
-                </span>
-              );
-            }}>
-            <MgArrows win={rushWin} paths={[{ squares: rush.heroPath, kind: "gold" }]} />
+        <div style={box(rightX, botY, stripW, stripH)}>
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols + 1} cellPx={stripCell} roundCorners={{ bl: true, br: true }} pieceAt={pieceMap(MG_RUSH.pieces, MG_STRIP.cols + 1)}>
+            <MgLoopScene cellPx={stripCell} mover={{ type: "R", color: "w", from: MG_RUSH.route[0] }} moverAnim="mgRushR" loopMs={MG_RUSH_MS} king={MG_RUSH.king} flashAnim="mgRushFlash" trail={MG_RUSH.route} hero />
           </MgBoardPiece>
         </div>
       </div>
@@ -9650,7 +9652,7 @@ function MinigameHubBoard({ stats, onPick }) {
         {MG_LABELS.map((lb) => {
           const st = stats && stats[lb.gameType];
           const rated = st && st.rated_games >= MINIGAME_PLACEMENT;
-          const pos = { ...(lb.right ? { right: (100 - lb.x) + "%" } : { left: lb.x + "%" }), ...(lb.bottom != null ? { bottom: lb.bottom + "%" } : { top: lb.top + "%" }) };
+          const pos = { ...(lb.right ? { right: (100 - lb.x) + "%" } : { left: lb.x + "%" }), top: lb.top + "%" };
           return (
             <div key={lb.gameType} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: lb.right ? "flex-end" : "flex-start", textAlign: lb.right ? "right" : "left", gap: "0.6cqw", color: T.ink }}>
               <span style={{ fontSize: labelFont, fontWeight: 800, lineHeight: 1.18, letterSpacing: "-.02em", whiteSpace: "nowrap" }}>
