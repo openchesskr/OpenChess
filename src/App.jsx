@@ -2743,14 +2743,13 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const prev = qKeyRef.current;
     qKeyRef.current = lastQKey;
     if (prev === undefined || lastQKey === prev || !lastQKey) return;
-    // (v0.5.6 버그 수정 BUG-009) 예전엔 기기의 "애니메이션 줄이기"(prefers-reduced-motion)가 켜져 있으면 이펙트를 통째로 껐다 —
-    // 설정 탭 토글은 켜져 있는데 이펙트가 전혀 안 떠 고장처럼 보였다. 켜고 끄는 건 설정 탭 토글만 정하고, 기기 설정은
-    // 가장 큰 움직임인 기물 미끄러짐(출발 칸 찾기)만 생략하게 한다.
+    // (v0.5.6 버그 수정 BUG-009·010) 예전엔 기기의 "애니메이션 줄이기"(prefers-reduced-motion)가 켜져 있으면 이펙트를 통째로 껐다 —
+    // 설정 탭 토글은 켜져 있는데 이펙트가 전혀 안 떠 고장처럼 보였다. 켜고 끄는 건 설정 탭 토글만 정한다(기기 설정은 보지 않는다).
     if (!moveFxOn || !MOVE_FX[lastQ.kind]) { setMoveFxState(null); return; }
     const [tr, tc] = lastQ.to, moved = board[tr] && board[tr][tc];
     let from = null;
     const before = beforeBoardRef.current;
-    if (moved && before && Date.now() - boardAtRef.current < 700 && !mgReducedMotion()) {
+    if (moved && before && Date.now() - boardAtRef.current < 700) {
       for (let r = 0; r < 8 && !from; r++) for (let c = 0; c < 8; c++) {
         const was = before[r][c], now = board[r][c];
         if (was && was.c === moved.c && (was.t === moved.t || was.t === "P") && (!now || now.c !== was.c) && !(r === tr && c === tc)) { from = [r, c]; if (was.t === moved.t) break; }
@@ -9486,11 +9485,11 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
 // 둔다. 네 보드 모두 움직인다 — 좌표 인지 게임은 칸 곳곳에 조준경이 튀어나오고, 나이트 레이스는 목표 칸이 계속
 // 바뀌며 나이트가 최단 경로로 뛰어가고, 무한 체크메이트 게임은 실전 1수 메이트(Praggnanandhaa–Keymer 2024,
 // Qg7#)를 퀸이 두는 장면을, 백랭크 러시아워는 막힌 주인공 룩이 옆으로 빠져나와 파일을 타고 올라가 백랭크 메이트
-// 하는 장면을 반복한다. 움직임 줄이기 설정이면 모두 멈춘 채로 보인다.
+// 하는 장면을 반복한다. (v0.5.6 BUG-010) 기기의 "애니메이션 줄이기" 설정과 상관없이 항상 움직인다 — scripts/check-reduced-motion.mjs 참고.
 // 좌표계는 SVG viewBox(100×100) 하나 — 보드·글자 오버레이도 같은 퍼센트 좌표로 얹는다.
 // (v0.5.6, 사용자 요청) 플레이 탭 버튼(일반 대국·미니게임) 최대 폭. 데스크톱에선 780px이 화면을 너무 크게 차지해
-// 600px로 줄였다 — 좁은 화면(모바일·좁은 창)은 원래대로 화면 폭을 채운다(780 제한은 사실상 닿지 않는다).
-const PLAY_HUB_MAX_W = 780, PLAY_HUB_MAX_W_DESKTOP = 600;
+// 520px로 줄였다 — 좁은 화면(모바일·좁은 창)은 원래대로 화면 폭을 채운다(780 제한은 사실상 닿지 않는다).
+const PLAY_HUB_MAX_W = 780, PLAY_HUB_MAX_W_DESKTOP = 520;
 const MG_GAP = 1.8;                 // 도형 사이 간격
 const MG_PAD = 3;                   // 글자 여백
 const MG_RADIUS = 3.4;              // 모서리 라운딩
@@ -9634,7 +9633,6 @@ function MgArrowSvg({ routes, color = T.arrow, opacity = 0.9, cols = MG_STRIP.co
     </svg>
   );
 }
-function mgReducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } }
 // (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 목표 칸(금색 별)이 계속 바뀌고, 나이트가 그때마다 최단 경로로 한 칸씩
 // 뛰어간다(화살표가 남은 경로). 도착하면 별이 터지듯 번쩍이고 잠시 뒤 다른 칸에 새 목표가 뜬다. 목표가 바뀔 때마다 상대(백)
 // 비숍·룩이 1~2개 새로 놓이고, 나이트는 보통 그 기물들이 지배하는 칸을 피해 돌아간다. 가끔(MG_KNIGHT_DOOM_P) 그 칸을 모르고
@@ -9721,7 +9719,6 @@ function MgKnightRun({ cellPx }) {
     return { pos, target: t, path: mgKnightPath(pos, t), foes: [], doom: false, hop: 0, rest: 1, tgt: 0, n: 0, life: 0, phase: "run", catcher: null };
   });
   useEffect(() => {
-    if (mgReducedMotion()) return undefined;
     const id = setInterval(() => setSt((s) => {
       if (s.rest > 0) return { ...s, rest: s.rest - 1 };
       if (s.phase === "caught") return { ...s, phase: "fade", rest: 1 };
@@ -9772,7 +9769,7 @@ function MgKnightRun({ cellPx }) {
 // (v0.5.5 연출, 사용자 요청) 아래쪽 두 보드 — src/data/hubScenes.json(scripts/build-hub-scenes.mjs가 4×7 창에 들어오는 것만
 // 골라 둔 장면)에서 무작위로 하나씩 골라, 수순의 기물이 한 칸씩 미끄러지고(잡힌 기물은 사라진다) 메이트 순간 킹 칸이
 // 빨갛게 번쩍인 뒤 다른 장면으로 넘어가길 반복한다. 무한 체크메이트는 실전 1·2수 메이트, 러시아워는 주인공 룩(금색 링·왕관)이
-// 빠져나가 백랭크 메이트하는 퍼즐. 남은 수순은 분석 탭 화살표로 보인다. 움직임 줄이기 설정이면 첫 장면에서 멈춘다.
+// 빠져나가 백랭크 메이트하는 퍼즐. 남은 수순은 분석 탭 화살표로 보인다.
 const MG_SCENE_MS = 760;
 const MG_LOOP_CSS = "@keyframes mgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
   + "@keyframes mgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
@@ -9789,7 +9786,6 @@ function MgScenePlayer({ scenes, cellPx }) {
   const pick = (not) => { let i = Math.floor(Math.random() * scenes.length); if (scenes.length > 1 && i === not) i = (i + 1) % scenes.length; return i; };
   const [st, setSt] = useState(() => { const i = pick(-1); return { ...mgSceneStart(scenes[i], 0), idx: i }; });
   useEffect(() => {
-    if (mgReducedMotion()) return undefined;
     const id = setInterval(() => setSt((s) => {
       if (s.hold > 0) return { ...s, hold: s.hold - 1 };
       if (s.phase === "intro" || s.phase === "play") {
@@ -9856,7 +9852,7 @@ function MgMasterReplay({ cellPx, onGameChange }) {
   const [st, setSt] = useState(() => ({ pieces: mgStartPieces(), last: null }));
   const runRef = useRef({ chess: null, sans: [], ply: 0, hold: 0, gi: -1 });
   useEffect(() => {
-    if (!games || !games.length || mgReducedMotion()) return undefined;
+    if (!games || !games.length) return undefined;
     const run = runRef.current;
     const nextGame = () => {
       let gi = Math.floor(Math.random() * games.length);
@@ -9983,7 +9979,7 @@ function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
         + "@keyframes mgSqFlash{0%{opacity:0}8%{opacity:1}32%{opacity:1}40%{opacity:0}100%{opacity:0}}"
         + "@keyframes mgTargetPulse{0%,100%{transform:scale(.86);opacity:.65}50%{transform:scale(1);opacity:1}}"
         + MG_LOOP_CSS
-        + "@media (prefers-reduced-motion: reduce){.mg-anim{animation:none!important}}"}</style>
+}</style>
       <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
         <defs>
           <filter id="mg-shadow" x="-10%" y="-10%" width="120%" height="130%">
@@ -10096,8 +10092,7 @@ const COORD_OK_BG = "rgba(46,160,67,.78)", COORD_NG_BG = "rgba(200,60,50,.76)";
 const COORD_GRID_CSS = "@keyframes ccAimSq{0%{opacity:0}20%{opacity:1}100%{opacity:1}}"
   + "@keyframes ccAim{0%{opacity:0;transform:scale(.3) rotate(-70deg)}60%{opacity:1;transform:scale(1.15) rotate(0)}100%{opacity:1;transform:scale(1)}}"
   + "@keyframes ccResult{0%{opacity:0;transform:scale(.55)}60%{opacity:1;transform:scale(1.12)}100%{opacity:1;transform:scale(1)}}"
-  + "@keyframes ccFade{0%{opacity:1}100%{opacity:0}}"
-  + "@media (prefers-reduced-motion: reduce){.cc-anim{animation-duration:1ms!important;animation-delay:0ms!important}}";
+  + "@keyframes ccFade{0%{opacity:1}100%{opacity:0}}";
 function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320 }) {
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
@@ -11465,8 +11460,7 @@ function KnightCaughtGlyph({ color, size, caught, base }) {
 }
 const KNIGHT_GRID_CSS = "@keyframes kgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
   + "@keyframes kgPulse{0%,100%{transform:scale(.86);opacity:.65}50%{transform:scale(1);opacity:1}}"
-  + "@keyframes kgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
-  + "@media (prefers-reduced-motion: reduce){[style*=kgPulse]{animation:none!important}}";
+  + "@keyframes kgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}";
 function KnightCapturedMark() {
   return <motion.span initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 420, damping: 18, delay: KNIGHT_CATCH_DELAY_S + 0.45 }}
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F0655A", fontWeight: 900, fontSize: "130%", textShadow: "0 1px 3px rgba(0,0,0,.8)" }}><X size="80%" strokeWidth={3.5} /></motion.span>;
@@ -33327,7 +33321,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "transparent", fontFamily: SITE_FONT }}>
       {/* (17차) 버튼 각진 클리핑(geo-cut)과 카드 모서리 금색 삼각형(geo-card) 장식은 제거하고,
           기하학적 밀도는 배경(GeoBackdrop)에만 추가한다 — 버튼은 원래의 둥근 모서리로 복구. */}
-      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} @media (prefers-reduced-motion: reduce){.dex-current-line{animation:none !important} .gm-board-shine::before{animation:none;opacity:0}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @media(prefers-reduced-motion:reduce){.dex-surge-line,.dex-surge-node,.dex-chip-surge{animation:none!important}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50} @keyframes lessonSiren{0%,100%{opacity:.35}50%{opacity:.85}} @keyframes lessonCaretBlink{0%,55%{opacity:1}56%,100%{opacity:0}} @keyframes pvpRadarPulse{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.9);opacity:0}}"}</style>
+      <style>{"button{transition:transform .08s ease, box-shadow .08s ease} button:not(:disabled):active{transform:scale(.94)} @keyframes lockpop{0%{transform:scale(.6);opacity:0}50%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}} @keyframes xpStarPop{0%{transform:scale(.3) rotate(-20deg);opacity:0}35%{transform:scale(1.25) rotate(10deg);opacity:1}55%{transform:scale(1) rotate(0deg);opacity:1}100%{transform:translateY(-34px) scale(.85);opacity:0}} @keyframes questclear{0%{transform:scale(1)}30%{transform:scale(1.035);box-shadow:0 0 0 3px rgba(120,200,120,.55)}70%{transform:scale(1);box-shadow:0 0 0 6px rgba(120,200,120,0)}100%{transform:scale(1);box-shadow:none}} @keyframes dotbounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}} @keyframes dotbounceSm{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-2.5px)}} @keyframes lineShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2.5px)}80%{transform:translateX(2px)}} @keyframes hintPieceWobble{0%,100%{transform:rotate(0deg)}20%{transform:rotate(-9deg)}45%{transform:rotate(7deg)}70%{transform:rotate(-5deg)}90%{transform:rotate(3deg)}} @keyframes hintSquarePulse{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}} @keyframes hintSquarePop{0%{opacity:0;transform:scale(.5)}40%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}} @keyframes condPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}} .dex-current-line{animation:dexCurrentFlow .5s linear infinite} @keyframes dexCurrentFlow{to{stroke-dashoffset:-24}} .gm-board-shine{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none;z-index:4} .gm-board-shine::before{content:\"\";position:absolute;top:-40%;left:0;width:42%;height:180%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.05) 32%,rgba(255,255,255,.42) 50%,rgba(255,255,255,.05) 68%,transparent 100%);filter:blur(2px);transform:translateX(-140%) rotate(8deg);animation:gmBoardShine 5s ease-in-out infinite} @keyframes gmBoardShine{0%{transform:translateX(-140%) rotate(8deg)}55%{transform:translateX(240%) rotate(8deg)}100%{transform:translateX(240%) rotate(8deg)}} .dex-surge-line{animation:dexCurrentFlow .5s linear infinite, dexSurgeGlow 1.3s ease-out} @keyframes dexSurgeGlow{0%{stroke:#EAF9FF;filter:drop-shadow(0 0 7px rgba(34,211,240,.95))}55%{filter:drop-shadow(0 0 5px rgba(34,211,240,.75))}100%{filter:drop-shadow(0 0 0 rgba(34,211,240,0))}} .dex-surge-node{animation:dexNodeSurge 1.2s ease-out} @keyframes dexNodeSurge{0%{box-shadow:0 0 0 0 rgba(34,211,240,0)}22%{box-shadow:0 0 15px 2px rgba(34,211,240,.9);border-color:#22D3F0}100%{box-shadow:0 0 0 0 rgba(34,211,240,0)}} .dex-chip-surge{animation:dexChipSurge 1.2s ease-out} @keyframes dexChipSurge{0%{transform:scale(1)}16%{transform:scale(1.13);box-shadow:0 0 24px 6px rgba(34,211,240,.9),0 0 0 3px rgba(34,211,240,.55)}100%{transform:scale(1)}} @keyframes questRaySpin{to{transform:translate(-50%,-50%) rotate(360deg)}} @keyframes questGlowPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 0 rgba(243,223,174,.5)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 4px 16px -2px rgba(0,0,0,.5), 0 0 0 9px rgba(243,223,174,0)}} @keyframes questConfettiFall{0%{transform:translateY(-8px) rotate(0deg);opacity:0}12%{opacity:1}100%{transform:translateY(96px) rotate(300deg);opacity:0}} @keyframes questBadgePop{0%{transform:scale(0) rotate(-8deg)}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg)}} @keyframes questRowHighlight{0%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}15%{box-shadow:0 0 0 7px rgba(196,154,80,.55);transform:scale(1.015)}55%{box-shadow:0 0 0 3px rgba(196,154,80,.25);transform:scale(1)}100%{box-shadow:0 0 0 0 rgba(196,154,80,0);transform:scale(1)}} @keyframes puzzleClearFade{0%{opacity:0}8%{opacity:1}88%{opacity:1}100%{opacity:0}} @keyframes puzzleStarPop{0%{transform:scale(0) rotate(-30deg);opacity:0}55%{transform:scale(1.3) rotate(8deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}} @keyframes checkDraw{to{stroke-dashoffset:0}} @keyframes miniAccDotPop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}60%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(-50%,-50%) scale(1);opacity:1}} @keyframes puzzleLetterPop{0%{transform:translateY(34px) rotate(var(--tr,0deg)) scale(.3);opacity:0}55%{transform:translateY(-7px) rotate(calc(var(--tr,0deg) * -0.3)) scale(1.2);opacity:1}80%{transform:translateY(2px) rotate(0deg) scale(.96)}100%{transform:translateY(0) rotate(0deg) scale(1);opacity:1}} @keyframes tierGlowPulse{0%,100%{opacity:.5;transform:scale(.94)}50%{opacity:1;transform:scale(1.06)}} @keyframes tierFirework{0%{transform:translate(0,0) scale(.3);opacity:0}22%{opacity:1;transform:translate(calc(var(--dx) * .35),calc(var(--dy) * .35)) scale(1)}100%{transform:translate(var(--dx),var(--dy)) scale(.5);opacity:0}} @keyframes pieceBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-13px)}} @keyframes legacyHeroPop{0%{transform:scale(.4);opacity:0}55%{transform:scale(1.35);opacity:1}75%{transform:scale(.92)}100%{transform:scale(1);opacity:1}} @keyframes legacyWaveShake{0%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-3px) rotate(-4deg)}50%{transform:translateY(2px) rotate(3deg)}75%{transform:translateY(-1px) rotate(-1deg)}100%{transform:translateY(0) rotate(0deg)}} @keyframes legacyPieceShake{0%{transform:translate(0,0) rotate(0deg) scale(1)}20%{transform:translate(-4px,3px) rotate(-8deg) scale(1.1)}40%{transform:translate(4px,-3px) rotate(7deg) scale(1.06)}60%{transform:translate(-3px,2px) rotate(-5deg) scale(1.03)}80%{transform:translate(2px,-1px) rotate(2deg) scale(1.01)}100%{transform:translate(0,0) rotate(0deg) scale(1)}} @keyframes legacyBoardFlicker{0%,100%{filter:brightness(1)}25%{filter:brightness(.92)}50%{filter:brightness(1.06)}75%{filter:brightness(.96)}} .hide-scrollbar{scrollbar-width:none;-ms-overflow-style:none} .hide-scrollbar::-webkit-scrollbar{display:none} .puzzle-search-preview{border-radius:12px;cursor:pointer;transition:box-shadow .15s ease} .puzzle-search-preview:hover{box-shadow:0 0 0 2px #C49A50} @keyframes lessonSiren{0%,100%{opacity:.35}50%{opacity:.85}} @keyframes lessonCaretBlink{0%,55%{opacity:1}56%,100%{opacity:0}} @keyframes pvpRadarPulse{0%{transform:scale(.6);opacity:.55}100%{transform:scale(1.9);opacity:0}}"}</style>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: -2, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }} />
       {/* (v0.1.4 기능) 배경음악 — 탭을 옮겨도 끊기지 않도록 앱 최상단에 한 번만 마운트한다. */}
       <audio ref={bgmRef} src="/bgm/clair-de-lune.mp3" loop preload="none" />
