@@ -2743,11 +2743,14 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     const prev = qKeyRef.current;
     qKeyRef.current = lastQKey;
     if (prev === undefined || lastQKey === prev || !lastQKey) return;
-    if (!moveFxOn || !MOVE_FX[lastQ.kind] || mgReducedMotion()) { setMoveFxState(null); return; }
+    // (v0.5.6 버그 수정 BUG-009) 예전엔 기기의 "애니메이션 줄이기"(prefers-reduced-motion)가 켜져 있으면 이펙트를 통째로 껐다 —
+    // 설정 탭 토글은 켜져 있는데 이펙트가 전혀 안 떠 고장처럼 보였다. 켜고 끄는 건 설정 탭 토글만 정하고, 기기 설정은
+    // 가장 큰 움직임인 기물 미끄러짐(출발 칸 찾기)만 생략하게 한다.
+    if (!moveFxOn || !MOVE_FX[lastQ.kind]) { setMoveFxState(null); return; }
     const [tr, tc] = lastQ.to, moved = board[tr] && board[tr][tc];
     let from = null;
     const before = beforeBoardRef.current;
-    if (moved && before && Date.now() - boardAtRef.current < 700) {
+    if (moved && before && Date.now() - boardAtRef.current < 700 && !mgReducedMotion()) {
       for (let r = 0; r < 8 && !from; r++) for (let c = 0; c < 8; c++) {
         const was = before[r][c], now = board[r][c];
         if (was && was.c === moved.c && (was.t === moved.t || was.t === "P") && (!now || now.c !== was.c) && !(r === tr && c === tc)) { from = [r, c]; if (was.t === moved.t) break; }
@@ -12672,7 +12675,7 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
   const aliveRef = useRef(true);
   useEffect(() => () => { aliveRef.current = false; }, []);
   const moveSeqRef = useRef(0); // 몇 번째 수인지 — 채점이 늦게 끝나 이미 다음 수를 뒀으면 그 결과는 버린다
-  const gradeMove = (prevSans, san) => (moveFxOn && fenRoot && engine && engine.status === "ready" && !mgReducedMotion()
+  const gradeMove = (prevSans, san) => (moveFxOn && fenRoot && engine && engine.status === "ready"
     ? classifyMoveKindQuick(engine, fenRoot, prevSans, san, 600, "attack-grade").catch(() => null)
     : Promise.resolve(null));
   const later = (ms, f) => timersRef.current.push(setTimeout(f, ms));
