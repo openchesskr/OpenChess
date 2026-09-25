@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
@@ -19,7 +19,8 @@
     "build-master-showcase": "node scripts/build-master-showcase.mjs",
     "build-hub-scenes": "node scripts/build-hub-scenes.mjs",
     "check:rpc-rows": "node scripts/check-rpc-null-rows.mjs",
-    "check:reduced-motion": "node scripts/check-reduced-motion.mjs"
+    "check:reduced-motion": "node scripts/check-reduced-motion.mjs",
+    "check:dex-layout": "node scripts/check-dex-tree-layout.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
