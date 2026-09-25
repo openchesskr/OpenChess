@@ -2366,14 +2366,18 @@ end; $$;
 -- knightGenRoundLocal과 완전히 같은 규칙. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이
 -- 되돌아가면 실제 최단 거리가 1~2수에 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을
 -- 피한 실제 최단 수(par)"를 knight_distance로 재서 라운드별 범위에 들어올 때만 채택한다.
---   라운드 1: par 3~4, 기물 1쌍 / 2·3: par 4~5, 2쌍 / 4·5: par 5~6, 3쌍
+-- (v0.5.5, 사용자 요청) 1라운드는 5초로 짧게, 뒤로 갈수록 제한시간이 늘지만 기물 수·거리가 더 가파르게 는다.
+--   라운드 1: par 3~4, 기물 1쌍, 5초 / 2: par 4~5, 2쌍, 8초 / 3: par 5~6, 3쌍, 11초
+--   라운드 4: par 6~7, 4쌍, 14초 / 5: par 6~7, 5쌍, 17초
 -- 2라운드부터는 기물이 없을 때의 최단 거리보다 par가 반드시 길어야 한다(눈에 보이는 가장 빠른 길이 위협
--- 칸으로 막혀 돌아가거나, 상대 기물을 잡아 길을 열어야 한다). 이동 수 제한은 par+1, 제한시간 15초.
--- 시작 칸·기물은 목표를 중심으로 점대칭이고, 백·흑 양쪽 par를 모두 재서 같을 때만 채택한다. 조건에 맞는 라운드를 400번 안에 못 찾으면(4·5라운드에서 약 7%) 한 단계 낮은 조건으로 다시 뽑는다.
+-- 칸으로 막혀 돌아가거나, 상대 기물을 잡아 길을 열어야 한다). 이동 수 제한은 par+1.
+-- 시작 칸·기물은 목표를 중심으로 점대칭이고, 백·흑 양쪽 par를 모두 재서 같을 때만 채택한다. 조건에 맞는 라운드를 4000번 안에
+-- 못 찾으면(5라운드 약 50%, 4라운드 약 15%) 한 단계 낮은 조건으로 다시 뽑는다 — 제한시간은 원래 라운드 것을 그대로 쓴다.
 create or replace function public._knight_gen_round(p_round_idx int)
 returns jsonb language plpgsql volatile as $$
 declare
-  v_specs int[][] := array[[3,4,1,0],[4,5,2,1],[4,5,2,1],[5,6,3,1],[5,6,3,1]]; -- minDist, maxDist, pairs, detour
+  v_specs int[][] := array[[3,4,1,0,5000],[4,5,2,1,8000],[5,6,3,1,11000],[6,7,4,1,14000],[6,7,5,1,17000]]; -- minDist, maxDist, pairs, detour, timeMs
+  v_time int := v_specs[least(greatest(p_round_idx, 0), 4) + 1][5];
   k int; v_try int; v_t int; i int;
   v_min int; v_max int; v_pairs int; v_detour boolean;
   v_target text; v_ws text; v_bs text; v_sq text; v_m text; v_used text[];
@@ -2382,7 +2386,7 @@ declare
 begin
   for k in reverse least(greatest(p_round_idx, 0), 4) + 1 .. 1 loop
     v_min := v_specs[k][1]; v_max := v_specs[k][2]; v_pairs := v_specs[k][3]; v_detour := v_specs[k][4] = 1;
-    for v_try in 1..400 loop
+    for v_try in 1..4000 loop
       v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
       v_ws := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
       v_bs := public.knight_reflect_sq(v_ws, v_target);
@@ -2417,11 +2421,11 @@ begin
         if v_par <= v_plain then continue; end if;
       end if;
       return jsonb_build_object('target', v_target, 'whiteStart', v_ws, 'blackStart', v_bs, 'hazards', v_hazards,
-        'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', 15000);
+        'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', v_time);
     end loop;
   end loop;
   return jsonb_build_object('target', 'd4', 'whiteStart', 'a1', 'blackStart', 'g7', 'hazards', '[]'::jsonb,
-    'wIllegal', '[]'::jsonb, 'bIllegal', '[]'::jsonb, 'par', 2, 'moveBudget', 3, 'timeLimitMs', 15000);
+    'wIllegal', '[]'::jsonb, 'bIllegal', '[]'::jsonb, 'par', 2, 'moveBudget', 3, 'timeLimitMs', v_time);
 end; $$;
 
 -- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다

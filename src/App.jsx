@@ -9477,67 +9477,136 @@ function MgArrowSvg({ routes, color = T.arrow, opacity = 0.9, cols = MG_STRIP.co
 }
 function mgReducedMotion() { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } }
 // (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 목표 칸(금색 별)이 계속 바뀌고, 나이트가 그때마다 최단 경로로 한 칸씩
-// 뛰어간다(점선이 남은 경로). 도착하면 별이 터지듯 번쩍이고 잠시 뒤 다른 칸에 새 목표가 뜬다. 둥근 버튼 모서리에
-// 걸리는 귀퉁이 칸(위 두 모서리)에는 가지도 서지도 않는다.
+// 뛰어간다(화살표가 남은 경로). 도착하면 별이 터지듯 번쩍이고 잠시 뒤 다른 칸에 새 목표가 뜬다. 목표가 바뀔 때마다 상대(백)
+// 비숍·룩이 1~2개 새로 놓이고, 나이트는 보통 그 기물들이 지배하는 칸을 피해 돌아간다. 가끔(MG_KNIGHT_DOOM_P) 그 칸을 모르고
+// 밟으면 지배하던 기물이 날아와 나이트를 잡고, 라운드가 끝난 듯 띠 전체가 사라졌다가 새로 시작한다. 둥근 버튼 모서리에 걸리는
+// 귀퉁이 칸(위 두 모서리)에는 나이트도 기물도 가지 않는다.
 const MG_KNIGHT_JUMPS = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
 const MG_KNIGHT_AVOID = new Set(["0,0", MG_STRIP.cols - 1 + ",0"]);
 const MG_HOP_MS = 560;
-function mgKnightPath(from, to) {
-  const key = (p) => p[0] + "," + p[1];
-  const prev = new Map([[key(from), null]]);
+const MG_KNIGHT_DOOM_P = 0.3;
+const mgKey = (p) => p[0] + "," + p[1];
+const mgInStrip = (c, r) => c >= 0 && r >= 0 && c < MG_STRIP.cols && r < MG_STRIP.rows;
+// blocked: 지나갈 수 없는 칸(키 Set) — 상대 기물 칸, 그리고 안전하게 갈 때는 그 기물들이 지배하는 칸까지.
+function mgKnightPath(from, to, blocked) {
+  const prev = new Map([[mgKey(from), null]]);
   const q = [from];
   while (q.length) {
     const cur = q.shift();
-    if (key(cur) === key(to)) break;
+    if (mgKey(cur) === mgKey(to)) break;
     for (const [dc, dr] of MG_KNIGHT_JUMPS) {
-      const nx = [cur[0] + dc, cur[1] + dr];
-      if (nx[0] < 0 || nx[1] < 0 || nx[0] >= MG_STRIP.cols || nx[1] >= MG_STRIP.rows || MG_KNIGHT_AVOID.has(key(nx)) || prev.has(key(nx))) continue;
-      prev.set(key(nx), cur); q.push(nx);
+      const nx = [cur[0] + dc, cur[1] + dr], k = mgKey(nx);
+      if (!mgInStrip(nx[0], nx[1]) || MG_KNIGHT_AVOID.has(k) || prev.has(k) || (blocked && blocked.has(k))) continue;
+      prev.set(k, cur); q.push(nx);
     }
   }
-  if (!prev.has(key(to))) return [];
+  if (!prev.has(mgKey(to))) return [];
   const path = [];
-  for (let p = to; p && key(p) !== key(from); p = prev.get(key(p))) path.unshift(p);
+  for (let p = to; p && mgKey(p) !== mgKey(from); p = prev.get(mgKey(p))) path.unshift(p);
   return path;
 }
-function mgPickTarget(from) {
-  const cands = [];
-  for (let r = 0; r < MG_STRIP.rows; r++) for (let c = 0; c < MG_STRIP.cols; c++) {
-    if (MG_KNIGHT_AVOID.has(c + "," + r) || (c === from[0] && r === from[1])) continue;
-    const n = mgKnightPath(from, [c, r]).length;
-    if (n >= 2 && n <= 3) cands.push([c, r]);
+// 비숍·룩이 지배하는 칸 — 다른 기물에 막히면 거기서 멈춘다.
+function mgFoeAttacks(foe, foes) {
+  const dirs = foe.t === "R" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const occ = new Set(foes.filter((f) => f !== foe).map((f) => mgKey([f.c, f.r])));
+  const out = [];
+  for (const [dc, dr] of dirs) {
+    for (let c = foe.c + dc, r = foe.r + dr; mgInStrip(c, r); c += dc, r += dr) { out.push(mgKey([c, r])); if (occ.has(mgKey([c, r]))) break; }
   }
-  return cands.length ? cands[Math.floor(Math.random() * cands.length)] : [1, 3];
+  return out;
+}
+function mgDangerSet(foes) { const s = new Set(); foes.forEach((f) => mgFoeAttacks(f, foes).forEach((k) => s.add(k))); return s; }
+// 다음 한 판 — 상대 기물, 목표 칸, 나이트가 밟을 경로. doom이면 경로 중간에 지배당하는 칸이 끼어 있다(첫 수는 안전).
+function mgKnightCycle(pos, n) {
+  const wantDoom = Math.random() < MG_KNIGHT_DOOM_P;
+  const rand = (k) => Math.floor(Math.random() * k);
+  for (let a = 0; a < 240; a++) {
+    const doom = wantDoom && a < 160;
+    const used = new Set([mgKey(pos), ...MG_KNIGHT_AVOID]);
+    const foes = [];
+    const cnt = 1 + rand(2);
+    for (let t = 0; t < 40 && foes.length < cnt; t++) {
+      const c = rand(MG_STRIP.cols), r = rand(MG_STRIP.rows);
+      if (used.has(mgKey([c, r]))) continue;
+      used.add(mgKey([c, r])); foes.push({ id: n + "-" + foes.length, t: Math.random() < 0.5 ? "B" : "R", c, r });
+    }
+    const danger = mgDangerSet(foes);
+    if (danger.has(mgKey(pos))) continue;
+    const foeSqs = new Set(foes.map((f) => mgKey([f.c, f.r])));
+    const safeBlock = new Set([...foeSqs, ...danger]);
+    const cands = [];
+    for (let r = 0; r < MG_STRIP.rows; r++) for (let c = 0; c < MG_STRIP.cols; c++) {
+      const k = mgKey([c, r]);
+      if (MG_KNIGHT_AVOID.has(k) || foeSqs.has(k) || danger.has(k) || (c === pos[0] && r === pos[1])) continue;
+      const path = mgKnightPath(pos, [c, r], doom ? foeSqs : safeBlock);
+      if (path.length < 2 || path.length > 3) continue;
+      const hit = path.slice(1, -1).some((q) => danger.has(mgKey(q)));
+      if (doom ? hit && !danger.has(mgKey(path[0])) : !hit) cands.push({ target: [c, r], path });
+    }
+    if (cands.length) return { foes, doom, ...cands[rand(cands.length)] };
+  }
+  const t = pos[0] < 3 ? [5, 2] : [1, 3];
+  return { foes: [], doom: false, target: t, path: mgKnightPath(pos, t) };
+}
+function mgKnightFresh(life) {
+  let pos;
+  do { pos = [Math.floor(Math.random() * MG_STRIP.cols), Math.floor(Math.random() * MG_STRIP.rows)]; } while (MG_KNIGHT_AVOID.has(mgKey(pos)));
+  return { pos, ...mgKnightCycle(pos, life * 100), hop: 0, rest: 1, tgt: 0, n: 0, life, phase: "run", catcher: null };
 }
 function MgKnightRun({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   // rest: 도착 뒤·새 목표를 띄운 뒤 잠깐 멈추는 박자 수. hop: 뛸 때마다 올려 안쪽 요소의 떠오르는 애니메이션을 다시 건다.
-  const [st, setSt] = useState(() => ({ pos: [1, 3], target: [6, 1], path: mgKnightPath([1, 3], [6, 1]), hop: 0, rest: 1, tgt: 0 }));
+  // phase: run(진행) → caught(잡힘: 기물이 날아와 나이트가 사라진다) → fade(띠 전체가 사라진다) → 새 판(life+1).
+  const [st, setSt] = useState(() => {
+    const pos = [1, 3], t = [6, 1];
+    return { pos, target: t, path: mgKnightPath(pos, t), foes: [], doom: false, hop: 0, rest: 1, tgt: 0, n: 0, life: 0, phase: "run", catcher: null };
+  });
   useEffect(() => {
     if (mgReducedMotion()) return undefined;
     const id = setInterval(() => setSt((s) => {
       if (s.rest > 0) return { ...s, rest: s.rest - 1 };
-      if (s.path.length) { const [n, ...rest] = s.path; return { ...s, pos: n, path: rest, hop: s.hop + 1, rest: rest.length ? 0 : 2 }; }
-      const t = mgPickTarget(s.pos);
-      return { ...s, target: t, path: mgKnightPath(s.pos, t), tgt: s.tgt + 1, rest: 1 };
+      if (s.phase === "caught") return { ...s, phase: "fade", rest: 1 };
+      if (s.phase === "fade") return mgKnightFresh(s.life + 1);
+      if (s.path.length) {
+        const [nx, ...rest] = s.path;
+        const k = mgKey(nx);
+        const catcher = s.foes.find((f) => mgFoeAttacks(f, s.foes).includes(k));
+        if (catcher) return { ...s, pos: nx, path: [], hop: s.hop + 1, phase: "caught", catcher: catcher.id, foes: s.foes.map((f) => (f.id === catcher.id ? { ...f, c: nx[0], r: nx[1] } : f)), rest: 2 };
+        return { ...s, pos: nx, path: rest, hop: s.hop + 1, rest: rest.length ? 0 : 2 };
+      }
+      const n = s.n + 1;
+      return { ...s, ...mgKnightCycle(s.pos, s.life * 100 + n), n, tgt: s.tgt + 1, rest: 1 };
     }), MG_HOP_MS);
     return () => clearInterval(id);
   }, []);
-  const arrived = !st.path.length && st.pos[0] === st.target[0] && st.pos[1] === st.target[1];
+  const caught = st.phase !== "run";
+  const arrived = !caught && !st.path.length && st.pos[0] === st.target[0] && st.pos[1] === st.target[1];
   const trail = [st.pos, ...st.path];
+  const hopMs = MG_HOP_MS * 0.72;
   return (
-    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
-      {/* 남은 경로 — 나이트가 뛸 한 수 한 수를 분석 탭 화살표로(다음 한 수만 진하게). */}
+    <div key={"life" + st.life} aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3, animation: "mgSceneIn .35s ease-out", opacity: st.phase === "fade" ? 0 : 1, transition: "opacity .45s ease" }}>
+      {/* 남은 경로 — 나이트가 뛸 한 수 한 수를 분석 탭 화살표로. */}
       {trail.length > 1 && <MgArrowSvg routes={trail.slice(0, -1).map((p, i) => [p, trail[i + 1]])} />}
-      <div key={"t" + st.tgt} style={{ position: "absolute", left: st.target[0] * w + "%", top: st.target[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center", animation: "mgPop .35s cubic-bezier(.2,.9,.3,1.3)" }}>
+      <div key={"t" + st.tgt} style={{ position: "absolute", left: st.target[0] * w + "%", top: st.target[1] * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center", animation: "mgPop .35s cubic-bezier(.2,.9,.3,1.3)", opacity: caught ? 0.35 : 1, transition: "opacity .3s" }}>
         <span className="mg-anim" style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: arrived ? "rgba(236,203,134,.6)" : "rgba(236,203,134,.28)", animation: arrived ? "mgBurst .5s ease-out" : "mgTargetPulse 1.4s ease-in-out infinite", transition: "background .2s" }} />
         <Star size={Math.max(10, cellPx * 0.46)} color={T.brassHi} fill={T.brassHi} style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6))" }} />
       </div>
-      <div style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + st.pos[0] * 100 + "%," + st.pos[1] * 100 + "%)", transition: "transform " + (MG_HOP_MS * 0.72) + "ms cubic-bezier(.45,.05,.3,1)" }}>
-        <div key={"h" + st.hop} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.45))", animation: st.hop ? "mgHop " + (MG_HOP_MS * 0.72) + "ms ease-out" : "none" }}>
+      {/* 잡힌 칸 — 빨갛게 번쩍인다. */}
+      {caught && <div style={{ position: "absolute", left: st.pos[0] * w + "%", top: st.pos[1] * h + "%", width: w + "%", height: h + "%", background: "radial-gradient(circle, rgba(229,52,42,.75) 0%, rgba(229,52,42,.25) 72%)", animation: "mgMateFlash .4s ease-out " + (hopMs + 260) + "ms both" }} />}
+      {/* 잡히면 나이트가 내려앉은 뒤(잡는 기물이 닿는 순간) 흐려지며 사라진다 — 뛸 때마다 새로 그려지는 안쪽이 아니라 바깥에 건다. */}
+      <div style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + st.pos[0] * 100 + "%," + st.pos[1] * 100 + "%)", opacity: caught ? 0 : 1, transition: "transform " + hopMs + "ms cubic-bezier(.45,.05,.3,1)" + (caught ? ", opacity .3s ease " + (hopMs + 280) + "ms" : "") }}>
+        <div key={"h" + st.hop} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.45))", animation: st.hop ? "mgHop " + hopMs + "ms ease-out" : "none" }}>
           <PieceGlyph type="N" color="b" size={cellPx * 0.82} />
         </div>
       </div>
+      {/* 상대(백) 비숍·룩 — 목표가 바뀔 때마다 새로 놓인다. 잡는 기물은 나이트가 내려앉은 뒤 그 칸으로 날아간다. */}
+      {st.foes.map((f) => (
+        <div key={f.id} style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: f.id === st.catcher ? 4 : 1, transform: "translate(" + f.c * 100 + "%," + f.r * 100 + "%)", transition: "transform 320ms cubic-bezier(.5,0,.25,1) " + (hopMs - 40) + "ms", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ display: "flex", animation: "mgPop .35s cubic-bezier(.2,.9,.3,1.3)", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>
+            <PieceGlyph type={f.t} color="w" size={cellPx * 0.78} />
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -11044,7 +11113,7 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 라운드당 15초, 5전 3선승이에요.</div>
+        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 제한시간은 1라운드 5초에서 라운드마다 늘어나고(대신 기물과 거리도 늘어요), 5전 3선승이에요.</div>
         <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 빨간 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
         <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
       </>}
@@ -11145,6 +11214,17 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
   const removedSet = new Set(removed || []);
   const hazBySq = {}; (hazards || []).forEach((h) => { if (!removedSet.has(h.sq)) hazBySq[h.sq] = h; });
+  // (v0.5.5, 사용자 요청) 나이트가 잡히면 그 칸을 지배하던 상대 기물이 원래 칸에서 날아와 나이트를 잡는다 — 날아가는 동안은
+  // 원래 칸에서 빼고 보드 위 오버레이로 그린다.
+  const catchers = [];
+  const addCatcher = (knightSq, knightColor, who) => {
+    if (!knightSq) return;
+    const h = (hazards || []).find((x) => x.color !== knightColor && !removedSet.has(x.sq) && knightAttackedSquares(x.sq, x.type).includes(knightSq));
+    if (h) { catchers.push({ ...h, to: knightSq, who }); delete hazBySq[h.sq]; }
+  };
+  if (myCaptured) addCatcher(myPos, myColor, "me");
+  if (oppCaptured && oppPos !== myPos) addCatcher(oppPos, oppColor, "opp");
+  const viewRC = (sq) => { const r = 8 - parseInt(sq.slice(1), 10), c = sq.charCodeAt(0) - 97; return flip ? [7 - r, 7 - c] : [r, c]; };
   const legalSet = new Set(legalTargets || []);
   // (v0.5.5, 사용자 요청) 상대 기물이 통제하는 칸(들어가면 잡히는 칸)은 설정 탭 "통제 칸 표시"를 켰을 때만 보인다 — 규칙은 그대로다.
   const { dangerOn } = useContext(MinigamePrefsContext);
@@ -11180,8 +11260,8 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
           </span>
         )}
         {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
-        {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: oppCaptured ? .35 : .88 }} />{oppCaptured && <KnightCapturedMark />}</motion.div>}
-        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: myCaptured ? .35 : 1 }} />{myCaptured && <KnightCapturedMark />}</motion.div>}
+        {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><KnightCaughtGlyph color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={oppCaptured} base={.88} />{oppCaptured && !catchers.some((x) => x.who === "opp") && <KnightCapturedMark />}</motion.div>}
+        {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><KnightCaughtGlyph color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} caught={myCaptured} base={1} />{myCaptured && !catchers.some((x) => x.who === "me") && <KnightCapturedMark />}</motion.div>}
 
       </button>
     );
@@ -11190,7 +11270,33 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
       <style>{KNIGHT_GRID_CSS}</style>
       {cells}
+      {catchers.map((h) => {
+        const [fr, fc] = viewRC(h.sq), [tr, tc] = viewRC(h.to), cell = size / 8;
+        return (
+          <motion.div key={"catch-" + roundKey + h.who} aria-hidden="true" initial={{ x: fc * cell, y: fr * cell }} animate={{ x: tc * cell, y: tr * cell }}
+            transition={{ delay: KNIGHT_CATCH_DELAY_S, duration: 0.34, ease: [0.5, 0, 0.25, 1] }}
+            style={{ position: "absolute", left: 0, top: 0, width: cell, height: cell, zIndex: 4, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+            <motion.span initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0.7] }} transition={{ delay: KNIGHT_CATCH_DELAY_S + 0.3, duration: 0.45 }}
+              style={{ position: "absolute", inset: 0, background: "radial-gradient(circle, rgba(229,52,42,.7) 0%, rgba(229,52,42,.2) 72%)" }} />
+            <motion.div initial={{ scale: 1 }} animate={{ scale: [1, 1.35, 1] }} transition={{ delay: KNIGHT_CATCH_DELAY_S, duration: 0.34 }} style={{ position: "relative", display: "flex", filter: "drop-shadow(0 4px 4px rgba(0,0,0,.45))" }}>
+              <PieceGlyph type={h.type} color={h.color} size={Math.max(12, Math.round(size / 320 * 22))} />
+            </motion.div>
+            <KnightCapturedMark />
+          </motion.div>
+        );
+      })}
     </div>
+  );
+}
+// 나이트가 칸에 내려앉은 뒤(KNIGHT_CATCH_DELAY_S) 잡는 기물이 날아오고, 닿는 순간 나이트가 빨갛게 번쩍이며 사라진다.
+const KNIGHT_CATCH_DELAY_S = 0.3;
+function KnightCaughtGlyph({ color, size, caught, base }) {
+  return (
+    <motion.span initial={false} animate={caught ? { opacity: [base, base, 0], scale: [1, 1, 0.4] } : { opacity: base, scale: 1 }}
+      transition={caught ? { delay: KNIGHT_CATCH_DELAY_S + 0.25, duration: 0.3, times: [0, 0.2, 1] } : { duration: 0 }}
+      style={{ display: "flex", filter: caught ? "drop-shadow(0 0 6px rgba(229,52,42,.9))" : "none" }}>
+      <PieceGlyph type="N" color={color} size={size} />
+    </motion.span>
   );
 }
 const KNIGHT_GRID_CSS = "@keyframes kgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
@@ -11198,7 +11304,7 @@ const KNIGHT_GRID_CSS = "@keyframes kgPop{0%{transform:scale(.2);opacity:0}100%{
   + "@keyframes kgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
   + "@media (prefers-reduced-motion: reduce){[style*=kgPulse]{animation:none!important}}";
 function KnightCapturedMark() {
-  return <motion.span initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 420, damping: 18 }}
+  return <motion.span initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 420, damping: 18, delay: KNIGHT_CATCH_DELAY_S + 0.45 }}
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F0655A", fontWeight: 900, fontSize: "130%", textShadow: "0 1px 3px rgba(0,0,0,.8)" }}><X size="80%" strokeWidth={3.5} /></motion.span>;
 }
 // 보드 위 색이 각각 무슨 뜻인지 알려주는 범례 — 빨강은 위협 기물에게 잡히는(들어가면 안 되는) 칸,
@@ -11329,26 +11435,28 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
 // 라운드 생성 규칙은 서버와 같은 knightGenRoundLocal로 만들어, 봇 대전도 실전 PvP와 같은 난이도 곡선·
 // 공정성을 겪게 한다. 봇은 자기 시작 칸(항상 흑 역할)에서 목표 칸까지 최단 나이트 경로(BFS, 위협 칸·자기
-// 색 기물 칸 제외)를 계산해, 한 수당 1.0~1.8초의 무작위 시간을 두고 그 경로를 그대로 밟는다.
+// 색 기물 칸 제외)를 계산해, 한 수당 무작위 시간(KNIGHT_BOT_PACE_*)을 두고 그 경로를 그대로 밟는다.
 // (v0.5.4 난이도 대폭 상향, 사용자 요청) 라운드 생성 — supabase-setup.sql의 _knight_gen_round와 완전히 같은
 // 규칙이다. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이 되돌아가면 실제 최단 거리가 1~2수에
 // 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을 피한 실제 최단 수(par)"를 BFS로 재서
 // 라운드별 범위에 들어올 때만 채택한다. 2라운드부터는 기물이 없을 때의 최단 경로보다 반드시 길어야 한다 —
 // 즉 눈에 보이는 가장 빠른 길이 위협 칸으로 막혀 있어 돌아가거나, 상대 기물을 잡아 길을 여는 수를 찾아야
-// 한다. 이동 수 제한은 par+1, 제한시간은 15초. 시작 칸·기물은 목표를 중심으로 점대칭이고, 양쪽 par를 모두 재서 같을 때만 쓴다.
-const KNIGHT_ROUND_MS = 15000;
+// 한다. 이동 수 제한은 par+1. 시작 칸·기물은 목표를 중심으로 점대칭이고, 양쪽 par를 모두 재서 같을 때만 쓴다.
+// (v0.5.5, 사용자 요청) 1라운드는 5초로 짧게, 뒤 라운드로 갈수록 제한시간(timeMs)이 늘지만 기물 수·목표까지의 거리가
+// 그보다 더 가파르게 는다(5라운드: 기물 5쌍, par 6~7). 조건이 까다로워진 만큼 라운드당 시도 횟수를 4000번으로 늘렸다.
 const KNIGHT_ROUND_SPECS = [
-  { minDist: 3, maxDist: 4, pairs: 1, detour: false },
-  { minDist: 4, maxDist: 5, pairs: 2, detour: true },
-  { minDist: 4, maxDist: 5, pairs: 2, detour: true },
-  { minDist: 5, maxDist: 6, pairs: 3, detour: true },
-  { minDist: 5, maxDist: 6, pairs: 3, detour: true },
+  { minDist: 3, maxDist: 4, pairs: 1, detour: false, timeMs: 5000 },
+  { minDist: 4, maxDist: 5, pairs: 2, detour: true, timeMs: 8000 },
+  { minDist: 5, maxDist: 6, pairs: 3, detour: true, timeMs: 11000 },
+  { minDist: 6, maxDist: 7, pairs: 4, detour: true, timeMs: 14000 },
+  { minDist: 6, maxDist: 7, pairs: 5, detour: true, timeMs: 17000 },
 ];
+const KNIGHT_GEN_TRIES = 4000;
 const KNIGHT_ALL_SQS = []; for (let f = 0; f < 8; f++) for (let r = 1; r <= 8; r++) KNIGHT_ALL_SQS.push(String.fromCharCode(97 + f) + r);
 function knightDistanceLocal(start, target, blocked) { const p = knightShortestPathLocal(start, target, blocked); return p ? p.length - 1 : null; }
 function knightTryGenLocal(spec) {
   const pick = () => KNIGHT_ALL_SQS[Math.floor(Math.random() * 64)];
-  for (let attempt = 0; attempt < 400; attempt++) {
+  for (let attempt = 0; attempt < KNIGHT_GEN_TRIES; attempt++) {
     const target = COORD_FILES[2 + Math.floor(Math.random() * 4)] + (3 + Math.floor(Math.random() * 4));
     const whiteStart = pick();
     const blackStart = knightReflectSq(whiteStart, target);
@@ -11374,7 +11482,7 @@ function knightTryGenLocal(spec) {
     // 반사점이 보드 밖인 칸 때문에 점대칭만으로는 양쪽 최단 수가 같다는 보장이 없어, 흑 쪽도 재서 같을 때만 쓴다.
     if (knightDistanceLocal(blackStart, target, [...bIllegal, ...hazB]) !== par) continue;
     if (spec.detour && par <= Math.min(knightDistanceLocal(whiteStart, target, []), knightDistanceLocal(blackStart, target, []))) continue;
-    return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, par, moveBudget: par + 1, timeLimitMs: KNIGHT_ROUND_MS };
+    return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, par, moveBudget: par + 1 };
   }
   return null;
 }
@@ -11386,13 +11494,16 @@ function knightSoloRound(roundIdx) {
   const par = knightDistanceLocal(r.whiteStart, r.target, r.wIllegal) || r.par;
   return { ...r, hazards, par, moveBudget: par + 1 };
 }
-// 조건에 맞는 라운드를 못 찾으면(4·5라운드에서 약 7%) 한 단계 낮은 라운드 조건으로 다시 뽑는다.
+// 조건에 맞는 라운드를 못 찾으면(5라운드에서 약 50%, 4라운드에서 약 15%) 한 단계 낮은 라운드 조건으로 다시 뽑는다 —
+// 제한시간은 원래 라운드 것을 그대로 쓴다.
 function knightGenRoundLocal(roundIdx) {
-  for (let k = Math.min(roundIdx, KNIGHT_ROUND_SPECS.length - 1); k >= 0; k--) {
+  const idx = Math.min(Math.max(roundIdx, 0), KNIGHT_ROUND_SPECS.length - 1);
+  const timeLimitMs = KNIGHT_ROUND_SPECS[idx].timeMs;
+  for (let k = idx; k >= 0; k--) {
     const r = knightTryGenLocal(KNIGHT_ROUND_SPECS[k]);
-    if (r) return r;
+    if (r) return { ...r, timeLimitMs };
   }
-  return { target: "d4", whiteStart: "a1", blackStart: "g7", hazards: [], wIllegal: [], bIllegal: [], par: 2, moveBudget: 3, timeLimitMs: KNIGHT_ROUND_MS };
+  return { target: "d4", whiteStart: "a1", blackStart: "g7", hazards: [], wIllegal: [], bIllegal: [], par: 2, moveBudget: 3, timeLimitMs };
 }
 function knightShortestPathLocal(start, target, illegal) {
   if (start === target) return [start];
@@ -11411,9 +11522,11 @@ function knightShortestPathLocal(start, target, illegal) {
   }
   return null;
 }
-const KNIGHT_BOT_MOVE_MS_MIN = 1000;
-const KNIGHT_ARRIVE_MS = 900;   // 목표 도착·잡힘 연출이 끝까지 보이도록 결과(배너·정산)를 늦추는 시간
-const KNIGHT_BOT_MOVE_MS_MAX = 1800;
+// (v0.5.5) 봇의 한 수 간격 — 라운드 제한시간을 (par+1)수로 나눈 몫의 55~95%. 제한시간이 라운드마다 달라져(5~17초) 고정 간격이면
+// 1라운드에선 봇이 시간 안에 못 가고 뒤 라운드에선 너무 느려진다.
+const KNIGHT_BOT_PACE_MIN = 0.55;
+const KNIGHT_BOT_PACE_MAX = 0.95;
+const KNIGHT_ARRIVE_MS = 1200;   // 목표 도착·잡힘 연출(잡는 기물이 날아오는 것까지)이 끝까지 보이도록 결과(배너·정산)를 늦추는 시간
 function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const [pos, setPos] = useState(round.whiteStart);
   const [movesUsed, setMovesUsed] = useState(0);
@@ -11456,7 +11569,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   useKnightRoundFx(timeLeftMs, started && !myReport);
   // (v0.5.0 기능, 사용자 요청) 봇의 시도 — 예전엔 결과만 한 번에 반영했지만, 이제 실제로 한 수씩
   // 옮겨 다니는 모습을 같은 보드 위에 보여준다. 라운드가 시작되는 순간 최단 경로를 한 번만 계산해,
-  // 그 경로의 각 수마다 1.0~1.8초 무작위 간격으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
+  // 그 경로의 각 수마다 무작위 간격(제한시간에 비례)으로 botPos를 옮기는 타이머를 미리 전부 예약해 둔다.
   // 봇은 항상 흑 역할이라 자신에게 위협적인 칸(bIllegal)을 피해 경로를 찾는다.
   useEffect(() => {
     if (solo) return; // (v0.5.3) 혼자 플레이하기 — 봇 없이 나만 시간·수 제한과 싸운다
@@ -11484,7 +11597,8 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     let cumulative = 0;
     let stepsWithinTime = 0;
     for (let i = 0; i < moves; i++) {
-      const delay = KNIGHT_BOT_MOVE_MS_MIN + Math.random() * (KNIGHT_BOT_MOVE_MS_MAX - KNIGHT_BOT_MOVE_MS_MIN);
+      const slot = round.timeLimitMs / (round.par + 1);
+      const delay = slot * (KNIGHT_BOT_PACE_MIN + Math.random() * (KNIGHT_BOT_PACE_MAX - KNIGHT_BOT_PACE_MIN));
       cumulative += delay;
       if (cumulative > round.timeLimitMs) break;
       stepsWithinTime = i + 1;
