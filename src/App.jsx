@@ -10985,8 +10985,8 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
   const settle = useRoundSettle(idx, !!(round && round.winner));
   useEffect(() => {
     if (finished) return;
-    if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
-    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === idx + 1 ? [...rs, { ...knightGenRoundLocal(rs.length), winner: null }] : rs));
+    if (rounds.length === 0) { setRounds([{ ...knightSoloRound(0), winner: null }]); return; }
+    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === idx + 1 ? [...rs, { ...knightSoloRound(rs.length), winner: null }] : rs));
   }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const onRoundDone = useCallback((winner, mine) => {
     setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const c = rs.slice(); c[i] = { ...c[i], winner, mine: mine ? { reached: mine.reached, moves: mine.moves, ms: mine.atMs, captured: !!mine.captured } : null }; return c; });
@@ -11159,8 +11159,7 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
     const light = (r + c) % 2 === 0;
     let overlay = null;
     if (isMyIllegal) overlay = "rgba(196,60,50,.32)";
-    else if (isTarget) overlay = "rgba(60,138,60,.35)";
-    else if (isLegal) overlay = "rgba(196,154,80,.25)";
+    else if (isLegal && !isTarget) overlay = "rgba(196,154,80,.25)";
     // 잡을 수 있는 상대 기물 — 이동 가능한 칸 위의 상대 색 기물은 금색 테두리로 "잡을 수 있다"를 알린다.
     const canTake = isLegal && haz && haz.color === oppColor;
     cells.push(
@@ -11169,20 +11168,31 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
         {overlay && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: overlay }} />}
         {isLegal && isMyIllegal && <span aria-hidden="true" style={{ position: "absolute", inset: 2, border: "2px dashed rgba(240,148,138,.9)", borderRadius: 3 }} />}
         {canTake && <motion.span aria-hidden="true" animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.1, repeat: Infinity }} style={{ position: "absolute", inset: 2, border: "2px solid " + T.brassHi, borderRadius: "50%" }} />}
-        {isTarget && !isMe && !isOpp && <span style={{ position: "relative", zIndex: 1, fontSize: 14, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)" }}>★</span>}
+        {/* (v0.5.5, 사용자 요청) 목표 칸 — 목록 버튼과 같은 맥동하는 금색 원 + 금색 별. 라운드마다 튀어나오고, 나이트가 도착하면 터지듯 번쩍인다. */}
+        {isTarget && (
+          <span key={"tgt" + roundKey} aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1, animation: "kgPop .35s cubic-bezier(.2,.9,.3,1.3)" }}>
+            <span style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: isMe || isOpp ? "rgba(236,203,134,.6)" : (isLegal ? "rgba(236,203,134,.45)" : "rgba(236,203,134,.28)"), animation: isMe || isOpp ? "kgBurst .55s ease-out" : "kgPulse 1.4s ease-in-out infinite" }} />
+            {!isMe && !isOpp && <Star size={Math.max(10, size / 8 * 0.46)} color={T.brassHi} fill={T.brassHi} style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6))" }} />}
+          </span>
+        )}
         {haz && <PieceGlyph type={haz.type} color={haz.color} size={Math.max(12, Math.round(size / 320 * 22))} style={{ position: "relative", zIndex: 1 }} />}
         {isOpp && <motion.div layoutId={"knight-opp-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 2, display: "flex" }}><PieceGlyph type="N" color={oppColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: oppCaptured ? .35 : .88 }} />{oppCaptured && <KnightCapturedMark />}</motion.div>}
         {isMe && <motion.div layoutId={"knight-me-" + roundKey} transition={{ type: "spring", stiffness: 520, damping: 34 }} style={{ position: "relative", zIndex: 3, display: "flex" }}><PieceGlyph type="N" color={myColor} size={Math.max(14, Math.round(size / 320 * 24))} style={{ opacity: myCaptured ? .35 : 1 }} />{myCaptured && <KnightCapturedMark />}</motion.div>}
-        {isTarget && (isMe || isOpp) && <motion.span aria-hidden="true" initial={{ scale: 0.4, opacity: 0.9 }} animate={{ scale: 1.6, opacity: 0 }} transition={{ duration: 0.8, repeat: Infinity }} style={{ position: "absolute", inset: "12%", borderRadius: "50%", border: "2px solid " + T.brassHi, zIndex: 4 }} />}
+
       </button>
     );
   }
   return (
     <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}>
+      <style>{KNIGHT_GRID_CSS}</style>
       {cells}
     </div>
   );
 }
+const KNIGHT_GRID_CSS = "@keyframes kgPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}"
+  + "@keyframes kgPulse{0%,100%{transform:scale(.86);opacity:.65}50%{transform:scale(1);opacity:1}}"
+  + "@keyframes kgBurst{0%{transform:scale(.8)}45%{transform:scale(1.3);box-shadow:0 0 0 3px " + T.brassHi + ",0 0 22px 8px rgba(236,203,134,.95)}100%{transform:scale(1)}}"
+  + "@media (prefers-reduced-motion: reduce){[style*=kgPulse]{animation:none!important}}";
 function KnightCapturedMark() {
   return <motion.span initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 420, damping: 18 }}
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F0655A", fontWeight: 900, fontSize: "130%", textShadow: "0 1px 3px rgba(0,0,0,.8)" }}><X size="80%" strokeWidth={3.5} /></motion.span>;
@@ -11201,7 +11211,7 @@ function KnightRaceLegend() {
       {chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
       {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물(도달하면 잡아요)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
-      {chip("rgba(60,138,60,.6)", "목표 칸")}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={11} color={MG_GOLD} fill={T.brassHi} />목표 칸</span>
     </div>
   );
 }
@@ -11362,6 +11372,14 @@ function knightTryGenLocal(spec) {
     return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, par, moveBudget: par + 1, timeLimitMs: KNIGHT_ROUND_MS };
   }
   return null;
+}
+// (v0.5.5, 사용자 요청) 혼자 플레이하기 라운드 — 상대가 없으니 내 진영(백) 기물은 보드에서 뺀다. 그 기물들이 막던 칸이 열려
+// 최단 수가 줄 수 있으므로 par·이동 수 제한을 흑 기물만으로 다시 잰다.
+function knightSoloRound(roundIdx) {
+  const r = knightGenRoundLocal(roundIdx);
+  const hazards = (r.hazards || []).filter((h) => h.color === "b");
+  const par = knightDistanceLocal(r.whiteStart, r.target, r.wIllegal) || r.par;
+  return { ...r, hazards, par, moveBudget: par + 1 };
 }
 // 조건에 맞는 라운드를 못 찾으면(4·5라운드에서 약 7%) 한 단계 낮은 라운드 조건으로 다시 뽑는다.
 function knightGenRoundLocal(roundIdx) {
