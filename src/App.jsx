@@ -9451,7 +9451,7 @@ function useSquareFit(maxSize = 420, reserveH = 0) {
 // 미니게임 친구 도전장을 수락하면, App 루트가 이 prop으로 "이미 매칭된 대국"을 넘겨준다. gameType이
 // 가리키는 게임을 곧장 활성화하고 그 대국 객체를 initialGame으로 넘겨 매칭 화면 없이 바로 대전
 // 화면부터 보여준다 — 한 번 반영하면 onConsumeResume으로 App 루트에 소비했음을 알려 재적용을 막는다.
-function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRating, canEditContent }) {
+function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRating, canEditContent, hubMaxWidth }) {
   const [activeKey, setActiveKey] = useState(null);
   const [resumeGame, setResumeGame] = useState(null);
   // (v0.5.4) 목록 카드마다 내 미니게임 레이팅을 보여준다 — 게임을 마치고 목록으로 돌아올 때 다시 읽는다.
@@ -9473,7 +9473,7 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
     const Game = active.Component;
     return <Game myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
   }
-  return <MinigameHubBoard stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
+  return <MinigameHubBoard maxWidth={hubMaxWidth} stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
 }
 // ============================================================ 미니게임 목록 화면(v0.5.5 리디자인) ============================================================
 // (v0.5.5 리디자인, 사용자 스케치) 한 줄에 게임 하나씩 쌓던 목록 대신, 사용자가 그린 스케치를 옮긴 한 장짜리 화면.
@@ -9488,6 +9488,9 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
 // Qg7#)를 퀸이 두는 장면을, 백랭크 러시아워는 막힌 주인공 룩이 옆으로 빠져나와 파일을 타고 올라가 백랭크 메이트
 // 하는 장면을 반복한다. 움직임 줄이기 설정이면 모두 멈춘 채로 보인다.
 // 좌표계는 SVG viewBox(100×100) 하나 — 보드·글자 오버레이도 같은 퍼센트 좌표로 얹는다.
+// (v0.5.6, 사용자 요청) 플레이 탭 버튼(일반 대국·미니게임) 최대 폭. 데스크톱에선 780px이 화면을 너무 크게 차지해
+// 600px로 줄였다 — 좁은 화면(모바일·좁은 창)은 원래대로 화면 폭을 채운다(780 제한은 사실상 닿지 않는다).
+const PLAY_HUB_MAX_W = 780, PLAY_HUB_MAX_W_DESKTOP = 600;
 const MG_GAP = 1.8;                 // 도형 사이 간격
 const MG_PAD = 3;                   // 글자 여백
 const MG_RADIUS = 3.4;              // 모서리 라운딩
@@ -9942,7 +9945,7 @@ function PlayNormalButton({ onClick }) {
     </button>
   );
 }
-function MinigameHubBoard({ stats, onPick }) {
+function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
   // 기물 이미지 스킨은 size(px)로 크기를 계산하고 clip-path는 px 경로가 필요하므로, 전체 폭을 실측한다.
   const [width, setWidth] = useState(360);
   const roRef = useRef(null);
@@ -9973,8 +9976,8 @@ function MinigameHubBoard({ stats, onPick }) {
   const labelFont = "clamp(16px, 5.3cqw, 40px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
-      // 데스크톱에서는 크게 쓴다(일반 대국 화면 아래에 오므로 화면 높이 제한은 두지 않는다).
-      maxWidth: 780 }}>
+      // 최대 폭은 PlayPage가 정한다(PLAY_HUB_MAX_W 참고) — 일반 대국 버튼과 같은 폭.
+      maxWidth }}>
       <style>{".mg-btn{cursor:pointer;outline:none;transition:fill .15s ease,stroke .15s ease}.mg-btn:focus-visible{stroke:" + T.brass + ";stroke-width:3px}"
         + "@keyframes mgPing{0%{opacity:0;transform:scale(.3) rotate(-60deg)}10%{opacity:1;transform:scale(1.15) rotate(0)}17%{transform:scale(1)}32%{opacity:1;transform:scale(1)}40%{opacity:0;transform:scale(.7)}100%{opacity:0;transform:scale(.7)}}"
         + "@keyframes mgSqFlash{0%{opacity:0}8%{opacity:1}32%{opacity:1}40%{opacity:0}100%{opacity:0}}"
@@ -13673,13 +13676,14 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // (v0.5.0 리디자인, 사용자 요청) 예전엔 이 페이지 전체가 화면을 덮는 별도 오버레이(고정 배경 +
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
+  const hubMaxW = narrow ? PLAY_HUB_MAX_W : PLAY_HUB_MAX_W_DESKTOP;
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   return (
     // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
     // 일반 대국 부분만 460px로 가운데에 둔다.
     <div style={{ maxWidth: 880, margin: "0 auto" }}>
-        <div style={{ maxWidth: step === "setup" ? 780 : 460, margin: "0 auto" }}>
+        <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
           <>
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
@@ -13898,7 +13902,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         {/* (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
             그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
         <div style={{ display: step === "setup" ? "block" : "none", marginTop: 14 }}>
-          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} />
+          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
