@@ -9462,6 +9462,82 @@ function MgArrows({ paths, win }) {
     </svg>
   );
 }
+// (v0.5.5 연출, 사용자 요청) 좌표 인지 게임 띠 — 칸 곳곳에 조준경이 차례로 튀어나왔다 사라지며 그 칸의 좌표를
+// 띄운다(띠 왼쪽 절반을 a–g 파일 × 8–5랭크로 본다). 다섯 칸이 시차를 두고 돌아 늘 한두 개가 떠 있다.
+const MG_PINGS = [{ c: 2, r: 1 }, { c: 5, r: 0 }, { c: 1, r: 3 }, { c: 4, r: 2 }, { c: 5, r: 3 }];
+const MG_PING_MS = 4000;
+function MgCrosshair({ size }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
+      <circle cx="12" cy="12" r="7" fill="none" stroke="#fff" strokeWidth="2.2" />
+      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="1.8" fill="#fff" />
+    </svg>
+  );
+}
+function MgCoordPings({ cellPx }) {
+  const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
+      {MG_PINGS.map((pg, i) => {
+        const delay = -(MG_PING_MS / MG_PINGS.length) * (MG_PINGS.length - i) + "ms";
+        return (
+          <div key={i} style={{ position: "absolute", left: pg.c * w + "%", top: pg.r * h + "%", width: w + "%", height: h + "%" }}>
+            <span className="mg-anim" style={{ position: "absolute", inset: 0, background: "rgba(22,181,166,.45)", boxShadow: "inset 0 0 0 2px " + T.brilliant, animation: "mgSqFlash " + MG_PING_MS + "ms ease-out infinite", animationDelay: delay }} />
+            <span className="mg-anim" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", animation: "mgPing " + MG_PING_MS + "ms cubic-bezier(.2,.9,.3,1.2) infinite", animationDelay: delay }}>
+              <MgCrosshair size={Math.max(12, cellPx * 0.7)} />
+              <span style={{ position: "absolute", right: "6%", bottom: "2%", fontSize: Math.max(8, cellPx * 0.22), fontWeight: 900, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.7)", fontFamily: SITE_FONT }}>{"abcdefg"[pg.c] + (8 - pg.r)}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+// (v0.5.5 연출, 사용자 요청) 나이트 레이스 띠 — 나이트가 L자로 세 번 뛰어 목표 칸(맥동하는 금색 별)에 닿는 걸 반복한다.
+// 지나갈 길은 점선으로 미리 보이고, 칸마다 잠깐 멈췄다가 살짝 떠오르며 다음 칸으로 뛴다.
+const MG_KNIGHT_ROUTE = [[1, 3], [3, 2], [4, 0], [6, 1]];   // [열, 줄] — 모두 합법적인 나이트 이동
+const MG_KNIGHT_MS = 4200;
+function MgKnightRun({ cellPx }) {
+  const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
+  const [tc, tr] = MG_KNIGHT_ROUTE[MG_KNIGHT_ROUTE.length - 1];
+  // 칸마다 머무는 구간 + 뛰는 구간을 번갈아 둔 CSS 키프레임 — 나이트 요소 자체가 한 칸 크기라 translate(열×100%, 줄×100%)로
+  // 칸 단위 이동이 된다. 뛰는 도중에는 안쪽 요소가 살짝 떠오른다. 마지막 칸에서 조금 더 머문 뒤 처음으로 돌아간다.
+  const { move, hop } = useMemo(() => {
+    const seg = 80 / (MG_KNIGHT_ROUTE.length - 1);
+    const mv = [], hp = [];
+    const at = (c, r) => "transform:translate(" + c * 100 + "%," + r * 100 + "%)";
+    MG_KNIGHT_ROUTE.forEach(([c, r], i) => {
+      const t0 = i * seg;
+      mv.push(t0.toFixed(2) + "%{" + at(c, r) + "}", (t0 + seg * 0.45).toFixed(2) + "%{" + at(c, r) + "}");
+      hp.push(t0.toFixed(2) + "%{transform:translateY(0)}", (t0 + seg * 0.45).toFixed(2) + "%{transform:translateY(0)}");
+      if (i < MG_KNIGHT_ROUTE.length - 1) hp.push((t0 + seg * 0.72).toFixed(2) + "%{transform:translateY(-32%) scale(1.08)}");
+    });
+    const [sc, sr] = MG_KNIGHT_ROUTE[0];
+    mv.push("97%{" + at(tc, tr) + "}", "100%{" + at(sc, sr) + "}");
+    hp.push("97%{transform:translateY(0)}", "100%{transform:translateY(0)}");
+    return { move: "@keyframes mgKnightMove{" + mv.join("") + "}", hop: "@keyframes mgKnightHop{" + hp.join("") + "}" };
+  }, [tc, tr]);
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3 }}>
+      <style>{move + hop}</style>
+      <svg viewBox={"0 0 " + MG_STRIP.cols + " " + MG_STRIP.rows} width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+        <polyline points={MG_KNIGHT_ROUTE.map(([c, r]) => (c + 0.5) + "," + (r + 0.5)).join(" ")} fill="none" stroke={T.brassHi} strokeWidth="0.09" strokeDasharray="0.14 0.14" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
+        {MG_KNIGHT_ROUTE.slice(0, -1).map(([c, r], i) => <circle key={i} cx={c + 0.5} cy={r + 0.5} r="0.09" fill={T.brassHi} />)}
+      </svg>
+      <div style={{ position: "absolute", left: tc * w + "%", top: tr * h + "%", width: w + "%", height: h + "%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span className="mg-anim" style={{ position: "absolute", inset: "6%", borderRadius: "50%", boxShadow: "0 0 0 2px " + T.brassHi + ", 0 0 12px 3px rgba(236,203,134,.8)", background: "rgba(236,203,134,.28)", animation: "mgTargetPulse 1.4s ease-in-out infinite" }} />
+        <Star size={Math.max(10, cellPx * 0.46)} color={T.brassHi} fill={T.brassHi} style={{ position: "relative", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.6))" }} />
+      </div>
+      {/* 움직임을 줄이는 설정이면(.mg-anim) 애니메이션 없이 출발 칸에 선다. */}
+      <div className="mg-anim" style={{ position: "absolute", left: 0, top: 0, width: w + "%", height: h + "%", zIndex: 2, transform: "translate(" + MG_KNIGHT_ROUTE[0][0] * 100 + "%," + MG_KNIGHT_ROUTE[0][1] * 100 + "%)", animation: "mgKnightMove " + MG_KNIGHT_MS + "ms ease-in-out infinite" }}>
+        <div className="mg-anim" style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.45))", animation: "mgKnightHop " + MG_KNIGHT_MS + "ms ease-in-out infinite" }}>
+          <PieceGlyph type="N" color="b" size={cellPx * 0.82} />
+        </div>
+      </div>
+    </div>
+  );
+}
 function MinigameHubBoard({ stats, onPick }) {
   // 기물 이미지 스킨은 size(px)로 크기를 계산하고 clip-path는 px 경로가 필요하므로, 전체 폭을 실측한다.
   const [width, setWidth] = useState(360);
@@ -9508,9 +9584,13 @@ function MinigameHubBoard({ stats, onPick }) {
   const labelFont = "clamp(12px, 3.4cqw, 24px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
-      // 데스크톱에서는 크게 쓰되, 헤더·토글·하단 탭바를 뺀 화면 높이 안에 한 번에 다 들어오게 폭을 제한한다(최소 460px).
-      maxWidth: "min(100%, max(460px, calc(100dvh - 250px)))" }}>
-      <style>{".mg-btn{cursor:pointer;outline:none;transition:fill .15s ease,stroke .15s ease}.mg-btn:focus-visible{stroke:" + T.brass + ";stroke-width:3px}"}</style>
+      // 데스크톱에서는 크게 쓴다(일반 대국 화면 아래에 오므로 화면 높이 제한은 두지 않는다).
+      maxWidth: 780 }}>
+      <style>{".mg-btn{cursor:pointer;outline:none;transition:fill .15s ease,stroke .15s ease}.mg-btn:focus-visible{stroke:" + T.brass + ";stroke-width:3px}"
+        + "@keyframes mgPing{0%{opacity:0;transform:scale(.3) rotate(-60deg)}10%{opacity:1;transform:scale(1.15) rotate(0)}17%{transform:scale(1)}32%{opacity:1;transform:scale(1)}40%{opacity:0;transform:scale(.7)}100%{opacity:0;transform:scale(.7)}}"
+        + "@keyframes mgSqFlash{0%{opacity:0}8%{opacity:1}32%{opacity:1}40%{opacity:0}100%{opacity:0}}"
+        + "@keyframes mgTargetPulse{0%,100%{transform:scale(.86);opacity:.65}50%{transform:scale(1);opacity:1}}"
+        + "@media (prefers-reduced-motion: reduce){.mg-anim{animation:none!important}}"}</style>
       <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
         <defs>
           <filter id="mg-shadow" x="-10%" y="-10%" width="120%" height="130%">
@@ -9528,14 +9608,14 @@ function MinigameHubBoard({ stats, onPick }) {
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", clipPath: clip, WebkitClipPath: clip }}>
         {/* 위쪽 체스보드 띠 — 두 버튼에 걸쳐 체크 무늬가 이어진다. 조준경(좌표 인지 게임)·나이트(나이트 레이스). */}
         <div style={box(-MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}
-            overlayAt={(r, c) => (r === 1 && c === 2 ? (
-              <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "rgba(22,181,166,.42)", boxShadow: "inset 0 0 0 2px " + T.brilliant, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Target size={Math.max(12, stripCell * 0.66)} color="#fff" strokeWidth={2.4} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.5))" }} />
-              </span>) : null)} />
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}>
+            <MgCoordPings cellPx={stripCell} />
+          </MgBoardPiece>
         </div>
         <div style={box(50 + MG_GAP / 2 - MG_BLEED, stripY, MG_STRIP.cols * MG_STRIP_CELL, stripH)}>
-          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }} pieceAt={(r, c) => (r === 3 && c === 9 ? "bN" : null)} />
+          <MgBoardPiece rows={MG_STRIP.rows} cols={MG_STRIP.cols} colOffset={MG_STRIP.cols} cellPx={stripCell} roundCorners={{ tl: true, tr: true }}>
+            <MgKnightRun cellPx={stripCell} />
+          </MgBoardPiece>
         </div>
         {/* 무한 체크메이트 게임 — 실전 1수 메이트(Qg7#)의 e–h 파일 */}
         <div style={box(-MG_BLEED, cropY, mgCropW(MG_MATE_FILES), cropH)}>
@@ -12409,10 +12489,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 아직 실제 미니게임은 없어 레이아웃(카드 그리드)만 먼저 만들어 둔다 — 나중에 게임이 정해지면
   // PLAY_SPECIAL_GAMES 배열에 항목만 추가하면 된다. step(setup/playing) 등 기존 상태는 이 토글과
   // 무관하게 그대로 유지되므로, "일반"으로 다시 돌아오면 하던 대국이 그대로 이어진다.
-  const [pageMode, setPageMode] = useState("normal"); // "normal" | "special"
-  // (v0.5.0 기능, 사용자 요청) 다른 탭에 있는 동안 전역 알람 박스에서 미니게임 친구 도전장을
-  // 수락하면(specialResume) 곧장 "스페셜" 토글로 전환해 그 대국을 보여준다.
-  useEffect(() => { if (specialResume) setPageMode("special"); }, [specialResume]);
+  // (v0.5.5, 사용자 요청) "일반/스페셜" 토글을 없애고 일반 대국 화면 아래에 미니게임 목록을 함께 보여준다 —
+  // 전역 알람 박스에서 미니게임 친구 도전장을 수락하면(specialResume) PlaySpecialGames가 곧장 그 대국을 연다.
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
@@ -12994,15 +13072,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   return (
-    // (v0.5.5, 사용자 요청) 스페셜(미니게임 목록)은 데스크톱에서 크게 보이도록 폭을 넓힌다 — 토글은 그대로 460px.
-    <div style={{ maxWidth: pageMode === "special" ? 880 : 460, margin: "0 auto" }}>
-        {/* (v0.5.0 기능, 사용자 요청) "일반/스페셜" 토글 — 페이지 최상단에 고정. */}
-        <div className="inline-flex" style={{ width: "100%", maxWidth: 460, display: "flex", margin: "0 auto", borderRadius: 11, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", padding: 4, gap: 4, marginBottom: 16 }}>
-          <button onClick={() => setPageMode("normal")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "normal" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "normal" ? "#241509" : "rgba(244,238,226,.7)" }}>일반</button>
-          <button onClick={() => setPageMode("special")} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800, background: pageMode === "special" ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pageMode === "special" ? "#241509" : "rgba(244,238,226,.7)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}><Sparkles size={13} />스페셜</button>
-        </div>
-        {pageMode === "special" && <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} />}
-        {pageMode === "normal" && (step === "setup" ? (
+    // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
+    // 일반 대국 부분만 460px로 가운데에 둔다.
+    <div style={{ maxWidth: 880, margin: "0 auto" }}>
+        <div style={{ maxWidth: 460, margin: "0 auto" }}>
+        {step === "setup" ? (
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
              (MatchmakingScreen)이다 — 지금 벌어지고 있는 일에 화면 전체가 반응하는 느낌을 준다. */
@@ -13203,7 +13277,18 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
               <NavBtn onClick={stepForward} disabled={!canGoForward}><ChevronRight size={17} /></NavBtn>
             </div>
           </div>
-        ))}
+        )}
+        </div>
+        {/* (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
+            그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
+        <div style={{ display: step === "setup" ? "block" : "none", marginTop: 28 }}>
+          <div style={{ maxWidth: 780, margin: "0 auto 12px", display: "flex", alignItems: "center", gap: 8 }}>
+            <Sparkles size={16} color={T.brassHi} />
+            <span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>미니게임</span>
+            <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.55)", fontWeight: 600 }}>체스보드 위 오리지널 미니게임</span>
+          </div>
+          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} />
+        </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
@@ -13237,8 +13322,8 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
           붙인다(<main> 안의 이 페이지 자신을 아래로 스크롤하면 보인다). 분석 탭 PLAY 버튼 등
           storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지 않아 지금까지와 완전히
-          동일하다. "스페셜" 토글일 때는 미니게임 그리드만 보여주고 상점은 숨긴다. */}
-      {storeProps && pageMode === "normal" && (
+          동일하다. */}
+      {storeProps && (
         <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
           <StoreTab {...storeProps} />
         </div>
