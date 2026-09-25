@@ -2518,23 +2518,39 @@ grant execute on function public.knight_report(bigint, int, boolean, int, text, 
 -- 그대로 믿고 상대 화면에 보여주기만 한다) 이미 라운드가 끝났거나 이미 보고를 마쳤어도 조용히
 -- 무시하면 그만이라 knight_report처럼 엄격한 "한 번만" 가드가 필요 없다 — 그냥 최신 위치로 덮어쓴다.
 -- (v0.5.4) p_taken — 지금까지 잡은 상대 기물 칸도 함께 알려, 상대 화면에서도 그 기물이 사라지게 한다.
+-- (v0.5.5, 사용자 요청) 상대 나이트 잡기 — 내가 옮긴 칸이 서버에 기록된 상대 나이트의 마지막 위치(아직 안 움직였으면 시작 칸)와
+-- 같고 상대가 아직 보고 전이면, 상대의 이번 라운드 시도를 "잡힘"(captured, 도착 실패)으로 끝낸다. 이미 보고를 마친 쪽의
+-- 위치 중계는 더 받지 않는다(잡힌 나이트가 상대 화면에서 계속 움직이지 않게).
 drop function if exists public.knight_move_ping(bigint, int, text, int);
 create or replace function public.knight_move_ping(p_game_id bigint, p_round int, p_sq text, p_moves_used int, p_taken text[] default '{}')
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
-  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text;
+  v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_mycolor text; v_oppcolor text;
+  v_opp_pos jsonb; v_opp_sq text; v_opp_rep jsonb; v_my_rep jsonb;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'knight' or v_game.status <> 'active' then return v_game; end if;
   if v_me = v_game.white_uid then v_mycolor := 'w'; elsif v_me = v_game.black_uid then v_mycolor := 'b'; else raise exception 'not a participant'; end if;
+  v_oppcolor := case when v_mycolor = 'w' then 'b' else 'w' end;
   v_rounds := v_game.sans;
   if p_round < 0 or p_round >= jsonb_array_length(v_rounds) then return v_game; end if;
   v_round := v_rounds -> p_round;
   if (v_round ->> 'winner') is not null then return v_game; end if; -- 이미 끝난 라운드는 위치를 더 알릴 필요 없다
+  v_my_rep := v_round -> 'reports' -> v_mycolor;
+  if v_my_rep is not null and jsonb_typeof(v_my_rep) <> 'null' then return v_game; end if; -- 이미 보고를 마쳤다(잡힘 포함)
   if v_round -> 'positions' is null or jsonb_typeof(v_round -> 'positions') <> 'object' then
     v_round := jsonb_set(v_round, array['positions'], jsonb_build_object('w', null, 'b', null));
+  end if;
+  v_opp_pos := v_round -> 'positions' -> v_oppcolor;
+  v_opp_sq := coalesce(case when jsonb_typeof(v_opp_pos) = 'object' then v_opp_pos ->> 'sq' end,
+    v_round ->> (case when v_oppcolor = 'w' then 'whiteStart' else 'blackStart' end));
+  v_opp_rep := v_round -> 'reports' -> v_oppcolor;
+  if p_sq = v_opp_sq and (v_opp_rep is null or jsonb_typeof(v_opp_rep) = 'null') then
+    v_round := jsonb_set(v_round, array['reports', v_oppcolor], jsonb_build_object(
+      'reached', false, 'movesUsed', coalesce((v_opp_pos ->> 'movesUsed')::int, 0), 'finalSq', v_opp_sq, 'captured', true, 'byKnight', true,
+      'taken', coalesce(case when jsonb_typeof(v_opp_pos) = 'object' then v_opp_pos -> 'taken' end, '[]'::jsonb), 'at', now()));
   end if;
   v_round := jsonb_set(v_round, array['positions', v_mycolor], jsonb_build_object('sq', p_sq, 'movesUsed', greatest(0, coalesce(p_moves_used, 0)), 'taken', to_jsonb(coalesce(p_taken, '{}')), 'at', now()));
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
