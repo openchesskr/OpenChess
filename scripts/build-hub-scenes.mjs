@@ -4,6 +4,9 @@
  *
  *  - mate: src/data/attackPositions.json의 1수·2수 메이트 중, 공격 측을 아래로 돌려 놓았을 때(흑이 공격이면 보드를
  *    뒤집는다) 수순 전체(공격 수·수비 응수)와 수비 킹이 4×7 창 안에 들어오는 포지션. 창 밖 기물은 그리지 않는다.
+ *    (v0.5.5 수정) 창 밖 기물이 도주 칸을 막아 주던 메이트는 버튼에서 보면 메이트가 아닌 것처럼 보였다 — 이제 창 안 기물만
+ *    남긴 포지션(공격 측 킹이 창 밖이면 수비 킹과 멀리 떨어져 있을 때만 제자리에 둔다)에서 같은 수순을 다시 두어,
+ *    그 포지션만으로도 체크메이트로 끝나는 것만 남긴다. 2수 메이트는 공격 수·수비 응수·메이트 수를 모두 재생한다.
  *  - rush: 게임과 같은 규칙 엔진(src/lib/rushHour.js)으로, 8랭크~5랭크 7개 파일 창 안에만 기물을 둔 엉킨 포지션을 무작위로
  *    만들고, BFS 풀이기로 2~4수 안에 풀리며 풀이 중 모든 움직임(유인 포획·체크 응수 포함)이 창 안에서 끝나는 것만 남긴다.
  *  보드 칸 색이 실제 체스판과 같도록 창 위치의 홀짝을 목록 화면의 보드 조각(왼쪽 colOffset 1, 오른쪽 8)에 맞춘다.
@@ -48,6 +51,7 @@ function mateScenes() {
       if (!best || kr < best.kr) best = { r0, c0, kr };
     }
     if (!best) continue;
+    if (!visibleMateHolds(p, best, disp, att)) continue;
     const pieces = [];
     for (let rr = 0; rr < 8; rr++) for (let cc = 0; cc < 8; cc++) {
       const x = board[rr][cc]; if (!x) continue;
@@ -59,6 +63,37 @@ function mateScenes() {
     out.push({ p: pieces, m: moves.map((m) => [m[0] - best.c0, m[1] - best.r0, m[2] - best.c0, m[3] - best.r0]), k: [k[0] - best.c0, k[1] - best.r0], src: p.src });
   }
   return out;
+}
+
+// 창 안 기물만 남긴 포지션에서도 같은 수순이 합법이고 체크메이트로 끝나는지.
+function visibleMateHolds(p, win, disp, att) {
+  const src = new Chess(p.fen);
+  const inWin = (sq) => { const [c, r] = disp(sq); return c >= win.c0 && c < win.c0 + COLS && r >= win.r0 && r < win.r0 + ROWS; };
+  const red = new Chess(); red.clear();
+  let attKing = null, defKing = null;
+  for (const row of src.board()) for (const x of row) {
+    if (!x) continue;
+    if (x.type === "k") { if (x.color === att) attKing = x; else defKing = x; }
+    if (inWin(x.square)) red.put({ type: x.type, color: x.color }, x.square);
+  }
+  if (!inWin(defKing.square)) return false;
+  if (!inWin(attKing.square)) {
+    // 보이지 않는 공격 측 킹이 수비 킹 주변 칸을 막아 주면 안 된다.
+    const d = Math.max(Math.abs(attKing.square.charCodeAt(0) - defKing.square.charCodeAt(0)), Math.abs(+attKing.square[1] - +defKing.square[1]));
+    if (d < 4) return false;
+    red.put({ type: "k", color: att }, attKing.square);
+  }
+  let ch;
+  try {
+    const f = red.fen().split(" ");
+    f[1] = att; f[2] = "-"; f[3] = "-";
+    ch = new Chess(f.join(" "));
+  } catch { return false; }
+  if (ch.inCheck()) return false;
+  for (const u of p.moves) {
+    try { if (!ch.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || "q" })) return false; } catch { return false; }
+  }
+  return ch.isCheckmate();
 }
 
 // ---- rush ----
