@@ -16352,17 +16352,15 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
     const selDelay = isSel && selectedTargetR ? (it.r / selectedTargetR) * selDuration : 0;
     const surgeDelay = electric ? (it.r || 0) / DEX_ELECTRIC_FLOW_SPEED : 0;
-    // (신규 기능, 사용자 요청) "내 승률" 오버레이 — 표본이 너무 적으면(3판 미만) 0%/100%로 튀어
-    // 오해를 살 수 있어 그 미만은 아예 표시하지 않는다. 색은 이 사이트의 기존 등급 색(최선=초록,
-    // 부정확=노랑, 블런더=빨강)을 그대로 재사용해 새 색 언어를 만들지 않는다.
-    const showWr = it.myN >= 3 && it.myWr != null;
-    const wrColor = it.myWr >= 60 ? T.best : it.myWr >= 40 ? T.inaccuracy : T.blunder;
+    // (v0.5.6, 사용자 요청) 내 chess.com 전적·승률 칩 — 이 수순까지 실제로 둔 내 대국이 있으면 블록 아래 가장자리에 걸쳐 "7승 2무 3패 · 58%"를
+    // 보여준다(예전엔 3판 이상일 때 오른쪽 위에 승률 %만). 승률 색은 기존 등급 색(최선=초록, 부정확=노랑, 블런더=빨강)을 쓰고, 표본이 3판
+    // 미만이면 0%/100%로 튀어 오해를 살 수 있어 색 없이(회색) 보여준다. 칩이 블록 밖으로 나오는 높이(DEX_LAYOUT.CHIP_BELOW)만큼은
+    // 배치 단계에서 라벨이 비켜 두므로 다른 요소와 겹치지 않는다.
+    const showRec = it.myN >= 1 && it.myWr != null;
+    const wrColor = it.myN < 3 ? "#8A7458" : it.myWr >= 60 ? T.best : it.myWr >= 40 ? T.inaccuracy : T.blunder;
     return (
       <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
-        {showWr && (
-          <span title={"내 승률 " + it.myWr + "% (" + it.myN + "판)"} style={{ position: "absolute", right: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, minWidth: 17, height: 17, padding: "0 3px", borderRadius: 9, background: wrColor, color: "#fff", fontSize: 8.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{it.myWr}%</span>
-        )}
         <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: SITE_FONT, fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
             {!it.unlocked && <Lock size={10} />}
@@ -16370,6 +16368,13 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
           </span>
           {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
         </button>
+        {showRec && (
+          <span title={"내 chess.com 전적 " + it.myN + "판 — " + it.myW + "승 " + it.myD + "무 " + it.myL + "패, 승률 " + it.myWr + "%"}
+            style={{ position: "absolute", left: "50%", top: boxH - 8, transform: "translateX(-50%)", height: 16, padding: "0 6px", borderRadius: 8, background: "#FFFDF6", border: "1.5px solid " + wrColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 8.5, fontWeight: 800, color: T.ink, zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>
+            <span>{it.myW}승 {it.myD}무 {it.myL}패</span>
+            <span style={{ color: wrColor }}>{it.myWr}%</span>
+          </span>
+        )}
       </div>
     );
   });
@@ -16504,7 +16509,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         adopt: n.depth === 1 ? 100 : (m.adopt || 0), kind: t ? t.kind : (m.book ? "book" : "pending"), evalCp: m.evalCp != null ? m.evalCp : null,
         name: nameOverride(parentKey, n.san) ?? m.name ?? null,
         hasChildren: !!((own && own.length) || addsFor(n.key).length), unlocked: dexIsUnlocked(chesscom, ccReady, unlockAll, n.path),
-        myWr: myStat ? Math.round(100 * myStat.w / myStat.n) : null, myN: myStat ? myStat.n : 0,
+        myWr: myStat ? Math.round(100 * myStat.w / myStat.n) : null, myN: myStat ? myStat.n : 0, myW: myStat ? myStat.w : 0, myD: myStat ? myStat.d : 0, myL: myStat ? myStat.l : 0,
         x: n.x, y: n.y, r: n.r, angle: n.angle, slotWidth: n.slotWidth, edgeD: n.edgeD, edgePts: n.edgePts,
       };
       items.push(it);
@@ -17198,7 +17203,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 2배로 키운다 — 이 카드는 이미 transform:scale(cardScale)로 균일하게 커지고 작아지도록 만들어져
     // 있었으므로(세로 모식도에서만 0.65배로 살짝 줄이던 것), 그 배율에 2를 곱하기만 하면 폰트·이미지·
     // 여백까지 전부 비율 그대로 2배가 된다.
-    const cardScale = (vertical ? 0.65 : 1) * 2;
+    // (v0.5.6, 사용자 요청 "카드 크기를 좀 줄여줘") 데스크톱 2배 → 1.5배, 모바일 1.3배 → 1배.
+    const cardScale = vertical ? 1 : 1.5;
     const vw = typeof window !== "undefined" ? window.innerWidth : 480;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
     const CARD_W = Math.max(240, Math.min(300, vw - 32));

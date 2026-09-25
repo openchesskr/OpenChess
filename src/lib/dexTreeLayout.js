@@ -7,7 +7,7 @@
 // 지키는 기존 규칙(OpeningSchematic 주석에 기록된 사용자 요청들):
 //  · 1수(e4/d4)는 중심 칩에서 정확히 위/아래 ROOT_GAP 거리. 팔 하나는 반원(180° × 0.94)만 쓴다.
 //  · 같은 깊이(ply)의 노드는 한 링(같은 반지름) 위에 놓이고, 부모의 형제 순서(DFS 순서)를 그대로 지켜 연결선이 서로 교차하지 않는다.
-//  · 사촌끼리는 최소 간격, 형제끼리는 그보다 넓은 간격(SIBLING_FACTOR).
+//  · (v0.5.6 사용자 요청으로 뒤집음) 형제끼리는 최소 간격, 사촌끼리(부모가 다른 이웃)는 그보다 넓은 간격(COUSIN_FACTOR) — 갈래가 한눈에 묶여 보이게.
 //  · 이웃 블록 중심 거리 ≥ SAFE_GAP(화면 70px), 이름이 많은 앞쪽(깊이 ≤ EARLY_NAME_DEPTH)은 EARLY_SAFE_GAP(화면 120px).
 //  · 링 간격(부모·자녀 거리)은 깊어질수록 같거나 커진다(줄어들지 않는다).
 //  · 깊이 ≥ 3에서 라벨 붙은 노드가 같은 링에서 이웃하면 반지름을 번갈아 살짝 어긋나게(지터, 화면 최대 ±100px).
@@ -26,12 +26,13 @@ export const DEX_LAYOUT = {
   ROOT_GAP: 260,
   SECTOR_HALF: (Math.PI / 2) * 0.94,
   DIR_ANGLE: { N: -Math.PI / 2, S: Math.PI / 2 },
-  SIBLING_FACTOR: 1.5,
+  COUSIN_FACTOR: 1.5,
   CLEAR: 14,                 // 블록 가장자리 사이 최소 여백(논리 px)
   EARLY_NAME_DEPTH: 3,
   JITTER_MIN_DEPTH: 3,
   LABEL_H: 20,
   LABEL_GAP: 4,
+  CHIP_BELOW: 8,             // 블록 아래 가장자리에 걸쳐 그리는 전적 칩이 블록 밖으로 나오는 높이 — 라벨은 이만큼 더 비켜 둔다
 };
 
 export function estLabelW(name) { return (name.length + 4) * 7.3 + 34; } // "✦ 이름 ✦" + 화살표 아이콘·여백
@@ -102,7 +103,7 @@ export function layoutDexTree(arms, { boxW, boxH, safeGap, earlySafeGap, jitterM
         if (i === 0) return 0;
         const mid = (theta[i - 1] + theta[i]) / 2;
         const need = Math.max(minC, boxNeed(mid + Math.PI / 2, boxW, boxH, P.CLEAR));
-        return it.parent === list[i - 1].parent ? need * P.SIBLING_FACTOR : need;
+        return it.parent === list[i - 1].parent ? need : need * P.COUSIN_FACTOR;
       });
       let rr = rMin, sol = solveRing(rr, targets, gaps, lo, hi);
       if (!sol) {
@@ -240,7 +241,7 @@ export function placeDexLabels(labeled, blocks, { boxW, boxH }) {
   const G = 240, grid = new Map();
   const cellsOf = (l, t, w, h) => { const out = []; for (let gx = Math.floor(l / G); gx <= Math.floor((l + w) / G); gx++) for (let gy = Math.floor(t / G); gy <= Math.floor((t + h) / G); gy++) out.push(gx + "," + gy); return out; };
   const put = (o) => { for (const k of cellsOf(o.l, o.t, o.w, o.h)) { let c = grid.get(k); if (!c) { c = []; grid.set(k, c); } c.push(o); } };
-  for (const b of blocks) put({ l: b.x, t: b.y, w: boxW, h: boxH, block: b.key });
+  for (const b of blocks) put({ l: b.x, t: b.y, w: boxW, h: boxH + P.CHIP_BELOW, block: b.key });
   const free = (l, t, w, h, selfKey) => {
     for (const k of cellsOf(l, t, w, h)) for (const o of (grid.get(k) || [])) {
       if (o.block === selfKey) continue;
@@ -251,7 +252,7 @@ export function placeDexLabels(labeled, blocks, { boxW, boxH }) {
   const out = [];
   for (const g of labeled) {
     const w = estLabelW(g.name), h = P.LABEL_H;
-    const upT = g.y - 30, dnT = g.y + boxH + 6;
+    const upT = g.y - 30, dnT = g.y + boxH + P.CHIP_BELOW + 6;
     const leftA = g.x - 6, leftB = g.x + boxW + 6 - w;
     const cands = [[leftA, upT], [leftA, dnT], [leftB, upT], [leftB, dnT]];
     for (let k = 1; k <= 6; k++) { cands.push([leftA, upT - k * (h + P.LABEL_GAP)]); cands.push([leftA, dnT + k * (h + P.LABEL_GAP)]); }
