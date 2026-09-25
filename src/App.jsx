@@ -2650,7 +2650,8 @@ const MOVE_FX = {
 };
 // 이펙트는 1.3초만 뜨므로 처음 재생 때 이미지를 받느라 기호가 빠지지 않게 미리 받아 둔다(세 장 합쳐 약 22KB).
 if (typeof window !== "undefined") Object.values(MOVE_FX).forEach((d) => { const im = new Image(); im.src = d.src; });
-const MOVE_FX_IN = 0.12, MOVE_FX_HOLD = 1.12, MOVE_FX_END = 1.34;   // 초 — 나타남 / 알약이 배지로 줄어들기 시작 / 끝
+// (v0.5.6, 사용자 요청 "조금만 빠르게") 1.34초 → 1.08초(약 20% 단축).
+const MOVE_FX_IN = 0.1, MOVE_FX_HOLD = 0.9, MOVE_FX_END = 1.08;   // 초 — 나타남 / 알약이 배지로 줄어들기 시작 / 끝
 const MOVE_FX_MS = Math.round(MOVE_FX_END * 1000) + 40;
 // 알약 폭 — 글자 폭을 캔버스로 재서 글자에 딱 맞춘다(재지 못하면 글자 수로 어림).
 let moveFxCanvas = null;
@@ -3018,8 +3019,19 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
                   <div style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[lastQ.kind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", pointerEvents: "none", zIndex: 6 }}>{badgeIcon(lastQ.kind, cell * 0.38)}</div>
                 </>
               )}
+              {/* (v0.5.6, 사용자 요청) 오답 표시 — 예전 분홍 ✕ 배지 대신 좌표 인지 게임의 오답 이펙트(빨간 칸 + X, ccResult 튀어나옴)와 똑같이.
+                  칸에 기물이 있어 가운데 흰 X는 흰 기물에 묻히므로, 무한 체크메이트 게임의 오답 표시처럼 X를 칸 오른쪽 위 빨간 원에 넣는다.
+                  빨간 칸은 기물 아래, X 원은 기물 위. 퍼즐·학습 탭 모두 이 표시를 쓴다. */}
               {wrongAt && wrongAt[0] === r && wrongAt[1] === c && (
-                <div style={{ position: "absolute", top: -(cell * 0.36) / 2, right: -(cell * 0.36) / 2, width: cell * 0.36, height: cell * 0.36, borderRadius: "50%", background: "#E86A9A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: cell * 0.24, fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.5)", pointerEvents: "none", zIndex: 8 }}>✕</div>
+                <>
+                  <style>{COORD_GRID_CSS}</style>
+                  <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: COORD_NG_BG, boxShadow: "inset 0 0 0 2px " + T.blunder, animation: "ccResult 280ms cubic-bezier(.2,.9,.3,1.3) both", pointerEvents: "none", zIndex: 0 }} />
+                  <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", animation: "ccResult 280ms cubic-bezier(.2,.9,.3,1.3) both", pointerEvents: "none", zIndex: 8 }}>
+                    <span style={{ margin: "3% 3% 0 0", width: "38%", height: "38%", borderRadius: "50%", background: T.blunder, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }}>
+                      <X size={Math.max(9, cell * 0.26)} color="#fff" strokeWidth={3.4} />
+                    </span>
+                  </span>
+                </>
               )}
               {/* (버그 수정) 두어야 할 칸을 가느다란 윤곽선(inset box-shadow)만으로 표시해 눈에 잘
                   안 띄었다 — 칸 전체를 금색 그라데이션으로 덧씌워 훨씬 또렷하게 보이도록 했다. 이
@@ -20094,8 +20106,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     if (onPuzzleSolveEvent) onPuzzleSolveEvent(puzzle.id);
     puzzleLineSolveTimeAdd(puzzleNo(puzzle.id), doneTag, myUid, Date.now() - solveStartRef.current);
     // (20차 기능2) 보드에서 결과를 잠깐 보여준 뒤 모식도 페이지로 자동 전환 — 클리어 애니메이션 재생.
-    const t = setTimeout(() => { setPage(1); setCelebrate({ tag: doneTag }); }, 900);
-    return () => clearTimeout(t);
+    // (v0.5.6, 사용자 요청) 마지막 수에 수 등급 이펙트가 뜨면 끝까지 본 뒤에 넘어간다(waitMoveFx).
+    let cancelled = false;
+    const timers = [];
+    const t = setTimeout(async () => {
+      await waitMoveFx(() => cancelled, timers);
+      if (!cancelled) { setPage(1); setCelebrate({ tag: doneTag }); }
+    }, 900);
+    return () => { cancelled = true; clearTimeout(t); timers.forEach(clearTimeout); };
   }, [done]);
   // 이 가지 아래에 아직 해결하지 않은 리프가 남아 있는가.
   // (20차 기능3) 개발자가 수 추가/삭제 중 잠시 남기는 "미완성" 리프(상대 수로 끝남 = 짝수 길이)는
@@ -20131,11 +20149,15 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       if (!kind && liveOn && engine && engine.status === "ready") {
         try { kind = await classifyMoveKind(engine, curSans, stripSuffix(next.san)); } catch { }
       }
+      // (v0.5.6, 사용자 요청) 방금 둔 내 수에 탁월·유일·최선 이펙트가 뜨고 있으면 끝까지 재생된 뒤에 응수를 둔다 — 예전엔
+      // 1초 뒤 곧장 응수를 틀어 이펙트가 중간에 끊겼다(응수 동안은 lastQ가 비어 이펙트가 사라진다).
+      await waitMoveFx(() => cancelled, waitTimers);
       if (cancelled) return;
       setReply({ sans: curSans, san: next.san, node: next, kind });
       t2 = setTimeout(() => { setReply(null); setPathNodes((p) => [...p, next]); }, 900);
     }, 1000);
-    return () => { cancelled = true; clearTimeout(t1); if (t2) clearTimeout(t2); };
+    const waitTimers = [];
+    return () => { cancelled = true; clearTimeout(t1); if (t2) clearTimeout(t2); waitTimers.forEach(clearTimeout); };
   }, [pathNodes.length, done, wrong, intro, tree]);
   // 진행 경로가 목표 라인에서 벗어나면(다른 우수 수 선택·상대의 다른 응수) 그 가지의 미해결 라인으로 목표 갱신
   useEffect(() => {
@@ -20378,6 +20400,25 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     return () => { cancelled = true; };
   }, [pathNodes.length, wrong, reverting, reply, intro, targetTag, puzzle.id]);
   const lastQpz = (!intro && !reply && !reverting && !wrong) ? moveIcon : null;
+  // (v0.5.6, 사용자 요청) 보드의 수 등급 이펙트가 끝날 때까지 다음 수(상대 응수·클리어 화면 전환)를 미룬다. Board는 lastQ의
+  // (도착 칸, 등급)이 탁월·유일·최선으로 바뀌는 순간 MOVE_FX_MS 동안 이펙트를 재생하므로 같은 조건으로 끝 시각을 기록해 둔다.
+  const { moveFx: pzMoveFxOn } = useContext(VisualPrefsContext);
+  const moveIconRef = useRef(moveIcon);
+  moveIconRef.current = moveIcon;
+  const fxUntilRef = useRef(0);
+  const lastQpzKey = lastQpz && lastQpz.to ? lastQpz.to[0] + "," + lastQpz.to[1] + ":" + lastQpz.kind : "";
+  useEffect(() => {
+    if (pzMoveFxOn && lastQpz && MOVE_FX[lastQpz.kind]) fxUntilRef.current = Date.now() + MOVE_FX_MS;
+  }, [lastQpzKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 등급이 아직 엔진 계산 중("pending")이면 최대 2.5초 기다린 뒤, 이펙트가 재생 중이면 끝날 때까지 기다린다.
+  async function waitMoveFx(isCancelled, timers) {
+    const sleep = (ms) => new Promise((res) => { timers.push(setTimeout(res, ms)); });
+    const t0 = Date.now();
+    while (!isCancelled() && pzMoveFxOn && moveIconRef.current && moveIconRef.current.kind === "pending" && Date.now() - t0 < 2500) await sleep(100);
+    await sleep(40); // 등급이 막 정해졌다면 위 effect가 끝 시각을 기록할 틈을 준다
+    const left = fxUntilRef.current - Date.now();
+    if (left > 0 && !isCancelled()) await sleep(left + 120);
+  }
   // (사용자 요청) 퍼즐에서도 탁월한 수를 두면 리뷰·집중 분석과 똑같이, 그 수로 희생된(상대에게
   // 안전하게 잡힐 수 있는) 기물이 공격받는다는 빨간색 화살표를 보여준다. lastQpz는 전환 중(응수
   // 애니메이션·오답 연출 등)에는 이미 null이므로 그 상태를 그대로 게이트로 재사용한다. 방금 이동한
