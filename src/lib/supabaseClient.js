@@ -28,6 +28,15 @@ export async function sbRpc(fn, args) {
   const text = await r.text();
   return text ? JSON.parse(text) : null;
 }
+// (v0.5.5 재발 방지, BUG-001) 테이블 한 행(returns public.xxx)을 돌려주는 RPC가 SQL NULL을 돌려주면 PostgREST는 null이 아니라
+// "모든 필드가 null인 객체"로 직렬화한다 — `if (row)`가 이를 실제 행으로 오인해 체스 PvP(v0.4.x)와 미니게임(v0.5.3~v0.5.4)에서
+// 매칭 버튼을 누르자마자 "패배"가 뜨는 같은 버그가 두 번 났다. 그런 RPC는 반드시 이 함수로 부른다 — 모든 값이 null인 객체는 null로 바꾼다.
+// scripts/check-rpc-null-rows.mjs(npm run build 전에 자동 실행)가 NULL을 돌려줄 수 있는 행 반환 RPC를 sbRpc로 직접 부르는 곳이 있으면 빌드를 막는다.
+export async function sbRpcRow(fn, args) {
+  const row = await sbRpc(fn, args);
+  if (!row || typeof row !== "object" || Array.isArray(row)) return row || null;
+  return Object.values(row).every((v) => v == null) ? null : row;
+}
 // (버그 수정, 사용자 제보) "생성자 회수·양도가 성공했다고 뜨는데 표시가 안 바뀐다" — RPC로 막 바꾼
 // 값을 곧바로 이 GET으로 다시 읽어 화면에 반영하는 호출부(puzzleCreatorInfo 등)가 여럿인데, fetch
 // 기본 캐시 모드("default")는 서버가 명시적으로 no-store를 내려주지 않는 한 브라우저가 같은 URL의

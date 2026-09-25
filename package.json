@@ -1,11 +1,12 @@
 {
   "name": "opening-lab",
   "private": true,
-  "version": "0.5.4",
+  "version": "0.5.5",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
@@ -14,7 +15,10 @@
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs",
     "check:assets": "node scripts/check-unused-public-assets.mjs",
     "build-rush-levels": "node scripts/build-rush-levels.mjs",
-    "build-attack-positions": "node scripts/build-attack-positions.mjs"
+    "build-attack-positions": "node scripts/build-attack-positions.mjs",
+    "build-master-showcase": "node scripts/build-master-showcase.mjs",
+    "build-hub-scenes": "node scripts/build-hub-scenes.mjs",
+    "check:rpc-rows": "node scripts/check-rpc-null-rows.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
