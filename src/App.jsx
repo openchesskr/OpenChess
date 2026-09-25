@@ -9271,7 +9271,7 @@ function MinigameScreen({ title, onBack, children, noScroll }) {
 // flex:1;minHeight:0으로 감싸 뷰포트의 남은 절반을 차지하도록만 해 두면, 나머지(그 절반 안에서
 // 실제로 정사각형이 얼마나 커질 수 있는지)는 이 훅이 ResizeObserver로 실측해 계산한다 — 폰트 크기·
 // 라벨 줄바꿈 등 주변 요소의 실제 렌더 결과에 따라 슬롯 크기가 달라져도 항상 정확하다.
-function useSquareFit(maxSize = 420) {
+function useSquareFit(maxSize = 420, reserveH = 0) {
   const [size, setSize] = useState(Math.min(maxSize, 280));
   const roRef = useRef(null);
   const setRef = useCallback((el) => {
@@ -9279,13 +9279,13 @@ function useSquareFit(maxSize = 420) {
     if (!el || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      const s = Math.max(80, Math.floor(Math.min(r.width, r.height, maxSize)));
+      const s = Math.max(80, Math.floor(Math.min(r.width, r.height - reserveH, maxSize)));
       setSize((prev) => (Math.abs(prev - s) > 1 ? s : prev));
     };
     measure();
     roRef.current = new ResizeObserver(measure);
     roRef.current.observe(el);
-  }, [maxSize]);
+  }, [maxSize, reserveH]);
   useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
   return [size, setRef];
 }
@@ -12273,13 +12273,12 @@ function AttackGrid({ chess, flip, selected, targets, onCell, size, lastMove, hi
   }
   return <div style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)" }}><style>{COORD_GRID_CSS}</style>{cells}</div>;
 }
-function AttackGradeBadge({ grade, big, withName }) {
+function AttackGradeBadge({ grade, big }) {
   const gi = attackGradeInfo(grade);
   const sz = big ? 30 : 20;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title={gi.name + " · " + gi.label}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title={gi.label}>
       <img src={BADGE_ICON_SRC[gi.kind]} alt={gi.name} draggable={false} style={{ width: sz, height: sz, display: "block", filter: big ? "drop-shadow(0 0 8px " + gi.color + "88)" : "none" }} />
-      {(withName || big) && <span style={{ fontSize: big ? 12.5 : 11, fontWeight: 800, color: gi.color }}>{gi.name}</span>}
       {big && <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{gi.label}</span>}
     </span>
   );
@@ -12308,8 +12307,8 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     if (p && p.color === attacker) { setSelected(sq === selected ? null : sq); fx("tap"); return; }
     setSelected(null);
   };
-  // (v0.5.5 연출, 사용자 요청) 좌표 인지 게임과 같은 이펙트 — 둔 칸에 조준경이 먼저 조준하고(COORD_AIM_MS) 그 뒤에 정답(초록+체크)·
-  // 오답(빨강+X)이 뜬다. 조준하는 동안은 다른 칸을 누를 수 없다(state "aim").
+  // (v0.5.5 연출, 사용자 요청) 둔 칸에 곧바로 정답(초록+체크)·오답(빨강+X) 이펙트가 뜬다(좌표 인지 게임과 달리 조준경 단계는 없다).
+  // 이펙트가 끝날 때까지는 다른 칸을 누를 수 없다(state "aim").
   const [mark, setMark] = useState(null); // { sq, ok: null(조준)|true|false, key }
   const later = (ms, f) => timersRef.current.push(setTimeout(f, ms));
   const tryMove = (from, to) => {
@@ -12322,8 +12321,8 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     setLastMove([from, to]); rerender();
     playSfx(mv.captured ? "capture" : "move");
     const key = Date.now();
-    setMark({ sq: to, ok: null, key }); setState("aim");
-    const A = COORD_AIM_MS;
+    setState("aim");
+    const A = 0;
     if (chess.isCheckmate()) {
       later(A, () => { setMark({ sq: to, ok: true, key }); setState("win"); fx("correct"); buzz([40, 40, 40]); });
       later(A + 900, () => onResult(true));
@@ -12331,8 +12330,8 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     }
     if (uciOf(mv) !== expected && mv.from + mv.to !== expected.slice(0, 4)) {
       later(A, () => { setMark({ sq: to, ok: false, key }); setState("fail"); fx("wrong"); buzz([80, 50, 80]); shake(); });
-      later(A + 650, () => { chess.undo(); setMark(null); setLastMove(null); setHintMove([expected.slice(0, 2), expected.slice(2, 4)]); rerender(); });
-      later(A + 1800, () => onResult(false));
+      later(A + 900, () => { chess.undo(); setMark(null); setLastMove(null); setHintMove([expected.slice(0, 2), expected.slice(2, 4)]); rerender(); });
+      later(A + 2000, () => onResult(false));
       return;
     }
     // 정답 — 초록으로 확인해 준 뒤 수비 측 응수를 이어서 둔다.
@@ -12368,7 +12367,7 @@ function attackTally(list) { const t = { S: 0, A: 0, B: 0, C: 0, total: 0, tries
 function attackDecide(me, opp, myRating, oppRating) {
   if (me.total !== opp.total) return { winner: me.total > opp.total ? "me" : "opp", reason: null };
   for (const g of ["C", "B", "A", "S"]) {
-    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점 — " + attackGradeInfo(g).name + " 등급 성공 수로 승부가 갈렸어요(낮은 등급부터 비교)." };
+    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점 — " + attackGradeInfo(g).label + " 성공 수로 승부가 갈렸어요(긴 메이트부터 비교)." };
   }
   if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: "등급별 성공 수까지 같아, 불리한 확률로 싸운(레이팅이 높은) 쪽이 승리했어요." };
   return { winner: "draw", reason: "모든 기록이 같아 무승부예요." };
@@ -12390,7 +12389,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
   const left = endAt - Math.max(now, startAt);
   const started = now >= startAt;
   const over = now >= endAt;
-  const [boardSize, boardFitRef] = useSquareFit(460);
+  const [boardSize, boardFitRef] = useSquareFit(460, 46);   // 보드 바로 위 등급 표시 줄(46px)만큼 비워 둔다
   const lastSecRef = useRef(null);
   useEffect(() => { const sec = Math.ceil(left / 1000); if (started && sec <= 10 && sec >= 1 && lastSecRef.current !== sec) { lastSecRef.current = sec; fx("warn"); } }, [left, started]);
   const pos = current ? attackPick(pool, current.g, current.pick) : null;
@@ -12403,20 +12402,20 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
         <AttackLedger tally={myTally} label="나" />
         {oppTally && <AttackLedger tally={oppTally} label={oppLabel} />}
       </div>
-      {/* (v0.5.5, 사용자 요청) 등급·차례·몇 수 메이트인지는 보드를 가리지 않게 보드 위쪽 줄에 둔다(예전엔 보드 왼쪽 위 칸을 덮었다). */}
-      <div style={{ minHeight: 38, marginBottom: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <AnimatePresence mode="popLayout">
-          {current && pos && !over && (
-            <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
-              <AttackGradeBadge grade={current.g} withName />
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        {/* (v0.5.5, 사용자 요청) 등급·차례·몇 수 메이트인지는 보드를 가리지 않게, 보드 바로 위에 붙여 둔다. */}
+        <div style={{ height: 38, marginBottom: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <AnimatePresence mode="popLayout">
+            {current && pos && !over && (
+              <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
+                <AttackGradeBadge grade={current.g} />
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         <div style={{ position: "relative" }}>
           {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
             : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.45)" }}><PendingDots size={12} /></div>}
@@ -12436,11 +12435,11 @@ function attackResultProps(myList, oppList, myRating, oppRating) {
   return {
     outcome: d.winner === "me" ? "win" : d.winner === "opp" ? "lose" : "draw",
     myScore: me.total, oppScore: opp.total,
-    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: attackGradeInfo(e.g).name })),
+    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: attackGradeInfo(e.g).mate + (e.g === "C" ? "+" : "") + "수" })),
     stats: [
       { label: "성공 / 시도", value: me.total + " / " + me.tries },
-      { label: "탁월·유일 성공", value: me.S + me.A },
-      { label: "최선·우수 성공", value: me.B + me.C },
+      { label: "1·2수 메이트 성공", value: me.S + me.A },
+      { label: "3수+ 메이트 성공", value: me.B + me.C },
     ],
     note: d.reason,
   };
@@ -12679,12 +12678,12 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
         <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
         <div>• 한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어가요.</div>
         <div>• 짧은 메이트일수록 좋은 등급이고, <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 더 높아요.</div>
-        <div>• 동점이면 낮은 등급(우수→최선→유일→탁월)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
+        <div>• 동점이면 긴 메이트(4수 이상→3수→2수→1수)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} withName />{gi.label}{counts ? " · " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? " · " + counts[i] : ""}</span>
           ))}
         </div>
       }
