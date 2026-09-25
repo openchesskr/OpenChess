@@ -12291,7 +12291,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           {current && pos && !over && (
             <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
-              <AttackGradeBadge grade={current.g} big />
+              <AttackGradeBadge grade={current.g} />
               <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
             </motion.div>
