@@ -14,7 +14,8 @@
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs",
     "check:assets": "node scripts/check-unused-public-assets.mjs",
     "build-rush-levels": "node scripts/build-rush-levels.mjs",
-    "build-attack-positions": "node scripts/build-attack-positions.mjs"
+    "build-attack-positions": "node scripts/build-attack-positions.mjs",
+    "build-master-showcase": "node scripts/build-master-showcase.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

@@ -9581,9 +9581,79 @@ function MgLoopScene({ cellPx, mover, moverAnim, loopMs, king, flashAnim, trail,
     </div>
   );
 }
-// (v0.5.5, 사용자 요청) 플레이 탭 맨 위 "일반 대국" 버튼 — 미니게임 버튼들과 같은 크림색 카드에, 왼쪽은 시작 포지션 체스보드
-// (앱 보드·기물 스킨, 카드 모서리에 여백 없이 붙음, 첫 수 e2→e4를 분석 탭 화살표로), 오른쪽은 이름. 누르면 설정 창이 열린다.
+// (v0.5.5, 사용자 요청) 플레이 탭 맨 위 "일반 대국" 버튼 — 미니게임 버튼들과 같은 크림색 카드에, 왼쪽은 앱 체스보드(칸 크기가
+// 아래 미니게임 버튼 보드와 같다), 오른쪽은 오른쪽 정렬한 이름. 보드에서는 매번 다른 마스터 대국(src/data/masterShowcase.json —
+// scripts/build-master-showcase.mjs가 엘로 2650+ 대국 80판을 골라 둔 것)이 기물이 미끄러지며 재생되고, 끝나면 다른 대국으로
+// 넘어간다. 누르면 설정 창이 열린다.
 const MG_START_BACK = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+const MG_REPLAY_MS = 700;
+const mgSqRC = (sq) => [8 - parseInt(sq[1], 10), "abcdefgh".indexOf(sq[0])];   // "e2" → [줄(위에서), 열]
+function mgStartPieces() {
+  const out = [];
+  MG_START_BACK.forEach((t, c) => { out.push({ id: "b" + t + c, t, color: "b", r: 0, c }, { id: "w" + t + c, t, color: "w", r: 7, c }); });
+  for (let c = 0; c < 8; c++) out.push({ id: "bP" + c, t: "P", color: "b", r: 1, c }, { id: "wP" + c, t: "P", color: "w", r: 6, c });
+  return out;
+}
+const mgPlayerName = (n) => String(n || "?").split(",")[0].trim();
+function MgMasterReplay({ cellPx, onGameChange }) {
+  const [games, setGames] = useState(null);
+  useEffect(() => {
+    let off = false;
+    import("./data/masterShowcase.json").then((m) => { if (!off) setGames(m.default || m); }).catch(() => { });
+    return () => { off = true; };
+  }, []);
+  const [st, setSt] = useState(() => ({ pieces: mgStartPieces(), last: null }));
+  const runRef = useRef({ chess: null, sans: [], ply: 0, hold: 0, gi: -1 });
+  useEffect(() => {
+    if (!games || !games.length || mgReducedMotion()) return undefined;
+    const run = runRef.current;
+    const nextGame = () => {
+      let gi = Math.floor(Math.random() * games.length);
+      if (games.length > 1 && gi === run.gi) gi = (gi + 1) % games.length;
+      const g = games[gi];
+      Object.assign(run, { chess: new Chess(), sans: g.m.split(" "), ply: 0, hold: 2, gi });
+      setSt({ pieces: mgStartPieces(), last: null });
+      onGameChange && onGameChange(g);
+    };
+    nextGame();
+    const id = setInterval(() => {
+      if (run.hold > 0) { run.hold--; return; }
+      if (run.ply >= run.sans.length) { nextGame(); return; }
+      let mv = null;
+      try { mv = run.chess.move(run.sans[run.ply]); } catch { mv = null; }
+      run.ply++;
+      if (!mv) { run.ply = run.sans.length; return; }
+      if (run.ply >= run.sans.length) run.hold = 5;   // 마지막 수를 잠깐 보여 준 뒤 다음 대국
+      setSt((prev) => {
+        const [fr, fc] = mgSqRC(mv.from), [tr, tc] = mgSqRC(mv.to);
+        // 잡힌 기물(앙파상은 도착 칸이 아니라 옆 칸)을 먼저 빼고, 움직인 기물(승진이면 종류도)을 옮기고, 캐슬링이면 룩도 옮긴다.
+        const capR = mv.flags.includes("e") ? fr : tr;
+        let pieces = prev.pieces.filter((p) => !(mv.captured && p.r === capR && p.c === tc && p.color !== mv.color));
+        pieces = pieces.map((p) => (p.r === fr && p.c === fc ? { ...p, r: tr, c: tc, t: mv.promotion ? mv.promotion.toUpperCase() : p.t } : p));
+        if (mv.flags.includes("k")) pieces = pieces.map((p) => (p.r === fr && p.c === 7 && p.t === "R" ? { ...p, c: 5 } : p));
+        if (mv.flags.includes("q")) pieces = pieces.map((p) => (p.r === fr && p.c === 0 && p.t === "R" ? { ...p, c: 3 } : p));
+        return { pieces, last: [[fr, fc], [tr, tc]] };
+      });
+    }, MG_REPLAY_MS);
+    return () => clearInterval(id);
+  }, [games]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 2 }}>
+      {st.last && st.last.map(([r, c], i) => <span key={i} style={{ position: "absolute", left: c * 12.5 + "%", top: r * 12.5 + "%", width: "12.5%", height: "12.5%", background: "rgba(236,203,134,.42)" }} />)}
+      {st.pieces.map((p) => {
+        // 카드 왼쪽 둥근 모서리(a8·a1)에 선 기물은 모서리에 잘리지 않게 살짝 안쪽으로.
+        const corner = p.c === 0 && (p.r === 0 || p.r === 7);
+        return (
+          <div key={p.id} style={{ position: "absolute", left: 0, top: 0, width: "12.5%", height: "12.5%", transform: "translate(" + p.c * 100 + "%," + p.r * 100 + "%)", transition: "transform " + Math.round(MG_REPLAY_MS * 0.6) + "ms cubic-bezier(.4,.1,.3,1)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
+            <span style={{ display: "flex", transform: corner ? "translate(9%," + (p.r === 0 ? 9 : -9) + "%) scale(.86)" : "none" }}>
+              <PieceGlyph type={p.t} color={p.color} size={cellPx * 0.8} />
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 function PlayNormalButton({ onClick }) {
   const [width, setWidth] = useState(360);
   const roRef = useRef(null);
@@ -9597,23 +9667,29 @@ function PlayNormalButton({ onClick }) {
   }, []);
   useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
   const [hover, setHover] = useState(false);
-  const boardFrac = 0.46;
+  const [game, setGame] = useState(null);
+  // 아래 미니게임 목록과 같은 폭에 놓이므로, 칸 크기를 같게 하려면 보드 폭 = 8칸 × 미니게임 칸(목록 폭의 MG_STRIP_CELL%).
+  const boardFrac = (8 * MG_STRIP_CELL) / 100;
   const cellPx = (width * boardFrac) / 8;
-  const pieceAt = (r, c) => (r === 0 ? "b" + MG_START_BACK[c] : r === 1 ? "bP" : r === 6 ? "wP" : r === 7 ? "w" + MG_START_BACK[c] : null);
   return (
     <button ref={measureRef} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="press" aria-label="일반 대국"
-      style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", aspectRatio: "1 / " + boardFrac, padding: 0, border: "1px solid " + (hover ? T.brass : "#DCCBA8"), borderRadius: 14, overflow: "hidden", background: hover ? "#F7EEDC" : T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)", cursor: "pointer", textAlign: "left", transition: "background .15s ease, border-color .15s ease" }}>
+      style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", aspectRatio: "1 / " + boardFrac, padding: 0, border: "1px solid " + (hover ? T.brass : "#DCCBA8"), borderRadius: 14, overflow: "hidden", background: hover ? "#F7EEDC" : T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)", cursor: "pointer", textAlign: "right", transition: "background .15s ease, border-color .15s ease" }}>
       <span style={{ position: "relative", width: boardFrac * 100 + "%", height: "100%", flexShrink: 0 }}>
-        <MgBoardPiece rows={8} cols={8} cellPx={cellPx} pieceAt={pieceAt} roundCorners={{ tl: true, bl: true }}>
-          <MgArrowSvg cols={8} rows={8} routes={[[[4, 6], [4, 4]]]} />
+        <MgBoardPiece rows={8} cols={8} cellPx={cellPx}>
+          <MgMasterReplay cellPx={cellPx} onGameChange={setGame} />
         </MgBoardPiece>
       </span>
-      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: "2cqw", padding: "0 5cqw", fontFamily: SITE_FONT, color: T.ink }}>
-        <span style={{ fontSize: "clamp(18px, 6.2cqw, 44px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.1 }}>일반 대국</span>
-        <span style={{ fontSize: "clamp(11px, 2.8cqw, 18px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.4 }}>봇 · 랜덤 매칭 · 친구와 대국</span>
-        <span style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, marginTop: "1cqw", padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.7cqw, 17px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "2.2cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
+        <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>일반 대국</span>
+        <span style={{ fontSize: "clamp(11px, 3cqw, 20px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.35 }}>봇 · 랜덤 매칭 · 친구</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.9cqw, 18px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
           <Play size={14} fill="#241509" />대국 시작
         </span>
+        {game && (
+          <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 700, color: "rgba(90,58,34,.6)", lineHeight: 1.3, maxWidth: "100%" }}>
+            {mgPlayerName(game.w)} – {mgPlayerName(game.b)}{game.y ? " · " + game.y : ""}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -9648,7 +9724,7 @@ function MinigameHubBoard({ stats, onPick }) {
   const topY = -MG_BLEED, botY = 100 + MG_BLEED - stripH, leftX = -MG_BLEED, rightX = 50 + MG_GAP / 2 - MG_BLEED;
   // 장면의 칸 좌표는 조각 기준([열, 줄])이고 pieceAt은 체크 무늬용 전역 열(colOffset 포함)을 받으므로 오프셋을 뺀다.
   const pieceMap = (m, colOffset) => (r, c) => m[(c - colOffset) + "," + r] || null;
-  const labelFont = "clamp(15px, 4.6cqw, 34px)";
+  const labelFont = "clamp(16px, 5.3cqw, 40px)";
   return (
     <div ref={measureRef} style={{ containerType: "inline-size", position: "relative", width: "100%", margin: "0 auto", aspectRatio: "1 / 1",
       // 데스크톱에서는 크게 쓴다(일반 대국 화면 아래에 오므로 화면 높이 제한은 두지 않는다).
@@ -12340,8 +12416,12 @@ const ATTACK_BOTS = [
 function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
   const solo = !bot;
   const [pool] = useAttackPool();
-  const [startAt] = useState(() => Date.now() + 3000);
-  const endAt = startAt + ATTACK_MATCH_MS;
+  // (v0.5.5 버그 수정, 사용자 제보 "3초 카운트다운이 지나고도 포지션을 불러오느라 기다린다") 예전엔 화면이 뜨는 순간부터
+  // 3초를 셌는데, 포지션 목록(번들 + 서버의 개발자 추가분)을 다 받기 전이면 카운트다운이 끝나고도 빈 보드로 기다렸다 —
+  // 목록이 준비된 순간부터 3초를 센다.
+  const [startAt, setStartAt] = useState(null);
+  useEffect(() => { if (pool && startAt == null) setStartAt(Date.now() + 3000); }, [pool, startAt]);
+  const endAt = startAt == null ? Infinity : startAt + ATTACK_MATCH_MS;
   const [mine, setMine] = useState([]); // [{ key, n, g, pick, ok }]
   const [botDone, setBotDone] = useState([]);
   const botPlan = useMemo(() => {
@@ -12359,6 +12439,7 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
     return plan;
   }, [bot, myRating]);
   useEffect(() => {
+    if (startAt == null) return undefined;
     const timers = botPlan.map((b, i) => setTimeout(() => { setBotDone((d) => [...d, b]); if (b.ok) fx("tap"); }, startAt - Date.now() + b.at));
     return () => timers.forEach(clearTimeout);
   }, [botPlan, startAt]);
@@ -12393,6 +12474,7 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
   if (over) {
     return <MinigameResult {...attackResultProps(mine, botDone, myRating || 800, bot.rating)} oppLabel={"봇(" + bot.label + ")"} onExit={onExit} onRematch={onRematch} />;
   }
+  if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}><PendingDots size={12} />포지션을 불러오는 중...</div>;
   return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel="봇" onResult={onResult} />;
 }
 function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
