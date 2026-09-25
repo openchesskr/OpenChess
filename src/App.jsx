@@ -2709,24 +2709,16 @@ function SquareFx({ color, label, labelColor, glyph, badge, cell, vc = 0, vr = 0
   );
 }
 // ---- (v0.5.6, 사용자 요청 — chess.com 대국 종료 연출 참고) 대국 종료 이펙트 ----
-// 체크메이트: 진 킹 칸은 빨강 + 큰 "체크메이트" 기호(킹 + #) + "체크메이트" 알약 → 빨간 배지, 이긴 킹 칸은 초록 + 큰 흰 왕관 + "승자"
+// 체크메이트: 진 킹 칸은 빨강 + 큰 "#" + "체크메이트" 알약 → 빨간 배지, 이긴 킹 칸은 초록 + 큰 흰 왕관 + "승자"
 // 알약 → 초록 배지. 스테일메이트·3회 동형 반복: 두 킹 칸 모두 회색 + 큰 "½" + "스테일메이트"/"3회 동형" 알약 → 회색 ½ 배지.
 // 이펙트가 끝나면 배지는 두 킹 칸 오른쪽 위에 그대로 남는다(GameEndBadge).
 const GAME_END_COLOR = { mate: "#DD4B3E", win: "#7FB14B", draw: "#9A948C" };
 const GAME_END_IN = 0.14, GAME_END_HOLD = 1.25, GAME_END_END = 1.5;
 const GAME_END_MS = Math.round(GAME_END_END * 1000) + 60;
-// 체크메이트 기호 — 킹 실루엣 오른쪽 아래에 "#"를 겹친다(chess.com 체크메이트 아이콘과 같은 뜻).
-function MateGlyph({ size, color = "#1C1917", hashColor = "#fff" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block", overflow: "visible" }}>
-      <rect x="10.9" y="0.8" width="2.2" height="5.6" rx=".6" fill={color} />
-      <rect x="8.9" y="2.5" width="6.2" height="2.1" rx=".6" fill={color} />
-      <path d="M12 6.9c-1.35 0-2.3 1-2.3 2.2 0 .45.12.85.35 1.2C8.8 9.1 7.3 8.6 5.9 9.1 3.9 9.8 3.4 12.3 4.9 14.3L7 17.2h10l2.1-2.9c1.5-2 1-4.5-1-5.2-1.4-.5-2.9 0-4.15 1.2.23-.35.35-.75.35-1.2 0-1.2-.95-2.2-2.3-2.2z" fill={color} />
-      <rect x="6.4" y="17.9" width="11.2" height="2.3" rx="1" fill={color} />
-      <rect x="5.4" y="20.7" width="13.2" height="2.2" rx="1" fill={color} />
-      <text x="19.2" y="23" textAnchor="middle" fontSize="13" fontWeight="900" fill={color} stroke={hashColor} strokeWidth="2" paintOrder="stroke" strokeLinejoin="round" fontFamily="Arial Black, Arial, sans-serif">#</text>
-    </svg>
-  );
+const END_FX_GAP_MS = 450, END_FX_WAIT_MS = 2500;
+// (v0.5.6, 사용자 요청) 체크메이트 기호는 그냥 "#" 문자로(무승부의 "½"와 같은 모양).
+function MateGlyph({ size, color = "#fff" }) {
+  return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>#</span>;
 }
 function HalfGlyph({ size, color = "#fff" }) {
   return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>½</span>;
@@ -2738,14 +2730,14 @@ function gameEndRole(endFx, pieceColor) {
   return null;
 }
 function gameEndBadgeIcon(role, px) {
-  if (role === "mate") return <MateGlyph size={px * 0.9} hashColor={GAME_END_COLOR.mate} />;
+  if (role === "mate") return <MateGlyph size={px * 0.8} />;
   if (role === "win") return <Crown size={px * 0.78} color="#fff" fill="#fff" strokeWidth={1.6} />;
   return <HalfGlyph size={px * 0.78} />;
 }
 function GameEndFx({ role, endFx, cell, vc, vr, clipTop }) {
   const color = GAME_END_COLOR[role];
   const label = role === "mate" ? "체크메이트" : role === "win" ? "승자" : endFx.kind === "stalemate" ? "스테일메이트" : "3회 동형";
-  const glyph = role === "mate" ? <MateGlyph size={cell * 0.7} hashColor={color} />
+  const glyph = role === "mate" ? <MateGlyph size={cell * 0.62} />
     : role === "win" ? <Crown size={cell * 0.6} color="#fff" fill="#fff" strokeWidth={1.4} style={{ filter: "drop-shadow(0 1px 0 rgba(0,0,0,.25))" }} />
     : <HalfGlyph size={cell * 0.62} />;
   return <SquareFx color={color} label={label} labelColor={role === "draw" ? "#6F6962" : color} glyph={glyph} badge={gameEndBadgeIcon(role, cell * 0.38)}
@@ -2802,16 +2794,30 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const [moveFxState, setMoveFxState] = useState(null); // { id, to, kind, from }
   // (v0.5.6) 대국 종료 이펙트 — endFx({ kind: "checkmate", loser } | { kind: "stalemate" | "threefold" })가 새로 생기면 두 킹 칸에서
   // 한 번 재생하고(처음 그려질 때부터 있던 종료는 재생 없이 배지만), 끝나면 배지만 남긴다. 재생 여부는 수 등급 이펙트와 같은 설정을 따른다.
+  // (v0.5.6, 사용자 요청) 마지막 수의 수 등급 이펙트가 먼저 끝까지 재생되고, 잠시(END_FX_GAP_MS) 쉰 뒤에 종료 이펙트가 재생된다.
+  // 등급이 아직 계산 중("pending")이면 최대 END_FX_WAIT_MS까지 기다린다. 기다리는 동안 킹 칸에는 배지도 그리지 않는다(endPending).
   const endKey = endFx && endFx.kind ? endFx.kind + ":" + (endFx.loser || "") : "";
   const endKeyRef = useRef(undefined);
   const [endAnimId, setEndAnimId] = useState(null);
+  const [endPending, setEndPending] = useState(null); // 종료가 정해진 시각(ms) — 재생 대기 중
   useLayoutEffect(() => {
     const prev = endKeyRef.current;
     endKeyRef.current = endKey;
-    if (!endKey) { setEndAnimId(null); return; }
+    if (!endKey) { setEndAnimId(null); setEndPending(null); return; }
     if (prev === undefined || prev === endKey) return;
-    setEndAnimId(moveFxOn ? Date.now() : null);
+    setEndAnimId(null);
+    setEndPending(moveFxOn ? Date.now() : null);
   }, [endKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lastQPending = !!(lastQ && lastQ.kind === "pending");
+  useEffect(() => {
+    if (!endPending || moveFxState) return undefined;          // 수 등급 이펙트가 재생 중이면 끝날 때(moveFxState → null)까지 기다린다
+    const waitGrade = lastQPending && Date.now() - endPending < END_FX_WAIT_MS;
+    const t = setTimeout(() => {
+      if (waitGrade) { setEndPending((v) => (v ? v - 1 : v)); return; } // 다시 확인(값을 살짝 바꿔 effect를 다시 돌린다)
+      setEndPending(null); setEndAnimId(Date.now());
+    }, waitGrade ? 150 : END_FX_GAP_MS);
+    return () => clearTimeout(t);
+  }, [endPending, moveFxState, lastQPending]);
   useEffect(() => {
     if (!endAnimId) return undefined;
     const t = setTimeout(() => setEndAnimId(null), GAME_END_MS);
@@ -3090,7 +3096,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
               )}
               {fxHere && <div style={{ position: "absolute", inset: 0, background: QCOLOR[fxHere.kind], opacity: 0.5, pointerEvents: "none" }} />}
               {fxHere && <MoveClassFx key={"fx" + fxHere.id} kind={fxHere.kind} cell={cell} vc={ci} vr={ri} />}
-              {endRole && (endAnimId ? <GameEndFx key={"end" + endAnimId} role={endRole} endFx={endFx} cell={cell} vc={ci} vr={ri} /> : <GameEndBadge role={endRole} cell={cell} left={!!(lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind])} />)}
+              {endRole && !endPending && (endAnimId ? <GameEndFx key={"end" + endAnimId} role={endRole} endFx={endFx} cell={cell} vc={ci} vr={ri} /> : <GameEndBadge role={endRole} cell={cell} left={!!(lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind])} />)}
               {!fxHere && lastQ && lastQ.to && lastQ.to[0] === r && lastQ.to[1] === c && QCOLOR[lastQ.kind] && (
                 <>
                   <div style={{ position: "absolute", inset: 0, background: QCOLOR[lastQ.kind], opacity: 0.5, pointerEvents: "none" }} />
@@ -13605,7 +13611,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     // (v0.5.6) 체크메이트·스테일메이트·3회 동형 반복은 보드의 대국 종료 이펙트를 끝까지 보여 준 뒤 결과 창을 연다.
     const boardFx = playMoveFxOn && result && (result.end === "checkmate" || result.end === "stalemate" || result.end === "threefold");
     if (!boardFx) { setResultModalOpen(true); return undefined; }
-    const t = setTimeout(() => setResultModalOpen(true), GAME_END_MS + 250);
+    const t = setTimeout(() => setResultModalOpen(true), END_FX_GAP_MS + GAME_END_MS + 250);
     return () => clearTimeout(t);
   }, [resultKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // (사용자 요청) 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인 동안은, 뒤로가기·페이지 나가기
