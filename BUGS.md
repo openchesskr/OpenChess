@@ -10,6 +10,8 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-023 | P2 | 리뷰 캐시(reviewed_games)를 로그인 없이 누구나 덮어써, 공유 리뷰 링크에 조작된 기보가 보일 수 있음 | 발견(수정 결정 필요) | 2026-09-26 |
+| BUG-022 | P1 | 채팅 수신자가 남이 보낸 메시지 본문을 REST로 고칠 수 있음(update 권한이 테이블 전체에 열림) | 수정 완료 | 2026-09-26 |
 | BUG-021 | P3 | 나이트 레이스 서버 거리 계산이 6수에서 멈춰 par 7 라운드가 실시간 대전에선 안 나옴 | 수정 완료 | 2026-09-26 |
 | BUG-020 | P1 | 나이트 레이스 위협 칸 판정이 실제 체스와 달라 "답이 없어 보이는" 라운드가 나옴 | 수정 완료 | 2026-09-26 |
 | BUG-019 | P2 | 채팅 목록이 전체 대화 중 최근 메시지 200개로만 만들어져 오래된 대화방·안 읽은 수가 빠짐 | 발견(수정 결정 필요) | 2026-09-26 |
@@ -35,6 +37,26 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-023 · [P2] 리뷰 캐시(reviewed_games)를 누구나 덮어쓸 수 있음
+- **상태**: 발견 (수정 결정 필요)
+- **발견일**: 2026-09-26 (BUG-022 권한 점검 중 발견)
+- **위치**: `supabase-setup.sql` 21) reviewed_games — `"reviewed games update" using (true) with check (true)`, `grant ... update ... to anon, authenticated`
+- **증상**: 로그인하지 않은 사람도 REST로 임의 chess.com 대국 ID의 `data`(기보)·`analysis`(분석 결과)를 덮어쓸 수 있다. 그 대국의 공유 리뷰 링크(/review/…)를 여는 모든 사람에게 조작된 기보·정확도가 보인다.
+- **근본 원인**: 크라우드소싱 캐시라 "조작해도 이득 볼 카운터가 없다"는 판단으로 insert/update를 모두 열어 둔 설계(v0.3.4 주석)
+- **수정 방향(제안)**: ① 처음 올린 뒤에는 `data`를 못 바꾸게(insert만 허용, `on conflict do nothing`) ② `analysis`는 버전(v)이 더 새로울 때만 갱신하는 RPC로 — 둘 다 캐시 갱신 흐름을 바꾸므로 승인 후 진행
+
+### BUG-022 · [P1] 채팅 수신자가 남이 보낸 메시지 본문을 고칠 수 있음
+- **상태**: 수정 완료 (v0.5.7)
+- **발견일**: 2026-09-26 (채팅 기능 강화 중 RLS 정책을 읽다가 발견)
+- **등급 근거**: 보안 취약점 — 다른 사용자의 콘텐츠 조작
+- **위치**: `supabase-setup.sql` 5) chat_messages — `"chat update own" for update using (auth.uid() = to_uid)` + `grant select, insert, update, delete ... to authenticated`
+- **증상**: 수신자가 REST로 `PATCH /chat_messages?id=eq.N {body: "..."}`를 보내면 "나에게 온" 메시지의 본문·이모티콘·공유 카드 컬럼이 바뀐다. 보낸 사람 화면에도 그대로 보여, 남이 보낸 메시지를 조작할 수 있었다.
+- **재현 방법**: 로컬 PostgreSQL 16에 chat_messages 스키마·정책을 그대로 올리고, 수신자 역할로 `update chat_messages set body = '조작된 메시지'` → 성공(수정 전)
+- **근본 원인**: 읽음 처리 전용 update 정책에 테이블 전체(모든 컬럼) update 권한이 붙음
+- **수정 내용**: `revoke update on chat_messages from anon, authenticated; grant update (read) ...` — REST로는 read만 바꿀 수 있다(본문 수정은 발신자 소유권을 검증하는 `chat_edit_message` RPC로만). 방어적으로 puzzles의 컬럼 단위 grant 앞에도 전체 update revoke 추가(컬럼 grant는 전체 권한이 이미 있으면 무의미하므로)
+- **재발 방지 안전장치**: `scripts/check-sql-grants.mjs`(prebuild, `npm run check:sql-grants`) — 수신자(to_uid)가 update하는 정책이 있는 테이블에 전체 update 권한이 남아 있으면 실패, 컬럼 단위 update grant 앞에 전체 update revoke가 없으면 실패(수신자 본인만 보는 notifications는 예외)
+- **검증**: 수정 후 같은 재현 → 읽음 처리(`set read = true`)는 성공, 본문 수정은 `permission denied`. 검사 스크립트가 수정 전 SQL에서 실패 → 수정 후 통과. **배포 시 `supabase-setup.sql` 재실행 필요**
 
 ### BUG-021 · [P3] 나이트 레이스 서버 거리 계산이 6수에서 멈춤
 - **상태**: 수정 완료 (v0.5.7)
