@@ -1405,8 +1405,25 @@ async function saveContent() {
 function branchFor(key) { const v = (CONTENT.branches18 || {})[key]; return v || null; }
 function recommendReasonFor(key) { const v = (CONTENT.recommends || {})[key]; return v || null; }
 function isMainline(key, san) { return !!CONTENT.mainline[key + "|" + san]; }
-function forceKindFor(key, san) { return CONTENT.forceKind[key + "|" + san] || null; }
+// (v0.5.6 버그 수정 BUG-015) 강제 등급(forceKind)은 개발자가 입력한 표기 그대로("Qh5") 저장되는데, 실제 수 표기에는 체크·메이트 기호가
+// 붙을 수 있다("Qh5+") — 예전엔 글자가 완전히 같을 때만 찾아 이론 지정이 조용히 무시됐다. 표기 그대로 → 기호를 뗀 것 → 기호를 붙인
+// 것 순으로 찾는다(isUnbooked·nameOverride가 이미 기호를 떼고 비교하는 것과 같은 기준).
+function forceKindFor(key, san) {
+  const fk = CONTENT.forceKind, base = key + "|";
+  const bare = stripSuffix(san);
+  return fk[base + san] || fk[base + bare] || fk[base + bare + "+"] || fk[base + bare + "#"] || null;
+}
 function addsFor(key) { return CONTENT.treeAdds[key] || []; }
+// (v0.5.6 버그 수정 BUG-015) 개발자가 추가한 수를 후보 목록에 끼워 넣을 때 쓰는 단 하나의 모양 — 예전엔 곳곳에서 { san, dev: true }처럼
+// 이론 여부(book) 없이 끼워 넣어, 이론 수로 추가한 수가 도감 블록·카드에서 이론이 아닌 수(계산 중)로 보였다. 이론 여부는 isBookMoveAt
+// (unbook → forceKind → 개발자 추가 이론 → 스냅샷)이 정한다. scripts/check-theory-merge.mjs가 다른 모양으로 끼워 넣는 코드를 막는다.
+function devAddEntry(key, a) { return { san: a.san, name: a.name || undefined, book: isBookMoveAt(key, a.san), adopt: null, games: null, dev: true }; }
+function mergeDevAdds(key, list) {
+  const out = list ? list.slice() : [];
+  const seen = new Set(out.map((m) => stripSuffix(m.san)));
+  for (const a of addsFor(key)) { const k = stripSuffix(a.san); if (!seen.has(k)) { out.push(devAddEntry(key, a)); seen.add(k); } }
+  return out;
+}
 function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 // (사용자 요청) 오프닝 명칭이 바뀌면, 그 이름을 접두사로 쓰던 자손 수들의 오프닝 명칭도 그 접두사만
 // 자연스럽게 함께 바뀐다 — 예: "Queen's Gambit"을 "QG"로 바꾸면 "Queen's Gambit Declined"도
@@ -2426,8 +2443,9 @@ function assignTiers(moves, ply, board, keyStr, sans) {
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
     const mv = moverEval(m, ply);
     const loss = (mv == null || best == null) ? null : best - mv;
-    const unbooked = keyStr != null && isUnbooked(keyStr, m.san);
-    const isBook = !unbooked && !!m.book;   // 이론 = 큐레이션 트리(스냅샷)에 있는 수 (ECO 미사용)
+    // (v0.5.6 버그 수정 BUG-015) 이론 판정은 isBookMoveAt 하나로 — 예전엔 여기만 스냅샷의 book 플래그만 봐서, 개발자가 추가한 이론 수
+    // (treeAdds의 theory)가 트리엔 이론으로 들어가 있는데 등급은 이론이 아니게(계산 중·좋은 수 등) 매겨졌다.
+    const isBook = keyStr != null ? isBookMoveAt(keyStr, m.san) : !!m.book;
     if (isBook) return { ...m, kind: "book", book: true };
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
     let kind = tierOf(loss);
@@ -4369,7 +4387,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const base = node ? node.moves.map((m) => ({ ...m })) : [];
     const withExtra = (list) => {
       const seen = new Set(list.map((m) => stripSuffix(m.san)));
-      addsFor(key).forEach((a) => { if (!seen.has(stripSuffix(a.san))) { list.push({ san: a.san, book: !!a.theory, adopt: null, games: null, dev: true, name: a.name || undefined }); seen.add(stripSuffix(a.san)); } });
+      addsFor(key).forEach((a) => { if (!seen.has(stripSuffix(a.san))) { list.push(devAddEntry(key, a)); seen.add(stripSuffix(a.san)); } });
       (extraSans || []).forEach((s) => { if (!seen.has(stripSuffix(s))) { list.push({ san: s, book: false, adopt: null, games: null, user: true }); seen.add(stripSuffix(s)); } });
       return list;
     };
@@ -16071,7 +16089,7 @@ const DEX_MAX_CHILDREN = 8;
 // 복합 증가의 밑수 자체를 줄인다.
 const DEX_MAX_CHILDREN_SHALLOW = 4;
 function dexCapFor(depth) { return depth < DEX_MIN_DEPTH ? DEX_MAX_CHILDREN_SHALLOW : DEX_MAX_CHILDREN; }
-function useOpeningTreeAuto(priorityRef) {
+function useOpeningTreeAuto(priorityRef, contentVer) {
   const [version, setVersion] = useState(0);
   const mapRef = useRef(new Map());
   useEffect(() => {
@@ -16136,8 +16154,7 @@ function useOpeningTreeAuto(priorityRef) {
     function run({ path, depth }) {
       const key = path.join(" ");
       const node = snapNode(path);
-      const rawMoves = node ? node.moves.slice() : (path.length === 0 && SNAP.tree[""] ? SNAP.tree[""].moves.slice() : []);
-      addsFor(key).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
+      const rawMoves = mergeDevAdds(key, node ? node.moves : (path.length === 0 && SNAP.tree[""] ? SNAP.tree[""].moves : []));
       if (!rawMoves.length) { mapRef.current.set(key, []); if (!cancelled) bumpVersion(); return Promise.resolve(); }
       mapRef.current.set(key, rawMoves.map((m) => ({ ...m, adopt: 0, games: 0, wdl: null })));
       bumpVersion();
@@ -16160,7 +16177,9 @@ function useOpeningTreeAuto(priorityRef) {
     }
     runNext();
     return () => { cancelled = true; if (bumpTimer) clearTimeout(bumpTimer); };
-  }, []);
+  // (v0.5.6 버그 수정 BUG-015) 개발자 콘텐츠(서버)가 앱 시작 뒤에 도착하거나 개발자가 수를 추가하면(contentVer) 다시 펼친다 — 예전엔
+  // 앱 시작 때 한 번만 돌아, 그 뒤 추가된 이론 수는 채택률 조회·하위 수 펼치기에서 빠졌다.
+  }, [contentVer]); // eslint-disable-line react-hooks/exhaustive-deps
   return { data: mapRef.current, version };
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
@@ -16179,8 +16198,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
   const tier = useMemo(() => {
     const node = snapNode(path);
-    const rawMoves = node ? node.moves.slice() : [];
-    addsFor(path.join(" ")).forEach((a) => { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, dev: true }); });
+    const rawMoves = mergeDevAdds(path.join(" "), node ? node.moves : []);
     const tiered = assignTiers(rawMoves, ply, board, path.join(" "), path);
     return tiered.find((x) => x.san === m.san) || null;
   }, [path.join(" "), m.san, board]);
@@ -16384,15 +16402,9 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
 let DEX_LAYOUT_CACHE = null, DEX_CENTER_FROZEN = null;
 function computeDexLayout(treeData, contentVer) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
-  const mergedMovesOf = (key) => {
-    let rawMoves = treeData.get(key);
-    const adds = addsFor(key);
-    if (adds.length) {
-      rawMoves = rawMoves ? rawMoves.slice() : [];
-      for (const a of adds) { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, name: a.name, book: !!a.theory, adopt: null, games: null, dev: true }); }
-    }
-    return rawMoves;
-  };
+  // (v0.5.6 버그 수정 BUG-015) 트리 구조는 늦게 도착하는 treeData(앱 시작 때 한 번 채워짐 — 서버의 개발자 콘텐츠가 오기 전일 수 있다)에
+  // 기대지 않고, 스냅샷 + 지금의 개발자 추가 수로 바로 만든다. treeData는 채택률·이름 같은 부가 데이터에만 쓴다.
+  const mergedMovesOf = (key) => { const node = SNAP.tree[key]; return mergeDevAdds(key, node && node.moves ? node.moves : (treeData.get(key) || [])); };
   // 구조(이론 수만) — 깊이 우선으로 만들며 키를 서명에 모은다.
   const sigParts = [];
   const build = (san, path, depth, dir) => {
@@ -16485,17 +16497,15 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     const tierCache = new Map();
     const parentMoves = (parentKey, parentPath) => {
       if (tierCache.has(parentKey)) return tierCache.get(parentKey);
-      let rawMoves = treeData.get(parentKey);
-      const adds = addsFor(parentKey);
-      if (adds.length) {
-        rawMoves = rawMoves ? rawMoves.slice() : [];
-        for (const a of adds) { if (!rawMoves.some((x) => x.san === a.san)) rawMoves.push({ san: a.san, name: a.name, book: !!a.theory, adopt: null, games: null, dev: true }); }
-      }
+      // 채택률·이름 등은 treeData(리체스 병합)에서, 개발자 추가 수는 같은 모양(devAddEntry)으로 보충한다.
+      const snapNodeHere = SNAP.tree[parentKey];
+      const base = treeData.get(parentKey) || (snapNodeHere && snapNodeHere.moves) || [];
+      const rawMoves = mergeDevAdds(parentKey, base);
       const filtered = (rawMoves || []).filter((m) => isBookMoveAt(parentKey, m.san));
       // 트리엔 이론 수만 있어 등급은 거의 항상 "이론"이다 — 희생 판정용 보드는 이론이 아닌 수가 섞인 드문 경우에만 만든다.
       const needBoard = filtered.some((m) => !m.book && !forceKindFor(parentKey, m.san));
       const tiered = assignTiers(filtered, parentPath.length, needBoard ? boardFromSans(parentPath) : null, parentKey, parentPath);
-      const v = { rawMoves: rawMoves || [], tiered };
+      const v = { rawMoves, tiered };
       tierCache.set(parentKey, v);
       return v;
     };
@@ -31981,7 +31991,6 @@ export default function App() {
   // 다시 시작됐다 — 그래서 짧게 훑어보면 항상 얕은 수(약 6수)에서 멈춘 것처럼 보였다. 항상
   // 마운트돼 있는 App으로 끌어올려, 어느 탭에 있든(도감을 벗어나도) 계속 더 깊이 채워지도록 한다.
   const dexGenPriorityRef = useRef({ selectedKey: null, distanceOf: null });
-  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef);
   const [unlocked, setUnlocked] = useState(new Set());
   const [newUnlocks, setNewUnlocks] = useState(0);
   const [newTitles, setNewTitles] = useState(0); // (버그) 새로 획득한 칭호 수 — 도감 탭 빨간 배지
@@ -32296,6 +32305,7 @@ export default function App() {
     return () => document.removeEventListener("click", onDocClick, true);
   }, []);
   const [contentVer, setContentVer] = useState(0);
+  const { data: dexTreeData, version: dexTreeVersion } = useOpeningTreeAuto(dexGenPriorityRef, contentVer);
   // (v0.5.6 성능) 도감 오프닝 트리의 좌표를 앱이 쉬는 틈에 미리 계산해 모듈 캐시에 넣어 둔다 — 도감 탭을 처음 열 때도 계산 없이 곧바로 그린다.
   // 구조가 그대로면 computeDexLayout이 캐시를 그대로 돌려주므로, 채택률 조회로 버전이 자주 올라가도 비용은 구조 확인(수 ms)뿐이다.
   useEffect(() => {
