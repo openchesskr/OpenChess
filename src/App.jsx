@@ -75,6 +75,10 @@ import {
   SCHEMATIC_ELECTRIC, DEX_SELECT_FLOW_SPEED, DEX_ELECTRIC_FLOW_SPEED, schematicCoord,
 } from "./lib/schematicGeometry.js";
 import { layoutDexTree, placeDexLabels, dexEdgeGeometry, DEX_LAYOUT } from "./lib/dexTreeLayout.js";
+import {
+  knightNeighbors as knightNeighborsClient, knightDangerFor, knightOwnBlocked, knightApplyMove, knightCatcherOf,
+  knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightGenRound, knightSafeWalls,
+} from "./lib/knightRace.js";
 import { ccGameKey, loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import {
   isSanSequenceValid, isTreeSequenceValid, isPuzzleSequenceValid, RATING_MIN_SAMPLES,
@@ -11549,8 +11553,8 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
   const settle = useRoundSettle(idx, !!(round && round.winner));
   useEffect(() => {
     if (finished) return;
-    if (rounds.length === 0) { setRounds([{ ...knightSoloRound(0), winner: null }]); return; }
-    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === idx + 1 ? [...rs, { ...knightSoloRound(rs.length), winner: null }] : rs));
+    if (rounds.length === 0) { setRounds([{ ...knightGenRound(0, { solo: true }), winner: null }]); return; }
+    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === idx + 1 ? [...rs, { ...knightGenRound(rs.length, { solo: true }), winner: null }] : rs));
   }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const onRoundDone = useCallback((winner, mine) => {
     setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const c = rs.slice(); c[i] = { ...c[i], winner, mine: mine ? { reached: mine.reached, moves: mine.moves, ms: mine.atMs, captured: !!mine.captured } : null }; return c; });
@@ -11607,7 +11611,8 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
         <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 제한시간은 1라운드 5초에서 라운드마다 늘어나고(대신 기물과 거리도 늘어요), 5전 3선승이에요.</div>
-        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요.</div>
+        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요. 기물의 공격선은 실제 체스처럼 다른 기물에 막혀요.</div>
+        <div>• <b style={{ color: T.ink }}>마지막 5라운드에는 상대 퀸이 나와요</b> — 첫 수부터 정확히 골라야 하는 가장 어려운 라운드예요.</div>
         <div>• <b style={{ color: T.ink }}>상대 나이트가 있는 칸으로 뛰어들면 상대 나이트를 잡을 수 있어요</b> — 잡힌 쪽은 그 라운드가 그대로 끝나요.</div>
         <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
       </>}
@@ -11632,63 +11637,16 @@ const KNIGHT_BO_TARGET = 3;
 // (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
 // (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고). p_illegal은 이제 "방해 칸"이
 // 아니라 그 나이트 색 기준으로 위협 기물에게 잡히는(들어가면 안 되는) 칸 목록이다.
-function knightNeighborsClient(sq, illegal) {
-  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
-  const deltas = [[1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]];
-  const out = [];
-  for (const [df, dr] of deltas) {
-    const nf = f + df, nr = r + dr;
-    if (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
-      const nsq = String.fromCharCode(97 + nf) + (nr + 1);
-      if (!illegal || !illegal.includes(nsq)) out.push(nsq);
-    }
-  }
-  return out;
-}
 // (v0.5.1 신규) 칸 sq를 중심 칸 center 기준으로 점대칭(180도 회전) 이동한 칸을 구한다 — 보드 밖으로
 // 나가면 null. supabase-setup.sql의 knight_reflect_sq와 완전히 같은 공식.
-function knightReflectSq(sq, center) {
-  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
-  const cf = center.charCodeAt(0) - 97, cr = parseInt(center.slice(1), 10) - 1;
-  const nf = 2 * cf - f, nr = 2 * cr - r;
-  if (nf < 0 || nf > 7 || nr < 0 || nr > 7) return null;
-  return String.fromCharCode(97 + nf) + (nr + 1);
-}
 // (v0.5.1 신규) 위협 기물(비숍/룩)이 실제로 지배(공격)하는 칸 — 다른 기물에 막히는 것은 고려하지
 // 않고 보드 끝까지 미끄러진다. supabase-setup.sql의 knight_attacked_squares와 완전히 같은 규칙.
-function knightAttackedSquares(sq, type) {
-  const f = sq.charCodeAt(0) - 97, r = parseInt(sq.slice(1), 10) - 1;
-  const dirs = type === "R" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 1], [1, -1], [-1, 1], [-1, -1]];
-  const out = [];
-  for (const [df, dr] of dirs) {
-    let nf = f + df, nr = r + dr;
-    while (nf >= 0 && nf <= 7 && nr >= 0 && nr <= 7) {
-      out.push(String.fromCharCode(97 + nf) + (nr + 1));
-      nf += df; nr += dr;
-    }
-  }
-  return out;
-}
 // (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 더 이상 "못 가는 칸"을 만드는 벽이 아니다.
 // ① 나이트가 상대 기물(색이 다른 hazards) 칸에 도달하면 그 기물을 잡아 없앤다 — 그 기물이 지배하던 칸도
 //    함께 안전해진다. ② 상대 기물이 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다.
 // ③ 자기 색 기물 칸에는 설 수 없다(실제 체스처럼). 서버 knight_danger와 같은 공식이다.
-function knightDangerFor(round, color, taken) {
-  const out = new Set();
-  (round.hazards || []).forEach((h) => {
-    if (h.color === color || (taken || []).includes(h.sq)) return;
-    knightAttackedSquares(h.sq, h.type).forEach((sq) => { if (knightReflectSq(sq, round.target)) out.add(sq); });
-  });
-  return [...out];
-}
 // color 나이트가 설 수 없는 칸 — 아직 남아 있는 자기 색 기물(상대 나이트가 잡아 간 것은 빼고).
-function knightOwnBlocked(round, color, oppTaken) { return (round.hazards || []).filter((h) => h.color === color && !(oppTaken || []).includes(h.sq)).map((h) => h.sq); }
 // 한 수를 두었을 때 — 상대 기물을 잡았는지(tookPiece), 그 뒤 내 나이트가 잡혔는지(captured).
-function knightApplyMove(round, color, taken, sq) {
-  const tookPiece = (round.hazards || []).some((h) => h.sq === sq && h.color !== color && !(taken || []).includes(sq));
-  const nextTaken = tookPiece ? [...(taken || []), sq] : (taken || []);
-  return { taken: nextTaken, tookPiece, captured: knightDangerFor(round, color, nextTaken).includes(sq) };
-}
 // 8×8 나이트 경주 보드 — 순수 표시용. 실시간 PvP(KnightRaceRound)와 봇 대전(KnightRaceBotRound) 둘
 // 다 이 컴포넌트로 같은 보드를 그리고, 라운드 진행·판정 로직만 서로 다르게 가져간다.
 // (버그 수정, 사용자 재지적) 보드·기물 모두 Board/PieceGlyph와 똑같이 SkinContext에서 지금 장착된
@@ -11713,7 +11671,7 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
   const catchers = [];
   const addCatcher = (knightSq, knightColor, who) => {
     if (!knightSq) return;
-    const h = (hazards || []).find((x) => x.color !== knightColor && !removedSet.has(x.sq) && knightAttackedSquares(x.sq, x.type).includes(knightSq));
+    const h = knightCatcherOf(hazards, knightColor, knightSq, removed);
     if (h) { catchers.push({ ...h, to: knightSq, who }); delete hazBySq[h.sq]; }
   };
   // (v0.5.5) 두 나이트가 한 칸에 있으면 한쪽이 다른 쪽을 잡은 것 — 날아오는 기물 없이 그 칸에서 잡힌 쪽이 사라진다.
@@ -11950,95 +11908,11 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
   );
 }
 // (v0.5.0 기능, 사용자 요청) 봇과 플레이하기 — 서버 없이 완전히 로컬에서 라운드를 만들고 판정한다.
-// 라운드 생성 규칙은 서버와 같은 knightGenRoundLocal로 만들어, 봇 대전도 실전 PvP와 같은 난이도 곡선·
-// 공정성을 겪게 한다. 봇은 자기 시작 칸(항상 흑 역할)에서 목표 칸까지 최단 나이트 경로(BFS, 위협 칸·자기
-// 색 기물 칸 제외)를 계산해, 한 수당 무작위 시간(KNIGHT_BOT_PACE_*)을 두고 그 경로를 그대로 밟는다.
-// (v0.5.4 난이도 대폭 상향, 사용자 요청) 라운드 생성 — supabase-setup.sql의 _knight_gen_round와 완전히 같은
-// 규칙이다. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이 되돌아가면 실제 최단 거리가 1~2수에
-// 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을 피한 실제 최단 수(par)"를 BFS로 재서
-// 라운드별 범위에 들어올 때만 채택한다. 2라운드부터는 기물이 없을 때의 최단 경로보다 반드시 길어야 한다 —
-// 즉 눈에 보이는 가장 빠른 길이 위협 칸으로 막혀 있어 돌아가거나, 상대 기물을 잡아 길을 여는 수를 찾아야
-// 한다. 이동 수 제한은 par+1. 시작 칸·기물은 목표를 중심으로 점대칭이고, 양쪽 par를 모두 재서 같을 때만 쓴다.
-// (v0.5.5, 사용자 요청) 1라운드는 5초로 짧게, 뒤 라운드로 갈수록 제한시간(timeMs)이 늘지만 기물 수·목표까지의 거리가
-// 그보다 더 가파르게 는다(5라운드: 기물 5쌍, par 6~7). 조건이 까다로워진 만큼 라운드당 시도 횟수를 4000번으로 늘렸다.
-const KNIGHT_ROUND_SPECS = [
-  { minDist: 3, maxDist: 4, pairs: 1, detour: false, timeMs: 5000 },
-  { minDist: 4, maxDist: 5, pairs: 2, detour: true, timeMs: 8000 },
-  { minDist: 5, maxDist: 6, pairs: 3, detour: true, timeMs: 11000 },
-  { minDist: 6, maxDist: 7, pairs: 4, detour: true, timeMs: 14000 },
-  { minDist: 6, maxDist: 7, pairs: 5, detour: true, timeMs: 17000 },
-];
-const KNIGHT_GEN_TRIES = 4000;
-const KNIGHT_ALL_SQS = []; for (let f = 0; f < 8; f++) for (let r = 1; r <= 8; r++) KNIGHT_ALL_SQS.push(String.fromCharCode(97 + f) + r);
-function knightDistanceLocal(start, target, blocked) { const p = knightShortestPathLocal(start, target, blocked); return p ? p.length - 1 : null; }
-function knightTryGenLocal(spec) {
-  const pick = () => KNIGHT_ALL_SQS[Math.floor(Math.random() * 64)];
-  for (let attempt = 0; attempt < KNIGHT_GEN_TRIES; attempt++) {
-    const target = COORD_FILES[2 + Math.floor(Math.random() * 4)] + (3 + Math.floor(Math.random() * 4));
-    const whiteStart = pick();
-    const blackStart = knightReflectSq(whiteStart, target);
-    // 백은 항상 목표보다 아래쪽(랭크가 같거나 낮은 쪽)에서 시작한다 — 흑이면 보드를 뒤집는 규칙만으로 내 나이트가 화면 아래에 온다.
-    if (!blackStart || whiteStart === target || parseInt(whiteStart.slice(1), 10) > parseInt(blackStart.slice(1), 10)) continue;
-    const used = new Set([whiteStart, blackStart, target]);
-    const hazW = [], hazB = [];
-    for (let i = 0; i < spec.pairs; i++) {
-      for (let t = 0; t < 50; t++) {
-        const sq = pick(), m = knightReflectSq(sq, target);
-        if (!m || sq === m || used.has(sq) || used.has(m)) continue;
-        used.add(sq); used.add(m); hazW.push(sq); hazB.push(m); break;
-      }
-    }
-    if (hazW.length < spec.pairs) continue;
-    const hazards = [];
-    hazW.forEach((sq, i) => { const type = Math.random() < 0.5 ? "B" : "R"; hazards.push({ sq, type, color: "w" }, { sq: hazB[i], type, color: "b" }); });
-    const r = { target, hazards };
-    const wIllegal = knightDangerFor(r, "w", []), bIllegal = knightDangerFor(r, "b", []);
-    if (wIllegal.includes(target) || wIllegal.includes(whiteStart)) continue;
-    const par = knightDistanceLocal(whiteStart, target, [...wIllegal, ...hazW]);
-    if (par == null || par < spec.minDist || par > spec.maxDist) continue;
-    // 반사점이 보드 밖인 칸 때문에 점대칭만으로는 양쪽 최단 수가 같다는 보장이 없어, 흑 쪽도 재서 같을 때만 쓴다.
-    if (knightDistanceLocal(blackStart, target, [...bIllegal, ...hazB]) !== par) continue;
-    if (spec.detour && par <= Math.min(knightDistanceLocal(whiteStart, target, []), knightDistanceLocal(blackStart, target, []))) continue;
-    return { target, whiteStart, blackStart, hazards, wIllegal, bIllegal, par, moveBudget: par + 1 };
-  }
-  return null;
-}
-// (v0.5.5, 사용자 요청) 혼자 플레이하기 라운드 — 상대가 없으니 내 진영(백) 기물은 보드에서 뺀다. 그 기물들이 막던 칸이 열려
-// 최단 수가 줄 수 있으므로 par·이동 수 제한을 흑 기물만으로 다시 잰다.
-function knightSoloRound(roundIdx) {
-  const r = knightGenRoundLocal(roundIdx);
-  const hazards = (r.hazards || []).filter((h) => h.color === "b");
-  const par = knightDistanceLocal(r.whiteStart, r.target, r.wIllegal) || r.par;
-  return { ...r, hazards, par, moveBudget: par + 1 };
-}
-// 조건에 맞는 라운드를 못 찾으면(5라운드에서 약 50%, 4라운드에서 약 15%) 한 단계 낮은 라운드 조건으로 다시 뽑는다 —
-// 제한시간은 원래 라운드 것을 그대로 쓴다.
-function knightGenRoundLocal(roundIdx) {
-  const idx = Math.min(Math.max(roundIdx, 0), KNIGHT_ROUND_SPECS.length - 1);
-  const timeLimitMs = KNIGHT_ROUND_SPECS[idx].timeMs;
-  for (let k = idx; k >= 0; k--) {
-    const r = knightTryGenLocal(KNIGHT_ROUND_SPECS[k]);
-    if (r) return { ...r, timeLimitMs };
-  }
-  return { target: "d4", whiteStart: "a1", blackStart: "g7", hazards: [], wIllegal: [], bIllegal: [], par: 2, moveBudget: 3, timeLimitMs };
-}
-function knightShortestPathLocal(start, target, illegal) {
-  if (start === target) return [start];
-  const visited = new Set([start]);
-  let frontier = [[start]];
-  while (frontier.length) {
-    const next = [];
-    for (const path of frontier) {
-      const cur = path[path.length - 1];
-      for (const nb of knightNeighborsClient(cur, illegal)) {
-        if (nb === target) return [...path, nb];
-        if (!visited.has(nb)) { visited.add(nb); next.push([...path, nb]); }
-      }
-    }
-    frontier = next;
-  }
-  return null;
-}
+// 라운드 생성·위협 칸·잡기 규칙은 src/lib/knightRace.js(knightGenRound 등)가 단일 출처다 — 실시간 대전 서버
+// (supabase-setup.sql의 _knight_gen_round)와 같은 규칙이라 봇 대전도 실전과 같은 난이도 곡선·공정성을 겪는다.
+// 봇은 자기 시작 칸(항상 흑)에서 목표 칸까지 "잡지 않고도 확실히 가는" 최단 경로(knightSafeWalls 기준 BFS)를 계산해,
+// 한 수당 무작위 시간(KNIGHT_BOT_PACE_*)을 두고 그 경로를 그대로 밟는다. 혼자 플레이하기는 knightGenRound(idx, { solo: true })
+// — 상대가 없으니 흑 기물만 두고 그 배치로 par·이동 수 제한을 잰다.
 // (v0.5.5) 봇의 한 수 간격 — 라운드 제한시간을 (par+1)수로 나눈 몫의 55~95%. 제한시간이 라운드마다 달라져(5~17초) 고정 간격이면
 // 1라운드에선 봇이 시간 안에 못 가고 뒤 라운드에선 너무 느려진다.
 const KNIGHT_BOT_PACE_MIN = 0.55;
@@ -12099,8 +11973,9 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   useEffect(() => {
     if (solo) return; // (v0.5.3) 혼자 플레이하기 — 봇 없이 나만 시간·수 제한과 싸운다
     const lead = Math.max(0, startRef.current - Date.now());
-    // (v0.5.4) 봇은 위협 칸과 자기 색(흑) 기물 칸을 피하고, 경로 위의 백 기물은 지나가며 잡는다.
-    const botAvoid = [...(round.bIllegal || []), ...knightOwnBlocked(round, "b", [])];
+    // (v0.5.7) 봇은 위협 칸과 모든 기물 칸을 피한다(knightSafeWalls) — 기물을 잡으면 그 기물이 막던 공격선이 열려 앞길이
+    // 위험해질 수 있어서다. par도 같은 기준이라, 이 경로는 항상 규칙대로 통한다.
+    const botAvoid = knightSafeWalls(round, "b");
     let path = knightShortestPathLocal(round.blackStart, round.target, botAvoid);
     // (v0.5.4) 이제 라운드는 "더 적은 수"로 이긴다 — 봇이 늘 최단 수로 가면 사람은 비기거나(시간 비교) 질
     // 수밖에 없으므로, 40% 확률로 봇이 첫 수를 "최단에서 한 수 벗어나는" 칸으로 둬 par+1수(이동 수 제한
@@ -12234,8 +12109,8 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   const settle = useRoundSettle(roundIdx, !!(round && round.winner));
   useEffect(() => {
     if (finished) return;
-    if (rounds.length === 0) { setRounds([{ ...knightGenRoundLocal(0), winner: null }]); return; }
-    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === roundIdx + 1 ? [...rs, { ...knightGenRoundLocal(rs.length), winner: null }] : rs));
+    if (rounds.length === 0) { setRounds([{ ...knightGenRound(0), winner: null }]); return; }
+    if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === roundIdx + 1 ? [...rs, { ...knightGenRound(rs.length), winner: null }] : rs));
   }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const onRoundDone = useCallback((winner, mine, bot) => {
     const pack = (x) => (x ? { reached: x.reached, moves: x.moves, ms: x.atMs, captured: !!x.captured } : null);
