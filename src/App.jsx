@@ -9674,16 +9674,22 @@ function useGridDrag({ size, cellAt, canDrag, onStart, onDrop, renderPiece }) {
     </div>, document.body) : null;
   return { bind, dragFrom, ghost };
 }
+// (v0.5.7, 사용자 요청 "데스크톱에서 비효율적인 레이아웃") 미니게임 화면은 모바일 기준으로만 짜여, 데스크톱에선 점수 줄·시간 막대·
+// 랭킹 탭이 화면 끝에서 끝까지(1400px+) 늘어나고 보드는 420px에 머물러 위아래·양옆이 텅 비었다. 화면 전체를 가운데 한 열
+// (MG_DESKTOP_MAX_W)로 모으고, 보드 상한은 데스크톱에서 MG_DESKTOP_BOARD까지 올린다(useSquareFit — 남은 높이 안에서만 커진다).
+const MG_DESKTOP_MAX_W = 760, MG_DESKTOP_BOARD = 640, MG_DESKTOP_BP = 899;
 function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
-      <div className="flex items-center justify-between" style={{ flexShrink: 0, padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px" }}>
+      <div className="flex items-center justify-between" style={{ flexShrink: 0, width: "100%", maxWidth: MG_DESKTOP_MAX_W + 28, margin: "0 auto", padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px", boxSizing: "border-box" }}>
         <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{title}</div>
         {headerRight || <span style={{ width: 32, flexShrink: 0 }} />}
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: "0 14px calc(env(safe-area-inset-bottom,0px) + 14px)", display: "flex", flexDirection: "column", overflowY: noScroll ? "hidden" : "auto" }}>
-        {children}
+        <div style={{ width: "100%", maxWidth: MG_DESKTOP_MAX_W, margin: "0 auto", display: "flex", flexDirection: "column", ...(noScroll ? { flex: 1, minHeight: 0 } : { flex: "1 0 auto" }) }}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body
@@ -9696,6 +9702,9 @@ function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
 // 실제로 정사각형이 얼마나 커질 수 있는지)는 이 훅이 ResizeObserver로 실측해 계산한다 — 폰트 크기·
 // 라벨 줄바꿈 등 주변 요소의 실제 렌더 결과에 따라 슬롯 크기가 달라져도 항상 정확하다.
 function useSquareFit(maxSize = 420, reserveH = 0) {
+  // (v0.5.7) 데스크톱(가로 900px 이상)에서는 상한을 MG_DESKTOP_BOARD까지 올린다 — 실제 크기는 여전히 슬롯의 가로·세로 중 작은 쪽.
+  const wide = !useNarrow(MG_DESKTOP_BP);
+  if (wide) maxSize = Math.max(maxSize, MG_DESKTOP_BOARD);
   const [size, setSize] = useState(Math.min(maxSize, 280));
   const roRef = useRef(null);
   const setRef = useCallback((el) => {
@@ -11166,8 +11175,9 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   const top = rows ? rows.filter((r) => r.rank <= 50) : [];
   const meOutside = rows ? rows.find((r) => r.is_me && r.rank > 50) : null;
   const empty = kind === "rating" ? "아직 랭킹에 오른 사람이 없어요 — 랜덤 매칭 " + MINIGAME_PLACEMENT + "판을 마치면 올라가요." : "아직 기록이 없어요 — 혼자 플레이하기로 첫 기록을 세워 보세요.";
+  // (v0.5.7) 데스크톱에서 탭·순위 줄이 화면 폭 끝까지 늘어나지 않게 로비(520px)보다 조금 넓은 폭으로 모은다.
   return (
-    <div style={{ padding: "8px 2px 4px" }}>
+    <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", padding: "8px 2px 4px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}><ChevronLeft size={14} />로비</button>
         <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={15} color={MG_GOLD} />랭킹</span>
@@ -12608,8 +12618,10 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
 function RushLevelSelect({ progress, onPick }) {
   const total = RUSH_LEVELS.length;
   const stars = RUSH_LEVELS.reduce((a, l) => a + (progress[l.id] ? rushStars(progress[l.id], l.par) : 0), 0);
+  // (v0.5.7) 데스크톱에선 난이도마다 8칸씩 두 줄로 딱 맞게 놓는다(자동 채우기면 13+3처럼 끝줄이 짧게 남았다).
   return (
-    <div>
+    <div style={{ width: "100%", maxWidth: 600, margin: "0 auto" }}>
+      <style>{"@media (min-width:" + (MG_DESKTOP_BP + 1) + "px){.rush-level-grid{grid-template-columns:repeat(8,minmax(0,1fr)) !important}}"}</style>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>혼자 풀기</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: MG_GOLD, display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={13} fill={MG_GOLD} color={MG_GOLD} />{stars} / {total * 3}</span>
@@ -12617,7 +12629,7 @@ function RushLevelSelect({ progress, onPick }) {
       {RUSH_DIFFS.map((d) => (
         <div key={d.key} style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: d.color, marginBottom: 6, textAlign: "left" }}>{d.label}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 6 }}>
+          <div className="rush-level-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 6 }}>
             {RUSH_LEVELS_BY_DIFF[d.key].map((l) => {
               const best = progress[l.id];
               const st = best ? rushStars(best, l.par) : 0;
@@ -13483,6 +13495,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   const [viewPly, setViewPly] = useState(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const narrow = useNarrow(720);
+  const narrowForShop = useNarrow(1040);
   const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
 
   // (신규 기능) 실시간 대국 매칭 — 대기열에 합류해 상대를 기다린다. 이미 나를 기다리던 상대가 있으면
@@ -14018,12 +14031,16 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   const hubMaxW = narrow ? PLAY_HUB_MAX_W : PLAY_HUB_MAX_W_DESKTOP;
+  // (v0.5.7, 사용자 요청 "데스크톱 레이아웃 비효율") 넓은 화면에선 상점을 대국·미니게임 버튼 아래(스크롤 한참 아래)가 아니라
+  // 오른쪽 열에 나란히 둔다 — 예전엔 520px 한 줄 아래로 스킨 카드 6장이 이어져 양옆이 비고 상점은 스크롤해야만 보였다.
+  const sideShop = !!storeProps && step === "setup" && !narrowForShop;
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   return (
     // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
     // 일반 대국 부분만 460px로 가운데에 둔다.
-    <div style={{ maxWidth: 880, margin: "0 auto" }}>
+    <div style={sideShop ? { maxWidth: PLAY_HUB_MAX_W_DESKTOP + 28 + 420, margin: "0 auto", display: "grid", gridTemplateColumns: PLAY_HUB_MAX_W_DESKTOP + "px minmax(0,1fr)", columnGap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
+      <div style={{ minWidth: 0 }}>
         <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
           <>
@@ -14246,6 +14263,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         <div style={{ display: step === "setup" ? "block" : "none", marginTop: 14 }}>
           <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
+      </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
@@ -14281,7 +14299,9 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
           storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지 않아 지금까지와 완전히
           동일하다. */}
       {storeProps && (
-        <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
+        <div style={sideShop
+          ? { gridColumn: 2, gridRow: 1, minWidth: 0, padding: "18px 18px 20px", borderRadius: 16, border: "1px solid rgba(196,154,80,.25)", background: "rgba(0,0,0,.14)", position: "sticky", top: 12 }
+          : { maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
           <StoreTab {...storeProps} />
         </div>
       )}
@@ -26850,9 +26870,14 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
   };
   const removeCodev = async (id) => { CONTENT.codev = CONTENT.codev.filter((x) => x !== id); await bumpContent(); };
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-xl mx-auto settings-root">
+      {/* (v0.5.7, 사용자 요청 "데스크톱 레이아웃 비효율") 넓은 화면에선 576px 한 줄로 카드 8~9장이 길게 이어져 양옆이 비었다 —
+          카드를 두 단(CSS 다단, 위→아래 읽는 순서 유지)으로 흘려 한 화면에 더 많이 보이게 한다. 개발자 도구는 폭이 필요해 단 밖 아래에 둔다.
+          단이 나뉘는 자리에선 위 여백이 잘려 오른쪽 단이 14px 올라가므로, 단 안에서는 카드 간격을 아래 여백으로 준다. */}
+      <style>{"@media (min-width:1000px){.settings-root{max-width:1080px !important}.settings-cols{column-count:2;column-gap:18px}.settings-cols{padding-top:14px}.settings-cols>*{break-inside:avoid;margin-top:0 !important;margin-bottom:14px}}"}</style>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 설정 아이콘과 중복돼 제거. */}
       <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
+      <div className="settings-cols">
 
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
       {!user ? (
@@ -27121,6 +27146,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           </div>
         </div>
         <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
+      </div>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
 
