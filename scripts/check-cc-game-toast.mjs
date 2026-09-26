@@ -2,9 +2,10 @@
 /** (v0.5.6) chess.com 대국 요약 알림의 계산 검사(src/lib/ccGameToast.js).
  *   · 본 대국 이후 것만, 오래된 것부터, 최근 CC_TOAST_MAX판만, 변형 체스 제외
  *   · 전적 이전/이후: 같은 오프닝·이 대국보다 앞선 대국만 세고, 이 대국 결과 칸만 1 늘어남
- *   · 레이팅 증감: 같은 시간 규정의 바로 앞 표준 체스 대국 대비
+ *   · 레이팅 증감: 같은 시간 규정의 바로 앞 표준 체스 대국 대비(목록용 computeRatingChanges도 — BUG-016)
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-cc-game-toast.mjs
  */
+import { computeRatingChanges } from "../src/lib/chesscom.js";
 import { pendingCcGames, recordAround, ratingDeltaOf, latestEndTime, CC_TOAST_MAX } from "../src/lib/ccGameToast.js";
 
 const problems = [];
@@ -37,6 +38,8 @@ eq("오프닝 없음 → 전체 전적(변형 제외)", [rAll.scope, rAll.prev.n
 
 eq("레이팅 증감(변형·다른 규정 건너뜀)", ratingDeltaOf(shuffled, games[6]), 1007 - 1004);
 eq("레이팅 증감(앞 대국 없음)", ratingDeltaOf(shuffled, games[0]), null);
+const rc = computeRatingChanges(shuffled);
+eq("목록 레이팅 증감도 변형 제외(BUG-016)", [rc.get(games[6]), rc.has(games[4])], [3, false]);
 
 if (problems.length) {
   console.error("✗ chess.com 대국 요약 알림 계산 검사 실패(src/lib/ccGameToast.js):");
