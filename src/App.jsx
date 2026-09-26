@@ -7819,7 +7819,10 @@ async function resolveReviewIdentifier(raw) {
 // 무시) 업로드하고, 딥링크로 들어온 방문자는 여기서 조회한다.
 async function reviewedGameShare(ccId, game) {
   if (!SB_ON || !ccId) return;
-  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), data: game }); } catch { }
+  // (v0.5.7 BUG-023) 표에 직접 쓰지 않고 reviewed_game_put RPC로 — 이미 올라온 기보는 덮어쓸 수 없다. SQL을 아직 다시 실행하지
+  // 않은 프로젝트(RPC 없음)에선 예전 방식으로 대신한다.
+  try { await sbRpc("reviewed_game_put", { p_cc_id: Number(ccId), p_data: game }); }
+  catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), data: game }); } catch { } }
 }
 async function reviewedGameFetch(ccId) {
   if (!SB_ON || !ccId) return null;
@@ -8412,7 +8415,10 @@ function weaknessReportFromAnalyses(games, analysesByCcId) {
 }
 async function reviewedAnalysisShare(ccId, result, depth) {
   if (!SB_ON || !ccId || !result) return;
-  try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
+  // (v0.5.7 BUG-023) reviewed_analysis_put RPC로 — 비어 있거나 더 새 버전·더 깊은 분석일 때만 바뀐다.
+  const analysis = { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result };
+  try { await sbRpc("reviewed_analysis_put", { p_cc_id: Number(ccId), p_analysis: analysis }); }
+  catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis }); } catch { } }
 }
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
@@ -26114,7 +26120,19 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
         <BestMoveJumpButton title="게임 리뷰" onClick={onReview} />
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 9 }}>
-        <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "0 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : "전체 전적"}</span>
+        <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : "전체 전적"}</span>
+        {/* (v0.5.7, 사용자 요청) 전적 칩은 오른쪽 끝에 고정 — 오프닝 이름 길이나 뒤늦게 나타나는 승률 변화(▲8%p)에 밀려 움직이지 않게,
+            변화 표시는 칩 왼쪽의 고정 폭 자리에 오른쪽 정렬로 둔다. */}
+        <span style={{ flexShrink: 0, width: 58, display: "inline-flex", justifyContent: "flex-end" }}>
+          <AnimatePresence>
+            {phase === 1 && (
+              <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
+                style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
+                {dWr == null ? "첫 대국!" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </span>
         <span style={{ position: "relative", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + chipColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: T.ink, transition: "border-color .3s" }}>
           {phase === 1 && <motion.span aria-hidden="true" initial={{ opacity: 0.8, transform: "scale(1)" }} animate={{ opacity: 0, transform: "scale(1.35)" }} transition={{ duration: 0.7, ease: "easeOut" }}
             style={{ position: "absolute", inset: -2, borderRadius: 12, border: "2px solid " + hotColor, pointerEvents: "none" }} />}
@@ -26122,14 +26140,6 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
           {/* 승률은 새 값까지 세어 가는 동안(useCountTween 750ms) 잔잔하게 떨리다 멈춘다 — 바뀐 전적 숫자보다 한 박자 뒤 */}
           <CcShake active={phase === 1 && dWr !== 0} delay={0.12} duration={0.75}><span style={{ color: chipColor, transition: "color .3s" }}>{wr != null ? wr + "%" : "–"}</span></CcShake>
         </span>
-        <AnimatePresence>
-          {phase === 1 && (
-            <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
-              style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
-              {dWr == null ? "첫 대국!" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
-            </motion.span>
-          )}
-        </AnimatePresence>
       </div>
       <motion.span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2.5, background: T.book, transformOrigin: "left", scaleX: left, opacity: 0.8 }} />
     </motion.div>

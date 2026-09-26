@@ -10,7 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
-| BUG-023 | P2 | 리뷰 캐시(reviewed_games)를 로그인 없이 누구나 덮어써, 공유 리뷰 링크에 조작된 기보가 보일 수 있음 | 발견(수정 결정 필요) | 2026-09-26 |
+| BUG-023 | P2 | 리뷰 캐시(reviewed_games)를 로그인 없이 누구나 덮어써, 공유 리뷰 링크에 조작된 기보가 보일 수 있음 | 수정 완료(사용자 승인) | 2026-09-26 |
 | BUG-022 | P1 | 채팅 수신자가 남이 보낸 메시지 본문을 REST로 고칠 수 있음(update 권한이 테이블 전체에 열림) | 수정 완료 | 2026-09-26 |
 | BUG-021 | P3 | 나이트 레이스 서버 거리 계산이 6수에서 멈춰 par 7 라운드가 실시간 대전에선 안 나옴 | 수정 완료 | 2026-09-26 |
 | BUG-020 | P1 | 나이트 레이스 위협 칸 판정이 실제 체스와 달라 "답이 없어 보이는" 라운드가 나옴 | 수정 완료 | 2026-09-26 |
@@ -39,12 +39,14 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ## 상세 기록
 
 ### BUG-023 · [P2] 리뷰 캐시(reviewed_games)를 누구나 덮어쓸 수 있음
-- **상태**: 발견 (수정 결정 필요)
+- **상태**: 수정 완료 (v0.5.7, 사용자 승인 — "모든 버그를 수정")
 - **발견일**: 2026-09-26 (BUG-022 권한 점검 중 발견)
 - **위치**: `supabase-setup.sql` 21) reviewed_games — `"reviewed games update" using (true) with check (true)`, `grant ... update ... to anon, authenticated`
 - **증상**: 로그인하지 않은 사람도 REST로 임의 chess.com 대국 ID의 `data`(기보)·`analysis`(분석 결과)를 덮어쓸 수 있다. 그 대국의 공유 리뷰 링크(/review/…)를 여는 모든 사람에게 조작된 기보·정확도가 보인다.
 - **근본 원인**: 크라우드소싱 캐시라 "조작해도 이득 볼 카운터가 없다"는 판단으로 insert/update를 모두 열어 둔 설계(v0.3.4 주석)
-- **수정 방향(제안)**: ① 처음 올린 뒤에는 `data`를 못 바꾸게(insert만 허용, `on conflict do nothing`) ② `analysis`는 버전(v)이 더 새로울 때만 갱신하는 RPC로 — 둘 다 캐시 갱신 흐름을 바꾸므로 승인 후 진행
+- **수정 내용**: 표에는 읽기만 열고(insert/update 정책·권한 제거), 쓰기는 SECURITY DEFINER RPC 두 개로만 — `reviewed_game_put`(기보는 처음 올린 것이 그대로 남음, 분석이 먼저 올라와 기보가 비어 있던 행만 채움, 모양·크기 검사), `reviewed_analysis_put`(비어 있거나 더 새 버전·같은 버전에서 더 깊은 분석일 때만 교체, 기보가 있으면 분석의 수 개수가 기보와 같아야 함). 클라이언트(`reviewedGameShare`·`reviewedAnalysisShare`)는 RPC를 부르고, RPC가 없으면(SQL 미반영) 예전 방식으로 대신한다.
+- **재발 방지 안전장치**: `scripts/check-sql-grants.mjs`에 "누구나 쓰는 정책(insert with check (true) / update using (true) with check (true))은 허용 목록(puzzles·daily_puzzle_cache)에 있는 표만" 규칙 추가 — 수정 전 SQL에서 reviewed_games 2건 실패 → 수정 후 통과
+- **검증**: 로컬 PostgreSQL 16 — anon 역할의 직접 insert/update는 `permission denied`, 이미 있는 기보를 RPC로 덮어쓰기 시도는 무시(원래 기보 유지), 수 개수가 다른 분석 거부, 더 얕은 분석 거부·더 깊은 분석 수락, 분석이 먼저 올라온 행은 기보로 채워짐. **배포 시 `supabase-setup.sql` 재실행 필요**
 
 ### BUG-022 · [P1] 채팅 수신자가 남이 보낸 메시지 본문을 고칠 수 있음
 - **상태**: 수정 완료 (v0.5.7)
