@@ -4193,20 +4193,28 @@ function useCountUp(target, durationMs, decimals = 0) {
   return target == null ? null : display;
 }
 // (v0.5.6 기능, 사용자 요청) 분석 탭 수 블록의 일일 퀘스트 표시 — 블록이 나타날 때 아이콘이 톡 튀어나오고, 오른쪽으로 두루마리
-// (원통)가 굴러가며 펴지듯 "퀘스트" 알약이 펼쳐진다(탁월/유일/최선 이펙트의 알약처럼). 그 뒤에도 몇 초마다 한 번씩 까딱까딱
-// 흔들려 "눌러 보라"고 손짓한다. 움직임은 전부 합성기 값(opacity·transform 문자열·clipPath)만 쓴다(SquareFx 주석 참고).
+// (원통)가 굴러가며 펴지듯 "퀘스트" 알약이 펼쳐진다(탁월/유일/최선 이펙트의 알약처럼). 움직임은 전부 합성기 값(opacity·transform
+// 문자열·clipPath)만 쓴다(SquareFx 주석 참고).
+// (v0.5.7, 사용자 요청 "흔들림이 부자연스럽다") 몇 초마다 태그 전체를 까딱까딱 회전시키던 흔들림을 없앴다 — 이제 태그는 제자리에
+// 가만히 있고, 주기마다 아이콘 뒤에서 금빛 고리가 한 번 퍼져 나가며 사라지고(ping), 이어서 알약 위로 빛줄기가 한 번 스쳐 지나간다
+// (금속 광택). 태그가 움직이지 않아 글자가 흔들려 읽기 어렵거나 블록 가장자리에서 삐져나오는 일이 없다.
 const QUEST_TAG_H = 22, QUEST_TAG_W = 64;
 const QUEST_TAG_POP = 0.12, QUEST_TAG_ROLL = 0.5;      // 아이콘 등장 뒤 펼치기 시작(초), 펼치는 시간(초)
-const QUEST_WIGGLE = ["rotate(0deg) scale(1)", "rotate(-9deg) scale(1.08)", "rotate(8deg) scale(1.08)", "rotate(-6deg) scale(1.05)", "rotate(4deg) scale(1.02)", "rotate(-1.5deg) scale(1)", "rotate(0deg) scale(1)"];
+const QUEST_IDLE_START = QUEST_TAG_POP + QUEST_TAG_ROLL + 0.9;   // 펼쳐진 뒤 첫 손짓까지(초)
+const QUEST_IDLE_PERIOD = 3.8;                                    // 손짓 주기(초) — 고리·빛줄기가 같은 주기로 반복된다
+const QUEST_PING_DUR = 0.95, QUEST_SHINE_DUR = 0.7, QUEST_SHINE_LAG = 0.18;
 function QuestTag({ onClick }) {
   const H = QUEST_TAG_H, W = QUEST_TAG_W, R = QUEST_TAG_POP, D = QUEST_TAG_ROLL;
   const clipClosed = "inset(0px " + (W - H) + "px 0px 0px round 999px)", clipOpen = "inset(0px 0px 0px 0px round 999px)";
   const Tag = onClick ? motion.button : motion.span;
   return (
     <Tag onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined} title={onClick ? "일일 퀘스트 오프닝 — 눌러서 퀘스트 보기" : "일일 퀘스트 오프닝"}
-      initial={{ transform: QUEST_WIGGLE[0] }} animate={{ transform: QUEST_WIGGLE }}
-      transition={{ duration: 0.7, delay: R + D + 0.9, times: [0, 0.14, 0.3, 0.46, 0.62, 0.8, 1], ease: fxEase(7, "easeInOut"), repeat: Infinity, repeatDelay: 2.8 }}
-      style={{ position: "absolute", top: -8, left: -8, width: W, height: H, padding: 0, border: "none", background: "transparent", zIndex: 5, cursor: onClick ? "pointer" : "default", transformOrigin: H / 2 + "px 50%", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.38))", willChange: "transform" }}>
+      whileHover={onClick ? { transform: "scale(1.05)" } : undefined} whileTap={onClick ? { transform: "scale(0.95)" } : undefined}
+      style={{ position: "absolute", top: -8, left: -8, width: W, height: H, padding: 0, border: "none", background: "transparent", zIndex: 5, cursor: onClick ? "pointer" : "default", transformOrigin: H / 2 + "px 50%", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.38))" }}>
+      {/* 손짓 1 — 아이콘 뒤에서 퍼져 나가며 옅어지는 금빛 고리(알약·아이콘 아래에 깔려 왼쪽·위·아래로만 보인다) */}
+      <motion.span initial={{ opacity: 0, transform: "scale(1)" }} animate={{ opacity: [0.9, 0], transform: ["scale(1)", "scale(1.9)"] }}
+        transition={{ duration: QUEST_PING_DUR, delay: QUEST_IDLE_START, ease: "easeOut", repeat: Infinity, repeatDelay: QUEST_IDLE_PERIOD - QUEST_PING_DUR }}
+        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", border: "2px solid " + T.brassHi, boxSizing: "border-box", willChange: "transform, opacity" }} />
       {/* 펼쳐지는 알약 — 왼쪽(아이콘 뒤)에 말려 있다가 clipPath로 오른쪽까지 드러난다 */}
       <motion.span initial={{ clipPath: clipClosed }} animate={{ clipPath: clipOpen }} transition={{ duration: D, delay: R, ease: [0.3, 0.7, 0.3, 1] }}
         style={{ position: "absolute", inset: 0, borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "2px solid " + T.paper, boxSizing: "border-box", overflow: "hidden", willChange: "clip-path" }}>
@@ -4216,6 +4224,10 @@ function QuestTag({ onClick }) {
         <motion.span initial={{ opacity: 1, transform: "translateX(" + (H - 12) + "px)" }} animate={{ opacity: [1, 1, 0], transform: ["translateX(" + (H - 12) + "px)", "translateX(" + (W - 14) + "px)", "translateX(" + (W - 14) + "px)"] }}
           transition={{ duration: D + 0.15, delay: R, times: [0, D / (D + 0.15), 1], ease: [[0.3, 0.7, 0.3, 1], "linear"] }}
           style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, borderRadius: 999, background: "linear-gradient(90deg,#6E5424 0%," + T.brassHi + " 45%,#FFF6DE 55%,#8A6C2F 100%)", willChange: "transform, opacity" }} />
+        {/* 손짓 2 — 고리가 퍼진 직후 알약 위를 왼쪽에서 오른쪽으로 스치는 비스듬한 빛줄기(알약 overflow로 잘린다) */}
+        <motion.span initial={{ transform: "translateX(-20px) skewX(-22deg)" }} animate={{ transform: ["translateX(-20px) skewX(-22deg)", "translateX(" + (W + 6) + "px) skewX(-22deg)"] }}
+          transition={{ duration: QUEST_SHINE_DUR, delay: QUEST_IDLE_START + QUEST_SHINE_LAG, ease: [0.45, 0, 0.35, 1], repeat: Infinity, repeatDelay: QUEST_IDLE_PERIOD - QUEST_SHINE_DUR }}
+          style={{ position: "absolute", left: 0, top: -2, bottom: -2, width: 14, background: "linear-gradient(90deg, rgba(255,248,225,0) 0%, rgba(255,248,225,.9) 50%, rgba(255,248,225,0) 100%)", pointerEvents: "none", willChange: "transform" }} />
       </motion.span>
       {/* 아이콘 원 */}
       <motion.span initial={{ opacity: 0, transform: "scale(0.3)" }} animate={{ opacity: 1, transform: "scale(1)" }} transition={{ duration: 0.32, ease: [0.2, 0.9, 0.3, 1.35] }}
