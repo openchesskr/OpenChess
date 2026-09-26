@@ -2278,7 +2278,9 @@ declare
   dist int := 0; sq text; nb text;
 begin
   if p_start = p_target then return 0; end if;
-  while array_length(frontier,1) > 0 and dist < 6 loop
+  -- (v0.5.7) 예전엔 dist < 6에서 멈춰 7수 이상은 null(=경로 없음)이 됐다 — 4·5라운드의 par 7(~8) 라운드가 서버에선 절대 안 나왔다.
+  -- BFS는 방문 배열로 알아서 끝나므로 보드 전체(64칸)까지 찾는다.
+  while array_length(frontier,1) > 0 and dist < 64 loop
     next_frontier := '{}';
     foreach sq in array frontier loop
       foreach nb in array public.knight_neighbors(sq, p_blocked) loop
@@ -2340,59 +2342,95 @@ begin
   return chr(97+nf) || (nr+1)::text;
 end; $$;
 
--- (v0.5.1 신규) 위협 기물(비숍/룩) p_sq가 실제로 지배(공격)하는 칸을 계산한다 — 다른 기물에 막히는
--- 것은 고려하지 않고 보드 끝까지 미끄러진다(미니게임 성격상 다른 기물에 의한 차단까지 재현할 필요는
--- 없다고 판단했다). 이 칸에 반대 색 나이트가 들어가면 잡힌다.
-create or replace function public.knight_attacked_squares(p_sq text, p_type text)
+-- (v0.5.1 신규 → v0.5.7 BUG-020 수정) 위협 기물 p_sq(R 룩·B 비숍·Q 퀸)가 공격하는 칸 — src/lib/knightRace.js의
+-- knightAttackedSquares와 같은 규칙. 예전엔 다른 기물을 뚫고 보드 끝까지 이어졌지만, 이제 실제 체스처럼 p_blockers(남아 있는
+-- 기물 칸, 색 무관)에 닿으면 그 칸까지만 공격한다(그 칸 자체는 공격 = 보호). 나이트는 움직이므로 막지 않는다.
+drop function if exists public.knight_attacked_squares(text, text);
+create or replace function public.knight_attacked_squares(p_sq text, p_type text, p_blockers text[] default '{}')
 returns text[] language plpgsql immutable as $$
 declare
   f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
-  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]] else array[[1,1],[1,-1],[-1,1],[-1,-1]] end;
-  out text[] := '{}'; i int; step int; nf int; nr int;
+  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]]
+                       when p_type = 'B' then array[[1,1],[1,-1],[-1,1],[-1,-1]]
+                       else array[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]] end;
+  out text[] := '{}'; i int; step int; nf int; nr int; nsq text;
 begin
-  for i in 1..4 loop
+  for i in 1..array_length(dirs, 1) loop
     step := 1;
     loop
       nf := f + dirs[i][1]*step; nr := r + dirs[i][2]*step;
       exit when nf < 0 or nf > 7 or nr < 0 or nr > 7;
-      out := out || (chr(97+nf) || (nr+1)::text);
+      nsq := chr(97+nf) || (nr+1)::text;
+      out := out || nsq;
+      exit when nsq = any(coalesce(p_blockers, '{}'));
       step := step + 1;
     end loop;
   end loop;
   return out;
 end; $$;
 
--- (v0.5.4 난이도 대폭 상향, 사용자 요청) 라운드 하나를 만든다 — src/App.jsx의 knightTryGenLocal/
--- knightGenRoundLocal과 완전히 같은 규칙. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이
--- 되돌아가면 실제 최단 거리가 1~2수에 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을
--- 피한 실제 최단 수(par)"를 knight_distance로 재서 라운드별 범위에 들어올 때만 채택한다.
--- (v0.5.5, 사용자 요청) 1라운드는 5초로 짧게, 뒤로 갈수록 제한시간이 늘지만 기물 수·거리가 더 가파르게 는다.
---   라운드 1: par 3~4, 기물 1쌍, 5초 / 2: par 4~5, 2쌍, 8초 / 3: par 5~6, 3쌍, 11초
---   라운드 4: par 6~7, 4쌍, 14초 / 5: par 6~7, 5쌍, 17초
--- 2라운드부터는 기물이 없을 때의 최단 거리보다 par가 반드시 길어야 한다(눈에 보이는 가장 빠른 길이 위협
--- 칸으로 막혀 돌아가거나, 상대 기물을 잡아 길을 열어야 한다). 이동 수 제한은 par+1.
--- 시작 칸·기물은 목표를 중심으로 점대칭이고, 백·흑 양쪽 par를 모두 재서 같을 때만 채택한다. 조건에 맞는 라운드를 4000번 안에
--- 못 찾으면(5라운드 약 50%, 4라운드 약 15%) 한 단계 낮은 조건으로 다시 뽑는다 — 제한시간은 원래 라운드 것을 그대로 쓴다.
+-- (v0.5.7) 잡지 않고도 확실히 가는 길의 금지 칸 — 처음 위협 칸 + 모든 기물 칸(src/lib/knightRace.js knightSafeWalls와 같음).
+-- 이 칸들만 피하면 도중에 아무것도 잡지 않아 위협 칸이 처음 그대로이므로, 이 기준으로 잰 par 경로는 규칙대로 반드시 통한다.
+create or replace function public.knight_safe_walls(p_round jsonb, p_color text)
+returns text[] language plpgsql immutable as $$
+begin
+  return public.knight_danger(p_round, p_color, '{}')
+      || coalesce(array(select h ->> 'sq' from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h), '{}');
+end; $$;
+
+-- (v0.5.7) p_start에서 최단(p_par수)으로 가는 첫 수가 몇 개인지 — 5라운드의 "첫 수가 딱 하나" 조건용.
+create or replace function public.knight_first_moves(p_start text, p_target text, p_walls text[], p_par int)
+returns int language plpgsql stable as $$
+declare nb text; n int := 0;
+begin
+  foreach nb in array public.knight_neighbors(p_start, p_walls) loop
+    if (nb = p_target and p_par = 1) or (nb <> p_target and public.knight_distance(nb, p_target, p_walls) = p_par - 1) then n := n + 1; end if;
+  end loop;
+  return n;
+end; $$;
+
+-- (v0.5.4 난이도 대폭 상향 → v0.5.7 개편) 라운드 하나를 만든다 — src/lib/knightRace.js의 knightTryGen/knightGenRound와 같은 규칙.
+-- par = 위협 칸과 모든 기물 칸을 피한(잡지 않고 가는) 최단 수(knight_safe_walls). 라운드별 조건(minDist~maxDist, 기물 쌍,
+-- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. 이동 수 제한은 par+1.
+--   1: par 3~4, 1쌍, 5초 / 2: par 4~5, 2쌍, +1 / 3: par 5~6, 3쌍, +1 / 4: par 6~7, 4쌍, +1, 14초
+--   5: par 6~8, 5쌍(1쌍은 반드시 퀸), +2, 첫 수 하나뿐, 17초 — (v0.5.7, 사용자 요청) 반드시 상대 퀸이 나오는 매우 어려운 라운드
+-- 시작 칸·기물은 목표를 중심으로 점대칭이고, 흑 쪽 par도 같을 때만 쓴다. 4000번 안에 못 찾으면 조건을 한 단계씩 낮추되,
+-- 5라운드는 퀸을 빼지 않고 나머지 조건만 낮춘다(knightGenRound의 ladder와 같은 순서). 제한시간은 원래 라운드 것 그대로.
 create or replace function public._knight_gen_round(p_round_idx int)
 returns jsonb language plpgsql volatile as $$
 declare
-  v_specs int[][] := array[[3,4,1,0,5000],[4,5,2,1,8000],[5,6,3,1,11000],[6,7,4,1,14000],[6,7,5,1,17000]]; -- minDist, maxDist, pairs, detour, timeMs
-  v_time int := v_specs[least(greatest(p_round_idx, 0), 4) + 1][5];
-  k int; v_try int; v_t int; i int;
-  v_min int; v_max int; v_pairs int; v_detour boolean;
+  v_idx int := least(greatest(p_round_idx, 0), 4);
+  -- 행: minDist, maxDist, pairs, minDetour, queens, onlyFirst(0/1), timeMs
+  v_specs int[][] := array[[3,4,1,0,0,0,5000],[4,5,2,1,0,0,8000],[5,6,3,1,0,0,11000],[6,7,4,1,0,0,14000],[6,8,5,2,1,1,17000]];
+  -- 5라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
+  v_queen_ladder int[][] := array[[6,8,5,2,1,1,17000],[6,8,5,2,1,0,17000],[6,8,5,1,1,0,17000],[5,8,4,1,1,0,17000],[4,8,3,0,1,0,17000],[3,8,2,0,1,0,17000]];
+  v_is_queen boolean; v_time int; v_steps int; v_step int; v_row int[];
+  v_try int; v_t int; v_p int;
+  v_min int; v_max int; v_pairs int; v_detour int; v_queens int; v_only boolean;
   v_target text; v_ws text; v_bs text; v_sq text; v_m text; v_used text[];
   v_haz_w text[]; v_haz_b text[]; v_hazards jsonb; v_type text; v_round jsonb;
-  v_w_ill text[]; v_b_ill text[]; v_par int; v_plain int;
+  v_w_ill text[]; v_b_ill text[]; v_w_walls text[]; v_b_walls text[]; v_par int; v_plain int;
 begin
-  for k in reverse least(greatest(p_round_idx, 0), 4) + 1 .. 1 loop
-    v_min := v_specs[k][1]; v_max := v_specs[k][2]; v_pairs := v_specs[k][3]; v_detour := v_specs[k][4] = 1;
+  v_is_queen := v_specs[v_idx + 1][5] > 0;
+  v_time := v_specs[v_idx + 1][7];
+  v_steps := case when v_is_queen then array_length(v_queen_ladder, 1) else v_idx + 1 end;
+  for v_step in 1..v_steps loop
+    -- 퀸 라운드는 v_queen_ladder 순서대로, 아니면 원래 라운드 → 1라운드 조건 순서로
+    if v_is_queen then
+      v_min := v_queen_ladder[v_step][1]; v_max := v_queen_ladder[v_step][2]; v_pairs := v_queen_ladder[v_step][3];
+      v_detour := v_queen_ladder[v_step][4]; v_queens := v_queen_ladder[v_step][5]; v_only := v_queen_ladder[v_step][6] = 1;
+    else
+      v_p := v_idx + 2 - v_step;
+      v_min := v_specs[v_p][1]; v_max := v_specs[v_p][2]; v_pairs := v_specs[v_p][3];
+      v_detour := v_specs[v_p][4]; v_queens := v_specs[v_p][5]; v_only := v_specs[v_p][6] = 1;
+    end if;
     for v_try in 1..4000 loop
       v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
       v_ws := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
       v_bs := public.knight_reflect_sq(v_ws, v_target);
       if v_bs is null or v_ws = v_target or substr(v_ws,2)::int > substr(v_bs,2)::int then continue; end if;
       v_used := array[v_ws, v_bs, v_target]; v_haz_w := '{}'; v_haz_b := '{}';
-      for i in 1..v_pairs loop
+      for v_p in 1..v_pairs loop
         for v_t in 1..50 loop
           v_sq := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
           v_m := public.knight_reflect_sq(v_sq, v_target);
@@ -2403,22 +2441,29 @@ begin
       end loop;
       if coalesce(array_length(v_haz_w,1),0) < v_pairs then continue; end if;
       v_hazards := '[]'::jsonb;
-      for i in 1..v_pairs loop
-        v_type := case when random() < 0.5 then 'B' else 'R' end;
-        v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_type, 'color', 'w')
-                               || jsonb_build_object('sq', v_haz_b[i], 'type', v_type, 'color', 'b');
+      for v_p in 1..v_pairs loop
+        v_type := case when v_p <= v_queens then 'Q' when random() < 0.5 then 'B' else 'R' end;
+        v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[v_p], 'type', v_type, 'color', 'w')
+                               || jsonb_build_object('sq', v_haz_b[v_p], 'type', v_type, 'color', 'b');
       end loop;
       v_round := jsonb_build_object('target', v_target, 'hazards', v_hazards);
       v_w_ill := public.knight_danger(v_round, 'w', '{}');
-      v_b_ill := public.knight_danger(v_round, 'b', '{}');
       if v_target = any(v_w_ill) or v_ws = any(v_w_ill) then continue; end if;
-      v_par := public.knight_distance(v_ws, v_target, v_w_ill || v_haz_w);
+      v_w_walls := public.knight_safe_walls(v_round, 'w');
+      v_par := public.knight_distance(v_ws, v_target, v_w_walls);
       if v_par is null or v_par < v_min or v_par > v_max then continue; end if;
-      -- 반사점이 보드 밖인 칸 때문에 점대칭만으로는 양쪽 최단 수가 같다는 보장이 없어, 흑 쪽도 재서 같을 때만 쓴다.
-      if public.knight_distance(v_bs, v_target, v_b_ill || v_haz_b) is distinct from v_par then continue; end if;
-      if v_detour then
+      -- 점대칭이라도 보드 끝·공격선 막힘은 대칭이 아니어서, 흑 쪽도 재서 같을 때만 쓴다.
+      v_b_ill := public.knight_danger(v_round, 'b', '{}');
+      if v_target = any(v_b_ill) or v_bs = any(v_b_ill) then continue; end if;
+      v_b_walls := public.knight_safe_walls(v_round, 'b');
+      if public.knight_distance(v_bs, v_target, v_b_walls) is distinct from v_par then continue; end if;
+      if v_detour > 0 then
         v_plain := least(public.knight_distance(v_ws, v_target, '{}'), public.knight_distance(v_bs, v_target, '{}'));
-        if v_par <= v_plain then continue; end if;
+        if v_par < v_plain + v_detour then continue; end if;
+      end if;
+      if v_only then
+        if public.knight_first_moves(v_ws, v_target, v_w_walls, v_par) <> 1 then continue; end if;
+        if public.knight_first_moves(v_bs, v_target, v_b_walls, v_par) <> 1 then continue; end if;
       end if;
       return jsonb_build_object('target', v_target, 'whiteStart', v_ws, 'blackStart', v_bs, 'hazards', v_hazards,
         'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', v_time);
@@ -2468,16 +2513,21 @@ grant execute on function public.knight_start_round(bigint) to authenticated;
 -- (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 이제 "못 가는 칸"을 만드는 벽이 아니다 — 나이트가 상대
 -- 기물 칸에 도달하면 그 기물을 잡아 없애고(그 기물이 지배하던 칸도 함께 안전해진다), 상대 기물이
 -- 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다(p_captured). 자기 색 기물 칸에는
--- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다 —
--- knight_start_round의 wIllegal/bIllegal과 같은 공식(점대칭 반사점이 보드 안인 칸만).
+-- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다.
+-- (v0.5.7 BUG-020 수정) 예전엔 "목표 칸 기준 점대칭 반사점이 보드 안인 칸"만 셌다 — 목표 e5·흑 룩 f4일 때 룩이 공격하는
+-- f1(반사점 d9)이 안전 칸으로 취급돼, 보기엔 답이 없는 라운드가 나왔다. 이제 실제 체스처럼 모든 공격 칸을 세고, 공격선은
+-- 남아 있는 기물(색 무관)에 막힌다 — src/lib/knightRace.js knightDangerFor와 같다.
 create or replace function public.knight_danger(p_round jsonb, p_color text, p_taken text[])
 returns text[] language sql immutable as $$
+  with live as (
+    select h from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h
+    where not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
+  ), blockers as (
+    select coalesce(array_agg(h ->> 'sq'), '{}') b from live
+  )
   select coalesce(array_agg(distinct a), '{}')
-  from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h,
-       unnest(public.knight_attacked_squares(h ->> 'sq', h ->> 'type')) a
-  where h ->> 'color' <> p_color
-    and not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
-    and public.knight_reflect_sq(a, p_round ->> 'target') is not null;
+  from live, blockers, unnest(public.knight_attacked_squares(live.h ->> 'sq', live.h ->> 'type', blockers.b)) a
+  where live.h ->> 'color' <> p_color;
 $$;
 
 -- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과·잡힘) 라운드당 한 번만 허용한다(이미 보고했으면

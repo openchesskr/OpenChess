@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
@@ -24,7 +24,8 @@
     "check:theory": "node scripts/check-theory-merge.mjs",
     "check:cc-toast": "node scripts/check-cc-game-toast.mjs",
     "check:inline-assets": "node scripts/check-inline-assets.mjs",
-    "check:latest-rows": "node scripts/check-latest-rows.mjs"
+    "check:latest-rows": "node scripts/check-latest-rows.mjs",
+    "check:knight-rounds": "node scripts/check-knight-rounds.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
