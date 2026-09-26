@@ -26064,7 +26064,7 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
 // 어떻게 바꿨는지(승/무/패 숫자가 넘어가고 승률이 새 값까지 올라가거나 내려감) 보여 준다.
 const CC_TOAST_MS = 8000;       // 자동으로 닫히기까지(마우스를 올려 두면 멈춤)
 const CC_TOAST_REVEAL_MS = 900; // 직전 전적을 먼저 보여 주고, 이 대국을 반영하기까지
-// (v0.5.6 사용자 요청) "이 오프닝 전적" 라벨 서체 — 한글 글리프가 없어 한글은 명조 계열로 대체된다.
+// (v0.5.6 사용자 요청) 전적 칩 앞 오프닝 이름(예: "Italian Game: Classical Variation") 서체 — 결과 줄에서 이 자리로 옮겼다.
 const CC_TOAST_LABEL_FONT = "'Playfair Display', 'Nanum Myeongjo', serif";
 const ccWrColor = (n, wr) => (n < 3 || wr == null ? "#8A7458" : wr >= 60 ? T.best : wr >= 40 ? T.inaccuracy : T.blunder); // 도감 전적 칩과 같은 규칙
 function useCountTween(from, to, run, ms = 750) {
@@ -26140,14 +26140,13 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
             {ratingDelta != null && <span style={{ marginLeft: 4, fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT, color: ratingDelta > 0 ? T.best : ratingDelta < 0 ? T.blunder : T.inkSoft }}>({ratingDelta > 0 ? "+" + ratingDelta : ratingDelta})</span>}
           </div>
           {opp && opp.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{opp.username}</b>{opp.rating != null && <span style={{ fontFamily: SITE_FONT }}>({opp.rating})</span>}</div>}
-          {game.opening && <div style={{ fontSize: 11, fontWeight: 800, color: T.book, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{game.opening}</div>}
         </div>
         <button onClick={onSearch} aria-label="대국 보기" title="분석 보드로 불러오기" className="press" style={iconBtn}><Search size={13} /></button>
         <BestMoveJumpButton title="게임 리뷰" onClick={onReview} />
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 9 }}>
-        <span style={{ fontFamily: CC_TOAST_LABEL_FONT, fontSize: 11.5, fontWeight: 700, color: T.book, flexShrink: 0 }}>{rec.scope === "opening" ? "이 오프닝 전적" : "전체 전적"}</span>
-        <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + chipColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: T.ink, transition: "border-color .3s" }}>
+        <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "0 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : "전체 전적"}</span>
+        <span style={{ position: "relative", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + chipColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: T.ink, transition: "border-color .3s" }}>
           {phase === 1 && <motion.span aria-hidden="true" initial={{ opacity: 0.8, transform: "scale(1)" }} animate={{ opacity: 0, transform: "scale(1.35)" }} transition={{ duration: 0.7, ease: "easeOut" }}
             style={{ position: "absolute", inset: -2, borderRadius: 12, border: "2px solid " + hotColor, pointerEvents: "none" }} />}
           <span><CcFlipNum value={cur.w} hot={phase === 1 && rec.changed === "w"} color={hotColor} />승 <CcFlipNum value={cur.d} hot={phase === 1 && rec.changed === "d"} color={hotColor} />무 <CcFlipNum value={cur.l} hot={phase === 1 && rec.changed === "l"} color={hotColor} />패</span>
@@ -26156,7 +26155,7 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
         <AnimatePresence>
           {phase === 1 && (
             <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
-              style={{ fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
+              style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
               {dWr == null ? "첫 대국!" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
             </motion.span>
           )}
