@@ -18888,6 +18888,7 @@ function useDailyPuzzle(engine, dateStr) {
 const DAILY_CAROUSEL_MAX_DAYS = 7;
 let earliestDailyPickCache = null; // Promise<string|null> — 세션 내내 재사용
 function loadEarliestDailyPickDate() {
+  // 가장 이른 날짜 하나만 필요해 asc+limit=1이 의도된 것 — asc-limit-ok (scripts/check-latest-rows.mjs)
   if (!earliestDailyPickCache) earliestDailyPickCache = sbSelect("daily_puzzle_picks?select=date&order=date.asc&limit=1").then((rows) => (rows && rows[0] ? rows[0].date : null)).catch(() => null);
   return earliestDailyPickCache;
 }
@@ -27542,14 +27543,27 @@ async function notifyDelete(row) { if (!SB_ON || row.id == null) return true; tr
 async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 /* (17차) 친구 채팅 — 텍스트 + 이모티콘 */
 async function chatSend(myUid, toUid, body, emoji) { if (!SB_ON || !myUid || !toUid) return false; try { await sbInsert("chat_messages", { from_uid: myUid, to_uid: toUid, body: body || null, emoji: emoji || null }); return true; } catch { return false; } }
+// (v0.5.7 버그 수정 BUG-018, P1) 예전엔 order=created_at.asc&limit=300 — "가장 오래된" 300개를 받아, 한 대화가 300개를 넘으면
+// 그 뒤 메시지가 영영 안 보였다. 새 메시지가 오거나 보낼 때마다 이 함수로 다시 불러오므로, 보낸 메시지가 보내자마자 사라지고
+// 안 읽은 메시지도 읽음 처리되지 않았다. 최신 CHAT_FETCH_LIMIT개를 desc로 받아 화면 순서(오래된 → 최신)로 뒤집는다.
+// scripts/check-latest-rows.mjs가 "asc + limit" 조합을 막는다.
+const CHAT_FETCH_LIMIT = 300;
 async function chatFetch(myUid, otherUid) {
   if (!SB_ON || !myUid || !otherUid) return [];
   try {
-    const q = "chat_messages?or=(and(from_uid.eq." + myUid + ",to_uid.eq." + otherUid + "),and(from_uid.eq." + otherUid + ",to_uid.eq." + myUid + "))&order=created_at.asc&limit=300";
-    return (await sbSelect(q)) || [];
+    const q = "chat_messages?or=(and(from_uid.eq." + myUid + ",to_uid.eq." + otherUid + "),and(from_uid.eq." + otherUid + ",to_uid.eq." + myUid + "))&order=created_at.desc,id.desc&limit=" + CHAT_FETCH_LIMIT;
+    return ((await sbSelect(q)) || []).slice().reverse();
   } catch { return []; }
 }
-async function chatMarkRead(rows) { if (!SB_ON || !rows || !rows.length) return; try { await Promise.all(rows.filter((r) => r.id != null).map((r) => sbPatch("chat_messages", "id=eq." + r.id, { read: true }).catch(() => {}))); } catch { } }
+// (v0.5.7, BUG-018과 함께) 예전엔 안 읽은 메시지마다 PATCH를 따로(동시에) 보냈다 — 긴 대화를 처음 열면 최대 300개 요청이 한꺼번에
+// 나갈 수 있어, id=in.(...) 한 번으로 묶는다(RLS "chat update own"이 받는 사람 본인 행만 허용하는 건 그대로).
+async function chatMarkRead(rows) {
+  if (!SB_ON || !rows || !rows.length) return;
+  const ids = rows.map((r) => r.id).filter((id) => id != null);
+  for (let i = 0; i < ids.length; i += 100) {
+    try { await sbPatch("chat_messages", "id=in.(" + ids.slice(i, i + 100).join(",") + ")", { read: true }); } catch { }
+  }
+}
 // (v0.1.4 기능) 채팅 메시지 수정/삭제 — 수정은 소유권 검증이 필요해 RPC로, 삭제는 puzzle_likes와
 // 같은 RLS 소유자 delete 정책 패턴으로 REST DELETE를 직접 쓴다(notifyDelete와 달리 정책이 있다).
 async function chatEditMessage(id, body) { if (!SB_ON || id == null) return false; try { await sbRpc("chat_edit_message", { p_id: id, p_body: body }); return true; } catch { return false; } }
