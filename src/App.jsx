@@ -2834,22 +2834,6 @@ function GameEndBadge({ role, cell, left }) {
     </div>
   );
 }
-// 이펙트와 함께 기물이 출발 칸에서 미끄러져 들어오며, 지나온 쪽으로 옅은 꼬리(흰 기물은 빛, 검은 기물은 그림자)를 남긴다.
-function MoveFxSlide({ dx, dy, pieceColor, cell, children }) {
-  const dist = Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-  const tail = pieceColor === "w" ? "rgba(255,255,255,.95)" : "rgba(20,14,8,.5)";
-  return (
-    <motion.div initial={{ transform: "translate(" + dx + "px," + dy + "px)" }} animate={{ transform: "translate(0px,0px)" }} transition={{ duration: 0.15, ease: [0.25, 0.8, 0.35, 1] }}
-      style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1, willChange: "transform" }}>
-      {dist > 1 && (
-        <motion.span aria-hidden="true" initial={{ opacity: 0.9, transform: "rotate(" + ang + "deg) scaleX(0)" }} animate={{ opacity: [0.9, 0.9, 0], transform: [0, 1, 0.35].map((k) => "rotate(" + ang + "deg) scaleX(" + k + ")") }} transition={{ duration: 0.42, times: [0, 0.36, 1], ease: fxEase(3, "easeOut") }}
-          style={{ position: "absolute", left: "50%", top: "50%", width: Math.min(dist, cell * 1.6), height: cell * 0.36, marginTop: -cell * 0.18, transformOrigin: "0% 50%", background: "linear-gradient(to right, " + tail + ", rgba(0,0,0,0))", borderRadius: 999, filter: "blur(" + Math.max(1.5, cell * 0.035) + "px)", pointerEvents: "none", zIndex: -1 }} />
-      )}
-      {children}
-    </motion.div>
-  );
-}
 function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTargets = [], selected, onSquareClick, onPieceDrag, onDrop, onMove, evalCp, evalDepth, showCoords = true, showEval = true, interactive = true, lastQ, wrongAt, boardSkin, pieceSkin, belowEval, hintTo, hintFrom, hintPathSq, hintPathProgress, gridRef: externalGridRef, reserveEvalGap = false, endFx }) {
   const haloSet = useMemo(() => new Set((haloSquares || []).map(([r, c]) => r + "," + c)), [haloSquares]);
   const ctx = useContext(SkinContext);
@@ -2863,17 +2847,13 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
   const tx = (r, c) => (flip ? [7 - r, 7 - c] : [r, c]);
   const px = (r, c) => { const [vr, vc] = flip ? [7 - r, 7 - c] : [r, c]; return [vc * cell + cell / 2, vr * cell + cell / 2]; };
   const targetSet = new Set(legalTargets.map(([r, c]) => r + "," + c));
-  // (v0.5.5) 수 등급 이펙트 — lastQ가 탁월·유일·최선으로 새로 바뀌면 한 번 재생한다(처음 그려질 때는 재생하지 않는다). 보드가
-  // 바뀐 직후라면 직전 보드에서 출발 칸을 찾아 기물이 미끄러져 들어오게 한다. 등급이 한참 뒤(엔진 분류)에 정해지면 미끄러짐 없이 이펙트만.
+  // (v0.5.5) 수 등급 이펙트 — lastQ가 탁월·유일·최선으로 새로 바뀌면 한 번 재생한다(처음 그려질 때는 재생하지 않는다).
+  // (v0.5.7, 사용자 요청) 예전엔 보드가 바뀐 직후면 출발 칸에서 기물이 미끄러져 들어오는 연출(MoveFxSlide)을 함께 재생했다 —
+  // 사용자가 직접 둔 수는 기물이 이미 도착 칸에 놓인 뒤라, 같은 이동을 한 번 더 보여 줘 어색했다. 이동 연출을 빼고 칸 이펙트만 재생한다.
   const { moveFx: moveFxOn } = useContext(VisualPrefsContext);
-  const boardSig = board.map((row) => row.map((q) => (q ? q.c + q.t : ".")).join("")).join("/");
-  const prevBoardRef = useRef(board), beforeBoardRef = useRef(null), boardAtRef = useRef(0);
-  useLayoutEffect(() => {
-    beforeBoardRef.current = prevBoardRef.current; prevBoardRef.current = board; boardAtRef.current = Date.now();
-  }, [boardSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastQKey = lastQ && lastQ.to ? lastQ.to[0] + "," + lastQ.to[1] + ":" + lastQ.kind : "";
   const qKeyRef = useRef(undefined);
-  const [moveFxState, setMoveFxState] = useState(null); // { id, to, kind, from }
+  const [moveFxState, setMoveFxState] = useState(null); // { id, to, kind }
   // (v0.5.6) 대국 종료 이펙트 — endFx({ kind: "checkmate", loser } | { kind: "stalemate" | "threefold" })가 새로 생기면 두 킹 칸에서
   // 한 번 재생하고(처음 그려질 때부터 있던 종료는 재생 없이 배지만), 끝나면 배지만 남긴다. 재생 여부는 수 등급 이펙트와 같은 설정을 따른다.
   // (v0.5.6, 사용자 요청) 마지막 수의 수 등급 이펙트가 먼저 끝까지 재생되고, 잠시(END_FX_GAP_MS) 쉰 뒤에 종료 이펙트가 재생된다.
@@ -2912,16 +2892,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
     // (v0.5.6 버그 수정 BUG-009·010) 예전엔 기기의 "애니메이션 줄이기"(prefers-reduced-motion)가 켜져 있으면 이펙트를 통째로 껐다 —
     // 설정 탭 토글은 켜져 있는데 이펙트가 전혀 안 떠 고장처럼 보였다. 켜고 끄는 건 설정 탭 토글만 정한다(기기 설정은 보지 않는다).
     if (!moveFxOn || !MOVE_FX[lastQ.kind]) { setMoveFxState(null); return; }
-    const [tr, tc] = lastQ.to, moved = board[tr] && board[tr][tc];
-    let from = null;
-    const before = beforeBoardRef.current;
-    if (moved && before && Date.now() - boardAtRef.current < 700) {
-      for (let r = 0; r < 8 && !from; r++) for (let c = 0; c < 8; c++) {
-        const was = before[r][c], now = board[r][c];
-        if (was && was.c === moved.c && (was.t === moved.t || was.t === "P") && (!now || now.c !== was.c) && !(r === tr && c === tc)) { from = [r, c]; if (was.t === moved.t) break; }
-      }
-    }
-    setMoveFxState({ id: Date.now(), to: [tr, tc], kind: lastQ.kind, from });
+    setMoveFxState({ id: Date.now(), to: lastQ.to, kind: lastQ.kind });
   }, [lastQKey, moveFxOn]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!moveFxState) return undefined;
@@ -3149,7 +3120,6 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
           const draggable = interactive && !!onPieceDrag && !!p;
           const fxHere = moveFxState && moveFxState.to[0] === r && moveFxState.to[1] === c && lastQ && lastQ.kind === moveFxState.kind ? moveFxState : null;
           const endRole = p && p.t === "K" ? gameEndRole(endFx, p.c) : null;
-          const fxSlide = fxHere && fxHere.from && p ? (() => { const [fr, fc] = tx(fxHere.from[0], fxHere.from[1]); return { dx: (fc - ci) * cell, dy: (fr - ri) * cell }; })() : null;
           const pieceEl = p && <PieceGlyph type={p.t} color={p.c} size={cell * 0.74} pieceSkin={effPieceSkin} style={{ cursor: draggable ? "grab" : "default", transformOrigin: "50% 90%", opacity: ptrDrag && ptrDrag.r === r && ptrDrag.c === c ? 0.25 : 1, animation: hintFrom && hintFrom[0] === r && hintFrom[1] === c ? "hintPieceWobble .6s ease-in-out infinite" : "none" }} />;
           return (
             <div key={ri + "_" + ci}
@@ -3221,7 +3191,7 @@ function Board({ board, flip, size = 336, arrows = [], haloSquares = [], legalTa
                   모두에서 드래그가 동작하게 한다(사용자 요청으로 이제 기물 도형이 아니라 칸 전체가
                   드래그 시작점 — 위 draggable/touchAction 참고). 드래그 중인 기물은 살짝 옅게 만들고,
                   실제 기물은 아래 고스트로 대신 보여준다. */}
-              {fxSlide ? <MoveFxSlide key={"slide" + fxHere.id} dx={fxSlide.dx} dy={fxSlide.dy} pieceColor={p.c} cell={cell}>{pieceEl}</MoveFxSlide> : pieceEl}
+              {pieceEl}
             </div>
           );
         }))}
