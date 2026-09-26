@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
@@ -22,7 +22,8 @@
     "check:reduced-motion": "node scripts/check-reduced-motion.mjs",
     "check:dex-layout": "node scripts/check-dex-tree-layout.mjs",
     "check:theory": "node scripts/check-theory-merge.mjs",
-    "check:cc-toast": "node scripts/check-cc-game-toast.mjs"
+    "check:cc-toast": "node scripts/check-cc-game-toast.mjs",
+    "check:inline-assets": "node scripts/check-inline-assets.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
