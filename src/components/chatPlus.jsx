@@ -468,3 +468,52 @@ export function ChatHeaderActions({ onSearch, onReport, blocked, onToggleBlock }
     </div>
   );
 }
+
+// ---- (v0.5.7, 사용자 요청 "명령어 체계 정리") 명령어 자동완성 — "/"를 치면 입력창 위에 뜬다. ↑↓로 고르고 Tab·Enter로 채운다. ----
+export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover }) {
+  if (!sugg || sugg.mode === "none" || !sugg.items.length) return null;
+  if (sugg.mode === "hint") {
+    const c = sugg.items[0];
+    return (
+      <div style={{ marginBottom: 6, padding: "7px 11px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6", fontSize: 11.5, color: T.inkSoft }}>
+        <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> — {c.desc}
+      </div>
+    );
+  }
+  return (
+    <div role="listbox" aria-label="명령어" onMouseDown={(e) => e.preventDefault()}
+      style={{ marginBottom: 6, maxHeight: 220, overflowY: "auto", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 8px 20px -10px rgba(0,0,0,.35)", padding: 4 }}>
+      {sugg.items.map((c, i) => (
+        <button key={c.name} role="option" aria-selected={i === activeIdx} onClick={() => onPick(c)} onMouseEnter={() => onHover && onHover(i)} className="press"
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 9px", borderRadius: 8, border: "none", cursor: "pointer", background: i === activeIdx ? "rgba(196,154,80,.18)" : "transparent" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</span>
+          <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 1 }}>{c.desc}</span>
+        </button>
+      ))}
+      <div style={{ fontSize: 9.5, color: T.inkSoft, padding: "4px 9px 2px" }}>↑↓ 고르기 · Tab/Enter 채우기 · Esc 닫기</div>
+    </div>
+  );
+}
+
+// ---- /help — 보내지 않고 나에게만 보이는 명령어 카드(무리별로) ----
+export function ChatHelpCard({ commands, onPick, onClose }) {
+  const groups = [];
+  commands.forEach((c) => { let g = groups.find((x) => x.name === c.group); if (!g) { g = { name: c.group, items: [] }; groups.push(g); } g.items.push(c); });
+  return (
+    <div style={{ position: "relative", marginBottom: 6, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", maxHeight: 260, overflowY: "auto" }}>
+      <button onClick={onClose} aria-label="도움말 닫기" className="press" style={{ position: "absolute", top: 6, right: 6, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 2 }}><X size={14} /></button>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, marginBottom: 2 }}>명령어 — 나에게만 보여요</div>
+      {groups.map((g) => (
+        <div key={g.name} style={{ marginTop: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>{g.name}</div>
+          {g.items.map((c) => (
+            <button key={c.name} onClick={() => onPick(c)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "3px 0", border: "none", background: "none", cursor: "pointer" }}>
+              <b style={{ fontSize: 11.5, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> <span style={{ fontSize: 11, color: T.inkSoft }}>— {c.desc}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>블라인드 대국 중에는 "2.Nf3", "2...Nc6"처럼 수순 번호를 붙여 수를 보내요.</div>
+    </div>
+  );
+}

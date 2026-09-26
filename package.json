@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs && node scripts/check-chat-commands.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "refresh": "node scripts/refresh-data.mjs",
@@ -26,7 +26,8 @@
     "check:inline-assets": "node scripts/check-inline-assets.mjs",
     "check:latest-rows": "node scripts/check-latest-rows.mjs",
     "check:knight-rounds": "node scripts/check-knight-rounds.mjs",
-    "check:sql-grants": "node scripts/check-sql-grants.mjs"
+    "check:sql-grants": "node scripts/check-sql-grants.mjs",
+    "check:chat-commands": "node scripts/check-chat-commands.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
