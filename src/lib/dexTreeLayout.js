@@ -11,7 +11,7 @@
 //  · 이웃 블록 중심 거리 ≥ SAFE_GAP(화면 70px), 이름이 많은 앞쪽(깊이 ≤ EARLY_NAME_DEPTH)은 EARLY_SAFE_GAP(화면 120px).
 //  · 링 간격(부모·자녀 거리)은 깊어질수록 같거나 커진다(줄어들지 않는다).
 //  · 깊이 ≥ 3에서 라벨 붙은 노드가 같은 링에서 이웃하면 반지름을 번갈아 살짝 어긋나게(지터, 화면 최대 ±100px).
-//  · 라벨은 블록 위, 블록과 겹치면 아래, 다른 라벨과도 겹치지 않게.
+//  · (v0.5.6 사용자 요청) 라벨은 무조건 블록 위쪽에 — 블록·다른 라벨과 겹치면 옆으로 맞춤을 바꾸거나 한 줄씩 더 위로.
 // 달라진 점:
 //  · 예전엔 한 링의 모든 노드를 반원 전체에 "균등하게" 흩어 자식이 부모에게서 수천 px 떨어지기 일쑤였다(평균 연결선 3,000px대,
 //    다른 블록을 관통하는 선 190여 개). 이제 각 노드는 자기 부모 각도 바로 밑에 모이고, 붐빌 때만 필요한 만큼 옆으로 밀린다 —
@@ -35,6 +35,10 @@ export const DEX_LAYOUT = {
   // 블록 아래에 띄워 그리는 전적 칩이 차지하는 높이(간격 3 + 칩 16 + 여유 1). 배치는 블록 + 이 높이를 한 덩어리(발자국)로 보고
   // 간격·겹침을 계산하며(layoutDexTree에 boxH + CHIP_BELOW를 넘긴다), 라벨도 이만큼 비켜 둔다.
   CHIP_BELOW: 20,
+  // (v0.5.6 사용자 요청 "라벨은 무조건 블록 위쪽") 블록 바로 위 라벨 한 줄 자리. 배치는 이만큼을 블록 발자국에 포함해(layoutDexTree에
+  // boxH + CHIP_BELOW + LABEL_ROOM을 넘기고, 블록 위 끝 = 발자국 위 끝 + LABEL_ROOM) 그 줄에 다른 블록이 오지 않게 한다 — 라벨이
+  // 이웃 라벨에 밀려 올라가더라도 다른 블록을 뛰어넘어 그 블록의 이름처럼 보이는 일이 없어진다(측정: 73개 → 0개, 트리 반경 +15%).
+  LABEL_ROOM: 30,
 };
 
 export function estLabelW(name) { return (name.length + 4) * 7.3 + 34; } // "✦ 이름 ✦" + 화살표 아이콘·여백
@@ -236,7 +240,7 @@ export function layoutDexTree(arms, { boxW, boxH, safeGap, earlySafeGap, jitterM
   return { nodes: all, overlaps: findOverlaps().length };
 }
 
-// 라벨 자리 — 블록 위(기본) → 블록 아래 → 오른쪽 끝 맞춤 위/아래 → 한 줄씩 더 위/아래로. 블록·다른 라벨과 안 겹치는 첫 자리.
+// 라벨 자리 — 항상 블록 위쪽. 블록 바로 위에서 옆으로 비켜 보고(왼쪽 맞춤 → 가운데 → 오른쪽 맞춤 → 조금씩 더 바깥) 한 줄씩 더 위로 올라가며 블록·다른 라벨과 안 겹치는 첫 자리.
 // labeled: [{ key, name, x, y }](x,y는 블록 좌상단). 결과: [{ key, name, left, top, w }].
 export function placeDexLabels(labeled, blocks, { boxW, boxH }) {
   const P = DEX_LAYOUT;
@@ -254,19 +258,37 @@ export function placeDexLabels(labeled, blocks, { boxW, boxH }) {
   const out = [];
   for (const g of labeled) {
     const w = estLabelW(g.name), h = P.LABEL_H;
-    const upT = g.y - 30, dnT = g.y + boxH + P.CHIP_BELOW + 6;
-    const leftA = g.x - 6, leftB = g.x + boxW + 6 - w;
-    const cands = [[leftA, upT], [leftA, dnT], [leftB, upT], [leftB, dnT]];
-    for (let k = 1; k <= 6; k++) { cands.push([leftA, upT - k * (h + P.LABEL_GAP)]); cands.push([leftA, dnT + k * (h + P.LABEL_GAP)]); }
-    let pick = cands.find(([l, t]) => free(l, t, w, h, g.key));
-    if (!pick) { // 그래도 없으면 예전 방식: 기본 자리에서 라벨끼리만 피해 한 줄씩 내린다
-      let t = upT, guard = 0;
-      while (guard++ < 60 && !free(leftA, t, w, h, g.key)) t += h + P.LABEL_GAP;
-      pick = [leftA, t];
+    const upT = g.y - 30;
+    // 같은 줄에서 먼저 옆으로 비켜 보고(블록 왼쪽 맞춤 → 가운데 → 오른쪽 맞춤 → 조금씩 더 바깥), 그래도 막히면 한 줄 위로.
+    const lA = g.x - 6, lB = g.x + boxW + 6 - w;
+    const lefts = [lA, g.x + boxW / 2 - w / 2, lB, lA - 40, lB + 40, lA - 80, lB + 80, lA - 120, lB + 120];
+    // 라벨과 자기 블록 사이(라벨·블록이 가로로 겹치는 폭, 세로로 라벨 아래 끝~블록 위 끝)에 다른 블록이 끼면 그 블록의 이름처럼 보여
+    // 헷갈린다 — 그런 자리는 되도록 피한다(1차). 1차로 못 찾을 때만 끼는 자리도 허용하고(2차) 점선 지시선으로 이어 준다.
+    const corridorFree = (l, t) => {
+      const x0 = Math.max(l, g.x), x1 = Math.min(l + w, g.x + boxW);
+      if (x1 - x0 < 20) return false;
+      const y0 = t + h, y1 = g.y;
+      if (y1 - y0 <= 8) return true;
+      for (const k of cellsOf(x0, y0, x1 - x0, y1 - y0)) for (const o of (grid.get(k) || [])) {
+        if (!o.block || o.block === g.key) continue;
+        if (x0 < o.l + o.w && o.l < x1 && y0 < o.t + o.h && o.t < y1) return false;
+      }
+      return true;
+    };
+    let pick = null, jumped = false;
+    for (let k = 0; k < 16 && !pick; k++) {
+      const t = upT - k * (h + P.LABEL_GAP);
+      for (const l of lefts) if (free(l, t, w, h, g.key) && corridorFree(l, t)) { pick = [l, t]; break; }
     }
+    for (let k = 0; k < 80 && !pick; k++) {
+      const t = upT - k * (h + P.LABEL_GAP);
+      for (const l of lefts) if (free(l, t, w, h, g.key)) { pick = [l, t]; jumped = true; break; }
+    }
+    if (!pick) pick = [lefts[0], upT]; // (이론상 오지 않음) 80줄 위까지 다 막혔으면 기본 자리
     const o = { l: pick[0], t: pick[1], w, h };
     put(o);
-    out.push({ key: g.key, name: g.name, left: pick[0], top: pick[1], w });
+    // lifted: 블록 바로 위 줄보다 더 올라갔는지 — 그런 라벨은 화면에서 블록까지 가는 점선(지시선)을 그어 어느 블록의 이름인지 보이게 한다.
+    out.push({ key: g.key, name: g.name, left: pick[0], top: pick[1], w, lifted: pick[1] < upT - 1, jumped, ax: g.x + boxW / 2, ay: g.y });
   }
   return out;
 }

@@ -4,7 +4,7 @@
  *  src/App.jsx에 들어 있는 오프닝 스냅샷(SNAP)으로 도감 트리 구조(이론 수만, e4=위쪽 팔·d4=아래쪽 팔, 스냅샷 순서를 가운데부터 좌우로)를
  *  만들고 src/lib/dexTreeLayout.js로 실제와 같은 설정으로 배치한 뒤, 다음을 검사한다. 하나라도 어기면 빌드를 멈춘다.
  *   · 블록끼리 겹침 0 (블록 아래 전적 칩 자리 포함)
- *   · 라벨–블록, 라벨–라벨 겹침 0
+ *   · 라벨–블록, 라벨–라벨 겹침 0, 라벨은 모두 자기 블록 위쪽
  *   · 연결선(회로 배선형)이 다른 블록을 지나감 0
  *   · 링 간격(부모·자녀 거리)이 깊어질수록 줄어들지 않음(사용자 규칙)
  *   · 계산 시간 예산(1.5초) 이내
@@ -53,7 +53,8 @@ for (const c of tree.children) arms[c.dir] = c;
 
 const L = SCHEMATIC_ZOOM_LABEL_BASE;
 const t0 = performance.now();
-const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW, safeGap: 70 / L, earlySafeGap: 120 / L, jitterMax: 100 / L, maxRadialStep: (70 / L) * 80 });
+const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW + DEX_LAYOUT.LABEL_ROOM, safeGap: 70 / L, earlySafeGap: 120 / L, jitterMax: 100 / L, maxRadialStep: (70 / L) * 80 });
+for (const n of res.nodes) n.y += DEX_LAYOUT.LABEL_ROOM; // 발자국 위 끝 → 블록 위 끝
 const nodes = res.nodes;
 const labels = placeDexLabels(nodes.filter((n) => n.label).map((n) => ({ key: n.key, name: n.label, x: n.x, y: n.y })), nodes, { boxW, boxH });
 for (const n of nodes) if (n.depth >= 2 && n.parent) n.edge = dexEdgeGeometry(n.parent, n, 0, 0, boxW, boxH);
@@ -100,6 +101,20 @@ for (const n of nodes) {
   if (hit) eb++;
 }
 if (eb) problems.push("다른 블록을 지나가는 연결선 " + eb + "개");
+// 라벨은 무조건 자기 블록 위쪽(사용자 규칙) — 라벨 아래 끝이 블록 위 끝보다 위에 있어야 한다. 얼마나 멀리 떴는지(줄 수)도 잰다.
+const nodeByKey = new Map(nodes.map((n) => [n.key, n]));
+let notAbove = 0, maxLift = 0, lifted = 0, jumped = 0;
+for (const g of labels) {
+  const n = nodeByKey.get(g.key);
+  if (!n) continue;
+  if (g.top + 20 > n.y) notAbove++;
+  const rows = Math.round((n.y - 30 - g.top) / 24);
+  if (rows > 0) lifted++;
+  if (g.jumped) jumped++;
+  if (rows > maxLift) maxLift = rows;
+}
+if (notAbove) problems.push("블록 위가 아닌 자리에 놓인 라벨 " + notAbove + "개");
+if (jumped) problems.push("다른 블록 너머에 놓여 그 블록의 이름처럼 보이는 라벨 " + jumped + "개");
 // 링 간격이 깊어질수록 줄어들지 않는지
 for (const dir of Object.keys(arms)) {
   const rByDepth = new Map();
@@ -119,4 +134,4 @@ if (problems.length) {
   problems.forEach((p) => console.error("  · " + p));
   process.exit(1);
 }
-console.log("✓ dex tree layout check: 블록 " + nodeCount + "개·라벨 " + labels.length + "개 겹침 0, 블록 관통 선 0, 계산 " + Math.round(ms) + "ms");
+console.log("✓ dex tree layout check: 블록 " + nodeCount + "개·라벨 " + labels.length + "개 겹침 0, 블록 관통 선 0, 라벨 전부 블록 위(한 줄 이상 올라간 라벨 " + lifted + "개, 최대 " + maxLift + "줄, 다른 블록 너머 " + jumped + "개), 계산 " + Math.round(ms) + "ms");

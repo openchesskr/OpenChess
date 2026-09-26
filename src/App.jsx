@@ -16440,8 +16440,9 @@ function computeDexLayout(treeData, contentVer) {
   walk(root, null, null);
   const arms = {};
   for (const c of root.children) arms[c.dir] = c;
-  // 블록 + 아래 전적 칩 자리를 한 덩어리로 배치한다(칩이 이웃 블록과 겹치지 않게). 노드 y는 그 덩어리의 위쪽 = 블록 위쪽.
-  const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW, safeGap: 70 / SCHEMATIC_ZOOM_LABEL_BASE, earlySafeGap: 120 / SCHEMATIC_ZOOM_LABEL_BASE, jitterMax: 100 / SCHEMATIC_ZOOM_LABEL_BASE, maxRadialStep: (70 / SCHEMATIC_ZOOM_LABEL_BASE) * 80 });
+  // 위 라벨 한 줄 + 블록 + 아래 전적 칩 자리를 한 덩어리로 배치한다(라벨 줄·칩이 이웃 블록과 겹치지 않게). 배치가 준 y는 덩어리 위 끝이라 라벨 줄만큼 내려 블록 위 끝으로 바꾼다.
+  const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW + DEX_LAYOUT.LABEL_ROOM, safeGap: 70 / SCHEMATIC_ZOOM_LABEL_BASE, earlySafeGap: 120 / SCHEMATIC_ZOOM_LABEL_BASE, jitterMax: 100 / SCHEMATIC_ZOOM_LABEL_BASE, maxRadialStep: (70 / SCHEMATIC_ZOOM_LABEL_BASE) * 80 });
+  for (const it of nodes) it.y += DEX_LAYOUT.LABEL_ROOM;
   let minX = 0, maxX = 0, minY = 0, maxY = 0;
   for (const it of nodes) { if (it.x < minX) minX = it.x; if (it.x > maxX) maxX = it.x; if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y; }
   const PAD = 200;
@@ -17366,9 +17367,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             // 칩과 팔 사이 트레이스 선이 팔마다 boxW·boxH만큼씩 다르게 어긋나 십자가 비대칭으로
             // 보였다.
             const ccx = centerX, ccy = centerY, half = CHIP_SIZE / 2;
+            // (v0.5.6) 블록 위치가 라벨 줄·전적 칩 자리를 포함한 발자국 기준으로 정해지므로, 트레이스 끝은 실제 1수 블록의 안쪽 변에 맞춘다.
+            const rootN = itemByKey.get("e4"), rootS = itemByKey.get("d4");
             const traces = {
-              N: [ccx, ccy - half, ccx, centerY - ROOT_GAP + boxH / 2],
-              S: [ccx, ccy + half, ccx, centerY + ROOT_GAP - boxH / 2],
+              N: [ccx, ccy - half, ccx, rootN ? rootN.y + boxH : centerY - ROOT_GAP + boxH / 2],
+              S: [ccx, ccy + half, ccx, rootS ? rootS.y : centerY + ROOT_GAP - boxH / 2],
             };
             // (사용자 요청) "회로와 e4, d4 사이에도(선택 시 파란색 선이) 적용되도록" — 지금까지는
             // electric(전체 서지)에만 반응했지 특정 수를 클릭해 선택했을 때는 칩→루트 구간이 전혀
@@ -17385,6 +17388,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             });
           })()}
           <DexEdgesLayer edges={culledEdges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} />
+          {/* (v0.5.6) 라벨은 항상 블록 위쪽 — 이웃 라벨에 밀려 한 줄 이상 위로 올라간 라벨은 자기 블록까지 가는 점선 지시선을 긋는다. */}
+          {culledGroups.map((g) => (g.lifted ? (
+            <line key={"leader-" + g.key} x1={Math.min(Math.max(g.ax, g.left + 12), g.left + g.w - 12)} y1={g.top + 20} x2={g.ax} y2={g.ay} stroke={T.brass} strokeWidth={1.2} strokeDasharray="2 3" opacity={0.7} />
+          ) : null))}
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
