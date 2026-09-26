@@ -86,7 +86,9 @@ import {
 import {
   ChatMsgMenu, CHAT_MENU_W, ReactionChips, ReplyQuote, ReplyBar, ReportSheet, ChatSearchPanel, chessSnippetOf, ChessSnippetCard,
   ChatAttachMenu, AttachButton, PositionPickSheet, PollCard, CoboCard, CoBoardScreen, ChatHeaderActions, chatSnippet,
+  ChatCommandPalette, ChatHelpCard,
 } from "./components/chatPlus.jsx";
+import { CHAT_COMMANDS as CHAT_CMD_LIST, parseChatCommand, chatCommandSuggestions, chatCommandAvailable, blindMoveToken, deriveBlindGame } from "./lib/chatCommands.js";
 import { ccGameKey, loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import {
   isSanSequenceValid, isTreeSequenceValid, isPuzzleSequenceValid, RATING_MIN_SAMPLES,
@@ -28135,69 +28137,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     </div>
   );
 }
-// (v0.4.8 기능) 사용자 요청 — 채팅으로 SAN 기보를 입력해 "블라인드 대국"을 진행한다. 서버에 별도
-// 상태를 두지 않고, 대화 기록(msgs) 자체가 유일한 진실 공급원이다 — 두 참가자 모두 항상 같은 msgs를
-// 보므로(realtime 구독), 이 함수 하나로 각자 독립적으로 계산해도 항상 같은 결론에 도달한다.
-//
-// "1.e4"처럼 수순 접두사(백은 "N.", 흑은 "N...")가 붙은 SAN 하나만 담긴 메시지가 나타나면 그
-// 시점부터 대국이 시작되고(그 메시지를 보낸 사람이 백), 그 뒤로는 다음 차례에 맞는 접두사+SAN
-// 메시지만 실제 수로 인식한다 — 그 사이 다른 잡담 메시지는 그냥 건너뛴다(수가 아니므로 무시).
-// 체크메이트·스테일메이트·3회 동형 반복이면 gameEndState로 자동 종료되고, /resign·/draw 명령어로도
-// 끝난다. 대국이 끝난 뒤 새로운 "1.xxx" 메시지가 나타나면 그 시점부터 새 대국이 다시 시작된다(=
-// 블라인드 대국 모드가 자동으로 꺼졌다 다시 켜지는 것과 같은 효과).
-function blindMoveToken(body, ply) {
-  const s = (body || "").trim();
-  const num = Math.floor(ply / 2) + 1;
-  const prefix = num + (ply % 2 === 0 ? "." : "...");
-  if (!s.startsWith(prefix)) return null;
-  const rest = s.slice(prefix.length).trim();
-  if (!rest || /\s/.test(rest)) return null;
-  if (!/^[a-hKQRBNO][a-h1-8xKQRBNO\-+#=]*$/.test(rest)) return null;
-  return stripSuffix(rest);
-}
-function deriveBlindGame(msgs) {
-  // (버그 수정, 사용자 제보) 예전엔 방금 수를 둔 바로 그 사람이 연달아 또 수를 인식시킬 수 있었다
-  // (다음 차례 접두사+SAN 형식만 맞으면 보낸 사람이 누구인지는 전혀 확인하지 않았기 때문) — 그래서
-  // 한 사람이 양쪽 수를 혼자 다 입력해도 정상 진행된 것처럼 보였다. lastMoveUid로 직전 수를 둔
-  // 사람을 기억해, 같은 사람이 연달아 보낸 메시지는 수로 인식하지 않는다(상대가 실제로 수를 갱신할
-  // 때까지 내 채팅은 SAN으로 해석되지 않는다).
-  let sans = null, active = false, result = null, whiteFromUid = null, lastMoveUid = null;
-  // (버그 수정, 사용자 제보) /draw가 누가 보내든 곧바로 대국을 끝내버려, 상대의 동의 없이도 원하는
-  // 쪽이 즉시 무승부로 끝낼 수 있었다 — 이제 첫 /draw는 "제안"으로만 기록되고(drawOfferUid),
-  // 상대방이 "다시" /draw를 보내야(즉 제안자가 아닌 사람이 보내야) 비로소 무승부로 끝난다. 같은
-  // 사람이 다시 /draw를 보내는 건 중복 제안이라 아무 효과가 없고, 누군가 실제 수를 두면 그 사이
-  // 걸려 있던 제안은 자동으로 취소된다(수를 두는 것으로 거절한 셈).
-  let drawOfferUid = null;
-  for (const m of msgs) {
-    if (m.pvp_invite_id != null || m.puzzle_no != null || m.legacy_slot != null || m.review_id != null || m.share_reward) continue;
-    const body = (m.body || "").trim();
-    if (!body) continue;
-    if (!active) {
-      const tok = blindMoveToken(body, 0);
-      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; result = null; whiteFromUid = m.from_uid; lastMoveUid = m.from_uid; drawOfferUid = null; }
-      continue;
-    }
-    if (/^\/resign\s*$/i.test(body)) { active = false; result = { kind: "resign", loserUid: m.from_uid }; continue; }
-    if (/^\/draw\s*$/i.test(body)) {
-      if (drawOfferUid && drawOfferUid !== m.from_uid) { active = false; result = { kind: "draw" }; }
-      else { drawOfferUid = m.from_uid; }
-      continue;
-    }
-    const ply = sans.length;
-    const tok = blindMoveToken(body, ply);
-    if (!tok) continue;
-    if (m.from_uid === lastMoveUid) continue;
-    const color = ply % 2 === 0 ? "w" : "b";
-    const board = boardFromSans(sans);
-    if (!sanSrc(board, tok, color)) continue;
-    sans.push(tok); lastMoveUid = m.from_uid; drawOfferUid = null;
-    const end = gameEndState(sans).end;
-    if (end === "checkmate") { active = false; result = { kind: "checkmate", winnerColor: color }; }
-    else if (end === "stalemate") { active = false; result = { kind: "stalemate" }; }
-    else if (end === "threefold") { active = false; result = { kind: "threefold" }; }
-  }
-  return { active, sans: sans || [], result, whiteFromUid, drawOfferUid };
-}
+// 블라인드 대국 상태(blindMoveToken·deriveBlindGame)는 src/lib/chatCommands.js로 옮겼다(v0.5.7 — 검사 스크립트가 직접 부르도록).
 // /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
 function formatBlindEval(ev) {
   if (!ev) return "아직 분석 중이에요…";
@@ -28245,6 +28185,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [flashId, setFlashId] = useState(null);     // 답장 인용·검색으로 이동한 메시지 잠깐 강조
   const [notice, setNotice] = useState("");         // "복사했어요" 같은 잠깐 뜨는 안내
+  const [helpOpen, setHelpOpen] = useState(false);  // (v0.5.7) /help — 보내지 않고 나에게만 보이는 명령어 카드
+  const [cmdIdx, setCmdIdx] = useState(0);          // (v0.5.7) 명령어 자동완성에서 고른 줄
   const noticeTimerRef = useRef(null);
   const showNotice = useCallback((t) => { setNotice(t); clearTimeout(noticeTimerRef.current); noticeTimerRef.current = setTimeout(() => setNotice(""), 1600); }, []);
   const scrollModeRef = useRef("bottom");           // 다음 목록 변화 때 스크롤 처리: "bottom" | { keepFrom: 이전 scrollHeight } | { jumpTo: id }
@@ -28592,6 +28534,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const v = e.target.value;
     setText(v);
     if (cmdError) setCmdError("");
+    if (helpOpen && v.startsWith("/")) setHelpOpen(false); // 새 명령어를 치기 시작하면 도움말 대신 자동완성이 뜬다
     if (!typingChanRef.current || editingId != null) return;
     const now = Date.now();
     if (now - lastTypingSentRef.current > 1500) {
@@ -28599,6 +28542,10 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       typingChanRef.current.send({ type: "broadcast", event: "typing", payload: { uid: myUid } });
     }
   };
+  // (v0.5.7, 사용자 요청 "명령어 체계 정리") 보내기 — "/…"는 src/lib/chatCommands.js의 parseChatCommand 하나로 해석한다(목록·자동완성과
+  // 같은 표). 명령어가 아니면 블라인드 대국 수인지 보고, 그것도 아니면 평범한 메시지(답장 포함)로 보낸다.
+  const failMsg = "보내지 못했어요. 잠시 후 다시 시도해 주세요.";
+  const finish = (ok, err) => { if (ok) { setText(""); setReplyTo(null); load(); } else if (err) setCmdError(err); };
   const send = async (body, emoji) => {
     if (sending) return;
     if (editingId != null) {
@@ -28612,197 +28559,137 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       return;
     }
     if (!body && !emoji) return;
-    // (v0.4.8 기능) 사용자 요청 — "1.e4"처럼 수순 접두사가 붙은 SAN 하나만 담긴 메시지로 블라인드
-    // 대국을 시작한다. 이미 진행 중이면(blindGame.active) 새로 시작하지 않고 그냥 평범한 텍스트로
-    // 흘려보낸다(그래도 규칙상 맞지 않는 순서라 deriveBlindGame이 그냥 무시하므로 안전하다).
-    if (body && !blindGame.active) {
-      const startTok = blindMoveToken(body, 0);
-      if (startTok && sanSrc(startBoard(), startTok, "w")) {
-        setCmdError(""); setSending(true);
-        const ok = await chatSend(myUid, otherUid, body, null);
-        if (ok) { await chatSend(myUid, otherUid, "블라인드 대국이 시작되었어요.", null); setText(""); load(); }
-        else setCmdError("메시지를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
-        setSending(false);
-        return;
+    const cmd = body ? parseChatCommand(body, { blindActive: blindGame.active }) : null;
+    if (cmd && cmd.error) { setCmdError(cmd.error); return; }
+    setCmdError("");
+    const nameFor = (uid) => uid === myUid ? (myUsername || "나") : otherUsername;
+    if (cmd) {
+      switch (cmd.name) {
+        // /help는 보내지 않고 입력창 위 도움말 카드로만(사용자 결정 — 상대 채팅 기록에 남지 않게).
+        case "help": setHelpOpen(true); setText(""); return;
+        // (v0.5.7, 사용자 결정) 블라인드 대국은 /blind로 명시적으로 준비한다 — 그 뒤 첫 "1.xx" 수가 대국을 시작한다(deriveBlindGame).
+        case "blind": {
+          setSending(true);
+          const ok = await chatSend(myUid, otherUid, "/blind", null);
+          if (ok) await chatSend(myUid, otherUid, "블라인드 대국을 준비했어요. 백을 맡을 사람이 \"1.e4\"처럼 첫 수를 보내면 시작돼요.", null);
+          setSending(false); finish(ok, failMsg); return;
+        }
+        case "resign": {
+          setSending(true);
+          const ok = await chatSend(myUid, otherUid, "/resign", null);
+          if (ok) await chatSend(myUid, otherUid, nameFor(myUid) + "님이 기권했어요. " + nameFor(otherUid) + "님의 승리예요.", null);
+          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "draw": {
+          // (버그 수정, 사용자 제보) /draw는 상대의 동의가 있어야 끝난다 — 내가 이미 제안했으면 중복이라 막고, 상대가 먼저
+          // 제안해 둔 상태에서 내가 보내면 그게 동의라 대국이 끝난다.
+          if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부를 제안했어요. 상대방의 응답을 기다려 주세요."); return; }
+          setSending(true);
+          const isAccepting = blindGame.drawOfferUid === otherUid;
+          const ok = await chatSend(myUid, otherUid, "/draw", null);
+          if (ok) await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국이 종료됐어요." : nameFor(myUid) + "님이 무승부를 제안했어요. /draw로 동의하면 대국이 끝나요.", null);
+          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "eval": {
+          setSending(true);
+          const ok = await chatSend(myUid, otherUid, formatBlindEval(blindEvalRef.current), null);
+          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "puzzle": {
+          // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 서버에 실제로 있는지 먼저 확인한다.
+          setSending(true);
+          const data = puzzlePreviews[cmd.no] !== undefined ? puzzlePreviews[cmd.no] : await puzzleFetch(cmd.no);
+          if (!data) { setSending(false); setCmdError("#" + cmd.no + " 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요."); return; }
+          const ok = await puzzleShareSend(cmd.no, myUid, otherUid);
+          setSending(false); finish(ok, "퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "legacy": {
+          const slotKey = LEGACY_SLOT_ORDER[cmd.slot - 1];
+          if (cmd.slot >= 4 && !myIsGM) { setCmdError("그랜드마스터 티어에 도달해야 추가 유산을 설정할 수 있어요."); return; }
+          if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + cmd.slot + "번 유산이 등록되어 있지 않습니다."); return; }
+          setSending(true);
+          const ok = await legacyShareSend(myUid, otherUid, slotKey);
+          setSending(false); finish(ok, "유산을 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "review": {
+          // 코드가 실제로 재생 가능한지(sanSequenceValid)부터 확인하고 보낸다 — 틀린 /review는 평범한 텍스트로 흘려보내지 않는다(사용자 요청).
+          let game = null;
+          if (cmd.kind === "recent") {
+            if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국을 찾을 수 없어요."); return; }
+            const g = [...myChesscomGames].sort((x, y) => (y.endTime || 0) - (x.endTime || 0))[0];
+            game = { sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id };
+          } else if (cmd.kind === "pgn") {
+            const fenTagMatch = /\[FEN\s+"([^"]+)"\]/.exec(cmd.code);
+            const fenRoot = fenTagMatch ? parseFenFull(fenTagMatch[1]) : null;
+            const sans = parsePgnSans(cmd.code);
+            if ((fenTagMatch && !fenRoot) || !sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 PGN 코드예요. 사용법: /review pgn <코드>"); return; }
+            game = { sans, fenRoot: fenTagMatch ? fenTagMatch[1] : null };
+          } else {
+            if (!looksLikeFen(cmd.code) || !parseFenFull(cmd.code)) { setCmdError("유효하지 않은 FEN 코드예요. 사용법: /review fen <코드>"); return; }
+            game = { sans: [], fenRoot: cmd.code };
+          }
+          setSending(true);
+          const rid = await reviewGameIdentifier(game);
+          if (!rid) { setSending(false); setCmdError("유효하지 않은 코드예요."); return; }
+          if (game.id) reviewedGameShare(game.id, game).catch(() => { });
+          const ok = await reviewShareSend(myUid, otherUid, rid);
+          setSending(false); finish(ok, "리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+        }
+        case "play": {
+          const tc = parsePlayCommandArg(cmd.arg);
+          if (!tc) { setCmdError("시간은 1~180분, 증가는 0~180초예요. 사용법: /play <분>[+<초>]"); return; }
+          // 채팅을 보낼 수 있다는 건 이미 accepted 친구라는 뜻이라 pvp_invite_friend의 친구 검사도 통과한다. RPC가 카드 메시지를 함께 남긴다.
+          setSending(true);
+          try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: tc.key, p_game_type: PVP_GAME_TYPE }); finish(true); }
+          catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+          setSending(false); return;
+        }
+        case "poll": case "board": {
+          // FEN을 비우면 포지션 고르기 창(+ 메뉴와 같은 창)을 연다.
+          if (!cmd.fen) { setText(""); setPickSheet(cmd.name === "poll" ? "poll" : "cobo"); return; }
+          if (!parseFenFull(cmd.fen)) { setCmdError("FEN을 읽을 수 없어요. 사용법: " + (cmd.name === "poll" ? "/poll [FEN]" : "/board [FEN]")); return; }
+          setText("");
+          await sendSpecial(cmd.name === "poll" ? { poll: { fen: cmd.fen } } : { cobo: { fen: cmd.fen, sans: [] } });
+          return;
+        }
+        default: break;
       }
     }
-    // (v0.4.8 기능) 블라인드 대국이 진행 중일 때만 /resign·/draw·/eval을 명령어로 인식한다 — 진행
-    // 중이 아니면 이 셋은 그냥 평범한 텍스트로 전송된다.
-    if (blindGame.active) {
-      const uidForColor = (color) => { const w = blindGame.whiteFromUid; const b = w === myUid ? otherUid : myUid; return color === "w" ? w : b; };
-      const nameFor = (uid) => uid === myUid ? (myUsername || "나") : otherUsername;
-      if (/^\/resign\s*$/i.test(body)) {
-        setCmdError(""); setSending(true);
+    // 블라인드 대국의 수 — 준비(/blind)된 상태면 첫 "1.xx"가 대국을 시작하고, 진행 중이면 다음 차례 접두사+SAN만 수로 인식한다.
+    if (body && !blindGame.active && blindGame.armed) {
+      const startTok = blindMoveToken(body, 0);
+      if (startTok && sanSrc(startBoard(), startTok, "w")) {
+        setSending(true);
         const ok = await chatSend(myUid, otherUid, body, null);
-        if (ok) { await chatSend(myUid, otherUid, nameFor(myUid) + "님이 기권했어요. " + nameFor(otherUid) + "님의 승리예요.", null); setText(""); load(); }
-        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
-        setSending(false);
-        return;
+        if (ok) await chatSend(myUid, otherUid, "블라인드 대국이 시작되었어요.", null);
+        setSending(false); finish(ok, failMsg); return;
       }
-      if (/^\/draw\s*$/i.test(body)) {
-        // (버그 수정, 사용자 제보) /draw는 이제 상대의 동의가 있어야 끝난다 — 내가 이미 제안해 둔
-        // 상태에서 다시 보내면 중복 제안이라 아무 일도 안 일어나므로 미리 막고, 상대가 먼저
-        // 제안해 둔 상태에서 내가 보내면 그게 동의라 대국이 끝난다는 문구로 안내한다.
-        if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부를 제안했어요. 상대방의 응답을 기다려 주세요."); return; }
-        setCmdError(""); setSending(true);
-        const isAccepting = blindGame.drawOfferUid === otherUid;
-        const ok = await chatSend(myUid, otherUid, body, null);
-        if (ok) {
-          await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국이 종료됐어요." : nameFor(myUid) + "님이 무승부를 제안했어요. /draw로 동의하면 대국이 끝나요.", null);
-          setText(""); load();
-        }
-        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
-        setSending(false);
-        return;
-      }
-      if (/^\/eval\s*$/i.test(body)) {
-        setCmdError(""); setSending(true);
-        const ok = await chatSend(myUid, otherUid, formatBlindEval(blindEvalRef.current), null);
-        if (ok) { setText(""); load(); }
-        else setCmdError("명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
-        setSending(false);
-        return;
-      }
-      // 진행 중인 대국의 다음 차례에 맞는 접두사+SAN 메시지만 실제 수로 인식한다.
+    }
+    if (body && blindGame.active) {
       const ply = blindGame.sans.length;
       const mvTok = blindMoveToken(body, ply);
       if (mvTok) {
         const color = ply % 2 === 0 ? "w" : "b";
         const board = boardFromSans(blindGame.sans);
         if (sanSrc(board, mvTok, color)) {
-          // (버그 수정, 사용자 제보) 지금 차례가 내 색이 아니면(=상대가 둘 차례) 서버로 보내도 어차피
-          // deriveBlindGame이 수로 인식하지 않으므로, 보내기 전에 미리 막아 조용히 무시되는 대신
-          // 명확히 안내한다.
-          if (uidForColor(color) !== myUid) { setCmdError("상대방이 응수할 차례예요."); return; }
-          setCmdError(""); setSending(true);
+          const whiteUid = blindGame.whiteFromUid, blackUid = whiteUid === myUid ? otherUid : myUid;
+          // (버그 수정, 사용자 제보) 상대가 둘 차례면 보내도 수로 인식되지 않으므로 미리 막고 안내한다.
+          if ((color === "w" ? whiteUid : blackUid) !== myUid) { setCmdError("상대방이 응수할 차례예요."); return; }
+          setSending(true);
           const ok = await chatSend(myUid, otherUid, body, null);
           if (ok) {
             const end = gameEndState([...blindGame.sans, mvTok]).end;
-            setText(""); load();
-            if (end === "checkmate") await chatSend(myUid, otherUid, "체크메이트! " + nameFor(uidForColor(color)) + "님의 승리예요.", null);
+            finish(true);
+            if (end === "checkmate") await chatSend(myUid, otherUid, "체크메이트! " + nameFor(myUid) + "님의 승리예요.", null);
             else if (end === "stalemate") await chatSend(myUid, otherUid, "스테일메이트로 무승부예요.", null);
             else if (end === "threefold") await chatSend(myUid, otherUid, "3회 동형 반복으로 무승부예요.", null);
-          } else setCmdError("메시지를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
-          setSending(false);
-          return;
+          } else setCmdError(failMsg);
+          setSending(false); return;
         }
       }
     }
-    // (v0.2.6 기능) "/puzzle 000000" 또는 "/puzzle -num 000000" 명령어 — 텍스트 대신 그 번호의
-    // 퍼즐을 공유 카드로 보낸다(기존 공유 버튼과 같은 puzzleShareSend 재사용).
-    const cmdMatch = body && body.match(/^\/puzzle\s+(?:-num\s+)?(\d{1,7})\s*$/i);
-    if (cmdMatch) {
-      setCmdError("");
-      const no = parseInt(cmdMatch[1], 10);
-      setSending(true);
-      // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 먼저 서버에서
-      // 실제로 그 번호의 퍼즐 데이터가 있는지 확인하고, 없으면 전송을 막는다.
-      const data = puzzlePreviews[no] !== undefined ? puzzlePreviews[no] : await puzzleFetch(no);
-      if (!data) {
-        setSending(false);
-        setCmdError("#" + no + " 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요.");
-        return;
-      }
-      const ok = await puzzleShareSend(no, myUid, otherUid);
-      setSending(false);
-      if (ok) { setText(""); load(); } else setCmdError("퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
-      return;
-    }
-    // (사용자 요청) "/legacy N"(N=1~6) 명령어 — 내 유산 슬롯 중 N번째를 공유 카드로 보낸다.
-    // 1~3은 기본 칸, 4~6은 그랜드마스터 보너스 칸(LEGACY_SLOT_ORDER). 그 범위를 벗어난 숫자는
-    // 애초에 정규식이 매치하지 않아 명령어로 인식되지 않고(그냥 평범한 텍스트로 전송됨) — 그 외
-    // 유효한 범위 안에서는 먼저 슬롯이 실제로 있는지, 보너스 칸이면 그랜드마스터인지를 검증한다.
-    const legacyCmdMatch = body && body.match(/^\/legacy\s+([1-6])\s*$/i);
-    if (legacyCmdMatch) {
-      setCmdError("");
-      const n = parseInt(legacyCmdMatch[1], 10);
-      const slotKey = LEGACY_SLOT_ORDER[n - 1];
-      if (n >= 4 && !myIsGM) { setCmdError("그랜드마스터 티어에 도달해야 추가 유산을 설정할 수 있어요."); return; }
-      if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + n + "번 유산이 등록되어 있지 않습니다."); return; }
-      setSending(true);
-      const ok = await legacyShareSend(myUid, otherUid, slotKey);
-      setSending(false);
-      if (ok) { setText(""); load(); } else setCmdError("유산을 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
-      return;
-    }
-    // (v0.3.4 기능) 사용자 요청 — "/review -recent"(가장 최근 chess.com 대국)·"/review -PGN <코드>"·
-    // "/review -FEN <코드>" 명령어로 리뷰를 공유한다. -PGN/-FEN은 대소문자 무관(정규식 /i)하게
-    // 인식하고, 코드가 실제로 재생 가능한지(sanSequenceValid — 각 SAN이 그 시점에 실제로 둘 수 있는
-    // 합법적인 수인지)부터 검증한 뒤에만 전송한다 — 검증에 실패하면 전송 자체를 막고 아래 공통
-    // "유효하지 않은 코드" 안내로 돌린다(/puzzle·/legacy와 달리, 인식은 됐지만 형식이 틀린 /review는
-    // 평범한 텍스트로 흘려보내지 않는다 — 사용자 요청).
-    if (body && /^\/review\b/i.test(body)) {
-      const recentMatch = /^\/review\s+-recent\s*$/i.test(body);
-      const pgnMatch = body.match(/^\/review\s+-pgn\s+([\s\S]+)$/i);
-      const fenMatch = body.match(/^\/review\s+-fen\s+([\s\S]+)$/i);
-      let game = null;
-      if (recentMatch) {
-        if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국을 찾을 수 없어요."); return; }
-        const g = [...myChesscomGames].sort((a, b) => (b.endTime || 0) - (a.endTime || 0))[0];
-        game = { sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id };
-      } else if (pgnMatch) {
-        const pgnText = pgnMatch[1].trim();
-        const fenTagMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
-        const fenRoot = fenTagMatch ? parseFenFull(fenTagMatch[1]) : null;
-        if (fenTagMatch && !fenRoot) { setCmdError("유효하지 않은 코드예요."); return; }
-        const sans = parsePgnSans(pgnText);
-        if (!sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 코드예요."); return; }
-        game = { sans, fenRoot: fenTagMatch ? fenTagMatch[1] : null };
-      } else if (fenMatch) {
-        const fenText = fenMatch[1].trim();
-        if (!looksLikeFen(fenText) || !parseFenFull(fenText)) { setCmdError("유효하지 않은 코드예요."); return; }
-        game = { sans: [], fenRoot: fenText };
-      } else {
-        setCmdError("유효하지 않은 코드예요. (/review -recent, /review -PGN <코드>, /review -FEN <코드>)");
-        return;
-      }
-      setCmdError("");
-      setSending(true);
-      const rid = await reviewGameIdentifier(game);
-      if (!rid) { setSending(false); setCmdError("유효하지 않은 코드예요."); return; }
-      if (game.id) reviewedGameShare(game.id, game).catch(() => { });
-      const ok = await reviewShareSend(myUid, otherUid, rid);
-      setSending(false);
-      if (ok) { setText(""); load(); } else setCmdError("리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
-      return;
-    }
-    // (v0.4.3 기능, 사용자 요청) "/play 3"(3분), "/play 15+10"(15분+10초 증가) 명령어로 채팅 상대에게
-    // 바로 실시간 대국을 신청한다 — /play 페이지의 "친구와 플레이하기"와 완전히 같은 RPC
-    // (pvp_invite_friend)를 부른다. 그 RPC가 이미 같은 내용을 채팅 메시지로도 남기므로(전역 알람
-    // 박스와 똑같은 PvpInviteChatCard로 렌더링됨), 여기서 따로 메시지를 만들 필요 없이 새로고침만
-    // 하면 된다. 채팅으로 대국을 신청할 수 있다는 건 이미 이 대화 상대가 accepted 친구라는
-    // 뜻이므로(그렇지 않으면 애초에 채팅 자체를 못 보냄), pvp_invite_friend의 "친구 사이인지" 검사도
-    // 항상 통과한다.
-    // (버그 수정, 사용자 제보) 예전엔 "/play "로 시작하기만 하면(뒤에 오는 게 유효한 타임컨트롤이든
-    // 아니든) 명령어로 인식해 버려, "/play 아무개랑 하고 싶다" 같은 평범한 문장까지 전송을 막고
-    // "사용법: ..." 오류만 보여줬다 — 정작 유효한 "/play 3" 같은 입력은 실행되므로 "명령어가 안
-    // 된다"고 오인되는 원인 중 하나였다. 이제 뒤에 오는 인자가 실제로 유효한 타임컨트롤일 때만
-    // 명령어로 인식하고, 그렇지 않으면 애초에 명령어 취급을 하지 않고 평범한 텍스트로 흘려보낸다.
-    const playCmdMatch = body && body.match(/^\/play\s+(\S.*)$/i);
-    const playTc = playCmdMatch ? parsePlayCommandArg(playCmdMatch[1]) : null;
-    if (playTc) {
-      setCmdError("");
-      setSending(true);
-      try {
-        await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: playTc.key, p_game_type: PVP_GAME_TYPE });
-        setText(""); load();
-      } catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
-      setSending(false);
-      return;
-    }
-    // (사용자 요청) "/help"는 이제 다른 명령어(/puzzle·/legacy·/review·/play)와 똑같이 실제로
-    // 전송된다 — 대화 기록에 그 결과(명령어 목록 카드)가 그대로 남아, 나중에 다시 스크롤해 올려도
-    // 무엇을 보냈는지 알 수 있다(예전엔 입력창 위에만 잠깐 뜨고 사라졌다). 렌더링은 아래 메시지
-    // 목록에서 m.body === "/help"를 감지해 카드로 그린다(다른 명령어들과 같은 패턴).
-    if (body && /^\/help$/i.test(body)) {
-      setSending(true);
-      const ok = await chatSend(myUid, otherUid, body, emoji);
-      setSending(false);
-      if (ok) { setText(""); load(); }
-      return;
-    }
     setSending(true);
-    // (v0.5.7) 답장 중이면 원문 id를 함께 보낸다(일반 텍스트·이모티콘만 — 명령어·블라인드 수는 답장 대상이 아니다).
+    // (v0.5.7) 답장 중이면 원문 id를 함께 보낸다(일반 텍스트·이모티콘만).
     const ok = await chatSendMessage(myUid, otherUid, body, emoji, replyTo ? { reply_to: replyTo.id } : null);
     setSending(false);
     if (ok) { setText(""); setReplyTo(null); load(); }
@@ -28814,28 +28701,32 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const ok = await chatSendMessage(myUid, otherUid, null, null, extra);
     if (ok) load(); else setCmdError("보내지 못했어요. 잠시 후 다시 시도해 주세요.");
   };
-  // (v0.2.6 기능 → v0.4.8 되돌림) "/"로 시작하면 쓸 수 있는 명령어. v0.4.3에서 "/"만 입력해도
-  // 뜨던 입력창 위 미리보기를 없애고 "/help"를 입력했을 때만 뜨게 했었는데, 사용자 요청으로 다시
-  // "/"만 입력해도(아래 렌더 조건 참고) 뜨도록 되돌린다.
-  const CHAT_COMMANDS = [
-    { cmd: "/puzzle -num 000000", desc: "그 번호의 퍼즐을 공유해요(또는 /puzzle 000000)" },
-    { cmd: "/legacy N(1~6)", desc: "내 N번째 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)" },
-    { cmd: "/review -recent", desc: "가장 최근에 플레이한 chess.com 대국의 리뷰를 공유해요" },
-    { cmd: "/review -PGN <코드>", desc: "그 PGN 기보의 리뷰를 공유해요" },
-    { cmd: "/review -FEN <코드>", desc: "그 FEN 포지션의 리뷰를 공유해요" },
-    { cmd: "/play <분>", desc: "상대에게 그 시간(분)의 실시간 대국을 신청해요 — 예: /play 3, /play 15+10(15분+10초 증가)" },
-    { cmd: "/help", desc: "이 명령어 목록을 보여줘요" },
-  ];
-  // (v0.4.8 기능) 블라인드 대국 관련 안내 — 시작 방법은 항상 보여주고, /resign·/draw·/eval은
-  // 실제로 그 모드가 켜져 있을 때만 명령어로 동작하므로 진행 중일 때만 목록에 덧붙인다.
-  const BLIND_COMMANDS = blindGame.active
-    ? [
-        { cmd: "N.SAN / N...SAN", desc: "지금 차례에 맞는 수를 그대로 입력하면 블라인드 대국이 진행돼요 — 예: 2.Nf3, 2...Nc6" },
-        { cmd: "/resign", desc: "기권해요" },
-        { cmd: "/draw", desc: "합의 무승부로 대국을 끝내요" },
-        { cmd: "/eval", desc: "지금 포지션의 평가치와 분석 depth를 보내요 — 예: +0.31(depth=25)" },
-      ]
-    : [{ cmd: "1.e4", desc: "이런 형식(수순 접두사+SAN)의 메시지를 보내면 블라인드 대국이 시작돼요" }];
+  // (v0.5.7) 명령어 자동완성 — 이름을 치는 중이면 후보 목록, 이름 뒤 공백까지 쳤으면 쓰는 법 힌트.
+  const cmdSugg = useMemo(() => chatCommandSuggestions(text, { blindActive: blindGame.active }), [text, blindGame.active]);
+  useEffect(() => { setCmdIdx(0); }, [cmdSugg.mode, cmdSugg.items.length]);
+  const pickCommand = (c) => {
+    // 인자가 없는 명령어는 이름만 채워 바로 보낼 수 있게, 인자가 있으면 이름 뒤 공백까지 채워 힌트로 넘어간다.
+    const noArg = !/[<[]/.test(c.usage);
+    setText("/" + c.name + (noArg ? "" : " "));
+    setCmdError("");
+  };
+  const onInputKeyDown = (e) => {
+    const listOpen = cmdSugg.mode === "list" && cmdSugg.items.length > 0;
+    if (listOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setCmdIdx((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + cmdSugg.items.length) % cmdSugg.items.length);
+      return;
+    }
+    if (listOpen && e.key === "Escape") { e.preventDefault(); setText(""); return; }
+    if (helpOpen && e.key === "Escape") { e.preventDefault(); setHelpOpen(false); return; }
+    // 이름을 다 치지 않았으면 Tab·Enter는 고른 명령어로 채우기 — 이름을 정확히 다 친 인자 없는 명령어(/help 등)는 Enter로 바로 보낸다.
+    if (listOpen && (e.key === "Tab" || (e.key === "Enter" && !cmdSugg.exact))) {
+      e.preventDefault();
+      pickCommand(cmdSugg.items[Math.min(cmdIdx, cmdSugg.items.length - 1)]);
+      return;
+    }
+    if (e.key === "Enter") send(text.trim(), null);
+  };
   const startEdit = (m) => { setMenuFor(null); setEditingId(m.id); setText(m.body || ""); };
   const cancelEdit = () => { setEditingId(null); setText(""); };
   // (v0.3.4 버그 수정) 예전엔 삭제 버튼을 누르면 곧장 목록에서 지우고, 서버 삭제가 실패했을 때만
@@ -28913,8 +28804,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={{ width: 260, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
                   <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
-                  {CHAT_COMMANDS.map((c) => (
-                    <div key={c.cmd} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+                  {CHAT_CMD_LIST.map((c) => (
+                    <div key={c.name} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.usage}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
                   ))}
                 </div>
               </div>
@@ -29345,20 +29236,17 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
-        {/* (v0.4.8 되돌림, 사용자 요청) 입력창에 "/"만 입력해도(정확히 "/help"까지 칠 필요 없이)
-            바로 위에 명령어 안내 박스가 뜬다. "/help"를 실제로 보내면 예전처럼 대화 기록에도 그
-            명령어 목록 카드로 남는다(위 m.body === "/help" 분기) — 이 미리보기는 그와 별개로 입력
-            중에만 잠깐 보이는 도움말이다. 블라인드 대국 시작법/명령어(BLIND_COMMANDS)는 항상 이
-            목록 맨 위에 먼저 보여준다. */}
-        {text.startsWith("/") && (
-          <div style={{ width: "100%", boxSizing: "border-box", padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", marginBottom: 6 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
-            {[...BLIND_COMMANDS, ...CHAT_COMMANDS].map((c, i) => (
-              <div key={i} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.cmd}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
-            ))}
-          </div>
-        )}
+        {/* (v0.5.7, 사용자 요청 "명령어 체계 정리") "/"를 치면 전체 목록 대신, 친 글자로 좁혀지는 자동완성(↑↓·Tab·Enter)이 뜨고
+            명령어 이름 뒤엔 쓰는 법 힌트가 뜬다. 목록은 src/lib/chatCommands.js 하나에서 온다. /help는 나에게만 보이는 카드. */}
+        {editingId == null && !helpOpen && <ChatCommandPalette sugg={cmdSugg} activeIdx={cmdIdx} onHover={setCmdIdx} onPick={pickCommand} />}
+        {helpOpen && <ChatHelpCard commands={CHAT_CMD_LIST.filter((c) => chatCommandAvailable(c, { blindActive: blindGame.active }))} onClose={() => setHelpOpen(false)} onPick={(c) => { setHelpOpen(false); pickCommand(c); }} />}
         {replyTo && editingId == null && <ReplyBar target={replyTo} authorName={nameOf(replyTo.from_uid)} onCancel={() => setReplyTo(null)} />}
+        {/* (v0.5.7) /blind로 준비만 된 상태 — 첫 수를 어떻게 보내는지 입력창 바로 위에서 알려 준다(대국이 시작되면 사라짐). */}
+        {blindGame.armed && editingId == null && (
+          <p style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px dashed " + T.brass, fontSize: 10.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 700 }}>
+            <span style={{ color: T.brass, fontWeight: 800 }}>블라인드 대국 준비됨</span> · <b style={{ color: T.ink }}>1.e4</b>처럼 백의 첫 수를 보내면 시작돼요
+          </p>
+        )}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <AnimatePresence>
           {notice && (
@@ -29377,7 +29265,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           <AttachButton open={attachOpen} onClick={() => setAttachOpen((v) => !v)} />
           {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onPoll={() => { setAttachOpen(false); setPickSheet("poll"); }} onCobo={() => { setAttachOpen(false); setPickSheet("cobo"); }} />}
           <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
-          <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
+          <input value={text} onChange={onTextChange} onKeyDown={onInputKeyDown} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
         )}
