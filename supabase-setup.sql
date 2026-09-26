@@ -305,6 +305,32 @@ alter table public.chat_messages add column if not exists review_id text;
 -- 보낸 쪽이면 응답 대기·취소)로 렌더링된다. 초대장 자체의 최신 상태(pending/accepted/declined/
 -- cancelled)는 이 컬럼이 아니라 pvp_invites 테이블에서 그때그때 조회한다(둘이 어긋나지 않게).
 alter table public.chat_messages add column if not exists pvp_invite_id bigint;
+-- (v0.5.7 기능, 채팅 강화) 답장(인용) — 어느 메시지에 대한 답인지. 원문이 지워지면 인용만 사라진다(null).
+alter table public.chat_messages add column if not exists reply_to bigint references public.chat_messages(id) on delete set null;
+-- (v0.5.7) "여기서 뭐 둘래?" 수 투표 카드 — {fen}. 투표는 chat_poll_votes에(아래 채팅 강화 절).
+alter table public.chat_messages add column if not exists poll jsonb;
+-- (v0.5.7) 같이 보기(공동 분석) 보드 초대 카드 — {fen, sans}. 보드 조작 자체는 DB 없이 Realtime broadcast로만 주고받는다.
+alter table public.chat_messages add column if not exists cobo jsonb;
+create index if not exists idx_chat_messages_to_time on public.chat_messages(to_uid, created_at desc);
+-- (v0.5.7 기능, 스토어 심사 대비) 사용자 차단 — 둘 중 한쪽이라도 차단했으면 서로 메시지를 보낼 수 없다(아래 "chat insert own").
+-- 차단 목록은 차단한 본인만 볼 수 있어, 정책 안에서 "상대가 나를 차단했는지"는 SECURITY DEFINER 함수로 확인한다.
+create table if not exists public.user_blocks (
+  blocker uuid not null references auth.users(id) on delete cascade,
+  blocked uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker, blocked),
+  check (blocker <> blocked)
+);
+alter table public.user_blocks enable row level security;
+drop policy if exists "blocks own" on public.user_blocks;
+create policy "blocks own" on public.user_blocks for all using (auth.uid() = blocker) with check (auth.uid() = blocker);
+grant select, insert, delete on public.user_blocks to authenticated;
+create or replace function public.chat_blocked_between(p_a uuid, p_b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a));
+$$;
+revoke all on function public.chat_blocked_between(uuid, uuid) from public, anon;
+grant execute on function public.chat_blocked_between(uuid, uuid) to authenticated;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -321,6 +347,8 @@ create policy "chat insert own" on public.chat_messages for insert with check (
     where fe.status = 'accepted'
       and ((fe.from_uid = auth.uid() and fe.to_uid = chat_messages.to_uid) or (fe.to_uid = auth.uid() and fe.from_uid = chat_messages.to_uid))
   )
+  -- (v0.5.7) 둘 중 한쪽이라도 상대를 차단했으면 보낼 수 없다.
+  and not public.chat_blocked_between(auth.uid(), chat_messages.to_uid)
 );
 create policy "chat update own" on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 -- (v0.1.4 기능) 채팅 메시지 삭제 — puzzle_likes/puzzle_reposts와 동일한 패턴으로, 보낸 사람만
@@ -345,7 +373,9 @@ begin
     -- (v0.3.3) 유산 공유 카드(legacy_slot)도 puzzle_no/share_reward와 마찬가지로 텍스트로 "수정"할
     -- 수 없는 특수 메시지라 같이 제외한다(클라이언트도 이런 메시지엔 수정 버튼을 안 보여주지만,
     -- 서버에서도 이중으로 막는다).
-    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null;
+    -- (v0.5.7) 투표·같이 보기 카드와 리뷰·대국 신청 카드도 텍스트로 고칠 수 없다.
+    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null
+      and review_id is null and pvp_invite_id is null and poll is null and cobo is null;
 end; $$;
 grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 
@@ -3425,6 +3455,126 @@ create policy "pvp games select own or spectate" on public.pvp_games for select 
   auth.uid() = white_uid or auth.uid() = black_uid or status = 'active'
   or (status <> 'active' and updated_at > now() - interval '10 minutes')
 );
+
+-- ============================================================================
+-- 채팅 강화 (v0.5.7, 사용자 요청 "실제 SNS 수준으로") — 이모지 반응·수 투표·신고·대화방 목록 요약
+-- (답장 reply_to, 투표 poll, 같이 보기 cobo 컬럼과 차단 user_blocks는 위 5) chat_messages 절에 있다)
+-- ============================================================================
+-- 이모지 반응 — 메시지 하나에 사람마다 여러 개(서로 다른 이모지)를 달 수 있다. 그 대화의 두 사람만 보고 달 수 있다.
+create table if not exists public.chat_reactions (
+  message_id bigint not null references public.chat_messages(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  emoji text not null check (emoji in ('👍', '❤️', '😂', '😮', '😢', '🔥')),
+  created_at timestamptz not null default now(),
+  primary key (message_id, uid, emoji)
+);
+alter table public.chat_reactions enable row level security;
+drop policy if exists "reactions read" on public.chat_reactions;
+drop policy if exists "reactions insert" on public.chat_reactions;
+drop policy if exists "reactions delete" on public.chat_reactions;
+-- chat_messages의 select 정책이 그 대화의 두 사람에게만 행을 보여 주므로, exists가 참이면 곧 대화 당사자다.
+create policy "reactions read" on public.chat_reactions for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "reactions insert" on public.chat_reactions for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "reactions delete" on public.chat_reactions for delete using (auth.uid() = uid);
+grant select, insert, delete on public.chat_reactions to authenticated;
+
+-- "여기서 뭐 둘래?" 투표 — 투표 카드(chat_messages.poll) 하나에 사람마다 한 표(수 SAN), 다시 두면 바뀐다.
+create table if not exists public.chat_poll_votes (
+  message_id bigint not null references public.chat_messages(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  san text not null check (char_length(san) between 2 and 10),
+  created_at timestamptz not null default now(),
+  primary key (message_id, uid)
+);
+alter table public.chat_poll_votes enable row level security;
+drop policy if exists "poll votes read" on public.chat_poll_votes;
+drop policy if exists "poll votes insert" on public.chat_poll_votes;
+drop policy if exists "poll votes update" on public.chat_poll_votes;
+create policy "poll votes read" on public.chat_poll_votes for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "poll votes insert" on public.chat_poll_votes for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
+-- 표를 바꿀 땐 upsert(merge-duplicates)가 모든 컬럼을 다시 쓰므로, 본인 표(uid)를 투표 카드(poll) 메시지 안에서만 바꿀 수 있게 with check로 묶는다.
+create policy "poll votes update" on public.chat_poll_votes for update using (auth.uid() = uid)
+  with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
+grant select, insert, update on public.chat_poll_votes to authenticated;
+
+-- 신고 — 신고 대상 메시지의 그 순간 본문을 서버가 복사해 둔다(나중에 지워져도 검토할 수 있게, 클라이언트가 본문을 위조할 수 없게).
+-- 신고한 사람은 자기 신고만 볼 수 있고, 검토는 대시보드(service role)에서 한다.
+create table if not exists public.user_reports (
+  id bigint generated always as identity primary key,
+  reporter uuid not null references auth.users(id) on delete cascade,
+  target_uid uuid not null references auth.users(id) on delete cascade,
+  message_id bigint references public.chat_messages(id) on delete set null,
+  message_snapshot jsonb,
+  reason text not null check (reason in ('spam', 'abuse', 'sexual', 'cheating', 'other')),
+  detail text check (detail is null or char_length(detail) <= 500),
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  check (reporter <> target_uid)
+);
+alter table public.user_reports enable row level security;
+drop policy if exists "reports read own" on public.user_reports;
+create policy "reports read own" on public.user_reports for select using (auth.uid() = reporter);
+grant select on public.user_reports to authenticated;
+create or replace function public.user_report(p_target uuid, p_message_id bigint, p_reason text, p_detail text)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_target is null or p_target = v_me then raise exception 'bad target'; end if;
+  if p_message_id is not null then
+    -- 내가 받은(또는 보낸) 그 사람의 메시지만 신고할 수 있다.
+    select to_jsonb(m) - 'read' into v_snap from public.chat_messages m
+    where m.id = p_message_id and m.from_uid = p_target and m.to_uid = v_me;
+    if v_snap is null then raise exception 'message not found'; end if;
+  end if;
+  -- 같은 사람이 짧은 시간에 신고를 쏟아내지 못하게(스팸 신고) 하루 20건으로 제한한다.
+  if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then
+    raise exception 'too many reports';
+  end if;
+  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, reason, detail)
+  values (v_me, p_target, p_message_id, v_snap, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
+  returning id into v_id;
+  return v_id;
+end; $$;
+grant execute on function public.user_report(uuid, bigint, text, text) to authenticated;
+
+-- 대화방 목록 요약(BUG-019 수정) — 예전엔 나와 관련된 최근 메시지 200개로 클라이언트가 방 목록을 추정해, 오래된 대화방이
+-- 목록에서 빠지고 안 읽은 수도 200개 안에 든 것만 셌다. 대화 상대마다 "나에게서만 삭제" 워터마크 뒤의 마지막 메시지와
+-- 안 읽은 수를 서버가 한 번에 돌려준다(호출자 권한 그대로 실행 — chat_messages RLS가 그대로 적용된다).
+create or replace function public.chat_rooms()
+returns table(other_uid uuid, last_message jsonb, unread int, last_at timestamptz)
+language sql stable security invoker set search_path = public as $$
+  with mine as (
+    select m.*, case when m.from_uid = auth.uid() then m.to_uid else m.from_uid end as other
+    from public.chat_messages m
+    where m.from_uid = auth.uid() or m.to_uid = auth.uid()
+  ), vis as (
+    select mine.* from mine
+    left join public.chat_conv_prefs p on p.uid = auth.uid() and p.other_uid = mine.other
+    where p.cleared_before is null or mine.created_at > p.cleared_before
+  ), unread as (
+    select other, count(*)::int n from vis where to_uid = auth.uid() and not read group by other
+  ), last as (
+    select distinct on (other) other, to_jsonb(vis) - 'other' as msg, created_at from vis order by other, created_at desc, id desc
+  )
+  select last.other, last.msg, coalesce(unread.n, 0), last.created_at
+  from last left join unread using (other)
+  order by last.created_at desc;
+$$;
+grant execute on function public.chat_rooms() to authenticated;
+
+-- 반응·투표도 실시간으로 반영되도록 Realtime publication에 넣는다(8) Realtime 절과 같은 방식).
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_reactions') then
+      alter publication supabase_realtime add table public.chat_reactions;
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_poll_votes') then
+      alter publication supabase_realtime add table public.chat_poll_votes;
+    end if;
+  end if;
+end $$;
 
 -- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:

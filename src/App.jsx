@@ -79,6 +79,14 @@ import {
   knightNeighbors as knightNeighborsClient, knightDangerFor, knightOwnBlocked, knightApplyMove, knightCatcherOf,
   knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightGenRound, knightSafeWalls,
 } from "./lib/knightRace.js";
+import {
+  CHAT_PAGE, chatFetchPage, chatSendMessage, chatSearch, chatReactionsFetch, chatReactToggle, chatPollVotesFetch, chatPollVote,
+  chatBlocksFetch, chatBlockSet, userReport, chatRoomsFetch, chatFetchByIds,
+} from "./lib/chatApi.js";
+import {
+  ChatMsgMenu, CHAT_MENU_W, ReactionChips, ReplyQuote, ReplyBar, ReportSheet, ChatSearchPanel, chessSnippetOf, ChessSnippetCard,
+  ChatAttachMenu, AttachButton, PositionPickSheet, PollCard, CoboCard, CoBoardScreen, ChatHeaderActions, chatSnippet,
+} from "./components/chatPlus.jsx";
 import { ccGameKey, loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import {
   isSanSequenceValid, isTreeSequenceValid, isPuzzleSequenceValid, RATING_MIN_SAMPLES,
@@ -28188,7 +28196,7 @@ function formatBlindEval(ev) {
   const cp = ev.cp || 0;
   return (cp >= 0 ? "+" : "") + (cp / 100).toFixed(2) + "(depth=" + depth + ")";
 }
-function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, onOpenBoardFen, onOpenBoardSans, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
   // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
   // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
@@ -28213,6 +28221,24 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   const narrow = fillNarrow;
   const otherPresence = usePresenceMap(otherUid ? [otherUid] : []);
   const [msgs, setMsgs] = useState([]);
+  // ---- (v0.5.7 기능, 사용자 요청 "채팅을 실제 SNS 수준으로") 채팅 강화 — src/components/chatPlus.jsx·src/lib/chatApi.js ----
+  const [reactions, setReactions] = useState({});   // messageId -> [{uid, emoji}]
+  const [pollVotes, setPollVotes] = useState({});   // messageId -> [{uid, san}]
+  const [replyTo, setReplyTo] = useState(null);     // 답장할 메시지
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [reportFor, setReportFor] = useState(null); // { msg } | { msg: null } — 신고 시트
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [pickSheet, setPickSheet] = useState(null); // "poll" | "cobo" | null
+  const [coboMsg, setCoboMsg] = useState(null);     // 열려 있는 같이 보기 보드
+  const [hasOlder, setHasOlder] = useState(false);  // 서버에 더 이전 메시지가 있는지
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [flashId, setFlashId] = useState(null);     // 답장 인용·검색으로 이동한 메시지 잠깐 강조
+  const [notice, setNotice] = useState("");         // "복사했어요" 같은 잠깐 뜨는 안내
+  const noticeTimerRef = useRef(null);
+  const showNotice = useCallback((t) => { setNotice(t); clearTimeout(noticeTimerRef.current); noticeTimerRef.current = setTimeout(() => setNotice(""), 1600); }, []);
+  const scrollModeRef = useRef("bottom");           // 다음 목록 변화 때 스크롤 처리: "bottom" | { keepFrom: 이전 scrollHeight } | { jumpTo: id }
+  const nameOf = useCallback((uid) => (uid === myUid ? (myUsername || "나") : otherUsername), [myUid, myUsername, otherUsername]);
   // (v0.4.8 기능) 지금 이 대화의 블라인드 대국 상태 — deriveBlindGame 참고(대화 기록 자체가 유일한
   // 진실 공급원이라 서버에 별도로 저장하지 않는다).
   const blindGame = useMemo(() => deriveBlindGame(msgs), [msgs]);
@@ -28385,12 +28411,21 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   // 없이 일정 시간 눌려 있으면 수정/삭제(또는 전달/삭제) 메뉴를 연다.
   const longPressTimerRef = useRef(null);
   const listRef = useRef(null);
+  const clearedBeforeRef = useRef(null);
   const load = useCallback(async () => {
-    const [rows, clearedBefore] = await Promise.all([chatFetch(myUid, otherUid), chatConvPrefGet(myUid, otherUid)]);
+    const [rows, clearedBefore] = await Promise.all([chatFetchPage(myUid, otherUid), chatConvPrefGet(myUid, otherUid)]);
+    clearedBeforeRef.current = clearedBefore;
     // (v0.3.4 기능) ChatsModal 목록을 거치지 않고 곧장 이 대화가 열리는 경로(예: 친구 프로필에서
     // 채팅 시작)에서도 "나에게서만 삭제" 워터마크가 똑같이 적용되도록 여기서도 걸러낸다.
     const visible = clearedBefore ? rows.filter((m) => new Date(m.created_at) > new Date(clearedBefore)) : rows;
-    setMsgs(visible);
+    // (v0.5.7) 최신 페이지만 다시 받으므로, 위로 스크롤해 불러 둔 더 이전 메시지(이번 페이지의 가장 오래된 것보다 앞선 것)는 그대로 둔다.
+    const full = rows.length >= CHAT_PAGE;
+    setMsgs((prev) => {
+      if (!full || !visible.length) return visible;
+      const oldest = visible[0].created_at, ids = new Set(visible.map((m) => m.id));
+      return [...prev.filter((m) => m.created_at < oldest && !ids.has(m.id)), ...visible];
+    });
+    setHasOlder((h) => h || (full && visible.length === rows.length));
     const unread = visible.filter((m) => m.to_uid === myUid && !m.read);
     if (unread.length) chatMarkRead(unread);
   }, [myUid, otherUid]);
@@ -28405,6 +28440,108 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   }, [load, otherUid]);
   useRealtimeTable("chat_messages", myUid ? "to_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
   useRealtimeTable("chat_messages", myUid ? "from_uid=eq." + myUid : null, onRt, !!(myUid && otherUid), 60000);
+  // (v0.5.7) 위로 스크롤하면 이전 페이지(CHAT_PAGE개)를 앞에 붙인다 — 스크롤 위치는 보던 메시지 그대로.
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || !hasOlder || !msgs.length) return [];
+    setLoadingOlder(true);
+    const rows = await chatFetchPage(myUid, otherUid, msgs[0].created_at);
+    const cb = clearedBeforeRef.current;
+    const visible = cb ? rows.filter((m) => new Date(m.created_at) > new Date(cb)) : rows;
+    if (listRef.current) scrollModeRef.current = { keepFrom: listRef.current.scrollHeight - listRef.current.scrollTop };
+    setMsgs((prev) => { const ids = new Set(prev.map((m) => m.id)); return [...visible.filter((m) => !ids.has(m.id)), ...prev]; });
+    setHasOlder(rows.length >= CHAT_PAGE && visible.length === rows.length);
+    setLoadingOlder(false);
+    return visible;
+  }, [loadingOlder, hasOlder, msgs, myUid, otherUid]);
+  const onListScroll = (e) => { if (e.currentTarget.scrollTop < 60 && hasOlder && !loadingOlder) loadOlder(); };
+  // 답장 인용·검색 결과로 원문 메시지까지 이동 — 아직 안 불러온 옛 메시지면 거기까지 이전 페이지를 이어서 불러온다.
+  const jumpTo = useCallback(async (id, createdAt) => {
+    if (id == null) return;
+    let have = msgs.some((m) => m.id === id);
+    let guard = 0, oldest = msgs.length ? msgs[0].created_at : null, more = hasOlder;
+    const extra = [];
+    while (!have && more && oldest && (!createdAt || createdAt < oldest) && guard++ < 10) {
+      const rows = await chatFetchPage(myUid, otherUid, oldest);
+      extra.unshift(...rows);
+      have = rows.some((m) => m.id === id);
+      more = rows.length >= CHAT_PAGE;
+      oldest = rows.length ? rows[0].created_at : null;
+    }
+    if (extra.length) { setMsgs((prev) => { const ids = new Set(prev.map((m) => m.id)); return [...extra.filter((m) => !ids.has(m.id)), ...prev]; }); setHasOlder(more); }
+    if (!have) { showNotice("원문 메시지를 찾을 수 없어요"); return; }
+    scrollModeRef.current = { jumpTo: id };
+    setFlashId(id); setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1800);
+    if (!extra.length) { const el = document.getElementById("chatmsg-" + id); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); scrollModeRef.current = "bottom"; }
+  }, [msgs, hasOlder, myUid, otherUid, showNotice]);
+  const msgIdsKey = msgs.map((m) => m.id).join(",");
+  // (v0.5.7) 답장 인용의 원문이 아직 안 불러온 옛 메시지면 그것만 따로 받아 둔다(id -> 메시지).
+  const [replyCache, setReplyCache] = useState({});
+  useEffect(() => {
+    const have = new Set(msgs.map((m) => m.id));
+    const need = [...new Set(msgs.map((m) => m.reply_to).filter((id) => id != null && !have.has(id) && !(id in replyCache)))];
+    if (!need.length) return undefined;
+    let off = false;
+    chatFetchByIds(need).then((rows) => {
+      if (off) return;
+      setReplyCache((prev) => { const n = { ...prev }; need.forEach((id) => { n[id] = rows.find((r) => r.id === id) || null; }); return n; });
+    });
+    return () => { off = true; };
+  }, [msgIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const replyTargetOf = (id) => msgs.find((x) => x.id === id) || replyCache[id] || null;
+  // (v0.5.7) 반응·투표 — 보이는 메시지의 것을 모아 받는다. 상대가 새로 단 것은 Realtime(상대 uid 필터)으로, 내 것은 바로 로컬 반영.
+  const pollIdsKey = msgs.filter((m) => m.poll).map((m) => m.id).join(",");
+  const loadReactions = useCallback(async () => {
+    const ids = msgs.map((m) => m.id);
+    const [rx, pv] = await Promise.all([chatReactionsFetch(ids), chatPollVotesFetch(msgs.filter((m) => m.poll).map((m) => m.id))]);
+    setReactions(rx); setPollVotes(pv);
+  }, [msgIdsKey, pollIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (msgs.length) loadReactions(); }, [loadReactions]); // eslint-disable-line react-hooks/exhaustive-deps
+  useRealtimeTable("chat_reactions", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
+  useRealtimeTable("chat_poll_votes", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
+  const toggleReaction = async (m, emoji, on) => {
+    setMenuFor(null);
+    setReactions((prev) => {
+      const list = (prev[m.id] || []).filter((r) => !(r.uid === myUid && r.emoji === emoji));
+      return { ...prev, [m.id]: on ? [...list, { uid: myUid, emoji }] : list };
+    });
+    const ok = await chatReactToggle(m.id, myUid, emoji, on);
+    if (!ok) { showNotice("반응을 남기지 못했어요"); loadReactions(); }
+  };
+  const castVote = async (m, san) => {
+    setPollVotes((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((v) => v.uid !== myUid), { uid: myUid, san }] }));
+    const ok = await chatPollVote(m.id, myUid, san);
+    if (!ok) { showNotice("투표하지 못했어요"); loadReactions(); }
+  };
+  // (v0.5.7) 차단 — 내가 이 상대를 차단했는지. 차단하면 입력창 대신 안내가 뜨고, 서버도 양쪽 전송을 막는다.
+  useEffect(() => { let off = false; chatBlocksFetch(myUid).then((l) => { if (!off) setBlockedByMe(l.includes(otherUid)); }); return () => { off = true; }; }, [myUid, otherUid]);
+  const setBlocked = async (on) => {
+    const ok = await chatBlockSet(myUid, otherUid, on);
+    if (ok) { setBlockedByMe(on); showNotice(on ? otherUsername + "님을 차단했어요" : "차단을 해제했어요"); }
+    else showNotice(on ? "차단하지 못했어요" : "차단을 해제하지 못했어요");
+    return ok;
+  };
+  const submitReport = async (reason, detail, alsoBlock) => {
+    const target = reportFor && reportFor.msg;
+    const r = await userReport(otherUid, target ? target.id : null, reason, detail);
+    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); showNotice("신고했어요. 검토 후 조치할게요"); }
+    return r;
+  };
+  // (v0.5.7) 수 투표 엔진 정답 — 앱의 분석 엔진으로 그 포지션의 최선의 수를 찾는다(최대 약 2.5초).
+  const engineBest = useCallback(async (root) => {
+    if (!engine || engine.status !== "ready") return null;
+    try {
+      const pool = await getAnalysisPool(engine.profile, engine.urls);
+      const w = poolWorker(pool, 0, engine);
+      const fen = fenOfRoot(root, []);
+      const pvs = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 1, 2500, () => {}, "chat-poll");
+      const top = pvs && pvs[0];
+      if (!top || !top.pv || !top.pv.length || (top.cp == null && top.mate == null)) return null;
+      const san = pvUciToSans([], top.pv, 1, root)[0];
+      const sign = root.turn === "w" ? 1 : -1;
+      const evalTxt = top.mate != null ? "#" + (top.mate * sign > 0 ? "" : "-") + Math.abs(top.mate) : ((top.cp * sign) / 100 > 0 ? "+" : "") + ((top.cp * sign) / 100).toFixed(2);
+      return san ? { san, evalTxt } : null;
+    } catch { return null; }
+  }, [engine]);
   // (v0.1.4 기능) 실시간 타이핑 표시 — DB에 쓰지 않는 Supabase Realtime broadcast 채널을 대화 상대와
   // 공유(두 uid를 정렬해 채널명을 고정)해, 입력창에 글자를 칠 때마다 가벼운 "타이핑 중" 신호만 주고받는다.
   // self: false라 내가 보낸 신호는 내게 되돌아오지 않으므로, 이 채널에서 받는 이벤트는 항상 상대방 것이다.
@@ -28424,7 +28561,15 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     typingChanRef.current = channel;
     return () => { sbClient.removeChannel(channel); typingChanRef.current = null; clearTimeout(typingHideRef.current); setOtherTyping(false); };
   }, [myUid, otherUid]);
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs.length, otherTyping]);
+  // (v0.5.7) 목록이 바뀌면 보통은 맨 아래로 — 이전 메시지를 앞에 붙였을 땐 보던 자리를 지키고, 원문으로 이동할 땐 그 메시지로.
+  useLayoutEffect(() => {
+    const el = listRef.current; if (!el) return;
+    const mode = scrollModeRef.current;
+    scrollModeRef.current = "bottom";
+    if (mode && mode.keepFrom != null) { el.scrollTop = el.scrollHeight - mode.keepFrom; return; }
+    if (mode && mode.jumpTo != null) { const t = document.getElementById("chatmsg-" + mode.jumpTo); if (t) { t.scrollIntoView({ block: "center" }); return; } }
+    el.scrollTop = el.scrollHeight;
+  }, [msgs.length, otherTyping]);
   // (v0.1.4 기능) 메시지 바깥을 클릭/터치하면 열려 있던 수정/삭제 메뉴를 닫는다(NotificationBell과 동일 패턴).
   useEffect(() => {
     if (menuFor == null) return;
@@ -28647,9 +28792,17 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       return;
     }
     setSending(true);
-    const ok = await chatSend(myUid, otherUid, body, emoji);
+    // (v0.5.7) 답장 중이면 원문 id를 함께 보낸다(일반 텍스트·이모티콘만 — 명령어·블라인드 수는 답장 대상이 아니다).
+    const ok = await chatSendMessage(myUid, otherUid, body, emoji, replyTo ? { reply_to: replyTo.id } : null);
     setSending(false);
-    if (ok) { setText(""); load(); }
+    if (ok) { setText(""); setReplyTo(null); load(); }
+    else setCmdError(blockedByMe ? "차단한 사용자에게는 메시지를 보낼 수 없어요." : "메시지를 보내지 못했어요. 상대가 대화를 막았거나 잠시 연결이 불안정해요.");
+  };
+  // (v0.5.7) 수 투표·같이 보기 카드 보내기
+  const sendSpecial = async (extra) => {
+    setPickSheet(null); setCmdError("");
+    const ok = await chatSendMessage(myUid, otherUid, null, null, extra);
+    if (ok) load(); else setCmdError("보내지 못했어요. 잠시 후 다시 시도해 주세요.");
   };
   // (v0.2.6 기능 → v0.4.8 되돌림) "/"로 시작하면 쓸 수 있는 명령어. v0.4.3에서 "/"만 입력해도
   // 뜨던 입력창 위 미리보기를 없애고 "/help"를 입력했을 때만 뜨게 했었는데, 사용자 요청으로 다시
@@ -28693,10 +28846,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   // 없으므로 구조적으로 겹칠 일이 없다. dx/dy는 이 "자연 위치"가 실제로 잘리는 경계(listRef, 없으면
   // window) 밖으로 나갈 때만(화면이 아주 좁거나 말풍선이 거의 꽉 찼을 때) 안쪽으로 당기는 보정값.
   const MSG_MENU_W = 110, MSG_MENU_H = 36;
-  const openMsgMenu = (id, anchorEl, mine) => {
+  // (v0.5.7) 텍스트·이모티콘 메시지는 반응 줄이 있는 큰 메뉴(ChatMsgMenu, 약 214×220)라 크기를 따로 넘긴다.
+  const openMsgMenu = (id, anchorEl, mine, w = MSG_MENU_W, h = MSG_MENU_H) => {
     setMenuFor(id);
     const bounds = listRef.current ? listRef.current.getBoundingClientRect() : undefined;
-    const { dx, dy } = sideBubbleAnchor(anchorEl.getBoundingClientRect(), MSG_MENU_W, MSG_MENU_H, mine, 8, bounds);
+    const { dx, dy } = sideBubbleAnchor(anchorEl.getBoundingClientRect(), w, h, mine, 8, bounds);
     setMenuDx(dx); setMenuDy(dy);
   };
   return (
@@ -28720,11 +28874,21 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         <button onClick={() => setViewProfile(otherUsername)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", minWidth: 0, textAlign: "left" }}>
           <span style={{ fontSize: 21, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{otherUsername}</span>
         </button>
+        {/* (v0.5.7) 대화 검색·신고·차단 */}
+        <ChatHeaderActions onSearch={() => setSearchOpen((v) => !v)} onReport={() => setReportFor({ msg: null })} blocked={blockedByMe} onToggleBlock={() => setBlocked(!blockedByMe)} />
       </div>
+      {searchOpen && <ChatSearchPanel onSearch={(q) => chatSearch(myUid, otherUid, q)} nameOf={nameOf} onClose={() => setSearchOpen(false)} onPick={(m) => { setSearchOpen(false); jumpTo(m.id, m.created_at); }} />}
       {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
           높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
-      <div ref={listRef} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+      <div ref={listRef} onScroll={onListScroll} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
+        {/* (v0.5.7) 위로 스크롤하면 이전 메시지를 이어서 불러온다(버튼으로도) */}
+        {hasOlder && msgs.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
+            {loadingOlder ? <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>이전 메시지 불러오는 중…</span>
+              : <button onClick={loadOlder} className="press" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 999, padding: "3px 10px", cursor: "pointer" }}>이전 메시지 더 보기</button>}
+          </div>
+        )}
         {msgs.map((m, i) => {
           const mine = m.from_uid === myUid;
           // (v0.4.3 기능) 실시간 대국 신청 카드 — pvp_invite_friend가 함께 남긴 메시지.
@@ -29001,6 +29165,43 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               </div>
             );
           }
+          // (v0.5.7 기능) 수 투표·같이 보기 카드 — 다른 공유 카드처럼 보낸 사람 쪽으로 정렬한다. 꾹 누르기/오른쪽 클릭 메뉴는 반응·답장·삭제·신고.
+          // 카드 안(보드)은 자기 조작을 위해 mousedown/touchstart를 막으므로, 꾹 누르기 타이머는 캡처 단계에서 건다.
+          if (m.poll || m.cobo) {
+            const showAvatarC = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
+            const openMenuC = (el) => openMsgMenu(m.id, el, mine, CHAT_MENU_W, 190);
+            const cancelPress = () => clearTimeout(longPressTimerRef.current);
+            return (
+              <React.Fragment key={m.id}>
+                <div id={"chatmsg-" + m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative", borderRadius: 14, transition: "background-color .4s", background: flashId === m.id ? "rgba(236,203,134,.45)" : "transparent" }}>
+                  {!mine && (showAvatarC
+                    ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                        {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
+                          : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+                      </button>
+                    : <div style={{ width: 26, flexShrink: 0 }} />)}
+                  <div style={{ position: "relative" }} onContextMenu={(e) => { e.preventDefault(); openMenuC(e.currentTarget); }}
+                    onTouchStartCapture={(e) => { const el = e.currentTarget; cancelPress(); longPressTimerRef.current = setTimeout(() => openMenuC(el), 520); }}
+                    onTouchMoveCapture={cancelPress} onTouchEndCapture={cancelPress}>
+                    {menuFor === m.id && (
+                      <ChatMsgMenu style={{ [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))" }}
+                        myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
+                        onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
+                        onReply={() => { setMenuFor(null); setReplyTo(m); }}
+                        onDelete={mine ? () => doDelete(m) : null}
+                        onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
+                    )}
+                    {m.poll
+                      ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
+                      : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", paddingLeft: mine ? 0 : 32, marginTop: -2 }}>
+                  <ReactionChips list={reactions[m.id]} myUid={myUid} align={mine ? "flex-end" : "flex-start"} onToggle={(emoji, on) => toggleReaction(m, emoji, on)} />
+                </div>
+              </React.Fragment>
+            );
+          }
           // (18차 UX7) 3분 이내 연속 전송된 내 메시지 묶음에서는 마지막 메시지에만 읽음 여부를 표시한다.
           const next = msgs[i + 1];
           const groupEnd = !next || next.from_uid !== m.from_uid || (new Date(next.created_at) - new Date(m.created_at)) > 3 * 60e3;
@@ -29011,15 +29212,13 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           const dx = drag && drag.id === m.id ? drag.dx : 0;
           const onDown = (e) => {
             dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
-            // (v0.1.4 기능) 내가 보낸 메시지만 꾹 눌러 수정/삭제 메뉴를 열 수 있다.
-            if (mine) {
-              clearTimeout(longPressTimerRef.current);
-              const anchorEl = e.currentTarget;
-              longPressTimerRef.current = setTimeout(() => {
-                openMsgMenu(m.id, anchorEl, true);
-                dragRef.current = null; setDrag(null);
-              }, 480);
-            }
+            // (v0.1.4 기능 → v0.5.7) 꾹 누르면 메시지 메뉴 — 이제 상대 메시지도(반응·답장·복사·신고).
+            clearTimeout(longPressTimerRef.current);
+            const anchorEl = e.currentTarget;
+            longPressTimerRef.current = setTimeout(() => {
+              openMsgMenu(m.id, anchorEl, mine, CHAT_MENU_W, 220);
+              dragRef.current = null; setDrag(null);
+            }, 480);
           };
           const onMove = (e) => {
             if (!dragRef.current || dragRef.current.id !== m.id) return;
@@ -29057,14 +29256,14 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           };
           // (사용자 요청) 컴퓨터(마우스) 환경에서는 꾹 누르기 대신 오른쪽 클릭으로도 수정/삭제 메뉴를
           // 열 수 있게 한다 — 내가 보낸 메시지만(꾹 누르기와 동일한 제약), 같은 openMsgMenu로 연다.
-          const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, true); };
+          const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine, CHAT_MENU_W, 220); };
           // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
           const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
           return (
             <React.Fragment key={m.id}>
               {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
               {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
-              <div className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
+              <div id={"chatmsg-" + m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative", borderRadius: 12, transition: "background-color .4s", background: flashId === m.id ? "rgba(236,203,134,.45)" : "transparent" }}>
                 {!mine && (showAvatar
                   ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                       {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
@@ -29082,17 +29281,34 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                     (v0.3.4 UX) 말풍선과 겹치지 않도록, 말풍선을 감싸는 transform 요소 밖(이 position:relative 컨테이너)에 두고
                     말풍선이 없는 쪽 여백(대화창 중앙 쪽)에 세로 중앙 정렬로 띄운다. */}
                 {menuFor === m.id && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    {m.body != null && <button onClick={() => startEdit(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>수정</button>}
-                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
-                  </div>
+                  <ChatMsgMenu style={{ [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))" }}
+                    myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
+                    onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
+                    onReply={() => { setMenuFor(null); setReplyTo(m); }}
+                    onCopy={m.body ? () => { setMenuFor(null); try { navigator.clipboard.writeText(m.body); showNotice("복사했어요"); } catch { showNotice("복사하지 못했어요"); } } : null}
+                    onEdit={mine && m.body != null ? () => startEdit(m) : null}
+                    onDelete={mine ? () => doDelete(m) : null}
+                    onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
                 )}
-                <span style={{ display: "inline-block", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+                <span style={{ display: "inline-flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+                  {m.reply_to != null && (() => { const t = replyTargetOf(m.reply_to); return <ReplyQuote target={t} authorName={t ? nameOf(t.from_uid) : "답장"} mine={mine} onJump={() => jumpTo(m.reply_to, t && t.created_at)} />; })()}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
                     : <span style={{ display: "inline-block", maxWidth: "min(50vw, 320px)", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{renderMentionText(m.body)}</span>}
                 </span>
               </div>
               </div>
+              {(() => {
+                // (v0.5.7) 본문 속 FEN·수순은 미니 보드로, 반응은 말풍선 아래 칩으로.
+                const snip = m.body ? chessSnippetOf(m.body) : null;
+                const rx = reactions[m.id];
+                if (!snip && !(rx && rx.length)) return null;
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", paddingLeft: mine ? 0 : 32, marginTop: -2 }}>
+                    {snip && <ChessSnippetCard Board={Board} snippet={snip} onOpen={() => (snip.kind === "fen" ? onOpenBoardFen && onOpenBoardFen(snip.fen) : onOpenBoardSans && onOpenBoardSans(snip.sans))} />}
+                    <ReactionChips list={rx} myUid={myUid} align={mine ? "flex-end" : "flex-start"} onToggle={(emoji, on) => toggleReaction(m, emoji, on)} />
+                  </div>
+                );
+              })()}
             </React.Fragment>
           );
         })}
@@ -29132,13 +29348,38 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             ))}
           </div>
         )}
+        {replyTo && editingId == null && <ReplyBar target={replyTo} authorName={nameOf(replyTo.from_uid)} onCancel={() => setReplyTo(null)} />}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
-        <div className="flex items-center gap-2">
+        <AnimatePresence>
+          {notice && (
+            <motion.div key="notice" initial={{ opacity: 0, transform: "translateY(4px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} exit={{ opacity: 0 }}
+              style={{ position: "absolute", left: "50%", bottom: "calc(100% + 8px)", marginLeft: -110, width: 220, textAlign: "center", zIndex: 25, pointerEvents: "none", fontSize: 11.5, fontWeight: 800, color: T.ivoryHi, background: "rgba(36,21,9,.88)", borderRadius: 999, padding: "5px 12px" }}>{notice}</motion.div>
+          )}
+        </AnimatePresence>
+        {blockedByMe ? (
+          <div className="flex items-center justify-between" style={{ gap: 8, padding: "9px 12px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6" }}>
+            <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700 }}>차단한 사용자예요. 서로 메시지를 보낼 수 없어요.</span>
+            <button onClick={() => setBlocked(false)} className="press" style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>차단 해제</button>
+          </div>
+        ) : (
+        <div className="flex items-center gap-2" style={{ position: "relative" }}>
+          {/* (v0.5.7) "+" — 수 투표·같이 보기 보드 */}
+          <AttachButton open={attachOpen} onClick={() => setAttachOpen((v) => !v)} />
+          {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onPoll={() => { setAttachOpen(false); setPickSheet("poll"); }} onCobo={() => { setAttachOpen(false); setPickSheet("cobo"); }} />}
           <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={(e) => e.key === "Enter" && send(text.trim(), null)} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
         </div>
+        )}
       </div>
+      {/* (v0.5.7) 신고·포지션 고르기(투표/같이 보기)·같이 보기 화면 */}
+      <AnimatePresence>
+        {reportFor && <ReportSheet key="report" targetName={otherUsername} snippet={reportFor.msg ? chatSnippet(reportFor.msg) : null} alreadyBlocked={blockedByMe} onSubmit={submitReport} onClose={() => setReportFor(null)} />}
+        {pickSheet && <PositionPickSheet key="pick" Board={Board} title={pickSheet === "poll" ? "\"여기서 뭐 둘래?\" 투표 만들기" : "같이 보기 보드 시작"} cta={pickSheet === "poll" ? "이 포지션으로 투표 보내기" : "이 포지션으로 같이 보기"}
+          onClose={() => setPickSheet(null)} onSend={(fen) => sendSpecial(pickSheet === "poll" ? { poll: { fen } } : { cobo: { fen, sans: [] } })} />}
+        {coboMsg && <CoBoardScreen key="cobo" Board={Board} sbClient={sbClient} msg={coboMsg} myUid={myUid} myName={myUsername} otherName={otherUsername} onClose={() => setCoboMsg(null)}
+          onOpenAnalysis={(root, sans) => { setCoboMsg(null); const fen = fenOfRoot(root, sans); if (root || !sans.length) { onOpenBoardFen && onOpenBoardFen(fen); } else { onOpenBoardSans && onOpenBoardSans(sans); } }} />}
+      </AnimatePresence>
       {forwardTarget && <PuzzleShareSheet puzzle={forwardTarget} myUid={myUid} onClose={() => setForwardTarget(null)} onShared={() => setForwardTarget(null)} />}
       <AnimatePresence>
         {viewLegacy && <LegacyRevealScreen typeInfo={viewLegacy.typeInfo} entry={viewLegacy.entry} onClose={() => setViewLegacy(null)} />}
@@ -30465,7 +30706,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const [rows, setRows] = useState(null);
   // (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅 목록에도.
   const chatPresence = usePresenceMap(useMemo(() => (rows || []).map((r) => r.uid), [rows]));
@@ -30476,17 +30717,26 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
   // (v0.3.4 기능) 대화방별 설정(고정/알림 끄기)을 목록과 함께 불러와, 내가 지운 시점(clearedBefore)
   // 이전 메시지는 애초에 목록 계산에서 제외하고(=대화가 사라짐), 고정한 대화는 항상 맨 위로 올린다.
   const loadRows = useCallback(async () => {
-    const [all, prefs] = await Promise.all([chatFetchAll(myUid), chatConvPrefsFetch(myUid)]);
-    const latest = new Map(); // otherUid -> 최근 메시지
-    const unreadBy = {};      // (18차 보충 UX7) 상대별 안읽은 메시지 수
-    for (const m of all) {
-      const other = m.from_uid === myUid ? m.to_uid : m.from_uid;
-      const pref = prefs[other];
-      if (pref && pref.clearedBefore && new Date(m.created_at) <= new Date(pref.clearedBefore)) continue;
-      if (!latest.has(other)) latest.set(other, m);
-      if (m.to_uid === myUid && !m.read) unreadBy[other] = (unreadBy[other] || 0) + 1;
+    // (v0.5.7 버그 수정 BUG-019) 대화방 목록을 서버 요약(chat_rooms RPC — 방마다 마지막 메시지·안 읽은 수, 워터마크 반영)으로 받는다.
+    // 예전 방식(최근 메시지 200개로 추정)은 오래된 방이 빠지고 안 읽은 수가 모자랐다. RPC가 아직 없으면(SQL 미반영) 예전 방식으로.
+    const [rooms, prefs, blocked] = await Promise.all([chatRoomsFetch(), chatConvPrefsFetch(myUid), chatBlocksFetch(myUid)]);
+    let base;
+    if (rooms) base = rooms;
+    else {
+      const all = await chatFetchAll(myUid);
+      const latest = new Map(); // otherUid -> 최근 메시지
+      const unreadBy = {};      // (18차 보충 UX7) 상대별 안읽은 메시지 수
+      for (const m of all) {
+        const other = m.from_uid === myUid ? m.to_uid : m.from_uid;
+        const pref = prefs[other];
+        if (pref && pref.clearedBefore && new Date(m.created_at) <= new Date(pref.clearedBefore)) continue;
+        if (!latest.has(other)) latest.set(other, m);
+        if (m.to_uid === myUid && !m.read) unreadBy[other] = (unreadBy[other] || 0) + 1;
+      }
+      base = [...latest.entries()].map(([uid, m]) => ({ uid, m, unread: unreadBy[uid] || 0 }));
     }
-    const list = [...latest.entries()].map(([uid, m]) => ({ uid, m, unread: unreadBy[uid] || 0, pinned: !!(prefs[uid] && prefs[uid].pinned), muted: !!(prefs[uid] && prefs[uid].muted) }));
+    const blockedSet = new Set(blocked);
+    const list = base.filter((r) => !blockedSet.has(r.uid)).map((r) => ({ ...r, pinned: !!(prefs[r.uid] && prefs[r.uid].pinned), muted: !!(prefs[r.uid] && prefs[r.uid].muted) }));
     // 안정 정렬(stable sort)이라, 같은 고정 여부 안에서는 chatFetchAll이 이미 준 최근 메시지 순서가 그대로 유지된다.
     list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     setRows(list);
@@ -30582,7 +30832,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
         )}
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={myUid} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
+            <ChatPanel onOpenBoardFen={onOpenBoardFen} onOpenBoardSans={onOpenBoardSans} myUid={myUid} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={closeChatWith} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : (
@@ -30613,7 +30863,7 @@ function ChatsModal({ me, myUid, onClose, onOpenSharedPuzzle, onOpenSharedReview
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.pvp_invite_id != null ? "⚔️ 실시간 대국을 신청했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.pvp_invite_id != null ? "⚔️ 실시간 대국을 신청했어요" : m.poll ? "📊 \"여기서 뭐 둘래?\" 투표" : m.cobo ? "👥 같이 보기 보드에 초대했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -31216,7 +31466,7 @@ function PvpSpectateModal({ gameId, onClose }) {
     </div>
   );
 }
-function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -31383,7 +31633,7 @@ function FriendsModal({ me, myUid, onClose, onOpenOpening, onOpenGame, onOpenGam
 
         {chatWith ? (
           <div style={{ flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined }}>
-            <ChatPanel myUid={meId} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
+            <ChatPanel onOpenBoardFen={onOpenBoardFen} onOpenBoardSans={onOpenBoardSans} myUid={meId} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
         ) : sel ? (() => {
@@ -32395,7 +32645,8 @@ export default function App() {
   const onOpenLearnFen = useCallback((fen) => {
     const root = fen ? parseFenFull(fen) : null;
     if (!root) return;
-    setSearchOpen(false); setFriendsOpen(false);
+    setSearchOpen(false); setFriendsOpen(false); setChatsOpen(false); // (v0.5.7) 채팅 속 FEN 미리보기의 "분석하기"로도 불린다
+
     // (버그 수정, 사용자 제보) 퍼즐 풀이 화면(전용 URL "/puzzle/(번호)-(라인)")에서 FEN 코드를
     // 누르면, 이 함수 직후 PuzzleSolver가 onClose(PuzzleTab의 closeActive)도 함께 부른다 —
     // closeActive는 "지금 주소가 그 퍼즐 URL 패턴이면" 무조건 history.back()을 호출하는데, 주소를
@@ -33597,9 +33848,9 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
