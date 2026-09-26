@@ -26064,6 +26064,8 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
 // 어떻게 바꿨는지(승/무/패 숫자가 넘어가고 승률이 새 값까지 올라가거나 내려감) 보여 준다.
 const CC_TOAST_MS = 8000;       // 자동으로 닫히기까지(마우스를 올려 두면 멈춤)
 const CC_TOAST_REVEAL_MS = 900; // 직전 전적을 먼저 보여 주고, 이 대국을 반영하기까지
+// (v0.5.6 사용자 요청) "이 오프닝 전적" 라벨 서체 — 한글 글리프가 없어 한글은 명조 계열로 대체된다.
+const CC_TOAST_LABEL_FONT = "'Playfair Display', 'Nanum Myeongjo', serif";
 const ccWrColor = (n, wr) => (n < 3 || wr == null ? "#8A7458" : wr >= 60 ? T.best : wr >= 40 ? T.inaccuracy : T.blunder); // 도감 전적 칩과 같은 규칙
 function useCountTween(from, to, run, ms = 750) {
   const [v, setV] = useState(from);
@@ -26094,7 +26096,7 @@ function CcFlipNum({ value, hot, color }) {
 }
 function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, onClose }) {
   const won = game.result === "win", lost = game.result === "loss";
-  const resColor = won ? "#7BC46A" : lost ? "#E0685C" : "#CDBB98";
+  const resColor = won ? T.best : lost ? T.blunder : T.inkSoft;
   const opp = game.color === "w" ? game.black : game.white;
   const [phase, setPhase] = useState(0); // 0: 직전 전적, 1: 이 대국 반영
   useEffect(() => { const t = setTimeout(() => setPhase(1), CC_TOAST_REVEAL_MS); return () => clearTimeout(t); }, []);
@@ -26121,30 +26123,30 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
     <motion.div role="status" onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
       initial={{ opacity: 0, transform: "translateY(-14px) scale(0.96)" }} animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }} exit={{ opacity: 0, transform: "translateY(-10px) scale(0.97)" }}
       transition={{ duration: 0.34, ease: [0.22, 1.2, 0.36, 1] }}
-      style={{ position: "relative", overflow: "hidden", pointerEvents: "auto", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "9px 12px 12px", borderRadius: 13, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
+      style={{ position: "relative", overflow: "hidden", pointerEvents: "auto", background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>chess.com 대국 종료</span>
-        {game.timeClass && <span style={{ fontSize: 10, fontWeight: 700, color: "#CDBB98" }}>· {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</span>}
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.book }}>최근 대국</span>
+        {game.timeClass && <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>· {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</span>}
         <span style={{ flex: 1 }} />
-        {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#241509", background: T.brassHi, borderRadius: 999, padding: "1px 7px" }}>다음 {more}판</span>}
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: "#CDBB98", cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
+        {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#FFF6DE", background: T.book, borderRadius: 999, padding: "1px 7px" }}>다음 {more}판</span>}
+        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
       </div>
       <div className="flex items-center gap-2">
-        <span title={game.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 34, flexShrink: 0, borderRadius: 3, background: game.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#120A04)", border: "1px solid " + (game.color === "w" ? "#D8C9A8" : "#6E5424") }} />
+        <span title={game.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 34, flexShrink: 0, borderRadius: 3, background: game.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (game.color === "w" ? "#C9B58C" : "#000") }} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, lineHeight: 1.2 }}>
             <b style={{ color: resColor }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
-            {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: "#CDBB98" }}>({drawKindLabel(game.moves)})</span>}
-            {ratingDelta != null && <span style={{ marginLeft: 4, fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT, color: ratingDelta > 0 ? "#7BC46A" : ratingDelta < 0 ? "#E0685C" : "#CDBB98" }}>({ratingDelta > 0 ? "+" + ratingDelta : ratingDelta})</span>}
+            {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(game.moves)})</span>}
+            {ratingDelta != null && <span style={{ marginLeft: 4, fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT, color: ratingDelta > 0 ? T.best : ratingDelta < 0 ? T.blunder : T.inkSoft }}>({ratingDelta > 0 ? "+" + ratingDelta : ratingDelta})</span>}
           </div>
-          {opp && opp.username && <div style={{ fontSize: 11, color: "#CDBB98", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ivoryHi }}>{opp.username}</b>{opp.rating != null && <span style={{ fontFamily: SITE_FONT }}>({opp.rating})</span>}</div>}
-          {game.opening && <div style={{ fontSize: 10.5, color: "#CDBB98", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{game.opening}</div>}
+          {opp && opp.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{opp.username}</b>{opp.rating != null && <span style={{ fontFamily: SITE_FONT }}>({opp.rating})</span>}</div>}
+          {game.opening && <div style={{ fontSize: 11, fontWeight: 800, color: T.book, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{game.opening}</div>}
         </div>
         <button onClick={onSearch} aria-label="대국 보기" title="분석 보드로 불러오기" className="press" style={iconBtn}><Search size={13} /></button>
         <BestMoveJumpButton title="게임 리뷰" onClick={onReview} />
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 9 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: "#CDBB98", flexShrink: 0 }}>{rec.scope === "opening" ? "이 오프닝 전적" : "전체 전적"}</span>
+        <span style={{ fontFamily: CC_TOAST_LABEL_FONT, fontSize: 11.5, fontWeight: 700, color: T.book, flexShrink: 0 }}>{rec.scope === "opening" ? "이 오프닝 전적" : "전체 전적"}</span>
         <span style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + chipColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: T.ink, transition: "border-color .3s" }}>
           {phase === 1 && <motion.span aria-hidden="true" initial={{ opacity: 0.8, transform: "scale(1)" }} animate={{ opacity: 0, transform: "scale(1.35)" }} transition={{ duration: 0.7, ease: "easeOut" }}
             style={{ position: "absolute", inset: -2, borderRadius: 12, border: "2px solid " + hotColor, pointerEvents: "none" }} />}
@@ -26154,13 +26156,13 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
         <AnimatePresence>
           {phase === 1 && (
             <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
-              style={{ fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.brassHi : dWr > 0 ? "#7BC46A" : dWr < 0 ? "#E0685C" : "#CDBB98" }}>
+              style={{ fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
               {dWr == null ? "첫 대국!" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
             </motion.span>
           )}
         </AnimatePresence>
       </div>
-      <motion.span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2, background: T.brass, transformOrigin: "left", scaleX: left, opacity: 0.8 }} />
+      <motion.span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2.5, background: T.book, transformOrigin: "left", scaleX: left, opacity: 0.8 }} />
     </motion.div>
   );
 }
@@ -33684,9 +33686,9 @@ export default function App() {
           </div>
         </div>
       )}
-      {/* (v0.5.6) chess.com 대국 요약 알림 — 옛 도감 잠금 해제 토스트 자리. 리뷰·PLAY 화면, 접속 직후 뜨는 창(업데이트
+      {/* (v0.5.6) chess.com 대국 요약 알림 — 화면 맨 위(헤더를 덮는 자리, 본문 정보를 가리지 않게). 리뷰·PLAY 화면, 접속 직후 뜨는 창(업데이트
           소식·오늘의 퍼즐·퀘스트 완료)이 위에 있거나 다른 토스트가 떠 있는 동안에는 띄우지 않고 기다린다(대기열은 그대로, 닫히면 이어서). */}
-      <div style={{ position: "fixed", top: 70, left: "50%", transform: "translateX(-50%)", zIndex: 61, width: "calc(100% - 32px)", maxWidth: 360, pointerEvents: "none" }}>
+      <div style={{ position: "fixed", top: "calc(8px + env(safe-area-inset-top, 0px))", left: "50%", transform: "translateX(-50%)", zIndex: 80, width: "calc(100% - 32px)", maxWidth: 360, pointerEvents: "none" }}>
         <AnimatePresence mode="wait">
           {ccCur && ccCurInfo && !reviewGame && !playGame && !announceOpen && !puzzleNoticeOpen && !questClearOpen && !(toast && toast.type !== "xp" && toast.type !== "coins") && (
             <ChesscomGameToast key={ccGameKey(ccCur)} game={ccCur} rec={ccCurInfo.rec} ratingDelta={ccCurInfo.ratingDelta} more={ccQueue.length - 1}
