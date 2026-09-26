@@ -62,7 +62,9 @@ export function ecoOpeningName(ecoUrl) {
 export function computeRatingChanges(games) {
   const map = new Map();
   const byClass = {};
-  for (const g of games || []) { if (!g.timeClass) continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
+  // (v0.5.6 버그 수정, BUGS.md BUG-016) chess.com은 변형 체스(Chess960 등)마다 레이팅 풀이 따로라, 같은 시간
+  // 규정이어도 표준 체스와 섞어 비교하면 증감이 틀린다 — 표준 체스 대국끼리만 비교한다.
+  for (const g of games || []) { if (!g.timeClass || (g.rules || "chess") !== "chess") continue; (byClass[g.timeClass] = byClass[g.timeClass] || []).push(g); }
   for (const arr of Object.values(byClass)) {
     const sorted = [...arr].sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
     for (let i = 1; i < sorted.length; i++) {
