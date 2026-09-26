@@ -26113,15 +26113,41 @@ function useCountTween(from, to, run, ms = 750) {
   }, [from, to, run, ms]);
   return v;
 }
-// 숫자가 바뀌면 아래에서 위로 넘어가며 바뀐다(바뀐 칸만 색으로 강조).
+// (v0.5.7, 사용자 요청 "전적 변화를 더 부각 — 숫자가 흔들리면서 변하게") 흔들림 래퍼 — active가 켜지는 순간 한 번, 좌우로 떨리며
+// 커졌다가 제자리로 가라앉는다. 숫자가 넘어가는(flip) 동안 함께 흔들려 "바뀌는 중"이라는 느낌을 준다. 떨림 폭은 점점 줄어든다.
+// 흔들림은 넘어가는 숫자를 자르는 overflow 칸 바깥에 걸어, 커져도 숫자가 잘리지 않는다. transform 문자열만 쓴다(합성기, SquareFx 주석 참고).
+const CC_SHAKE_STRONG = [
+  "translateX(0px) rotate(0deg) scale(1)", "translateX(-2.5px) rotate(-10deg) scale(1.3)", "translateX(2.5px) rotate(9deg) scale(1.45)",
+  "translateX(-2px) rotate(-7deg) scale(1.45)", "translateX(1.5px) rotate(5deg) scale(1.38)", "translateX(-1px) rotate(-2.5deg) scale(1.25)", "translateX(0px) rotate(0deg) scale(1)",
+];
+const CC_SHAKE_SOFT = [
+  "translateX(0px) rotate(0deg) scale(1)", "translateX(-1.5px) rotate(-4deg) scale(1.12)", "translateX(1.5px) rotate(4deg) scale(1.18)",
+  "translateX(-1.2px) rotate(-3deg) scale(1.18)", "translateX(1px) rotate(2deg) scale(1.14)", "translateX(-0.5px) rotate(-1deg) scale(1.08)", "translateX(0px) rotate(0deg) scale(1)",
+];
+function CcShake({ active, strong, delay = 0, duration = 0.62, children }) {
+  const frames = strong ? CC_SHAKE_STRONG : CC_SHAKE_SOFT;
+  return (
+    <motion.span initial={{ transform: frames[0] }} animate={active ? { transform: frames } : { transform: frames[0] }}
+      transition={active ? { duration, delay, times: [0, 0.14, 0.3, 0.47, 0.64, 0.82, 1], ease: fxEase(7, "easeInOut") } : { duration: 0 }}
+      style={{ display: "inline-flex", transformOrigin: "50% 60%", position: "relative", zIndex: active ? 1 : undefined }}>
+      {children}
+    </motion.span>
+  );
+}
+// 숫자가 바뀌면 아래에서 위로 넘어가며 바뀐다(바뀐 칸만 색으로 강조). hot이면 넘어가는 동안 크게 흔들리고, 뒤에 같은 색 빛이 번진다.
 function CcFlipNum({ value, hot, color }) {
   return (
-    <span style={{ position: "relative", display: "inline-flex", justifyContent: "center", minWidth: String(value).length * 0.62 + "em", height: "1.25em", overflow: "hidden", verticalAlign: "bottom" }}>
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span key={value} initial={{ opacity: 0, transform: "translateY(85%)" }} animate={{ opacity: 1, transform: "translateY(0%)" }} exit={{ opacity: 0, transform: "translateY(-85%)" }}
-          transition={{ duration: 0.38, ease: [0.2, 0.8, 0.3, 1] }} style={{ display: "inline-block", lineHeight: "1.25em", color: hot ? color : undefined, transition: "color .3s" }}>{value}</motion.span>
-      </AnimatePresence>
-    </span>
+    <CcShake active={hot} strong>
+      {hot && <motion.span aria-hidden="true" initial={{ opacity: 0, transform: "scale(0.4)" }} animate={{ opacity: [0, 0.55, 0], transform: ["scale(0.4)", "scale(1.3)", "scale(1.9)"] }}
+        transition={{ duration: 0.7, times: [0, 0.35, 1], ease: fxEase(3, "easeOut") }}
+        style={{ position: "absolute", left: "50%", top: "50%", width: "1.5em", height: "1.5em", marginLeft: "-0.75em", marginTop: "-0.75em", borderRadius: "50%", background: "radial-gradient(circle," + color + " 0%, rgba(0,0,0,0) 70%)", pointerEvents: "none" }} />}
+      <span style={{ position: "relative", display: "inline-flex", justifyContent: "center", minWidth: String(value).length * 0.62 + "em", height: "1.25em", overflow: "hidden", verticalAlign: "bottom" }}>
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span key={value} initial={{ opacity: 0, transform: "translateY(85%)" }} animate={{ opacity: 1, transform: "translateY(0%)" }} exit={{ opacity: 0, transform: "translateY(-85%)" }}
+            transition={{ duration: 0.38, ease: [0.2, 0.8, 0.3, 1] }} style={{ display: "inline-block", lineHeight: "1.25em", color: hot ? color : undefined, transition: "color .3s" }}>{value}</motion.span>
+        </AnimatePresence>
+      </span>
+    </CcShake>
   );
 }
 function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, onClose }) {
@@ -26180,7 +26206,8 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
           {phase === 1 && <motion.span aria-hidden="true" initial={{ opacity: 0.8, transform: "scale(1)" }} animate={{ opacity: 0, transform: "scale(1.35)" }} transition={{ duration: 0.7, ease: "easeOut" }}
             style={{ position: "absolute", inset: -2, borderRadius: 12, border: "2px solid " + hotColor, pointerEvents: "none" }} />}
           <span><CcFlipNum value={cur.w} hot={phase === 1 && rec.changed === "w"} color={hotColor} />승 <CcFlipNum value={cur.d} hot={phase === 1 && rec.changed === "d"} color={hotColor} />무 <CcFlipNum value={cur.l} hot={phase === 1 && rec.changed === "l"} color={hotColor} />패</span>
-          <span style={{ color: chipColor, transition: "color .3s" }}>{wr != null ? wr + "%" : "–"}</span>
+          {/* 승률은 새 값까지 세어 가는 동안(useCountTween 750ms) 잔잔하게 떨리다 멈춘다 — 바뀐 전적 숫자보다 한 박자 뒤 */}
+          <CcShake active={phase === 1 && dWr !== 0} delay={0.12} duration={0.75}><span style={{ color: chipColor, transition: "color .3s" }}>{wr != null ? wr + "%" : "–"}</span></CcShake>
         </span>
         <AnimatePresence>
           {phase === 1 && (
