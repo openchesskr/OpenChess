@@ -1423,12 +1423,13 @@ alter table public.reviewed_games enable row level security;
 drop policy if exists "reviewed games read"   on public.reviewed_games;
 drop policy if exists "reviewed games insert" on public.reviewed_games;
 drop policy if exists "reviewed games update" on public.reviewed_games;
--- (puzzles 테이블과 동일한 판단) 게임 데이터를 조작해도 이득 볼 카운터·랭킹이 이 테이블엔 전혀
--- 없으므로, insert/update 모두 열어 둔다 — 크라우드소싱 캐시의 성격상 최초 발견자 외에도 누구나
--- 갱신할 수 있어야 한다(puzzles.data와 동일한 이유).
+-- (v0.5.7 보안 BUG-023) 예전엔 "조작해도 이득 볼 카운터가 없다"는 판단으로 insert/update를 모두(로그인 없이도) 열어 뒀다 —
+-- 그 결과 누구든 REST로 임의 대국의 기보(data)·분석(analysis)을 덮어쓸 수 있었고, 그 대국의 공유 리뷰 링크를 여는 모든 사람에게
+-- 조작된 기보·정확도가 보였다. 이제 표에는 읽기만 열고, 쓰기는 아래 두 RPC로만 한다:
+--   reviewed_game_put     — 기보는 처음 올린 것이 그대로 남는다(이미 기보가 있으면 무시). 모양·크기 검사.
+--   reviewed_analysis_put — 분석은 비어 있거나, 더 새 버전(v)이거나, 같은 버전에서 더 깊은(d) 분석일 때만 바뀐다.
+--                           기보가 이미 있으면 분석의 수 개수가 기보와 같아야 한다.
 create policy "reviewed games read"   on public.reviewed_games for select using (true);
-create policy "reviewed games insert" on public.reviewed_games for insert with check (true);
-create policy "reviewed games update" on public.reviewed_games for update using (true) with check (true);
 
 -- ============================================================================
 -- 22) legacy_likes / legacy_like_counts — 유산(Legacy) 블록 좋아요 (사용자 요청)
@@ -1494,7 +1495,48 @@ begin
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
 grant execute on function public.legacy_like_toggle(uuid, text) to authenticated;
-grant select, insert, update on public.reviewed_games to anon, authenticated;
+grant select on public.reviewed_games to anon, authenticated;
+revoke insert, update on public.reviewed_games from anon, authenticated;
+create or replace function public.reviewed_game_put(p_cc_id bigint, p_data jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_moves jsonb := coalesce(p_data -> 'moves', p_data -> 'sans');
+begin
+  if p_cc_id is null or p_cc_id <= 0 or p_data is null or jsonb_typeof(p_data) <> 'object' then return false; end if;
+  if v_moves is null or jsonb_typeof(v_moves) <> 'array' or jsonb_array_length(v_moves) = 0 or jsonb_array_length(v_moves) > 1000 then return false; end if;
+  if pg_column_size(p_data) > 200000 then return false; end if;
+  insert into public.reviewed_games(cc_id, data) values (p_cc_id, p_data)
+  on conflict (cc_id) do update set data = excluded.data
+    where public.reviewed_games.data is null or public.reviewed_games.data = '{}'::jsonb;  -- 분석이 먼저 올라와 기보만 비어 있던 행만 채운다
+  return true;
+end; $$;
+revoke all on function public.reviewed_game_put(bigint, jsonb) from public;
+grant execute on function public.reviewed_game_put(bigint, jsonb) to anon, authenticated;
+create or replace function public.reviewed_analysis_put(p_cc_id bigint, p_analysis jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_row public.reviewed_games; v_n int; v_len int;
+  v_new_v int := (p_analysis ->> 'v')::int; v_new_d int := coalesce((p_analysis ->> 'd')::int, 0);
+begin
+  if p_cc_id is null or p_cc_id <= 0 or p_analysis is null or v_new_v is null then return false; end if;
+  if jsonb_typeof(p_analysis #> '{result,moves}') is distinct from 'array' then return false; end if;
+  if pg_column_size(p_analysis) > 1000000 then return false; end if;
+  v_n := jsonb_array_length(p_analysis #> '{result,moves}');
+  select * into v_row from public.reviewed_games where cc_id = p_cc_id for update;
+  if found then
+    v_len := jsonb_array_length(coalesce(v_row.data -> 'moves', v_row.data -> 'sans', '[]'::jsonb));
+    if v_len > 0 and v_len <> v_n then return false; end if;  -- 기보와 수 개수가 다른 분석은 받지 않는다
+    if v_row.analysis is not null and not (
+      v_new_v > coalesce((v_row.analysis ->> 'v')::int, 0)
+      or (v_new_v = coalesce((v_row.analysis ->> 'v')::int, 0) and v_new_d > coalesce((v_row.analysis ->> 'd')::int, 0))
+    ) then return false; end if;
+    update public.reviewed_games set analysis = p_analysis where cc_id = p_cc_id;
+  else
+    insert into public.reviewed_games(cc_id, analysis) values (p_cc_id, p_analysis);
+  end if;
+  return true;
+end; $$;
+revoke all on function public.reviewed_analysis_put(bigint, jsonb) from public;
+grant execute on function public.reviewed_analysis_put(bigint, jsonb) to anon, authenticated;
 
 -- ============================================================================
 -- N) presence — OpenChess 실시간 접속 여부(Discord 스타일 초록 점) + 마지막 접속 시각
