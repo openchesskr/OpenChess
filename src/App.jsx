@@ -4222,6 +4222,39 @@ function useCountUp(target, durationMs, decimals = 0) {
   }, [target, durationMs, decimals]);
   return target == null ? null : display;
 }
+// (v0.5.6 기능, 사용자 요청) 분석 탭 수 블록의 일일 퀘스트 표시 — 블록이 나타날 때 아이콘이 톡 튀어나오고, 오른쪽으로 두루마리
+// (원통)가 굴러가며 펴지듯 "퀘스트" 알약이 펼쳐진다(탁월/유일/최선 이펙트의 알약처럼). 그 뒤에도 몇 초마다 한 번씩 까딱까딱
+// 흔들려 "눌러 보라"고 손짓한다. 움직임은 전부 합성기 값(opacity·transform 문자열·clipPath)만 쓴다(SquareFx 주석 참고).
+const QUEST_TAG_H = 22, QUEST_TAG_W = 64;
+const QUEST_TAG_POP = 0.12, QUEST_TAG_ROLL = 0.5;      // 아이콘 등장 뒤 펼치기 시작(초), 펼치는 시간(초)
+const QUEST_WIGGLE = ["rotate(0deg) scale(1)", "rotate(-9deg) scale(1.08)", "rotate(8deg) scale(1.08)", "rotate(-6deg) scale(1.05)", "rotate(4deg) scale(1.02)", "rotate(-1.5deg) scale(1)", "rotate(0deg) scale(1)"];
+function QuestTag({ onClick }) {
+  const H = QUEST_TAG_H, W = QUEST_TAG_W, R = QUEST_TAG_POP, D = QUEST_TAG_ROLL;
+  const clipClosed = "inset(0px " + (W - H) + "px 0px 0px round 999px)", clipOpen = "inset(0px 0px 0px 0px round 999px)";
+  const Tag = onClick ? motion.button : motion.span;
+  return (
+    <Tag onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined} title={onClick ? "일일 퀘스트 오프닝 — 눌러서 퀘스트 보기" : "일일 퀘스트 오프닝"}
+      initial={{ transform: QUEST_WIGGLE[0] }} animate={{ transform: QUEST_WIGGLE }}
+      transition={{ duration: 0.7, delay: R + D + 0.9, times: [0, 0.14, 0.3, 0.46, 0.62, 0.8, 1], ease: fxEase(7, "easeInOut"), repeat: Infinity, repeatDelay: 2.8 }}
+      style={{ position: "absolute", top: -8, left: -8, width: W, height: H, padding: 0, border: "none", background: "transparent", zIndex: 5, cursor: onClick ? "pointer" : "default", transformOrigin: H / 2 + "px 50%", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.38))", willChange: "transform" }}>
+      {/* 펼쳐지는 알약 — 왼쪽(아이콘 뒤)에 말려 있다가 clipPath로 오른쪽까지 드러난다 */}
+      <motion.span initial={{ clipPath: clipClosed }} animate={{ clipPath: clipOpen }} transition={{ duration: D, delay: R, ease: [0.3, 0.7, 0.3, 1] }}
+        style={{ position: "absolute", inset: 0, borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "2px solid " + T.paper, boxSizing: "border-box", overflow: "hidden", willChange: "clip-path" }}>
+        <motion.span initial={{ opacity: 0, transform: "translateX(-8px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: D * 0.8, delay: R + D * 0.3, ease: "easeOut" }}
+          style={{ position: "absolute", left: H - 2, right: 0, top: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#241509", fontSize: 10.5, fontWeight: 900, fontFamily: SITE_FONT, letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>퀘스트</motion.span>
+        {/* 두루마리 심 — 펼쳐지는 가장자리를 따라 굴러가는 원통 음영, 다 펴지면 사라진다 */}
+        <motion.span initial={{ opacity: 1, transform: "translateX(" + (H - 12) + "px)" }} animate={{ opacity: [1, 1, 0], transform: ["translateX(" + (H - 12) + "px)", "translateX(" + (W - 14) + "px)", "translateX(" + (W - 14) + "px)"] }}
+          transition={{ duration: D + 0.15, delay: R, times: [0, D / (D + 0.15), 1], ease: [[0.3, 0.7, 0.3, 1], "linear"] }}
+          style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, borderRadius: 999, background: "linear-gradient(90deg,#6E5424 0%," + T.brassHi + " 45%,#FFF6DE 55%,#8A6C2F 100%)", willChange: "transform, opacity" }} />
+      </motion.span>
+      {/* 아이콘 원 */}
+      <motion.span initial={{ opacity: 0, transform: "scale(0.3)" }} animate={{ opacity: 1, transform: "scale(1)" }} transition={{ duration: 0.32, ease: [0.2, 0.9, 0.3, 1.35] }}
+        style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", willChange: "transform, opacity" }}>
+        <MaterialIcon name="assignment" size={12} color="#241509" />
+      </motion.span>
+    </Tag>
+  );
+}
 function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
@@ -4234,9 +4267,7 @@ function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading,
     <div style={{ minWidth: 0, borderRadius: 12, marginBottom: 9, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + color, boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px", overflow: "visible", position: "relative" }}>
       {/* (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이) 수순에 해당하는 블록임을 알려주는 배지.
           (사용자 요청) 누르면 즉시 학습 탭으로 이동해 해당 퀘스트를 하이라이트한다. */}
-      {questBadge && (onQuestBadgeClick
-        ? <button onClick={(e) => { e.stopPropagation(); onQuestBadgeClick(); }} title="일일 퀘스트 오프닝 — 눌러서 퀘스트 보기" className="press" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5, cursor: "pointer" }}><MaterialIcon name="assignment" size={12} color="#241509" /></button>
-        : <span title="일일 퀘스트 오프닝" style={{ position: "absolute", top: -7, left: -7, width: 20, height: 20, borderRadius: "50%", background: T.brass, border: "2px solid " + T.paper, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 5px rgba(0,0,0,.4)", zIndex: 5 }}><MaterialIcon name="assignment" size={12} color="#241509" /></span>)}
+      {questBadge && <QuestTag onClick={onQuestBadgeClick} />}
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
         <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={kind} descOnClick /></span>
         <div style={{ minWidth: 0, flex: 1 }}>
