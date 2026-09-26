@@ -17205,8 +17205,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     // 2배로 키운다 — 이 카드는 이미 transform:scale(cardScale)로 균일하게 커지고 작아지도록 만들어져
     // 있었으므로(세로 모식도에서만 0.65배로 살짝 줄이던 것), 그 배율에 2를 곱하기만 하면 폰트·이미지·
     // 여백까지 전부 비율 그대로 2배가 된다.
-    // (v0.5.6, 사용자 요청 "카드 크기를 좀 줄여줘") 데스크톱 2배 → 1.5배, 모바일 1.3배 → 1배.
-    const cardScale = vertical ? 1 : 1.5;
+    // (v0.5.6, 사용자 요청 "카드 크기를 좀 줄여줘" → "더 작게") 데스크톱 2배 → 1.5배 → 1.1배, 모바일 1.3배 → 1배 → 0.85배.
+    const cardScale = vertical ? 0.85 : 1.1;
     const vw = typeof window !== "undefined" ? window.innerWidth : 480;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
     const CARD_W = Math.max(240, Math.min(300, vw - 32));
