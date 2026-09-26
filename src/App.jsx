@@ -16370,7 +16370,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
         </button>
         {showRec && (
           <span title={"내 chess.com 전적 " + it.myN + "판 — " + it.myW + "승 " + it.myD + "무 " + it.myL + "패, 승률 " + it.myWr + "%"}
-            style={{ position: "absolute", left: "50%", top: boxH - 8, transform: "translateX(-50%)", height: 16, padding: "0 6px", borderRadius: 8, background: "#FFFDF6", border: "1.5px solid " + wrColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 8.5, fontWeight: 800, color: T.ink, zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>
+            style={{ position: "absolute", left: "50%", top: boxH + 3, transform: "translateX(-50%)", height: 16, padding: "0 6px", borderRadius: 8, background: "#FFFDF6", border: "1.5px solid " + wrColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 8.5, fontWeight: 800, color: T.ink, zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>
             <span>{it.myW}승 {it.myD}무 {it.myL}패</span>
             <span style={{ color: wrColor }}>{it.myWr}%</span>
           </span>
@@ -16440,7 +16440,8 @@ function computeDexLayout(treeData, contentVer) {
   walk(root, null, null);
   const arms = {};
   for (const c of root.children) arms[c.dir] = c;
-  const res = layoutDexTree(arms, { boxW, boxH, safeGap: 70 / SCHEMATIC_ZOOM_LABEL_BASE, earlySafeGap: 120 / SCHEMATIC_ZOOM_LABEL_BASE, jitterMax: 100 / SCHEMATIC_ZOOM_LABEL_BASE, maxRadialStep: (70 / SCHEMATIC_ZOOM_LABEL_BASE) * 80 });
+  // 블록 + 아래 전적 칩 자리를 한 덩어리로 배치한다(칩이 이웃 블록과 겹치지 않게). 노드 y는 그 덩어리의 위쪽 = 블록 위쪽.
+  const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW, safeGap: 70 / SCHEMATIC_ZOOM_LABEL_BASE, earlySafeGap: 120 / SCHEMATIC_ZOOM_LABEL_BASE, jitterMax: 100 / SCHEMATIC_ZOOM_LABEL_BASE, maxRadialStep: (70 / SCHEMATIC_ZOOM_LABEL_BASE) * 80 });
   let minX = 0, maxX = 0, minY = 0, maxY = 0;
   for (const it of nodes) { if (it.x < minX) minX = it.x; if (it.x > maxX) maxX = it.x; if (it.y < minY) minY = it.y; if (it.y > maxY) maxY = it.y; }
   const PAD = 200;

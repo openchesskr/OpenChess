@@ -32,7 +32,9 @@ export const DEX_LAYOUT = {
   JITTER_MIN_DEPTH: 3,
   LABEL_H: 20,
   LABEL_GAP: 4,
-  CHIP_BELOW: 8,             // 블록 아래 가장자리에 걸쳐 그리는 전적 칩이 블록 밖으로 나오는 높이 — 라벨은 이만큼 더 비켜 둔다
+  // 블록 아래에 띄워 그리는 전적 칩이 차지하는 높이(간격 3 + 칩 16 + 여유 1). 배치는 블록 + 이 높이를 한 덩어리(발자국)로 보고
+  // 간격·겹침을 계산하며(layoutDexTree에 boxH + CHIP_BELOW를 넘긴다), 라벨도 이만큼 비켜 둔다.
+  CHIP_BELOW: 20,
 };
 
 export function estLabelW(name) { return (name.length + 4) * 7.3 + 34; } // "✦ 이름 ✦" + 화살표 아이콘·여백

@@ -53,7 +53,7 @@ for (const c of tree.children) arms[c.dir] = c;
 
 const L = SCHEMATIC_ZOOM_LABEL_BASE;
 const t0 = performance.now();
-const res = layoutDexTree(arms, { boxW, boxH, safeGap: 70 / L, earlySafeGap: 120 / L, jitterMax: 100 / L, maxRadialStep: (70 / L) * 80 });
+const res = layoutDexTree(arms, { boxW, boxH: boxH + DEX_LAYOUT.CHIP_BELOW, safeGap: 70 / L, earlySafeGap: 120 / L, jitterMax: 100 / L, maxRadialStep: (70 / L) * 80 });
 const nodes = res.nodes;
 const labels = placeDexLabels(nodes.filter((n) => n.label).map((n) => ({ key: n.key, name: n.label, x: n.x, y: n.y })), nodes, { boxW, boxH });
 for (const n of nodes) if (n.depth >= 2 && n.parent) n.edge = dexEdgeGeometry(n.parent, n, 0, 0, boxW, boxH);
