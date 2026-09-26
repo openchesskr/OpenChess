@@ -328,6 +328,12 @@ create policy "chat update own" on public.chat_messages for update using (auth.u
 -- SECURITY DEFINER RPC인 chat_edit_message로 처리한다 — 아래 참고).
 create policy "chat delete own" on public.chat_messages for delete using (auth.uid() = from_uid);
 grant select, insert, update, delete on public.chat_messages to authenticated;
+-- (v0.5.7 보안 BUG-022, P1) 위 "chat update own"은 수신자의 읽음 처리 전용인데, update 권한이 테이블 전체(모든 컬럼)에 열려 있어
+-- 수신자가 REST로 직접 "나에게 온" 메시지의 body·emoji·puzzle_no 등을 고칠 수 있었다 — 보낸 사람 화면에도 그대로 보여, 남이
+-- 보낸 메시지를 조작할 수 있었다. 컬럼 단위 권한으로 좁혀 REST로 바꿀 수 있는 건 read뿐이다(본문 수정은 발신자 소유권을 검증하는
+-- chat_edit_message RPC로만). puzzles.data와 같은 방식. scripts/check-sql-grants.mjs가 이런 전체 update 권한을 막는다.
+revoke update on public.chat_messages from anon, authenticated;
+grant update (read) on public.chat_messages to authenticated;
 -- (v0.1.4 기능) 채팅 메시지 수정 — 발신자 본인의 텍스트 메시지(퍼즐 공유·보상 시스템 메시지 제외)만
 -- 고칠 수 있고, 수정됨 표시(edited)를 함께 남긴다. "chat update own" 정책은 수신자의 읽음 처리
 -- 전용이라 발신자의 본문 수정에는 쓸 수 없어, SECURITY DEFINER로 소유권을 직접 검증한다.
@@ -413,6 +419,9 @@ grant select, insert on public.puzzles to anon, authenticated;
 -- 바뀐다. src/App.jsx의 puzzleShare()는 비로그인 게스트도 새로 만난 퍼즐을 공유하므로(집중 학습은
 -- 로그인 없이 쓸 수 있는 핵심 기능) data update는 anon도 유지하되, solves/likes는 어느 role도 직접
 -- 건드릴 수 없다.
+-- (v0.5.7 방어) 컬럼 단위 grant는 테이블 전체 update 권한이 이미 있으면(Supabase 기본 권한 등) 아무 제한도 못 한다 — 먼저 전체
+-- update를 거둬 이 제한이 프로젝트 기본 설정과 무관하게 항상 먹게 한다(scripts/check-sql-grants.mjs).
+revoke update on public.puzzles from anon, authenticated;
 grant update (data) on public.puzzles to anon, authenticated;
 
 -- 퍼즐별 해결자 uid 기록 — "친구 OO 외 N명이 풀었습니다!" 표기용(1인 1행). 본인 명의로만 기록 가능.
