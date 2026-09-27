@@ -88,6 +88,7 @@ import {
   ChatAttachMenu, AttachButton, PositionPickSheet, PollCard, CoboCard, CoBoardScreen, ChatHeaderActions, chatSnippet,
   ChatCommandPalette, ChatHelpCard,
 } from "./components/chatPlus.jsx";
+import { RI, reviewIntroLayout } from "./lib/reviewIntroLayout.js";
 import { CHAT_COMMANDS as CHAT_CMD_LIST, parseChatCommand, chatCommandSuggestions, chatCommandAvailable, blindMoveToken, deriveBlindGame } from "./lib/chatCommands.js";
 import { ccGameKey, loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import {
@@ -8436,14 +8437,15 @@ const REVIEW_INTRO_ILLUSTRATIONS = ["/ilust-7-web.webp", "/ilust-6-web.webp", "/
 const REVIEW_INTRO_SLIDE_MS = 4200;
 // (버그 수정, 사용자 제보) 데스크톱에서도 항상 모바일 크기(maxWidth 420 · height 170) 그대로였다 —
 // narrow가 아니면 훨씬 큰 폭·높이를 써 넓은 화면에서 삽화가 상대적으로 너무 작아 보이지 않게 한다.
-function ReviewIntroCarousel({ narrow = true }) {
+// (v0.5.7) width/height(px)를 주면 그 크기 그대로 — 리뷰 대기 화면이 뷰포트에 맞춰 계산한 크기(reviewIntroLayout)를 쓴다.
+function ReviewIntroCarousel({ narrow = true, width, height }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     const iv = setInterval(() => setIdx((v) => (v + 1) % REVIEW_INTRO_ILLUSTRATIONS.length), REVIEW_INTRO_SLIDE_MS);
     return () => clearInterval(iv);
   }, []);
   return (
-    <div style={{ position: "relative", width: "100%", maxWidth: narrow ? 420 : 640, height: narrow ? 170 : 260, margin: "0 auto", overflow: "hidden", background: "transparent", flexShrink: 0 }}>
+    <div style={{ position: "relative", width: width != null ? width : "100%", maxWidth: width != null ? "100%" : (narrow ? 420 : 640), height: height != null ? height : (narrow ? 170 : 260), margin: "0 auto", overflow: "hidden", background: "transparent", flexShrink: 0 }}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.img key={idx} src={REVIEW_INTRO_ILLUSTRATIONS[idx]} alt="" draggable={false}
           initial={{ x: 70, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -70, opacity: 0 }}
@@ -8698,15 +8700,18 @@ function buildRevealData(result, sharpOn = true) {
 // 마커·눈금 여러 개를 다시 그리는, 두 번 렌더링되는 무거운 쪽)까지 매번 통째로 다시 렌더링됐다.
 // 이 컴포넌트가 실제로 받는 값(shownCount·accValue 등)은 floored가 정수 칸을 넘어갈 때만 바뀌므로
 // (progress의 소수부 변화와는 무관), React.memo로 얕은 비교를 걸어 그 사이의 낭비 렌더링을 없앤다.
-const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast }) {
+// (v0.5.7, 사용자 요청 "리뷰 진입 화면이 뷰포트에 한 번에 안 보인다") pxW·pxH를 주면 그래프 상자를 그 픽셀 크기로 그리고 viewBox도
+// 픽셀 단위로 맞춘다 — 예전엔 320×108 viewBox를 preserveAspectRatio:none으로 상자 폭에 늘려, 넓은 화면일수록 눈금 글자가 옆으로 늘어났다.
+const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves, color, label, big, accValue, layoutId, calculatingSan, toast, pxW, pxH }) {
   const total = curve.length - 1; // 그 진영이 실제로 둔 수 개수
-  const W2 = 320, H2 = big ? 108 : 46;
+  const pxMode = !!(pxW && pxH);
+  const W2 = pxMode ? pxW : 320, H2 = pxMode ? pxH : (big ? 108 : 46);
   // (v0.3.9 사용자 요청) 등급 아이콘(원 마커)이 그래프 위아래 끝에서 잘리던 문제 — 마커는 고정 픽셀
   // 크기(dotBox)의 HTML 오버레이라, 위아래 여백(PAD)이 마커 반지름보다 작으면 값이 최고/최저 근처일
   // 때 컨테이너의 overflow:hidden에 마커 절반이 잘렸다. dotBox 반지름 이상의 여백을 확보하도록 PAD를
   // 키우고, 컨테이너 자체 높이도 조금 늘려 픽셀 단위 여유를 추가로 더한다.
-  const PAD = big ? 18 : 10;
-  const boxHeight = big ? 116 : 50;
+  const PAD = pxMode ? Math.min(18, Math.round(pxH * 0.17)) : (big ? 18 : 10);
+  const boxHeight = pxMode ? pxH : (big ? 116 : 50);
   // (사용자 요청, v0.3.9) 예전엔 수가 몇 개든 항상 고정폭(W2) 안에 눌러 담아(i/total*W2) 그려서, 수가
   // 많은 대국일수록 수 아이콘들이 다닥다닥 겹쳐 보였다 — 대신 수 하나당 항상 같은 간격(SPACING)을 주는
   // "가상 캔버스"(contentWidth = 수 개수 × SPACING)에 그리고, 실제로 보이는 영역(W2 폭의 뷰포트)은 그
@@ -8720,11 +8725,11 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
   // 왼쪽부터 채워짐), 화면이 스크롤되는 건 실제로 다 못 담을 만큼 수가 많을 때뿐이다.
   // (사용자 요청) 뷰포트(W2=320) 안에 한 번에 보이는 아이콘 수를 기존보다 약 2개 줄인다 — 간격을
   // 넓혀 W2/SPACING(한 화면에 들어오는 개수)이 그만큼 줄어들게 한다.
-  const SPACING = big ? 37 : 26;
+  const SPACING = pxMode ? 42 : (big ? 37 : 26);
   // (사용자 요청) 오른쪽에도 여유 공간을 둬 마지막 수의 아이콘이 우하단 정확도 숫자·그래프 오른쪽
   // 끝과 겹치지 않게 한다 — contentWidth에 여백 하나를 더해 두면, 대국이 다 끝나 카메라가 오른쪽
   // 끝까지 밀렸을 때도 마지막 점 뒤로 이 여백만큼 빈 공간이 항상 남는다. (재요청으로 더 늘림)
-  const RIGHT_MARGIN = big ? 46 : 36;
+  const RIGHT_MARGIN = pxMode ? 52 : (big ? 46 : 36);
   const contentWidth = Math.max(W2, total * SPACING + RIGHT_MARGIN);
   const xx = (i) => i * SPACING;
   const pts = curve.slice(0, Math.max(1, shownCount + 1));
@@ -8767,8 +8772,8 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
   const dotIconSize = dotBox - (big ? 4 : 3);
   return (
     <div>
-      <div style={{ fontSize: big ? 15 : 10.5, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: SITE_FONT }}>{label}</div>
-      <div style={{ position: "relative", width: "100%", height: boxHeight, overflow: "hidden" }}>
+      <div style={{ fontSize: pxMode ? 13.5 : (big ? 15 : 10.5), lineHeight: pxMode ? "17px" : undefined, fontWeight: 700, color: RV.soft, marginBottom: 3, fontFamily: SITE_FONT }}>{label}</div>
+      <div style={{ position: "relative", width: pxMode ? pxW : "100%", maxWidth: "100%", height: boxHeight, overflow: "hidden", margin: pxMode ? "0 auto" : undefined }}>
         {/* (v0.3.9 기능) viewBox의 min-x를 offset만큼 옮겨 가상 캔버스(폭 contentWidth) 중 W2폭짜리
             창만 보여준다 — 배경·격자선은 항상 전체 캔버스(contentWidth)를 채워 어느 위치로 창이
             옮겨가도 잘리지 않게 하고, 눈금 숫자만 창의 왼쪽 끝(offset+2)에 계속 붙어 있도록 한다. */}
@@ -8839,9 +8844,10 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
       </div>
       {/* (사용자 요청) "n.SAN을 분석 중입니다..."는 그래프 컨테이너(overflow:hidden) 안이 아니라
           바깥에 별도 줄로 표시한다 — 그래프 안쪽 요소와 겹치거나 잘릴 걱정 없이 항상 온전히 보인다. */}
-      {calculatingSan && (
-        <div style={{ marginTop: 3, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {calculatingSan}을 분석 중입니다...
+      {/* (v0.5.7) px 모드에선 이 줄 자리를 늘 비워 둔다 — 문구가 떴다 사라질 때마다 아래 요소가 들썩이지 않게(높이는 reviewIntroLayout이 셈한 값). */}
+      {(calculatingSan || pxMode) && (
+        <div style={{ marginTop: 3, height: pxMode ? 14 : undefined, lineHeight: pxMode ? "14px" : undefined, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {calculatingSan ? calculatingSan + "을 분석 중입니다..." : ""}
         </div>
       )}
     </div>
@@ -8871,7 +8877,31 @@ const REVEAL_HOLD_MS = 900;       // 그래프가 다 그려지고 분석도 끝
 // 0에 그대로 머물고, visible이 true가 되는 순간 이 시점까지 실제로 쌓여 있던 채점 결과(target)를
 // 그대로 반영해 새로 리빌이 시작된다 — "사용자가 실제로 볼 수 있을 때부터 애니메이션이 시작"됨과
 // 동시에, 이미 쌓인 만큼은 기존의 밀린 만큼 빨라지는 속도 조절이 자연스럽게 처리한다.
-function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true, visible = true }) {
+// (v0.5.7, 사용자 요청 "정확도 그래프 화면이 뷰포트에 한 번에 안 보인다 — 모바일·데스크톱 비율에 맞게 다시") 리뷰 대기 화면의 배치를
+// 실제로 쓸 수 있는 영역(w×h, 헤더 아래)에서 계산한다 — 예전엔 삽화 170/260px·그래프 116px처럼 고정 크기를 위에서부터 쌓아, 폰에선
+// 아래 진행 막대가 화면 밖으로 밀렸고 데스크톱에선 가운데 한 줄로 길게 내려가 양옆이 비었다.
+//  · 가로가 넉넉한 가로형(폭 760 이상, 가로/세로 1.15 이상): 왼쪽 열에 삽화·상태 문구·진행 막대, 오른쪽 열에 평가치 그래프와 백·흑 정확도
+//    그래프를 세로로 — 오른쪽 열 높이를 뷰포트 높이에 맞춰 나눈다.
+//  · 세로형(폰·좁은 창): 한 열. 삽화가 남는 높이를 흡수하는 유일한 가변 요소라, 공간이 모자라면 삽화부터 줄이고(최소 96px), 그래도
+//    모자라면 그래프를 정해진 하한까지 줄인 뒤 마지막으로 삽화를 숨긴다 — 그래프·진행 상황은 항상 한 화면에 다 보인다.
+// 계산은 순수 함수(src/lib/reviewIntroLayout.js)라 scripts/check-review-intro-layout.mjs가 여러 화면 크기에서 "합이 영역을 넘지 않는지"를 검사한다.
+// 배치 계산(RI·reviewIntroLayout)은 src/lib/reviewIntroLayout.js에 있다.
+// 요소의 실제 크기(px) — 리뷰 대기 화면이 헤더 아래 남은 영역을 재는 데 쓴다.
+function useElementBox() {
+  const [box, setBox] = useState(null);
+  const roRef = useRef(null);
+  const ref = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el) return;
+    const measure = () => { const r = el.getBoundingClientRect(); setBox((p) => (p && Math.abs(p.w - r.width) < 1 && Math.abs(p.h - r.height) < 1 ? p : { w: r.width, h: r.height })); };
+    measure();
+    if (typeof ResizeObserver !== "undefined") { roRef.current = new ResizeObserver(measure); roRef.current.observe(el); }
+  }, []);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  return [box, ref];
+}
+function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onDone, narrow, sharpOn, sans, startWhite = true, visible = true, progressPct = 0 }) {
+  const [box, boxRef] = useElementBox();
   const data = useMemo(() => buildRevealData(result, sharpOn), [result, sharpOn]);
   const { moves, evalWin, wCurve, bCurve, wMoves, bMoves, moveMeta } = data;
   // (사용자 요청) 아직 채점되지 않은 다음 수의 SAN을 "분석 중입니다..."로 보여주려면, 채점 여부와
@@ -9014,61 +9044,67 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   // (사용자 요청) 가려져 있는 동안은(=위 rAF 루프가 애초에 안 도는 동안) SVG·MiniAccCurve 같은
   // 무거운 트리 자체를 렌더링하지 않는다 — 어차피 화면상 아무도 못 보므로 그릴 이유가 없다. 모든
   // 훅은 이 조건과 무관하게 항상 그대로 호출되고(위쪽에 이미 다 끝남), 반환할 JSX만 갈린다.
-  if (!visible) return null;
-  // (버그 수정, 사용자 제보) 이 대기 화면은 데스크톱에서도 항상 maxWidth:360짜리 모바일 폭 그대로
-  // 보여줬다 — 큰 모니터에서는 화면 대부분이 빈 여백이고 그래프·아이콘은 상대적으로 너무 작아
-  // "안 보이는" 것처럼 느껴진 원인. narrow가 아니면(=데스크톱) 훨씬 넓은 폭을 쓴다.
-  const waitMaxWidth = narrow ? 360 : 880;
-  return (
-    <div style={{ width: "100%", maxWidth: waitMaxWidth, margin: "0 auto", padding: "6px 4px" }}>
-      {/* (사용자 요청) 실제로 채점 대기 중일 때는(progress가 curFloored에 그대로 머무는 동안) 새로
-          보여줄 데이터가 없어 그래프 자체는 정직하게 정지해 있는 게 맞다 — 대신 이 문구 옆에 항상
-          움직이는 3-dot 인디케이터(다른 곳의 "계산 중" 표시와 동일)를 붙여, 화면이 아예 멎어버린
-          것처럼 보이지 않고 "지금도 계속 작업 중"이라는 걸 계속 눈에 보이게 알려준다. */}
-      <p className="flex items-center justify-center" style={{ gap: 6, fontSize: 12, fontWeight: 700, color: RV.dim, margin: "0 0 8px", fontFamily: SITE_FONT }}>
-        <span>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요"}</span>
-        {!allDone && <PendingDots size={11} />}
-      </p>
-      {/* (사용자 요청) 이 평가치 미리보기 그래프는 아래 백·흑 정확도 그래프 두 개와 "거의 같은
-          크기"를 이루도록 폭을 줄인다 — 데스크톱(narrow=false)에서는 아래 두 그래프가 이 컨테이너
-          폭을 절반씩 나눠 쓰므로, 이 그래프도 그 한 칸(절반, 사이 간격 14 절반씩 뺀 값)만큼만 쓰고
-          가운데 정렬한다. 모바일에서는 아래 그래프들도 이미 한 줄에 하나씩 전체 폭을 쓰므로 그대로
-          전체 폭을 쓴다. */}
-      <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, width: narrow ? "100%" : (waitMaxWidth - 14) / 2, maxWidth: "100%", margin: narrow ? 0 : "0 auto" }}>
-        <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
-          {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
-          {tipX < W && <rect x={tipX.toFixed(1)} y="0" width={(W - tipX).toFixed(1)} height={H} fill="#0A0604" />}
-          {tipX > 0 && (
-            <>
-              {/* 펜이 지나간 부분만 아래쪽을 흰색으로 채운다 */}
-              {areaPts && <polygon points={areaPts} fill="#EDE7DC" />}
-              {lineD && <path d={lineD} fill="none" stroke="#B9B0A4" strokeWidth="1" />}
-            </>
-          )}
-          {/* (사용자 요청) 정중앙(0.0 평가) 점선 — 아직 그려지지 않은 검은 구간에도, 흰 채우기가 덮는
-              구간에도 항상 보이도록 채우기보다 나중에(위에) 그리고, 진한 황동색을 쓴다. */}
-          <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={T.brass} strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="3 3" />
-          {/* (사용자 요청) 정확도 증감 숫자는 더 이상 이 평가치 그래프에 표시하지 않는다 — 이제
-              정확도 그래프(MiniAccCurve) 쪽 "n.SAN : 등급" 토스트 안에서만 함께 보여준다. */}
-        </svg>
+  // (사용자 요청) 가려져 있는 동안은 무거운 SVG·MiniAccCurve를 그리지 않는다 — 다만 영역 크기는 미리 재 둔다(드러나는 순간 바로 맞는 배치로).
+  const measureStyle = { flex: "1 1 auto", minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center" };
+  if (!visible || !box) return <div ref={boxRef} style={measureStyle} />;
+  const L = reviewIntroLayout(box.w, box.h);
+  const graphW = L.mode === "row" ? L.rightW : L.colW;
+  const statusEl = (
+    // (사용자 요청) 채점 대기 중에도 3-dot 인디케이터로 "지금도 작업 중"임을 보여준다.
+    <p className="flex items-center justify-center" style={{ gap: 6, height: RI.STATUS, fontSize: 12, fontWeight: 700, color: RV.dim, margin: 0, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>
+      <span>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요"}</span>
+      {!allDone && <PendingDots size={11} />}
+    </p>
+  );
+  // 진행 막대 — 채점된 수(gradedCount) 기준. 예전엔 화면 맨 아래 별도 줄이라 폰에서 가장 먼저 잘렸다 — 막대와 %를 한 줄로.
+  const pct = Math.round(Math.max(0, Math.min(1, progressPct)) * 100);
+  const progEl = (
+    <div className="flex items-center" style={{ gap: 8, height: RI.PROG, width: "100%", maxWidth: 320, margin: "0 auto" }}>
+      <div style={{ flex: 1, height: 7, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden" }}>
+        <div style={{ width: pct + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")", transition: "width .3s ease" }} />
       </div>
-      {/* (사용자 요청) 모바일에서는 백·흑 그래프를 나란히 좁게 두지 않고 각각 다른 줄에 더 크게
-          보여준다 — narrow일 때만 세로(column)로 쌓는다. (버그 수정) MiniAccCurve의 big 크기는 이제
-          narrow 여부와 무관하게 항상 켠다 — 데스크톱도 위에서 컨테이너 폭 자체를 넓혔으므로(880),
-          나란히 두 칸으로 나눠도 각 칸이 여전히 충분히 넓어 큰 폰트·굵은 선이 작게 눌리지 않는다. */}
-      <div className={narrow ? "flex flex-col" : "flex items-start"} style={{ gap: narrow ? 18 : 14, marginTop: 10 }}>
-        {/* (버그 수정) 정확도 증감(delta)은 이제 MiniAccCurve 안의 "SAN : 등급" 토스트에 함께
-            표시된다(위 toast.delta 참고) — 여기 따로 떠 있던 팝업은 "n.SAN을 분석 중입니다..."
-            줄이 컨테이너 밖으로 나오며 wrapper 높이가 오르내릴 때 그 팝업의 bottom 기준 위치가 함께
-            흔들려 정확도 숫자와 간헐적으로 겹쳐 보이던 원인이었다 — 완전히 제거한다. */}
-        <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big
-            accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={wToast} />
+      <span style={{ fontSize: 11.5, fontWeight: 800, color: RV.dim, fontFamily: SITE_FONT, minWidth: 34, textAlign: "right" }}>{pct}%</span>
+    </div>
+  );
+  const evalEl = (
+    <div style={{ background: "#3B342E", borderRadius: 10, padding: 6, width: graphW, maxWidth: "100%", boxSizing: "border-box", margin: "0 auto" }}>
+      <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: L.evalH }}>
+        {/* 아직 펜이 지나가지 않은 구간 — 값을 추측해 잇지 않고 그냥 검은 여백으로 둔다 */}
+        {tipX < W && <rect x={tipX.toFixed(1)} y="0" width={(W - tipX).toFixed(1)} height={H} fill="#0A0604" />}
+        {tipX > 0 && (
+          <>
+            {areaPts && <polygon points={areaPts} fill="#EDE7DC" />}
+            {lineD && <path d={lineD} fill="none" stroke="#B9B0A4" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+          </>
+        )}
+        {/* (사용자 요청) 정중앙(0.0 평가) 점선 — 채우기 위에 진한 황동색으로 */}
+        <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke={T.brass} strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
+  );
+  const accW = <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big pxW={graphW} pxH={L.accH}
+    accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={wToast} />;
+  const accB = <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big pxW={graphW} pxH={L.accH}
+    accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={bToast} />;
+  const car = L.carH ? <ReviewIntroCarousel width={L.carW} height={L.carH} /> : null;
+  if (L.mode === "row") {
+    return (
+      <div ref={boxRef} style={measureStyle}>
+        <div className="flex items-center" style={{ width: L.totalW, gap: 28 }}>
+          <div className="flex flex-col items-center" style={{ width: L.leftW, flexShrink: 0, gap: RI.GAP }}>
+            {car}{statusEl}{progEl}
+          </div>
+          <div className="flex flex-col" style={{ width: L.rightW, flexShrink: 0, gap: RI.GAP }}>
+            {evalEl}{accW}{accB}
+          </div>
         </div>
-        <div style={{ flex: 1, textAlign: "center", position: "relative" }}>
-          <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big
-            accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={bToast} />
-        </div>
+      </div>
+    );
+  }
+  return (
+    <div ref={boxRef} style={measureStyle}>
+      <div className="flex flex-col" style={{ width: L.colW, gap: RI.GAP }}>
+        {car}{statusEl}{evalEl}{accW}{accB}{progEl}
       </div>
     </div>
   );
@@ -14987,17 +15023,11 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
       <AnimatePresence>
         {!boardIntroDone && <ReviewBoardIntroAnim sans={sans} onDone={() => setBoardIntroDone(true)} />}
       </AnimatePresence>
-      <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px 24px", textAlign: "center" }}>
-        <ReviewIntroCarousel narrow={narrow} />
-        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} visible={boardIntroDone} />
-        {/* (버그 수정) 예전엔 이 막대·퍼센트가 엔진이 실제로 평가를 끝낸 포지션 수(doneCount, 워크
-            스틸링이라 순서 없이 끝남)를 그대로 보여줬다 — 채점(gradeIdx)은 반드시 순서대로만 진행되므로
-            초반의 한 포지션이 오래 걸리면 뒤 포지션들은 이미 다 평가돼 있어도 애니메이션은 그 자리에
-            멈춰 있는데 이 막대만 90%까지 훌쩍 앞서가, "퍼센티지는 다 됐다는데 화면은 안 움직인다"는
-            혼란(화면이 멎은 듯한 느낌)의 원인이었다. 위 애니메이션과 똑같이 gradedCount(순서대로 채점된
-            수)를 기준으로 삼아 이 표시가 실제로 보이는 진행 상황과 항상 같은 속도로 움직이게 한다. */}
-        <div style={{ maxWidth: 280, margin: "10px auto 0", height: 8, borderRadius: 999, background: "rgba(255,255,255,.12)", overflow: "hidden", flexShrink: 0 }}><div style={{ width: (Math.min(1, sans.length ? gradedCount / sans.length : 0) * 100) + "%", height: "100%", background: "linear-gradient(90deg," + T.brass + ",#A8842F)", transition: "width .2s ease" }} /></div>
-        <p style={{ color: RV.dim, fontSize: 11.5, fontWeight: 700, marginTop: 6, flexShrink: 0 }}>{Math.round(Math.min(1, sans.length ? gradedCount / sans.length : 0) * 100)}%</p>
+      {/* (v0.5.7, 사용자 요청) 삽화·상태 문구·그래프·진행 막대를 모두 ReviewAccuracyRevealAnim이 헤더 아래 남은 영역에 맞춰 한 번에 배치한다
+          (reviewIntroLayout). 진행 막대는 예전처럼 채점된 수(gradedCount — 순서대로 채점, 애니메이션과 같은 속도) 기준. */}
+      <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", padding: narrow ? "10px 14px 14px" : "16px 24px 20px", textAlign: "center" }}>
+        <ReviewAccuracyRevealAnim result={result} resultDone={resultDone} totalPlies={sans.length} instant={introRevealSeededRef.current} onDone={() => setIntroRevealDone(true)} narrow={narrow} sharpOn={sharpOn} sans={sans} startWhite={fenRoot ? fenRoot.turn === "w" : true} visible={boardIntroDone}
+          progressPct={sans.length ? gradedCount / sans.length : 0} />
       </div>
     </div>
   );
