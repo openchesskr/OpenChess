@@ -10,7 +10,9 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
-| BUG-029 | P2 | supabase-setup.sql을 새 프로젝트에 처음 실행하면 뒤에서 추가되는 컬럼(puzzles.likes, profiles.mid)을 먼저 참조해 정책·검색 함수 4개가 실패 | 기록함(수정 여부 결정 필요) | 2026-09-27 |
+| BUG-031 | P2 | supabase-setup.sql을 두 번째로 실행한 뒤부터 새 계정의 MID(회원 번호)가 비어 "#MID" 검색에 안 잡힘 | 수정 완료(BUG-029와 같은 블록) | 2026-09-27 |
+| BUG-030 | P3 | 서버 함수 실패 이유가 오류에 실리지 않아 도전장 실패가 "신청하지 못했어요"로만 보이고, 신고 하루 한도 안내가 한 번도 뜨지 않음 | 수정 완료 | 2026-09-27 |
+| BUG-029 | P2 | supabase-setup.sql을 새 프로젝트에 처음 실행하면 뒤에서 추가되는 컬럼(puzzles.likes, profiles.mid)을 먼저 참조해 정책·검색 함수 4개가 실패 | 수정 완료(사용자 승인) | 2026-09-27 |
 | BUG-028 | P1 | 채팅 /play로 미니게임을 화면 이름("무한 체크메이트 게임" 등)으로 적으면 신청 대신 평범한 메시지로 나감 | 수정 완료 | 2026-09-27 |
 | BUG-027 | P2 | 분석 탭 FEN 모드에서 제안 화살표가 안 나오고, 흑 차례 FEN의 엔진 라인·후보 수 번호가 백 기준(1.Nf6)으로 표시 | 수정 완료(사용자 요청 범위) | 2026-09-27 |
 | BUG-026 | P2 | 상단 도전장 알림이 프리셋에 없는 시간(/play 7 등)을 "10분 · 래피드"로 잘못 표시 | 수정 완료(작업 범위) | 2026-09-27 |
@@ -44,15 +46,34 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 ## 상세 기록
 
+### BUG-031 · [P2] supabase-setup.sql 재실행 후 새 계정의 MID 기본값이 사라짐
+- **상태**: 수정 완료 (v0.5.7 이후, BUG-029 수정 중 같은 블록에서 발견)
+- **발견일**: 2026-09-27 — 빈 DB에 파일을 한 번 실행한 카탈로그와 두 번 실행한 카탈로그를 비교해서 발견(`profiles.mid`의 기본값만 사라짐)
+- **위치**: `supabase-setup.sql` MID 절 — `drop function if exists public.gen_mid() cascade;` 뒤 `alter table public.profiles add column if not exists mid text unique default public.gen_mid();`
+- **증상**: 파일을 두 번째로 실행한 뒤부터(운영 프로젝트는 버전마다 다시 실행하므로 사실상 항상) 새로 가입한 계정의 `mid`가 비어 있다 — 계정 센터 회원 번호가 없고 "#MID" 친구 검색에 안 잡힌다. 다음에 SQL을 다시 실행할 때 backfill로 뒤늦게 채워진다.
+- **근본 원인**: `drop function … cascade`가 그 함수를 쓰는 컬럼 기본값까지 지우는데, `add column if not exists`는 컬럼이 이미 있으면 통째로 건너뛰어 기본값을 다시 걸지 않음
+- **수정 내용**: drop 없이 `create or replace`만(시그니처 동일), 컬럼 추가 뒤 `alter column mid set default public.gen_mid()`를 매번 명시. 기존 backfill(`update … where mid is null`)이 그동안 비어 있던 계정을 채운다.
+- **재발 방지 안전장치**: `scripts/check-sql-order.mjs`(prebuild, `npm run check:sql-order`) — 컬럼 기본값으로 쓰이는 함수를 cascade로 drop하면 실패
+- **검증**: 빈 PostgreSQL 16에서 수정 후 파일을 두 번 실행 — 두 카탈로그(기본값·정책·트리거·인덱스·함수·권한 431개 항목)가 완전히 같음, 두 번 실행 뒤 새 profiles 행에 MID가 자동 발급됨(PQWEG7100)
+
+### BUG-030 · [P3] 서버 함수 실패 이유가 오류에 실리지 않음
+- **상태**: 수정 완료 (v0.5.7 이후, 사용자 제보 "채팅으로 미니게임 신청 시 빨간 글씨로 신청하지 못했다고 뜬다" 조사 중 발견)
+- **위치**: `src/lib/supabaseClient.js` `sbRpc` — `throw new Error("rpc " + r.status)`
+- **증상**: RPC가 실패하면 서버가 알려 준 이유(PostgREST code·message — 예: `not friends`, 함수 없음 PGRST202)가 버려져, 화면에는 "신청하지 못했어요"만 뜨고 원인을 알 수 없었다. `userReport`의 하루 한도 판정(`/too many/`)도 이 메시지를 봐서 한 번도 맞지 않았다.
+- **수정 내용**: `sbRpc`가 응답 본문을 읽어 `e.status`·`e.code`·`e.serverMessage`를 싣고 메시지에도 붙인다. 도전장 실패(채팅 /play 체스·미니게임, 미니게임 친구 목록)는 `inviteFailText`가 이유별 문구(친구 아님·로그인 풀림·서버 함수 미반영)를, 모르는 이유면 원문(상태·코드·메시지)을 괄호로 보여 준다.
+- **남은 일**: 사용자 제보의 실제 원인은 아직 확인하지 못함 — 같은 SQL을 올린 로컬 DB에서는 `pvp_invite_friend(…, 'knight')`가 정상 동작. 배포 후 괄호 속 이유로 확인할 것
+
 ### BUG-029 · [P2] supabase-setup.sql 첫 실행 시 뒤에서 추가되는 컬럼을 먼저 참조
-- **상태**: 기록함 — 수정 여부 결정 필요
+- **상태**: 수정 완료 (사용자 승인 — "BUG-029도 고쳐")
 - **발견일**: 2026-09-27 (BUG-028 서버 쪽 검증을 위해 빈 PostgreSQL 16에 파일 전체를 처음부터 실행하다 발견, v0.5.6에도 같은 순서)
-- **위치**: `supabase-setup.sql` — 441행 `"puzzles insert"` 정책이 `likes`를 참조하는데 컬럼은 523행에서 추가, 1100~1111행 `profiles_search_by_mid_prefix`·`idx_profiles_mid_text_pattern`이 `mid`를 참조하는데 컬럼은 3347행에서 추가
-- **증상**: 새 Supabase 프로젝트에 처음 실행하면 `column "likes" does not exist`, `column "mid" does not exist` 등 4건 오류로 퍼즐 insert 정책과 친구 ID 검색 함수·인덱스가 만들어지지 않는다(한 번 더 실행하면 컬럼이 이미 있어 통과). 이미 운영 중인 프로젝트는 컬럼이 있어 영향 없음.
-- **제안 수정**: 두 컬럼 추가문을 참조하는 곳보다 앞으로 옮기고, 빈 DB에 파일 전체를 한 번 실행해 오류가 없는지 확인하는 검사 스크립트 추가
+- **위치**: `supabase-setup.sql` — `"puzzles insert"` 정책이 `likes`를 참조하는데 컬럼은 좋아요 절에서야 추가, `profiles_search_by_mid_prefix`(language sql)·`idx_profiles_mid_text_pattern`이 `mid`를 참조하는데 컬럼은 파일 끝 N+5절에서야 추가
+- **증상**: 새 Supabase 프로젝트에 처음 실행하면 `column "likes" does not exist`, `column "mid" does not exist` 등 4건 오류로 퍼즐 insert 정책·친구 ID 검색 함수·인덱스가 만들어지지 않음(두 번째 실행에서야 생김). 이미 운영 중인 프로젝트는 영향 없음.
+- **수정 내용**: `puzzles.likes` 추가를 puzzles 표 바로 뒤로(좋아요 절의 같은 문장은 그대로 — 둘 다 if not exists), MID 절 전체(gen_mid 함수·컬럼·backfill·제약)를 16-1) 검색 함수 앞(16-0)으로 옮김
+- **재발 방지 안전장치**: `scripts/check-sql-order.mjs` — create table에 없고 add column으로만 생기는 컬럼을 그보다 앞의 정책·인덱스·language sql 함수 본문에서 쓰면 실패(plpgsql 본문은 실행 때 확인하므로 제외). 수정 전 파일에서 4건 실패 → 수정 후 통과
+- **검증**: 빈 PostgreSQL 16에 수정한 파일을 처음 실행 — 오류는 로컬에 없는 pg_cron의 `cron` 스키마 1건뿐, 첫 실행과 두 번째 실행의 카탈로그가 같음
 
 ### BUG-028 · [P1] 채팅 /play 미니게임 이름을 못 알아들어 신청 대신 평범한 메시지로 나감
-- **상태**: 수정 완료 (v0.5.7 이후, 사용자 제보 "채팅으로 미니게임 신청이 안 되는데")
+- **상태**: 수정 완료 (v0.5.7 이후, 사용자 제보 "채팅으로 미니게임 신청이 안 되는데"를 조사하다 코드에서 확인 — 단, 사용자가 본 증상(빨간 "신청하지 못했어요")과는 다른 문제로, 제보 원인은 BUG-030 참고)
 - **등급 근거**: 새 기능(채팅에서 미니게임 대결 신청)이 흔한 입력에서 동작하지 않음 — 오류도 없이 조용히 실패. 애매해 한 단계 높여 P1
 - **위치**: `src/lib/chatCommands.js` `chatPlayGameOf`·`parseChatCommand` play 분기
 - **증상**: 화면에 보이는 이름 "무한 체크메이트 게임", 영문 "Knight Race"·"rush hour", 옛 이름 "공격 모드", "백랭크" 등으로 적으면 명령어로 인식하지 못해 "/play 무한 체크메이트 게임"이 그냥 채팅 메시지로 나갔다. 체스도 "/play 3분"처럼 단위를 붙이면 같은 식으로 나갔다.
