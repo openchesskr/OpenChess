@@ -23,7 +23,15 @@ export function setSbToken(token) { SB_TOKEN = token || null; if (sbClient) sbCl
 // 같은 구조적 결함을 안고 있었다 — 204거나 본문이 비어 있으면 파싱을 건너뛰고 null을 돌려준다.
 export async function sbRpc(fn, args) {
   const r = await fetch(SB_URL + "/rest/v1/rpc/" + fn, { method: "POST", headers: sbHeaders(), body: JSON.stringify(args || {}) });
-  if (!r.ok) throw new Error("rpc " + r.status);
+  // (v0.5.7 BUG-030) 서버가 돌려준 실패 이유(PostgREST의 code·message — 예: raise exception 'not friends', PGRST202 함수 없음)를 오류에 싣는다.
+  // 예전엔 "rpc 400"만 남아, 화면에는 "신청하지 못했어요"만 뜨고 왜 실패했는지 알 수 없었다(신고 하루 한도 판정도 이 메시지를 봐서 한 번도 맞지 않았다).
+  if (!r.ok) {
+    let info = null;
+    try { info = await r.json(); } catch { /* 본문 없음 */ }
+    const e = new Error("rpc " + r.status + (info && info.message ? ": " + info.message : ""));
+    e.status = r.status; e.code = info && info.code; e.serverMessage = (info && info.message) || ""; e.hint = info && info.hint;
+    throw e;
+  }
   if (r.status === 204) return null;
   const text = await r.text();
   return text ? JSON.parse(text) : null;

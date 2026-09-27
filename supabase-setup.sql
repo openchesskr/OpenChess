@@ -430,6 +430,9 @@ create table if not exists public.puzzles (
   solves bigint not null default 0,
   created_at timestamptz not null default now()
 );
+-- (v0.5.7 BUG-029) 아래 "puzzles insert" 정책이 likes를 참조하므로, 새 프로젝트에서도 정책보다 먼저 컬럼이 있게 여기서 추가한다
+-- (좋아요 절의 같은 문장은 이미 있는 프로젝트를 위한 것 — 둘 다 add column if not exists라 몇 번 실행해도 안전).
+alter table public.puzzles add column if not exists likes bigint not null default 0;
 alter table public.puzzles enable row level security;
 drop policy if exists "puzzles read"   on public.puzzles;
 drop policy if exists "puzzles insert" on public.puzzles;
@@ -1083,6 +1086,45 @@ as $$
   limit least(coalesce(p_limit, 8), 20);
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+
+-- ============================================================================
+-- 16-0) MID(원래 N+5) — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- ============================================================================
+-- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
+-- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
+-- profiles 행이라 MID는 하나 그대로 유지된다).
+-- (v0.4.4 버그 수정) MID 형식을 "9자 중 아무 자리에나 영문/숫자가 섞인 9자리"에서, 사람이 부르고
+-- 받아 적기 쉽도록 "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정했다(예: ABCDE1234).
+-- (v0.5.7 BUG-031) 예전엔 여기서 "drop function ... gen_mid() cascade"를 먼저 했다 — cascade가 profiles.mid의 기본값(default gen_mid())까지
+-- 지우고, 아래 "add column if not exists"는 컬럼이 이미 있으면 건너뛰어 기본값이 다시 걸리지 않았다. 그래서 이 파일을 두 번째로 실행한 뒤부터
+-- 새로 가입한 계정은 MID가 비어 "#MID" 검색에 안 잡혔다. 시그니처가 같으니 create or replace로 충분하고, 기본값은 매번 명시적으로 다시 건다.
+create or replace function public.gen_mid()
+returns text language plpgsql volatile set search_path = public as $$
+declare v_letters text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; v_digits text := '0123456789'; v_code text; v_exists boolean;
+begin
+  loop
+    v_code := '';
+    for i in 1..5 loop
+      v_code := v_code || substr(v_letters, 1 + floor(random() * length(v_letters))::int, 1);
+    end loop;
+    for i in 1..4 loop
+      v_code := v_code || substr(v_digits, 1 + floor(random() * length(v_digits))::int, 1);
+    end loop;
+    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end; $$;
+-- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
+-- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
+-- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
+-- 채운다. 체크 제약도 새 형식(영문 5+숫자 4)으로 다시 걸고, 옛 형식(무작위 9자)으로 이미 발급된
+-- MID는 새 형식으로 다시 발급한다.
+alter table public.profiles drop constraint if exists profiles_mid_check;
+alter table public.profiles add column if not exists mid text unique default public.gen_mid();
+alter table public.profiles alter column mid set default public.gen_mid();
+update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
+alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
 
 -- ============================================================================
 -- 16-1) profiles_search_by_mid_prefix — 유저 검색 "#MID" 실시간 후보 목록 (사용자 요청)
@@ -2189,8 +2231,8 @@ begin
     end if;
   end if;
   if jsonb_array_length(v_rounds) >= v_total_rounds then
-    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
-    return v_game;
+    -- (v0.5.7 BUG-033) 마지막 라운드까지 승자가 났으면 여기서 결과를 확정한다(예전엔 행을 그대로 돌려줘 정산 화면이 안 떴다).
+    return public.coord_finish(p_game_id);
   end if;
   v_sq := chr(97 + floor(random() * 8)::int) || (floor(random() * 8)::int + 1)::text;
   -- (v0.5.0 기능, 사용자 요청) clicks — 이번 라운드에 각자 마지막으로 시도한 클릭(오답 포함)을 담아
@@ -2235,6 +2277,10 @@ begin
   end if;
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  -- (v0.5.7 BUG-033) 마지막(15번째) 라운드의 정답이면 그 자리에서 결과까지 확정한다 — 두 참가자 모두 realtime으로 곧장 정산 화면을 받는다.
+  if v_correct and p_round = jsonb_array_length(v_rounds) - 1 and jsonb_array_length(v_rounds) >= 15 then
+    return public.coord_finish(p_game_id);
+  end if;
   return v_game;
 end; $$;
 grant execute on function public.coord_click(bigint, int, text) to authenticated;
@@ -2480,11 +2526,13 @@ end; $$;
 create or replace function public._knight_gen_round(p_round_idx int)
 returns jsonb language plpgsql volatile as $$
 declare
-  v_idx int := least(greatest(p_round_idx, 0), 4);
+  v_idx int := least(greatest(p_round_idx, 0), 6);
   -- 행: minDist, maxDist, pairs, minDetour, queens, onlyFirst(0/1), timeMs
-  v_specs int[][] := array[[3,4,1,0,0,0,5000],[4,5,2,1,0,0,8000],[5,6,3,1,0,0,11000],[6,7,4,1,0,0,14000],[6,8,5,2,1,1,17000]];
-  -- 5라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
-  v_queen_ladder int[][] := array[[6,8,5,2,1,1,17000],[6,8,5,2,1,0,17000],[6,8,5,1,1,0,17000],[5,8,4,1,1,0,17000],[4,8,3,0,1,0,17000],[3,8,2,0,1,0,17000]];
+  -- (v0.5.8, 사용자 요청) Bo7 — 1·2라운드는 방해 기물 없이, 3라운드부터 한 쌍씩 늘고, 7라운드는 퀸 — 시간 10초부터 라운드마다 +2.5초.
+  -- src/lib/knightRace.js KNIGHT_ROUND_SPECS와 같아야 한다(scripts/check-knight-rounds.mjs가 비교).
+  v_specs int[][] := array[[3,4,0,0,0,0,10000],[4,5,0,0,0,0,12500],[4,5,1,0,0,0,15000],[5,6,2,1,0,0,17500],[5,6,3,1,0,0,20000],[6,7,4,1,0,0,22500],[6,8,5,2,1,1,25000]];
+  -- 7라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
+  v_queen_ladder int[][] := array[[6,8,5,2,1,1,25000],[6,8,5,2,1,0,25000],[6,8,5,1,1,0,25000],[5,8,4,1,1,0,25000],[4,8,3,0,1,0,25000],[3,8,2,0,1,0,25000]];
   v_is_queen boolean; v_time int; v_steps int; v_step int; v_row int[];
   v_try int; v_t int; v_p int;
   v_min int; v_max int; v_pairs int; v_detour int; v_queens int; v_only boolean;
@@ -2554,7 +2602,7 @@ begin
     'wIllegal', '[]'::jsonb, 'bIllegal', '[]'::jsonb, 'par', 2, 'moveBudget', 3, 'timeLimitMs', v_time);
 end; $$;
 
--- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
+-- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 4승(Bo7, v0.5.8)했거나 7라운드를 다
 -- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
 -- 라운드 내용은 _knight_gen_round가 만든다.
 create or replace function public.knight_start_round(p_game_id bigint)
@@ -2577,7 +2625,7 @@ begin
   for r in select * from jsonb_array_elements(v_rounds) loop
     if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
   end loop;
-  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
+  if v_w_wins >= 4 or v_b_wins >= 4 or jsonb_array_length(v_rounds) >= 7 then return v_game; end if;
   -- (v0.5.3 연출 강화) startedAt을 3초 뒤로 잡는다 — 두 클라이언트가 이 시각까지 "3·2·1" 카운트다운을
   -- 보여주고 그 뒤에야 보드를 조작할 수 있게 해, 라운드 시작 순간을 양쪽이 같은 서버 시각으로 맞춘다.
   -- positions — 각자 "지금 나이트가 어디 있는지"(knight_move_ping이 매 수마다 갱신, 판정과 무관한 표시용).
@@ -2692,15 +2740,17 @@ grant execute on function public.knight_move_ping(bigint, int, text, int, text[]
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
 -- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 더 적은 수,
--- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 거리→남은 수→남은 시간 순 타이브레이커로 정한다.
--- 이 라운드 결과로 한쪽이 3승(Bo5)에 닿거나 5라운드를 다 치렀으면 매치 결과도 함께 확정한다.
+-- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 목표까지 거리 → (v0.5.7, 사용자 요청) 거리도 같으면 소모 시간이
+-- 적은 쪽(예전의 "남은 수" 단계는 뺐다 — 화면 연출과 같은 순서). 판정 근거는 round.judge에 남겨 두 화면이 같은 연출(금색 퍼짐 + 승자 왕관,
+-- 거리 동률이면 시간 표시)을 한다 — src/lib/knightRace.js knightJudge와 같은 규칙.
+-- 이 라운드 결과로 한쪽이 4승(Bo7, v0.5.8)에 닿거나 7라운드를 다 치렀으면 매치 결과도 함께 확정한다.
 create or replace function public.knight_resolve_round(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_round_idx int;
   v_wrep jsonb; v_brep jsonb; v_grace constant int := 2000; v_winner text;
-  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int; v_w_remain int; v_b_remain int;
-  v_w_time numeric; v_b_time numeric; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
+  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int;
+  v_w_ms numeric; v_b_ms numeric; v_basis text; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2719,14 +2769,18 @@ begin
      and (v_round ->> 'startedAt')::timestamptz + ((v_round->>'timeLimitMs')::int + v_grace || ' ms')::interval > now() then
     return v_game; -- 아직 확정할 때가 아니다(둘 다 보고 전이고 시간도 안 지남)
   end if;
+  v_w_ms := case when v_wrep is null then null else round(extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000) end;
+  v_b_ms := case when v_brep is null then null else round(extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000) end;
+  v_basis := 'report';
   v_w_reached := coalesce((v_wrep ->> 'reached')::boolean, false);
   v_b_reached := coalesce((v_brep ->> 'reached')::boolean, false);
   if v_wrep is not null and v_brep is null then v_winner := 'w';
   elsif v_brep is not null and v_wrep is null then v_winner := 'b';
   elsif v_wrep is null and v_brep is null then v_winner := 'draw';
-  elsif v_w_reached and not v_b_reached then v_winner := 'w';
-  elsif v_b_reached and not v_w_reached then v_winner := 'b';
+  elsif v_w_reached and not v_b_reached then v_winner := 'w'; v_basis := 'reach';
+  elsif v_b_reached and not v_w_reached then v_winner := 'b'; v_basis := 'reach';
   elsif v_w_reached and v_b_reached then
+    v_basis := case when (v_wrep->>'movesUsed')::int <> (v_brep->>'movesUsed')::int then 'moves' else 'time' end;
     -- (v0.5.4, 사용자 요청) 둘 다 도착했으면 더 적은 수, 수가 같으면 서버가 기록한 도착(보고) 시각이 빠른 쪽.
     if (v_wrep->>'movesUsed')::int <> (v_brep->>'movesUsed')::int then
       v_winner := case when (v_wrep->>'movesUsed')::int < (v_brep->>'movesUsed')::int then 'w' else 'b' end;
@@ -2742,25 +2796,20 @@ begin
       public.knight_danger(v_round, 'b', array(select jsonb_array_elements_text(coalesce(v_brep->'taken', '[]'::jsonb))))), 99) end;
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
+      v_basis := 'distance';
     else
-      v_w_remain := (v_round->>'moveBudget')::int - (v_wrep->>'movesUsed')::int;
-      v_b_remain := (v_round->>'moveBudget')::int - (v_brep->>'movesUsed')::int;
-      if v_w_remain <> v_b_remain then
-        v_winner := case when v_w_remain > v_b_remain then 'w' else 'b' end;
-      else
-        v_w_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
-        v_b_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
-        v_winner := case when v_w_time = v_b_time then 'draw' when v_w_time > v_b_time then 'w' else 'b' end;
-      end if;
+      v_winner := case when v_w_ms = v_b_ms then 'draw' when v_w_ms < v_b_ms then 'w' else 'b' end;
+      v_basis := 'distanceTime';
     end if;
   end if;
   v_round := jsonb_set(v_round, array['winner'], to_jsonb(v_winner));
+  v_round := jsonb_set(v_round, array['judge'], jsonb_strip_nulls(jsonb_build_object('basis', v_basis, 'wDist', v_w_dist, 'bDist', v_b_dist, 'wMs', v_w_ms, 'bMs', v_b_ms)));
   v_round := jsonb_set(v_round, array['resolvedAt'], to_jsonb(now()));
   v_rounds := jsonb_set(v_rounds, array[v_round_idx::text], v_round);
   for r in select * from jsonb_array_elements(v_rounds) loop
     if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
   end loop;
-  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then
+  if v_w_wins >= 4 or v_b_wins >= 4 or jsonb_array_length(v_rounds) >= 7 then
     update public.pvp_games set sans = v_rounds,
       status = case when v_w_wins > v_b_wins then 'white_won' when v_b_wins > v_w_wins then 'black_won' else 'draw' end,
       result_reason = 'knight_score', updated_at = now()
@@ -3313,40 +3362,8 @@ end; $$;
 grant execute on function public.delete_own_account() to authenticated;
 
 -- ============================================================================
--- N+5) MID — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- N+5) MID — (v0.5.7 BUG-029) 16-1) profiles_search_by_mid_prefix가 mid 컬럼을 쓰므로 그 앞(16-0)으로 옮겼다.
 -- ============================================================================
--- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
--- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
--- profiles 행이라 MID는 하나 그대로 유지된다).
--- (v0.4.4 버그 수정) MID 형식을 "9자 중 아무 자리에나 영문/숫자가 섞인 9자리"에서, 사람이 부르고
--- 받아 적기 쉽도록 "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정했다(예: ABCDE1234).
-drop function if exists public.gen_mid() cascade;
-create or replace function public.gen_mid()
-returns text language plpgsql volatile set search_path = public as $$
-declare v_letters text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; v_digits text := '0123456789'; v_code text; v_exists boolean;
-begin
-  loop
-    v_code := '';
-    for i in 1..5 loop
-      v_code := v_code || substr(v_letters, 1 + floor(random() * length(v_letters))::int, 1);
-    end loop;
-    for i in 1..4 loop
-      v_code := v_code || substr(v_digits, 1 + floor(random() * length(v_digits))::int, 1);
-    end loop;
-    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
-    exit when not v_exists;
-  end loop;
-  return v_code;
-end; $$;
--- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
--- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
--- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
--- 채운다. 체크 제약도 새 형식(영문 5+숫자 4)으로 다시 걸고, 옛 형식(무작위 9자)으로 이미 발급된
--- MID는 새 형식으로 다시 발급한다.
-alter table public.profiles drop constraint if exists profiles_mid_check;
-alter table public.profiles add column if not exists mid text unique default public.gen_mid();
-update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
-alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
 
 -- ============================================================================
 -- N+6) daily_puzzle_picks — 커뮤니티 인기 퍼즐 기반 "오늘의 퍼즐" 자동 선정 (v0.5.0, 사용자 요청)
