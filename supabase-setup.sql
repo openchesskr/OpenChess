@@ -430,6 +430,9 @@ create table if not exists public.puzzles (
   solves bigint not null default 0,
   created_at timestamptz not null default now()
 );
+-- (v0.5.7 BUG-029) 아래 "puzzles insert" 정책이 likes를 참조하므로, 새 프로젝트에서도 정책보다 먼저 컬럼이 있게 여기서 추가한다
+-- (좋아요 절의 같은 문장은 이미 있는 프로젝트를 위한 것 — 둘 다 add column if not exists라 몇 번 실행해도 안전).
+alter table public.puzzles add column if not exists likes bigint not null default 0;
 alter table public.puzzles enable row level security;
 drop policy if exists "puzzles read"   on public.puzzles;
 drop policy if exists "puzzles insert" on public.puzzles;
@@ -1083,6 +1086,45 @@ as $$
   limit least(coalesce(p_limit, 8), 20);
 $$;
 grant execute on function public.search_puzzles_prefix(text, int) to anon, authenticated;
+
+-- ============================================================================
+-- 16-0) MID(원래 N+5) — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- ============================================================================
+-- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
+-- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
+-- profiles 행이라 MID는 하나 그대로 유지된다).
+-- (v0.4.4 버그 수정) MID 형식을 "9자 중 아무 자리에나 영문/숫자가 섞인 9자리"에서, 사람이 부르고
+-- 받아 적기 쉽도록 "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정했다(예: ABCDE1234).
+-- (v0.5.7 BUG-031) 예전엔 여기서 "drop function ... gen_mid() cascade"를 먼저 했다 — cascade가 profiles.mid의 기본값(default gen_mid())까지
+-- 지우고, 아래 "add column if not exists"는 컬럼이 이미 있으면 건너뛰어 기본값이 다시 걸리지 않았다. 그래서 이 파일을 두 번째로 실행한 뒤부터
+-- 새로 가입한 계정은 MID가 비어 "#MID" 검색에 안 잡혔다. 시그니처가 같으니 create or replace로 충분하고, 기본값은 매번 명시적으로 다시 건다.
+create or replace function public.gen_mid()
+returns text language plpgsql volatile set search_path = public as $$
+declare v_letters text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; v_digits text := '0123456789'; v_code text; v_exists boolean;
+begin
+  loop
+    v_code := '';
+    for i in 1..5 loop
+      v_code := v_code || substr(v_letters, 1 + floor(random() * length(v_letters))::int, 1);
+    end loop;
+    for i in 1..4 loop
+      v_code := v_code || substr(v_digits, 1 + floor(random() * length(v_digits))::int, 1);
+    end loop;
+    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end; $$;
+-- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
+-- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
+-- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
+-- 채운다. 체크 제약도 새 형식(영문 5+숫자 4)으로 다시 걸고, 옛 형식(무작위 9자)으로 이미 발급된
+-- MID는 새 형식으로 다시 발급한다.
+alter table public.profiles drop constraint if exists profiles_mid_check;
+alter table public.profiles add column if not exists mid text unique default public.gen_mid();
+alter table public.profiles alter column mid set default public.gen_mid();
+update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
+alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
 
 -- ============================================================================
 -- 16-1) profiles_search_by_mid_prefix — 유저 검색 "#MID" 실시간 후보 목록 (사용자 요청)
@@ -3313,40 +3355,8 @@ end; $$;
 grant execute on function public.delete_own_account() to authenticated;
 
 -- ============================================================================
--- N+5) MID — 계정 하나마다 부여되는 9자리 영문 대문자+숫자 회원 번호
+-- N+5) MID — (v0.5.7 BUG-029) 16-1) profiles_search_by_mid_prefix가 mid 컬럼을 쓰므로 그 앞(16-0)으로 옮겼다.
 -- ============================================================================
--- profiles.id(uuid)는 그대로 "계정 하나 = 고유 UID"의 진짜 식별자로 두고, MID는 사람이 계정 센터
--- 화면에서 보고 부르기 쉬운 짧은 번호일 뿐이다(로그인 수단과 무관 — 여러 OAuth를 연결해도 같은
--- profiles 행이라 MID는 하나 그대로 유지된다).
--- (v0.4.4 버그 수정) MID 형식을 "9자 중 아무 자리에나 영문/숫자가 섞인 9자리"에서, 사람이 부르고
--- 받아 적기 쉽도록 "앞 영문 대문자 5자리 + 뒤 숫자 4자리"로 고정했다(예: ABCDE1234).
-drop function if exists public.gen_mid() cascade;
-create or replace function public.gen_mid()
-returns text language plpgsql volatile set search_path = public as $$
-declare v_letters text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; v_digits text := '0123456789'; v_code text; v_exists boolean;
-begin
-  loop
-    v_code := '';
-    for i in 1..5 loop
-      v_code := v_code || substr(v_letters, 1 + floor(random() * length(v_letters))::int, 1);
-    end loop;
-    for i in 1..4 loop
-      v_code := v_code || substr(v_digits, 1 + floor(random() * length(v_digits))::int, 1);
-    end loop;
-    select exists(select 1 from public.profiles where mid = v_code) into v_exists;
-    exit when not v_exists;
-  end loop;
-  return v_code;
-end; $$;
--- 컬럼을 만들 때 이미 이 함수가 있어야 default로 걸 수 있으므로, 위에서 함수부터 만든 뒤 컬럼을
--- 추가한다. 새로 가입하는 계정(handle_new_user 트리거·claim_username RPC 등 profiles를 insert하는
--- 모든 경로)은 컬럼 default 덕분에 자동으로 MID를 받고, 이미 있던 계정은 아래 backfill로 한 번만
--- 채운다. 체크 제약도 새 형식(영문 5+숫자 4)으로 다시 걸고, 옛 형식(무작위 9자)으로 이미 발급된
--- MID는 새 형식으로 다시 발급한다.
-alter table public.profiles drop constraint if exists profiles_mid_check;
-alter table public.profiles add column if not exists mid text unique default public.gen_mid();
-update public.profiles set mid = public.gen_mid() where mid is null or mid !~ '^[A-Z]{5}[0-9]{4}$';
-alter table public.profiles add constraint profiles_mid_check check (mid ~ '^[A-Z]{5}[0-9]{4}$');
 
 -- ============================================================================
 -- N+6) daily_puzzle_picks — 커뮤니티 인기 퍼즐 기반 "오늘의 퍼즐" 자동 선정 (v0.5.0, 사용자 요청)

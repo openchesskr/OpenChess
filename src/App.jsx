@@ -9535,7 +9535,7 @@ function useFriendPvpInvite({ myUid, gameType, onMatched }) {
     try {
       const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: "0-0", p_game_type: gameType });
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
-    } catch { setErr("도전장을 보내지 못했어요."); }
+    } catch (e) { setErr(inviteFailText(e, "도전장")); }
   };
   const cancelInvite = async () => {
     if (!myInvite) return;
@@ -28196,6 +28196,15 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     </div>
   );
 }
+// (v0.5.7 BUG-030) 도전장 신청 실패 문구 — 서버가 알려 준 이유를 사람이 읽을 말로 바꾸고, 모르는 이유면 원문을 괄호로 붙여 제보할 수 있게 한다.
+function inviteFailText(e, what) {
+  const m = String((e && e.serverMessage) || "");
+  if (/not friends/.test(m)) return "친구 사이일 때만 " + what + "을 신청할 수 있어요.";
+  if (/auth required/.test(m)) return "로그인이 풀렸어요. 다시 로그인한 뒤 신청해 주세요.";
+  if (/cannot invite self/.test(m)) return "나에게는 신청할 수 없어요.";
+  if (e && (e.code === "PGRST202" || e.code === "PGRST203" || e.code === "42883")) return what + " 신청 기능이 서버에 최신으로 반영되지 않았어요. supabase-setup.sql을 다시 실행해 주세요.";
+  return what + "을 신청하지 못했어요. 잠시 후 다시 시도해 주세요." + (e && (e.code || m) ? " (" + [e.status, e.code, m].filter(Boolean).join(" · ") + ")" : "");
+}
 // 블라인드 대국 상태(blindMoveToken·deriveBlindGame)는 src/lib/chatCommands.js로 옮겼다(v0.5.7 — 검사 스크립트가 직접 부르도록).
 // (v0.5.7, 사용자 요청) 블라인드 대국에서 실제 수로 인식된 메시지 — 일반 말풍선과 구분되게, 백의 수는 크림색·흑의 수는 갈색 판에
 // 금색 글씨로 그리고, 움직인 기물(SAN 첫 글자, 캐슬링은 킹) 아이콘을 앞에 붙인다. 어느 말풍선이 수인지는 deriveBlindGame.moveColors가 정한다.
@@ -28718,7 +28727,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           if (cmd.gameType) {
             setSending(true);
             try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: "0-0", p_game_type: cmd.gameType }); finish(true); }
-            catch { setCmdError("대결을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+            catch (e) { setCmdError(inviteFailText(e, "대결")); }
             setSending(false); return;
           }
           const tc = parsePlayCommandArg(cmd.arg);
@@ -28726,7 +28735,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           // 채팅을 보낼 수 있다는 건 이미 accepted 친구라는 뜻이라 pvp_invite_friend의 친구 검사도 통과한다. RPC가 카드 메시지를 함께 남긴다.
           setSending(true);
           try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: tc.key, p_game_type: PVP_GAME_TYPE }); finish(true); }
-          catch { setCmdError("대국을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+          catch (e) { setCmdError(inviteFailText(e, "대국")); }
           setSending(false); return;
         }
         case "poll": case "board": {
