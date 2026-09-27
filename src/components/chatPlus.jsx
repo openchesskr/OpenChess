@@ -470,13 +470,22 @@ export function ChatHeaderActions({ onSearch, onReport, blocked, onToggleBlock }
 }
 
 // ---- (v0.5.7, 사용자 요청 "명령어 체계 정리") 명령어 자동완성 — "/"를 치면 입력창 위에 뜬다. ↑↓로 고르고 Tab·Enter로 채운다. ----
-export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover }) {
+export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickChoice }) {
   if (!sugg || sugg.mode === "none" || !sugg.items.length) return null;
   if (sugg.mode === "hint") {
     const c = sugg.items[0];
+    // (v0.5.7) 고를 수 있는 인자가 정해진 명령어(/play)는 힌트 아래 칩으로 보여 준다 — 누르면 입력창에 채워진다.
     return (
-      <div style={{ marginBottom: 6, padding: "7px 11px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6", fontSize: 11.5, color: T.inkSoft }}>
+      <div onMouseDown={(e) => e.preventDefault()} style={{ marginBottom: 6, padding: "7px 11px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6", fontSize: 11.5, color: T.inkSoft }}>
         <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> — {c.desc}
+        {c.choices && onPickChoice && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
+            {c.choices.map((ch) => (
+              <button key={ch.value} onClick={() => onPickChoice(c, ch.value)} className="press"
+                style={{ padding: "4px 9px", borderRadius: 999, border: "1px solid #D9C396", background: "rgba(196,154,80,.1)", color: T.ink, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{ch.label}</button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

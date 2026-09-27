@@ -7,13 +7,31 @@
 
 import { sanSrc, startBoard, boardFromSans, gameEndState, stripSuffix } from "./chessRules.js";
 
+// (v0.5.7, 사용자 요청) /play로 바로 신청할 수 있는 미니게임 — gameType은 pvp_invites.game_type·PLAY_SPECIAL_GAMES와 같은 값.
+// 영문 키와 한국어 별칭을 모두 받는다(대소문자·공백 무시).
+export const CHAT_PLAY_GAMES = [
+  { gameType: "coord", key: "coord", label: "좌표 인지 게임", aliases: ["좌표", "좌표인지", "좌표인지게임"] },
+  { gameType: "knight", key: "knight", label: "나이트 레이스", aliases: ["나이트", "나이트레이스"] },
+  { gameType: "rush", key: "rush", label: "백랭크 러시아워", aliases: ["러시", "러시아워", "백랭크러시아워"] },
+  { gameType: "attack", key: "attack", label: "무한 체크메이트 게임", aliases: ["메이트", "체크메이트", "무한체크메이트"] },
+];
+export function chatPlayGameOf(arg) {
+  const k = (arg || "").toLowerCase().replace(/\s+/g, "");
+  if (!k) return null;
+  return CHAT_PLAY_GAMES.find((g) => g.key === k || g.gameType === k || g.aliases.includes(k)) || null;
+}
+
 export const CHAT_COMMANDS = [
   { name: "puzzle", usage: "/puzzle <번호>", desc: "그 번호의 퍼즐을 공유해요", group: "공유", example: "/puzzle 123456" },
   { name: "legacy", usage: "/legacy <1~6>", desc: "내 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)", group: "공유", example: "/legacy 1" },
   { name: "review", usage: "/review recent | pgn <코드> | fen <코드>", desc: "최근 chess.com 대국이나 PGN·FEN 리뷰를 공유해요", group: "공유", example: "/review recent" },
   { name: "poll", usage: "/poll [FEN]", desc: "\"여기서 뭐 둘래?\" 수 투표를 보내요(FEN을 비우면 포지션 고르기 창)", group: "공유", example: "/poll" },
   { name: "board", usage: "/board [FEN]", desc: "같이 보기 보드를 열어요 — 한 보드를 둘이 함께 둬요", group: "공유", example: "/board" },
-  { name: "play", usage: "/play <분>[+<초>]", desc: "상대에게 실시간 대국을 신청해요 — 예: /play 3, /play 15+10", group: "대국", example: "/play 10" },
+  { name: "play", usage: "/play <분>[+<초>] | <미니게임>", desc: "상대에게 실시간 체스 대국이나 미니게임 대결을 신청해요 — 예: /play 10, /play 15+10, /play knight", group: "대국", example: "/play 10",
+    choices: [
+      { value: "3", label: "체스 3분" }, { value: "10", label: "체스 10분" }, { value: "15+10", label: "체스 15+10" },
+      ...CHAT_PLAY_GAMES.map((g) => ({ value: g.key, label: g.label })),
+    ] },
   { name: "blind", usage: "/blind", desc: "블라인드 대국을 준비해요 — 그 뒤 백을 맡을 사람이 1.e4처럼 첫 수를 보내면 시작", group: "대국", when: "blindIdle", example: "/blind" },
   { name: "resign", usage: "/resign", desc: "블라인드 대국을 기권해요", group: "블라인드 대국 중", when: "blindActive" },
   { name: "draw", usage: "/draw", desc: "무승부를 제안해요(상대도 /draw를 보내면 무승부)", group: "블라인드 대국 중", when: "blindActive" },
@@ -68,7 +86,9 @@ export function parseChatCommand(body, ctx) {
     case "play": {
       // (예전 동작 유지, 사용자 제보로 고친 것) 인자가 올바른 시간 형식이 아니면 명령어로 보지 않고 평범한 문장으로 보낸다
       // — "/play 아무개랑 하고 싶다" 같은 말을 막지 않으려는 것. 형식 검사는 호출부(parsePlayCommandArg)가 한다.
-      if (!rest) return err(name, "시간(분)을 적어 주세요.");
+      if (!rest) return err(name, "시간(분)이나 미니게임 이름을 적어 주세요.");
+      const mg = chatPlayGameOf(rest);
+      if (mg) return { name, gameType: mg.gameType };
       if (!/^\d{1,3}(\s*\+\s*\d{1,3})?$/.test(rest)) return null;
       return { name, arg: rest };
     }
@@ -134,6 +154,8 @@ export function deriveBlindGame(msgs) {
   // 걸려 있던 제안은 자동으로 취소된다(수를 두는 것으로 거절한 셈).
   let drawOfferUid = null;
   let armed = false;
+  // (v0.5.7, 사용자 요청) 수로 인식된 메시지 — { [메시지 id]: "w" | "b" }. 채팅이 그 말풍선을 백(크림)·흑(갈색) 수 모양으로 그린다.
+  const moveColors = {};
   const explicitSince = Date.parse(BLIND_EXPLICIT_SINCE);
   for (const m of msgs) {
     if (m.pvp_invite_id != null || m.puzzle_no != null || m.legacy_slot != null || m.review_id != null || m.share_reward) continue;
@@ -143,7 +165,7 @@ export function deriveBlindGame(msgs) {
       if (/^\/blind\s*$/i.test(body)) { armed = true; continue; }
       const legacy = !(Date.parse(m.created_at) >= explicitSince); // 시각을 못 읽으면(테스트 데이터 등) 옛 규칙
       const tok = (armed || legacy) ? blindMoveToken(body, 0) : null;
-      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; armed = false; result = null; whiteFromUid = m.from_uid; lastMoveUid = m.from_uid; drawOfferUid = null; }
+      if (tok && sanSrc(startBoard(), tok, "w")) { sans = [tok]; active = true; armed = false; result = null; whiteFromUid = m.from_uid; lastMoveUid = m.from_uid; drawOfferUid = null; if (m.id != null) moveColors[m.id] = "w"; }
       continue;
     }
     if (/^\/resign\s*$/i.test(body)) { active = false; result = { kind: "resign", loserUid: m.from_uid }; continue; }
@@ -160,10 +182,11 @@ export function deriveBlindGame(msgs) {
     const board = boardFromSans(sans);
     if (!sanSrc(board, tok, color)) continue;
     sans.push(tok); lastMoveUid = m.from_uid; drawOfferUid = null;
+    if (m.id != null) moveColors[m.id] = color;
     const end = gameEndState(sans).end;
     if (end === "checkmate") { active = false; result = { kind: "checkmate", winnerColor: color }; }
     else if (end === "stalemate") { active = false; result = { kind: "stalemate" }; }
     else if (end === "threefold") { active = false; result = { kind: "threefold" }; }
   }
-  return { active, armed: !active && armed, sans: sans || [], result, whiteFromUid, drawOfferUid };
+  return { active, armed: !active && armed, sans: sans || [], result, whiteFromUid, drawOfferUid, moveColors };
 }

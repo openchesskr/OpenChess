@@ -9768,7 +9768,9 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
   if (active) {
     const Game = active.Component;
-    return <Game myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
+    // (v0.5.7, BUG-025) 이미 같은 미니게임 준비 화면에 있을 때 도전장을 수락해도 새 대전으로 들어가도록, 재개할 대전마다 새로 마운트한다
+    // (useMinigameMatch는 initialGame을 첫 마운트 때만 읽는다).
+    return <Game key={resumeGame ? "resume-" + resumeGame.id : "lobby"} myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
   }
   return <MinigameHubBoard maxWidth={hubMaxWidth} stats={myStats} onPick={(gameType) => { const g = PLAY_SPECIAL_GAMES.find((x) => x.gameType === gameType); if (g) setActiveKey(g.key); }} />;
 }
@@ -13549,10 +13551,14 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
   }, !!myInvite, 4000);
   // (v0.4.3 기능) 전역 알람 박스에서 도전장을 수락하면 App 루트가 openPlay(seed.resumePvpGame)로 이
   // 페이지를 새로 연다 — 마운트 시 한 번, 이미 서버에서 확정된 그 대국을 곧장 적용한다.
+  // (v0.5.7, BUG-025) 예전엔 마운트 때 한 번만 봤다 — 그런데 플레이 탭은 한 번 열리면 숨겨진 채 계속 마운트돼 있어서(App의
+  // playGame 주석 참고), 플레이 탭을 한 번이라도 연 뒤에 수락한 도전장은 탭만 바뀌고 대국에 들어가지 못했다. 재개할 대국이
+  // 바뀔 때마다 적용한다.
+  const resumeId = seed && seed.resumePvpGame ? seed.resumePvpGame.id : null;
   useEffect(() => {
-    if (seed && seed.resumePvpGame) applyPvpGame(seed.resumePvpGame);
+    if (resumeId != null) applyPvpGame(seed.resumePvpGame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [resumeId]);
   // (버그 수정, 사용자 제보) 실시간 대국 도중 새로고침하거나(언마운트 cleanup이 걸리지 않는 하드
   // 리로드·탭 종료) 잠시 다른 곳에 있다가 /play로 다시 돌아오면, 이 컴포넌트는 항상 처음(설정 화면,
   // mode="bot")부터 새로 시작해 서버에는 여전히 "active"로 남아 있는 내 대국을 이어받을 방법이
@@ -28109,6 +28115,26 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
     try { await sbRpc("pvp_invite_cancel", { p_invite_id: msg.pvp_invite_id }); setInv((c) => (c ? { ...c, status: "cancelled" } : c)); } catch { }
   };
   const status = inv ? inv.status : "pending";
+  // (v0.5.7) 미니게임 대결 신청이면 게임 이름을 보여 주고, 수락된 뒤 대전이 아직 진행 중이면 양쪽 모두 "입장하기"로 곧장 들어간다
+  // (예전엔 "PLAY 탭에서 확인하세요" 안내뿐이라, 채팅에서 신청한 사람은 스스로 찾아 들어가야 했다).
+  const special = inv ? PLAY_SPECIAL_GAMES.find((g) => g.gameType === inv.game_type) : null;
+  const what = special ? special.name + " 대결" : "실시간 대국";
+  const [liveGame, setLiveGame] = useState(null);
+  const gameId = inv && inv.status === "accepted" ? inv.game_id : null;
+  useEffect(() => {
+    if (gameId == null) { setLiveGame(null); return; }
+    let off = false;
+    sbSelect("pvp_games?id=eq." + gameId + "&select=*").then((rows) => { if (!off) setLiveGame((rows && rows[0]) || null); }).catch(() => { });
+    return () => { off = true; };
+  }, [gameId]);
+  const canEnter = !!(liveGame && liveGame.status === "active" && onAccepted);
+  // 보낸 사람이 이 카드를 보고 있는 동안 상대가 수락하면(대기 중 → 수락을 이 화면에서 직접 본 경우만) 곧장 입장한다 —
+  // 친구 로스터에서 보낸 도전장이 수락되면 바로 대전이 열리는 것과 같게. 예전에 이미 수락된 카드는 저절로 열리지 않는다.
+  const sawPendingRef = useRef(false), autoEnteredRef = useRef(false);
+  useEffect(() => { if (inv && inv.status === "pending") sawPendingRef.current = true; }, [inv]);
+  useEffect(() => {
+    if (mine && canEnter && sawPendingRef.current && !autoEnteredRef.current) { autoEnteredRef.current = true; onAccepted(liveGame); }
+  }, [mine, canEnter, liveGame, onAccepted]);
   // (사용자 요청) 실시간 대국 신청 카드도 일반 메시지처럼 보낸 사람 기준으로 좌/우 정렬하고, 누가
   // 보냈는지가 문장 앞머리에서 바로 드러나도록 한다 — 내가 보냈으면 "OO님에게", 상대가 보냈으면 "OO님이".
   return (
@@ -28117,7 +28143,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
         <div className="flex items-center gap-2" style={{ marginBottom: 9 }}>
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? otherUsername + "님에게 실시간 대국을 신청했어요" : otherUsername + "님이 실시간 대국을 신청했어요"}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? otherUsername + "님에게 " + what + "을 신청했어요" : otherUsername + "님이 " + what + "을 신청했어요"}</div>
         </div>
         {status === "pending" ? (
           mine ? (
@@ -28129,15 +28155,38 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
             </div>
           )
         ) : (
-          <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
-            {status === "accepted" ? "수락됐어요 — PLAY 탭에서 대국을 확인하세요." : status === "declined" ? "거절됐어요." : "취소됐어요."}
-          </div>
+          canEnter ? (
+            <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락됐어요 — 입장하기</button>
+          ) : (
+            <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
+              {status === "accepted" ? (liveGame ? "끝난 " + (special ? "대결" : "대국") + "이에요." : "수락됐어요.") : status === "declined" ? "거절됐어요." : "취소됐어요."}
+            </div>
+          )
         )}
       </div>
     </div>
   );
 }
 // 블라인드 대국 상태(blindMoveToken·deriveBlindGame)는 src/lib/chatCommands.js로 옮겼다(v0.5.7 — 검사 스크립트가 직접 부르도록).
+// (v0.5.7, 사용자 요청) 블라인드 대국에서 실제 수로 인식된 메시지 — 일반 말풍선과 구분되게, 백의 수는 크림색·흑의 수는 갈색 판에
+// 금색 글씨로 그리고, 움직인 기물(SAN 첫 글자, 캐슬링은 킹) 아이콘을 앞에 붙인다. 어느 말풍선이 수인지는 deriveBlindGame.moveColors가 정한다.
+const BLIND_MOVE_STYLE = {
+  w: { bg: "linear-gradient(180deg,#FCF6E8,#EEDFBE)", border: "#D6BC85", text: "#86601D", shadow: "0 2px 6px -2px rgba(120,86,30,.35)", glyph: "drop-shadow(0 0 .6px #86601D) drop-shadow(0 0 .6px #86601D)" },
+  b: { bg: "linear-gradient(180deg,#4A2F1C,#27170B)", border: "#8A6530", text: T.brassHi, shadow: "0 2px 8px -2px rgba(0,0,0,.5)", glyph: "drop-shadow(0 0 .6px " + T.brassHi + ") drop-shadow(0 0 .6px " + T.brassHi + ")" },
+};
+function BlindMoveBubble({ body, color }) {
+  const st = BLIND_MOVE_STYLE[color] || BLIND_MOVE_STYLE.w;
+  const s = (body || "").trim();
+  const pm = /^(\d+\.(?:\.\.)?)\s*(.*)$/.exec(s);
+  const prefix = pm ? pm[1] : "", san = pm ? pm[2] : s;
+  const pieceType = /^O-O/.test(san) ? "K" : /^[KQRBN]/.test(san) ? san[0] : "P";
+  return (
+    <span aria-label={(color === "w" ? "백" : "흑") + "의 수 " + s} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px 5px 7px", borderRadius: 12, background: st.bg, border: "1px solid " + st.border, boxShadow: st.shadow, color: st.text, fontWeight: 800, fontSize: 14, lineHeight: 1.2, letterSpacing: ".01em", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+      <span style={{ display: "inline-flex", width: 20, height: 20, flexShrink: 0, filter: st.glyph }}><PieceGlyph type={pieceType} color={color} size={20} /></span>
+      <span><span style={{ opacity: .62, fontWeight: 700, fontSize: 12 }}>{prefix}</span>{san}</span>
+    </span>
+  );
+}
 // /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
 function formatBlindEval(ev) {
   if (!ev) return "아직 분석 중이에요…";
@@ -28636,6 +28685,13 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           setSending(false); finish(ok, "리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
         }
         case "play": {
+          // (v0.5.7, 사용자 요청) 미니게임 대결 — 친구 로스터의 도전장과 같은 RPC(p_game_type만 다름)라, 수락되면 두 사람 모두 그 미니게임 대전으로 들어간다.
+          if (cmd.gameType) {
+            setSending(true);
+            try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: "0-0", p_game_type: cmd.gameType }); finish(true); }
+            catch { setCmdError("대결을 신청하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+            setSending(false); return;
+          }
           const tc = parsePlayCommandArg(cmd.arg);
           if (!tc) { setCmdError("시간은 1~180분, 증가는 0~180초예요. 사용법: /play <분>[+<초>]"); return; }
           // 채팅을 보낼 수 있다는 건 이미 accepted 친구라는 뜻이라 pvp_invite_friend의 친구 검사도 통과한다. RPC가 카드 메시지를 함께 남긴다.
@@ -29194,6 +29250,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 <span style={{ display: "inline-flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
                   {m.reply_to != null && (() => { const t = replyTargetOf(m.reply_to); return <ReplyQuote target={t} authorName={t ? nameOf(t.from_uid) : "답장"} mine={mine} onJump={() => jumpTo(m.reply_to, t && t.created_at)} />; })()}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
+                    : blindGame.moveColors[m.id] ? <BlindMoveBubble body={m.body} color={blindGame.moveColors[m.id]} />
                     : <span style={{ display: "inline-block", maxWidth: "min(50vw, 320px)", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{renderMentionText(m.body)}</span>}
                 </span>
               </div>
@@ -29238,7 +29295,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         )}
         {/* (v0.5.7, 사용자 요청 "명령어 체계 정리") "/"를 치면 전체 목록 대신, 친 글자로 좁혀지는 자동완성(↑↓·Tab·Enter)이 뜨고
             명령어 이름 뒤엔 쓰는 법 힌트가 뜬다. 목록은 src/lib/chatCommands.js 하나에서 온다. /help는 나에게만 보이는 카드. */}
-        {editingId == null && !helpOpen && <ChatCommandPalette sugg={cmdSugg} activeIdx={cmdIdx} onHover={setCmdIdx} onPick={pickCommand} />}
+        {editingId == null && !helpOpen && <ChatCommandPalette sugg={cmdSugg} activeIdx={cmdIdx} onHover={setCmdIdx} onPick={pickCommand} onPickChoice={(c, v) => { setText("/" + c.name + " " + v); setCmdError(""); }} />}
         {helpOpen && <ChatHelpCard commands={CHAT_CMD_LIST.filter((c) => chatCommandAvailable(c, { blindActive: blindGame.active }))} onClose={() => setHelpOpen(false)} onPick={(c) => { setHelpOpen(false); pickCommand(c); }} />}
         {replyTo && editingId == null && <ReplyBar target={replyTo} authorName={nameOf(replyTo.from_uid)} onCancel={() => setReplyTo(null)} />}
         {/* (v0.5.7) /blind로 준비만 된 상태 — 첫 수를 어떻게 보내는지 입력창 바로 위에서 알려 준다(대국이 시작되면 사라짐). */}
@@ -32151,7 +32208,7 @@ function NewPasswordModal({ recovery, onDone, onClose }) {
 // 두어, 상대가 사이트 안에서 어느 탭·화면에 있든(로그인만 돼 있으면) 상단에 뜬다. 자동으로 사라지지
 // 않고 수락·거절하거나(내가) 상대가 취소할 때만(실시간 구독) 닫힌다. 여러 화면에서 각자 따로
 // 구독·응답하면 중복 팝업이나 엇갈린 상태가 생기므로, 응답 로직 전체를 여기 한 곳에만 둔다.
-function GlobalPvpInviteBanner({ myUid, onAccepted, onAcceptedMinigame }) {
+function GlobalPvpInviteBanner({ myUid, onAccepted }) {
   const [invite, setInvite] = useState(null); // { ...pvp_invites 행, fromPub, fromUsername }
   const loadPending = useCallback(async () => {
     if (!myUid) { setInvite(null); return; }
@@ -32174,9 +32231,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted, onAcceptedMinigame }) {
     else loadPending();
   }, !!invite, 6000);
   if (!myUid || !invite) return null;
-  // (v0.5.0 기능, 사용자 요청) 미니게임(좌표 인지 게임·나이트 경주) 친구 도전장도 이 전역 알람
-  // 박스로 똑같이 받는다 — game_type으로 체스와 구분해, 수락 시 서로 다른 콜백(onAccepted는 체스용
-  // /play 재개, onAcceptedMinigame은 플레이 탭의 "스페셜" 화면 재개)으로 나눈다.
+  // (v0.5.0 기능, 사용자 요청) 미니게임 친구 도전장도 이 전역 알람 박스로 똑같이 받는다 — game_type은 문구에만 쓰고,
+  // 수락한 대전을 어느 화면으로 열지는 App의 enterPvpGame이 정한다(v0.5.7, BUG-024).
   const specialGame = PLAY_SPECIAL_GAMES.find((g) => g.gameType === invite.game_type);
   const respond = async (accept) => {
     const id = invite.id;
@@ -32186,7 +32242,7 @@ function GlobalPvpInviteBanner({ myUid, onAccepted, onAcceptedMinigame }) {
       if (accept && inv && inv.game_id) {
         const rows = await sbSelect("pvp_games?id=eq." + inv.game_id + "&select=*");
         const g = rows && rows[0];
-        if (g) { if (specialGame && onAcceptedMinigame) onAcceptedMinigame(g, invite.game_type); else if (!specialGame && onAccepted) onAccepted(g); }
+        if (g && onAccepted) onAccepted(g); // 게임 종류별 화면 선택은 App의 enterPvpGame이 한다
       }
     } catch { }
   };
@@ -33443,6 +33499,15 @@ export default function App() {
     setTab("store"); urlTabRef.current = "store";
     try { if (!window.location.pathname.startsWith("/play")) window.history.pushState({ play: true }, "", "/play"); } catch { }
   }, []);
+  // (v0.5.7, BUG-024) 수락·입장한 실시간 대전을 게임 종류에 맞는 화면으로 연다 — 체스는 PlayPage가 이어받고(resumePvpGame),
+  // 미니게임은 플레이 탭의 스페셜 화면이 이어받는다(specialResume). 예전엔 채팅 카드가 항상 체스 쪽으로만 열어, 미니게임 도전장을
+  // 채팅에서 수락하면 체스 대국 화면에 미니게임 대전이 물려 엉뚱하게 동작했다. 대전을 여는 모든 경로는 이 함수 하나를 쓴다.
+  const enterPvpGame = useCallback((g) => {
+    if (!g) return;
+    setChatsOpen(false);
+    if (PLAY_SPECIAL_GAMES.some((x) => x.gameType === g.game_type)) { setSpecialResume({ gameType: g.game_type, game: g }); openPlay({ sans: [], fenRoot: null }); }
+    else openPlay({ sans: [], fenRoot: null, resumePvpGame: g });
+  }, [openPlay]);
   const closePlay = useCallback(() => {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
@@ -33746,14 +33811,14 @@ export default function App() {
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
-      {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
+      {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={enterPvpGame} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
+      <AnimatePresence>{chatsOpen && <ChatsModal key="chatsModal" me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setChatsOpen(false); popScreen("chats"); }} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={enterPvpGame} onOpenUserProfile={openUserProfileByUsername} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
       {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
-      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={(g) => openPlay({ sans: [], fenRoot: null, resumePvpGame: g })} onAcceptedMinigame={(g, gameType) => { setSpecialResume({ gameType, game: g }); openPlay({ sans: [], fenRoot: null }); }} />}
+      {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={enterPvpGame} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
           대신 정말 기권 처리해도 되는지 한 번 확인한다. */}
       <AnimatePresence>
