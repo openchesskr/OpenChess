@@ -10,15 +10,28 @@ import { sanSrc, startBoard, boardFromSans, gameEndState, stripSuffix } from "./
 // (v0.5.7, 사용자 요청) /play로 바로 신청할 수 있는 미니게임 — gameType은 pvp_invites.game_type·PLAY_SPECIAL_GAMES와 같은 값.
 // 영문 키와 한국어 별칭을 모두 받는다(대소문자·공백 무시).
 export const CHAT_PLAY_GAMES = [
-  { gameType: "coord", key: "coord", label: "좌표 인지 게임", aliases: ["좌표", "좌표인지", "좌표인지게임"] },
-  { gameType: "knight", key: "knight", label: "나이트 레이스", aliases: ["나이트", "나이트레이스"] },
-  { gameType: "rush", key: "rush", label: "백랭크 러시아워", aliases: ["러시", "러시아워", "백랭크러시아워"] },
-  { gameType: "attack", key: "attack", label: "무한 체크메이트 게임", aliases: ["메이트", "체크메이트", "무한체크메이트"] },
+  { gameType: "coord", key: "coord", label: "좌표 인지 게임", aliases: ["좌표", "좌표인지", "좌표게임", "coordrace", "coordinate", "coordinates"] },
+  { gameType: "knight", key: "knight", label: "나이트 레이스", aliases: ["나이트", "나이트경주", "knightrace"] },
+  { gameType: "rush", key: "rush", label: "백랭크 러시아워", aliases: ["러시", "러시아워", "백랭크", "rushhour", "backrank", "backrankrushhour"] },
+  { gameType: "attack", key: "attack", label: "무한 체크메이트 게임", aliases: ["메이트", "체크메이트", "무한체크메이트", "무한메이트", "공격모드", "attackmode", "mate", "checkmate"] },
 ];
+// (v0.5.7 BUG-028) 사용자가 화면에 보이는 이름 그대로("무한 체크메이트 게임", "Knight Race" 등) 적어도 알아듣도록 — 소문자·공백·기호를
+// 없앤 뒤 키·gameType·화면 이름·별칭과 비교하고, 끝에 붙은 "게임"·"대결"·"한판"도 떼어 본다.
+const normGame = (s) => (s || "").toLowerCase().replace(/[\s\-_.·!?~]+/g, "");
+const GAME_NAMES = CHAT_PLAY_GAMES.map((g) => ({ g, names: new Set([g.key, g.gameType, normGame(g.label), ...g.aliases.map(normGame)]) }));
 export function chatPlayGameOf(arg) {
-  const k = (arg || "").toLowerCase().replace(/\s+/g, "");
+  const k = normGame(arg);
   if (!k) return null;
-  return CHAT_PLAY_GAMES.find((g) => g.key === k || g.gameType === k || g.aliases.includes(k)) || null;
+  for (const cand of [k, k.replace(/(게임|대결|한판)$/, "")]) {
+    const hit = cand && GAME_NAMES.find((x) => x.names.has(cand));
+    if (hit) return hit.g;
+  }
+  return null;
+}
+// 체스 시간 — "10", "15+10"에 더해 "10분", "15분+10초", "15분 10초"도 받는다. 맞으면 "분[+초]" 문자열, 아니면 null.
+export function chatPlayTimeArg(arg) {
+  const m = /^(\d{1,3})\s*분?\s*(?:(?:\+|\s)\s*(\d{1,3})\s*초?)?$/.exec((arg || "").trim());
+  return m ? m[1] + (m[2] != null ? "+" + m[2] : "") : null;
 }
 
 export const CHAT_COMMANDS = [
@@ -27,7 +40,7 @@ export const CHAT_COMMANDS = [
   { name: "review", usage: "/review recent | pgn <코드> | fen <코드>", desc: "최근 chess.com 대국이나 PGN·FEN 리뷰를 공유해요", group: "공유", example: "/review recent" },
   { name: "poll", usage: "/poll [FEN]", desc: "\"여기서 뭐 둘래?\" 수 투표를 보내요(FEN을 비우면 포지션 고르기 창)", group: "공유", example: "/poll" },
   { name: "board", usage: "/board [FEN]", desc: "같이 보기 보드를 열어요 — 한 보드를 둘이 함께 둬요", group: "공유", example: "/board" },
-  { name: "play", usage: "/play <분>[+<초>] | <미니게임>", desc: "상대에게 실시간 체스 대국이나 미니게임 대결을 신청해요 — 예: /play 10, /play 15+10, /play knight", group: "대국", example: "/play 10",
+  { name: "play", usage: "/play <분>[+<초>] | <미니게임 이름>", desc: "상대에게 실시간 체스 대국이나 미니게임 대결을 신청해요 — 예: /play 10, /play 15+10, /play knight", group: "대국", example: "/play 10",
     choices: [
       { value: "3", label: "체스 3분" }, { value: "10", label: "체스 10분" }, { value: "15+10", label: "체스 15+10" },
       ...CHAT_PLAY_GAMES.map((g) => ({ value: g.key, label: g.label })),
@@ -86,11 +99,15 @@ export function parseChatCommand(body, ctx) {
     case "play": {
       // (예전 동작 유지, 사용자 제보로 고친 것) 인자가 올바른 시간 형식이 아니면 명령어로 보지 않고 평범한 문장으로 보낸다
       // — "/play 아무개랑 하고 싶다" 같은 말을 막지 않으려는 것. 형식 검사는 호출부(parsePlayCommandArg)가 한다.
+      // (v0.5.7 BUG-028) 단, 한 단어짜리 인자는 명령어를 치려던 것이라(예: "/play 백랭크") 문장으로 흘려보내지 않고 쓸 수 있는 이름을 알려 준다
+      // — 예전엔 못 알아들은 게임 이름이 평범한 메시지로 조용히 나가 "신청이 안 된다"로만 보였다.
       if (!rest) return err(name, "시간(분)이나 미니게임 이름을 적어 주세요.");
       const mg = chatPlayGameOf(rest);
       if (mg) return { name, gameType: mg.gameType };
-      if (!/^\d{1,3}(\s*\+\s*\d{1,3})?$/.test(rest)) return null;
-      return { name, arg: rest };
+      const t = chatPlayTimeArg(rest);
+      if (t) return { name, arg: t };
+      if (/\s/.test(rest)) return null;
+      return err(name, "\"" + rest + "\"은(는) 모르는 이름이에요. 미니게임: " + CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ") + ".");
     }
     case "poll": case "board": {
       if (!rest) return { name, fen: null };
