@@ -49,6 +49,19 @@ eq("/play 나이트 레이스", P("/play 나이트 레이스", IDLE), { name: "p
 eq("/play 러시아워", P("/play 러시아워", IDLE), { name: "play", gameType: "rush" });
 eq("/play 체크메이트", P("/play 체크메이트", IDLE), { name: "play", gameType: "attack" });
 eq("/play 좌표", P("/play 좌표", IDLE), { name: "play", gameType: "coord" });
+// (BUG-028 재발 방지) 화면에 보이는 이름 그대로 적어도 신청돼야 한다 — 예전엔 "무한 체크메이트 게임"이 평범한 메시지로 조용히 나갔다.
+for (const g of CHAT_PLAY_GAMES) {
+  for (const form of [g.key, g.label, g.label.replace(/\s+/g, ""), g.key.toUpperCase(), g.label + " 한판"]) {
+    eq("/play " + form + " → " + g.gameType, P("/play " + form, IDLE), { name: "play", gameType: g.gameType });
+  }
+}
+eq("/play Knight Race", P("/play Knight Race", IDLE), { name: "play", gameType: "knight" });
+eq("/play 나이트경주(옛 이름)", P("/play 나이트경주", IDLE), { name: "play", gameType: "knight" });
+eq("/play 공격 모드(옛 이름)", P("/play 공격 모드", IDLE), { name: "play", gameType: "attack" });
+eq("/play 3분", P("/play 3분", IDLE), { name: "play", arg: "3" });
+eq("/play 15분+10초", P("/play 15분+10초", IDLE), { name: "play", arg: "15+10" });
+eq("/play 15분 10초", P("/play 15분 10초", IDLE), { name: "play", arg: "15+10" });
+isErr("/play 한 단어 모르는 이름은 조용히 보내지 않고 안내", P("/play 백랭크러쉬", IDLE));
 {
   const choices = (CHAT_COMMANDS.find((c) => c.name === "play").choices || []).map((c) => c.value);
   for (const v of choices) { const r = P("/play " + v, IDLE); if (!r || r.error) fails.push("/play 칩 값이 해석되지 않는다: " + v); }
