@@ -4,8 +4,8 @@
  *   · 사용자 제보 포지션(목표 e5, 흑 룩 b4·f4, 비숍 d2, 나이트 h2)의 f1이 위협 칸이고 답이 없다고 판정되는지(회귀)
  *   · 생성한 라운드(혼자·실시간 양쪽, 라운드 1~5)가 전부 풀리는지 — 시작·목표 칸 안전, par 경로를 규칙대로 밟아 잡히지 않고
  *     도착, 기물 잡기까지 고려한 실제 최단 수 ≤ 이동 수 제한. 실시간은 흑 쪽도 같은 par
- *   · 5라운드는 반드시 상대 퀸이 있는지
- *   · (v0.5.7) 1·2라운드는 방해 기물이 없고 3라운드부터 있는지, 제한시간이 10·12.5·15·17.5·20초인지, 클라이언트 KNIGHT_ROUND_SPECS와
+ *   · 마지막 라운드(v0.5.8부터 7라운드, Bo7)는 반드시 상대 퀸이 있는지
+ *   · (v0.5.7) 1·2라운드는 방해 기물이 없고 3라운드부터 있는지, 제한시간이 10초부터 2.5초씩(10~25초)인지, 클라이언트 KNIGHT_ROUND_SPECS와
  *     서버 _knight_gen_round의 표(v_specs)가 같은지, 판정 규칙(knightJudge — 거리 → 거리 같으면 소모 시간)이 맞는지
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-knight-rounds.mjs
  */
@@ -79,7 +79,7 @@ function checkSide(r, color, start, tag) {
   if (!ex || ex.length - 1 > r.moveBudget) fail(tag + ": 이동 수 제한 안에 답이 없음");
 }
 for (const solo of [true, false]) {
-  for (let idx = 0; idx < 5; idx++) {
+  for (let idx = 0; idx < KNIGHT_ROUND_SPECS.length; idx++) {
     const rnd = mulberry32(1000 * idx + (solo ? 7 : 13));
     for (let n = 0; n < PER; n++) {
       const r = knightGenRound(idx, { solo, rnd });
@@ -91,9 +91,9 @@ for (const solo of [true, false]) {
       if (solo && r.hazards.some((h) => h.color === "w")) fail(tag + ": 혼자 플레이에 내 진영 기물이 있음");
       checkSide(r, "w", r.whiteStart, tag + " 백");
       if (!solo) checkSide(r, "b", r.blackStart, tag + " 흑");
-      if (idx === 4) {
+      if (idx === KNIGHT_ROUND_SPECS.length - 1) {
         const bq = r.hazards.some((h) => h.type === "Q" && h.color === "b"), wq = r.hazards.some((h) => h.type === "Q" && h.color === "w");
-        if (!bq || (!solo && !wq)) fail(tag + ": 5라운드에 상대 퀸이 없음"); else queenRounds++;
+        if (!bq || (!solo && !wq)) fail(tag + ": 마지막 라운드에 상대 퀸이 없음"); else queenRounds++;
       }
     }
   }
@@ -129,4 +129,4 @@ if (problems.length) {
   console.error("✗ knight rounds check 실패:\n  " + problems.slice(0, 30).join("\n  ") + (problems.length > 30 ? "\n  … 외 " + (problems.length - 30) + "건" : ""));
   process.exit(1);
 }
-console.log("✓ knight rounds check: 위협 칸 = 실제 체스(막힘·퀸 포함), 제보 포지션 회귀, 라운드 " + rounds + "개 모두 풀림, 5라운드 퀸 " + queenRounds + "/" + (PER * 2));
+console.log("✓ knight rounds check: 위협 칸 = 실제 체스(막힘·퀸 포함), 제보 포지션 회귀, 라운드 " + rounds + "개 모두 풀림, 마지막 라운드 퀸 " + queenRounds + "/" + (PER * 2));

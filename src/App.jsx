@@ -9652,7 +9652,7 @@ const MG_GOLD = "#A97A2C";
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 const PLAY_SPECIAL_GAMES = [
   { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 5전 3선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 7전 4선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
   { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: "엉킨 내 기물들 사이에서 룩을 탈출시켜 백랭크 메이트 — 비켜 주고, 희생으로 수비 기물을 끌어내세요.", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
   { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: "3분 동안 쏟아지는 강제 메이트 '공격 기회'를 더 많이 성공시키는 쪽이 승리 — 짧은 메이트일수록 좋은 등급이에요.", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
@@ -11846,13 +11846,13 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b>이 이겨요. 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어나고, 5전 3선승(Bo5)이에요.</div>
+        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b>이 이겨요. 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어나고, 7전 4선승(Bo7)이에요.</div>
         <div>• 1·2라운드는 방해 기물 없이 거리만, <b style={{ color: T.ink }}>3라운드부터 상대 색 기물이 나와</b> 라운드마다 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요. 기물의 공격선은 실제 체스처럼 다른 기물에 막혀요.</div>
-        <div>• <b style={{ color: T.ink }}>마지막 5라운드에는 상대 퀸이 나와요</b> — 첫 수부터 정확히 골라야 하는 가장 어려운 라운드예요.</div>
+        <div>• <b style={{ color: T.ink }}>마지막 7라운드에는 상대 퀸이 나와요</b> — 첫 수부터 정확히 골라야 하는 가장 어려운 라운드예요.</div>
         <div>• <b style={{ color: T.ink }}>상대 나이트가 있는 칸으로 뛰어들면 상대 나이트를 잡을 수 있어요</b> — 잡힌 쪽은 그 라운드가 그대로 끝나요.</div>
-        <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
+        <div>• 혼자 플레이하기는 7라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
       </>}
-      soloSub={best ? "5라운드 · 최고 " + best.reached + "회" : "5라운드 기록 도전"} botSub="5전 3선승"
+      soloSub={best ? "7라운드 · 최고 " + best.reached + "회" : "7라운드 기록 도전"} botSub="7전 4선승"
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <KnightRaceBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <KnightSoloBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
@@ -11867,8 +11867,8 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
 // 자기 나이트로 먼저 목표 칸에 도달해야 그 라운드를 가져간다(5전 3선승, Bo5). 규칙·서버 권위 판정은
 // supabase-setup.sql의 knight_start_round/knight_report/knight_resolve_round 참고.
 const KNIGHT_GAME_TYPE = "knight";
-const KNIGHT_BO_TOTAL = 5;
-const KNIGHT_BO_TARGET = 3;
+const KNIGHT_BO_TOTAL = 7; // (v0.5.8, 사용자 요청) Bo7 — 7전 4선승
+const KNIGHT_BO_TARGET = 4;
 // 서버(knight_neighbors)와 완전히 같은 규칙의 클라이언트용 나이트 이웃 계산 — 어떤 칸을 눌러도 되는지
 // (합법 수인지) 보드에서 즉시 판정하는 용도일 뿐, 서버는 이 결과를 신뢰하지 않고 최종 요약만 받는다
 // (체스 pvp_move가 SAN을 신뢰하는 것과 같은 모델 — 위 SQL 주석 참고). p_illegal은 이제 "방해 칸"이
@@ -12458,7 +12458,7 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel="봇" center={Math.max(1, rounds.length) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 3선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel="봇" center={Math.max(1, rounds.length) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 4선승"} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -12530,7 +12530,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel="상대" center={(roundIdx + 1) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 3선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel="상대" center={(roundIdx + 1) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 4선승"} />
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} revealed={revealed} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -24974,6 +24974,19 @@ function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle
 // 그래서 APP_VERSION을 별도 상수로 두지 않고 CHANGELOG[0].version에서 그대로 파생시킨다:
 // 이제 버전 번호를 두 곳에 맞출 필요 없이 아래 배열만 관리하면 된다.
 const CHANGELOG = [
+  {
+    version: "0.5.8", date: "2026.9.27", dev: ["openchesskr", "G13sus4"], items: [
+      "미니게임 대전이 끝나면 결과 화면에서 바로 재대국을 신청할 수 있어요. 받은 사람은 어디에 있든 화면 위에 뜨는 알림으로 수락하거나 거절할 수 있어요.",
+      "미니게임에서 상대가 누른 칸·상대 나이트·상대 점수 옆에 상대 프로필 사진이 작게 떠서, 상대가 무엇을 했는지 한눈에 보여요.",
+      "좌표 인지 게임 혼자 플레이에 난이도가 생겼어요 — 하(×1), 중(좌표 없음, ×2), 상(좌표 없음 + 흑 시점, ×3). 맞힌 개수에 배율을 곱한 점수가 기록이 돼요. 플레이 중에도 다시하기로 처음부터 할 수 있어요.",
+      "좌표 인지 게임에서 여러 칸을 한꺼번에 누를 수 없게 했어요.",
+      "나이트 레이스가 7전 4선승이 됐어요. 1·2라운드는 방해 기물 없이 시작해 점점 어려워지고, 마지막 7라운드에는 상대 퀸이 나와요. 제한시간은 10초부터 라운드마다 2.5초씩 늘어나요.",
+      "나이트 레이스에서 둘 다 목표에 못 가면, 목표에서 금색이 퍼져 나가 더 가까운 나이트에 왕관이 씌워져요. 거리가 같으면 시간을 덜 쓴 쪽이 이겨요.",
+      "게임 리뷰를 열 때 나오는 정확도 그래프 화면이 폰·데스크톱 모두 한 화면에 다 보이도록 새로 배치됐어요.",
+      "좌표 인지 게임 대전에서 마지막 라운드 뒤 결과 화면이 뜨지 않던 문제, 채팅 /play로 미니게임 이름을 적으면 신청이 안 되던 문제를 고쳤어요.",
+      "백랭크 러시아워 안내 문구가 더 잘 보이게 진해졌어요.",
+    ]
+  },
   {
     version: "0.5.7", date: "2026.9.27", dev: ["openchesskr", "G13sus4"], items: [
       "채팅이 훨씬 강해졌어요 — 메시지를 꾹 누르면 답장·이모지 반응·복사·신고를 할 수 있고, 위로 올리면 예전 메시지를 더 불러오고, 대화 안에서 검색도 돼요. 원하지 않는 사용자는 차단할 수 있어요.",

@@ -2526,13 +2526,13 @@ end; $$;
 create or replace function public._knight_gen_round(p_round_idx int)
 returns jsonb language plpgsql volatile as $$
 declare
-  v_idx int := least(greatest(p_round_idx, 0), 4);
+  v_idx int := least(greatest(p_round_idx, 0), 6);
   -- 행: minDist, maxDist, pairs, minDetour, queens, onlyFirst(0/1), timeMs
-  -- (v0.5.7, 사용자 요청) 1·2라운드는 방해 기물 없이, 3라운드부터 기물이 늘고, 5라운드는 퀸 — 시간 10초부터 라운드마다 +2.5초.
+  -- (v0.5.8, 사용자 요청) Bo7 — 1·2라운드는 방해 기물 없이, 3라운드부터 한 쌍씩 늘고, 7라운드는 퀸 — 시간 10초부터 라운드마다 +2.5초.
   -- src/lib/knightRace.js KNIGHT_ROUND_SPECS와 같아야 한다(scripts/check-knight-rounds.mjs가 비교).
-  v_specs int[][] := array[[3,4,0,0,0,0,10000],[4,5,0,0,0,0,12500],[5,6,2,1,0,0,15000],[6,7,4,1,0,0,17500],[6,8,5,2,1,1,20000]];
-  -- 5라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
-  v_queen_ladder int[][] := array[[6,8,5,2,1,1,20000],[6,8,5,2,1,0,20000],[6,8,5,1,1,0,20000],[5,8,4,1,1,0,20000],[4,8,3,0,1,0,20000],[3,8,2,0,1,0,20000]];
+  v_specs int[][] := array[[3,4,0,0,0,0,10000],[4,5,0,0,0,0,12500],[4,5,1,0,0,0,15000],[5,6,2,1,0,0,17500],[5,6,3,1,0,0,20000],[6,7,4,1,0,0,22500],[6,8,5,2,1,1,25000]];
+  -- 7라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
+  v_queen_ladder int[][] := array[[6,8,5,2,1,1,25000],[6,8,5,2,1,0,25000],[6,8,5,1,1,0,25000],[5,8,4,1,1,0,25000],[4,8,3,0,1,0,25000],[3,8,2,0,1,0,25000]];
   v_is_queen boolean; v_time int; v_steps int; v_step int; v_row int[];
   v_try int; v_t int; v_p int;
   v_min int; v_max int; v_pairs int; v_detour int; v_queens int; v_only boolean;
@@ -2602,7 +2602,7 @@ begin
     'wIllegal', '[]'::jsonb, 'bIllegal', '[]'::jsonb, 'par', 2, 'moveBudget', 3, 'timeLimitMs', v_time);
 end; $$;
 
--- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 3승(Bo5)했거나 5라운드를 다
+-- 다음 라운드 시작 — 마지막 라운드가 아직 안 끝났거나 이미 한쪽이 4승(Bo7, v0.5.8)했거나 7라운드를 다
 -- 치렀으면 새 라운드를 만들지 않고 그대로 반환한다(호출부가 knight_resolve_round로 매치를 확정한다).
 -- 라운드 내용은 _knight_gen_round가 만든다.
 create or replace function public.knight_start_round(p_game_id bigint)
@@ -2625,7 +2625,7 @@ begin
   for r in select * from jsonb_array_elements(v_rounds) loop
     if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
   end loop;
-  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then return v_game; end if;
+  if v_w_wins >= 4 or v_b_wins >= 4 or jsonb_array_length(v_rounds) >= 7 then return v_game; end if;
   -- (v0.5.3 연출 강화) startedAt을 3초 뒤로 잡는다 — 두 클라이언트가 이 시각까지 "3·2·1" 카운트다운을
   -- 보여주고 그 뒤에야 보드를 조작할 수 있게 해, 라운드 시작 순간을 양쪽이 같은 서버 시각으로 맞춘다.
   -- positions — 각자 "지금 나이트가 어디 있는지"(knight_move_ping이 매 수마다 갱신, 판정과 무관한 표시용).
@@ -2743,7 +2743,7 @@ grant execute on function public.knight_move_ping(bigint, int, text, int, text[]
 -- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 목표까지 거리 → (v0.5.7, 사용자 요청) 거리도 같으면 소모 시간이
 -- 적은 쪽(예전의 "남은 수" 단계는 뺐다 — 화면 연출과 같은 순서). 판정 근거는 round.judge에 남겨 두 화면이 같은 연출(금색 퍼짐 + 승자 왕관,
 -- 거리 동률이면 시간 표시)을 한다 — src/lib/knightRace.js knightJudge와 같은 규칙.
--- 이 라운드 결과로 한쪽이 3승(Bo5)에 닿거나 5라운드를 다 치렀으면 매치 결과도 함께 확정한다.
+-- 이 라운드 결과로 한쪽이 4승(Bo7, v0.5.8)에 닿거나 7라운드를 다 치렀으면 매치 결과도 함께 확정한다.
 create or replace function public.knight_resolve_round(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
@@ -2809,7 +2809,7 @@ begin
   for r in select * from jsonb_array_elements(v_rounds) loop
     if r ->> 'winner' = 'w' then v_w_wins := v_w_wins + 1; elsif r ->> 'winner' = 'b' then v_b_wins := v_b_wins + 1; end if;
   end loop;
-  if v_w_wins >= 3 or v_b_wins >= 3 or jsonb_array_length(v_rounds) >= 5 then
+  if v_w_wins >= 4 or v_b_wins >= 4 or jsonb_array_length(v_rounds) >= 7 then
     update public.pvp_games set sans = v_rounds,
       status = case when v_w_wins > v_b_wins then 'white_won' when v_b_wins > v_w_wins then 'black_won' else 'draw' end,
       result_reason = 'knight_score', updated_at = now()

@@ -150,16 +150,18 @@ export function knightExactPath(round, color, start) {
 }
 
 // ---- 라운드 생성 ----
-// (v0.5.7, 사용자 요청) Bo5(3선승) 난이도 곡선 — 1·2라운드는 방해 기물이 아예 없이 거리만(3~4 → 4~5), 3라운드부터 기물이 들어와
-// 점점 늘고(2쌍 → 4쌍) 돌아가야 하는 길도 생기며, 5라운드는 반드시 상대 퀸이 나오는 매우 어려운 라운드(기물 5쌍, par 6~8, 기물이
-// 없을 때보다 최소 2수 더 돌아가고, 최단 경로로 가는 첫 수가 딱 하나뿐). 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어난다
-// (예전 5·8·11·14·17초에서 기본 +5초, 증분 3초 → 2.5초). 서버 _knight_gen_round의 표와 같아야 한다(check-knight-rounds가 비교).
+// (v0.5.8, 사용자 요청) Bo7(4선승) 난이도 곡선 — 1·2라운드는 방해 기물이 아예 없이 거리만(3~4 → 4~5), 3라운드부터 기물이 한 쌍씩
+// 들어와 점점 늘고(1 → 2 → 3 → 4쌍) 돌아가야 하는 길도 생기며, 마지막 7라운드는 반드시 상대 퀸이 나오는 매우 어려운 라운드(기물 5쌍,
+// par 6~8, 기물이 없을 때보다 최소 2수 더 돌아가고, 최단 경로로 가는 첫 수가 딱 하나뿐). 제한시간은 1라운드 10초에서 라운드마다 2.5초씩
+// 늘어난다(10 → 25초). 서버 _knight_gen_round의 표와 같아야 한다(check-knight-rounds가 비교).
 export const KNIGHT_ROUND_SPECS = [
   { minDist: 3, maxDist: 4, pairs: 0, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 10000 },
   { minDist: 4, maxDist: 5, pairs: 0, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 12500 },
-  { minDist: 5, maxDist: 6, pairs: 2, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 15000 },
-  { minDist: 6, maxDist: 7, pairs: 4, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 17500 },
-  { minDist: 6, maxDist: 8, pairs: 5, minDetour: 2, queens: 1, onlyFirst: true, timeMs: 20000 },
+  { minDist: 4, maxDist: 5, pairs: 1, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 15000 },
+  { minDist: 5, maxDist: 6, pairs: 2, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 17500 },
+  { minDist: 5, maxDist: 6, pairs: 3, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 20000 },
+  { minDist: 6, maxDist: 7, pairs: 4, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 22500 },
+  { minDist: 6, maxDist: 8, pairs: 5, minDetour: 2, queens: 1, onlyFirst: true, timeMs: 25000 },
 ];
 export const KNIGHT_GEN_TRIES = 4000;
 
@@ -219,7 +221,7 @@ export function knightTryGen(spec, { solo = false, rnd = Math.random } = {}) {
   return null;
 }
 
-// 라운드 idx(0~4)의 라운드를 만든다. 조건에 맞는 라운드를 못 찾으면 조건을 한 단계씩 낮춰 다시 뽑되, 퀸 라운드(5라운드)는
+// 라운드 idx(0~6)의 라운드를 만든다. 조건에 맞는 라운드를 못 찾으면 조건을 한 단계씩 낮춰 다시 뽑되, 퀸 라운드(마지막 라운드)는
 // 퀸을 빼지 않고 나머지 조건만 낮춘다. 제한시간은 원래 라운드 것 그대로.
 export function knightGenRound(roundIdx, opts = {}) {
   const idx = Math.min(Math.max(roundIdx, 0), KNIGHT_ROUND_SPECS.length - 1);
