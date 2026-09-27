@@ -2231,8 +2231,8 @@ begin
     end if;
   end if;
   if jsonb_array_length(v_rounds) >= v_total_rounds then
-    update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
-    return v_game;
+    -- (v0.5.7 BUG-033) 마지막 라운드까지 승자가 났으면 여기서 결과를 확정한다(예전엔 행을 그대로 돌려줘 정산 화면이 안 떴다).
+    return public.coord_finish(p_game_id);
   end if;
   v_sq := chr(97 + floor(random() * 8)::int) || (floor(random() * 8)::int + 1)::text;
   -- (v0.5.0 기능, 사용자 요청) clicks — 이번 라운드에 각자 마지막으로 시도한 클릭(오답 포함)을 담아
@@ -2277,6 +2277,10 @@ begin
   end if;
   v_rounds := jsonb_set(v_rounds, array[p_round::text], v_round);
   update public.pvp_games set sans = v_rounds, updated_at = now() where id = p_game_id returning * into v_game;
+  -- (v0.5.7 BUG-033) 마지막(15번째) 라운드의 정답이면 그 자리에서 결과까지 확정한다 — 두 참가자 모두 realtime으로 곧장 정산 화면을 받는다.
+  if v_correct and p_round = jsonb_array_length(v_rounds) - 1 and jsonb_array_length(v_rounds) >= 15 then
+    return public.coord_finish(p_game_id);
+  end if;
   return v_game;
 end; $$;
 grant execute on function public.coord_click(bigint, int, text) to authenticated;
