@@ -28118,7 +28118,10 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
   // (v0.5.7) 미니게임 대결 신청이면 게임 이름을 보여 주고, 수락된 뒤 대전이 아직 진행 중이면 양쪽 모두 "입장하기"로 곧장 들어간다
   // (예전엔 "PLAY 탭에서 확인하세요" 안내뿐이라, 채팅에서 신청한 사람은 스스로 찾아 들어가야 했다).
   const special = inv ? PLAY_SPECIAL_GAMES.find((g) => g.gameType === inv.game_type) : null;
-  const what = special ? special.name + " 대결" : "실시간 대국";
+  // (v0.5.7, 사용자 요청 "미니게임 도전장도 일반 도전장과 똑같은 디자인") 제목 한 줄은 같은 틀로 두고, 무엇을 하는지는 그 아래 한 줄로 —
+  // 체스는 시간 제한, 미니게임은 게임 이름. 게임 이름을 제목에 넣으면 줄이 바뀌어 카드 모양이 달라졌다.
+  const what = special ? "실시간 대결" : "실시간 대국";
+  const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? " · " + tc.cat : ""); })();
   const [liveGame, setLiveGame] = useState(null);
   const gameId = inv && inv.status === "accepted" ? inv.game_id : null;
   useEffect(() => {
@@ -28143,7 +28146,10 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
         <div className="flex items-center gap-2" style={{ marginBottom: 9 }}>
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>{mine ? otherUsername + "님에게 " + what + "을 신청했어요" : otherUsername + "님이 " + what + "을 신청했어요"}</div>
+          <div style={{ minWidth: 0, fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>
+            {mine ? otherUsername + "님에게 " + what + "을 신청했어요" : otherUsername + "님이 " + what + "을 신청했어요"}
+            <span style={{ display: "block", minHeight: 14, fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{detail}</span>
+          </div>
         </div>
         {status === "pending" ? (
           mine ? (
@@ -32246,7 +32252,7 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
       }
     } catch { }
   };
-  const tc = TIME_CONTROLS.find((t) => t.key === invite.time_control) || DEFAULT_TIME_CONTROL;
+  const tc = timeControlFromKey(invite.time_control);
   return (
     <div style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 10090, width: "min(360px, calc(100vw - 24px))" }}>
       <div style={{ padding: "12px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 14px 34px -10px rgba(0,0,0,.65)" }}>
@@ -32254,8 +32260,8 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{invite.fromUsername || "누군가"}님이 {specialGame ? specialGame.name + " 대결을" : "대국을"} 신청했어요
-            {!specialGame && <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{tc.label}{tc.cat ? " · " + tc.cat : ""}</span>}
+            @{invite.fromUsername || "누군가"}님이 {specialGame ? "실시간 대결을" : "대국을"} 신청했어요
+            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tc.cat : "")}</span>
           </div>
         </div>
         <div className="flex gap-2">
