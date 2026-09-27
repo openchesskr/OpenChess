@@ -3,10 +3,13 @@
  *   · parseChatCommand — 새 문법(/puzzle 123, /review pgn …)과 예전 문법(-num·-recent·-PGN·-FEN)이 같은 결과를 내는지,
  *     형식이 틀리면 보내지 않고 사용법을 돌려주는지, "/play 아무개랑…"·"/ㅅ/" 같은 평범한 문장은 명령어로 잡지 않는지.
  *   · chatCommandSuggestions — 자동완성 목록·힌트, 블라인드 대국 전용 명령어가 상황에 맞게만 뜨는지.
- *   · deriveBlindGame — /blind 준비(armed) 뒤의 첫 수로만 시작, 옛 메시지는 예전 규칙, 무승부 합의·기권·연속 수 무시.
+ *   · deriveBlindGame — /blind 준비(armed) 뒤의 첫 수로만 시작, 옛 메시지는 예전 규칙, 무승부 합의·기권·연속 수 무시,
+ *     수로 인식된 메시지의 백/흑 색(moveColors).
+ *   · /play 미니게임 — 별칭 해석, 자동완성 칩 값이 모두 해석되는지, 목록이 App의 PLAY_SPECIAL_GAMES와 같은지.
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-chat-commands.mjs
  */
-import { parseChatCommand as P, chatCommandSuggestions as S, deriveBlindGame, CHAT_COMMANDS } from "../src/lib/chatCommands.js";
+import { readFileSync } from "node:fs";
+import { parseChatCommand as P, chatCommandSuggestions as S, deriveBlindGame, CHAT_COMMANDS, CHAT_PLAY_GAMES } from "../src/lib/chatCommands.js";
 
 const fails = [];
 const eq = (label, got, want) => {
@@ -39,6 +42,21 @@ isErr("/review 종류 모름", P("/review xyz", IDLE));
 eq("/play 10", P("/play 10", IDLE), { name: "play", arg: "10" });
 eq("/play 15+10", P("/play 15+10", IDLE), { name: "play", arg: "15+10" });
 eq("/play 뒤 문장은 평범한 텍스트", P("/play 아무개랑 하고 싶다", IDLE), null);
+// (v0.5.7) 미니게임 대결 — 영문 키·한국어 별칭 모두, 대소문자·띄어쓰기 무시. gameType은 PLAY_SPECIAL_GAMES와 같아야 한다.
+eq("/play knight", P("/play knight", IDLE), { name: "play", gameType: "knight" });
+eq("/play Coord", P("/play Coord", IDLE), { name: "play", gameType: "coord" });
+eq("/play 나이트 레이스", P("/play 나이트 레이스", IDLE), { name: "play", gameType: "knight" });
+eq("/play 러시아워", P("/play 러시아워", IDLE), { name: "play", gameType: "rush" });
+eq("/play 체크메이트", P("/play 체크메이트", IDLE), { name: "play", gameType: "attack" });
+eq("/play 좌표", P("/play 좌표", IDLE), { name: "play", gameType: "coord" });
+{
+  const choices = (CHAT_COMMANDS.find((c) => c.name === "play").choices || []).map((c) => c.value);
+  for (const v of choices) { const r = P("/play " + v, IDLE); if (!r || r.error) fails.push("/play 칩 값이 해석되지 않는다: " + v); }
+  const appSrc = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const block = /const PLAY_SPECIAL_GAMES = \[([\s\S]*?)\n\];/.exec(appSrc);
+  const appTypes = block ? [...block[1].matchAll(/gameType: "(\w+)"/g)].map((m) => m[1]).sort() : [];
+  eq("/play 미니게임 목록 = PLAY_SPECIAL_GAMES", CHAT_PLAY_GAMES.map((g) => g.gameType).sort(), appTypes);
+}
 isErr("/play 빈 값", P("/play", IDLE));
 eq("/poll 비우면 고르기 창", P("/poll", IDLE), { name: "poll", fen: null });
 eq("/board FEN", P("/board " + FEN0, IDLE), { name: "board", fen: FEN0 });
@@ -68,7 +86,8 @@ eq("'/resign ' 대국 아니면 힌트 없음", S("/resign ", IDLE).mode, "none"
 // ── 블라인드 대국 상태 ──
 const A = "uidA", B = "uidB";
 const NEW = "2026-09-28T12:00:00+09:00", OLD = "2026-09-01T12:00:00+09:00";
-const msg = (from, body, at = NEW) => ({ from_uid: from, body, created_at: at });
+let nextId = 1;
+const msg = (from, body, at = NEW) => ({ id: nextId++, from_uid: from, body, created_at: at });
 const G = (list) => { const g = deriveBlindGame(list); return { active: g.active, armed: g.armed, sans: g.sans, result: g.result, white: g.whiteFromUid }; };
 
 eq("새 규칙: /blind 없이 1.e4는 대국 아님", G([msg(A, "1.e4")]), { active: false, armed: false, sans: [], result: null, white: null });
@@ -90,6 +109,12 @@ eq("끝난 뒤엔 다시 /blind가 필요", G([msg(A, "/blind"), msg(A, "1.e4"),
 eq("끝난 뒤 /blind로 새 대국", G([msg(A, "/blind"), msg(A, "1.e4"), msg(B, "/resign"), msg(B, "/blind"), msg(A, "1.d4")]).sans, ["d4"]);
 const mate = [msg(A, "/blind"), msg(A, "1.f3"), msg(B, "1...e5"), msg(A, "2.g4"), msg(B, "2...Qh4#")];
 eq("체크메이트로 자동 종료", G(mate).result, { kind: "checkmate", winnerColor: "b" });
+// (v0.5.7) 수로 인식된 메시지만 백/흑 색이 매겨진다 — 잡담·같은 사람의 연속 수·/draw는 빠진다.
+{
+  const list = [msg(A, "/blind"), msg(B, "좋아"), msg(A, "1.e4"), msg(A, "1...e5"), msg(B, "1...e5"), msg(A, "/draw"), msg(A, "2.Nf3")];
+  const mc = deriveBlindGame(list).moveColors, idOf = (i) => list[i].id;
+  eq("수 말풍선 색", mc, { [idOf(2)]: "w", [idOf(4)]: "b", [idOf(6)]: "w" });
+}
 
 if (fails.length) {
   console.error("✖ check-chat-commands: " + fails.length + "건 실패\n  · " + fails.join("\n  · "));
