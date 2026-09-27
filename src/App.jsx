@@ -10578,7 +10578,8 @@ function ScorePop({ value, color }) {
     </span>
   );
 }
-function MinigameScoreHeader({ myScore, oppScore, oppLabel, center }) {
+// right — (v0.5.7) 상대 칸이 없는 혼자 플레이에서 오른쪽 자리에 넣을 요소(예: 다시하기 버튼).
+function MinigameScoreHeader({ myScore, oppScore, oppLabel, center, right }) {
   const lead = myScore > oppScore ? "me" : oppScore > myScore ? "opp" : null;
   const side = (label, score, color, isLead, align) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: align === "right" ? "row-reverse" : "row", minWidth: 0 }}>
@@ -10590,7 +10591,7 @@ function MinigameScoreHeader({ myScore, oppScore, oppLabel, center }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 12, background: "linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,.45))", border: "1px solid rgba(150,112,58,.37)", flexShrink: 0 }}>
       {side("나", myScore, MG_GOLD, lead === "me", "left")}
       <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>{center}</div>
-      {oppLabel ? side(oppLabel, oppScore, "#8FC1EC", lead === "opp", "right") : <span style={{ minWidth: 20 }} />}
+      {oppLabel ? side(oppLabel, oppScore, "#8FC1EC", lead === "opp", "right") : (right || <span style={{ minWidth: 20 }} />)}
     </div>
   );
 }
@@ -10909,7 +10910,7 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   useEffect(() => {
     if (finished || !countdownDone) return;
     if (rounds.length === 0) { sbRpc("coord_reveal_next", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
-    if (!round || !round.winner) return;
+    if (!round || !round.winner || rounds.length >= COORD_TOTAL_ROUNDS) return; // 마지막 라운드 뒤엔 다음 라운드가 없다 — 결과 확정은 아래 effect
     const delay = Math.max(500, 900 - (Date.now() - new Date(round.resolvedAt || round.revealedAt).getTime()));
     const t = setTimeout(() => {
       if (advanceLockRef.current) return;
@@ -10920,11 +10921,15 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }, [game.id, rounds.length, round && round.winner, finished, countdownDone]);
   // 총 라운드가 다 찼으면 결과를 확정한다 — coord_finish는 sans에 이미 서버가 기록해 둔 라운드
   // 승자만 다시 세어 계산하므로, 누가(또는 양쪽 다) 불러도 결과는 항상 같다.
+  // (v0.5.7 BUG-033) 예전 의존성은 [game.id, rounds.length, finished]뿐이었다 — 마지막(15번째) 라운드가 공개될 때는 아직 승자가 없어
+  // 그냥 지나가고, 그 뒤 승자가 기록돼도 라운드 수가 그대로라 이 effect가 다시 돌지 않아 결과가 확정되지 않았다(아래 reveal_next도
+  // 15라운드에선 행을 그대로 돌려줘 아무 변화가 없었다). 마지막 라운드의 승자를 의존성에 넣는다. 서버도 마지막 라운드 정답 클릭에서
+  // 곧장 결과를 확정한다(coord_click) — 둘 중 하나만 동작해도 바로 정산 화면이 뜬다.
+  const lastWinner = rounds.length ? rounds[rounds.length - 1].winner : null;
   useEffect(() => {
-    if (finished || rounds.length < COORD_TOTAL_ROUNDS) return;
-    const last = rounds[rounds.length - 1];
-    if (last && last.winner) sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
-  }, [game.id, rounds.length, finished]);
+    if (finished || rounds.length < COORD_TOTAL_ROUNDS || !lastWinner) return;
+    sbRpc("coord_finish", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { });
+  }, [game.id, rounds.length, lastWinner, finished]);
   const onCell = (sq) => {
     if (finished || !round || round.winner || !countdownDone) return;
     if (myClicks.some((x) => x.sq === sq)) return;
@@ -11583,7 +11588,10 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch }) {
   const left = endAt - Math.max(now, startAt);
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? T.blunder : T.ink, fontVariantNumeric: "tabular-nums" }}>{Math.ceil(left / 1000)}초</span>} />
+      {/* (v0.5.7, 사용자 요청) 혼자 플레이 중에도 다시하기 — 보드를 새로 마운트해(허브의 onRematch = runKey 증가) 카운트다운·타이머·점수·
+          클릭 기록을 모두 처음 상태로 되돌린다. 기록 저장은 시간이 다 됐을 때만 하므로 중간에 다시 해도 기록에 남지 않는다. */}
+      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? T.blunder : T.ink, fontVariantNumeric: "tabular-nums" }}>{Math.ceil(left / 1000)}초</span>}
+        right={onRematch ? <button onClick={onRematch} className="press" aria-label="다시하기" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(150,112,58,.45)", background: "rgba(255,255,255,.6)", color: T.ink, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}><RotateCcw size={13} />다시하기</button> : null} />
       <MinigameTimeBar pct={left / COORD_SOLO_MS} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
