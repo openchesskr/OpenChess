@@ -77,7 +77,7 @@ import {
 import { layoutDexTree, placeDexLabels, dexEdgeGeometry, DEX_LAYOUT } from "./lib/dexTreeLayout.js";
 import {
   knightNeighbors as knightNeighborsClient, knightDangerFor, knightOwnBlocked, knightApplyMove, knightCatcherOf,
-  knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightGenRound, knightSafeWalls,
+  knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightGenRound, knightSafeWalls, knightJudge,
 } from "./lib/knightRace.js";
 import {
   CHAT_PAGE, chatFetchPage, chatSendMessage, chatSearch, chatReactionsFetch, chatReactToggle, chatPollVotesFetch, chatPollVote,
@@ -10495,24 +10495,7 @@ function CoordRaceGrid({ onCell, myClicks, oppClicks, size = 320, hideCoords, fl
     </div>
   );
 }
-// 보드 위 칸 색이 각각 무슨 뜻인지 알려주는 범례 — 금색 테두리 칸은 내 클릭, 파란 테두리 칸은
-// 상대(또는 봇) 클릭, 초록/빨강 채움은 그 클릭이 정답/오답이었는지를 나타낸다.
-function CoordClickLegend({ oppLabel }) {
-  const chip = (border, fill, label) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-      <span aria-hidden="true" style={{ width: 11, height: 11, borderRadius: 3, background: fill, boxShadow: border ? "inset 0 0 0 2px " + border : "none", display: "inline-block", flexShrink: 0 }} />
-      {label}
-    </span>
-  );
-  return (
-    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
-      {chip(MG_GOLD, "rgba(90,58,34,.14)", "나")}
-      {chip("#6FA8DC", "rgba(90,58,34,.14)", oppLabel)}
-      {chip(null, "rgba(60,168,60,.92)", "정답")}
-      {chip(null, "rgba(196,60,50,.92)", "오답")}
-    </div>
-  );
-}
+// (v0.5.7, 사용자 요청) 보드 아래 색 범례(CoordClickLegend)는 없앴다 — 칸 색·상대 프로필 사진만으로 충분히 구분된다.
 // 두 보드(내 보드/상대 보드) 위에 붙는 작은 이름표.
 // (v0.5.1 UI, 사용자 요청) 미니게임 화면이 전체화면 어두운 배경으로 바뀌면서 밝은 잉크색(T.inkSoft)
 // 대신 옅은 아이보리로 바꿨다 — flexShrink:0도 함께 줘 두 보드가 flex:1로 남은 공간을 나눠 가질 때
@@ -10796,7 +10779,8 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
 }
 const fmtSec = (ms) => (ms == null ? "-" : (Math.max(0, ms) / 1000).toFixed(1) + "초");
 // 나이트 경주 한 라운드 정산 행·사유. me/opp: { reached, moves, ms, captured } | null(미보고).
-function knightSettleInfo(me, opp, result, par, solo) {
+// dist — (v0.5.7) 거리 판정 라운드면 { basis, me, opp, meMs, oppMs }: 목표까지 거리·소모 시간 행과 사유를 더한다.
+function knightSettleInfo(me, opp, result, par, solo, dist) {
   const st = (x) => (!x ? "미완료" : x.reached ? "도착" : x.captured ? "잡힘" : "실패");
   const both = me && opp && me.reached && opp.reached;
   const rows = [
@@ -10809,7 +10793,14 @@ function knightSettleInfo(me, opp, result, par, solo) {
   else if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 도착해 이겼어요." : "상대가 더 적은 수로 도착했어요.") : result === "me" ? "같은 수 — 더 빨리 도착해 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 도착했어요." : "수도 시간도 같아 비겼어요.";
   else if (me && me.reached) reason = opp && opp.captured ? "상대 나이트가 잡혔어요 — 도착한 내가 이겼어요." : "나만 도착해 이겼어요.";
   else if (opp && opp.reached) reason = me && me.captured ? "나이트가 잡혔어요 — 도착한 상대가 이겼어요." : "상대만 도착했어요.";
+  else if (dist && dist.basis === "distance") reason = "둘 다 도착하지 못했어요 — " + (result === "me" ? "내가 목표에 더 가까워 이겼어요." : "상대가 목표에 더 가까웠어요.");
+  else if (dist && dist.basis === "distanceTime") reason = "둘 다 도착 못 했고 거리도 같아요 — " + (result === "draw" ? "시간도 같아 무승부예요." : result === "me" ? "시간을 덜 써서 이겼어요." : "상대가 시간을 덜 썼어요.");
   else reason = "둘 다 도착하지 못했어요" + (result === "draw" ? " — 무승부예요." : " — 목표에 더 가까이 간 쪽이 이겼어요.");
+  if (dist && (dist.basis === "distance" || dist.basis === "distanceTime")) {
+    const dl = (d) => (d == null ? "-" : d >= 99 ? "잡힘" : d + "수 거리");
+    rows.push({ label: "목표까지", me: dl(dist.me), opp: dl(dist.opp), win: dist.me !== dist.opp ? ((dist.me ?? 99) < (dist.opp ?? 99) ? "me" : "opp") : null });
+    if (dist.basis === "distanceTime") rows.push({ label: "소모 시간", me: fmtSec(dist.meMs), opp: fmtSec(dist.oppMs), win: dist.meMs !== dist.oppMs ? (dist.meMs < dist.oppMs ? "me" : "opp") : null });
+  }
   return { rows, reason: reason + (par ? " (이 라운드 최소 " + par + "수)" : "") };
 }
 // 러시아워 한 라운드 정산 행·사유. me/opp: { solved, moves, ms, captured } | null.
@@ -10981,7 +10972,6 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
-      <CoordClickLegend oppLabel="상대" />
     </div>
   );
 }
@@ -11082,7 +11072,6 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
-      <CoordClickLegend oppLabel="봇" />
     </div>
   );
 }
@@ -11857,8 +11846,8 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 제한시간은 1라운드 5초에서 라운드마다 늘어나고(대신 기물과 거리도 늘어요), 5전 3선승이에요.</div>
-        <div>• 라운드가 진행될수록 상대 색 기물이 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요. 기물의 공격선은 실제 체스처럼 다른 기물에 막혀요.</div>
+        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b>이 이겨요. 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어나고, 5전 3선승(Bo5)이에요.</div>
+        <div>• 1·2라운드는 방해 기물 없이 거리만, <b style={{ color: T.ink }}>3라운드부터 상대 색 기물이 나와</b> 라운드마다 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요. 기물의 공격선은 실제 체스처럼 다른 기물에 막혀요.</div>
         <div>• <b style={{ color: T.ink }}>마지막 5라운드에는 상대 퀸이 나와요</b> — 첫 수부터 정확히 골라야 하는 가장 어려운 라운드예요.</div>
         <div>• <b style={{ color: T.ink }}>상대 나이트가 있는 칸으로 뛰어들면 상대 나이트를 잡을 수 있어요</b> — 잡힌 쪽은 그 라운드가 그대로 끝나요.</div>
         <div>• 혼자 플레이하기는 5라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
@@ -11908,7 +11897,94 @@ const KNIGHT_BO_TARGET = 3;
 // "내 색이 흑이면 보드를 뒤집는다"는 규칙만으로 이게 보장된다).
 // (v0.5.4) dangerForMe — 들어가면 잡히는 칸(빨강, 이제 누를 수는 있다), removed — 잡혀서 사라진 기물 칸,
 // myCaptured/oppCaptured — 그 나이트가 잡혀 시도가 끝났으면 흐리게 + 빨간 X로 그린다.
-function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets, dangerForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "", myCaptured, oppCaptured }) {
+// judge(흑백 기준) → 정산 화면용(나/상대 기준)
+function knightDistView(judge, myColor) {
+  if (!judge || (judge.basis !== "distance" && judge.basis !== "distanceTime")) return null;
+  const w = myColor === "w";
+  return { basis: judge.basis, me: w ? judge.wDist : judge.bDist, opp: w ? judge.bDist : judge.wDist, meMs: w ? judge.wMs : judge.bMs, oppMs: w ? judge.bMs : judge.wMs };
+}
+// ---- (v0.5.7, 사용자 요청) 거리 판정 연출 ----
+// 둘 다 목표에 못 닿은 라운드는 목표까지의 나이트 거리로 판정한다(knightJudge / 서버 knight_resolve_round의 round.judge). 그걸 눈으로
+// 보여 주려고, 목표 칸에서 나이트 수(한 번 뛸 때마다 한 겹)로 칸들이 차례로 금색으로 물들며 퍼져 나간다 — 두 나이트 칸은 판정에 쓴 실제
+// 거리(위협 칸을 피해 잰 값, 잡힌 나이트는 닿지 않음)의 겹에서 물든다. 더 가까운 나이트 칸이 먼저 물들고, 그 칸에 체크메이트 승자 연출
+// (초록 칸 + 흰 왕관 + "승자", GameEndFx)이 뜬다. 거리가 같으면 두 칸이 동시에 물든 뒤 각자 소모 시간을 띄우고, 적게 쓴 쪽에 왕관.
+const KD_STEP_MS = 320;          // 한 겹 퍼지는 간격
+const KD_CAP = 8;                // 연출할 최대 겹(거리 99 = 잡힘은 물들지 않는다)
+function knightDistFxPlan(judge) {
+  if (!judge || (judge.basis !== "distance" && judge.basis !== "distanceTime")) return null;
+  const lit = (d) => (d == null || d >= 99 ? null : Math.min(d, KD_CAP) * KD_STEP_MS);
+  const wAt = lit(judge.wDist), bAt = lit(judge.bDist);
+  const tie = judge.basis === "distanceTime";
+  const winAt = judge.winner === "w" ? wAt : judge.winner === "b" ? bAt : Math.max(wAt || 0, bAt || 0);
+  const timesAt = tie ? (winAt || 0) + 350 : null;
+  const crownAt = (winAt || 0) + (tie ? 1250 : 320);
+  const totalMs = crownAt + (judge.winner === "draw" ? 900 : GAME_END_MS + 350);
+  return { wAt, bAt, tie, timesAt, crownAt, totalMs };
+}
+function knightDistFxMs(judge) { const p = knightDistFxPlan(judge); return p ? p.totalMs : 0; }
+const KD_CSS = "@keyframes kdLit{0%{opacity:0;transform:scale(.55)}55%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}"
+  + "@keyframes kdRing{0%{opacity:.9;transform:translate(-50%,-50%) scale(0)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}";
+function KnightDistFx({ size, flip, target, info }) {
+  const { judge, wSq, bSq } = info;
+  const plan = knightDistFxPlan(judge);
+  const [stage, setStage] = useState(0); // 1 시간 표시, 2 왕관
+  useEffect(() => {
+    if (!plan) return;
+    const ts = [];
+    if (plan.timesAt != null) ts.push(setTimeout(() => setStage((s) => Math.max(s, 1)), plan.timesAt));
+    ts.push(setTimeout(() => { setStage(2); fx(judge.winner === "draw" ? "roundDraw" : "roundWin"); }, plan.crownAt));
+    return () => ts.forEach(clearTimeout);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const layers = useMemo(() => {
+    // 목표에서의 나이트 거리(벽 없이) — 일반 칸의 물드는 겹
+    const d = {}; const q = [target]; d[target] = 0;
+    while (q.length) { const sq = q.shift(); for (const n of knightNeighborsClient(sq, [])) if (d[n] == null) { d[n] = d[sq] + 1; q.push(n); } }
+    return d;
+  }, [target]);
+  if (!plan) return null;
+  const cell = size / 8;
+  const rc = (sq) => { const r = 8 - parseInt(sq.slice(1), 10), c = sq.charCodeAt(0) - 97; return flip ? [7 - r, 7 - c] : [r, c]; };
+  const maxAt = Math.max(plan.wAt || 0, plan.bAt || 0, plan.crownAt - 320);
+  const cells = [];
+  for (const sq of Object.keys(layers)) {
+    let at = Math.min(layers[sq], KD_CAP) * KD_STEP_MS;
+    if (sq === wSq) at = plan.wAt; else if (sq === bSq) at = plan.bAt;
+    if (at == null || at > maxAt) continue;
+    const [vr, vc] = rc(sq);
+    const knight = sq === wSq || sq === bSq;
+    cells.push(<span key={sq} aria-hidden="true" style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, zIndex: 1, pointerEvents: "none",
+      background: sq === target ? "rgba(236,203,134,.75)" : knight ? "rgba(236,190,90,.72)" : "rgba(236,203,134,.42)", boxShadow: "inset 0 0 0 " + (knight ? 3 : 1.5) + "px " + (knight ? T.brassHi : "rgba(236,203,134,.85)"),
+      animation: "kdLit 360ms cubic-bezier(.2,.9,.3,1.2) " + at + "ms both" }} />);
+  }
+  const [tr, tc] = rc(target);
+  const pill = (sq, ms, win) => {
+    const [vr, vc] = rc(sq);
+    return (
+      <motion.span key={"t" + sq} initial={{ opacity: 0, y: 6, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 420, damping: 22 }}
+        // 시간 알약은 칸 아래(맨 아래 줄이면 위)에 — 오른쪽 위는 왕관 "승자" 알약·배지 자리라 겹치지 않게
+        style={{ position: "absolute", left: vc * cell + cell / 2, top: vr === 7 ? vr * cell - 4 : (vr + 1) * cell + 3, transform: vr === 7 ? "translate(-50%,-100%)" : "translate(-50%,0)", zIndex: 9, pointerEvents: "none", whiteSpace: "nowrap",
+          padding: "2px 7px", borderRadius: 999, fontSize: Math.max(10, cell * 0.24), fontWeight: 900, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums",
+          background: stage >= 2 && win ? GAME_END_COLOR.win : "rgba(36,21,9,.88)", color: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)" }}>{(Math.max(0, ms || 0) / 1000).toFixed(1)}초</motion.span>
+    );
+  };
+  const winSq = judge.winner === "w" ? wSq : judge.winner === "b" ? bSq : null;
+  return (
+    <>
+      <style>{KD_CSS}</style>
+      <span aria-hidden="true" style={{ position: "absolute", left: (tc + 0.5) * cell, top: (tr + 0.5) * cell, width: size * 2.2, height: size * 2.2, borderRadius: "50%", zIndex: 1, pointerEvents: "none",
+        border: "3px solid " + T.brassHi, boxShadow: "0 0 18px rgba(236,203,134,.7)", animation: "kdRing " + Math.max(900, maxAt + 400) + "ms ease-out both" }} />
+      {cells}
+      {stage >= 1 && plan.tie && wSq && bSq && <>{pill(wSq, judge.wMs, judge.winner === "w")}{pill(bSq, judge.bMs, judge.winner === "b")}</>}
+      {stage >= 2 && winSq && (() => { const [vr, vc] = rc(winSq); return (
+        <div style={{ position: "absolute", left: vc * cell, top: vr * cell, width: cell, height: cell, zIndex: 8, pointerEvents: "none" }}>
+          <GameEndFx role="win" endFx={{ kind: "checkmate" }} cell={cell} vc={vc} vr={vr} />
+        </div>
+      ); })()}
+    </>
+  );
+}
+// distFx — 거리 판정 라운드의 연출 정보 { judge, wSq, bSq } (없으면 연출 없음).
+function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets, dangerForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "", myCaptured, oppCaptured, distFx }) {
   const oppInfo = useContext(MgOppContext); // (v0.5.7) 상대(봇) 나이트가 있는 칸 우상단에 상대 프로필 사진
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
@@ -11981,6 +12057,7 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
     <div {...drag.bind} style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", touchAction: "none" }}>
       <style>{KNIGHT_GRID_CSS}</style>
       {cells}
+      {distFx && <KnightDistFx key={"kd" + roundKey} size={size} flip={flip} target={target} info={distFx} />}
       {drag.ghost}
       {catchers.map((h) => {
         const [fr, fc] = viewRC(h.sq), [tr, tc] = viewRC(h.to), cell = size / 8;
@@ -12144,7 +12221,8 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <KnightRaceGrid size={boardSize} myPos={pos} oppPos={oppPos} target={round.target} hazards={round.hazards} removed={[...taken, ...oppTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor={myColor} oppColor={oppColor} onCell={onCell} flip={myColor === "b"} roundKey={roundIdx}
-            myCaptured={captured || !!(myRep && myRep.captured)} oppCaptured={!!(oppRep && oppRep.captured) || (!!tookOppSq && oppPos === tookOppSq && pos === tookOppSq)} />
+            myCaptured={captured || !!(myRep && myRep.captured)} oppCaptured={!!(oppRep && oppRep.captured) || (!!tookOppSq && oppPos === tookOppSq && pos === tookOppSq)}
+            distFx={round.winner && round.judge ? { judge: round.judge, wSq: round.reports && round.reports.w && round.reports.w.finalSq, bSq: round.reports && round.reports.b && round.reports.b.finalSq } : null} />
           <MinigameCountdown startAt={startMs} />
           <MinigameRoundBanner result={roundResult} roundKey={roundIdx} />
         </motion.div>
@@ -12271,23 +12349,23 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [winner, setWinner] = useState(null);
+  const [distFx, setDistFx] = useState(null);
   useEffect(() => {
     if (!myReport || (!solo && !botReport) || winner) return;
-    let w;
-    if (solo) w = myReport.reached ? "w" : "b";
-    // (v0.5.4) 둘 다 도착하면 더 적은 수, 수가 같으면 더 짧은 시간이 이긴다(서버 knight_resolve_round와 같은 규칙).
-    else if (myReport.reached && botReport.reached) w = myReport.moves !== botReport.moves ? (myReport.moves < botReport.moves ? "w" : "b") : myReport.atMs === botReport.atMs ? "draw" : myReport.atMs < botReport.atMs ? "w" : "b";
-    else if (myReport.reached) w = "w";
-    else if (botReport.reached) w = "b";
-    // (v0.5.5) 둘 다 못 갔으면 잡힌 쪽이 진다(서버 knight_resolve_round에서 잡힌 쪽 거리를 99로 보는 것과 같다).
-    else if (!!botReport.captured !== !!myReport.captured) w = botReport.captured ? "w" : "b";
-    // (설계) 봇은 생성 시점부터 항상 짧은 정답 경로가 보장돼 있어 시간 안에 실패하는 경우가 사실상
-    // 없다 — 둘 다 실패하는 경우까지 서버(knight_resolve_round)와 같은 거리 타이브레이커를 두는 대신
-    // 무승부로 단순화했다(실질적으로 거의 일어나지 않는 경로라 과설계를 피했다).
-    else w = "draw";
-    setWinner(w);
-    onRoundDone(w, myReport, botReport);
-  }, [myReport, botReport, onRoundDone, winner]);
+    if (solo) { const w = myReport.reached ? "w" : "b"; setWinner(w); onRoundDone(w, myReport, botReport); return; }
+    // (v0.5.7) 판정은 서버 knight_resolve_round와 같은 knightJudge 하나로 — 예전엔 둘 다 못 가면(잡힌 쪽 제외) 그냥 무승부였다.
+    // 둘 다 못 갔으면 목표까지 거리 → 거리도 같으면 소모 시간. 거리로 정했으면 금색 퍼짐·왕관 연출을 다 보여 준 뒤 라운드를 넘긴다.
+    const j = knightJudge(round,
+      { ...myReport, finalSq: posRef.current, taken },
+      { ...botReport, finalSq: botPosRef.current, taken: botTaken });
+    setWinner(j.winner);
+    const fxMs = knightDistFxMs(j);
+    if (fxMs) {
+      setDistFx({ judge: j, wSq: posRef.current, bSq: botPosRef.current });
+      const t = setTimeout(() => onRoundDone(j.winner, myReport, botReport, j), fxMs);
+      timersRef.current.push(t);
+    } else onRoundDone(j.winner, myReport, botReport, j);
+  }, [myReport, botReport, onRoundDone, winner]); // eslint-disable-line react-hooks/exhaustive-deps
   const legalTargets = useMemo(() => (myReport || !started ? [] : knightNeighborsClient(pos, knightOwnBlocked(round, "w", botTaken))), [pos, round, botTaken, myReport, started]);
   const onCell = (sq) => {
     if (myReportRef.current || !started || !legalTargets.includes(sq)) return;
@@ -12321,7 +12399,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
-          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} />
+          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} />
           <MinigameCountdown startAt={startRef.current} />
           <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공!" : "실패") : null} />
         </motion.div>
@@ -12361,13 +12439,13 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
     if (rounds.length === 0) { setRounds([{ ...knightGenRound(0), winner: null }]); return; }
     if (round && round.winner && settle.phase === "done") setRounds((rs) => (rs.length === roundIdx + 1 ? [...rs, { ...knightGenRound(rs.length), winner: null }] : rs));
   }, [rounds.length, round && round.winner, finished, settle.phase]); // eslint-disable-line react-hooks/exhaustive-deps
-  const onRoundDone = useCallback((winner, mine, bot) => {
+  const onRoundDone = useCallback((winner, mine, bot, judge) => {
     const pack = (x) => (x ? { reached: x.reached, moves: x.moves, ms: x.atMs, captured: !!x.captured } : null);
-    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner, mine: pack(mine), bot: pack(bot) }; return copy; });
+    setRounds((rs) => { const i = rs.length - 1; if (i < 0 || rs[i].winner) return rs; const copy = rs.slice(); copy[i] = { ...copy[i], winner, mine: pack(mine), bot: pack(bot), judge: judge || null }; return copy; });
   }, []);
   if (settle.phase === "settle") {
     const res = round.winner === "w" ? "me" : round.winner === "b" ? "opp" : "draw";
-    const info = knightSettleInfo(round.mine, round.bot, res, round.par);
+    const info = knightSettleInfo(round.mine, round.bot, res, round.par, false, knightDistView(round.judge, "w"));
     return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={botWins} oppLabel="봇"
       rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
   }
@@ -12413,7 +12491,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     if (finished) return;
     if (rounds.length === 0) { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
     if (round && round.winner) {
-      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL + KNIGHT_ARRIVE_MS);
+      const t = setTimeout(() => { sbRpc("knight_start_round", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); }, ROUND_SETTLE_TOTAL + KNIGHT_ARRIVE_MS + knightDistFxMs(round.judge));
       return () => clearTimeout(t);
     }
   }, [game.id, rounds.length, round && round.winner, finished]);
@@ -12422,17 +12500,19 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const hasWinner = !!(round && round.winner);
   const resolvedAtMs = round && round.resolvedAt ? Date.parse(round.resolvedAt) : null;
   const [revealKey, setRevealKey] = useState(null);
+  // (v0.5.7) 거리 판정 라운드면 금색 퍼짐·왕관 연출(knightDistFxMs)까지 보여 준 뒤에 배너·정산으로 — 두 화면 모두 같은 round.judge로 같은 시간을 센다.
+  const revealDelay = KNIGHT_ARRIVE_MS + knightDistFxMs(round && round.judge);
   useEffect(() => {
     if (!hasWinner) return;
-    const t = setTimeout(() => setRevealKey(roundIdx), KNIGHT_ARRIVE_MS);
+    const t = setTimeout(() => setRevealKey(roundIdx), revealDelay);
     return () => clearTimeout(t);
-  }, [hasWinner, roundIdx]);
-  const revealed = hasWinner && (revealKey === roundIdx || !!(resolvedAtMs && Date.now() - resolvedAtMs > KNIGHT_ARRIVE_MS + 2000));
-  const settle = useRoundSettle(roundIdx, revealed, resolvedAtMs ? resolvedAtMs + KNIGHT_ARRIVE_MS : null);
+  }, [hasWinner, roundIdx, revealDelay]);
+  const revealed = hasWinner && (revealKey === roundIdx || !!(resolvedAtMs && Date.now() - resolvedAtMs > revealDelay + 2000));
+  const settle = useRoundSettle(roundIdx, revealed, resolvedAtMs ? resolvedAtMs + revealDelay : null);
   if (settle.phase === "settle") {
     const oppColor = isWhite ? "b" : "w";
     const res = round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw";
-    const info = knightSettleInfo(knightRepInfo(round, myColor), knightRepInfo(round, oppColor), res, round.par);
+    const info = knightSettleInfo(knightRepInfo(round, myColor), knightRepInfo(round, oppColor), res, round.par, false, knightDistView(round.judge, myColor));
     return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={oppWins} oppLabel="상대"
       rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
   }
@@ -12812,7 +12892,8 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
           <MinigameRoundBanner result={result} roundKey={roundKey} />
         </motion.div>
       </div>
-      <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
+      {/* (v0.5.7, 사용자 요청) 안내 문구가 너무 연해 잘 안 보였다 — 본문 잉크색·굵게 */}
+      <div style={{ textAlign: "center", fontSize: 12, color: T.ink, fontWeight: 800, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
         {result ? "" : done ? (p.status === "win" ? "풀었어요! " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡혔어요 — 결과를 기다리는 중..." : "시간 초과 — 결과를 기다리는 중...") : (opp.solved ? opp.label + "가 이미 풀었어요 — 더 적은 수로 역전하세요!" : "목표: 최단 " + level.par + "수")}
       </div>
       <RushMsg msg={p.msg} />

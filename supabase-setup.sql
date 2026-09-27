@@ -2528,9 +2528,11 @@ returns jsonb language plpgsql volatile as $$
 declare
   v_idx int := least(greatest(p_round_idx, 0), 4);
   -- 행: minDist, maxDist, pairs, minDetour, queens, onlyFirst(0/1), timeMs
-  v_specs int[][] := array[[3,4,1,0,0,0,5000],[4,5,2,1,0,0,8000],[5,6,3,1,0,0,11000],[6,7,4,1,0,0,14000],[6,8,5,2,1,1,17000]];
+  -- (v0.5.7, 사용자 요청) 1·2라운드는 방해 기물 없이, 3라운드부터 기물이 늘고, 5라운드는 퀸 — 시간 10초부터 라운드마다 +2.5초.
+  -- src/lib/knightRace.js KNIGHT_ROUND_SPECS와 같아야 한다(scripts/check-knight-rounds.mjs가 비교).
+  v_specs int[][] := array[[3,4,0,0,0,0,10000],[4,5,0,0,0,0,12500],[5,6,2,1,0,0,15000],[6,7,4,1,0,0,17500],[6,8,5,2,1,1,20000]];
   -- 5라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
-  v_queen_ladder int[][] := array[[6,8,5,2,1,1,17000],[6,8,5,2,1,0,17000],[6,8,5,1,1,0,17000],[5,8,4,1,1,0,17000],[4,8,3,0,1,0,17000],[3,8,2,0,1,0,17000]];
+  v_queen_ladder int[][] := array[[6,8,5,2,1,1,20000],[6,8,5,2,1,0,20000],[6,8,5,1,1,0,20000],[5,8,4,1,1,0,20000],[4,8,3,0,1,0,20000],[3,8,2,0,1,0,20000]];
   v_is_queen boolean; v_time int; v_steps int; v_step int; v_row int[];
   v_try int; v_t int; v_p int;
   v_min int; v_max int; v_pairs int; v_detour int; v_queens int; v_only boolean;
@@ -2738,15 +2740,17 @@ grant execute on function public.knight_move_ping(bigint, int, text, int, text[]
 
 -- 라운드 확정 — 둘 다 보고했거나 제한시간(+2초 여유)이 지났을 때만 승자를 정한다. 한쪽만 보고했으면
 -- 보고한 쪽이 이기고(도달 여부 무관 — 시도조차 안 보고한 쪽보다 항상 우선), 둘 다 도달했으면 더 적은 수,
--- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 거리→남은 수→남은 시간 순 타이브레이커로 정한다.
+-- 같으면 서버가 기록한 보고 시각이 빠른 쪽(v0.5.4), 둘 다 도달 못 했으면 목표까지 거리 → (v0.5.7, 사용자 요청) 거리도 같으면 소모 시간이
+-- 적은 쪽(예전의 "남은 수" 단계는 뺐다 — 화면 연출과 같은 순서). 판정 근거는 round.judge에 남겨 두 화면이 같은 연출(금색 퍼짐 + 승자 왕관,
+-- 거리 동률이면 시간 표시)을 한다 — src/lib/knightRace.js knightJudge와 같은 규칙.
 -- 이 라운드 결과로 한쪽이 3승(Bo5)에 닿거나 5라운드를 다 치렀으면 매치 결과도 함께 확정한다.
 create or replace function public.knight_resolve_round(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
 declare
   v_me uuid := auth.uid(); v_game public.pvp_games; v_rounds jsonb; v_round jsonb; v_round_idx int;
   v_wrep jsonb; v_brep jsonb; v_grace constant int := 2000; v_winner text;
-  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int; v_w_remain int; v_b_remain int;
-  v_w_time numeric; v_b_time numeric; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
+  v_w_reached boolean; v_b_reached boolean; v_w_dist int; v_b_dist int;
+  v_w_ms numeric; v_b_ms numeric; v_basis text; v_w_wins int := 0; v_b_wins int := 0; r jsonb;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
@@ -2765,14 +2769,18 @@ begin
      and (v_round ->> 'startedAt')::timestamptz + ((v_round->>'timeLimitMs')::int + v_grace || ' ms')::interval > now() then
     return v_game; -- 아직 확정할 때가 아니다(둘 다 보고 전이고 시간도 안 지남)
   end if;
+  v_w_ms := case when v_wrep is null then null else round(extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000) end;
+  v_b_ms := case when v_brep is null then null else round(extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000) end;
+  v_basis := 'report';
   v_w_reached := coalesce((v_wrep ->> 'reached')::boolean, false);
   v_b_reached := coalesce((v_brep ->> 'reached')::boolean, false);
   if v_wrep is not null and v_brep is null then v_winner := 'w';
   elsif v_brep is not null and v_wrep is null then v_winner := 'b';
   elsif v_wrep is null and v_brep is null then v_winner := 'draw';
-  elsif v_w_reached and not v_b_reached then v_winner := 'w';
-  elsif v_b_reached and not v_w_reached then v_winner := 'b';
+  elsif v_w_reached and not v_b_reached then v_winner := 'w'; v_basis := 'reach';
+  elsif v_b_reached and not v_w_reached then v_winner := 'b'; v_basis := 'reach';
   elsif v_w_reached and v_b_reached then
+    v_basis := case when (v_wrep->>'movesUsed')::int <> (v_brep->>'movesUsed')::int then 'moves' else 'time' end;
     -- (v0.5.4, 사용자 요청) 둘 다 도착했으면 더 적은 수, 수가 같으면 서버가 기록한 도착(보고) 시각이 빠른 쪽.
     if (v_wrep->>'movesUsed')::int <> (v_brep->>'movesUsed')::int then
       v_winner := case when (v_wrep->>'movesUsed')::int < (v_brep->>'movesUsed')::int then 'w' else 'b' end;
@@ -2788,19 +2796,14 @@ begin
       public.knight_danger(v_round, 'b', array(select jsonb_array_elements_text(coalesce(v_brep->'taken', '[]'::jsonb))))), 99) end;
     if v_w_dist <> v_b_dist then
       v_winner := case when v_w_dist < v_b_dist then 'w' else 'b' end;
+      v_basis := 'distance';
     else
-      v_w_remain := (v_round->>'moveBudget')::int - (v_wrep->>'movesUsed')::int;
-      v_b_remain := (v_round->>'moveBudget')::int - (v_brep->>'movesUsed')::int;
-      if v_w_remain <> v_b_remain then
-        v_winner := case when v_w_remain > v_b_remain then 'w' else 'b' end;
-      else
-        v_w_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_wrep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
-        v_b_time := (v_round->>'timeLimitMs')::int - extract(epoch from ((v_brep->>'at')::timestamptz - (v_round->>'startedAt')::timestamptz)) * 1000;
-        v_winner := case when v_w_time = v_b_time then 'draw' when v_w_time > v_b_time then 'w' else 'b' end;
-      end if;
+      v_winner := case when v_w_ms = v_b_ms then 'draw' when v_w_ms < v_b_ms then 'w' else 'b' end;
+      v_basis := 'distanceTime';
     end if;
   end if;
   v_round := jsonb_set(v_round, array['winner'], to_jsonb(v_winner));
+  v_round := jsonb_set(v_round, array['judge'], jsonb_strip_nulls(jsonb_build_object('basis', v_basis, 'wDist', v_w_dist, 'bDist', v_b_dist, 'wMs', v_w_ms, 'bMs', v_b_ms)));
   v_round := jsonb_set(v_round, array['resolvedAt'], to_jsonb(now()));
   v_rounds := jsonb_set(v_rounds, array[v_round_idx::text], v_round);
   for r in select * from jsonb_array_elements(v_rounds) loop

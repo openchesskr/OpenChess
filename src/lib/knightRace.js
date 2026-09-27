@@ -150,15 +150,16 @@ export function knightExactPath(round, color, start) {
 }
 
 // ---- 라운드 생성 ----
-// 1~4라운드는 v0.5.5 곡선 그대로. (v0.5.7, 사용자 요청) 5라운드는 반드시 상대 퀸이 나오는 매우 어려운 라운드 —
-// 기물 5쌍 중 1쌍이 퀸, par 6~8, 기물이 없을 때보다 최소 2수 더 돌아가야 하고(minDetour 2), 최단 경로로 가는 첫 수가
-// 딱 하나뿐이다(onlyFirst — 처음 한 수를 잘못 고르면 최단으로는 못 간다).
+// (v0.5.7, 사용자 요청) Bo5(3선승) 난이도 곡선 — 1·2라운드는 방해 기물이 아예 없이 거리만(3~4 → 4~5), 3라운드부터 기물이 들어와
+// 점점 늘고(2쌍 → 4쌍) 돌아가야 하는 길도 생기며, 5라운드는 반드시 상대 퀸이 나오는 매우 어려운 라운드(기물 5쌍, par 6~8, 기물이
+// 없을 때보다 최소 2수 더 돌아가고, 최단 경로로 가는 첫 수가 딱 하나뿐). 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어난다
+// (예전 5·8·11·14·17초에서 기본 +5초, 증분 3초 → 2.5초). 서버 _knight_gen_round의 표와 같아야 한다(check-knight-rounds가 비교).
 export const KNIGHT_ROUND_SPECS = [
-  { minDist: 3, maxDist: 4, pairs: 1, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 5000 },
-  { minDist: 4, maxDist: 5, pairs: 2, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 8000 },
-  { minDist: 5, maxDist: 6, pairs: 3, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 11000 },
-  { minDist: 6, maxDist: 7, pairs: 4, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 14000 },
-  { minDist: 6, maxDist: 8, pairs: 5, minDetour: 2, queens: 1, onlyFirst: true, timeMs: 17000 },
+  { minDist: 3, maxDist: 4, pairs: 0, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 10000 },
+  { minDist: 4, maxDist: 5, pairs: 0, minDetour: 0, queens: 0, onlyFirst: false, timeMs: 12500 },
+  { minDist: 5, maxDist: 6, pairs: 2, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 15000 },
+  { minDist: 6, maxDist: 7, pairs: 4, minDetour: 1, queens: 0, onlyFirst: false, timeMs: 17500 },
+  { minDist: 6, maxDist: 8, pairs: 5, minDetour: 2, queens: 1, onlyFirst: true, timeMs: 20000 },
 ];
 export const KNIGHT_GEN_TRIES = 4000;
 
@@ -236,4 +237,30 @@ export function knightGenRound(roundIdx, opts = {}) {
     if (r) return { ...r, timeLimitMs };
   }
   return { target: "d4", whiteStart: "a1", blackStart: "g7", hazards: [], wIllegal: [], bIllegal: [], par: 2, moveBudget: 3, timeLimitMs };
+}
+
+// ---- 라운드 판정(v0.5.7) ----
+// 서버 knight_resolve_round와 같은 규칙 — 봇·혼자 모드가 이 함수를 쓰고, 서버는 같은 순서를 SQL로 계산해 round.judge에 남긴다.
+//   보고한 쪽 > 안 한 쪽 → 도착한 쪽 > 못 한 쪽 → 둘 다 도착: 적은 수 → 빠른 시간 → 둘 다 못 도착: 목표까지 거리(잡힌 나이트는 99)가
+//   가까운 쪽(basis "distance") → 거리도 같으면 소모 시간이 적은 쪽(basis "distanceTime") → 그래도 같으면 무승부.
+// rep: { reached, moves, atMs, captured, finalSq, taken } | null. 반환: { winner: "w"|"b"|"draw", basis, wDist, bDist, wMs, bMs }
+export function knightRepDistance(round, color, rep) {
+  if (!rep || rep.captured || !rep.finalSq) return 99;
+  const d = knightDistance(rep.finalSq, round.target, knightDangerFor(round, color, rep.taken || []));
+  return d == null ? 99 : d;
+}
+export function knightJudge(round, w, b) {
+  if (w && !b) return { winner: "w", basis: "report" };
+  if (b && !w) return { winner: "b", basis: "report" };
+  if (!w && !b) return { winner: "draw", basis: "report" };
+  const wMs = Math.round(w.atMs || 0), bMs = Math.round(b.atMs || 0);
+  if (w.reached && b.reached) {
+    if (w.moves !== b.moves) return { winner: w.moves < b.moves ? "w" : "b", basis: "moves", wMs, bMs };
+    return { winner: wMs === bMs ? "draw" : wMs < bMs ? "w" : "b", basis: "time", wMs, bMs };
+  }
+  if (w.reached) return { winner: "w", basis: "reach" };
+  if (b.reached) return { winner: "b", basis: "reach" };
+  const wDist = knightRepDistance(round, "w", w), bDist = knightRepDistance(round, "b", b);
+  if (wDist !== bDist) return { winner: wDist < bDist ? "w" : "b", basis: "distance", wDist, bDist, wMs, bMs };
+  return { winner: wMs === bMs ? "draw" : wMs < bMs ? "w" : "b", basis: "distanceTime", wDist, bDist, wMs, bMs };
 }
