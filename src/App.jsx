@@ -4251,7 +4251,7 @@ function QuestTag({ onClick }) {
     </Tag>
   );
 }
-function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
+function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
@@ -4271,7 +4271,7 @@ function MoveTile({ m, ply, onClick, onFocus, hideFocus, posGames, statsLoading,
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
               <div style={{ marginBottom: 6 }}><KeywordScroll kws={kws} /></div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply)}{m.disp || m.san}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply, startColor)}{m.disp || m.san}</span>
                 {m.name ? <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, wordBreak: "keep-all" }}>{m.name}</span> : m.isMain ? <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Main Line</span> : null}
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? "이론" : "…")}</span>
               </div>
@@ -15026,7 +15026,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
               {/* (v0.2.1 기능) 엔진 라인 — 모바일은 가장 아래에 표시한다. (v0.3.8 사용자 요청) 글자
                   크기를 키우고, 보드 그리드 폭(프레임 제외)이 아니라 카드 전체 폭을 채워 왼쪽(보드 왼쪽
                   끝)에 맞춰 정렬되도록 width를 100%로 바꿨다. */}
-              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} large font={SITE_FONT} />
+              <EngineLines lines={engineLines} pending={linesPending} sans={effSans} startColor={fenRoot ? fenRoot.turn : undefined} width="100%" onPlayFirst={playFree} large font={SITE_FONT} />
             </div>
           )}
         {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} />}
@@ -15091,7 +15091,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
                 <EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} />
               </div>
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
-              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} width="100%" onPlayFirst={playFree} font={SITE_FONT} /></div>
+              <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} startColor={fenRoot ? fenRoot.turn : undefined} width="100%" onPlayFirst={playFree} font={SITE_FONT} /></div>
               <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
             </>
           )}
@@ -15171,6 +15171,8 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
   const board = fenRoot ? fenReplay.board : stdBoard;
   const color = fenRoot ? (plyIsWhite(sans.length, fenRoot.turn) ? "w" : "b") : (sans.length % 2 === 0 ? "w" : "b");
   const ply = sans.length;
+  // (v0.5.7, 사용자 요청) 수 번호 표기의 시작 색 — FEN이 흑 차례면 "b"라 첫 수가 1...부터(백·흑 구분). 이 화면의 모든 moveNumber·기보·엔진 라인에 넘긴다.
+  const startColor = fenRoot ? fenRoot.turn : undefined;
   const stdEp = useMemo(() => epTarget(sans), [key]);
   const ep = fenRoot ? fenReplay.ep : stdEp;
   // (UI) 사용자 요청 — 둘 수 있는 수가 1~2개뿐인 국면(사실상 강제된 수순)에서는 엔진 라인의 남은
@@ -15349,19 +15351,24 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
   // 예전엔 두께·투명도가 "평가치순"을 선택해도 항상 채택률(adopt) 기준으로만 계산돼, 정렬 기준을
   // 바꿔도 화살표 시각화가 전혀 달라지지 않는 버그도 함께 고친다 — Board는 weight(0~1, 이미 정규화된
   // 값)를 그대로 두께·투명도에 쓰므로, sortBy에 맞춰 서로 다른 순위·값을 계산해 넘긴다.
+  // (v0.5.7, 사용자 요청 "FEN 모드에서도 제안 화살표") FEN 모드의 후보 수(fenMoves)는 전용 엔진 줄에서 만든 것이라 live·채택률이 없다 —
+  // 예전엔 "live 없는 수는 제외"·"채택률 없는 수는 제외" 규칙에 전부 걸러져 화살표가 하나도 안 나왔다. FEN 모드에선 그 두 규칙을 빼고
+  // 평가치로만 순위를 매긴다. 또 moverEval의 ply 짝수=백 가정은 흑 차례 FEN에서 부호가 뒤집히므로, 실제 둘 차례(color)로 넘긴다.
   const arrows = useMemo(() => {
     const liveActive = liveOn && engine && engine.status === "ready";
-    const rankKey = sortBy === "adopt"
+    const moverPly = color === "w" ? 0 : 1;
+    const byAdopt = sortBy === "adopt" && !fenRoot;
+    const rankKey = byAdopt
       ? (m) => (m.adopt != null ? m.adopt : (m.games != null ? m.games : -Infinity))
-      : (m) => { if (liveActive && !m.live) return -Infinity; const v = moverEval(m, ply); return v == null ? -Infinity : v; };
+      : (m) => { if (liveActive && !fenRoot && !m.live) return -Infinity; const v = moverEval(m, moverPly); return v == null ? -Infinity : v; };
     const ranked = moves.filter((m) => rankKey(m) > -Infinity).sort((a, b) => rankKey(b) - rankKey(a)).slice(0, 3);
     if (!ranked.length) return [];
-    if (sortBy === "adopt") {
+    if (byAdopt) {
       return ranked.map((m) => { const info = sanSrc(board, m.san, color); return info && info.from ? { from: info.from, to: info.to, weight: Math.min(1, Math.max(0, (m.adopt || 0) / 60)) } : null; }).filter(Boolean);
     }
     // sortBy === "eval" — 상위 3수 중 최선(가장 높은 moverEval) 대비 손실이 클수록 화살표를 얇고
     // 옅게 만든다(200cp 이상 차이 나면 최소값으로 고정).
-    const evs = ranked.map((m) => moverEval(m, ply));
+    const evs = ranked.map((m) => moverEval(m, moverPly));
     const best = Math.max(...evs.filter((v) => v != null));
     return ranked.map((m, i) => {
       const info = sanSrc(board, m.san, color); if (!info || !info.from) return null;
@@ -15369,7 +15376,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
       const weight = v != null ? Math.max(0, 1 - (best - v) / 200) : 0.3;
       return { from: info.from, to: info.to, weight };
     }).filter(Boolean);
-  }, [moves, board, color, sortBy, ply, liveOn, engine && engine.status]);
+  }, [moves, board, color, sortBy, fenRoot, liveOn, engine && engine.status]);
   // (사용자 요청) FEN 모드에서는 legalDests의 캐슬링 판정(기물 배치만 봄)을 그대로 쓰지 않고,
   // FEN에서 유래한 캐슬링 권리로 한 번 더 걸러낸다(fenLegalDests).
   const legalTargets = useMemo(() => {
@@ -15680,7 +15687,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
   // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
   const node = fenRoot ? null : snapNode(sans);
   const openingName = node && node.opening ? node.opening.name : null;
-  const stageTitle = ply === 0 ? "1수 · 백의 첫 수" : (openingName || moveNumber(ply) + " 차례");
+  const stageTitle = fenRoot ? moveNumber(ply, startColor) + " " + (color === "w" ? "백" : "흑") + " 차례" : ply === 0 ? "1수 · 백의 첫 수" : (openingName || moveNumber(ply) + " 차례");
 
   // (UI5) 헤더 블록에 현재 수(직전에 두어진 수) 정보 표기
   const lastSan = sans.length ? sans[sans.length - 1] : null;
@@ -15771,7 +15778,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
             {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
                 두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
             {nb.length > 3 && (
               <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
                 <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
@@ -15860,7 +15867,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
               균형을 맞춘다(className이 그 폭에서 margin/width를 다시 0/100%로 되돌린다). */}
           <div ref={boardRef} className="lg:max-w-360 board-bleed" style={{ width: "calc(100% + 28px)", margin: "0 -14px", position: "relative", scrollMarginBottom: 84 }}>
             <BoardWithMaterial board={board} endFx={drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={flip} textColor={T.brassHi} size={boardSize} arrows={arrows} legalTargets={legalTargets} selected={sel} onSquareClick={!focus ? onSquareClick : undefined} onPieceDrag={!focus ? onPieceDrag : undefined} onDrop={!focus ? onDrop : undefined} onMove={!focus ? tryMove : undefined} evalCp={posEval} evalDepth={liveOn ? curDepth : null} interactive={!focus} lastQ={lastQ} hideMaterial showEval={!forcedPosition} reserveEvalGap gridRef={setPromoGridEl}
-              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
+              belowEval={<EngineLines lines={engineLines} pending={linesPending} sans={sans} startColor={startColor} width={Math.floor(boardSize / 8) * 8} onPlayFirst={!focus ? playEngineMove : undefined} forced={forcedPosition} maxLines={forcedPosition ? legalMoveCount : 3} />} />
             {promoPrompt && (
               <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />
             )}
@@ -15922,7 +15929,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
                   <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
-                    <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
+                    <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><Cpu size={12} /> 주요 분기점</span>
@@ -15933,7 +15940,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}><ThumbsUp size={12} /> 수 추천</span>
                         {rec ? (
                           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
-                            <b style={{ fontSize: 13.5 }}>{moveNumber(ply)}{recSan}</b>
+                            <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
                             {reason ? " — " + reason : null}
                           </p>
                         ) : (
@@ -15959,7 +15966,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
                   <div>
                     <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
                       {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
-                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, fenRoot ? fenRoot.turn : undefined)}{lastSan}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
                       {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
                       {/* (사용자 요청) 집중 분석은 표준 시작 위치의 오프닝 이론을 전제로 하므로 FEN 모드에서는 숨긴다. */}
                       {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}><Play size={11} /> 분석</button>}

@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { HelpCircle } from "lucide-react";
 import { T, MOTION_EASE } from "../lib/theme.js";
 import { matePliesOf, fmtEvalCp } from "../lib/moveQuality.js";
-import { moveNumber } from "../lib/chessRules.js";
+import { moveNumber, plyIsWhite } from "../lib/chessRules.js";
 
 // (18차 UI6 → 사용자 요청으로 v0.3.3에 유산 기보 폰트로 통일) 기보 표기 전반에 쓰는 폰트 —
 // 원래 Playfair Display였으나, 유산(Legacy) 재생 화면의 기보에 쓰던 폰트(LEGACY_FONT)로 맞췄다.
@@ -28,11 +28,12 @@ export const mateWhiteWins = (mate, win) => (win ? win === "w" : mate > 0);
 // pvUciToSans로 얻은 이어지는 수(contSans)만 받아, 그 첫 수의 실제 수 번호(startPly)부터 표기한다.
 // contSans 각 요소는 pvUciToSans가 buildSan으로 만들어 이미 +/# 기호가 붙어 있으므로 decorateLine이
 // 필요 없다(decorateLine은 시작 위치부터 다시 재생해야 해 이 이어붙인 조각만으로는 쓸 수 없음).
-function pvContinuationText(startPly, contSans) {
+// (v0.5.7) startColor — FEN으로 시작한 위치가 흑 차례면 "b"(첫 수가 1...부터, 백의 응수에서 번호가 오른다). 기본은 백.
+function pvContinuationText(startPly, contSans, startColor) {
   const parts = [];
   contSans.forEach((san, i) => {
     const ply = startPly + i;
-    if (ply % 2 === 0 || i === 0) parts.push(moveNumber(ply) + san);
+    if (plyIsWhite(ply, startColor) || i === 0) parts.push(moveNumber(ply, startColor) + san);
     else parts[parts.length - 1] += " " + san;
   });
   return parts.join(" ");
@@ -206,8 +207,8 @@ export function EngineLineBlank({ large }) {
 // 컴포넌트가 마운트·언마운트되어도 살아남도록, 이 기억을 React 트리 바깥의 모듈 레벨 캐시(posKeyBase
 // 기준 — 포지션이 바뀌면 통째로 비움)로 옮긴다.
 const engineLineMaxTextCache = { base: null, map: new Map() };
-export function TypedMoveLine({ startPly, sans, posKeyBase }) {
-  const text = pvContinuationText(startPly, sans);
+export function TypedMoveLine({ startPly, sans, posKeyBase, startColor }) {
+  const text = pvContinuationText(startPly, sans, startColor);
   if (engineLineMaxTextCache.base !== posKeyBase) { engineLineMaxTextCache.base = posKeyBase; engineLineMaxTextCache.map = new Map(); }
   const firstMove = sans[0];
   const numCount = (text.match(/\d+\./g) || []).length;
@@ -251,7 +252,7 @@ export function dedupeEngineLines(list) {
 // maxPlies=15까지, MultiPV 탐색이 도달한 depth만큼 수를 이미 다 갖고 있고(TypedMoveLine이 그걸
 // 전부 타이핑해 준다) 화면에 한 번에 안 보일 뿐이었다 — 네이티브 스크롤은 어떤 모바일 브라우저에서도
 // 항상 동작이 보장되므로, 이제 실제로 밀면 반드시 나머지가 나온다.
-export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst, large, font }) {
+export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPlayFirst, large, font, startColor }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const [showFade, setShowFade] = useState(false);
@@ -289,14 +290,14 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
         style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: font || SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
-          <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} />
+          <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} startColor={startColor} />
         </span>
       </div>
       {showFade && <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 26, pointerEvents: "none", background: "linear-gradient(to right, rgba(20,12,6,0), rgba(20,12,6,1) 80%)", borderRadius: "0 6px 6px 0" }} />}
     </motion.div>
   );
 }
-export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font, maxLines }) {
+export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, large, font, maxLines, startColor }) {
   const hasLines = lines && lines.length;
   const posKey = sans.join(" ");
   // (사용자 요청) 예전엔 lines도 없고 pending도 아니면(liveOn이 꺼졌거나 아직 첫 fetch 전) 이
@@ -353,7 +354,7 @@ export function EngineLines({ lines, pending, sans, width, onPlayFirst, forced, 
             // (다른 후보로 완전히 교체) 자연스럽게 새 컴포넌트로 마운트/언마운트된다.
             const rowKey = (l.sans && l.sans[0]) || ("slot" + i);
             return (
-              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} font={font} />
+              <EngineLineRow key={rowKey} l={l} startPly={sans.length} slotIdx={i} posKeyBase={posKey} pending={pending} onPlayFirst={onPlayFirst} large={large} font={font} startColor={startColor} />
             );
           })}
           {Array.from({ length: missing }, (_, i) => (forced || !pending) ? <EngineLineBlank key={"pad" + i} large={large} /> : <EngineLineSkeleton key={"pad" + i} large={large} />)}
