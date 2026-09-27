@@ -14,4 +14,19 @@ export default defineConfig({
   plugins: [react()],
   server: { headers: CROSS_ORIGIN_ISOLATION_HEADERS },
   preview: { headers: CROSS_ORIGIN_ISOLATION_HEADERS },
+  // (v0.5.7 성능) 라이브러리를 앱 코드와 다른 파일로 나눈다 — 앱 코드는 배포마다 바뀌지만 라이브러리는 거의 그대로라,
+  // 재방문자는 브라우저 캐시에 남은 라이브러리 파일을 다시 받지 않는다(예전엔 한 파일이라 배포마다 전부 다시 받았다).
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
+          if (id.includes("node_modules/framer-motion") || id.includes("node_modules/motion-")) return "vendor-motion";
+          if (id.includes("node_modules/chess.js")) return "vendor-chess";
+          return "vendor";
+        },
+      },
+    },
+  },
 });

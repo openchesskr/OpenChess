@@ -305,6 +305,32 @@ alter table public.chat_messages add column if not exists review_id text;
 -- 보낸 쪽이면 응답 대기·취소)로 렌더링된다. 초대장 자체의 최신 상태(pending/accepted/declined/
 -- cancelled)는 이 컬럼이 아니라 pvp_invites 테이블에서 그때그때 조회한다(둘이 어긋나지 않게).
 alter table public.chat_messages add column if not exists pvp_invite_id bigint;
+-- (v0.5.7 기능, 채팅 강화) 답장(인용) — 어느 메시지에 대한 답인지. 원문이 지워지면 인용만 사라진다(null).
+alter table public.chat_messages add column if not exists reply_to bigint references public.chat_messages(id) on delete set null;
+-- (v0.5.7) "여기서 뭐 둘래?" 수 투표 카드 — {fen}. 투표는 chat_poll_votes에(아래 채팅 강화 절).
+alter table public.chat_messages add column if not exists poll jsonb;
+-- (v0.5.7) 같이 보기(공동 분석) 보드 초대 카드 — {fen, sans}. 보드 조작 자체는 DB 없이 Realtime broadcast로만 주고받는다.
+alter table public.chat_messages add column if not exists cobo jsonb;
+create index if not exists idx_chat_messages_to_time on public.chat_messages(to_uid, created_at desc);
+-- (v0.5.7 기능, 스토어 심사 대비) 사용자 차단 — 둘 중 한쪽이라도 차단했으면 서로 메시지를 보낼 수 없다(아래 "chat insert own").
+-- 차단 목록은 차단한 본인만 볼 수 있어, 정책 안에서 "상대가 나를 차단했는지"는 SECURITY DEFINER 함수로 확인한다.
+create table if not exists public.user_blocks (
+  blocker uuid not null references auth.users(id) on delete cascade,
+  blocked uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker, blocked),
+  check (blocker <> blocked)
+);
+alter table public.user_blocks enable row level security;
+drop policy if exists "blocks own" on public.user_blocks;
+create policy "blocks own" on public.user_blocks for all using (auth.uid() = blocker) with check (auth.uid() = blocker);
+grant select, insert, delete on public.user_blocks to authenticated;
+create or replace function public.chat_blocked_between(p_a uuid, p_b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a));
+$$;
+revoke all on function public.chat_blocked_between(uuid, uuid) from public, anon;
+grant execute on function public.chat_blocked_between(uuid, uuid) to authenticated;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -321,6 +347,8 @@ create policy "chat insert own" on public.chat_messages for insert with check (
     where fe.status = 'accepted'
       and ((fe.from_uid = auth.uid() and fe.to_uid = chat_messages.to_uid) or (fe.to_uid = auth.uid() and fe.from_uid = chat_messages.to_uid))
   )
+  -- (v0.5.7) 둘 중 한쪽이라도 상대를 차단했으면 보낼 수 없다.
+  and not public.chat_blocked_between(auth.uid(), chat_messages.to_uid)
 );
 create policy "chat update own" on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 -- (v0.1.4 기능) 채팅 메시지 삭제 — puzzle_likes/puzzle_reposts와 동일한 패턴으로, 보낸 사람만
@@ -328,6 +356,12 @@ create policy "chat update own" on public.chat_messages for update using (auth.u
 -- SECURITY DEFINER RPC인 chat_edit_message로 처리한다 — 아래 참고).
 create policy "chat delete own" on public.chat_messages for delete using (auth.uid() = from_uid);
 grant select, insert, update, delete on public.chat_messages to authenticated;
+-- (v0.5.7 보안 BUG-022, P1) 위 "chat update own"은 수신자의 읽음 처리 전용인데, update 권한이 테이블 전체(모든 컬럼)에 열려 있어
+-- 수신자가 REST로 직접 "나에게 온" 메시지의 body·emoji·puzzle_no 등을 고칠 수 있었다 — 보낸 사람 화면에도 그대로 보여, 남이
+-- 보낸 메시지를 조작할 수 있었다. 컬럼 단위 권한으로 좁혀 REST로 바꿀 수 있는 건 read뿐이다(본문 수정은 발신자 소유권을 검증하는
+-- chat_edit_message RPC로만). puzzles.data와 같은 방식. scripts/check-sql-grants.mjs가 이런 전체 update 권한을 막는다.
+revoke update on public.chat_messages from anon, authenticated;
+grant update (read) on public.chat_messages to authenticated;
 -- (v0.1.4 기능) 채팅 메시지 수정 — 발신자 본인의 텍스트 메시지(퍼즐 공유·보상 시스템 메시지 제외)만
 -- 고칠 수 있고, 수정됨 표시(edited)를 함께 남긴다. "chat update own" 정책은 수신자의 읽음 처리
 -- 전용이라 발신자의 본문 수정에는 쓸 수 없어, SECURITY DEFINER로 소유권을 직접 검증한다.
@@ -339,7 +373,9 @@ begin
     -- (v0.3.3) 유산 공유 카드(legacy_slot)도 puzzle_no/share_reward와 마찬가지로 텍스트로 "수정"할
     -- 수 없는 특수 메시지라 같이 제외한다(클라이언트도 이런 메시지엔 수정 버튼을 안 보여주지만,
     -- 서버에서도 이중으로 막는다).
-    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null;
+    -- (v0.5.7) 투표·같이 보기 카드와 리뷰·대국 신청 카드도 텍스트로 고칠 수 없다.
+    where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null
+      and review_id is null and pvp_invite_id is null and poll is null and cobo is null;
 end; $$;
 grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 
@@ -413,6 +449,9 @@ grant select, insert on public.puzzles to anon, authenticated;
 -- 바뀐다. src/App.jsx의 puzzleShare()는 비로그인 게스트도 새로 만난 퍼즐을 공유하므로(집중 학습은
 -- 로그인 없이 쓸 수 있는 핵심 기능) data update는 anon도 유지하되, solves/likes는 어느 role도 직접
 -- 건드릴 수 없다.
+-- (v0.5.7 방어) 컬럼 단위 grant는 테이블 전체 update 권한이 이미 있으면(Supabase 기본 권한 등) 아무 제한도 못 한다 — 먼저 전체
+-- update를 거둬 이 제한이 프로젝트 기본 설정과 무관하게 항상 먹게 한다(scripts/check-sql-grants.mjs).
+revoke update on public.puzzles from anon, authenticated;
 grant update (data) on public.puzzles to anon, authenticated;
 
 -- 퍼즐별 해결자 uid 기록 — "친구 OO 외 N명이 풀었습니다!" 표기용(1인 1행). 본인 명의로만 기록 가능.
@@ -1384,12 +1423,13 @@ alter table public.reviewed_games enable row level security;
 drop policy if exists "reviewed games read"   on public.reviewed_games;
 drop policy if exists "reviewed games insert" on public.reviewed_games;
 drop policy if exists "reviewed games update" on public.reviewed_games;
--- (puzzles 테이블과 동일한 판단) 게임 데이터를 조작해도 이득 볼 카운터·랭킹이 이 테이블엔 전혀
--- 없으므로, insert/update 모두 열어 둔다 — 크라우드소싱 캐시의 성격상 최초 발견자 외에도 누구나
--- 갱신할 수 있어야 한다(puzzles.data와 동일한 이유).
+-- (v0.5.7 보안 BUG-023) 예전엔 "조작해도 이득 볼 카운터가 없다"는 판단으로 insert/update를 모두(로그인 없이도) 열어 뒀다 —
+-- 그 결과 누구든 REST로 임의 대국의 기보(data)·분석(analysis)을 덮어쓸 수 있었고, 그 대국의 공유 리뷰 링크를 여는 모든 사람에게
+-- 조작된 기보·정확도가 보였다. 이제 표에는 읽기만 열고, 쓰기는 아래 두 RPC로만 한다:
+--   reviewed_game_put     — 기보는 처음 올린 것이 그대로 남는다(이미 기보가 있으면 무시). 모양·크기 검사.
+--   reviewed_analysis_put — 분석은 비어 있거나, 더 새 버전(v)이거나, 같은 버전에서 더 깊은(d) 분석일 때만 바뀐다.
+--                           기보가 이미 있으면 분석의 수 개수가 기보와 같아야 한다.
 create policy "reviewed games read"   on public.reviewed_games for select using (true);
-create policy "reviewed games insert" on public.reviewed_games for insert with check (true);
-create policy "reviewed games update" on public.reviewed_games for update using (true) with check (true);
 
 -- ============================================================================
 -- 22) legacy_likes / legacy_like_counts — 유산(Legacy) 블록 좋아요 (사용자 요청)
@@ -1455,7 +1495,48 @@ begin
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
 grant execute on function public.legacy_like_toggle(uuid, text) to authenticated;
-grant select, insert, update on public.reviewed_games to anon, authenticated;
+grant select on public.reviewed_games to anon, authenticated;
+revoke insert, update on public.reviewed_games from anon, authenticated;
+create or replace function public.reviewed_game_put(p_cc_id bigint, p_data jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_moves jsonb := coalesce(p_data -> 'moves', p_data -> 'sans');
+begin
+  if p_cc_id is null or p_cc_id <= 0 or p_data is null or jsonb_typeof(p_data) <> 'object' then return false; end if;
+  if v_moves is null or jsonb_typeof(v_moves) <> 'array' or jsonb_array_length(v_moves) = 0 or jsonb_array_length(v_moves) > 1000 then return false; end if;
+  if pg_column_size(p_data) > 200000 then return false; end if;
+  insert into public.reviewed_games(cc_id, data) values (p_cc_id, p_data)
+  on conflict (cc_id) do update set data = excluded.data
+    where public.reviewed_games.data is null or public.reviewed_games.data = '{}'::jsonb;  -- 분석이 먼저 올라와 기보만 비어 있던 행만 채운다
+  return true;
+end; $$;
+revoke all on function public.reviewed_game_put(bigint, jsonb) from public;
+grant execute on function public.reviewed_game_put(bigint, jsonb) to anon, authenticated;
+create or replace function public.reviewed_analysis_put(p_cc_id bigint, p_analysis jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_row public.reviewed_games; v_n int; v_len int;
+  v_new_v int := (p_analysis ->> 'v')::int; v_new_d int := coalesce((p_analysis ->> 'd')::int, 0);
+begin
+  if p_cc_id is null or p_cc_id <= 0 or p_analysis is null or v_new_v is null then return false; end if;
+  if jsonb_typeof(p_analysis #> '{result,moves}') is distinct from 'array' then return false; end if;
+  if pg_column_size(p_analysis) > 1000000 then return false; end if;
+  v_n := jsonb_array_length(p_analysis #> '{result,moves}');
+  select * into v_row from public.reviewed_games where cc_id = p_cc_id for update;
+  if found then
+    v_len := jsonb_array_length(coalesce(v_row.data -> 'moves', v_row.data -> 'sans', '[]'::jsonb));
+    if v_len > 0 and v_len <> v_n then return false; end if;  -- 기보와 수 개수가 다른 분석은 받지 않는다
+    if v_row.analysis is not null and not (
+      v_new_v > coalesce((v_row.analysis ->> 'v')::int, 0)
+      or (v_new_v = coalesce((v_row.analysis ->> 'v')::int, 0) and v_new_d > coalesce((v_row.analysis ->> 'd')::int, 0))
+    ) then return false; end if;
+    update public.reviewed_games set analysis = p_analysis where cc_id = p_cc_id;
+  else
+    insert into public.reviewed_games(cc_id, analysis) values (p_cc_id, p_analysis);
+  end if;
+  return true;
+end; $$;
+revoke all on function public.reviewed_analysis_put(bigint, jsonb) from public;
+grant execute on function public.reviewed_analysis_put(bigint, jsonb) to anon, authenticated;
 
 -- ============================================================================
 -- N) presence — OpenChess 실시간 접속 여부(Discord 스타일 초록 점) + 마지막 접속 시각
@@ -2278,7 +2359,9 @@ declare
   dist int := 0; sq text; nb text;
 begin
   if p_start = p_target then return 0; end if;
-  while array_length(frontier,1) > 0 and dist < 6 loop
+  -- (v0.5.7) 예전엔 dist < 6에서 멈춰 7수 이상은 null(=경로 없음)이 됐다 — 4·5라운드의 par 7(~8) 라운드가 서버에선 절대 안 나왔다.
+  -- BFS는 방문 배열로 알아서 끝나므로 보드 전체(64칸)까지 찾는다.
+  while array_length(frontier,1) > 0 and dist < 64 loop
     next_frontier := '{}';
     foreach sq in array frontier loop
       foreach nb in array public.knight_neighbors(sq, p_blocked) loop
@@ -2340,59 +2423,95 @@ begin
   return chr(97+nf) || (nr+1)::text;
 end; $$;
 
--- (v0.5.1 신규) 위협 기물(비숍/룩) p_sq가 실제로 지배(공격)하는 칸을 계산한다 — 다른 기물에 막히는
--- 것은 고려하지 않고 보드 끝까지 미끄러진다(미니게임 성격상 다른 기물에 의한 차단까지 재현할 필요는
--- 없다고 판단했다). 이 칸에 반대 색 나이트가 들어가면 잡힌다.
-create or replace function public.knight_attacked_squares(p_sq text, p_type text)
+-- (v0.5.1 신규 → v0.5.7 BUG-020 수정) 위협 기물 p_sq(R 룩·B 비숍·Q 퀸)가 공격하는 칸 — src/lib/knightRace.js의
+-- knightAttackedSquares와 같은 규칙. 예전엔 다른 기물을 뚫고 보드 끝까지 이어졌지만, 이제 실제 체스처럼 p_blockers(남아 있는
+-- 기물 칸, 색 무관)에 닿으면 그 칸까지만 공격한다(그 칸 자체는 공격 = 보호). 나이트는 움직이므로 막지 않는다.
+drop function if exists public.knight_attacked_squares(text, text);
+create or replace function public.knight_attacked_squares(p_sq text, p_type text, p_blockers text[] default '{}')
 returns text[] language plpgsql immutable as $$
 declare
   f int := ascii(substr(p_sq,1,1)) - 97; r int := substr(p_sq,2)::int - 1;
-  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]] else array[[1,1],[1,-1],[-1,1],[-1,-1]] end;
-  out text[] := '{}'; i int; step int; nf int; nr int;
+  dirs int[][] := case when p_type = 'R' then array[[1,0],[-1,0],[0,1],[0,-1]]
+                       when p_type = 'B' then array[[1,1],[1,-1],[-1,1],[-1,-1]]
+                       else array[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]] end;
+  out text[] := '{}'; i int; step int; nf int; nr int; nsq text;
 begin
-  for i in 1..4 loop
+  for i in 1..array_length(dirs, 1) loop
     step := 1;
     loop
       nf := f + dirs[i][1]*step; nr := r + dirs[i][2]*step;
       exit when nf < 0 or nf > 7 or nr < 0 or nr > 7;
-      out := out || (chr(97+nf) || (nr+1)::text);
+      nsq := chr(97+nf) || (nr+1)::text;
+      out := out || nsq;
+      exit when nsq = any(coalesce(p_blockers, '{}'));
       step := step + 1;
     end loop;
   end loop;
   return out;
 end; $$;
 
--- (v0.5.4 난이도 대폭 상향, 사용자 요청) 라운드 하나를 만든다 — src/App.jsx의 knightTryGenLocal/
--- knightGenRoundLocal과 완전히 같은 규칙. 예전엔 목표에서 무작위로 3~5걸음 걸어 시작 칸을 정해, 걸음이
--- 되돌아가면 실제 최단 거리가 1~2수에 그치는 쉬운 라운드가 자주 나왔다. 이제는 "위협 칸·자기 색 기물 칸을
--- 피한 실제 최단 수(par)"를 knight_distance로 재서 라운드별 범위에 들어올 때만 채택한다.
--- (v0.5.5, 사용자 요청) 1라운드는 5초로 짧게, 뒤로 갈수록 제한시간이 늘지만 기물 수·거리가 더 가파르게 는다.
---   라운드 1: par 3~4, 기물 1쌍, 5초 / 2: par 4~5, 2쌍, 8초 / 3: par 5~6, 3쌍, 11초
---   라운드 4: par 6~7, 4쌍, 14초 / 5: par 6~7, 5쌍, 17초
--- 2라운드부터는 기물이 없을 때의 최단 거리보다 par가 반드시 길어야 한다(눈에 보이는 가장 빠른 길이 위협
--- 칸으로 막혀 돌아가거나, 상대 기물을 잡아 길을 열어야 한다). 이동 수 제한은 par+1.
--- 시작 칸·기물은 목표를 중심으로 점대칭이고, 백·흑 양쪽 par를 모두 재서 같을 때만 채택한다. 조건에 맞는 라운드를 4000번 안에
--- 못 찾으면(5라운드 약 50%, 4라운드 약 15%) 한 단계 낮은 조건으로 다시 뽑는다 — 제한시간은 원래 라운드 것을 그대로 쓴다.
+-- (v0.5.7) 잡지 않고도 확실히 가는 길의 금지 칸 — 처음 위협 칸 + 모든 기물 칸(src/lib/knightRace.js knightSafeWalls와 같음).
+-- 이 칸들만 피하면 도중에 아무것도 잡지 않아 위협 칸이 처음 그대로이므로, 이 기준으로 잰 par 경로는 규칙대로 반드시 통한다.
+create or replace function public.knight_safe_walls(p_round jsonb, p_color text)
+returns text[] language plpgsql immutable as $$
+begin
+  return public.knight_danger(p_round, p_color, '{}')
+      || coalesce(array(select h ->> 'sq' from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h), '{}');
+end; $$;
+
+-- (v0.5.7) p_start에서 최단(p_par수)으로 가는 첫 수가 몇 개인지 — 5라운드의 "첫 수가 딱 하나" 조건용.
+create or replace function public.knight_first_moves(p_start text, p_target text, p_walls text[], p_par int)
+returns int language plpgsql stable as $$
+declare nb text; n int := 0;
+begin
+  foreach nb in array public.knight_neighbors(p_start, p_walls) loop
+    if (nb = p_target and p_par = 1) or (nb <> p_target and public.knight_distance(nb, p_target, p_walls) = p_par - 1) then n := n + 1; end if;
+  end loop;
+  return n;
+end; $$;
+
+-- (v0.5.4 난이도 대폭 상향 → v0.5.7 개편) 라운드 하나를 만든다 — src/lib/knightRace.js의 knightTryGen/knightGenRound와 같은 규칙.
+-- par = 위협 칸과 모든 기물 칸을 피한(잡지 않고 가는) 최단 수(knight_safe_walls). 라운드별 조건(minDist~maxDist, 기물 쌍,
+-- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. 이동 수 제한은 par+1.
+--   1: par 3~4, 1쌍, 5초 / 2: par 4~5, 2쌍, +1 / 3: par 5~6, 3쌍, +1 / 4: par 6~7, 4쌍, +1, 14초
+--   5: par 6~8, 5쌍(1쌍은 반드시 퀸), +2, 첫 수 하나뿐, 17초 — (v0.5.7, 사용자 요청) 반드시 상대 퀸이 나오는 매우 어려운 라운드
+-- 시작 칸·기물은 목표를 중심으로 점대칭이고, 흑 쪽 par도 같을 때만 쓴다. 4000번 안에 못 찾으면 조건을 한 단계씩 낮추되,
+-- 5라운드는 퀸을 빼지 않고 나머지 조건만 낮춘다(knightGenRound의 ladder와 같은 순서). 제한시간은 원래 라운드 것 그대로.
 create or replace function public._knight_gen_round(p_round_idx int)
 returns jsonb language plpgsql volatile as $$
 declare
-  v_specs int[][] := array[[3,4,1,0,5000],[4,5,2,1,8000],[5,6,3,1,11000],[6,7,4,1,14000],[6,7,5,1,17000]]; -- minDist, maxDist, pairs, detour, timeMs
-  v_time int := v_specs[least(greatest(p_round_idx, 0), 4) + 1][5];
-  k int; v_try int; v_t int; i int;
-  v_min int; v_max int; v_pairs int; v_detour boolean;
+  v_idx int := least(greatest(p_round_idx, 0), 4);
+  -- 행: minDist, maxDist, pairs, minDetour, queens, onlyFirst(0/1), timeMs
+  v_specs int[][] := array[[3,4,1,0,0,0,5000],[4,5,2,1,0,0,8000],[5,6,3,1,0,0,11000],[6,7,4,1,0,0,14000],[6,8,5,2,1,1,17000]];
+  -- 5라운드(퀸) 조건을 낮춰 가는 순서 — 퀸은 끝까지 유지
+  v_queen_ladder int[][] := array[[6,8,5,2,1,1,17000],[6,8,5,2,1,0,17000],[6,8,5,1,1,0,17000],[5,8,4,1,1,0,17000],[4,8,3,0,1,0,17000],[3,8,2,0,1,0,17000]];
+  v_is_queen boolean; v_time int; v_steps int; v_step int; v_row int[];
+  v_try int; v_t int; v_p int;
+  v_min int; v_max int; v_pairs int; v_detour int; v_queens int; v_only boolean;
   v_target text; v_ws text; v_bs text; v_sq text; v_m text; v_used text[];
   v_haz_w text[]; v_haz_b text[]; v_hazards jsonb; v_type text; v_round jsonb;
-  v_w_ill text[]; v_b_ill text[]; v_par int; v_plain int;
+  v_w_ill text[]; v_b_ill text[]; v_w_walls text[]; v_b_walls text[]; v_par int; v_plain int;
 begin
-  for k in reverse least(greatest(p_round_idx, 0), 4) + 1 .. 1 loop
-    v_min := v_specs[k][1]; v_max := v_specs[k][2]; v_pairs := v_specs[k][3]; v_detour := v_specs[k][4] = 1;
+  v_is_queen := v_specs[v_idx + 1][5] > 0;
+  v_time := v_specs[v_idx + 1][7];
+  v_steps := case when v_is_queen then array_length(v_queen_ladder, 1) else v_idx + 1 end;
+  for v_step in 1..v_steps loop
+    -- 퀸 라운드는 v_queen_ladder 순서대로, 아니면 원래 라운드 → 1라운드 조건 순서로
+    if v_is_queen then
+      v_min := v_queen_ladder[v_step][1]; v_max := v_queen_ladder[v_step][2]; v_pairs := v_queen_ladder[v_step][3];
+      v_detour := v_queen_ladder[v_step][4]; v_queens := v_queen_ladder[v_step][5]; v_only := v_queen_ladder[v_step][6] = 1;
+    else
+      v_p := v_idx + 2 - v_step;
+      v_min := v_specs[v_p][1]; v_max := v_specs[v_p][2]; v_pairs := v_specs[v_p][3];
+      v_detour := v_specs[v_p][4]; v_queens := v_specs[v_p][5]; v_only := v_specs[v_p][6] = 1;
+    end if;
     for v_try in 1..4000 loop
       v_target := chr(97 + (2 + floor(random()*4))::int) || (3 + floor(random()*4))::int::text;
       v_ws := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
       v_bs := public.knight_reflect_sq(v_ws, v_target);
       if v_bs is null or v_ws = v_target or substr(v_ws,2)::int > substr(v_bs,2)::int then continue; end if;
       v_used := array[v_ws, v_bs, v_target]; v_haz_w := '{}'; v_haz_b := '{}';
-      for i in 1..v_pairs loop
+      for v_p in 1..v_pairs loop
         for v_t in 1..50 loop
           v_sq := chr(97 + floor(random()*8)::int) || (1 + floor(random()*8))::int::text;
           v_m := public.knight_reflect_sq(v_sq, v_target);
@@ -2403,22 +2522,29 @@ begin
       end loop;
       if coalesce(array_length(v_haz_w,1),0) < v_pairs then continue; end if;
       v_hazards := '[]'::jsonb;
-      for i in 1..v_pairs loop
-        v_type := case when random() < 0.5 then 'B' else 'R' end;
-        v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[i], 'type', v_type, 'color', 'w')
-                               || jsonb_build_object('sq', v_haz_b[i], 'type', v_type, 'color', 'b');
+      for v_p in 1..v_pairs loop
+        v_type := case when v_p <= v_queens then 'Q' when random() < 0.5 then 'B' else 'R' end;
+        v_hazards := v_hazards || jsonb_build_object('sq', v_haz_w[v_p], 'type', v_type, 'color', 'w')
+                               || jsonb_build_object('sq', v_haz_b[v_p], 'type', v_type, 'color', 'b');
       end loop;
       v_round := jsonb_build_object('target', v_target, 'hazards', v_hazards);
       v_w_ill := public.knight_danger(v_round, 'w', '{}');
-      v_b_ill := public.knight_danger(v_round, 'b', '{}');
       if v_target = any(v_w_ill) or v_ws = any(v_w_ill) then continue; end if;
-      v_par := public.knight_distance(v_ws, v_target, v_w_ill || v_haz_w);
+      v_w_walls := public.knight_safe_walls(v_round, 'w');
+      v_par := public.knight_distance(v_ws, v_target, v_w_walls);
       if v_par is null or v_par < v_min or v_par > v_max then continue; end if;
-      -- 반사점이 보드 밖인 칸 때문에 점대칭만으로는 양쪽 최단 수가 같다는 보장이 없어, 흑 쪽도 재서 같을 때만 쓴다.
-      if public.knight_distance(v_bs, v_target, v_b_ill || v_haz_b) is distinct from v_par then continue; end if;
-      if v_detour then
+      -- 점대칭이라도 보드 끝·공격선 막힘은 대칭이 아니어서, 흑 쪽도 재서 같을 때만 쓴다.
+      v_b_ill := public.knight_danger(v_round, 'b', '{}');
+      if v_target = any(v_b_ill) or v_bs = any(v_b_ill) then continue; end if;
+      v_b_walls := public.knight_safe_walls(v_round, 'b');
+      if public.knight_distance(v_bs, v_target, v_b_walls) is distinct from v_par then continue; end if;
+      if v_detour > 0 then
         v_plain := least(public.knight_distance(v_ws, v_target, '{}'), public.knight_distance(v_bs, v_target, '{}'));
-        if v_par <= v_plain then continue; end if;
+        if v_par < v_plain + v_detour then continue; end if;
+      end if;
+      if v_only then
+        if public.knight_first_moves(v_ws, v_target, v_w_walls, v_par) <> 1 then continue; end if;
+        if public.knight_first_moves(v_bs, v_target, v_b_walls, v_par) <> 1 then continue; end if;
       end if;
       return jsonb_build_object('target', v_target, 'whiteStart', v_ws, 'blackStart', v_bs, 'hazards', v_hazards,
         'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', v_time);
@@ -2468,16 +2594,21 @@ grant execute on function public.knight_start_round(bigint) to authenticated;
 -- (v0.5.4 규칙 변경, 사용자 요청) 상대 기물은 이제 "못 가는 칸"을 만드는 벽이 아니다 — 나이트가 상대
 -- 기물 칸에 도달하면 그 기물을 잡아 없애고(그 기물이 지배하던 칸도 함께 안전해진다), 상대 기물이
 -- 지배하는 칸에 들어가면 나이트가 잡혀 그 라운드 시도가 그대로 끝난다(p_captured). 자기 색 기물 칸에는
--- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다 —
--- knight_start_round의 wIllegal/bIllegal과 같은 공식(점대칭 반사점이 보드 안인 칸만).
+-- 설 수 없다. 이 함수는 p_taken(내가 잡은 상대 기물 칸들)을 빼고 남은 상대 기물의 위협 칸을 돌려준다.
+-- (v0.5.7 BUG-020 수정) 예전엔 "목표 칸 기준 점대칭 반사점이 보드 안인 칸"만 셌다 — 목표 e5·흑 룩 f4일 때 룩이 공격하는
+-- f1(반사점 d9)이 안전 칸으로 취급돼, 보기엔 답이 없는 라운드가 나왔다. 이제 실제 체스처럼 모든 공격 칸을 세고, 공격선은
+-- 남아 있는 기물(색 무관)에 막힌다 — src/lib/knightRace.js knightDangerFor와 같다.
 create or replace function public.knight_danger(p_round jsonb, p_color text, p_taken text[])
 returns text[] language sql immutable as $$
+  with live as (
+    select h from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h
+    where not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
+  ), blockers as (
+    select coalesce(array_agg(h ->> 'sq'), '{}') b from live
+  )
   select coalesce(array_agg(distinct a), '{}')
-  from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h,
-       unnest(public.knight_attacked_squares(h ->> 'sq', h ->> 'type')) a
-  where h ->> 'color' <> p_color
-    and not ((h ->> 'sq') = any(coalesce(p_taken, '{}')))
-    and public.knight_reflect_sq(a, p_round ->> 'target') is not null;
+  from live, blockers, unnest(public.knight_attacked_squares(live.h ->> 'sq', live.h ->> 'type', blockers.b)) a
+  where live.h ->> 'color' <> p_color;
 $$;
 
 -- 내 시도 결과 보고 — 도달했든 못 했든(수 소진·시간 초과·잡힘) 라운드당 한 번만 허용한다(이미 보고했으면
@@ -3366,6 +3497,126 @@ create policy "pvp games select own or spectate" on public.pvp_games for select 
   auth.uid() = white_uid or auth.uid() = black_uid or status = 'active'
   or (status <> 'active' and updated_at > now() - interval '10 minutes')
 );
+
+-- ============================================================================
+-- 채팅 강화 (v0.5.7, 사용자 요청 "실제 SNS 수준으로") — 이모지 반응·수 투표·신고·대화방 목록 요약
+-- (답장 reply_to, 투표 poll, 같이 보기 cobo 컬럼과 차단 user_blocks는 위 5) chat_messages 절에 있다)
+-- ============================================================================
+-- 이모지 반응 — 메시지 하나에 사람마다 여러 개(서로 다른 이모지)를 달 수 있다. 그 대화의 두 사람만 보고 달 수 있다.
+create table if not exists public.chat_reactions (
+  message_id bigint not null references public.chat_messages(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  emoji text not null check (emoji in ('👍', '❤️', '😂', '😮', '😢', '🔥')),
+  created_at timestamptz not null default now(),
+  primary key (message_id, uid, emoji)
+);
+alter table public.chat_reactions enable row level security;
+drop policy if exists "reactions read" on public.chat_reactions;
+drop policy if exists "reactions insert" on public.chat_reactions;
+drop policy if exists "reactions delete" on public.chat_reactions;
+-- chat_messages의 select 정책이 그 대화의 두 사람에게만 행을 보여 주므로, exists가 참이면 곧 대화 당사자다.
+create policy "reactions read" on public.chat_reactions for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "reactions insert" on public.chat_reactions for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "reactions delete" on public.chat_reactions for delete using (auth.uid() = uid);
+grant select, insert, delete on public.chat_reactions to authenticated;
+
+-- "여기서 뭐 둘래?" 투표 — 투표 카드(chat_messages.poll) 하나에 사람마다 한 표(수 SAN), 다시 두면 바뀐다.
+create table if not exists public.chat_poll_votes (
+  message_id bigint not null references public.chat_messages(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  san text not null check (char_length(san) between 2 and 10),
+  created_at timestamptz not null default now(),
+  primary key (message_id, uid)
+);
+alter table public.chat_poll_votes enable row level security;
+drop policy if exists "poll votes read" on public.chat_poll_votes;
+drop policy if exists "poll votes insert" on public.chat_poll_votes;
+drop policy if exists "poll votes update" on public.chat_poll_votes;
+create policy "poll votes read" on public.chat_poll_votes for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "poll votes insert" on public.chat_poll_votes for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
+-- 표를 바꿀 땐 upsert(merge-duplicates)가 모든 컬럼을 다시 쓰므로, 본인 표(uid)를 투표 카드(poll) 메시지 안에서만 바꿀 수 있게 with check로 묶는다.
+create policy "poll votes update" on public.chat_poll_votes for update using (auth.uid() = uid)
+  with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
+grant select, insert, update on public.chat_poll_votes to authenticated;
+
+-- 신고 — 신고 대상 메시지의 그 순간 본문을 서버가 복사해 둔다(나중에 지워져도 검토할 수 있게, 클라이언트가 본문을 위조할 수 없게).
+-- 신고한 사람은 자기 신고만 볼 수 있고, 검토는 대시보드(service role)에서 한다.
+create table if not exists public.user_reports (
+  id bigint generated always as identity primary key,
+  reporter uuid not null references auth.users(id) on delete cascade,
+  target_uid uuid not null references auth.users(id) on delete cascade,
+  message_id bigint references public.chat_messages(id) on delete set null,
+  message_snapshot jsonb,
+  reason text not null check (reason in ('spam', 'abuse', 'sexual', 'cheating', 'other')),
+  detail text check (detail is null or char_length(detail) <= 500),
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  check (reporter <> target_uid)
+);
+alter table public.user_reports enable row level security;
+drop policy if exists "reports read own" on public.user_reports;
+create policy "reports read own" on public.user_reports for select using (auth.uid() = reporter);
+grant select on public.user_reports to authenticated;
+create or replace function public.user_report(p_target uuid, p_message_id bigint, p_reason text, p_detail text)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_target is null or p_target = v_me then raise exception 'bad target'; end if;
+  if p_message_id is not null then
+    -- 내가 받은(또는 보낸) 그 사람의 메시지만 신고할 수 있다.
+    select to_jsonb(m) - 'read' into v_snap from public.chat_messages m
+    where m.id = p_message_id and m.from_uid = p_target and m.to_uid = v_me;
+    if v_snap is null then raise exception 'message not found'; end if;
+  end if;
+  -- 같은 사람이 짧은 시간에 신고를 쏟아내지 못하게(스팸 신고) 하루 20건으로 제한한다.
+  if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then
+    raise exception 'too many reports';
+  end if;
+  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, reason, detail)
+  values (v_me, p_target, p_message_id, v_snap, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
+  returning id into v_id;
+  return v_id;
+end; $$;
+grant execute on function public.user_report(uuid, bigint, text, text) to authenticated;
+
+-- 대화방 목록 요약(BUG-019 수정) — 예전엔 나와 관련된 최근 메시지 200개로 클라이언트가 방 목록을 추정해, 오래된 대화방이
+-- 목록에서 빠지고 안 읽은 수도 200개 안에 든 것만 셌다. 대화 상대마다 "나에게서만 삭제" 워터마크 뒤의 마지막 메시지와
+-- 안 읽은 수를 서버가 한 번에 돌려준다(호출자 권한 그대로 실행 — chat_messages RLS가 그대로 적용된다).
+create or replace function public.chat_rooms()
+returns table(other_uid uuid, last_message jsonb, unread int, last_at timestamptz)
+language sql stable security invoker set search_path = public as $$
+  with mine as (
+    select m.*, case when m.from_uid = auth.uid() then m.to_uid else m.from_uid end as other
+    from public.chat_messages m
+    where m.from_uid = auth.uid() or m.to_uid = auth.uid()
+  ), vis as (
+    select mine.* from mine
+    left join public.chat_conv_prefs p on p.uid = auth.uid() and p.other_uid = mine.other
+    where p.cleared_before is null or mine.created_at > p.cleared_before
+  ), unread as (
+    select other, count(*)::int n from vis where to_uid = auth.uid() and not read group by other
+  ), last as (
+    select distinct on (other) other, to_jsonb(vis) - 'other' as msg, created_at from vis order by other, created_at desc, id desc
+  )
+  select last.other, last.msg, coalesce(unread.n, 0), last.created_at
+  from last left join unread using (other)
+  order by last.created_at desc;
+$$;
+grant execute on function public.chat_rooms() to authenticated;
+
+-- 반응·투표도 실시간으로 반영되도록 Realtime publication에 넣는다(8) Realtime 절과 같은 방식).
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_reactions') then
+      alter publication supabase_realtime add table public.chat_reactions;
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_poll_votes') then
+      alter publication supabase_realtime add table public.chat_poll_votes;
+    end if;
+  end if;
+end $$;
 
 -- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:
