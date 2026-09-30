@@ -66,6 +66,7 @@ import {
   isSacrifice, ownPriorMoveWasSacrifice, matePliesOf, fmtEvalCp, posEvalToWhite,
   winPctFromCp, stdev, normalCdf, sharpLossMultiplier, newAccuracyFromAvgLoss,
   newCumulativeAccuracy, NEW_ACC_PENALTY_MULT, MUST_NOT_INCREASE_KINDS, gradeMoveKind,
+  pvLosesMaterial, pvRegainsMaterial, sacrificeCaptureUci, SAC_POISON_MIN_GAIN_CP, SAC_POISON_BIG_GAIN_CP,
 } from "./lib/moveQuality.js";
 import {
   ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, SCHEMATIC_ZOOM_LABEL_BASE,
@@ -540,6 +541,8 @@ function useEngine(enginePref) {
         }
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
+        // (v0.5.9 BUG-038) 탁월 판정이 "상대가 실제로 기물을 따 가는지"를 엔진 수순으로 확인할 수 있게 단일 PV 평가도 수순을 함께 담는다.
+        { const pvIdx = line.indexOf(" pv "); if (pvIdx >= 0) cb.last.pv = line.slice(pvIdx + 4).trim().split(/\s+/); }
         // (기능1) go depth N 한 번의 탐색 안에서도 스톡피시는 얕은 depth부터 점점 깊여 결과를 낸다.
         // 이 중간 info 라인을 그대로 콜백으로 흘려보내면 최종 depth를 기다리지 않고도
         // 점진적으로 갱신되는 평가치를 보여줄 수 있다(추가 탐색 없이 공짜로 얻는 진행 표시).
@@ -696,19 +699,22 @@ async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
   const adoptBy = {};
   try { const lc = fenRoot ? null : await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
   const cands = []; const seen = new Set();
-  pvs.forEach((pv, i) => {
-    if (!pv || !pv.uci) return;
-    const san = uciToSan(brd, pv.uci, color); if (!san) return;
-    const k = stripSuffix(san); if (seen.has(k)) return; seen.add(k);
+  // (v0.5.9 BUG-038) 탁월 후보는 엔진으로 희생을 확인한다(같은 엔진, 리뷰와 같은 depth).
+  const sacEval = (fen) => engine.evaluate(fen, REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+  for (let i = 0; i < pvs.length; i++) {
+    const pv = pvs[i];
+    if (!pv || !pv.uci) continue;
+    const san = uciToSan(brd, pv.uci, color); if (!san) continue;
+    const k = stripSuffix(san); if (seen.has(k)) continue; seen.add(k);
     const mvCp = cpOfLine(pv);
     const loss = i === 0 ? 0 : Math.max(0, bestCp - mvCp);
     // (v0.4.0 버그 수정) 다른 네 판정 경로(classifyMoveKindDetailed·analyzeGame·분석 탭·자유 탐색)와
     // 달리 이 퍼즐 후보 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는 다시 탁월로
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
     // (v0.5.9 BUG-037) 등급 규칙은 gradeMoveKind 하나로 — 퍼즐 후보는 유일한 수를 따로 매기지 않는다(secondCp 생략).
-    const kind = gradeMoveKind({ loss, matched: i === 0, bestCp, playedCp: mvCp, isSac: () => isSacrifice(brd, san, color), priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san });
+    const kind = await gradeMoveKindConfirmed({ loss, matched: i === 0, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
-  });
+  }
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
   const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
   if (topAdopt && topAdopt[1] >= 10 && sanSrc(brd, topAdopt[0], color)) {
@@ -718,7 +724,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
       if (evc) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
-        const kind = gradeMoveKind({ loss, matched: false, bestCp, playedCp: mvCp, isSac: () => isSacrifice(brd, san, color), priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san });
+        const kind = await gradeMoveKindConfirmed({ loss, matched: false, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
         cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color) });
       }
     } catch { }
@@ -1754,20 +1760,90 @@ async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12, fenRo
   }
   const loss = matched ? 0 : bestCp - ourCp;   // 최선수 그 자체는 손실 0(노이즈 제거) — analyzeGame과 동일 규칙
   // 승부가 기울었는지(완화)는 두기 전 평가(bestCp)로 판단한다 — gradeMoveKind 참고.
-  const grade = (oppJustErred) => gradeMoveKind({
+  // 탁월 후보는 엔진으로 희생을 확인한다(v0.5.9 BUG-038).
+  const grade = (oppJustErred) => gradeMoveKindConfirmed({
     loss, matched, bestCp, playedCp: ourCp, secondCp: p1 ? cpOf(p1) : null,
-    isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+    priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
     singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), oppJustErred, san,
-  });
-  let kind = grade(false);
+  }, { fenRoot, prevSans, san, color: col, evaluate: (fen) => engine.evaluate(fen, depth) });
+  let kind = await grade(false);
   // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는지는 후보일 때만 직전 포지션을 1회 추가 평가해 확인한다.
   if (["inaccuracy", "mistake", "good"].includes(kind) && prevSans.length >= 1 && bestCp >= 120 && loss >= 100 && ourCp >= -30) {
     try {
       const oppBest = await engine.evaluate(fenOfRoot(fenRoot, prevSans.slice(0, -1)), depth);
-      if (oppBest && cpOf(oppBest) + bestCp >= 100) kind = grade(true);
+      if (oppBest && cpOf(oppBest) + bestCp >= 100) kind = await grade(true);
     } catch { }
   }
   return { kind, bestSan: matched ? null : bestSan, beforeCp: bestCp };
+}
+// ============================================================ (v0.5.9 BUG-038) 희생의 엔진 확인 ============================================================
+// isSacrifice(정적 판정)가 참인 탁월 후보만 엔진으로 한 번 더 확인한다 — 둔 뒤 엔진 수순에서 실제로 기물을 내주는가(pvLosesMaterial),
+// 아니면 받으면 상대가 1점 이상 손해라 못 받는 "독이 든" 희생인가(sacrificeCaptureUci로 따 간 포지션을 평가). 원리는 moveQuality.js 참고.
+// 결과는 "포지션 FEN|수" 단위로 캐시해 게임 리뷰·분석 탭·집중 학습·퍼즐이 같은 수에 항상 같은 답을 낸다.
+// evaluate(fen) → { cp|mate, pv } — 호출부가 가진 엔진(리뷰 풀·분석 풀·공용 엔진)을 넘긴다. 없으면 App 루트가 등록한 공용 엔진을 쓴다.
+const sacConfirmCache = new Map();          // key → true | false(확정) | Promise(확인 중)
+const sacConfirmListeners = new Set();      // 확인이 끝날 때마다 알림(동기 채점 화면이 다시 그리도록)
+let sacConfirmDefaultEval = null;
+function setSacConfirmEvaluator(fn) { sacConfirmDefaultEval = fn; }
+function sacConfirmKey(fenRoot, prevSans, san) { return fenOfRoot(fenRoot, prevSans) + "|" + stripSuffix(san); }
+function sacVerdict(fenRoot, prevSans, san) { const v = sacConfirmCache.get(sacConfirmKey(fenRoot, prevSans, san)); return typeof v === "boolean" ? v : undefined; }
+function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
+  const key = sacConfirmKey(fenRoot, prevSans, san);
+  const hit = sacConfirmCache.get(key);
+  if (hit !== undefined) return typeof hit === "boolean" ? Promise.resolve(hit) : hit;
+  const ev = evaluate || sacConfirmDefaultEval;
+  if (!ev) return Promise.resolve(undefined);
+  const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : (x.cp || 0));
+  const p = (async () => {
+    const board = boardOfRoot(fenRoot, prevSans);
+    const enemy = color === "w" ? "b" : "w";
+    const after = applySan(board, san, color);
+    const a = await ev(fenOfRoot(fenRoot, [...prevSans, san]));
+    if (!a || (a.cp == null && a.mate == null)) return undefined;
+    if (a.pv && pvLosesMaterial(board, after, a.pv, color)) return true;             // ① 실제로 내준다
+    const capUci = sacrificeCaptureUci(board, san, color);
+    const capSan = capUci ? uciToSan(after, capUci, enemy) : null;
+    if (!capSan) return false;
+    const c = await ev(fenOfRoot(fenRoot, [...prevSans, san, capSan]));              // ② 따 간 포지션(다시 둔 쪽 차례)
+    if (!c || (c.cp == null && c.mate == null)) return undefined;
+    const gain = cpOf(c) - (-cpOf(a));
+    if (gain < SAC_POISON_MIN_GAIN_CP) return false;                                // 따 가도 그만 — 가짜 희생
+    if (gain >= SAC_POISON_BIG_GAIN_CP || (c.mate != null && c.mate > 0)) return true; // 받으면 크게 무너지는 함정
+    const afterCap = applySan(after, capSan, enemy);
+    return !(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color));              // 따 간 뒤 그대로 되찾으면 희생이 아님
+  })().catch(() => undefined).then((v) => {
+    if (typeof v === "boolean") { sacConfirmCache.set(key, v); sacConfirmListeners.forEach((f) => { try { f(); } catch { } }); }
+    else sacConfirmCache.delete(key);   // 엔진이 답하지 못함 — 다음에 다시 시도
+    return v;
+  });
+  sacConfirmCache.set(key, p);
+  return p;
+}
+// 동기 채점(분석 탭 후보 블록·FEN 모드·도감)용 isSac — 정적 판정이 참이면 캐시된 엔진 확인 결과를 쓰고, 아직 없으면 확인을 요청한 뒤
+// 일단 탁월이 아닌 것으로 둔다(확인이 끝나면 useSacConfirmTick이 화면을 다시 그린다).
+function sacCheckSync(fenRoot, prevSans, san, color, board) {
+  return () => {
+    if (!isSacrifice(board || boardOfRoot(fenRoot, prevSans), san, color)) return false;
+    const v = sacVerdict(fenRoot, prevSans, san);
+    if (v === undefined) confirmSacrifice({ fenRoot, prevSans, san, color });
+    return v === true;
+  };
+}
+function useSacConfirmTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const f = () => setTick((t) => t + 1); sacConfirmListeners.add(f); return () => { sacConfirmListeners.delete(f); }; }, []);
+  return tick;
+}
+// 비동기 채점용 — 정적 판정으로 매긴 등급이 희생 때문에 탁월이 됐을 때만 엔진 확인을 기다리고, 가짜 희생이면 희생 없이 다시 매긴다.
+// 엔진이 답하지 못하면(드묾) 정적 판정을 그대로 둔다. args는 gradeMoveKind 인자(isSac 제외), sac는 confirmSacrifice 인자.
+async function gradeMoveKindConfirmed(args, sac) {
+  const board = boardOfRoot(sac.fenRoot, sac.prevSans);
+  const withSac = gradeMoveKind({ ...args, isSac: () => isSacrifice(board, sac.san, sac.color) });
+  if (withSac !== "brilliant") return withSac;
+  const noSac = gradeMoveKind({ ...args, isSac: () => false });
+  if (noSac === "brilliant") return withSac;   // 언더프로모션 — 희생과 무관하게 탁월
+  const v = await confirmSacrifice(sac);
+  return v === false ? noSac : withSac;
 }
 // 대안 없는 단순 되잡기(recaptureFact.onlyCandidate)인지 — gradeMoveKind가 유일한 수 후보일 때만 부르도록 함수로 넘긴다.
 function singleRecaptureCheck(prevSans, san, color, fenRoot) {
@@ -1794,11 +1870,11 @@ async function classifyMoveKindQuick(engine, fenRoot, prevSans, san, movetime = 
     ourCp = -cpOf(after);
   }
   const loss = matched ? 0 : bestCp - ourCp;
-  return gradeMoveKind({
+  return gradeMoveKindConfirmed({
     loss, matched, bestCp, playedCp: ourCp, secondCp,
-    isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+    priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
     singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), san,
-  });
+  }, { fenRoot, prevSans, san, color: col, evaluate: (fen) => engine.evaluate(fen, MAX_SEARCH_DEPTH, undefined, movetime, slot) });
 }
 // 앱 전역 엔진(useEngine) — 보드 컴포넌트 깊숙한 곳(미니게임)에서도 수 등급을 매길 수 있게 컨텍스트로 내려 준다.
 const EngineContext = createContext(null);
@@ -1835,7 +1911,7 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
       const ourCp = -afterOpp;
       const loss = matched ? 0 : bestCp - ourCp;
-      const kind = gradeMoveKind({ loss, matched, bestCp, playedCp: ourCp, isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, color), priorSac: ownPriorMoveWasSacrifice(prevSans, color, fenRoot), san });
+      const kind = await gradeMoveKindConfirmed({ loss, matched, bestCp, playedCp: ourCp, priorSac: ownPriorMoveWasSacrifice(prevSans, color, fenRoot), san }, { fenRoot, prevSans, san, color, evaluate: (fen) => engine.evaluate(fen, 10, undefined, 300) });
       if (kind === "brilliant") counts.brilliant++;
       else if (kind === "mistake") counts.mistake++;
       else if (kind === "blunder") counts.blunder++;
@@ -1946,6 +2022,7 @@ function bootAnalysisWorker(urls) {
         }
       } else if (sc && !job.multi) {
         job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
+        { const pvIdx = line.indexOf(" pv "); if (pvIdx >= 0) job.last.pv = line.slice(pvIdx + 4).trim().split(/\s+/); }   // (v0.5.9 BUG-038) 위 useEngine과 같음
         if (job.onProgress) { const dm = line.match(/^info depth (\d+)/); job.onProgress({ ...job.last, depth: dm ? parseInt(dm[1], 10) : null }); }
       }
       if (line.startsWith("bestmove")) {
@@ -2145,6 +2222,15 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // 이후로는 이미 떠 있는 워커를 그대로 재사용한다.
   const dedicated = await getAnalysisPool(engine.profile, engine.urls);
   const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
+  // (v0.5.9 BUG-038) 희생 엔진 확인용 평가 — 풀의 첫 워커로, 리뷰와 같은 depth에 기본 movetime의 4배 상한. 결과는 { cp|mate, pv }.
+  // 바깥 withTimeout을 두지 않는다 — 이 요청은 워커 큐에서 아직 남은 포지션 평가들 뒤에 서므로 짧은 제한을 걸면 차례가 오기 전에
+  // 끝나 버렸다(실측: 14.Kf1이 확인 없이 정적 판정으로 남음). 멈춘 워커는 작업별 워치독(mt + hardBuffer)이 정리한다.
+  let flushWait = null;
+  const sacTried = new Set();
+  const sacEval = async (fen) => {
+    const lines = await workers[0].evaluateMulti(fen, depth, 1, movetime * 4);
+    return lines && lines[0] ? lines[0] : null;
+  };
   // (v0.3.0 성능) 예전엔 포지션 N+1개를 전부 평가(await Promise.all)한 "다음"에야 채점 루프를 한
   // 번에 돌려 결과를 통째로 반환했다 — 그래서 화면(ReviewPage)은 분석이 100% 끝날 때까지 진행률
   // 막대만 보여줄 수 있었다. 여기서는 포지션이 하나 끝날 때마다(work-stealing이라 순서 없이 끝남)
@@ -2223,13 +2309,26 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 등급 — 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037). '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만, 승부가 기울었는지는
     // 두기 전(bestCp) 기준, 직전 자신의 수가 이미 탁월(희생)이면 이어지는 콤보 수는 다시 탁월로 태그하지 않는다(v0.2.6).
     let kind;
+    // (v0.5.9 BUG-038) 희생 판정은 엔진 확인(confirmSacrifice)까지 거친다 — 확인 결과가 아직 없으면 확인을 시작하고 이 수의 채점을
+    // 미룬다(tryFlush가 그 Promise를 기다렸다가 다시 부른다). 엔진이 끝내 답하지 못하면 정적 판정을 쓴다(sacTried).
+    let sacWait = null;
+    const isSac = () => {
+      if (!isSacrifice(brd, fullSans[i], color)) return false;
+      const v = sacVerdict(fenRoot, fullSans.slice(0, i), fullSans[i]);
+      if (v !== undefined) return v;
+      if (sacTried.has(i)) return true;
+      sacTried.add(i);
+      sacWait = confirmSacrifice({ fenRoot, prevSans: fullSans.slice(0, i), san: fullSans[i], color, evaluate: sacEval });
+      return true;
+    };
     if (!fenRoot && isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
     else kind = gradeMoveKind({
       loss, matched, bestCp, playedCp, secondCp: posEval[i].second == null ? null : posEval[i].second,
-      isSac: () => isSacrifice(brd, fullSans[i], color), priorSac: i >= 2 && moves[i - 2].kind === "brilliant",
+      isSac, priorSac: i >= 2 && moves[i - 2].kind === "brilliant",
       singleRecapture: singleRecaptureCheck(fullSans.slice(0, i), fullSans[i], color, fenRoot),
       oppJustErred: i >= 1 && ["mistake", "blunder"].includes(moves[i - 1].kind), san: fullSans[i],
     });
+    if (sacWait && kind === "brilliant") return sacWait;
     // (v0.3.4 유지) best/only/brilliant/book로 분류된 수는 원 손실(엔진 depth 노이즈로 미세하게
     // 남을 수 있음)과 무관하게 정확도 계산에서 감점하지 않는다 — 예전 chess.com 근사 체계의 규칙을
     // 그대로 물려받는다(이 판정 자체는 "어떤 수가 감점 대상인지"이지, 손실→정확도 변환 공식과는 무관).
@@ -2263,10 +2362,11 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     return out;
   }
   function tryFlush() {
-    if (!posEval[0]) return;
+    if (!posEval[0] || flushWait) return;
     if (graphCp[0] === undefined) computeDisplay(0);
     while (gradeIdx < N && posEval[gradeIdx] && posEval[gradeIdx + 1]) {
-      gradeOne(gradeIdx);
+      const wait = gradeOne(gradeIdx);
+      if (wait) { flushWait = wait.then(() => { flushWait = null; tryFlush(); }); return; }   // 희생 엔진 확인 대기(v0.5.9 BUG-038)
       computeDisplay(gradeIdx + 1);
       gradeIdx++;
       if (onMove) {
@@ -2362,6 +2462,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   }
   await Promise.all(workers.map(runWorker));
   tryFlush(); // 안전망 — 위에서 이미 다 흘려보냈어야 하지만, 마지막 자리가 비는 경우를 대비해 한 번 더.
+  while (flushWait) await flushWait;   // 남은 희생 엔진 확인이 끝나 채점이 모두 흘러갈 때까지(v0.5.9 BUG-038)
   // (성능) 여기서 워커를 끄지 않는다 — getAnalysisPool이 세션 내내 재사용하도록 관리한다(프로필을
   // 바꾸면 그때 이전 풀이 정리된다).
   // (v0.2.1) 마지막 수가 체크메이트(#)면 종료 포지션은 엔진이 평가를 못 준다(둘 수가 없음) — cp 0으로 남아
@@ -2457,7 +2558,8 @@ function assignTiers(moves, ply, board, keyStr, sans) {
     const matched = i === argmaxIdx;
     const kind = gradeMoveKind({
       loss: best - mv, matched, bestCp: best, playedCp: mv, secondCp: matched ? secondCp : undefined,
-      isSac: () => !!(board && sans) && isSacrifice(board, m.san, color), priorSac: !!sans && ownPriorMoveWasSacrifice(sans, color),
+      // 엔진 확인된 희생만(v0.5.9 BUG-038) — 확인 전엔 탁월로 치지 않고, 끝나면 호출부가 useSacConfirmTick으로 다시 그린다.
+      isSac: () => !!(board && sans) && sacCheckSync(null, sans, m.san, color, board)(), priorSac: !!sans && ownPriorMoveWasSacrifice(sans, color),
       singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
     });
     return { ...m, kind, book: false };
@@ -4736,6 +4838,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   }, [moves, ply, liveOn, engine && engine.status]);
 
   const board = useMemo(() => boardFromSans(sans), [key]);
+  const sacTick = useSacConfirmTick();   // 희생 엔진 확인이 끝나면 등급을 다시 매긴다(v0.5.9 BUG-038)
   const tiled = useMemo(() => {
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
@@ -4763,7 +4866,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const books = t.filter((m) => m.book).sort((a, b) => rank(b) - rank(a));
     const nonbooks = t.filter((m) => !m.book).sort((a, b) => rank(b) - rank(a));
     return [...books, ...nonbooks];
-  }, [moves, ply, board, key, contentVer, sortBy, liveOn, engine && engine.status]);
+  }, [moves, ply, board, key, contentVer, sortBy, liveOn, engine && engine.status, sacTick]);
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
   // 후보 수 평가가 하나도 없을 때(막 포지션에 진입한 순간)의 임시 표시값으로만 사용한다.
@@ -6175,16 +6278,17 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     // 기준값이라 한 번만 구하고, after만 depth가 깊어질 때마다(onProgress) 다시 등급을 매겨 아이콘을
     // 계속 갱신한다(최대 5초 동안 여러 번 바뀔 수 있음 — depth 20·moveTime 5초 상한, 대부분의
     // 포지션은 그 전에 depth 20에서 먼저 끝나 체감 속도는 기존과 비슷하게 유지된다).
+    const sacEvalRef = { current: null };
     const gradeFrom = (bestCp, secondCp, bestSan, after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
       const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       const ourCp = -afterOpp; const loss = matched ? 0 : bestCp - ourCp;
       // 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037) — 승부가 기울었는지는 두기 전(bestCp) 기준.
-      return gradeMoveKind({
+      return gradeMoveKindConfirmed({
         loss, matched, bestCp, playedCp: ourCp, secondCp,
-        isSac: () => isSacrifice(boardFromSans(sans), san, col), priorSac: ownPriorMoveWasSacrifice(sans, col),
+        priorSac: ownPriorMoveWasSacrifice(sans, col),
         singleRecapture: singleRecaptureCheck(sans, san, col), san,
-      });
+      }, { fenRoot: null, prevSans: sans, san, color: col, evaluate: sacEvalRef.current });   // 탁월 후보는 엔진 확인(v0.5.9 BUG-038)
     };
     (async () => {
       // (버그 수정) best/after는 서로 다른 독립된 포지션이라 순서를 지킬 이유가 없는데도, 단일
@@ -6202,7 +6306,9 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
       if (cancel || !best || !after) return;
       const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : x.cp);
       const bestSan = best.uci ? uciToSan(boardFromSans(sans), best.uci, col) : null;
-      setLiveKind(gradeFrom(cpOf(best), pvs[1] ? cpOf(pvs[1]) : null, bestSan, after));
+      sacEvalRef.current = (fen) => wAfter.evaluate(fen, 20, undefined, 5000, "focus-sac");
+      const k = await gradeFrom(cpOf(best), pvs[1] ? cpOf(pvs[1]) : null, bestSan, after);
+      if (!cancel) setLiveKind(k);
     })();
     return () => { cancel = true; };
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status, engine && engine.profile]);
@@ -14830,11 +14936,12 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           const ourCp = -afterOpp;
           const loss = matched ? 0 : bestCp - ourCp;
           // 등급 규칙은 analyzeGame과 같은 gradeMoveKind 하나로(v0.5.9 BUG-037).
-          const kind = gradeMoveKind({
+          const kind = await gradeMoveKindConfirmed({
             loss, matched, bestCp, playedCp: ourCp, secondCp,
-            isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+            priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
             singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), san,
-          });
+          }, { fenRoot, prevSans, san, color: col, evaluate: (fen) => wAfter.evaluate(fen, MAX_SEARCH_DEPTH, undefined, movetime) });
+          if (cancelled) return;
           if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
         };
         await grade(REVIEW_MOVETIME_MS);
@@ -15475,7 +15582,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
           const second = raw.find((q, j) => j > 0 && q && q.pv && q.pv.length);
           kind = gradeMoveKind({
             loss, matched, bestCp, playedCp: thisCp, secondCp: matched && second ? cpOf(second) : undefined,   // 2순위 줄이 아직 없으면(스트리밍 중) 모름
-            isSac: () => isSacrifice(board, san, col), priorSac: ownPriorMoveWasSacrifice(sans, col, fenRoot),
+            isSac: sacCheckSync(fenRoot, sans, san, col, board), priorSac: ownPriorMoveWasSacrifice(sans, col, fenRoot),   // 엔진 확인된 희생만(v0.5.9 BUG-038)
             singleRecapture: singleRecaptureCheck(sans, san, col, fenRoot), san,
           });
         }
@@ -15486,8 +15593,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
     // (버그 수정) 분석 풀(getAnalysisPool)이 돌려주는 워커 래퍼의 evaluateMulti는 공용 엔진(engine)과
     // 인자 개수가 다르다 — onProgress 없이 (fen,d,multipv,mt,onLines,slot) 6개뿐이다(callEvaluateMulti
     // 주석 참고). 순위 1위 줄(top)의 평가·depth를 posEval·curDepth로도 함께 쓴다.
+    // (v0.5.9 BUG-038) 희생 엔진 확인이 끝나면 마지막 후보 줄로 등급을 다시 매긴다(sacCheckSync는 확인 전엔 탁월로 치지 않는다).
+    let lastRaw = null;
+    const onSacConfirmed = () => { if (!cancelled && lastRaw) { const mt = toMoveTiles(lastRaw); if (mt.length) setFenMoves(mt); } };
+    sacConfirmListeners.add(onSacConfirmed);
     const onLines = (raw) => {
       if (cancelled || !raw || !raw.length) return;
+      lastRaw = raw;
       const l = toLines(raw);
       const top = raw[0];
       setFenEval((prev) => ({
@@ -15516,7 +15628,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
         onLines(deep);
       } catch { if (!cancelled) setFenEval((prev) => ({ ...prev, linesPending: false })); }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; sacConfirmListeners.delete(onSacConfirmed); };
   }, [fenRoot, key, liveOn, engine.status, engine.profile]);
   const { moves, posGames, statsLoading, engineNote, posEval, engineLines, linesPending, curDepth } = fenRoot
     ? { moves: fenMoves, posGames: null, statsLoading: false, engineNote: null, ...fenEval }
@@ -15600,18 +15712,19 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
     const wBest = pool[0] || engine, wAfter = pool[1] || engine;
     const col = plyIsWhite(prevSans.length, fenRootParam ? fenRootParam.turn : "w") ? "w" : "b";
     let bestCp = null, matched = null, secondCp;
-    const computeKind = (after) => {
+    // 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037) — 승부가 기울었는지는 두기 전(bestCp) 기준이라 팽팽하던 위치를 스스로
+    // 무너뜨린 블런더가 실수로 격하되지 않는다. (v0.5.9 BUG-038) 진행 중 갱신(partial)은 이미 끝난 엔진 확인 결과만 쓰고(아직 없으면
+    // 탁월 아님), 최종 채점만 엔진 확인을 기다린다.
+    const kindArgs = (after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp; // 상대 관점
       const ourCp = -afterOpp;
-      const loss = matched ? 0 : bestCp - ourCp;
-      // 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037) — 승부가 기울었는지는 두기 전(bestCp) 기준이라 팽팽하던 위치를 스스로
-      // 무너뜨린 블런더가 실수로 격하되지 않는다.
-      return gradeMoveKind({
-        loss, matched, bestCp, playedCp: ourCp, secondCp,
-        isSac: () => isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRootParam),
+      return {
+        loss: matched ? 0 : bestCp - ourCp, matched, bestCp, playedCp: ourCp, secondCp,
+        priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRootParam),
         singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRootParam), san,
-      });
+      };
     };
+    const computeKind = (after) => gradeMoveKind({ ...kindArgs(after), isSac: () => isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col) && sacVerdict(fenRootParam, prevSans, san) === true });
     // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
     // (v0.5.9 BUG-037) 유일한 수를 가리려면 2순위 평가가 필요해 MultiPV 2로 평가한다 — 예전엔 1순위만 봐서 분석 탭에서 직접 둔 수에는
     // 유일한 수가 절대 뜨지 않았다.
@@ -15630,7 +15743,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
     const afterPromise = wAfter.evaluate(fenOfRoot(fenRootParam, [...prevSans, san]), 13, onKind ? async (partial) => { await bestPromise; if (bestCp != null) onKind(computeKind(partial)); } : undefined, MOVETIME_MS);
     const [best, after] = await Promise.all([bestPromise, afterPromise]);
     if (!best || !after) return null;
-    return computeKind(after);
+    return gradeMoveKindConfirmed(kindArgs(after), { fenRoot: fenRootParam, prevSans, san, color: col, evaluate: (fen) => wAfter.evaluate(fen, 13, undefined, MOVETIME_MS) });
   }, [liveOn, engine.status, engine.profile, engine.urls]);
 
   const stampQ = useCallback((prevSans, brd, col, san, mm) => {
@@ -16386,12 +16499,13 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
   const label = nameOverride(path.join(" "), m.san) ?? m.name ?? openingNameOf([...path, m.san]) ?? (m.isMain ? "Main Line" : null);
   const ply = path.length;
   const board = useMemo(() => boardFromSans(path), [path.join(" ")]);
+  const sacTick = useSacConfirmTick();   // 희생 엔진 확인이 끝나면 등급을 다시 매긴다(v0.5.9 BUG-038)
   const tier = useMemo(() => {
     const node = snapNode(path);
     const rawMoves = mergeDevAdds(path.join(" "), node ? node.moves : []);
     const tiered = assignTiers(rawMoves, ply, board, path.join(" "), path);
     return tiered.find((x) => x.san === m.san) || null;
-  }, [path.join(" "), m.san, board]);
+  }, [path.join(" "), m.san, board, sacTick]);
   const kind = (tier && tier.kind) || (m.book ? "book" : "pending");
   const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
   const evTxt = m.evalCp != null ? fmtEvalCp(m.evalCp) : null;
@@ -20482,7 +20596,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     const key = prevSans.join(",") + "|" + mvSan;
     if (knownKind) { setMoveIcon({ key, to: info.to, kind: knownKind }); return; }
     // (20차) 엔진을 못 쓰는 상황의 fallback을 'best'가 아닌 '아이콘 없음'으로 — 아무 수에나 최선 별이 붙지 않도록.
-    const fallback = isSetupMistake ? null : (isSacrifice(boardOfRoot(fenRoot, prevSans), stripSuffix(mvSan), moverColor) ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
+    // (v0.5.9 BUG-038) 정적 희생 판정만으로 탁월 아이콘을 먼저 띄우지 않는다 — 엔진 확인이 이미 끝난 희생일 때만.
+    const sacKnown = isSacrifice(boardOfRoot(fenRoot, prevSans), stripSuffix(mvSan), moverColor) && sacVerdict(fenRoot, prevSans, stripSuffix(mvSan)) === true;
+    const fallback = isSetupMistake ? null : (sacKnown ? "brilliant" : (liveOn && engine && engine.status === "ready" ? "pending" : null));
     setMoveIcon(fallback ? { key, to: info.to, kind: fallback } : null);
     let cancelled = false;
     if (liveOn && engine && engine.status === "ready") {
@@ -32929,6 +33045,16 @@ export default function App() {
   const [enginePref, setEnginePrefState] = useState(loadEnginePref);
   const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
   const engine = useEngine(enginePref);
+  // (v0.5.9 BUG-038) 분석 탭 후보 블록·FEN 모드·도감처럼 엔진을 직접 들고 있지 않은 동기 채점이 요청하는 희생 엔진 확인은 공용 분석
+  // 풀의 마지막 워커로 돌린다(메인 엔진은 실시간 분석 큐가 길 수 있어 피한다). 풀을 못 띄우면 메인 엔진으로.
+  useEffect(() => {
+    if (engine.status !== "ready") { setSacConfirmEvaluator(null); return; }
+    setSacConfirmEvaluator(async (fen) => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => []);
+      const w = pool && pool.length ? pool[pool.length - 1] : engine;
+      return w.evaluate(fen, 14, undefined, 1500);
+    });
+  }, [engine.status, engine.profile]);
   // (v0.3.9 기능) 사용자 요청 — 설정 탭 "리뷰 설정" 카드의 리뷰 속도(더 빠르게/더 정확하게)·국면
   // 변동성 보정 on/off. 둘 다 이 기기에만 저장되고(엔진 선택과 같은 패턴), ReviewPage에 그대로
   // prop으로 전달한다.

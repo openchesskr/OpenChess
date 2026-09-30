@@ -350,6 +350,79 @@ export function isSacrifice(board, sanRaw, color) {
   }
   return false;
 }
+/* ── (v0.5.9 BUG-038) 희생의 엔진 확인 ──
+   isSacrifice는 한 칸의 정적 교환(SEE)만 봐서, 다른 칸의 교환·중간 수로 되찾는 방어(예: 14.Kf1 — e5 나이트가 공짜처럼 보여도
+   …Bxe5 Qxd5 Nxd5 Rxe5로 되찾음)를 희생으로 오판한다. 탁월 후보일 때만 엔진으로 두 가지를 확인한다(App.jsx confirmSacrifice):
+   ① 둔 뒤 엔진 수순(PV)을 따라가 "내 수를 둔 직후" 지점의 기물 점수가 두기 전보다 1점 이상 줄어드는 순간이 있는가(실제로 내준다),
+   ② 수순에선 상대가 받지 않아도, 상대가 그 기물을 가장 싼 기물로 따 간 포지션을 평가하면 둔 쪽이 SAC_POISON_MIN_GAIN_CP 이상
+      좋아지고, 그 뒤 엔진 수순으로 기물을 그대로 되찾지 못하는가(pvRegainsMaterial — 되찾으면 희생이 아니라 지켜진 기물. 단
+      SAC_POISON_BIG_GAIN_CP 이상·메이트면 받는 순간 무너지는 함정이라 희생으로 인정). 둘 다 아니면 가짜 희생이라 탁월이 아니다.
+   마스터 대국 1,500판 실측(수정 전 규칙): 탁월 후보 866개 중 ①이 374개, 나머지 중 약 절반이 ②의 독이 든 희생. */
+export const SAC_POISON_MIN_GAIN_CP = 100;
+// ②에서 따 간 뒤 엔진 수순으로 기물을 그대로 되찾으면(예: 14.Kf1 …Bxe5 Qxd5 Nxd5 Rxe5) 희생이 아니라 "지켜진 기물"이다 — 다만 이득이
+// 이만큼 크면(메이트 포함) 되찾더라도 받는 순간 크게 무너지는 함정이라 희생으로 인정한다.
+export const SAC_POISON_BIG_GAIN_CP = 300;
+// UCI 한 수를 보드에 그대로 적용한다(합법성 검사 없음 — 엔진 수순 재생용). 캐슬링 룩 이동·앙파상·승진을 반영한다.
+export function applyUciRaw(board, uci) {
+  const F = "abcdefgh";
+  if (!uci || uci.length < 4) return null;
+  const fc = F.indexOf(uci[0]), fr = 8 - parseInt(uci[1], 10), tc = F.indexOf(uci[2]), tr = 8 - parseInt(uci[3], 10);
+  if (fc < 0 || tc < 0 || !board[fr] || !board[fr][fc]) return null;
+  const b = board.map((row) => row.slice());
+  const p = b[fr][fc];
+  if (p.t === "K" && Math.abs(tc - fc) === 2) { const rf = tc > fc ? 7 : 0, rt = tc > fc ? 5 : 3; b[fr][rt] = b[fr][rf]; b[fr][rf] = null; }
+  if (p.t === "P" && fc !== tc && !b[tr][tc]) b[fr][tc] = null; // 앙파상
+  b[tr][tc] = uci.length > 4 ? { c: p.c, t: uci[4].toUpperCase() } : p;
+  b[fr][fc] = null;
+  return b;
+}
+// ① — boardBefore: 두기 전, boardAfter: 둔 직후(상대 차례), pv: boardAfter에서 시작하는 엔진 수순(UCI).
+export function pvLosesMaterial(boardBefore, boardAfter, pv, color, plies = 8) {
+  const base = materialDiff(boardBefore, color);
+  let b = boardAfter, min = materialDiff(boardAfter, color);
+  const n = Math.min(plies, (pv || []).length);
+  for (let k = 0; k < n; k++) {
+    b = applyUciRaw(b, pv[k]);
+    if (!b) break;
+    // 내 수를 둔 직후(상대 차례)만 잰다 — 상대가 먼저 잡고 내가 곧바로 되잡는 평범한 교환의 순간적인 차이는 손해가 아니다.
+    // 수순이 상대 수로 끝났으면(메이트 등으로 더 이어지지 않음) 그 마지막 지점도 잰다.
+    if (k % 2 === 1 || (k === n - 1 && n === pv.length)) min = Math.min(min, materialDiff(b, color));
+  }
+  return base - min >= 1;
+}
+// ② — 상대가 희생된 기물을 따 간 뒤(boardAfterCapture, 둔 쪽 차례) 엔진 수순(pv, 둔 쪽 수부터)을 따라가 수순 끝에서 기물 점수가 두기 전
+// 수준까지 돌아오는지. 끝 지점은 "마지막 내 수 직후"와 "그 다음 상대 수 직후" 중 낮은 쪽으로 잰다(막 잡고 곧 되잡히는 순간을 빼려고).
+export function pvRegainsMaterial(boardBefore, boardAfterCapture, pv, color, plies = 8) {
+  const base = materialDiff(boardBefore, color);
+  const m = [materialDiff(boardAfterCapture, color)];
+  let b = boardAfterCapture;
+  const n = Math.min(plies, (pv || []).length);
+  for (let k = 0; k < n; k++) { b = applyUciRaw(b, pv[k]); if (!b) break; m.push(materialDiff(b, color)); }
+  // m[j]는 j수 둔 뒤 — j가 홀수면 내 수 직후
+  let j = m.length - 1;
+  if (j % 2 === 0) j -= 1;
+  if (j < 1) return m[0] >= base;
+  const settled = j + 1 < m.length ? Math.min(m[j], m[j + 1]) : m[j];
+  return settled >= base;
+}
+// ② 준비 — 희생된 기물(이동한 기물이 잡히는 칸, 아니면 방치된 기물)을 상대가 가장 싼 기물로 합법적으로 잡는 수(UCI). 없으면 null.
+export function sacrificeCaptureUci(board, sanRaw, color) {
+  const info = sanSrc(board, sanRaw, color);
+  if (!info) return null;
+  const after = applySan(board, sanRaw, color);
+  const enemy = color === "w" ? "b" : "w";
+  const [tr, tc] = info.to;
+  let sq = null;
+  if (!info.castle && seeSquare(after, tr, tc, enemy) > 0) sq = [tr, tc];
+  else sq = hangingLossSq(after, color, info.castle ? null : [tr, tc]).sq;
+  if (!sq) return null;
+  const att = lva(after, sq[0], sq[1], enemy);
+  if (!att || !canCaptureSquareLegally(after, sq[0], sq[1], enemy)) return null;
+  const F = "abcdefgh";
+  const promo = att.t === "P" && (sq[0] === 0 || sq[0] === 7) ? "q" : "";
+  return F[att.c] + (8 - att.r) + F[sq[1]] + (8 - sq[0]) + promo;
+}
+
 // (v0.2.6 버그 수정) 직전 자신의 수(2수 전 — 상대 응수 하나를 사이에 둔 같은 진영의 수)가 이미
 // 희생이었다면, 지금 이 수는 그 희생을 잇는 콤보의 연결 수(디플렉션·체크로 기물을 회수하는 수 등)일
 // 뿐 새로 찾아낸 탁월한 수가 아니므로 다시 브릴리언트로 태그하지 않는다. 예: 15...Qxd2(퀸 희생)
