@@ -72,6 +72,17 @@
 
 ## 버전 기록
 
+### OpenChess v0.5.9 — 2026/9/30
+
+**버그 수정**
+- 친구 도전장 전송 실패(BUG-035): `pvp_invites.game_type` 컬럼 누락. `supabase-setup.sql`에 `add column if not exists` 추가, `check-sql-table-columns`(prebuild)로 재발 방지.
+- 탁월한 수·유일한 수 누락(BUG-036·037·038): 채점 규칙을 `gradeMoveKind` 하나로 통일. 탁월한 수는 엔진 PV로 희생·회수를 확인. `check-move-grading`(prebuild).
+- 리뷰 이론 수 오표시(BUG-039): 수순이 아닌 포지션 기준 판정 + ECO 포지션(`src/data/ecoBook.json`). `check-book-transposition`(prebuild).
+
+**문구 정리**
+- 사이트 전체 문구(앱 화면·About·FAQ·공지·업데이트 내역)를 명사형·개조식으로 통일. " — " 구분 기호 제거, 중요도 낮은 안내 문구·마스코트 대사 삭제.
+- `VERSION_HISTORY`의 `mascot` 필드 삭제, `CHANGELOG` 항목은 `VERSION_HISTORY` 섹션에서 재생성.
+
 ### OpenChess v0.5.8 — 2026/9/27
 
 **기능 — 미니게임 대전 경험**
