@@ -13844,7 +13844,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
       // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
-    } catch { setPvpErr("도전장을 보내지 못했어요."); }
+    } catch (e) { setPvpErr(inviteFailText(e, "도전장")); } // (v0.5.9 BUG-035) 미니게임 로스터·채팅 /play처럼 서버가 알려 준 실패 이유를 보여 준다
   };
   const cancelFriendInvite = async () => {
     if (!myInvite) return;

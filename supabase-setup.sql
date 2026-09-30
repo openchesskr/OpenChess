@@ -2100,6 +2100,9 @@ create table if not exists public.pvp_invites (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- (v0.5.9 BUG-035) game_type은 위 create table 안에만 있어, v0.4.8 이전에 만들어진 기존 프로젝트에서는 이 파일만 다시 실행해도
+-- 컬럼이 생기지 않는다(pvp_queue·pvp_games는 따로 add column이 있는데 이 표만 빠져 있었음) — 그러면 pvp_invite_friend가 매번 실패한다.
+alter table public.pvp_invites add column if not exists game_type text not null default 'chess';
 alter table public.pvp_invites enable row level security;
 drop policy if exists "pvp invites select own" on public.pvp_invites;
 create policy "pvp invites select own" on public.pvp_invites for select using (auth.uid() = from_uid or auth.uid() = to_uid);
