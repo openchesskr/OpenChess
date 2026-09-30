@@ -131,7 +131,7 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
     const r = await onSubmit(reason, detail.trim(), alsoBlock);
     setBusy(false);
     if (r && r.ok) onClose();
-    else setMsg(r && r.error === "limit" ? "오늘은 신고를 더 할 수 없어요(하루 20건)." : "신고를 보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+    else setMsg(r && r.error === "limit" ? "오늘은 더 신고할 수 없음 (하루 20건)" : "신고 전송 실패. 잠시 후 다시 시도");
   };
   return (
     <Sheet title={targetName + "님 신고"} onClose={onClose}>
@@ -146,12 +146,12 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
         style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", fontSize: 12, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }} />
       {!alreadyBlocked && (
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 12, cursor: "pointer" }}>
-          <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} />이 사용자 차단하기(서로 메시지를 보낼 수 없어요)
+          <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} />이 사용자 차단 (서로 메시지 전송 불가)
         </label>
       )}
       {msg && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{msg}</p>}
       <button onClick={submit} disabled={!reason || busy} className="press" style={primaryBtn(!!reason && !busy)}>{busy ? "보내는 중…" : "신고하기"}</button>
-      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>신고한 메시지 내용은 검토를 위해 운영진에게 전달돼요. 상대에게는 알리지 않아요.</p>
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>신고한 메시지는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음</p>
     </Sheet>
   );
 }
@@ -191,7 +191,7 @@ export function ChatSearchPanel({ onSearch, onPick, onClose, nameOf }) {
                 <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {new Date(m.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
                 <div style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mark(m.body || "")}</div>
               </button>
-            )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>검색 결과가 없어요.</div>}
+            )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>검색 결과 없음</div>}
         </div>
       )}
     </div>
@@ -300,10 +300,10 @@ export function PositionPickSheet({ Board, title, cta, onSend, onClose }) {
   useEffect(() => { setSans([]); }, [fenText]);
   return (
     <Sheet title={title} onClose={onClose} width={380}>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 8px", lineHeight: 1.5 }}>보드에서 직접 수를 두거나, FEN을 붙여넣어 포지션을 정하세요.</p>
-      <input value={fenText} onChange={(e) => setFenText(e.target.value)} placeholder="FEN 붙여넣기(비우면 시작 위치)"
+      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 8px", lineHeight: 1.5 }}>보드에서 직접 수를 두거나 FEN을 붙여넣어 포지션 지정</p>
+      <input value={fenText} onChange={(e) => setFenText(e.target.value)} placeholder="FEN 붙여넣기 (비우면 시작 위치)"
         style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid " + (fenBad ? T.blunder : "#C9B58C"), background: "#fff", fontSize: 11.5, color: T.ink, marginBottom: 8, fontFamily: "ui-monospace,monospace" }} />
-      {fenBad && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "-4px 0 8px" }}>FEN 형식이 올바르지 않아요.</p>}
+      {fenBad && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "-4px 0 8px" }}>FEN 형식이 올바르지 않음</p>}
       <div style={{ display: "flex", justifyContent: "center" }}>
         <ChatMoveBoard Board={Board} root={root} sans={sans} size={300} onMove={(san) => setSans((s) => [...s, san])} flip={root ? root.turn === "b" : false} />
       </div>
@@ -332,7 +332,7 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
     (votes || []).forEach((v) => { const t = m.get(v.san) || { san: v.san, uids: [] }; t.uids.push(v.uid); m.set(v.san, t); });
     return [...m.values()].sort((a, b) => b.uids.length - a.uids.length);
   }, [votes]);
-  if (!root) return <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>포지션을 읽을 수 없는 투표예요.</div>;
+  if (!root) return <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>포지션을 읽을 수 없는 투표</div>;
   const voting = !myVote || changing;
   const total = (votes || []).length;
   const reveal = async () => {
@@ -344,7 +344,7 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 236, padding: 8, borderRadius: 14, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
       <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 900, color: T.ink, marginBottom: 2 }}><BarChart3 size={13} color={T.brass} />여기서 뭐 둘래?</div>
-      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{(root.turn === "w" ? "백" : "흑") + " 차례 · " + (voting ? "보드에서 수를 두면 투표돼요" : "투표 " + total + "표")}</div>
+      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{(root.turn === "w" ? "백" : "흑") + " 차례 · " + (voting ? "보드에서 수를 두면 투표" : "투표 " + total + "표")}</div>
       <ChatMoveBoard Board={Board} root={root} sans={[]} size={220} interactive={voting} flip={root.turn === "b"} onMove={(san) => { setChanging(false); onVote(san); }} />
       {!voting && (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -374,13 +374,13 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
             <motion.div initial={{ opacity: 0, transform: "translateY(4px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }}
               style={{ fontSize: 11.5, fontWeight: 800, color: T.best, textAlign: "center", marginTop: 2 }}>
               엔진 최선의 수: {best.san} <span style={{ color: T.inkSoft, fontWeight: 700 }}>({best.evalTxt})</span>
-              {myVote && <span style={{ display: "block", fontSize: 10.5, color: myVote.san === best.san ? T.best : T.inkSoft }}>{myVote.san === best.san ? "정답을 맞혔어요!" : "내 선택: " + myVote.san}</span>}
+              {myVote && <span style={{ display: "block", fontSize: 10.5, color: myVote.san === best.san ? T.best : T.inkSoft }}>{myVote.san === best.san ? "정답" : "내 선택: " + myVote.san}</span>}
             </motion.div>
           )}
-          {best === "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, textAlign: "center" }}>엔진이 아직 준비되지 않았어요. 잠시 후 다시 눌러 주세요.</div>}
+          {best === "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, textAlign: "center" }}>엔진 준비 중. 잠시 후 다시 시도</div>}
         </div>
       )}
-      {mine && voting && myVote == null && total > 0 && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>{total}명이 투표했어요 — 나도 두면 결과가 보여요.</div>}
+      {mine && voting && myVote == null && total > 0 && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>{total}명 투표. 나도 두면 결과 표시</div>}
     </div>
   );
 }
@@ -390,7 +390,7 @@ export function CoboCard({ msg, mine, otherName, onJoin }) {
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 220, padding: "10px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.ivoryHi, boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
       <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 900 }}><Users size={15} color={T.brassHi} />같이 보기 보드</div>
-      <div style={{ fontSize: 11, color: "rgba(250,242,226,.75)", margin: "4px 0 9px", lineHeight: 1.45 }}>{mine ? otherName + "님과 한 보드를 같이 봐요 — 누가 두든 서로의 화면에 바로 보여요." : otherName + "님이 같이 보기 보드에 초대했어요."}</div>
+      <div style={{ fontSize: 11, color: "rgba(250,242,226,.75)", margin: "4px 0 9px", lineHeight: 1.45 }}>{mine ? otherName + "님과 한 보드를 같이 봄. 누가 두든 서로의 화면에 바로 표시" : otherName + "님이 같이 보기 보드에 초대"}</div>
       <button onClick={onJoin} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{mine ? "보드 열기" : "참여하기"}</button>
     </div>
   );
@@ -437,7 +437,7 @@ export function CoBoardScreen({ Board, sbClient, msg, myUid, myName, otherName, 
         <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>같이 보기</div>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: peerHere ? T.best : T.inkSoft }}>{peerHere ? "● " + otherName + "님도 보고 있어요" : "○ " + otherName + "님을 기다리는 중"}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: peerHere ? T.best : T.inkSoft }}>{peerHere ? "● " + otherName + "님도 보는 중" : "○ " + otherName + "님을 기다리는 중"}</div>
         </div>
         <span style={{ width: 32 }} />
       </div>
@@ -446,7 +446,7 @@ export function CoBoardScreen({ Board, sbClient, msg, myUid, myName, otherName, 
         <div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginBottom: 6, minHeight: 16 }}>
           {info.color === "w" ? "백" : "흑"} 차례{lastBy && sans.length ? " · 마지막 수: " + (lastBy === myUid ? (myName || "나") : otherName) : ""}
         </div>
-        <div style={{ fontSize: 12, color: T.ink, fontFamily: "ui-monospace,monospace", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "7px 10px", minHeight: 20, marginBottom: 10, wordBreak: "break-word" }}>{movesTxt || "아직 둔 수가 없어요 — 아무나 먼저 두세요."}</div>
+        <div style={{ fontSize: 12, color: T.ink, fontFamily: "ui-monospace,monospace", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "7px 10px", minHeight: 20, marginBottom: 10, wordBreak: "break-word" }}>{movesTxt || "둔 수 없음. 먼저 두기"}</div>
         <div className="flex gap-2">
           <button onClick={() => push(sans.slice(0, -1))} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><Undo2 size={13} />무르기</button>
           <button onClick={() => push([])} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><RotateCcw size={13} />처음부터</button>
@@ -477,7 +477,7 @@ export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickCho
     // (v0.5.7) 고를 수 있는 인자가 정해진 명령어(/play)는 힌트 아래 칩으로 보여 준다 — 누르면 입력창에 채워진다.
     return (
       <div onMouseDown={(e) => e.preventDefault()} style={{ marginBottom: 6, padding: "7px 11px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6", fontSize: 11.5, color: T.inkSoft }}>
-        <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> — {c.desc}
+        <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> · {c.desc}
         {c.choices && onPickChoice && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
             {c.choices.map((ch) => (
@@ -511,18 +511,18 @@ export function ChatHelpCard({ commands, onPick, onClose }) {
   return (
     <div style={{ position: "relative", marginBottom: 6, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", maxHeight: 260, overflowY: "auto" }}>
       <button onClick={onClose} aria-label="도움말 닫기" className="press" style={{ position: "absolute", top: 6, right: 6, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 2 }}><X size={14} /></button>
-      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, marginBottom: 2 }}>명령어 — 나에게만 보여요</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, marginBottom: 2 }}>명령어 (나에게만 표시)</div>
       {groups.map((g) => (
         <div key={g.name} style={{ marginTop: 6 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>{g.name}</div>
           {g.items.map((c) => (
             <button key={c.name} onClick={() => onPick(c)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "3px 0", border: "none", background: "none", cursor: "pointer" }}>
-              <b style={{ fontSize: 11.5, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> <span style={{ fontSize: 11, color: T.inkSoft }}>— {c.desc}</span>
+              <b style={{ fontSize: 11.5, color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> <span style={{ fontSize: 11, color: T.inkSoft }}>{c.desc}</span>
             </button>
           ))}
         </div>
       ))}
-      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>블라인드 대국 중에는 "2.Nf3", "2...Nc6"처럼 수순 번호를 붙여 수를 보내요.</div>
+      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>블라인드 대국 중에는 "2.Nf3", "2...Nc6"처럼 수순 번호를 붙여 전송</div>
     </div>
   );
 }

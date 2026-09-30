@@ -332,14 +332,14 @@ const SNAP = /*__DATA__*/ {"tree":{"":{"opening":null,"moves":[{"san":"e4","book
 
 /* 편집 오버레이 — 주요분기·마스코트·집중분석 상세 */
 const OVERLAY = {
-  "": { mascot: "백의 첫 수예요. e4는 개방적·공격적, d4는 전략적·폐쇄적 경향이 있어요." },
+  "": { mascot: "백의 첫 수. e4는 개방적·공격적, d4는 전략적·폐쇄적" },
   "e4 e5 Nf3 Nc6 Bc4": {
     majorBranch: true,
-    branchNote: "이탈리안 게임의 성격이 갈리는 주요 분기. 흑의 …Bc5(지우코 피아노, 조용한 전략전)와 …Nf6(투 나이츠, 날카로운 전술전)로 나뉘며 채택률이 비슷하다.",
+    branchNote: "이탈리안 게임의 갈림길. 흑 …Bc5(지우코 피아노, 조용한 전략전) 또는 …Nf6(투 나이츠, 날카로운 전술전). 채택률 비슷",
   },
   "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5": {
-    branchNote: "4.Ng5는 f7을 직접 위협한다. 평가를 유지하는 사실상 유일한 정수는 4...d5뿐.",
-    mascotByMove: { "Bc5": "트랙슬러 카운터어택! f7을 내주고 백의 f2를 맞받아치는 함정 수예요." },
+    branchNote: "4.Ng5는 f7 직접 위협. 평가를 지키는 수는 사실상 4...d5뿐",
+    mascotByMove: { "Bc5": "트랙슬러 카운터어택. f7을 내주고 f2를 맞받는 함정 수" },
   },
 };
 
@@ -401,7 +401,7 @@ async function scanImageFile(file, onProgress) {
     reader.readAsDataURL(effectiveFile);
   });
   const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl || "");
-  if (!m) throw new Error("이미지를 읽지 못했어요.");
+  if (!m) throw new Error("이미지를 읽지 못함");
   report(14);
   const body = JSON.stringify({ image: m[2], mediaType: m[1] });
   const data = await new Promise((resolve, reject) => {
@@ -423,11 +423,11 @@ async function scanImageFile(file, onProgress) {
       if (simTimer) clearInterval(simTimer);
       let parsed = null;
       try { parsed = JSON.parse(xhr.responseText); } catch { }
-      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식에 실패했어요.")); return; }
+      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식 실패")); return; }
       report(100);
       resolve(parsed);
     };
-    xhr.onerror = () => { if (simTimer) clearInterval(simTimer); reject(new Error("네트워크 오류로 이미지 인식에 실패했어요.")); };
+    xhr.onerror = () => { if (simTimer) clearInterval(simTimer); reject(new Error("네트워크 오류로 이미지 인식 실패")); };
     xhr.send(body);
   });
   return data;
@@ -1074,38 +1074,38 @@ async function fetchWiki(name) {
 
 /* ============================================================ 내부 해설 데이터 (한글) ============================================================ */
 const EXPLAIN = {
-  "": "백의 첫 수. e4·d4가 압도적이지만, 그 외 전개도 이론적으로 존재한다. b4(폴란드)·f4(버드)처럼 평가가 다소 떨어지는 수는 부정확으로 분류된다.",
-  "e4": "킹 폰 오프닝. 중앙을 즉시 점유하고 비숍·퀸의 길을 열어 빠른 전개와 공격을 노린다.",
-  "d4": "퀸 폰 오프닝. e4보다 폐쇄적·전략적이며 안정적인 중앙 장악을 추구한다.",
-  "e4 e5 Nf3 Nc6 Bc4": "이탈리안 게임. 비숍을 c4로 보내 f7 약점을 겨눈다. 흑의 …Bc5(지우코 피아노)와 …Nf6(투 나이츠)로 성격이 갈린다.",
-  "e4 e5 Nf3 Nc6 Bb5": "루이 로페즈(스패니시). 흑의 c6 나이트를 압박해 e5 폰의 수비를 흔드는, 가장 깊이 연구된 오프닝 중 하나.",
-  "e4 c5": "시칠리안 디펜스. 흑이 비대칭 구조로 반격을 노리는, 최상위에서 가장 인기 있는 e4 대응.",
-  "d4 Nf6 c4 e6": "님조/퀸즈 인디언 계열로 가는 관문. 흑이 유연하게 중앙을 통제한다.",
+  "": "백의 첫 수. e4·d4가 압도적. b4(폴란드)·f4(버드)처럼 평가가 떨어지는 수는 부정확으로 분류",
+  "e4": "킹 폰 오프닝. 중앙 점유, 비숍·퀸 길을 열어 빠른 전개와 공격",
+  "d4": "퀸 폰 오프닝. e4보다 폐쇄적·전략적, 안정적인 중앙 장악",
+  "e4 e5 Nf3 Nc6 Bc4": "이탈리안 게임. 비숍을 c4로 보내 f7 약점 공략. 흑 …Bc5(지우코 피아노) 또는 …Nf6(투 나이츠)",
+  "e4 e5 Nf3 Nc6 Bb5": "루이 로페즈(스패니시). 흑 c6 나이트를 압박해 e5 폰 수비를 흔듦. 가장 깊이 연구된 오프닝 중 하나",
+  "e4 c5": "시칠리안 디펜스. 비대칭 구조로 반격. 최상위에서 가장 인기 있는 e4 대응",
+  "d4 Nf6 c4 e6": "님조/퀸즈 인디언 계열 입구. 흑이 유연하게 중앙 통제",
 };
 const BRANCH = {
-  "": "백의 첫 수 — 게임 전체 성격(개방/폐쇄·전술/전략)을 결정하는 최상위 분기.",
-  "e4": "흑의 1...e5(오픈게임)·c5(시칠리안)·e6(프렌치)·c6(카로칸) 선택지가 갈리는, e4 진영의 방어 체계 분기.",
-  "e4 e5 Nf3": "흑의 e5 방어: 2...Nc6(정통)·Nf6(페트로프)·d6(필리도르)로 나뉜다.",
-  "e4 e5 Nf3 Nc6": "백의 공격 플랜 분기 — 3.Bb5(루이 로페즈, 구조적 압박) vs 3.Bc4(이탈리안, 빠른 f7 겨냥).",
-  "e4 e5 Nf3 Nc6 Bc4": "이탈리안의 성격 분기 — 3...Bc5(지우코 피아노, 전략전) vs 3...Nf6(투 나이츠, 전술전).",
-  "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5": "프라이드 리버 분기 — f7 위협에 4...d5만이 사실상 유일한 정수.",
-  "e4 e5 Nf3 Nc6 Bb5": "루이 로페즈 핵심 분기 — 3...a6(모펀 메인) vs 3...Nf6(베를린 디펜스).",
-  "e4 c5": "안티-시칠리안 분기 — 2.Nf3(오픈 시칠리안) vs 2.Nc3/c3/Bc4(폐쇄·알라핀 등).",
-  "e4 c5 Nf3": "오픈 시칠리안 대분기 — 2...d6(나이도르프/드래곤)·Nc6(스벤니/클래식)·e6(타이마노프/카안) 계열.",
-  "e4 e6 d4 d5": "프렌치 구조 분기 — 3.Nc3·Nd2(타라쉬)·e5(어드밴스)·exd5(익스체인지)로 폰 구조가 갈린다.",
-  "e4 c6 d4 d5": "카로칸 구조 분기 — 3.Nc3/Nd2(클래시컬)·e5(어드밴스)·exd5(익스체인지)·f3(핀란드).",
-  "d4": "흑의 응수 분기 — 1...d5(정통 폐쇄) vs 1...Nf6(인디언, 초현대적 중앙 양보).",
-  "d4 d5 c4": "퀸스 갬빗 핵심 분기 — 2...e6(QGD)·c6(슬라브)·dxc4(QGA).",
-  "d4 Nf6 c4": "인디언 디펜스 대분기 — 2...e6(님조/QID)·g6(KID/그륀펠트)·c5(베노니).",
-  "d4 Nf6 c4 e6 Nc3": "3...Bb4(님조-인디언, 핀) vs 3...d5(QGD 전환)의 분기.",
-  "d4 Nf6 c4 g6 Nc3": "3...d5(그륀펠트, 중앙 반격) vs 3...Bg7→d6(킹스 인디언, 폐쇄 공격) 분기.",
+  "": "백의 첫 수. 게임 전체 성격(개방/폐쇄, 전술/전략)을 정하는 최상위 분기",
+  "e4": "흑의 선택지: 1...e5(오픈 게임) · c5(시칠리안) · e6(프렌치) · c6(카로칸)",
+  "e4 e5 Nf3": "흑 e5 방어: 2...Nc6(정통) · Nf6(페트로프) · d6(필리도르)",
+  "e4 e5 Nf3 Nc6": "백의 공격 플랜: 3.Bb5(루이 로페즈, 구조적 압박) vs 3.Bc4(이탈리안, 빠른 f7 공략)",
+  "e4 e5 Nf3 Nc6 Bc4": "이탈리안의 성격: 3...Bc5(지우코 피아노, 전략전) vs 3...Nf6(투 나이츠, 전술전)",
+  "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5": "프라이드 리버: f7 위협에 4...d5만 사실상 유일한 정수",
+  "e4 e5 Nf3 Nc6 Bb5": "루이 로페즈 핵심: 3...a6(모펀 메인) vs 3...Nf6(베를린 디펜스)",
+  "e4 c5": "안티-시칠리안: 2.Nf3(오픈 시칠리안) vs 2.Nc3 / c3 / Bc4(폐쇄·알라핀 등)",
+  "e4 c5 Nf3": "오픈 시칠리안: 2...d6(나이도르프/드래곤) · Nc6(스벤니/클래식) · e6(타이마노프/카안)",
+  "e4 e6 d4 d5": "프렌치 구조: 3.Nc3 · Nd2(타라쉬) · e5(어드밴스) · exd5(익스체인지)로 폰 구조가 갈림",
+  "e4 c6 d4 d5": "카로칸 구조: 3.Nc3/Nd2(클래시컬) · e5(어드밴스) · exd5(익스체인지) · f3(핀란드)",
+  "d4": "흑의 응수: 1...d5(정통 폐쇄) vs 1...Nf6(인디언, 초현대적 중앙 양보)",
+  "d4 d5 c4": "퀸스 갬빗: 2...e6(QGD) · c6(슬라브) · dxc4(QGA)",
+  "d4 Nf6 c4": "인디언 디펜스: 2...e6(님조/QID) · g6(KID/그륀펠트) · c5(베노니)",
+  "d4 Nf6 c4 e6 Nc3": "3...Bb4(님조-인디언, 핀) vs 3...d5(QGD 전환)",
+  "d4 Nf6 c4 g6 Nc3": "3...d5(그륀펠트, 중앙 반격) vs 3...Bg7→d6(킹스 인디언, 폐쇄 공격)",
 };
 function explainFor(sans) {
   const k = sans.join(" ");
   if (CONTENT.explains[k]) return CONTENT.explains[k];
   if (EXPLAIN[k]) return EXPLAIN[k];
   const n = snapNode(sans);
-  if (n && n.opening) return n.opening.name + " 라인. 정석 이론에 따라 전개되는 포지션입니다.";
+  if (n && n.opening) return n.opening.name + " 정석 이론대로 전개되는 라인";
   return null;
 }
 function explainMove(sans, san) {
@@ -1119,15 +1119,15 @@ function explainMove(sans, san) {
 const PUNISH = {
   "e4 e5 Nf3|f6": {
     opening: "Damiano Defense", mistake: "f6",
-    why: "2...f6는 f7-킹 대각선을 약화시키고 나이트의 출구를 막는 대표적 악수입니다. 백은 즉시 e5 폰을 희생해 응징할 수 있습니다.",
+    why: "2...f6는 f7-킹 대각선을 약화시키고 나이트 출구를 막는 대표적인 악수. 백은 e5 폰을 희생해 바로 응징 가능",
     line: ["Nxe5", "fxe5", "Qh5+"],
-    steps: ["3.Nxe5! — 나이트를 내주고 폰을 잡으며 f7-h5 대각선을 노린다.", "3...fxe5 — 받으면(거의 강제) e8-h5 대각선이 완전히 열린다.", "4.Qh5+ — 더블 어택. 4...Ke7 5.Qxe5+ 로 룩까지 따내며 백 대승."],
+    steps: ["3.Nxe5! 나이트를 내주고 폰을 잡으며 f7-h5 대각선 공략", "3...fxe5 받으면(거의 강제) e8-h5 대각선이 완전히 열림", "4.Qh5+ 더블 어택. 4...Ke7 5.Qxe5+로 룩까지 따내며 백 대승"],
   },
   "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5|Nxd5": {
     opening: "Fried Liver Attack", mistake: "Nxd5",
-    why: "5...Nxd5?는 욕심내어 폰을 되찾지만 f7이 무방비가 됩니다. 백은 나이트를 희생하는 프라이드 리버로 응징합니다.",
+    why: "5...Nxd5?는 폰을 되찾지만 f7이 무방비. 백은 나이트를 희생하는 프라이드 리버로 응징",
     line: ["Nxf7", "Kxf7", "Qf3+"],
-    steps: ["6.Nxf7! — 나이트를 희생하며 킹을 끌어낸다.", "6...Kxf7 — 받으면 킹이 노출된다.", "7.Qf3+ — 킹과 d5 나이트를 동시에 노린다. 백이 강력한 주도권."],
+    steps: ["6.Nxf7! 나이트를 희생해 킹을 끌어냄", "6...Kxf7 받으면 킹이 노출", "7.Qf3+ 킹과 d5 나이트를 동시에 공격. 백이 주도권"],
   },
 };
 function punishFor(sans, san) { return PUNISH[sans.join(" ") + "|" + san] || null; }
@@ -1164,11 +1164,11 @@ function seedContent() {
   if (!("e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+" in CONTENT.mainline)) CONTENT.mainline["e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+"] = true;
   if (!("e4 e5 Nf3 f6 Nxe5|fxe5" in CONTENT.mainline)) CONTENT.mainline["e4 e5 Nf3 f6 Nxe5|fxe5"] = true;
   if (!("e4 e5 Nf3 f6|Nxe5" in CONTENT.mainline)) CONTENT.mainline["e4 e5 Nf3 f6|Nxe5"] = true;
-  if (!("e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+" in CONTENT.explains)) CONTENT.explains["e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+"] = "다미아노 디펜스 응징의 핵심. 4.Qh5+ 더블 어택으로 e5 폰을 회수하고 흑 킹을 노출시켜 백이 대승.";
+  if (!("e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+" in CONTENT.explains)) CONTENT.explains["e4 e5 Nf3 f6 Nxe5 fxe5|Qh5+"] = "다미아노 디펜스 응징의 핵심. 4.Qh5+ 더블 어택으로 e5 폰 회수, 흑 킹 노출";
   // 폴란드 오프닝(1.b4)·폰지아니(1.e4 e5 2.Nf3 Nc6 3.c3) 이론 수 지정
   if (!("|b4" in CONTENT.forceKind)) CONTENT.forceKind["|b4"] = "book";
   addMove("e4 e5 Nf3 Nc6", "c3", "book");
-  if (!("e4 e5 Nf3 Nc6|c3" in CONTENT.explains)) CONTENT.explains["e4 e5 Nf3 Nc6|c3"] = "폰지아니 오프닝. d4를 준비하며 중앙을 노리는 고전 정석.";
+  if (!("e4 e5 Nf3 Nc6|c3" in CONTENT.explains)) CONTENT.explains["e4 e5 Nf3 Nc6|c3"] = "폰지아니 오프닝. d4를 준비하며 중앙을 노리는 고전 정석";
   // 카로칸: 백의 3번째 수를 분기점으로, 3.Nc3를 메인 라인으로
   CONTENT.mainline["e4 c6 d4 d5|Nc3"] = true;
   // 스칸디나비안 디펜스(1.e4 d5) — 스냅샷에서 누락되어 보강
@@ -1178,7 +1178,7 @@ function seedContent() {
   addMove("e4 d5 exd5 Qxd5", "Nc3", "book");
   addMove("e4 d5 exd5 Qxd5 Nc3", "Qa5"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd6"); addMove("e4 d5 exd5 Qxd5 Nc3", "Qd8");
   CONTENT.mainline["e4 d5|exd5"] = true; CONTENT.mainline["e4 d5 exd5|Qxd5"] = true; CONTENT.mainline["e4 d5 exd5 Qxd5|Nc3"] = true;
-  if (!("e4 d5" in CONTENT.explains)) CONTENT.explains["e4 d5"] = "스칸디나비안 디펜스. 흑이 즉시 d5로 중앙을 교환해 빠른 전개를 노린다. 백은 2.exd5 후 퀸/나이트 회수 라인으로 분기.";
+  if (!("e4 d5" in CONTENT.explains)) CONTENT.explains["e4 d5"] = "스칸디나비안 디펜스. 흑이 d5로 중앙을 바로 교환해 빠르게 전개. 백은 2.exd5 뒤 퀸/나이트 회수 라인으로 분기";
   // 외부 마스터 게임 기반 이론 라인(THEORY_BOOK) 반영 — 각 라인을 한 수씩 훑으며
   // addMove로 이론 등록하고, 마지막 수의 도착 위치에만 이름을 붙인다(중간 위치는 이미 다른
   // 라인이 이름을 갖고 있을 수 있어 덮어쓰지 않음).
@@ -1240,71 +1240,71 @@ function seedLessons() {
 
   // ------------------------------------------------------------ 오프닝 원칙(모식도 시작점) ------------------------------------------------------------
   const PRINCIPLES = [
-    "1. 빠르게 최대한 많은 기물을 전개하라.",
-    "2. 비숍보다 먼저 나이트를 전개하라.",
-    "3. 오프닝에서 같은 기물을 두 번 움직이지 말라.",
-    "4. 오프닝에서 폰을 불필요하게 움직이지 말라.",
-    "5. 필요하지 않다면 체크하지 말라.",
-    "6. 전개가 느리다면 포지션을 열지 말라.",
-    "7. 퀸을 폰의 뒤에 배치하라.",
-    "8. 나의 전개된 기물과 상대의 전개되지 않은 기물의 교환을 피하라.",
-    "9. 되도록 빠르게 캐슬링하라.",
-    "10. 킹사이드 캐슬링이 퀸사이드 캐슬링보다 안전하다.",
-    "11. 가능한 한 영역을 최대한 넓히라.",
-    "12. 공간을 지배하기 위해 폰을 밀라.",
-    "13. 기물을 중앙에 가깝게 유지시키라.",
-    "14. 폰을 교환할 때 사이드에서 중앙 쪽으로 하라.",
-    "15. 공격하기 전에 중앙을 제어하라.",
-    "16. 룩으로 빠르게 오픈 파일이나 세미 오픈파일을 장악하라.",
-    "17. 오프닝에서 자주 나오는 폰 구조를 숙지하라.",
-    "18. 늘 예외를 생각하고 필요할 때는 원칙을 어기라.",
+    "1. 최대한 빠르게 기물 전개",
+    "2. 비숍보다 나이트 먼저 전개",
+    "3. 오프닝에서 같은 기물을 두 번 움직이지 않기",
+    "4. 오프닝에서 폰을 불필요하게 움직이지 않기",
+    "5. 필요 없으면 체크하지 않기",
+    "6. 전개가 느리면 포지션을 열지 않기",
+    "7. 퀸은 폰 뒤에 배치",
+    "8. 내 전개된 기물과 상대 미전개 기물의 교환 피하기",
+    "9. 되도록 빠르게 캐슬링",
+    "10. 킹사이드 캐슬링이 퀸사이드보다 안전",
+    "11. 가능한 한 영역 넓히기",
+    "12. 공간 지배를 위해 폰 밀기",
+    "13. 기물을 중앙 가까이 유지",
+    "14. 폰 교환은 사이드에서 중앙 쪽으로",
+    "15. 공격 전에 중앙 제어",
+    "16. 룩으로 오픈·세미 오픈 파일 빠르게 장악",
+    "17. 자주 나오는 폰 구조 숙지",
+    "18. 늘 예외를 생각하고, 필요하면 원칙을 어기기",
   ];
   L.l_intro = {
-    title: "오프닝 원칙", desc: "오프닝에서 지켜야 할 원칙들이 결국 무엇을 위한 것인지 — 중앙 차지, 기물의 전개, 킹의 안전 — 세 가지 목적으로 정리해 봅니다.", reward: 40, parent: null,
+    title: "오프닝 원칙", desc: "원칙의 목적 세 가지: 중앙 차지, 기물 전개, 킹의 안전", reward: 40, parent: null,
     pages: [
       { // 1페이지 — 도입 + 원칙 목록 + 세 가지 목적
         beats: [
-          { kind: "say", speaker: "milku", text: "첫 번째 레슨에 오신 것을 환영합니다!" },
-          { kind: "say", speaker: "milku", text: "저는 OpenChess의 코치, MILKU입니다." },
-          { kind: "say", speaker: "milku", text: "지금부터 당신의 체스 오프닝 실력을 함께 향상시켜보죠." },
-          { kind: "say", speaker: "milku", text: "먼저, 오프닝에는 일반적으로 지켜야 할 원칙들이 여러 개 있습니다." },
+          { kind: "say", speaker: "milku", text: "첫 번째 레슨" },
+          { kind: "say", speaker: "milku", text: "코치 MILKU" },
+          { kind: "say", speaker: "milku", text: "오프닝 실력을 함께 키우기" },
+          { kind: "say", speaker: "milku", text: "오프닝에는 지켜야 할 원칙이 여러 개 있음" },
           { kind: "principles", lines: PRINCIPLES },
-          { kind: "say", speaker: "milku", text: "하지만 이 많은 원칙들도 결국 세 가지 목적을 달성하고자 하는 전제 속에 세워진 것입니다." },
-          { kind: "say", speaker: "milku", text: "바로 중앙 차지, 기물의 전개, 킹의 안전이죠." },
-          { kind: "say", speaker: "milku", text: "그럼 하나씩 알아볼까요?" },
+          { kind: "say", speaker: "milku", text: "원칙은 결국 세 가지 목적으로 모임" },
+          { kind: "say", speaker: "milku", text: "중앙 차지, 기물 전개, 킹의 안전" },
+          { kind: "say", speaker: "milku", text: "하나씩 확인" },
         ],
       },
       { // 2페이지 — 중앙 차지
         beats: [
-          { kind: "say", speaker: "milku", text: "지금까지 연구된 거의 대부분의 체스 오프닝은 본질적으로 중앙을 차지하기 위한 백과 흑의 논리적인 수들이 맞부딪히며 만들어졌습니다." },
-          { kind: "say", speaker: "milku", text: "체스에서 중앙이란 주로 d열과 e열을 의미합니다. 그리고 오프닝에서 백과 흑이 맞붙는 곳은 주로 4행과 5행이죠." },
+          { kind: "say", speaker: "milku", text: "거의 모든 오프닝은 중앙을 차지하려는 백과 흑의 수가 부딪히며 만들어짐" },
+          { kind: "say", speaker: "milku", text: "중앙은 주로 d열과 e열. 오프닝에서 양쪽이 맞붙는 곳은 주로 4행과 5행" },
           { kind: "board", dim: true, squares: lessonCross(["d", "e"], [4, 5]) },
-          { kind: "say", speaker: "milku", text: "그래서 중앙 차지는 보통 정중앙의 4칸인 e4, e5, d4, d5에 대한 장악 능력을 확보하는 것입니다." },
+          { kind: "say", speaker: "milku", text: "중앙 차지는 정중앙 4칸(e4, e5, d4, d5)을 장악하는 것" },
           { kind: "board", glow: true, squares: ["e4", "e5", "d4", "d5"] },
-          { kind: "say", speaker: "milku", text: "이 근본적인 목표를 위해 백과 흑으로 플레이한 수많은 체스 선수들은 방법론적인 선택을 연구하게 되었고, 오늘날의 오프닝 이론이 탄생하게 되었습니다." },
+          { kind: "say", speaker: "milku", text: "이 목표를 두고 선수들이 수를 연구했고, 그 결과가 오늘날의 오프닝 이론" },
         ],
       },
       { // 3페이지 — 기물의 전개
         beats: [
-          { kind: "say", speaker: "milku", text: "기물의 전개는 오프닝에서 매우 중요합니다." },
-          { kind: "say", speaker: "milku", text: "앞서 배운 중앙 차지 역시 기물의 전개와 균형을 이루어야 하죠." },
-          { kind: "say", speaker: "milku", text: "일반적으로 오프닝에서 같은 기물을 두 번 움직이는 것은 좋지 않습니다." },
-          { kind: "say", speaker: "milku", text: "가능한 한 많은 기물을 전개한 뒤 계획을 실행해 보세요!" },
+          { kind: "say", speaker: "milku", text: "오프닝에서 기물 전개는 매우 중요" },
+          { kind: "say", speaker: "milku", text: "중앙 차지도 기물 전개와 균형이 필요" },
+          { kind: "say", speaker: "milku", text: "오프닝에서 같은 기물을 두 번 움직이는 건 보통 손해" },
+          { kind: "say", speaker: "milku", text: "가능한 한 많은 기물을 전개한 뒤 계획 실행" },
           { kind: "play", stepMs: 320, moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6", "Bc4", "Bd7", "O-O-O"] },
         ],
       },
       { // 4페이지 — 킹의 안전
         beats: [
-          { kind: "say", speaker: "milku", text: "체스는 상대의 킹을 공격하는 게임입니다. 그렇다면 내 킹의 안전은 당연히 중요하겠죠?" },
-          { kind: "say", speaker: "milku", text: "킹이 중앙에 남아있다면 상대에게 더 쉽게 공격받게 됩니다." },
-          { kind: "say", speaker: "milku", text: "캐슬링을 통해서 한 수만에 킹을 구석에 숨길 수 있어요." },
+          { kind: "say", speaker: "milku", text: "체스는 상대 킹을 공격하는 게임. 내 킹의 안전도 그만큼 중요" },
+          { kind: "say", speaker: "milku", text: "킹이 중앙에 남아 있으면 공격받기 쉬움" },
+          { kind: "say", speaker: "milku", text: "캐슬링으로 한 수에 킹을 구석에 숨길 수 있음" },
           { kind: "play", stepMs: 350, moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"] },
           { kind: "pause", ms: 2000 },
           { kind: "board", dim: true, squares: ["e1", "h1"] },
           { kind: "play", stepMs: 500, moves: ["O-O"] },
           { kind: "clear" },
-          { kind: "say", speaker: "milku", text: "단, 킹과 룩 사이의 기물이 없고, 상대가 경로를 공격하지 않으며, 킹과 룩 모두 한번도 움직인 적이 없어야 해요! 이 모든 조건을 충족할 때 캐슬링 권리를 얻습니다." },
-          { kind: "say", speaker: "milku", text: "상대와의 기물 교환으로 킹을 지키고 있던 폰이 끌려가면, 킹 앞이 급격히 약해져 불리해지니 주의하세요!" },
+          { kind: "say", speaker: "milku", text: "캐슬링 조건: 킹과 룩 사이에 기물 없음, 상대가 경로를 공격하지 않음, 킹과 룩 모두 이동한 적 없음" },
+          { kind: "say", speaker: "milku", text: "교환으로 킹 앞 폰이 끌려가면 킹 주변이 급격히 약해지니 주의" },
           { kind: "play", stepMs: 350, moves: ["d6", "Qe1", "Bg4", "Nc3", "Bxf3"] },
           { kind: "pause", ms: 2000 },
           { kind: "board", dim: true, squares: ["g2"] },
@@ -1316,70 +1316,70 @@ function seedLessons() {
     ],
   };
   L.l_e4 = {
-    title: "1.e4 — 킹스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수.", reward: 60, parent: "l_intro",
+    title: "1.e4 킹스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수", reward: 60, parent: "l_intro",
     pages: [
-      explainPage([], "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하며, 비숍과 퀸의 대각선을 동시에 열어주는 수가 있어요. 직접 그 수를 둬볼까요?"),
-      movePage([], "중앙 폰을 두 칸 전진시켜 보세요.", ["e4"], "1.e4, 킹스 폰 오프닝이에요! 비숍(f1)과 퀸(d1)의 대각선이 즉시 열려 활발한 기물 전개와 이른 전술전을 지향해요."),
-      mcPage(["e4"], "1.e4 이후 흑의 응수로 실제로 불가능한 것은?", ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 이중 전진 후 재전진)", "1...c6 (카로칸 디펜스)"], 2, "흑 폰은 d7에서 d5나 d6로만 움직일 수 있어요. d4는 아직 그 폰이 닿을 수 없는 칸이에요."),
+      explainPage([], "폰을 두 칸 전진시켜 중앙을 장악하고 비숍과 퀸의 대각선도 연다. 직접 두기"),
+      movePage([], "중앙 폰을 두 칸 전진", ["e4"], "1.e4 킹스 폰 오프닝. 비숍(f1)과 퀸(d1) 대각선이 바로 열려 빠른 전개와 이른 전술전"),
+      mcPage(["e4"], "1.e4 뒤 흑이 둘 수 없는 수는?", ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 두 칸 전진 뒤 재전진)", "1...c6 (카로칸 디펜스)"], 2, "흑 폰은 d7에서 d5나 d6까지만 이동 가능. d4는 닿지 않음"),
     ],
   };
   L.l_e4_e5 = {
-    title: "1...e5 — 오픈 게임", desc: "중앙에서 폰을 맞세워 대칭적으로 공간을 나누는 가장 고전적인 응수.", reward: 60, parent: "l_e4",
+    title: "1...e5 오픈 게임", desc: "중앙에서 폰을 맞세워 대칭으로 공간을 나누는 가장 고전적인 응수", reward: 60, parent: "l_e4",
     pages: [
-      explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭적으로 공간을 나누고, 오픈된 전술전을 준비해요. 이런 대칭적인 시작을 '오픈 게임'이라고 불러요."),
-      mcPage(["e4", "e5"], "1.e4 e5 포지션에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 자연스럽게 기물을 전개하는 가장 흔한 수예요."),
-      movePage(["e4", "e5"], "나이트를 전개하며 e5 폰을 위협해 보세요.", ["Nf3"], "2.Nf3! 나이트가 e5를 위협하는 동시에 킹사이드 캐슬링을 준비해요."),
+      explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭으로 공간을 나누고 오픈된 전술전 준비. 이런 시작을 오픈 게임이라 부름"),
+      mcPage(["e4", "e5"], "1.e4 e5에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 기물을 자연스럽게 전개하는 가장 흔한 수"),
+      movePage(["e4", "e5"], "나이트를 전개하며 e5 폰 위협", ["Nf3"], "2.Nf3! e5를 위협하면서 킹사이드 캐슬링 준비"),
     ],
   };
   L.l_e4_e5_open = {
-    title: "이탈리안 게임으로", desc: "2.Nf3 Nc6 이후, 비숍을 활발하게 전개해 이탈리안 게임으로 들어갑니다.", reward: 70, parent: "l_e4_e5",
+    title: "이탈리안 게임으로", desc: "2.Nf3 Nc6 뒤 비숍을 전개해 이탈리안 게임으로", reward: 70, parent: "l_e4_e5",
     pages: [
-      explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5 폰을 지켰어요. 이제 백은 비숍을 가장 활발한 대각선으로 전개할 차례예요 — f7을 겨냥하는 자리죠."),
-      movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨냥하는 자리로 전개해 보세요.", ["Bc4"], "3.Bc4! 이탈리안 게임이에요. 비숍이 상대의 약점인 f7 폰을 직접 겨냥해요."),
-      mcPage(["e4", "e5", "Nf3", "Nc6", "Bc4"], "이탈리안 게임(3.Bc4)의 핵심 아이디어로 가장 알맞은 것은?", ["비숍으로 f7 폰을 겨냥하며 빠르게 킹사이드를 노린다", "폰을 희생해서라도 퀸사이드를 빠르게 개방한다", "킹을 일부러 중앙에 오래 남겨둔다", "나이트를 교환해 무승부를 유도한다"], 0, "이탈리안 게임은 비숍의 활발한 대각선을 살려 빠르게 공격 기회를 노리는 오프닝이에요."),
+      explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5를 지킴. 백은 비숍을 f7을 겨누는 대각선으로 전개"),
+      movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨누는 자리로 전개", ["Bc4"], "3.Bc4! 이탈리안 게임. 비숍이 약점인 f7 폰을 직접 겨눔"),
+      mcPage(["e4", "e5", "Nf3", "Nc6", "Bc4"], "이탈리안 게임(3.Bc4)의 핵심 아이디어는?", ["비숍으로 f7 폰을 겨누며 빠르게 킹사이드 공략", "폰을 희생해서라도 퀸사이드를 빠르게 개방", "킹을 일부러 중앙에 오래 남겨 둠", "나이트를 교환해 무승부 유도"], 0, "이탈리안 게임은 비숍의 활발한 대각선으로 빠르게 공격 기회를 노리는 오프닝"),
     ],
   };
   L.l_e4_c5 = {
-    title: "1...c5 — 시칠리안 디펜스", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적인 반격을 노립니다.", reward: 60, parent: "l_e4",
+    title: "1...c5 시칠리안 디펜스", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적으로 반격", reward: 60, parent: "l_e4",
     pages: [
-      explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 능동적인 반격을 노리는 대표적인 오프닝이에요 — 시칠리안 디펜스."),
-      mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 가장 알맞은 설명은?", ["대칭 구조로 무승부를 지향한다", "비대칭 구조로 양쪽 다 승부를 볼 기회를 남긴다", "중앙 폰을 최대한 빨리 다 교환해 버린다", "킹사이드 캐슬링을 절대 하지 않는다"], 1, "시칠리안은 통계적으로 승부(흑의 승률 포함)가 가장 많이 나는 오프닝 중 하나로 꼽혀요."),
+      explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 반격하는 대표 오프닝. 시칠리안 디펜스"),
+      mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 알맞은 것은?", ["대칭 구조로 무승부를 지향", "비대칭 구조로 양쪽 모두 승부 기회를 남김", "중앙 폰을 최대한 빨리 전부 교환", "킹사이드 캐슬링을 절대 안 함"], 1, "시칠리안은 통계상 승부(흑 승률 포함)가 가장 많이 나는 오프닝 중 하나"),
     ],
   };
   L.l_e4_e6 = {
-    title: "1...e6 — 프렌치 디펜스", desc: "d5를 다음 수에 밀며 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격합니다.", reward: 60, parent: "l_e4",
+    title: "1...e6 프렌치 디펜스", desc: "d5를 다음 수에 밀어 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격", reward: 60, parent: "l_e4",
     pages: [
-      explainPage(["e4", "e6"], "d5를 다음 수에 밀며 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격하는 오프닝이에요 — 프렌치 디펜스."),
-      movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬을 세워 보세요.", ["d5"], "2...d5! 이제 중앙에서 폰이 맞부딪혀요. 백이 e5로 전진하면 흑은 c5로 퀸사이드를 반격할 준비를 해요."),
+      explainPage(["e4", "e6"], "d5를 다음 수에 밀어 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격. 프렌치 디펜스"),
+      movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬 세우기", ["d5"], "2...d5! 중앙에서 폰이 맞부딪힘. 백이 e5로 전진하면 흑은 c5로 퀸사이드 반격 준비"),
     ],
   };
   L.l_e4_c6 = {
-    title: "1...c6 — 카로칸 디펜스", desc: "d5를 다음 수에 밀되, 나이트 전개에 유연하게 대비하는 견고한 응수.", reward: 60, parent: "l_e4",
+    title: "1...c6 카로칸 디펜스", desc: "d5를 다음 수에 밀되 나이트 전개에 유연하게 대비하는 견고한 응수", reward: 60, parent: "l_e4",
     pages: [
-      explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍의 전개 경로를 막지 않아요) 나이트 전개(Nc3 대응)에 유연하게 대비하는 오프닝이에요 — 카로칸 디펜스."),
-      mcPage(["e4", "c6"], "프렌치 디펜스(1...e6)와 비교했을 때, 카로칸 디펜스(1...c6)의 장점으로 가장 알맞은 것은?", ["퀸을 즉시 교환할 수 있다", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있다", "킹사이드 캐슬링이 금지된다", "중앙 폰을 절대 교환하지 않는다"], 1, "프렌치는 1...e6로 c8 비숍의 전개 경로를 스스로 막지만, 카로칸은 그 문제를 피해가요."),
+      explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍 길을 막지 않음) 나이트 전개(Nc3 대응)에 유연하게 대비. 카로칸 디펜스"),
+      mcPage(["e4", "c6"], "프렌치(1...e6)와 비교한 카로칸(1...c6)의 장점은?", ["퀸을 바로 교환 가능", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있음", "킹사이드 캐슬링 금지", "중앙 폰을 절대 교환하지 않음"], 1, "프렌치는 1...e6로 c8 비숍의 길을 스스로 막지만 카로칸은 이 문제를 피함"),
     ],
   };
   L.l_d4 = {
-    title: "1.d4 — 퀸스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 장악하되, e4보다 더 견고하고 점진적인 구조 싸움을 지향합니다.", reward: 60, parent: "l_intro",
+    title: "1.d4 퀸스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 장악하되 e4보다 견고하고 점진적인 구조 싸움", reward: 60, parent: "l_intro",
     pages: [
-      explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진시켜 봐요. e4보다 더 견고하고 점진적인 구조 싸움을 지향하는 수예요."),
-      movePage([], "퀸 쪽 중앙 폰을 두 칸 전진시켜 보세요.", ["d4"], "1.d4, 퀸스 폰 오프닝이에요! 즉시 폰을 잃을 위험 없이 견고하게 중앙을 장악해요."),
-      mcPage(["d4"], "1.d4 이후 흑의 응수가 크게 어떤 두 갈래로 나뉘나요?", ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], 0, "1...d5는 퀸스 갬빗 계열로, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열로 이어져요."),
+      explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진. e4보다 견고하고 점진적인 구조 싸움"),
+      movePage([], "퀸 쪽 중앙 폰을 두 칸 전진", ["d4"], "1.d4 퀸스 폰 오프닝. 폰을 잃을 위험 없이 견고하게 중앙 장악"),
+      mcPage(["d4"], "1.d4 뒤 흑의 응수는 크게 어떤 두 갈래?", ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], 0, "1...d5는 퀸스 갬빗 계열, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열"),
     ],
   };
   L.l_d4_d5 = {
-    title: "1...d5 — 퀸스 갬빗", desc: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응.", reward: 60, parent: "l_d4",
+    title: "1...d5 퀸스 갬빗", desc: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응", reward: 60, parent: "l_d4",
     pages: [
-      explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응이에요. 여기서 백이 c4를 두면 유명한 '퀸스 갬빗'이 시작돼요."),
-      movePage(["d4", "d5"], "폰을 하나 내주는 셈 치고 c4를 두어 퀸스 갬빗을 시작해 보세요.", ["c4"], "2.c4! 퀸스 갬빗이에요. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾을 수 있어 실질적인 손해가 거의 없어요(그래서 '갬빗'이지만 진짜 희생은 아니에요)."),
+      explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응. 백이 c4를 두면 퀸스 갬빗 시작"),
+      movePage(["d4", "d5"], "폰을 내줄 각오로 c4를 두어 퀸스 갬빗 시작", ["c4"], "2.c4! 퀸스 갬빗. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾아 실질 손해 거의 없음(이름은 갬빗이지만 진짜 희생은 아님)"),
     ],
   };
   L.l_d4_nf6 = {
-    title: "1...Nf6 — 인디언 디펜스", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응합니다.", reward: 60, parent: "l_d4",
+    title: "1...Nf6 인디언 디펜스", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응", reward: 60, parent: "l_d4",
     pages: [
-      explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 유연하게 대응 방향을 정하는 계열이에요 — 인디언 디펜스."),
-      mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통적인 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제한다", "폰을 절대 전진시키지 않는다", "킹을 캐슬링 없이 중앙에 둔다", "나이트를 절대 f6에 두지 않는다"], 0, "흔히 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 원거리로 견제해요."),
+      explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 대응 방향을 정하는 계열. 인디언 디펜스"),
+      mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제", "폰을 절대 전진시키지 않음", "킹을 캐슬링 없이 중앙에 둠", "나이트를 절대 f6에 두지 않음"], 0, "보통 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 멀리서 견제"),
     ],
   };
   // (기획) 이 레슨 콘텐츠는 시드일 뿐이다 — 실제 서비스에서는 개발자가 LessonEditor(CMS)로 자유롭게
@@ -2544,17 +2544,17 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
 }
 // (v0.2.1 기능) 수 체계 아이콘을 누르면 그 등급의 조건·설명을 말풍선으로 보여준다(나무위키 "체스닷컴" 수 등급 참고).
 const QDESC = {
-  brilliant: "대개 기물을 희생하면서도 포지션을 유리하게 이끄는, 발견하기 어려운 최상의 수입니다.",
-  only: "그 수를 두지 않으면 포지션이 크게 나빠지는, 사실상 유일하게 좋은 수입니다.",
-  best: "엔진이 계산한 그 포지션에서 가장 좋은 수입니다.",
-  excellent: "최선은 아니지만 평가치 손실이 거의 없는 훌륭한 수입니다.",
-  good: "무난하게 좋은 수로, 포지션을 크게 해치지 않습니다.",
-  inaccuracy: "더 나은 수가 있었던, 약간의 평가치 손실이 있는 부정확한 수입니다.",
-  miss: "상대의 실수로 생긴 좋은 기회를 살리지 못하고 놓친 수입니다.",
-  mistake: "평가치를 눈에 띄게 떨어뜨려 포지션을 불리하게 만든 실수입니다.",
-  blunder: "승패를 뒤집을 만큼 평가치를 크게 잃은 치명적인 실수입니다.",
-  book: "정석(오프닝 이론)에 등록된, 잘 알려진 이론적인 수입니다.",
-  pending: "엔진이 이 수를 분석하고 있습니다.",
+  brilliant: "기물을 희생하면서도 포지션을 유리하게 이끄는, 찾기 어려운 최상의 수",
+  only: "두지 않으면 포지션이 크게 나빠지는, 사실상 유일하게 좋은 수",
+  best: "엔진이 계산한 그 포지션의 가장 좋은 수",
+  excellent: "최선은 아니지만 평가치 손실이 거의 없는 훌륭한 수",
+  good: "무난하게 좋은 수. 포지션을 크게 해치지 않음",
+  inaccuracy: "더 나은 수가 있었던, 평가치 손실이 약간 있는 수",
+  miss: "상대 실수로 생긴 기회를 살리지 못한 수",
+  mistake: "평가치를 눈에 띄게 떨어뜨려 불리해진 수",
+  blunder: "승패를 뒤집을 만큼 평가치를 크게 잃은 치명적인 실수",
+  book: "정석(오프닝 이론)에 등록된 이론 수",
+  pending: "엔진이 분석 중",
 };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중분석의 대국 목록에서 공용.
 const TIME_CLASS_LABEL = { rapid: "래피드", blitz: "블리츠", bullet: "불릿", daily: "일일" };
@@ -3484,22 +3484,22 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
   };
   const submit = () => {
     const raw = text.trim();
-    if (!raw) { setErr("붙여넣을 내용을 입력하세요."); return; }
+    if (!raw) { setErr("붙여넣을 내용을 입력하세요"); return; }
     if (looksLikeFen(raw)) {
       const fenRoot = parseFenFull(raw);
-      if (!fenRoot) { setErr("올바른 FEN 형식이 아닙니다."); return; }
+      if (!fenRoot) { setErr("올바른 FEN 형식이 아님"); return; }
       onLoadFen(fenRoot); setOpen(false); setText(""); setErr("");
       return;
     }
     const moves = parsePgnMoves(raw);
-    if (!moves.length) { setErr("인식할 수 있는 기보가 없습니다."); return; }
+    if (!moves.length) { setErr("인식할 수 있는 기보 없음"); return; }
     let board = startBoard(), ok = true;
     for (let i = 0; i < moves.length; i++) {
       const color = i % 2 === 0 ? "w" : "b";
       if (!sanSrc(board, moves[i], color)) { ok = false; break; }
       board = applySan(board, moves[i], color);
     }
-    if (!ok) { setErr("기보에 불법적인 수가 포함되어 있습니다."); return; }
+    if (!ok) { setErr("기보에 불법 수 포함"); return; }
     onLoadPgn(moves); setOpen(false); setText(""); setErr("");
   };
   return (
@@ -3519,7 +3519,7 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
               <button onClick={submit} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>불러오기</button>
               <button onClick={() => setOpen(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>취소</button>
             </div>
-            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>PGN 기보는 검증 후 그 수순 그대로 분석 탭에서 이어서 둘 수 있습니다. FEN을 붙여넣으면 그 포지션(차례·캐슬링 권리·앙파상까지)부터 이어서 둘 수 있는 "FEN 모드"로 전환됩니다 — 이 위치에서 처음 두는 수부터 새로 1수로 표기돼요.</p>
+            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환되고, 처음 두는 수가 1수로 표기됨</p>
           </div>
         </div>
       )}
@@ -3786,7 +3786,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   useEffect(() => { setFenInput(fenText); }, [fenText]);
   const applyFenInput = () => {
     const p = parseFenFull(fenInput.trim());
-    if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
+    if (!p) { setFenErr("올바른 FEN 형식이 아님"); return; }
     pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setFenErr("");
   };
   const [copied, setCopied] = useState(false);
@@ -3794,11 +3794,11 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const pasteFen = async () => {
     try {
       const raw = (await navigator.clipboard.readText()).trim();
-      if (!looksLikeFen(raw)) { setFenErr("클립보드에 올바른 FEN이 없어요."); return; }
+      if (!looksLikeFen(raw)) { setFenErr("클립보드에 올바른 FEN 없음"); return; }
       const p = parseFenFull(raw);
-      if (!p) { setFenErr("올바른 FEN 형식이 아니에요."); return; }
+      if (!p) { setFenErr("올바른 FEN 형식이 아님"); return; }
       pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setFenErr("");
-    } catch { setFenErr("클립보드를 읽을 수 없어요."); }
+    } catch { setFenErr("클립보드를 읽을 수 없음"); }
   };
   // (v0.3.5 기능 → v0.3.9 백엔드 재전환 → v0.4.2 텍스트 인식 확장) 사용자 요청 — 이미지 스캔(사진 →
   // FEN). 서버(api/scan-board.js, Gemini API)가 이제 체스판 배치 사진뿐 아니라 PGN/FEN 텍스트가 담긴
@@ -3814,7 +3814,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       const data = await scanImageFile(file, setScanProgress);
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
-        if (!p) { setFenErr("인식된 배치를 적용할 수 없었어요."); return; }
+        if (!p) { setFenErr("인식된 배치를 적용할 수 없음"); return; }
         pushSnap({ board: p.board, ep: null });
         return;
       }
@@ -3822,7 +3822,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
         const raw = data.recognized_text.trim();
         if (looksLikeFen(raw)) {
           const p = parseFenFull(raw);
-          if (!p) { setFenErr("인식된 FEN 형식이 올바르지 않아요."); return; }
+          if (!p) { setFenErr("인식된 FEN 형식이 올바르지 않음"); return; }
           pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null });
           return;
         }
@@ -3835,12 +3835,12 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
           moveEp = epTargetFromMoveInfo(info);
           board = applySan(board, moves[i], color);
         }
-        if (!ok) { setFenErr("인식된 기보를 적용할 수 없었어요."); return; }
+        if (!ok) { setFenErr("인식된 기보를 적용할 수 없음"); return; }
         pushSnap({ board, ep: moveEp });
         return;
       }
-      setFenErr("이미지에서 체스판이나 기보를 인식하지 못했어요.");
-    } catch (e) { setFenErr((e && e.message) || "이미지 스캔에 실패했어요."); }
+      setFenErr("이미지에서 체스판이나 기보를 인식하지 못함");
+    } catch (e) { setFenErr((e && e.message) || "이미지 스캔 실패"); }
     finally { setScanning(false); setScanProgress(0); }
   };
   const handleDone = () => { const p = parseFenFull(fenText); if (p) onApply(p); };
@@ -3910,7 +3910,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const fenActionsRow = (
     <div className="flex gap-2">
       <button onClick={pasteFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>복사한 FEN 붙여넣기</button>
-      <button onClick={copyFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>{copied ? "복사됨!" : "FEN 복사"}</button>
+      <button onClick={copyFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>{copied ? "복사됨" : "FEN 복사"}</button>
     </div>
   );
   const fenInputRow = (
@@ -4298,7 +4298,7 @@ function QuestTag({ onClick }) {
   const clipClosed = "inset(0px " + (W - H) + "px 0px 0px round 999px)", clipOpen = "inset(0px 0px 0px 0px round 999px)";
   const Tag = onClick ? motion.button : motion.span;
   return (
-    <Tag onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined} title={onClick ? "일일 퀘스트 오프닝 — 눌러서 퀘스트 보기" : "일일 퀘스트 오프닝"}
+    <Tag onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined} title={onClick ? "일일 퀘스트 오프닝. 눌러서 퀘스트 보기" : "일일 퀘스트 오프닝"}
       whileHover={onClick ? { transform: "scale(1.05)" } : undefined} whileTap={onClick ? { transform: "scale(0.95)" } : undefined}
       style={{ position: "absolute", top: -8, left: -8, width: W, height: H, padding: 0, border: "none", background: "transparent", zIndex: 5, cursor: onClick ? "pointer" : "default", transformOrigin: H / 2 + "px 50%", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.38))" }}>
       {/* 손짓 1 — 아이콘 뒤에서 퍼져 나가며 옅어지는 금빛 고리(알약·아이콘 아래에 깔려 왼쪽·위·아래로만 보인다) */}
@@ -4562,8 +4562,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         let active = null, emptyMaster = false;
         if (isMaster) {
           if (master && master.moves.length) { active = master; }
-          else if (master && !master.moves.length) { setPosGames(master.posTotal); setEngineNote("이 포지션의 마스터 기보 없음 · 엔진 추천 수"); emptyMaster = true; }
-          else { active = normal; setEngineNote(normal && normal.moves.length ? "마스터 기보 로드 실패 · 일반 통계 표시" : "기보를 불러오지 못했습니다"); }
+          else if (master && !master.moves.length) { setPosGames(master.posTotal); setEngineNote("이 포지션의 마스터 기보 없음. 엔진 추천 수 표시"); emptyMaster = true; }
+          else { active = normal; setEngineNote(normal && normal.moves.length ? "마스터 기보 로드 실패. 일반 통계 표시" : "기보를 불러오지 못함"); }
         } else {
           active = normal || master;
         }
@@ -5232,17 +5232,17 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     const info = sanSrc(board, san, color);
     const promoKor = PIECE_KOR[(info && info.promo) || "N"] || "기물";
     const reason = underpromoReason(board, san, color);
-    if (reason === "stalemate") typeSentence = "퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
-    else if (reason === "safety") typeSentence = "퀸으로 승진하면 곧바로 잡히지만 " + josaEunNeun(promoKor) + " 안전하게 남을 수 있어, 대신 " + josaEulReul(promoKor) + " 골라 승진하는 수예요";
-    else typeSentence = "퀸이 아닌 " + josaEulReul(promoKor) + " 골라 승진하는, 흔치 않은 감각의 수예요";
+    if (reason === "stalemate") typeSentence = "퀸으로 승진하면 스테일메이트(무승부). 대신 " + promoKor + " 승진";
+    else if (reason === "safety") typeSentence = "퀸으로 승진하면 바로 잡힘. " + promoKor + " 승진은 안전하게 남음";
+    else typeSentence = "퀸이 아닌 " + promoKor + " 승진. 흔치 않은 선택";
   } else if (sub.type === "exchangeSac") {
-    typeSentence = josaGwaWa(PIECE_KOR[sub.give]) + " " + josaEulReul(PIECE_KOR[sub.get]) + " 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이에요";
+    typeSentence = josaGwaWa(PIECE_KOR[sub.give]) + " " + PIECE_KOR[sub.get] + " 교환. 쉽지 않지만 이 상황에선 탁월한 선택";
   } else if (sub.type === "neglect" && sub.piece) {
-    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수예요";
+    typeSentence = PIECE_KOR[sub.piece] + " 위협을 무시하고 더 큰 이득을 얻는 수";
   } else if (sub.piece) {
-    typeSentence = josaEulReul(PIECE_KOR[sub.piece]) + " 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수예요";
+    typeSentence = PIECE_KOR[sub.piece] + " 희생. 눈앞의 손해를 감수하고 더 큰 것을 노림";
   } else {
-    typeSentence = "눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수예요";
+    typeSentence = "눈에 보이는 손해를 감수하고 더 큰 것을 노리는 수";
   }
   let reasonSentence = null;
   if (alreadyLosing) {
@@ -5250,12 +5250,12 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
         const endKor = drawSeek.end === "stalemate" ? "스테일메이트" : "3회 동형 반복";
-        reasonSentence = "이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, " + drawSeek.line.join(" ") + " 수순으로 " + endKor + "를 만들어 무승부를 강제해야 했던 수예요";
+        reasonSentence = "이미 불리한 상황. " + drawSeek.line.join(" ") + " 수순으로 " + endKor + " 무승부를 강제";
       }
     } catch { }
   }
   let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
-  if (notBest) text += " 참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수예요.";
+  if (notBest) text += " 엔진 최선은 아니지만 찾기 어려운 수.";
   return text;
 }
 
@@ -5999,13 +5999,13 @@ function developmentNote(sansBeforeMove, san, color, kind, fenRoot) {
   const pieceKor = PIECE_KOR[info.piece];
   const seed = sansBeforeMove.length;
   return MEC_GOOD_KINDS.includes(kind)
-    ? mecPick([josaEulReul(pieceKor) + " 적절한 칸인 " + sq + "에 전개했어요.", "적절한 칸 " + sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "에 전개했어요, 적절한 칸이에요."], seed)
-    : mecPick([josaEulReul(pieceKor) + " " + sq + "에 전개했어요.", sq + "로 " + josaEulReul(pieceKor) + " 전개했어요.", josaEulReul(pieceKor) + " " + sq + "로 옮겨 전개했어요."], seed);
+    ? mecPick([pieceKor + " " + sq + " 전개. 적절한 칸", "적절한 칸 " + sq + "로 " + pieceKor + " 전개", pieceKor + " " + sq + " 전개, 적절한 칸"], seed)
+    : mecPick([pieceKor + " " + sq + " 전개", sq + "로 " + pieceKor + " 전개", pieceKor + " " + sq + "로 이동해 전개"], seed);
 }
 // R12 — 캐슬링 전용 평가. 좋은 수면 항상 같은 취지의 긍정 문구를, 나쁜 수인데 다른 사실로 원인을
 // 못 찾았으면 "엔진에 의하면" 키워드로 대체한다.
 function castleQualityGoodPhrase(seed) {
-  return mecPick(["킹의 안전을 도모하는 것은 대부분의 상황에서 좋은 선택이에요.", "캐슬링으로 킹을 안전한 곳에 두는 건 언제나 우선순위가 높은 선택이에요.", "킹을 미리 안전지대로 옮겨두는 좋은 선택이에요."], seed);
+  return mecPick(["킹 안전 확보는 대부분의 상황에서 좋은 선택", "캐슬링으로 킹을 안전하게 두는 건 우선순위가 높은 선택", "킹을 미리 안전지대로 옮기는 좋은 선택"], seed);
 }
 // R7 — 위협 시각화용 데이터. "위협"(ctrl.threats)이 실제로 mecFacts의 대표 사실로 뽑혔을 때만, 그
 // 칸을 노리는 내 공격자 전부와 그 칸을 지키는 상대 수비자 전부를 모아 돌려준다(ReviewCoachCard가
@@ -6030,55 +6030,55 @@ function threatSquareDetail(board, sq, color) {
   return { targetSq: [tr, tc], attackers, defenders };
 }
 const MEC_PHRASES = {
-  mine: (sq, p, s) => mecPick([sq + "에 있는 " + josaEulReul(p) + " 잃게 돼요.", sq + "의 " + josaEulReul(p) + " 이대로 두면 잃게 돼요.", "지금대로면 " + sq + "에 있는 " + josaEulReul(p) + " 잃어요."], s),
-  threat: (p, s) => mecPick(["이 수는 상대 " + josaEulReul(p) + " 위협해요.", "상대 " + josaIGa(p) + " 이 수의 위협을 받고 있어요.", "이제 상대 " + josaEulReul(p) + " 위협하고 있어요."], s),
-  preexistingTheirs: (p, s) => mecPick(["상대 " + josaIGa(p) + " 걸려 있어요 — 잡을 기회예요.", "상대 " + josaEulReul(p) + " 잡을 수 있는 상황이에요.", "아직 상대 " + josaIGa(p) + " 방치돼 있어요 — 놓치지 마세요."], s),
-  declinedCapture: (p, s) => mecPick([josaEulReul(p) + " 잡지 않았지만 여전히 좋은 수예요.", josaEulReul(p) + " 잡을 수도 있었지만, 이 수도 충분히 좋아요.", "당장 " + josaEulReul(p) + " 안 잡아도 이 수면 충분해요."], s),
-  declinedBestCapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 잡는 게 최선이었지만, 이 수도 여전히 좋아요.", "사실 " + josaEulReul(p) + " 잡을 수 있었어요 — 그래도 이 수 역시 좋은 선택이에요.", josaEulReul(p) + " 잡는 게 최선이었어요, 다만 이 수도 나쁘지 않아요."], s),
-  exchangeAheadGood: (s) => mecPick(["유리한 상황에서의 기물 교환은 게임을 쉽고 안정적으로 풀어가는 좋은 방법이에요.", "이기고 있을 때 기물을 교환해 상황을 단순하게 만드는 좋은 선택이에요.", "유리할 때는 기물을 바꿔가며 안정적으로 승리를 굳히는 게 좋아요."], s),
-  exchangeBehindForced: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 불가피한 최선의 선택이었어요.", "기물 교환은 원래 피해야 하는 상황이지만, 이 교환만큼은 어쩔 수 없는 최선이었어요.", "지고 있는 상황에서도 이 교환은 최선으로 불가피했어요."], s),
-  exchangeBehindGood: (s) => mecPick(["지고 있을 때는 기물 교환을 피하는 게 좋지만, 이 교환은 좋은 선택이었어요.", "원래는 피해야 할 기물 교환이지만, 이번엔 괜찮은 선택이었어요.", "지고 있는 상황이라도 이 교환만큼은 나쁘지 않은 선택이었어요."], s),
-  exchangeAheadBad: (s) => mecPick(["유리한 상황이라도 목적 없는 기물 교환은 손해가 될 수 있어요 — 기물 교환은 목적을 갖고 해야 해요.", "이기고 있어도 이 교환은 아쉬운 선택이었어요 — 기물 교환에는 목적이 있어야 해요.", "유리한 상황을 단순화하려던 거라면, 이번 교환은 아쉬운 선택이었어요."], s),
-  exchangeBehindBad: (s) => mecPick(["지고 있는 상황에서는 기물 교환을 피하는 게 좋은데, 이 교환은 아쉬운 선택이었어요 — 기물 교환은 목적을 갖고 해야 해요.", "지고 있을 때 기물을 바꾸면 역전 기회도 함께 줄어들어요 — 이 교환은 아쉬운 선택이었어요.", "역전을 노려야 할 때 목적 없이 기물을 교환한 건 아쉬운 선택이에요."], s),
-  defend: (p, s) => mecPick(["위태롭던 아군 " + josaEulReul(p) + " 위협 대처로 지켜냈어요.", "상대 위협에 대한 위협 대처로, 덕분에 " + josaIGa(p) + " 더 이상 위험하지 않아요.", josaEulReul(p) + " 안전하게 지키는 위협 대처예요."], s),
-  evade: (p, s) => mecPick([josaIGa(p) + " 위협을 피해 안전한 자리로 갔어요.", josaEulReul(p) + " 안전한 칸으로 피신시켰어요.", "이 수로 " + p + "에 대한 위협을 피했어요."], s),
-  counter: (p, tgt, s) => mecPick(["위협을 피하면서 상대 " + josaEulReul(tgt) + " 반격해요.", "피하는 동시에 상대 " + josaEulReul(tgt) + " 노리는 반격이에요.", josaEulReul(p) + " 피신시키면서 상대 " + tgt + "까지 반격했어요."], s),
-  pawnTension: (s) => mecPick(["서로 폰을 노리고 있어요.", "폰끼리 서로 위협하고 있어요.", "이 폰과 상대 폰이 서로를 겨누고 있어요."], s),
-  pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰을 교환하는 것은 " + (good ? "좋은" : "좋지 않은") + " 선택이에요.", (good ? "중앙 쪽으로" : "사이드 쪽으로") + " 잡은 " + from + "폰과 " + captured + "폰의 교환은 " + (good ? "괜찮아요." : "아쉬워요."), from + "폰이 " + captured + "폰을 잡은 건 " + (good ? "중앙을 지키는 좋은 선택이에요." : "중앙에서 멀어지는 아쉬운 선택이에요.")], s),
-  tempo: (s) => mecPick(["이 폰을 처음에 두 칸 전진시켰으면 한 수를 아낄 수 있었어요.", "한 번에 두 칸 갈 수 있었는데 나눠서 전진했어요.", "이 폰, 처음부터 두 칸 밀었으면 템포를 아꼈을 거예요."], s),
-  pieceReturned: (p, s) => mecPick([josaIGa(p) + " 시작 칸으로 그대로 돌아갔어요 — 그동안의 전개가 무의미해졌어요.", "애써 전개한 " + josaIGa(p) + " 다시 시작 칸으로 돌아갔어요.", josaIGa(p) + " 원래 자리로 되돌아가며 한 수를 낭비했어요."], s),
-  pieceDetour: (p, s) => mecPick([p + "가 상대 폰에 쫓겨 옮긴 자리, 사실 처음부터 한 수에 갈 수 있었어요.", "상대 폰에게 쫓기느라 " + p + "가 두 수를 들여서야 도착했어요 — 처음부터 한 수면 됐어요.", "상대 폰 한 수에 템포를 내주며 " + p + "가 돌아갔어요, 원래 한 번에 갈 수 있는 자리였어요."], s),
-  castleLost: (s) => mecPick(["이 수로 캐슬링 권리를 잃었어요.", "캐슬링 권리가 이 수로 사라졌어요.", "이제 캐슬링을 할 수 없게 됐어요."], s),
-  queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 조금 덜 안전해요.", "퀸사이드로 캐슬링했어요 — a열 폰이 다소 약점이 될 수 있어요.", "퀸사이드 캐슬링이에요, 킹사이드보다는 살짝 덜 안전해요."], s),
-  exchangeOffered: (p, s) => mecPick([josaEulReul(p) + " 상대의 같은 기물이 공격할 수 있는 칸으로 옮겨, 교환을 요청했어요.", "상대와 동가 기물로 맞바꾸자는 교환 요청이에요.", josaIGa(p) + " 상대 기물과 서로 마주 보고 있어요, 교환 요청이에요."], s),
-  exchangeFreeGive: (p, s) => mecPick([josaEulReul(p) + " 아무 대가 없이 상대에게 내주는 수예요.", "지켜주는 기물 없이 " + josaEulReul(p) + " 공짜로 내줬어요.", josaIGa(p) + " 공짜로 잡히는 자리로 갔어요."], s),
-  exchangeAccepted: (p, s) => mecPick(["상대의 교환 요청을 받아들여 " + josaEulReul(p) + " 잡았어요.", "교환 요청을 수락하고 " + josaEulReul(p) + " 그대로 잡았어요.", josaEulReul(p) + " 잡으며 교환 요청을 받아들였어요."], s),
-  exchangeDeclined: (p, s) => mecPick(["상대의 교환 요청을 거절하고 기물을 물렸어요.", "교환에 응하지 않고 " + josaEulReul(p) + " 노리던 기물을 피신시켰어요.", "상대와의 교환을 거절하는 수예요."], s),
-  recapture: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 되잡아서 기물 상황을 유지했어요.", "상대가 잡은 자리에서 " + josaEulReul(p) + " 그대로 되잡았어요.", "되잡기로 기물 상황을 다시 맞췄어요."], s),
-  redeployOpening: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재전개하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재전개했어요.", josaEulReul(p) + " 최적의 위치로 재전개하는 수예요."], s),
-  redeployMidgame: (p, s) => mecPick([josaEulReul(p) + " 여러 번 움직였지만, 더 나은 자리로 재배치하는 수예요.", "같은 " + josaEulReul(p) + " 반복해서 움직였지만, 최적의 위치로 재배치했어요.", josaEulReul(p) + " 최적의 위치로 재배치하는 수예요."], s),
-  noObviousReason: (s) => mecPick(["직관적인 이득은 찾기 어렵지만, 엔진에 의하면 좋은 수예요.", "설명하긴 어렵지만, 엔진에 의하면 좋은 수예요.", "엔진에 의하면 좋은 수예요."], s),
-  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + josaEulReul(PIECE_KOR[blocker]) + " 뒀다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요, 먼저 " + sq + "를 선점하는 예방 수예요.", sq + "를 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " 차지했다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요 — 미리 막는 예방 수예요.", "예방 수예요, 상대 " + josaEunNeun(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요."], s),
-  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + "의 컨트롤을 늘린 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " 여기 와서 " + josaEulReul(PIECE_KOR[targetP]) + " 위협하는 걸 간접적으로 막았어요.", "간접 예방 수예요, 상대 " + josaIGa(PIECE_KOR[blocker]) + " " + sq + "에 왔다면 " + josaEulReul(PIECE_KOR[targetP]) + " 위협받았을 거예요.", "직접 막지는 않았지만 " + sq + "의 컨트롤을 늘린 예방 수로 상대 " + PIECE_KOR[blocker] + "의 진입을 막았어요."], s),
-  nextCastle: (s) => mecPick(["이 수로 다음 수에 캐슬링이 가능해졌어요.", "다음 수에는 캐슬링을 할 수 있어요.", "이제 다음 수에 캐슬링이 가능해요."], s),
-  overprotect: (p, s) => mecPick([josaEulReul(p) + " 아직 위협받지 않았지만 미리 과보호했어요.", "당장 위협은 없지만 " + josaEulReul(p) + " 미리 지키는 기물을 늘렸어요, 과보호예요.", josaIGa(p) + " 위협받진 않지만 과보호하는 수예요."], s),
-  latentThreat: (p, s) => mecPick(["상대 " + josaEulReul(p) + " 노리는 공격자를 하나 더 늘렸어요, 아직 잡을 수는 없지만 잠재 위협이에요.", "당장 잡히진 않지만 상대 " + josaIGa(p) + " 잠재 위협을 받고 있어요.", "상대 " + josaEulReul(p) + " 향한 잠재 위협을 만드는 수예요."], s),
-  openFile: (s) => mecPick(["룩을 오픈 파일에 배치했어요.", "이 파일엔 폰이 하나도 없어서, 룩을 오픈 파일에 세웠어요.", "룩을 완전히 열린 파일에 배치하는 좋은 수예요."], s),
-  semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치했어요.", "내 폰은 없고 상대 폰만 남은 세미오픈 파일에 룩을 세웠어요.", "룩을 세미오픈 파일에 배치해 상대 폰에 잠재 위협을 줘요."], s),
-  connect: (p, s) => mecPick([josaEulReul(p) + " 서로 지켜주는 연결을 만들었어요.", "다른 " + josaGwaWa(p) + " 연결돼 서로를 지켜줘요.", josaIGa(p) + " 짝과 연결되어 서로 보호하는 관계가 됐어요."], s),
-  stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩됐어요.", "같은 파일에서 룩끼리 중첩되어 서로를 지켜줘요.", "룩 중첩으로 그 파일을 강하게 장악했어요."], s),
-  pawnSac: (sq, s) => mecPick([sq + "폰이 위협받고 있지만 지키지 않았어요, 폰 희생이에요.", sq + "폰을 지키는 대신 희생하는 수예요.", "위협받는 " + sq + "폰을 그대로 두고 폰 희생을 택했어요."], s),
-  castleBadFallback: (s) => mecPick(["엔진에 의하면 지금은 캐슬링이 좋은 타이밍이 아니에요.", "엔진에 의하면 이 캐슬링은 아쉬운 타이밍이에요.", "엔진에 의하면 지금 캐슬링하기엔 좋지 않은 순간이에요."], s),
+  mine: (sq, p, s) => mecPick([sq + " " + p + " 손실 위험", sq + " " + p + " 방치 시 손실", "현재 " + sq + " " + p + " 손실 예정"], s),
+  threat: (p, s) => mecPick(["상대 " + p + " 위협", "상대 " + p + " 공격 대상", "이 수로 상대 " + p + " 위협"], s),
+  preexistingTheirs: (p, s) => mecPick(["상대 " + p + " 노출. 잡을 기회", "상대 " + p + " 잡을 수 있는 상황", "상대 " + p + " 방치 중. 놓치지 말 것"], s),
+  declinedCapture: (p, s) => mecPick([p + " 안 잡았지만 좋은 수", p + " 잡을 수 있었지만 이 수도 충분", "당장 " + p + " 안 잡아도 충분"], s),
+  declinedBestCapture: (p, s) => mecPick(["상대 " + p + " 잡는 게 최선. 이 수도 좋음", "사실 " + p + " 잡을 수 있었음. 이 수도 좋은 선택", p + " 잡는 게 최선이었지만 이 수도 나쁘지 않음"], s),
+  exchangeAheadGood: (s) => mecPick(["유리할 때 기물 교환은 상황을 단순하게 만드는 좋은 방법", "앞서 있을 때 교환으로 단순화. 좋은 선택", "유리할 땐 기물을 바꿔 승리를 굳히기"], s),
+  exchangeBehindForced: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 불가피한 최선", "원래 피할 교환이지만 이번엔 어쩔 수 없는 최선", "불리해도 이 교환은 최선"], s),
+  exchangeBehindGood: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 좋은 선택", "원래 피할 교환이지만 이번엔 괜찮음", "불리해도 이 교환은 나쁘지 않음"], s),
+  exchangeAheadBad: (s) => mecPick(["유리해도 목적 없는 교환은 손해. 교환에는 목적 필요", "앞서 있어도 이 교환은 아쉬움. 교환에는 목적 필요", "유리한 상황을 단순화하려던 교환이라면 아쉬운 선택"], s),
+  exchangeBehindBad: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙. 이 교환은 아쉬움. 교환에는 목적 필요", "불리할 때 교환하면 역전 기회도 줄어듦. 아쉬운 교환", "역전을 노릴 때 목적 없는 교환은 아쉬움"], s),
+  defend: (p, s) => mecPick(["위태로운 " + p + " 방어 성공", "상대 위협에 대응해 " + p + " 안전 확보", p + " 안전하게 방어"], s),
+  evade: (p, s) => mecPick([p + " 위협 회피, 안전한 칸으로 이동", p + " 안전한 칸으로 피신", "이 수로 " + p + " 위협 회피"], s),
+  counter: (p, tgt, s) => mecPick(["위협을 피하며 상대 " + tgt + " 반격", "회피와 동시에 상대 " + tgt + " 공격", p + " 피신과 동시에 상대 " + tgt + " 반격"], s),
+  pawnTension: (s) => mecPick(["폰끼리 서로 겨눔", "폰 대치", "이 폰과 상대 폰이 서로 공격 가능"], s),
+  pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰 교환: " + (good ? "좋은 선택" : "좋지 않은 선택"), (good ? "중앙 쪽" : "사이드 쪽") + " 교환(" + from + "폰x" + captured + "폰): " + (good ? "괜찮음" : "아쉬움"), from + "폰이 " + captured + "폰 캡처: " + (good ? "중앙 유지" : "중앙에서 멀어짐")], s),
+  tempo: (s) => mecPick(["처음에 두 칸 전진했다면 한 수 절약", "한 번에 갈 수 있는 두 칸을 나눠 전진", "처음부터 두 칸 밀었다면 템포 절약"], s),
+  pieceReturned: (p, s) => mecPick([p + " 시작 칸으로 복귀. 전개가 무의미해짐", "전개한 " + p + " 다시 시작 칸으로 복귀", p + " 원래 자리 복귀. 한 수 낭비"], s),
+  pieceDetour: (p, s) => mecPick([p + " 상대 폰에 쫓겨 이동. 처음부터 한 수에 갈 수 있었음", "상대 폰에 쫓겨 " + p + " 두 수 소요. 한 수면 충분", "상대 폰 한 수에 템포 손해. " + p + " 원래 한 번에 갈 자리"], s),
+  castleLost: (s) => mecPick(["이 수로 캐슬링 권리 상실", "캐슬링 권리 소멸", "더 이상 캐슬링 불가"], s),
+  queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 덜 안전", "퀸사이드 캐슬링. a열 폰이 약점이 될 수 있음", "퀸사이드 캐슬링. 킹사이드보다 살짝 덜 안전"], s),
+  exchangeOffered: (p, s) => mecPick([p + " 상대 같은 기물이 공격 가능한 칸으로 이동. 교환 제안", "동가 기물 교환 제안", p + " 상대 기물과 마주 봄. 교환 제안"], s),
+  exchangeFreeGive: (p, s) => mecPick([p + " 대가 없이 내줌", "지켜 주는 기물 없이 " + p + " 공짜로 내줌", p + " 공짜로 잡히는 자리로 이동"], s),
+  exchangeAccepted: (p, s) => mecPick(["교환 제안 수락, 상대 " + p + " 캡처", "교환 수락. " + p + " 캡처", p + " 캡처로 교환 수락"], s),
+  exchangeDeclined: (p, s) => mecPick(["교환 제안 거절, 기물 후퇴", "교환 거절. " + p + " 피신", "상대와의 교환 거절"], s),
+  recapture: (p, s) => mecPick(["상대 " + p + " 되잡아 기물 균형 유지", "상대가 잡은 자리에서 " + p + " 되잡음", "되잡기로 기물 균형 회복"], s),
+  redeployOpening: (p, s) => mecPick([p + " 여러 번 이동, 더 나은 자리로 재전개", "같은 " + p + " 반복 이동, 최적 위치로 재전개", p + " 최적 위치로 재전개"], s),
+  redeployMidgame: (p, s) => mecPick([p + " 여러 번 이동, 더 나은 자리로 재배치", "같은 " + p + " 반복 이동, 최적 위치로 재배치", p + " 최적 위치로 재배치"], s),
+  noObviousReason: (s) => mecPick(["직관적 이득은 찾기 어렵지만 엔진 평가상 좋은 수", "설명은 어렵지만 엔진 평가상 좋은 수", "엔진 평가상 좋은 수"], s),
+  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + PIECE_KOR[blocker] + " 뒀다면 " + PIECE_KOR[targetP] + " 위협. " + sq + " 선점하는 예방 수", sq + " 상대 " + PIECE_KOR[blocker] + " 차지 시 " + PIECE_KOR[targetP] + " 위협. 미리 막는 예방 수", "예방 수. 상대 " + PIECE_KOR[blocker] + " " + sq + " 진입 시 " + PIECE_KOR[targetP] + " 위협"], s),
+  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + " 컨트롤 강화. 상대 " + PIECE_KOR[blocker] + " 진입 후 " + PIECE_KOR[targetP] + " 위협을 간접 차단", "간접 예방 수. 상대 " + PIECE_KOR[blocker] + " " + sq + " 진입 시 " + PIECE_KOR[targetP] + " 위협", "직접 차단은 아니지만 " + sq + " 컨트롤 강화로 상대 " + PIECE_KOR[blocker] + " 진입 차단"], s),
+  nextCastle: (s) => mecPick(["다음 수 캐슬링 가능", "다음 수에 캐슬링 가능해짐", "이제 다음 수 캐슬링 가능"], s),
+  overprotect: (p, s) => mecPick([p + " 아직 위협은 없지만 미리 과보호", "당장 위협은 없지만 " + p + " 지키는 기물 추가. 과보호", p + " 위협 없음. 과보호"], s),
+  latentThreat: (p, s) => mecPick(["상대 " + p + " 노리는 공격자 추가. 아직 못 잡지만 잠재 위협", "당장 잡히진 않지만 상대 " + p + " 잠재 위협", "상대 " + p + " 향한 잠재 위협 생성"], s),
+  openFile: (s) => mecPick(["룩을 오픈 파일에 배치", "폰이 하나도 없는 파일에 룩 배치", "완전히 열린 파일에 룩 배치. 좋은 수"], s),
+  semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치", "내 폰은 없고 상대 폰만 있는 세미오픈 파일에 룩 배치", "세미오픈 파일 룩 배치. 상대 폰에 잠재 위협"], s),
+  connect: (p, s) => mecPick([p + " 서로 지켜 주는 연결 형성", "다른 " + josaGwaWa(p) + " 연결, 서로 보호", p + " 짝과 연결, 서로 보호"], s),
+  stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩", "같은 파일에서 룩 중첩, 서로 보호", "룩 중첩으로 파일 장악"], s),
+  pawnSac: (sq, s) => mecPick([sq + "폰이 위협받지만 지키지 않음. 폰 희생", sq + "폰을 지키지 않고 희생", "위협받는 " + sq + "폰을 그대로 두고 폰 희생 선택"], s),
+  castleBadFallback: (s) => mecPick(["엔진 평가상 지금은 캐슬링 타이밍이 아님", "엔진 평가상 이 캐슬링은 타이밍이 아쉬움", "엔진 평가상 지금 캐슬링은 좋지 않음"], s),
   // (신규) 수비자 제거 — 사용자 요청에 따라 매번 같은 고정 문구를 쓴다(다른 사실처럼 무작위로
   // 바뀌지 않는다).
-  removeDefender: () => "수비자 제거 전술은 간단하지만 매우 강력합니다!",
+  removeDefender: () => "수비자 제거. 단순하지만 강력한 전술",
   // (사용자 요청) 체크메이트 — 다른 어떤 사실보다 우선하는 최상위 규칙이라 removeDefender와 같은
   // 이유로 매번 같은 고정 문구를 쓴다. 탁월한 수·유일한 수와 연계된 두 문구는 그 등급을 상징하는
   // 기호(체스 표기법 그대로 — 탁월한 수 "!!", 유일한 수 "!")로 끝난다(아래 mecFacts 끝의 일반
   // 규칙과 자릿수를 맞춤). 그 외 등급의 체크메이트는 일반 문구를 쓴다.
-  checkmateBrilliant: (p) => "당신의 " + josaEunNeun(p) + " 상대의 킹과 맞바꾸게 될 거에요!!",
-  checkmateOnly: () => "체크메이트를 향한 유일한 길을 찾아냈어요!",
-  checkmate: () => "체크메이트! 이 수로 게임이 끝나요.",
+  checkmateBrilliant: (p) => "당신의 " + josaEunNeun(p) + " 상대 킹과 맞바꾸게 됨!!",
+  checkmateOnly: () => "체크메이트로 가는 유일한 길!",
+  checkmate: () => "체크메이트. 게임 종료",
 };
 // (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
 // 돌려야 해 코치 카드에 자동으로 붙이지 못하고 온디맨드로 남겨 뒀던 항목) 지금 포지션에서 엔진이
@@ -6110,7 +6110,7 @@ function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
   return best;
 }
 function relocationPlanPhrase(plan) {
-  return josaIGa(PIECE_KOR[plan.piece] || "기물") + " " + plan.squares.join(" → ") + "로 이동하는 재배치 계획이 보여요.";
+  return (PIECE_KOR[plan.piece] || "기물") + " 재배치 계획: " + plan.squares.join(" → ");
 }
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
@@ -6564,7 +6564,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
       });
       onSaved && onSaved();
       onClose();
-    } catch (e) { setErr("저장하지 못했습니다. 다시 시도해 주세요."); } finally { setSaving(false); }
+    } catch (e) { setErr("저장 실패. 다시 시도"); } finally { setSaving(false); }
   };
   // (v0.2.3 기능) 대량 가져오기 — 여러 대국이 이어 붙은 PGN 텍스트(외부 대국 데이터베이스의 선수/
   // 오프닝별 zip을 풀면 나오는 .pgn 파일 등)를 파일로 올리거나 그대로 붙여넣으면, 대국 단위로 쪼개 각각의 White/
@@ -6578,7 +6578,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
   const bulkSkipped = bulkGames.length - bulkOk.length;
   const onPickFile = async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
-    try { setBulkText(await f.text()); } catch { setBulkErr("파일을 읽지 못했습니다."); }
+    try { setBulkText(await f.text()); } catch { setBulkErr("파일 읽기 실패"); }
     e.target.value = "";
   };
   const saveBulk = async () => {
@@ -6588,7 +6588,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
       await addDevMasterGamesBulk(bulkOk);
       setBulkDone({ saved: bulkOk.length, skipped: bulkSkipped });
       onSaved && onSaved();
-    } catch (e) { setBulkErr("저장하지 못했습니다. 다시 시도해 주세요."); } finally { setBulkSaving(false); }
+    } catch (e) { setBulkErr("저장 실패. 다시 시도"); } finally { setBulkSaving(false); }
   };
   const inputStyle = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: T.paper, color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
   const labelStyle = { fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
@@ -6617,7 +6617,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         <div style={{ marginBottom: 8 }}>
           <label style={labelStyle}>PGN 기보</label>
           <textarea value={pgn} onChange={(e) => setPgn(e.target.value)} rows={5} style={{ ...inputStyle, fontFamily: SITE_FONT, resize: "vertical" }} placeholder="1.e4 e5 2.Nf3 Nc6 3.Bb5 ..." />
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? parsed.length + "수 인식됨" : "아직 인식된 수가 없습니다"}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? parsed.length + "수 인식됨" : "인식된 수 없음"}</div>
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>대국 결과{!resultTouched && result && <span style={{ color: T.inkSoft, fontWeight: 600 }}> (자동 입력됨)</span>}</label>
@@ -6630,23 +6630,23 @@ function AddMasterGameModal({ onClose, onSaved }) {
         {err && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{err}</p>}
         <button onClick={save} disabled={!canSave} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 9, border: "none", background: canSave ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9BDA0", color: "#241509", fontWeight: 900, fontSize: 12.5, cursor: canSave ? "pointer" : "default" }}>{saving ? "저장 중…" : "저장"}</button>
         </>) : (<>
-        <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>외부에서 받은, 여러 대국이 이어 붙은 .pgn 파일을 그대로 올리거나 붙여넣으세요. 각 대국의 White/Black/Elo/Date/Result 헤더를 읽어 자동으로 채웁니다.</div>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>여러 대국이 담긴 .pgn 파일을 올리거나 붙여넣기. 헤더(White/Black/Elo/Date/Result)는 자동 입력</div>
         <div style={{ marginBottom: 8 }}>
           <label style={labelStyle}>.pgn 파일 선택</label>
           <input type="file" accept=".pgn,.txt,text/plain" onChange={onPickFile} style={{ fontSize: 11.5, color: T.ink }} />
         </div>
         <div style={{ marginBottom: 8 }}>
-          <label style={labelStyle}>또는 PGN 텍스트 붙여넣기</label>
+          <label style={labelStyle}>PGN 텍스트 붙여넣기</label>
           <textarea value={bulkText} onChange={(e) => { setBulkText(e.target.value); setBulkDone(null); }} rows={6} style={{ ...inputStyle, fontFamily: SITE_FONT, resize: "vertical" }} placeholder={'[Event "..."]\n[White "Kasparov, Garry"]\n[Black "Karpov, Anatoly"]\n...\n\n1.e4 e5 2.Nf3 ...'} />
         </div>
         {bulkGames.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>
-            {bulkGames.length}개 대국 인식됨 — <b style={{ color: T.best }}>{bulkOk.length}개 가져오기 가능</b>
-            {bulkSkipped > 0 && <span style={{ color: T.blunder }}> · {bulkSkipped}개는 대국자 이름·수순·결과 중 일부를 확인할 수 없어 건너뜁니다</span>}
+            {bulkGames.length}개 대국 인식, <b style={{ color: T.best }}>{bulkOk.length}개 가져오기 가능</b>
+            {bulkSkipped > 0 && <span style={{ color: T.blunder }}> · {bulkSkipped}개는 대국자·수순·결과 확인 불가로 제외</span>}
           </div>
         )}
         {bulkErr && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{bulkErr}</p>}
-        {bulkDone && <p style={{ fontSize: 11.5, color: T.best, marginBottom: 8, fontWeight: 800 }}>{bulkDone.saved}개 대국을 저장했습니다{bulkDone.skipped > 0 ? " (" + bulkDone.skipped + "개 건너뜀)" : ""}.</p>}
+        {bulkDone && <p style={{ fontSize: 11.5, color: T.best, marginBottom: 8, fontWeight: 800 }}>{bulkDone.saved}개 대국 저장 완료{bulkDone.skipped > 0 ? " (" + bulkDone.skipped + "개 건너뜀)" : ""}.</p>}
         <button onClick={saveBulk} disabled={!bulkOk.length || bulkSaving} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 9, border: "none", background: bulkOk.length && !bulkSaving ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9BDA0", color: "#241509", fontWeight: 900, fontSize: 12.5, cursor: bulkOk.length && !bulkSaving ? "pointer" : "default" }}>{bulkSaving ? "가져오는 중…" : bulkOk.length ? bulkOk.length + "개 일괄 저장" : "가져올 대국 없음"}</button>
         </>)}
       </div>
@@ -7024,12 +7024,12 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     const t = draft.trim();
     if (!t) return;
     if (moveNoteEffectiveLen(t) > MOVE_NOTE_MAX_LEN) { setErr("글자 수가 너무 길어요(" + MOVE_NOTE_MAX_LEN + "자까지)."); return; }
-    if (containsBannedWord(t)) { setErr("부적절한 표현이 포함되어 있어요."); return; }
+    if (containsBannedWord(t)) { setErr("부적절한 표현 포함"); return; }
     setBusy(true); setErr("");
     try {
       await sbInsert("move_notes", { move_key: moveKey, uid, author_username: username || "", body: t });
       setDraft(""); await load();
-    } catch { setErr("등록에 실패했어요. 잠시 후 다시 시도해주세요."); }
+    } catch { setErr("등록 실패. 잠시 후 다시 시도"); }
     setBusy(false);
   };
   const hasNotes = notes && notes.length > 0;
@@ -7088,23 +7088,23 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
           )}
         </>
       ) : (
-        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인입니다." : "이 수에 대한 해설 데이터가 아직 없습니다.")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
+        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? title + " 라인" : "해설 없음")}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>더보기</button>}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>로그인하면 이 수에 대한 설명을 직접 남길 수 있어요.</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>로그인 후 설명 작성 가능</p>
       ) : !canAddMore ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? "이미 이 수에 설명을 " + myNotes.length + "개 남겼어요(최대 " + cap + "개) — 위 카드에서 직접 수정하거나 지울 수 있어요." : "이미 이 수에 설명을 남겼어요 — 위 카드에서 직접 수정하거나 지울 수 있어요."}</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? "이미 이 수에 설명을 " + myNotes.length + "개 남겼어요(최대 " + cap + "개). 위 카드에서 수정·삭제 가능" : "이미 작성함. 위 카드에서 수정·삭제 가능"}</p>
       ) : (
         <div>
-          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder="이 수에 대한 짧은 설명을 남겨보세요" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
+          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder="이 수의 짧은 설명 작성" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
           <div className="flex items-center justify-between" style={{ marginTop: 5 }}>
             <span style={{ fontSize: 10, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
             <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>등록</button>
           </div>
           {/* (v0.4.0 기능) 바로 다음 수는 SAN을 그냥 문장에 적기만 해도 자동으로 링크가 된다는 것과,
               더 뒤쪽 수로 링크를 걸려면 [[...]] 안에 이어지는 수순을 적어야 한다는 걸 안내한다. */}
-          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>Tip: 문장에 "12.Nf3"처럼 수 번호와 함께 바로 다음 수를 적으면 자동으로 그 수로 이동하는 링크가 돼요(수 번호 없이 "Nf3"만 적으면 링크가 안 돼요). 더 이어지는 수로 링크하려면 <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>처럼 대괄호 두 개 안에 수 번호와 함께 이 위치부터 이어지는 수순을 공백으로 구분해 적어주세요 — 대괄호 안 내용은 150자 제한에 포함되지 않아요.</p>
+          <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>Tip: "12.Nf3"처럼 수 번호와 함께 적으면 해당 수로 이동하는 링크가 됨. 이어지는 수순으로 링크하려면 <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>처럼 대괄호 두 개 안에 수 번호와 수순을 공백으로 구분해 적기. 대괄호 안은 150자 제한에서 제외</p>
           {err && <p style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
         </div>
       )}
@@ -7228,7 +7228,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   const handleOpenGame = async (id) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
-    try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국을 여는 데 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
+    try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국 열기 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
   };
   // (v0.2.1 기능) chess.com 통계의 "보기"+초록 리뷰 버튼 쌍과 동일하게, 마스터 대국도 목록에서
   // 바로 /review로 진입할 수 있게 한다 — "보기"(handleOpenGame)와 별개 상태로 바쁨/에러를 추적한다.
@@ -7237,7 +7237,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   const handleReviewGame = async (g) => {
     if (!onOpenMasterGameReview || reviewingGameId) return;
     setReviewingGameId(g.id); setReviewOpenError(false);
-    try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰를 여는 데 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
+    try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰 열기 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
   };
   return (
     <div>
@@ -7350,14 +7350,14 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             </div>
           </div>
         )}
-        {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>설정 탭에서 chess.com 계정을 연동하면 이 수로 진행된 내 실제 대국과 통계가 표시됩니다.</p>
+        {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>설정에서 chess.com 계정을 연동하면 이 수의 내 대국과 통계 표시</p>
           : chesscom.status === "loading" ? <p style={{ fontSize: 12, color: T.inkSoft }}>기보를 불러오는 중…</p>
-            : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>
+            : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>기보 로드 실패. 계정 확인 필요</p>
               : (
                 <div>
                   {/* 이 수가 두어진 내 최근 대국 — 없으면 "없다"고 표시 */}
-                  <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>이 수가 두어진 내 최근 대국</span>{myGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{myGames.length}판</span>}</div>
-                  {myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px" }}>이 수로 최근에 둔 대국이 없습니다.</p>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>이 수를 둔 내 최근 대국</span>{myGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{myGames.length}판</span>}</div>
+                  {myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px" }}>최근 대국 없음</p>
                     : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
                         const won = g.result === "win", lost = g.result === "loss";
                         const rc = ratingChanges.get(g);
@@ -7388,7 +7388,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                       <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
                     </div>}
                   {/* 전적 요약 */}
-                  {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>이 수순으로 둔 대국 통계가 없습니다.</p>
+                  {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>이 수순의 대국 통계 없음</p>
                     : (
                   <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
                     <div><b>{fmtFull(stats.total)} 게임</b> · <span style={{ color: T.best }}>{stats.w}승</span> {stats.d}무 <span style={{ color: T.blunder }}>{stats.l}패</span> · 승률 <b>{stats.winRate}%</b></div>
@@ -7407,9 +7407,9 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                       {analyzing && mistakes.length === 0 ? (
                         <div className="flex items-center gap-2" style={{ padding: "4px 0" }}>
                           <Mascot name={ply % 2 === 0 ? "kokoa" : "milku"} emotion="think" size={62} />
-                          <span style={{ fontSize: 11.5, color: T.inkSoft }}>내 대국 기보를 분석하는 중…</span>
+                          <span style={{ fontSize: 11.5, color: T.inkSoft }}>내 대국 분석 중…</span>
                         </div>
-                      ) : (!analyzing && mistakes.length === 0) ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? "15수 이내에서 두드러진 실수가 발견되지 않았습니다." : "엔진이 준비되면 분석합니다."}</div>
+                      ) : (!analyzing && mistakes.length === 0) ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? "15수 이내 두드러진 실수 없음" : "엔진 준비 후 분석"}</div>
                         : mistakes.map((mt, idx) => {
                           const seqStr = [san, ...mt.seq]; // 표기: 집중 분석 수부터
                           // (사용자 요청) 이 실수 수순으로 실제로 진행된 내 chess.com 대국 — 클릭하면
@@ -7436,7 +7436,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                               </button>
                               {isOpen && (
                                 <div style={{ margin: "2px 0 6px", padding: "4px 8px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>
-                                  {mtGames.length === 0 ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "4px 0" }}>이 대국을 찾을 수 없습니다.</div>
+                                  {mtGames.length === 0 ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "4px 0" }}>대국을 찾을 수 없음</div>
                                     : mtGames.map((g, gi) => {
                                       const won = g.result === "win", lost = g.result === "loss";
                                       const rc = ratingChanges.get(g);
@@ -7505,12 +7505,12 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             )}
           </div>
         )}
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 기록 탐색 중…</p>
+        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 검색 중…</p>
           : masterGamesError ? (
-            <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 정보를 불러오지 못했습니다. <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
+            <p style={{ fontSize: 12, color: T.inkSoft }}>마스터 대국 로드 실패 <button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>다시 시도</button></p>
           )
-          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국을 찾지 못했습니다.</p>
-          : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{masterSearch.trim()}"과 일치하는 선수의 대국이 없습니다.</p>
+          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>일치하는 마스터 대국 없음</p>
+          : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{masterSearch.trim()}" 검색 결과 없음</p>
             : (<>
             {masterPageItems.map((g) => (
               <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
@@ -7532,8 +7532,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             ))}
             <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
             </>)}
-        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 기보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
-        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>대국 리뷰를 여는 데 실패했습니다. 잠시 후 다시 시도해 주세요.</p>}
+        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>기보 로드 실패. 잠시 후 다시 시도</p>}
+        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>리뷰 열기 실패. 잠시 후 다시 시도</p>}
       </div>
         </>,
         nextMovesPanel,
@@ -7557,8 +7557,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
 /* ============================================================ 분석 탭 ============================================================ */
 function mascotFor(sans, san) {
   const n = snapNode([...sans, san]); const om = n && n.opening ? n.opening.name : null;
-  if (om) return om + " 라인에 들어섰어요. 보드에서 직접 두며 전개를 살펴보세요.";
-  return moveNumber(sans.length) + san + " — 보드에서 자유롭게 두며 탐구해 보세요.";
+  if (om) return om + " 라인 진입. 보드에서 직접 두며 확인";
+  return moveNumber(sans.length) + san + " 보드에서 자유롭게 탐구";
 }
 
 // (18차 기능4) 수 추천 블록의 "추천 이유"를 개발자 모드에서 직접 편집(비우면 자동 문구로 복귀).
@@ -7575,7 +7575,7 @@ function RecommendReasonEditor({ sentKey, bumpContent }) {
   if (!editing) return <button onClick={() => { setDraft(recommendReasonFor(sentKey) || ""); setEditing(true); }} className="press" style={{ marginTop: 8, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: "#8A6A18", cursor: "pointer" }}>✎ 추천 이유 편집</button>;
   return (
     <div style={{ marginTop: 8 }}>
-      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder="추천 이유(비우면 자동 문구)" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder="추천 이유 (비우면 자동)" style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
       <div className="flex gap-2" style={{ marginTop: 5 }}>
         <button onClick={save} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>저장</button>
         <button onClick={() => setEditing(false)} className="press" style={{ fontSize: 11, padding: "4px 11px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>취소</button>
@@ -7591,7 +7591,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
   const save = async () => { if (!CONTENT.branches18) CONTENT.branches18 = {}; CONTENT.branches18[sentKey] = draft.trim() || "주요 분기점"; await bumpContent(); setEditing(false); setDraft(""); };
   const remove = async () => { if (CONTENT.branches18) delete CONTENT.branches18[sentKey]; await bumpContent(); };
   if (!reason && !editing) {
-    if (canEdit || canAdd) return <button onClick={() => { setDraft(""); setEditing(true); }} className="press" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 이 위치를 주요 분기점으로 지정</button>;
+    if (canEdit || canAdd) return <button onClick={() => { setDraft(""); setEditing(true); }} className="press" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>+ 주요 분기점으로 지정</button>;
     return null;
   }
   if (editing) return (
@@ -7713,17 +7713,17 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
 // 지킵니다")까지 자연어로 분석해 주지만, 그 수준의 맥락 분석 엔진은 이 세션 범위를 벗어난다 — 등급별로
 // 뜻이 통하는 일반적인 설명 템플릿을 여러 개 두고 ply로 순환시켜, 같은 등급이 반복돼도 문구가 안 겹치게 한다.
 const REVIEW_COACH_COPY = {
-  brilliant: { head: "은(는) 탁월한 수예요!", mascot: ["kokoa", "celebrate"], body: ["기물을 내주는 위험을 감수했지만, 정확히 계산된 최고의 수였어요.", "쉽게 찾기 어려운 수를 훌륭하게 찾아냈어요!"] },
-  best: { head: "은(는) 최선의 수예요.", mascot: ["milku", "great"], body: ["이 포지션에서 엔진이 찾아낸 가장 좋은 수예요.", "정확한 수를 뒀어요."] },
-  only: { head: "은(는) 유일한 수였어요.", mascot: ["milku", "surprise"], body: ["다른 수를 뒀다면 크게 불리해졌을 거예요 — 반드시 이 수여야 했어요.", "이 수 말고는 답이 없었어요."] },
-  excellent: { head: "은(는) 우수한 수예요.", mascot: ["milku", "wink"], body: ["최선의 수는 아니지만 아주 좋은 선택이에요.", "이 포지션에서 손꼽히는 좋은 수 중 하나예요."] },
-  good: { head: "은(는) 좋은 수예요.", mascot: ["milku", "great"], body: ["무난하고 안정적인 수예요.", "포지션을 잘 유지하는 수예요."] },
-  book: { head: "은(는) 이론적인 수예요.", mascot: ["milku", "wink"], body: ["오랫동안 많은 강자들이 두어 온 정석 수예요.", "책에 나오는 잘 알려진 수예요."] },
-  inaccuracy: { head: "은(는) 다소 부정확해요.", mascot: ["kokoa", "think"], body: ["더 나은 수가 있었어요 — 큰 손해는 아니지만 아쉬운 선택이에요.", "포지션이 살짝 나빠졌어요."] },
-  miss: { head: " — 좋은 기회를 놓쳤어요.", mascot: ["kokoa", "surprise"], body: ["상대의 실수를 응징할 기회가 있었는데 활용하지 못했어요.", "더 강한 수가 있었어요."] },
-  mistake: { head: "은(는) 실수예요.", mascot: ["kokoa", "surprise"], body: ["이 수로 포지션이 눈에 띄게 나빠졌어요.", "더 나은 대안이 있었어요."] },
-  blunder: { head: "은(는) 블런더예요!", mascot: ["kokoa", "angry"], body: ["이 수로 크게 불리해졌어요 — 다음엔 더 신중하게 살펴보세요.", "포지션이 크게 무너졌어요."] },
-  pending: { head: "", mascot: ["milku", "think"], body: ["이 수는 아직 분석되지 않았어요."] },
+  brilliant: { head: ": 탁월한 수", mascot: ["kokoa", "celebrate"], body: ["기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수", "찾기 어려운 수를 정확히 찾아냄"] },
+  best: { head: ": 최선의 수", mascot: ["milku", "great"], body: ["엔진이 찾은 이 포지션의 가장 좋은 수", "정확한 수"] },
+  only: { head: ": 유일한 수", mascot: ["milku", "surprise"], body: ["다른 수는 크게 불리. 반드시 이 수", "이 수 외엔 답이 없음"] },
+  excellent: { head: ": 우수한 수", mascot: ["milku", "wink"], body: ["최선은 아니지만 아주 좋은 선택", "이 포지션의 좋은 수 중 하나"] },
+  good: { head: ": 좋은 수", mascot: ["milku", "great"], body: ["무난하고 안정적인 수", "포지션을 잘 유지하는 수"] },
+  book: { head: ": 이론 수", mascot: ["milku", "wink"], body: ["오래 검증된 정석 수", "책에 나오는 잘 알려진 수"] },
+  inaccuracy: { head: ": 부정확한 수", mascot: ["kokoa", "think"], body: ["더 나은 수가 있음. 큰 손해는 아니지만 아쉬움", "포지션이 살짝 나빠짐"] },
+  miss: { head: " : 기회를 놓침", mascot: ["kokoa", "surprise"], body: ["상대 실수를 응징할 기회를 활용하지 못함", "더 강한 수가 있었음"] },
+  mistake: { head: ": 실수", mascot: ["kokoa", "surprise"], body: ["포지션이 눈에 띄게 나빠짐", "더 나은 대안이 있었음"] },
+  blunder: { head: ": 블런더", mascot: ["kokoa", "angry"], body: ["크게 불리해짐", "포지션이 크게 무너짐"] },
+  pending: { head: "", mascot: ["milku", "think"], body: ["아직 분석되지 않은 수"] },
 };
 // (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
 // Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
@@ -7738,11 +7738,11 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
   if (m.kind !== "book") {
     const extra = [];
-    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push("상대가 " + punishLine.join(" ") + "로 응징할 수 있어요.");
+    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push("상대 응징 수순: " + punishLine.join(" "));
     // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
     // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
     if (m.kind === "only" && onlyRefutation) {
-      extra.push(onlyRefutation.altSan + " 같은 다른 수를 뒀다면, 상대가 " + onlyRefutation.continuation.join(" ") + "로 응징해 상황이 나빠졌을 거예요.");
+      extra.push(onlyRefutation.altSan + " 등 다른 수는 상대의 " + onlyRefutation.continuation.join(" ") + " 응징으로 불리해짐");
     }
     if (extra.length) body = body + " " + extra.join(" ");
   }
@@ -8083,7 +8083,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   // (v0.2.1) 단계 아이콘을 누르면 그 단계·진영의 부분 정확도를 잠깐 보여준다(등급 설명 대신).
   const [accShow, setAccShow] = useState(null); // "라벨:side"
   const won = game.result === "win", lost = game.result === "loss";
-  const headline = !game.result ? "이 수순의 주요 장면들을 함께 분석해봐요!" : won ? "이 대국에서 좋은 전술을 찾아냈어요. 함께 살펴봐요!" : lost ? "아쉬운 순간들이 있었어요 — 무엇을 놓쳤는지 함께 확인해요." : "이 대국의 주요 장면들을 함께 리뷰해요!";
+  const headline = !game.result ? "주요 장면 분석" : won ? "좋은 전술을 찾아낸 대국" : lost ? "아쉬운 순간이 있는 대국. 놓친 부분 확인" : "주요 장면 리뷰";
   const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
   const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
   const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
@@ -8315,7 +8315,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
               버튼을 눌러야만 계산한다(README v0.4.9 개발자 기록에 남겨 뒀던 항목). */}
           {move.kind !== "book" && (planLoading || planText) && (
             <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4, fontStyle: planLoading ? "italic" : "normal" }}>
-              {planLoading ? "재배치 계획을 분석하는 중…" : planText}
+              {planLoading ? "재배치 계획 분석 중…" : planText}
             </p>
           )}
         </div>
@@ -8323,7 +8323,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
         <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> Show</button>
         {onShowPlan && move.kind !== "book" && (
-          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title="여러 수에 걸친 기물 재배치 계획을 엔진으로 찾아봐요" className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}><Route size={narrow ? 13 : 16} /> 계획</button>
+          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title="엔진으로 재배치 계획 찾기" className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}><Route size={narrow ? 13 : 16} /> 계획</button>
         )}
         <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
       </div>
@@ -8925,7 +8925,7 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
       {/* (v0.5.7) px 모드에선 이 줄 자리를 늘 비워 둔다 — 문구가 떴다 사라질 때마다 아래 요소가 들썩이지 않게(높이는 reviewIntroLayout이 셈한 값). */}
       {(calculatingSan || pxMode) && (
         <div style={{ marginTop: 3, height: pxMode ? 14 : undefined, lineHeight: pxMode ? "14px" : undefined, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {calculatingSan ? calculatingSan + "을 분석 중입니다..." : ""}
+          {calculatingSan ? calculatingSan + "분석 중…" : ""}
         </div>
       )}
     </div>
@@ -9130,7 +9130,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const statusEl = (
     // (사용자 요청) 채점 대기 중에도 3-dot 인디케이터로 "지금도 작업 중"임을 보여준다.
     <p className="flex items-center justify-center" style={{ gap: 6, height: RI.STATUS, fontSize: 12, fontWeight: 700, color: RV.dim, margin: 0, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>
-      <span>{allDone ? "정확도를 계산했어요" : "게임을 분석하며 정확도를 계산하는 중이에요"}</span>
+      <span>{allDone ? "정확도 계산 완료" : "정확도 계산 중"}</span>
       {!allDone && <PendingDots size={11} />}
     </p>
   );
@@ -9526,26 +9526,26 @@ function playResultCopy(result, activeColor) {
   if (result.end === "checkmate") {
     const won = result.color !== activeColor;
     return won
-      ? { kind: "win", title: "승리!", subtitle: "체크메이트", text: "상대의 왕을 완벽하게 몰아붙였어요 — 체크메이트예요!", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "체크메이트", text: "이번엔 체크메이트를 당했어요. 리뷰에서 갈림길이 어디였는지 함께 찾아봐요.", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: "승리", subtitle: "체크메이트", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "체크메이트", mascot: "milku", emotion: "sad" };
   }
-  if (result.end === "resign") return { kind: "loss", title: "패배", subtitle: "기권", text: "기권했어요 — 다음 판엔 끝까지 싸워봐요!", mascot: "milku", emotion: "sad" };
+  if (result.end === "resign") return { kind: "loss", title: "패배", subtitle: "기권", mascot: "milku", emotion: "sad" };
   if (result.end === "flag") {
     const won = result.color !== activeColor;
     return won
-      ? { kind: "win", title: "승리!", subtitle: "시간 초과", text: "시간 승부에서 이겼어요 — 클럭 관리도 실력이에요.", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "시간 초과", text: "시간이 다 됐어요. 다음엔 클럭도 함께 신경 써봐요.", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: "승리", subtitle: "시간 초과", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "시간 초과", mascot: "milku", emotion: "sad" };
   }
   if (result.end === "pvp") {
-    if (result.status === "draw") return { kind: "draw", title: "무승부", subtitle: "합의된 결과", text: "팽팽한 승부였어요 — 무승부예요.", mascot: "milku", emotion: "think" };
-    if (result.status === "aborted") return { kind: "draw", title: "대국 중단", subtitle: "", text: "이 대국은 중단됐어요.", mascot: "milku", emotion: "think" };
+    if (result.status === "draw") return { kind: "draw", title: "무승부", subtitle: "합의된 결과", mascot: "milku", emotion: "think" };
+    if (result.status === "aborted") return { kind: "draw", title: "대국 중단", subtitle: "", mascot: "milku", emotion: "think" };
     const won = (result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b");
     return won
-      ? { kind: "win", title: "승리!", subtitle: "상대의 기권", text: "상대가 기권했어요 — 승리를 가져갔어요!", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "상대의 승리", text: "아쉽게 졌어요. 리뷰에서 무엇이 승부를 갈랐는지 살펴봐요.", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: "승리", subtitle: "상대의 기권", mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: "패배", subtitle: "상대의 승리", mascot: "milku", emotion: "sad" };
   }
-  if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", text: "둘 자리가 없어요 — 스테일메이트로 무승부예요.", mascot: "milku", emotion: "think" };
-  return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", text: "같은 포지션이 세 번 반복됐어요 — 무승부예요.", mascot: "milku", emotion: "think" };
+  if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", mascot: "milku", emotion: "think" };
+  return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", mascot: "milku", emotion: "think" };
 }
 function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
@@ -9582,9 +9582,6 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
             </div>
           </div>
           {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? " · " + timeControl.cat : ""}</div>}
-          <div style={{ marginBottom: 16 }}>
-            <MascotBubble text={copy.text} mascot={copy.mascot} emotion={copy.emotion} stacked />
-          </div>
           {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
               "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
               리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
@@ -9663,7 +9660,7 @@ function useFriendPvpInvite({ myUid, gameType, onMatched }) {
     if (row.status === "accepted" && row.game_id) {
       const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
       if (rows && rows[0]) { setMyInvite(null); onMatched(rows[0]); }
-    } else if (row.status === "declined") { setMyInvite(null); setErr("상대가 도전장을 거절했어요."); }
+    } else if (row.status === "declined") { setMyInvite(null); setErr("상대가 도전장 거절"); }
     else if (row.status === "cancelled") { setMyInvite(null); }
   }, !!myInvite, 4000);
   return { friendList: sortedFriendList, myInvite, sendInvite, cancelInvite, err };
@@ -9682,11 +9679,11 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile,
         </div>
       )}
       {!myUid ? (
-        <div style={{ padding: "16px 10px", borderRadius: boxRadius, border: "1px dashed " + (lobby ? "rgba(150,112,58,.35)" : "#C9B58C"), fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+        <div style={{ padding: "16px 10px", borderRadius: boxRadius, border: "1px dashed " + (lobby ? "rgba(150,112,58,.35)" : "#C9B58C"), fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용 가능</div>
       ) : (
         <div style={{ border: "1px solid " + (lobby ? MG_LOBBY_LINE : "#DCCBA8"), borderRadius: boxRadius, maxHeight: 280, overflowY: "auto", background: lobby ? MG_LOBBY_CARD : "rgba(255,255,255,.4)" }}>
           {friendList.length === 0 ? (
-            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 플레이할 친구가 없어요.</div>
+            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>플레이할 친구 없음</div>
           ) : friendList.map((f, i) => (
             <motion.div key={f.uid} layout="position"
               initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
@@ -9729,11 +9726,11 @@ const MG_GOLD = "#A97A2C";
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 나타나면 상대보다 먼저 그 칸을 클릭해 점수를 겨루는 실시간 대전이에요.", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸까지 상대보다 먼저 도달하세요 — 7전 4선승, 라운드가 진행될수록 방해 칸이 늘어나요.", Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가", Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: "엉킨 내 기물들 사이에서 룩을 탈출시켜 백랭크 메이트 — 비켜 주고, 희생으로 수비 기물을 끌어내세요.", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: "3분 동안 쏟아지는 강제 메이트 '공격 기회'를 더 많이 성공시키는 쪽이 승리 — 짧은 메이트일수록 좋은 등급이에요.", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
+  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: "엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
+  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: "3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
 ];
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
@@ -10684,7 +10681,7 @@ function MinigameRoundBanner({ result, roundKey, text }) {
     if (result === "me") { fx("roundWin"); buzz([30, 40, 30]); } else if (result === "opp") { fx("roundLose"); buzz(120); } else fx("roundDraw");
   }, [result, roundKey]);
   const color = result === "me" ? T.best : result === "opp" ? T.blunder : "#B89A6A";
-  const label = text || (result === "me" ? "라운드 승리!" : result === "opp" ? "라운드 패배" : "무승부");
+  const label = text || (result === "me" ? "라운드 승리" : result === "opp" ? "라운드 패배" : "무승부");
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 15, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
       <AnimatePresence>
@@ -10721,7 +10718,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
     if (outcome === "win") { fx("win"); buzz([40, 60, 40, 60, 120]); } else if (outcome === "lose") { fx("lose"); buzz(200); } else fx("roundDraw");
   }, [outcome]);
   // (v0.5.3) 혼자 플레이하기는 승패가 없어 title(예: "신기록!", "기록")·scoreText(예: "12개")로 바꿔 쓴다.
-  const title = titleOverride || (outcome === "win" ? "승리!" : outcome === "lose" ? "패배" : "무승부");
+  const title = titleOverride || (outcome === "win" ? "승리" : outcome === "lose" ? "패배" : "무승부");
   const color = outcome === "win" ? MG_GOLD : outcome === "lose" ? T.blunder : "#9C8563";
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "20px 6px", overflowY: "auto" }}>
@@ -10737,7 +10734,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
         </>)}
       </motion.div>
       {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
-      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>친선전 — 전적에만 남고 레이팅은 바뀌지 않아요</div>}
+      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>친선전: 전적만 기록, 레이팅 변동 없음</div>}
       {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
@@ -10810,7 +10807,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
   }, [result]);
   const now = useNow(true, 100);
   const left = Math.max(0, (until || now) - now);
-  const title = solo ? (result === "me" ? "도착 성공!" : "실패") : result === "me" ? "라운드 승리!" : result === "opp" ? "라운드 패배" : "라운드 무승부";
+  const title = solo ? (result === "me" ? "도착 성공" : "실패") : result === "me" ? "라운드 승리" : result === "opp" ? "라운드 패배" : "라운드 무승부";
   const color = result === "me" ? MG_GOLD : result === "opp" ? T.blunder : "#9C8563";
   const cellStyle = (hl) => ({ padding: "8px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.16)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), textAlign: "center", minWidth: 0 });
   return (
@@ -10867,13 +10864,13 @@ function knightSettleInfo(me, opp, result, par, solo, dist) {
     { label: "걸린 시간", me: me && me.reached ? fmtSec(me.ms) : "-", opp: opp && opp.reached ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
-  if (solo) reason = me && me.reached ? (me.moves <= par ? "최소 수로 도착했어요!" : "도착! 최소 " + par + "수로도 갈 수 있었어요.") : me && me.captured ? "상대 기물이 지배하는 칸에 들어가 나이트가 잡혔어요." : "제한 안에 도착하지 못했어요.";
-  else if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 도착해 이겼어요." : "상대가 더 적은 수로 도착했어요.") : result === "me" ? "같은 수 — 더 빨리 도착해 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 도착했어요." : "수도 시간도 같아 비겼어요.";
-  else if (me && me.reached) reason = opp && opp.captured ? "상대 나이트가 잡혔어요 — 도착한 내가 이겼어요." : "나만 도착해 이겼어요.";
-  else if (opp && opp.reached) reason = me && me.captured ? "나이트가 잡혔어요 — 도착한 상대가 이겼어요." : "상대만 도착했어요.";
-  else if (dist && dist.basis === "distance") reason = "둘 다 도착하지 못했어요 — " + (result === "me" ? "내가 목표에 더 가까워 이겼어요." : "상대가 목표에 더 가까웠어요.");
-  else if (dist && dist.basis === "distanceTime") reason = "둘 다 도착 못 했고 거리도 같아요 — " + (result === "draw" ? "시간도 같아 무승부예요." : result === "me" ? "시간을 덜 써서 이겼어요." : "상대가 시간을 덜 썼어요.");
-  else reason = "둘 다 도착하지 못했어요" + (result === "draw" ? " — 무승부예요." : " — 목표에 더 가까이 간 쪽이 이겼어요.");
+  if (solo) reason = me && me.reached ? (me.moves <= par ? "최소 수로 도착" : "도착. 최소 " + par + "수로도 가능") : me && me.captured ? "상대 기물이 지배하는 칸에 들어가 나이트가 잡힘" : "제한 안에 도착 못 함";
+  else if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 도착해 승리" : "상대가 더 적은 수로 도착") : result === "me" ? "같은 수, 더 빨리 도착해 승리" : result === "opp" ? "같은 수, 상대가 더 빨리 도착" : "수도 시간도 같아 무승부";
+  else if (me && me.reached) reason = opp && opp.captured ? "상대 나이트가 잡혀 도착한 내가 승리" : "나만 도착해 승리";
+  else if (opp && opp.reached) reason = me && me.captured ? "나이트가 잡혀 도착한 상대가 승리" : "상대만 도착";
+  else if (dist && dist.basis === "distance") reason = "둘 다 도착 못 함. " + (result === "me" ? "내가 목표에 더 가까워 승리" : "상대가 목표에 더 가까움");
+  else if (dist && dist.basis === "distanceTime") reason = "둘 다 도착 못 했고 거리도 같음. " + (result === "draw" ? "시간도 같아 무승부" : result === "me" ? "시간을 덜 써서 승리" : "상대가 시간을 덜 씀");
+  else reason = "둘 다 도착 못 함:" + (result === "draw" ? " 무승부" : " 목표에 더 가까이 간 쪽 승리");
   if (dist && (dist.basis === "distance" || dist.basis === "distanceTime")) {
     const dl = (d) => (d == null ? "-" : d >= 99 ? "잡힘" : d + "수 거리");
     rows.push({ label: "목표까지", me: dl(dist.me), opp: dl(dist.opp), win: dist.me !== dist.opp ? ((dist.me ?? 99) < (dist.opp ?? 99) ? "me" : "opp") : null });
@@ -10891,10 +10888,10 @@ function rushSettleInfo(me, opp, result, par) {
     { label: "걸린 시간", me: me && me.solved ? fmtSec(me.ms) : "-", opp: opp && opp.solved ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
-  if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 이겼어요." : "상대가 더 적은 수로 메이트했어요.") : result === "me" ? "같은 수 — 더 빨리 풀어 이겼어요." : result === "opp" ? "같은 수 — 상대가 더 빨리 풀었어요." : "수도 시간도 같아 비겼어요.";
-  else if (me && me.solved) reason = opp ? "나만 풀어 이겼어요." : "상대가 더 적은 수로 따라잡을 수 없어 이겼어요.";
-  else if (opp && opp.solved) reason = me && me.captured ? "룩이 잡혔어요 — 푼 상대가 이겼어요." : "상대만 풀었어요.";
-  else reason = "둘 다 풀지 못해 무승부예요.";
+  if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 승리" : "상대가 더 적은 수로 메이트") : result === "me" ? "같은 수, 더 빨리 풀어 승리" : result === "opp" ? "같은 수, 상대가 더 빨리 풂" : "수도 시간도 같아 무승부";
+  else if (me && me.solved) reason = opp ? "나만 풀어 승리" : "상대가 더 적은 수로 따라잡을 수 없어 승리";
+  else if (opp && opp.solved) reason = me && me.captured ? "룩이 잡힘. 푼 상대가 승리" : "상대만 풂";
+  else reason = "둘 다 풀지 못해 무승부";
   return { rows, reason: reason + (par ? " (최단 " + par + "수)" : "") };
 }
 // 제한시간 막대 — 남은 비율이 25% 아래로 떨어지면 빨갛게 바뀌고 맥동한다.
@@ -11035,7 +11032,7 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const byForfeit = game.result_reason === "coord_forfeit";
     return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={oppScore} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={coordRoundChips(rounds.filter((r) => r.winner), myColor, oppColor)} stats={stats}
-      note={byForfeit ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
+      note={byForfeit ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
   }
   const lastDone = round && round.winner ? (round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw") : null;
   return (
@@ -11046,7 +11043,7 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={oppClicks} />
           {countdownAt > 0 && <MinigameCountdown startAt={countdownAt} />}
-          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답! +1" : lastDone === "opp" ? "상대 득점" : null} />
+          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답 +1" : lastDone === "opp" ? "상대 득점" : null} />
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
@@ -11146,7 +11143,7 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={botClicks} />
           <MinigameCountdown startAt={countdownAt} />
-          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답! +1" : lastDone === "opp" ? "봇 득점" : null} />
+          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답 +1" : lastDone === "opp" ? "봇 득점" : null} />
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
@@ -11262,7 +11259,7 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
           {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>로그인하면 대전 전적·레이팅과 혼자 플레이 기록이 랭킹에 남아요.</div>
+        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>로그인하면 전적·레이팅·기록이 랭킹에 반영</div>
       )}
     </div>
   );
@@ -11326,7 +11323,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   }, [game, kind, scope]);
   const top = rows ? rows.filter((r) => r.rank <= 50) : [];
   const meOutside = rows ? rows.find((r) => r.is_me && r.rank > 50) : null;
-  const empty = kind === "rating" ? "아직 랭킹에 오른 사람이 없어요 — 랜덤 매칭 " + MINIGAME_PLACEMENT + "판을 마치면 올라가요." : "아직 기록이 없어요 — 혼자 플레이하기로 첫 기록을 세워 보세요.";
+  const empty = kind === "rating" ? "랭킹 없음. 랜덤 매칭 " + MINIGAME_PLACEMENT + "판을 마치면 등록" : "기록 없음. 혼자 플레이로 첫 기록 도전";
   // (v0.5.7) 데스크톱에서 탭·순위 줄이 화면 폭 끝까지 늘어나지 않게 로비(520px)보다 조금 넓은 폭으로 모은다.
   return (
     <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", padding: "8px 2px 4px" }}>
@@ -11342,7 +11339,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
       {rows == null ? (
         <div style={{ textAlign: "center", padding: "28px 0" }}><PendingDots size={12} /></div>
       ) : top.length === 0 ? (
-        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.70)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹을 불러오지 못했어요." : empty}</p>
+        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.70)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹 로드 실패" : empty}</p>
       ) : (
         <div style={{ display: "grid", gap: 6 }}>
           {top.map((r, i) => <MinigameRankRow key={r.uid} r={r} game={game} kind={kind} onOpenProfile={onOpenProfile} index={i} />)}
@@ -11352,7 +11349,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
           </>)}
         </div>
       )}
-      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 바뀌어요 · 친구 도전은 전적에만 남아요</p>}
+      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록</p>}
     </div>
   );
 }
@@ -11434,7 +11431,7 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
   // 매칭 대기 중 이 화면을 벗어나면(뒤로가기 등) 대기열에 남지 않도록 정리한다.
   useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
   const join = useCallback(async () => {
-    if (!myUid) { setErr("로그인 후 이용할 수 있어요."); return; }
+    if (!myUid) { setErr("로그인 후 이용 가능"); return; }
     setErr(""); setWaiting(true);
     try {
       const g = await sbRpcRow("pvp_queue_join", { p_time_control: "0-0", p_game_type: gameType });
@@ -11445,10 +11442,10 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
       // 버그가 v0.5.3에서 미니게임 매칭 훅을 새로 만들며 되살아난 것 — 실제 대전(id가 있고 active)만 받는다.
       // 재접속 분기는 게임 종류와 무관하게 진행 중인 대전을 돌려주므로, 다른 게임(예: 체스)의 대전이면 열지 않는다.
       if (g && g.id != null && g.status === "active") {
-        if (g.game_type && g.game_type !== gameType) { setErr("진행 중인 다른 대전이 있어요. 그 대전을 먼저 끝내 주세요."); setWaiting(false); return; }
+        if (g.game_type && g.game_type !== gameType) { setErr("진행 중인 대전이 있음. 먼저 끝낼 것"); setWaiting(false); return; }
         setGame(g); setWaiting(false);
       }
-    } catch { setErr("매칭에 실패했어요. 다시 시도해 주세요."); setWaiting(false); }
+    } catch { setErr("매칭 실패. 다시 시도"); setWaiting(false); }
   }, [myUid, gameType]);
   const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
   const onMatch = useCallback((payload) => {
@@ -11515,7 +11512,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
               )}
             </AnimatePresence>
           </div>
-          <MinigameModeRow Icon={Shuffle} label="랜덤 매칭" sub={myUid ? "실시간 대전 상대 찾기" : "로그인하면 이용할 수 있어요"} onClick={onRandom} disabled={!myUid} primary />
+          <MinigameModeRow Icon={Shuffle} label="랜덤 매칭" sub={myUid ? "실시간 대전 상대 찾기" : "로그인 후 이용 가능"} onClick={onRandom} disabled={!myUid} primary />
         </div>
       </div>
       {roster}
@@ -11564,8 +11561,8 @@ function MinigameForfeitConfirm({ onCancel, onConfirm, bot }) {
   return (
     <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나가시겠어요?</div>
-        <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? "진행 중인 게임이 끝나고 기록은 남지 않아요." : "진행 중인 대전을 포기하게 되고, 상대가 승리해요."}</p>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나갈까요?</div>
+        <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? "진행 중인 게임 종료, 기록 없음" : "대전 포기 처리, 상대 승리"}</p>
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
           <button onClick={onConfirm} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
@@ -11626,7 +11623,7 @@ function MgPvpRematch({ pvp }) {
     if (!row) return;
     setGame(row);
     if (row.rematch_game_id) go(row.rematch_game_id);
-    else if (offeredRef.current && !row.rematch_offered_by) { offeredRef.current = false; setNote("상대가 재대국을 거절했어요."); }
+    else if (offeredRef.current && !row.rematch_offered_by) { offeredRef.current = false; setNote("상대가 재대국 거절"); }
   }, [g0.id, go]), true, 4000);
   // 제안해 둔 채 결과 화면을 떠나면 제안을 거둔다 — 안 그러면 상대가 나중에 수락했을 때 상대만 빈 대전에 들어간다.
   const gameIdRef = useRef(g0.id);
@@ -11642,10 +11639,10 @@ function MgPvpRematch({ pvp }) {
         if (r && r.id !== game.id) go(r.id); // 상대가 먼저 제안해 둔 상태 → 곧장 새 대전
         else if (r) { offeredRef.current = true; setGame(r); if (r.rematch_game_id) go(r.rematch_game_id); }
       }
-    } catch (e) { setNote("재대국을 신청하지 못했어요."); }
+    } catch (e) { setNote("재대국 신청 실패"); }
     setBusy(false);
   };
-  const label = mine ? "상대 응답 기다리는 중… (취소)" : theirs ? "재대국 수락" : "재대국 신청";
+  const label = mine ? "상대 응답 대기 중… (취소)" : theirs ? "재대국 수락" : "재대국 신청";
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
       <button onClick={onClick} disabled={busy} className="press" style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: theirs ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.14)", color: theirs ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: busy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
@@ -11733,7 +11730,7 @@ function CoordSoloLevelPick({ onPick }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 4px" }}>
       <MgLobbyLabel>난이도 선택</MgLobbyLabel>
-      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>30초 동안 맞힌 개수 × 난이도 배율이 최종 기록이 돼요{best != null ? " · 최고 " + best + "점" : ""}</div>
+      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>30초 동안 맞힌 개수 × 난이도 배율 = 최종 기록{best != null ? " · 최고 " + best + "점" : ""}</div>
       {COORD_SOLO_LEVELS.map((l, i) => (
         <motion.button key={l.key} onClick={() => onPick(l.key)} className="press" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
           style={{ width: "100%", maxWidth: 420, display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + MG_LOBBY_LINE, background: l.bg, cursor: "pointer", textAlign: "left", boxShadow: "0 2px 8px -4px rgba(90,58,34,.35)" }}>
@@ -11829,9 +11826,9 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
   };
   if (over) {
     if (!best) return null;
-    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록!" : "시간 종료"} scoreText={<CoordMultScore base={score} level={level} />}
+    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록" : "시간 종료"} scoreText={<CoordMultScore base={score} level={level} />}
       rounds={done.map((sq, i) => ({ result: "me", label: String(i + 1), detail: sq }))} stats={stats}
-      note={(best.prev != null ? "이전 최고 기록 " + best.prev + "점" : "첫 기록이에요!")} onExit={onExit} onRematch={onRematch}
+      note={(best.prev != null ? "이전 최고 기록 " + best.prev + "점" : "첫 기록")} onExit={onExit} onRematch={onRematch}
       extraAction={onChangeLevel ? { label: "난이도 변경", onClick: onChangeLevel } : null} />;
   }
   const left = endAt - Math.max(now, startAt);
@@ -11851,7 +11848,7 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
       <CoordTargetLabel targetSq={started ? target : null} roundIdx={n} />
       <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
         <span style={{ fontWeight: 800, color: level.ink }}>난이도 {level.label}</span><CoordMultChip level={level} size={10.5} />
-        <span>· {loadMinigameBest("coord") == null ? "첫 기록에 도전하세요!" : "최고 기록 " + loadMinigameBest("coord") + "점"}</span>
+        <span>· {loadMinigameBest("coord") == null ? "첫 기록 도전" : "최고 기록 " + loadMinigameBest("coord") + "점"}</span>
       </div>
     </div>
   );
@@ -11892,10 +11889,10 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
   }
   if (finished && settle.phase === "done") {
     if (!best) return null;
-    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록!" : "기록"} scoreText={reached.length + " / " + KNIGHT_BO_TOTAL + " 도달"}
+    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록" : "기록"} scoreText={reached.length + " / " + KNIGHT_BO_TOTAL + " 도달"}
       rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : "opp", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? r.mine.moves + "수" : "실패" }))}
       stats={knightResultStats(rounds.map((r) => r.mine))}
-      note={best.prev ? "이전 최고 기록 " + best.prev.reached + "회 도달 · " + (best.prev.ms / 1000).toFixed(1) + "초" : "첫 기록이에요!"} onExit={onExit} onRematch={onRematch} />;
+      note={best.prev ? "이전 최고 기록 " + best.prev.reached + "회 도달 · " + (best.prev.ms / 1000).toFixed(1) + "초" : "첫 기록"} onExit={onExit} onRematch={onRematch} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -11909,9 +11906,9 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="좌표 인지 게임" gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
       rules={<>
-        <div>• 무작위 좌표가 나타나면 그 칸을 <b style={{ color: T.ink }}>상대보다 먼저</b> 클릭하세요. 15라운드 동안 더 많이 맞힌 쪽이 이겨요.</div>
-        <div>• 오답을 눌러도 라운드는 끝나지 않아요 — 누군가 정답을 맞힐 때까지 계속돼요.</div>
-        <div>• 혼자 플레이하기는 <b style={{ color: T.ink }}>30초 타임어택</b> — 난이도 하(×1)·중(좌표 없음, ×2)·상(좌표 없음 + 흑 시점, ×3) 중에서 골라, 맞힌 개수 × 배율로 기록에 도전해요.</div>
+        <div>• 무작위 좌표가 뜨면 <b style={{ color: T.ink }}>상대보다 먼저</b> 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리</div>
+        <div>• 오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속</div>
+        <div>• 혼자 플레이는 <b style={{ color: T.ink }}>30초 타임어택</b>. 난이도 하(×1) · 중(좌표 없음, ×2) · 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율</div>
       </>}
       soloSub={loadMinigameBest("coord") == null ? "30초 타임어택 · 난이도 3단계" : "30초 · 난이도 3단계 · 최고 " + loadMinigameBest("coord") + "점"} botSub="15라운드"
       renderPvp={(p) => <CoordRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -11924,11 +11921,11 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★)까지 가세요 — <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드를 가져가고, 수가 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽이 이겨요. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b>이 이겨요. 제한시간은 1라운드 10초에서 라운드마다 2.5초씩 늘어나고, 7전 4선승(Bo7)이에요.</div>
-        <div>• 1·2라운드는 방해 기물 없이 거리만, <b style={{ color: T.ink }}>3라운드부터 상대 색 기물이 나와</b> 라운드마다 늘어나요. <b style={{ color: T.ink }}>상대 기물 칸에 도달하면 그 기물을 잡아</b> 없앨 수 있지만, 상대 기물이 지배하는 칸에 들어가면 내 나이트가 잡혀 그 라운드가 끝나요. 기물의 공격선은 실제 체스처럼 다른 기물에 막혀요.</div>
-        <div>• <b style={{ color: T.ink }}>마지막 7라운드에는 상대 퀸이 나와요</b> — 첫 수부터 정확히 골라야 하는 가장 어려운 라운드예요.</div>
-        <div>• <b style={{ color: T.ink }}>상대 나이트가 있는 칸으로 뛰어들면 상대 나이트를 잡을 수 있어요</b> — 잡힌 쪽은 그 라운드가 그대로 끝나요.</div>
-        <div>• 혼자 플레이하기는 7라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록에 도전해요.</div>
+        <div>• 나이트로 목표 칸(★) 도달. <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드 승리, 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b> 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승</div>
+        <div>• 1·2라운드는 방해 기물 없음. <b style={{ color: T.ink }}>3라운드부터 상대 기물 등장</b>, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘</div>
+        <div>• <b style={{ color: T.ink }}>7라운드에는 상대 퀸 등장</b>. 가장 어려운 라운드</div>
+        <div>• <b style={{ color: T.ink }}>상대 나이트 칸으로 이동하면 상대 나이트를 잡음</b>. 잡힌 쪽은 라운드 종료</div>
+        <div>• 혼자 플레이는 7라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록 도전</div>
       </>}
       soloSub={best ? "7라운드 · 최고 " + best.reached + "회" : "7라운드 기록 도전"} botSub="7전 4선승"
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -12185,8 +12182,8 @@ function KnightRaceLegend() {
   );
   return (
     <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
-      {dangerOn && chip("rgba(196,60,50,.75)", "위협 칸(가면 잡혀 끝나요)")}
-      {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물(도달하면 잡아요)")}
+      {dangerOn && chip("rgba(196,60,50,.75)", "위협 칸 (진입 시 잡힘)")}
+      {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물 (도달 시 잡음)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={11} color={MG_GOLD} fill={T.brassHi} />목표 칸</span>
     </div>
@@ -12306,7 +12303,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {round.winner ? "" : captured ? "나이트가 잡혔어요 — 상대를 기다리는 중..." : iReported ? "상대를 기다리는 중..." : (oppRep ? (oppRep.reached ? "상대가 " + oppRep.movesUsed + "수로 도착했어요 — 더 적은 수로 가면 이겨요!" : "상대가 시도를 마쳤어요 — 서둘러요!") : "가장 적은 수로 목표 칸(★)까지 가 보세요")}
+        {round.winner ? "" : captured ? "나이트가 잡힘. 상대 대기 중…" : iReported ? "상대를 기다리는 중..." : (oppRep ? (oppRep.reached ? "상대가 " + oppRep.movesUsed + "수로 도착. 더 적은 수면 승리" : "상대 시도 완료") : "가장 적은 수로 목표 칸(★) 도달")}
       </div>
       <KnightRaceLegend />
     </div>
@@ -12479,11 +12476,11 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} />
           <MinigameCountdown startAt={startRef.current} />
-          <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공!" : "실패") : null} />
+          <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공" : "실패") : null} />
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {winner ? "" : myReport ? (captured ? "나이트가 잡혔어요 — " : "") + (solo ? "" : "봇이 시도하는 중...") : "가장 적은 수로 목표 칸(★)까지 가 보세요"}
+        {winner ? "" : myReport ? (captured ? "나이트가 잡힘. " : "") + (solo ? "" : "봇 시도 중…") : "가장 적은 수로 목표 칸(★) 도달"}
       </div>
       <KnightRaceLegend />
     </div>
@@ -12604,7 +12601,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     });
     return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={rounds.filter((r) => r.winner).map((r, i) => ({ result: r.winner === myColor ? "me" : r.winner === "draw" ? "draw" : "opp", label: "R" + (i + 1), detail: mine[i] && mine[i].reached ? mine[i].moves + "수" : "실패" }))}
-      stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
+      stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -12757,7 +12754,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
     const finish = () => {
       if (res.status === "fail") {
         fx("wrong"); buzz([80, 50, 80]); shake();
-        flash("주인공 룩이 잡혔어요!", "bad", 4000);
+        flash("주인공 룩이 잡힘", "bad", 4000);
         const ids = rushMoveIds(cur.ids, res.events);
         setHist((h) => [...h, { state: res.state, ids, last: [from, to] }]);
         setView(rushView(res.state, ids)); setBusy(false); setStatus("lost");
@@ -12766,7 +12763,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
       }
       if (res.status === "mateOther") {
         fx("wrong"); shake();
-        flash("메이트는 주인공 룩으로 해야 해요!", "bad");
+        flash("메이트는 주인공 룩으로", "bad");
         setView(rushView(cur.state, cur.ids)); setBusy(false); return;
       }
       const ids = rushMoveIds(cur.ids, res.events);
@@ -12774,8 +12771,8 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
       setHist((h) => [...h, entry]);
       setView(rushView(res.state, ids));
       setBusy(false);
-      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash("상대 " + RUSH_PIECE_SUBJ[rest[0].piece[1]] + " 미끼를 물었어요!", "info"); }
-      else if (rest.some((e) => e.kind === "reply")) { fx("capture"); flash("체크! 상대가 응수했어요.", "info"); }
+      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash("상대 " + RUSH_PIECE_SUBJ[rest[0].piece[1]] + " 상대가 미끼를 물음", "info"); }
+      else if (rest.some((e) => e.kind === "reply")) { fx("capture"); flash("체크. 상대 응수", "info"); }
       if (res.status === "win") {
         setStatus("win");
         fx("correct"); buzz([40, 40, 40]);
@@ -12842,10 +12839,10 @@ function RushToolbar({ p }) {
 function RushRules({ compact }) {
   return (
     <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.45)", border: compact ? "none" : "1px solid rgba(150,112,58,.33)" }}>
-      <div>• <b style={{ color: MG_GOLD }}>왕관 표시 룩</b>을 엉킨 기물들 사이에서 빼내 상대 백랭크(맨 윗줄)에서 킹을 메이트하세요.</div>
-      <div>• 다른 내 기물들은 실제 체스 규칙대로 움직여 길을 비켜 주거나, <b style={{ color: T.ink }}>희생</b>으로 상대 기물을 끌어낼 수 있어요.</div>
-      <div>• 상대 기물은 가만히 있다가, <b style={{ color: T.ink }}>방금 움직인 내 기물</b>이 자기 공격 범위에 들어오면 잡으러 와요.</div>
-      <div>• 주인공 룩이 <b style={{ color: "#F4B2A6" }}>상대 기물이 지배하는 칸</b>에 들어가면 그 즉시 잡혀 라운드가 끝나요(혼자 풀기는 실패 — 다시 풀기). 더 적은 수로 풀수록 별이 많아요.</div>
+      <div>• <b style={{ color: MG_GOLD }}>왕관 표시 룩</b>을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트</div>
+      <div>• 다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 <b style={{ color: T.ink }}>희생</b>으로 상대 기물 유인 가능</div>
+      <div>• 상대 기물은 정지 상태. <b style={{ color: T.ink }}>방금 움직인 내 기물</b>이 공격 범위에 들어오면 잡으러 옴</div>
+      <div>• 주인공 룩이 <b style={{ color: "#F4B2A6" }}>상대 기물이 지배하는 칸</b>에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가</div>
     </div>
   );
 }
@@ -12870,15 +12867,15 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
           <AnimatePresence>
             {failed && solvedMoves == null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: T.blunder, fontFamily: SITE_FONT }}>룩이 잡혔어요</motion.div>
-                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 들어갔어요 — 이번 시도는 실패예요.</div>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: T.blunder, fontFamily: SITE_FONT }}>룩이 잡힘</motion.div>
+                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 진입. 시도 실패</div>
                 <button onClick={() => { setFailed(false); p.restart(); }} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}><RotateCcw size={13} />다시 풀기</button>
               </motion.div>
             )}
             {solvedMoves != null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
                 <VictoryBurst />
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: MG_GOLD, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>체크메이트!</motion.div>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: MG_GOLD, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>체크메이트</motion.div>
                 <div style={{ display: "flex", gap: 4, margin: "8px 0 4px" }}>
                   {[1, 2, 3].map((k) => <motion.span key={k} initial={{ scale: 0, rotate: -60 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.2 + k * 0.15, type: "spring", stiffness: 400, damping: 14 }}><Star size={28} color={MG_GOLD} fill={k <= rushStars(solvedMoves, level.par) ? MG_GOLD : "transparent"} /></motion.span>)}
                 </div>
@@ -12972,7 +12969,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
       </div>
       {/* (v0.5.7, 사용자 요청) 안내 문구가 너무 연해 잘 안 보였다 — 본문 잉크색·굵게 */}
       <div style={{ textAlign: "center", fontSize: 12, color: T.ink, fontWeight: 800, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
-        {result ? "" : done ? (p.status === "win" ? "풀었어요! " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡혔어요 — 결과를 기다리는 중..." : "시간 초과 — 결과를 기다리는 중...") : (opp.solved ? opp.label + "가 이미 풀었어요 — 더 적은 수로 역전하세요!" : "목표: 최단 " + level.par + "수")}
+        {result ? "" : done ? (p.status === "win" ? "풀이 완료 " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡힘. 결과 대기 중…" : "시간 초과. 결과 대기 중…") : (opp.solved ? opp.label + "가 이미 풂. 더 적은 수로 역전 가능" : "목표: 최단 " + level.par + "수")}
       </div>
       <RushMsg msg={p.msg} />
       <RushToolbar p={p} />
@@ -13119,7 +13116,7 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
       rounds={rushRoundChips(done, me, opp, (r) => r.reports && r.reports[me])}
       stats={rushStatsOf(done.map((r) => { const m = r.reports && r.reports[me]; return m && { ...m, par: rushLevelFor(r.diff, r.seed).par }; }))}
-      note={game.result_reason === "rush_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : null} onExit={onExit} />;
+      note={game.result_reason === "rush_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
   }
   const oppProg = round && round.progress && round.progress[opp];
   return (
@@ -13377,12 +13374,12 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
         {state === "win" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
             <VictoryBurst />
-            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(255,250,238,.95)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>체크메이트! +1</motion.div>
+            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(255,250,238,.95)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>체크메이트 +1</motion.div>
           </motion.div>
         )}
         {state === "fail" && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ position: "absolute", left: 0, right: 0, bottom: 8, zIndex: 8, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
-            <div style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(196,60,50,.9)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>공격 실패 — 파란 칸이 정답이었어요</div>
+            <div style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(196,60,50,.9)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>공격 실패. 파란 칸이 정답</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -13394,10 +13391,10 @@ function attackTally(list) { const t = { S: 0, A: 0, B: 0, C: 0, total: 0, tries
 function attackDecide(me, opp, myRating, oppRating) {
   if (me.total !== opp.total) return { winner: me.total > opp.total ? "me" : "opp", reason: null };
   for (const g of ["C", "B", "A", "S"]) {
-    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점 — " + attackGradeInfo(g).label + " 성공 수로 승부가 갈렸어요(긴 메이트부터 비교)." };
+    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점. " + attackGradeInfo(g).label + " 성공 수로 결정 (긴 메이트부터 비교)" };
   }
-  if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: "등급별 성공 수까지 같아, 불리한 확률로 싸운(레이팅이 높은) 쪽이 승리했어요." };
-  return { winner: "draw", reason: "모든 기록이 같아 무승부예요." };
+  if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: "등급별 성공 수도 같아 레이팅이 높은 쪽 승리" };
+  return { winner: "draw", reason: "모든 기록이 같아 무승부" };
 }
 function AttackLedger({ tally, label }) {
   return (
@@ -13447,7 +13444,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
             : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.45)" }}><PendingDots size={12} /></div>}
           <MinigameCountdown startAt={startAt} />
-          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>시간 종료!</div>}
+          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>시간 종료</div>}
         </div>
       </div>
       <div style={{ textAlign: "center", minHeight: 22, marginTop: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -13536,13 +13533,13 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
   if (over && solo) {
     if (!soloBest) return null;
     const props = attackResultProps(mine, [], myRating || 800, myRating || 800);
-    return <MinigameResult {...props} outcome={soloBest.isNew ? "win" : "draw"} title={soloBest.isNew ? "신기록!" : "시간 종료"} scoreText={props.myScore + "회 메이트"}
-      note={soloBest.prev != null ? "이전 최고 기록 " + soloBest.prev + "회" : "첫 기록이에요!"} onExit={onExit} onRematch={onRematch} />;
+    return <MinigameResult {...props} outcome={soloBest.isNew ? "win" : "draw"} title={soloBest.isNew ? "신기록" : "시간 종료"} scoreText={props.myScore + "회 메이트"}
+      note={soloBest.prev != null ? "이전 최고 기록 " + soloBest.prev + "회" : "첫 기록"} onExit={onExit} onRematch={onRematch} />;
   }
   if (over) {
     return <MinigameResult {...attackResultProps(mine, botDone, myRating || 800, bot.rating)} oppLabel={"봇(" + bot.label + ")"} onExit={onExit} onRematch={onRematch} />;
   }
-  if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}><PendingDots size={12} />포지션을 불러오는 중...</div>;
+  if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}><PendingDots size={12} />포지션 로드 중…</div>;
   return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel="봇" onResult={onResult} />;
 }
 function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
@@ -13593,7 +13590,7 @@ function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const props = attackResultProps(mine, theirs, myRating, oppRating);
     const iWon = (me === "w" && game.status === "white_won") || (me === "b" && game.status === "black_won");
     const outcome = game.status === "draw" ? "draw" : iWon ? "win" : "lose";
-    return <MinigameResult {...props} outcome={outcome} oppLabel="상대" rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? "상대가 대전을 포기했어요." : "대전을 포기했어요.") : props.note} onExit={onExit} />;
+    return <MinigameResult {...props} outcome={outcome} oppLabel="상대" rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : props.note} onExit={onExit} />;
   }
   if (!head) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><PendingDots size={12} /></div>;
   return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel="상대" onResult={onResult}
@@ -13608,11 +13605,11 @@ function attackValidateLine(fen, moveTokens) {
   for (const tok of moveTokens) {
     let mv = null;
     try { mv = /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(tok) ? c.move({ from: tok.slice(0, 2), to: tok.slice(2, 4), promotion: tok[4] || "q" }) : c.move(tok); } catch { mv = null; }
-    if (!mv) return { error: "수순 '" + tok + "'이(가) 합법 수가 아니에요." };
+    if (!mv) return { error: "수순 '" + tok + "' 합법 수 아님" };
     ucis.push(uciOf(mv));
   }
-  if (!c.isCheckmate()) return { error: "수순의 마지막이 체크메이트가 아니에요." };
-  if (ucis.length % 2 === 0) return { error: "공격 측 수로 끝나야 해요(수순 길이가 홀수)." };
+  if (!c.isCheckmate()) return { error: "수순의 마지막이 체크메이트가 아님" };
+  if (ucis.length % 2 === 0) return { error: "공격 측 수로 끝나야 함 (수순 길이 홀수)" };
   return { moves: ucis, mateIn: (ucis.length + 1) / 2 };
 }
 async function fetchLichessMatePuzzle(mateIn) {
@@ -13631,7 +13628,7 @@ async function fetchLichessMatePuzzle(mateIn) {
       if (!v.error) return { fen: c.fen(), ...v, source: "lichess:" + data.puzzle.id };
     } catch { }
   }
-  throw new Error("퍼즐 수순을 검증하지 못했어요.");
+  throw new Error("퍼즐 수순 검증 실패");
 }
 function AttackDevPanel({ pool, onChanged }) {
   const [open, setOpen] = useState(false);
@@ -13646,22 +13643,22 @@ function AttackDevPanel({ pool, onChanged }) {
   const addManual = async () => {
     setMsg("");
     let v;
-    try { v = attackValidateLine(fen.trim(), line.trim().split(/[\s,]+/).filter((t) => t && !/^\d+\.+$/.test(t))); } catch { v = { error: "FEN이 올바르지 않아요." }; }
+    try { v = attackValidateLine(fen.trim(), line.trim().split(/[\s,]+/).filter((t) => t && !/^\d+\.+$/.test(t))); } catch { v = { error: "FEN이 올바르지 않음" }; }
     if (v.error) { setMsg(v.error); return; }
     setBusy(true);
-    try { await save({ fen: fen.trim(), ...v, source: "dev" }); setMsg(v.mateIn + "수 메이트 포지션을 추가했어요."); setFen(""); setLine(""); }
-    catch { setMsg("저장하지 못했어요(이미 있는 FEN이거나 권한 문제)."); }
+    try { await save({ fen: fen.trim(), ...v, source: "dev" }); setMsg(v.mateIn + "수 메이트 포지션 추가됨"); setFen(""); setLine(""); }
+    catch { setMsg("저장 실패 (이미 있는 FEN이거나 권한 문제)"); }
     setBusy(false);
   };
   const addLichess = async (n) => {
     setMsg(""); setBusy(true);
-    try { const p = await fetchLichessMatePuzzle(n); await save(p); setMsg("리체스 " + p.source.slice(8) + " (" + p.mateIn + "수 메이트)를 추가했어요."); }
+    try { const p = await fetchLichessMatePuzzle(n); await save(p); setMsg("리체스 " + p.source.slice(8) + " (" + p.mateIn + "수 메이트) 추가됨"); }
     catch (e) { setMsg("가져오지 못했어요: " + (e && e.message ? e.message : "오류")); }
     setBusy(false);
   };
   const remove = async (p) => {
     if (!p.dbId) return;
-    try { await sbDelete("attack_positions?id=eq." + p.dbId); onChanged(); } catch { setMsg("삭제하지 못했어요."); }
+    try { await sbDelete("attack_positions?id=eq." + p.dbId); onChanged(); } catch { setMsg("삭제 실패"); }
   };
   const inp = { width: "100%", boxSizing: "border-box", padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(150,112,58,.50)", background: "rgba(0,0,0,.25)", color: T.ink, fontSize: 11.5, fontFamily: "ui-monospace,monospace" };
   return (
@@ -13675,7 +13672,7 @@ function AttackDevPanel({ pool, onChanged }) {
           <div style={{ display: "flex", gap: 6 }}>
             {[1, 2, 3, 4].map((n) => <button key={n} disabled={busy} onClick={() => addLichess(n)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid " + attackGradeInfo(attackGradeOfMate(n)).color, background: "rgba(255,255,255,.55)", color: T.ink, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{n}수 메이트</button>)}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)", marginTop: 4 }}>FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분 — 공격·수비 번갈아, 메이트 수로 끝)</div>
+          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)", marginTop: 4 }}>FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분, 공격·수비 번갈아, 메이트 수로 끝)</div>
           <input value={fen} onChange={(e) => setFen(e.target.value)} placeholder="FEN" style={inp} />
           <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="예: Qh7+ Kf8 Qh8#" style={inp} />
           <button disabled={busy || !fen.trim() || !line.trim()} onClick={addManual} className="press" style={{ padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>검증 후 추가</button>
@@ -13702,10 +13699,10 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   return (
     <MinigameHub title="무한 체크메이트 게임" gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
-        <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션("공격 기회")이 끝없이 주어져요. 더 많이 메이트시킨 쪽이 승리!</div>
-        <div>• 한 수라도 틀리면 그 기회는 실패하고 바로 다음 기회로 넘어가요.</div>
-        <div>• 짧은 메이트일수록 좋은 등급이고, <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 더 높아요.</div>
-        <div>• 동점이면 긴 메이트(4수 이상→3수→2수→1수)의 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이겨요.</div>
+        <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리</div>
+        <div>• 한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동</div>
+        <div>• 짧은 메이트일수록 좋은 등급. <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 높음</div>
+        <div>• 동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -13821,7 +13818,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
     if (g.id != null) sbRpc("pvp_check_flag", { p_game_id: g.id }).catch(() => {});
   }, [myUid]);
   const joinPvpQueue = async () => {
-    if (!myUid) { setPvpErr("로그인 후 이용할 수 있어요."); return; }
+    if (!myUid) { setPvpErr("로그인 후 이용 가능"); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
       const g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
@@ -13834,7 +13831,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       // 결과 팝업이 떴다 — 대기열이 비어 있을 때(같은 시간에 매칭될 다른 사람이 없을 때)마다 100% 재현.
       // 실제 대국인지는 id가 실제로 있는지로 가려낸다.
       if (g && g.id != null) applyPvpGame(g);
-    } catch { setPvpErr("대기열 합류에 실패했어요. 잠시 후 다시 시도해주세요."); setPvpWaiting(false); }
+    } catch { setPvpErr("대기열 합류 실패. 잠시 후 다시 시도"); setPvpWaiting(false); }
   };
   const leavePvpQueue = async () => { setPvpWaiting(false); try { await sbRpc("pvp_queue_leave", {}); } catch { } };
   // (v0.4.3 기능, 사용자 요청) 페이지를 나갈 때(뒤로가기·탭 전환 등으로 이 컴포넌트가 언마운트될 때)
@@ -13942,7 +13939,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
       const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
       if (rows && rows[0]) applyPvpGame(rows[0]);
     } else if (row.status === "declined") {
-      setMyInvite(null); setPvpErr("상대가 도전장을 거절했어요.");
+      setMyInvite(null); setPvpErr("상대가 도전장 거절");
     } else if (row.status === "cancelled") {
       setMyInvite(null);
     }
@@ -14385,7 +14382,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 <div className="flex gap-2" style={{ marginBottom: 10 }}>
                   <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
                   <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
-                    <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용할 수 있어요" : "대국 상대 찾기"}
+                    <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용 가능" : "대국 상대 찾기"}
                   </button>
                 </div>
                 <button onClick={() => { setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 16 }}>
@@ -14403,11 +14400,11 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                   <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
                 </div>
                 {!myUid ? (
-                  <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용할 수 있어요.</div>
+                  <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용 가능</div>
                 ) : (
                   <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
                     {sortedFriendList.length === 0 ? (
-                      <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>같이 대국할 친구가 없어요.</div>
+                      <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>대국할 친구 없음</div>
                     ) : sortedFriendList.map((f, i) => (
                       <motion.div key={f.uid} layout="position"
                         initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
@@ -14437,13 +14434,13 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 <button onClick={() => setSetupPhase("choose")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 14, padding: "6px 10px 6px 6px", borderRadius: 8, border: "none", background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
                   <ChevronLeft size={16} /> 뒤로
                 </button>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>어느 진영으로 두시겠어요?</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>진영 선택</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
                     <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
                   ))}
                 </div>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>상대할 봇을 골라주세요</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>상대할 봇 선택</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
                     <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
@@ -14472,7 +14469,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
                 되돌아본다), 상대(봇) 정보 줄, 보드, 내 정보 줄, 그 아래 결과/컨트롤. */}
             <div className="hide-scrollbar" style={{ display: "flex", gap: 10, overflowX: "auto", padding: "9px 10px", background: "rgba(0,0,0,.28)", borderRadius: 10, marginBottom: 10, border: "1px solid rgba(255,255,255,.08)" }}>
               {moveRows.length === 0
-                ? <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.4)", whiteSpace: "nowrap" }}>아직 둔 수가 없어요</span>
+                ? <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.4)", whiteSpace: "nowrap" }}>둔 수 없음</span>
                 : moveRows.map((row) => (
                   <div key={row.num} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     <span style={{ fontSize: 11, color: "rgba(244,238,226,.45)", fontFamily: SITE_FONT }}>{row.num}.</span>
@@ -14500,15 +14497,15 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             {result && (
               <div style={{ marginTop: 10, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
                 <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
-                  {result.end === "checkmate" ? (result.color === activeColor ? "패배 — 체크메이트" : "승리! 🎉 체크메이트") :
-                   result.end === "resign" ? "기권했어요" :
-                   result.end === "flag" ? (result.color === activeColor ? "패배 — 시간 초과" : "승리! 🎉 시간 초과") :
+                  {result.end === "checkmate" ? (result.color === activeColor ? "패배: 체크메이트" : "승리: 체크메이트") :
+                   result.end === "resign" ? "기권" :
+                   result.end === "flag" ? (result.color === activeColor ? "패배: 시간 초과" : "승리: 시간 초과") :
                    result.end === "pvp" ? (
                      result.status === "draw" ? "무승부" :
-                     result.status === "aborted" ? "대국이 중단됐어요" :
-                     ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? "승리! 🎉 상대가 기권했어요" : "패배 — 상대가 승리했어요"
+                     result.status === "aborted" ? "대국 중단" :
+                     ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? "승리: 상대 기권" : "패배: 상대 승리"
                    ) :
-                   result.end === "stalemate" ? "무승부 — 스테일메이트" : "무승부 — 3회 동형 반복"}
+                   result.end === "stalemate" ? "무승부: 스테일메이트" : "무승부: 3회 동형 반복"}
                 </div>
               </div>
             )}
@@ -14567,7 +14564,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
             <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
               <Handshake size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 무승부를 제안했어요"}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + " 무승부 제안"}</span>
               <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
               <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
             </div>
@@ -14582,7 +14579,7 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
             style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
             <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
               <Repeat2 size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + "가 재대결을 신청했어요"}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + " 재대결 신청"}</span>
               <button onClick={declineRematch} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
               <button onClick={requestRematch} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
             </div>
@@ -14800,7 +14797,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
-  const openingText = game.opening ? (game.opening + (CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? " — " + CONTENT.explains[sans.slice(0, 6).join(" ")] : "")) : null;
+  const openingText = game.opening ? (game.opening + (CONTENT.explains && CONTENT.explains[sans.slice(0, 6).join(" ")] ? ": " + CONTENT.explains[sans.slice(0, 6).join(" ")] : "")) : null;
   // jump는 실제 게임 수순의 특정 지점으로 하드 이동 — 진행 중이던 자유 탐색은 버린다.
   const jump = (p) => { setExploreSans([]); setExploreFuture([]); setSel(null); setDrag(null); setPromoPrompt(null); setCurPly(Math.max(0, Math.min(sans.length, p))); };
   const goNext = () => { if (curPly >= sans.length) { onClose(); return; } jump(curPly + 1); };
@@ -15050,7 +15047,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     if (!activeMove || activeMove.kind === "book") return [];
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
-      return [mecPick(["체크메이트로 몰아가는 강제 수순이에요, 메이트까지 " + n + "수 남았어요.", "이제부터는 체크메이트 수순이에요 — " + n + "수 뒤에 체크메이트예요.", "메이트 " + n + "수 전이에요, 체크메이트로 끝나는 강제 수순이에요."], effSans.length)];
+      return [mecPick(["체크메이트 강제 수순. 메이트까지 " + n + "수", "체크메이트 수순 진입. " + n + "수 뒤 체크메이트", "메이트 " + n + "수 전. 체크메이트로 끝나는 강제 수순"], effSans.length)];
     }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
   }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
@@ -15096,7 +15093,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     }
   }, [engine, effSans, fenRoot, planKey, planByKey]);
   const planText = planEntry && !planEntry.loading
-    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : "이 포지션에서는 뚜렷한 재배치 계획을 찾지 못했어요.")
+    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : "뚜렷한 재배치 계획 없음")
     : null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
@@ -15338,7 +15335,7 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
     </div>
   );
   if (err) return (
-    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석할 수 없습니다. 엔진이 준비되었는지 확인해 주세요.</p></div></div>
+    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석 불가. 엔진 준비 상태 확인</p></div></div>
   );
   // (v0.3.0 성능 → v0.3.8 2차 개편) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100%
   // 끝나야(resultDone) 신뢰할 수 있는 완결된 데이터라 그대로 기다린다 — 분석이 덜 끝난 채로 리뷰를
@@ -16137,13 +16134,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
       {linesPending && (
         <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
           <Mascot name={ply % 2 === 0 ? "milku" : "kokoa"} emotion="think" size={30} />
-          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")}가 수를 계산하고 있어요.</span>
+          <span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700 }}>{(ply % 2 === 0 ? "MILKU" : "KOKOA")} 수 계산 중</span>
         </div>
       )}
       {moves.length === 0 ? (
         <div style={{ background: T.paper, borderRadius: 12, padding: 16, border: "1px dashed #C9B58C", textAlign: "center" }}>
           <div style={{ display: "flex", justifyContent: "center" }}><Mascot name="milku" emotion="sleep" size={92} /></div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수가 없어요. 보드에서 직접 두면 그 수가 평가되어 블록으로 추가됩니다.</p>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginTop: 8 }}>제안된 수 없음. 보드에서 직접 두면 평가 후 블록으로 추가</p>
         </div>
       ) : (() => {
         const bk = moves.filter((m) => m.book);
@@ -16271,7 +16268,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
             {onOpenPlay && !focus && (() => {
               const atStart = !fenRoot && sans.length === 0;
               return (
-                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? "PLAY — 봇과 대국하기" : "PLAY — 표준 시작 위치일 때만 대국을 시작할 수 있어요"} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 46, padding: "0 14px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 13, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
+                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? "PLAY: 봇과 대국" : "PLAY: 표준 시작 위치에서만 가능"} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 46, padding: "0 14px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 13, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
                   <Play size={15} color={atStart ? "#241509" : "rgba(244,238,226,.35)"} fill={atStart ? "#241509" : "rgba(244,238,226,.35)"} />PLAY
                 </button>
               );
@@ -16305,7 +16302,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
                 const branch = branchFor(key);
                 const rec = !branch ? (moves.find((m) => m.book && m.isMain) || moves.find((m) => m.book) || moves[0] || null) : null;
                 const recSan = rec ? (rec.disp || rec.san) : null;
-                const autoReason = rec ? ((rec.name ? "‘" + rec.name + "’(으)로 이어지는 " : "이 위치에서 ") + (rec.book ? "대표 이론 수예요" : "유력한 수예요") + (rec.adopt != null ? ". 전체 대국의 " + rec.adopt.toFixed(1) + "%가 이 수를 선택했어요." : ".")) : null;
+                const autoReason = rec ? ((rec.name ? "‘" + rec.name + "’ 이어지는 " : "이 위치의 ") + (rec.book ? "대표 이론 수" : "유력한 수") + (rec.adopt != null ? ". 전체 대국의 " + rec.adopt.toFixed(1) + "%가 선택" : "")) : null;
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
                   <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
@@ -16321,7 +16318,7 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
                         {rec ? (
                           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
-                            {reason ? " — " + reason : null}
+                            {reason ? " · " + reason : null}
                           </p>
                         ) : (
                           <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
@@ -16757,7 +16754,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
           {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
         </button>
         {showRec && (
-          <span title={"내 chess.com 전적 " + it.myN + "판 — " + it.myW + "승 " + it.myD + "무 " + it.myL + "패, 승률 " + it.myWr + "%"}
+          <span title={"내 chess.com 전적 " + it.myN + "판: " + it.myW + "승 " + it.myD + "무 " + it.myL + "패, 승률 " + it.myWr + "%"}
             style={{ position: "absolute", left: "50%", top: boxH + 3, transform: "translateX(-50%)", height: 16, padding: "0 6px", borderRadius: 8, background: "#FFFDF6", border: "1.5px solid " + wrColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 8.5, fontWeight: 800, color: T.ink, zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>
             <span>{it.myW}승 {it.myD}무 {it.myL}패</span>
             <span style={{ color: wrColor }}>{it.myWr}%</span>
@@ -17514,10 +17511,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [draft, setDraft] = useState({ adds: {}, removes: {} }); // adds: {parentKey:[{san,name}]}, removes: {"parentKey|san":true}
   const stageAdd = (parentPath, sanRaw, nameRaw) => {
     const san = (sanRaw || "").trim();
-    if (!san) return "수를 입력하세요.";
+    if (!san) return "수 입력 필요";
     const board = boardFromSans(parentPath);
     const color = parentPath.length % 2 === 0 ? "w" : "b";
-    if (!sanSrc(board, san, color)) return "불법 수입니다.";
+    if (!sanSrc(board, san, color)) return "불법 수";
     const key = parentPath.join(" ");
     let dup = false;
     setDraft((d) => {
@@ -17525,7 +17522,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (list.some((x) => x.san === san)) { dup = true; return d; }
       return { ...d, adds: { ...d.adds, [key]: [...list, { san, name: (nameRaw || "").trim() }] } };
     });
-    return dup ? "이미 추가 대기 중인 수예요." : null;
+    return dup ? "이미 추가 대기 중인 수" : null;
   };
   const unstageAdd = (parentPath, san) => {
     const key = parentPath.join(" ");
@@ -17693,7 +17690,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         {query.trim() && (
           <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
             {matches.length === 0
-              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝이 없어요.</div>
+              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝 없음</div>
               : matches.map((it) => (
                 <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
@@ -17813,7 +17810,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         <div className="no-pan" onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 62, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.5)" }}>
           <span style={{ fontSize: 12, fontWeight: 800, color: T.brassHi }}>
-            대기 중인 변경 —{draftAddCount > 0 ? " 추가 " + draftAddCount : ""}{draftRemoveCount > 0 ? " 삭제 " + draftRemoveCount : ""}
+            대기 중인 변경:{draftAddCount > 0 ? " 추가 " + draftAddCount : ""}{draftRemoveCount > 0 ? " 삭제 " + draftRemoveCount : ""}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={cancelDraft} disabled={draftSaving} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1 }}>취소</button>
@@ -17875,7 +17872,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
       </div>
       {dexView === "skins" ? (
         <div>
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨과 기물 스킨을 모아볼 수 있어요. 기본 스킨은 누구나 바로 장착할 수 있고, 상점에서 구매한 스킨은 여기서도 장착·구매할 수 있습니다. 아직 얻지 못한 스킨도 미리 볼 수 있어요.</p>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
@@ -17893,7 +17890,7 @@ function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, 
         <div>
           {/* (20차 UX2) 획득 조건 설명을 상시 노출하던 문단은 삭제 — 칭호를 클릭하면 그 칭호의 조건만
               애니메이션으로 잠깐 떴다 사라진다(TitleBadge 내부). 여기는 그 상호작용을 안내하는 짧은 힌트만. */}
-          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>칭호를 클릭하면 획득 조건이 잠깐 표시돼요. 획득한 칭호는 클릭해 장착할 수 있어요.</p>
+          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>칭호를 클릭하면 획득 조건 표시. 획득한 칭호는 클릭해 장착</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
           {/* (17차) 칭호 이미지가 오프닝당 세로로 이어지는 5단계 배너로 디자인되어 있어,
               오프닝을 가로로 나열하고 각 오프닝 내부에서는 등급을 위→아래로 쌓는다.
@@ -18115,8 +18112,8 @@ function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);
   if (!phase) return null;
   return compact
-    ? <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작해요"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
-    : <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작해요"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
+    ? <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
+    : <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
 }
 /* ── (20차 기능1) 퍼즐 트리 유틸 ──
    구버전 퍼즐(lines/solution만 있는)도 공통 접두사를 병합해 동일한 트리 구조로 다룬다.
@@ -18419,12 +18416,12 @@ function nextLeafTag(tree, seedSeq) {
 function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw, seedSeq) {
   const board = boardFromSans([...preSans, ...leafPath]);
   const color = (preSans.length + leafPath.length) % 2 === 0 ? "w" : "b";
-  if (!sanSrc(board, sanRaw, color)) return { error: "불법 수입니다." };
+  if (!sanSrc(board, sanRaw, color)) return { error: "불법 수" };
   const decorated = decorateSan(board, sanRaw, color);
   const clone = cloneTree(tree);
   const leaf = findTreeNode(clone, leafPath);
-  if (!leaf) return { error: "라인을 찾을 수 없습니다." };
-  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이미 다음 수가 있는 라인입니다." };
+  if (!leaf) return { error: "라인 없음" };
+  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이미 다음 수가 있는 라인" };
   const isValidTerminus = (leafPath.length + 1) % 2 === 1;
   delete leaf.tag;
   const child = { san: decorated, pass: true, children: [] };
@@ -18443,9 +18440,9 @@ function extendPuzzleLeaf(tree, preSans, leafPath, sanRaw, seedSeq) {
 function addSiblingBranch(tree, parentPath, cand, seedSeq) {
   const clone = cloneTree(tree);
   const parent = parentPath.length ? findTreeNode(clone, parentPath) : clone;
-  if (!parent) return { error: "위치를 찾을 수 없습니다." };
+  if (!parent) return { error: "위치 없음" };
   const key = stripSuffix(cand.san);
-  if ((parent.children || []).some((c) => stripSuffix(c.san) === key)) return { error: "이미 있는 수입니다." };
+  if ((parent.children || []).some((c) => stripSuffix(c.san) === key)) return { error: "이미 있는 수" };
   const depth = parentPath.length;
   const isUserTurn = depth % 2 === 0;
   const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(cand.kind) : true;
@@ -18465,16 +18462,16 @@ function addSiblingBranch(tree, parentPath, cand, seedSeq) {
 // 상대 수(짝수 길이)로 끝나면 add와 동일하게 "미완성" 상태(태그 없음)로 남아 이어서 정리해야 한다.
 // 최소 1수는 항상 남겨(빈 라인 방지) 편집 실수로 라인 전체가 통째로 유실되지 않게 한다.
 function removeLastMoveOfLine(tree, path, seedSeq) {
-  if (!path || path.length <= 1) return { error: "더 이상 줄일 수 없어요 — 라인에는 최소 1수가 있어야 해요." };
+  if (!path || path.length <= 1) return { error: "더 줄일 수 없음. 라인에는 최소 1수 필요" };
   const clone = cloneTree(tree);
   const parentPath = path.slice(0, -1);
   const parent = findTreeNode(clone, parentPath);
-  if (!parent) return { error: "라인을 찾을 수 없습니다." };
+  if (!parent) return { error: "라인 없음" };
   const leafKey = stripSuffix(path[path.length - 1]);
   const idx = (parent.children || []).findIndex((c) => stripSuffix(c.san) === leafKey);
-  if (idx < 0) return { error: "라인을 찾을 수 없습니다." };
+  if (idx < 0) return { error: "라인 없음" };
   const leaf = parent.children[idx];
-  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이 수 뒤에 더 진행된 갈래가 있어 삭제할 수 없습니다." };
+  if (leaf.children && leaf.children.some((c) => c.pass !== false)) return { error: "이 수 뒤에 진행된 갈래가 있어 삭제 불가" };
   parent.children.splice(idx, 1);
   let seq = seedSeq || 0;
   if (!parent.children.length) {
@@ -18625,7 +18622,7 @@ async function puzzleShare(p) {
     // 무관한 퍼즐의 data를 덮어써 버린다(서버에서 조용히 사라지는 데이터 손상). 이런 드문 충돌은
     // 병합하지 않고 그냥 포기한다 — 이 퍼즐은 로컬 상태(setPuzzles)에는 이미 반영돼 있으니 이 세션
     // 안에서 풀이는 계속 가능하고, 서버 공유·번호 공유만 못 하게 된다.
-    if (server && server.id && server.id !== p.id) { console.warn("퍼즐 번호 충돌(no=" + no + "), 서버 공유를 건너뜁니다:", p.id, "vs", server.id); return; }
+    if (server && server.id && server.id !== p.id) { console.warn("퍼즐 번호 충돌(no=" + no + "), 서버 공유 건너뜀:", p.id, "vs", server.id); return; }
     // (v0.5.1 버그 수정, 사용자 제보) "퍼즐 이름을 바꿔도 밖에서는 예전 이름 그대로 보인다" — 원인은
     // 여기 병합 로직이었다. 위 puzzleCreatorInfo 주석이 이미 경고한 것과 정확히 같은 종류의 함정을
     // puzzle_set_name(v0.4.9)이 그 뒤 data 안에 이름을 저장하면서 다시 만들었다: p는 호출부가 들고
@@ -18786,9 +18783,9 @@ function solveCountText(count, friendNames) {
     const shown = friendNames.slice(0, 2);
     const rest = count - shown.length;
     const names = shown.map((n) => n + "님").join(", ");
-    return rest > 0 ? names + " 외 " + fmtFull(rest) + "명이 풀었습니다!" : names + "이 풀었습니다!";
+    return rest > 0 ? names + " 외 " + fmtFull(rest) + "명 풀이 완료" : names + " 풀이 완료";
   }
-  return fmtFull(count) + "명이 풀었습니다!";
+  return fmtFull(count) + "명 풀이 완료";
 }
 // (16차) 퍼즐 추천 랭킹 — 매 해결(중복 풀이 포함)마다 이벤트 한 줄을 기록하고, 기간별(day/week/month) 집계는
 // RPC 'puzzle_rank'로 서버에서 수행한다. 테이블/RPC 미생성 시 무해하게 비활성(추천 목록이 그냥 비어있음).
@@ -19508,7 +19505,7 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
           레이팅 : n" 말풍선이 뜬다(모바일 안전 영역 클램프는 ClickInfoBadge가 담당). */}
       {puzzleRating != null && (
         <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(puzzleRating)}>
-          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+          <span title="퍼즐 레이팅: 라인을 풀면 상승, 틀린 수를 두면 하락" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, padding: "5px 9px", borderRadius: 999, background: "rgba(196,154,80,.16)", border: "1px solid " + T.brass, color: T.brassHi, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
             <MaterialIcon name="extension" size={11} /> {fmtFull(puzzleRating)}
           </span>
         </ClickInfoBadge>
@@ -19854,7 +19851,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               if (it.ghost) return (
                 <div key={i} style={{ position: "absolute", left: it.depth * colW, top: it.y * rowH, width: "max-content", minWidth: boxW }}>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래예요 — 두어 보면 드러나요" className="press"
+                    <button onClick={() => onPick && onPick(it)} title="아직 두지 않은 갈래. 두어 보면 표시" className="press"
                       style={{ flexShrink: 0, minWidth: boxW, minHeight: boxH, borderRadius: 12, border: "1.5px dashed #C9B58C",
                         background: "repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,.07) 6px 12px)",
                         color: T.inkSoft, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
@@ -19915,7 +19912,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                       <span>{isRoot ? "시작 위치" : (QLABEL[kind] || "–")}</span>
                       {!isRoot && <span style={{ marginLeft: "auto" }}>{adopt != null ? Math.round(adopt) + "%" : "–%"}</span>}
                     </span>
-                    {incomplete && <div style={{ fontSize: 13, fontWeight: 800, color: "#9A6A18", marginTop: 2 }}>미완성 — 다음 수 필요</div>}
+                    {incomplete && <div style={{ fontSize: 13, fontWeight: 800, color: "#9A6A18", marginTop: 2 }}>미완성: 다음 수 필요</div>}
                   </button>
                   {/* (v0.2.6 버그 수정) "라인 n" 표기를 마지막 수 블록 우측으로 옮기고, 해결 완료
                       체크 표시도 SAN 옆(블록 내부) 대신 여기서 라인 n과 함께 보여준다.
@@ -19950,9 +19947,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               <button onClick={() => setAddAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
             </div>
             {addCands === null ? (
-              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 불러오는 중…</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진 후보 로드 중…</div>
             ) : addCands.length === 0 ? (
-              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>추천 후보 없음. 아래에 직접 입력</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
                 {addCands.map((c) => (
@@ -19964,7 +19961,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
                 ))}
               </div>
             )}
-            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>원하는 수가 없으면 직접 입력하세요</div>
+            <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>원하는 수가 없으면 직접 입력</div>
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
               <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitAdd()} placeholder="수 (예: Nf3)" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1px solid " + (err ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5 }} />
               <button onClick={submitAdd} disabled={busy} className="press" style={{ padding: "6px 12px", borderRadius: 7, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{busy ? "추가 중…" : "추가"}</button>
@@ -19982,9 +19979,9 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
               <button onClick={() => setSiblingAt(null)} className="press" style={{ padding: "2px 8px", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>닫기</button>
             </div>
             {siblingCands === null ? (
-              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진으로 후보를 다시 불러오는 중…</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>엔진 후보 다시 로드 중…</div>
             ) : siblingCands.length === 0 ? (
-              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>더 추천할 후보가 없어요 — 아래에 직접 입력하세요.</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, padding: "6px 0" }}>추가 후보 없음. 아래에 직접 입력</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
                 {siblingCands.map((c) => (
@@ -20033,18 +20030,18 @@ function hintPathSquares(pieceType, from, to) {
 function summarizePosition(board, userColor) {
   const oppColor = userColor === "w" ? "b" : "w";
   const kp = kingPos(board, oppColor);
-  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹이 체크 상태예요 — 지금 공격이 통하고 있어요!";
+  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹 체크. 공격 진행 중";
   // (기능) 자체 포지션 평가 AI의 기물 긴장 신호 — 걸린 기물이 있으면 막연한 점수차 안내보다 훨씬
   // 구체적인 힌트가 된다(FEN 기반 tensionFacts, Stockfish 없이 즉시 계산).
   const t = tensionFacts(board, userColor);
-  if (t.theirs.length) return "상대 " + PIECE_KOR[t.theirs[0].piece] + "가 걸려 있어요 — 잡을 기회를 찾아보세요.";
-  if (t.mine.length) return "네 " + PIECE_KOR[t.mine[0].piece] + "가 위태로워요 — 안전하게 지킬 수를 찾아보세요.";
+  if (t.theirs.length) return "상대 " + PIECE_KOR[t.theirs[0].piece] + " 노출. 잡을 기회 찾기";
+  if (t.mine.length) return "내 " + PIECE_KOR[t.mine[0].piece] + " 위험. 안전하게 지킬 수 찾기";
   const diff = materialDiff(board, userColor);
-  if (diff >= 3) return "지금 기물 점수에서 크게 앞서 있어요 — 확실히 마무리할 수를 찾아보세요.";
-  if (diff >= 1) return "지금 기물을 조금 앞서 있어요 — 이 이점을 굳히는 수를 찾아보세요.";
-  if (diff <= -3) return "지금 기물 점수가 크게 밀리고 있어요 — 반격할 결정적인 수가 필요해요.";
-  if (diff <= -1) return "지금 기물이 조금 부족해요 — 포지션을 뒤집을 수를 찾아보세요.";
-  return "기물 점수는 팽팽해요 — 포지션을 유리하게 이끌 수를 찾아보세요.";
+  if (diff >= 3) return "기물 점수 크게 우세. 확실히 마무리할 수 찾기";
+  if (diff >= 1) return "기물 점수 소폭 우세. 이점을 굳히는 수 찾기";
+  if (diff <= -3) return "기물 점수 크게 열세. 반격할 결정적인 수 필요";
+  if (diff <= -1) return "기물 점수 소폭 열세. 포지션을 뒤집을 수 찾기";
+  return "기물 점수 팽팽. 포지션을 유리하게 이끌 수 찾기";
 }
 // (사용자 요청, v0.3.9) 퍼즐 라인 클리어 — 아래 PuzzleClearBanner와 완전히 같은 디자인·애니메이션
 // (typoLetters 글자별 팝인, 같은 글자 크기·재생 시간, 방사형 글로우 배경)을 쓴다. 별 3개 대신, 그
@@ -20135,7 +20132,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const doDeletePuzzle = async () => {
     setDeletingPuzzle(true); setDeletePuzzleErr("");
     const ok = await onDeletePuzzle(puzzle.id);
-    if (!ok) { setDeletingPuzzle(false); setDeletePuzzleErr("퍼즐을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요."); return; }
+    if (!ok) { setDeletingPuzzle(false); setDeletePuzzleErr("퍼즐 삭제 실패. 잠시 후 다시 시도"); return; }
     setConfirmDeletePuzzle(false);
   };
   const theme = primaryTheme(puzzle);
@@ -20197,14 +20194,14 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const startEditName = () => { setNameInput(displayPuzzleName || ""); setNameErr(""); setEditingName(true); };
   const saveEditName = async () => {
     const v = nameInput.trim();
-    if (!v) { setNameErr("이름을 입력해 주세요."); return; }
-    if (v.length > 60) { setNameErr("이름은 60자 이내로 입력해 주세요."); return; }
-    if (containsBannedWord(v)) { setNameErr("부적절한 표현이 포함되어 있어요."); return; }
+    if (!v) { setNameErr("이름 입력 필요"); return; }
+    if (v.length > 60) { setNameErr("이름은 60자 이내"); return; }
+    if (containsBannedWord(v)) { setNameErr("부적절한 표현 포함"); return; }
     setNameBusy(true);
     const ok = await puzzleSetName(puzzleNoForTag, v);
     setNameBusy(false);
     if (ok) { setNameOverride(v); setEditingName(false); onPuzzleRenamed && onPuzzleRenamed(puzzle.id, v); }
-    else setNameErr("저장하지 못했어요 — 잠시 후 다시 시도해 주세요(1시간에 한 번만 바꿀 수 있어요).");
+    else setNameErr("저장 실패. 잠시 후 다시 시도 (1시간에 한 번만 변경 가능)");
   };
   const [nowTick, setNowTick] = useState(Date.now());
   useEffect(() => {
@@ -20604,9 +20601,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   }, [reply, pathNodes.length, wrong, reverting, curSans.join(" "), puzzle.id, liveOn, engine && engine.status]);
   // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
   // 설명하도록 바꾼다(막연한 "힌트 버튼을 눌러보세요" 대신 실제로 도움이 되는 상황 설명).
-  const idleBubble = intro ? "직전 수를 살펴보는 중이에요…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당해요!" : "다른 수예요. 다시 시도해 보세요!") : reply ? "상대가 응수하고 있어요…" : (mecBubble || summarizePosition(board, color));
-  const doneBubble = fullyComplete ? "훌륭해요! 모든 라인을 정복했어요."
-    : "이 라인을 완료했어요! 모식도에서 다른 가지에 도전해 보세요.";
+  const idleBubble = intro ? "직전 수 확인 중…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당함" : "다른 수. 다시 시도") : reply ? "상대 응수 중…" : (mecBubble || summarizePosition(board, color));
+  const doneBubble = fullyComplete ? "모든 라인 정복"
+    : "라인 완료. 모식도에서 다른 가지에 도전";
   const bubbleText = done ? doneBubble : idleBubble;
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   // (v0.3.4 기능·버그 수정) 클리어 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지) — 그
@@ -20779,23 +20776,23 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // 비어도 카운터가 리셋되지 않아, 예전 라인이 쓰던 번호를 새 라인이 재사용해 "이미 해결됨"으로
   // 잘못 표시되는 사고를 막는다(nextLeafTag 주석 참고).
   const addMoveToLeaf = async (path, sanRaw) => {
-    if (!canEditPuzzle) return "편집 권한이 없어요.";
-    if (!path) return "라인을 찾을 수 없습니다.";
+    if (!canEditPuzzle) return "편집 권한 없음";
+    if (!path) return "라인 없음";
     const res = extendPuzzleLeaf(tree, setup, path, sanRaw, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
+    catch { return "저장 실패. 잠시 후 다시 시도"; }
     return null;
   };
   // (20차 기능3) 모식도의 리프에서 "삭제"를 누르면 그 라인의 마지막 수를 하나 지운다. 실수로
   // 라인 전체가 한 번에 사라지지 않도록 항상 정확히 한 수만(그 리프 자신) 지운다.
   const deleteMoveFromLeaf = async (path) => {
-    if (!canEditPuzzle) return "편집 권한이 없어요.";
-    if (!path) return "라인을 찾을 수 없습니다.";
+    if (!canEditPuzzle) return "편집 권한 없음";
+    if (!path) return "라인 없음";
     const res = removeLastMoveOfLine(tree, path, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
+    catch { return "저장 실패. 잠시 후 다시 시도"; }
     return null;
   };
   // (v0.3.0 기능) 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로 계산해
@@ -20812,18 +20809,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     } catch { return []; }
   };
   const addSibling = async (path, cand) => {
-    if (!canEditPuzzle) return "편집 권한이 없어요.";
+    if (!canEditPuzzle) return "편집 권한 없음";
     let finalCand = cand;
     if (cand.manual) {
       const board = boardOfRoot(fenRoot, [...setup, ...path]);
       const color = plyIsWhite(setup.length + path.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
-      if (!sanSrc(board, cand.san, color)) return "불법 수입니다.";
+      if (!sanSrc(board, cand.san, color)) return "불법 수";
       finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
     }
     const res = addSiblingBranch(tree, path, finalCand, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장에 실패했어요. 잠시 후 다시 시도해주세요."; }
+    catch { return "저장 실패. 잠시 후 다시 시도"; }
     return null;
   };
   // (20차 기능3) 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을 퍼즐마다
@@ -20889,9 +20886,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
       const th = primaryTheme(puzzle);
       const opts = { ...puzzleThemeOpts(th, targetInput, puzzleTypeInput), firstSan: th === "sacrifice" ? (allLines[0] && allLines[0].sans[0]) : null, tagSeq: seedTagSeq() };
       const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
-      if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없어요(기준을 낮춰보세요)."); return; }
+      if (!gen) { setRegenErr("이 기준으로는 트리를 만들 수 없음 (기준을 낮추기)"); return; }
       try { await persistEdit(gen.tree, gen.lines, gen.seq, { target: targetInput, puzzleType: puzzleTypeInput }); }
-      catch { setRegenErr("저장에 실패했어요. 잠시 후 다시 시도해주세요."); }
+      catch { setRegenErr("저장 실패. 잠시 후 다시 시도"); }
     } finally { setRegenBusy(false); }
   };
   // (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자 전용, 이 퍼즐의 생성자를 재지정한다(원래 생성자의
@@ -20903,10 +20900,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     setReassignBusy(true); setReassignMsg("");
     const ok = await puzzleReassignCreator(puzzleNoForTag, targetUsername);
     if (ok) {
-      setReassignMsg(targetUsername ? "생성자를 @" + targetUsername + "님에게 양도했어요." : "생성자를 개발자 명의로 회수했어요.");
+      setReassignMsg(targetUsername ? "생성자를 @" + targetUsername + "님에게 양도 완료" : "생성자를 개발자 명의로 회수");
       setReassignInput("");
       setCreatorInfo(await puzzleCreatorInfo(puzzleNoForTag));
-    } else setReassignMsg("실패했어요 — 아이디를 확인하거나, 이 퍼즐이 아직 서버에 공유되지 않았을 수 있어요.");
+    } else setReassignMsg("실패. 아이디 확인 또는 아직 서버에 공유되지 않은 퍼즐일 수 있음");
     setReassignBusy(false);
   };
   // (20차 기능3) allLines(완결된 라인)가 0개여도, 트리 자체에 내용이 있으면(개발자가 삭제로 잠시
@@ -20916,13 +20913,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   if (treeIsEmpty) return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
-      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>퍼즐 데이터를 불러올 수 없어요.</p>
+      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>퍼즐 데이터 로드 실패</p>
     </div>
   );
   if (!allLines.length && !canEdit) return (
     <div style={{ position: "relative", background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 16, maxWidth: 460, margin: "0 auto" }}>
       <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", fontSize: 15, fontWeight: 800, lineHeight: 1, cursor: "pointer" }}>✕</button>
-      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>이 퍼즐은 아직 준비 중이에요.</p>
+      <p style={{ fontSize: 13, color: T.inkSoft, fontWeight: 700, textAlign: "center", padding: "30px 0" }}>준비 중인 퍼즐</p>
     </div>
   );
   return (
@@ -20981,8 +20978,8 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
           제약에서 벗어난 별도 줄로 둔다 — 닫기 버튼은 이 줄보다 위쪽에만 있어 안 겹치므로, 카드
           오른쪽 끝까지 거의 여백 없이 붙을 수 있다. */}
       <div className="flex items-center flex-wrap" style={{ gap: 6, marginBottom: 10, justifyContent: "flex-end" }}>
-        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-        {puzzle.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+        {puzzle.setupSans && puzzle.setupSans.length > 0 && <span title="PGN 기보로 시작 위치 지정" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+        {puzzle.fen && <span title="FEN 코드로 시작 위치 지정" style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         <GamePhaseBadge p={puzzle} />
         {myPuzzleRating != null ? (() => {
           const diff = avgRating - myPuzzleRating;
@@ -20996,11 +20993,11 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
               </div>
             }>
-              <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+              <span title="퍼즐 레이팅 (100~3000, 모든 라인 평균 난이도). 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
             </ClickInfoBadge>
           );
         })() : (
-          <span title="퍼즐 레이팅 — 모든 라인의 평균 난이도(100~3000)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
+          <span title="퍼즐 레이팅 (100~3000, 모든 라인 평균 난이도)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT }}>{avgRating}</span>
         )}
       </div>
       <div style={{ marginBottom: 10 }}>
@@ -21125,7 +21122,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                   const lineIsSolved = solvedNow.has(l.tag);
                   const isTarget = l.tag === targetTag;
                   return (
-                    <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={"라인 " + (i + 1) + (lineIsSolved ? " (해결됨 — 다시 풀기)" : "")}
+                    <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={"라인 " + (i + 1) + (lineIsSolved ? " (해결됨, 다시 풀기)" : "")}
                       style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
                         border: "2px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
                         background: lineIsSolved ? "#EAF3E0" : "#fff",
@@ -21163,7 +21160,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                     <button key={String(v)} onClick={() => saveVisibility(v)} disabled={visBusy} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: publicInput === v ? T.brass : "transparent", color: publicInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: visBusy ? "default" : "pointer", opacity: visBusy ? 0.6 : 1 }}>{lb}</button>
                   ))}
                 </div>
-                {!publicInput && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 5 }}>비공개 상태예요 — 나(그리고 개발자)만 이 퍼즐을 볼 수 있어요.</div>}
+                {!publicInput && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 5 }}>비공개. 나와 개발자만 볼 수 있음</div>}
               </div>
             )}
             {/* (20차 기능1·3) 라인 길이는 모식도의 각 라인 끝(리프)에 있는 "+"(추가)·삭제 버튼으로 한 수씩 직접 조정한다.
@@ -21172,12 +21169,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 대신 남은 시간을 알려준다. */}
             {isMyPuzzle && !canEdit && creatorCooldownMs > 0 && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C", fontSize: 11, color: T.inkSoft }}>
-                내가 만든 퍼즐이에요 — 방금 편집해서, 약 {Math.max(1, Math.ceil(creatorCooldownMs / 60000))}분 뒤에 다시 라인을 조정할 수 있어요.
+                내 퍼즐. 방금 편집해서 약 {Math.max(1, Math.ceil(creatorCooldownMs / 60000))}분 뒤 라인 재조정 가능
               </div>
             )}
             {canEditPuzzle && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
-                {isMyPuzzle && !canEdit && <div style={{ fontSize: 11, color: T.brass, fontWeight: 700, marginBottom: 8 }}>내가 만든 퍼즐이에요 — 개발자와 같은 라인 조정·재생성을 1시간에 한 번 할 수 있어요.</div>}
+                {isMyPuzzle && !canEdit && <div style={{ fontSize: 11, color: T.brass, fontWeight: 700, marginBottom: 8 }}>내 퍼즐. 라인 조정·재생성은 1시간에 한 번 가능</div>}
                 {/* (신규) 퍼즐 종류 — 포지션 우위(cp 이득 기준)/기물 우위(기물 이득 즉시 종료, 수비자
                     제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 퍼즐 종류</div>
@@ -21188,7 +21185,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 </div>
                 {puzzleTypeInput === "positional" && (
                   <>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 "확실히 유리하다"고 볼 평가치)</span></div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{canEdit ? "개발자" : "제작자"} · 기본 이점 기준 <span style={{ color: T.ink }}>(자동 생성이 확실히 유리하다고 보는 평가치)</span></div>
                     <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
                       <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
                         style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
@@ -21199,10 +21196,10 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginTop: 8 }}>
                   <button onClick={regenerateWithTarget} disabled={!engine || engine.status !== "ready" || regenBusy} className="press" style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 11.5, opacity: (!engine || engine.status !== "ready") ? 0.5 : 1 }}>{regenBusy ? "재생성 중…" : "이 기준으로 기본 트리 재생성"}</button>
                 </div>
-                <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 이 퍼즐의 트리가 통째로 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라져요.</div>
-                {!canEdit && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>이 퍼즐은 1시간에 한 번만 라인을 조정하거나 재생성할 수 있어요.</div>}
+                <div style={{ fontSize: 9.5, color: T.blunder, marginTop: 5 }}>재생성하면 트리가 새로 만들어져 수동으로 추가·삭제한 내용이 모두 사라짐</div>
+                {!canEdit && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>라인 조정·재생성은 1시간에 한 번</div>}
                 {regenErr && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>{regenErr}</div>}
-                {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>엔진이 준비되면 라인에 수를 추가·삭제하거나 재생성할 수 있어요.</div>}
+                {(!engine || engine.status !== "ready") && <div style={{ fontSize: 10, color: T.blunder, marginTop: 3 }}>엔진 준비 후 라인 수 추가·삭제·재생성 가능</div>}
               </div>
             )}
             {/* (v0.3.4 기능) 사용자 요청 — 개발자/공동개발자 전용, 이 퍼즐의 생성자를 재지정(박탈)한다.
@@ -21247,7 +21244,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
           effect(celebrate 종료 2.4초 뒤 자동으로 nextTag로 넘어감)가 이미 그 역할을 하고 있어 중복이었다. */}
       {done && fullyComplete && (
         <div style={{ marginTop: 12, textAlign: "center", background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "12px 14px", border: "1px solid " + T.brass }}>
-          <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>🎉 완전 해결! {totalLines}개 라인을 모두 정복해 별 3개를 모았어요.</div>
+          <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 13 }}>완전 해결 {totalLines}개 라인 모두 정복, 별 3개 획득</div>
         </div>
       )}
       <div className="flex items-center justify-center gap-2" style={{ marginTop: 8, marginBottom: 4 }}>
@@ -21261,7 +21258,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
         <div onClick={() => !deletingPuzzle && setConfirmDeletePuzzle(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>퍼즐 삭제</div>
-            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>이 퍼즐을 삭제할까요? 되돌릴 수 없고, 다른 사람들의 피드에서도 함께 사라져요.</p>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>이 퍼즐을 삭제할까요? 되돌릴 수 없고 다른 사람의 피드에서도 사라짐</p>
             {deletePuzzleErr && <p style={{ fontSize: 12, color: T.blunder, marginTop: -8, marginBottom: 14, fontWeight: 700 }}>{deletePuzzleErr}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setConfirmDeletePuzzle(false)} disabled={deletingPuzzle} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: deletingPuzzle ? "default" : "pointer", opacity: deletingPuzzle ? 0.5 : 1 }}>취소</button>
@@ -21316,7 +21313,7 @@ function ExternalShareRow({ url, title, text }) {
         {canNativeShare && (
           <button onClick={doNativeShare} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}><Share2 size={13} /> 공유하기(카카오톡·인스타그램 등)</button>
         )}
-        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? "복사됨!" : "링크 복사"}</button>
+        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? "복사됨" : "링크 복사"}</button>
         {!canNativeShare && (
           <>
             <a href={"https://story.kakao.com/share?url=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>카카오스토리</a>
@@ -21352,12 +21349,12 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
   }, [myUid]);
   const send = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    if (!puzzle || puzzle.id == null) { setSendErr("퍼즐 정보를 불러오지 못해 전달할 수 없어요."); return; }
+    if (!puzzle || puzzle.id == null) { setSendErr("퍼즐 정보를 불러오지 못해 전달 불가"); return; }
     setBusy(toUid); setSendErr("");
     const ok = await puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid);
     setBusy(null);
     if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
-    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    else setSendErr("전달 실패. 잠시 후 다시 시도");
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
@@ -21366,12 +21363,12 @@ function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
           <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />퍼즐 공유</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐 — " + (livePuzzleName(puzzle) || "퍼즐 풀어보기")} />}
+        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐: " + (livePuzzleName(puzzle) || "퍼즐 풀어보기")} />}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -21439,7 +21436,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
       // (CSS의 aspectRatio/width:100%는 화면 표시 크기만 줄일 뿐 canvas.width/height 자체는 그대로),
       // 굳이 다시 그릴 필요 없이 그 캔버스를 그대로 toBlob한다.
       const blob = await new Promise((resolve) => previewRef.current.toBlob((b) => resolve(b), "image/png"));
-      if (!blob) { setCardMsg("이미지를 만들지 못했어요."); return; }
+      if (!blob) { setCardMsg("이미지 생성 실패"); return; }
       const file = new File([blob], "openchess-review.png", { type: "image/png" });
       if (canNativeShareFiles && navigator.canShare({ files: [file] })) {
         try { await navigator.share({ files: [file], title: "OpenChess 리뷰", text: label || "OpenChess 대국 리뷰" }); return; }
@@ -21450,8 +21447,8 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
       const a = document.createElement("a");
       a.href = url; a.download = "openchess-review.png"; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setCardMsg("이미지를 저장했어요.");
-    } catch { setCardMsg("이미지를 만들지 못했어요."); }
+      setCardMsg("이미지 저장 완료");
+    } catch { setCardMsg("이미지 생성 실패"); }
     finally { setCardBusy(false); }
   };
   useEffect(() => {
@@ -21467,12 +21464,12 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
   }, [myUid]);
   const send = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    if (!reviewId) { setSendErr("리뷰 정보를 불러오지 못해 전달할 수 없어요."); return; }
+    if (!reviewId) { setSendErr("리뷰 정보를 불러오지 못해 전달 불가"); return; }
     setBusy(toUid); setSendErr("");
     const ok = await reviewShareSend(myUid, toUid, reviewId);
     setBusy(null);
     if (ok) setSent((s) => new Set(s).add(toUid));
-    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    else setSendErr("전달 실패. 잠시 후 다시 시도");
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 310, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
@@ -21481,7 +21478,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
           <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />리뷰 공유</span>
           <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title="OpenChess 리뷰" text={"OpenChess 리뷰 — " + (label || "대국 리뷰 보기")} />
+        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title="OpenChess 리뷰" text={"OpenChess 리뷰: " + (label || "대국 리뷰 보기")} />
           : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>공유 링크를 만드는 중…</div>}
         {/* (신규 기능, 사용자 요청) 이미지 카드 — 정확성·결과·오프닝을 한눈에 담은 정사각형 PNG를
             SNS에 바로 올릴 수 있게(카카오톡·인스타그램 등은 링크보다 이미지가 훨씬 잘 퍼진다).
@@ -21503,7 +21500,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -21657,7 +21654,7 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
         <FitPuzzleName text={livePuzzleName(p)} />
         {/* (사용자 요청) 퍼즐 유형·라인 개수를 알려주는 텍스트는 지운다 — 손상된(라인 0개) 퍼즐 경고만
             남긴다(유용한 오류 표시라 지우지 않는다). */}
-        {broken && <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, marginTop: 4 }}>⚠ 손상된 퍼즐(라인 0개)</span>}
+        {broken && <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, marginTop: 4 }}>⚠ 손상된 퍼즐 (라인 0개)</span>}
         {/* (사용자 요청) 6자리 퍼즐 번호는 왼쪽, 퍼즐 레이팅은 같은 줄 오른쪽에 표시한다 — 예전엔
             번호가 오른쪽에, 레이팅은 그 아래 배지 줄 한가운데 섞여 있었다. */}
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
@@ -21677,12 +21674,12 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
                 }>
                   {/* (사용자 요청) 퍼즐 풀이 카드(PuzzleSolver)의 레이팅 배지와 완전히 같은 디자인 —
                       "★" 글자 기호 대신 배경·테두리가 있는 알약형 배지로 표시한다. */}
-                  <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도) — 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
+                  <span title="퍼즐 레이팅 (100~3000, 라인 평균 난이도). 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
                 </ClickInfoBadge>
               );
             })()
           ) : (
-            <span title="퍼즐 레이팅(100~3000, 라인 평균 난이도)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
+            <span title="퍼즐 레이팅 (100~3000, 라인 평균 난이도)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
           ))}
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
@@ -21703,8 +21700,8 @@ function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedTags, fr
             순으로 바꿨다 — 그 퍼즐이 "어느 국면"인지가 가장 먼저 눈에 들어와야 할 정보라 맨 왼쪽에 둔다. */}
         <div className="flex items-center" style={{ marginTop: 4, gap: 5, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
             <GamePhaseBadge p={p} compact />
-            {p.setupSans && p.setupSans.length > 0 && <span title="이 퍼즐은 대국 기보(PGN)로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-            {p.fen && <span title="이 퍼즐은 FEN 코드로 시작 위치를 갖고 있어요" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+            {p.setupSans && p.setupSans.length > 0 && <span title="PGN 기보로 시작 위치 지정" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+            {p.fen && <span title="FEN 코드로 시작 위치 지정" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         </div>
         {/* (사용자 요청) 좋아요·리포스트·공유 수는 왼쪽에 묶어 두고, 실제 공유하기 버튼만 카드 맨
             아래 줄의 오른쪽 끝(우하단)에 오도록 justify-between으로 분리한다 — 예전엔 넷 다 같은
@@ -21786,7 +21783,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       <div className="flex items-center justify-between flex-wrap" style={{ marginBottom: 10, gap: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>일일 퀘스트</div>
         <div className="flex items-center gap-2">
-          {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료!</span>}
+          {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
           <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.06)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
         </div>
@@ -21794,7 +21791,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {row("puzzle", "새 퍼즐 " + dq.puzzleTarget + "회 풀기", dq.puzzleCount + "/" + dq.puzzleTarget)}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row("dailypuzzle", "일일 퍼즐 풀기", "퍼즐 탭 맨 위 ‘일일 퍼즐’을 풀어보세요")}
+        {row("dailypuzzle", "일일 퍼즐 풀기", "퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기")}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -21804,10 +21801,10 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
             // (사용자 요청) key에 highlight.nonce를 섞어, 같은 오프닝을 배지로 연달아 눌러도 매번
             // 새로 마운트되어 하이라이트 애니메이션이 다시 재생되게 한다.
             <div key={i + (highlighted ? "-" + highlight.nonce : "")} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabelNode(q), !hasChesscom ? "설정에서 chess.com 계정을 연동해야 확인할 수 있어요" : (isOpening ? openingMovesTexts[i] : null),
+              {row("cc_" + i, questLabelNode(q), !hasChesscom ? "설정에서 chess.com 계정 연동 필요" : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
-                  <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체(퀘스트당 1회)"
+                  <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체 (퀘스트당 1회)"
                     style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.04)", color: "#8A6A2F", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={12} /></button>
                 ) : null, highlighted)}
             </div>
@@ -21824,7 +21821,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
               <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? T.best : "#8A6A2F" }}>모든 퀘스트 완료 보상</div>
               <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: "#8A6A2F" }}>50개</b> · {doneCount}/5 완료</div>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? "획득 완료!" : "획득!") : "잠김"}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? "획득 완료" : "획득") : "잠김"}</span>
           </div>
         );
       })()}
@@ -22060,9 +22057,9 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
         <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>레슨</span>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{overall.totalChapters} 완료</span>
       </div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>체스 개념과 오프닝을 하나씩 다루는 독립된 학습 코스 — 갈래를 따라 순서대로 해금됩니다.</div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>체스 개념과 오프닝 학습 코스. 갈래를 따라 순서대로 해금</div>
       {ids.length === 0 ? (
-        <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>아직 등록된 레슨이 없어요.</div>
+        <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>등록된 레슨 없음</div>
       ) : (
         <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
           <div style={{ position: "relative", width, height }}>
@@ -22349,7 +22346,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
         {lessonDone ? (
           <div style={{ textAlign: "center", padding: "24px 0" }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? "레슨을 복습했어요!" : "레슨을 완료했어요!"}</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? "레슨 복습 완료" : "레슨 완료"}</div>
             {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: "#8A6A2F", marginBottom: 16 }}><CoinIcon size={18} /> +{lesson.reward || 60} OC 나이트 코인</div>}
             <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? "닫기" : "보상 받기"}</button>
           </div>
@@ -22383,7 +22380,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
                         background: showCorrect ? "rgba(63,122,58,.12)" : showWrong ? "rgba(200,80,80,.12)" : "#fff", color: T.ink }}>{op}</button>
                   );
                 })}
-                {mcFeedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 6 }}>✕ 다른 설명이에요. 다시 골라보세요.</div>}
+                {mcFeedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 6 }}>✕ 다른 설명. 다시 선택</div>}
                 {mcFeedback === "correct" && (
                   <div style={{ marginTop: 6 }}>
                     {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
@@ -22394,8 +22391,8 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
             )}
             {beat && beat.kind === "move" && (
               <div>
-                {moveWrongSq && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>✕ 다른 수예요. 보드를 다시 살펴보세요.</div>}
-                {!moveDone && !moveWrongSq && <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>보드 위에서 기물을 눌러(또는 끌어서) 두어보세요.</div>}
+                {moveWrongSq && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>✕ 다른 수. 보드를 다시 확인</div>}
+                {!moveDone && !moveWrongSq && <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>보드에서 기물을 눌러(또는 끌어서) 두기</div>}
                 {moveDone && (
                   <>
                     {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
@@ -22503,12 +22500,12 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
         </>
       )}
       {kind === "principles" && (
-        <textarea value={linesText} onChange={(e) => setLinesText(e.target.value)} onBlur={() => patch({ lines: linesToArr(linesText) })} placeholder={"원칙 목록 — 한 줄에 하나씩"} rows={4} style={{ ...lsField, resize: "vertical" }} />
+        <textarea value={linesText} onChange={(e) => setLinesText(e.target.value)} onBlur={() => patch({ lines: linesToArr(linesText) })} placeholder={"원칙 목록 (한 줄에 하나씩)"} rows={4} style={{ ...lsField, resize: "vertical" }} />
       )}
       {kind === "mc" && (
         <>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
-          <textarea value={optsText} onChange={(e) => setOptsText(e.target.value)} onBlur={() => patch({ opts: linesToArr(optsText) })} placeholder={"선택지 — 한 줄에 하나씩"} rows={3} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={optsText} onChange={(e) => setOptsText(e.target.value)} onBlur={() => patch({ opts: linesToArr(optsText) })} placeholder={"선택지 (한 줄에 하나씩)"} rows={3} style={{ ...lsField, resize: "vertical" }} />
           <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
             <span style={{ fontSize: 10.5, color: T.inkSoft }}>정답 인덱스(0부터)</span>
             <input type="number" min={0} value={beat.answer ?? 0} onChange={(e) => patch({ answer: parseInt(e.target.value, 10) || 0 })} style={{ width: 60, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
@@ -22519,13 +22516,13 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
       {kind === "move" && (
         <>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
-          <textarea value={answersText} onChange={(e) => setAnswersText(e.target.value)} onBlur={() => patch({ answers: linesToArr(answersText) })} placeholder={"정답으로 인정할 수(SAN) — 한 줄에 하나씩, 예: e4"} rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={answersText} onChange={(e) => setAnswersText(e.target.value)} onBlur={() => patch({ answers: linesToArr(answersText) })} placeholder={"정답으로 인정할 수 (SAN, 한 줄에 하나씩, 예: e4)"} rows={2} style={{ ...lsField, resize: "vertical" }} />
           <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder="정답 해설(note)" rows={2} style={{ ...lsField, resize: "vertical" }} />
         </>
       )}
       {kind === "play" && (
         <>
-          <input value={movesText} onChange={(e) => setMovesText(e.target.value)} onBlur={() => patch({ moves: spaceToArr(movesText) })} placeholder={"이어서 재생할 수(SAN) 나열 — 띄어쓰기로 구분, 예: e4 e5 Nf3"} style={lsField} />
+          <input value={movesText} onChange={(e) => setMovesText(e.target.value)} onBlur={() => patch({ moves: spaceToArr(movesText) })} placeholder={"이어서 재생할 수 (SAN, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={lsField} />
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 10.5, color: T.inkSoft }}>한 수당 재생 간격(ms)</span>
             <input type="number" min={0} value={stepMs} onChange={(e) => setStepMs(e.target.value)} onBlur={() => patch({ stepMs: stepMs === "" ? undefined : parseInt(stepMs, 10) || 420 })} placeholder="420" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
@@ -22540,7 +22537,7 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
       )}
       {kind === "board" && (
         <>
-          <input value={squaresText} onChange={(e) => setSquaresText(e.target.value)} onBlur={() => patch({ squares: spaceToArr(squaresText) })} placeholder={"강조할 칸 — 띄어쓰기로 구분, 예: e4 e5 d4 d5"} style={lsField} />
+          <input value={squaresText} onChange={(e) => setSquaresText(e.target.value)} onBlur={() => patch({ squares: spaceToArr(squaresText) })} placeholder={"강조할 칸 (띄어쓰기로 구분, 예: e4 e5 d4 d5)"} style={lsField} />
           <div className="flex items-center gap-3" style={{ marginBottom: 4 }}>
             <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.dim} onChange={(e) => patch({ dim: e.target.checked })} /> dim(음영)</label>
             <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.glow} onChange={(e) => patch({ glow: e.target.checked })} /> glow(발광)</label>
@@ -22567,8 +22564,8 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
           </div>
         </>
       )}
-      {kind === "clear" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>이 beat는 별도 필드 없이 보드 연출(dim/glow/siren)만 초기화해요.</div>}
-      <input value={sansText} onChange={(e) => setSansText(e.target.value)} onBlur={commitSans} placeholder={"(선택) 즉시 전환할 위치 — 수순(SAN)을 띄어쓰기로, 예: e4 e5 Nf3"} style={{ ...lsField, marginBottom: 0, fontSize: 10.5, color: T.inkSoft }} />
+      {kind === "clear" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>이 beat는 보드 연출(dim/glow/siren)만 초기화</div>}
+      <input value={sansText} onChange={(e) => setSansText(e.target.value)} onBlur={commitSans} placeholder={"(선택) 즉시 전환할 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={{ ...lsField, marginBottom: 0, fontSize: 10.5, color: T.inkSoft }} />
     </div>
   );
 }
@@ -22595,9 +22592,9 @@ function PageEditor({ page, index, total, onChange, onRemove, onMoveUp, onMoveDo
           <button type="button" onClick={onRemove} className="press" title="페이지 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
         </div>
       </div>
-      <input value={startSansText} onChange={(e) => setStartSansText(e.target.value)} onBlur={commitStartSans} placeholder={"(선택) 시작 위치 — 수순(SAN)을 띄어쓰기로, 예: e4 e5 Nf3"} style={lsField} />
+      <input value={startSansText} onChange={(e) => setStartSansText(e.target.value)} onBlur={commitStartSans} placeholder={"(선택) 시작 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={lsField} />
       <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer", marginBottom: 6 }}>
-        <input type="checkbox" checked={!!page.flip} onChange={(e) => onChange({ ...page, flip: e.target.checked })} /> flip(보드 반전 — 흑 시점으로 보기)
+        <input type="checkbox" checked={!!page.flip} onChange={(e) => onChange({ ...page, flip: e.target.checked })} /> flip(보드 반전, 흑 시점으로 보기)
       </label>
       {beats.map((b, bi) => (
         <BeatEditor key={bi} beat={b} index={bi} total={beats.length} onChange={(nb) => updateBeatAt(bi, nb)} onRemove={() => removeBeatAt(bi)} onMoveUp={() => moveBeatAt(bi, -1)} onMoveDown={() => moveBeatAt(bi, 1)} />
@@ -22649,7 +22646,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
         <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 제목" style={{ ...field, fontWeight: 700 }} />
         <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 설명" rows={2} style={{ ...field, resize: "vertical" }} />
         <div style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 4 }}>선행 레슨 (여러 개 선택 가능 — 전부 완료해야 이 레슨이 열려요)</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 4 }}>선행 레슨 (여러 개 선택 가능, 전부 완료해야 열림)</div>
           {otherLessonKeys.length === 0 ? (
             <div style={{ fontSize: 11, color: T.inkSoft }}>없음(최상위)</div>
           ) : (
@@ -22660,7 +22657,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
                 // 선택하면 k → ... → 이 레슨 → k처럼 순환이 생기기 때문.
                 const blocked = !isNew && lessonDescendants(lessonKey, CONTENT.lessons).has(k);
                 return (
-                  <label key={k} title={blocked ? "순환(사이클)이 생겨서 선택할 수 없어요" : ""}
+                  <label key={k} title={blocked ? "순환이 생겨 선택 불가" : ""}
                     style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 7px", borderRadius: 7,
                       border: "1px solid #C9B58C", background: checked ? "rgba(196,154,80,.22)" : "transparent",
                       opacity: blocked ? 0.4 : 1, cursor: blocked ? "not-allowed" : "pointer" }}>
@@ -22672,7 +22669,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
                         delete nd.parent;
                         save(nd);
                       }} />
-                    {k} — {CONTENT.lessons[k].title}
+                    {k} · {CONTENT.lessons[k].title}
                   </label>
                 );
               })}
@@ -22684,13 +22681,13 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
           <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
         </div>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>페이지·스크립트 — {pages.length}페이지</div>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>페이지·스크립트: {pages.length}페이지</div>
         {pages.map((p, i) => (
           <PageEditor key={i} page={p} index={i} total={pages.length} onChange={(np) => updatePageAt(i, np)} onRemove={() => removePageAt(i)} onMoveUp={() => movePageAt(i, -1)} onMoveDown={() => movePageAt(i, 1)} />
         ))}
         <button onClick={addPage} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer", marginBottom: 10 }}>+ 페이지 추가</button>
         <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-          <span style={{ fontSize: 10, color: T.inkSoft }}>{saving ? "저장 중…" : "모든 필드는 변경 즉시(포커스를 벗어나면) 저장돼요."}</span>
+          <span style={{ fontSize: 10, color: T.inkSoft }}>{saving ? "저장 중…" : "모든 필드는 변경 즉시(포커스 이동 시) 저장"}</span>
           {!isNew && <button onClick={delLesson} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
         </div>
       </div>
@@ -23001,9 +22998,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
       let text = null;
       if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
       else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
-      if (!text) { setPcErr("이미지에서 체스판이나 기보를 인식하지 못했어요."); return; }
+      if (!text) { setPcErr("이미지에서 체스판이나 기보를 인식하지 못함"); return; }
       setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
-    } catch (e) { setPcErr((e && e.message) || "이미지 스캔에 실패했어요."); }
+    } catch (e) { setPcErr((e && e.message) || "이미지 스캔 실패"); }
     finally { setPcScanning(false); setPcScanProgress(0); }
   };
   const resetPuzzleCreate = () => {
@@ -23035,25 +23032,25 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   const parsePcInput = (override) => {
     const raw = (override !== undefined ? override : pcInput).trim();
     setPcErr(""); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcExisting(null);
-    if (!raw) { setPcErr("PGN 또는 FEN을 입력하세요."); return; }
+    if (!raw) { setPcErr("PGN 또는 FEN 입력 필요"); return; }
     // (사용자 요청) PGN/FEN 기보로 인식되지 않는 입력은 사유와 무관하게 항상 같은 문구("잘못된
     // 기보 형식입니다.")로 안내하고, pcParsed를 세우지 않아(2단계는 pcParsed가 있어야만 열림) 2단계로
     // 넘어가지 못하게 막는다.
     if (looksLikeFen(raw)) {
       const fenRoot = parseFenFull(raw);
-      if (!fenRoot) { setPcErr("잘못된 기보 형식입니다."); return; }
+      if (!fenRoot) { setPcErr("잘못된 기보 형식"); return; }
       setPcParsed({ kind: "fen", fenRoot, raw });
       return;
     }
     const moves = parsePgnMoves(raw);
-    if (!moves.length) { setPcErr("잘못된 기보 형식입니다."); return; }
+    if (!moves.length) { setPcErr("잘못된 기보 형식"); return; }
     let board = startBoard(), ok = true;
     for (let i = 0; i < moves.length; i++) {
       const color = i % 2 === 0 ? "w" : "b";
       if (!sanSrc(board, moves[i], color)) { ok = false; break; }
       board = applySan(board, moves[i], color);
     }
-    if (!ok) { setPcErr("잘못된 기보 형식입니다."); return; }
+    if (!ok) { setPcErr("잘못된 기보 형식"); return; }
     setPcParsed({ kind: "pgn", sans: moves, raw });
   };
   // (사용자 요청) PGN이 확인되면 유형 버튼을 누르길 기다리지 않고 곧바로 전체 기보를 채점한다.
@@ -23063,7 +23060,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     setPcAnalyzing(true); setPcAnalyzeProgress(0); setPcAnalyzeErr(""); setPcAnalyzeResult(null);
     analyzeGame(pcParsed.sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setPcAnalyzeProgress(p); }, REVIEW_MOVETIME_MS)
       .then((r) => { if (!cancelled) setPcAnalyzeResult(r); })
-      .catch(() => { if (!cancelled) setPcAnalyzeErr("기보 채점에 실패했어요. 잠시 후 다시 시도해주세요."); })
+      .catch(() => { if (!cancelled) setPcAnalyzeErr("기보 채점 실패. 잠시 후 다시 시도"); })
       .finally(() => { if (!cancelled) setPcAnalyzing(false); });
     return () => { cancelled = true; };
   }, [pcParsed, engine && engine.status]);
@@ -23099,7 +23096,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
   const runPcGenerate = async (theme, setupSans, mistakeSan, fenRoot) => {
     setPcGen(null); setPcGenErr(""); setPcGenProgress(0);
-    if (!engine || engine.status !== "ready") { setPcGenErr("엔진이 아직 준비되지 않았어요."); return; }
+    if (!engine || engine.status !== "ready") { setPcGenErr("엔진 준비 중"); return; }
     setPcGenerating(true);
     const onProgress = (p) => setPcGenProgress(p);
     try {
@@ -23114,9 +23111,9 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
         // 실수 응징하기/우위 점하기는 "그 수(실수)가 이미 두어진 뒤" 포지션부터 트리를 만든다.
         gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts(theme), onProgress);
       }
-      if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr("이 포지션/수순에서는 뚜렷한 전술 라인을 찾지 못했어요. 다른 PGN·FEN이나 유형으로 시도해 보세요."); return; }
+      if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr("뚜렷한 전술 라인 없음. 다른 PGN·FEN이나 유형으로 시도"); return; }
       setPcGen(gen);
-    } catch { setPcGenErr("퍼즐 생성에 실패했어요. 잠시 후 다시 시도해주세요."); }
+    } catch { setPcGenErr("퍼즐 생성 실패. 잠시 후 다시 시도"); }
     finally { setPcGenerating(false); }
   };
   // FEN 모드 — 유형을 고르면(고를 수 있는 후보 목록이 없으므로) 곧바로 그 포지션 자체로 생성한다.
@@ -23511,19 +23508,19 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
     if (isDateInput) {
       const m = numInput.match(/^(\d{4})(\d{2})(\d{2})$/);
       const mm = m ? +m[2] : 0, dd = m ? +m[3] : 0;
-      if (!m || mm < 1 || mm > 12 || dd < 1 || dd > 31) { setNumMsg("날짜는 YYYYMMDD 형식으로 입력하세요(예: 20260729)."); return; }
+      if (!m || mm < 1 || mm > 12 || dd < 1 || dd > 31) { setNumMsg("날짜는 YYYYMMDD 형식 (예: 20260729)"); return; }
       const dateStr = m[1] + "-" + m[2] + "-" + m[3];
-      if (dateStr > todayStr()) { setNumMsg("아직 오지 않은 날짜예요."); return; }
+      if (dateStr > todayStr()) { setNumMsg("아직 오지 않은 날짜"); return; }
       setNumMsg("불러오는 중…");
       const pz = await resolveDailyPuzzleCached(dateStr, engine);
-      if (pz) { setNumMsg(""); setNumInput(""); setActive(pz); } else setNumMsg(dateStr + " 날짜의 일일 퍼즐을 찾을 수 없습니다.");
+      if (pz) { setNumMsg(""); setNumInput(""); setActive(pz); } else setNumMsg(dateStr + " 일일 퍼즐 없음");
       return;
     }
     const n = parseInt(numInput, 10);
-    if (!Number.isFinite(n)) { setNumMsg("번호를 입력하세요."); return; }
+    if (!Number.isFinite(n)) { setNumMsg("번호 입력 필요"); return; }
     let hit = puzzles.find((p) => puzzleNo(p.id) === n);
     if (!hit) { setNumMsg("불러오는 중…"); const d = await puzzleFetch(n); if (d) hit = d; }
-    if (hit) { setNumMsg(""); setNumInput(""); setActive(hit); } else setNumMsg("#" + n + " 번호의 퍼즐을 찾을 수 없습니다.");
+    if (hit) { setNumMsg(""); setNumInput(""); setActive(hit); } else setNumMsg("#" + n + " 번호의 퍼즐 없음");
   };
   return (
     <div>
@@ -23542,8 +23539,8 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
         <button onClick={() => setPuzzleMode("solve")} className="press" style={{ padding: "7px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "solve" ? T.ebony2 : "transparent", color: puzzleMode === "solve" ? T.brassHi : T.inkSoft }}>퍼즐 풀기</button>
         {/* (사용자 요청) 로그인하지 않은 상태에서는 퍼즐 만들기 기능 자체를 쓸 수 없게 막는다 — 만든
             퍼즐은 myUid를 제작자로 기록해 공유되므로, 로그인 없이는 애초에 의미가 없다. */}
-        <button onClick={() => myUid && setPuzzleMode("create")} disabled={!myUid} title={!myUid ? "로그인 후 이용할 수 있어요" : undefined} className="press" style={{ padding: "7px 16px", borderRadius: 7, border: "none", cursor: myUid ? "pointer" : "default", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: !myUid ? "rgba(244,238,226,.35)" : puzzleMode === "create" ? T.brassHi : T.inkSoft }}>퍼즐 만들기</button>
-        {!myUid && <span style={{ fontSize: 10, color: T.inkSoft, padding: "0 8px" }}>로그인 후 이용할 수 있어요</span>}
+        <button onClick={() => myUid && setPuzzleMode("create")} disabled={!myUid} title={!myUid ? "로그인 후 이용 가능" : undefined} className="press" style={{ padding: "7px 16px", borderRadius: 7, border: "none", cursor: myUid ? "pointer" : "default", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: !myUid ? "rgba(244,238,226,.35)" : puzzleMode === "create" ? T.brassHi : T.inkSoft }}>퍼즐 만들기</button>
+        {!myUid && <span style={{ fontSize: 10, color: T.inkSoft, padding: "0 8px" }}>로그인 후 이용 가능</span>}
       </div>
       {puzzleMode === "create" && (
         <div style={{ marginBottom: 16 }}>
@@ -23554,7 +23551,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
               placeholder={"예: 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 ...(다음 단계에서 유형에 맞는 수를 골라요)\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}
               style={{ width: "100%", boxSizing: "border-box", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT }} />
             {pcErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pcErr}</div>}
-            {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션이 확인됐어요 — 이 위치 자체가 퍼즐 시작점이 돼요." : "기보가 확인됐어요(" + pcParsed.sans.length + "수) — 아래에서 퍼즐 유형을 고르면 그 유형에 맞는 수를 고를 수 있어요."}</div>}
+            {pcParsed && <div style={{ fontSize: 11.5, color: T.best, marginTop: 6, fontWeight: 700 }}>{pcParsed.kind === "fen" ? "FEN 포지션 확인. 이 위치가 퍼즐 시작점" : "기보가 확인됐어요(" + pcParsed.sans.length + "수). 아래에서 퍼즐 유형을 고르면 그에 맞는 수 선택 가능"}</div>}
             {/* (사용자 요청) "확인" 버튼을 박스 우하단에 두고, 그 왼쪽에 이미지 스캔 버튼을 둔다 —
                 체스판 사진이나 PGN/FEN 텍스트 사진을 스캔하면 입력 박스가 채워지고, 그대로 "확인"을
                 눌러 검증한다. */}
@@ -23628,7 +23625,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                           <span style={{ fontSize: 10.5, color: T.inkSoft }}>{qualifying.length}개</span>
                         </div>
                         {qualifying.length === 0 ? (
-                          <div style={{ fontSize: 11, color: T.inkSoft }}>이 기보에는 "{kinds.map((kk) => QLABEL[kk]).join("·")}"로 채점된 수가 없어요.</div>
+                          <div style={{ fontSize: 11, color: T.inkSoft }}>이 기보에는 "{kinds.map((kk) => QLABEL[kk]).join("·")}" 등급의 수 없음</div>
                         ) : (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                             {qualifying.map((m) => (
@@ -23646,13 +23643,13 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
                   })}
                 </>
               )}
-              {pcGenerating && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 10 }}>전술 라인을 찾는 중...</div>}
+              {pcGenerating && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 10 }}>전술 라인 검색 중…</div>}
               {pcGenErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 10 }}>{pcGenErr}</div>}
               {/* (v0.4.4 개편, 사용자 요청) 이미 같은 포지션의 퍼즐이 있으면(누가 만들었는지와 함께)
                   여기서 바로 알려준다 — 아래 3·4단계(라인 생성·공개 설정)는 필요 없으므로 건너뛴다. */}
               {pcExisting && (
                 <div style={{ marginTop: 10, padding: "10px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass, color: T.ink, fontWeight: 700, fontSize: 12.5 }}>
-                  {pcExisting.creatorUsername ? "@" + pcExisting.creatorUsername + "님이 이미 이 퍼즐을 만들었어요!" : "이미 이 퍼즐이 존재해요!"}
+                  {pcExisting.creatorUsername ? "@" + pcExisting.creatorUsername + "님이 이미 만든 퍼즐" : "이미 존재하는 퍼즐"}
                 </div>
               )}
             </div>
@@ -23663,7 +23660,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           {!pcExisting && pcTheme && pcGen && (
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>3. 퍼즐 라인 편집 (생성자 권한)</div>
-              <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{pcGen.lines.length}개의 라인을 찾았어요 — 아래에서 미리 확인하고, 만든 뒤에도 이 퍼즐을 열어 라인을 추가·삭제할 수 있어요(1시간에 한 번).</div>
+              <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{pcGen.lines.length}개 라인 발견. 아래에서 미리 확인 가능, 생성 후에도 라인 추가·삭제 가능 (1시간에 한 번)</div>
               {/* (버그 수정, 사용자 제보) 기물 희생하기 테마는 선택한 수 자체가 풀이자가 찾아야 할
                   첫 수(firstSan)라 시작 포지션을 그 수 이전(직전 수까지)으로 둬야 하는데, 이 미리보기가
                   다른 테마와 똑같이 선택한 수까지 이미 둔 위치를 시작 포지션으로 보여주고 있었다. */}
@@ -23683,7 +23680,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>4. 공개 설정</div>
               <div className="flex gap-2">
-                {[[true, "공개", "다른 사람도 이 퍼즐을 보고 풀 수 있어요"], [false, "비공개", "나만 보고 풀 수 있어요"]].map(([v, lb, desc]) => (
+                {[[true, "공개", "다른 사람도 보고 풀 수 있음"], [false, "비공개", "나만 보고 풀 수 있음"]].map(([v, lb, desc]) => (
                   <button key={String(v)} onClick={() => setPcPublic(v)} className="press" style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: "1px solid " + (pcPublic === v ? T.brass : "#C9B58C"), background: pcPublic === v ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcPublic === v ? "#241509" : T.ink, cursor: "pointer", textAlign: "left" }}>
                     <span style={{ display: "block", fontWeight: 800, fontSize: 12.5 }}>{lb}</span>
                     <span style={{ display: "block", fontSize: 10, marginTop: 2, opacity: 0.85 }}>{desc}</span>
@@ -23877,7 +23874,7 @@ function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved,
           통합한다. 기본 정렬("추천순")은 위 puzzleExposureScore(난이도 적합도·약점 보완도·테마
           적합도 가중합)가 높은 순 — 예전 "🔥 추천 퍼즐" 섹션이 하던 발견 기능(인기·리포스트 퍼즐)은
           discoveredPuzzles로 이 피드의 후보 풀에 그대로 합류돼 있다. */}
-      {feed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>이 조건에 맞는 퍼즐이 아직 없어요.</div>
+      {feed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>조건에 맞는 퍼즐 없음</div>
         : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
             <AnimatePresence mode="popLayout">
               {/* (버그 수정) 이 카드의 "✕" 삭제 버튼이 소유자 확인·확인 다이얼로그 없이 모든 로그인
@@ -23913,7 +23910,7 @@ function ValidatedMoveInput({ value, onCommit, board, color, placeholder, style 
       <input value={text} onChange={(e) => { setText(e.target.value); if (err) setErr(false); }} onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
         placeholder={placeholder} style={{ ...style, border: err ? "1px solid " + T.blunder : style.border }} />
-      {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 2 }}>이 위치에서 둘 수 없는 수예요.</div>}
+      {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 2 }}>이 위치에서 둘 수 없는 수</div>}
     </div>
   );
 }
@@ -24004,10 +24001,10 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
         <span>소개</span>
         <span style={{ fontWeight: 600, color: T.inkSoft, fontSize: 11 }}>{(profile.bio || "").length}/{PROFILE_BIO_MAX_LEN}</span>
       </div>
-      <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder="예: 시칠리안 좋아하는 클럽 플레이어예요" style={field} />
-      <div style={lab}>자주 두는 첫 수 — 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (연동된 chess.com 기록으로 자동 입력됨 — 직접 수정 가능)</span>}</div>
+      <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder="예: 시칠리안을 좋아하는 클럽 플레이어" style={field} />
+      <div style={lab}>자주 두는 첫 수: 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (chess.com 기록으로 자동 입력, 직접 수정 가능)</span>}</div>
       <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: SITE_FONT }} />
-      <div style={lab}>자주 두는 첫 수 — 흑 (백의 첫 수별, 생략 가능)</div>
+      <div style={lab}>자주 두는 첫 수: 흑 (백의 첫 수별, 생략 가능)</div>
       <div className="grid sm:grid-cols-2 gap-2">
         {["e4", "d4", "c4", "Nf3"].map((w) => (
           <div key={w} className="flex items-center gap-2">
@@ -24243,7 +24240,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   // 걸린다 — 아직 로딩 중인데 이 시간 규정의 대국을 하나도 못 찾았다고 "그래프가 안 그려지는 버그"로
   // 오해하기 쉽다(예: 최근엔 안 둔 시간 규정이 사실은 더 최근 달에 있는데 아직 그 달을 못 받은 경우).
   // 로딩 중엔 아예 숨기는 대신 "불러오는 중" 안내를 보여준다.
-  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>대국 기록을 불러오는 중이에요…</div> : null;
+  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>대국 기록 로드 중…</div> : null;
   const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
   const cutoff = Date.now() / 1000 - periodDef.days * 86400;
   const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
@@ -24277,7 +24274,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   };
   const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
   const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
-  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록을 더 불러오는 중이에요…" : "이 기간엔 대국이 부족해요."}</div>;
+  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록 추가 로드 중…" : "이 기간 대국 부족"}</div>;
   let body;
   if (isAll) {
     // (기능) 이 기간에 그 시간 규정 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재
@@ -24597,7 +24594,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
   useEffect(() => { setRecentPage(0); }, [username, timeFilter]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>기보를 불러오는 중…</p>;
-  if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보를 불러오지 못했습니다. 계정을 확인하세요.</p>;
+  if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보 로드 실패. 계정 확인 필요</p>;
   if (!ready) return null;
 
   // (사용자 요청) 유산(Legacy) 관리 화면에서 재사용할 때(onSelectGame이 있을 때)는 프로필 헤더·전적·
@@ -24658,7 +24655,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
         )}
       </div>
       {/* 전적 */}
-      {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
+      {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "조건에 맞는 리뷰 대국 없음" : "이 시간 규정의 대국 없음"}</p>}
       {!recentOnly && overall && (
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -24675,7 +24672,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
           </div>
         </div>
       )}
-      {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "이 조건에서 리뷰한 대국이 없어요." : "이 시간 규정의 대국이 없어요."}</p>}
+      {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "조건에 맞는 리뷰 대국 없음" : "이 시간 규정의 대국 없음"}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
@@ -24747,7 +24744,7 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
               <div className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 6 }}><Target size={13} /> 약점 리포트</div>
               {weaknessLoading ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>리뷰 기록을 모으는 중…</p>
                 : weaknessReport.openings.length === 0
-                ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>같은 오프닝을 2판 이상 리뷰해야 경향을 알 수 있어요 — 대국을 더 리뷰해 보세요.</p>
+                ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>같은 오프닝을 2판 이상 리뷰해야 경향 확인 가능</p>
                 : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {weaknessReport.openings.slice(0, 3).map((o) => (
@@ -24758,14 +24755,14 @@ function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOp
                     ))}
                     {(weaknessReport.kindTotals.blunder || weaknessReport.kindTotals.mistake) > 0 && (
                       <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>
-                        최근 리뷰한 {weaknessReport.gamesUsed}판 기준 — 블런더 {weaknessReport.kindTotals.blunder || 0}회 · 실수 {weaknessReport.kindTotals.mistake || 0}회
+                        최근 리뷰한 {weaknessReport.gamesUsed}판 기준: 블런더 {weaknessReport.kindTotals.blunder || 0}회 · 실수 {weaknessReport.kindTotals.mistake || 0}회
                       </p>
                     )}
                   </div>
                 )}
             </div>
           )}
-          {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국을 찾지 못했습니다.</p>}
+          {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국 없음</p>}
         </>
       )}
     </div>
@@ -24942,7 +24939,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
         // 섹션으로 바로 이어지도록 편집 버튼을 함께 둔다.
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 14px", lineHeight: 1.6 }}>chess.com 계정을 연동하면 실전 대국 통계를 여기서 볼 수 있어요.</p>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 14px", lineHeight: 1.6 }}>chess.com 계정을 연동하면 실전 대국 통계 표시</p>
           <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12.5, border: "none", cursor: "pointer" }}>연동하기</button>
         </div>
       )}
@@ -24954,14 +24951,14 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             {/* chess.com 연동 — 기존 설정 탭 블록에서 모달로 이동 */}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
               <label className="flex items-center" style={{ gap: 6, fontSize: 13, fontWeight: 700, color: T.ink }}><ChesscomLogo height={19} /> 계정</label>
-              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>최근 기보를 받아 집중 분석 모드에서 수별 전적·승률과 '오프닝 실수'를 분석합니다.</p>
+              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>최근 기보로 수별 전적·승률과 오프닝 실수를 집중 분석 모드에서 분석</p>
               {linked ? (
                 <div>
                   <div className="flex items-center gap-2">
                     <button disabled className="flex items-center justify-center gap-2" style={{ flex: 1, padding: "10px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, border: "none", cursor: "default" }}><Check size={16} /> 연동 완료 · {profile.chesscom}{chesscomStatus === "loading" ? " (불러오는 중…)" : ""}</button>
-                    <button onClick={changeChesscom} disabled={chesscomDaysLeft > 0} title={chesscomDaysLeft > 0 ? chesscomDaysLeft + "일 후 변경 가능(어뷰징 방지)" : undefined} className="press" style={{ padding: "10px 13px", borderRadius: 9, background: "transparent", color: chesscomDaysLeft > 0 ? T.inkSoft : T.ink, fontWeight: 700, border: "1px solid #C9B58C", cursor: chesscomDaysLeft > 0 ? "not-allowed" : "pointer", opacity: chesscomDaysLeft > 0 ? 0.55 : 1, whiteSpace: "nowrap" }}>계정 변경</button>
+                    <button onClick={changeChesscom} disabled={chesscomDaysLeft > 0} title={chesscomDaysLeft > 0 ? chesscomDaysLeft + "일 후 변경 가능" : undefined} className="press" style={{ padding: "10px 13px", borderRadius: 9, background: "transparent", color: chesscomDaysLeft > 0 ? T.inkSoft : T.ink, fontWeight: 700, border: "1px solid #C9B58C", cursor: chesscomDaysLeft > 0 ? "not-allowed" : "pointer", opacity: chesscomDaysLeft > 0 ? 0.55 : 1, whiteSpace: "nowrap" }}>계정 변경</button>
                   </div>
-                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>어뷰징 방지를 위해 계정 변경은 30일에 한 번만 가능해요 · {chesscomDaysLeft}일 후 변경할 수 있어요</p>}
+                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>계정 변경은 30일에 한 번만 가능 · {chesscomDaysLeft}일 후 변경 가능</p>}
                 </div>
               ) : (
                 <div className="flex gap-2">
@@ -26078,11 +26075,11 @@ function AnnouncementModal({ onClose }) {
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
         </div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: SITE_FONT }}>v{latest.version}</b>({latest.date})에서 이런 점이 달라졌어요.</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: SITE_FONT }}>v{latest.version}</b>({latest.date}) 변경 사항</p>
         {/* (v0.1.2 기능) 소개 페이지(/about)의 버전 기록 파트로 이동 — 2페이지가 최신 버전(카테고리별로
             나뉜 더 자세한 설명)이라 ?page=2로 곧장 연다. */}
         <a href="/about?page=2" target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, color: T.brass, textDecoration: "none", width: "fit-content" }}>
-          업데이트 내역 자세히 보기 <ChevronRight size={13} />
+          전체 업데이트 내역 <ChevronRight size={13} />
         </a>
         <div style={{ maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
           {CHANGELOG.map((v, i) => (
@@ -26195,7 +26192,7 @@ function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLea
                   <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
-                  <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + " 포지션이에요 — 최선의 수를 찾아보세요!"} ply={0} mascot="kokoa" emotion="wink" stacked />
+                  <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + "  포지션. 최선의 수 찾기"} ply={0} mascot="kokoa" emotion="wink" stacked />
                 </div>
                 {playBtn}
               </div>
@@ -26344,11 +26341,11 @@ function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze, onClo
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어!</span>
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어</span>
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>일일 퀘스트 5개를 모두 완료해서<br />완료 보상까지 받았어요.</p>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>일일 퀘스트 5개 모두 완료<br />완료 보상 획득</p>
           {/* (디자인) 보상 배지는 카드가 자리 잡은 뒤 살짝 늦게, 하나씩 튕기며 등장하고(questBadgePop),
               숫자는 0에서 목표치까지 빠르게 카운트업된다 — 둘 다 게임 보상 화면에서 흔히 보이는 연출. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
@@ -26415,15 +26412,15 @@ function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>새로운 칭호 획득!</span>
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>새 칭호 획득</span>
             <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam.label} 오프닝을 충분히 연습해서<br />새 칭호를 얻었어요.</p>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam.label} 오프닝을 충분히 연습해서<br />새 칭호 획득</p>
           <div style={{ padding: "0 6px", marginBottom: 10 }}>
             <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
           </div>
-          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? "지금 장착 중인 칭호예요." : "칭호를 눌러 바로 장착할 수 있어요."}</p>
+          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? "현재 장착 중인 칭호" : "칭호를 눌러 바로 장착"}</p>
           <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
             <span className="gm-board-shine" style={{ borderRadius: 11 }} />
             <Check size={14} strokeWidth={3} />확인
@@ -26555,7 +26552,7 @@ function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, o
             {phase === 1 && (
               <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
                 style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
-                {dWr == null ? "첫 대국!" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
+                {dWr == null ? "첫 대국" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
               </motion.span>
             )}
           </AnimatePresence>
@@ -26578,7 +26575,7 @@ const FAQ_ITEMS = [];
 function openInquiryEmail(user) {
   const subject = "[OpenChess 문의]";
   const body = [
-    "문의 내용을 아래에 자세히 적어주세요.",
+    "문의 내용을 아래에 적기",
     "",
     "─────────────",
     "아이디: " + (user || ""),
@@ -26614,14 +26611,14 @@ function InquiryModal({ onClose, user }) {
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
         <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>문의 / FAQ</span></div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>자주 묻는 질문을 먼저 확인해 보시고, 해결되지 않으면 아래 문의하기 버튼으로 이메일을 보내주세요.</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>자주 묻는 질문을 먼저 확인. 해결되지 않으면 문의하기 버튼으로 이메일 발송</p>
         <div style={{ marginBottom: 14 }}>
           {FAQ_ITEMS.length === 0
-            ? <p style={{ fontSize: 12, color: T.inkSoft }}>아직 등록된 FAQ가 없습니다.</p>
+            ? <p style={{ fontSize: 12, color: T.inkSoft }}>등록된 FAQ 없음</p>
             : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
         </div>
         <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><MessageCircle size={16} /> 문의하기</button>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>기본 메일 앱의 작성 화면으로 이동합니다 (openchesskr@gmail.com)</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>기본 메일 앱 작성 화면으로 이동 (openchesskr@gmail.com)</p>
       </div>
     </div>
   );
@@ -26658,7 +26655,7 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 재화·티어·경험치 설정</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 재화·티어·경험치 설정</div>
       <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
         지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)}
       </div>
@@ -26748,7 +26745,7 @@ function DailyPuzzleDevPanel({ card }) {
   return (
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>일일 퍼즐 (개발자)</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>커뮤니티 인기 퍼즐 중 매일 밤 KST 23:50에 자동으로 확정되는 다음 날 몫과, 미래 날짜에 직접 지정할 퍼즐을 관리해요.</p>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>매일 밤 KST 23:50에 커뮤니티 인기 퍼즐로 자동 확정되는 다음 날 몫과, 미래 날짜 지정 퍼즐 관리</p>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>최근 확정 내역</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
         {(picks || []).map((p) => (
@@ -26756,19 +26753,19 @@ function DailyPuzzleDevPanel({ card }) {
             <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>퍼즐 #{p.puzzle_no} · 인기 점수 {Number(p.score || 0).toFixed(1)}</span>
           </div>
         ))}
-        {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>아직 확정된 내역이 없어요(자정 전 자동 실행을 기다리거나, 아래에서 지금 바로 실행해볼 수 있어요).</span>}
+        {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>확정 내역 없음 (자정 전 자동 실행 대기, 또는 아래에서 바로 실행)</span>}
       </div>
       {pickErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pickErr}</p>}
-      <button onClick={runPickNow} disabled={pickBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: pickBusy ? .6 : 1 }}>지금 바로 다음 날 몫 선정 실행(테스트용)</button>
+      <button onClick={runPickNow} disabled={pickBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: pickBusy ? .6 : 1 }}>다음 날 몫 선정 바로 실행 (테스트용)</button>
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>미래 날짜 퍼즐 직접 지정 (PGN)</div>
       <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <input type="date" value={pzDate} onChange={(e) => setPzDate(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
         <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder="오프닝 이름(선택)" style={{ ...inputStyle, flex: "1 1 130px" }} />
       </div>
-      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder="PGN 수순 붙여넣기 — 마지막 수가 상대의 실수(퍼즐의 시작)여야 해요." rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
-      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? pzMoves.length + "수 인식됨" : "인식할 수 있는 수순이 없어요") : ""}</p>
+      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder="PGN 수순 붙여넣기 (마지막 수가 상대의 실수, 퍼즐 시작)" rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
+      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? pzMoves.length + "수 인식됨" : "인식할 수 있는 수순 없음") : ""}</p>
       {pzErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pzErr}</p>}
-      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>저장했어요.</p>}
+      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>저장됨</p>}
       <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>퍼즐 저장</button>
     </div>
   );
@@ -26854,19 +26851,19 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 전체 퍼즐 일괄 재생성</div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>모든 퍼즐을 최신 라인 종료 규칙으로 다시 만듭니다. 이 창을 닫거나 새로고침하면 멈추고, 다시 시작하면 처음부터 다시 순회합니다. 퍼즐 수에 따라 오래 걸릴 수 있어요 — 기존 라인 태그가 바뀌어 유저의 라인별 풀이 기록과 안 맞을 수 있습니다.</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 전체 퍼즐 일괄 재생성</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>모든 퍼즐을 최신 라인 종료 규칙으로 다시 생성. 창을 닫거나 새로고침하면 중단되고, 다시 시작하면 처음부터 순회. 퍼즐 수에 따라 오래 걸릴 수 있음. 기존 라인 태그가 바뀌어 유저의 라인별 풀이 기록과 맞지 않을 수 있음</p>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         {running
           ? <button onClick={stop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
           : <button onClick={start} disabled={!engine || engine.status !== "ready"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", opacity: (!engine || engine.status !== "ready") ? .5 : 1 }}>{status === "idle" ? "전체 재생성 시작" : "처음부터 다시 시작"}</button>}
-        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>엔진이 준비되면 시작할 수 있어요.</span> : null}
+        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>엔진 준비 후 시작 가능</span> : null}
       </div>
       {status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {status === "listing" ? "퍼즐 목록을 불러오는 중…" : status === "done" ? "완료" : status === "stopped" ? "중단됨" : "진행 중…"}
-            {total > 0 && " — " + doneCount + " / " + total + (curNo != null && running ? " (지금 #" + curNo + ")" : "")}
+            {status === "listing" ? "퍼즐 목록 로드 중…" : status === "done" ? "완료" : status === "stopped" ? "중단됨" : "진행 중…"}
+            {total > 0 && " · " + doneCount + " / " + total + (curNo != null && running ? " (지금 #" + curNo + ")" : "")}
           </div>
           {total > 0 && (
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
@@ -26878,7 +26875,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
       {failed.length > 0 && (
         <div style={{ maxHeight: 160, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>실패 {failed.length}건</div>
-          {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no} — {f.error}</div>)}
+          {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no}: {f.error}</div>)}
         </div>
       )}
     </div>
@@ -27014,22 +27011,22 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       const { overridesTouched } = await regenerateOnePuzzle(engine, parsedNo);
       if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
       setCtlMsg({ ok: true, text: "#" + parsedNo + " 재생성 완료" });
-    } catch (e) { setCtlMsg({ ok: false, text: "#" + parsedNo + " 재생성 실패 — " + ((e && e.message) || String(e)) }); }
+    } catch (e) { setCtlMsg({ ok: false, text: "#" + parsedNo + " 재생성 실패: " + ((e && e.message) || String(e)) }); }
     setCtlBusy(false);
   };
   const doDeleteOne = async () => {
     if (!validNo || ctlBusy) return;
     setCtlBusy(true); setCtlMsg(null);
     const ok = await puzzleDeleteRemote(parsedNo);
-    setCtlMsg(ok ? { ok: true, text: "#" + parsedNo + " 삭제 완료" } : { ok: false, text: "#" + parsedNo + " 삭제 실패(존재하지 않거나 권한 없음)" });
+    setCtlMsg(ok ? { ok: true, text: "#" + parsedNo + " 삭제 완료" } : { ok: false, text: "#" + parsedNo + " 삭제 실패 (없거나 권한 없음)" });
     setCtlBusy(false);
   };
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   const darkBtnStyle = { padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자 — 퍼즐 컨트롤 센터</div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>손상된(라인이 하나도 없어 아무도 풀 수 없는) 퍼즐을 찾아 한 번에 지우거나, 특정 번호 하나를 직접 재생성·삭제할 수 있어요.</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 퍼즐 컨트롤 센터</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>손상된 퍼즐(라인 없음)을 찾아 한 번에 삭제, 특정 번호는 직접 재생성·삭제</p>
 
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>손상된 퍼즐 검사·말소</div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
@@ -27043,11 +27040,11 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       {status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {status === "listing" ? "퍼즐 목록을 불러오는 중…"
-              : status === "scanning" ? "검사 중… — " + checked + " / " + total + " (손상 " + corrupted.length + "건 발견)"
-              : status === "scanned" ? (corrupted.length ? "검사 완료 — 손상된 퍼즐 " + corrupted.length + "개 발견" : "검사 완료 — 손상된 퍼즐 없음")
-              : status === "deleting" ? "말소 중… — " + deleteDone + " / " + corrupted.length
-              : status === "deleted" ? "말소 완료 — " + deleteDone + "개 지움" + (deleteFailed.length ? " (실패 " + deleteFailed.length + "건)" : "")
+            {status === "listing" ? "퍼즐 목록 로드 중…"
+              : status === "scanning" ? "검사 중… " + checked + " / " + total + " (손상 " + corrupted.length + "건 발견)"
+              : status === "scanned" ? (corrupted.length ? "검사 완료: 손상된 퍼즐 " + corrupted.length + "개 발견" : "검사 완료: 손상된 퍼즐 없음")
+              : status === "deleting" ? "삭제 중… " + deleteDone + " / " + corrupted.length
+              : status === "deleted" ? "삭제 완료: " + deleteDone + "개 지움" + (deleteFailed.length ? " (실패 " + deleteFailed.length + "건)" : "")
               : status === "stopped" ? "중단됨" : ""}
           </div>
           {(scanning || deleting) && total > 0 && (
@@ -27071,7 +27068,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
       <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>중복 퍼즐 검사·정리</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>같은 포지션에서 시작하는 퍼즐이 서로 다른 번호로 여러 개 있으면, 풀이 수가 가장 많은 하나만 남기고 나머지를 지워요.</p>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>같은 포지션의 중복 퍼즐은 풀이 수가 가장 많은 하나만 남기고 삭제</p>
       <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
         {dedupScanning || dedupDeleting
           ? <button onClick={dedupStop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
@@ -27083,11 +27080,11 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       {dedup.status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {dedup.status === "listing" ? "퍼즐 목록을 불러오는 중…"
-              : dedup.status === "scanning" ? "검사 중… — " + dedup.checked + " / " + dedup.total + " (중복 그룹 " + dedup.groups.length + "개 발견)"
-              : dedup.status === "scanned" ? (dedupRemoveCount ? "검사 완료 — 중복 그룹 " + dedup.groups.length + "개(정리 대상 " + dedupRemoveCount + "개)" : "검사 완료 — 중복 퍼즐 없음")
-              : dedup.status === "deleting" ? "정리 중… — " + dedup.deleteDone + " / " + dedup.deleteTarget
-              : dedup.status === "deleted" ? "정리 완료 — " + dedup.deleteDone + "개 지움" + (dedup.deleteFailed.length ? " (실패 " + dedup.deleteFailed.length + "건)" : "")
+            {dedup.status === "listing" ? "퍼즐 목록 로드 중…"
+              : dedup.status === "scanning" ? "검사 중… " + dedup.checked + " / " + dedup.total + " (중복 그룹 " + dedup.groups.length + "개 발견)"
+              : dedup.status === "scanned" ? (dedupRemoveCount ? "검사 완료: 중복 그룹 " + dedup.groups.length + "개(정리 대상 " + dedupRemoveCount + "개)" : "검사 완료: 중복 퍼즐 없음")
+              : dedup.status === "deleting" ? "정리 중… " + dedup.deleteDone + " / " + dedup.deleteTarget
+              : dedup.status === "deleted" ? "정리 완료: " + dedup.deleteDone + "개 지움" + (dedup.deleteFailed.length ? " (실패 " + dedup.deleteFailed.length + "건)" : "")
               : dedup.status === "stopped" ? "중단됨" : ""}
           </div>
           {(dedupScanning || dedupDeleting) && (dedup.total > 0 || dedup.deleteTarget > 0) && (
@@ -27116,7 +27113,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? "처리 중…" : "재생성"}</button>
         <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>삭제</button>
       </div>
-      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>재생성은 엔진이 준비돼야 할 수 있어요(삭제는 바로 가능해요).</p>}
+      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>재생성은 엔진 준비 후 가능 (삭제는 바로 가능)</p>}
       {ctlMsg && <p style={{ fontSize: 11, color: ctlMsg.ok ? T.best : T.blunder, fontWeight: 700 }}>{ctlMsg.text}</p>}
     </div>
   );
@@ -27180,11 +27177,11 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
   // (UX6) 존재하지 않는 아이디를 공동 개발자로 등록할 수 없도록, 추가 전 실제 계정 존재 여부를 확인한다.
   const addCodev = async () => {
     const id = codevId.trim();
-    if (!ALNUM.test(id) || id === DEV_ACCOUNT) { setCodevErr("아이디 형식이 올바르지 않습니다."); return; }
+    if (!ALNUM.test(id) || id === DEV_ACCOUNT) { setCodevErr("아이디 형식이 올바르지 않음"); return; }
     setCodevBusy(true); setCodevErr("");
     const found = await userProfile(id);
     setCodevBusy(false);
-    if (!found) { setCodevErr("존재하지 않는 아이디입니다."); return; }
+    if (!found) { setCodevErr("존재하지 않는 아이디"); return; }
     if (!CONTENT.codev.includes(found.username)) CONTENT.codev.push(found.username);
     await bumpContent();
     setCodevId(""); setCodevErr("");
@@ -27204,7 +27201,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       {!user ? (
         <div style={{ ...card, animation: loginShaking ? "lineShake .55s ease 3" : "none" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>계정</div>
-          <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>로그인하면 진도가 계정에 저장됩니다.</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
+          <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>로그인하면 진도가 계정에 저장됨</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
         </div>
       ) : (
         <div style={card}>
@@ -27273,7 +27270,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
             고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
         {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>신경망 파일이 커서(108MB) 회선에 따라 부팅에 몇 분 걸릴 수 있어요.</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요</div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
@@ -27291,7 +27288,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             );
           })}
         </div>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>바꾸면 즉시 새 엔진으로 다시 연결돼요(게임 리뷰에도 똑같이 쓰여요, 이 기기에서만 기억돼요).</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장</p>
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
@@ -27326,7 +27323,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>포지션 변동성 보정</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 포지션의 실수를 더 엄격하게 반영해요</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 포지션의 실수를 더 엄격하게 반영</div>
           </div>
           <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -27339,9 +27336,9 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>퍼즐 설정</div>
         {[
-          { label: "LINE CLEAR 애니메이션", desc: "라인 하나를 클리어할 때 배너를 보여줘요", on: lineClearOn, set: setLineClearOn },
-          { label: "PUZZLE CLEAR 애니메이션", desc: "퍼즐의 모든 라인을 클리어할 때 배너를 보여줘요", on: puzzleClearOn, set: setPuzzleClearOn },
-          { label: "코치 말풍선", desc: "퍼즐을 풀 때 코치 캐릭터의 말풍선을 보여줘요", on: coachBubbleOn, set: setCoachBubbleOn },
+          { label: "LINE CLEAR 애니메이션", desc: "라인 클리어 시 배너 표시", on: lineClearOn, set: setLineClearOn },
+          { label: "PUZZLE CLEAR 애니메이션", desc: "퍼즐의 모든 라인 클리어 시 배너 표시", on: puzzleClearOn, set: setPuzzleClearOn },
+          { label: "코치 말풍선", desc: "퍼즐 풀이 중 코치 말풍선 표시", on: coachBubbleOn, set: setCoachBubbleOn },
         ].map((o, i) => (
           <React.Fragment key={o.label}>
             {i > 0 && <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />}
@@ -27363,7 +27360,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>통제 칸 표시</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸을 보여줘요</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시</div>
           </div>
           <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label="통제 칸 표시" className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -27401,7 +27398,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>수 등급 이펙트</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>탁월한 수·유일한 수·최선의 수를 두면 보드 위에 이펙트를 보여줘요</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시</div>
           </div>
           <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label="수 등급 이펙트" className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -27420,7 +27417,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
           <button onClick={() => onOpenUserProfile && onOpenUserProfile(DEV_ACCOUNT)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22", background: "none", border: "none", padding: 0, cursor: onOpenUserProfile ? "pointer" : "default" }}>{DEV_ACCOUNT}</button>
           <span style={{ fontSize: 11, color: T.inkSoft }}>개발자</span>
         </div>
-        {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>등록된 공동 개발자가 없습니다.</div>
+        {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>등록된 공동 개발자 없음</div>
           : (CONTENT.codev || []).map((id) => (
             <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
@@ -27466,7 +27463,7 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>문의하기</button>
           </div>
         </div>
-        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문을 확인하거나, 이메일로 직접 문의할 수 있어요.</p>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문 확인 또는 이메일 문의</p>
       </div>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
@@ -27481,14 +27478,14 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>개발자 도구</div>
           </div>
-          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? "공동 개발자 모드에서는 임명 권한을 뺀 나머지를 그대로 쓸 수 있어요." : "개발자 전용 도구예요."}</p>
+          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? "공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능" : "개발자 전용 도구"}</p>
 
           {canManageCodev && (
             <>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
               <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
               {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
-              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설을 <b>추가</b>만 할 수 있고 수정·삭제는 불가합니다.</p>
+              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설 <b>추가</b>만 가능. 수정·삭제 불가</p>
               <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
             </>
           )}
@@ -27995,12 +27992,12 @@ function presenceLabel(lastSeenMs) {
 }
 function notifText(n) {
   const p = n.payload || {};
-  if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냈습니다";
-  if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락했습니다";
+  if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냄";
+  if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락함";
   if (n.kind === "title_earned") return "새 칭호 획득: " + (titleLabel(p.titleId) || p.titleId);
-  if (n.kind === "tier_up") return "티어 " + p.tierLabel + "(으)로 승급했습니다!";
+  if (n.kind === "tier_up") return "티어 " + p.tierLabel + " 승급";
   // (v0.5.6, 사용자 요청) 선정 팝업(PuzzleSelectedModal)을 없애고 알림 창에서만 알린다 — 어떤 퍼즐인지 번호까지.
-  if (n.kind === "daily_puzzle_selected") return p.no != null ? "내가 만든 " + josaIGa("퍼즐 #" + p.no) + " 오늘의 퍼즐로 선정됐어요!" : "내가 만든 퍼즐이 오늘의 퍼즐로 선정됐어요!";
+  if (n.kind === "daily_puzzle_selected") return p.no != null ? "내가 만든 " + josaIGa("퍼즐 #" + p.no) + " 오늘의 퍼즐로 선정" : "내 퍼즐이 오늘의 퍼즐로 선정";
   return "알림";
 }
 function notifIcon(kind) {
@@ -28109,7 +28106,7 @@ function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }) {
             <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
             {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
           </div>
-          {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>알림이 없습니다.</div> : (
+          {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>알림 없음</div> : (
             <div>
               <AnimatePresence>
               {items.map((n, i) => { const result = n.payload && n.payload.result; return (
@@ -28127,7 +28124,7 @@ function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }) {
                       </div>
                     ))}
                     {n.kind === "daily_puzzle_selected" && ((n.payload && n.payload.claimed) ? (
-                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: T.best }}>받았어요!</div>
+                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: T.best }}>수령 완료</div>
                     ) : (
                       <button onClick={() => claim(n)} className="press flex items-center gap-1" style={{ marginTop: 6, padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>+{(n.payload && n.payload.reward) || 0} <CoinIcon size={13} /> 받기</button>
                     ))}
@@ -28355,9 +28352,9 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
         const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
         const name = (pub && pub.nickname) || pubUsername || "상대";
         setReqState(status);
-        setInviteMsg(status === "accepted" ? "친구가 되었어요!" : status === "exists" ? "이미 친구이거나 요청을 보냈어요." : "자동으로 친구 요청을 보냈어요.");
-        if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(name + "님에게 친구 요청을 보냈습니다!"); }
-        else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); setReqPopup(name + "님과 친구가 되었어요!"); }
+        setInviteMsg(status === "accepted" ? "친구 추가 완료" : status === "exists" ? "이미 친구이거나 요청함" : "친구 요청을 자동 발송");
+        if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(name + "님에게 친구 요청 발송"); }
+        else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); setReqPopup(name + "님과 친구 추가 완료"); }
       }
     })();
   }, [autoInvite, me, myUid, pubUid, mid]);
@@ -28369,8 +28366,8 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     if (r && r.ok) {
       const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
       const name = (pub && pub.nickname) || pubUsername || "상대";
-      if (status === "pending") setReqPopup(name + "님에게 친구 요청을 보냈습니다!");
-      else if (status === "accepted") setReqPopup(name + "님과 친구가 되었어요!");
+      if (status === "pending") setReqPopup(name + "님에게 친구 요청 발송");
+      else if (status === "accepted") setReqPopup(name + "님과 친구 추가 완료");
       setReqState(status);
       if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
       else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); }
@@ -28403,7 +28400,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
       </div>
       <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
-          <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>이 MID의 유저를 찾을 수 없어요.</p>
+          <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>이 MID의 유저 없음</p>
         ) : !pub ? (
           <p style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>불러오는 중…</p>
         ) : (
@@ -28566,7 +28563,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>
-            {mine ? otherUsername + "님에게 " + what + "을 신청했어요" : otherUsername + "님이 " + what + "을 신청했어요"}
+            {mine ? otherUsername + "님에게 " + what + "신청함" : otherUsername + "님이 " + what + "신청함"}
             <span style={{ display: "block", minHeight: 14, fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{detail}</span>
           </div>
         </div>
@@ -28581,10 +28578,10 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
           )
         ) : (
           canEnter ? (
-            <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락됐어요 — 입장하기</button>
+            <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락됨. 입장하기</button>
           ) : (
             <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
-              {status === "accepted" ? (liveGame ? "끝난 " + (special ? "대결" : "대국") + "이에요." : "수락됐어요.") : status === "declined" ? "거절됐어요." : "취소됐어요."}
+              {status === "accepted" ? (liveGame ? "끝난 " + (special ? "대결" : "대국") : "수락됨") : status === "declined" ? "거절됨" : "취소됨"}
             </div>
           )
         )}
@@ -28595,11 +28592,11 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
 // (v0.5.7 BUG-030) 도전장 신청 실패 문구 — 서버가 알려 준 이유를 사람이 읽을 말로 바꾸고, 모르는 이유면 원문을 괄호로 붙여 제보할 수 있게 한다.
 function inviteFailText(e, what) {
   const m = String((e && e.serverMessage) || "");
-  if (/not friends/.test(m)) return "친구 사이일 때만 " + what + "을 신청할 수 있어요.";
-  if (/auth required/.test(m)) return "로그인이 풀렸어요. 다시 로그인한 뒤 신청해 주세요.";
-  if (/cannot invite self/.test(m)) return "나에게는 신청할 수 없어요.";
-  if (e && (e.code === "PGRST202" || e.code === "PGRST203" || e.code === "42883")) return what + " 신청 기능이 서버에 최신으로 반영되지 않았어요. supabase-setup.sql을 다시 실행해 주세요.";
-  return what + "을 신청하지 못했어요. 잠시 후 다시 시도해 주세요." + (e && (e.code || m) ? " (" + [e.status, e.code, m].filter(Boolean).join(" · ") + ")" : "");
+  if (/not friends/.test(m)) return what + " 신청은 친구 사이에서만 가능";
+  if (/auth required/.test(m)) return "로그인이 만료됨. 다시 로그인 후 신청";
+  if (/cannot invite self/.test(m)) return "나에게는 신청 불가";
+  if (e && (e.code === "PGRST202" || e.code === "PGRST203" || e.code === "42883")) return what + " 신청 기능이 서버에 반영되지 않음. supabase-setup.sql 재실행 필요";
+  return what + " 신청 실패. 잠시 후 다시 시도" + (e && (e.code || m) ? " (" + [e.status, e.code, m].filter(Boolean).join(" · ") + ")" : "");
 }
 // 블라인드 대국 상태(blindMoveToken·deriveBlindGame)는 src/lib/chatCommands.js로 옮겼다(v0.5.7 — 검사 스크립트가 직접 부르도록).
 // (v0.5.7, 사용자 요청) 블라인드 대국에서 실제 수로 인식된 메시지 — 일반 말풍선과 구분되게, 백의 수는 크림색·흑의 수는 갈색 판에
@@ -28623,7 +28620,7 @@ function BlindMoveBubble({ body, color }) {
 }
 // /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
 function formatBlindEval(ev) {
-  if (!ev) return "아직 분석 중이에요…";
+  if (!ev) return "분석 중…";
   const depth = ev.depth != null ? ev.depth : "?";
   if (ev.mate != null) return (ev.mate > 0 ? "#" : "-#") + Math.abs(ev.mate) + "(depth=" + depth + ")";
   const cp = ev.cp || 0;
@@ -28903,7 +28900,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       oldest = rows.length ? rows[0].created_at : null;
     }
     if (extra.length) { setMsgs((prev) => { const ids = new Set(prev.map((m) => m.id)); return [...extra.filter((m) => !ids.has(m.id)), ...prev]; }); setHasOlder(more); }
-    if (!have) { showNotice("원문 메시지를 찾을 수 없어요"); return; }
+    if (!have) { showNotice("원문 메시지 없음"); return; }
     scrollModeRef.current = { jumpTo: id };
     setFlashId(id); setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1800);
     if (!extra.length) { const el = document.getElementById("chatmsg-" + id); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); scrollModeRef.current = "bottom"; }
@@ -28940,25 +28937,25 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       return { ...prev, [m.id]: on ? [...list, { uid: myUid, emoji }] : list };
     });
     const ok = await chatReactToggle(m.id, myUid, emoji, on);
-    if (!ok) { showNotice("반응을 남기지 못했어요"); loadReactions(); }
+    if (!ok) { showNotice("반응 등록 실패"); loadReactions(); }
   };
   const castVote = async (m, san) => {
     setPollVotes((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((v) => v.uid !== myUid), { uid: myUid, san }] }));
     const ok = await chatPollVote(m.id, myUid, san);
-    if (!ok) { showNotice("투표하지 못했어요"); loadReactions(); }
+    if (!ok) { showNotice("투표 실패"); loadReactions(); }
   };
   // (v0.5.7) 차단 — 내가 이 상대를 차단했는지. 차단하면 입력창 대신 안내가 뜨고, 서버도 양쪽 전송을 막는다.
   useEffect(() => { let off = false; chatBlocksFetch(myUid).then((l) => { if (!off) setBlockedByMe(l.includes(otherUid)); }); return () => { off = true; }; }, [myUid, otherUid]);
   const setBlocked = async (on) => {
     const ok = await chatBlockSet(myUid, otherUid, on);
-    if (ok) { setBlockedByMe(on); showNotice(on ? otherUsername + "님을 차단했어요" : "차단을 해제했어요"); }
-    else showNotice(on ? "차단하지 못했어요" : "차단을 해제하지 못했어요");
+    if (ok) { setBlockedByMe(on); showNotice(on ? otherUsername + "님 차단됨" : "차단 해제됨"); }
+    else showNotice(on ? "차단 실패" : "차단 해제 실패");
     return ok;
   };
   const submitReport = async (reason, detail, alsoBlock) => {
     const target = reportFor && reportFor.msg;
     const r = await userReport(otherUid, target ? target.id : null, reason, detail);
-    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); showNotice("신고했어요. 검토 후 조치할게요"); }
+    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); showNotice("신고 접수. 검토 후 조치"); }
     return r;
   };
   // (v0.5.7) 수 투표 엔진 정답 — 앱의 분석 엔진으로 그 포지션의 최선의 수를 찾는다(최대 약 2.5초).
@@ -29027,7 +29024,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   };
   // (v0.5.7, 사용자 요청 "명령어 체계 정리") 보내기 — "/…"는 src/lib/chatCommands.js의 parseChatCommand 하나로 해석한다(목록·자동완성과
   // 같은 표). 명령어가 아니면 블라인드 대국 수인지 보고, 그것도 아니면 평범한 메시지(답장 포함)로 보낸다.
-  const failMsg = "보내지 못했어요. 잠시 후 다시 시도해 주세요.";
+  const failMsg = "전송 실패. 잠시 후 다시 시도";
   const finish = (ok, err) => { if (ok) { setText(""); setReplyTo(null); load(); } else if (err) setCmdError(err); };
   const send = async (body, emoji) => {
     if (sending) return;
@@ -29038,7 +29035,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       const ok = await chatEditMessage(editingId, body);
       setSending(false);
       if (ok) { setEditingId(null); setText(""); load(); }
-      else setCmdError("메시지를 수정하지 못했어요. 잠시 후 다시 시도해 주세요.");
+      else setCmdError("메시지 수정 실패. 잠시 후 다시 시도");
       return;
     }
     if (!body && !emoji) return;
@@ -29054,69 +29051,69 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         case "blind": {
           setSending(true);
           const ok = await chatSend(myUid, otherUid, "/blind", null);
-          if (ok) await chatSend(myUid, otherUid, "블라인드 대국을 준비했어요. 백을 맡을 사람이 \"1.e4\"처럼 첫 수를 보내면 시작돼요.", null);
+          if (ok) await chatSend(myUid, otherUid, "블라인드 대국 준비 완료. 백을 맡은 사람이 \"1.e4\"처럼 첫 수를 보내면 시작", null);
           setSending(false); finish(ok, failMsg); return;
         }
         case "resign": {
           setSending(true);
           const ok = await chatSend(myUid, otherUid, "/resign", null);
-          if (ok) await chatSend(myUid, otherUid, nameFor(myUid) + "님이 기권했어요. " + nameFor(otherUid) + "님의 승리예요.", null);
-          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          if (ok) await chatSend(myUid, otherUid, nameFor(myUid) + "님 기권 " + nameFor(otherUid) + "님 승리", null);
+          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
         }
         case "draw": {
           // (버그 수정, 사용자 제보) /draw는 상대의 동의가 있어야 끝난다 — 내가 이미 제안했으면 중복이라 막고, 상대가 먼저
           // 제안해 둔 상태에서 내가 보내면 그게 동의라 대국이 끝난다.
-          if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부를 제안했어요. 상대방의 응답을 기다려 주세요."); return; }
+          if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부 제안 중. 상대 응답 대기"); return; }
           setSending(true);
           const isAccepting = blindGame.drawOfferUid === otherUid;
           const ok = await chatSend(myUid, otherUid, "/draw", null);
-          if (ok) await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국이 종료됐어요." : nameFor(myUid) + "님이 무승부를 제안했어요. /draw로 동의하면 대국이 끝나요.", null);
-          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          if (ok) await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국 종료" : nameFor(myUid) + "님이 무승부 제안. /draw로 동의하면 대국 종료", null);
+          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
         }
         case "eval": {
           setSending(true);
           const ok = await chatSend(myUid, otherUid, formatBlindEval(blindEvalRef.current), null);
-          setSending(false); finish(ok, "명령어를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
         }
         case "puzzle": {
           // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 서버에 실제로 있는지 먼저 확인한다.
           setSending(true);
           const data = puzzlePreviews[cmd.no] !== undefined ? puzzlePreviews[cmd.no] : await puzzleFetch(cmd.no);
-          if (!data) { setSending(false); setCmdError("#" + cmd.no + " 번호의 퍼즐을 찾을 수 없어 보낼 수 없어요."); return; }
+          if (!data) { setSending(false); setCmdError("#" + cmd.no + " 번호의 퍼즐 없음. 전송 불가"); return; }
           const ok = await puzzleShareSend(cmd.no, myUid, otherUid);
-          setSending(false); finish(ok, "퍼즐을 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          setSending(false); finish(ok, "퍼즐 전송 실패. 잠시 후 다시 시도"); return;
         }
         case "legacy": {
           const slotKey = LEGACY_SLOT_ORDER[cmd.slot - 1];
-          if (cmd.slot >= 4 && !myIsGM) { setCmdError("그랜드마스터 티어에 도달해야 추가 유산을 설정할 수 있어요."); return; }
-          if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + cmd.slot + "번 유산이 등록되어 있지 않습니다."); return; }
+          if (cmd.slot >= 4 && !myIsGM) { setCmdError("추가 유산은 그랜드마스터 티어부터 설정 가능"); return; }
+          if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + cmd.slot + "번 유산 미등록"); return; }
           setSending(true);
           const ok = await legacyShareSend(myUid, otherUid, slotKey);
-          setSending(false); finish(ok, "유산을 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          setSending(false); finish(ok, "유산 전송 실패. 잠시 후 다시 시도"); return;
         }
         case "review": {
           // 코드가 실제로 재생 가능한지(sanSequenceValid)부터 확인하고 보낸다 — 틀린 /review는 평범한 텍스트로 흘려보내지 않는다(사용자 요청).
           let game = null;
           if (cmd.kind === "recent") {
-            if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국을 찾을 수 없어요."); return; }
+            if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국 없음"); return; }
             const g = [...myChesscomGames].sort((x, y) => (y.endTime || 0) - (x.endTime || 0))[0];
             game = { sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id };
           } else if (cmd.kind === "pgn") {
             const fenTagMatch = /\[FEN\s+"([^"]+)"\]/.exec(cmd.code);
             const fenRoot = fenTagMatch ? parseFenFull(fenTagMatch[1]) : null;
             const sans = parsePgnSans(cmd.code);
-            if ((fenTagMatch && !fenRoot) || !sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 PGN 코드예요. 사용법: /review pgn <코드>"); return; }
+            if ((fenTagMatch && !fenRoot) || !sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 PGN 코드. 사용법: /review pgn <코드>"); return; }
             game = { sans, fenRoot: fenTagMatch ? fenTagMatch[1] : null };
           } else {
-            if (!looksLikeFen(cmd.code) || !parseFenFull(cmd.code)) { setCmdError("유효하지 않은 FEN 코드예요. 사용법: /review fen <코드>"); return; }
+            if (!looksLikeFen(cmd.code) || !parseFenFull(cmd.code)) { setCmdError("유효하지 않은 FEN 코드. 사용법: /review fen <코드>"); return; }
             game = { sans: [], fenRoot: cmd.code };
           }
           setSending(true);
           const rid = await reviewGameIdentifier(game);
-          if (!rid) { setSending(false); setCmdError("유효하지 않은 코드예요."); return; }
+          if (!rid) { setSending(false); setCmdError("유효하지 않은 코드"); return; }
           if (game.id) reviewedGameShare(game.id, game).catch(() => { });
           const ok = await reviewShareSend(myUid, otherUid, rid);
-          setSending(false); finish(ok, "리뷰를 보내지 못했어요. 잠시 후 다시 시도해 주세요."); return;
+          setSending(false); finish(ok, "리뷰 전송 실패. 잠시 후 다시 시도"); return;
         }
         case "play": {
           // (v0.5.7, 사용자 요청) 미니게임 대결 — 친구 로스터의 도전장과 같은 RPC(p_game_type만 다름)라, 수락되면 두 사람 모두 그 미니게임 대전으로 들어간다.
@@ -29151,7 +29148,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       if (startTok && sanSrc(startBoard(), startTok, "w")) {
         setSending(true);
         const ok = await chatSend(myUid, otherUid, body, null);
-        if (ok) await chatSend(myUid, otherUid, "블라인드 대국이 시작되었어요.", null);
+        if (ok) await chatSend(myUid, otherUid, "블라인드 대국 시작", null);
         setSending(false); finish(ok, failMsg); return;
       }
     }
@@ -29164,15 +29161,15 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         if (sanSrc(board, mvTok, color)) {
           const whiteUid = blindGame.whiteFromUid, blackUid = whiteUid === myUid ? otherUid : myUid;
           // (버그 수정, 사용자 제보) 상대가 둘 차례면 보내도 수로 인식되지 않으므로 미리 막고 안내한다.
-          if ((color === "w" ? whiteUid : blackUid) !== myUid) { setCmdError("상대방이 응수할 차례예요."); return; }
+          if ((color === "w" ? whiteUid : blackUid) !== myUid) { setCmdError("상대가 응수할 차례"); return; }
           setSending(true);
           const ok = await chatSend(myUid, otherUid, body, null);
           if (ok) {
             const end = gameEndState([...blindGame.sans, mvTok]).end;
             finish(true);
-            if (end === "checkmate") await chatSend(myUid, otherUid, "체크메이트! " + nameFor(myUid) + "님의 승리예요.", null);
-            else if (end === "stalemate") await chatSend(myUid, otherUid, "스테일메이트로 무승부예요.", null);
-            else if (end === "threefold") await chatSend(myUid, otherUid, "3회 동형 반복으로 무승부예요.", null);
+            if (end === "checkmate") await chatSend(myUid, otherUid, "체크메이트. " + nameFor(myUid) + "님 승리", null);
+            else if (end === "stalemate") await chatSend(myUid, otherUid, "스테일메이트로 무승부", null);
+            else if (end === "threefold") await chatSend(myUid, otherUid, "3회 동형 반복으로 무승부", null);
           } else setCmdError(failMsg);
           setSending(false); return;
         }
@@ -29183,13 +29180,13 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const ok = await chatSendMessage(myUid, otherUid, body, emoji, replyTo ? { reply_to: replyTo.id } : null);
     setSending(false);
     if (ok) { setText(""); setReplyTo(null); load(); }
-    else setCmdError(blockedByMe ? "차단한 사용자에게는 메시지를 보낼 수 없어요." : "메시지를 보내지 못했어요. 상대가 대화를 막았거나 잠시 연결이 불안정해요.");
+    else setCmdError(blockedByMe ? "차단한 사용자에게는 메시지 전송 불가" : "전송 실패. 상대가 대화를 막았거나 연결이 불안정");
   };
   // (v0.5.7) 수 투표·같이 보기 카드 보내기
   const sendSpecial = async (extra) => {
     setPickSheet(null); setCmdError("");
     const ok = await chatSendMessage(myUid, otherUid, null, null, extra);
-    if (ok) load(); else setCmdError("보내지 못했어요. 잠시 후 다시 시도해 주세요.");
+    if (ok) load(); else setCmdError("전송 실패. 잠시 후 다시 시도");
   };
   // (v0.5.7) 명령어 자동완성 — 이름을 치는 중이면 후보 목록, 이름 뒤 공백까지 쳤으면 쓰는 법 힌트.
   const cmdSugg = useMemo(() => chatCommandSuggestions(text, { blindActive: blindGame.active }), [text, blindGame.active]);
@@ -29229,7 +29226,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     setCmdError("");
     const ok = await chatDeleteMessage(m.id);
     if (ok) setMsgs((prev) => prev.filter((x) => x.id !== m.id));
-    else setCmdError("메시지를 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    else setCmdError("메시지 삭제 실패. 잠시 후 다시 시도");
   };
   // (v0.3.4 버그 수정) 메시지끼리 간격이 좁아(6px) 위/아래로 여는 메뉴(34px)가 항상 이웃 메시지와
   // 겹쳤다 — 메뉴를 말풍선 위/아래가 아니라 말풍선이 없는 쪽 여백(대화창 중앙 쪽, 내 메시지는
@@ -29272,7 +29269,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
           높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
       <div ref={listRef} onScroll={onListScroll} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>아직 대화가 없어요. 첫 메시지를 보내보세요!</div>}
+        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>대화 없음. 첫 메시지 보내기</div>}
         {/* (v0.5.7) 위로 스크롤하면 이전 메시지를 이어서 불러온다(버튼으로도) */}
         {hasOlder && msgs.length > 0 && (
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
@@ -29295,7 +29292,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 <div style={{ width: 260, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
                   <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
                   {CHAT_CMD_LIST.map((c) => (
-                    <div key={c.name} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.usage}</b> <span style={{ color: T.inkSoft }}>— {c.desc}</span></div>
+                    <div key={c.name} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.usage}</b> <span style={{ color: T.inkSoft }}>{c.desc}</span></div>
                   ))}
                 </div>
               </div>
@@ -29310,8 +29307,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 <div className="flex items-center gap-1" style={{ padding: "5px 10px", borderRadius: 999, background: "rgba(196,154,80,.18)", border: "1px solid " + T.brass, color: T.brass, fontSize: 10.5, fontWeight: 800, textAlign: "center" }}>
                   <Sparkles size={11} />
                   {mine
-                    ? otherUsername + "님이 공유한 퍼즐을 풀어서 " + otherUsername + "님에게 XP +" + m.share_reward.amount + "를 선물했어요!"
-                    : otherUsername + "님이 내가 공유한 퍼즐을 풀어서 XP +" + m.share_reward.amount + "를 받았어요!"}
+                    ? otherUsername + "님이 공유한 퍼즐을 풀어서 " + otherUsername + "님에게 XP +" + m.share_reward.amount + " 선물"
+                    : otherUsername + "님이 내가 공유한 퍼즐을 풀어서 XP +" + m.share_reward.amount + " 획득"}
                 </div>
               </div>
             );
@@ -29371,7 +29368,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                       재사용하고, 편집·공유 아이콘은 넘기지 않아 "보기 전용"이 된다(누르면 그대로 재생). */}
                   <div style={{ width: 150, userSelect: "none", WebkitUserSelect: "none" }}>
                     {lp === undefined ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.ivory }}>불러오는 중…</div>
-                      : lp === null ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 10, fontSize: 11, color: T.ivory }}>유산을 찾을 수 없어요.</div>
+                      : lp === null ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 10, fontSize: 11, color: T.ivory }}>유산 없음</div>
                       : <LegacyStoneTile typeInfo={lp.typeInfo} entry={lp.entry} onOpen={() => setViewLegacy(lp)} size={150} />}
                   </div>
                 </div>
@@ -29438,7 +29435,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                       우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
                   <div style={{ width: 248, borderRadius: 14, padding: "9px 10px", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
                     {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>불러오는 중…</div>
-                      : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰를 불러올 수 없어요.</div>
+                      : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰 로드 실패</div>
                       : (() => {
                           const g = rp.game;
                           const hasPD = !!(g.white || g.black || g.color);
@@ -29543,7 +29540,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                   {(pz === undefined || pz === null) ? (
                     <div style={{ width: 200, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
                       <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                        <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>{pz === undefined ? "불러오는 중…" : "퍼즐을 찾을 수 없어요."}</div>
+                        <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>{pz === undefined ? "불러오는 중…" : "퍼즐 없음"}</div>
                       </div>
                     </div>
                   ) : (
@@ -29676,7 +29673,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                     myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
                     onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
                     onReply={() => { setMenuFor(null); setReplyTo(m); }}
-                    onCopy={m.body ? () => { setMenuFor(null); try { navigator.clipboard.writeText(m.body); showNotice("복사했어요"); } catch { showNotice("복사하지 못했어요"); } } : null}
+                    onCopy={m.body ? () => { setMenuFor(null); try { navigator.clipboard.writeText(m.body); showNotice("복사됨"); } catch { showNotice("복사 실패"); } } : null}
                     onEdit={mine && m.body != null ? () => startEdit(m) : null}
                     onDelete={mine ? () => doDelete(m) : null}
                     onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
@@ -29735,7 +29732,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         {/* (v0.5.7) /blind로 준비만 된 상태 — 첫 수를 어떻게 보내는지 입력창 바로 위에서 알려 준다(대국이 시작되면 사라짐). */}
         {blindGame.armed && editingId == null && (
           <p style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px dashed " + T.brass, fontSize: 10.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 700 }}>
-            <span style={{ color: T.brass, fontWeight: 800 }}>블라인드 대국 준비됨</span> · <b style={{ color: T.ink }}>1.e4</b>처럼 백의 첫 수를 보내면 시작돼요
+            <span style={{ color: T.brass, fontWeight: 800 }}>블라인드 대국 준비됨</span> · <b style={{ color: T.ink }}>1.e4</b>처럼 백의 첫 수를 보내면 시작
           </p>
         )}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
@@ -29747,7 +29744,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         </AnimatePresence>
         {blockedByMe ? (
           <div className="flex items-center justify-between" style={{ gap: 8, padding: "9px 12px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6" }}>
-            <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700 }}>차단한 사용자예요. 서로 메시지를 보낼 수 없어요.</span>
+            <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700 }}>차단한 사용자. 서로 메시지 전송 불가</span>
             <button onClick={() => setBlocked(false)} className="press" style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>차단 해제</button>
           </div>
         ) : (
@@ -29835,7 +29832,7 @@ function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onOpenPuzzle 
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span></div>
       {puzzles.length === 0 ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "아직 푼 퍼즐이 없어요."}</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "푼 퍼즐 없음"}</p>
       ) : (
         /* (v0.1.3 버그 수정) 카드를 좁은 프로필 카드 폭에서 균등 3열(grid 1fr)로 강제 배치하면
            PuzzleCard가 퍼즐 탭 기준 최소폭(148px)보다 훨씬 좁게 눌려 오프닝 이름 같은 텍스트가 한
@@ -29954,7 +29951,7 @@ function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size, likeC
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
-      <button onClick={onOpen} className="press" title={typeInfo.label + " — 눌러서 재생"} style={LEGACY_BLOCK_BTN_STYLE}>
+      <button onClick={onOpen} className="press" title={typeInfo.label + " (눌러서 재생)"} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
           textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
@@ -30579,7 +30576,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
     const ok = await legacyShareSend(myUid, toUid, slotKey);
     setBusy(null);
     if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
-    else setSendErr("전달하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    else setSendErr("전달 실패. 잠시 후 다시 시도");
   };
   const color = QCOLOR[typeInfo.kind];
   // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴.
@@ -30601,7 +30598,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
         <div style={{ padding: 12, minHeight: 120, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
           {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구가 없습니다. 먼저 친구를 추가해 보세요.</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -30649,9 +30646,9 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
   const [side, setSide] = useState("w");
   const loadPgnText = () => {
     const raw = pgnText.trim();
-    if (!raw) { setPgnErr("PGN을 입력해 주세요."); return; }
+    if (!raw) { setPgnErr("PGN 입력 필요"); return; }
     const tokens = parsePgnMoves(raw);
-    if (!tokens.length) { setPgnErr("기보를 읽을 수 없어요."); return; }
+    if (!tokens.length) { setPgnErr("기보를 읽을 수 없음"); return; }
     // (검증) NotationTools.submit과 동일한 방식 — 시작 위치부터 한 수씩 실제로 재생해, 불법적인
     // 수가 섞여 있으면(오타·변화수 등) 저장 전에 걸러낸다.
     let board = startBoard(); const validated = [];
@@ -30663,7 +30660,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
       board = applySan(board, t, color);
       validated.push(t);
     }
-    if (validated.length < 1) { setPgnErr("기보가 너무 짧아요."); return; }
+    if (validated.length < 1) { setPgnErr("기보가 너무 짧음"); return; }
     setPgnErr(""); setSans(validated); setStep("analyzing");
   };
   // (v0.3.5 버그 수정) ReviewPage와 같은 이유 — engine이 항상 "ready"였던 전용 훅(useReviewEngine) 대신
@@ -30721,10 +30718,10 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 대국 선택</div>
         {step === "source" && (
           <div>
-            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국을 골라 주세요 — {typeInfo.label}은(는) "{QLABEL[typeInfo.kind]}"로 채점된 수만 지정할 수 있어요.</p>
+            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국 선택. {typeInfo.label}은 "{QLABEL[typeInfo.kind]}" 등급의 수만 지정 가능</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button onClick={() => setStep("paste")} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", textAlign: "left" }}>PGN 직접 입력</button>
-              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정을 연동하면 이용할 수 있어요)" : ""}</button>
+              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정 연동 시 이용 가능)" : ""}</button>
             </div>
             {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에
                 펼친다 — 각 대국 줄의 검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. */}
@@ -30742,7 +30739,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             {pgnErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pgnErr}</div>}
             {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>어느 진영으로 플레이했나요?</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>플레이한 진영</div>
               <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
                 {[["w", "백"], ["b", "흑"]].map(([k, lab]) => (
                   <button key={k} type="button" onClick={() => setSide(k)} className="press" style={{ padding: "6px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: side === k ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: side === k ? T.ivoryHi : T.inkSoft }}>{lab}</button>
@@ -30765,7 +30762,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             </div>
             {analyzeErr && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>분석에 실패했어요. 다시 시도해 주세요.</div>
+                <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>분석 실패. 다시 시도</div>
                 <button onClick={() => setStep("source")} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
               </div>
             )}
@@ -30775,10 +30772,10 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 수 선택</div>
             {qualifying.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>이 대국에는 "{QLABEL[typeInfo.kind]}"로 채점된 수가 없어요. 다른 대국을 시도해 보세요.</div>
+              <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>이 대국에는 "{QLABEL[typeInfo.kind]}" 등급의 수 없음. 다른 대국 선택</div>
             ) : (
               <>
-                <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{QLABEL[typeInfo.kind]}"로 채점된 수 중 하나를 골라 주세요.</p>
+                <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{QLABEL[typeInfo.kind]}" 등급의 수 중 하나 선택</p>
                 <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                   {qualifying.map((m) => (
                     <MoveLongPressPreview key={m.ply} priorSans={sans.slice(0, m.ply)} san={m.san} kind={m.kind} flip={side === "b"}>
@@ -30800,7 +30797,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
             {/* (사용자 요청) 지정한 수 앞뒤로 몇 수 함께 보여줄지를 직접 입력이 아니라 1~7수 범위의
                 선택 박스로 고른다. */}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>이 수보다 몇 수 전부터 보여줄까요?</p>
+            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>이 수보다 몇 수 전부터 표시할지 선택</p>
             {beforeOptions.length > 0 ? (
               <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
                 <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
@@ -30809,9 +30806,9 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
                 <span style={{ fontSize: 11.5, color: T.inkSoft }}>전부터</span>
               </div>
             ) : (
-              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>이 수보다 앞선 수가 없어요.</p>
+              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>이 수보다 앞선 수 없음</p>
             )}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>이 수부터 몇 수까지 재생할까요?</p>
+            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>이 수부터 몇 수까지 재생할지 선택</p>
             <div className="flex items-center gap-2">
               <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
                 {playOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
@@ -30849,7 +30846,7 @@ function TierRatingRow({ pub }) {
       <TierStatPill totalXp={pub.xp || 0} size={52} onClick={() => setTierMapOpen(true)} />
       {pub.puzzleRating != null && (
         <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(pub.puzzleRating)}>
-          <span title="퍼즐 레이팅 — 라인을 풀면 오르고 틀린 수를 두면 내려가요" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
+          <span title="퍼즐 레이팅: 라인을 풀면 상승, 틀린 수를 두면 하락" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
             <MaterialIcon name="extension" size={12} /> {fmtFull(pub.puzzleRating)}
           </span>
         </ClickInfoBadge>
@@ -30924,7 +30921,7 @@ function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGa
       ) : (
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.6 }}>chess.com 계정을 연동하지 않았습니다.</p>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.6 }}>chess.com 계정 미연동</p>
         </div>
       )}
     </div>
@@ -31040,7 +31037,7 @@ function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
           </div>
           {q.trim() ? (
             busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
+              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저 없음</div> : null)
                 // (사용자 요청) 검색어로 찾은 결과도 기본(추천) 목록과 완전히 같은 블록 UI를 쓴다 —
               // 리더보드 행과 똑같이 우측에 티어 십각형 아이콘을, isMe 옵션으로 "나" 표시까지 그대로 준다.
               : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
@@ -31227,7 +31224,7 @@ function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpe
         ) : (
           <div ref={rowsRef} style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
             {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-              : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 채팅이 없어요. 친구 목록에서 채팅을 시작해 보세요.</div>
+              : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>채팅 없음. 친구 목록에서 시작</div>
               : rows.map(({ uid, m, unread, pinned, muted }, i) => {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
@@ -31252,7 +31249,7 @@ function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpe
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐을 공유했어요" : m.legacy_slot != null ? "💎 유산을 공유했어요" : m.review_id != null ? "📊 리뷰를 공유했어요" : m.pvp_invite_id != null ? "⚔️ 실시간 대국을 신청했어요" : m.poll ? "📊 \"여기서 뭐 둘래?\" 투표" : m.cobo ? "👥 같이 보기 보드에 초대했어요" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐 공유" : m.legacy_slot != null ? "💎 유산 공유" : m.review_id != null ? "📊 리뷰 공유" : m.pvp_invite_id != null ? "⚔️ 실시간 대국 신청" : m.poll ? "📊 \"여기서 뭐 둘래?\" 투표" : m.cobo ? "👥 같이 보기 보드 초대" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -31278,7 +31275,7 @@ function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpe
       <div onClick={() => setConfirmClear(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>대화 삭제</div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{confirmClear.username}님과의 대화를 삭제할까요? 나에게서만 보이지 않게 되고, 상대방 화면에는 그대로 남아요.</p>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{confirmClear.username}님과의 대화를 삭제할까요? 내 화면에서만 사라지고 상대 화면에는 남음</p>
           <div className="flex gap-2 justify-end">
             <button onClick={() => setConfirmClear(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
             <button onClick={doClear} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
@@ -31687,7 +31684,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
         {QUEST_CLEAR_SPARKLES.map((p, i) => (
           <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
         ))}
-        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>티어 승급!</div>
+        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>티어 승급</div>
         {/* (버그 수정) 기물 이미지 자체가 흰색/밝은 선화라 카드를 밝은 색으로 바꾸자 거의 안 보이게
             됐다(그랜드마스터만 홀로그램 다색이라 그나마 보임) — 사이트 전역 배경과 같은 톤의 짙은
             원판을 기물 전용 "무대"로 깔아, 카드는 밝게 유지하면서 기물만 원래처럼 잘 보이게 한다. */}
@@ -31721,7 +31718,7 @@ function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, rewar
             </AnimatePresence>
           </div>
         </div>
-        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달!</div>}
+        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달</div>}
         {reward > 0 && (
           <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
             <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
@@ -31755,8 +31752,8 @@ function PvpSpectateModal({ gameId, onClose }) {
         const rows = await sbSelect("pvp_games?id=eq." + gameId + "&select=*");
         if (cancelled) return;
         if (rows && rows[0]) applyRow(rows[0]);
-        else setErr("대국을 찾을 수 없어요(이미 끝났거나 취소됐을 수 있어요).");
-      } catch { if (!cancelled) setErr("대국 정보를 불러오지 못했어요."); }
+        else setErr("대국 없음 (이미 끝났거나 취소됐을 수 있음)");
+      } catch { if (!cancelled) setErr("대국 정보 로드 실패"); }
     })();
     return () => { cancelled = true; };
   }, [gameId, applyRow]);
@@ -32082,7 +32079,7 @@ function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onO
               {!SB_ON ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>친구 기능은 서버 연결이 필요합니다. (현재 오프라인 모드)</div>
                 : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
                 : tab === "friends" ? (
-                  friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>아직 친구가 없습니다. ‘추가’에서 아이디로 검색해 요청을 보내세요.</div>
+                  friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>친구 없음. ‘추가’에서 아이디로 검색해 요청 발송</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
@@ -32093,7 +32090,7 @@ function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onO
                         </>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
-                  incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청이 없습니다.</div>
+                  incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청 없음</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
@@ -32117,7 +32114,7 @@ function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onO
                     </div>
                     {!!myMid && <InviteLinkBox mid={myMid} />}
                     {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-                      : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저가 없습니다.</div> : null)
+                      : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저 없음</div> : null)
                         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
                             const uid = r.id; const rel = relOf(uid); const busyId = !!pending[uid];
                             const right = rel === "friend" ? statusChip("친구", <UserCheck size={12} />)
@@ -32258,11 +32255,11 @@ function UsernameSetupModal({ account, onDone, onCancel }) {
   const [ccId, setCcId] = useState(""); // (18차 UX6) Google 최초 가입 시에도 chess.com 아이디를 함께 입력(선택)
   const submit = async () => {
     setErr("");
-    if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자여야 합니다."); return; }
+    if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자"); return; }
     setBusy(true);
     try {
       const r = await claimUsername(account.uid, id);
-      if (!r.ok) { setErr(r.error === "username_taken" ? "이미 사용 중인 아이디입니다." : r.error === "invalid" ? "아이디 형식이 올바르지 않습니다." : "처리 중 오류가 발생했습니다."); setBusy(false); return; }
+      if (!r.ok) { setErr(r.error === "username_taken" ? "이미 사용 중인 아이디" : r.error === "invalid" ? "아이디 형식이 올바르지 않음" : "처리 중 오류 발생"); setBusy(false); return; }
       // (버그 수정) AuthModal의 이메일 가입 경로와 같은 문제 — 여기서도 chess.com 아이디를 검증 없이
       // 사용자가 입력한 원형 그대로 저장하고 있었다. fetchChesscomProfile로 실제 계정의 정확한
       // 대소문자를 조회해 저장하고, 조회 실패 시에만 입력한 원형을 그대로 대체값으로 쓴다.
@@ -32270,7 +32267,7 @@ function UsernameSetupModal({ account, onDone, onCancel }) {
       let ccFinal = ccRaw;
       if (ccRaw) { try { const p = await fetchChesscomProfile(ccRaw); ccFinal = p.username; } catch { } }
       onDone({ uid: account.uid, username: id.toLowerCase(), pub: { ...(account.pub || {}), displayId: id.trim(), ...(ccFinal ? { chesscom: ccFinal } : {}) }, progress: account.progress || {} });
-    } catch { setErr("처리 중 오류가 발생했습니다."); setBusy(false); }
+    } catch { setErr("처리 중 오류 발생"); setBusy(false); }
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
@@ -32282,10 +32279,10 @@ function UsernameSetupModal({ account, onDone, onCancel }) {
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>아이디 설정</div>
           <button onClick={onCancel} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         </div>
-        <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginBottom: 12 }}>Google 계정으로 처음 로그인했어요. 친구 검색·프로필에 표시될 아이디를 정해 주세요.</p>
+        <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginBottom: 12 }}>Google 계정으로 첫 로그인. 친구 검색·프로필에 표시될 아이디 설정</p>
         <input value={id} onChange={(e) => setId(e.target.value)} placeholder="아이디 (영문+숫자 3~20자)" autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
         <input value={ccId} onChange={(e) => setCcId(e.target.value)} placeholder="chess.com 아이디 (선택)" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
-        <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "-2px 0 8px" }}>chess.com 아이디는 생략할 수 있고, 나중에 설정 탭에서 언제든 변경할 수 있어요.</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "-2px 0 8px" }}>chess.com 아이디는 생략 가능, 나중에 설정 탭에서 변경</p>
         {err && <div style={{ fontSize: 12, color: T.blunder, marginBottom: 8 }}>{err}</div>}
         <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{busy ? "설정 중…" : "시작하기"}</button>
         <div style={{ textAlign: "center", marginTop: 8 }}><button onClick={onCancel} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>취소하고 로그아웃</button></div>
@@ -32307,7 +32304,7 @@ function AuthModal({ onClose, onAuth, initialMode }) {
     setErr(""); setHintProvider(null);
     if (mode === "reset") {
       const who = email.trim();
-      if (!who) { setErr("아이디 또는 이메일을 입력하세요."); return; }
+      if (!who) { setErr("아이디 또는 이메일 입력 필요"); return; }
       setBusy(true);
       try { await authRecover(who); } catch { }
       setBusy(false); setSent(true);
@@ -32315,12 +32312,12 @@ function AuthModal({ onClose, onAuth, initialMode }) {
     }
     const isEmail = email.includes("@");
     const em = email.trim();
-    if (mode === "signup" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setErr("올바른 이메일을 입력하세요."); return; }
-    if (mode === "login" && !em) { setErr("아이디 또는 이메일을 입력하세요."); return; }
-    if (pw.length < 6) { setErr("비밀번호는 6자 이상이어야 합니다."); return; }
+    if (mode === "signup" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setErr("올바른 이메일 입력 필요"); return; }
+    if (mode === "login" && !em) { setErr("아이디 또는 이메일 입력 필요"); return; }
+    if (pw.length < 6) { setErr("비밀번호는 6자 이상"); return; }
     if (mode === "signup") {
-      if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자여야 합니다."); return; }
-      if (pw !== pw2) { setErr("비밀번호가 일치하지 않습니다."); return; }
+      if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자"); return; }
+      if (pw !== pw2) { setErr("비밀번호 불일치"); return; }
     }
     setBusy(true);
     try {
@@ -32330,13 +32327,13 @@ function AuthModal({ onClose, onAuth, initialMode }) {
           if (r && r.error === "email_taken") {
             const provs = await accountProviders(em);
             const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
-            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 이메일은 " + lb + " 계정으로 가입되어 있어요. 아래 ‘" + lb + "로 계속하기’로 로그인하세요."); setBusy(false); return; }
-            setErr("이미 가입된 이메일입니다. 로그인해 주세요."); setBusy(false); return;
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 이메일은 " + lb + " 계정으로 가입됨. 아래 ‘" + lb + "로 계속하기’로 로그인"); setBusy(false); return; }
+            setErr("이미 가입된 이메일. 로그인 필요"); setBusy(false); return;
           }
-          setErr(r && r.error === "username_taken" ? "이미 사용 중인 아이디입니다."
-            : r && r.error === "confirm_required" ? "확인 메일을 보냈습니다. 인증 후 로그인하세요."
-            : r && r.error === "offline" ? "서버 연결이 필요합니다."
-            : "가입 처리 중 오류가 발생했습니다.");
+          setErr(r && r.error === "username_taken" ? "이미 사용 중인 아이디"
+            : r && r.error === "confirm_required" ? "확인 메일 발송. 인증 후 로그인"
+            : r && r.error === "offline" ? "서버 연결 필요"
+            : "가입 처리 중 오류 발생");
           setBusy(false); return;
         }
         // (17차) 회원가입 시 chess.com 아이디도 함께 입력받는다(생략 가능, 나중에 설정에서 변경 가능).
@@ -32353,24 +32350,24 @@ function AuthModal({ onClose, onAuth, initialMode }) {
       } else {
         const r = await authLogin(em, pw);
         if (!r || !r.ok) {
-          if (r && r.error === "offline") { setErr("서버 연결이 필요합니다."); setBusy(false); return; }
+          if (r && r.error === "offline") { setErr("서버 연결 필요"); setBusy(false); return; }
           const probe = (r && r.email) || (isEmail ? em : "");
           if (probe) {
             const provs = await accountProviders(probe);
             const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
-            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 계정은 " + lb + "로 가입되어 있어요. 아래 ‘" + lb + "로 계속하기’로 로그인하세요."); setBusy(false); return; }
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 계정은 " + lb + "로 가입됨. 아래 ‘" + lb + "로 계속하기’로 로그인"); setBusy(false); return; }
           }
-          setErr("아이디/이메일 또는 비밀번호가 올바르지 않습니다."); setBusy(false); return;
+          setErr("아이디/이메일 또는 비밀번호가 올바르지 않음"); setBusy(false); return;
         }
         onAuth(r.account);
       }
-    } catch { setErr("처리 중 오류가 발생했습니다."); }
+    } catch { setErr("처리 중 오류 발생"); }
     setBusy(false);
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
   const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #C9B58C", marginBottom: 8, background: "#fff", color: T.ink, boxSizing: "border-box" };
-  const title = mode === "login" ? "다시 오신 걸 환영해요" : mode === "signup" ? "OpenChess 시작하기" : "비밀번호 찾기";
+  const title = mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "비밀번호 찾기";
   return (
     <motion.div
       onClick={onClose}
@@ -32396,12 +32393,12 @@ function AuthModal({ onClose, onAuth, initialMode }) {
         </div>
         {mode === "reset" ? (sent ? (
           <>
-            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>입력하신 계정이 존재하면 연동된 이메일로 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인해 주세요.</p>
+            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>입력한 계정이 존재하면 연동된 이메일로 재설정 링크 발송. 스팸함 포함 메일함 확인</p>
             <button onClick={() => { setMode("login"); setSent(false); setErr(""); setPw(""); }} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>로그인으로 돌아가기</button>
           </>
         ) : (
           <>
-            <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>가입 시 사용한 아이디 또는 이메일을 입력하면 연동된 이메일로 재설정 링크를 보내드립니다.</p>
+            <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>가입 시 사용한 아이디 또는 이메일 입력. 연동된 이메일로 재설정 링크 발송</p>
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="아이디 또는 이메일" autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
             {err && <div style={{ fontSize: 12, color: T.blunder, marginBottom: 8 }}>{err}</div>}
             <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? "보내는 중…" : "재설정 메일 보내기"}</button>
@@ -32427,12 +32424,12 @@ function AuthModal({ onClose, onAuth, initialMode }) {
             <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><GoogleG /> Google로 계속하기</button>
             <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><AppleLogo /> Apple로 계속하기</button>
             <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><FacebookLogo /> Facebook으로 계속하기</button>
-            {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>비밀번호를 잊으셨나요?</button></div>}
+            {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>비밀번호 찾기</button></div>}
             <div style={{ textAlign: "center", fontSize: 12.5, color: T.inkSoft }}>
               {mode === "login" ? "계정이 없나요? " : "이미 계정이 있나요? "}
               <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setHintProvider(null); setPw2(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{mode === "login" ? "회원가입" : "로그인"}</button>
             </div>
-            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.4 }}>이메일·비밀번호로 가입합니다. 아이디는 친구 검색·프로필에 공개로 표시되며, 진도(도감·해결한 퍼즐)는 계정에 저장됩니다.</p>
+            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.4 }}>이메일·비밀번호로 가입. 아이디는 친구 검색·프로필에 공개 표시, 진도(도감·해결한 퍼즐)는 계정에 저장</p>
           </>
         )}
       </motion.div>
@@ -32513,19 +32510,19 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
   const linkCount = (identities || []).length;
   const doLink = async (provider) => {
     setErr(""); setBusy(true);
-    try { await linkIdentityRedirect(provider); } catch { setErr("연결을 시작하지 못했어요. Supabase 프로젝트에서 이 로그인 방식과 계정 연결(manual linking)이 켜져 있는지 확인해주세요."); setBusy(false); }
+    try { await linkIdentityRedirect(provider); } catch { setErr("연결 시작 실패. Supabase 프로젝트에서 이 로그인 방식과 계정 연결(manual linking) 활성화 확인 필요"); setBusy(false); }
   };
   const doUnlink = async (identity) => {
-    if (linkCount <= 1) { setErr("마지막 로그인 수단은 연결 해제할 수 없어요."); return; }
+    if (linkCount <= 1) { setErr("마지막 로그인 수단은 연결 해제 불가"); return; }
     setErr(""); setBusy(true);
     try { await unlinkIdentity(identity.identity_id); await load(); }
-    catch { setErr("연결 해제에 실패했어요."); }
+    catch { setErr("연결 해제 실패"); }
     finally { setBusy(false); }
   };
   const doDelete = async () => {
     setDeleteErr(""); setBusy(true);
     try { await sbRpc("delete_own_account", {}); onAccountDeleted(); }
-    catch { setDeleteErr("계정을 삭제하지 못했어요. 잠시 후 다시 시도해주세요."); setBusy(false); }
+    catch { setDeleteErr("계정 삭제 실패. 잠시 후 다시 시도"); setBusy(false); }
   };
   const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 4px" };
   return (
@@ -32585,7 +32582,7 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
           </div>
         )}
         {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>어떤 수단으로 로그인해도 같은 OpenChess 계정으로 연결돼요. 다른 기기·다른 로그인 방식을 함께 쓰려면 여기서 미리 연결해두세요.</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결</p>
 
         <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
         <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>로그아웃</button>
@@ -32594,7 +32591,7 @@ function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccount
           <button onClick={() => { setConfirmDelete(true); setDeleteTyped(""); setDeleteErr(""); }} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>계정 탈퇴</button>
         ) : (
           <div style={{ padding: "12px 13px", borderRadius: 10, background: "rgba(200,69,59,.1)", border: "1px solid " + T.blunder }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 이 계정의 모든 데이터가 영구적으로 삭제되며 되돌릴 수 없어요.</p>
+            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제되며 되돌릴 수 없음</p>
             <input value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} placeholder={"확인을 위해 \"" + username + "\" 입력"} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", marginBottom: 8, fontSize: 12.5 }} />
             {deleteErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{deleteErr}</div>}
             <div className="flex gap-2">
@@ -32613,11 +32610,11 @@ function NewPasswordModal({ recovery, onDone, onClose }) {
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const submit = async () => {
     setErr("");
-    if (pw.length < 6) { setErr("비밀번호는 6자 이상이어야 합니다."); return; }
-    if (pw !== pw2) { setErr("비밀번호가 일치하지 않습니다."); return; }
+    if (pw.length < 6) { setErr("비밀번호는 6자 이상"); return; }
+    if (pw !== pw2) { setErr("비밀번호 불일치"); return; }
     setBusy(true);
-    try { const r = await authSetPassword(recovery, pw); if (!r.ok) { setErr("재설정에 실패했습니다. 링크가 만료되었을 수 있습니다."); setBusy(false); return; } onDone(r.account || null); }
-    catch { setErr("처리 중 오류가 발생했습니다."); setBusy(false); }
+    try { const r = await authSetPassword(recovery, pw); if (!r.ok) { setErr("재설정 실패. 링크가 만료되었을 수 있음"); setBusy(false); return; } onDone(r.account || null); }
+    catch { setErr("처리 중 오류 발생"); setBusy(false); }
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
@@ -32688,7 +32685,7 @@ function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{invite.fromUsername || "누군가"}님이 {specialGame ? "실시간 대결을" : "대국을"} 신청했어요
+            @{invite.fromUsername || "누군가"}님이 {specialGame ? "실시간 대결을" : "대국을"} 신청
             <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tc.cat : "")}</span>
           </div>
         </div>
@@ -32747,7 +32744,7 @@ function GlobalMinigameRematchBanner({ myUid, onAccepted }) {
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <MgOppBadge opp={{ photo: offer.photo, name: offer.name }} size={30} inline />
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            {offer.name}님이 재대국을 신청했어요
+            {offer.name}님이 재대국 신청
             <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{special ? special.name : "미니게임"}</span>
           </div>
         </div>
@@ -33217,7 +33214,7 @@ export default function App() {
   useEffect(() => { (async () => {
     const _rec = parseRecoveryHash(); if (_rec) setRecovery(_rec);
     const _oauth = _rec ? null : parseOAuthHash();
-    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice("Google 로그인을 완료하지 못했어요. 이미 다른 방식으로 가입된 이메일일 수 있습니다."); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
+    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음"); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
     // (UX7) 세션 복구를 먼저 시도해 uid를 확정한 뒤, 그 uid(없으면 guest) 전용 로컬 캐시만 읽는다 —
     // 순서를 바꾸지 않으면 이전에 이 기기에서 로그인했던 "다른" 계정의 로컬 캐시를 먼저 읽어버린다.
     let acc = null;
@@ -33430,7 +33427,7 @@ export default function App() {
     // 퍼즐은 PGN(setupSans)에서 자동으로 FEN을 계산해 채워 넣는다(PGN→FEN 자동). FEN 기반으로
     // 직접 생성된 퍼즐(setupSans 없음)은 생성 시점에 이미 pz.fen이 채워져 있으므로 그대로 둔다.
     const pz = (pzIn.fen || !pzIn.setupSans || !pzIn.setupSans.length) ? pzIn : { ...pzIn, fen: sansToFen(pzIn.setupSans) };
-    if (!isPuzzleSequenceValid(pz)) { console.warn("퍼즐 저장 거부(불법 수순):", pz.id); return; }
+    if (!isPuzzleSequenceValid(pz)) { console.warn("퍼즐 저장 거부 (불법 수순):", pz.id); return; }
     setPuzzles((prev) => {
       const i = prev.findIndex((x) => x.id === pz.id);
       if (i >= 0) {
@@ -34330,8 +34327,8 @@ export default function App() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(10,6,3,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <motion.div initial={{ opacity: 0, y: 12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .97 }} transition={{ duration: 0.2, ease: MOTION_EASE }}
               style={{ width: "100%", maxWidth: 320, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: 20, textAlign: "center", boxShadow: "0 20px 50px -12px rgba(0,0,0,.7)" }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>대국을 나가시겠어요?</div>
-              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>지금 나가면 기권으로 처리돼요.</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>대국에서 나갈까요?</div>
+              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>지금 나가면 기권 처리</div>
               <div className="flex gap-2">
                 <button onClick={cancelPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>계속 두기</button>
                 <button onClick={confirmPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#E05C5C,#B23A3A)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>나가기(기권)</button>
@@ -34408,7 +34405,7 @@ export default function App() {
             /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <span style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={20} style={{ color: T.brassHi }} /></span>
-              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>공유 보상 도착!</div><div style={{ fontSize: 12 }}>친구가 내가 공유한 퍼즐을 풀어 <b>+{toast.amount} XP</b>를 받았어요.</div></div>
+              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>공유 보상</div><div style={{ fontSize: 12 }}>친구가 공유한 퍼즐을 풀어 <b>+{toast.amount} XP</b> 획득</div></div>
             </div>
           ) : toast.type === "questClear" ? (
             /* (v0.2.9 기능) 일일 퀘스트 5개 중 하나를 클리어할 때 — 전체 클리어 팝업(DailyQuestClearedModal)과
@@ -34418,7 +34415,7 @@ export default function App() {
               <span className="gm-board-shine" style={{ borderRadius: 13 }} />
               <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)" }}><Check size={18} color="#fff" strokeWidth={3} /></span>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>퀘스트 완료!</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>퀘스트 완료</div>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
