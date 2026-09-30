@@ -10,7 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
-| BUG-035 | P1 | 친구에게 도전장(일반 대국·미니게임)을 보내면 빨간 오류 문구가 뜨고 전달되지 않음 | 수정 중(원인 확인 중) | 2026-09-30 |
+| BUG-035 | P1 | 친구에게 도전장(일반 대국·미니게임)을 보내면 400·42703 오류로 전달되지 않음 — 기존 DB의 pvp_invites에 game_type 컬럼이 없었음 | 수정 완료(SQL 재실행 필요) | 2026-09-30 |
 | BUG-034 | P3 | 나이트 레이스 봇 대전에서 둘 다 목표에 못 가면 거리와 상관없이 무승부 — 실시간 대전(거리 판정)과 규칙이 달랐음 | 수정 완료(작업 범위) | 2026-09-27 |
 | BUG-033 | P1 | 좌표 인지 게임 실시간 대전에서 15라운드가 다 끝나도 정산 화면이 뜨지 않고 멈춤 | 수정 완료 | 2026-09-27 |
 | BUG-032 | P2 | 리뷰 대기(정확도 그래프) 화면이 고정 크기로 쌓여 폰에선 진행 막대가 화면 밖으로 밀리고, 데스크톱에선 한 줄로 길게 내려감 | 수정 완료(사용자 요청) | 2026-09-27 |
@@ -51,11 +51,15 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ## 상세 기록
 
 ### BUG-035 · [P1] 친구 도전장(일반 대국·미니게임)이 전달되지 않음
-- **상태**: 수정 중 (v0.5.9, 사용자 제보 "미니게임·일반 대국 전부 친구한테 매칭이 안 보내진다" — 보내는 쪽에 빨간 오류 문구)
-- **등급 근거**: 핵심 기능(친구 대국) 사용 불가
-- **위치**: `supabase-setup.sql` `pvp_invite_friend`·`pvp_invites`, `src/App.jsx` 도전장 발송 3곳(체스 로스터·미니게임 로스터·채팅 /play)
-- **조사**: 로컬 PostgreSQL 16 + PostgREST + 실제 앱(dev·배포 빌드) + Playwright 두 계정으로 재현 시도 — 새 DB, v0.5.7 SQL 위에 최신 SQL 재실행 모두 체스·좌표 인지 게임 도전장이 정상 발송·수신·수락됨. 코드만으로는 재현되지 않아 운영 DB 상태 차이로 보고 오류 원문을 확인 중.
-- **함께 고친 것**: 체스 로스터만 실패 이유 없이 "도전장을 보내지 못했어요."로 뭉개고 있었다(BUG-030 수정 누락) — `inviteFailText`로 서버 이유를 보여 준다. `pvp_invites.game_type`이 create table 안에만 있어 오래된 프로젝트에선 재실행해도 생기지 않던 것을 `add column if not exists`로 보강.
+- **상태**: 수정 완료 (v0.5.9, 사용자 제보 "미니게임·일반 대국 전부 친구한테 매칭이 안 보내진다" — 오류 문구 `400 · 42703`) · **배포 시 supabase-setup.sql 재실행 필요**
+- **등급 근거**: 핵심 기능(친구 대국·미니게임 대결) 사용 불가
+- **위치**: `supabase-setup.sql` `pvp_invites` 표, `pvp_invite_friend`
+- **증상**: 친구 로스터·채팅 /play 어디서 도전장을 보내도 서버가 400(42703, column does not exist)을 돌려주고 아무것도 전달되지 않음.
+- **원인**: v0.4.8에서 `pvp_invites.game_type`을 `create table if not exists` 블록 안에만 추가했다. 운영 DB의 `pvp_invites`는 v0.4.3(첫 도입) 때 이미 만들어져 있어, 이후 supabase-setup.sql을 다시 실행해도 블록 전체가 건너뛰어져 컬럼이 생기지 않았다(같은 v0.4.8에 붙은 `pvp_queue`·`pvp_games`의 game_type은 따로 `add column if not exists`가 있었는데 이 표만 빠짐). `pvp_invite_friend`는 plpgsql이라 만들 때는 컬럼을 확인하지 않아 SQL 실행은 오류 없이 끝나고, 호출할 때마다 `insert into pvp_invites(..., game_type)`에서 실패했다.
+- **재현**: 로컬 PostgreSQL 16 — v0.4.3 시점(d24e238) SQL로 DB를 만든 뒤 v0.5.8 SQL을 다시 실행하고 `pvp_invite_friend(친구, '0-0', 'coord')` 호출 → `42703: column "game_type" of relation "pvp_invites" does not exist`. 새 DB에서는 재현되지 않음(그래서 개발 중 테스트에서 못 잡음).
+- **수정 내용**: `alter table public.pvp_invites add column if not exists game_type text not null default 'chess'` 추가. 조사 중 함께 — 체스 로스터만 실패 이유 없이 "도전장을 보내지 못했어요."로 뭉개던 것을 `inviteFailText`로 서버 이유를 보여 주게 함(BUG-030 수정 누락분).
+- **재발 방지 안전장치**: `scripts/check-sql-table-columns.mjs`(prebuild, `npm run check:sql-columns`) — `scripts/sql-table-baseline.json`에 표마다 처음 만들어질 때의 컬럼(git 기록으로 산출)을 적어 두고, 그 뒤 create table 블록에 추가된 컬럼에 `add column if not exists`가 없으면 빌드를 막는다. 새 표는 기준 파일에 등록해야 통과. git 기록으로 33개 표 전부를 감사한 결과 같은 누락은 이 컬럼 하나뿐이었다.
+- **검증**: 위 재현 DB에 수정된 SQL을 다시 실행 → 같은 호출이 `pending · coord` 행을 돌려줌. 검사 스크립트는 수정 전 SQL에서 실패, 수정 후 통과. 로컬 PostgREST + 실제 앱(dev·배포 빌드) + Playwright 두 계정으로 체스·좌표 인지 게임 도전장 발송·수신 확인. `npm run build` 통과.
 
 ### BUG-034 · [P3] 나이트 레이스 봇 대전 판정이 실시간 대전과 달랐음
 - **상태**: 수정 완료 (v0.5.7 이후, 거리 판정 연출 작업 중 발견 — 같은 작업 범위)
