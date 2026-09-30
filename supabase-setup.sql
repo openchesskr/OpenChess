@@ -2519,6 +2519,47 @@ begin
   return n;
 end; $$;
 
+-- (v0.5.9, BUG-040) 기물 잡기까지 모두 고려한 실제 최단 수 — src/lib/knightRace.js knightExactPath와 같은 규칙((칸, 잡은 기물 집합)
+-- 상태 BFS). 잡은 기물 집합은 상대 색 기물 순서대로 비트마스크(최대 5쌍 = 32가지). 못 가면 null.
+-- par는 "잡지 않고 가는" 경로 기준이라 잡아서 길을 여는 지름길이 있으면 실제 최단보다 크다 — _knight_gen_round는 둘이 같을 때만 쓴다.
+create or replace function public.knight_exact_dist(p_round jsonb, p_color text, p_start text)
+returns int language plpgsql stable as $$
+declare
+  v_target text := p_round ->> 'target';
+  v_opp text[] := array(select h ->> 'sq' from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h where h ->> 'color' <> p_color);
+  v_own text[] := array(select h ->> 'sq' from jsonb_array_elements(coalesce(p_round -> 'hazards', '[]'::jsonb)) h where h ->> 'color' = p_color);
+  v_dang jsonb := '{}'::jsonb;
+  v_seen boolean[] := array_fill(false, array[2048]);
+  v_front int[]; v_next int[]; v_depth int := 0;
+  v_st int; v_sq text; v_mask int; v_nb text; v_nmask int; v_k int; v_key text; v_taken text[]; v_i2 int;
+begin
+  if p_start = v_target then return 0; end if;
+  v_front := array[((ascii(substr(p_start,1,1)) - 97) * 8 + (substr(p_start,2)::int - 1)) * 32];
+  v_seen[v_front[1] + 1] := true;
+  while coalesce(array_length(v_front, 1), 0) > 0 loop
+    v_depth := v_depth + 1; v_next := '{}';
+    foreach v_st in array v_front loop
+      v_sq := chr(97 + (v_st / 32) / 8) || (((v_st / 32) % 8) + 1)::text;
+      v_mask := v_st % 32;
+      foreach v_nb in array public.knight_neighbors(v_sq, v_own) loop
+        v_nmask := v_mask; v_k := array_position(v_opp, v_nb);
+        if v_k is not null then v_nmask := v_nmask | (1 << (v_k - 1)); end if;
+        v_key := v_nmask::text;
+        if not (v_dang ? v_key) then
+          v_taken := array(select v_opp[i] from generate_series(1, coalesce(array_length(v_opp, 1), 0)) i where (v_nmask & (1 << (i - 1))) <> 0);
+          v_dang := v_dang || jsonb_build_object(v_key, to_jsonb(public.knight_danger(p_round, p_color, v_taken)));
+        end if;
+        continue when (v_dang -> v_key) ? v_nb;
+        if v_nb = v_target then return v_depth; end if;
+        v_i2 := ((ascii(substr(v_nb,1,1)) - 97) * 8 + (substr(v_nb,2)::int - 1)) * 32 + v_nmask;
+        if not v_seen[v_i2 + 1] then v_seen[v_i2 + 1] := true; v_next := v_next || v_i2; end if;
+      end loop;
+    end loop;
+    v_front := v_next;
+  end loop;
+  return null;
+end; $$;
+
 -- (v0.5.4 난이도 대폭 상향 → v0.5.7 개편) 라운드 하나를 만든다 — src/lib/knightRace.js의 knightTryGen/knightGenRound와 같은 규칙.
 -- par = 위협 칸과 모든 기물 칸을 피한(잡지 않고 가는) 최단 수(knight_safe_walls). 라운드별 조건(minDist~maxDist, 기물 쌍,
 -- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. 이동 수 제한은 par+1.
@@ -2597,6 +2638,9 @@ begin
         if public.knight_first_moves(v_ws, v_target, v_w_walls, v_par) <> 1 then continue; end if;
         if public.knight_first_moves(v_bs, v_target, v_b_walls, v_par) <> 1 then continue; end if;
       end if;
+      -- (v0.5.9, BUG-040) 기물을 잡는 지름길로 par보다 빨리 갈 수 있는 라운드는 쓰지 않는다(knightTryGen과 같음).
+      if public.knight_exact_dist(v_round, 'w', v_ws) is distinct from v_par then continue; end if;
+      if public.knight_exact_dist(v_round, 'b', v_bs) is distinct from v_par then continue; end if;
       return jsonb_build_object('target', v_target, 'whiteStart', v_ws, 'blackStart', v_bs, 'hazards', v_hazards,
         'wIllegal', to_jsonb(v_w_ill), 'bIllegal', to_jsonb(v_b_ill), 'par', v_par, 'moveBudget', v_par + 1, 'timeLimitMs', v_time);
     end loop;
