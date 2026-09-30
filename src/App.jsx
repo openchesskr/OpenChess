@@ -28,6 +28,7 @@ import { fx, buzz } from "./lib/minigameFx.js";
 import { rushParse, rushApply, rushTargetsFrom, rushAttacked } from "./lib/rushHour.js";
 import RUSH_LEVELS from "./data/rushLevels.json";
 import HUB_SCENES from "./data/hubScenes.json";
+import { isEcoBookPosition, bookPositionKey } from "./lib/ecoBook.js";
 import { Chess } from "chess.js";
 import {
   startBoard, fenToBoard, looksLikeFen, parseFenFull, replayFromFen, fenLegalDests, liveLegalDests,
@@ -1496,8 +1497,14 @@ function isUnbooked(key, san) { return !!CONTENT.unbook[key + "|" + stripSuffix(
 // 않았다(예: 개발자가 스칸디나비안 3수까지 이론으로 등록해도 리뷰에선 우수/최선으로 나옴). LearnTab의
 // 병합 규칙(2310행 등)과 동일하게 맞춘다: unbook이면 제외 → forceKind "book"이거나 개발자 추가
 // 이론이면 이론 → 그 외엔 (강제 지정이 없을 때) 스냅샷 트리의 book 플래그를 따른다.
-function isBookMoveAt(keyStr, san) {
-  if (keyStr == null) return false;
+// (v0.5.9 BUG-039) 위 규칙은 "수순 경로"(keyStr)로만 찾아서, 같은 포지션을 다른 수 순서로 만든 대국(수순 전환)에서는 이론 수가
+// 비이론으로 떴다 — 예: 1.e4 g6 2.d4는 데이터에 1.d4 g6 2.e4로만 있어 리뷰에서 비이론. 마스터 대국 5,000판(첫 30수)에서 이론 수 2,326개
+// (약 6%)가 이렇게 빠졌고 한 번 빠지면 이어지는 수까지 줄줄이 빠졌다. 경로로 못 찾으면 "이 수를 둔 뒤의 포지션이 이론 포지션인가"로
+// 다시 본다(chess.com과 같은 포지션 기준). 또 스냅샷이 포지션마다 상위 5수·10수까지만 담아 1...g6(모던)·1.Nf3 d5(레티) 같은 이름 있는
+// 오프닝도 비이론이었다 — ECO 오프닝 목록(lichess chess-openings, CC0)이 지나는 포지션도 이론으로 본다(src/lib/ecoBook.js).
+// 개발자가 이 경로에서 명시적으로 뺀 수(unbook·이론 아닌 강제 등급)는 그대로 빠지고, 어느
+// 경로에서든 명시적으로 뺀 포지션은 다른 경로의 이론으로도 되살리지 않는다. scripts/check-book-transposition.mjs가 검사한다.
+function isBookMoveAtPath(keyStr, san) {
   if (isUnbooked(keyStr, san)) return false;
   const forced = forceKindFor(keyStr, san);
   if (forced === "book") return true;
@@ -1506,6 +1513,58 @@ function isBookMoveAt(keyStr, san) {
   const node = SNAP.tree[keyStr];
   const snapMv = node && node.moves ? node.moves.find((x) => stripSuffix(x.san) === stripSuffix(san)) : null;
   return !!(snapMv && snapMv.book);
+}
+// 수순 경로 + 수 → 둔 뒤 포지션 키(기물 배치·차례·캐슬링 권리). 앙파상 칸은 뺀다 — sansToFen은 잡을 폰이 없어도 두 칸 전진마다
+// 앙파상 칸을 적어, 1.e4 g6 2.d4(d3)와 1.d4 g6 2.e4(e3)가 다른 포지션으로 보였다.
+const _bookPosAfterCache = new Map();
+function bookPosAfter(keyStr, san) {
+  const ck = keyStr + "|" + stripSuffix(san);
+  if (_bookPosAfterCache.has(ck)) return _bookPosAfterCache.get(ck);
+  let pos = null;
+  try {
+    const prev = keyStr ? keyStr.split(" ") : [];
+    const board = boardFromSans(prev);
+    const color = prev.length % 2 === 0 ? "w" : "b";
+    if (sanSrc(board, san, color)) pos = bookPositionKey(sansToFen([...prev, san]));
+  } catch { pos = null; }
+  if (_bookPosAfterCache.size > 50000) _bookPosAfterCache.clear();
+  _bookPosAfterCache.set(ck, pos);
+  return pos;
+}
+// 이론 포지션 색인 — 스냅샷·개발자 추가·강제 등급·unbook의 모든 (경로, 수)를 둔 뒤 포지션으로 모은다. CONTENT가 바뀌면(불러오기·개발자
+// 편집 bumpContent) invalidateBookIndex로 다시 만든다.
+let _bookPosIndex = null, _bookIndexVer = 0;
+function invalidateBookIndex() { _bookIndexVer++; }
+function bookPosIndex() {
+  if (_bookPosIndex && _bookPosIndex.content === CONTENT && _bookPosIndex.ver === _bookIndexVer) return _bookPosIndex;
+  const pairs = new Map();
+  const addPair = (k, san) => { if (k != null && san) pairs.set(k + "|" + stripSuffix(san), [k, san]); };
+  for (const [k, node] of Object.entries(SNAP.tree)) for (const m of (node && node.moves) || []) if (m.book) addPair(k, m.san);
+  for (const [k, list] of Object.entries(CONTENT.treeAdds || {})) for (const a of list || []) addPair(k, a.san);
+  for (const fk of [...Object.keys(CONTENT.forceKind || {}), ...Object.keys(CONTENT.unbook || {})]) { const i = fk.lastIndexOf("|"); if (i >= 0) addPair(fk.slice(0, i), fk.slice(i + 1)); }
+  const book = new Set(), no = new Set();
+  for (const [k, san] of pairs.values()) {
+    const pos = bookPosAfter(k, san);
+    if (!pos) continue;
+    if (isBookMoveAtPath(k, san)) book.add(pos);
+    else { const f = forceKindFor(k, san); if (isUnbooked(k, san) || (f != null && f !== "book")) no.add(pos); }
+  }
+  _bookPosIndex = { content: CONTENT, ver: _bookIndexVer, book, no };
+  return _bookPosIndex;
+}
+function isBookMoveAt(keyStr, san) {
+  if (keyStr == null) return false;
+  if (isBookMoveAtPath(keyStr, san)) return true;
+  // 이 경로에서 개발자가 명시적으로 뺀 수는 포지션 기준으로도 되살리지 않는다
+  if (isUnbooked(keyStr, san)) return false;
+  const forced = forceKindFor(keyStr, san);
+  if (forced != null && forced !== "book") return false;
+  const pos = bookPosAfter(keyStr, san);
+  if (!pos) return false;
+  const idx = bookPosIndex();
+  if (idx.no.has(pos)) return false;
+  // 앱 이론 데이터(스냅샷·개발자 추가)의 포지션이거나, 이름 있는 오프닝(ECO) 수순이 지나는 포지션이면 이론(src/lib/ecoBook.js)
+  return idx.book.has(pos) || isEcoBookPosition(pos);
 }
 
 /* ============================================================ chess.com 프로필 빅데이터 ============================================================ */
@@ -2222,13 +2281,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
   // 이후로는 이미 떠 있는 워커를 그대로 재사용한다.
   const dedicated = await getAnalysisPool(engine.profile, engine.urls);
   const workers = dedicated.length ? dedicated : [{ evaluateMulti: engine.evaluateMulti }];
-  // (v0.5.9 BUG-038) 희생 엔진 확인용 평가 — 풀의 첫 워커로, 리뷰와 같은 depth에 기본 movetime의 4배 상한. 결과는 { cp|mate, pv }.
-  // 바깥 withTimeout을 두지 않는다 — 이 요청은 워커 큐에서 아직 남은 포지션 평가들 뒤에 서므로 짧은 제한을 걸면 차례가 오기 전에
-  // 끝나 버렸다(실측: 14.Kf1이 확인 없이 정적 판정으로 남음). 멈춘 워커는 작업별 워치독(mt + hardBuffer)이 정리한다.
+  // (v0.5.9 BUG-038) 희생 엔진 확인용 평가 — 리뷰와 같은 depth에 기본 movetime의 4배 상한. 결과는 { cp|mate, pv }.
+  // 리뷰 풀 워커가 아니라 메인 엔진으로 돌린다 — 풀 워커 큐에 끼우면 뒤에 줄 선 포지션 평가가 withTimeout(대기 시간 포함)에 걸려
+  // 실패할 수 있다(풀이 없을 때만 폴백 워커 = 메인 엔진). 바깥 withTimeout을 두지 않는다 — 차례가 오기 전에 끝나 버려 14.Kf1이 확인
+  // 없이 정적 판정으로 남았다. 멈춘 엔진은 작업별 워치독이 정리한다.
   let flushWait = null;
   const sacTried = new Set();
   const sacEval = async (fen) => {
-    const lines = await workers[0].evaluateMulti(fen, depth, 1, movetime * 4);
+    const lines = await (dedicated.length ? engine : workers[0]).evaluateMulti(fen, depth, 1, movetime * 4);
     return lines && lines[0] ? lines[0] : null;
   };
   // (v0.3.0 성능) 예전엔 포지션 N+1개를 전부 평가(await Promise.all)한 "다음"에야 채점 루프를 한
@@ -2298,8 +2358,14 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 배열에 아예 없음 — 리뷰 화면은 그 경우 "n.SAN을 분석 중입니다..." 문구로 따로 안내한다) 이
     // 분기가 moves 배열에 pending을 넣는 유일한 자리였다. 중립적인 표시 등급(good)으로 즉시
     // 확정해, 리뷰 창에서 "계산 중"인 채로 영영 안 바뀌는 수가 구조적으로 나올 수 없게 한다.
+    // (v0.5.9 BUG-039) 이론 수 여부는 엔진과 무관하다 — 예전엔 엔진 평가가 실패한 수를 이론 판정보다 먼저 "좋음"으로 확정해, 워커가
+    // 바쁠 때(평가 시간 초과) 이론 수가 무작위로 비이론(좋음)으로 떴다. 이론 수면 평가가 없어도 이론으로 매기고 정확도에서도 감점 0.
+    const bookMove = !fenRoot && isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i]);
     if (!posEval[i].ok || (!matched && !posEval[i + 1].ok)) {
-      moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "good", acc: null, lossWinPct: null, sharp: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
+      if (bookMove) {
+        moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "book", acc: 100, lossWinPct: 0, sharp: 0, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
+        if (moverWhite) { wLoss.push(0); wSharp.push(0); wKind.push("book"); } else { bLoss.push(0); bSharp.push(0); bKind.push("book"); }
+      } else moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind: "good", acc: null, lossWinPct: null, sharp: null, best: null, beforeCp: posEval[i].ok ? moveBeforeCp : null });
       gradeBoard = applySan(gradeBoard, fullSans[i], color);
       return;
     }
@@ -2321,7 +2387,7 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
       sacWait = confirmSacrifice({ fenRoot, prevSans: fullSans.slice(0, i), san: fullSans[i], color, evaluate: sacEval });
       return true;
     };
-    if (!fenRoot && isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
+    if (bookMove) kind = "book";
     else kind = gradeMoveKind({
       loss, matched, bestCp, playedCp, secondCp: posEval[i].second == null ? null : posEval[i].second,
       isSac, priorSac: i >= 2 && moves[i - 2].kind === "brilliant",
@@ -33133,7 +33199,7 @@ export default function App() {
   // 않았다. contentVer부터 먼저 올려 로컬 화면은 그 즉시 새 CONTENT 기준으로 다시 그리고, 서버
   // 저장은 그 뒤로 미뤄(실패해도 다음 saveContent 호출 때 최신 CONTENT를 다시 통째로 올리므로 무해)
   // 화면 반응 속도와 무관하게 배경에서 진행한다.
-  const bumpContent = useCallback(async () => { setContentVer((v) => v + 1); saveContent(); }, []);
+  const bumpContent = useCallback(async () => { invalidateBookIndex(); setContentVer((v) => v + 1); saveContent(); }, []);   // 개발자 편집 → 이론 포지션 색인도 다시(v0.5.9 BUG-039)
   const isDev = user === DEV_ACCOUNT;
   const isCodev = !!user && Array.isArray(CONTENT.codev) && CONTENT.codev.includes(user);
   const canEdit = (isDev && devOn) || (isCodev && codevOn);   // (기능3) 분기점 해설·수 설명·수 키워드 수정 권한
