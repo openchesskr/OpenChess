@@ -208,6 +208,11 @@ export function knightTryGen(spec, { solo = false, rnd = Math.random } = {}) {
       if (bIllegal.includes(target) || bIllegal.includes(blackStart)) continue;
       if (knightDistance(blackStart, target, knightSafeWalls(r, "b")) !== par) continue;
     }
+    // (v0.5.9, BUG-040) par는 "잡지 않고 가는" 안전 경로 기준이라, 기물을 잡아 길을 여는 지름길이 있으면 실제 최단 수보다 크게 나온다
+    // (7라운드 par 7을 3수에 푸는 일). 기물 잡기까지 모두 고려한 실제 최단 수가 par와 같은 라운드만 낸다 — 그래야 표시되는
+    // "최소 N수"·이동 수 제한·난이도 조건(돌아가는 길, 첫 수 하나뿐)이 사실이다.
+    if (knightExactPath(r, "w", whiteStart).length - 1 !== par) continue;
+    if (!solo && knightExactPath(r, "b", blackStart).length - 1 !== par) continue;
     if (spec.minDetour > 0) {
       const plain = solo ? knightDistance(whiteStart, target, []) : Math.min(knightDistance(whiteStart, target, []), knightDistance(blackStart, target, []));
       if (par < plain + spec.minDetour) continue;
