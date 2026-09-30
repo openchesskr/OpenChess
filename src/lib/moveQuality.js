@@ -215,6 +215,10 @@ export function forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, hr, 
       if (r2 === hr && c2 === hc) continue;
       const q = board[r2][c2]; if (!q || q.c !== color) continue;
       if (!attacksSquare(board, p, enemy, er, ec, r2, c2)) continue;
+      // (v0.5.9 BUG-036) "다른 쪽"이 두기 전에 실제로 위험했어야 포크다 — 킹은 체크, 그 외는 이 공격자가 SEE상 이득을 보는 경우.
+      // 예전엔 기하학적으로 겨누기만 하면(되잡기로 충분히 지켜지는 기물이라도) 포크로 보고 "이 수가 구해냈다"며 탁월을 막았다
+      // (예: 11...Bxc6 — Qd4가 Ra7과 함께 f6 나이트·d6 폰도 겨누지만 둘 다 SEE 0이라 원래 안전했다).
+      if (q.t === "K" ? !isAttacked(board, r2, c2, enemy) : seeSquare(board, r2, c2, enemy) <= 0) continue;
       // (er,ec)가 (hr,hc)와 (r2,c2) 둘을 동시에 공격하는 포크 — (r2,c2)가 바로 이번 수로 이동한
       // 기물 자신(fr,fc)이라면 그 새 도착 칸(tr,tc)에서 안전해졌는지 확인한다.
       const nr = (r2 === fr && c2 === fc) ? tr : r2;
@@ -354,6 +358,47 @@ export function isSacrifice(board, sanRaw, color) {
 export function ownPriorMoveWasSacrifice(prevSans, color, fenRoot) {
   if (!prevSans || prevSans.length < 2) return false;
   try { return isSacrifice(boardOfRoot(fenRoot, prevSans.slice(0, -2)), prevSans[prevSans.length - 2], color); } catch { return false; }
+}
+
+/* ============================================================ 수 등급 판정(단일 규칙) ============================================================ */
+// (v0.5.9 BUG-037) 수 등급 판정 규칙을 한 곳으로 모은다. 예전엔 같은 규칙이 App.jsx 9곳(게임 리뷰·리뷰 자유 탐색·분석 탭 후보 블록·
+// 분석 탭 FEN 모드·분석 탭에서 직접 둔 수·퍼즐 풀이·퍼즐 후보·미니게임·가벼운 집계)에 복사돼 있었고, "유일한 수"는 그중 일부에만
+// 들어가 있었다 — 분석 탭에서 직접 둔 수·FEN 모드·퍼즐 풀이에는 규칙 자체가 없어 절대 뜨지 않았고, 분석 탭 후보 블록은 "나머지 형제
+// 수가 전부 부정확 이하"라는 다른 정의를 썼는데 그 형제 수가 승부가 기운 위치 완화(부정확→좋음)를 먼저 거쳐 유일한 수가 사라졌다.
+// scripts/check-move-grading.mjs가 App.jsx에 이 규칙이 다시 복사되면(isSacrifice·tierOf를 직접 조합하면) 빌드를 막는다.
+//   loss      최선 대비 손실(cp, ≥0) · matched  엔진 1순위 수를 그대로 뒀는지
+//   bestCp    두기 전 최선 평가(둔 쪽 관점, 메이트는 ±1e5) · playedCp  둔 뒤 평가(둔 쪽 관점)
+//   secondCp  2순위 수 평가(둔 쪽 관점). undefined = 모름(유일한 수 판정 안 함), null = 2순위 수가 없음
+//   isSac()   isSacrifice 결과(필요할 때만 계산) · priorSac  직전 자신의 수가 이미 희생(콤보 연결 수)
+//   singleRecapture()  대안 없는 단순 되잡기 · oppJustErred  상대 직전 수가 실수·블런더(놓친 수 판정) · san  언더프로모션 판정용
+// (v0.5.9 BUG-036) 탁월로 인정하는 "둔 뒤 평가"(둔 쪽 관점) 하한. 예전엔 -40(-0.4)이라, 11...Bxc6처럼 엔진이 흑을 -0.66 정도로 보는
+// 평범한 오픈 시실리안 포지션의 교환 희생까지 막았다(리뷰 depth에서 흑 포지션은 -0.3~-0.7이 흔하다). chess.com 기준("둔 뒤 나쁜
+// 포지션이 아닐 것")에 맞춰 폰 하나(-1.0)까지 허용한다 — 그보다 나쁘면 희생이 아니라 그냥 불리해지는 수로 본다.
+export const BRILLIANT_MIN_PLAYED_CP = -100;
+export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac, priorSac = false, singleRecapture, oppJustErred = false, san = "" }) {
+  let kind = tierOf(Math.max(0, loss));
+  if (kind === "best" && !matched) kind = "excellent";
+  // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않았고, 직전 자기 희생을 잇는 수가 아닐 때
+  const badlyLosing = bestCp <= -200;
+  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing && !priorSac) {
+    try { if (isSac && isSac()) kind = "brilliant"; } catch { /* 판정 실패는 희생 아님 */ }
+  }
+  // 이미 승부가 기운 위치(두기 전 기준)에서는 실수류를 한 단계씩 완화
+  if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+  // 유일한 수 — 1순위를 뒀고 2순위가 1.2점 이상 나쁘다(단순 되잡기·승부가 난 위치·2순위도 크게 이기는 위치 제외)
+  if (kind === "best" && matched && secondCp !== undefined) {
+    const gap = secondCp == null ? 9999 : bestCp - secondCp;
+    const secondStillWinningBig = secondCp != null && secondCp >= 200;
+    if (gap >= 120 && Math.abs(bestCp) < 600 && !badlyLosing && !secondStillWinningBig) {
+      let rc = false; try { rc = !!(singleRecapture && singleRecapture()); } catch { rc = false; }
+      if (!rc) kind = "only";
+    }
+  }
+  // 놓친 수 — 상대 실수·블런더의 이점을 응징하지 못해 1점 이상 잃었지만 뒤집히진 않음
+  if (oppJustErred && ["inaccuracy", "mistake", "good"].includes(kind) && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
+  // 언더프로모션은 탁월
+  if (/=/.test(san) && !/=Q/.test(san) && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+  return kind;
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */

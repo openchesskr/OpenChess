@@ -63,9 +63,9 @@ import {
   VAL, lva, seeSquare, pawnDefendsSquare,
   canCaptureSquareLegally, countLegalCapturesOnSquare, hangingLossSq, attacksPricier,
   attacksPricierIndependent, hasSaferSquare, attacksSquare, forkForcedTheOtherSide,
-  isSacrifice, ownPriorMoveWasSacrifice, matePliesOf, fmtEvalCp, posEvalToWhite, tierOf,
+  isSacrifice, ownPriorMoveWasSacrifice, matePliesOf, fmtEvalCp, posEvalToWhite,
   winPctFromCp, stdev, normalCdf, sharpLossMultiplier, newAccuracyFromAvgLoss,
-  newCumulativeAccuracy, NEW_ACC_PENALTY_MULT, MUST_NOT_INCREASE_KINDS,
+  newCumulativeAccuracy, NEW_ACC_PENALTY_MULT, MUST_NOT_INCREASE_KINDS, gradeMoveKind,
 } from "./lib/moveQuality.js";
 import {
   ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, SCHEMATIC_ZOOM_LABEL_BASE,
@@ -693,10 +693,6 @@ async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
   const pvs = pvsIn || await evalPositionMulti(engine, cur, fenRoot);
   if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
   const bestCp = cpOfLine(pvs[0]);
-  // (버그 수정) 이미 승부가 기운 위치(예: -600cp)에서 어차피 지는 형세를 못 바꾸는 희생 수까지
-  // "탁월한 수(brilliant)"로 잘못 태그되던 문제 — classifyMoveKind/analyzeGame과 동일하게, 두기
-  // 전 위치가 이미 결정 나 있고(decided) 지고 있던(losing) 경우에는 희생 태그를 주지 않는다.
-  const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
   const adoptBy = {};
   try { const lc = fenRoot ? null : await fetchLichess(cur, false); if (lc && lc.moves) for (const mv of lc.moves) adoptBy[stripSuffix(mv.san)] = mv.adopt; } catch { /* 채택률 데이터 없음 허용 */ }
   const cands = []; const seen = new Set();
@@ -705,20 +701,12 @@ async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
     const san = uciToSan(brd, pv.uci, color); if (!san) return;
     const k = stripSuffix(san); if (seen.has(k)) return; seen.add(k);
     const mvCp = cpOfLine(pv);
-    const loss = Math.max(0, bestCp - mvCp);
-    let kind = i === 0 ? "best" : tierOf(loss);
-    if (i > 0 && kind === "best") kind = "excellent";
+    const loss = i === 0 ? 0 : Math.max(0, bestCp - mvCp);
     // (v0.4.0 버그 수정) 다른 네 판정 경로(classifyMoveKindDetailed·analyzeGame·분석 탭·자유 탐색)와
     // 달리 이 퍼즐 후보 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는 다시 탁월로
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
-    try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color, fenRoot)) kind = "brilliant"; } catch { }
-    // (v0.4.0 버그 수정) decided(위에서 계산만 해 두고 실제로는 쓰지 않던 변수)를 다른 네 판정
-    // 경로와 같은 완화 규칙에 실제로 연결한다 — 이미 승부가 기운 위치(예: +6점)에서는 실수류 등급을
-    // 한 단계씩 완화해야 하는데, 이 퍼즐 후보 판정에서만 그 완화가 빠져 있어 다른 후보 수들과 다른
-    // 등급(예: 블런더 그대로)이 나오고 있었다. 언더프로모션 승격 규칙도 마찬가지로 빠져 있었다.
-    if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-    const under = /=/.test(san) && !/=Q/.test(san);
-    if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+    // (v0.5.9 BUG-037) 등급 규칙은 gradeMoveKind 하나로 — 퍼즐 후보는 유일한 수를 따로 매기지 않는다(secondCp 생략).
+    const kind = gradeMoveKind({ loss, matched: i === 0, bestCp, playedCp: mvCp, isSac: () => isSacrifice(brd, san, color), priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san });
     cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
   });
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
@@ -730,14 +718,7 @@ async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
       if (evc) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
-        let kind = tierOf(loss); if (kind === "best") kind = "excellent";
-        // (v0.4.0 버그 수정) 위 엔진 PV 후보들과 달리 이 실전 채택 수 보강 후보에는 탁월한 수 승격·
-        // 완화 규칙이 통째로 빠져 있었다 — 같은 포지션의 같은 종류 수(예: 기물 희생)가 엔진 PV
-        // 목록에 있었다면 탁월로 뜨는데 이 보강 후보로 들어오면 그냥 우수로 뜨는 불일치가 있었다.
-        try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, san, color) && mvCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(cur, color, fenRoot)) kind = "brilliant"; } catch { }
-        if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-        const under2 = /=/.test(san) && !/=Q/.test(san);
-        if (under2 && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+        const kind = gradeMoveKind({ loss, matched: false, bestCp, playedCp: mvCp, isSac: () => isSacrifice(brd, san, color), priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san });
         cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color) });
       }
     } catch { }
@@ -1752,43 +1733,45 @@ function useChessCom(username, opts) {
 // 새로 둔다 — classifyMoveKind는 이 함수를 감싸 kind만 꺼내 쓰는 얇은 래퍼가 된다.
 async function classifyMoveKindDetailed(engine, prevSans, san, depth = 12, fenRoot) {
   if (!engine || engine.status !== "ready") return null;
-  const best = await engine.evaluate(fenOfRoot(fenRoot, prevSans), depth);
-  if (!best) return null;
-  const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
+  const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : x.cp);
+  // (v0.5.9 BUG-037) 유일한 수를 가리려면 2순위 수 평가가 필요해 MultiPV 2로 평가한다(예전엔 1순위만 봐서 이 경로 — 퍼즐 풀이·MEC
+  // 코치 — 에서는 유일한 수가 절대 뜨지 않았다).
+  const pvs = await callEvaluateMulti(engine, fenOfRoot(fenRoot, prevSans), depth, 2);
+  const p0 = pvs && pvs[0], p1 = pvs && pvs[1];
+  if (!p0) return null;
+  const bestCp = cpOf(p0);
   const col = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
   // (20차) '최선의 수'(별)는 엔진 1순위 수를 그대로 뒀을 때만 부여한다 — 서로 다른 두 포지션 평가의
   // depth 노이즈로 loss가 우연히 ≤10이 된 차선 수까지 별이 붙던 문제(가짜 최선 수) 수정.
-  const bestSan = best.best ? uciToSan(boardOfRoot(fenRoot, prevSans), best.best, col) : null;
+  const bestSan = p0.uci ? uciToSan(boardOfRoot(fenRoot, prevSans), p0.uci, col) : null;
   const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
-  const after = await engine.evaluate(fenOfRoot(fenRoot, [...prevSans, san]), depth);
-  if (!after) return null;
-  const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
-  const ourCp = -afterOpp;
+  let ourCp;
+  if (/#/.test(san)) ourCp = 1e5;
+  else {
+    const after = await engine.evaluate(fenOfRoot(fenRoot, [...prevSans, san]), depth);
+    if (!after) return null;
+    ourCp = -cpOf(after);
+  }
   const loss = matched ? 0 : bestCp - ourCp;   // 최선수 그 자체는 손실 0(노이즈 제거) — analyzeGame과 동일 규칙
-  let kind = tierOf(loss);
-  if (kind === "best" && !matched) kind = "excellent";
-  // (버그 수정) '이미 승부가 기운 위치라 이 정도 실수는 완화한다'는 판정을 '수를 둔 뒤' 평가(ourCp)로
-  // 하고 있었다 — 그러면 거의 동등하던 위치(+0.68)에서 둔 수 하나가 -5.71까지 무너뜨린 진짜 블런더도
-  // '둔 뒤엔 이미 -2점 넘게 기울었으니 완화 대상'으로 오판정돼 블런더가 실수로 격하됐다. 승부가 이미
-  // 기울어 있었는지는 '이 수를 두기 전(최선의 수 기준)' 평가(bestCp)로 판단해야 한다 — 둔 뒤 평가가
-  // 아무리 나빠져도, 두기 전이 팽팽했다면 그 수 자체가 승부를 가른 것이므로 완화 대상이 아니다.
-  const decided = Math.abs(bestCp) > 200;
-  const losing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant";
-  if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-  // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 analyzeGame·학습
-  // 탭·자유 탐색에는 있는데 이 판정(MEC/퍼즐 코치가 함께 쓰는 상세 버전)에는 빠져 있었다 — 동일하게 적용한다.
-  const under = /=/.test(san) && !/=Q/.test(san);
-  if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-  // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데 그 이점을 응징 못 해 평가치가 감소하되,
-  // 결과가 뒤집힐(패배) 정도는 아닌 경우. 후보일 때만 직전 포지션을 1회 추가 평가해 상대 손실을 확인한다.
+  // 승부가 기울었는지(완화)는 두기 전 평가(bestCp)로 판단한다 — gradeMoveKind 참고.
+  const grade = (oppJustErred) => gradeMoveKind({
+    loss, matched, bestCp, playedCp: ourCp, secondCp: p1 ? cpOf(p1) : null,
+    isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+    singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), oppJustErred, san,
+  });
+  let kind = grade(false);
+  // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는지는 후보일 때만 직전 포지션을 1회 추가 평가해 확인한다.
   if (["inaccuracy", "mistake", "good"].includes(kind) && prevSans.length >= 1 && bestCp >= 120 && loss >= 100 && ourCp >= -30) {
     try {
       const oppBest = await engine.evaluate(fenOfRoot(fenRoot, prevSans.slice(0, -1)), depth);
-      if (oppBest) { const oppBestCp = oppBest.mate != null ? (oppBest.mate > 0 ? 1e5 : -1e5) : oppBest.cp; if (oppBestCp + bestCp >= 100) kind = "miss"; }
+      if (oppBest && cpOf(oppBest) + bestCp >= 100) kind = grade(true);
     } catch { }
   }
   return { kind, bestSan: matched ? null : bestSan, beforeCp: bestCp };
+}
+// 대안 없는 단순 되잡기(recaptureFact.onlyCandidate)인지 — gradeMoveKind가 유일한 수 후보일 때만 부르도록 함수로 넘긴다.
+function singleRecaptureCheck(prevSans, san, color, fenRoot) {
+  return () => { const rc = recaptureFact(prevSans, san, color, fenRoot); return !!(rc && rc.onlyCandidate); };
 }
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
@@ -1811,18 +1794,11 @@ async function classifyMoveKindQuick(engine, fenRoot, prevSans, san, movetime = 
     ourCp = -cpOf(after);
   }
   const loss = matched ? 0 : bestCp - ourCp;
-  let kind = tierOf(loss);
-  if (kind === "best" && !matched) kind = "excellent";
-  const badlyLosing = bestCp <= -200;
-  try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant"; } catch { }
-  if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-  if (/=/.test(san) && !/=Q/.test(san) && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-  const gap = secondCp == null ? 9999 : bestCp - secondCp;
-  let singleRecapture = false;
-  try { const rc = recaptureFact(prevSans, san, col, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-  const secondStillWinningBig = secondCp != null && secondCp >= 200;
-  if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
-  return kind;
+  return gradeMoveKind({
+    loss, matched, bestCp, playedCp: ourCp, secondCp,
+    isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+    singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), san,
+  });
 }
 // 앱 전역 엔진(useEngine) — 보드 컴포넌트 깊숙한 곳(미니게임)에서도 수 등급을 매길 수 있게 컨텍스트로 내려 준다.
 const EngineContext = createContext(null);
@@ -1859,10 +1835,7 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
       const ourCp = -afterOpp;
       const loss = matched ? 0 : bestCp - ourCp;
-      let kind = tierOf(loss);
-      const decided = Math.abs(bestCp) > 200;
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, color) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, color, fenRoot)) kind = "brilliant";
-      if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; }
+      const kind = gradeMoveKind({ loss, matched, bestCp, playedCp: ourCp, isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, color), priorSac: ownPriorMoveWasSacrifice(prevSans, color, fenRoot), san });
       if (kind === "brilliant") counts.brilliant++;
       else if (kind === "mistake") counts.mistake++;
       else if (kind === "blunder") counts.blunder++;
@@ -2247,49 +2220,16 @@ async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, 
     // 둔 수가 엔진 최선수면 손실 0(노이즈 제거), 아니면 둔 뒤 포지션(= posEval[i+1], 상대 관점) 부호 반전
     const playedCp = matched ? bestCp : -posEval[i + 1].cp;
     const loss = Math.max(0, bestCp - playedCp);
-    // 등급 — (20차) '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만(loss 노이즈로 차선 수에 별이 붙는 것 방지)
-    let kind = tierOf(loss);
-    if (kind === "best" && !matched) kind = "excellent";
+    // 등급 — 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037). '최선의 수'(별)는 엔진 1순위 수를 실제로 뒀을 때만, 승부가 기울었는지는
+    // 두기 전(bestCp) 기준, 직전 자신의 수가 이미 탁월(희생)이면 이어지는 콤보 수는 다시 탁월로 태그하지 않는다(v0.2.6).
+    let kind;
     if (!fenRoot && isBookMoveAt(fullSans.slice(0, i).join(" "), fullSans[i])) kind = "book";
-    else {
-      // (버그 수정) '완화' 판정을 둔 뒤 평가(playedCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로
-      // 한다 — 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
-      const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      // (v0.2.6 버그 수정) 직전 자신의 수(2수 전)가 이미 브릴리언트(희생)로 분류됐다면, 지금 수는
-      // 그 희생을 잇는 콤보의 연결 수일 뿐이므로 다시 탁월로 중복 태그하지 않는다.
-      const continuesOwnSacrifice = i >= 2 && moves[i - 2].kind === "brilliant";
-      // (v0.3.9 버그 수정, 재조정) 사용자 요청 — 이 수를 두기 전 평가(bestCp)가 이미 2점(200cp) 이상
-      // 불리한 쪽에서는 탁월한 수·유일한 수를 매기지 않는다(이미 승부가 크게 기운 위치에서의 발버둥/
-      // 막판 수순까지 "탁월"·"유일"로 추켜세우는 게 의미가 없다는 판단). 처음엔 3점 기준으로
-      // 했다가 2점으로 낮췄다 — 기존 decided&&losing(실수 등급 완화용, 바로 아래)과 값은 우연히
-      // 같아졌지만, 이 승격 게이트는 그와 별개인 badlyLosing이라 앞으로 서로 다른 값으로 독립적으로
-      // 조정할 수 있다.
-      const badlyLosing = bestCp <= -200;
-      try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(brd, fullSans[i], color) && playedCp >= -40 && !badlyLosing && !continuesOwnSacrifice) kind = "brilliant"; } catch { }
-      if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-      // 유일한 수(Great, 매우 좋아요): 최선수를 뒀는데 2순위가 분명히 열세라(대안이 없다) 반드시 그 수여야 했던 경우.
-      // (버그 수정) 상대가 방금 잡은 자리를 되잡을 수 있는 내 기물이 이 하나뿐인 수(단순 되잡기)는
-      // 기물 점수를 맞추는 게 너무 직관적이라 "유일한 수"로 놀라워할 이유가 없다 — recaptureFact로
-      // 감지해 이런 수는 "유일한 수" 승격에서 제외한다(등급은 그대로 최선의 수로 남는다).
-      // (v0.3.9 버그 수정, 재조정) 사용자 요청 — 위 badlyLosing(2점 이상 불리)에 더해, 2순위 수
-      // (posEval[i].second) 자체가 이미 +2점(200cp) 이상이면 유리한 쪽이어도 "유일한 수"를 매기지
-      // 않는다 — 대안(2순위)도 여전히 크게 유리한 수라면 "이 수여야만 했다"는 놀라움이 성립하지 않는다.
-      const gap = posEval[i].second == null ? 9999 : (bestCp - posEval[i].second);
-      const secondStillWinningBig = posEval[i].second != null && posEval[i].second >= 200;
-      let singleRecapture = false;
-      try { const rc = recaptureFact(fullSans.slice(0, i), fullSans[i], color, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-      if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
-      // 놓친 수(Miss): 상대의 직전 수가 실수/블런더(내게 이점)였는데, 그 이점을 응징 못 해 평가치가
-      // 의미있게 감소(loss≥100)하되, 결과가 뒤집힐(패배) 정도는 아닌 경우(playedCp≥-30).
-      if (["inaccuracy", "mistake", "good"].includes(kind) && i >= 1
-        && ["mistake", "blunder"].includes(moves[i - 1].kind)
-        && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
-      // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 분석 탭·리뷰 자유
-      // 탐색에는 있는데 정식 게임 리뷰(analyzeGame)에는 빠져 있었다 — 실제 기보에 언더프로모션이
-      // 있으면 이 판정 경로도 다른 두 곳과 똑같은 등급이 나오도록 같은 규칙을 적용한다.
-      const under = /=/.test(fullSans[i]) && !/=Q/.test(fullSans[i]);
-      if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-    }
+    else kind = gradeMoveKind({
+      loss, matched, bestCp, playedCp, secondCp: posEval[i].second == null ? null : posEval[i].second,
+      isSac: () => isSacrifice(brd, fullSans[i], color), priorSac: i >= 2 && moves[i - 2].kind === "brilliant",
+      singleRecapture: singleRecaptureCheck(fullSans.slice(0, i), fullSans[i], color, fenRoot),
+      oppJustErred: i >= 1 && ["mistake", "blunder"].includes(moves[i - 1].kind), san: fullSans[i],
+    });
     // (v0.3.4 유지) best/only/brilliant/book로 분류된 수는 원 손실(엔진 depth 노이즈로 미세하게
     // 남을 수 있음)과 무관하게 정확도 계산에서 감점하지 않는다 — 예전 chess.com 근사 체계의 규칙을
     // 그대로 물려받는다(이 판정 자체는 "어떤 수가 감점 대상인지"이지, 손실→정확도 변환 공식과는 무관).
@@ -2492,69 +2432,36 @@ function assignTiers(moves, ply, board, keyStr, sans) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
-  // (버그 수정) 분석 탭의 이 등급 판정만 classifyMoveKind/analyzeGame/puzzleCandidatesAt과 달리 "이미
-  // 승부가 기운 위치에서의 자포자기 희생은 탁월한 수로 안 쳐준다"는 완화 규칙이 빠져 있었다 — 같은
-  // 포지션이 게임 리뷰·퍼즐 채점에서는 정상 등급(예: 우수)으로 나오는데 분석 탭에서만 "탁월한 수"로
-  // 잘못 표시되는 불일치가 있었다. best(형제 수 중 최댓값)는 다른 세 곳의 bestCp와 같은 역할이므로
-  // 동일한 기준으로 완화한다.
-  const decided = best != null && Math.abs(best) > 200;
-  const losing = best != null && best <= -200;
-  let out = moves.map((m) => {
+  // 최선의 수는 반드시 1개 이하 — 평가치가 가장 높은 수(argmax)만 "엔진 1순위를 둔 수"(matched)로 친다. 그 수가 이론 수면
+  // 최선은 어떤 수에도 붙지 않는다(이론 수는 아래에서 먼저 book으로 빠진다).
+  let argmaxIdx = -1, argmaxVal = null;
+  moves.forEach((m, i) => { const v = moverEval(m, ply); if (v != null && (argmaxVal == null || v > argmaxVal)) { argmaxVal = v; argmaxIdx = i; } });
+  // (v0.5.9 BUG-037) 유일한 수 — 게임 리뷰와 같은 기준(2순위와 1.2점 이상 차이, gradeMoveKind)으로 매긴다. 2순위는 형제 수 중
+  // 두 번째로 높은 평가치다. 예전엔 "나쁘지 않은 수가 정확히 1개, 나머지는 전부 부정확 이하"라는 다른 정의를 썼는데, 형제 수가
+  // 승부가 기운 위치 완화(부정확→좋음)를 먼저 거쳐 좋은 수로 바뀌면 유일한 수가 사라졌다. 이론 수가 있는 위치, 아직 평가가 없는
+  // 형제 수가 있는 동안에는 매기지 않는다(secondCp 모름).
+  // 형제 수가 하나도 없으면(아직 후보가 1개만 들어온 경우 등) 2순위를 "없음"이 아니라 "모름"으로 둔다 — 유일한 수를 섣불리 매기지 않게.
+  const anyBook = moves.some((m) => (keyStr != null ? (forceKindFor(keyStr, m.san) === "book" || isBookMoveAt(keyStr, m.san)) : !!m.book));
+  const pendingSibling = moves.some((m) => moverEval(m, ply) == null);
+  const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
+  const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
+  return moves.map((m, i) => {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
-    const mv = moverEval(m, ply);
-    const loss = (mv == null || best == null) ? null : best - mv;
     // (v0.5.6 버그 수정 BUG-015) 이론 판정은 isBookMoveAt 하나로 — 예전엔 여기만 스냅샷의 book 플래그만 봐서, 개발자가 추가한 이론 수
     // (treeAdds의 theory)가 트리엔 이론으로 들어가 있는데 등급은 이론이 아니게(계산 중·좋은 수 등) 매겨졌다.
     const isBook = keyStr != null ? isBookMoveAt(keyStr, m.san) : !!m.book;
     if (isBook) return { ...m, kind: "book", book: true };
+    const mv = moverEval(m, ply);
     if (mv == null || best == null) return { ...m, kind: hasRealEval(m) ? "good" : "pending", book: false };
-    let kind = tierOf(loss);
-    // (v0.4.0 버그 수정) 이 분석 탭 판정에만 "직전 자신의 수가 이미 희생이었다면 이어지는 콤보 수는
-    // 다시 탁월로 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 게임 리뷰·퍼즐 채점·자유 탐색과 같은
-    // 기준으로 통일한다.
-    if (["best", "excellent", "good"].includes(kind) && board && sans && isSacrifice(board, m.san, color) && mv >= -40 && !(best != null && best <= -200) && !ownPriorMoveWasSacrifice(sans, color)) kind = "brilliant";
-    // (v0.4.0 버그 수정) 위 주석(decided)에서 이미 지적된 대로 이 판정만 "이미 승부가 기운 위치에서는
-    // 실수류 등급을 완화한다"는 규칙 자체가 안 걸려 있었다(변수만 계산해 두고 실제로 안 씀) — 다른
-    // 세 곳과 같은 완화를 적용한다. 언더프로모션 승격 규칙도 마찬가지로 빠져 있었다.
-    if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-    const under = /=/.test(m.san) && !/=Q/.test(m.san);
-    if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+    const matched = i === argmaxIdx;
+    const kind = gradeMoveKind({
+      loss: best - mv, matched, bestCp: best, playedCp: mv, secondCp: matched ? secondCp : undefined,
+      isSac: () => !!(board && sans) && isSacrifice(board, m.san, color), priorSac: !!sans && ownPriorMoveWasSacrifice(sans, color),
+      singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
+    });
     return { ...m, kind, book: false };
   });
-  // (기능4) 최선의 수는 반드시 1개 이하. 평가치가 가장 좋은 '비이론' 수 1개에만 '최선'을 부여하고
-  // 나머지 'best' 는 '우수'로 강등. 평가치 최댓값이 이론 수이면 '최선'은 어떤 수에도 표기하지 않는다.
-  let argmaxIdx = -1, argmaxVal = null;
-  out.forEach((m, i) => { const v = moverEval(m, ply); if (v != null && (argmaxVal == null || v > argmaxVal)) { argmaxVal = v; argmaxIdx = i; } });
-  if (argmaxIdx >= 0) {
-    const topIsBook = out[argmaxIdx].book;
-    const keepBest = (!topIsBook && out[argmaxIdx].kind === "best") ? argmaxIdx : -1;
-    out = out.map((m, i) => (m.kind === "best" && i !== keepBest) ? { ...m, kind: "excellent" } : m);
-  }
-  // 유일한 수(#6): 이 위치에 이론 수가 없고, '나쁘지 않은' 수가 정확히 1개이며,
-  // 나머지 분석된 수가 전부 부정확/실수/블런더일 때만. 유일+탁월이면 탁월로 표기.
-  // (버그 수정) analyzeGame(Math.abs(bestCp) < 600)과 달리 이 분석 탭 판정에는 평가치 크기 상한이
-  // 빠져 있어, 이미 한쪽이 6점 이상 유리해진 위치에서도(다른 수는 전부 나쁘게 분류되니) '유일한 수'가
-  // 계속 붙었다 — 승부가 사실상 끝난 위치에서는 그 수를 찾았는지가 더 이상 의미가 없으므로, 다른 세
-  // 판정과 동일한 기준으로 이 평가치 범위를 벗어나면 '유일한 수'를 매기지 않는다.
-  const anyBook = out.some((m) => m.kind === "book");
-  const goodSet = ["brilliant", "best", "excellent", "good"];
-  const goods = out.filter((m) => goodSet.includes(m.kind));
-  const others = out.filter((m) => !goodSet.includes(m.kind));
-  const allOthersBad = others.length > 0 && others.every((m) => ["inaccuracy", "mistake", "blunder"].includes(m.kind));
-  // (기능) 리뷰·퍼즐 채점과 동일하게, 그 유일한 좋은 수가 사실은 상대가 방금 잡은 기물을 그대로
-  // 되잡는 단순 리캡처(다른 후보가 애초에 없었을 뿐인 뻔한 수)라면 '유일한 수'로 승격하지 않는다 —
-  // recaptureFact는 실제로 두어진 수 이력(sans)이 있어야 상대의 직전 수를 볼 수 있으므로, 그 이력을
-  // 넘겨줄 수 있는 호출자에서만 이 예외가 적용된다.
-  let singleRecapture = false;
-  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && sans) {
-    try { const rc = recaptureFact(sans, goods[0].san, color); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-  }
-  if (!anyBook && goods.length === 1 && allOthersBad && best != null && Math.abs(best) < 600 && !singleRecapture) {
-    const i = out.indexOf(goods[0]);
-    out[i] = { ...out[i], kind: out[i].kind === "brilliant" ? "brilliant" : "only" };
-  }
-  return out;
 }
 /* (UI2) 화면 폭에 맞춰 보드 크기를 산출 — 모바일에서 보드가 잘리지 않게 함 */
 // (UI1) 세로로 긴 모바일 화면 여부 — 상단 헤더 크기/여백을 줄이는 데 사용
@@ -6268,18 +6175,16 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     // 기준값이라 한 번만 구하고, after만 depth가 깊어질 때마다(onProgress) 다시 등급을 매겨 아이콘을
     // 계속 갱신한다(최대 5초 동안 여러 번 바뀔 수 있음 — depth 20·moveTime 5초 상한, 대부분의
     // 포지션은 그 전에 depth 20에서 먼저 끝나 체감 속도는 기존과 비슷하게 유지된다).
-    const gradeFrom = (bestCp, bestSan, after) => {
+    const gradeFrom = (bestCp, secondCp, bestSan, after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
       const matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       const ourCp = -afterOpp; const loss = matched ? 0 : bestCp - ourCp;
-      let k = tierOf(loss);
-      if (k === "best" && !matched) k = "excellent";
-      // (버그 수정) '완화' 판정을 둔 뒤 평가(ourCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로 한다.
-      const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-      if (["best", "excellent", "good"].includes(k) && isSacrifice(boardFromSans(sans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(sans, col)) k = "brilliant";
-      if (decided) { if (k === "blunder") k = "mistake"; else if (k === "mistake") k = "inaccuracy"; else if (k === "inaccuracy") k = "good"; }
-      const under = /=/.test(san) && !/=Q/.test(san); if (under && !["inaccuracy", "mistake", "blunder"].includes(k)) k = "brilliant";
-      return k;
+      // 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037) — 승부가 기울었는지는 두기 전(bestCp) 기준.
+      return gradeMoveKind({
+        loss, matched, bestCp, playedCp: ourCp, secondCp,
+        isSac: () => isSacrifice(boardFromSans(sans), san, col), priorSac: ownPriorMoveWasSacrifice(sans, col),
+        singleRecapture: singleRecaptureCheck(sans, san, col), san,
+      });
     };
     (async () => {
       // (버그 수정) best/after는 서로 다른 독립된 포지션이라 순서를 지킬 이유가 없는데도, 단일
@@ -6290,13 +6195,14 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
       const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => null);
       if (cancel) return;
       const wBest = (pool && pool[0]) || engine, wAfter = (pool && pool[1]) || engine;
-      const bestPromise = wBest.evaluate(sansToFen(sans), 20, undefined, 5000, "focus-best");
+      const bestPromise = callEvaluateMulti(wBest, sansToFen(sans), 20, 2, 5000, "focus-best");   // 2순위까지 — 유일한 수 판정(v0.5.9 BUG-037)
       const afterPromise = wAfter.evaluate(sansToFen([...sans, san]), 20, undefined, 5000, "focus-after");
-      const [best, after] = await Promise.all([bestPromise, afterPromise]);
+      const [pvs, after] = await Promise.all([bestPromise, afterPromise]);
+      const best = pvs && pvs[0];
       if (cancel || !best || !after) return;
-      const bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;
-      const bestSan = best.best ? uciToSan(boardFromSans(sans), best.best, col) : null;
-      setLiveKind(gradeFrom(bestCp, bestSan, after));
+      const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : x.cp);
+      const bestSan = best.uci ? uciToSan(boardFromSans(sans), best.uci, col) : null;
+      setLiveKind(gradeFrom(cpOf(best), pvs[1] ? cpOf(pvs[1]) : null, bestSan, after));
     })();
     return () => { cancel = true; };
   }, [active, sansKey, san, active && m.kind, active && m.book, engine && engine.status, engine && engine.profile]);
@@ -14923,28 +14829,12 @@ function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
           const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp;
           const ourCp = -afterOpp;
           const loss = matched ? 0 : bestCp - ourCp;
-          let kind = tierOf(loss);
-          if (kind === "best" && !matched) kind = "excellent";
-          const decided = Math.abs(bestCp) > 200, losing = bestCp <= -200;
-          // (v0.3.9 버그 수정, 재조정) analyzeGame과 동일 — 별도 2점(200cp) 기준(badlyLosing)으로
-          // 탁월한 수·유일한 수 승격을 막는다. 기존 decided&&losing은 실수 등급 완화에만 쓴다(값은
-          // 우연히 같지만 서로 독립적으로 조정 가능한 별개 변수).
-          const badlyLosing = bestCp <= -200;
-          try { if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRoot, prevSans), san, col) && ourCp >= -40 && !badlyLosing && !ownPriorMoveWasSacrifice(prevSans, col, fenRoot)) kind = "brilliant"; } catch { }
-          if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-          // (v0.2.3 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 분석 탭(evalMoveKind
-          // 호출부의 applyKind)에는 있는데 이 자유 탐색 판정에는 빠져 있었다 — 같은 규칙을 그대로 적용한다.
-          const under = /=/.test(san) && !/=Q/.test(san);
-          if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-          const gap = secondCp == null ? 9999 : (bestCp - secondCp);
-          // (버그 수정) analyzeGame과 동일 — 단순 되잡기(되잡을 수 있는 내 기물이 이 하나뿐)는 "유일한
-          // 수"로 승격하지 않는다.
-          let singleRecapture = false;
-          try { const rc = recaptureFact(prevSans, san, col, fenRoot); singleRecapture = !!(rc && rc.onlyCandidate); } catch { }
-          // (v0.3.9 버그 수정, 재조정) analyzeGame과 동일 — badlyLosing이거나 2순위(secondCp)가 이미 +2점 이상
-          // 이어도 "유일한 수"를 매기지 않는다.
-          const secondStillWinningBig = secondCp != null && secondCp >= 200;
-          if (kind === "best" && matched && gap >= 120 && Math.abs(bestCp) < 600 && !singleRecapture && !badlyLosing && !secondStillWinningBig) kind = "only";
+          // 등급 규칙은 analyzeGame과 같은 gradeMoveKind 하나로(v0.5.9 BUG-037).
+          const kind = gradeMoveKind({
+            loss, matched, bestCp, playedCp: ourCp, secondCp,
+            isSac: () => isSacrifice(boardOfRoot(fenRoot, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRoot),
+            singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), san,
+          });
           if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
         };
         await grade(REVIEW_MOVETIME_MS);
@@ -15581,15 +15471,13 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
           const thisCp = cpOf(pv);
           const matched = i === 0;
           const loss = matched ? 0 : bestCp - thisCp;
-          kind = tierOf(loss);
-          if (kind === "best" && !matched) kind = "excellent";
-          const decided = Math.abs(bestCp) > 200;
-          try {
-            if (["best", "excellent", "good"].includes(kind) && isSacrifice(board, san, col) && thisCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(sans, col, fenRoot)) kind = "brilliant";
-          } catch { }
-          if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
-          const under = /=/.test(san) && !/=Q/.test(san);
-          if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
+          // (v0.5.9 BUG-037) 규칙은 gradeMoveKind 하나로 — 1순위 줄은 2순위 줄과의 차이로 유일한 수도 가린다(예전엔 FEN 모드에 유일한 수 규칙 자체가 없었다).
+          const second = raw.find((q, j) => j > 0 && q && q.pv && q.pv.length);
+          kind = gradeMoveKind({
+            loss, matched, bestCp, playedCp: thisCp, secondCp: matched && second ? cpOf(second) : undefined,   // 2순위 줄이 아직 없으면(스트리밍 중) 모름
+            isSac: () => isSacrifice(board, san, col), priorSac: ownPriorMoveWasSacrifice(sans, col, fenRoot),
+            singleRecapture: singleRecaptureCheck(sans, san, col, fenRoot), san,
+          });
         }
         out.push({ san, kind, evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
       });
@@ -15711,30 +15599,29 @@ function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, cont
     const pool = await getAnalysisPool(engine.profile, engine.urls);
     const wBest = pool[0] || engine, wAfter = pool[1] || engine;
     const col = plyIsWhite(prevSans.length, fenRootParam ? fenRootParam.turn : "w") ? "w" : "b";
-    let bestCp = null, matched = null;
+    let bestCp = null, matched = null, secondCp;
     const computeKind = (after) => {
       const afterOpp = after.mate != null ? (after.mate > 0 ? 1e5 : -1e5) : after.cp; // 상대 관점
       const ourCp = -afterOpp;
       const loss = matched ? 0 : bestCp - ourCp;
-      let kind = tierOf(loss);
-      if (kind === "best" && !matched) kind = "excellent";
-      // (버그 수정) '완화' 판정을 둔 뒤 평가(ourCp)가 아니라 둔 전(최선수 기준) 평가(bestCp)로 한다 —
-      // 그래야 팽팽하던 위치를 스스로 무너뜨린 진짜 블런더가 실수로 격하되지 않는다.
-      const decided = Math.abs(bestCp) > 200;  // 이 수를 두기 전, 최선의 수 기준으로도 이미 승부가 기울어 있었는가
-      const losing = bestCp <= -200;           // 그 상태에서 이 수를 둔 쪽이 불리했는가
-      if (["best", "excellent", "good"].includes(kind) && isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col) && ourCp >= -40 && !(bestCp <= -200) && !ownPriorMoveWasSacrifice(prevSans, col, fenRootParam)) kind = "brilliant";
-      if (decided) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }   // 실수류 완화(양측)
-      // (v0.4.0 버그 수정) 언더프로모션(=/=Q 아닌 승진)이면 탁월로 완화하는 규칙이 다른 판정 경로에는
-      // 있는데 FEN 모드 전용인 이 판정에만 빠져 있었다 — 동일하게 적용한다.
-      const under = /=/.test(san) && !/=Q/.test(san);
-      if (under && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
-      return kind;
+      // 규칙은 gradeMoveKind 하나로(v0.5.9 BUG-037) — 승부가 기울었는지는 두기 전(bestCp) 기준이라 팽팽하던 위치를 스스로
+      // 무너뜨린 블런더가 실수로 격하되지 않는다.
+      return gradeMoveKind({
+        loss, matched, bestCp, playedCp: ourCp, secondCp,
+        isSac: () => isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col), priorSac: ownPriorMoveWasSacrifice(prevSans, col, fenRootParam),
+        singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRootParam), san,
+      });
     };
     // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
-    const bestPromise = wBest.evaluate(fenOfRoot(fenRootParam, prevSans), 13, undefined, MOVETIME_MS).then((best) => {
+    // (v0.5.9 BUG-037) 유일한 수를 가리려면 2순위 평가가 필요해 MultiPV 2로 평가한다 — 예전엔 1순위만 봐서 분석 탭에서 직접 둔 수에는
+    // 유일한 수가 절대 뜨지 않았다.
+    const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : x.cp);
+    const bestPromise = callEvaluateMulti(wBest, fenOfRoot(fenRootParam, prevSans), 13, 2, MOVETIME_MS).then((pvs) => {
+      const best = pvs && pvs[0];
       if (!best) return null;
-      bestCp = best.mate != null ? (best.mate > 0 ? 1e5 : -1e5) : best.cp;     // 둘 차례(=우리) 관점 최선
-      const bestSan = best.best ? uciToSan(boardOfRoot(fenRootParam, prevSans), best.best, col) : null;
+      bestCp = cpOf(best);     // 둘 차례(=우리) 관점 최선
+      secondCp = pvs[1] ? cpOf(pvs[1]) : null;
+      const bestSan = best.uci ? uciToSan(boardOfRoot(fenRootParam, prevSans), best.uci, col) : null;
       matched = !!bestSan && stripSuffix(bestSan) === stripSuffix(san);
       return best;
     });
