@@ -194,20 +194,15 @@ function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotChar, masco
 
 const FEATURES = [
   { Icon: GraduationCap, eyebrow: "분석", title: "엔진과 함께 배우기", shot: "/about/screenshot-study.webp", mascotChar: "milku", mascotExpr: "think", ccBadge: true,
-    desc: "Stockfish 엔진의 실시간 분석과 함께 수를 두며 배워요. chess.com 계정을 연동하면 내가 실제로 둔 대국을 그대로 불러와, 어디서 무엇을 놓쳤는지 짚어줍니다.",
-    quote: "네가 둔 수, 하나하나 같이 복기해 줄게." },
+    desc: "Stockfish 엔진의 실시간 분석과 함께 수를 두며 학습. chess.com 계정을 연동하면 실제 대국을 불러와 어디서 무엇을 놓쳤는지 확인" },
   { Icon: Library, eyebrow: "도감", title: "오프닝 나침반", shot: "/about/screenshot-dex.webp", mascotChar: "milku", mascotExpr: "wink",
-    desc: "1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗어나가는 오프닝 트리에서 각 수의 채택률·평가치·이름을 한눈에 살펴보세요. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 모아둡니다.",
-    quote: "이 갈래 끝에 뭐가 있는지, 같이 따라가 보자." },
+    desc: "1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗는 오프닝 트리에서 각 수의 채택률·평가치·이름 확인. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 수집" },
   { Icon: Puzzle, eyebrow: "퍼즐", title: "내 실수로 만든 퍼즐", shot: "/about/screenshot-puzzle.webp", mascotChar: "kokoa", mascotExpr: "think",
-    desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마로, 실전에서 나온 실수를 바탕으로 자동 생성되는 맞춤형 전술 퍼즐을 풀어보세요. 친구에게 퍼즐을 공유할 수도 있어요.",
-    quote: "이 수, 정말 최선이었을까? 한번 찾아봐." },
+    desc: "\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능" },
   { Icon: Target, eyebrow: "학습", title: "매일 조금씩", shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
-    desc: "매일 새로 갱신되는 일일 퀘스트와, 갈래를 갖는 로드맵을 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인을 모아보세요.",
-    quote: "일일 퀘스트, 벌써 확인했어?" },
+    desc: "매일 갱신되는 일일 퀘스트와, 갈래를 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인 획득" },
   { Icon: Wrench, eyebrow: "설정", title: "내게 맞게 조정하기", shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
-    desc: "정확도가 가장 높은 Stockfish 16과, 가볍고 빠른 Stockfish 18 Lite 중 기기에 맞는 분석 엔진을 골라보세요. 로그인하면 진도가 계정에 저장돼 어느 기기에서든 이어서 즐길 수 있어요.",
-    quote: "빠르게 갈지, 정확하게 갈지 — 네가 골라." },
+    desc: "가볍고 빠른 Stockfish 18 Lite와 더 강력한 Stockfish 17.1·18 중 기기에 맞는 분석 엔진 선택. 로그인하면 진도가 계정에 저장되어 어느 기기에서든 이어서 사용" },
 ];
 
 // (v0.1.3 기능) "체스 웹사이트니까 사이사이에 체스보드를 많이 넣어달라"는 요청 — 실제 기물 이미지
@@ -308,12 +303,12 @@ function piecesFromFEN(fen, excludeAlg) {
 function famousDeco(pos) {
   return { pieces: piecesFromFEN(pos.fen, pos.move.to), move: { piece: pos.move.piece, from: algToRC(pos.move.from), to: algToRC(pos.move.to) }, caption: pos.caption };
 }
-const POS_FOOLSMATE = { fen: "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", move: { piece: "bQ", from: "d8", to: "h4" }, caption: "폴스 메이트 — 세계 최단 체크메이트 (단 2수)" };
-const POS_SCHOLARSMATE = { fen: "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4", move: { piece: "wQ", from: "h5", to: "f7" }, caption: "스칼라스 메이트 — 초보자 함정의 대명사" };
-const POS_LEGALSTRAP = { fen: "rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7", move: { piece: "wN", from: "c3", to: "d5" }, caption: "레갈의 함정 — 비숍을 미끼로 던지는 고전 트랩" };
-const POS_FRIEDLIVER = { fen: "r1bq1b1r/ppp3pp/2n1k3/3np3/2B5/5Q2/PPPP1PPP/RNB1K2R w KQ - 2 8", move: { piece: "bK", from: "f7", to: "e6" }, caption: "프라이드 리버 어택 — 나이트 희생으로 왕을 끌어내다" };
-const POS_IMMORTAL = { fen: "r1bk3r/p2pBpNp/n4n2/1p1NP2P/6P1/3P4/P1P1K3/q5b1 b - - 1 23", move: { piece: "wB", from: "d6", to: "e7" }, caption: "불멸의 게임 — 안더센 vs 키제리츠키, 1851" };
-const POS_OPERA = { fen: "1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17", move: { piece: "wR", from: "d1", to: "d8" }, caption: "오페라 게임 — 모피 vs 브런즈윅 공작·이수아르 백작, 1858" };
+const POS_FOOLSMATE = { fen: "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", move: { piece: "bQ", from: "d8", to: "h4" }, caption: "폴스 메이트: 세계 최단 체크메이트 (단 2수)" };
+const POS_SCHOLARSMATE = { fen: "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4", move: { piece: "wQ", from: "h5", to: "f7" }, caption: "스칼라스 메이트: 초보자 함정의 대명사" };
+const POS_LEGALSTRAP = { fen: "rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7", move: { piece: "wN", from: "c3", to: "d5" }, caption: "레갈의 함정: 비숍을 미끼로 던지는 고전 트랩" };
+const POS_FRIEDLIVER = { fen: "r1bq1b1r/ppp3pp/2n1k3/3np3/2B5/5Q2/PPPP1PPP/RNB1K2R w KQ - 2 8", move: { piece: "bK", from: "f7", to: "e6" }, caption: "프라이드 리버 어택: 나이트 희생으로 왕을 끌어냄" };
+const POS_IMMORTAL = { fen: "r1bk3r/p2pBpNp/n4n2/1p1NP2P/6P1/3P4/P1P1K3/q5b1 b - - 1 23", move: { piece: "wB", from: "d6", to: "e7" }, caption: "불멸의 게임: 안더센 vs 키제리츠키, 1851" };
+const POS_OPERA = { fen: "1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17", move: { piece: "wR", from: "d1", to: "d8" }, caption: "오페라 게임: 모피 vs 브런즈윅 공작·이수아르 백작, 1858" };
 const DECO_A = famousDeco(POS_FOOLSMATE);
 const DECO_B = famousDeco(POS_SCHOLARSMATE);
 const DECO_C = famousDeco(POS_LEGALSTRAP);
@@ -347,9 +342,9 @@ function FamousOpeningsSection() {
           <Library size={14} color={T.brass} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>OPENING</span>
         </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>체스 역사에 남은 유명한 오프닝들</h3>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>유명한 오프닝</h3>
         <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 26px", textAlign: "center", maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
-          이탈리안 게임부터 킹스 갬빗까지 — 도감 탭에서 만나볼 수 있는 대표 오프닝의 정석 수순을 실제 기보 그대로 체스보드에 재현했어요.
+          이탈리안 게임부터 킹스 갬빗까지. 도감 탭의 대표 오프닝 정석 수순을 실제 기보 그대로 체스보드에 재현
         </p>
       </Reveal>
       <div className="flex items-start justify-center flex-wrap" style={{ gap: 28 }}>
@@ -433,20 +428,20 @@ function GrandmasterCard() {
               </div>
               <h3 style={{ fontSize: 23, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>그랜드마스터</h3>
               <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 16px" }}>
-                아이언에서 시작해 여섯 단계를 모두 넘어야 도달하는 일곱 번째, 마지막 티어예요.
+                아이언에서 시작해 여섯 단계를 모두 넘어야 도달하는 일곱 번째, 마지막 티어
               </p>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>달성 조건</div>
                 <p style={{ fontSize: 12.5, color: T.ivory, lineHeight: 1.75, margin: 0 }}>
-                  퍼즐을 풀어 누적 <b style={{ color: T.brassHi }}>200,000 XP</b>를 모으면(아이언→브론즈→실버→골드→다이아몬드→마스터 순서로 전부 돌파) 도달해요. 그 뒤로도 XP는 계속 쌓이고, <b style={{ color: T.brassHi }}>100,000 XP</b>마다 프레스티지 별(★)이 하나씩 더해져요.
+                  퍼즐을 풀어 누적 <b style={{ color: T.brassHi }}>200,000 XP</b>를 모으면(아이언→브론즈→실버→골드→다이아몬드→마스터 순서로 전부 돌파) 도달. 이후에도 XP는 계속 쌓이고, <b style={{ color: T.brassHi }}>100,000 XP</b>마다 프레스티지 별(★) 1개 추가
                 </p>
               </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>그랜드마스터만의 혜택</div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ivory, lineHeight: 1.85 }}>
-                  <li>오로라처럼 일렁이는 전용 그러데이션 배지와, 끝없이 쌓이는 프레스티지 별(★) 카운터로 한눈에 구분돼요.</li>
-                  <li>코인으로는 살 수 없는 전용 체스보드·기물 스킨이 티어 달성과 동시에 자동으로 해금돼요 — 상점에서 바로 장착할 수 있어요.</li>
-                  <li>친구 목록·유저 검색·티어 리더보드 어디서든 그랜드마스터는 골드빛 테두리와 왕관 아이콘으로 항상 강조되어 보여요.</li>
+                  <li>오로라처럼 일렁이는 전용 그러데이션 배지와 프레스티지 별(★) 카운터로 구분</li>
+                  <li>코인으로 살 수 없는 전용 체스보드·기물 스킨이 티어 달성과 동시에 해금. 상점에서 바로 장착 가능</li>
+                  <li>친구 목록·유저 검색·티어 리더보드에서 골드빛 테두리와 왕관 아이콘으로 강조</li>
                 </ul>
               </div>
               <GrandmasterSkinPreview />
@@ -513,10 +508,10 @@ function CCStatTile({ label, sub, delay }) {
   );
 }
 const CC_TILES = [
-  { label: "대국 자동 동기화", sub: "chess.com 계정만 연결하면 실제로 둔 대국이 그대로 들어와요." },
-  { label: "게임 리뷰 정확도", sub: "chess.com과 같은 방식의 정확도(%)로 내 대국을 채점해요." },
-  { label: "레이팅 변화 그래프", sub: "래피드·블리츠·불릿별로 대국마다 오르내린 레이팅을 보여줘요." },
-  { label: "오프닝별 승률 통계", sub: "도감의 각 수마다 이 오프닝을 실전에서 얼마나, 어떻게 뒀는지 보여줘요." },
+  { label: "대국 자동 동기화", sub: "chess.com 계정만 연결하면 실제 대국이 그대로 반영" },
+  { label: "게임 리뷰 정확도", sub: "chess.com과 같은 방식의 정확도(%)로 채점" },
+  { label: "레이팅 변화 그래프", sub: "래피드·블리츠·불릿별 대국마다 오르내린 레이팅 표시" },
+  { label: "오프닝별 승률 통계", sub: "도감의 각 수마다 이 오프닝을 실전에서 얼마나, 어떻게 뒀는지 표시" },
 ];
 function ChessComSection() {
   return (
@@ -526,9 +521,9 @@ function ChessComSection() {
           <img src="/chess.com_Icon.png" alt="" style={{ width: 18, height: 18, borderRadius: 4 }} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>CHESS.COM 연동</span>
         </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>내가 실제로 둔 대국까지 함께 분석해요</h3>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>실제로 둔 대국까지 분석</h3>
         <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
-          설정 탭에서 chess.com 아이디만 연결하면, 실전에서 둔 수만큼 도감이 해금되고 내 정확도·레이팅 변화까지 한눈에 볼 수 있어요.
+          설정 탭에서 chess.com 아이디만 연결하면 실전에서 둔 수만큼 도감이 해금되고 정확도·레이팅 변화 확인 가능
         </p>
       </Reveal>
       <div className="flex flex-wrap items-stretch justify-center" style={{ gap: 12 }}>
@@ -661,47 +656,47 @@ function AccuracySystemSection() {
           <Zap size={16} color={T.brassHi} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>정확도 체계</span>
         </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>정확도는 어떻게 계산될까요?</h3>
+        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>정확도 계산 방식</h3>
         <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
-          단순히 "실수를 몇 번 했는지" 세는 게 아니에요. 실제로 게임 리뷰를 설계하며 거쳤던 네 단계를 그대로 보여드릴게요 — 수식과 그래프로요.
+          실수 횟수만 세지 않음. 게임 리뷰를 설계하며 거친 네 단계를 수식과 그래프로 소개
         </p>
       </Reveal>
 
       <section style={{ maxWidth: 620, margin: "0 auto 28px" }}>
         <SpeechBubble mascot={{ char: "kokoa", expr: "think" }} name="KOKOA 코치">
-          "정확도 몇 %"라는 숫자 하나 뒤에는 이런 계산이 숨어 있어요. 하나씩 같이 뜯어볼까요?
+          정확도 % 하나 뒤에 이런 계산이 있음
         </SpeechBubble>
       </section>
 
       <div className="flex flex-col" style={{ gap: 40 }}>
-        <AsStep n={1} title="① 평가치(cp)는 승률로 바꿔야 공평해요"
+        <AsStep n={1} title="① 평가치(cp)를 승률로 변환"
           formula={<AsFormula>win%(cp) = 50 + 50 × (2 / (1 + e^(&#8722;0.00368×cp)) &#8722; 1)</AsFormula>}
           chart={<AsLineChart points={AS_WINPCT_PTS} xDomain={[-1200, 1200]} yDomain={[0, 100]} xTicks={[-1200, 0, 1200]} yTicks={[0, 50, 100]} markers={[[0, 50, "0 → 50%"], [300, asWinPct(300), "+300 → " + asWinPct(300).toFixed(0) + "%"]]} />}>
-          엔진이 내놓는 평가치(centipawn)는 그 자체로는 불공평한 잣대예요. 이미 +500으로 압도적으로 이기고 있을 때 100점을 더 잃는 것과, 팽팽한 0점 근처에서 100점을 잃는 건 승부에 미치는 영향이 완전히 달라요. 그래서 cp를 먼저 "이 포지션에서 이길 확률(win%)"로 바꿔요 — 로지스틱 곡선이라 0 근처에서는 가파르게, 이미 승부가 기운 구간에서는 완만하게 휘어져요. <b>손실은 이 win%가 그 수 전후로 얼마나 떨어졌는지</b>로 정의합니다.
+          엔진 평가치(centipawn)는 그대로 쓰면 불공평함. 이미 +500으로 크게 앞설 때 100점을 잃는 것과 0점 근처에서 100점을 잃는 것은 승부에 미치는 영향이 다름. 그래서 cp를 이 포지션에서 이길 확률(win%)로 변환. 로지스틱 곡선이라 0 근처에서는 가파르고 승부가 기운 구간에서는 완만함 <b>손실은 그 수 전후로 win%가 얼마나 떨어졌는지</b>로 정의
         </AsStep>
 
-        <AsStep n={2} title="② 손실이 클수록, 정확도는 훨씬 더 가파르게 떨어져요" reverse
+        <AsStep n={2} title="② 손실이 클수록 정확도는 더 가파르게 하락" reverse
           formula={<AsFormula>정확도 = 103.17 × e^(&#8722;0.055 × 손실) &#8722; 3.17</AsFormula>}
           chart={<AsLineChart points={AS_DECAY_PTS} xDomain={[0, 40]} yDomain={[0, 100]} xTicks={[0, 20, 40]} yTicks={[0, 50, 100]} markers={[[0, 100, "0 → 100"], [25, asAccFromLoss(25), "25 → " + asAccFromLoss(25).toFixed(1)]]} color="#8FB55E" />}>
-          이 승률% 손실 하나를 다시 지수 감쇠(exponential decay) 곡선에 넣어 그 수 하나의 "정확도"로 바꿔요. 손실이 0에 가까우면 정확도는 계속 100 근처(최선의 수를 그대로 뒀다는 뜻이니 당연하죠), 손실이 커질수록 정확도는 완만하게가 아니라 <b>점점 더 가파르게</b> 떨어집니다 — 작은 실수는 관대하게, 큰 블런더는 훨씬 냉정하게 반영하려는 의도예요.
+          이 승률% 손실을 지수 감쇠(exponential decay) 곡선에 넣어 수 하나의 정확도로 변환. 손실이 0에 가까우면 정확도는 100 근처, 손실이 커질수록 완만하지 않고 <b>점점 더 가파르게</b> 하락. 작은 실수는 관대하게, 큰 블런더는 냉정하게 반영
         </AsStep>
 
-        <AsStep n={3} title="③ 여기서 순서를 한 번 잘못 잡았었어요"
+        <AsStep n={3} title="③ 계산 순서를 잘못 잡았던 부분"
           formula={<AsFormula>❌ acc(mean(loss))  vs.  ✅ mean(acc(loss))</AsFormula>}
           chart={<AsJensenBars />}>
-          처음엔 "그 대국에서 낸 손실들을 먼저 평균 낸 뒤, 그 평균 하나만 정확도로 변환"했어요. 그런데 위 감쇠 곡선은 아래로 볼록(convex)해서, <b>옌센 부등식(Jensen's inequality)</b>에 의해 이 순서는 항상 "각 수를 먼저 변환한 뒤 평균 내는" 것보다 결과가 같거나 높게 나와요 — 무난한 수가 많은 대국일수록 블런더 한 번의 타격이 평균에 옅게 희석되는 거예요. 왼쪽 예시(무난한 수 9개 + 블런더 1개짜리 가상의 10수)로 보면, 예전 방식은 <b>{AS_JENSEN_NAIVE.toFixed(1)}점</b>이 나오지만 chess.com처럼 각 수의 정확도를 먼저 구하고 <b>조화평균(harmonic mean)</b>으로 모으면 <b>{AS_JENSEN_CORRECT.toFixed(1)}점</b>으로, 블런더 하나가 실제로 체감되는 만큼 정확도에 반영돼요.
+          처음엔 손실을 먼저 평균 낸 뒤 그 평균 하나만 정확도로 변환. 감쇠 곡선이 아래로 볼록(convex)해서, <b>옌센 부등식(Jensen's inequality)</b>에 따라 이 순서는 각 수를 먼저 변환해 평균 내는 것보다 항상 같거나 높게 나옴. 무난한 수가 많을수록 블런더 한 번의 타격이 옅게 희석됨. 왼쪽 예시(무난한 수 9개 + 블런더 1개인 가상의 10수)에서 예전 방식은 <b>{AS_JENSEN_NAIVE.toFixed(1)}점</b>이 나오지만, chess.com처럼 각 수의 정확도를 먼저 구하고 <b>조화평균(harmonic mean)</b>으로 모으면 <b>{AS_JENSEN_CORRECT.toFixed(1)}점</b>으로 평균 내면 블런더 하나가 체감되는 만큼 반영됨
         </AsStep>
 
-        <AsStep n={4} title="④ 같은 실수라도 포지션에 따라 무게가 달라요" reverse
+        <AsStep n={4} title="④ 포지션에 따라 같은 실수의 무게가 다름" reverse
           formula={<AsFormula>배율 = 0.85 + 0.3 × Φ((날카로움 &#8722; 8) / 8)</AsFormula>}
           chart={<AsLineChart points={AS_SHARP_PTS} xDomain={[0, 25]} yDomain={[0.8, 1.2]} xTicks={[0, 8, 25]} yTicks={[0.85, 1, 1.15]} markers={[[8, 1, "8 → ×1.0"], [20, asSharpMult(20), "20 → ×" + asSharpMult(20).toFixed(2)]]} color="#E0B53A" />}>
-          정답이 하나뿐인 날카로운 포지션(엔진 후보 1·2·3위 평가가 서로 크게 벌어져 있음)에서의 실수는 더 엄격하게, 후보가 다 고만고만한 무난한 포지션에서의 실수는 더 관대하게 반영해요. 후보 수들 평가의 표준편차(Φ는 정규분포 누적분포함수)를 0.85~1.15배 배율로 매핑해 손실에 곱합니다 — 마지막으로 이 값들을 진영별로 처음부터 지금까지 <b>조화평균</b>내면, 게임이 길어질수록 수 하나의 영향이 자연히 옅어지면서도 블런더는 여전히 뚜렷하게 드러나는 최종 정확도가 나와요.
+          정답이 하나뿐인 날카로운 포지션(엔진 후보 1·2·3위 평가가 크게 벌어짐)의 실수는 엄격하게, 후보가 비슷한 무난한 포지션의 실수는 관대하게 반영. 후보 평가의 표준편차(Φ는 정규분포 누적분포함수)를 0.85~1.15배 배율로 매핑해 손실에 곱함. 마지막으로 이 값을 진영별로 처음부터 지금까지 <b>조화평균</b>내면, 게임이 길어질수록 수 하나의 영향이 옅어지면서도 블런더는 뚜렷하게 드러나는 최종 정확도가 나옴
         </AsStep>
       </div>
 
       <section style={{ maxWidth: 620, margin: "28px auto 0" }}>
         <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">
-          이 네 단계, 그리고 이 계산에 쓰이는 "포지션 변동성 보정"까지 — 설정 탭의 리뷰 설정 카드에서 직접 켜고 끌 수 있어요!
+          이 네 단계와 포지션 변동성 보정은 설정 탭의 리뷰 설정 카드에서 켜고 끌 수 있음
         </SpeechBubble>
       </section>
     </section>
@@ -788,10 +783,10 @@ function IntroPage() {
             <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>무료 체스 오프닝 학습·연습 애플리케이션</span>
           </div></Reveal>
           <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(32px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.22, margin: "0 0 16px", letterSpacing: "-.01em" }}>
-            오프닝을 배우고,<br />내 실수를 <span style={{ color: T.brassHi }}>퍼즐</span>로<br />복습하세요.
+            오프닝 학습,<br />내 실수는 <span style={{ color: T.brassHi }}>퍼즐</span>로<br />복습
           </h1></Reveal>
           <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", maxWidth: 440 }}>
-            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수에서 자동 생성되는 전술 퍼즐, 로드맵형 레슨과 티어 시스템까지 — MILKU·KOKOA와 함께 체스를 더 깊이 익혀보세요.
+            엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템
           </p></Reveal>
           <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 26 }}>
             <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
@@ -831,7 +826,7 @@ function IntroPage() {
 
       <section style={{ maxWidth: 640, margin: "0 auto 8px" }}>
         <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">
-          안녕하세요! 저는 MILKU예요. OpenChess에서는 그냥 체스를 두는 게 아니라, 왜 그 수가 좋았는지·나빴는지까지 함께 살펴봐요. 아래에서 하나씩 소개해 드릴게요.
+          수를 두는 데서 끝나지 않고 그 수가 왜 좋았는지·나빴는지까지 확인. 아래에서 기능별로 소개
         </SpeechBubble>
       </section>
 
@@ -883,7 +878,7 @@ function IntroPage() {
           </div>
           <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>아이언부터 그랜드마스터까지</h3>
           <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", textAlign: "center", maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
-            랭크 게임처럼 7단계 티어로 나뉜 경험치 시스템이에요. 퍼즐을 풀수록 경험치가 쌓이고 티어가 오릅니다.
+            7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승
           </p>
         </Reveal>
         <TierStrip />
@@ -908,7 +903,7 @@ function IntroPage() {
       <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "0 auto" }}>
         <div style={{ flex: "1 1 300px", minWidth: 260 }}>
           <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">
-            친구를 추가하고 채팅하며, 서로 얼마나 풀었는지·어떤 칭호를 얻었는지 프로필에서 확인해 보세요. 퍼즐을 공유하면 친구가 풀었을 때 저도 경험치를 조금 나눠 받아요.
+            친구를 추가하고 채팅하며 프로필에서 서로의 풀이 수·칭호 확인. 퍼즐을 공유하면 친구가 풀었을 때 경험치를 일부 획득
           </SpeechBubble>
         </div>
         <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
@@ -921,14 +916,13 @@ function IntroPage() {
         <div style={{ maxWidth: 280, margin: "40px auto 0", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
           <FloatImg src="/ilust-3-web.webp" alt="마주 앉아 대국을 두는 MILKU와 KOKOA" delay={0.8} />
         </div>
-        <p style={{ textAlign: "center", fontSize: 12, color: T.inkSoft, marginTop: 10 }}>오늘도 누군가는 다음 수를 고민합니다.</p>
       </Reveal>
 
       <Reveal delay={0.05}>
         <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 64, padding: "36px 28px", borderRadius: 18, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
           <div style={{ flex: "1 1 260px", minWidth: 220 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>지금 바로 시작해 보세요</h3>
-            <p style={{ fontSize: 13, color: T.inkSoft, margin: 0 }}>가입 없이 게스트로도 바로 둘러볼 수 있어요.</p>
+            <h3 style={{ fontSize: 20, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>지금 시작</h3>
+            <p style={{ fontSize: 13, color: T.inkSoft, margin: 0 }}>가입 없이 게스트로 둘러보기 가능</p>
           </div>
           <div className="flex items-center" style={{ gap: 18 }}>
             <Mascot char="kokoa" expr="celebrate" size={64} />
@@ -2735,10 +2729,10 @@ const VERSION_HISTORY = [
 // 이미지·애니메이션으로 보여주는" 구성 — 버전마다 대표 기능 하나를 뽑아 아이콘 펄스, 실제 티어
 // 이미지, 또는 승급 연출을 그대로 재현한 미니 데모로 보여준다.
 const PROMO_TIERS = [
-  { img: "/iron-pawn.png", label: "아이언 승급!" },
-  { img: "/bronze-knight.png", label: "브론즈 승급!" },
-  { img: "/silver-bishop.png", label: "실버 승급!" },
-  { img: "/gold-rook.png", label: "골드 승급!" },
+  { img: "/iron-pawn.png", label: "아이언 승급" },
+  { img: "/bronze-knight.png", label: "브론즈 승급" },
+  { img: "/silver-bishop.png", label: "실버 승급" },
+  { img: "/gold-rook.png", label: "골드 승급" },
 ];
 // v0.1.1에서 새로 생긴 "티어가 오르면 화면이 바뀌며 승급하는" 연출을, 실제 사이트에서 쓰는 것과
 // 같은 시각 언어(GOLD_DISC)로 축소 재현한다 — 일정 간격으로 다음 티어로 자동 순환.
