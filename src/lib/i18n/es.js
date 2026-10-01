@@ -1,4 +1,4 @@
-// (v0.7.0, 다국어) Español(스페인어) 번역. 키 = 한국어 원문, 값 = 번역. 체스 용어는 glossary.js의 표기를 쓴다. 자리표시자 {0}, 복수형 {0|단수|복수}.
+// (v0.6.0, 다국어) Español(스페인어) 번역. 키 = 한국어 원문, 값 = 번역. 체스 용어는 glossary.js의 표기를 쓴다. 자리표시자 {0}, 복수형 {0|단수|복수}.
 // AI가 초안을 쓴 번역이다. 원어민 검수 전에는 미세한 어감이 어색할 수 있다.
 export default {
   "탁월한 수": "Jugada brillante",
@@ -1753,8 +1753,6 @@ export default {
   "체스 용어(체크메이트·앙파상·캐슬링 등)를 언어별 표준 용어로 번역.": "Los términos de ajedrez (jaque mate, captura al paso, enroque, etc.) se traducen con la terminología estándar de cada idioma.",
   "날짜·숫자 표기가 선택한 언어에 맞춰 표시됨.": "Las fechas y los números se muestran con el formato del idioma elegido.",
   "레슨 본문·오프닝 설명 일부는 한국어로 표시됨. 순차 번역 예정.": "Parte del texto de las lecciones y de las descripciones de aperturas se muestra en coreano. La traducción se hará progresivamente.",
-  "5개 언어 선택 · 체스 용어 표준 번역": "5 idiomas · terminología estándar de ajedrez",
-  "다국어 지원 · 체스 용어 표준 번역.": "Compatibilidad multilingüe · terminología estándar de ajedrez.",
   "설정 탭 정리. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합.": "Pestaña de Ajustes reorganizada. Las tarjetas de cuenta e idioma pasan arriba y «Mostrar casillas controladas» se integra en Efectos visuales.",
   "처음 접속하면 기기 언어로 자동 설정. 직접 선택하면 그 언어로 고정.": "En la primera visita el idioma se establece según tu dispositivo. Si eliges uno, queda fijo.",
   "번역 화면의 복수형·대소문자·문장 연결 오류 수정. 체스 용어 표기 전수 점검.": "Corregidos errores de plurales, mayúsculas y unión de frases en las pantallas traducidas. Terminología de ajedrez revisada por completo.",
@@ -1762,4 +1760,6 @@ export default {
   "수 블록의 Lichess 통계를 위쪽 블록부터 도착하는 대로 표시.": "Las estadísticas de Lichess de los bloques de jugadas aparecen según llegan, empezando por los de arriba.",
   "수 블록의 키워드가 끝에서 되돌아오지 않고 같은 순서로 계속 흘러감.": "Las palabras clave de los bloques de jugadas siguen fluyendo en el mismo orden en lugar de volver al principio.",
   "엔진 depth가 한 단계 깊어질 때마다 수 블록 평가치·정렬 갱신.": "Las evaluaciones y el orden de los bloques se actualizan cada vez que la profundidad del motor aumenta en uno.",
+  "다국어 지원 · 신고·차단 확대 · 개인정보처리방침·이용약관 · 분석 탭 개선 · 앱 출시 준비.": "Compatibilidad multilingüe · más denuncias y bloqueos · Política de privacidad y Términos de servicio · mejoras en la pestaña de Análisis · preparación para el lanzamiento de la app.",
+  "5개 언어 선택 · 체스 용어 표준 번역 · 프로필 신고·차단 · 개인정보처리방침·이용약관 · 분석 탭 개선": "5 idiomas · terminología estándar de ajedrez · denuncia y bloqueo desde el perfil · Privacidad y Términos · mejoras en Análisis",
 };
