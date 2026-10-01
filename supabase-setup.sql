@@ -3658,19 +3658,23 @@ create table if not exists public.user_reports (
   target_uid uuid not null references auth.users(id) on delete cascade,
   message_id bigint references public.chat_messages(id) on delete set null,
   message_snapshot jsonb,
-  reason text not null check (reason in ('spam', 'abuse', 'sexual', 'cheating', 'other')),
+  reason text not null check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$'),
   detail text check (detail is null or char_length(detail) <= 500),
   status text not null default 'open',
   created_at timestamptz not null default now(),
   check (reporter <> target_uid)
 );
+-- (v0.6.1) 신고 사유를 여러 개("spam,abuse") 고를 수 있고, 신고 순간의 최근 대화(context)도 함께 남긴다. 이미 만들어진 표는 위 create table을 건너뛰므로 따로 바꾼다.
+alter table public.user_reports drop constraint if exists user_reports_reason_check;
+alter table public.user_reports add constraint user_reports_reason_check check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$');
+alter table public.user_reports add column if not exists context jsonb;
 alter table public.user_reports enable row level security;
 drop policy if exists "reports read own" on public.user_reports;
 create policy "reports read own" on public.user_reports for select using (auth.uid() = reporter);
 grant select on public.user_reports to authenticated;
 create or replace function public.user_report(p_target uuid, p_message_id bigint, p_reason text, p_detail text)
 returns bigint language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint;
+declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint; v_ctx jsonb;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   if p_target is null or p_target = v_me then raise exception 'bad target'; end if;
@@ -3679,6 +3683,12 @@ begin
     select to_jsonb(m) - 'read' into v_snap from public.chat_messages m
     where m.id = p_message_id and m.from_uid = p_target and m.to_uid = v_me;
     if v_snap is null then raise exception 'message not found'; end if;
+    -- (v0.6.1) 신고 순간 두 사람의 최근 대화 15개를 복사해 둔다 — 앞뒤 맥락을 보고 판단하고, 나중에 지워져도 남게(서버가 복사하므로 위조 불가).
+    select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'from_uid', x.from_uid, 'body', x.body, 'emoji', x.emoji, 'created_at', x.created_at) order by x.created_at, x.id), '[]'::jsonb)
+      into v_ctx from (
+        select c.id, c.from_uid, c.body, c.emoji, c.created_at from public.chat_messages c
+        where (c.from_uid = v_me and c.to_uid = p_target) or (c.from_uid = p_target and c.to_uid = v_me)
+        order by c.created_at desc, c.id desc limit 15) x;
   else
     -- (v0.6.0) 프로필 신고 — 신고 순간의 아이디·닉네임·소개·사진 여부를 서버가 복사해 둔다(나중에 고쳐도 검토 가능, 위조 불가).
     select jsonb_build_object('kind', 'profile', 'username', pr.username, 'nickname', pr.pub ->> 'nickname',
@@ -3690,12 +3700,39 @@ begin
   if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then
     raise exception 'too many reports';
   end if;
-  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, reason, detail)
-  values (v_me, p_target, p_message_id, v_snap, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
+  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, context, reason, detail)
+  values (v_me, p_target, p_message_id, v_snap, v_ctx, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
   returning id into v_id;
   return v_id;
 end; $$;
 grant execute on function public.user_report(uuid, bigint, text, text) to authenticated;
+
+-- (v0.6.1, 사용자 요청) 개발자 모드에서 신고 열람 — 개발자 계정(openchesskr)만. 신고한 사람·신고당한 사람 아이디, 사유, 신고된 메시지와 최근 대화를 돌려준다.
+-- 공동 개발자에게는 열지 않는다(개인 대화 내용이 들어 있어서). 표 자체는 신고자 본인만 읽을 수 있고(RLS), 이 함수만 개발자에게 전체를 보여 준다.
+create or replace function public._is_dev_account(p_uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles pr where pr.id = p_uid and pr.username = 'openchesskr');
+$$;
+create or replace function public.reports_for_dev(p_limit int default 100)
+returns table (id bigint, reporter_username text, target_username text, reason text, detail text, message_id bigint, message_snapshot jsonb, context jsonb, status text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select r.id, rp.username, tp.username, r.reason, r.detail, r.message_id, r.message_snapshot, r.context, r.status, r.created_at
+  from public.user_reports r
+  join public.profiles rp on rp.id = r.reporter
+  join public.profiles tp on tp.id = r.target_uid
+  where public._is_dev_account(auth.uid())
+  order by r.created_at desc
+  limit least(greatest(coalesce(p_limit, 100), 1), 300);
+$$;
+grant execute on function public.reports_for_dev(int) to authenticated;
+create or replace function public.report_set_status(p_id bigint, p_status text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public._is_dev_account(auth.uid()) then raise exception 'dev only'; end if;
+  if p_status not in ('open', 'done') then raise exception 'bad status'; end if;
+  update public.user_reports set status = p_status where id = p_id;
+end; $$;
+grant execute on function public.report_set_status(bigint, text) to authenticated;
 
 -- 대화방 목록 요약(BUG-019 수정) — 예전엔 나와 관련된 최근 메시지 200개로 클라이언트가 방 목록을 추정해, 오래된 대화방이
 -- 목록에서 빠지고 안 읽은 수도 200개 안에 든 것만 셌다. 대화 상대마다 "나에게서만 삭제" 워터마크 뒤의 마지막 메시지와
