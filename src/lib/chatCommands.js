@@ -11,10 +11,10 @@ import { t } from "./i18n.js";
 // (v0.5.7, 사용자 요청) /play로 바로 신청할 수 있는 미니게임 — gameType은 pvp_invites.game_type·PLAY_SPECIAL_GAMES와 같은 값.
 // 영문 키와 한국어 별칭을 모두 받는다(대소문자·공백 무시).
 export const CHAT_PLAY_GAMES = [
-  { gameType: "coord", key: "coord", label: t("좌표 인지 게임"), aliases: [t("좌표"), t("좌표인지"), t("좌표게임"), "coordrace", "coordinate", "coordinates"] },
-  { gameType: "knight", key: "knight", label: t("나이트 레이스"), aliases: [t("나이트"), t("나이트경주"), "knightrace"] },
-  { gameType: "rush", key: "rush", label: t("백랭크 러시아워"), aliases: [t("러시"), t("러시아워"), t("백랭크"), "rushhour", "backrank", "backrankrushhour"] },
-  { gameType: "attack", key: "attack", label: t("무한 체크메이트 게임"), aliases: [t("메이트"), t("체크메이트"), t("무한체크메이트"), t("무한메이트"), t("공격모드"), "attackmode", "mate", "checkmate"] },
+  { gameType: "coord", key: "coord", label: t("좌표 인지 게임"), aliases: ["좌표", "좌표인지", "좌표인지게임", "좌표게임", "coordrace", "coordinate", "coordinates"] },
+  { gameType: "knight", key: "knight", label: t("나이트 레이스"), aliases: ["나이트", "나이트레이스", "나이트경주", "knightrace"] },
+  { gameType: "rush", key: "rush", label: t("백랭크 러시아워"), aliases: ["러시", "러시아워", "백랭크", "백랭크러시아워", "rushhour", "backrank", "backrankrushhour"] },
+  { gameType: "attack", key: "attack", label: t("무한 체크메이트 게임"), aliases: ["메이트", "체크메이트", "무한체크메이트", "무한체크메이트게임", "무한메이트", "공격모드", "attackmode", "mate", "checkmate"] },
 ];
 // (v0.5.7 BUG-028) 사용자가 화면에 보이는 이름 그대로("무한 체크메이트 게임", "Knight Race" 등) 적어도 알아듣도록 — 소문자·공백·기호를
 // 없앤 뒤 키·gameType·화면 이름·별칭과 비교하고, 끝에 붙은 "게임"·"대결"·"한판"도 떼어 본다.

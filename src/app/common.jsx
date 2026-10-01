@@ -4379,6 +4379,8 @@ export const REVIEW_RESULT_CACHE_VERSION = 1;
 // 문자열끼리만 대기열에서 짝짓는다. initialSec이 null이면 무제한(클럭 없음).
 // (v0.4.3 UI 개편) 사용자 요청 — chess.com처럼 불렛/블리츠/래피드/스탠다드 4개 카테고리로 묶어 3개씩
 // 나열한 그리드로 바꾼다(각 항목의 cat이 그 그룹 헤더).
+// 시간 제어 구분(cat)은 값 비교에 쓰이는 한국어 고정 문자열 — 화면에 보일 때만 이 함수로 번역한다.
+export function tcCatLabel(cat) { return cat === "불렛" ? t("불렛") : cat === "블리츠" ? t("블리츠") : cat === "래피드" ? t("래피드") : cat === "스탠다드" ? t("스탠다드") : cat; }
 export const TIME_CONTROLS = [
   { key: "60-0", label: t("1분"), cat: "불렛", initialSec: 60, incSec: 0 },
   { key: "120-0", label: t("2분"), cat: "불렛", initialSec: 120, incSec: 0 },

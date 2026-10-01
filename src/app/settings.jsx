@@ -100,11 +100,11 @@ const FAQ_ITEMS = [];
 function openInquiryEmail(user) {
   const subject = t("[OpenChess 문의]");
   const body = [
-    "문의 내용을 아래에 적기",
+    t("문의 내용을 아래에 적기"),
     "",
     "─────────────",
-    "아이디: " + (user || ""),
-    "문의 유형: (버그 제보 / 기능 제안 / 기타)",
+    t("아이디: {0}", user || ""),
+    t("문의 유형: (버그 제보 / 기능 제안 / 기타)"),
     "─────────────",
   ].join("\n");
   // (버그 수정) 예전엔 Gmail 웹 작성 화면 URL(mail.google.com/...)을 새 탭으로 열었다 — 데스크톱에서

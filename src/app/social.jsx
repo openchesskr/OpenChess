@@ -17,7 +17,7 @@ import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "..
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles } from "./common.jsx";
+import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -884,7 +884,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
   // (v0.5.7, 사용자 요청 "미니게임 도전장도 일반 도전장과 똑같은 디자인") 제목 한 줄은 같은 틀로 두고, 무엇을 하는지는 그 아래 한 줄로 —
   // 체스는 시간 제한, 미니게임은 게임 이름. 게임 이름을 제목에 넣으면 줄이 바뀌어 카드 모양이 달라졌다.
   const what = special ? t("실시간 대결") : t("실시간 대국");
-  const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? " · " + tc.cat : ""); })();
+  const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? " · " + tcCatLabel(tc.cat) : ""); })();
   const [liveGame, setLiveGame] = useState(null);
   const gameId = inv && inv.status === "accepted" ? inv.game_id : null;
   useEffect(() => {
