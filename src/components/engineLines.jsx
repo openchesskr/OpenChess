@@ -17,7 +17,7 @@ export const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
 // 다시 맞춘다. 리뷰 페이지와만 공유하던 컴포넌트(EvalBadge·EvalBar·SequenceBar 등)의 font(옵션)
 // prop·기본값 구조는 이제 의미가 없어졌지만(기본값 자체가 이미 이 상수이므로), 굳이 걷어내지 않아도
 // 동작에는 차이가 없어 그대로 둔다.
-export const SITE_FONT = "'IBM Plex Sans KR', sans-serif";
+export const SITE_FONT = "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif";
 
 // (17차) 메이트로 이어지는 수를 null로 버려 평가치 바(fallbackEval)에서 최선의 수가 누락되던 버그 수정 —
 // posEval의 다른 경로(onEvalProgress)와 동일한 ±1000 표기 관례로 메이트도 값을 갖도록 한다.
