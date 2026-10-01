@@ -17,7 +17,7 @@ import { Chess } from "chess.js";
 import HUB_SCENES from "../data/hubScenes.json";
 import { fx, buzz } from "../lib/minigameFx.js";
 import RUSH_LEVELS from "../data/rushLevels.json";
-import { knightGenRound, knightNeighbors as knightNeighborsClient, knightCatcherOf, knightDangerFor, knightOwnBlocked, knightApplyMove, knightSafeWalls, knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightJudge } from "../lib/knightRace.js";
+import { knightGenRound, knightNeighbors as knightNeighborsClient, knightCatcherOf, knightDangerFor, knightOwnBlocked, knightApplyMove, knightSafeWalls, knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightJudge, knightExactPath } from "../lib/knightRace.js";
 import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rushHour.js";
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
@@ -2728,6 +2728,7 @@ function knightDistView(judge, myColor) {
 // 보여 주려고, 목표 칸에서 나이트 수(한 번 뛸 때마다 한 겹)로 칸들이 차례로 금색으로 물들며 퍼져 나간다 — 두 나이트 칸은 판정에 쓴 실제
 // 거리(위협 칸을 피해 잰 값, 잡힌 나이트는 닿지 않음)의 겹에서 물든다. 더 가까운 나이트 칸이 먼저 물들고, 그 칸에 체크메이트 승자 연출
 // (초록 칸 + 흰 왕관 + "승자", GameEndFx)이 뜬다. 거리가 같으면 두 칸이 동시에 물든 뒤 각자 소모 시간을 띄우고, 적게 쓴 쪽에 왕관.
+const KNIGHT_GRID_BORDER = 2;   // BOARD_GLOSS의 border 두께(px) — 오버레이 칸 계산에 쓴다
 const KD_STEP_MS = 320;          // 한 겹 퍼지는 간격
 const KD_CAP = 8;                // 연출할 최대 겹(거리 99 = 잡힘은 물들지 않는다)
 function knightDistFxPlan(judge) {
@@ -2762,7 +2763,8 @@ function KnightDistFx({ size, flip, target, info }) {
     return d;
   }, [target]);
   if (!plan) return null;
-  const cell = size / 8;
+  // (v0.6.1 버그 수정) 보드 틀(BOARD_GLOSS)이 2px 테두리라 칸 한 개는 (size-4)/8이다 — size/8로 잡으면 오른쪽·아래 칸일수록 연출이 최대 4px 어긋났다.
+  const cell = (size - KNIGHT_GRID_BORDER * 2) / 8;
   const rc = (sq) => { const r = 8 - parseInt(sq.slice(1), 10), c = sq.charCodeAt(0) - 97; return flip ? [7 - r, 7 - c] : [r, c]; };
   const maxAt = Math.max(plan.wAt || 0, plan.bAt || 0, plan.crownAt - 320);
   const cells = [];
@@ -2803,8 +2805,39 @@ function KnightDistFx({ size, flip, target, info }) {
     </>
   );
 }
+// (v0.6.1, 사용자 요청) 혼자 플레이에서 목표에 못 닿았을 때 정산 전에 시작 칸 → 목표 칸 최단 경로를 분석 탭과 같은 금색(T.arrow) 화살표로
+// 한 수씩 빠르게 그려 보여 준다. 기물을 잡는 것까지 고려한 실제 최단 경로(knightExactPath)를 쓰고, 없으면 안전 경로로 대신한다.
+const KP_STEP_MS = 230;   // 화살표 한 개가 나타나는 간격
+const KP_HOLD_MS = 800;   // 마지막 화살표 뒤 잠시 멈춤
+function knightSuggestPath(round, start) {
+  return knightExactPath(round, "w", start) || knightShortestPathLocal(start, round.target, knightSafeWalls(round, "w"));
+}
+function knightPathFxMs(path) { return path && path.length > 1 ? (path.length - 1) * KP_STEP_MS + 300 + KP_HOLD_MS : 0; }
+const KP_CSS = "@keyframes kpDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}@keyframes kpHead{0%,60%{opacity:0}100%{opacity:1}}";
+function KnightPathFx({ path, flip }) {
+  const HEAD = 0.3, HW = HEAD * 0.62, W = 0.14;
+  const pt = (sq) => { const r = 8 - parseInt(sq.slice(1), 10), c = sq.charCodeAt(0) - 97; const [vr, vc] = flip ? [7 - r, 7 - c] : [r, c]; return [vc + 0.5, vr + 0.5]; };
+  return (
+    <svg viewBox="0 0 8 8" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 7, pointerEvents: "none" }}>
+      <style>{KP_CSS}</style>
+      {path.slice(0, -1).map((sq, i) => {
+        const [x1, y1] = pt(sq), [x2, y2] = pt(path[i + 1]);
+        const len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+        const bx = x2 - ux * HEAD, by = y2 - uy * HEAD, nx = -uy, ny = ux;
+        const head = x2 + "," + y2 + " " + (bx + nx * HW) + "," + (by + ny * HW) + " " + (bx - nx * HW) + "," + (by - ny * HW);
+        const delay = i * KP_STEP_MS + "ms";
+        return (
+          <g key={i} opacity={0.92}>
+            <line x1={x1} y1={y1} x2={bx} y2={by} stroke={T.arrow} strokeWidth={W} strokeLinecap="round" pathLength="1" strokeDasharray="1" style={{ animation: "kpDraw " + KP_STEP_MS * 1.3 + "ms ease-out " + delay + " both" }} />
+            <polygon points={head} fill={T.arrow} style={{ animation: "kpHead " + KP_STEP_MS * 1.3 + "ms ease-out " + delay + " both" }} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 // distFx — 거리 판정 라운드의 연출 정보 { judge, wSq, bSq } (없으면 연출 없음).
-function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets, dangerForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "", myCaptured, oppCaptured, distFx }) {
+function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets, dangerForMe, myColor, oppColor, onCell, flip, size = 320, roundKey = "", myCaptured, oppCaptured, distFx, pathFx }) {
   const oppInfo = useContext(MgOppContext); // (v0.5.7) 상대(봇) 나이트가 있는 칸 우상단에 상대 프로필 사진
   const ctx = useContext(SkinContext);
   const sk = BOARD_SKINS[ctx.boardSkin] || BOARD_SKINS.classic;
@@ -2877,10 +2910,11 @@ function KnightRaceGrid({ myPos, oppPos, target, hazards, removed, legalTargets,
     <div {...drag.bind} style={{ position: "relative", borderRadius: 4, overflow: "hidden", ...BOARD_GLOSS, boxSizing: "border-box", width: size, height: size, flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", touchAction: "none" }}>
       <style>{KNIGHT_GRID_CSS}</style>
       {cells}
+      {pathFx && <KnightPathFx key={"kp" + roundKey} path={pathFx} flip={flip} />}
       {distFx && <KnightDistFx key={"kd" + roundKey} size={size} flip={flip} target={target} info={distFx} />}
       {drag.ghost}
       {catchers.map((h) => {
-        const [fr, fc] = viewRC(h.sq), [tr, tc] = viewRC(h.to), cell = size / 8;
+        const [fr, fc] = viewRC(h.sq), [tr, tc] = viewRC(h.to), cell = (size - KNIGHT_GRID_BORDER * 2) / 8;
         return (
           <motion.div key={"catch-" + roundKey + h.who} aria-hidden="true" initial={{ x: fc * cell, y: fr * cell }} animate={{ x: tc * cell, y: tr * cell }}
             transition={{ delay: KNIGHT_CATCH_DELAY_S, duration: 0.34, ease: [0.5, 0, 0.25, 1] }}
@@ -3023,7 +3057,6 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
     // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
     if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doReport(false, sq, nextMoves, true, mv.taken); return; }
     if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doReport(true, sq, nextMoves, false, mv.taken); return; }
-    if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doReport(false, sq, nextMoves, false, mv.taken); }
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
   // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다 — 그 슬롯을 ResizeObserver로
@@ -3034,7 +3067,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
-        <span>{tx("내 수 {0}/{1} · 상대 {2}", <b style={{ color: T.ink }}>{movesUsed}</b>, round.moveBudget, oppMovesUsed)}</span>
+        <span>{tx("내 수 {0} · 상대 {1}", <b style={{ color: T.ink }}>{movesUsed}</b>, oppMovesUsed)}</span>
         <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.max(0, Math.ceil(timeLeftMs / 1000)))}</span>
       </div>
       <MinigameTimeBar pct={timePct} />
@@ -3170,9 +3203,21 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   }, []);
   const [winner, setWinner] = useState(null);
   const [distFx, setDistFx] = useState(null);
+  const [pathFx, setPathFx] = useState(null); // (v0.6.1) 혼자 플레이 실패 시 최단 경로 제안 화살표
   useEffect(() => {
     if (!myReport || (!solo && !botReport) || winner) return;
-    if (solo) { const w = myReport.reached ? "w" : "b"; setWinner(w); onRoundDone(w, myReport, botReport); return; }
+    if (solo) {
+      const w = myReport.reached ? "w" : "b";
+      // (v0.6.1, 사용자 요청) 목표에 못 닿았으면 정산 전에 시작 칸 → 목표 칸 최단 경로를 금색 화살표로 빠르게 보여 준다.
+      const sp = !myReport.reached ? knightSuggestPath(round, round.whiteStart) : null;
+      const ms = knightPathFxMs(sp);
+      if (ms) {
+        setPathFx(sp);
+        timersRef.current.push(setTimeout(() => { setWinner(w); onRoundDone(w, myReport, botReport); }, ms));
+        setWinner("pending");
+      } else { setWinner(w); onRoundDone(w, myReport, botReport); }
+      return;
+    }
     // (v0.5.7) 판정은 서버 knight_resolve_round와 같은 knightJudge 하나로 — 예전엔 둘 다 못 가면(잡힌 쪽 제외) 그냥 무승부였다.
     // 둘 다 못 갔으면 목표까지 거리 → 거리도 같으면 소모 시간. 거리로 정했으면 금색 퍼짐·왕관 연출을 다 보여 준 뒤 라운드를 넘긴다.
     const j = knightJudge(round,
@@ -3203,23 +3248,22 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
     // (v0.5.4) 상대 기물이 지배하는 칸에 들어갔다 — 내 나이트가 잡혀 이 라운드 시도가 끝난다.
     if (mv.captured) { setCaptured(true); fx("wrong"); shake(); buzz([80, 40, 120]); doMyReport(false, nextMoves, true, KNIGHT_ARRIVE_MS); return; }
     if (sq === round.target) { fx("correct"); buzz([30, 30, 30]); doMyReport(true, nextMoves, false, KNIGHT_ARRIVE_MS); return; }
-    if (nextMoves >= round.moveBudget) { fx("wrong"); shake(); doMyReport(false, nextMoves); }
   };
   const timePct = Math.max(0, Math.min(1, timeLeftMs / round.timeLimitMs));
   // (v0.5.1 리디자인, 사용자 요청) 보드 하나만 화면 정중앙에 크게 쓴다. 나는 항상 백 역할이라
   // flip은 필요 없다(백은 서버 생성 규칙상 항상 목표보다 낮은 랭크에서 시작해 화면 아래쪽에 온다).
   const [boardSize, boardFitRef] = useSquareFit();
-  const roundResult = winner ? (winner === "w" ? "me" : winner === "b" ? "opp" : "draw") : null;
+  const roundResult = winner && winner !== "pending" ? (winner === "w" ? "me" : winner === "b" ? "opp" : "draw") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
-        <span>{tx("내 수 {0}", <b style={{ color: T.ink }}>{movesUsed}</b>)}/{round.moveBudget}{solo ? "" : t(" · 봇 {0}", botMovesUsed)}</span>
+        <span>{tx("내 수 {0}", <b style={{ color: T.ink }}>{movesUsed}</b>)}{solo ? "" : t(" · 봇 {0}", botMovesUsed)}</span>
         <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.max(0, Math.ceil(timeLeftMs / 1000)))}</span>
       </div>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
-          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} />
+          <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} pathFx={pathFx} />
           <MinigameCountdown startAt={startRef.current} />
           <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? t("도달 성공") : t("실패")) : null} />
         </motion.div>
