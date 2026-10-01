@@ -3,6 +3,7 @@ import { Star, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lu
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 
+import { t } from "../lib/i18n.js";
 export function BestMoveJumpButton({ onClick, disabled, title = "이 대국 분석 모드로 바로 보기", size = 30 }) {
   const dotSize = Math.round(size * 0.6), starSize = Math.round(size * 0.367);
   return (
@@ -24,11 +25,11 @@ export function ListPager({ page, setPage, pageCount, jump = 5 }) {
   const pbtn = (dis) => ({ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: dis ? "#D8C9A8" : T.inkSoft, cursor: dis ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" });
   return (
     <div className="flex items-center justify-center gap-2" style={{ marginTop: 8 }}>
-      {showJump && <button onClick={() => setPage((p) => Math.max(0, p - jump))} disabled={page === 0} aria-label={jump + "페이지 이전"} title={jump + "페이지 이전"} className="press" style={pbtn(page === 0)}><ChevronsLeft size={13} /></button>}
-      <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="이전 페이지" className="press" style={pbtn(page === 0)}><ChevronLeft size={13} /></button>
+      {showJump && <button onClick={() => setPage((p) => Math.max(0, p - jump))} disabled={page === 0} aria-label={t("{0}페이지 이전", (jump))} title={t("{0}페이지 이전", (jump))} className="press" style={pbtn(page === 0)}><ChevronsLeft size={13} /></button>}
+      <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label={t("이전 페이지")} className="press" style={pbtn(page === 0)}><ChevronLeft size={13} /></button>
       <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, fontFamily: SITE_FONT }}>{page + 1} / {pageCount}</span>
-      <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label="다음 페이지" className="press" style={pbtn(page >= pageCount - 1)}><ChevronRight size={13} /></button>
-      {showJump && <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + jump))} disabled={page >= pageCount - 1} aria-label={jump + "페이지 다음"} title={jump + "페이지 다음"} className="press" style={pbtn(page >= pageCount - 1)}><ChevronsRight size={13} /></button>}
+      <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} aria-label={t("다음 페이지")} className="press" style={pbtn(page >= pageCount - 1)}><ChevronRight size={13} /></button>
+      {showJump && <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + jump))} disabled={page >= pageCount - 1} aria-label={t("{0}페이지 다음", (jump))} title={t("{0}페이지 다음", (jump))} className="press" style={pbtn(page >= pageCount - 1)}><ChevronsRight size={13} /></button>}
     </div>
   );
 }

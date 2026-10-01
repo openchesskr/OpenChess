@@ -24,6 +24,7 @@ import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
 import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles } from "./common.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
 // 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
@@ -90,13 +91,13 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
 }
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
 const PLAY_BOT_TIERS = [
-  { elo: 400, label: "400", desc: "체스를 막 배운 친구" },
-  { elo: 800, label: "800", desc: "초보" },
-  { elo: 1200, label: "1200", desc: "아마추어" },
-  { elo: 1600, label: "1600", desc: "클럽 플레이어" },
-  { elo: 2000, label: "2000", desc: "상급자" },
-  { elo: 2400, label: "2400", desc: "마스터" },
-  { elo: 2800, label: "2800", desc: "그랜드마스터" },
+  { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
+  { elo: 800, label: "800", desc: t("초보") },
+  { elo: 1200, label: "1200", desc: t("아마추어") },
+  { elo: 1600, label: "1600", desc: t("클럽 플레이어") },
+  { elo: 2000, label: "2000", desc: t("상급자") },
+  { elo: 2400, label: "2400", desc: t("마스터") },
+  { elo: 2800, label: "2800", desc: t("그랜드마스터") },
 ];
 // (버그 수정, 사용자 제보) 2800 봇이 너무 나쁜 수를 자주 뒀다 — 예전엔 온도가 레이팅에 선형으로만
 // 줄어들어(elo 2800에서도 T=8), cp 손실이 30~40 정도인 후보도 꽤 자주 골라졌다. 400(T=220)~2800(T=5)
@@ -347,11 +348,11 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
         </motion.div>
       </div>
       <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 5, textAlign: "center" }}>
-        {isInvite ? "@" + oppName + "님의 응답을 기다리는 중" : "상대를 찾는 중"}
+        {isInvite ? t("@{0}님의 응답을 기다리는 중", oppName) : t("상대를 찾는 중")}
       </div>
       {timeControlLabel && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 14 }}>{timeControlLabel}</div>}
       <div style={{ fontSize: 22, fontWeight: 800, color: T.brassHi, fontFamily: "ui-monospace,monospace", letterSpacing: ".02em", marginBottom: 22 }}>{fmtClock(elapsed * 1000)}</div>
-      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>취소</button>
+      <button onClick={onCancel} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "1px solid rgba(196,154,80,.55)", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("취소")}</button>
     </motion.div>
   );
 }
@@ -364,26 +365,26 @@ function playResultCopy(result, activeColor) {
   if (result.end === "checkmate") {
     const won = result.color !== activeColor;
     return won
-      ? { kind: "win", title: "승리", subtitle: "체크메이트", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "체크메이트", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: t("승리"), subtitle: t("체크메이트"), mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: t("패배"), subtitle: t("체크메이트"), mascot: "milku", emotion: "sad" };
   }
-  if (result.end === "resign") return { kind: "loss", title: "패배", subtitle: "기권", mascot: "milku", emotion: "sad" };
+  if (result.end === "resign") return { kind: "loss", title: t("패배"), subtitle: t("기권"), mascot: "milku", emotion: "sad" };
   if (result.end === "flag") {
     const won = result.color !== activeColor;
     return won
-      ? { kind: "win", title: "승리", subtitle: "시간 초과", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "시간 초과", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: t("승리"), subtitle: t("시간 초과"), mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: t("패배"), subtitle: t("시간 초과"), mascot: "milku", emotion: "sad" };
   }
   if (result.end === "pvp") {
-    if (result.status === "draw") return { kind: "draw", title: "무승부", subtitle: "합의된 결과", mascot: "milku", emotion: "think" };
-    if (result.status === "aborted") return { kind: "draw", title: "대국 중단", subtitle: "", mascot: "milku", emotion: "think" };
+    if (result.status === "draw") return { kind: "draw", title: t("무승부"), subtitle: t("합의된 결과"), mascot: "milku", emotion: "think" };
+    if (result.status === "aborted") return { kind: "draw", title: t("대국 중단"), subtitle: "", mascot: "milku", emotion: "think" };
     const won = (result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b");
     return won
-      ? { kind: "win", title: "승리", subtitle: "상대의 기권", mascot: "kokoa", emotion: "celebrate" }
-      : { kind: "loss", title: "패배", subtitle: "상대의 승리", mascot: "milku", emotion: "sad" };
+      ? { kind: "win", title: t("승리"), subtitle: t("상대의 기권"), mascot: "kokoa", emotion: "celebrate" }
+      : { kind: "loss", title: t("패배"), subtitle: t("상대의 승리"), mascot: "milku", emotion: "sad" };
   }
-  if (result.end === "stalemate") return { kind: "draw", title: "무승부", subtitle: "스테일메이트", mascot: "milku", emotion: "think" };
-  return { kind: "draw", title: "무승부", subtitle: "3회 동형 반복", mascot: "milku", emotion: "think" };
+  if (result.end === "stalemate") return { kind: "draw", title: t("무승부"), subtitle: t("스테일메이트"), mascot: "milku", emotion: "think" };
+  return { kind: "draw", title: t("무승부"), subtitle: t("3회 동형 반복"), mascot: "milku", emotion: "think" };
 }
 function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
@@ -398,7 +399,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
         style={{ width: "100%", maxWidth: 360, borderRadius: 16, overflow: "hidden", background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -14px rgba(0,0,0,.7)" }}>
         <div style={{ position: "relative", background: checker, padding: "20px 16px 16px", textAlign: "center" }}>
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,12,6,.15), rgba(20,12,6,.55))" }} />
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 2, width: 26, height: 26, borderRadius: 8, background: "rgba(20,12,6,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 2, width: 26, height: 26, borderRadius: 8, background: "rgba(20,12,6,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
           <div style={{ position: "relative", zIndex: 1 }}>
             <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-.01em", textShadow: "0 2px 6px rgba(0,0,0,.5)" }}>{copy.title}</div>
             {copy.subtitle && <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 2 }}>{copy.subtitle}</div>}
@@ -410,7 +411,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               {mode === "pvp" && opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }} />
                 : mode === "pvp" ? <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}>{(oppName || "?")[0].toUpperCase()}</span>
                 : <span style={{ width: 46, height: 46, borderRadius: 12, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}><Cpu size={20} /></span>}
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || "상대") : botTier.label}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || t("상대")) : botTier.label}</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>VS</span>
             <div style={{ textAlign: "center", minWidth: 0 }}>
@@ -425,16 +426,16 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
               그대로 가져와, 이 버튼이 대국 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도
               알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
-          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Star size={15} fill="#fff" color="#fff" />대국 리뷰 보기</button>}
+          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0}대국 리뷰 보기", <Star size={15} fill="#fff" color="#fff" />)}</button>}
           <div className="flex gap-2">
             {/* (사용자 요청) 봇 대국은 눌러면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게
                 제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
                 상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서
                 제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
             <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.12)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
-              {mode !== "pvp" ? "재대결" : rematchOfferedByMe ? "상대 응답 기다리는 중…" : rematchOfferedByOpp ? "재대결 수락" : "재대결 신청"}
+              {mode !== "pvp" ? t("재대결") : rematchOfferedByMe ? t("상대 응답 기다리는 중…") : rematchOfferedByOpp ? t("재대결 수락") : t("재대결 신청")}
             </button>
-            <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>닫기</button>
+            <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("닫기")}</button>
           </div>
         </div>
       </motion.div>
@@ -484,7 +485,7 @@ function useFriendPvpInvite({ myUid, gameType, onMatched }) {
     try {
       const inv = await sbRpc("pvp_invite_friend", { p_to_uid: f.uid, p_time_control: "0-0", p_game_type: gameType });
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
-    } catch (e) { setErr(inviteFailText(e, "도전장")); }
+    } catch (e) { setErr(inviteFailText(e, t("도전장"))); }
   };
   const cancelInvite = async () => {
     if (!myInvite) return;
@@ -498,7 +499,7 @@ function useFriendPvpInvite({ myUid, gameType, onMatched }) {
     if (row.status === "accepted" && row.game_id) {
       const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
       if (rows && rows[0]) { setMyInvite(null); onMatched(rows[0]); }
-    } else if (row.status === "declined") { setMyInvite(null); setErr("상대가 도전장 거절"); }
+    } else if (row.status === "declined") { setMyInvite(null); setErr(t("상대가 도전장 거절")); }
     else if (row.status === "cancelled") { setMyInvite(null); }
   }, !!myInvite, 4000);
   return { friendList: sortedFriendList, myInvite, sendInvite, cancelInvite, err };
@@ -510,18 +511,18 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile,
   const boxRadius = lobby ? 14 : 10;
   return (
     <div>
-      {lobby ? <MgLobbyLabel>친구와 플레이하기</MgLobbyLabel> : (
+      {lobby ? <MgLobbyLabel>{t("친구와 플레이하기")}</MgLobbyLabel> : (
         <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
           <User size={14} color={T.brass} />
-          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("친구와 플레이하기")}</span>
         </div>
       )}
       {!myUid ? (
-        <div style={{ padding: "16px 10px", borderRadius: boxRadius, border: "1px dashed " + (lobby ? "rgba(150,112,58,.35)" : "#C9B58C"), fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용 가능</div>
+        <div style={{ padding: "16px 10px", borderRadius: boxRadius, border: "1px dashed " + (lobby ? "rgba(150,112,58,.35)" : "#C9B58C"), fontSize: 12, color: T.inkSoft, textAlign: "center" }}>{t("로그인 후 이용 가능")}</div>
       ) : (
         <div style={{ border: "1px solid " + (lobby ? MG_LOBBY_LINE : "#DCCBA8"), borderRadius: boxRadius, maxHeight: 280, overflowY: "auto", background: lobby ? MG_LOBBY_CARD : "rgba(255,255,255,.4)" }}>
           {friendList.length === 0 ? (
-            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>플레이할 친구 없음</div>
+            <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>{t("플레이할 친구 없음")}</div>
           ) : friendList.map((f, i) => (
             <motion.div key={f.uid} layout="position"
               initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
@@ -537,10 +538,10 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile,
                 </span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                 </span>
               </button>
-              <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
+              <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>
             </motion.div>
           ))}
         </div>
@@ -564,11 +565,11 @@ const MG_GOLD = "#A97A2C";
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: "무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전", Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: "나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가", Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: "엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인", Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: "3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급", Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
+  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
+  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: t("3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급"), Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
 ];
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
@@ -651,7 +652,7 @@ function MinigameScreen({ title, onBack, children, noScroll, headerRight }) {
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 150, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", height: "100dvh" }}>
       <div className="flex items-center justify-between" style={{ flexShrink: 0, width: "100%", maxWidth: MG_DESKTOP_MAX_W + 28, margin: "0 auto", padding: "calc(env(safe-area-inset-top,0px) + 12px) 14px 10px", boxSizing: "border-box" }}>
-        <button onClick={onBack} aria-label="목록으로" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
+        <button onClick={onBack} aria-label={t("목록으로")} className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={16} /></button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "center", flex: 1 }}>{title}</div>
         {headerRight || <span style={{ width: 32, flexShrink: 0 }} />}
       </div>
@@ -788,10 +789,10 @@ const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스",
 const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED;            // 버튼 안에 보이는 보드 높이
 const MG_LABEL_UP_TOP = MG_STRIP_H + 2.4, MG_LABEL_DN_TOP = 50 + MG_GAP / 2 + 2.2;
 const MG_LABELS = [
-  { gameType: "coord", lines: ["좌표 인지", "게임"], x: MG_PAD + 1, top: MG_LABEL_UP_TOP },
-  { gameType: "knight", lines: ["나이트", "레이스"], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true },
-  { gameType: "attack", lines: ["무한", "체크메이트", "게임"], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
-  { gameType: "rush", lines: ["백랭크", "러시아워"], x: 100 - MG_PAD - 1, top: MG_LABEL_DN_TOP, right: true },
+  { gameType: "coord", lines: [t("좌표 인지"), t("게임")], x: MG_PAD + 1, top: MG_LABEL_UP_TOP },
+  { gameType: "knight", lines: [t("나이트"), t("레이스")], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true },
+  { gameType: "attack", lines: [t("무한"), t("체크메이트"), t("게임")], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
+  { gameType: "rush", lines: [t("백랭크"), t("러시아워")], x: 100 - MG_PAD - 1, top: MG_LABEL_DN_TOP, right: true },
 ];
 // 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨을 그대로 쓴다. rows×cols와 전역 좌표 오프셋(rowOffset·colOffset,
 // 위에서 아래·왼쪽에서 오른쪽)을 받아, 조각끼리 이어 붙이거나 8×8의 일부를 잘라도 체크 무늬가 실제 보드와 같다.
@@ -1166,7 +1167,7 @@ function PlayNormalButton({ onClick }) {
   const boardFrac = (8 * MG_STRIP_CELL) / 100;
   const cellPx = (width * boardFrac) / 8;
   return (
-    <button ref={measureRef} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="press" aria-label="일반 대국"
+    <button ref={measureRef} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} className="press" aria-label={t("일반 대국")}
       style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", aspectRatio: "1 / " + boardFrac, padding: 0, border: "1px solid " + (hover ? T.brass : "#DCCBA8"), borderRadius: 14, overflow: "hidden", background: hover ? "#F7EEDC" : T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)", cursor: "pointer", textAlign: "right", transition: "background .15s ease, border-color .15s ease" }}>
       <span style={{ position: "relative", width: boardFrac * 100 + "%", height: "100%", flexShrink: 0 }}>
         <MgBoardPiece rows={8} cols={8} cellPx={cellPx}>
@@ -1174,11 +1175,10 @@ function PlayNormalButton({ onClick }) {
         </MgBoardPiece>
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "2.2cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
-        <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>일반 대국</span>
-        <span style={{ fontSize: "clamp(11px, 3cqw, 20px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.35 }}>봇 · 랜덤 매칭 · 친구</span>
+        <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("일반 대국")}</span>
+        <span style={{ fontSize: "clamp(11px, 3cqw, 20px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.35 }}>{t("봇 · 랜덤 매칭 · 친구")}</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.9cqw, 18px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
-          <Play size={14} fill="#241509" />대국 시작
-        </span>
+          {tx("{0}대국 시작", <Play size={14} fill="#241509" />)}</span>
         {game && (
           <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 700, color: "rgba(90,58,34,.6)", lineHeight: 1.3, maxWidth: "100%" }}>
             {mgPlayerName(game.w)} – {mgPlayerName(game.b)}{game.y ? " · " + game.y : ""}
@@ -1551,13 +1551,13 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
         style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(90,58,34,.80)", marginBottom: 14 }}>
         {scoreText != null ? (typeof scoreText === "string" ? <span style={{ fontSize: 32, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{scoreText}</span> : scoreText) : (<>
-          <span>나</span>
+          <span>{t("나")}</span>
           <span style={{ fontSize: 32, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
           <span>{oppLabel}</span>
         </>)}
       </motion.div>
       {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
-      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>친선전: 전적만 기록, 레이팅 변동 없음</div>}
+      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>{t("친선전: 전적만 기록, 레이팅 변동 없음")}</div>}
       {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
@@ -1589,8 +1589,8 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", justifyContent: "center" }}>
         {!onRematch && pvp && <MgPvpRematch pvp={pvp} />}
         {extraAction && <button onClick={extraAction.onClick} className="press" style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(150,112,58,.45)", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{extraAction.label}</button>}
-        {onRematch && <button onClick={onRematch} className="press" style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><RotateCcw size={14} />다시 하기</button>}
-        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>목록으로</button>
+        {onRematch && <button onClick={onRematch} className="press" style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>{tx("{0}다시 하기", <RotateCcw size={14} />)}</button>}
+        <button onClick={onExit} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("목록으로")}</button>
       </div>
     </div>
   );
@@ -1642,7 +1642,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
       {!solo && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
           style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(90,58,34,.80)", marginBottom: 14 }}>
-          <span>나</span>
+          <span>{t("나")}</span>
           <span style={{ fontSize: 30, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{myScore} : {oppScore}</span>
           <span>{oppLabel}</span>
         </motion.div>
@@ -1651,7 +1651,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
       <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 6, marginBottom: 12 }}>
         {!solo && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
-            <span>나</span><span /><span>{oppLabel}</span>
+            <span>{t("나")}</span><span /><span>{oppLabel}</span>
           </div>
         )}
         {rows.map((r, i) => (
@@ -1669,7 +1669,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
         <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.55)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: (100 * left / ROUND_SETTLE_MS) + "%", background: "linear-gradient(90deg,#A8842F," + T.brassHi + ")", transition: "width .1s linear" }} />
         </div>
-        <div style={{ fontSize: 10.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{nextLabel}까지 {Math.ceil(left / 1000)}초</div>
+        <div style={{ fontSize: 10.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{tx("{0}까지 {1}초", nextLabel, Math.ceil(left / 1000))}</div>
       </div>
       {onNext && <button onClick={onNext} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{nextLabel}</button>}
     </div>
@@ -1682,9 +1682,9 @@ function knightSettleInfo(me, opp, result, par, solo, dist) {
   const st = (x) => (!x ? "미완료" : x.reached ? "도착" : x.captured ? "잡힘" : "실패");
   const both = me && opp && me.reached && opp.reached;
   const rows = [
-    { label: "결과", me: st(me), opp: st(opp), win: null },
-    { label: "이동 수", me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
-    { label: "걸린 시간", me: me && me.reached ? fmtSec(me.ms) : "-", opp: opp && opp.reached ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
+    { label: t("결과"), me: st(me), opp: st(opp), win: null },
+    { label: t("이동 수"), me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: t("걸린 시간"), me: me && me.reached ? fmtSec(me.ms) : "-", opp: opp && opp.reached ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
   if (solo) reason = me && me.reached ? (me.moves <= par ? "최소 수로 도착" : "도착. 최소 " + par + "수로도 가능") : me && me.captured ? "상대 기물이 지배하는 칸에 들어가 나이트가 잡힘" : "제한 안에 도착 못 함";
@@ -1696,8 +1696,8 @@ function knightSettleInfo(me, opp, result, par, solo, dist) {
   else reason = "둘 다 도착 못 함:" + (result === "draw" ? " 무승부" : " 목표에 더 가까이 간 쪽 승리");
   if (dist && (dist.basis === "distance" || dist.basis === "distanceTime")) {
     const dl = (d) => (d == null ? "-" : d >= 99 ? "잡힘" : d + "수 거리");
-    rows.push({ label: "목표까지", me: dl(dist.me), opp: dl(dist.opp), win: dist.me !== dist.opp ? ((dist.me ?? 99) < (dist.opp ?? 99) ? "me" : "opp") : null });
-    if (dist.basis === "distanceTime") rows.push({ label: "소모 시간", me: fmtSec(dist.meMs), opp: fmtSec(dist.oppMs), win: dist.meMs !== dist.oppMs ? (dist.meMs < dist.oppMs ? "me" : "opp") : null });
+    rows.push({ label: t("목표까지"), me: dl(dist.me), opp: dl(dist.opp), win: dist.me !== dist.opp ? ((dist.me ?? 99) < (dist.opp ?? 99) ? "me" : "opp") : null });
+    if (dist.basis === "distanceTime") rows.push({ label: t("소모 시간"), me: fmtSec(dist.meMs), opp: fmtSec(dist.oppMs), win: dist.meMs !== dist.oppMs ? (dist.meMs < dist.oppMs ? "me" : "opp") : null });
   }
   return { rows, reason: reason + (par ? " (이 라운드 최소 " + par + "수)" : "") };
 }
@@ -1706,9 +1706,9 @@ function rushSettleInfo(me, opp, result, par) {
   const st = (x) => (!x ? "미완료" : x.solved ? "메이트" : x.captured ? "룩 잡힘" : "시간 초과");
   const both = me && opp && me.solved && opp.solved;
   const rows = [
-    { label: "결과", me: st(me), opp: st(opp), win: null },
-    { label: "이동 수", me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
-    { label: "걸린 시간", me: me && me.solved ? fmtSec(me.ms) : "-", opp: opp && opp.solved ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
+    { label: t("결과"), me: st(me), opp: st(opp), win: null },
+    { label: t("이동 수"), me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: t("걸린 시간"), me: me && me.solved ? fmtSec(me.ms) : "-", opp: opp && opp.solved ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
   if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 승리" : "상대가 더 적은 수로 메이트") : result === "me" ? "같은 수, 더 빨리 풀어 승리" : result === "opp" ? "같은 수, 상대가 더 빨리 풂" : "수도 시간도 같아 무승부";
@@ -1764,7 +1764,7 @@ function useCoordFeedback(roundIdx, targetSq) {
     const avg = reactions.length ? Math.round(reactions.reduce((a, b) => a + b, 0) / reactions.length) : null;
     const best = reactions.length ? Math.min(...reactions) : null;
     const fmt = (ms) => (ms == null ? "-" : (ms / 1000).toFixed(2) + "초");
-    return [{ label: "평균 반응속도", value: fmt(avg) }, { label: "최고 반응속도", value: fmt(best) }, { label: "오답 클릭", value: misses + "회" }];
+    return [{ label: t("평균 반응속도"), value: fmt(avg) }, { label: t("최고 반응속도"), value: fmt(best) }, { label: t("오답 클릭"), value: misses + "회" }];
   }, [reactions, misses]);
   return { onMyClick, shakeControls, stats };
 }
@@ -1853,20 +1853,20 @@ function CoordRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const isDraw = game.status === "draw";
     const byForfeit = game.result_reason === "coord_forfeit";
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={oppScore} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={oppScore} oppLabel={t("상대")} rating={minigameRatingOf(game, myUid)}
       rounds={coordRoundChips(rounds.filter((r) => r.winner), myColor, oppColor)} stats={stats}
-      note={byForfeit ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
+      note={byForfeit ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : null} onExit={onExit} />;
   }
   const lastDone = round && round.winner ? (round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myScore} oppScore={oppScore} oppLabel="상대" center={(rounds.length ? roundIdx + 1 : 1) + " / " + COORD_TOTAL_ROUNDS + " 라운드"} />
+      <MinigameScoreHeader myScore={myScore} oppScore={oppScore} oppLabel={t("상대")} center={t("{0} / {1} 라운드", (rounds.length ? roundIdx + 1 : 1), COORD_TOTAL_ROUNDS)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === myColor ? "me" : r.winner === oppColor ? "opp" : r.winner === "draw" ? "draw" : null)} total={COORD_TOTAL_ROUNDS} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={oppClicks} />
           {countdownAt > 0 && <MinigameCountdown startAt={countdownAt} />}
-          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답 +1" : lastDone === "opp" ? "상대 득점" : null} />
+          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? t("정답 +1") : lastDone === "opp" ? t("상대 득점") : null} />
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
@@ -1954,19 +1954,19 @@ function CoordRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   };
   if (finished) {
     const iWon = myScore > botScore, isDraw = myScore === botScore;
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={botScore} oppLabel="봇"
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myScore} oppScore={botScore} oppLabel={t("봇")}
       rounds={coordRoundChips(rounds, "w", "b")} stats={stats} onExit={onExit} onRematch={onRematch} />;
   }
   const lastDone = round && round.winner ? (round.winner === "w" ? "me" : "opp") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myScore} oppScore={botScore} oppLabel="봇" center={Math.max(1, rounds.length) + " / " + COORD_TOTAL_ROUNDS + " 라운드"} />
+      <MinigameScoreHeader myScore={myScore} oppScore={botScore} oppLabel={t("봇")} center={t("{0} / {1} 라운드", (Math.max(1, rounds.length)), COORD_TOTAL_ROUNDS)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={COORD_TOTAL_ROUNDS} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <CoordRaceGrid size={boardSize} onCell={onCell} myClicks={myClicks} oppClicks={botClicks} />
           <MinigameCountdown startAt={countdownAt} />
-          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? "정답 +1" : lastDone === "opp" ? "봇 득점" : null} />
+          <MinigameRoundBanner result={lastDone} roundKey={roundIdx} text={lastDone === "me" ? t("정답 +1") : lastDone === "opp" ? t("봇 득점") : null} />
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={targetSq} roundIdx={roundIdx} />
@@ -2038,10 +2038,10 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   return (
     <div style={{ ...MG_LOBBY_CARD_STYLE, padding: "12px 14px 14px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: myUid ? 12 : 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>내 기록</span>
-        <button onClick={onOpenRanking} className="press" aria-label="랭킹"
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t("내 기록")}</span>
+        <button onClick={onOpenRanking} className="press" aria-label={t("랭킹")}
           style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px 4px 9px", borderRadius: 999, border: "1px solid rgba(169,122,44,.35)", background: "rgba(196,154,80,.1)", color: MG_GOLD, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
-          <Trophy size={12} />랭킹<ChevronRight size={12} />
+          {tx("{0}랭킹{1}", <Trophy size={12} />, <ChevronRight size={12} />)}
         </button>
       </div>
       {myUid ? (
@@ -2051,7 +2051,7 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
           {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>로그인하면 전적·레이팅·기록이 랭킹에 반영</div>
+        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>{t("로그인하면 전적·레이팅·기록이 랭킹에 반영")}</div>
       )}
     </div>
   );
@@ -2083,7 +2083,7 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
         border: r.is_me ? "1.5px solid " + T.brassHi : "1px solid rgba(150,112,58,.29)", background: r.is_me ? "rgba(236,203,134,.14)" : "rgba(255,255,255,.035)" }}>
       <span style={{ width: 34, height: 34, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
         {r.rank <= 3
-          ? <img src={"/rank-" + r.rank + ".png"} alt={r.rank + "위"} style={{ height: r.rank === 1 ? 34 : 29, width: "auto", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }} />
+          ? <img src={"/rank-" + r.rank + ".png"} alt={t("{0}위", (r.rank))} style={{ height: r.rank === 1 ? 34 : 29, width: "auto", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))" }} />
           : <span style={{ fontSize: 13, fontWeight: 900, color: "rgba(90,58,34,.70)", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{r.rank}</span>}
       </span>
       {p.photo ? <img src={p.photo} alt="" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
@@ -2091,7 +2091,7 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 800, color: T.ink }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-          {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>나</span>}
+          {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>{t("나")}</span>}
         </span>
         {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
       </span>
@@ -2120,18 +2120,18 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   return (
     <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", padding: "8px 2px 4px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}><ChevronLeft size={14} />로비</button>
-        <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={15} color={MG_GOLD} />랭킹</span>
+        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}>{tx("{0}로비", <ChevronLeft size={14} />)}</button>
+        <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}>{tx("{0}랭킹", <Trophy size={15} color={MG_GOLD} />)}</span>
         <span style={{ width: 40 }} />
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
-        <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: "레이팅" }, { key: "best", label: "혼자 플레이 기록" }]} />
-        <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: "전체" }, { key: "friends", label: "친구", disabled: !myUid }]} />
+        <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />
+        <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: t("전체") }, { key: "friends", label: t("친구"), disabled: !myUid }]} />
       </div>
       {rows == null ? (
         <div style={{ textAlign: "center", padding: "28px 0" }}><PendingDots size={12} /></div>
       ) : top.length === 0 ? (
-        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.70)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? "랭킹 로드 실패" : empty}</p>
+        <p style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.70)", padding: "24px 10px", lineHeight: 1.6 }}>{err ? t("랭킹 로드 실패") : empty}</p>
       ) : (
         <div style={{ display: "grid", gap: 6 }}>
           {top.map((r, i) => <MinigameRankRow key={r.uid} r={r} game={game} kind={kind} onOpenProfile={onOpenProfile} index={i} />)}
@@ -2141,7 +2141,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
           </>)}
         </div>
       )}
-      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록</p>}
+      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>{t("레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록")}</p>}
     </div>
   );
 }
@@ -2160,7 +2160,7 @@ function MinigameRatingChange({ rating }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
       style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.55)", border: "1px solid " + c, marginBottom: 14 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>레이팅</span>
+      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{t("레이팅")}</span>
       <span style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12.5, fontWeight: 900, color: c, fontVariantNumeric: "tabular-nums" }}>{Arrow && <Arrow size={14} />}{diff > 0 ? "+" + diff : diff}</span>
     </motion.div>
@@ -2186,7 +2186,7 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
   // 매칭 대기 중 이 화면을 벗어나면(뒤로가기 등) 대기열에 남지 않도록 정리한다.
   useEffect(() => () => { if (waitingRef.current) sbRpc("pvp_queue_leave", {}).catch(() => { }); }, []);
   const join = useCallback(async () => {
-    if (!myUid) { setErr("로그인 후 이용 가능"); return; }
+    if (!myUid) { setErr(t("로그인 후 이용 가능")); return; }
     setErr(""); setWaiting(true);
     try {
       const g = await sbRpcRow("pvp_queue_join", { p_time_control: "0-0", p_game_type: gameType });
@@ -2197,10 +2197,10 @@ function useMinigameMatch({ myUid, gameType, initialGame }) {
       // 버그가 v0.5.3에서 미니게임 매칭 훅을 새로 만들며 되살아난 것 — 실제 대전(id가 있고 active)만 받는다.
       // 재접속 분기는 게임 종류와 무관하게 진행 중인 대전을 돌려주므로, 다른 게임(예: 체스)의 대전이면 열지 않는다.
       if (g && g.id != null && g.status === "active") {
-        if (g.game_type && g.game_type !== gameType) { setErr("진행 중인 대전이 있음. 먼저 끝낼 것"); setWaiting(false); return; }
+        if (g.game_type && g.game_type !== gameType) { setErr(t("진행 중인 대전이 있음. 먼저 끝낼 것")); setWaiting(false); return; }
         setGame(g); setWaiting(false);
       }
-    } catch { setErr("매칭 실패. 다시 시도"); setWaiting(false); }
+    } catch { setErr(t("매칭 실패. 다시 시도")); setWaiting(false); }
   }, [myUid, gameType]);
   const leave = () => { setWaiting(false); sbRpc("pvp_queue_leave", {}).catch(() => { }); };
   const onMatch = useCallback((payload) => {
@@ -2247,12 +2247,12 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
       <style>{MG_LOBBY_CSS}</style>
       {statsBar}
       <div>
-        <MgLobbyLabel>플레이 모드</MgLobbyLabel>
+        <MgLobbyLabel>{t("플레이 모드")}</MgLobbyLabel>
         {err && <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 2px 8px" }}>{err}</p>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <MinigameModeRow Icon={User} label="혼자 플레이하기" sub={soloSub} onClick={onSolo} />
+          <MinigameModeRow Icon={User} label={t("혼자 플레이하기")} sub={soloSub} onClick={onSolo} />
           <div>
-            <MinigameModeRow Icon={Cpu} label="봇과 플레이하기" sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
+            <MinigameModeRow Icon={Cpu} label={t("봇과 플레이하기")} sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
             <AnimatePresence initial={false}>
               {botOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
@@ -2267,7 +2267,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
               )}
             </AnimatePresence>
           </div>
-          <MinigameModeRow Icon={Shuffle} label="랜덤 매칭" sub={myUid ? "실시간 대전 상대 찾기" : "로그인 후 이용 가능"} onClick={onRandom} disabled={!myUid} primary />
+          <MinigameModeRow Icon={Shuffle} label={t("랜덤 매칭")} sub={myUid ? t("실시간 대전 상대 찾기") : t("로그인 후 이용 가능")} onClick={onRandom} disabled={!myUid} primary />
         </div>
       </div>
       {roster}
@@ -2290,18 +2290,18 @@ function MinigameHelpButton({ title, children }) {
   }, [open]);
   return (
     <div ref={wrapRef} style={{ position: "relative", flexShrink: 0 }}>
-      <button onClick={() => setOpen((v) => !v)} aria-label="게임 방법" aria-expanded={open} className="press"
+      <button onClick={() => setOpen((v) => !v)} aria-label={t("게임 방법")} aria-expanded={open} className="press"
         style={{ width: 32, height: 32, borderRadius: 9, background: open ? T.brass : "rgba(255,255,255,.55)", border: "1px solid " + (open ? "rgba(120,84,30,.5)" : "rgba(90,58,34,.18)"), color: open ? "#241509" : T.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 15, fontWeight: 900, fontFamily: SITE_FONT, transition: "background .15s ease" }}>?</button>
       <AnimatePresence>
         {open && (
-          <motion.div role="dialog" aria-label={title + " 게임 방법"} initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.16, ease: MOTION_EASE }}
+          <motion.div role="dialog" aria-label={t("{0} 게임 방법", (title))} initial={{ opacity: 0, scale: 0.92, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }} transition={{ duration: 0.16, ease: MOTION_EASE }}
             style={{ position: "absolute", top: 42, right: 0, zIndex: 20, width: "min(360px, calc(100vw - 28px))", transformOrigin: "calc(100% - 16px) -10px" }}>
             {/* 말풍선 꼬리 — ? 버튼 가운데를 가리킨다 */}
             <span aria-hidden="true" style={{ position: "absolute", top: -6, right: 11, width: 11, height: 11, background: "#FFFDF8", borderLeft: "1px solid " + MG_LOBBY_LINE, borderTop: "1px solid " + MG_LOBBY_LINE, transform: "rotate(45deg)", borderTopLeftRadius: 2 }} />
             <div style={{ borderRadius: 14, background: "#FFFDF8", border: "1px solid " + MG_LOBBY_LINE, boxShadow: "0 18px 40px -14px rgba(60,36,14,.45), 0 2px 6px rgba(60,36,14,.08)", padding: "13px 15px 14px", maxHeight: "min(70dvh, 560px)", overflowY: "auto" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 900, color: T.ink }}>게임 방법</span>
-                <button onClick={() => setOpen(false)} aria-label="닫기" className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "none", background: "transparent", color: "rgba(90,58,34,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={15} /></button>
+                <span style={{ fontSize: 13, fontWeight: 900, color: T.ink }}>{t("게임 방법")}</span>
+                <button onClick={() => setOpen(false)} aria-label={t("닫기")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "none", background: "transparent", color: "rgba(90,58,34,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={15} /></button>
               </div>
               <div className="mg-help-body" style={{ textAlign: "left", fontSize: 12.5, lineHeight: 1.7, color: "rgba(90,58,34,.88)" }}>{children}</div>
             </div>
@@ -2316,11 +2316,11 @@ function MinigameForfeitConfirm({ onCancel, onConfirm, bot }) {
   return (
     <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>정말 나갈까요?</div>
-        <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? "진행 중인 게임 종료, 기록 없음" : "대전 포기 처리, 상대 승리"}</p>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("정말 나갈까요?")}</div>
+        <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? t("진행 중인 게임 종료, 기록 없음") : t("대전 포기 처리, 상대 승리")}</p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>계속하기</button>
-          <button onClick={onConfirm} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>나가기</button>
+          <button onClick={onCancel} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>{t("계속하기")}</button>
+          <button onClick={onConfirm} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>{t("나가기")}</button>
         </div>
       </div>
     </div>
@@ -2370,7 +2370,7 @@ function MgPvpRematch({ pvp }) {
     if (!row) return;
     setGame(row);
     if (row.rematch_game_id) go(row.rematch_game_id);
-    else if (offeredRef.current && !row.rematch_offered_by) { offeredRef.current = false; setNote("상대가 재대국 거절"); }
+    else if (offeredRef.current && !row.rematch_offered_by) { offeredRef.current = false; setNote(t("상대가 재대국 거절")); }
   }, [g0.id, go]), true, 4000);
   // 제안해 둔 채 결과 화면을 떠나면 제안을 거둔다 — 안 그러면 상대가 나중에 수락했을 때 상대만 빈 대전에 들어간다.
   const gameIdRef = useRef(g0.id);
@@ -2386,7 +2386,7 @@ function MgPvpRematch({ pvp }) {
         if (r && r.id !== game.id) go(r.id); // 상대가 먼저 제안해 둔 상태 → 곧장 새 대전
         else if (r) { offeredRef.current = true; setGame(r); if (r.rematch_game_id) go(r.rematch_game_id); }
       }
-    } catch (e) { setNote("재대국 신청 실패"); }
+    } catch (e) { setNote(t("재대국 신청 실패")); }
     setBusy(false);
   };
   const label = mine ? "상대 응답 대기 중… (취소)" : theirs ? "재대국 수락" : "재대국 신청";
@@ -2460,9 +2460,9 @@ const COORD_SOLO_MS = 30000;
 // (v0.5.7, 사용자 요청) 혼자 플레이 난이도 — 하는 지금 그대로(좌표 표시, 백 시점), 중은 보드 가장자리 좌표를 지우고, 상은 좌표를 지운 채
 // 흑 진영이 아래로 오게 뒤집는다. 맞힌 개수에 배율을 곱한 값이 최종 기록이다(하 ×1, 중 ×2 금색, 상 ×3 그랜드마스터 색).
 const COORD_SOLO_LEVELS = [
-  { key: "easy", label: "하", mult: 1, desc: "좌표 표시 · 백 시점", bg: "rgba(255,255,255,.7)", ink: T.ink, chip: "linear-gradient(180deg,#F4EBDA,#DCC9A4)" },
-  { key: "mid", label: "중", mult: 2, desc: "좌표 없이 · 백 시점", hideCoords: true, bg: "linear-gradient(135deg,#FFF3D1,#F3D98E 55%,#D9A94A)", ink: "#4A3208", chip: "linear-gradient(135deg,#FDDB82,#C49A50 60%,#8A6428)" },
-  { key: "hard", label: "상", mult: 3, desc: "좌표 없이 · 흑 시점(보드 뒤집힘)", hideCoords: true, flip: true, bg: "linear-gradient(135deg,rgba(185,131,255,.28),rgba(110,231,200,.26),rgba(255,143,209,.28))", ink: "#3B1F5E", chip: tierGradientCss("grandmaster") },
+  { key: "easy", label: t("하"), mult: 1, desc: t("좌표 표시 · 백 시점"), bg: "rgba(255,255,255,.7)", ink: T.ink, chip: "linear-gradient(180deg,#F4EBDA,#DCC9A4)" },
+  { key: "mid", label: t("중"), mult: 2, desc: t("좌표 없이 · 백 시점"), hideCoords: true, bg: "linear-gradient(135deg,#FFF3D1,#F3D98E 55%,#D9A94A)", ink: "#4A3208", chip: "linear-gradient(135deg,#FDDB82,#C49A50 60%,#8A6428)" },
+  { key: "hard", label: t("상"), mult: 3, desc: t("좌표 없이 · 흑 시점(보드 뒤집힘)"), hideCoords: true, flip: true, bg: "linear-gradient(135deg,rgba(185,131,255,.28),rgba(110,231,200,.26),rgba(255,143,209,.28))", ink: "#3B1F5E", chip: tierGradientCss("grandmaster") },
 ];
 function coordSoloLevel(key) { return COORD_SOLO_LEVELS.find((l) => l.key === key) || COORD_SOLO_LEVELS[0]; }
 // 혼자 플레이하기 진입점 — 난이도를 고른 뒤 보드를 연다. 이 컴포넌트는 key 없이 그려져 "다시하기"(보드만 새로 마운트)에도 난이도가
@@ -2476,14 +2476,14 @@ function CoordSoloLevelPick({ onPick }) {
   const best = loadMinigameBest("coord");
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 4px" }}>
-      <MgLobbyLabel>난이도 선택</MgLobbyLabel>
-      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>30초 동안 맞힌 개수 × 난이도 배율 = 최종 기록{best != null ? " · 최고 " + best + "점" : ""}</div>
+      <MgLobbyLabel>{t("난이도 선택")}</MgLobbyLabel>
+      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>{tx("30초 동안 맞힌 개수 × 난이도 배율 = 최종 기록{0}", best != null ? t(" · 최고 {0}점", best) : "")}</div>
       {COORD_SOLO_LEVELS.map((l, i) => (
         <motion.button key={l.key} onClick={() => onPick(l.key)} className="press" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
           style={{ width: "100%", maxWidth: 420, display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + MG_LOBBY_LINE, background: l.bg, cursor: "pointer", textAlign: "left", boxShadow: "0 2px 8px -4px rgba(90,58,34,.35)" }}>
           <span style={{ width: 40, height: 40, borderRadius: 12, background: l.chip, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 900, color: l.key === "easy" ? T.ink : "#fff", textShadow: l.key === "easy" ? "none" : "0 1px 2px rgba(0,0,0,.35)", flexShrink: 0 }}>{l.label}</span>
           <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: l.ink }}>난이도 {l.label}</span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: l.ink }}>{tx("난이도 {0}", l.label)}</span>
             <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "rgba(90,58,34,.72)", marginTop: 2 }}>{l.desc}</span>
           </span>
           <CoordMultChip level={l} size={15} />
@@ -2519,7 +2519,7 @@ function CoordMultScore({ base, level }) {
       <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
         <motion.span key={phase >= 3 ? "fin" : "base"} initial={phase >= 3 ? { scale: 1.35 } : false} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 380, damping: 14 }}
           style={{ fontSize: 32, color: phase >= 3 ? level.ink : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", ...(phase >= 3 && level.key !== "easy" ? { background: level.chip, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.25))" } : {}) }}>
-          {phase >= 2 ? shown : base}{phase >= 3 ? "점" : phase === 2 ? "" : "개"}
+          {phase >= 2 ? shown : base}{phase >= 3 ? t("점") : phase === 2 ? "" : t("개")}
         </motion.span>
         <AnimatePresence>
           {phase >= 1 && phase < 3 && (
@@ -2529,7 +2529,7 @@ function CoordMultScore({ base, level }) {
           )}
         </AnimatePresence>
       </span>
-      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(90,58,34,.72)", minHeight: 15 }}>{phase >= 3 ? "최종 기록 · " + base + "개 × " + level.mult + " (난이도 " + level.label + ")" : ""}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(90,58,34,.72)", minHeight: 15 }}>{phase >= 3 ? t("최종 기록 · {0}개 × {1} (난이도 {2})", base, level.mult, level.label) : ""}</span>
     </span>
   );
 }
@@ -2573,18 +2573,18 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
   };
   if (over) {
     if (!best) return null;
-    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록" : "시간 종료"} scoreText={<CoordMultScore base={score} level={level} />}
+    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? t("신기록") : t("시간 종료")} scoreText={<CoordMultScore base={score} level={level} />}
       rounds={done.map((sq, i) => ({ result: "me", label: String(i + 1), detail: sq }))} stats={stats}
-      note={(best.prev != null ? "이전 최고 기록 " + best.prev + "점" : "첫 기록")} onExit={onExit} onRematch={onRematch}
-      extraAction={onChangeLevel ? { label: "난이도 변경", onClick: onChangeLevel } : null} />;
+      note={(best.prev != null ? t("이전 최고 기록 {0}점", best.prev) : t("첫 기록"))} onExit={onExit} onRematch={onRematch}
+      extraAction={onChangeLevel ? { label: t("난이도 변경"), onClick: onChangeLevel } : null} />;
   }
   const left = endAt - Math.max(now, startAt);
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {/* (v0.5.7, 사용자 요청) 혼자 플레이 중에도 다시하기 — 보드를 새로 마운트해(허브의 onRematch = runKey 증가) 카운트다운·타이머·점수·
           클릭 기록을 모두 처음 상태로 되돌린다. 기록 저장은 시간이 다 됐을 때만 하므로 중간에 다시 해도 기록에 남지 않는다. */}
-      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? T.blunder : T.ink, fontVariantNumeric: "tabular-nums" }}>{Math.ceil(left / 1000)}초</span>}
-        right={onRematch ? <button onClick={onRematch} className="press" aria-label="다시하기" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(150,112,58,.45)", background: "rgba(255,255,255,.6)", color: T.ink, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}><RotateCcw size={13} />다시하기</button> : null} />
+      <MinigameScoreHeader myScore={score} oppLabel={null} center={<span style={{ fontSize: 15, fontWeight: 900, color: left < 8000 ? T.blunder : T.ink, fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.ceil(left / 1000))}</span>}
+        right={onRematch ? <button onClick={onRematch} className="press" aria-label={t("다시하기")} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(150,112,58,.45)", background: "rgba(255,255,255,.6)", color: T.ink, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0}다시하기", <RotateCcw size={13} />)}</button> : null} />
       <MinigameTimeBar pct={left / COORD_SOLO_MS} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
@@ -2594,8 +2594,8 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
       </div>
       <CoordTargetLabel targetSq={started ? target : null} roundIdx={n} />
       <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
-        <span style={{ fontWeight: 800, color: level.ink }}>난이도 {level.label}</span><CoordMultChip level={level} size={10.5} />
-        <span>· {loadMinigameBest("coord") == null ? "첫 기록 도전" : "최고 기록 " + loadMinigameBest("coord") + "점"}</span>
+        <span style={{ fontWeight: 800, color: level.ink }}>{tx("난이도 {0}", level.label)}</span><CoordMultChip level={level} size={10.5} />
+        <span>· {loadMinigameBest("coord") == null ? t("첫 기록 도전") : t("최고 기록 {0}점", loadMinigameBest("coord"))}</span>
       </div>
     </div>
   );
@@ -2632,18 +2632,18 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
     const res = round.winner === "w" ? "me" : "opp";
     const info = knightSettleInfo(round.mine, null, res, round.par, true);
     return <MinigameRoundSettle solo roundNo={idx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} rows={info.rows.filter((r) => r.label !== "결과")} reason={info.reason}
-      sub={"지금까지 " + reached.length + "회 도착"} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+      sub={t("지금까지 {0}회 도착", reached.length)} until={settle.until} onNext={settle.skip} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   if (finished && settle.phase === "done") {
     if (!best) return null;
-    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? "신기록" : "기록"} scoreText={reached.length + " / " + KNIGHT_BO_TOTAL + " 도달"}
-      rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : "opp", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? r.mine.moves + "수" : "실패" }))}
+    return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? t("신기록") : t("기록")} scoreText={t("{0} / {1} 도달", (reached.length), KNIGHT_BO_TOTAL)}
+      rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : "opp", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? t("{0}수", (r.mine.moves)) : t("실패") }))}
       stats={knightResultStats(rounds.map((r) => r.mine))}
-      note={best.prev ? "이전 최고 기록 " + best.prev.reached + "회 도달 · " + (best.prev.ms / 1000).toFixed(1) + "초" : "첫 기록"} onExit={onExit} onRematch={onRematch} />;
+      note={best.prev ? t("이전 최고 기록 {0}회 도달 · {1}초", best.prev.reached, (best.prev.ms / 1000).toFixed(1)) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={reached.length} oppLabel={null} center={Math.max(1, rounds.length) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 혼자 플레이"} />
+      <MinigameScoreHeader myScore={reached.length} oppLabel={null} center={t("{0} / {1} 라운드 · 혼자 플레이", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={idx} round={round} onRoundDone={onRoundDone} solo /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -2651,13 +2651,13 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
 }
 function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
-    <MinigameHub title="좌표 인지 게임" gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
+    <MinigameHub title={t("좌표 인지 게임")} gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
       rules={<>
-        <div>• 무작위 좌표가 뜨면 <b style={{ color: T.ink }}>상대보다 먼저</b> 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리</div>
-        <div>• 오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속</div>
-        <div>• 혼자 플레이는 <b style={{ color: T.ink }}>30초 타임어택</b>. 난이도 하(×1) · 중(좌표 없음, ×2) · 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율</div>
+        <div>{tx("• 무작위 좌표가 뜨면 {0} 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리", <b style={{ color: T.ink }}>{t("상대보다 먼저")}</b>)}</div>
+        <div>{t("• 오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속")}</div>
+        <div>{tx("• 혼자 플레이는 {0}. 난이도 하(×1) · 중(좌표 없음, ×2) · 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율", <b style={{ color: T.ink }}>{t("30초 타임어택")}</b>)}</div>
       </>}
-      soloSub={loadMinigameBest("coord") == null ? "30초 타임어택 · 난이도 3단계" : "30초 · 난이도 3단계 · 최고 " + loadMinigameBest("coord") + "점"} botSub="15라운드"
+      soloSub={loadMinigameBest("coord") == null ? t("30초 타임어택 · 난이도 3단계") : t("30초 · 난이도 3단계 · 최고 {0}점", loadMinigameBest("coord"))} botSub={t("15라운드")}
       renderPvp={(p) => <CoordRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <CoordRaceBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <CoordSoloEntry runKey={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
@@ -2666,15 +2666,15 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
 function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   const best = loadMinigameBest("knight");
   return (
-    <MinigameHub title="나이트 레이스" gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
+    <MinigameHub title={t("나이트 레이스")} gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>• 나이트로 목표 칸(★) 도달. <b style={{ color: T.ink }}>더 적은 수</b>로 도착한 쪽이 라운드 승리, 같으면 <b style={{ color: T.ink }}>더 빨리</b> 도착한 쪽. 둘 다 못 가면 <b style={{ color: T.ink }}>목표에 더 가까운 쪽</b>, 거리도 같으면 <b style={{ color: T.ink }}>시간을 덜 쓴 쪽</b> 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승</div>
-        <div>• 1·2라운드는 방해 기물 없음. <b style={{ color: T.ink }}>3라운드부터 상대 기물 등장</b>, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘</div>
-        <div>• <b style={{ color: T.ink }}>7라운드에는 상대 퀸 등장</b>. 가장 어려운 라운드</div>
-        <div>• <b style={{ color: T.ink }}>상대 나이트 칸으로 이동하면 상대 나이트를 잡음</b>. 잡힌 쪽은 라운드 종료</div>
-        <div>• 혼자 플레이는 7라운드를 모두 풀어 <b style={{ color: T.ink }}>도달 횟수와 시간</b>으로 기록 도전</div>
+        <div>{tx("• 나이트로 목표 칸(★) 도달. {0}로 도착한 쪽이 라운드 승리, 같으면 {1} 도착한 쪽. 둘 다 못 가면 {2}, 거리도 같으면 {3} 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승", <b style={{ color: T.ink }}>{t("더 적은 수")}</b>, <b style={{ color: T.ink }}>{t("더 빨리")}</b>, <b style={{ color: T.ink }}>{t("목표에 더 가까운 쪽")}</b>, <b style={{ color: T.ink }}>{t("시간을 덜 쓴 쪽")}</b>)}</div>
+        <div>{tx("• 1·2라운드는 방해 기물 없음. {0}, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘", <b style={{ color: T.ink }}>{t("3라운드부터 상대 기물 등장")}</b>)}</div>
+        <div>• {tx("{0}. 가장 어려운 라운드", <b style={{ color: T.ink }}>{t("7라운드에는 상대 퀸 등장")}</b>)}</div>
+        <div>• {tx("{0}. 잡힌 쪽은 라운드 종료", <b style={{ color: T.ink }}>{t("상대 나이트 칸으로 이동하면 상대 나이트를 잡음")}</b>)}</div>
+        <div>{tx("• 혼자 플레이는 7라운드를 모두 풀어 {0}으로 기록 도전", <b style={{ color: T.ink }}>{t("도달 횟수와 시간")}</b>)}</div>
       </>}
-      soloSub={best ? "7라운드 · 최고 " + best.reached + "회" : "7라운드 기록 도전"} botSub="7전 4선승"
+      soloSub={best ? t("7라운드 · 최고 {0}회", best.reached) : t("7라운드 기록 도전")} botSub={t("7전 4선승")}
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <KnightRaceBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <KnightSoloBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
@@ -2786,7 +2786,7 @@ function KnightDistFx({ size, flip, target, info }) {
         // 시간 알약은 칸 아래(맨 아래 줄이면 위)에 — 오른쪽 위는 왕관 "승자" 알약·배지 자리라 겹치지 않게
         style={{ position: "absolute", left: vc * cell + cell / 2, top: vr === 7 ? vr * cell - 4 : (vr + 1) * cell + 3, transform: vr === 7 ? "translate(-50%,-100%)" : "translate(-50%,0)", zIndex: 9, pointerEvents: "none", whiteSpace: "nowrap",
           padding: "2px 7px", borderRadius: 999, fontSize: Math.max(10, cell * 0.24), fontWeight: 900, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums",
-          background: stage >= 2 && win ? GAME_END_COLOR.win : "rgba(36,21,9,.88)", color: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)" }}>{(Math.max(0, ms || 0) / 1000).toFixed(1)}초</motion.span>
+          background: stage >= 2 && win ? GAME_END_COLOR.win : "rgba(36,21,9,.88)", color: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,.35)" }}>{tx("{0}초", (Math.max(0, ms || 0) / 1000).toFixed(1))}</motion.span>
     );
   };
   const winSq = judge.winner === "w" ? wSq : judge.winner === "b" ? bSq : null;
@@ -2932,7 +2932,7 @@ function KnightRaceLegend() {
       {dangerOn && chip("rgba(196,60,50,.75)", "위협 칸 (진입 시 잡힘)")}
       {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물 (도달 시 잡음)")}
       {chip("rgba(196,154,80,.6)", "이동 가능")}
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={11} color={MG_GOLD} fill={T.brassHi} />목표 칸</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{tx("{0}목표 칸", <Star size={11} color={MG_GOLD} fill={T.brassHi} />)}</span>
     </div>
   );
 }
@@ -3036,8 +3036,8 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
-        <span>내 수 <b style={{ color: T.ink }}>{movesUsed}</b>/{round.moveBudget} · 상대 {oppMovesUsed}</span>
-        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+        <span>{tx("내 수 {0}/{1} · 상대 {2}", <b style={{ color: T.ink }}>{movesUsed}</b>, round.moveBudget, oppMovesUsed)}</span>
+        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.max(0, Math.ceil(timeLeftMs / 1000)))}</span>
       </div>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -3050,7 +3050,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {round.winner ? "" : captured ? "나이트가 잡힘. 상대 대기 중…" : iReported ? "상대를 기다리는 중..." : (oppRep ? (oppRep.reached ? "상대가 " + oppRep.movesUsed + "수로 도착. 더 적은 수면 승리" : "상대 시도 완료") : "가장 적은 수로 목표 칸(★) 도달")}
+        {round.winner ? "" : captured ? t("나이트가 잡힘. 상대 대기 중…") : iReported ? t("상대를 기다리는 중...") : (oppRep ? (oppRep.reached ? t("상대가 {0}수로 도착. 더 적은 수면 승리", oppRep.movesUsed) : t("상대 시도 완료")) : t("가장 적은 수로 목표 칸(★) 도달"))}
       </div>
       <KnightRaceLegend />
     </div>
@@ -3215,19 +3215,19 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.75)", fontWeight: 700, flexShrink: 0 }}>
-        <span>내 수 <b style={{ color: T.ink }}>{movesUsed}</b>/{round.moveBudget}{solo ? "" : " · 봇 " + botMovesUsed}</span>
-        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{Math.max(0, Math.ceil(timeLeftMs / 1000))}초</span>
+        <span>{tx("내 수 {0}", <b style={{ color: T.ink }}>{movesUsed}</b>)}/{round.moveBudget}{solo ? "" : t(" · 봇 {0}", botMovesUsed)}</span>
+        <span style={{ color: timePct < 0.25 ? T.blunder : "rgba(90,58,34,.90)", fontVariantNumeric: "tabular-nums" }}>{tx("{0}초", Math.max(0, Math.ceil(timeLeftMs / 1000)))}</span>
       </div>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
           <KnightRaceGrid size={boardSize} myPos={pos} oppPos={solo ? null : botPos} target={round.target} hazards={round.hazards} removed={[...taken, ...botTaken]} legalTargets={legalTargets} dangerForMe={myDanger} myColor="w" oppColor="b" onCell={onCell} roundKey={round.target + round.whiteStart} myCaptured={captured} oppCaptured={!!(botReport && botReport.captured)} distFx={distFx} />
           <MinigameCountdown startAt={startRef.current} />
-          <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? "도달 성공" : "실패") : null} />
+          <MinigameRoundBanner result={roundResult} roundKey={round.target + round.whiteStart} text={solo ? (roundResult === "me" ? t("도달 성공") : t("실패")) : null} />
         </motion.div>
       </div>
       <div style={{ textAlign: "center", fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700, margin: "8px 0 2px", flexShrink: 0, minHeight: 16 }}>
-        {winner ? "" : myReport ? (captured ? "나이트가 잡힘. " : "") + (solo ? "" : "봇 시도 중…") : "가장 적은 수로 목표 칸(★) 도달"}
+        {winner ? "" : myReport ? (captured ? t("나이트가 잡힘. ") : "") + (solo ? "" : t("봇 시도 중…")) : t("가장 적은 수로 목표 칸(★) 도달")}
       </div>
       <KnightRaceLegend />
     </div>
@@ -3238,9 +3238,9 @@ function knightResultStats(mine) {
   const fastest = reached.length ? Math.min(...reached.map((r) => r.ms)) : null;
   const avgMoves = reached.length ? (reached.reduce((a, r) => a + r.moves, 0) / reached.length).toFixed(1) : "-";
   return [
-    { label: "목표 도달", value: reached.length + "/" + mine.length },
-    { label: "평균 이동 수", value: avgMoves },
-    { label: "최단 도달", value: fastest == null ? "-" : (fastest / 1000).toFixed(1) + "초" },
+    { label: t("목표 도달"), value: reached.length + "/" + mine.length },
+    { label: t("평균 이동 수"), value: avgMoves },
+    { label: t("최단 도달"), value: fastest == null ? "-" : (fastest / 1000).toFixed(1) + "초" },
   ];
 }
 function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
@@ -3268,19 +3268,19 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   if (settle.phase === "settle") {
     const res = round.winner === "w" ? "me" : round.winner === "b" ? "opp" : "draw";
     const info = knightSettleInfo(round.mine, round.bot, res, round.par, false, knightDistView(round.judge, "w"));
-    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={botWins} oppLabel="봇"
-      rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={botWins} oppLabel={t("봇")}
+      rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   if (finished && settle.phase === "done") {
     const iWon = myWins > botWins;
     const isDraw = myWins === botWins;
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={botWins} oppLabel="봇"
-      rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : r.winner === "b" ? "opp" : "draw", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? r.mine.moves + "수" : "실패" }))}
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={botWins} oppLabel={t("봇")}
+      rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : r.winner === "b" ? "opp" : "draw", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? t("{0}수", (r.mine.moves)) : t("실패") }))}
       stats={knightResultStats(rounds.map((r) => r.mine))} onExit={onExit} onRematch={onRematch} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel="봇" center={Math.max(1, rounds.length) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 4선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / {1} 라운드 · 4선승", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -3335,8 +3335,8 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const oppColor = isWhite ? "b" : "w";
     const res = round.winner === myColor ? "me" : round.winner === oppColor ? "opp" : "draw";
     const info = knightSettleInfo(knightRepInfo(round, myColor), knightRepInfo(round, oppColor), res, round.par, false, knightDistView(round.judge, myColor));
-    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={oppWins} oppLabel="상대"
-      rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+    return <MinigameRoundSettle roundNo={roundIdx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} myScore={myWins} oppScore={oppWins} oppLabel={t("상대")}
+      rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   // 마지막 라운드도 배너 → 정산을 거친 뒤 최종 결과로(기권 등 라운드 승자 없이 끝난 대전은 곧장 결과).
   if (finished && (settle.phase === "done" || !(round && round.winner))) {
@@ -3346,13 +3346,13 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
       const rep = r.reports && r.reports[myColor];
       return rep ? { reached: !!rep.reached, moves: rep.movesUsed, ms: new Date(rep.at).getTime() - new Date(r.startedAt).getTime() } : null;
     });
-    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
-      rounds={rounds.filter((r) => r.winner).map((r, i) => ({ result: r.winner === myColor ? "me" : r.winner === "draw" ? "draw" : "opp", label: "R" + (i + 1), detail: mine[i] && mine[i].reached ? mine[i].moves + "수" : "실패" }))}
-      stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
+    return <MinigameResult outcome={isDraw ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} rating={minigameRatingOf(game, myUid)}
+      rounds={rounds.filter((r) => r.winner).map((r, i) => ({ result: r.winner === myColor ? "me" : r.winner === "draw" ? "draw" : "opp", label: "R" + (i + 1), detail: mine[i] && mine[i].reached ? t("{0}수", (mine[i].moves)) : t("실패") }))}
+      stats={knightResultStats(mine)} note={game.result_reason === "knight_forfeit" ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : null} onExit={onExit} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel="상대" center={(roundIdx + 1) + " / " + KNIGHT_BO_TOTAL + " 라운드 · 4선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / {1} 라운드 · 4선승", (roundIdx + 1), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} revealed={revealed} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -3368,9 +3368,9 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
 const RUSH_GAME_TYPE = "rush";
 const RUSH_ROUND_MS = 120000;
 const RUSH_DIFFS = [
-  { key: "easy", label: "쉬움", color: "#6FBF73" },
-  { key: "normal", label: "보통", color: T.brass },
-  { key: "hard", label: "어려움", color: "#E0795F" },
+  { key: "easy", label: t("쉬움"), color: "#6FBF73" },
+  { key: "normal", label: t("보통"), color: T.brass },
+  { key: "hard", label: t("어려움"), color: "#E0795F" },
 ];
 const RUSH_LEVELS_BY_DIFF = { easy: [], normal: [], hard: [] };
 RUSH_LEVELS.forEach((l) => { (RUSH_LEVELS_BY_DIFF[l.diff] || (RUSH_LEVELS_BY_DIFF[l.diff] = [])).push(l); });
@@ -3500,7 +3500,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
     const finish = () => {
       if (res.status === "fail") {
         fx("wrong"); buzz([80, 50, 80]); shake();
-        flash("주인공 룩이 잡힘", "bad", 4000);
+        flash(t("주인공 룩이 잡힘"), "bad", 4000);
         const ids = rushMoveIds(cur.ids, res.events);
         setHist((h) => [...h, { state: res.state, ids, last: [from, to] }]);
         setView(rushView(res.state, ids)); setBusy(false); setStatus("lost");
@@ -3509,7 +3509,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
       }
       if (res.status === "mateOther") {
         fx("wrong"); shake();
-        flash("메이트는 주인공 룩으로", "bad");
+        flash(t("메이트는 주인공 룩으로"), "bad");
         setView(rushView(cur.state, cur.ids)); setBusy(false); return;
       }
       const ids = rushMoveIds(cur.ids, res.events);
@@ -3517,8 +3517,8 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
       setHist((h) => [...h, entry]);
       setView(rushView(res.state, ids));
       setBusy(false);
-      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash("상대 " + RUSH_PIECE_SUBJ[rest[0].piece[1]] + " 상대가 미끼를 물음", "info"); }
-      else if (rest.some((e) => e.kind === "reply")) { fx("capture"); flash("체크. 상대 응수", "info"); }
+      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash(t("상대 {0} 상대가 미끼를 물음", RUSH_PIECE_SUBJ[rest[0].piece[1]]), "info"); }
+      else if (rest.some((e) => e.kind === "reply")) { fx("capture"); flash(t("체크. 상대 응수"), "info"); }
       if (res.status === "win") {
         setStatus("win");
         fx("correct"); buzz([40, 40, 40]);
@@ -3585,10 +3585,10 @@ function RushToolbar({ p }) {
 function RushRules({ compact }) {
   return (
     <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.45)", border: compact ? "none" : "1px solid rgba(150,112,58,.33)" }}>
-      <div>• <b style={{ color: MG_GOLD }}>왕관 표시 룩</b>을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트</div>
-      <div>• 다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 <b style={{ color: T.ink }}>희생</b>으로 상대 기물 유인 가능</div>
-      <div>• 상대 기물은 정지 상태. <b style={{ color: T.ink }}>방금 움직인 내 기물</b>이 공격 범위에 들어오면 잡으러 옴</div>
-      <div>• 주인공 룩이 <b style={{ color: "#F4B2A6" }}>상대 기물이 지배하는 칸</b>에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가</div>
+      <div>• {tx("{0}을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트", <b style={{ color: MG_GOLD }}>{t("왕관 표시 룩")}</b>)}</div>
+      <div>{tx("• 다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 {0}으로 상대 기물 유인 가능", <b style={{ color: T.ink }}>{t("희생")}</b>)}</div>
+      <div>{tx("• 상대 기물은 정지 상태. {0}이 공격 범위에 들어오면 잡으러 옴", <b style={{ color: T.ink }}>{t("방금 움직인 내 기물")}</b>)}</div>
+      <div>{tx("• 주인공 룩이 {0}에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가", <b style={{ color: "#F4B2A6" }}>{t("상대 기물이 지배하는 칸")}</b>)}</div>
     </div>
   );
 }
@@ -3603,9 +3603,9 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
-        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><ChevronLeft size={14} />레벨 목록</button>
-        <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? " · 희생" : ""}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>수 <b style={{ color: T.ink }}>{p.moves}</b> · 목표 {level.par}수{best ? " · 최고 " + best : ""}</span>
+        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}>{tx("{0}레벨 목록", <ChevronLeft size={14} />)}</button>
+        <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? t(" · 희생") : ""}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>{tx("수 {0} · 목표 {1}수{2}", <b style={{ color: T.ink }}>{p.moves}</b>, level.par, best ? t(" · 최고 {0}", best) : "")}</span>
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
@@ -3613,22 +3613,22 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
           <AnimatePresence>
             {failed && solvedMoves == null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: T.blunder, fontFamily: SITE_FONT }}>룩이 잡힘</motion.div>
-                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", margin: "6px 0 12px" }}>상대 기물이 지배하는 칸에 진입. 시도 실패</div>
-                <button onClick={() => { setFailed(false); p.restart(); }} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}><RotateCcw size={13} />다시 풀기</button>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 28, fontWeight: 900, color: T.blunder, fontFamily: SITE_FONT }}>{t("룩이 잡힘")}</motion.div>
+                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", margin: "6px 0 12px" }}>{t("상대 기물이 지배하는 칸에 진입. 시도 실패")}</div>
+                <button onClick={() => { setFailed(false); p.restart(); }} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>{tx("{0}다시 풀기", <RotateCcw size={13} />)}</button>
               </motion.div>
             )}
             {solvedMoves != null && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.9)", borderRadius: 6 }}>
                 <VictoryBurst />
-                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: MG_GOLD, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>체크메이트</motion.div>
+                <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 15 }} style={{ fontSize: 30, fontWeight: 900, color: MG_GOLD, fontFamily: SITE_FONT, textShadow: "0 0 24px rgba(232,196,110,.5)" }}>{t("체크메이트")}</motion.div>
                 <div style={{ display: "flex", gap: 4, margin: "8px 0 4px" }}>
                   {[1, 2, 3].map((k) => <motion.span key={k} initial={{ scale: 0, rotate: -60 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.2 + k * 0.15, type: "spring", stiffness: 400, damping: 14 }}><Star size={28} color={MG_GOLD} fill={k <= rushStars(solvedMoves, level.par) ? MG_GOLD : "transparent"} /></motion.span>)}
                 </div>
-                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", marginBottom: 12 }}>{solvedMoves}수 (최단 {level.par}수)</div>
+                <div style={{ fontSize: 12, color: "rgba(90,58,34,.90)", marginBottom: 12 }}>{tx("{0}수 (최단 {1}수)", solvedMoves, level.par)}</div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => { setSolvedMoves(null); p.restart(); }} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>다시 풀기</button>
-                  {onNext && <button onClick={onNext} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>다음 레벨</button>}
+                  <button onClick={() => { setSolvedMoves(null); p.restart(); }} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid " + T.brass, background: "rgba(196,154,80,.14)", color: T.ink, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("다시 풀기")}</button>
+                  {onNext && <button onClick={onNext} className="press" style={{ padding: "8px 18px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("다음 레벨")}</button>}
                 </div>
               </motion.div>
             )}
@@ -3648,7 +3648,7 @@ function RushLevelSelect({ progress, onPick }) {
     <div style={{ width: "100%", maxWidth: 600, margin: "0 auto" }}>
       <style>{"@media (min-width:" + (MG_DESKTOP_BP + 1) + "px){.rush-level-grid{grid-template-columns:repeat(8,minmax(0,1fr)) !important}}"}</style>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>혼자 풀기</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("혼자 풀기")}</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: MG_GOLD, display: "inline-flex", alignItems: "center", gap: 4 }}><Star size={13} fill={MG_GOLD} color={MG_GOLD} />{stars} / {total * 3}</span>
       </div>
       {RUSH_DIFFS.map((d) => (
@@ -3695,15 +3695,15 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, fontSize: 11, color: "rgba(90,58,34,.80)", fontWeight: 700, flexShrink: 0 }}>
-        <span className="flex items-center" style={{ gap: 5 }}><span><b style={{ color: diff.color }}>{diff.label}</b> · 내 수 <b style={{ color: T.ink }}>{p.moves}</b> ·</span>
+        <span className="flex items-center" style={{ gap: 5 }}><span>{tx("{0} · 내 수 {1}", <b style={{ color: diff.color }}>{diff.label}</b>, <b style={{ color: T.ink }}>{p.moves}</b>)} ·</span>
           {/* (v0.5.7) 상대 진행 — 상대 프로필 사진을 우상단에 단 파란 알약, 상대가 수를 둘 때마다 한 번 톡 튄다. */}
           <motion.span key={"om" + (opp.moves || 0) + (opp.done ? "d" : "")} initial={{ scale: 1.14 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}
             style={{ position: "relative", display: "inline-flex", alignItems: "center", padding: oppInfo ? "2px 20px 2px 8px" : "2px 8px", borderRadius: 999, background: "rgba(111,168,220,.14)", border: "1px solid rgba(111,168,220,.55)" }}>
-            {opp.label} {opp.solved ? "완료 " + opp.moves + "수" : opp.done ? "실패" : (opp.moves || 0) + "수"}
+            {opp.label} {opp.solved ? t("완료 {0}수", opp.moves) : opp.done ? t("실패") : t("{0}수", (opp.moves || 0))}
             {oppInfo && <MgOppBadge opp={oppInfo} size={15} />}
           </motion.span>
         </span>
-        <span style={{ fontVariantNumeric: "tabular-nums", color: left < timeLimitMs * 0.25 ? T.blunder : "rgba(90,58,34,.95)" }}>{Math.ceil(left / 1000)}초</span>
+        <span style={{ fontVariantNumeric: "tabular-nums", color: left < timeLimitMs * 0.25 ? T.blunder : "rgba(90,58,34,.95)" }}>{tx("{0}초", Math.ceil(left / 1000))}</span>
       </div>
       <MinigameTimeBar pct={left / timeLimitMs} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -3715,7 +3715,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
       </div>
       {/* (v0.5.7, 사용자 요청) 안내 문구가 너무 연해 잘 안 보였다 — 본문 잉크색·굵게 */}
       <div style={{ textAlign: "center", fontSize: 12, color: T.ink, fontWeight: 800, marginTop: 6, minHeight: 16, flexShrink: 0 }}>
-        {result ? "" : done ? (p.status === "win" ? "풀이 완료 " + opp.label + "를 기다리는 중..." : p.status === "lost" ? "룩이 잡힘. 결과 대기 중…" : "시간 초과. 결과 대기 중…") : (opp.solved ? opp.label + "가 이미 풂. 더 적은 수로 역전 가능" : "목표: 최단 " + level.par + "수")}
+        {result ? "" : done ? (p.status === "win" ? t("풀이 완료 {0}를 기다리는 중...", opp.label) : p.status === "lost" ? t("룩이 잡힘. 결과 대기 중…") : t("시간 초과. 결과 대기 중…")) : (opp.solved ? t("{0}가 이미 풂. 더 적은 수로 역전 가능", (opp.label)) : t("목표: 최단 {0}수", level.par))}
       </div>
       <RushMsg msg={p.msg} />
       <RushToolbar p={p} />
@@ -3725,15 +3725,15 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
 function rushRoundChips(rounds, meKey, oppKey, mineOf) {
   return rounds.map((r, i) => {
     const mine = mineOf(r);
-    return { result: r.winner === meKey ? "me" : r.winner === oppKey ? "opp" : "draw", label: RUSH_DIFFS[i] ? RUSH_DIFFS[i].label : "R" + (i + 1), detail: mine && mine.solved ? mine.moves + "수" : "실패" };
+    return { result: r.winner === meKey ? "me" : r.winner === oppKey ? "opp" : "draw", label: RUSH_DIFFS[i] ? RUSH_DIFFS[i].label : "R" + (i + 1), detail: mine && mine.solved ? t("{0}수", (mine.moves)) : t("실패") };
   });
 }
 function rushStatsOf(list) {
   const solved = list.filter((x) => x && x.solved);
   return [
-    { label: "푼 퍼즐", value: solved.length + "/" + list.length },
-    { label: "총 이동 수", value: solved.length ? solved.reduce((a, x) => a + x.moves, 0) : "-" },
-    { label: "최단 대비", value: solved.length ? "+" + solved.reduce((a, x) => a + (x.moves - x.par), 0) : "-" },
+    { label: t("푼 퍼즐"), value: solved.length + "/" + list.length },
+    { label: t("총 이동 수"), value: solved.length ? solved.reduce((a, x) => a + x.moves, 0) : "-" },
+    { label: t("최단 대비"), value: solved.length ? "+" + solved.reduce((a, x) => a + (x.moves - x.par), 0) : "-" },
   ];
 }
 // 봇 대전 — 봇은 라운드마다 "par + 0~3수"를 "par × 5~10초 + 7초" 동안 푸는 것으로 흉내 낸다(어려운
@@ -3798,19 +3798,19 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
   }, []);
   if (settle.phase === "settle") {
     const info = rushSettleInfo(round.me, round.bot, round.winner, round.level.par);
-    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={round.winner} myScore={myWins} oppScore={botWins} oppLabel="봇"
-      sub={RUSH_DIFFS[idx] ? RUSH_DIFFS[idx].label + " 퍼즐" : null} rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={round.winner} myScore={myWins} oppScore={botWins} oppLabel={t("봇")}
+      sub={RUSH_DIFFS[idx] ? t("{0} 퍼즐", (RUSH_DIFFS[idx].label)) : null} rows={info.rows} reason={info.reason} until={settle.until} onNext={settle.skip} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   if (finished && settle.phase === "done") {
     const outcome = myWins > botWins ? "win" : botWins > myWins ? "lose" : "draw";
-    return <MinigameResult outcome={outcome} myScore={myWins} oppScore={botWins} oppLabel="봇"
+    return <MinigameResult outcome={outcome} myScore={myWins} oppScore={botWins} oppLabel={t("봇")}
       rounds={rushRoundChips(rounds, "me", "opp", (r) => r.me)} stats={rushStatsOf(rounds.map((r) => r.me && { ...r.me, par: r.level.par }))} onExit={onExit} onRematch={onRematch} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel="봇" center={Math.max(1, rounds.length) + " / 3 라운드 · 2선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / 3 라운드 · 2선승", (Math.max(1, rounds.length)))} />
       {round && <RushRound key={idx} level={round.level} startAt={round.startAt} timeLimitMs={RUSH_ROUND_MS} roundKey={idx} result={round.winner}
-        opp={{ label: "봇", moves: round.bot ? round.bot.moves : round.botMoves, solved: round.bot && round.bot.solved, done: !!round.bot }} onDone={onDone} />}
+        opp={{ label: t("봇"), moves: round.bot ? round.bot.moves : round.botMoves, solved: round.bot && round.bot.solved, done: !!round.bot }} onDone={onDone} />}
     </div>
   );
 }
@@ -3853,24 +3853,24 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const info_ = (c) => { const r = round.reports && round.reports[c]; return r ? { solved: !!r.solved, moves: r.moves || 0, ms: new Date(r.at).getTime() - new Date(round.startedAt).getTime(), captured: !!r.captured } : null; };
     const res = round.winner === me ? "me" : round.winner === opp ? "opp" : "draw";
     const info = rushSettleInfo(info_(me), info_(opp), res, rushLevelFor(round.diff, round.seed).par);
-    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={res} myScore={myWins} oppScore={oppWins} oppLabel="상대"
-      sub={RUSH_DIFFS[idx] ? RUSH_DIFFS[idx].label + " 퍼즐" : null} rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? "최종 결과" : "다음 라운드"} />;
+    return <MinigameRoundSettle roundNo={idx + 1} roundTotal={3} result={res} myScore={myWins} oppScore={oppWins} oppLabel={t("상대")}
+      sub={RUSH_DIFFS[idx] ? t("{0} 퍼즐", (RUSH_DIFFS[idx].label)) : null} rows={info.rows} reason={info.reason} until={settle.until} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   if (finished && (settle.phase === "done" || !(round && round.winner))) {
     const iWon = (isWhite && game.status === "white_won") || (!isWhite && game.status === "black_won");
     const done = rounds.filter((r) => r.winner);
-    return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel="상대" rating={minigameRatingOf(game, myUid)}
+    return <MinigameResult outcome={game.status === "draw" ? "draw" : iWon ? "win" : "lose"} myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} rating={minigameRatingOf(game, myUid)}
       rounds={rushRoundChips(done, me, opp, (r) => r.reports && r.reports[me])}
       stats={rushStatsOf(done.map((r) => { const m = r.reports && r.reports[me]; return m && { ...m, par: rushLevelFor(r.diff, r.seed).par }; }))}
-      note={game.result_reason === "rush_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : null} onExit={onExit} />;
+      note={game.result_reason === "rush_forfeit" ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : null} onExit={onExit} />;
   }
   const oppProg = round && round.progress && round.progress[opp];
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel="상대" center={(idx + 1) + " / 3 라운드 · 2선승"} />
+      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / 3 라운드 · 2선승", (idx + 1))} />
       {round ? <RushPvpRoundWrap key={idx} round={round} idx={idx} gameId={game.id} onDone={onDone}
         result={round.winner ? (round.winner === me ? "me" : round.winner === opp ? "opp" : "draw") : null}
-        opp={{ label: "상대", moves: oppRep ? oppRep.moves : (oppProg && oppProg.moves) || 0, solved: !!(oppRep && oppRep.solved), done: !!oppRep }} />
+        opp={{ label: t("상대"), moves: oppRep ? oppRep.moves : (oppProg && oppProg.moves) || 0, solved: !!(oppRep && oppRep.solved), done: !!oppRep }} />
         : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
   );
@@ -3895,9 +3895,9 @@ function RushHourGame({ myUid, onExit, onOpenProfile, initialGame }) {
   const progress = loadRushProgress();
   const stars = RUSH_LEVELS.reduce((a, l) => a + (progress[l.id] ? rushStars(progress[l.id], l.par) : 0), 0);
   return (
-    <MinigameHub title="백랭크 러시아워" gameType={RUSH_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="rush_forfeit"
+    <MinigameHub title={t("백랭크 러시아워")} gameType={RUSH_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="rush_forfeit"
       rules={<RushRules compact />} soloScroll
-      soloSub={RUSH_LEVELS.length + "레벨 · ★" + stars} botSub="3라운드 2선승"
+      soloSub={t("{0}레벨 · ★{1}", (RUSH_LEVELS.length), stars)} botSub={t("3라운드 2선승")}
       renderPvp={(p) => <RushPvpBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <RushBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <RushSoloHub key={p.runKey} />} />
@@ -3916,10 +3916,10 @@ const ATTACK_MATCH_MS = 180000;
 // (v0.5.5, 사용자 요청) 화면에서는 S·A·B·C 글자 대신 리뷰의 수 등급 아이콘으로 보여준다 — 탁월(S)·유일(A)·최선(B)·우수(C).
 // 내부 값(서버 _attack_grade·집계 키)은 그대로 S·A·B·C다.
 const ATTACK_GRADES = [
-  { g: "S", mate: 1, kind: "brilliant", name: "탁월", color: QCOLOR.brilliant, label: "1수 메이트" },
-  { g: "A", mate: 2, kind: "only", name: "유일", color: QCOLOR.only, label: "2수 메이트" },
-  { g: "B", mate: 3, kind: "best", name: "최선", color: QCOLOR.best, label: "3수 메이트" },
-  { g: "C", mate: 4, kind: "excellent", name: "우수", color: QCOLOR.excellent, label: "4수 이상 메이트" },
+  { g: "S", mate: 1, kind: "brilliant", name: "탁월", color: QCOLOR.brilliant, label: t("1수 메이트") },
+  { g: "A", mate: 2, kind: "only", name: "유일", color: QCOLOR.only, label: t("2수 메이트") },
+  { g: "B", mate: 3, kind: "best", name: "최선", color: QCOLOR.best, label: t("3수 메이트") },
+  { g: "C", mate: 4, kind: "excellent", name: "우수", color: QCOLOR.excellent, label: t("4수 이상 메이트") },
 ];
 const attackGradeInfo = (g) => ATTACK_GRADES.find((x) => x.g === g) || ATTACK_GRADES[3];
 const attackGradeOfMate = (n) => (n <= 1 ? "S" : n === 2 ? "A" : n === 3 ? "B" : "C");
@@ -4120,12 +4120,12 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
         {state === "win" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
             <VictoryBurst />
-            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(255,250,238,.95)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>체크메이트 +1</motion.div>
+            <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 360, damping: 14 }} style={{ padding: "8px 20px", borderRadius: 14, background: "rgba(255,250,238,.95)", border: "2px solid " + attackGradeInfo(grade).color, fontSize: 22, fontWeight: 900, color: attackGradeInfo(grade).color, fontFamily: SITE_FONT }}>{t("체크메이트 +1")}</motion.div>
           </motion.div>
         )}
         {state === "fail" && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ position: "absolute", left: 0, right: 0, bottom: 8, zIndex: 8, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
-            <div style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(196,60,50,.9)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>공격 실패. 파란 칸이 정답</div>
+            <div style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(196,60,50,.9)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>{t("공격 실패. 파란 칸이 정답")}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -4169,7 +4169,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
         center={<span style={{ fontSize: 17, fontWeight: 900, color: left < 30000 ? T.blunder : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{attackClock(left)}</span>} />
       <MinigameTimeBar pct={left / (endAt - startAt)} />
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4, marginBottom: 6, flexShrink: 0 }}>
-        <AttackLedger tally={myTally} label="나" />
+        <AttackLedger tally={myTally} label={t("나")} />
         {oppTally && <AttackLedger tally={oppTally} label={oppLabel} />}
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -4180,7 +4180,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
               <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
                 <AttackGradeBadge grade={current.g} />
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{pos.fen.split(" ")[1] === "w" ? "백" : "흑"} 차례 · {pos.mateIn}수 안에 메이트</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{tx("{0} 차례 · {1}수 안에 메이트", pos.fen.split(" ")[1] === "w" ? t("백") : t("흑"), pos.mateIn)}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
               </motion.div>
             )}
@@ -4190,7 +4190,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
             : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.45)" }}><PendingDots size={12} /></div>}
           <MinigameCountdown startAt={startAt} />
-          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>시간 종료</div>}
+          {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{t("시간 종료")}</div>}
         </div>
       </div>
       <div style={{ textAlign: "center", minHeight: 22, marginTop: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -4205,20 +4205,20 @@ function attackResultProps(myList, oppList, myRating, oppRating) {
   return {
     outcome: d.winner === "me" ? "win" : d.winner === "opp" ? "lose" : "draw",
     myScore: me.total, oppScore: opp.total,
-    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: attackGradeInfo(e.g).mate + (e.g === "C" ? "+" : "") + "수" })),
+    rounds: myList.filter((e) => e.ok != null).slice(0, 40).map((e) => ({ result: e.ok ? "me" : "opp", label: t("{0}수", (attackGradeInfo(e.g).mate + (e.g === "C" ? "+" : ""))) })),
     stats: [
-      { label: "성공 / 시도", value: me.total + " / " + me.tries },
-      { label: "1·2수 메이트 성공", value: me.S + me.A },
-      { label: "3수+ 메이트 성공", value: me.B + me.C },
+      { label: t("성공 / 시도"), value: me.total + " / " + me.tries },
+      { label: t("1·2수 메이트 성공"), value: me.S + me.A },
+      { label: t("3수+ 메이트 성공"), value: me.B + me.C },
     ],
     note: d.reason,
   };
 }
 const ATTACK_BOTS = [
   // (v0.5.3 난이도 완화, 사용자 요청) 세 단계 모두 풀이 속도를 늦추고(speed 배율↑) 정답률을 낮췄다.
-  { key: "easy", label: "쉬움", rating: 1000, speed: 2.1, acc: 0.58 },
-  { key: "normal", label: "보통", rating: 1500, speed: 1.45, acc: 0.72 },
-  { key: "hard", label: "어려움", rating: 2000, speed: 1.05, acc: 0.84 },
+  { key: "easy", label: t("쉬움"), rating: 1000, speed: 2.1, acc: 0.58 },
+  { key: "normal", label: t("보통"), rating: 1500, speed: 1.45, acc: 0.72 },
+  { key: "hard", label: t("어려움"), rating: 2000, speed: 1.05, acc: 0.84 },
 ];
 // 봇 대전 — 봇의 기회·풀이 시간·성공 여부를 대전 시작 순간에 전부 미리 정해 두고(등급은 같은 가중
 // 공식), 시각이 되면 하나씩 반영한다. 등급이 낮을수록(긴 메이트) 오래 걸리고 실패 확률도 높다.
@@ -4279,14 +4279,14 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
   if (over && solo) {
     if (!soloBest) return null;
     const props = attackResultProps(mine, [], myRating || 800, myRating || 800);
-    return <MinigameResult {...props} outcome={soloBest.isNew ? "win" : "draw"} title={soloBest.isNew ? "신기록" : "시간 종료"} scoreText={props.myScore + "회 메이트"}
-      note={soloBest.prev != null ? "이전 최고 기록 " + soloBest.prev + "회" : "첫 기록"} onExit={onExit} onRematch={onRematch} />;
+    return <MinigameResult {...props} outcome={soloBest.isNew ? "win" : "draw"} title={soloBest.isNew ? t("신기록") : t("시간 종료")} scoreText={t("{0}회 메이트", (props.myScore))}
+      note={soloBest.prev != null ? t("이전 최고 기록 {0}회", soloBest.prev) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
   }
   if (over) {
-    return <MinigameResult {...attackResultProps(mine, botDone, myRating || 800, bot.rating)} oppLabel={"봇(" + bot.label + ")"} onExit={onExit} onRematch={onRematch} />;
+    return <MinigameResult {...attackResultProps(mine, botDone, myRating || 800, bot.rating)} oppLabel={t("봇({0})", bot.label)} onExit={onExit} onRematch={onRematch} />;
   }
-  if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}><PendingDots size={12} />포지션 로드 중…</div>;
-  return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel="봇" onResult={onResult} />;
+  if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}>{tx("{0}포지션 로드 중…", <PendingDots size={12} />)}</div>;
+  return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel={t("봇")} onResult={onResult} />;
 }
 function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const [pool] = useAttackPool();
@@ -4336,11 +4336,11 @@ function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
     const props = attackResultProps(mine, theirs, myRating, oppRating);
     const iWon = (me === "w" && game.status === "white_won") || (me === "b" && game.status === "black_won");
     const outcome = game.status === "draw" ? "draw" : iWon ? "win" : "lose";
-    return <MinigameResult {...props} outcome={outcome} oppLabel="상대" rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? "상대가 대전 포기" : "대전 포기") : props.note} onExit={onExit} />;
+    return <MinigameResult {...props} outcome={outcome} oppLabel={t("상대")} rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : props.note} onExit={onExit} />;
   }
   if (!head) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><PendingDots size={12} /></div>;
-  return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel="상대" onResult={onResult}
-    waitingNote={now >= endAt ? "결과 집계 중..." : null} />;
+  return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel={t("상대")} onResult={onResult}
+    waitingNote={now >= endAt ? t("결과 집계 중...") : null} />;
 }
 // (v0.5.3 개발자 도구) 공격 기회 포지션 관리 — 개발자·공동 개발자만 보인다. ① 리체스 퍼즐 API에서
 // N수 메이트 퍼즐을 가져와(프록시 api/lichess.js?puzzle=1) 검증 후 추가 ② FEN과 정답 수순을 직접
@@ -4351,11 +4351,11 @@ function attackValidateLine(fen, moveTokens) {
   for (const tok of moveTokens) {
     let mv = null;
     try { mv = /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(tok) ? c.move({ from: tok.slice(0, 2), to: tok.slice(2, 4), promotion: tok[4] || "q" }) : c.move(tok); } catch { mv = null; }
-    if (!mv) return { error: "수순 '" + tok + "' 합법 수 아님" };
+    if (!mv) return { error: t("수순 '{0}' 합법 수 아님", tok) };
     ucis.push(uciOf(mv));
   }
-  if (!c.isCheckmate()) return { error: "수순의 마지막이 체크메이트가 아님" };
-  if (ucis.length % 2 === 0) return { error: "공격 측 수로 끝나야 함 (수순 길이 홀수)" };
+  if (!c.isCheckmate()) return { error: t("수순의 마지막이 체크메이트가 아님") };
+  if (ucis.length % 2 === 0) return { error: t("공격 측 수로 끝나야 함 (수순 길이 홀수)") };
   return { moves: ucis, mateIn: (ucis.length + 1) / 2 };
 }
 async function fetchLichessMatePuzzle(mateIn) {
@@ -4389,39 +4389,39 @@ function AttackDevPanel({ pool, onChanged }) {
   const addManual = async () => {
     setMsg("");
     let v;
-    try { v = attackValidateLine(fen.trim(), line.trim().split(/[\s,]+/).filter((t) => t && !/^\d+\.+$/.test(t))); } catch { v = { error: "FEN이 올바르지 않음" }; }
+    try { v = attackValidateLine(fen.trim(), line.trim().split(/[\s,]+/).filter((t) => t && !/^\d+\.+$/.test(t))); } catch { v = { error: t("FEN이 올바르지 않음") }; }
     if (v.error) { setMsg(v.error); return; }
     setBusy(true);
-    try { await save({ fen: fen.trim(), ...v, source: "dev" }); setMsg(v.mateIn + "수 메이트 포지션 추가됨"); setFen(""); setLine(""); }
-    catch { setMsg("저장 실패 (이미 있는 FEN이거나 권한 문제)"); }
+    try { await save({ fen: fen.trim(), ...v, source: "dev" }); setMsg(t("{0}수 메이트 포지션 추가됨", (v.mateIn))); setFen(""); setLine(""); }
+    catch { setMsg(t("저장 실패 (이미 있는 FEN이거나 권한 문제)")); }
     setBusy(false);
   };
   const addLichess = async (n) => {
     setMsg(""); setBusy(true);
-    try { const p = await fetchLichessMatePuzzle(n); await save(p); setMsg("리체스 " + p.source.slice(8) + " (" + p.mateIn + "수 메이트) 추가됨"); }
-    catch (e) { setMsg("가져오지 못했어요: " + (e && e.message ? e.message : "오류")); }
+    try { const p = await fetchLichessMatePuzzle(n); await save(p); setMsg(t("리체스 {0} ({1}수 메이트) 추가됨", p.source.slice(8), p.mateIn)); }
+    catch (e) { setMsg(t("가져오지 못했어요: {0}", e && e.message ? e.message : t("오류"))); }
     setBusy(false);
   };
   const remove = async (p) => {
     if (!p.dbId) return;
-    try { await sbDelete("attack_positions?id=eq." + p.dbId); onChanged(); } catch { setMsg("삭제 실패"); }
+    try { await sbDelete("attack_positions?id=eq." + p.dbId); onChanged(); } catch { setMsg(t("삭제 실패")); }
   };
   const inp = { width: "100%", boxSizing: "border-box", padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(150,112,58,.50)", background: "rgba(0,0,0,.25)", color: T.ink, fontSize: 11.5, fontFamily: "ui-monospace,monospace" };
   return (
     <div style={{ marginTop: 16, textAlign: "left", border: "1px dashed rgba(150,112,58,.55)", borderRadius: 10, padding: 10 }}>
       <button onClick={() => setOpen((v) => !v)} className="press" style={{ background: "transparent", border: "none", color: MG_GOLD, fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, padding: 0 }}>
-        <Wrench size={13} />개발자: 공격 기회 포지션 관리 {pool ? "(번들 " + (pool.all.length - pool.dev.length) + " + 추가 " + pool.dev.length + ")" : ""}{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {tx("{0}개발자: 공격 기회 포지션 관리 {1}{2}", <Wrench size={13} />, pool ? t("(번들 {0} + 추가 {1})", pool.all.length - pool.dev.length, pool.dev.length) : "", open ? <ChevronUp size={13} /> : <ChevronDown size={13} />)}
       </button>
       {open && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)" }}>리체스 퍼즐 API에서 가져오기</div>
+          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)" }}>{t("리체스 퍼즐 API에서 가져오기")}</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[1, 2, 3, 4].map((n) => <button key={n} disabled={busy} onClick={() => addLichess(n)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid " + attackGradeInfo(attackGradeOfMate(n)).color, background: "rgba(255,255,255,.55)", color: T.ink, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{n}수 메이트</button>)}
+            {[1, 2, 3, 4].map((n) => <button key={n} disabled={busy} onClick={() => addLichess(n)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid " + attackGradeInfo(attackGradeOfMate(n)).color, background: "rgba(255,255,255,.55)", color: T.ink, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>{tx("{0}수 메이트", n)}</button>)}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)", marginTop: 4 }}>FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분, 공격·수비 번갈아, 메이트 수로 끝)</div>
+          <div style={{ fontSize: 11, color: "rgba(90,58,34,.80)", marginTop: 4 }}>{t("FEN 직접 추가 (정답 수순: UCI 또는 SAN, 공백 구분, 공격·수비 번갈아, 메이트 수로 끝)")}</div>
           <input value={fen} onChange={(e) => setFen(e.target.value)} placeholder="FEN" style={inp} />
-          <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="예: Qh7+ Kf8 Qh8#" style={inp} />
-          <button disabled={busy || !fen.trim() || !line.trim()} onClick={addManual} className="press" style={{ padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>검증 후 추가</button>
+          <input value={line} onChange={(e) => setLine(e.target.value)} placeholder={t("예: Qh7+ Kf8 Qh8#")} style={inp} />
+          <button disabled={busy || !fen.trim() || !line.trim()} onClick={addManual} className="press" style={{ padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("검증 후 추가")}</button>
           {msg && <div style={{ fontSize: 11.5, color: MG_GOLD }}>{msg}</div>}
           {pool && pool.dev.length > 0 && (
             <div style={{ maxHeight: 160, overflowY: "auto", borderTop: "1px solid rgba(150,112,58,.35)", paddingTop: 6 }}>
@@ -4429,7 +4429,7 @@ function AttackDevPanel({ pool, onChanged }) {
                 <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
                   <AttackGradeBadge grade={attackGradeOfMate(p.mateIn)} />
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src} · {p.fen}</span>
-                  <button onClick={() => remove(p)} className="press" aria-label="삭제" style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
+                  <button onClick={() => remove(p)} className="press" aria-label={t("삭제")} style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
                 </div>
               ))}
             </div>
@@ -4443,12 +4443,12 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   const [pool, reloadPool] = useAttackPool();
   const counts = pool ? ATTACK_GRADES.map((gi) => pool.byGrade[gi.g].length) : null;
   return (
-    <MinigameHub title="무한 체크메이트 게임" gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
+    <MinigameHub title={t("무한 체크메이트 게임")} gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
-        <div>• <b style={{ color: T.ink }}>3분</b> 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리</div>
-        <div>• 한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동</div>
-        <div>• 짧은 메이트일수록 좋은 등급. <b style={{ color: T.ink }}>퍼즐 레이팅이 낮은 쪽</b>이 좋은 등급을 받을 확률이 높음</div>
-        <div>• 동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리</div>
+        <div>• {tx("{0} 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리", <b style={{ color: T.ink }}>{t("3분")}</b>)}</div>
+        <div>{t("• 한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동")}</div>
+        <div>{tx("• 짧은 메이트일수록 좋은 등급. {0}이 좋은 등급을 받을 확률이 높음", <b style={{ color: T.ink }}>{t("퍼즐 레이팅이 낮은 쪽")}</b>)}</div>
+        <div>{t("• 동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리")}</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -4457,8 +4457,8 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
           ))}
         </div>
       }
-      soloSub={loadMinigameBest("attack") == null ? "3분 기록 도전" : "3분 · 최고 " + loadMinigameBest("attack") + "회"} botSub={"내 레이팅 " + (myRating || 800)}
-      botOptions={ATTACK_BOTS.map((b) => ({ ...b, sub: "레이팅 " + b.rating }))}
+      soloSub={loadMinigameBest("attack") == null ? t("3분 기록 도전") : t("3분 · 최고 {0}회", loadMinigameBest("attack"))} botSub={t("내 레이팅 {0}", myRating || 800)}
+      botOptions={ATTACK_BOTS.map((b) => ({ ...b, sub: t("레이팅 {0}", b.rating) }))}
       footer={canEditContent ? <AttackDevPanel pool={pool} onChanged={reloadPool} /> : null}
       renderPvp={(p) => <AttackPvpBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <AttackBotBoard key={p.runKey} bot={p.opt} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
@@ -4564,7 +4564,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
     if (g.id != null) sbRpc("pvp_check_flag", { p_game_id: g.id }).catch(() => {});
   }, [myUid]);
   const joinPvpQueue = async () => {
-    if (!myUid) { setPvpErr("로그인 후 이용 가능"); return; }
+    if (!myUid) { setPvpErr(t("로그인 후 이용 가능")); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
       const g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
@@ -4577,7 +4577,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
       // 결과 팝업이 떴다 — 대기열이 비어 있을 때(같은 시간에 매칭될 다른 사람이 없을 때)마다 100% 재현.
       // 실제 대국인지는 id가 실제로 있는지로 가려낸다.
       if (g && g.id != null) applyPvpGame(g);
-    } catch { setPvpErr("대기열 합류 실패. 잠시 후 다시 시도"); setPvpWaiting(false); }
+    } catch { setPvpErr(t("대기열 합류 실패. 잠시 후 다시 시도")); setPvpWaiting(false); }
   };
   const leavePvpQueue = async () => { setPvpWaiting(false); try { await sbRpc("pvp_queue_leave", {}); } catch { } };
   // (v0.4.3 기능, 사용자 요청) 페이지를 나갈 때(뒤로가기·탭 전환 등으로 이 컴포넌트가 언마운트될 때)
@@ -4665,7 +4665,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
       // (v0.4.3) 대기 화면에 "@닉네임의 응답을 기다리는 중..."을 보여주기 위해, 서버 응답(원본 초대
       // 행)에 클릭 시점에 이미 알고 있던 상대 표시 정보를 얹어 둔다 — 서버는 uid만 갖고 있다.
       setMyInvite({ ...inv, toUsername: f.pub.nickname || f.username, toPhoto: f.pub.photo || null });
-    } catch (e) { setPvpErr(inviteFailText(e, "도전장")); } // (v0.5.9 BUG-035) 미니게임 로스터·채팅 /play처럼 서버가 알려 준 실패 이유를 보여 준다
+    } catch (e) { setPvpErr(inviteFailText(e, t("도전장"))); } // (v0.5.9 BUG-035) 미니게임 로스터·채팅 /play처럼 서버가 알려 준 실패 이유를 보여 준다
   };
   const cancelFriendInvite = async () => {
     if (!myInvite) return;
@@ -4685,7 +4685,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
       const rows = await sbSelect("pvp_games?id=eq." + row.game_id + "&select=*");
       if (rows && rows[0]) applyPvpGame(rows[0]);
     } else if (row.status === "declined") {
-      setMyInvite(null); setPvpErr("상대가 도전장 거절");
+      setMyInvite(null); setPvpErr(t("상대가 도전장 거절"));
     } else if (row.status === "cancelled") {
       setMyInvite(null);
     }
@@ -5055,10 +5055,10 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             {myName ? myName[0].toUpperCase() : <User size={14} />}
           </span>
         )}
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isTop ? (mode === "pvp" ? (oppName || "상대") : botTier.label + " 봇") : (myName || "Unnamed")}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{isTop ? (mode === "pvp" ? (oppName || t("상대")) : t("{0} 봇", (botTier.label))) : (myName || "Unnamed")}</span>
       </div>
       <div className="flex items-center gap-8">
-        {isTop && mode === "bot" && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? "생각하는 중..." : "레이팅 " + botTier.elo}</span>}
+        {isTop && mode === "bot" && <span style={{ fontSize: 11, fontWeight: 700, color: botThinking && !result ? T.brassHi : "rgba(244,238,226,.6)", fontFamily: SITE_FONT }}>{botThinking && !result ? t("생각하는 중...") : t("레이팅 {0}", botTier.elo)}</span>}
         {/* (신규 기능) 사용자 요청 — 타임 컨트롤을 골랐으면 각 진영의 남은 시간을 시계처럼 보여준다. */}
         {clock && (() => {
           const barColor = isTop ? (activeColor === "w" ? "b" : "w") : activeColor;
@@ -5091,7 +5091,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
             <PlayNormalButton onClick={() => setSetupOpen(true)} />
             {setupOpen && (
-              <MinigameScreen title="일반 대국" onBack={closeSetup}>
+              <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
                 {
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
@@ -5116,7 +5116,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 setupPhase가 "bot"으로 넘어간다. */}
             {setupPhase === "choose" ? (
               <>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>타임 컨트롤</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("타임 컨트롤")}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -5134,12 +5134,11 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div className="flex gap-2" style={{ marginBottom: 10 }}>
                   <div style={{ padding: "11px 14px", borderRadius: 10, border: "1px solid #C9B58C", color: T.ink, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center" }}>{timeControl.label}</div>
                   <button onClick={() => { setMode("pvp"); setPvpSubMode("queue"); setPvpErr(""); joinPvpQueue(); }} disabled={!myUid} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 10, border: "none", background: !myUid ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, cursor: !myUid ? "default" : "pointer" }}>
-                    <Play size={14} fill="#241509" />{!myUid ? "로그인 후 이용 가능" : "대국 상대 찾기"}
+                    <Play size={14} fill="#241509" />{!myUid ? t("로그인 후 이용 가능") : t("대국 상대 찾기")}
                   </button>
                 </div>
                 <button onClick={() => { setMode("bot"); setSetupPhase("bot"); }} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 10, border: "1px solid " + T.brass, background: "rgba(196,154,80,.12)", color: T.ink, fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginBottom: 16 }}>
-                  <Cpu size={16} /> 봇과 플레이하기
-                </button>
+                  {tx("{0} 봇과 플레이하기", <Cpu size={16} />)}</button>
                 {/* (v0.4.4 리디자인, 사용자 요청) 친구 목록을 눌러야 펼쳐지는 드롭다운이 아니라, 로그인만
                     돼 있으면 항상 고정으로 보이는 로스터로 바꿨다 — 처음 한 번만 살짝 스태거되며
                     나타나고(motion), 이후 실시간 접속 갱신으로 순서가 바뀌어도 다시 애니메이션되지
@@ -5149,14 +5148,14 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                     버튼을 분리). */}
                 <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
                   <User size={14} color={T.brass} />
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>친구와 플레이하기</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("친구와 플레이하기")}</span>
                 </div>
                 {!myUid ? (
-                  <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>로그인 후 이용 가능</div>
+                  <div style={{ padding: "16px 10px", borderRadius: 10, border: "1px dashed #C9B58C", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>{t("로그인 후 이용 가능")}</div>
                 ) : (
                   <div style={{ border: "1px solid #DCCBA8", borderRadius: 10, maxHeight: 280, overflowY: "auto", background: "rgba(255,255,255,.4)" }}>
                     {sortedFriendList.length === 0 ? (
-                      <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>대국할 친구 없음</div>
+                      <div style={{ padding: "16px 10px", fontSize: 12, color: T.inkSoft, textAlign: "center" }}>{t("대국할 친구 없음")}</div>
                     ) : sortedFriendList.map((f, i) => (
                       <motion.div key={f.uid} layout="position"
                         initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
@@ -5172,10 +5171,10 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
                             <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                            <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || "오프라인"}</span>
+                            <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                           </span>
                         </button>
-                        <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>도전</button>
+                        <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>
                       </motion.div>
                     ))}
                   </div>
@@ -5184,15 +5183,14 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             ) : (
               <>
                 <button onClick={() => setSetupPhase("choose")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 14, padding: "6px 10px 6px 6px", borderRadius: 8, border: "none", background: "transparent", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-                  <ChevronLeft size={16} /> 뒤로
-                </button>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>진영 선택</div>
+                  {tx("{0} 뒤로", <ChevronLeft size={16} />)}</button>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
                     <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
                   ))}
                 </div>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>상대할 봇 선택</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("상대할 봇 선택")}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
                     <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
@@ -5205,7 +5203,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                     </button>
                   ))}
                 </div>
-                <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? "엔진을 준비하는 중..." : "대국 시작"}</button>
+                <button onClick={startGame} disabled={!engine || engine.status !== "ready"} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: (!engine || engine.status !== "ready") ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: (!engine || engine.status !== "ready") ? "default" : "pointer" }}>{(!engine || engine.status !== "ready") ? t("엔진을 준비하는 중...") : t("대국 시작")}</button>
               </>
             )}
           </div>
@@ -5221,7 +5219,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 되돌아본다), 상대(봇) 정보 줄, 보드, 내 정보 줄, 그 아래 결과/컨트롤. */}
             <div className="hide-scrollbar" style={{ display: "flex", gap: 10, overflowX: "auto", padding: "9px 10px", background: "rgba(0,0,0,.28)", borderRadius: 10, marginBottom: 10, border: "1px solid rgba(255,255,255,.08)" }}>
               {moveRows.length === 0
-                ? <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.4)", whiteSpace: "nowrap" }}>둔 수 없음</span>
+                ? <span style={{ fontSize: 11.5, color: "rgba(244,238,226,.4)", whiteSpace: "nowrap" }}>{t("둔 수 없음")}</span>
                 : moveRows.map((row) => (
                   <div key={row.num} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     <span style={{ fontSize: 11, color: "rgba(244,238,226,.45)", fontFamily: SITE_FONT }}>{row.num}.</span>
@@ -5238,7 +5236,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             {playerBar(false)}
             {promoPrompt && (
               <div style={{ marginTop: 10, textAlign: "center" }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>승격할 기물 선택</div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(244,238,226,.7)", marginBottom: 6 }}>{t("승격할 기물 선택")}</div>
                 <div className="flex justify-center gap-2">
                   {["Q", "R", "B", "N"].map((t) => (
                     <button key={t} onClick={() => completePromo(t)} className="press" style={{ width: 46, height: 46, borderRadius: 10, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><PieceGlyph type={t} color={activeColor} size={24} /></button>
@@ -5249,15 +5247,15 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             {result && (
               <div style={{ marginTop: 10, textAlign: "center", padding: "12px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass }}>
                 <div style={{ color: T.brassHi, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>
-                  {result.end === "checkmate" ? (result.color === activeColor ? "패배: 체크메이트" : "승리: 체크메이트") :
-                   result.end === "resign" ? "기권" :
-                   result.end === "flag" ? (result.color === activeColor ? "패배: 시간 초과" : "승리: 시간 초과") :
+                  {result.end === "checkmate" ? (result.color === activeColor ? t("패배: 체크메이트") : t("승리: 체크메이트")) :
+                   result.end === "resign" ? t("기권") :
+                   result.end === "flag" ? (result.color === activeColor ? t("패배: 시간 초과") : t("승리: 시간 초과")) :
                    result.end === "pvp" ? (
-                     result.status === "draw" ? "무승부" :
-                     result.status === "aborted" ? "대국 중단" :
-                     ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? "승리: 상대 기권" : "패배: 상대 승리"
+                     result.status === "draw" ? t("무승부") :
+                     result.status === "aborted" ? t("대국 중단") :
+                     ((result.status === "white_won" && activeColor === "w") || (result.status === "black_won" && activeColor === "b")) ? t("승리: 상대 기권") : t("패배: 상대 승리")
                    ) :
-                   result.end === "stalemate" ? "무승부: 스테일메이트" : "무승부: 3회 동형 반복"}
+                   result.end === "stalemate" ? t("무승부: 스테일메이트") : t("무승부: 3회 동형 반복")}
                 </div>
               </div>
             )}
@@ -5282,16 +5280,16 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                           제안해 응답을 기다리는 중이면 "제안 취소"로 바뀐다. */}
                       {!result && mode === "pvp" && (
                         <button onClick={drawOfferedByMe ? () => respondDraw(false) : offerDraw} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
-                          <Handshake size={14} />{drawOfferedByMe ? "무승부 제안 취소" : "무승부 제안"}
+                          <Handshake size={14} />{drawOfferedByMe ? t("무승부 제안 취소") : t("무승부 제안")}
                         </button>
                       )}
-                      {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>기권</button>}
-                      {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>대국 리뷰</button>}
+                      {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("기권")}</button>}
+                      {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("대국 리뷰")}</button>}
                       {/* (사용자 요청) 봇이 아닌 실시간 상대와 대국을 하는 도중에는 "다시 설정"이 뜨지 않게
                           한다 — 상대는 그대로 둔 채 설정만 바꿔 새로 시작할 방법이 없어(재도전은 별도
                           흐름) 대국 중엔 이 버튼이 의미가 없고, 실수로 눌러 진행 중인 대국을 잃을 위험만
                           있다. 대국이 끝난 뒤에는(리뷰·새 대국 시작 용도로) 그대로 둔다. */}
-                      {(mode !== "pvp" || result) && <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>다시 설정</button>}
+                      {(mode !== "pvp" || result) && <button onClick={() => { rematch(); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.ivoryHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("다시 설정")}</button>}
                     </div>
                   </>
                 )}
@@ -5316,9 +5314,9 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
             <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
               <Handshake size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + " 무승부 제안"}</span>
-              <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
-              <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{t("{0} 무승부 제안", (oppName || t("상대")))}</span>
+              <button onClick={() => respondDraw(false)} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("거절")}</button>
+              <button onClick={() => respondDraw(true)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("수락")}</button>
             </div>
           </motion.div>
         )}
@@ -5331,9 +5329,9 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 320, padding: "12px 16px calc(12px + env(safe-area-inset-bottom))", background: "linear-gradient(180deg,#3A2516,#241509)", borderTop: "1px solid " + T.brass, boxShadow: "0 -10px 24px -8px rgba(0,0,0,.6)" }}>
             <div style={{ maxWidth: 460, margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
               <Repeat2 size={18} color={T.brassHi} style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{(oppName || "상대") + " 재대결 신청"}</span>
-              <button onClick={declineRematch} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>거절</button>
-              <button onClick={requestRematch} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>수락</button>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ivoryHi }}>{t("{0} 재대결 신청", (oppName || t("상대")))}</span>
+              <button onClick={declineRematch} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: "rgba(244,238,226,.75)", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("거절")}</button>
+              <button onClick={requestRematch} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("수락")}</button>
             </div>
           </motion.div>
         )}
@@ -5358,21 +5356,21 @@ function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipS
       {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
       <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 상점 아이콘과 중복돼 제거. */}
-        <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>상점</h2></div>
+        <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("상점")}</h2></div>
         <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-          <div className="flex items-center gap-1" title="보유 중인 OC 나이트 코인" style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
+          <div className="flex items-center gap-1" title={t("보유 중인 OC 나이트 코인")} style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
             <CoinIcon size={26} />
             <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{fmtFull(coins || 0)}</span>
           </div>
         </div>
       </div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
         {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
           <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
         ))}
       </div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("기물 스킨")}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
           <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>

@@ -17,6 +17,7 @@ import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, friendEdges, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, usersProfiles } from "./common.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 // (버그 수정) movetime 없이 "go depth 14"만 보내면 워커 큐의 기본 워치독(15000ms)에 걸릴 때까지
 // 걸릴 수 있어, 코치 카드에서 이 결과를 기다리는 UI가 몇 초씩(plies가 2면 최악 30초 가까이) 응답이
@@ -336,16 +337,16 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
 // 지킵니다")까지 자연어로 분석해 주지만, 그 수준의 맥락 분석 엔진은 이 세션 범위를 벗어난다 — 등급별로
 // 뜻이 통하는 일반적인 설명 템플릿을 여러 개 두고 ply로 순환시켜, 같은 등급이 반복돼도 문구가 안 겹치게 한다.
 const REVIEW_COACH_COPY = {
-  brilliant: { head: ": 탁월한 수", mascot: ["kokoa", "celebrate"], body: ["기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수", "찾기 어려운 수를 정확히 찾아냄"] },
-  best: { head: ": 최선의 수", mascot: ["milku", "great"], body: ["엔진이 찾은 이 포지션의 가장 좋은 수", "정확한 수"] },
-  only: { head: ": 유일한 수", mascot: ["milku", "surprise"], body: ["다른 수는 크게 불리. 반드시 이 수", "이 수 외엔 답이 없음"] },
-  excellent: { head: ": 우수한 수", mascot: ["milku", "wink"], body: ["최선은 아니지만 아주 좋은 선택", "이 포지션의 좋은 수 중 하나"] },
-  good: { head: ": 좋은 수", mascot: ["milku", "great"], body: ["무난하고 안정적인 수", "포지션을 잘 유지하는 수"] },
-  book: { head: ": 이론 수", mascot: ["milku", "wink"], body: ["오래 검증된 정석 수", "책에 나오는 잘 알려진 수"] },
-  inaccuracy: { head: ": 부정확한 수", mascot: ["kokoa", "think"], body: ["더 나은 수가 있음. 큰 손해는 아니지만 아쉬움", "포지션이 살짝 나빠짐"] },
-  miss: { head: " : 기회를 놓침", mascot: ["kokoa", "surprise"], body: ["상대 실수를 응징할 기회를 활용하지 못함", "더 강한 수가 있었음"] },
-  mistake: { head: ": 실수", mascot: ["kokoa", "surprise"], body: ["포지션이 눈에 띄게 나빠짐", "더 나은 대안이 있었음"] },
-  blunder: { head: ": 블런더", mascot: ["kokoa", "angry"], body: ["크게 불리해짐", "포지션이 크게 무너짐"] },
+  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: ["기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수", "찾기 어려운 수를 정확히 찾아냄"] },
+  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: ["엔진이 찾은 이 포지션의 가장 좋은 수", "정확한 수"] },
+  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: ["다른 수는 크게 불리. 반드시 이 수", "이 수 외엔 답이 없음"] },
+  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: ["최선은 아니지만 아주 좋은 선택", "이 포지션의 좋은 수 중 하나"] },
+  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: ["무난하고 안정적인 수", "포지션을 잘 유지하는 수"] },
+  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: ["오래 검증된 정석 수", "책에 나오는 잘 알려진 수"] },
+  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: ["더 나은 수가 있음. 큰 손해는 아니지만 아쉬움", "포지션이 살짝 나빠짐"] },
+  miss: { head: t(" : 기회를 놓침"), mascot: ["kokoa", "surprise"], body: ["상대 실수를 응징할 기회를 활용하지 못함", "더 강한 수가 있었음"] },
+  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: ["포지션이 눈에 띄게 나빠짐", "더 나은 대안이 있었음"] },
+  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: ["크게 불리해짐", "포지션이 크게 무너짐"] },
   pending: { head: "", mascot: ["milku", "think"], body: ["아직 분석되지 않은 수"] },
 };
 // (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
@@ -544,9 +545,9 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   const hasEndgame = endStart < result.moves.length;
   const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
   const phaseRanges = [
-    { label: "오프닝", from: 0, to: openEnd },
-    { label: "미들게임", from: openEnd + 1, to: midTo },
-    { label: "엔드게임", from: endStart, to: hasEndgame ? result.moves.length - 1 : -1 },
+    { label: t("오프닝"), from: 0, to: openEnd },
+    { label: t("미들게임"), from: openEnd + 1, to: midTo },
+    { label: t("엔드게임"), from: endStart, to: hasEndgame ? result.moves.length - 1 : -1 },
   ];
   const phases = phaseRanges.map((r) => ({
     label: r.label, from: r.from, to: r.to,
@@ -570,7 +571,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
       </div>
       <EvalGraph evalWin={result.evalWin} moves={result.moves} />
       <div className="flex items-center justify-between" style={{ margin: "16px 0 8px" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: RV.soft }}>플레이어</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: RV.soft }}>{t("플레이어")}</span>
       </div>
       <div className="flex items-center" style={{ gap: 10, marginBottom: 16 }}>
         <div style={{ flex: 1, textAlign: "center" }}>
@@ -585,8 +586,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
         </div>
       </div>
       <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
-        <ReviewAccuracyPill label="정확성" value={fullWhiteAcc} hi={(fullWhiteAcc || 0) >= (fullBlackAcc || 0)} layoutId="review-acc-w" />
-        <ReviewAccuracyPill label="정확성" value={fullBlackAcc} hi={(fullBlackAcc || 0) > (fullWhiteAcc || 0)} layoutId="review-acc-b" />
+        <ReviewAccuracyPill label={t("정확성")} value={fullWhiteAcc} hi={(fullWhiteAcc || 0) >= (fullBlackAcc || 0)} layoutId="review-acc-w" />
+        <ReviewAccuracyPill label={t("정확성")} value={fullBlackAcc} hi={(fullBlackAcc || 0) > (fullWhiteAcc || 0)} layoutId="review-acc-b" />
       </div>
       <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
       {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
@@ -605,7 +606,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
                       수·유일한 수가 있었으면(kind) 최선/우수/좋음 구간에서만 그 아이콘으로 대체한다. */}
                   <span style={{ pointerEvents: "none" }}><CircleBadge kind={gradeFromAccuracy(acc, kind)} /></span>
                 </button>
-                {active && <PhaseAccBubble text={p.label + " 정확도 " + acc.toFixed(1) + "%"} />}
+                {active && <PhaseAccBubble text={t("{0} 정확도 {1}%", (p.label), acc.toFixed(1))} />}
               </span>
             );
           };
@@ -622,7 +623,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
       </div>
       {/* (v0.2.1) 닫기 버튼 삭제 — 이 요약(Analysis) 창을 닫는 건 헤더의 뒤로가기가 담당한다. */}
       <div className="flex flex-col" style={{ gap: 10, marginTop: 16 }}>
-        <button onClick={onStart} className="press" style={{ padding: "13px 14px", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 14.5, cursor: "pointer" }}>리뷰 시작</button>
+        <button onClick={onStart} className="press" style={{ padding: "13px 14px", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: 14.5, cursor: "pointer" }}>{t("리뷰 시작")}</button>
       </div>
     </div>
   );
@@ -666,7 +667,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
   };
   return (
     <div className="flex items-center" style={{ gap: 4, padding: "8px 4px" }}>
-      <button onClick={onPrev} disabled={!canPrev} aria-label="이전 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
+      <button onClick={onPrev} disabled={!canPrev} aria-label={t("이전 수")} className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canPrev ? RV.text : RV.dim, cursor: canPrev ? "pointer" : "default", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       <div ref={scrollRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={onClickCapture}
         className="flex items-center no-pan" style={{ gap: 6, flex: 1, minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y", cursor: "grab" }}>
         {sans.map((s, ply) => {
@@ -686,7 +687,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
             끝에 결과 기호(½-½)만 덧붙인다. */}
         {drawn && <span style={{ fontSize: 13, fontWeight: 800, color: RV.text, padding: "4px 8px", flexShrink: 0 }}>½-½</span>}
       </div>
-      <button onClick={onNext} disabled={!canNext} aria-label="다음 수" className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? RV.text : RV.dim, cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
+      <button onClick={onNext} disabled={!canNext} aria-label={t("다음 수")} className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? RV.text : RV.dim, cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
     </div>
   );
 }
@@ -790,7 +791,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
               버튼을 눌러야만 계산한다(README v0.4.9 개발자 기록에 남겨 뒀던 항목). */}
           {move.kind !== "book" && (planLoading || planText) && (
             <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4, fontStyle: planLoading ? "italic" : "normal" }}>
-              {planLoading ? "재배치 계획 분석 중…" : planText}
+              {planLoading ? t("재배치 계획 분석 중…") : planText}
             </p>
           )}
         </div>
@@ -798,9 +799,9 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
         <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> Show</button>
         {onShowPlan && move.kind !== "book" && (
-          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title="엔진으로 재배치 계획 찾기" className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}><Route size={narrow ? 13 : 16} /> 계획</button>
+          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title={t("엔진으로 재배치 계획 찾기")} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}>{tx("{0} 계획", <Route size={narrow ? 13 : 16} />)}</button>
         )}
-        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? "완료" : "Next"}</button>
+        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : "Next"}</button>
       </div>
     </div>
   );
@@ -1292,7 +1293,7 @@ const MiniAccCurve = React.memo(function MiniAccCurve({ curve, shownCount, moves
       {/* (v0.5.7) px 모드에선 이 줄 자리를 늘 비워 둔다 — 문구가 떴다 사라질 때마다 아래 요소가 들썩이지 않게(높이는 reviewIntroLayout이 셈한 값). */}
       {(calculatingSan || pxMode) && (
         <div style={{ marginTop: 3, height: pxMode ? 14 : undefined, lineHeight: pxMode ? "14px" : undefined, fontSize: big ? 10.5 : 9, fontWeight: 700, fontFamily: SITE_FONT, color: RV.soft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {calculatingSan ? calculatingSan + "분석 중…" : ""}
+          {calculatingSan ? t("{0}분석 중…", (calculatingSan)) : ""}
         </div>
       )}
     </div>
@@ -1497,7 +1498,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
   const statusEl = (
     // (사용자 요청) 채점 대기 중에도 3-dot 인디케이터로 "지금도 작업 중"임을 보여준다.
     <p className="flex items-center justify-center" style={{ gap: 6, height: RI.STATUS, fontSize: 12, fontWeight: 700, color: RV.dim, margin: 0, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>
-      <span>{allDone ? "정확도 계산 완료" : "정확도 계산 중"}</span>
+      <span>{allDone ? t("정확도 계산 완료") : t("정확도 계산 중")}</span>
       {!allDone && <PendingDots size={11} />}
     </p>
   );
@@ -1527,9 +1528,9 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
       </svg>
     </div>
   );
-  const accW = <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label="⬜ 백 정확도" big pxW={graphW} pxH={L.accH}
+  const accW = <MiniAccCurve curve={wCurve} shownCount={wShown} moves={wMoves} color="#EDE7DC" label={t("⬜ 백 정확도")} big pxW={graphW} pxH={L.accH}
     accValue={wVal} layoutId="review-acc-w" calculatingSan={wCalcSan} toast={wToast} />;
-  const accB = <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label="⬛ 흑 정확도" big pxW={graphW} pxH={L.accH}
+  const accB = <MiniAccCurve curve={bCurve} shownCount={bShown} moves={bMoves} color="#B8A78C" label={t("⬛ 흑 정확도")} big pxW={graphW} pxH={L.accH}
     accValue={bVal} layoutId="review-acc-b" calculatingSan={bCalcSan} toast={bToast} />;
   const car = L.carH ? <ReviewIntroCarousel width={L.carW} height={L.carH} /> : null;
   if (L.mode === "row") {
@@ -2274,22 +2275,22 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
-      <button onClick={handleBack} aria-label="뒤로" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
-      <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>게임 리뷰</span>
+      <button onClick={handleBack} aria-label={t("뒤로")} className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
+      <span style={{ fontSize: 15, fontWeight: 800, color: RV.text }}>{t("게임 리뷰")}</span>
       <div className="flex items-center gap-2">
         {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
             있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
         {result && !resultDone && sans && sans.length > 0 && (
-          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}><Cpu size={11} /> 분석 중 {Math.round((gradedCount / sans.length) * 100)}%</span>
+          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}>{tx("{0} 분석 중 {1}", <Cpu size={11} />, Math.round((gradedCount / sans.length) * 100))}%</span>
         )}
         {result ? (
-          <button onClick={() => setShareOpen(true)} aria-label="리뷰 공유" title="공유" className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Share2 size={18} /></button>
+          <button onClick={() => setShareOpen(true)} aria-label={t("리뷰 공유")} title={t("공유")} className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Share2 size={18} /></button>
         ) : <span style={{ width: 34 }} />}
       </div>
     </div>
   );
   if (err) return (
-    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>분석 불가. 엔진 준비 상태 확인</p></div></div>
+    <div style={wrap}>{header}<div style={{ padding: 24, textAlign: "center" }}><p style={{ color: RV.text, fontSize: 13 }}>{t("분석 불가. 엔진 준비 상태 확인")}</p></div></div>
   );
   // (v0.3.0 성능 → v0.3.8 2차 개편) 정확도%·단계별 하이라이트 같은 요약 통계는 분석이 100%
   // 끝나야(resultDone) 신뢰할 수 있는 완결된 데이터라 그대로 기다린다 — 분석이 덜 끝난 채로 리뷰를
@@ -2505,10 +2506,10 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
       // (CSS의 aspectRatio/width:100%는 화면 표시 크기만 줄일 뿐 canvas.width/height 자체는 그대로),
       // 굳이 다시 그릴 필요 없이 그 캔버스를 그대로 toBlob한다.
       const blob = await new Promise((resolve) => previewRef.current.toBlob((b) => resolve(b), "image/png"));
-      if (!blob) { setCardMsg("이미지 생성 실패"); return; }
+      if (!blob) { setCardMsg(t("이미지 생성 실패")); return; }
       const file = new File([blob], "openchess-review.png", { type: "image/png" });
       if (canNativeShareFiles && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: "OpenChess 리뷰", text: label || "OpenChess 대국 리뷰" }); return; }
+        try { await navigator.share({ files: [file], title: t("OpenChess 리뷰"), text: label || t("OpenChess 대국 리뷰") }); return; }
         catch { return; } // 사용자가 공유 시트에서 취소 — 조용히 종료
       }
       // 공유 API가 파일을 못 받는 환경(대부분의 데스크톱)은 바로 다운로드.
@@ -2516,8 +2517,8 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
       const a = document.createElement("a");
       a.href = url; a.download = "openchess-review.png"; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setCardMsg("이미지 저장 완료");
-    } catch { setCardMsg("이미지 생성 실패"); }
+      setCardMsg(t("이미지 저장 완료"));
+    } catch { setCardMsg(t("이미지 생성 실패")); }
     finally { setCardBusy(false); }
   };
   useEffect(() => {
@@ -2533,43 +2534,43 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
   }, [myUid]);
   const send = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    if (!reviewId) { setSendErr("리뷰 정보를 불러오지 못해 전달 불가"); return; }
+    if (!reviewId) { setSendErr(t("리뷰 정보를 불러오지 못해 전달 불가")); return; }
     setBusy(toUid); setSendErr("");
     const ok = await reviewShareSend(myUid, toUid, reviewId);
     setBusy(null);
     if (ok) setSent((s) => new Set(s).add(toUid));
-    else setSendErr("전달 실패. 잠시 후 다시 시도");
+    else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 310, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />리뷰 공유</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}리뷰 공유", <Send size={15} />)}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title="OpenChess 리뷰" text={"OpenChess 리뷰: " + (label || "대국 리뷰 보기")} />
-          : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>공유 링크를 만드는 중…</div>}
+        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title={t("OpenChess 리뷰")} text={t("OpenChess 리뷰: {0}", label || t("대국 리뷰 보기"))} />
+          : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>{t("공유 링크를 만드는 중…")}</div>}
         {/* (신규 기능, 사용자 요청) 이미지 카드 — 정확성·결과·오프닝을 한눈에 담은 정사각형 PNG를
             SNS에 바로 올릴 수 있게(카카오톡·인스타그램 등은 링크보다 이미지가 훨씬 잘 퍼진다).
             cardData가 없으면(FEN 모드 등 플레이어 정보가 없는 분석) 섹션 자체를 숨긴다. */}
         {cardData && (
           <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>이미지 카드로 공유</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>{t("이미지 카드로 공유")}</div>
             <canvas ref={previewRef} style={{ width: "100%", aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", marginBottom: 8, opacity: cardReady ? 1 : 0.5, transition: "opacity .2s" }} />
             <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
               <button onClick={shareCardImage} disabled={cardBusy || !cardReady} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: (cardBusy || !cardReady) ? "default" : "pointer", opacity: (cardBusy || !cardReady) ? .6 : 1 }}>
                 {canNativeShareFiles ? <Share2 size={13} /> : <ImageIcon size={13} />}
-                {cardBusy ? "만드는 중…" : !cardReady ? "카드 준비 중…" : canNativeShareFiles ? "이미지로 공유" : "이미지 저장"}
+                {cardBusy ? t("만드는 중…") : !cardReady ? t("카드 준비 중…") : canNativeShareFiles ? t("이미지로 공유") : t("이미지 저장")}
               </button>
               {cardMsg && <span style={{ fontSize: 11, color: T.inkSoft }}>{cardMsg}</span>}
             </div>
           </div>
         )}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>{t("친구에게 보내기")}</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -2582,7 +2583,7 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
                         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent || !reviewId} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent || !reviewId} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
                     </div>
                   );
                 })}

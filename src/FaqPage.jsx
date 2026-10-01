@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowLeft, ChevronDown, HelpCircle, Sparkles, Mail } from "lucide-react";
 
+import { t, tx } from "./lib/i18n.js";
 // (v0.4.3 기능, 사용자 요청) 사이트를 소개하는 /about과 마찬가지로, App(엔진 워커·Supabase 클라이언트
 // 등 무거운 초기화)을 거치지 않는 별도의 가벼운 정적 페이지(/faq)로 분리한다(main.jsx가 경로만 보고
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프도 App.jsx의 T 객체를 그대로
@@ -90,48 +91,48 @@ function KineticTagline() {
 // ============================================================ FAQ 데이터 ============================================================
 const FAQ_GROUPS = [
   {
-    label: "시작하기",
+    label: t("시작하기"),
     items: [
-      { q: "무료 여부", a: "오프닝 학습·엔진 분석·오프닝 도감·퍼즐 등 핵심 기능 모두 무료" },
-      { q: "회원가입 없이 이용", a: "게스트로도 대부분의 화면 이용 가능. 진도(도감 해금)·해결한 퍼즐·친구·실시간 대국처럼 계정에 저장되는 기능은 로그인 필요" },
+      { q: t("무료 여부"), a: t("오프닝 학습·엔진 분석·오프닝 도감·퍼즐 등 핵심 기능 모두 무료") },
+      { q: t("회원가입 없이 이용"), a: t("게스트로도 대부분의 화면 이용 가능. 진도(도감 해금)·해결한 퍼즐·친구·실시간 대국처럼 계정에 저장되는 기능은 로그인 필요") },
     ],
   },
   {
-    label: "학습 · 도감",
+    label: t("학습 · 도감"),
     items: [
-      { q: "학습 탭 기능", a: "체스판을 직접 두거나 PGN·FEN·chess.com 대국을 불러와 엔진 분석. 매 수의 정확도(최선/우수/실수/블런더 등급) 표시" },
-      { q: "오프닝 도감이란", a: "체스 오프닝을 트리 구조로 정리한 지도. 학습 탭에서 오프닝을 실제로 두면 그 갈래가 도감에 해금, 도감에서 각 오프닝의 정통 수순과 유래 확인" },
-      { q: "사용하는 엔진", a: "Stockfish 계열 엔진 사용. 설정 탭에서 가볍고 빠른 기본 엔진, 더 강력한 Stockfish 17.1 · 18 중 선택" },
+      { q: t("학습 탭 기능"), a: t("체스판을 직접 두거나 PGN·FEN·chess.com 대국을 불러와 엔진 분석. 매 수의 정확도(최선/우수/실수/블런더 등급) 표시") },
+      { q: t("오프닝 도감이란"), a: t("체스 오프닝을 트리 구조로 정리한 지도. 학습 탭에서 오프닝을 실제로 두면 그 갈래가 도감에 해금, 도감에서 각 오프닝의 정통 수순과 유래 확인") },
+      { q: t("사용하는 엔진"), a: t("Stockfish 계열 엔진 사용. 설정 탭에서 가볍고 빠른 기본 엔진, 더 강력한 Stockfish 17.1 · 18 중 선택") },
     ],
   },
   {
-    label: "퍼즐",
+    label: t("퍼즐"),
     items: [
-      { q: "퍼즐 생성 방식", a: "퍼즐 탭의 \"퍼즐 만들기\"에서 PGN·FEN 입력 또는 내 chess.com 대국 선택. 그 안의 실제 수(기물 희생·우위 점하기·실수 응징하기 등)로 직접 제작" },
-      { q: "퍼즐 비공개 설정", a: "퍼즐 만들기 마지막 단계 또는 이미 만든 퍼즐의 풀이 카드에서 언제든 공개/비공개 변경" },
-      { q: "다른 사람의 퍼즐 풀기", a: "공개 퍼즐은 퍼즐 탭 목록에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능" },
+      { q: t("퍼즐 생성 방식"), a: t("퍼즐 탭의 \"퍼즐 만들기\"에서 PGN·FEN 입력 또는 내 chess.com 대국 선택. 그 안의 실제 수(기물 희생·우위 점하기·실수 응징하기 등)로 직접 제작") },
+      { q: t("퍼즐 비공개 설정"), a: t("퍼즐 만들기 마지막 단계 또는 이미 만든 퍼즐의 풀이 카드에서 언제든 공개/비공개 변경") },
+      { q: t("다른 사람의 퍼즐 풀기"), a: t("공개 퍼즐은 퍼즐 탭 목록에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능") },
     ],
   },
   {
-    label: "실시간 대국",
+    label: t("실시간 대국"),
     items: [
-      { q: "실시간 대국", a: "PLAY 페이지에서 타임 컨트롤을 고른 뒤 \"대국 상대 찾기\"로 랜덤 매칭, 또는 \"친구와 플레이하기\"에서 친구에게 도전장 발송" },
-      { q: "채팅에서 대국 신청", a: "친구와의 채팅창에 /play 명령어 입력. 예: \"/play 10\"은 10분 대국, \"/play 15+10\"은 15분에 매 수마다 10초씩 증가. 상대가 수락하면 바로 대국 시작" },
-      { q: "매칭 대기 중 페이지 이탈", a: "대기열에 있었다면 매칭 자동 취소, 진행 중인 대국이었다면 기권 처리" },
+      { q: t("실시간 대국"), a: t("PLAY 페이지에서 타임 컨트롤을 고른 뒤 \"대국 상대 찾기\"로 랜덤 매칭, 또는 \"친구와 플레이하기\"에서 친구에게 도전장 발송") },
+      { q: t("채팅에서 대국 신청"), a: t("친구와의 채팅창에 /play 명령어 입력. 예: \"/play 10\"은 10분 대국, \"/play 15+10\"은 15분에 매 수마다 10초씩 증가. 상대가 수락하면 바로 대국 시작") },
+      { q: t("매칭 대기 중 페이지 이탈"), a: t("대기열에 있었다면 매칭 자동 취소, 진행 중인 대국이었다면 기권 처리") },
     ],
   },
   {
-    label: "계정 · 데이터",
+    label: t("계정 · 데이터"),
     items: [
-      { q: "소셜 로그인 (Google · Apple · Facebook)", a: "로그인 창에서 바로 선택 가능. 로그인 후 \"계정 센터\"에서 여러 로그인 수단을 하나의 계정에 연결하면 어떤 수단으로든 같은 계정으로 로그인" },
-      { q: "계정 탈퇴 시 데이터", a: "계정 센터의 \"계정 탈퇴\"를 누르면 프로필·진도·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제. 삭제 후에는 되돌릴 수 없음" },
-      { q: "다른 기기에서 진도 이어가기", a: "로그인하면 어느 기기에서든 같은 진도(도감 해금·해결한 퍼즐·XP 등) 이용" },
+      { q: t("소셜 로그인 (Google · Apple · Facebook)"), a: t("로그인 창에서 바로 선택 가능. 로그인 후 \"계정 센터\"에서 여러 로그인 수단을 하나의 계정에 연결하면 어떤 수단으로든 같은 계정으로 로그인") },
+      { q: t("계정 탈퇴 시 데이터"), a: t("계정 센터의 \"계정 탈퇴\"를 누르면 프로필·진도·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제. 삭제 후에는 되돌릴 수 없음") },
+      { q: t("다른 기기에서 진도 이어가기"), a: t("로그인하면 어느 기기에서든 같은 진도(도감 해금·해결한 퍼즐·XP 등) 이용") },
     ],
   },
   {
-    label: "기타",
+    label: t("기타"),
     items: [
-      { q: "버그 제보", a: "설정 탭의 \"문의 / FAQ\" 카드에서 이메일로 제보. 화면이 어디서 어떻게 달랐는지 함께 적으면 빠르게 확인" },
+      { q: t("버그 제보"), a: t("설정 탭의 \"문의 / FAQ\" 카드에서 이메일로 제보. 화면이 어디서 어떻게 달랐는지 함께 적으면 빠르게 확인") },
     ],
   },
 ];
@@ -166,8 +167,7 @@ export default function FaqPage() {
           <a href="/" style={{ display: "inline-flex", alignItems: "center" }}>
             <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           </a>
-          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>
-            시작하기 <ArrowRight size={14} />
+          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}
           </a>
         </div>
       </header>
@@ -175,12 +175,10 @@ export default function FaqPage() {
       <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto", padding: "56px 20px 90px" }}>
         <Reveal><div className="flex items-center justify-center gap-2" style={{ marginBottom: 10 }}>
           <HelpCircle size={14} color={T.brass} />
-          <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".1em" }}>자주 묻는 질문</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".1em" }}>{t("자주 묻는 질문")}</span>
         </div></Reveal>
         <KineticTagline />
-        <Reveal delay={0.1}><p style={{ textAlign: "center", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.75, maxWidth: 480, margin: "0 auto 8px" }}>
-          막히는 부분은 여기서 먼저 확인. 답이 없으면 맨 아래에서 문의
-        </p></Reveal>
+        <Reveal delay={0.1}><p style={{ textAlign: "center", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.75, maxWidth: 480, margin: "0 auto 8px" }}>{t("막히는 부분은 여기서 먼저 확인. 답이 없으면 맨 아래에서 문의")}</p></Reveal>
 
         {FAQ_GROUPS.map((g, gi) => (
           <div key={g.label}>
@@ -201,19 +199,17 @@ export default function FaqPage() {
         <Reveal delay={0.1}>
           <div style={{ marginTop: 60, padding: "28px 24px", borderRadius: 20, textAlign: "center", background: "linear-gradient(160deg, rgba(46,27,16,.6), rgba(27,16,9,.15))", border: "1px solid rgba(196,154,80,.22)" }}>
             <Sparkles size={18} color={T.brass} style={{ marginBottom: 8 }} />
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>원하는 답이 없나요?</div>
-            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 18, lineHeight: 1.6 }}>문제나 궁금한 점을 이메일로 보내면 확인 후 답변</p>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>{t("원하는 답이 없나요?")}</div>
+            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 18, lineHeight: 1.6 }}>{t("문제나 궁금한 점을 이메일로 보내면 확인 후 답변")}</p>
             <a href="mailto:openchesskr@gmail.com?subject=%5BOpenChess%20%EB%AC%B8%EC%9D%98%5D" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 22px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>
-              <Mail size={15} /> 이메일로 문의하기
-            </a>
+              {tx("{0} 이메일로 문의하기", <Mail size={15} />)}</a>
           </div>
         </Reveal>
 
         <Reveal delay={0.1}>
           <div style={{ textAlign: "center", marginTop: 28 }}>
             <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: T.inkSoft, fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}>
-              <ArrowLeft size={13} /> OpenChess로 돌아가기
-            </a>
+              {tx("{0} OpenChess로 돌아가기", <ArrowLeft size={13} />)}</a>
           </div>
         </Reveal>
       </div>

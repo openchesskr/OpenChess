@@ -134,16 +134,16 @@ function InquiryModal({ onClose, user }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>문의 / FAQ</span></div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>자주 묻는 질문을 먼저 확인. 해결되지 않으면 문의하기 버튼으로 이메일 발송</p>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{t("문의 / FAQ")}</span></div>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>{t("자주 묻는 질문을 먼저 확인. 해결되지 않으면 문의하기 버튼으로 이메일 발송")}</p>
         <div style={{ marginBottom: 14 }}>
           {FAQ_ITEMS.length === 0
-            ? <p style={{ fontSize: 12, color: T.inkSoft }}>등록된 FAQ 없음</p>
+            ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("등록된 FAQ 없음")}</p>
             : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
         </div>
-        <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><MessageCircle size={16} /> 문의하기</button>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>기본 메일 앱 작성 화면으로 이동 (openchesskr@gmail.com)</p>
+        <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>{tx("{0} 문의하기", <MessageCircle size={16} />)}</button>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>{t("기본 메일 앱 작성 화면으로 이동 (openchesskr@gmail.com)")}</p>
       </div>
     </div>
   );
@@ -180,37 +180,36 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 재화·티어·경험치 설정</div>
-      <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>
-        지금 <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b> · 누적 {fmtFull(totalXp)} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)}
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("개발자: 재화·티어·경험치 설정")}</div>
+      <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>{tx("지금 {0} · 누적 {1}", <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b>, fmtFull(totalXp))} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)}
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
         <CoinIcon size={20} />
-        <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder="OC 코인 수치" style={inputStyle} />
-        <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>적용</button>
+        <input type="number" value={coinInput} onChange={(e) => setCoinInput(e.target.value)} placeholder={t("OC 코인 수치")} style={inputStyle} />
+        <button onClick={() => setOcCoins(Math.max(0, parseInt(coinInput, 10) || 0))} className="press" style={applyBtnStyle}>{t("적용")}</button>
       </div>
       <div style={{ height: 1, background: "#E4D5B6", margin: "12px 0" }} />
       <div className="flex items-center gap-2" style={rowStyle}>
         <Star size={14} style={{ color: T.brass, flexShrink: 0 }} />
-        <input type="number" value={xpInput} onChange={(e) => setXpInput(e.target.value)} placeholder="누적 XP 수치" style={inputStyle} />
-        <button onClick={() => setTotalXp(Math.max(0, parseInt(xpInput, 10) || 0))} className="press" style={applyBtnStyle}>XP 적용</button>
+        <input type="number" value={xpInput} onChange={(e) => setXpInput(e.target.value)} placeholder={t("누적 XP 수치")} style={inputStyle} />
+        <button onClick={() => setTotalXp(Math.max(0, parseInt(xpInput, 10) || 0))} className="press" style={applyBtnStyle}>{t("XP 적용")}</button>
       </div>
       <div className="flex items-center gap-2 flex-wrap" style={rowStyle}>
         <select value={tierSel} onChange={(e) => setTierSel(e.target.value)} style={selectStyle}>
           {TIERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
         {tierSel === "grandmaster" ? (
-          <input type="number" value={starSel} onChange={(e) => setStarSel(parseInt(e.target.value, 10) || 0)} placeholder="★ 프레스티지" style={{ ...inputStyle, flex: "0 0 110px" }} />
+          <input type="number" value={starSel} onChange={(e) => setStarSel(parseInt(e.target.value, 10) || 0)} placeholder={t("★ 프레스티지")} style={{ ...inputStyle, flex: "0 0 110px" }} />
         ) : (
           <select value={divSel} onChange={(e) => setDivSel(parseInt(e.target.value, 10))} style={selectStyle}>
-            {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{DIVISION_ROMAN[d]} 구간</option>)}
+            {[1, 2, 3, 4, 5].map((d) => <option key={d} value={d}>{tx("{0} 구간", DIVISION_ROMAN[d])}</option>)}
           </select>
         )}
-        <button onClick={() => setTotalXp(xpForTierDivision(tierSel, divSel, starSel))} className="press" style={applyBtnStyle}>티어 적용</button>
+        <button onClick={() => setTotalXp(xpForTierDivision(tierSel, divSel, starSel))} className="press" style={applyBtnStyle}>{t("티어 적용")}</button>
       </div>
       <div className="flex flex-wrap gap-2">
         {TIERS.map((t, i) => <button key={t.key} onClick={() => setTotalXp(tierStarts[i])} className="press" style={btnStyle}>{t.label}</button>)}
-        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>XP 0으로 초기화</button>
+        <button onClick={() => setTotalXp(0)} className="press" style={{ ...btnStyle, color: T.blunder, borderColor: T.blunder }}>{t("XP 0으로 초기화")}</button>
       </div>
     </div>
   );
@@ -232,7 +231,7 @@ function DailyPuzzleDevPanel({ card }) {
   const runPickNow = async () => {
     setPickBusy(true); setPickErr("");
     try { await sbRpc("daily_puzzle_pick_run", {}); await loadPicks(); }
-    catch (e) { setPickErr("실행 실패: " + e.message); }
+    catch (e) { setPickErr(t("실행 실패: {0}", e.message)); }
     setPickBusy(false);
   };
   const [pzDate, setPzDate] = useState("");
@@ -262,36 +261,36 @@ function DailyPuzzleDevPanel({ card }) {
       // 두면, resolveDailyPuzzle이 그 위치부터 genPuzzleTree로 정답 라인을 직접 만들어 낸다.
       await sbInsert("daily_puzzles_dev", { date: d, pgn: pzPgn, sans: pzMoves, puzzle_ply: pzMoves.length - 1, opening: pzOpening.trim() || null });
       setPzOk(true); setPzDate(""); setPzOpening(""); setPzPgn("");
-    } catch (e) { setPzErr("저장 실패: " + e.message); }
+    } catch (e) { setPzErr(t("저장 실패: {0}", e.message)); }
     setPzBusy(false);
   };
   const inputStyle = { padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
   const btnStyle = { padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>일일 퍼즐 (개발자)</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>매일 밤 KST 23:50에 커뮤니티 인기 퍼즐로 자동 확정되는 다음 날 몫과, 미래 날짜 지정 퍼즐 관리</p>
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>최근 확정 내역</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("일일 퍼즐 (개발자)")}</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>{t("매일 밤 KST 23:50에 커뮤니티 인기 퍼즐로 자동 확정되는 다음 날 몫과, 미래 날짜 지정 퍼즐 관리")}</p>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{t("최근 확정 내역")}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
         {(picks || []).map((p) => (
           <div key={p.date} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
-            <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>퍼즐 #{p.puzzle_no} · 인기 점수 {Number(p.score || 0).toFixed(1)}</span>
+            <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>{tx("퍼즐 #{0} · 인기 점수 {1}", p.puzzle_no, Number(p.score || 0).toFixed(1))}</span>
           </div>
         ))}
-        {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>확정 내역 없음 (자정 전 자동 실행 대기, 또는 아래에서 바로 실행)</span>}
+        {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>{t("확정 내역 없음 (자정 전 자동 실행 대기, 또는 아래에서 바로 실행)")}</span>}
       </div>
       {pickErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pickErr}</p>}
-      <button onClick={runPickNow} disabled={pickBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: pickBusy ? .6 : 1 }}>다음 날 몫 선정 바로 실행 (테스트용)</button>
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>미래 날짜 퍼즐 직접 지정 (PGN)</div>
+      <button onClick={runPickNow} disabled={pickBusy} className="press" style={{ ...btnStyle, marginBottom: 14, opacity: pickBusy ? .6 : 1 }}>{t("다음 날 몫 선정 바로 실행 (테스트용)")}</button>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{t("미래 날짜 퍼즐 직접 지정 (PGN)")}</div>
       <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
         <input type="date" value={pzDate} onChange={(e) => setPzDate(e.target.value)} style={{ ...inputStyle, flex: "1 1 130px" }} />
-        <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder="오프닝 이름(선택)" style={{ ...inputStyle, flex: "1 1 130px" }} />
+        <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder={t("오프닝 이름(선택)")} style={{ ...inputStyle, flex: "1 1 130px" }} />
       </div>
-      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder="PGN 수순 붙여넣기 (마지막 수가 상대의 실수, 퍼즐 시작)" rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
-      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? pzMoves.length + "수 인식됨" : "인식할 수 있는 수순 없음") : ""}</p>
+      <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder={t("PGN 수순 붙여넣기 (마지막 수가 상대의 실수, 퍼즐 시작)")} rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
+      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? t("{0}수 인식됨", (pzMoves.length)) : t("인식할 수 있는 수순 없음")) : ""}</p>
       {pzErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pzErr}</p>}
-      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>저장됨</p>}
-      <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>퍼즐 저장</button>
+      {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>{t("저장됨")}</p>}
+      <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>{t("퍼즐 저장")}</button>
     </div>
   );
 }
@@ -376,19 +375,19 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 전체 퍼즐 일괄 재생성</div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>모든 퍼즐을 최신 라인 종료 규칙으로 다시 생성. 창을 닫거나 새로고침하면 중단되고, 다시 시작하면 처음부터 순회. 퍼즐 수에 따라 오래 걸릴 수 있음. 기존 라인 태그가 바뀌어 유저의 라인별 풀이 기록과 맞지 않을 수 있음</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("개발자: 전체 퍼즐 일괄 재생성")}</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{t("모든 퍼즐을 최신 라인 종료 규칙으로 다시 생성. 창을 닫거나 새로고침하면 중단되고, 다시 시작하면 처음부터 순회. 퍼즐 수에 따라 오래 걸릴 수 있음. 기존 라인 태그가 바뀌어 유저의 라인별 풀이 기록과 맞지 않을 수 있음")}</p>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
         {running
-          ? <button onClick={stop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
-          : <button onClick={start} disabled={!engine || engine.status !== "ready"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", opacity: (!engine || engine.status !== "ready") ? .5 : 1 }}>{status === "idle" ? "전체 재생성 시작" : "처음부터 다시 시작"}</button>}
-        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>엔진 준비 후 시작 가능</span> : null}
+          ? <button onClick={stop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>{t("중단")}</button>
+          : <button onClick={start} disabled={!engine || engine.status !== "ready"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", opacity: (!engine || engine.status !== "ready") ? .5 : 1 }}>{status === "idle" ? t("전체 재생성 시작") : t("처음부터 다시 시작")}</button>}
+        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>{t("엔진 준비 후 시작 가능")}</span> : null}
       </div>
       {status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {status === "listing" ? "퍼즐 목록 로드 중…" : status === "done" ? "완료" : status === "stopped" ? "중단됨" : "진행 중…"}
-            {total > 0 && " · " + doneCount + " / " + total + (curNo != null && running ? " (지금 #" + curNo + ")" : "")}
+            {status === "listing" ? t("퍼즐 목록 로드 중…") : status === "done" ? t("완료") : status === "stopped" ? t("중단됨") : t("진행 중…")}
+            {total > 0 && " · " + doneCount + " / " + total + (curNo != null && running ? t(" (지금 #{0})", curNo) : "")}
           </div>
           {total > 0 && (
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
@@ -399,7 +398,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
       )}
       {failed.length > 0 && (
         <div style={{ maxHeight: 160, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>실패 {failed.length}건</div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>{tx("실패 {0}건", failed.length)}</div>
           {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no}: {f.error}</div>)}
         </div>
       )}
@@ -535,42 +534,42 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     try {
       const { overridesTouched } = await regenerateOnePuzzle(engine, parsedNo);
       if (overridesTouched && bumpContent) { try { await bumpContent(); } catch { } }
-      setCtlMsg({ ok: true, text: "#" + parsedNo + " 재생성 완료" });
-    } catch (e) { setCtlMsg({ ok: false, text: "#" + parsedNo + " 재생성 실패: " + ((e && e.message) || String(e)) }); }
+      setCtlMsg({ ok: true, text: t("#{0} 재생성 완료", parsedNo) });
+    } catch (e) { setCtlMsg({ ok: false, text: t("#{0} 재생성 실패: {1}", parsedNo, (e && e.message) || String(e)) }); }
     setCtlBusy(false);
   };
   const doDeleteOne = async () => {
     if (!validNo || ctlBusy) return;
     setCtlBusy(true); setCtlMsg(null);
     const ok = await puzzleDeleteRemote(parsedNo);
-    setCtlMsg(ok ? { ok: true, text: "#" + parsedNo + " 삭제 완료" } : { ok: false, text: "#" + parsedNo + " 삭제 실패 (없거나 권한 없음)" });
+    setCtlMsg(ok ? { ok: true, text: t("#{0} 삭제 완료", parsedNo) } : { ok: false, text: t("#{0} 삭제 실패 (없거나 권한 없음)", parsedNo) });
     setCtlBusy(false);
   };
   const btnStyle = { padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" };
   const darkBtnStyle = { padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" };
   return (
     <div style={card}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>개발자: 퍼즐 컨트롤 센터</div>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>손상된 퍼즐(라인 없음)을 찾아 한 번에 삭제, 특정 번호는 직접 재생성·삭제</p>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("개발자: 퍼즐 컨트롤 센터")}</div>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{t("손상된 퍼즐(라인 없음)을 찾아 한 번에 삭제, 특정 번호는 직접 재생성·삭제")}</p>
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>손상된 퍼즐 검사·말소</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{t("손상된 퍼즐 검사·말소")}</div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
         {scanning || deleting
-          ? <button onClick={stopScan} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
-          : <button onClick={scan} className="press" style={btnStyle}>{status === "idle" ? "손상된 퍼즐 검사" : "다시 검사"}</button>}
+          ? <button onClick={stopScan} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>{t("중단")}</button>
+          : <button onClick={scan} className="press" style={btnStyle}>{status === "idle" ? t("손상된 퍼즐 검사") : t("다시 검사")}</button>}
         {status === "scanned" && corrupted.length > 0 && (
-          <button onClick={deleteAll} disabled={deleting} className="press" style={{ ...darkBtnStyle, opacity: deleting ? .6 : 1 }}>손상된 퍼즐 {corrupted.length}개 모두 말소</button>
+          <button onClick={deleteAll} disabled={deleting} className="press" style={{ ...darkBtnStyle, opacity: deleting ? .6 : 1 }}>{tx("손상된 퍼즐 {0}개 모두 말소", corrupted.length)}</button>
         )}
       </div>
       {status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {status === "listing" ? "퍼즐 목록 로드 중…"
-              : status === "scanning" ? "검사 중… " + checked + " / " + total + " (손상 " + corrupted.length + "건 발견)"
-              : status === "scanned" ? (corrupted.length ? "검사 완료: 손상된 퍼즐 " + corrupted.length + "개 발견" : "검사 완료: 손상된 퍼즐 없음")
-              : status === "deleting" ? "삭제 중… " + deleteDone + " / " + corrupted.length
-              : status === "deleted" ? "삭제 완료: " + deleteDone + "개 지움" + (deleteFailed.length ? " (실패 " + deleteFailed.length + "건)" : "")
-              : status === "stopped" ? "중단됨" : ""}
+            {status === "listing" ? t("퍼즐 목록 로드 중…")
+              : status === "scanning" ? t("검사 중… {0} / {1} (손상 {2}건 발견)", checked, total, corrupted.length)
+              : status === "scanned" ? (corrupted.length ? t("검사 완료: 손상된 퍼즐 {0}개 발견", corrupted.length) : t("검사 완료: 손상된 퍼즐 없음"))
+              : status === "deleting" ? t("삭제 중… {0} / {1}", deleteDone, corrupted.length)
+              : status === "deleted" ? t("삭제 완료: {0}개 지움{1}", deleteDone, deleteFailed.length ? t(" (실패 {0}건)", deleteFailed.length) : "")
+              : status === "stopped" ? t("중단됨") : ""}
           </div>
           {(scanning || deleting) && total > 0 && (
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
@@ -585,32 +584,31 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         </div>
       )}
       {deleteFailed.length > 0 && (
-        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
-          말소 실패: {deleteFailed.map((no) => "#" + no).join(", ")}
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>{tx("말소 실패: {0}", deleteFailed.map((no) => "#" + no).join(", "))}
         </div>
       )}
 
       <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>중복 퍼즐 검사·정리</div>
-      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>같은 포지션의 중복 퍼즐은 풀이 수가 가장 많은 하나만 남기고 삭제</p>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{t("중복 퍼즐 검사·정리")}</div>
+      <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>{t("같은 포지션의 중복 퍼즐은 풀이 수가 가장 많은 하나만 남기고 삭제")}</p>
       <div className="flex items-center gap-2" style={{ marginBottom: 10, flexWrap: "wrap" }}>
         {dedupScanning || dedupDeleting
-          ? <button onClick={dedupStop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>중단</button>
-          : <button onClick={dedupScan} className="press" style={btnStyle}>{dedup.status === "idle" ? "중복 퍼즐 검사" : "다시 검사"}</button>}
+          ? <button onClick={dedupStop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>{t("중단")}</button>
+          : <button onClick={dedupScan} className="press" style={btnStyle}>{dedup.status === "idle" ? t("중복 퍼즐 검사") : t("다시 검사")}</button>}
         {dedup.status === "scanned" && dedupRemoveCount > 0 && (
-          <button onClick={dedupDeleteAll} disabled={dedupDeleting} className="press" style={{ ...darkBtnStyle, opacity: dedupDeleting ? .6 : 1 }}>중복 {dedupRemoveCount}개 정리(그룹 {dedup.groups.length}개)</button>
+          <button onClick={dedupDeleteAll} disabled={dedupDeleting} className="press" style={{ ...darkBtnStyle, opacity: dedupDeleting ? .6 : 1 }}>{tx("중복 {0}개 정리(그룹 {1}개)", dedupRemoveCount, dedup.groups.length)}</button>
         )}
       </div>
       {dedup.status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
-            {dedup.status === "listing" ? "퍼즐 목록 로드 중…"
-              : dedup.status === "scanning" ? "검사 중… " + dedup.checked + " / " + dedup.total + " (중복 그룹 " + dedup.groups.length + "개 발견)"
-              : dedup.status === "scanned" ? (dedupRemoveCount ? "검사 완료: 중복 그룹 " + dedup.groups.length + "개(정리 대상 " + dedupRemoveCount + "개)" : "검사 완료: 중복 퍼즐 없음")
-              : dedup.status === "deleting" ? "정리 중… " + dedup.deleteDone + " / " + dedup.deleteTarget
-              : dedup.status === "deleted" ? "정리 완료: " + dedup.deleteDone + "개 지움" + (dedup.deleteFailed.length ? " (실패 " + dedup.deleteFailed.length + "건)" : "")
-              : dedup.status === "stopped" ? "중단됨" : ""}
+            {dedup.status === "listing" ? t("퍼즐 목록 로드 중…")
+              : dedup.status === "scanning" ? t("검사 중… {0} / {1} (중복 그룹 {2}개 발견)", dedup.checked, dedup.total, dedup.groups.length)
+              : dedup.status === "scanned" ? (dedupRemoveCount ? t("검사 완료: 중복 그룹 {0}개(정리 대상 {1}개)", dedup.groups.length, dedupRemoveCount) : t("검사 완료: 중복 퍼즐 없음"))
+              : dedup.status === "deleting" ? t("정리 중… {0} / {1}", dedup.deleteDone, dedup.deleteTarget)
+              : dedup.status === "deleted" ? t("정리 완료: {0}개 지움{1}", dedup.deleteDone, dedup.deleteFailed.length ? t(" (실패 {0}건)", dedup.deleteFailed.length) : "")
+              : dedup.status === "stopped" ? t("중단됨") : ""}
           </div>
           {(dedupScanning || dedupDeleting) && (dedup.total > 0 || dedup.deleteTarget > 0) && (
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
@@ -625,20 +623,19 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         </div>
       )}
       {dedup.deleteFailed.length > 0 && (
-        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>
-          정리 실패: {dedup.deleteFailed.map((no) => "#" + no).join(", ")}
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>{tx("정리 실패: {0}", dedup.deleteFailed.map((no) => "#" + no).join(", "))}
         </div>
       )}
 
       <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>번호로 재생성·삭제</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{t("번호로 재생성·삭제")}</div>
       <div className="flex gap-2" style={{ marginBottom: 6, flexWrap: "wrap" }}>
-        <input value={ctlNo} onChange={(e) => { setCtlNo(e.target.value.replace(/[^0-9]/g, "")); setCtlMsg(null); }} placeholder="퍼즐 번호(no)" inputMode="numeric" style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box", flex: "1 1 120px" }} />
-        <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? "처리 중…" : "재생성"}</button>
-        <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>삭제</button>
+        <input value={ctlNo} onChange={(e) => { setCtlNo(e.target.value.replace(/[^0-9]/g, "")); setCtlMsg(null); }} placeholder={t("퍼즐 번호(no)")} inputMode="numeric" style={{ padding: "7px 9px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, boxSizing: "border-box", flex: "1 1 120px" }} />
+        <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? t("처리 중…") : t("재생성")}</button>
+        <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>{t("삭제")}</button>
       </div>
-      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>재생성은 엔진 준비 후 가능 (삭제는 바로 가능)</p>}
+      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>{t("재생성은 엔진 준비 후 가능 (삭제는 바로 가능)")}</p>}
       {ctlMsg && <p style={{ fontSize: 11, color: ctlMsg.ok ? T.best : T.blunder, fontWeight: 700 }}>{ctlMsg.text}</p>}
     </div>
   );
@@ -714,11 +711,11 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
   // (UX6) 존재하지 않는 아이디를 공동 개발자로 등록할 수 없도록, 추가 전 실제 계정 존재 여부를 확인한다.
   const addCodev = async () => {
     const id = codevId.trim();
-    if (!ALNUM.test(id) || id === DEV_ACCOUNT) { setCodevErr("아이디 형식이 올바르지 않음"); return; }
+    if (!ALNUM.test(id) || id === DEV_ACCOUNT) { setCodevErr(t("아이디 형식이 올바르지 않음")); return; }
     setCodevBusy(true); setCodevErr("");
     const found = await userProfile(id);
     setCodevBusy(false);
-    if (!found) { setCodevErr("존재하지 않는 아이디"); return; }
+    if (!found) { setCodevErr(t("존재하지 않는 아이디")); return; }
     if (!CONTENT.codev.includes(found.username)) CONTENT.codev.push(found.username);
     await bumpContent();
     setCodevId(""); setCodevErr("");
@@ -731,7 +728,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           단이 나뉘는 자리에선 위 여백이 잘려 오른쪽 단이 14px 올라가므로, 단 안에서는 카드 간격을 아래 여백으로 준다. */}
       <style>{"@media (min-width:1000px){.settings-root{max-width:1080px !important}.settings-cols{column-count:2;column-gap:18px}.settings-cols{padding-top:14px}.settings-cols>*{break-inside:avoid;margin-top:0 !important;margin-bottom:14px}}"}</style>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 설정 아이콘과 중복돼 제거. */}
-      <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
+      <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("설정")}</h2></div>
       <div className="settings-cols">
 
       {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
@@ -751,8 +748,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
       {!user ? (
         <div style={{ ...card, animation: loginShaking ? "lineShake .55s ease 3" : "none" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>계정</div>
-          <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>로그인하면 진도가 계정에 저장됨</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>로그인 / 회원가입</button></div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("계정")}</div>
+          <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>{t("로그인하면 진도가 계정에 저장됨")}</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{t("로그인 / 회원가입")}</button></div>
         </div>
       ) : (
         <div style={card}>
@@ -763,8 +760,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
               {/* (버그 수정, 사용자 요청) 두 버튼이 패딩·폰트 크기는 같았지만 테두리가 하나만
                   1px solid이고 다른 하나는 none이라, border-box 기준으로 실제 렌더 높이가 2px
                   차이났다 — height를 똑같이 고정해 border 유무와 무관하게 항상 같은 높이가 되게 한다. */}
-              <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>계정 센터</button>
-              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>자세히 보기</button>
+              <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>{t("계정 센터")}</button>
+              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("자세히 보기")}</button>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -787,13 +784,13 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* (18차 UI10) 개발자/공동 개발자 모드 — 블록·설명 없이 온오프 토글 한 줄만 */}
       {isDev && (
         <div className="flex items-center justify-between" style={{ marginTop: 14, padding: "6px 2px" }}>
-          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>개발자 모드</span></div>
+          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>{t("개발자 모드")}</span></div>
           <button onClick={() => setDevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: devOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: devOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       )}
       {isCodev && (
         <div className="flex items-center justify-between" style={{ marginTop: 14, padding: "6px 2px" }}>
-          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>공동 개발자 모드</span></div>
+          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>{t("공동 개발자 모드")}</span></div>
           <button onClick={() => setCodevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: codevOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: codevOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       )}
@@ -810,18 +807,18 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>리뷰 설정</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("리뷰 설정")}</div>
           <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
             {engineStatus === "ready" ? <Wifi size={12} /> : engineStatus === "off" ? <WifiOff size={12} /> : <Cpu size={12} />}
-            {engineStatus === "ready" ? "연결됨" : engineStatus === "off" ? "연결 실패" : "불러오는 중…"}
+            {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>분석 엔진</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("분석 엔진")}</div>
         {/* (v0.5.1 기능) Stockfish 18은 신경망 파일이 108MB나 돼 느린 회선에서는 부팅에 몇 분씩 걸릴 수
             있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
             고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
         {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>{t("신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요")}</div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
@@ -839,7 +836,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             );
           })}
         </div>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
@@ -847,9 +844,9 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             그대로(REVIEW_DEPTH=20), "더 정확하게"는 포지션당 depth 상한을 25로 올린다 — movetime은
             그대로라 예전엔 depth 20에서 일찍 끝나던 쉬운 포지션들도 남는 시간을 마저 써서 depth
             25까지 더 파고들게 되고, 그만큼 리뷰 전체 시간도 자연히 늘어난다. */}
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>리뷰 속도</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("리뷰 속도")}</div>
         <div style={{ display: "flex", gap: 8 }}>
-          {[{ id: "fast", label: "더 빠르게", desc: "depth=" + REVIEW_DEPTH }, { id: "accurate", label: "더 정확하게", desc: "depth=25" }].map((o) => {
+          {[{ id: "fast", label: t("더 빠르게"), desc: "depth=" + REVIEW_DEPTH }, { id: "accurate", label: t("더 정확하게"), desc: "depth=25" }].map((o) => {
             const on = reviewSpeed === o.id;
             return (
               <button key={o.id} onClick={() => setReviewSpeed(o.id)} className="press"
@@ -873,8 +870,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             정확도로 변환하는 마지막 단계만 건너뛴다(reviewPhaseAccuracy/buildRevealData 참고). */}
         <div className="flex items-center justify-between">
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>포지션 변동성 보정</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>날카로운 포지션의 실수를 더 엄격하게 반영</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("포지션 변동성 보정")}</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("날카로운 포지션의 실수를 더 엄격하게 반영")}</div>
           </div>
           <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -885,11 +882,11 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           캐시·Supabase user_progress에 같이 실림 — 리뷰 속도 등과 달리 이 기기만이 아니라 다른
           기기에서 로그인해도 그대로 따라온다). */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>퍼즐 설정</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("퍼즐 설정")}</div>
         {[
-          { label: "LINE CLEAR 애니메이션", desc: "라인 클리어 시 배너 표시", on: lineClearOn, set: setLineClearOn },
-          { label: "PUZZLE CLEAR 애니메이션", desc: "퍼즐의 모든 라인 클리어 시 배너 표시", on: puzzleClearOn, set: setPuzzleClearOn },
-          { label: "코치 말풍선", desc: "퍼즐 풀이 중 코치 말풍선 표시", on: coachBubbleOn, set: setCoachBubbleOn },
+          { label: t("LINE CLEAR 애니메이션"), desc: t("라인 클리어 시 배너 표시"), on: lineClearOn, set: setLineClearOn },
+          { label: t("PUZZLE CLEAR 애니메이션"), desc: t("퍼즐의 모든 라인 클리어 시 배너 표시"), on: puzzleClearOn, set: setPuzzleClearOn },
+          { label: t("코치 말풍선"), desc: t("퍼즐 풀이 중 코치 말풍선 표시"), on: coachBubbleOn, set: setCoachBubbleOn },
         ].map((o, i) => (
           <React.Fragment key={o.label}>
             {i > 0 && <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />}
@@ -907,51 +904,51 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* (v0.5.5, 사용자 요청) 미니게임 설정 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을
           보드에 빨갛게 표시할지. 기본값은 꺼짐(스스로 읽어 내는 게 미니게임의 재미라), 퍼즐 설정과 같이 계정에 저장된다. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>미니게임 설정</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("미니게임 설정")}</div>
         <div className="flex items-center justify-between">
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>통제 칸 표시</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
           </div>
-          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label="통제 칸 표시" className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label={t("통제 칸 표시")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       </div>
 
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
           (헤더에는 따로 두지 않는다 — 조절은 항상 설정 탭에서만.) */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>사운드</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("사운드")}</div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {bgmOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>배경음악</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("배경음악")}</span>
           </div>
           <button onClick={onToggleBgm} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: bgmOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: bgmOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
-        <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label="배경음악 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
+        <input type="range" min={0} max={1} step={0.05} value={bgmVolume} onChange={(e) => onBgmVolumeChange(parseFloat(e.target.value))} disabled={!bgmOn} aria-label={t("배경음악 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: bgmOn ? 1 : 0.4, cursor: bgmOn ? "pointer" : "default" }} />
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {sfxOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>효과음</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("효과음")}</span>
           </div>
           <button onClick={onToggleSfx} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sfxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: sfxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
-        <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label="효과음 음량" style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
+        <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label={t("효과음 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
       </div>
 
       {/* (v0.5.5, 사용자 요청) 시각 효과 — 탁월한 수·유일한 수·최선의 수를 두었을 때의 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰
           페이지, 무한 체크메이트 게임). 기본값은 켜짐, 계정에 저장된다. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>시각 효과</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("시각 효과")}</div>
         <div className="flex items-center justify-between">
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>수 등급 이펙트</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시")}</div>
           </div>
-          <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label="수 등급 이펙트" className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+          <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label={t("수 등급 이펙트")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       </div>
 
@@ -961,27 +958,26 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
 
       {/* 개발진 명단 (수 기호 안내 대체) */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>개발진</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("개발진")}</div>
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
           {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
               아이디의 프로필로 이동한다. */}
           <button onClick={() => onOpenUserProfile && onOpenUserProfile(DEV_ACCOUNT)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22", background: "none", border: "none", padding: 0, cursor: onOpenUserProfile ? "pointer" : "default" }}>{DEV_ACCOUNT}</button>
-          <span style={{ fontSize: 11, color: T.inkSoft }}>개발자</span>
+          <span style={{ fontSize: 11, color: T.inkSoft }}>{t("개발자")}</span>
         </div>
-        {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>등록된 공동 개발자 없음</div>
+        {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>{t("등록된 공동 개발자 없음")}</div>
           : (CONTENT.codev || []).map((id) => (
             <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
                 <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{codevDisplayIds[id] || id}</button>{" "}
-                <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>공동 개발자</span>
+                <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>{t("공동 개발자")}</span>
               </span>
-              {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>해제</button>}
+              {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button>}
             </div>
           ))}
         {/* (v0.2.0) 업데이트 공지 팝업은 버전마다 최초 접속 시 한 번만 뜨고 다시 안 뜨므로, 그
             내용(버전·날짜·항목·참여 개발자)을 여기 "개발자 기록"으로 항상 남겨 언제든 다시 볼 수 있게 한다. */}
-        <button onClick={() => setDevLogOpen((v) => !v)} className="press flex items-center justify-between" style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCCBA8", background: devLogOpen ? "#0000000d" : "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-          개발자 기록 {devLogOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <button onClick={() => setDevLogOpen((v) => !v)} className="press flex items-center justify-between" style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCCBA8", background: devLogOpen ? "#0000000d" : "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{tx("개발자 기록 {0}", devLogOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
         </button>
         {devLogOpen && (
           <div style={{ marginTop: 10, maxHeight: 320, overflowY: "auto", paddingRight: 4 }}>
@@ -994,7 +990,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                   {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
                 </ul>
-                {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>개발: {v.dev.join(", ")}</div>}
+                {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
               </div>
             ))}
           </div>
@@ -1007,25 +1003,25 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {myUid && (
         <div style={card}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Users size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>차단 목록</span></div>
-            <button onClick={openBlockList} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>관리</button>
+            <div className="flex items-center gap-2"><Users size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("차단 목록")}</span></div>
+            <button onClick={openBlockList} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>{t("관리")}</button>
           </div>
         </div>
       )}
       {/* 문의 / FAQ */}
       <div style={card}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>문의 / FAQ</span></div>
+          <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("문의 / FAQ")}</span></div>
           <div className="flex items-center gap-2">
             {/* (v0.4.3 기능, 사용자 요청) /about처럼 반응형 타이포그래피·애니메이션 중심으로 만든
                 별도 FAQ 페이지(/faq) — 이 카드에서 실제 페이지 이동(같은 탭 새 로드)으로 연결한다. */}
-            <a href="/faq" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>FAQ 보기</a>
-            <a href="/terms" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>이용약관</a>
-            <a href="/privacy" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>개인정보처리방침</a>
-            <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>문의하기</button>
+            <a href="/faq" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("FAQ 보기")}</a>
+            <a href="/terms" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("이용약관")}</a>
+            <a href="/privacy" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("개인정보처리방침")}</a>
+            <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("문의하기")}</button>
           </div>
         </div>
-        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>자주 묻는 질문 확인 또는 이메일 문의</p>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>{t("자주 묻는 질문 확인 또는 이메일 문의")}</p>
       </div>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
@@ -1041,16 +1037,16 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <div ref={devToolsRef} style={{ ...card, marginTop: 28, border: "1.5px solid " + T.brass, background: "linear-gradient(180deg,#FBF4E2,#F2E8D5)" }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
             <Crown size={16} style={{ color: T.brass }} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>개발자 도구</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? "공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능" : "개발자 전용 도구"}</p>
+          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>
 
           {canManageCodev && (
             <>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>공동 개발자 지정</div>
-              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder="아이디 (영문+숫자)" style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? "확인 중…" : "추가"}</button></div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("공동 개발자 지정")}</div>
+              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder={t("아이디 (영문+숫자)")} style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? t("확인 중…") : t("추가")}</button></div>
               {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
-              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>공동 개발자는 트리·분기점·해설 <b>추가</b>만 가능. 수정·삭제 불가</p>
+              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>{tx("공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가", <b>{t("추가")}</b>)}</p>
               <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
             </>
           )}
@@ -1139,19 +1135,19 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
   const linkCount = (identities || []).length;
   const doLink = async (provider) => {
     setErr(""); setBusy(true);
-    try { await linkIdentityRedirect(provider); } catch { setErr("연결 시작 실패. Supabase 프로젝트에서 이 로그인 방식과 계정 연결(manual linking) 활성화 확인 필요"); setBusy(false); }
+    try { await linkIdentityRedirect(provider); } catch { setErr(t("연결 시작 실패. Supabase 프로젝트에서 이 로그인 방식과 계정 연결(manual linking) 활성화 확인 필요")); setBusy(false); }
   };
   const doUnlink = async (identity) => {
-    if (linkCount <= 1) { setErr("마지막 로그인 수단은 연결 해제 불가"); return; }
+    if (linkCount <= 1) { setErr(t("마지막 로그인 수단은 연결 해제 불가")); return; }
     setErr(""); setBusy(true);
     try { await unlinkIdentity(identity.identity_id); await load(); }
-    catch { setErr("연결 해제 실패"); }
+    catch { setErr(t("연결 해제 실패")); }
     finally { setBusy(false); }
   };
   const doDelete = async () => {
     setDeleteErr(""); setBusy(true);
     try { await sbRpc("delete_own_account", {}); onAccountDeleted(); }
-    catch { setDeleteErr("계정 삭제 실패. 잠시 후 다시 시도"); setBusy(false); }
+    catch { setDeleteErr(t("계정 삭제 실패. 잠시 후 다시 시도")); setBusy(false); }
   };
   const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 4px" };
   return (
@@ -1167,7 +1163,7 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
         style={{ position: "relative", width: "100%", maxWidth: 360, maxHeight: "85vh", overflowY: "auto", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}
       >
         <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4, paddingRight: 30 }}>계정 센터</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4, paddingRight: 30 }}>{t("계정 센터")}</div>
         <div style={{ fontSize: 12, color: T.inkSoft, marginBottom: 10 }}>@{username}</div>
 
         {/* (v0.4.3 기능, 사용자 요청) MID — 이 계정 고유의 9자리 영문+숫자 회원 번호. 로그인 수단이
@@ -1175,26 +1171,26 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>MID</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? "불러오는 중…" : (mid || "—")}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? t("불러오는 중…") : (mid || "—")}</div>
           </div>
           {!!mid && (
             <button onClick={copyMid} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
-              <Copy size={12} />{midCopied ? "복사됨" : "복사"}
+              <Copy size={12} />{midCopied ? t("복사됨") : t("복사")}
             </button>
           )}
         </div>
         <InviteLinkBox mid={mid} />
 
 
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>로그인 수단</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{t("로그인 수단")}</div>
         {identities == null ? (
-          <div style={{ fontSize: 12, color: T.inkSoft, padding: "10px 4px" }}>불러오는 중…</div>
+          <div style={{ fontSize: 12, color: T.inkSoft, padding: "10px 4px" }}>{t("불러오는 중…")}</div>
         ) : (
           <div style={{ borderTop: "1px solid rgba(0,0,0,.08)" }}>
             {hasEmail && (
               <div style={{ ...row, borderBottom: "1px solid rgba(0,0,0,.08)" }}>
-                <div className="flex items-center gap-2"><span style={{ width: 26, height: 26, borderRadius: "50%", background: T.ebony2, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Lock size={13} color={T.ivory} /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>이메일·비밀번호</span></div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: T.best }}>연결됨</span>
+                <div className="flex items-center gap-2"><span style={{ width: 26, height: 26, borderRadius: "50%", background: T.ebony2, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Lock size={13} color={T.ivory} /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("이메일·비밀번호")}</span></div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.best }}>{t("연결됨")}</span>
               </div>
             )}
             {ACCOUNT_CENTER_PROVIDERS.map((p) => {
@@ -1203,29 +1199,29 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
                 <div key={p.key} style={{ ...row, borderBottom: "1px solid rgba(0,0,0,.08)" }}>
                   <div className="flex items-center gap-2"><span style={{ width: 26, height: 26, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", ...p.chip }}><p.Icon /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{p.label}</span></div>
                   {idn
-                    ? <button onClick={() => doUnlink(idn)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: busy ? "default" : "pointer" }}>연결 해제</button>
-                    : <button onClick={() => doLink(p.key)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, cursor: busy ? "default" : "pointer" }}>연결하기</button>}
+                    ? <button onClick={() => doUnlink(idn)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: busy ? "default" : "pointer" }}>{t("연결 해제")}</button>
+                    : <button onClick={() => doLink(p.key)} disabled={busy} className="press" style={{ padding: "5px 11px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, cursor: busy ? "default" : "pointer" }}>{t("연결하기")}</button>}
                 </div>
               );
             })}
           </div>
         )}
         {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결</p>
+        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>{t("어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결")}</p>
 
         <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
-        <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>로그아웃</button>
+        <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>{t("로그아웃")}</button>
 
         {!confirmDelete ? (
-          <button onClick={() => { setConfirmDelete(true); setDeleteTyped(""); setDeleteErr(""); }} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>계정 탈퇴</button>
+          <button onClick={() => { setConfirmDelete(true); setDeleteTyped(""); setDeleteErr(""); }} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>{t("계정 탈퇴")}</button>
         ) : (
           <div style={{ padding: "12px 13px", borderRadius: 10, background: "rgba(200,69,59,.1)", border: "1px solid " + T.blunder }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제되며 되돌릴 수 없음</p>
-            <input value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} placeholder={"확인을 위해 \"" + username + "\" 입력"} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", marginBottom: 8, fontSize: 12.5 }} />
+            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>{t("정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제되며 되돌릴 수 없음")}</p>
+            <input value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} placeholder={t("확인을 위해 \"{0}\" 입력", username)} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", marginBottom: 8, fontSize: 12.5 }} />
             {deleteErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{deleteErr}</div>}
             <div className="flex gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>취소</button>
-              <button onClick={doDelete} disabled={busy || deleteTyped !== username} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: (busy || deleteTyped !== username) ? "default" : "pointer", opacity: (busy || deleteTyped !== username) ? 0.55 : 1 }}>{busy ? "삭제하는 중…" : "영구 삭제"}</button>
+              <button onClick={() => setConfirmDelete(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("취소")}</button>
+              <button onClick={doDelete} disabled={busy || deleteTyped !== username} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: (busy || deleteTyped !== username) ? "default" : "pointer", opacity: (busy || deleteTyped !== username) ? 0.55 : 1 }}>{busy ? t("삭제하는 중…") : t("영구 삭제")}</button>
             </div>
           </div>
         )}

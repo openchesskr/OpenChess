@@ -5,6 +5,7 @@ import { T, MOTION_EASE } from "../lib/theme.js";
 import { matePliesOf, fmtEvalCp } from "../lib/moveQuality.js";
 import { moveNumber, plyIsWhite } from "../lib/chessRules.js";
 
+import { t, tx } from "../lib/i18n.js";
 // (18차 UI6 → 사용자 요청으로 v0.3.3에 유산 기보 폰트로 통일) 기보 표기 전반에 쓰는 폰트 —
 // 원래 Playfair Display였으나, 유산(Legacy) 재생 화면의 기보에 쓰던 폰트(LEGACY_FONT)로 맞췄다.
 export const SEQ_FONT = "'Merriweather', 'Noto Sans KR', serif";
@@ -134,7 +135,7 @@ export function EvalBar({ cp, width, depth, vertical, font }) {
           {/* (버그 수정) 이 아이콘은 백이 크게 유리해지면(흰 구간이 바 전체를 거의 채움) 우측 끝까지
               흰 배경 위에 놓이는데, 색이 고정 흰색(#fff)이라 그 위에서 완전히 안 보였다 — 배경이
               흰색이든 검은색이든 늘 뚜렷이 보이도록 순백 대신 사이트 테마의 브라스 골드로 바꾼다. */}
-          <button onClick={() => setTipOpen((v) => !v)} aria-label="탐색 상태 도움말" style={{ width: 14, height: 14, padding: 0, border: "none", background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: .9 }}><HelpCircle size={12} /></button>
+          <button onClick={() => setTipOpen((v) => !v)} aria-label={t("탐색 상태 도움말")} style={{ width: 14, height: 14, padding: 0, border: "none", background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: .9 }}><HelpCircle size={12} /></button>
           {/* (18차 보충 UX5) 말풍선이 체스보드에 가려지던 문제 — 바 아래가 아니라 위쪽으로 띄우고 z-index를 높인다 */}
           {/* (v0.3.9 버그 수정) 이 말풍선은 항상 right:0(자기 오른쪽 끝 기준 좌측으로 확장)로 고정돼
               있었는데, 바깥 인디케이터가 흑 유리 시 left:4로(=바 왼쪽 끝 근처) 옮겨가도 말풍선은 여전히
@@ -151,8 +152,7 @@ export function EvalBar({ cp, width, depth, vertical, font }) {
           {tipOpen && (
             <span style={{ position: "absolute", bottom: 24, whiteSpace: "nowrap", background: "rgba(20,12,6,.97)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 700, borderRadius: 8, border: "1px solid " + T.brass, padding: "5px 9px", zIndex: 999, boxShadow: "0 6px 16px -6px rgba(0,0,0,.6)", ...(num >= 0 ? { right: 0 } : { left: 0 }) }}>
               <span style={{ position: "absolute", bottom: -4, width: 7, height: 7, background: "rgba(20,12,6,.97)", transform: "rotate(45deg)", borderRight: "1px solid " + T.brass, borderBottom: "1px solid " + T.brass, ...(num >= 0 ? { right: 10 } : { left: 10 }) }} />
-              {depth}수 후까지 탐색 중..
-            </span>
+              {tx("{0}수 후까지 탐색 중..", depth)}</span>
           )}
         </span>
       )}

@@ -1,4 +1,5 @@
-/* ============================================================ 디자인 토큰 ============================================================ */
+
+import { t } from "./i18n.js";/* ============================================================ 디자인 토큰 ============================================================ */
 export const T = {
   ebony: "#1B1009", ebony2: "#2E1B10", ebony3: "#3D2616",
   ivory: "#EBDDC4", ivoryHi: "#FAF2E2", paper: "#F1E6D0",
@@ -124,13 +125,13 @@ export const PIECE_IMG_SETS = {
    ocean\uC740 \uCCA8\uBD80 \uB808\uC9C4 \uCCB4\uC2A4\uBCF4\uB4DC \uB808\uD37C\uB7F0\uC2A4\uCC98\uB7FC \uBC18\uD22C\uBA85\u00B7\uAD11\uD0DD \uC788\uB294 \uD30C\uB780 \uC720\uB9AC \uB290\uB08C \u2014 \uBCF4\uB4DC\uB294 \uC0AC\uAC01\uD615 \uBC30\uACBD\uC5D0
    \uB300\uAC01\uC120 \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uACB9\uCE5C \uADF8\uB77C\uB514\uC5B8\uD2B8, \uAE30\uBB3C\uC740 \uBC18\uD22C\uBA85 rgba \uCC44\uC6C0 \uC704\uC5D0 \uD074\uB9BD\uB41C \uC720\uB9AC \uD558\uC774\uB77C\uC774\uD2B8\uB97C \uC5B9\uB294\uB2E4. */
 export const BOARD_SKINS = {
-  classic: { label: "\uAE30\uBCF8", price: 0, light: T.boardLight, dark: T.boardDark },
+  classic: { label: t("기본"), price: 0, light: T.boardLight, dark: T.boardDark },
   // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
   // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
-  ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: "/boards/ocean-board.jpg" },
+  ocean: { label: t("푸른 바다"), price: 500, image: "/boards/ocean-board.jpg" },
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
-  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
+  grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -146,13 +147,13 @@ export function boardSquareBg(sk, light, r, c) {
   return { background: light ? sk.light : sk.dark };
 }
 export const PIECE_SKINS = {
-  classic: { label: "\uAE30\uBCF8", price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
+  classic: { label: t("기본"), price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
   // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
   // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
-  ocean: { label: "\uD478\uB978 \uBC14\uB2E4", price: 500, image: true },
+  ocean: { label: t("푸른 바다"), price: 500, image: true },
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
-  grandmaster: { label: "그랜드마스터", tierLocked: "grandmaster", image: true },
+  grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
 };
 export function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —

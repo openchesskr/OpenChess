@@ -21,6 +21,7 @@ import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, InviteLinkBox, LEGAC
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
 // 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
 // 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에
@@ -102,7 +103,7 @@ function ValidatedMoveInput({ value, onCommit, board, color, placeholder, style 
       <input value={text} onChange={(e) => { setText(e.target.value); if (err) setErr(false); }} onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
         placeholder={placeholder} style={{ ...style, border: err ? "1px solid " + T.blunder : style.border }} />
-      {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 2 }}>이 위치에서 둘 수 없는 수</div>}
+      {err && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 2 }}>{t("이 위치에서 둘 수 없는 수")}</div>}
     </div>
   );
 }
@@ -160,48 +161,46 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
   return (
     <div style={card}>
       {/* (17차 후속) 카드 상단의 계정 요약 줄(아바타+아이디+"진도가 서버에 저장됩니다")은 프로필 편집 정보와 중복이라 제거 */}
-      <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>프로필 편집</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("프로필 편집")}</div>
       <div className="flex items-center gap-3" style={{ margin: "12px 0" }}>
         {profile.photo ? <img src={profile.photo} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(totalXp || 0).tier.key === "grandmaster") || {}) }} />
           : <span style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24 }}>{(profile.nickname || "?")[0].toUpperCase()}</span>}
         <div style={{ minWidth: 0 }}>
           {/* (UI2) 설정 탭에서는 칭호를 고를 수 없고, 장착된 칭호만 닉네임 위에 작게 표시 */}
           {/* (18차 UI11) 칭호 텍스트 대신 칭호 이미지로 표시 */}
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || "이름 미설정"}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{profile.nickname || t("이름 미설정")}</div>
         </div>
       </div>
       {/* (17차) 프로필 정보 확장 — 티어(현재 XP 숫자 명시)와 해결한 퍼즐 개수를 한눈에 볼 수 있게 표시 */}
       {totalXp != null && (
         <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
           <TierStatPill totalXp={totalXp} />
-          {solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>퍼즐 {fmtFull(solvedCount)}개 해결</span>}
+          {solvedCount != null && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>{tx("퍼즐 {0}개 해결", fmtFull(solvedCount))}</span>}
         </div>
       )}
-      <div style={lab}>프로필 사진</div>
+      <div style={lab}>{t("프로필 사진")}</div>
       <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-        <label className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer", border: "none" }}>
-          파일에서 선택
-          <input type="file" accept="image/*" onChange={onPhotoFile} style={{ display: "none" }} />
+        <label className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12, cursor: "pointer", border: "none" }}>{t("파일에서 선택")}<input type="file" accept="image/*" onChange={onPhotoFile} style={{ display: "none" }} />
         </label>
-        {profile.photo && <button onClick={() => set({ photo: "" })} className="press" style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>제거</button>}
+        {profile.photo && <button onClick={() => set({ photo: "" })} className="press" style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("제거")}</button>}
       </div>
-      <input value={(profile.photo || "").startsWith("data:") ? "" : (profile.photo || "")} onChange={(e) => set({ photo: e.target.value })} placeholder="또는 이미지 주소(URL) 입력" style={field} />
-      <div style={lab}>이름</div>
-      <input value={profile.nickname || ""} onChange={(e) => set({ nickname: e.target.value })} placeholder="표시 이름" style={field} />
+      <input value={(profile.photo || "").startsWith("data:") ? "" : (profile.photo || "")} onChange={(e) => set({ photo: e.target.value })} placeholder={t("또는 이미지 주소(URL) 입력")} style={field} />
+      <div style={lab}>{t("이름")}</div>
+      <input value={profile.nickname || ""} onChange={(e) => set({ nickname: e.target.value })} placeholder={t("표시 이름")} style={field} />
       {/* (사용자 요청) 소개 — 프로필 카드·검색 창에서 닉네임 바로 밑에 표시되는 한 줄 자기소개. */}
       <div className="flex items-center justify-between" style={lab}>
-        <span>소개</span>
+        <span>{t("소개")}</span>
         <span style={{ fontWeight: 600, color: T.inkSoft, fontSize: 11 }}>{(profile.bio || "").length}/{PROFILE_BIO_MAX_LEN}</span>
       </div>
-      <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder="예: 시칠리안을 좋아하는 클럽 플레이어" style={field} />
-      <div style={lab}>자주 두는 첫 수: 백{chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}> (chess.com 기록으로 자동 입력, 직접 수정 가능)</span>}</div>
-      <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder="예: e4 (생략 가능)" style={{ ...field, fontFamily: SITE_FONT }} />
-      <div style={lab}>자주 두는 첫 수: 흑 (백의 첫 수별, 생략 가능)</div>
+      <input value={profile.bio || ""} onChange={(e) => set({ bio: e.target.value.slice(0, PROFILE_BIO_MAX_LEN) })} maxLength={PROFILE_BIO_MAX_LEN} placeholder={t("예: 시칠리안을 좋아하는 클럽 플레이어")} style={field} />
+      <div style={lab}>{tx("자주 두는 첫 수: 백{0}", chesscom && chesscom.status === "ready" && <span style={{ fontWeight: 600, color: T.inkSoft }}>{" "}{t("(chess.com 기록으로 자동 입력, 직접 수정 가능)")}</span>)}</div>
+      <ValidatedMoveInput value={fm.white || ""} onCommit={(v) => setFM({ white: v })} board={startBoard()} color="w" placeholder={t("예: e4 (생략 가능)")} style={{ ...field, fontFamily: SITE_FONT }} />
+      <div style={lab}>{t("자주 두는 첫 수: 흑 (백의 첫 수별, 생략 가능)")}</div>
       <div className="grid sm:grid-cols-2 gap-2">
         {["e4", "d4", "c4", "Nf3"].map((w) => (
           <div key={w} className="flex items-center gap-2">
             <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft, width: 56, flexShrink: 0 }}>vs 1.{w}</span>
-            <ValidatedMoveInput value={(fm.black || {})[w] || ""} onCommit={(v) => setFM({ black: { ...(fm.black || {}), [w]: v } })} board={boardFromSans([w])} color="b" placeholder="응수" style={{ ...field, fontFamily: SITE_FONT }} />
+            <ValidatedMoveInput value={(fm.black || {})[w] || ""} onCommit={(v) => setFM({ black: { ...(fm.black || {}), [w]: v } })} board={boardFromSans([w])} color="b" placeholder={t("응수")} style={{ ...field, fontFamily: SITE_FONT }} />
           </div>
         ))}
       </div>
@@ -220,13 +219,13 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
   const s = (n) => Math.round(n * scale);
   return (
     <div className="flex items-center" style={{ padding: s(2), borderRadius: s(9), background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: s(2), flexShrink: 0 }}>
-      <button onClick={() => setStatsView("oc")} aria-label="OpenChess 통계" title="OpenChess 통계" className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+      <button onClick={() => setStatsView("oc")} aria-label={t("OpenChess 통계")} title={t("OpenChess 통계")} className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
         {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의 약
             86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아 보인다 —
             실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 조금 더 크게 잡는다(17px vs 15px). */}
         <img src="/favicon.png" alt="OpenChess" style={{ width: s(17), height: s(17), objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
       </button>
-      <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
+      <button onClick={() => setStatsView("cc")} aria-label={t("Chess.com 통계")} title={t("Chess.com 통계")} className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
         <span aria-hidden="true" style={{ fontSize: s(11), fontWeight: 900, letterSpacing: "-.03em", color: "#fff", opacity: statsView === "cc" ? 1 : 0.55 }}>cc</span>
       </button>
     </div>
@@ -252,7 +251,7 @@ function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
         <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
         {/* (사용자 요청) 실명 줄도 프로필 카드의 소개(bio)와 같은 이유로 항상 자리를 차지해 둔다. */}
         <div style={{ fontSize: 12, color: T.ink, marginTop: 5, minHeight: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(ccHeaderProf && ccHeaderProf.name) || ""}</div>
-        {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {relTimeFromMs(ccHeaderProf.lastOnline)} 접속</div>}
+        {ccHeaderProf && ccHeaderProf.lastOnline && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>chess.com {tx("{0} 접속", relTimeFromMs(ccHeaderProf.lastOnline))}</div>}
       </div>
     </div>
   );
@@ -294,7 +293,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             카드 최상단의 큰 세그먼트 바 대신 이 헤더 줄 우상단 여백으로 옮겨, 편집 버튼과 나란히 둔다. */}
         <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
         <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>프로필 편집</button>
+          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("프로필 편집")}</button>
           {statsViewToggle(statsView, setStatsView)}
         </div>
       </div>
@@ -354,8 +353,8 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
           {mq.totalChapters > 0 && (
             <div style={{ marginTop: 4, marginBottom: 14, paddingTop: 12, borderTop: "1px solid #E4D5B6" }}>
               <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>레슨 진척도</span>
-                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 레슨 완료</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("레슨 진척도")}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{tx("{0} 레슨 완료", mq.totalChapters)}</span>
               </div>
               <div style={{ height: 7, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
                 <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -379,31 +378,31 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
         // 섹션으로 바로 이어지도록 편집 버튼을 함께 둔다.
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 14px", lineHeight: 1.6 }}>chess.com 계정을 연동하면 실전 대국 통계 표시</p>
-          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12.5, border: "none", cursor: "pointer" }}>연동하기</button>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 14px", lineHeight: 1.6 }}>{t("chess.com 계정을 연동하면 실전 대국 통계 표시")}</p>
+          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12.5, border: "none", cursor: "pointer" }}>{t("연동하기")}</button>
         </div>
       )}
       {editOpen && (
         <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
-            <button onClick={() => setEditOpen(false)} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+            <button onClick={() => setEditOpen(false)} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
             {profileEditor}
             {/* chess.com 연동 — 기존 설정 탭 블록에서 모달로 이동 */}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
-              <label className="flex items-center" style={{ gap: 6, fontSize: 13, fontWeight: 700, color: T.ink }}><ChesscomLogo height={19} /> 계정</label>
-              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>최근 기보로 수별 전적·승률과 오프닝 실수를 집중 분석 모드에서 분석</p>
+              <label className="flex items-center" style={{ gap: 6, fontSize: 13, fontWeight: 700, color: T.ink }}>{tx("{0} 계정", <ChesscomLogo height={19} />)}</label>
+              <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "4px 0 10px" }}>{t("최근 기보로 수별 전적·승률과 오프닝 실수를 집중 분석 모드에서 분석")}</p>
               {linked ? (
                 <div>
                   <div className="flex items-center gap-2">
-                    <button disabled className="flex items-center justify-center gap-2" style={{ flex: 1, padding: "10px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, border: "none", cursor: "default" }}><Check size={16} /> 연동 완료 · {profile.chesscom}{chesscomStatus === "loading" ? " (불러오는 중…)" : ""}</button>
-                    <button onClick={changeChesscom} disabled={chesscomDaysLeft > 0} title={chesscomDaysLeft > 0 ? chesscomDaysLeft + "일 후 변경 가능" : undefined} className="press" style={{ padding: "10px 13px", borderRadius: 9, background: "transparent", color: chesscomDaysLeft > 0 ? T.inkSoft : T.ink, fontWeight: 700, border: "1px solid #C9B58C", cursor: chesscomDaysLeft > 0 ? "not-allowed" : "pointer", opacity: chesscomDaysLeft > 0 ? 0.55 : 1, whiteSpace: "nowrap" }}>계정 변경</button>
+                    <button disabled className="flex items-center justify-center gap-2" style={{ flex: 1, padding: "10px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, border: "none", cursor: "default" }}>{tx("{0} 연동 완료 · {1}{2}", <Check size={16} />, profile.chesscom, chesscomStatus === "loading" ? t(" (불러오는 중…)") : "")}</button>
+                    <button onClick={changeChesscom} disabled={chesscomDaysLeft > 0} title={chesscomDaysLeft > 0 ? t("{0}일 후 변경 가능", (chesscomDaysLeft)) : undefined} className="press" style={{ padding: "10px 13px", borderRadius: 9, background: "transparent", color: chesscomDaysLeft > 0 ? T.inkSoft : T.ink, fontWeight: 700, border: "1px solid #C9B58C", cursor: chesscomDaysLeft > 0 ? "not-allowed" : "pointer", opacity: chesscomDaysLeft > 0 ? 0.55 : 1, whiteSpace: "nowrap" }}>{t("계정 변경")}</button>
                   </div>
-                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>계정 변경은 30일에 한 번만 가능 · {chesscomDaysLeft}일 후 변경 가능</p>}
+                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>{tx("계정 변경은 30일에 한 번만 가능 · {0}일 후 변경 가능", chesscomDaysLeft)}</p>}
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <input value={cc} onChange={(e) => setCc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && verifyChesscom()} placeholder="chess.com 사용자명" style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
-                  <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? "확인 중…" : ccState === "failed" ? "연동 실패" : "연동하기"}</button>
+                  <input value={cc} onChange={(e) => setCc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && verifyChesscom()} placeholder={t("chess.com 사용자명")} style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
+                  <button onClick={verifyChesscom} disabled={ccState === "checking"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: ccState === "failed" ? T.blunder : "linear-gradient(180deg,#3A2516,#241509)", color: ccState === "failed" ? "#fff" : T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{ccState === "checking" ? t("확인 중…") : ccState === "failed" ? t("연동 실패") : t("연동하기")}</button>
                 </div>
               )}
               {linked && <AccountChessStats chesscom={chesscom} username={profile.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} reviewUnlocked={reviewUnlocked} />}
@@ -440,7 +439,7 @@ export function ProfileWindow({ onClose, profile, setProfile, user, myUid, curre
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, marginBottom: 40 }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: -12, right: -12, zIndex: 10, width: 32, height: 32, borderRadius: "50%", border: "1px solid #DCCBA8", background: T.paper, color: T.ink, cursor: "pointer", boxShadow: "0 4px 10px rgba(0,0,0,.35)" }}>✕</button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: -12, right: -12, zIndex: 10, width: 32, height: 32, borderRadius: "50%", border: "1px solid #DCCBA8", background: T.paper, color: T.ink, cursor: "pointer", boxShadow: "0 4px 10px rgba(0,0,0,.35)" }}>✕</button>
         <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
           chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
           mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
@@ -452,17 +451,17 @@ export function ProfileWindow({ onClose, profile, setProfile, user, myUid, curre
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 320, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
               {pending.avatar ? <img src={pending.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 10 }} /> : <span style={{ width: 46, height: 46, borderRadius: 10, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{pending.username[0].toUpperCase()}</span>}
-              <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{pending.username}</div><div style={{ fontSize: 11.5, color: T.inkSoft }}>플레이한 게임 {fmtFull(pending.games)}국</div></div>
+              <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{pending.username}</div><div style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("플레이한 게임 {0}국", fmtFull(pending.games))}</div></div>
             </div>
             <div className="flex gap-2" style={{ marginBottom: 14 }}>
               {[["래피드", pending.rapid], ["블리츠", pending.blitz], ["불릿", pending.bullet]].map(([lb, v]) => (
                 <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{v != null ? v : "—"}</div></div>
               ))}
             </div>
-            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>이 계정이 맞나요?</p>
+            <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>{t("이 계정이 맞나요?")}</p>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>아니요</button>
-              <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>이 계정으로 연동</button>
+              <button onClick={() => setPending(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>{t("아니요")}</button>
+              <button onClick={confirmLink} className="press" style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, cursor: "pointer" }}>{t("이 계정으로 연동")}</button>
             </div>
           </div>
         </div>
@@ -637,12 +636,12 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
   }, [myUid, pubUid]);
   const setBlocked = async (on) => {
     const ok = await chatBlockSet(myUid, pubUid, on);
-    if (ok) { setBlockedByMe(on); setSafetyMsg(on ? "차단됨" : "차단 해제됨"); } else setSafetyMsg(on ? "차단 실패" : "차단 해제 실패");
+    if (ok) { setBlockedByMe(on); setSafetyMsg(on ? t("차단됨") : t("차단 해제됨")); } else setSafetyMsg(on ? t("차단 실패") : t("차단 해제 실패"));
     return ok;
   };
   const submitProfileReport = async (reason, detail, alsoBlock) => {
     const r = await userReport(pubUid, null, reason, detail);
-    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); setSafetyMsg("신고 접수. 검토 후 조치"); }
+    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); setSafetyMsg(t("신고 접수. 검토 후 조치")); }
     return r;
   };
 
@@ -689,14 +688,14 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
     autoInviteTriedRef.current = mid;
     (async () => {
       const r = await friendRequestByMid(mid);
-      if (r && r.status === "blocked") { setInviteMsg("요청할 수 없는 사용자"); return; }
+      if (r && r.status === "blocked") { setInviteMsg(t("요청할 수 없는 사용자")); return; }
       if (r && r.ok) {
         const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
         const name = (pub && pub.nickname) || pubUsername || "상대";
         setReqState(status);
-        setInviteMsg(status === "accepted" ? "친구 추가 완료" : status === "exists" ? "이미 친구이거나 요청함" : "친구 요청을 자동 발송");
-        if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(name + "님에게 친구 요청 발송"); }
-        else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); setReqPopup(name + "님과 친구 추가 완료"); }
+        setInviteMsg(status === "accepted" ? t("친구 추가 완료") : status === "exists" ? t("이미 친구이거나 요청함") : t("친구 요청을 자동 발송"));
+        if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(t("{0}님에게 친구 요청 발송", (name))); }
+        else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); setReqPopup(t("{0}님과 친구 추가 완료", (name))); }
       }
     })();
   }, [autoInvite, me, myUid, pubUid, mid]);
@@ -705,12 +704,12 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
     setReqBusy(true);
     const r = await friendRequestByMid(mid);
     setReqBusy(false);
-    if (r && r.status === "blocked") { setInviteMsg("요청할 수 없는 사용자"); return; }
+    if (r && r.status === "blocked") { setInviteMsg(t("요청할 수 없는 사용자")); return; }
     if (r && r.ok) {
       const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
       const name = (pub && pub.nickname) || pubUsername || "상대";
-      if (status === "pending") setReqPopup(name + "님에게 친구 요청 발송");
-      else if (status === "accepted") setReqPopup(name + "님과 친구 추가 완료");
+      if (status === "pending") setReqPopup(t("{0}님에게 친구 요청 발송", (name)));
+      else if (status === "accepted") setReqPopup(t("{0}님과 친구 추가 완료", (name)));
       setReqState(status);
       if (status === "pending") notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid });
       else if (status === "accepted") { notifyCreate(pubUid, "friend_accepted", { byUsername: me }); notifyResolveFriendRequest(myUid, pubUid, "accepted"); }
@@ -721,7 +720,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       {safetyMsg && <div role="status" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 410, padding: "10px 16px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700 }}>{safetyMsg}</div>}
       <AnimatePresence>
-        {reportOpen && <ReportSheet key="profile-report" targetName={(pub && pub.nickname) || pubUsername || "사용자"} snippet={null} alreadyBlocked={blockedByMe} onSubmit={submitProfileReport} onClose={() => setReportOpen(false)} />}
+        {reportOpen && <ReportSheet key="profile-report" targetName={(pub && pub.nickname) || pubUsername || t("사용자")} snippet={null} alreadyBlocked={blockedByMe} onSubmit={submitProfileReport} onClose={() => setReportOpen(false)} />}
       </AnimatePresence>
       {/* (사용자 요청) 친구 요청이 나갔을 때(초대 링크 자동 요청·수동 버튼 공통) 화면 위쪽에 잠깐
           떴다 사라지는 팝업 알림 — 카드 안쪽의 작은 inviteMsg 문구만으로는 눈에 잘 안 띈다는 피드백. */}
@@ -740,17 +739,17 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
       </AnimatePresence>
       <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
         <div className="flex items-center gap-2">
-          <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
+          <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("프로필")}</span>
         </div>
         {me && pubUid && !isSelf && <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} />}
-        {!wide && <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>}
+        {!wide && <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>}
       </div>
       <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
-          <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>이 MID의 유저 없음</p>
+          <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>{t("이 MID의 유저 없음")}</p>
         ) : !pub ? (
-          <p style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>불러오는 중…</p>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>{t("불러오는 중…")}</p>
         ) : (
           <div style={{ display: "flex", flexDirection: wide ? "row" : "column", gap: wide ? 84 : 0, alignItems: "flex-start" }}>
             {/* 왼쪽(데스크톱) / 상단(모바일) — 신원·MID·친구 요청. 처음 진입할 때 한 번, 왼쪽에서
@@ -823,7 +822,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
                       reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} /></span>
                         : reqState === "pending" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><Clock size={14} style={{ flexShrink: 0 }} /></span>
                           : reqState === "exists" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}><UserCheck size={14} style={{ flexShrink: 0 }} /></span>
-                            : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} aria-label="친구 요청" title="친구 요청" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5, whiteSpace: "nowrap" }}><UserPlus size={14} /></motion.button>
+                            : <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.96 }} onClick={doReq} disabled={reqBusy} aria-label={t("친구 요청")} title={t("친구 요청")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: reqBusy ? "default" : "pointer", opacity: reqBusy ? 0.6 : 1, fontSize: 12.5, whiteSpace: "nowrap" }}><UserPlus size={14} /></motion.button>
                     ) : null
                   )}
                 </div>
@@ -911,25 +910,25 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>
-            {mine ? otherUsername + "님에게 " + what + "신청함" : otherUsername + "님이 " + what + "신청함"}
+            {mine ? t("{0}님에게 {1}신청함", (otherUsername), what) : t("{0}님이 {1}신청함", (otherUsername), what)}
             <span style={{ display: "block", minHeight: 14, fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{detail}</span>
           </div>
         </div>
         {status === "pending" ? (
           mine ? (
-            <button onClick={cancel} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>취소</button>
+            <button onClick={cancel} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("취소")}</button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락</button>
-              <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>거절</button>
+              <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("수락")}</button>
+              <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("거절")}</button>
             </div>
           )
         ) : (
           canEnter ? (
-            <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>수락됨. 입장하기</button>
+            <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("수락됨. 입장하기")}</button>
           ) : (
             <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
-              {status === "accepted" ? (liveGame ? "끝난 " + (special ? "대결" : "대국") : "수락됨") : status === "declined" ? "거절됨" : "취소됨"}
+              {status === "accepted" ? (liveGame ? t("끝난 {0}", special ? t("대결") : t("대국")) : t("수락됨")) : status === "declined" ? t("거절됨") : t("취소됨")}
             </div>
           )
         )}
@@ -951,7 +950,7 @@ function BlindMoveBubble({ body, color }) {
   const prefix = pm ? pm[1] : "", san = pm ? pm[2] : s;
   const pieceType = /^O-O/.test(san) ? "K" : /^[KQRBN]/.test(san) ? san[0] : "P";
   return (
-    <span aria-label={(color === "w" ? "백" : "흑") + "의 수 " + s} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px 5px 7px", borderRadius: 12, background: st.bg, border: "1px solid " + st.border, boxShadow: st.shadow, color: st.text, fontWeight: 800, fontSize: 14, lineHeight: 1.2, letterSpacing: ".01em", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+    <span aria-label={t("{0}의 수 {1}", (color === "w" ? t("백") : t("흑")), s)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px 5px 7px", borderRadius: 12, background: st.bg, border: "1px solid " + st.border, boxShadow: st.shadow, color: st.text, fontWeight: 800, fontSize: 14, lineHeight: 1.2, letterSpacing: ".01em", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
       <span style={{ display: "inline-flex", width: 20, height: 20, flexShrink: 0, filter: st.glyph }}><PieceGlyph type={pieceType} color={color} size={20} /></span>
       <span><span style={{ opacity: .62, fontWeight: 700, fontSize: 12 }}>{prefix}</span>{san}</span>
     </span>
@@ -1239,7 +1238,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       oldest = rows.length ? rows[0].created_at : null;
     }
     if (extra.length) { setMsgs((prev) => { const ids = new Set(prev.map((m) => m.id)); return [...extra.filter((m) => !ids.has(m.id)), ...prev]; }); setHasOlder(more); }
-    if (!have) { showNotice("원문 메시지 없음"); return; }
+    if (!have) { showNotice(t("원문 메시지 없음")); return; }
     scrollModeRef.current = { jumpTo: id };
     setFlashId(id); setTimeout(() => setFlashId((f) => (f === id ? null : f)), 1800);
     if (!extra.length) { const el = document.getElementById("chatmsg-" + id); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); scrollModeRef.current = "bottom"; }
@@ -1276,25 +1275,25 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       return { ...prev, [m.id]: on ? [...list, { uid: myUid, emoji }] : list };
     });
     const ok = await chatReactToggle(m.id, myUid, emoji, on);
-    if (!ok) { showNotice("반응 등록 실패"); loadReactions(); }
+    if (!ok) { showNotice(t("반응 등록 실패")); loadReactions(); }
   };
   const castVote = async (m, san) => {
     setPollVotes((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((v) => v.uid !== myUid), { uid: myUid, san }] }));
     const ok = await chatPollVote(m.id, myUid, san);
-    if (!ok) { showNotice("투표 실패"); loadReactions(); }
+    if (!ok) { showNotice(t("투표 실패")); loadReactions(); }
   };
   // (v0.5.7) 차단 — 내가 이 상대를 차단했는지. 차단하면 입력창 대신 안내가 뜨고, 서버도 양쪽 전송을 막는다.
   useEffect(() => { let off = false; chatBlocksFetch(myUid).then((l) => { if (!off) setBlockedByMe(l.includes(otherUid)); }); return () => { off = true; }; }, [myUid, otherUid]);
   const setBlocked = async (on) => {
     const ok = await chatBlockSet(myUid, otherUid, on);
-    if (ok) { setBlockedByMe(on); showNotice(on ? otherUsername + "님 차단됨" : "차단 해제됨"); }
-    else showNotice(on ? "차단 실패" : "차단 해제 실패");
+    if (ok) { setBlockedByMe(on); showNotice(on ? t("{0}님 차단됨", (otherUsername)) : t("차단 해제됨")); }
+    else showNotice(on ? t("차단 실패") : t("차단 해제 실패"));
     return ok;
   };
   const submitReport = async (reason, detail, alsoBlock) => {
     const target = reportFor && reportFor.msg;
     const r = await userReport(otherUid, target ? target.id : null, reason, detail);
-    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); showNotice("신고 접수. 검토 후 조치"); }
+    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); showNotice(t("신고 접수. 검토 후 조치")); }
     return r;
   };
   // (v0.5.7) 수 투표 엔진 정답 — 앱의 분석 엔진으로 그 포지션의 최선의 수를 찾는다(최대 약 2.5초).
@@ -1374,7 +1373,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       const ok = await chatEditMessage(editingId, body);
       setSending(false);
       if (ok) { setEditingId(null); setText(""); load(); }
-      else setCmdError("메시지 수정 실패. 잠시 후 다시 시도");
+      else setCmdError(t("메시지 수정 실패. 잠시 후 다시 시도"));
       return;
     }
     if (!body && !emoji) return;
@@ -1402,7 +1401,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         case "draw": {
           // (버그 수정, 사용자 제보) /draw는 상대의 동의가 있어야 끝난다 — 내가 이미 제안했으면 중복이라 막고, 상대가 먼저
           // 제안해 둔 상태에서 내가 보내면 그게 동의라 대국이 끝난다.
-          if (blindGame.drawOfferUid === myUid) { setCmdError("이미 무승부 제안 중. 상대 응답 대기"); return; }
+          if (blindGame.drawOfferUid === myUid) { setCmdError(t("이미 무승부 제안 중. 상대 응답 대기")); return; }
           setSending(true);
           const isAccepting = blindGame.drawOfferUid === otherUid;
           const ok = await chatSend(myUid, otherUid, "/draw", null);
@@ -1418,14 +1417,14 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 서버에 실제로 있는지 먼저 확인한다.
           setSending(true);
           const data = puzzlePreviews[cmd.no] !== undefined ? puzzlePreviews[cmd.no] : await puzzleFetch(cmd.no);
-          if (!data) { setSending(false); setCmdError("#" + cmd.no + " 번호의 퍼즐 없음. 전송 불가"); return; }
+          if (!data) { setSending(false); setCmdError(t("#{0} 번호의 퍼즐 없음. 전송 불가", cmd.no)); return; }
           const ok = await puzzleShareSend(cmd.no, myUid, otherUid);
           setSending(false); finish(ok, "퍼즐 전송 실패. 잠시 후 다시 시도"); return;
         }
         case "legacy": {
           const slotKey = LEGACY_SLOT_ORDER[cmd.slot - 1];
-          if (cmd.slot >= 4 && !myIsGM) { setCmdError("추가 유산은 그랜드마스터 티어부터 설정 가능"); return; }
-          if (!myLegacies || !myLegacies[slotKey]) { setCmdError("#" + cmd.slot + "번 유산 미등록"); return; }
+          if (cmd.slot >= 4 && !myIsGM) { setCmdError(t("추가 유산은 그랜드마스터 티어부터 설정 가능")); return; }
+          if (!myLegacies || !myLegacies[slotKey]) { setCmdError(t("#{0}번 유산 미등록", cmd.slot)); return; }
           setSending(true);
           const ok = await legacyShareSend(myUid, otherUid, slotKey);
           setSending(false); finish(ok, "유산 전송 실패. 잠시 후 다시 시도"); return;
@@ -1434,22 +1433,22 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           // 코드가 실제로 재생 가능한지(sanSequenceValid)부터 확인하고 보낸다 — 틀린 /review는 평범한 텍스트로 흘려보내지 않는다(사용자 요청).
           let game = null;
           if (cmd.kind === "recent") {
-            if (!myChesscomGames || !myChesscomGames.length) { setCmdError("연동된 chess.com 계정의 최근 대국 없음"); return; }
+            if (!myChesscomGames || !myChesscomGames.length) { setCmdError(t("연동된 chess.com 계정의 최근 대국 없음")); return; }
             const g = [...myChesscomGames].sort((x, y) => (y.endTime || 0) - (x.endTime || 0))[0];
             game = { sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id };
           } else if (cmd.kind === "pgn") {
             const fenTagMatch = /\[FEN\s+"([^"]+)"\]/.exec(cmd.code);
             const fenRoot = fenTagMatch ? parseFenFull(fenTagMatch[1]) : null;
             const sans = parsePgnSans(cmd.code);
-            if ((fenTagMatch && !fenRoot) || !sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError("유효하지 않은 PGN 코드. 사용법: /review pgn <코드>"); return; }
+            if ((fenTagMatch && !fenRoot) || !sans.length || !sanSequenceValid(sans, fenRoot)) { setCmdError(t("유효하지 않은 PGN 코드. 사용법: /review pgn <코드>")); return; }
             game = { sans, fenRoot: fenTagMatch ? fenTagMatch[1] : null };
           } else {
-            if (!looksLikeFen(cmd.code) || !parseFenFull(cmd.code)) { setCmdError("유효하지 않은 FEN 코드. 사용법: /review fen <코드>"); return; }
+            if (!looksLikeFen(cmd.code) || !parseFenFull(cmd.code)) { setCmdError(t("유효하지 않은 FEN 코드. 사용법: /review fen <코드>")); return; }
             game = { sans: [], fenRoot: cmd.code };
           }
           setSending(true);
           const rid = await reviewGameIdentifier(game);
-          if (!rid) { setSending(false); setCmdError("유효하지 않은 코드"); return; }
+          if (!rid) { setSending(false); setCmdError(t("유효하지 않은 코드")); return; }
           if (game.id) reviewedGameShare(game.id, game).catch(() => { });
           const ok = await reviewShareSend(myUid, otherUid, rid);
           setSending(false); finish(ok, "리뷰 전송 실패. 잠시 후 다시 시도"); return;
@@ -1459,21 +1458,21 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           if (cmd.gameType) {
             setSending(true);
             try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: "0-0", p_game_type: cmd.gameType }); finish(true); }
-            catch (e) { setCmdError(inviteFailText(e, "대결")); }
+            catch (e) { setCmdError(inviteFailText(e, t("대결"))); }
             setSending(false); return;
           }
           const tc = parsePlayCommandArg(cmd.arg);
-          if (!tc) { setCmdError("시간은 1~180분, 증가는 0~180초예요. 사용법: /play <분>[+<초>]"); return; }
+          if (!tc) { setCmdError(t("시간은 1~180분, 증가는 0~180초예요. 사용법: /play <분>[+<초>]")); return; }
           // 채팅을 보낼 수 있다는 건 이미 accepted 친구라는 뜻이라 pvp_invite_friend의 친구 검사도 통과한다. RPC가 카드 메시지를 함께 남긴다.
           setSending(true);
           try { await sbRpc("pvp_invite_friend", { p_to_uid: otherUid, p_time_control: tc.key, p_game_type: PVP_GAME_TYPE }); finish(true); }
-          catch (e) { setCmdError(inviteFailText(e, "대국")); }
+          catch (e) { setCmdError(inviteFailText(e, t("대국"))); }
           setSending(false); return;
         }
         case "poll": case "board": {
           // FEN을 비우면 포지션 고르기 창(+ 메뉴와 같은 창)을 연다.
           if (!cmd.fen) { setText(""); setPickSheet(cmd.name === "poll" ? "poll" : "cobo"); return; }
-          if (!parseFenFull(cmd.fen)) { setCmdError("FEN을 읽을 수 없어요. 사용법: " + (cmd.name === "poll" ? "/poll [FEN]" : "/board [FEN]")); return; }
+          if (!parseFenFull(cmd.fen)) { setCmdError(t("FEN을 읽을 수 없어요. 사용법: {0}", cmd.name === "poll" ? "/poll [FEN]" : "/board [FEN]")); return; }
           setText("");
           await sendSpecial(cmd.name === "poll" ? { poll: { fen: cmd.fen } } : { cobo: { fen: cmd.fen, sans: [] } });
           return;
@@ -1500,7 +1499,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         if (sanSrc(board, mvTok, color)) {
           const whiteUid = blindGame.whiteFromUid, blackUid = whiteUid === myUid ? otherUid : myUid;
           // (버그 수정, 사용자 제보) 상대가 둘 차례면 보내도 수로 인식되지 않으므로 미리 막고 안내한다.
-          if ((color === "w" ? whiteUid : blackUid) !== myUid) { setCmdError("상대가 응수할 차례"); return; }
+          if ((color === "w" ? whiteUid : blackUid) !== myUid) { setCmdError(t("상대가 응수할 차례")); return; }
           setSending(true);
           const ok = await chatSend(myUid, otherUid, body, null);
           if (ok) {
@@ -1519,13 +1518,13 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const ok = await chatSendMessage(myUid, otherUid, body, emoji, replyTo ? { reply_to: replyTo.id } : null);
     setSending(false);
     if (ok) { setText(""); setReplyTo(null); load(); }
-    else setCmdError(blockedByMe ? "차단한 사용자에게는 메시지 전송 불가" : "전송 실패. 상대가 대화를 막았거나 연결이 불안정");
+    else setCmdError(blockedByMe ? t("차단한 사용자에게는 메시지 전송 불가") : t("전송 실패. 상대가 대화를 막았거나 연결이 불안정"));
   };
   // (v0.5.7) 수 투표·같이 보기 카드 보내기
   const sendSpecial = async (extra) => {
     setPickSheet(null); setCmdError("");
     const ok = await chatSendMessage(myUid, otherUid, null, null, extra);
-    if (ok) load(); else setCmdError("전송 실패. 잠시 후 다시 시도");
+    if (ok) load(); else setCmdError(t("전송 실패. 잠시 후 다시 시도"));
   };
   // (v0.5.7) 명령어 자동완성 — 이름을 치는 중이면 후보 목록, 이름 뒤 공백까지 쳤으면 쓰는 법 힌트.
   const cmdSugg = useMemo(() => chatCommandSuggestions(text, { blindActive: blindGame.active }), [text, blindGame.active]);
@@ -1565,7 +1564,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     setCmdError("");
     const ok = await chatDeleteMessage(m.id);
     if (ok) setMsgs((prev) => prev.filter((x) => x.id !== m.id));
-    else setCmdError("메시지 삭제 실패. 잠시 후 다시 시도");
+    else setCmdError(t("메시지 삭제 실패. 잠시 후 다시 시도"));
   };
   // (v0.3.4 버그 수정) 메시지끼리 간격이 좁아(6px) 위/아래로 여는 메뉴(34px)가 항상 이웃 메시지와
   // 겹쳤다 — 메뉴를 말풍선 위/아래가 아니라 말풍선이 없는 쪽 여백(대화창 중앙 쪽, 내 메시지는
@@ -1586,14 +1585,14 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           선택하면 그 헤더를 숨기므로, 이 헤더 하나가 뒤로가기(←)·닫기 역할을 모두 겸한다 —
           ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
-        <button onClick={onBack} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        <button onClick={onBack} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
         {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
             지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독.
             (사용자 요청) 사진·아이디 크기를 1.5배(28→42, 14→21)로 키우고, 둘 다 누르면 그 유저의
             프로필로 이동한다(onOpenUserProfile이 이미 pushState로 히스토리를 쌓아 두므로 뒤로가기를
             누르면 popstate 핸들러가 이 채팅창 위의 프로필 오버레이만 닫고 채팅창으로 자연스럽게
             돌아온다 — 별도 배선 불필요). */}
-        <button onClick={() => setViewProfile(otherUsername)} aria-label={otherUsername + " 프로필 보기"} className="press" style={{ position: "relative", display: "inline-flex", flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+        <button onClick={() => setViewProfile(otherUsername)} aria-label={t("{0} 프로필 보기", (otherUsername))} className="press" style={{ position: "relative", display: "inline-flex", flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 42, height: 42, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
             : <span style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
           <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={13} />
@@ -1608,12 +1607,12 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
       {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
           높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
       <div ref={listRef} onScroll={onListScroll} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>대화 없음. 첫 메시지 보내기</div>}
+        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>{t("대화 없음. 첫 메시지 보내기")}</div>}
         {/* (v0.5.7) 위로 스크롤하면 이전 메시지를 이어서 불러온다(버튼으로도) */}
         {hasOlder && msgs.length > 0 && (
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
-            {loadingOlder ? <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>이전 메시지 불러오는 중…</span>
-              : <button onClick={loadOlder} className="press" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 999, padding: "3px 10px", cursor: "pointer" }}>이전 메시지 더 보기</button>}
+            {loadingOlder ? <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{t("이전 메시지 불러오는 중…")}</span>
+              : <button onClick={loadOlder} className="press" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 999, padding: "3px 10px", cursor: "pointer" }}>{t("이전 메시지 더 보기")}</button>}
           </div>
         )}
         {msgs.map((m, i) => {
@@ -1629,7 +1628,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             return (
               <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={{ width: 260, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
-                  <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>사용 가능한 명령어</div>
+                  <div style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, marginBottom: 4 }}>{t("사용 가능한 명령어")}</div>
                   {CHAT_CMD_LIST.map((c) => (
                     <div key={c.name} style={{ fontSize: 11, color: T.ink, fontWeight: 600, marginTop: 1 }}><b style={{ fontFamily: SITE_FONT }}>{c.usage}</b> <span style={{ color: T.inkSoft }}>{c.desc}</span></div>
                   ))}
@@ -1646,8 +1645,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 <div className="flex items-center gap-1" style={{ padding: "5px 10px", borderRadius: 999, background: "rgba(196,154,80,.18)", border: "1px solid " + T.brass, color: T.brass, fontSize: 10.5, fontWeight: 800, textAlign: "center" }}>
                   <Sparkles size={11} />
                   {mine
-                    ? otherUsername + "님이 공유한 퍼즐을 풀어서 " + otherUsername + "님에게 XP +" + m.share_reward.amount + " 선물"
-                    : otherUsername + "님이 내가 공유한 퍼즐을 풀어서 XP +" + m.share_reward.amount + " 획득"}
+                    ? t("{0}님이 공유한 퍼즐을 풀어서 {1}님에게 XP +{2} 선물", (otherUsername), otherUsername, m.share_reward.amount)
+                    : t("{0}님이 내가 공유한 퍼즐을 풀어서 XP +{1} 획득", (otherUsername), m.share_reward.amount)}
                 </div>
               </div>
             );
@@ -1687,7 +1686,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             return (
               <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
                 {!mine && (showAvatar
-                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label={t("프로필 보기")} style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                       {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
                         : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
                     </button>
@@ -1698,7 +1697,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && mine && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
@@ -1706,8 +1705,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                       예전엔 채팅 전용으로 따로 만든 원형 배지+텍스트 카드였다. 고정 픽셀 크기(size)로
                       재사용하고, 편집·공유 아이콘은 넘기지 않아 "보기 전용"이 된다(누르면 그대로 재생). */}
                   <div style={{ width: 150, userSelect: "none", WebkitUserSelect: "none" }}>
-                    {lp === undefined ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.ivory }}>불러오는 중…</div>
-                      : lp === null ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 10, fontSize: 11, color: T.ivory }}>유산 없음</div>
+                    {lp === undefined ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.ivory }}>{t("불러오는 중…")}</div>
+                      : lp === null ? <div style={{ width: 150, aspectRatio: "1 / 1", boxSizing: "border-box", borderRadius: 14, border: "1.5px solid " + T.brass, background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 10, fontSize: 11, color: T.ivory }}>{t("유산 없음")}</div>
                       : <LegacyStoneTile typeInfo={lp.typeInfo} entry={lp.entry} onOpen={() => setViewLegacy(lp)} size={150} />}
                   </div>
                 </div>
@@ -1749,7 +1748,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             return (
               <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
                 {!mine && (showAvatar
-                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label={t("프로필 보기")} style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                       {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
                         : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
                     </button>
@@ -1760,7 +1759,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && mine && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>
+                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
@@ -1773,8 +1772,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                       그 아래 인식되는 오프닝 이름(OpenChess 수 체계, openingNameOf)까지 표시한다.
                       우측 버튼(리뷰 보기)의 동작은 그대로 둔다. */}
                   <div style={{ width: 248, borderRadius: 14, padding: "9px 10px", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
-                    {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>불러오는 중…</div>
-                      : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>리뷰 로드 실패</div>
+                    {rp === undefined ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>{t("불러오는 중…")}</div>
+                      : rp === null ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "10px 0" }}>{t("리뷰 로드 실패")}</div>
                       : (() => {
                           const g = rp.game;
                           const hasPD = !!(g.white || g.black || g.color);
@@ -1784,10 +1783,10 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                             const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
                             return (
                               <>
-                                <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                                <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                                 <div style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
                                   <div style={{ fontSize: 12.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+                                    <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
                                     {!won && !lost && g.sans && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.sans)})</span>}
                                     {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
                                   </div>
@@ -1816,8 +1815,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                         입력한다(리뷰 페이지 대신). 초록색 리뷰 버튼을 오른쪽에 추가해, 그 버튼만
                         실제 리뷰 페이지로 이동한다. 두 버튼 모두 /user의 chess.com 최근 대국 행과
                         같은 크기(30x30, 아이콘 13px)로 맞춘다. */}
-                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label="학습 탭에서 보기" title="학습 탭에서 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                    <BestMoveJumpButton size={30} disabled={!rp} title="리뷰 보기" onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
+                    <button onClick={() => onOpenSharedReviewOnBoard && onOpenSharedReviewOnBoard(m)} disabled={!rp} aria-label={t("학습 탭에서 보기")} title={t("학습 탭에서 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: rp ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#C9B58C", color: "#241509", border: "none", cursor: rp ? "pointer" : "default", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                    <BestMoveJumpButton size={30} disabled={!rp} title={t("리뷰 보기")} onClick={() => onOpenSharedReview && onOpenSharedReview(m)} />
                   </div>
                 </div>
                 </div>
@@ -1859,7 +1858,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             return (
               <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
                 {!mine && (showAvatar
-                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label={t("프로필 보기")} style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                       {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
                         : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
                     </button>
@@ -1870,8 +1869,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && (
                   <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}><Send size={10} />전달</button>
-                    {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>삭제</button>}
+                    <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}>{tx("{0}전달", <Send size={10} />)}</button>
+                    {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>}
                   </div>
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
@@ -1879,7 +1878,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                   {(pz === undefined || pz === null) ? (
                     <div style={{ width: 200, borderRadius: 14, overflow: "hidden", border: "1px solid #DCCBA8", background: "#fff", boxShadow: "0 3px 10px -4px rgba(0,0,0,.4)", userSelect: "none", WebkitUserSelect: "none" }}>
                       <div style={{ padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                        <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>{pz === undefined ? "불러오는 중…" : "퍼즐 없음"}</div>
+                        <div style={{ fontSize: 11, color: T.inkSoft, padding: "20px 0" }}>{pz === undefined ? t("불러오는 중…") : t("퍼즐 없음")}</div>
                       </div>
                     </div>
                   ) : (
@@ -1902,7 +1901,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               <React.Fragment key={m.id}>
                 <div id={"chatmsg-" + m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative", borderRadius: 14, transition: "background-color .4s", background: flashId === m.id ? "rgba(236,203,134,.45)" : "transparent" }}>
                   {!mine && (showAvatarC
-                    ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                    ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label={t("프로필 보기")} style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                         {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
                           : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
                       </button>
@@ -1989,10 +1988,10 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           return (
             <React.Fragment key={m.id}>
               {/* (v0.1.4 기능) 읽음 표시와 달리 말풍선 상단에 별도 줄로 "수정됨"을 표시한다. */}
-              {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>수정됨</span></div>}
+              {m.edited && <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}><span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, opacity: .75 }}>{t("수정됨")}</span></div>}
               <div id={"chatmsg-" + m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative", borderRadius: 12, transition: "background-color .4s", background: flashId === m.id ? "rgba(236,203,134,.45)" : "transparent" }}>
                 {!mine && (showAvatar
-                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label="프로필 보기" style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
+                  ? <button onClick={() => setViewProfile(otherUsername)} className="press" aria-label={t("프로필 보기")} style={{ flexShrink: 0, padding: 0, border: "none", background: "none", cursor: "pointer" }}>
                       {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: 8, objectFit: "cover", border: "1px solid #C9B58C" }} />
                         : <span style={{ width: 26, height: 26, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
                     </button>
@@ -2000,7 +1999,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               <div className="flex items-center" style={{ gap: 4, position: "relative" }}
                 onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                 onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
-                {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>읽음</span>}
+                {mine && showRead && Math.abs(dx) < 4 && <span style={{ fontSize: 9, color: T.inkSoft, fontWeight: 700, flexShrink: 0 }}>{t("읽음")}</span>}
                 {/* (18차 보충 UX7 → 19차 선행) 드래그로 생긴 공간에 보낸 시각 표시 — 내 메시지는 오른쪽, 상대 메시지는 왼쪽.
                     래퍼를 inline-block으로 두어 transform이 정상 적용(말풍선 왜곡 해소)되고, overflow 미적용으로 시각이 가려지지 않는다. */}
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
@@ -2012,13 +2011,13 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                     myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
                     onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
                     onReply={() => { setMenuFor(null); setReplyTo(m); }}
-                    onCopy={m.body ? () => { setMenuFor(null); try { navigator.clipboard.writeText(m.body); showNotice("복사됨"); } catch { showNotice("복사 실패"); } } : null}
+                    onCopy={m.body ? () => { setMenuFor(null); try { navigator.clipboard.writeText(m.body); showNotice(t("복사됨")); } catch { showNotice(t("복사 실패")); } } : null}
                     onEdit={mine && m.body != null ? () => startEdit(m) : null}
                     onDelete={mine ? () => doDelete(m) : null}
                     onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
                 )}
                 <span style={{ display: "inline-flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
-                  {m.reply_to != null && (() => { const t = replyTargetOf(m.reply_to); return <ReplyQuote target={t} authorName={t ? nameOf(t.from_uid) : "답장"} mine={mine} onJump={() => jumpTo(m.reply_to, t && t.created_at)} />; })()}
+                  {m.reply_to != null && (() => { const t = replyTargetOf(m.reply_to); return <ReplyQuote target={t} authorName={t ? nameOf(t.from_uid) : t("답장")} mine={mine} onJump={() => jumpTo(m.reply_to, t && t.created_at)} />; })()}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
                     : blindGame.moveColors[m.id] ? <BlindMoveBubble body={m.body} color={blindGame.moveColors[m.id]} />
                     : <span style={{ display: "inline-block", maxWidth: "min(50vw, 320px)", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{renderMentionText(m.body)}</span>}
@@ -2046,7 +2045,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           // (v0.2.6 버그 수정) 입력 중 말풍선은 투명도 50%로 표시해 "아직 확정된 메시지가 아님"을 시각적으로 구분한다.
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 0.5, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }} style={{ display: "flex", justifyContent: "flex-start" }}>
             <div className="flex items-center" style={{ gap: 6, padding: "7px 11px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>
-              <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>입력 중</span>
+              <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{t("입력 중")}</span>
               <span className="flex items-center" style={{ gap: 3 }}>
                 {[0, 1, 2].map((di) => <motion.span key={di} animate={{ y: [0, -4, 0] }} transition={{ duration: 0.9, repeat: Infinity, delay: di * 0.15, ease: "easeInOut" }} style={{ width: 5, height: 5, borderRadius: 999, background: T.inkSoft, display: "inline-block" }} />)}
               </span>
@@ -2059,8 +2058,8 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         {pickerOpen && pickerPos && <EmojiPicker pos={pickerPos} onPick={(code) => send(null, code)} onClose={() => setPickerOpen(false)} />}
         {editingId != null && (
           <div className="flex items-center justify-between" style={{ marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass }}>
-            <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>메시지 수정 중</span>
-            <button onClick={cancelEdit} aria-label="수정 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
+            <span style={{ fontSize: 10.5, color: T.brass, fontWeight: 800 }}>{t("메시지 수정 중")}</span>
+            <button onClick={cancelEdit} aria-label={t("수정 취소")} className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
           </div>
         )}
         {/* (v0.5.7, 사용자 요청 "명령어 체계 정리") "/"를 치면 전체 목록 대신, 친 글자로 좁혀지는 자동완성(↑↓·Tab·Enter)이 뜨고
@@ -2071,8 +2070,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         {/* (v0.5.7) /blind로 준비만 된 상태 — 첫 수를 어떻게 보내는지 입력창 바로 위에서 알려 준다(대국이 시작되면 사라짐). */}
         {blindGame.armed && editingId == null && (
           <p style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px dashed " + T.brass, fontSize: 10.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 700 }}>
-            <span style={{ color: T.brass, fontWeight: 800 }}>블라인드 대국 준비됨</span> · <b style={{ color: T.ink }}>1.e4</b>처럼 백의 첫 수를 보내면 시작
-          </p>
+            <span style={{ color: T.brass, fontWeight: 800 }}>{t("블라인드 대국 준비됨")}</span> · {tx("{0}처럼 백의 첫 수를 보내면 시작", <b style={{ color: T.ink }}>1.e4</b>)}</p>
         )}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <AnimatePresence>
@@ -2083,24 +2081,24 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
         </AnimatePresence>
         {blockedByMe ? (
           <div className="flex items-center justify-between" style={{ gap: 8, padding: "9px 12px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6" }}>
-            <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700 }}>차단한 사용자. 서로 메시지 전송 불가</span>
-            <button onClick={() => setBlocked(false)} className="press" style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>차단 해제</button>
+            <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 700 }}>{t("차단한 사용자. 서로 메시지 전송 불가")}</span>
+            <button onClick={() => setBlocked(false)} className="press" style={{ flexShrink: 0, padding: "6px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("차단 해제")}</button>
           </div>
         ) : (
         <div className="flex items-center gap-2" style={{ position: "relative" }}>
           {/* (v0.5.7) "+" — 수 투표·같이 보기 보드 */}
           <AttachButton open={attachOpen} onClick={() => setAttachOpen((v) => !v)} />
           {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onPoll={() => { setAttachOpen(false); setPickSheet("poll"); }} onCobo={() => { setAttachOpen(false); setPickSheet("cobo"); }} />}
-          <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label="이모티콘" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
-          <input value={text} onChange={onTextChange} onKeyDown={onInputKeyDown} placeholder={editingId != null ? "수정할 내용 입력…" : "메시지 입력…"} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
-          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? "수정" : "전송"}</button>
+          <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label={t("이모티콘")} style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
+          <input value={text} onChange={onTextChange} onKeyDown={onInputKeyDown} placeholder={editingId != null ? t("수정할 내용 입력…") : t("메시지 입력…")} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
+          <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? t("수정") : t("전송")}</button>
         </div>
         )}
       </div>
       {/* (v0.5.7) 신고·포지션 고르기(투표/같이 보기)·같이 보기 화면 */}
       <AnimatePresence>
         {reportFor && <ReportSheet key="report" targetName={otherUsername} snippet={reportFor.msg ? chatSnippet(reportFor.msg) : null} alreadyBlocked={blockedByMe} onSubmit={submitReport} onClose={() => setReportFor(null)} />}
-        {pickSheet && <PositionPickSheet key="pick" Board={Board} title={pickSheet === "poll" ? "\"여기서 뭐 둘래?\" 투표 만들기" : "같이 보기 보드 시작"} cta={pickSheet === "poll" ? "이 포지션으로 투표 보내기" : "이 포지션으로 같이 보기"}
+        {pickSheet && <PositionPickSheet key="pick" Board={Board} title={pickSheet === "poll" ? t("\"여기서 뭐 둘래?\" 투표 만들기") : t("같이 보기 보드 시작")} cta={pickSheet === "poll" ? t("이 포지션으로 투표 보내기") : t("이 포지션으로 같이 보기")}
           onClose={() => setPickSheet(null)} onSend={(fen) => sendSpecial(pickSheet === "poll" ? { poll: { fen } } : { cobo: { fen, sans: [] } })} />}
         {coboMsg && <CoBoardScreen key="cobo" Board={Board} sbClient={sbClient} msg={coboMsg} myUid={myUid} myName={myUsername} otherName={otherUsername} onClose={() => setCoboMsg(null)}
           onOpenAnalysis={(root, sans) => { setCoboMsg(null); const fen = fenOfRoot(root, sans); if (root || !sans.length) { onOpenBoardFen && onOpenBoardFen(fen); } else { onOpenBoardSans && onOpenBoardSans(sans); } }} />}
@@ -2140,7 +2138,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
     const ok = await legacyShareSend(myUid, toUid, slotKey);
     setBusy(null);
     if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
-    else setSendErr("전달 실패. 잠시 후 다시 시도");
+    else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
   };
   const color = QCOLOR[typeInfo.kind];
   // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴.
@@ -2149,8 +2147,8 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 380, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />유산 공유</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}유산 공유", <Send size={15} />)}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)", flexShrink: 0 }}>
           <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
@@ -2161,8 +2159,8 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
         </div>
         <div style={{ padding: 12, minHeight: 120, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -2175,7 +2173,7 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
                         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
                     </div>
                   );
                 })}
@@ -2210,9 +2208,9 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
   const [side, setSide] = useState("w");
   const loadPgnText = () => {
     const raw = pgnText.trim();
-    if (!raw) { setPgnErr("PGN 입력 필요"); return; }
+    if (!raw) { setPgnErr(t("PGN 입력 필요")); return; }
     const tokens = parsePgnMoves(raw);
-    if (!tokens.length) { setPgnErr("기보를 읽을 수 없음"); return; }
+    if (!tokens.length) { setPgnErr(t("기보를 읽을 수 없음")); return; }
     // (검증) NotationTools.submit과 동일한 방식 — 시작 위치부터 한 수씩 실제로 재생해, 불법적인
     // 수가 섞여 있으면(오타·변화수 등) 저장 전에 걸러낸다.
     let board = startBoard(); const validated = [];
@@ -2220,11 +2218,11 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
       const color = validated.length % 2 === 0 ? "w" : "b";
       const clean = t.replace(/[+#]/g, "");
       const src = sanSrc(board, clean, color);
-      if (!src) { setPgnErr("기보에 불법적인 수가 포함되어 있어요(" + (validated.length + 1) + "번째 수)."); return; }
+      if (!src) { setPgnErr(t("기보에 불법적인 수가 포함되어 있어요({0}{1}번째 수).", validated.length, 1)); return; }
       board = applySan(board, t, color);
       validated.push(t);
     }
-    if (validated.length < 1) { setPgnErr("기보가 너무 짧음"); return; }
+    if (validated.length < 1) { setPgnErr(t("기보가 너무 짧음")); return; }
     setPgnErr(""); setSans(validated); setStep("analyzing");
   };
   // (v0.3.5 버그 수정) ReviewPage와 같은 이유 — engine이 항상 "ready"였던 전용 훅(useReviewEngine) 대신
@@ -2273,19 +2271,19 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.12)", flexShrink: 0 }}>
-          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>유산 • {typeInfo.short}</span></div>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{tx("유산 • {0}", typeInfo.short)}</span></div>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
         {(step === "source" || step === "paste") && (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 대국 선택</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 대국 선택", stepNo)}</div>
         {step === "source" && (
           <div>
-            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>이 유산에 새길 대국 선택. {typeInfo.label}은 "{QLABEL[typeInfo.kind]}" 등급의 수만 지정 가능</p>
+            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>{tx("이 유산에 새길 대국 선택. {0}은 \"{1}\" 등급의 수만 지정 가능", typeInfo.label, QLABEL[typeInfo.kind])}</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button onClick={() => setStep("paste")} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", textAlign: "left" }}>PGN 직접 입력</button>
-              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>chess.com 대국에서 선택{!chesscomReady ? " (설정에서 chess.com 계정 연동 시 이용 가능)" : ""}</button>
+              <button onClick={() => setStep("paste")} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", textAlign: "left" }}>{t("PGN 직접 입력")}</button>
+              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>{tx("chess.com 대국에서 선택{0}", !chesscomReady ? t(" (설정에서 chess.com 계정 연동 시 이용 가능)") : "")}</button>
             </div>
             {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에
                 펼친다 — 각 대국 줄의 검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. */}
@@ -2294,16 +2292,16 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
                 <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setSide(g.color); setStep("analyzing"); }} />
               </div>
             )}
-            {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "8px 0", width: "100%", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>이 유산 삭제</button>}
+            {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "8px 0", width: "100%", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("이 유산 삭제")}</button>}
           </div>
         )}
         {step === "paste" && (
           <div>
-            <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder="PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)" rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5, resize: "vertical" }} />
+            <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder={t("PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)")} rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5, resize: "vertical" }} />
             {pgnErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pgnErr}</div>}
             {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>플레이한 진영</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>{t("플레이한 진영")}</div>
               <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
                 {[["w", "백"], ["b", "흑"]].map(([k, lab]) => (
                   <button key={k} type="button" onClick={() => setSide(k)} className="press" style={{ padding: "6px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: side === k ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: side === k ? T.ivoryHi : T.inkSoft }}>{lab}</button>
@@ -2311,8 +2309,8 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
               </div>
             </div>
             <div className="flex gap-2" style={{ marginTop: 10 }}>
-              <button onClick={() => setStep("source")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
-              <button onClick={loadPgnText} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>불러오기</button>
+              <button onClick={() => setStep("source")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
+              <button onClick={loadPgnText} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>{t("불러오기")}</button>
             </div>
           </div>
         )}
@@ -2320,26 +2318,26 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
         )}
         {step === "analyzing" && (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "24px 13px", textAlign: "center" }}>
-            <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>대국을 분석하는 중이에요… ({Math.round(progress * 100)}%)</div>
+            <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>{tx("대국을 분석하는 중이에요… ({0}", Math.round(progress * 100))}%)</div>
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8", maxWidth: 260, margin: "0 auto" }}>
               <div style={{ width: (progress * 100) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
             </div>
             {analyzeErr && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>분석 실패. 다시 시도</div>
-                <button onClick={() => setStep("source")} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
+                <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{t("분석 실패. 다시 시도")}</div>
+                <button onClick={() => setStep("source")} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
               </div>
             )}
           </div>
         )}
         {step === "pick" && result && (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 수 선택</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 수 선택", stepNo)}</div>
             {qualifying.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>이 대국에는 "{QLABEL[typeInfo.kind]}" 등급의 수 없음. 다른 대국 선택</div>
+              <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>{tx("이 대국에는 \"{0}\" 등급의 수 없음. 다른 대국 선택", QLABEL[typeInfo.kind])}</div>
             ) : (
               <>
-                <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{QLABEL[typeInfo.kind]}" 등급의 수 중 하나 선택</p>
+                <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{tx("{0}\" 등급의 수 중 하나 선택", QLABEL[typeInfo.kind])}</p>
                 <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                   {qualifying.map((m) => (
                     <MoveLongPressPreview key={m.ply} priorSans={sans.slice(0, m.ply)} san={m.san} kind={m.kind} flip={side === "b"}>
@@ -2352,36 +2350,36 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
                 </div>
               </>
             )}
-            <button onClick={() => setStep("source")} className="press" style={{ marginTop: 12, padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>다른 대국 선택</button>
+            <button onClick={() => setStep("source")} className="press" style={{ marginTop: 12, padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("다른 대국 선택")}</button>
           </div>
         )}
         {step === "count" && moveIndex != null && sans && (
           <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{stepNo}. 재생 범위 설정</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 재생 범위 설정", stepNo)}</div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
             {/* (사용자 요청) 지정한 수 앞뒤로 몇 수 함께 보여줄지를 직접 입력이 아니라 1~7수 범위의
                 선택 박스로 고른다. */}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>이 수보다 몇 수 전부터 표시할지 선택</p>
+            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>{t("이 수보다 몇 수 전부터 표시할지 선택")}</p>
             {beforeOptions.length > 0 ? (
               <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
                 <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
-                  {beforeOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
+                  {beforeOptions.map((n) => <option key={n} value={n}>{tx("{0}수", n)}</option>)}
                 </select>
-                <span style={{ fontSize: 11.5, color: T.inkSoft }}>전부터</span>
+                <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("전부터")}</span>
               </div>
             ) : (
-              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>이 수보다 앞선 수 없음</p>
+              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>{t("이 수보다 앞선 수 없음")}</p>
             )}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>이 수부터 몇 수까지 재생할지 선택</p>
+            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{t("이 수부터 몇 수까지 재생할지 선택")}</p>
             <div className="flex items-center gap-2">
               <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
-                {playOptions.map((n) => <option key={n} value={n}>{n}수</option>)}
+                {playOptions.map((n) => <option key={n} value={n}>{tx("{0}수", n)}</option>)}
               </select>
-              <span style={{ fontSize: 11.5, color: T.inkSoft }}>까지</span>
+              <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("까지")}</span>
             </div>
             <div className="flex gap-2" style={{ marginTop: 14 }}>
-              <button onClick={() => setStep("pick")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>뒤로</button>
-              <button onClick={save} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>저장</button>
+              <button onClick={() => setStep("pick")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
+              <button onClick={save} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>{t("저장")}</button>
             </div>
           </div>
         )}
@@ -2395,9 +2393,9 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
 function ChesscomRatingRow({ ccHeaderProf }) {
   if (!ccHeaderProf) return null;
   const items = [
-    { label: "래피드", v: ccHeaderProf.rapid },
-    { label: "블리츠", v: ccHeaderProf.blitz },
-    { label: "불릿", v: ccHeaderProf.bullet },
+    { label: t("래피드"), v: ccHeaderProf.rapid },
+    { label: t("블리츠"), v: ccHeaderProf.blitz },
+    { label: t("불릿"), v: ccHeaderProf.bullet },
   ].filter((x) => x.v != null);
   if (!items.length) return null;
   return (
@@ -2445,14 +2443,14 @@ function userSearchRow(r, onClick, right, opts) {
       {rank != null && (
         <span style={{ width: slotW, height: slotH, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           {rank <= 3
-            ? <img src={"/rank-" + rank + ".png"} alt={rank + "위"} style={{ height: medalH, width: "auto", maxWidth: slotW, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
+            ? <img src={"/rank-" + rank + ".png"} alt={t("{0}위", (rank))} style={{ height: medalH, width: "auto", maxWidth: slotW, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }} />
             : <span style={{ fontSize: 14, fontWeight: 900, color: T.inkSoft, fontFamily: SITE_FONT }}>{rank}</span>}
         </span>
       )}
       {p.photo ? <img src={p.photo} alt="" style={{ width: avatar, height: avatar, borderRadius: 9, objectFit: "cover", flexShrink: 0, ...(gmPhotoRingStyle(isGM, 2) || {}) }} /> : <span style={{ width: avatar, height: avatar, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(p.nickname || r.username || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         {/* (사용자 요청) "나" 표시는 그랜드마스터 왕관 아이콘보다 오른쪽에 온다. */}
-        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>나</span>}</div>
+        <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>{t("나")}</span>}</div>
         {/* (사용자 요청) 소개 — 닉네임 바로 밑, @핸들 위. 촘촘한 리더보드(compact)에서는 줄 수를
             늘리지 않도록 생략한다. */}
         {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
@@ -2508,33 +2506,33 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
           카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>유저 검색</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t("유저 검색")}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
         </div>
         <div style={{ padding: 16, overflowY: "auto" }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
             {/* (v0.4.4 기능, 사용자 요청) "#ABCDE1234"처럼 MID로도 검색할 수 있다 — userSearch가 이
                 입력 형태를 인식해 mid로 곧장 조회한다. */}
-            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder="아이디 또는 #MID로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
-            <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder={t("아이디 또는 #MID로 검색")} autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
+            <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{t("검색")}</button>
           </div>
           {q.trim() ? (
-            busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저 없음</div> : null)
+            busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 중…")}</div>
+              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("일치하는 유저 없음")}</div> : null)
                 // (사용자 요청) 검색어로 찾은 결과도 기본(추천) 목록과 완전히 같은 블록 UI를 쓴다 —
               // 리더보드 행과 똑같이 우측에 티어 십각형 아이콘을, isMe 옵션으로 "나" 표시까지 그대로 준다.
               : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
                   <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
                   { isMe: r.id === myUid })}</FadeIn>)}</AnimatePresence></div>
-          ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+          ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
             : (sugFriends.length === 0 && sugTop.length === 0) ? null
               : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   {sugFriends.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>알 수도 있는 사람</div>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{t("알 수도 있는 사람")}</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {sugFriends.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
-                          <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>같이 아는 친구 {r.mutual}명</span>)}</FadeIn>)}
+                          <span style={{ fontSize: 10.5, color: T.inkSoft, flexShrink: 0, whiteSpace: "nowrap" }}>{tx("같이 아는 친구 {0}명", r.mutual)}</span>)}</FadeIn>)}
                       </div>
                     </div>
                   )}
@@ -2695,8 +2693,8 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
             전체를 닫으려면(X) 먼저 그 ←로 목록에 돌아와야 한다. */}
         {!chatWith && (
           <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>채팅</span>
-            <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+            <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("채팅")}</span>
+            <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
           </div>
         )}
         {chatWith ? (
@@ -2706,8 +2704,8 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
           </div>
         ) : (
           <div ref={rowsRef} style={{ padding: 12, minHeight: 140, maxHeight: narrow ? undefined : 440, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
-            {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-              : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>채팅 없음. 친구 목록에서 시작</div>
+            {rows == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+              : rows.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("채팅 없음. 친구 목록에서 시작")}</div>
               : rows.map(({ uid, m, unread, pinned, muted }, i) => {
                 const pr = profiles[uid] || {}; const pub = pr.pub || {};
                 return (
@@ -2732,7 +2730,7 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? "🎉 공유 보상 XP +" + m.share_reward.amount : m.puzzle_no != null ? "🧩 퍼즐 공유" : m.legacy_slot != null ? "💎 유산 공유" : m.review_id != null ? "📊 리뷰 공유" : m.pvp_invite_id != null ? "⚔️ 실시간 대국 신청" : m.poll ? "📊 \"여기서 뭐 둘래?\" 투표" : m.cobo ? "👥 같이 보기 보드 초대" : m.emoji ? "(이모티콘)" : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? t("🎉 공유 보상 XP +{0}", m.share_reward.amount) : m.puzzle_no != null ? t("🧩 퍼즐 공유") : m.legacy_slot != null ? t("💎 유산 공유") : m.review_id != null ? t("📊 리뷰 공유") : m.pvp_invite_id != null ? t("⚔️ 실시간 대국 신청") : m.poll ? t("📊 \"여기서 뭐 둘래?\" 투표") : m.cobo ? t("👥 같이 보기 보드 초대") : m.emoji ? t("(이모티콘)") : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}
@@ -2740,9 +2738,9 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
                   </button>
                   {ctxFor === uid && (
                     <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: 0, ...(ctxDown ? { top: "calc(100% + 2px)" } : { bottom: "calc(100% + 2px)" }), transform: ctxDx ? "translateX(" + ctxDx + "px)" : undefined, zIndex: 30, width: CTX_MENU_W, background: T.ebony2, borderRadius: 10, border: "1px solid #000", padding: 4, display: "flex", flexDirection: "column", gap: 1, boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
-                      <button onClick={() => togglePin(uid, pinned)} className="press" style={ctxItemStyle}>{pinned ? <PinOff size={13} /> : <Pin size={13} />}{pinned ? "고정 해제" : "고정"}</button>
-                      <button onClick={() => toggleMute(uid, muted)} className="press" style={ctxItemStyle}>{muted ? <Bell size={13} /> : <BellOff size={13} />}{muted ? "알림 받기" : "알림 끄기"}</button>
-                      <button onClick={() => { setCtxFor(null); setConfirmClear({ uid, username: pub.nickname || pub.displayId || pr.username }); }} className="press" style={{ ...ctxItemStyle, color: "#F4A0A0" }}><Trash2 size={13} />삭제</button>
+                      <button onClick={() => togglePin(uid, pinned)} className="press" style={ctxItemStyle}>{pinned ? <PinOff size={13} /> : <Pin size={13} />}{pinned ? t("고정 해제") : t("고정")}</button>
+                      <button onClick={() => toggleMute(uid, muted)} className="press" style={ctxItemStyle}>{muted ? <Bell size={13} /> : <BellOff size={13} />}{muted ? t("알림 받기") : t("알림 끄기")}</button>
+                      <button onClick={() => { setCtxFor(null); setConfirmClear({ uid, username: pub.nickname || pub.displayId || pr.username }); }} className="press" style={{ ...ctxItemStyle, color: "#F4A0A0" }}>{tx("{0}삭제", <Trash2 size={13} />)}</button>
                     </div>
                   )}
                   </div>
@@ -2757,11 +2755,11 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
     {confirmClear && (
       <div onClick={() => setConfirmClear(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>대화 삭제</div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{confirmClear.username}님과의 대화를 삭제할까요? 내 화면에서만 사라지고 상대 화면에는 남음</p>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("대화 삭제")}</div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{tx("{0}님과의 대화를 삭제할까요? 내 화면에서만 사라지고 상대 화면에는 남음", confirmClear.username)}</p>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => setConfirmClear(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
-            <button onClick={doClear} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+            <button onClick={() => setConfirmClear(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>{t("취소")}</button>
+            <button onClick={doClear} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>{t("삭제")}</button>
           </div>
         </div>
       </div>
@@ -2790,8 +2788,8 @@ function PvpSpectateModal({ gameId, onClose }) {
         const rows = await sbSelect("pvp_games?id=eq." + gameId + "&select=*");
         if (cancelled) return;
         if (rows && rows[0]) applyRow(rows[0]);
-        else setErr("대국 없음 (이미 끝났거나 취소됐을 수 있음)");
-      } catch { if (!cancelled) setErr("대국 정보 로드 실패"); }
+        else setErr(t("대국 없음 (이미 끝났거나 취소됐을 수 있음)"));
+      } catch { if (!cancelled) setErr(t("대국 정보 로드 실패")); }
     })();
     return () => { cancelled = true; };
   }, [gameId, applyRow]);
@@ -2869,12 +2867,12 @@ function PvpSpectateModal({ gameId, onClose }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.68)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink }}><Eye size={17} />관전</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}관전", <Eye size={17} />)}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
         </div>
         <div style={{ padding: 16 }}>
           {err ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{err}</div>
-            : !game ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+            : !game ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
             : (
               <>
                 {playerRow(blackName, blackPub, displayClock && displayClock.b)}
@@ -2882,7 +2880,7 @@ function PvpSpectateModal({ gameId, onClose }) {
                   <Board board={board} flip={false} size={boardSize} showEval={false} showCoords interactive={false} />
                 </div>
                 {playerRow(whiteName, whitePub, displayClock && displayClock.w)}
-                {resultLabel && <div style={{ marginTop: 10, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brass }}>대국 종료 · {resultLabel}</div>}
+                {resultLabel && <div style={{ marginTop: 10, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brass }}>{tx("대국 종료 · {0}", resultLabel)}</div>}
               </>
             )}
         </div>
@@ -3042,15 +3040,15 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
             {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
-              {sel ? <button onClick={() => setSel(null)} aria-label="뒤로" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? "프로필" : "친구"}</span>
+              {sel ? <button onClick={() => setSel(null)} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? t("프로필") : t("친구")}</span>
             </span>
             {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
                 우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
               {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
-              {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label="친구 삭제" title="친구 삭제" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
-              <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label={t("친구 삭제")} title={t("친구 삭제")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
             </span>
           </div>
         )}
@@ -3082,7 +3080,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                   {statsViewToggle(statsView, setStatsView)}
-                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label="채팅" title="채팅" className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
                 </div>
               </div>
               {statsView === "cc" && p.chesscom ? (
@@ -3114,30 +3112,30 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
               {tabBtn("add", "추가")}
             </div>
             <div style={{ padding: 14, minHeight: 180, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
-              {!SB_ON ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>친구 기능은 서버 연결이 필요합니다. (현재 오프라인 모드)</div>
-                : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
+              {!SB_ON ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("친구 기능은 서버 연결이 필요합니다. (현재 오프라인 모드)")}</div>
+                : loading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
                 : tab === "friends" ? (
-                  friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>친구 없음. ‘추가’에서 아이디로 검색해 요청 발송</div>
+                  friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("친구 없음. ‘추가’에서 아이디로 검색해 요청 발송")}</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{friends.map((u, i) => (
                         // (버그 수정) 목록 줄의 삭제 버튼은 없애고(프로필 클릭 후 우상단에서만 삭제 가능),
                         // 채팅 버튼도 텍스트 대신 아이콘으로 — 헤더의 채팅 버튼과 같은 아이콘으로 통일.
                         <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>
                           {/* (기능7, 사용자 요청) 친구가 지금 실시간 대국 중이면 참가하지 않고 구경만 할 수 있는 관전 버튼. */}
-                          {friendActiveGames[u] != null && <button onClick={() => setSpectateGameId(friendActiveGames[u])} aria-label="관전" title="관전" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Eye size={14} /></button>}
-                          <button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label="채팅" title="채팅" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
+                          {friendActiveGames[u] != null && <button onClick={() => setSpectateGameId(friendActiveGames[u])} aria-label={t("관전")} title={t("관전")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Eye size={14} /></button>}
+                          <button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
                         </>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
-                  incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>받은/보낸 요청 없음</div>
+                  incoming.length === 0 && outgoing.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("받은/보낸 요청 없음")}</div>
                     : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                         {incoming.length > 0 && <div>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>받은 요청</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>{t("받은 요청")}</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
                             <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>보낸 요청</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>{t("보낸 요청")}</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{outgoing.map((u, i) => (
                             <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
                           ))}</AnimatePresence></div>
@@ -3147,12 +3145,12 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                   <div>
                     {/* (사용자 요청) 검색 박스를 친구 링크 박스보다 위에 표시한다. */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                      <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder="아이디 또는 #MID로 검색" autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
-                      <button onClick={runSearch} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>검색</button>
+                      <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && runSearch()} placeholder={t("아이디 또는 #MID로 검색")} autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
+                      <button onClick={runSearch} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{t("검색")}</button>
                     </div>
                     {!!myMid && <InviteLinkBox mid={myMid} />}
-                    {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>검색 중…</div>
-                      : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>일치하는 유저 없음</div> : null)
+                    {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 중…")}</div>
+                      : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("일치하는 유저 없음")}</div> : null)
                         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
                             const uid = r.id; const rel = relOf(uid); const busyId = !!pending[uid];
                             const right = rel === "friend" ? statusChip("친구", <UserCheck size={12} />)
@@ -3174,11 +3172,11 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
     {confirmRemove && (
       <div onClick={() => setConfirmRemove(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>친구 삭제</div>
-          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{(confirmRemove.pub && confirmRemove.pub.nickname) || confirmRemove.username}님을 친구 목록에서 삭제할까요?</p>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("친구 삭제")}</div>
+          <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{tx("{0}님을 친구 목록에서 삭제할까요?", (confirmRemove.pub && confirmRemove.pub.nickname) || confirmRemove.username)}</p>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => setConfirmRemove(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
-            <button onClick={() => { doRemove(confirmRemove.uid); setConfirmRemove(null); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>삭제</button>
+            <button onClick={() => setConfirmRemove(null)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>{t("취소")}</button>
+            <button onClick={() => { doRemove(confirmRemove.uid); setConfirmRemove(null); }} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>{t("삭제")}</button>
           </div>
         </div>
       </div>
