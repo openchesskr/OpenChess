@@ -181,7 +181,7 @@ function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotChar, masco
           <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
             <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={15} color={T.brassHi} /></span>
             <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{eyebrow}</span>
-            {ccBadge && <img src="/chess.com_Icon.png" alt="chess.com" title="chess.com 연동" style={{ width: 18, height: 18, borderRadius: 5, objectFit: "contain", marginLeft: 2 }} />}
+            {ccBadge && <span title="chess.com 연동" style={{ fontSize: 10, fontWeight: 900, color: T.brass, border: "1px solid " + T.brass, borderRadius: 5, padding: "1px 5px", marginLeft: 2 }}>chess.com</span>}
           </div>
           <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{title}</h3>
           <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 12px" }}>{desc}</p>
@@ -501,7 +501,6 @@ function CCStatTile({ label, sub, delay }) {
     <motion.div initial={{ opacity: 0, y: 16, scale: 0.9 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.45, delay, ease: [0.22, 0.9, 0.32, 1] }}
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
       className="flex flex-col items-center" style={{ gap: 8, flex: "1 1 140px", minWidth: 140, padding: "18px 14px", borderRadius: 14, background: "rgba(0,0,0,.22)", border: "1px solid #4A3521" }}>
-      <img src="/chess.com_Icon.png" alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
       <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, textAlign: "center" }}>{label}</span>
       <span style={{ fontSize: 11, color: T.inkSoft, textAlign: "center", lineHeight: 1.55 }}>{sub}</span>
     </motion.div>
@@ -518,7 +517,6 @@ function ChessComSection() {
     <section>
       <Reveal>
         <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-          <img src="/chess.com_Icon.png" alt="" style={{ width: 18, height: 18, borderRadius: 4 }} />
           <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>CHESS.COM 연동</span>
         </div>
         <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>실제로 둔 대국까지 분석</h3>

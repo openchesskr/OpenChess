@@ -526,3 +526,47 @@ export function ChatHelpCard({ commands, onPick, onClose }) {
     </div>
   );
 }
+
+// ---- (v0.6.0, 스토어 심사 대비) 프로필 화면 신고·차단 메뉴 + 설정의 차단 목록 ----
+// 채팅 밖(프로필·차단 목록)에서도 같은 신고 시트(ReportSheet)·차단 동작을 쓴다.
+export function UserSafetyMenu({ blocked, onReport, onToggleBlock }) {
+  const [open, setOpen] = useState(false);
+  const item = { ...menuBtn, color: "#F4A0A0" };
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      <button onClick={() => setOpen((v) => !v)} aria-label="신고·차단" aria-expanded={open} title="신고·차단" className="press"
+        style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag size={14} /></button>
+      {open && (
+        <>
+          <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />
+          <div role="menu" style={{ position: "absolute", right: 0, top: 36, zIndex: 21, width: 150, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+            <button onClick={() => { setOpen(false); onReport(); }} className="press" style={item}><Flag size={14} />신고</button>
+            <button onClick={() => { setOpen(false); onToggleBlock(); }} className="press" style={item}><Ban size={14} />{blocked ? "차단 해제" : "차단"}</button>
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+export function BlockListSheet({ items, loading, onUnblock, onClose }) {
+  const [busy, setBusy] = useState(null);
+  return (
+    <Sheet title="차단 목록" onClose={onClose}>
+      {loading ? <p style={{ fontSize: 12.5, color: T.inkSoft, margin: 0 }}>불러오는 중…</p>
+        : !items.length ? <p style={{ fontSize: 12.5, color: T.inkSoft, margin: 0 }}>차단한 사용자 없음</p>
+          : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {items.map((u) => (
+                <div key={u.uid} className="flex items-center justify-between" style={{ gap: 10, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</span>
+                  <button disabled={busy === u.uid} onClick={async () => { setBusy(u.uid); await onUnblock(u.uid); setBusy(null); }} className="press"
+                    style={{ flexShrink: 0, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>차단 해제</button>
+                </div>
+              ))}
+            </div>
+          )}
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.5 }}>차단하면 서로 메시지·친구 요청·도전장 전송 불가. 상대에게는 알리지 않음</p>
+    </Sheet>
+  );
+}

@@ -1,4 +1,5 @@
-export const LICHESS_API = "/api/lichess";
+import { apiUrl } from "./siteConfig.js";
+export const LICHESS_API = apiUrl("/api/lichess");
 export const WIKI_API = "https://en.wikipedia.org/api/rest_v1/page/summary/";
 
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
