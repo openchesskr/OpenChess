@@ -88,44 +88,48 @@ export function KeywordChip({ k, style }) {
     </span>
   );
 }
-// (사용자 요청) 수 블록의 키워드 칩들을 두 줄 이상으로 줄바꿈하는 대신 한 줄에 담고, 다 안 들어가면
-// 가로 스크롤이 되도록 하되(줄바꿈 없음) 잘려 있다는 걸 알 수 있게 자동으로 천천히 오른쪽으로
-// 스크롤됐다가 끝에 닿으면 처음으로 돌아가길 반복한다 — 학습 탭 전체(집중 분석 모드 포함)에서
-// 키워드가 표시되는 자리에 공용으로 쓴다.
+// (사용자 요청) 수 블록의 키워드 칩들을 두 줄 이상으로 줄바꿈하는 대신 한 줄에 담는다. 다 안 들어가면
+// 같은 키워드 묶음을 한 번 더 이어 붙여, 오른쪽으로 끝까지 갔다가 처음으로 되돌아오는 대신 같은
+// 순서로 끊김 없이 계속 오른쪽으로 흘러가게 한다(한 묶음 길이만큼 이동하면 scrollLeft를 그만큼 빼
+// 눈에는 보이지 않게 제자리로 돌린다). 학습 탭 전체(집중 분석 모드 포함)의 키워드 자리에 공용으로 쓴다.
+const KW_GAP = 4;
 export function KeywordScroll({ kws, chipStyle }) {
   const ref = useRef(null);
+  const setRef = useRef(null);
   const [overflow, setOverflow] = useState(false);
+  const sig = kws.join(",");
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => setOverflow(el.scrollWidth > el.clientWidth + 1);
+    const el = ref.current, one = setRef.current;
+    if (!el || !one) return;
+    const check = () => setOverflow(one.offsetWidth > el.clientWidth + 1);
     check();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [kws.join(",")]);
+  }, [sig]);
   useEffect(() => {
-    const el = ref.current;
-    if (!el || !overflow) return;
-    let stopped = false, resumeTimer = null;
+    const el = ref.current, one = setRef.current;
+    if (!el || !one || !overflow) { if (el) el.scrollLeft = 0; return; }
     const id = setInterval(() => {
-      if (stopped) return;
-      const max = el.scrollWidth - el.clientWidth;
-      if (max <= 0) return;
-      if (el.scrollLeft >= max - 0.5) {
-        stopped = true;
-        resumeTimer = setTimeout(() => { el.scrollLeft = 0; stopped = false; }, 1400);
-        return;
-      }
-      el.scrollLeft += 0.6;
+      const period = one.offsetWidth + KW_GAP;
+      if (period <= KW_GAP) return;
+      let next = el.scrollLeft + 0.6;
+      if (next >= period) next -= period;
+      el.scrollLeft = next;
     }, 30);
-    return () => { clearInterval(id); if (resumeTimer) clearTimeout(resumeTimer); };
-  }, [overflow, kws.join(",")]);
+    return () => clearInterval(id);
+  }, [overflow, sig]);
   if (!kws.length) return null;
-  return (
-    <div ref={ref} className="hide-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "hidden" }}>
+  const set = (key, extra) => (
+    <div key={key} ref={key === "a" ? setRef : null} aria-hidden={extra ? "true" : undefined} style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, flexShrink: 0 }}>
       {kws.map((k) => <KeywordChip key={k} k={k} style={chipStyle} />)}
+    </div>
+  );
+  return (
+    <div ref={ref} className="hide-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, overflowX: "hidden" }}>
+      {set("a", false)}
+      {overflow && set("b", true)}
     </div>
   );
 }

@@ -19,6 +19,17 @@ export function lichessSinceParam(monthsBack) {
 // "쿨다운" 시각을 하나 두어, 어느 한 호출이든 429를 맞으면 그 뒤로 들어오는 모든 호출(동시에 떠 있는
 // 다른 7개 포함)이 그 쿨다운이 끝날 때까지 먼저 기다리게 한다 — 실패가 실패를 부르며 몰아치는 걸 막는다.
 let _lichessCooldownUntil = 0;
+// (사용자 요청, 성능) 화면에 곧바로 보여줘야 하는 조회(분석 탭 수 블록 통계)가 도감 트리를 백그라운드에서
+// 계속 채우는 조회(동시 8개씩 수백 건)에 밀려 느려지지 않게 한다. 앞쪽(foreground) 조회가 하나라도 진행
+// 중이면 백그라운드 조회는 새 요청을 시작하지 않고 잠시 기다린다(이미 나간 요청은 그대로 끝까지 진행).
+let _lichessFg = 0;
+const _lichessFgWaiters = [];
+export function lichessForeground(promise) {
+  _lichessFg++;
+  return Promise.resolve(promise).finally(() => { _lichessFg--; if (_lichessFg === 0) while (_lichessFgWaiters.length) _lichessFgWaiters.shift()(); });
+}
+export const lichessForegroundBusy = () => _lichessFg > 0;
+export function whenLichessIdle() { return _lichessFg === 0 ? Promise.resolve() : new Promise((r) => _lichessFgWaiters.push(r)); }
 export async function lichessFetchWithRetry(url) {
   // 다른 동시 호출이 이미 429를 맞아 쿨다운 중이면, 이 호출은 새로 요청을 던지기 전에 그 쿨다운이
   // 끝날 때까지 먼저 기다린다 — 이미 레이트리밋된 상태에 요청을 더 얹지 않기 위함.

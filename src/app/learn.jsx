@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'learn' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { lichessFetchWithRetry, LICHESS_API, loadMasterGameData, staticMasterGamesFor } from "../lib/lichessApi.js";
+import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor } from "../lib/lichessApi.js";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
@@ -932,70 +932,85 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     // 블록이 이 플래그를 보고 "—" 대신 3-dot bounce 인디케이터를 보여준다.
     setStatsLoading(liveOn);
     if (!liveOn) return;
-    (async () => {
-      try {
-        const [nr, mr] = await Promise.allSettled([fetchLichess(sans, false), fetchLichess(sans, true)]);
-        const normal = nr.status === "fulfilled" ? nr.value : null;
-        const master = mr.status === "fulfilled" ? mr.value : null;
-        if (cancelled) return;
-        // (기능1) 마스터/일반 통계 반영. 마스터 fetch 실패와 "기보 없음"을 구분.
-        let active = null, emptyMaster = false;
-        if (isMaster) {
-          if (master && master.moves.length) { active = master; }
-          else if (master && !master.moves.length) { setPosGames(master.posTotal); setEngineNote(t("이 포지션의 마스터 기보 없음. 엔진 추천 수 표시")); emptyMaster = true; }
-          else { active = normal; setEngineNote(normal && normal.moves.length ? t("마스터 기보 로드 실패. 일반 통계 표시") : t("기보를 불러오지 못함")); }
-        } else {
-          active = normal || master;
-        }
-        setMasterEmpty(emptyMaster);
-        if (!active || !active.moves.length) { if (emptyMaster) setMoves(withExtra([])); return; }
-        setPosGames(active.posTotal);
-        const snapBy = Object.fromEntries(base.map((m) => [stripSuffix(m.san), m]));
-        // (기능3) 새로 추가한 이론 수(addsFor)와 스냅샷에 원래 있던 이론 수를 구분하지 않는다 —
-        // 둘 다 여기서 같은 "책 등록부"로 합쳐서 봄. 그렇지 않으면 dev가 추가한 수가 Lichess의
-        // 일반 후보 수로도 함께 돌아올 때 book 여부가 스냅샷 쪽(false)으로 덮여버려 헤더에서
-        // 비이론 수로 잘못 표기되는 문제가 있었음.
-        const devAddsBy = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
-        const masterAdoptBy = master ? Object.fromEntries(master.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
-        const masterTopSans = master ? master.moves.slice(0, 3).map((m) => stripSuffix(m.san)) : [];
-        const mk = (l) => {
-          const k = stripSuffix(l.san);
-          const s = snapBy[k] || {};
-          const dev = devAddsBy[k];
-          const unb = isUnbooked(key, l.san);
-          const book = !unb && (!!s.book || !!(dev && dev.theory));
-          return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
-        };
-        const all = active.moves.map(mk);
-        // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
-        // 변형 등) 그 수가 통째로 빠져, 보드 위 추천 화살표가 아예 안 그려지거나(채택률 데이터가 없는
-        // 수만 남아) 두께·투명도가 전부 최솟값으로 뭉개져 보이는 문제가 있었다 — 스냅샷의 이론 수는
-        // Lichess 응답에 없어도 항상 포함되도록 보강한다.
-        const coveredSans = new Set(all.map((m) => stripSuffix(m.san)));
-        for (const s of base) {
-          if (!s.book) continue;
-          const k = stripSuffix(s.san);
-          if (coveredSans.has(k)) continue;
-          const dev = devAddsBy[k];
-          all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
-          coveredSans.add(k);
-        }
-        const books = all.filter((m) => m.book);
-        const nonbook = all.filter((m) => !m.book);
-        // Lichess가 응답한 비이론 수는 전부 유지(임의 캡 금지) — 수 체계와 무관하게 표시되는 모든 수가 통계를 가져야 함
-        const out = [...books, ...nonbook];
-        setMoves(withExtra(out));
-        // (성능, 사용자 요청) 지금 후보 수 중 실제로 가장 많이 두어진(games 상위) 4개는 사용자가
-        // 다음으로 클릭할 확률이 특히 높다 — 클릭을 기다리지 않고 그 다음 포지션의 리체스 통계를
-        // 지금 미리 백그라운드에서 당겨와 lichessApi.js의 10분 캐시(_lichessCache)에 채워 둔다.
-        // 실제로 그 수를 누르면 이 effect가 다시 돌 때 캐시 히트라 네트워크 왕복 없이 즉시 표시되고,
-        // 안 눌려도 그냥 버려지는 요청 하나일 뿐이라 손해가 없다(같은 URL이면 중복 요청도 캐시가 막음).
-        [...out].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4).forEach((m) => {
-          fetchLichess([...sans, m.san], isMaster).catch(() => { });
-        });
-      } catch (_) { /* 차단 시 스냅샷 유지 */ }
-      finally { if (!cancelled) setStatsLoading(false); }
-    })();
+    // (사용자 요청, 성능) 일반·마스터 통계를 둘 다 기다렸다가 한꺼번에 반영하던 것을, 먼저 도착한 쪽부터
+    // 곧바로 화면에 반영한다 — 일반 통계(기본 화면)는 마스터 응답을 기다리지 않고, 마스터 응답은 뒤늦게
+    // 와도 마스터 채택률·상위 표시만 덧붙인다. 마스터 모드는 마스터 응답이 오는 즉시(실패면 일반 통계로 대체).
+    let normal = null, master = null, nDone = false, mDone = false, applied = false;
+    const applyMain = () => {
+      // (기능1) 마스터/일반 통계 반영. 마스터 fetch 실패와 "기보 없음"을 구분.
+      let active = null, emptyMaster = false;
+      if (isMaster) {
+        if (master && master.moves.length) { active = master; }
+        else if (master && !master.moves.length) { setPosGames(master.posTotal); setEngineNote(t("이 포지션의 마스터 기보 없음. 엔진 추천 수 표시")); emptyMaster = true; }
+        else { active = normal; setEngineNote(normal && normal.moves.length ? t("마스터 기보 로드 실패. 일반 통계 표시") : t("기보를 불러오지 못함")); }
+      } else {
+        active = normal || master;
+      }
+      setMasterEmpty(emptyMaster);
+      if (!active || !active.moves.length) { if (emptyMaster) setMoves(withExtra([])); return; }
+      setPosGames(active.posTotal);
+      const snapBy = Object.fromEntries(base.map((m) => [stripSuffix(m.san), m]));
+      // (기능3) 새로 추가한 이론 수(addsFor)와 스냅샷에 원래 있던 이론 수를 구분하지 않는다 —
+      // 둘 다 여기서 같은 "책 등록부"로 합쳐서 봄. 그렇지 않으면 dev가 추가한 수가 Lichess의
+      // 일반 후보 수로도 함께 돌아올 때 book 여부가 스냅샷 쪽(false)으로 덮여버려 헤더에서
+      // 비이론 수로 잘못 표기되는 문제가 있었음.
+      const devAddsBy = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
+      const masterAdoptBy = master ? Object.fromEntries(master.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
+      const masterTopSans = master ? master.moves.slice(0, 3).map((m) => stripSuffix(m.san)) : [];
+      const mk = (l) => {
+        const k = stripSuffix(l.san);
+        const s = snapBy[k] || {};
+        const dev = devAddsBy[k];
+        const unb = isUnbooked(key, l.san);
+        const book = !unb && (!!s.book || !!(dev && dev.theory));
+        return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
+      };
+      const all = active.moves.map(mk);
+      // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
+      // 변형 등) 그 수가 통째로 빠져, 보드 위 추천 화살표가 아예 안 그려지거나(채택률 데이터가 없는
+      // 수만 남아) 두께·투명도가 전부 최솟값으로 뭉개져 보이는 문제가 있었다 — 스냅샷의 이론 수는
+      // Lichess 응답에 없어도 항상 포함되도록 보강한다.
+      const coveredSans = new Set(all.map((m) => stripSuffix(m.san)));
+      for (const s of base) {
+        if (!s.book) continue;
+        const k = stripSuffix(s.san);
+        if (coveredSans.has(k)) continue;
+        const dev = devAddsBy[k];
+        all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
+        coveredSans.add(k);
+      }
+      const books = all.filter((m) => m.book);
+      const nonbook = all.filter((m) => !m.book);
+      // Lichess가 응답한 비이론 수는 전부 유지(임의 캡 금지) — 수 체계와 무관하게 표시되는 모든 수가 통계를 가져야 함
+      const out = [...books, ...nonbook];
+      // 엔진이 먼저 끝나 이미 live 평가·보충 수가 들어와 있어도 지워지지 않게 합친다.
+      setMoves((prev) => {
+        const pb = Object.fromEntries(prev.map((m) => [stripSuffix(m.san), m]));
+        const merged = withExtra(out).map((m) => { const o = pb[stripSuffix(m.san)]; return o && o.live ? { ...m, live: o.live } : m; });
+        const have = new Set(merged.map((m) => stripSuffix(m.san)));
+        prev.forEach((m) => { if (m.engine && !have.has(stripSuffix(m.san))) merged.push(m); });
+        return merged;
+      });
+    };
+    const patchMaster = () => {
+      const adoptBy = Object.fromEntries(master.moves.map((m) => [stripSuffix(m.san), m.adopt]));
+      const top = master.moves.slice(0, 3).map((m) => stripSuffix(m.san));
+      setMoves((prev) => prev.map((m) => { const k = stripSuffix(m.san); return { ...m, masterAdopt: adoptBy[k] ?? m.masterAdopt ?? null, masterTop: top.includes(k) }; }));
+    };
+    const onArrive = () => {
+      if (cancelled) return;
+      if (!applied) {
+        const ready = isMaster ? (mDone && (master || nDone)) : (normal ? true : (nDone && mDone));
+        if (!ready) return;
+        applied = true;
+        try { applyMain(); } catch (_) { /* 차단 시 스냅샷 유지 */ }
+        setStatsLoading(false);
+      } else if (!isMaster && master && mDone) {
+        patchMaster();
+      }
+    };
+    lichessForeground(fetchLichess(sans, false)).then((v) => { normal = v; }, () => { }).finally(() => { nDone = true; onArrive(); });
+    lichessForeground(fetchLichess(sans, true)).then((v) => { master = v; }, () => { }).finally(() => { mDone = true; onArrive(); });
     return () => { cancelled = true; };
   }, [key, liveOn, extraKey, contentVer, isMaster]);
 
@@ -1078,7 +1093,27 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           };
         } catch { return null; }
       }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
-      const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); };
+      // (사용자 요청) 엔진 depth가 한 단계 깊어질 때마다 수 블록의 평가치(live)도 그 depth의 결과로 곧바로
+      // 갱신해, 블록 정렬이 단계가 끝날 때(0.7초·5초·20초)까지 기다리지 않고 depth마다 따라 움직이게 한다.
+      // 각 줄의 depth 합이 이전 반영보다 커졌을 때만 반영한다(심화 단계가 다시 얕은 depth부터 시작해도 이미
+      // 반영한 더 깊은 값을 얕은 값으로 되돌리지 않음). MultiPV 상위 줄의 첫 수만 대상이다.
+      const liveBoard = boardFromSans(sans), liveColor = ply % 2 === 0 ? "w" : "b";
+      const applyDepthEvals = (raw) => {
+        if (!raw || !raw.length) return;
+        const sig = raw.reduce((a, pv) => a + (pv && pv.depth ? pv.depth : 0), 0);
+        if (!(sig > (cache.sortSig || 0))) return;
+        cache.sortSig = sig;
+        const evBy = {};
+        raw.forEach((pv) => {
+          if (!pv || !pv.uci || (pv.mate == null && pv.cp == null)) return;
+          try {
+            const san = uciToSan(liveBoard, pv.uci, liveColor);
+            if (san) evBy[stripSuffix(san)] = pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite };
+          } catch { }
+        });
+        if (Object.keys(evBy).length) setMoves((prev) => prev.map((m) => { const hit = evBy[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
+      };
+      const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); applyDepthEvals(raw); };
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
       // 목표 depth에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
@@ -1244,33 +1279,12 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     return () => { cancelled = true; };
   }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty]);
 
-  // (표본) 비이론 수 중 통계가 없는 수(엔진 보충, 보드에서 직접 둔 수 등)는 그 수를 둔 뒤 위치의 Lichess 총 게임수로 채움.
-  // 캡 없이 "블록에 표시되는 모든 수"를 대상으로 하며, 레이트리밋 방지를 위해 순차 처리한다.
   const statMountedRef = useRef(true);
   useEffect(() => () => { statMountedRef.current = false; }, []);
   const statDoneRef = useRef(new Set());
+  const statKeyRef = useRef(key);
+  statKeyRef.current = key;
   useEffect(() => { statDoneRef.current = new Set(); }, [key]);
-  useEffect(() => {
-    if (!liveOn) return;
-    const need = moves.filter((m) => !m.book && m.games == null && !statDoneRef.current.has(key + "|" + m.san));
-    if (!need.length) return;
-    let cancelled = false;
-    (async () => {
-      for (const m of need) {
-        if (cancelled || !statMountedRef.current) break;
-        statDoneRef.current.add(key + "|" + m.san);
-        try {
-          const child = await fetchLichess([...sans, m.san], false);
-          const g = child && child.posTotal != null ? child.posTotal : null;
-          if (g != null && !cancelled && statMountedRef.current) {
-            setMoves((prev) => prev.map((x) => x.san === m.san ? { ...x, games: g, adopt: posGames ? (100 * g / posGames) : x.adopt } : x));
-          }
-        } catch { }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [key, moves, liveOn, posGames]);
-
   // (17차) tiled 정렬(ev())과 동일하게, 라이브 분석 중에는 아직 그 depth의 live 값이 없는 수를
   // 오래된 스냅샷(evalCp)과 섞어 비교하지 않는다 — 이 불일치가 "평가치 바와 1위 수 평가치가
   // 서로 다르게 보이는" 문제의 원인이었다(스냅샷과 live는 서로 다른 depth의 값이라 직접 비교 불가).
@@ -1313,6 +1327,39 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const nonbooks = t.filter((m) => !m.book).sort((a, b) => rank(b) - rank(a));
     return [...books, ...nonbooks];
   }, [moves, ply, board, key, contentVer, sortBy, liveOn, engine && engine.status, sacTick]);
+  // (표본, 사용자 요청 성능) 비이론 수 중 통계가 없는 수(엔진 보충, 보드에서 직접 둔 수 등)는 그 수를 둔 뒤
+  // 위치의 Lichess 총 게임수로 채운다. 예전엔 목록 전체를 한 수씩 순서대로 가져와 수가 많을수록 맨 아래
+  // 블록은 한참 뒤에야 채워졌다 — 이제 화면에 보이는 순서(위쪽 블록부터)대로 STAT_CONCURRENCY개씩 동시에
+  // 가져오고, 한 수의 응답이 오는 즉시 그 블록만 바로 갱신한다(다른 수를 기다리지 않음). 같은 주소의 중복
+  // 요청은 lichessFetchJson이 합치고, 화면에 필요한 수가 모두 끝난 뒤에야 다음 수 후보의 미리 가져오기를 한다.
+  const STAT_CONCURRENCY = 6;
+  const statInflightRef = useRef(0);
+  const statPumpRef = useRef(() => { });
+  const statPrefetchedRef = useRef("");
+  const statOrder = tiled.filter((m) => m.games == null).map((m) => m.san).join("|");
+  statPumpRef.current = () => {
+    if (!liveOn || !statMountedRef.current) return;
+    const myKey = statKeyRef.current;
+    const need = tiled.filter((m) => m.games == null && !statDoneRef.current.has(myKey + "|" + m.san));
+    while (statInflightRef.current < STAT_CONCURRENCY && need.length) {
+      const m = need.shift();
+      statDoneRef.current.add(myKey + "|" + m.san);
+      statInflightRef.current++;
+      lichessForeground(fetchLichess([...sans, m.san], false)).then((child) => {
+        const g = child && child.posTotal != null ? child.posTotal : null;
+        if (g != null && statMountedRef.current && statKeyRef.current === myKey) {
+          setMoves((prev) => prev.map((x) => x.san === m.san && x.games == null ? { ...x, games: g, adopt: posGames ? (100 * g / posGames) : x.adopt } : x));
+        }
+      }).catch(() => { }).finally(() => { statInflightRef.current--; statPumpRef.current(); });
+    }
+    // 화면에 필요한 통계가 모두 끝났으면, 다음에 눌릴 가능성이 높은 상위 4수의 다음 포지션을 미리 캐시에 채운다.
+    if (!need.length && statInflightRef.current === 0 && statPrefetchedRef.current !== myKey && posGames != null) {
+      statPrefetchedRef.current = myKey;
+      [...tiled].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 4).forEach((m) => { fetchLichess([...sans, m.san], isMaster).catch(() => { }); });
+    }
+  };
+  useEffect(() => { statPumpRef.current(); }, [statOrder, key, liveOn, posGames, statsLoading]);
+
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
   // 후보 수 평가가 하나도 없을 때(막 포지션에 진입한 순간)의 임시 표시값으로만 사용한다.
@@ -2644,7 +2691,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 풀어 카드 폭 그대로 커지게 했으므로, 이 훅 내부 상한도 그만큼 넉넉히 올려 실제 측정된 폭을
   // 다시 400px로 잘라버리지 않도록 한다 — 데스크톱은 여전히 CSS lg:max-w-360가 먼저 재는
   // 폭 자체를 360 근처로 묶어 두므로 이 값이 커져도 영향이 없다.
-  const [boardSize, boardRef] = useBoardSize(720);
+  // (사용자 요청) 분석 탭 보드를 조금 더 키운다 — 틀 여유값을 42→24로 줄이고(실제 틀 22px) 데스크톱 상한도 360→400px로.
+  const [boardSize, boardRef] = useBoardSize(720, 24);
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}

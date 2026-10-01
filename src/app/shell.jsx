@@ -16,6 +16,7 @@ import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { lichessForegroundBusy, whenLichessIdle } from "../lib/lichessApi.js";
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
 // (v0.0.5 성능) props 없는 순수 장식 SVG인데도 memo가 없으면 App이 리렌더될 때마다(3~30초 폴링 등)
@@ -350,7 +351,13 @@ export function useOpeningTreeAuto(priorityRef, contentVer) {
     // (v0.5.6 성능) 우선순위(선택한 오프닝 먼저)는 이제 네트워크를 타는 채택률 조회에만 의미가 있다 — 구조는 아래 run이 로컬
     // 스냅샷으로 즉시 만들어 순서가 결과에 영향을 주지 않는다. 예전엔 구조 큐에서 매번 큐 전체를 훑어(노드마다 화면 거리 계산 포함)
     // 다음 노드를 골라 O(노드 수²)로 앱 시작을 늦췄다 — 구조 큐는 순서대로(FIFO), 조회 큐만 선택 갈래를 앞당긴다.
+    let idleWaiting = false;
     const runFetchQueue = () => {
+      // 분석 탭 같은 앞쪽 조회가 진행 중이면 새 백그라운드 조회는 그 조회가 끝난 뒤(+짧은 여유)에 시작한다.
+      if (fetchQueue.length && lichessForegroundBusy()) {
+        if (!idleWaiting) { idleWaiting = true; whenLichessIdle().then(() => setTimeout(() => { idleWaiting = false; if (!cancelled) runFetchQueue(); }, 250)); }
+        return;
+      }
       while (fetchActive < MAX_FETCH_CONCURRENT && fetchQueue.length) {
         const sel = priorityRef && priorityRef.current ? priorityRef.current.selectedKey : null;
         let idx = 0;

@@ -541,12 +541,19 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
 }
 /* ============================================================ 라이브 Lichess Explorer ============================================================ */
 export const _lichessCache = new Map(); // url -> { t, data }
-export async function lichessFetchJson(url) {
+const _lichessInflight = new Map(); // url -> Promise — 같은 주소를 동시에 두 번 부르지 않게(미리 가져오기와 화면 표시가 겹칠 때)
+export function lichessFetchJson(url) {
   const hit = _lichessCache.get(url);
-  if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data; // 10분 캐시(되돌리기·재방문 시 재요청·레이트리밋 방지)
-  const data = await (await lichessFetchWithRetry(url)).json();
-  _lichessCache.set(url, { t: Date.now(), data });
-  return data;
+  if (hit && Date.now() - hit.t < 10 * 60 * 1000) return Promise.resolve(hit.data); // 10분 캐시(되돌리기·재방문 시 재요청·레이트리밋 방지)
+  const pending = _lichessInflight.get(url);
+  if (pending) return pending;
+  const p = (async () => {
+    const data = await (await lichessFetchWithRetry(url)).json();
+    _lichessCache.set(url, { t: Date.now(), data });
+    return data;
+  })().finally(() => { _lichessInflight.delete(url); });
+  _lichessInflight.set(url, p);
+  return p;
 }
 export async function fetchLichess(sans, master) {
   const uci = sansToUci(sans).join(",");
@@ -1931,7 +1938,7 @@ export function useNarrow(bp = 480) {
 // 보드가 부자연스럽게 작게 고정되는 버그로 드러났다). 콜백 ref로 바꾸면 React가 그 DOM 노드를
 // "실제로 붙이는 순간"(그게 언제든, 몇 번째 렌더든) 그 즉시 측정·관찰을 시작할 수 있어 이 순서
 // 문제가 구조적으로 사라진다.
-export function useBoardSize(max = 360) {
+export function useBoardSize(max = 360, frame = 42) {
   const [size, setSize] = useState(Math.min(max, 320));
   const elRef = useRef(null);
   const roRef = useRef(null);
@@ -1939,7 +1946,7 @@ export function useBoardSize(max = 360) {
   // (버그·모바일) Board 래퍼는 격자 바깥에 프레임(안쪽 여백 20 + 패딩 20 + 테두리 ~2 ≈ 42px)을 더한다.
   // 이 프레임을 빼지 않으면 board+프레임이 컨테이너를 넘쳐(모바일 가로 오버플로) 보드 오른쪽이 잘려 보였다.
   const measure = useCallback(() => {
-    const FRAME = 42;
+    const FRAME = frame;   // 기본 42는 여유를 넉넉히 둔 값(실제 틀은 안쪽 여백 20 + 테두리 2 = 22). 폭을 더 쓰고 싶은 화면은 24까지 줄여 쓴다.
     const el = elRef.current; if (!el) return;
     const w = el.clientWidth; if (w <= 0) return;
     const next = Math.max(160, Math.floor((Math.min(max, w) - FRAME) / 8) * 8);
@@ -1947,7 +1954,7 @@ export function useBoardSize(max = 360) {
     // 화면에는 아무 차이가 없지만, 그 자체가 하위 트리를 한 번 더 리렌더시켜 또 다른 ResizeObserver
     // 콜백을 유발할 수 있다(연쇄 반응의 씨앗을 남기지 않기 위함).
     setSize((prev) => (prev === next ? prev : next));
-  }, [max]);
+  }, [max, frame]);
   // (버그 수정, 사용자 제보) 분석 탭에서 수를 둘 때마다 보드가 미세하게 커졌다 작아졌다 했다 — 한 수를
   // 두면 캡션·수 블록·정확도 표시 등 보드 옆·아래 요소들이 거의 같은 렌더 사이클 안에서 잇따라 자기
   // 크기를 바꾸는데, 그 각각의 중간 단계마다 ResizeObserver가 따로 콜백을 발화시켜(레이아웃이 완전히
