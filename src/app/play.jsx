@@ -4307,7 +4307,7 @@ function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }
       <p style={{ fontSize: 11, color: "rgba(90,58,34,.72)", margin: "0 0 12px", maxWidth: 320, lineHeight: 1.5 }}>{t("동점. 긴 메이트부터 등급별 성공 수를 비교")}</p>
       <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 7, marginBottom: 12 }}>
         {rows.map((r) => {
-          const shown = step >= r.i, active = step === r.i;
+          const shown = !r.hide && step >= r.i, active = step === r.i;
           const win = !shown ? null : r.me === r.opp ? null : r.me > r.opp ? "me" : "opp";
           return (
             <div key={r.key} style={{ display: "grid", gridTemplateColumns: "1fr 122px 1fr", gap: 6, alignItems: "stretch", opacity: r.hide ? 0.25 : 1, transition: "opacity .3s ease" }}>
