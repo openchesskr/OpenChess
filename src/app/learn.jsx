@@ -1009,8 +1009,20 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         patchMaster();
       }
     };
-    lichessForeground(fetchLichess(sans, false)).then((v) => { normal = v; }, () => { }).finally(() => { nDone = true; onArrive(); });
-    lichessForeground(fetchLichess(sans, true)).then((v) => { master = v; }, () => { }).finally(() => { mDone = true; onArrive(); });
+    // (v0.6.1 버그 수정) 포지션 통계 조회가 레이트리밋·일시 오류로 한 번 실패하면 posGames·채택률이 비어 "회수 / —"와
+    // 빈 막대만 남았다(보충 조회는 나중에 성공해 회수만 채워짐). 실패하면 잠시 뒤 두 번 더 시도한다.
+    const fetchWithRetry = async (isM) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await fetchLichess(sans, isM); }
+        catch (e) {
+          if (attempt >= 2 || cancelled) throw e;
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+          if (cancelled) throw e;
+        }
+      }
+    };
+    lichessForeground(fetchWithRetry(false)).then((v) => { normal = v; }, () => { }).finally(() => { nDone = true; onArrive(); });
+    lichessForeground(fetchWithRetry(true)).then((v) => { master = v; }, () => { }).finally(() => { mDone = true; onArrive(); });
     return () => { cancelled = true; };
   }, [key, liveOn, extraKey, contentVer, isMaster]);
 
@@ -1359,6 +1371,26 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     }
   };
   useEffect(() => { statPumpRef.current(); }, [statOrder, key, liveOn, posGames, statsLoading]);
+  // (v0.6.1 버그 수정) 포지션 전체 표본(posGames)이 보충 조회보다 늦게 도착하면 이미 회수가 채워진 수의 채택률이
+  // 영영 null로 남았다 — posGames가 정해지면 채택률이 비어 있는 수를 다시 계산한다. 끝내 전체 표본을 못 얻으면
+  // (조회 실패) 수별 회수의 합을 대신 써서 "—"가 남지 않게 한다.
+  useEffect(() => {
+    if (!liveOn || statsLoading) return;
+    setMoves((prev) => {
+      let total = posGames;
+      if (total == null) {
+        const sum = prev.reduce((a, m) => a + (m.games || 0), 0);
+        if (!sum || prev.some((m) => m.games == null)) return prev;
+        total = sum;
+      }
+      if (!prev.some((m) => m.games != null && m.adopt == null)) return prev;
+      return prev.map((m) => (m.games != null && m.adopt == null ? { ...m, adopt: 100 * m.games / total } : m));
+    });
+    if (posGames == null) {
+      const sum = moves.reduce((a, m) => a + (m.games || 0), 0);
+      if (sum && !moves.some((m) => m.games == null)) setPosGames(sum);
+    }
+  }, [posGames, statsLoading, liveOn, moves]);
 
   // (UX1) 보드 위 평가치 바는 항상 "현재 후보 수 중 최선의 수" 평가에서 유도한다(같은 계산에서
   // 파생되므로 평가치순 1위 수의 평가치와 구조적으로 항상 일치). 엔진의 포지션 직접 평가(posEval)는
