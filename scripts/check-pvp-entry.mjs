@@ -8,8 +8,9 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-pvp-entry.mjs
  */
 import { readFileSync } from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 
-const src = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const src = readAppSource();
 const lines = src.split("\n");
 const fails = [];
 

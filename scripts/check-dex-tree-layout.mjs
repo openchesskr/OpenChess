@@ -11,12 +11,13 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-dex-tree-layout.mjs
  */
 import fs from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 import path from "node:path";
 import { layoutDexTree, placeDexLabels, dexEdgeGeometry, DEX_LAYOUT } from "../src/lib/dexTreeLayout.js";
 import { ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, SCHEMATIC_ZOOM_LABEL_BASE } from "../src/lib/schematicGeometry.js";
 
 const root = new URL("..", import.meta.url).pathname;
-const src = fs.readFileSync(path.join(root, "src/App.jsx"), "utf8");
+const src = readAppSource();
 const m = src.match(/const SNAP = \/\*__DATA__\*\/ (\{.*\});\s*$/m);
 if (!m) { console.error("✗ dex layout check: App.jsx에서 SNAP 데이터를 찾지 못했어요."); process.exit(1); }
 const SNAP = JSON.parse(m[1]);

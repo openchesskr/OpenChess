@@ -9,6 +9,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-chat-commands.mjs
  */
 import { readFileSync } from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 import { parseChatCommand as P, chatCommandSuggestions as S, deriveBlindGame, CHAT_COMMANDS, CHAT_PLAY_GAMES } from "../src/lib/chatCommands.js";
 
 const fails = [];
@@ -65,7 +66,7 @@ isErr("/play 한 단어 모르는 이름은 조용히 보내지 않고 안내", 
 {
   const choices = (CHAT_COMMANDS.find((c) => c.name === "play").choices || []).map((c) => c.value);
   for (const v of choices) { const r = P("/play " + v, IDLE); if (!r || r.error) fails.push("/play 칩 값이 해석되지 않는다: " + v); }
-  const appSrc = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const appSrc = readAppSource();
   const block = /const PLAY_SPECIAL_GAMES = \[([\s\S]*?)\n\];/.exec(appSrc);
   const appTypes = block ? [...block[1].matchAll(/gameType: "(\w+)"/g)].map((m) => m[1]).sort() : [];
   eq("/play 미니게임 목록 = PLAY_SPECIAL_GAMES", CHAT_PLAY_GAMES.map((g) => g.gameType).sort(), appTypes);

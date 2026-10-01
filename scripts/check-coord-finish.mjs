@@ -9,9 +9,10 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-coord-finish.mjs
  */
 import { readFileSync } from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 
 const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
-const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const app = readAppSource();
 const fails = [];
 const fnBody = (name) => { const m = new RegExp("create or replace function public\\." + name + "\\([\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$", "i").exec(sql); return m ? m[1] : ""; };
 

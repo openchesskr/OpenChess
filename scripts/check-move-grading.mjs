@@ -9,6 +9,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-move-grading.mjs
  */
 import { readFileSync } from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 import { boardOfRoot, parseFenFull } from "../src/lib/chessRules.js";
 import { applySan } from "../src/lib/chessRules.js";
 import { isSacrifice, gradeMoveKind, pvLosesMaterial, pvRegainsMaterial, sacrificeCaptureUci } from "../src/lib/moveQuality.js";
@@ -92,7 +93,7 @@ for (const [name, args, want] of G) {
 }
 
 // ③ App.jsx에 등급 규칙 복사 금지
-const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8").split("\n");
+const app = readAppSource().split("\n");
 app.forEach((l, i) => {
   const code = l.replace(/\/\/.*$/, "");
   if (/\btierOf\s*\(/.test(code)) fails.push("src/App.jsx:" + (i + 1) + " — tierOf를 직접 부른다. 수 등급은 gradeMoveKind(src/lib/moveQuality.js)로만 매길 것");

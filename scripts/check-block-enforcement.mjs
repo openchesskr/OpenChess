@@ -5,6 +5,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-block-enforcement.mjs
  */
 import { readFileSync } from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 
 const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
 const fails = [];
@@ -27,7 +28,7 @@ for (const { label, re } of CONTACT_PATHS) {
 const sug = sql.indexOf("create or replace function public.friend_suggestions");
 if (sug < 0 || !/user_blocks/.test(sql.slice(sug, sql.indexOf("$$;", sug)))) fails.push("friend_suggestions가 차단 관계를 제외하지 않음");
 // 클라이언트: 설정에 차단 목록, 프로필에 신고·차단 메뉴(스토어 심사 요건).
-const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const app = readAppSource();
 if (!/<UserSafetyMenu\b/.test(app)) fails.push("프로필 화면에 UserSafetyMenu(신고·차단) 없음");
 if (!/<BlockListSheet\b/.test(app)) fails.push("설정에 BlockListSheet(차단 목록) 없음");
 if (fails.length) { console.error("check-block-enforcement 실패:\n  " + fails.join("\n  ")); process.exit(1); }
