@@ -79,6 +79,8 @@
 **기능**
 - 다국어(i18n): English·日本語·中文(简体)·Español·हिन्दी. 설정 탭 언어 카드, FAQ·약관·소개 페이지 헤더 `LangSwitch`. 선택은 `occ_lang`에 저장하고 새로고침으로 적용. 저장값이 없으면 브라우저 언어(기존 사용자는 한국어 유지).
 - 엔진 `src/lib/i18n.js`: 한국어 원문을 키로 쓰는 `t("한국어")`, JSX 인자는 `tx`. 자리표시자 `{0}`, 한국어 조사 `{0:이/가}`, 복수형 `{0|단수|복수}`(언어별 규칙). 카탈로그는 `src/lib/i18n/{en,hi,ja,zh,es}.js`(top-level await, 빌드 target es2022).
+- 언어 선택 UI: 국기(`Flag.jsx`, SVG라 윈도우에서도 깨지지 않음)가 붙은 펼침 상자(`LangPicker.jsx`). 설정 탭과 정적 페이지 머리글(`LangSwitch`)이 같은 컴포넌트를 씀. 바깥 클릭·Esc로 닫힘.
+- 설정 탭 정리: 카드 제목을 아이콘 + 굵은 글씨로 통일(`cardTitle`), 카드 모서리·그림자 통일.
 - 날짜·숫자: `fmtDate`·`fmtDateOnly`·`fmtNum`이 언어에 맞는 서식 적용. `document.documentElement.lang` 갱신, hi·ja·zh는 Noto Sans Devanagari·JP·SC 폰트 폴백.
 
 **시스템**

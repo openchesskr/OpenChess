@@ -4,7 +4,8 @@ import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/c
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock } from "lucide-react";
+import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Gamepad2, Sparkles } from "lucide-react";
+import LangPicker from "../components/LangPicker.jsx";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { parsePgnMoves } from "../lib/pgn.js";
@@ -693,7 +694,14 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
     const t = setTimeout(() => setLoginShaking(false), 1700);
     return () => clearTimeout(t);
   }, [loginShakeTick]);
-  const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8", marginTop: 14 };
+  const card = { background: T.paper, borderRadius: 14, padding: 16, border: "1px solid #DCCBA8", marginTop: 12, boxShadow: "0 1px 0 rgba(255,255,255,.5) inset, 0 4px 14px rgba(20,10,4,.12)" };
+  // (v0.7.0, 설정 탭 정리) 카드 제목을 아이콘 + 굵은 글씨로 통일. 카드마다 제각각이던 제목 크기·간격을 한 곳에서 맞춘다.
+  const cardTitle = (Icon, text) => (
+    <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
+      <Icon size={16} style={{ color: T.brass, flexShrink: 0 }} />
+      <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{text}</span>
+    </div>
+  );
   // (v0.3.5 기능) 사용자 요청 — 흩어져 있던 개발자 전용 패널(자원 조정·공동 개발자 지정·일일 퍼즐
   // 관리·퍼즐 일괄 재생성)을 설정 탭 맨 아래 카드 하나("개발자 도구")로 모았다. 개발자/공동 개발자
   // 모드를 막 켰을 때만(false→true로 바뀐 순간) 이 블록으로 자동 스크롤한다 — 이미 켜진 채로
@@ -733,22 +741,14 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
 
       {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{lang === "en" ? t("언어") : t("언어") + " / Language"}</div>
-        <p style={{ fontSize: 11, color: T.inkSoft, margin: "0 0 10px" }}>{t("선택하면 페이지가 새로고침됨")}</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="radiogroup" aria-label="Language">
-          {LANGS.map((l) => {
-            const on = l.code === lang;
-            return (
-              <button key={l.code} role="radio" aria-checked={on} lang={l.code} onClick={() => setLang(l.code)} className="press"
-                style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", color: T.ink, background: on ? "rgba(196,154,80,.22)" : "#fff", border: "1.5px solid " + (on ? T.brass : "#E4D5B6") }}>{l.name}</button>
-            );
-          })}
-        </div>
+        {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
+        <LangPicker />
+        <p style={{ fontSize: 11, color: T.inkSoft, margin: "8px 2px 0" }}>{t("선택하면 페이지가 새로고침됨")}</p>
       </div>
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
       {!user ? (
         <div style={{ ...card, animation: loginShaking ? "lineShake .55s ease 3" : "none" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("계정")}</div>
+          {cardTitle(User, t("계정"))}
           <div className="flex items-center justify-between gap-3"><span style={{ fontSize: 12.5, color: T.inkSoft, minWidth: 0 }}>{t("로그인하면 진도가 계정에 저장됨")}</span><button onClick={() => openAuth("login")} className="press" style={{ flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{t("로그인 / 회원가입")}</button></div>
         </div>
       ) : (
@@ -806,8 +806,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           요청으로 게임 리뷰에만 영향을 주는 두 설정 — 리뷰 속도(더 빠르게/더 정확하게)와 포지션
           변동성 보정 on/off — 을 같은 카드에 추가해 "리뷰 설정"으로 확장한다. */}
       <div style={card}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("리뷰 설정")}</div>
+        <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+          <div className="flex items-center gap-2"><SlidersHorizontal size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("리뷰 설정")}</span></div>
           <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
             {engineStatus === "ready" ? <Wifi size={12} /> : engineStatus === "off" ? <WifiOff size={12} /> : <Cpu size={12} />}
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
@@ -882,7 +882,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           캐시·Supabase user_progress에 같이 실림 — 리뷰 속도 등과 달리 이 기기만이 아니라 다른
           기기에서 로그인해도 그대로 따라온다). */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("퍼즐 설정")}</div>
+        {cardTitle(Puzzle, t("퍼즐 설정"))}
         {[
           { label: t("LINE CLEAR 애니메이션"), desc: t("라인 클리어 시 배너 표시"), on: lineClearOn, set: setLineClearOn },
           { label: t("PUZZLE CLEAR 애니메이션"), desc: t("퍼즐의 모든 라인 클리어 시 배너 표시"), on: puzzleClearOn, set: setPuzzleClearOn },
@@ -904,7 +904,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* (v0.5.5, 사용자 요청) 미니게임 설정 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을
           보드에 빨갛게 표시할지. 기본값은 꺼짐(스스로 읽어 내는 게 미니게임의 재미라), 퍼즐 설정과 같이 계정에 저장된다. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("미니게임 설정")}</div>
+        {cardTitle(Gamepad2, t("미니게임 설정"))}
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
@@ -917,7 +917,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
           (헤더에는 따로 두지 않는다 — 조절은 항상 설정 탭에서만.) */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("사운드")}</div>
+        {cardTitle(Volume2, t("사운드"))}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {bgmOn ? <Volume2 size={15} style={{ color: T.brass }} /> : <VolumeX size={15} style={{ color: T.inkSoft }} />}
@@ -942,7 +942,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       {/* (v0.5.5, 사용자 요청) 시각 효과 — 탁월한 수·유일한 수·최선의 수를 두었을 때의 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰
           페이지, 무한 체크메이트 게임). 기본값은 켜짐, 계정에 저장된다. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{t("시각 효과")}</div>
+        {cardTitle(Sparkles, t("시각 효과"))}
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</div>
@@ -958,7 +958,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
 
       {/* 개발진 명단 (수 기호 안내 대체) */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("개발진")}</div>
+        {cardTitle(Users, t("개발진"))}
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
           {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
               아이디의 프로필로 이동한다. */}
