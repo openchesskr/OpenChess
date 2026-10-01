@@ -77,6 +77,8 @@ function checkSide(r, color, start, tag) {
   }
   const ex = knightExactPath(r, color, start);
   if (!ex || ex.length - 1 > r.moveBudget) fail(tag + ": 이동 수 제한 안에 답이 없음");
+  // (BUG-040) 표시되는 "최소 N수"(par)는 기물을 잡는 지름길까지 고려한 실제 최단 수와 같아야 한다.
+  else if (ex.length - 1 !== r.par) fail(tag + ": par " + r.par + "인데 기물을 잡으면 " + (ex.length - 1) + "수에 도착(최소 수 표시가 거짓)");
 }
 for (const solo of [true, false]) {
   for (let idx = 0; idx < KNIGHT_ROUND_SPECS.length; idx++) {
@@ -124,6 +126,14 @@ for (const solo of [true, false]) {
   const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
   const body = /function public\.knight_resolve_round[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(sql);
   if (!body || !/'distanceTime'/.test(body[1]) || /v_w_remain/.test(body[1]) || !/'judge'/.test(body[1])) fail("서버 knight_resolve_round가 거리 → 시간 규칙·judge 기록을 따르지 않음");
+}
+// 6) 서버 라운드 생성도 같은 조건(실제 최단 수 = par)을 쓰는지 — 클라이언트 knightTryGen과 어긋나면 실시간 대전에서만 "최소 수" 표시가 틀린다.
+{
+  const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
+  const gen = /function public\._knight_gen_round[\s\S]*?\$\$;/.exec(sql);
+  if (!gen || !/knight_exact_dist\(v_round, 'w', v_ws\) is distinct from v_par/.test(gen[0]) || !/knight_exact_dist\(v_round, 'b', v_bs\) is distinct from v_par/.test(gen[0]))
+    fail("서버 _knight_gen_round가 실제 최단 수(knight_exact_dist) = par 조건을 확인하지 않음");
+  if (!/function public\.knight_exact_dist/.test(sql)) fail("supabase-setup.sql에 knight_exact_dist가 없음");
 }
 if (problems.length) {
   console.error("✗ knight rounds check 실패:\n  " + problems.slice(0, 30).join("\n  ") + (problems.length > 30 ? "\n  … 외 " + (problems.length - 30) + "건" : ""));

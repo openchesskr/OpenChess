@@ -42,6 +42,15 @@ else {
 // ④ 미니게임 재개 key
 if (!/<Game key=\{resumeGame \?/.test(src)) fails.push("PlaySpecialGames — 재개할 대전마다 <Game key=…>로 새로 마운트해야 한다(useMinigameMatch는 initialGame을 첫 마운트 때만 읽음)");
 
+// ⑤ (BUG-041) 새로고침 때 진행 중 대전을 이어받는 effect — 체스가 아닌 대전(미니게임)을 체스 대국으로 열지 않는다
+const resumeQ = lines.findIndex((l) => /pvp_games\?status=eq\.active&or=\(white_uid\.eq\./.test(l));
+if (resumeQ < 0) fails.push("PlayPage의 진행 중 대전 이어받기(pvp_games?status=eq.active…)를 찾지 못했다");
+else {
+  const win = lines.slice(resumeQ, resumeQ + 25);
+  const guard = win.findIndex((l) => /!== PVP_GAME_TYPE/.test(l)), apply = win.findIndex((l) => /^\s*applyPvpGame\(g\);/.test(l));
+  if (guard < 0 || apply < 0 || guard > apply) fails.push("App.jsx:" + (resumeQ + 1) + " — 새로고침 이어받기가 game_type을 보지 않고 applyPvpGame(g)을 부른다(미니게임 대전이 체스 대국으로 열려 시간 초과 패배·먹통)");
+}
+
 if (fails.length) {
   console.error("✖ check-pvp-entry: " + fails.length + "건\n  · " + fails.join("\n  · "));
   process.exit(1);

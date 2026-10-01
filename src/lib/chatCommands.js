@@ -35,21 +35,21 @@ export function chatPlayTimeArg(arg) {
 }
 
 export const CHAT_COMMANDS = [
-  { name: "puzzle", usage: "/puzzle <번호>", desc: "그 번호의 퍼즐을 공유해요", group: "공유", example: "/puzzle 123456" },
-  { name: "legacy", usage: "/legacy <1~6>", desc: "내 유산을 공유해요(1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)", group: "공유", example: "/legacy 1" },
-  { name: "review", usage: "/review recent | pgn <코드> | fen <코드>", desc: "최근 chess.com 대국이나 PGN·FEN 리뷰를 공유해요", group: "공유", example: "/review recent" },
-  { name: "poll", usage: "/poll [FEN]", desc: "\"여기서 뭐 둘래?\" 수 투표를 보내요(FEN을 비우면 포지션 고르기 창)", group: "공유", example: "/poll" },
-  { name: "board", usage: "/board [FEN]", desc: "같이 보기 보드를 열어요 — 한 보드를 둘이 함께 둬요", group: "공유", example: "/board" },
-  { name: "play", usage: "/play <분>[+<초>] | <미니게임 이름>", desc: "상대에게 실시간 체스 대국이나 미니게임 대결을 신청해요 — 예: /play 10, /play 15+10, /play knight", group: "대국", example: "/play 10",
+  { name: "puzzle", usage: "/puzzle <번호>", desc: "그 번호의 퍼즐 공유", group: "공유", example: "/puzzle 123456" },
+  { name: "legacy", usage: "/legacy <1~6>", desc: "내 유산 공유 (1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)", group: "공유", example: "/legacy 1" },
+  { name: "review", usage: "/review recent | pgn <코드> | fen <코드>", desc: "최근 chess.com 대국이나 PGN·FEN 리뷰 공유", group: "공유", example: "/review recent" },
+  { name: "poll", usage: "/poll [FEN]", desc: "\"여기서 뭐 둘래?\" 수 투표 전송 (FEN을 비우면 포지션 선택 창)", group: "공유", example: "/poll" },
+  { name: "board", usage: "/board [FEN]", desc: "같이 보기 보드 열기. 한 보드를 둘이 함께 둠", group: "공유", example: "/board" },
+  { name: "play", usage: "/play <분>[+<초>] | <미니게임 이름>", desc: "상대에게 실시간 체스 대국이나 미니게임 대결 신청. 예: /play 10, /play 15+10, /play knight", group: "대국", example: "/play 10",
     choices: [
       { value: "3", label: "체스 3분" }, { value: "10", label: "체스 10분" }, { value: "15+10", label: "체스 15+10" },
       ...CHAT_PLAY_GAMES.map((g) => ({ value: g.key, label: g.label })),
     ] },
-  { name: "blind", usage: "/blind", desc: "블라인드 대국을 준비해요 — 그 뒤 백을 맡을 사람이 1.e4처럼 첫 수를 보내면 시작", group: "대국", when: "blindIdle", example: "/blind" },
-  { name: "resign", usage: "/resign", desc: "블라인드 대국을 기권해요", group: "블라인드 대국 중", when: "blindActive" },
-  { name: "draw", usage: "/draw", desc: "무승부를 제안해요(상대도 /draw를 보내면 무승부)", group: "블라인드 대국 중", when: "blindActive" },
-  { name: "eval", usage: "/eval", desc: "지금 포지션의 엔진 평가치를 보내요", group: "블라인드 대국 중", when: "blindActive" },
-  { name: "help", usage: "/help", desc: "명령어 목록을 보여줘요(나에게만 보여요)", group: "기타" },
+  { name: "blind", usage: "/blind", desc: "블라인드 대국 준비. 이후 백을 맡은 사람이 1.e4처럼 첫 수를 보내면 시작", group: "대국", when: "blindIdle", example: "/blind" },
+  { name: "resign", usage: "/resign", desc: "블라인드 대국 기권", group: "블라인드 대국 중", when: "blindActive" },
+  { name: "draw", usage: "/draw", desc: "무승부 제안 (상대도 /draw를 보내면 무승부)", group: "블라인드 대국 중", when: "blindActive" },
+  { name: "eval", usage: "/eval", desc: "지금 포지션의 엔진 평가치 전송", group: "블라인드 대국 중", when: "blindActive" },
+  { name: "help", usage: "/help", desc: "명령어 목록 표시 (나에게만 표시)", group: "기타" },
 ];
 const BY_NAME = Object.fromEntries(CHAT_COMMANDS.map((c) => [c.name, c]));
 
@@ -74,26 +74,26 @@ export function parseChatCommand(body, ctx) {
   const c = BY_NAME[name];
   if (!c) return null; // 모르는 "/…"는 평범한 텍스트로(예: 이모티콘처럼 쓰는 "/ㅅ/")
   if (!chatCommandAvailable(c, ctx)) {
-    if (c.when === "blindActive") return { error: "블라인드 대국 중에만 쓸 수 있어요. 먼저 /blind로 대국을 준비하세요.", name };
-    return { error: "이미 블라인드 대국이 진행 중이에요. /resign이나 /draw로 끝낸 뒤 다시 준비하세요.", name };
+    if (c.when === "blindActive") return { error: "블라인드 대국 중에만 사용 가능. 먼저 /blind로 준비", name };
+    return { error: "이미 블라인드 대국 진행 중. /resign이나 /draw로 끝낸 뒤 다시 준비", name };
   }
   switch (name) {
     case "help": case "blind": case "resign": case "draw": case "eval":
-      return rest ? err(name, "이 명령어는 뒤에 아무것도 붙이지 않아요.") : { name };
+      return rest ? err(name, "이 명령어는 뒤에 아무것도 붙이지 않음") : { name };
     case "puzzle": {
       const pm = /^(?:-num\s+)?#?(\d{1,7})$/i.exec(rest);
-      return pm ? { name, no: parseInt(pm[1], 10) } : err(name, "퍼즐 번호(숫자)를 적어 주세요.");
+      return pm ? { name, no: parseInt(pm[1], 10) } : err(name, "퍼즐 번호(숫자) 입력 필요");
     }
     case "legacy": {
       const lm = /^([1-6])$/.exec(rest);
-      return lm ? { name, slot: parseInt(lm[1], 10) } : err(name, "1~6 중 하나를 적어 주세요.");
+      return lm ? { name, slot: parseInt(lm[1], 10) } : err(name, "1~6 중 하나 입력 필요");
     }
     case "review": {
       const rm = /^-?(recent|pgn|fen)(?:\s+([\s\S]+))?$/i.exec(rest);
       if (!rm) return err(name);
       const kind = rm[1].toLowerCase(), code = (rm[2] || "").trim();
       if (kind === "recent") return code ? err(name) : { name, kind };
-      if (!code) return err(name, (kind === "pgn" ? "PGN" : "FEN") + " 코드를 붙여 주세요.");
+      if (!code) return err(name, (kind === "pgn" ? "PGN" : "FEN") + " 코드 붙여넣기 필요");
       return { name, kind, code };
     }
     case "play": {
@@ -101,17 +101,17 @@ export function parseChatCommand(body, ctx) {
       // — "/play 아무개랑 하고 싶다" 같은 말을 막지 않으려는 것. 형식 검사는 호출부(parsePlayCommandArg)가 한다.
       // (v0.5.7 BUG-028) 단, 한 단어짜리 인자는 명령어를 치려던 것이라(예: "/play 백랭크") 문장으로 흘려보내지 않고 쓸 수 있는 이름을 알려 준다
       // — 예전엔 못 알아들은 게임 이름이 평범한 메시지로 조용히 나가 "신청이 안 된다"로만 보였다.
-      if (!rest) return err(name, "시간(분)이나 미니게임 이름을 적어 주세요.");
+      if (!rest) return err(name, "시간(분)이나 미니게임 이름 입력 필요");
       const mg = chatPlayGameOf(rest);
       if (mg) return { name, gameType: mg.gameType };
       const t = chatPlayTimeArg(rest);
       if (t) return { name, arg: t };
       if (/\s/.test(rest)) return null;
-      return err(name, "\"" + rest + "\"은(는) 모르는 이름이에요. 미니게임: " + CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ") + ".");
+      return err(name, "\"" + rest + "\" 알 수 없는 이름. 미니게임: " + CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ") + ".");
     }
     case "poll": case "board": {
       if (!rest) return { name, fen: null };
-      return FENISH.test(rest) ? { name, fen: rest } : err(name, "FEN 형식이 아니에요.");
+      return FENISH.test(rest) ? { name, fen: rest } : err(name, "FEN 형식 아님");
     }
     default:
       return null;
