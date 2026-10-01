@@ -4,7 +4,7 @@ import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/c
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Gamepad2, Sparkles } from "lucide-react";
+import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
 import LangPicker from "../components/LangPicker.jsx";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -739,12 +739,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("설정")}</h2></div>
       <div className="settings-cols">
 
-      {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
-      <div style={card}>
-        {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
-        <LangPicker />
-        <p style={{ fontSize: 11, color: T.inkSoft, margin: "8px 2px 0" }}>{t("선택하면 페이지가 새로고침됨")}</p>
-      </div>
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
       {!user ? (
         <div style={{ ...card, animation: loginShaking ? "lineShake .55s ease 3" : "none" }}>
@@ -780,6 +774,12 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine} earnedTitles={earnedTitles} onEquipTitle={onEquipTitle} isDev={isDev} isCodev={isCodev}
           devOn={devOn} codevOn={codevOn} chesscomStatus={chesscomStatus} chesscom={chesscom} />
       )}
+      {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
+      <div style={card}>
+        {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
+        <LangPicker />
+        <p style={{ fontSize: 11, color: T.inkSoft, margin: "8px 2px 0" }}>{t("선택하면 페이지가 새로고침됨")}</p>
+      </div>
 
       {/* (18차 UI10) 개발자/공동 개발자 모드 — 블록·설명 없이 온오프 토글 한 줄만 */}
       {isDev && (
@@ -901,19 +901,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         ))}
       </div>
 
-      {/* (v0.5.5, 사용자 요청) 미니게임 설정 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을
-          보드에 빨갛게 표시할지. 기본값은 꺼짐(스스로 읽어 내는 게 미니게임의 재미라), 퍼즐 설정과 같이 계정에 저장된다. */}
-      <div style={card}>
-        {cardTitle(Gamepad2, t("미니게임 설정"))}
-        <div className="flex items-center justify-between">
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
-          </div>
-          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label={t("통제 칸 표시")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
-        </div>
-      </div>
-
       {/* (v0.1.4 기능) 사운드 — 배경음악·효과음 켜기/끄기와 세부 음량을 이 카드 하나로 모은다.
           (헤더에는 따로 두지 않는다 — 조절은 항상 설정 탭에서만.) */}
       <div style={card}>
@@ -949,6 +936,15 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시")}</div>
           </div>
           <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label={t("수 등급 이펙트")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
+        <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
+        {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.7.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
+            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
+          </div>
+          <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label={t("통제 칸 표시")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
       </div>
 

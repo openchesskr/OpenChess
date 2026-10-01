@@ -1756,4 +1756,6 @@ export default {
   "레슨 본문·오프닝 설명 일부는 한국어로 표시됨. 순차 번역 예정.": "Parte del texto de las lecciones y de las descripciones de aperturas se muestra en coreano. La traducción se hará progresivamente.",
   "5개 언어 선택 · 체스 용어 표준 번역": "5 idiomas · terminología estándar de ajedrez",
   "다국어 지원 · 체스 용어 표준 번역.": "Compatibilidad multilingüe · terminología estándar de ajedrez.",
+  "설정 탭 정리. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합.": "Pestaña de Ajustes reorganizada. Las tarjetas de cuenta e idioma pasan arriba y «Mostrar casillas controladas» se integra en Efectos visuales.",
+  "처음 접속하면 기기 언어로 자동 설정. 직접 선택하면 그 언어로 고정.": "En la primera visita el idioma se establece según tu dispositivo. Si eliges uno, queda fijo.",
 };
