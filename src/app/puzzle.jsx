@@ -1635,7 +1635,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     return () => clearTimeout(t);
   }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
-  const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || (t("라인 {0}{1}", lineIdx, 1))) : "";
+  const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || (t("라인 {0}", lineIdx + 1))) : "";
   // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
   // 등급이 없는 수(직전 실수 수·구버전 트리)만 엔진으로 정밀 판정한다.
   const [moveIcon, setMoveIcon] = useState(null);   // { key, to, kind }
@@ -2126,7 +2126,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                   const lineIsSolved = solvedNow.has(l.tag);
                   const isTarget = l.tag === targetTag;
                   return (
-                    <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={t("라인 {0}{1}{2}", i, 1, lineIsSolved ? t(" (해결됨, 다시 풀기)") : "")}
+                    <button key={l.tag} onClick={() => gotoLine(l.tag)} className="press" title={t("라인 {0}{1}", i + 1, lineIsSolved ? t(" (해결됨, 다시 풀기)") : "")}
                       style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
                         border: "2px solid " + (isTarget ? T.brassHi : lineIsSolved ? T.best : "#C9B58C"),
                         background: lineIsSolved ? "#EAF3E0" : "#fff",
