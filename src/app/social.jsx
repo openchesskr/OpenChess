@@ -219,15 +219,9 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
   const s = (n) => Math.round(n * scale);
   return (
     <div className="flex items-center" style={{ padding: s(2), borderRadius: s(9), background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: s(2), flexShrink: 0 }}>
-      <button onClick={() => setStatsView("oc")} aria-label={t("OpenChess 통계")} title={t("OpenChess 통계")} className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "oc" ? "#fff" : "transparent", boxShadow: statsView === "oc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-        {/* (사용자 요청) favicon.png는 나이트 그림 둘레에 여백이 넓게 있어(실제 그림 높이가 캔버스의 약
-            86%) chess.com 폰 아이콘(캔버스 전체를 꽉 채움)과 같은 픽셀 크기로 두면 훨씬 작아 보인다 —
-            실제 눈에 보이는 그림 높이가 비슷해지도록 이 아이콘만 조금 더 크게 잡는다(17px vs 15px). */}
-        <img src="/favicon.png" alt="OpenChess" style={{ width: s(17), height: s(17), objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
-      </button>
-      <button onClick={() => setStatsView("cc")} aria-label={t("Chess.com 통계")} title={t("Chess.com 통계")} className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-        <span aria-hidden="true" style={{ fontSize: s(11), fontWeight: 900, letterSpacing: "-.03em", color: "#fff", opacity: statsView === "cc" ? 1 : 0.55 }}>cc</span>
-      </button>
+      {[["oc", "OpenChess", t("OpenChess 통계")], ["cc", "chess.com", t("Chess.com 통계")]].map(([key, label, aria]) => (
+        <button key={key} onClick={() => setStatsView(key)} aria-label={aria} title={aria} aria-pressed={statsView === key} className="press" style={{ height: s(26), padding: "0 " + s(8) + "px", borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === key ? "#fff" : "transparent", boxShadow: statsView === key ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease", fontSize: s(11), fontWeight: 800, letterSpacing: "-.02em", whiteSpace: "nowrap", color: statsView === key ? "#3B2A1A" : "rgba(59,42,26,.55)" }}>{label}</button>
+      ))}
     </div>
   );
 }

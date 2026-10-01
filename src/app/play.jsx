@@ -2099,7 +2099,7 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
     </motion.button>
   );
 }
-function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
+function MinigameLeaderboard({ game, myUid, onOpenProfile }) {
   const [kind, setKind] = useState("rating");
   const [scope, setScope] = useState("all");
   const [rows, setRows] = useState(null);
@@ -2119,10 +2119,8 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   // (v0.5.7) 데스크톱에서 탭·순위 줄이 화면 폭 끝까지 늘어나지 않게 로비(520px)보다 조금 넓은 폭으로 모은다.
   return (
     <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", padding: "8px 2px 4px" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, padding: 0 }}>{tx("{0}로비", <ChevronLeft size={14} />)}</button>
+      <div className="flex items-center justify-center" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}>{tx("{0}랭킹", <Trophy size={15} color={MG_GOLD} />)}</span>
-        <span style={{ width: 40 }} />
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
         <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />
@@ -2432,7 +2430,7 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   if (m.game) body = <MgPvpContext.Provider value={pvpCtx}><MgOppContext.Provider value={opp}>{renderPvp({ ...common, runKey: "pvp" + m.game.id, game: m.game })}</MgOppContext.Provider></MgPvpContext.Provider>;
   else if (mode && mode.kind === "bot") body = <MgOppContext.Provider value={MG_BOT_OPP}>{renderBot({ ...common, opt: mode.opt })}</MgOppContext.Provider>;
   else if (mode && mode.kind === "solo") body = renderSolo(common);
-  else if (mode && mode.kind === "rank") body = <MinigameLeaderboard game={gameType} myUid={myUid} onOpenProfile={onOpenProfile} onBack={toLobby} />;
+  else if (mode && mode.kind === "rank") body = <MinigameLeaderboard game={gameType} myUid={myUid} onOpenProfile={onOpenProfile} />;
   else if (m.waiting || m.myInvite) body = (
     <MatchmakingScreen active variant={m.myInvite ? "invite" : "queue"}
       opponent={m.myInvite ? { name: m.myInvite.toUsername || t("상대"), photo: m.myInvite.toPhoto } : null}
