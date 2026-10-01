@@ -7,6 +7,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-book-transposition.mjs
  */
 import fs from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 import { boardFromSans, sanSrc, sansToFen, stripSuffix } from "../src/lib/chessRules.js";
 import { bookPositionKey, ecoHash } from "../src/lib/ecoHash.js";
 
@@ -15,7 +16,7 @@ const ECO_BOOK = JSON.parse(fs.readFileSync(new URL("../src/data/ecoBook.json", 
 const ecoSet = new Set(ECO_BOOK.hashes.split(" "));
 const isEcoBookPosition = (key) => !!key && ecoSet.has(ecoHash(key));
 
-const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const app = readAppSource();
 const fails = [];
 const body = (name) => {
   const i = app.indexOf("function " + name + "(");
