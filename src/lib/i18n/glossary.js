@@ -60,5 +60,5 @@ export const GLOSSARY = [
 export const LANG_CODES = ["en", "hi", "ja", "zh", "es"];
 // 용어집이 오탐하는 경우만 적는다: { "원문 키": ["용어 id", …] } — 반드시 이유를 주석으로 남길 것.
 export const GLOSSARY_EXEMPT = {
-  "{0} OC 나이트 코인": ["knight"], "OC 나이트 코인": ["knight"], "OC 나이트 코인 {0} · {1}/5 완료": ["knight"], // 재화 이름(OC Knight Coin)의 "나이트"는 기물이 아니라 브랜드 이름 — 번역에서 기물 표기를 쓰지 않는다
+  "{0} OC 나이트 코인": ["knight"], "OC 나이트 코인": ["knight"], "OC 나이트 코인 {0} · {1}/5 완료": ["knight"], "보유 중인 OC 나이트 코인": ["knight"], // 재화 이름(OC Knight Coin)의 "나이트"는 기물이 아니라 브랜드 이름 — 번역에서 기물 표기를 쓰지 않는다
 };
