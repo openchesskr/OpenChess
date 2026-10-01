@@ -10,7 +10,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, titleId, todayStr, useNarrow, useRealtimeTable, usersProfiles } from "./common.jsx";
+import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, titleId, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -1980,7 +1980,7 @@ export function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{tx("{0}님이 {1} 신청{2}", invite.fromUsername || t("누군가"), specialGame ? t("실시간 대결을") : t("대국을"), <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tc.cat : "")}</span>)}
+            @{tx("{0}님이 {1} 신청{2}", invite.fromUsername || t("누군가"), specialGame ? t("실시간 대결을") : t("대국을"), <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tcCatLabel(tc.cat) : "")}</span>)}
           </div>
         </div>
         <div className="flex gap-2">

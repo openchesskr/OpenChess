@@ -9,15 +9,13 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-i18n.mjs [--report]
  */
 import { extractAll } from "./lib/i18nKeys.mjs";
-import { GLOSSARY, LANG_CODES } from "../src/lib/i18n/glossary.js";
+import { GLOSSARY, LANG_CODES, GLOSSARY_EXEMPT } from "../src/lib/i18n/glossary.js";
 
 // 번역을 100% 요구하는 파일(src 기준 경로). 화면을 번역할 때마다 여기에 추가한다.
 export const CORE_FILES = JSON.parse(await import("node:fs").then((fs) => fs.readFileSync(new URL("../src/lib/i18n/core-files.json", import.meta.url), "utf8")));
-// 용어집이 오탐하는 경우만 적는다: { "원문 키": ["용어 id", …] } — 이유를 주석으로 남길 것.
-const GLOSSARY_EXEMPT = {};
 
 const fails = [], warns = [];
-const { byFile, all } = extractAll();
+const { byFile, all, deferredAll } = extractAll();
 // ① 바인딩
 for (const [f, r] of Object.entries(byFile)) r.badBinding.forEach((l) => fails.push(f + ":" + l + " — t()가 i18n.js의 t가 아니라 지역 변수를 가리킴(변수 이름을 바꿀 것)"));
 // 키 검사 함수
@@ -57,4 +55,4 @@ const perFile = Object.entries(byFile).filter(([, r]) => r.keys.size).map(([f, r
 if (process.argv.includes("--report")) { console.log("파일별 미번역(어느 한 언어라도 없는 키):"); perFile.sort((a, b) => b[2] - a[2]).forEach(([f, n, m]) => console.log("  " + String(m).padStart(5) + " / " + String(n).padStart(5) + "  " + f + (CORE_FILES.includes(f) ? "  [핵심]" : ""))); }
 warns.slice(0, 15).forEach((w) => console.warn("경고 " + w)); if (warns.length > 15) console.warn("경고 … 외 " + (warns.length - 15) + "건");
 if (fails.length) { console.error("check-i18n 실패 (" + fails.length + "건):\n  " + fails.slice(0, 60).join("\n  ") + (fails.length > 60 ? "\n  … 외 " + (fails.length - 60) + "건" : "")); process.exit(1); }
-console.log("✔ check-i18n: 키 " + total + "개 · " + lines.join(" · ") + " · 핵심 화면 " + CORE_FILES.length + "개 파일(" + coreKeys + "키) 전 언어 100%");
+console.log("✔ check-i18n: 키 " + total + "개(보류한 대형 콘텐츠 " + deferredAll.size + "개 별도) · " + lines.join(" · ") + " · 핵심 화면 " + CORE_FILES.length + "개 파일(" + coreKeys + "키) 전 언어 100%");

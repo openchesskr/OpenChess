@@ -5,22 +5,22 @@
 //  · 번역은 AI가 초안을 쓴 것이다. 원어민 검수 전에는 note의 "검수 필요" 표시를 지우지 않는다.
 export const GLOSSARY = [
   // ── 기물 ──
-  { id: "king", ko: "킹(?!덤)", en: ["King"], hi: ["राजा"], ja: ["キング"], zh: ["王"], es: ["Rey"] },
-  { id: "queen", ko: "퀸", en: ["Queen"], hi: ["रानी", "वज़ीर", "वजीर"], ja: ["クイーン"], zh: ["后"], es: ["Dama", "Reina"] },
+  { id: "king", ko: "킹(?!덤|스)", en: ["King"], hi: ["राजा"], ja: ["キング"], zh: ["王"], es: ["Rey"] },
+  { id: "queen", ko: "퀸(?!스)", en: ["Queen"], hi: ["रानी", "वज़ीर", "वजीर"], ja: ["クイーン"], zh: ["后"], es: ["Dama", "Reina"] },
   { id: "rook", ko: "룩(?!스)", en: ["Rook"], hi: ["हाथी", "रूक"], ja: ["ルーク"], zh: ["车"], es: ["Torre"] },
   { id: "bishop", ko: "비숍", en: ["Bishop"], hi: ["ऊँट", "ऊंट", "बिशप"], ja: ["ビショップ"], zh: ["象"], es: ["Alfil"] },
   { id: "knight", ko: "나이트(?!메어)", en: ["Knight"], hi: ["घोड़ा", "घोड़े", "नाइट"], ja: ["ナイト"], zh: ["马"], es: ["Caballo"] },
-  { id: "pawn", ko: "(?<![가-힣])폰(?![트가-힣]*트)", en: ["Pawn"], hi: ["प्यादा", "प्यादे", "पॉन"], ja: ["ポーン"], zh: ["兵"], es: ["Peón", "Peon", "Peones"] },
-  { id: "piece", ko: "기물", en: ["Piece"], hi: ["मोहरा", "मोहरे", "मोहरों"], ja: ["駒"], zh: ["棋子", "子"], es: ["Pieza"] },
+  { id: "pawn", ko: "(?<![가-힣])폰(?!트|지아니)", en: ["Pawn"], hi: ["प्यादा", "प्यादे", "प्यादों", "पॉन"], ja: ["ポーン"], zh: ["兵"], es: ["Peón", "Peon", "Peones"] },
+  { id: "piece", ko: "기물", en: ["Piece", "material"], hi: ["मोहरा", "मोहरे", "मोहरों"], ja: ["駒"], zh: ["棋子", "子"], es: ["Pieza", "material"] },
   // ── 수 등급 ──
-  { id: "brilliant", ko: "탁월", en: ["Brilliant"], hi: ["शानदार"], ja: ["ブリリアント"], zh: ["精彩"], es: ["Brillante"] },
+  { id: "brilliant", ko: "탁월한 수|탁월한 유산|^탁월$", en: ["Brilliant"], hi: ["शानदार"], ja: ["ブリリアント"], zh: ["精彩"], es: ["Brillante"] },
   { id: "only", ko: "유일한 수", en: ["Only move"], hi: ["एकमात्र चाल"], ja: ["唯一の手", "唯一手"], zh: ["唯一着法", "唯一走法", "唯一的着法"], es: ["Única jugada", "Jugada única", "única"] },
   { id: "best", ko: "최선의 수", en: ["Best"], hi: ["सर्वश्रेष्ठ चाल", "सर्वोत्तम चाल"], ja: ["最善手"], zh: ["最佳"], es: ["Mejor"] },
   { id: "excellent", ko: "우수한 수", en: ["Excellent"], hi: ["उत्कृष्ट"], ja: ["好手"], zh: ["优秀"], es: ["Excelente"] },
-  { id: "good", ko: "좋은 수", en: ["Good"], hi: ["अच्छी चाल"], ja: ["良手"], zh: ["好着法", "好棋", "良好"], es: ["Buena"] },
+  { id: "good", ko: "^좋은 수$", en: ["Good"], hi: ["अच्छी चाल"], ja: ["良手"], zh: ["好着法", "好棋", "良好"], es: ["Buena"] },
   { id: "book", ko: "이론적인 수|이론 수", en: ["Book"], hi: ["थ्योरी", "बुक"], ja: ["定跡"], zh: ["开局库", "定式", "理论"], es: ["Teoría", "Libro", "teórica"] },
   { id: "inaccuracy", ko: "부정확", en: ["Inaccura"], hi: ["अशुद्धि", "अशुद्ध"], ja: ["疑問手", "不正確"], zh: ["不精确", "不准确"], es: ["Imprecis"] },
-  { id: "mistake", ko: "실수", en: ["Mistake"], hi: ["गलती"], ja: ["悪手"], zh: ["失误", "错着", "错误"], es: ["Error"] },
+  { id: "mistake", ko: "^실수$", en: ["Mistake"], hi: ["गलती"], ja: ["悪手"], zh: ["失误", "错着", "错误"], es: ["Error"] },
   { id: "miss", ko: "놓친 수", en: ["Miss"], hi: ["चूक"], ja: ["見逃し"], zh: ["漏着", "错失"], es: ["Oportunidad perdida", "perdida", "Fallo"] },
   { id: "blunder", ko: "블런더", en: ["Blunder"], hi: ["भारी भूल", "ब्लंडर"], ja: ["大悪手", "ブランダー"], zh: ["大漏着", "严重失误", "漏着"], es: ["Error grave", "Blunder", "Pifia"] },
   // ── 규칙·결과 ──
@@ -37,10 +37,10 @@ export const GLOSSARY = [
   { id: "pin", ko: "(?<![가-힣])핀(?![가-힣]*[란트])", en: ["Pin"], hi: ["पिन"], ja: ["ピン"], zh: ["牵制"], es: ["Clavada"] },
   { id: "skewer", ko: "스큐어", en: ["Skewer"], hi: ["स्क्यूअर", "स्क्यूर"], ja: ["スキュアー", "スキューア"], zh: ["串击", "穿击"], es: ["Ensartada", "Enfilada"] },
   { id: "discovered", ko: "디스커버드", en: ["Discovered"], hi: ["डिस्कवर्ड"], ja: ["ディスカバード"], zh: ["闪击"], es: ["Descubiert"] },
-  { id: "sacrifice", ko: "희생", en: ["Sacrifice"], hi: ["बलिदान", "कुर्बानी", "क़ुर्बानी"], ja: ["サクリファイス", "犠牲", "駒を捨て"], zh: ["弃子"], es: ["Sacrificio"] },
+  { id: "sacrifice", ko: "희생", en: ["Sacrifice"], hi: ["बलिदान", "कुर्बान", "क़ुर्बान"], ja: ["サクリファイス", "犠牲", "駒を捨て"], zh: ["弃子"], es: ["Sacrific"] },
   { id: "gambit", ko: "갬빗", en: ["Gambit"], hi: ["गैम्बिट", "गैंबिट"], ja: ["ギャンビット"], zh: ["弃兵"], es: ["Gambito"] },
   { id: "tactics", ko: "전술", en: ["Tactic"], hi: ["टैक्टिक", "युक्ति"], ja: ["戦術"], zh: ["战术"], es: ["Táctic"] },
-  { id: "strategy", ko: "전략", en: ["Strateg"], hi: ["रणनीति"], ja: ["戦略"], zh: ["战略", "策略"], es: ["Estrategia"] },
+  { id: "strategy", ko: "전략", en: ["Strateg"], hi: ["रणनीति"], ja: ["戦略"], zh: ["战略", "策略"], es: ["Estrategia", "estratég"] },
   // ── 단계·개념 ──
   { id: "opening", ko: "오프닝", en: ["Opening"], hi: ["ओपनिंग"], ja: ["オープニング"], zh: ["开局"], es: ["Apertura"] },
   { id: "middlegame", ko: "미들게임", en: ["Middlegame"], hi: ["मिडिलगेम", "मिडलगेम"], ja: ["ミドルゲーム"], zh: ["中局"], es: ["Medio juego", "Mediojuego"] },
@@ -50,7 +50,7 @@ export const GLOSSARY = [
   { id: "accuracy", ko: "정확도", en: ["Accuracy"], hi: ["सटीकता"], ja: ["精度", "正確度"], zh: ["准确率", "准确度"], es: ["Precisión"] },
   { id: "engine", ko: "엔진", en: ["Engine"], hi: ["इंजन"], ja: ["エンジン"], zh: ["引擎"], es: ["Motor"] },
   { id: "review", ko: "리뷰", en: ["Review"], hi: ["रिव्यू", "समीक्षा"], ja: ["レビュー"], zh: ["复盘"], es: ["Revisión", "Revision"] },
-  { id: "puzzle", ko: "퍼즐", en: ["Puzzle"], hi: ["पहेली", "पज़ल", "पजल"], ja: ["パズル"], zh: ["谜题", "棋题"], es: ["Puzle", "Problema", "Puzzle", "Ejercicio"] },
+  { id: "puzzle", ko: "퍼즐", en: ["Puzzle"], hi: ["पहेली", "पहेलियाँ", "पहेलियों", "पज़ल", "पजल"], ja: ["パズル"], zh: ["谜题", "棋题", "解谜", "解题"], es: ["Puzle", "Problema", "Puzzle", "Ejercicio"] },
   { id: "rematch", ko: "재대국", en: ["Rematch"], hi: ["रीमैच", "दोबारा"], ja: ["再戦"], zh: ["再战", "再来一局"], es: ["Revancha"] },
   // ── 시간 제어(영어 표기를 그대로 쓰는 것이 관례) ──
   { id: "bullet", ko: "불릿", en: ["Bullet"], hi: ["बुलेट", "Bullet"], ja: ["ブレット", "Bullet"], zh: ["超快棋", "子弹", "Bullet"], es: ["Bullet", "Bala"] },
@@ -58,3 +58,7 @@ export const GLOSSARY = [
   { id: "rapid", ko: "래피드", en: ["Rapid"], hi: ["रैपिड", "Rapid"], ja: ["ラピッド", "Rapid"], zh: ["快棋", "Rapid"], es: ["Rápid", "Rapid"] },
 ];
 export const LANG_CODES = ["en", "hi", "ja", "zh", "es"];
+// 용어집이 오탐하는 경우만 적는다: { "원문 키": ["용어 id", …] } — 반드시 이유를 주석으로 남길 것.
+export const GLOSSARY_EXEMPT = {
+  "{0} OC 나이트 코인": ["knight"], "OC 나이트 코인": ["knight"], // 재화 이름(OC Knight Coin)의 "나이트"는 기물이 아니라 브랜드 이름 — 번역에서 기물 표기를 쓰지 않는다
+};

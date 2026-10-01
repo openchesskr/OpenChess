@@ -1,0 +1,27 @@
+{
+  "_설명": "functions/keys: 개발자·공동 개발자만 보는 도구 화면은 번역하지 않는다(한국어 그대로). deferredFunctions: 사용자에게 보이지만 이번 단계에서 아직 번역하지 않는 대형 콘텐츠(번역이 없으면 한국어 원문이 나옴). 현황에는 따로 집계하고 핵심 화면 100% 요구에서는 뺀다.",
+  "functions": [
+    "DevResourcePanel",
+    "DailyPuzzleDevPanel",
+    "PuzzleBatchRegenPanel",
+    "PuzzleControlCenterPanel",
+    "AddMasterGameModal",
+    "AttackDevPanel",
+    "DexTreeEditSection",
+    "BeatEditor",
+    "LessonEditor"
+  ],
+  "keys": [
+    "개발자 모드",
+    "공동 개발자 모드",
+    "개발자 도구",
+    "공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능",
+    "개발자 전용 도구",
+    "공동 개발자 지정",
+    "공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가",
+    "존재하지 않는 아이디"
+  ],
+  "deferredFunctions": [
+    "seedLessons"
+  ]
+}

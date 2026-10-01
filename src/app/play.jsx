@@ -22,7 +22,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles } from "./common.jsx";
+import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -89,7 +89,7 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
   }
   return counts;
 }
-const TIME_CONTROL_CATS = [t("불렛"), t("블리츠"), t("래피드"), t("스탠다드")];
+const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"]; // 구분 값(한국어 고정). 화면에는 tcCatLabel로 번역해 표시
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
   { elo: 800, label: "800", desc: t("초보") },
@@ -420,7 +420,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
             </div>
           </div>
-          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? " · " + timeControl.cat : ""}</div>}
+          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? " · " + tcCatLabel(timeControl.cat) : ""}</div>}
           {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
               "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
               리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
@@ -5120,7 +5120,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center" }}>{cat}</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center" }}>{tcCatLabel(cat)}</div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
                         <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
