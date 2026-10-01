@@ -171,6 +171,7 @@ function firstMoveCount(start, target, walls, par) {
 }
 
 // spec 하나로 라운드를 시도한다. solo면 흑 기물만 둔다(상대가 없으니 내 진영 기물이 필요 없다). rnd: 0~1 난수 함수.
+// (v0.6.1) moveBudget(par+1)은 더 이상 플레이어의 이동 수 제한이 아니다 — 사람은 제한시간 안에서 몇 수든 둘 수 있고, 봇이 쓸 경로 길이의 상한으로만 남는다.
 export function knightTryGen(spec, { solo = false, rnd = Math.random } = {}) {
   const pick = () => KNIGHT_ALL_SQS[Math.floor(rnd() * 64)];
   for (let attempt = 0; attempt < KNIGHT_GEN_TRIES; attempt++) {

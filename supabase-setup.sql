@@ -2576,7 +2576,7 @@ end; $$;
 
 -- (v0.5.4 난이도 대폭 상향 → v0.5.7 개편) 라운드 하나를 만든다 — src/lib/knightRace.js의 knightTryGen/knightGenRound와 같은 규칙.
 -- par = 위협 칸과 모든 기물 칸을 피한(잡지 않고 가는) 최단 수(knight_safe_walls). 라운드별 조건(minDist~maxDist, 기물 쌍,
--- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. 이동 수 제한은 par+1.
+-- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. moveBudget(par+1)은 (v0.6.1) 플레이어의 이동 제한이 아니라 봇이 따라갈 수 있는 경로 길이의 상한일 뿐이다.
 --   1: par 3~4, 1쌍, 5초 / 2: par 4~5, 2쌍, +1 / 3: par 5~6, 3쌍, +1 / 4: par 6~7, 4쌍, +1, 14초
 --   5: par 6~8, 5쌍(1쌍은 반드시 퀸), +2, 첫 수 하나뿐, 17초 — (v0.5.7, 사용자 요청) 반드시 상대 퀸이 나오는 매우 어려운 라운드
 -- 시작 칸·기물은 목표를 중심으로 점대칭이고, 흑 쪽 par도 같을 때만 쓴다. 4000번 안에 못 찾으면 조건을 한 단계씩 낮추되,
@@ -3077,8 +3077,10 @@ grant execute on function public.rush_forfeit(bigint) to authenticated;
 -- ② 등급별로도 전부 같으면, 불리한 확률로 플레이한(레이팅이 높은) 쪽 ③ 레이팅도 같으면 무승부.
 -- 포지션 풀: 저장소에 번들된 시드(src/data/attackPositions.json — 실전 마스터 대국에서 Stockfish로
 -- 검증해 뽑은 강제 메이트) + 개발자가 추가한 포지션(아래 attack_positions 테이블 — 직접 FEN 입력 또는
--- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 두 클라이언트는 같은
--- 풀(번들+테이블, id순 정렬)의 그 등급 목록에서 pick % 개수번째 포지션을 꺼낸다.
+-- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 각 클라이언트는 자기 기회의
+-- 포지션을 번들+테이블 풀의 그 등급 목록에서 직접 고른다(src/lib/attackPool.js — 이 브라우저에서 아직 안 나온
+-- 포지션 중, 테마를 균등하게 섞어 pick을 시드로 추첨). 상대 화면에는 포지션이 보이지 않으므로 두 클라이언트가
+-- 같은 포지션을 고를 필요는 없다(v0.6.1부터).
 --   sans[0] = { "h": 1, "startAt": ts, "endAt": ts, "wr": int, "br": int }  (헤더)
 --   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null, "prog": { "s": "ok"|"bad"|"win", "left", "n", "t" }|없음 }
 create table if not exists public.attack_positions (
