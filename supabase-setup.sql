@@ -1830,9 +1830,10 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  -- (v0.5.4) 미니게임 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  -- (v0.5.4) 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  -- (v0.6.1) 일반 체스 랜덤 매칭도 레이팅 대전이다(예전엔 미니게임만).
   insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at, rated)
-    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), p_game_type <> 'chess')
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), true)
     returning * into v_game;
   return v_game;
 end; $$;
@@ -3079,7 +3080,7 @@ grant execute on function public.rush_forfeit(bigint) to authenticated;
 -- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 두 클라이언트는 같은
 -- 풀(번들+테이블, id순 정렬)의 그 등급 목록에서 pick % 개수번째 포지션을 꺼낸다.
 --   sans[0] = { "h": 1, "startAt": ts, "endAt": ts, "wr": int, "br": int }  (헤더)
---   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null }
+--   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null, "prog": { "s": "ok"|"bad"|"win", "left", "n", "t" }|없음 }
 create table if not exists public.attack_positions (
   id bigint generated always as identity primary key,
   fen text not null,
@@ -3181,6 +3182,27 @@ begin
 end; $$;
 grant execute on function public.attack_report(bigint, int, boolean) to authenticated;
 
+-- (v0.6.1) 내 진행 상황 알림 — 상대 화면의 "상대 상황 표시"(체크메이트 수순을 찾는 중 / 정확한 수순 / 실패 / n수 메이트 성공)용.
+-- 내 것이고 아직 안 끝난 기회에만 prog = { s: 'ok'|'bad'|'win', left, n, t }를 붙인다. 판정(attack_report·attack_finish)에는 쓰이지 않는 표시값이다.
+create or replace function public.attack_progress(p_game_id bigint, p_idx int, p_state text, p_left int, p_n int)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_c text; v_e jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_state is null or p_state not in ('ok', 'bad', 'win') then return; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then return; end if;
+  if v_game.game_type <> 'attack' or v_game.status <> 'active' then return; end if;
+  if v_me = v_game.white_uid then v_c := 'w'; elsif v_me = v_game.black_uid then v_c := 'b'; else raise exception 'not a participant'; end if;
+  if p_idx < 1 or p_idx >= jsonb_array_length(v_game.sans) then return; end if;
+  v_e := v_game.sans -> p_idx;
+  if v_e ->> 'c' <> v_c then return; end if;
+  if v_e -> 'ok' is not null and jsonb_typeof(v_e -> 'ok') <> 'null' then return; end if;
+  v_e := v_e || jsonb_build_object('prog', jsonb_build_object('s', p_state, 'left', least(greatest(coalesce(p_left, 0), 0), 9), 'n', least(greatest(coalesce(p_n, 0), 0), 9), 't', now()));
+  update public.pvp_games set sans = jsonb_set(sans, array[p_idx::text], v_e), updated_at = now() where id = p_game_id;
+end; $$;
+grant execute on function public.attack_progress(bigint, int, text, int, int) to authenticated;
+
 -- 결과 확정 — 종료 시각(+3초 여유, 마지막 보고를 기다린다)이 지난 뒤에만. 규칙은 위 설명 참고.
 create or replace function public.attack_finish(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
@@ -3253,7 +3275,7 @@ grant execute on function public.attack_forfeit(bigint) to authenticated;
 -- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
 create table if not exists public.minigame_stats (
   uid uuid not null references auth.users(id) on delete cascade,
-  game text not null check (game in ('coord', 'knight', 'rush', 'attack')),
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess')),
   rating int not null default 1200,
   peak_rating int not null default 1200,
   rated_games int not null default 0,
@@ -3269,6 +3291,10 @@ create table if not exists public.minigame_stats (
   updated_at timestamptz not null default now(),
   primary key (uid, game)
 );
+-- (v0.6.1) 일반 체스 대국('chess')도 같은 표에 전적·레이팅을 쌓는다. 이미 만들어진 표는 위 create table을 건너뛰므로 제약을 따로 바꾼다.
+-- 이 제약이 먼저 넓혀져야 아래 트리거가 'chess' 행을 넣을 수 있다(순서 중요).
+alter table public.minigame_stats drop constraint if exists minigame_stats_game_check;
+alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess'));
 create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
 create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
 alter table public.minigame_stats enable row level security;
@@ -3289,6 +3315,9 @@ declare
   w public.minigame_stats; b public.minigame_stats;
   v_ws numeric; v_wr int; v_br int;
 begin
+  -- (v0.6.1) 전적·레이팅 집계가 어떤 이유로 실패해도(제약·권한 등) 대국 결과를 확정하는 update 자체는 막지 않는다 — 집계는 부가 기능이고,
+  -- 일반 체스까지 이 트리거를 타므로 여기서 예외가 나면 모든 대국이 끝나지 못하는 사고가 된다.
+  begin
   insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
     on conflict (uid, game) do nothing;
   select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
@@ -3324,6 +3353,9 @@ begin
     best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
     updated_at = now()
   where uid = new.black_uid and game = new.game_type;
+  exception when others then
+    raise warning 'minigame stats skipped for game %: %', new.id, sqlerrm;
+  end;
   return new;
 end; $$;
 -- BEFORE 트리거라 rating_delta를 같은 update 안에서 채운다 — 대전 화면이 구독 중인 그 한 번의 실시간
@@ -3332,7 +3364,7 @@ drop trigger if exists minigame_game_end_trigger on public.pvp_games;
 create trigger minigame_game_end_trigger
   before update of status on public.pvp_games
   for each row
-  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack'))
+  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack', 'chess'))
   execute function public._minigame_on_game_end();
 
 -- 혼자 플레이하기 기록 제출 — 이전 기록보다 좋을 때만 바꾸고, 바뀌었는지 돌려준다. 클라이언트가 계산한

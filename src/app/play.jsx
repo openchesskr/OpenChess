@@ -18,6 +18,7 @@ import HUB_SCENES from "../data/hubScenes.json";
 import { fx, buzz } from "../lib/minigameFx.js";
 import RUSH_LEVELS from "../data/rushLevels.json";
 import { knightGenRound, knightNeighbors as knightNeighborsClient, knightCatcherOf, knightDangerFor, knightOwnBlocked, knightApplyMove, knightSafeWalls, knightShortestPath as knightShortestPathLocal, knightDistance as knightDistanceLocal, knightJudge, knightExactPath } from "../lib/knightRace.js";
+import { attackGradeOfMate, decodeAttackRow, dedupeAttackPositions, pickAttackPosition, loadAttackSeen, markAttackSeen } from "../lib/attackPool.js";
 import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rushHour.js";
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
@@ -2048,7 +2049,7 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
         <div style={{ display: "flex" }}>
           {cell(t("레이팅"), row ? row.rating : 1200, placed ? t("최고 {0}", row.peak_rating) : t("배치 {0}/{1}", Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT), true)}
           {cell(t("전적"), minigameRecordText(row), row && row.streak >= 2 ? t("{0}연승 중", (row.streak)) : row && row.best_streak >= 2 ? t("최다 {0}연승", row.best_streak) : null)}
-          {cell(t("혼자 최고"), best == null ? "-" : minigameBestLabel(game, best))}
+          {game === "chess" ? cell(t("최고 레이팅"), row ? row.peak_rating : 1200) : cell(t("혼자 최고"), best == null ? "-" : minigameBestLabel(game, best))}
         </div>
       ) : (
         <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>{t("로그인하면 전적·레이팅·기록이 랭킹에 반영")}</div>
@@ -2123,7 +2124,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile }) {
         <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}>{tx("{0}랭킹", <Trophy size={15} color={MG_GOLD} />)}</span>
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
-        <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />
+        {game !== "chess" && <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />}
         <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: t("전체") }, { key: "friends", label: t("친구"), disabled: !myUid }]} />
       </div>
       {rows == null ? (
@@ -3964,7 +3965,6 @@ const ATTACK_GRADES = [
   { g: "C", mate: 4, kind: "excellent", name: t("우수"), color: QCOLOR.excellent, label: t("4수 이상 메이트") },
 ];
 const attackGradeInfo = (g) => ATTACK_GRADES.find((x) => x.g === g) || ATTACK_GRADES[3];
-const attackGradeOfMate = (n) => (n <= 1 ? "S" : n === 2 ? "A" : n === 3 ? "B" : "C");
 // supabase-setup.sql의 _attack_grade와 같은 공식 — 기본 분포 S25·A35·B25·C15%를, 상대보다 레이팅이
 // 낮을수록(400점 차이에서 최대) S·A 쪽으로, 높을수록 B·C 쪽으로 기울인다.
 function attackGradeLocal(my, opp) {
@@ -3976,6 +3976,8 @@ function attackGradeLocal(my, opp) {
 }
 // 포지션 풀 — 번들 시드(src/data/attackPositions.json, 첫 진입 때만 지연 로드) + 개발자가 추가한 DB
 // 포지션(attack_positions). 두 클라이언트가 같은 목록을 같은 순서로 갖도록 id 기준으로 정렬한다.
+// (v0.6.1, 사용자 요청) 시드는 수천 개로 늘었고 테마(th)가 붙어 있다. 한 번 나온 포지션은 다시 나오지 않도록 이 브라우저에 나온 id를
+// 기록하고(attackPool.js), 그 등급을 한 바퀴 다 돌았을 때만 그 등급을 처음부터 다시 돌린다.
 let attackPoolPromise = null;
 function loadAttackPool(force) {
   if (attackPoolPromise && !force) return attackPoolPromise;
@@ -3983,10 +3985,10 @@ function loadAttackPool(force) {
     const seed = (await import("../data/attackPositions.json")).default || [];
     let extra = [];
     if (SB_ON) { try { extra = (await sbSelect("attack_positions?select=id,fen,moves,mate_in,source&order=id")) || []; } catch { } }
-    const all = [
-      ...seed.map((p) => ({ id: p.id, fen: p.fen, moves: p.moves, mateIn: p.mateIn, src: p.src })),
-      ...extra.map((r) => ({ id: "d" + r.id, dbId: r.id, fen: r.fen, moves: r.moves, mateIn: r.mate_in, src: r.source || "dev" })),
-    ];
+    const all = dedupeAttackPositions([
+      ...seed.map(decodeAttackRow),
+      ...extra.map((r) => ({ id: "d" + r.id, dbId: r.id, fen: r.fen, moves: r.moves, mateIn: r.mate_in, src: r.source || "dev", th: [] })),
+    ]);
     const byGrade = { S: [], A: [], B: [], C: [] };
     all.forEach((p) => byGrade[attackGradeOfMate(p.mateIn)].push(p));
     return { all, byGrade, dev: all.filter((p) => p.dbId) };
@@ -3999,7 +4001,8 @@ function useAttackPool() {
   useEffect(() => { reload(false); }, [reload]);
   return [pool, () => reload(true)];
 }
-const attackPick = (pool, grade, pick) => { const list = (pool && pool.byGrade[grade]) || []; return list.length ? list[Math.abs(pick | 0) % list.length] : null; };
+// 이 기회(pick)에 쓸 포지션 — 아직 안 나온 것 중에서(같은 pick이면 같은 포지션). 나온 것으로 기록하는 건 markAttackSeen(화면에 뜬 뒤).
+const attackPick = (pool, grade, pick) => pickAttackPosition((pool && pool.byGrade[grade]) || [], pick, loadAttackSeen());
 const uciOf = (m) => m.from + m.to + (m.promotion || "");
 // 체스판 — chess.js 보드를 사이트 스킨으로 그린다. 공격 측이 항상 아래쪽.
 function AttackGrid({ chess, flip, selected, targets, onCell, canDrag, size, lastMove, hintMove, mated, mark, moveFx }) {
@@ -4067,7 +4070,7 @@ function AttackGradeBadge({ grade, big }) {
   );
 }
 // 공격 기회 하나 — 풀었으면 onResult(true), 틀렸으면 정답 수를 잠깐 보여준 뒤 onResult(false).
-function AttackChance({ pos, grade, enabled, onResult, size }) {
+function AttackChance({ pos, grade, enabled, onResult, onProgress, size }) {
   const chessRef = useRef(null);
   if (!chessRef.current) { try { chessRef.current = new Chess(pos.fen); } catch { chessRef.current = new Chess(); } }
   const chess = chessRef.current;
@@ -4122,7 +4125,10 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     const key = Date.now();
     setState("aim");
     const A = 0;
+    // (v0.6.1) 상대에게 보여줄 진행 상황 — 이 수까지 둔 공격 수(done)와 남은 수. 어느 시점이든 메이트가 되면 성공(더 빠른 메이트 포함).
+    const done = Math.floor(k / 2) + 1;
     if (chess.isCheckmate()) {
+      onProgress && onProgress({ s: "win", n: done });
       later(A, () => { setMark({ sq: to, ok: true, key }); setState("win"); fx("correct"); buzz([40, 40, 40]); });
       // 다음 포지션으로 넘어가기 전에 등급을 기다린다(최대 1.6초) — 이펙트 등급이면 이펙트가 끝난 뒤에 넘어간다.
       let moved = false;
@@ -4136,6 +4142,7 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
       return;
     }
     if (uciOf(mv) !== expected && mv.from + mv.to !== expected.slice(0, 4)) {
+      onProgress && onProgress({ s: "bad" });
       later(A, () => { setMark({ sq: to, ok: false, key }); setState("fail"); fx("wrong"); buzz([80, 50, 80]); shake(); });
       later(A + 900, () => { chess.undo(); setMark(null); setLastMove(null); setHintMove([expected.slice(0, 2), expected.slice(2, 4)]); rerender(); });
       later(A + 2000, () => onResult(false));
@@ -4143,6 +4150,7 @@ function AttackChance({ pos, grade, enabled, onResult, size }) {
     }
     // 정답 — 초록으로 확인해 준 뒤 수비 측 응수를 이어서 둔다. 등급은 응수를 기다리게 하지 않고, 나오는 대로 그 칸에 이펙트를 띄운다.
     const reply = pos.moves[k + 1];
+    onProgress && onProgress({ s: "ok", left: Math.max(1, pos.mateIn - done) });
     later(A, () => { setMark({ sq: to, ok: true, key }); fx("tap"); });
     gradeMove(prevSans, mv.san).then((kind) => {
       if (!aliveRef.current || !MOVE_FX[kind] || seq !== moveSeqRef.current) return;
@@ -4194,9 +4202,145 @@ function AttackLedger({ tally, label }) {
     </div>
   );
 }
+// ---- (v0.6.1, 사용자 요청) 상대 상황 표시 — 3점 인디케이터 / 체크 / X 와 문장 ----
+// st: { s: "search" } 수순을 찾는 중 · { s: "ok", left } 정확한 수순(메이트까지 left수) · { s: "fail" } 실패 · { s: "win", n } n수 메이트 성공.
+function AttackOppStatus({ st }) {
+  const win = st.s === "win";
+  let icon, text, color = "rgba(90,58,34,.82)";
+  if (st.s === "ok") {
+    icon = <motion.span initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 20 }} style={{ display: "inline-flex" }}><Check size={15} color="#2E9F45" strokeWidth={3.2} /></motion.span>;
+    text = t("정확한 수순, 체크메이트까지 {0}수 남음", st.left); color = "#2B7A3A";
+  } else if (st.s === "fail") {
+    icon = <motion.span initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }} style={{ display: "inline-flex" }}><X size={15} color={T.blunder} strokeWidth={3.4} /></motion.span>;
+    text = t("체크메이트 실패"); color = T.blunder;
+  } else if (win) {
+    // 정답 수의 작은 체크와 구분되도록 — 초록 원 + 흰 체크가 튀어나오고 고리가 퍼져 나간다.
+    icon = (
+      <span style={{ position: "relative", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+        <motion.span initial={{ scale: 0.4, opacity: 0.8 }} animate={{ scale: 2.4, opacity: 0 }} transition={{ duration: 0.9, ease: "easeOut" }} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid #2E9F45" }} />
+        <motion.span initial={{ scale: 0, rotate: -40 }} animate={{ scale: [0, 1.35, 1], rotate: 0 }} transition={{ duration: 0.5, times: [0, 0.6, 1] }} style={{ width: 18, height: 18, borderRadius: "50%", background: "#2E9F45", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 10px rgba(46,159,69,.6)" }}><Check size={12} color="#fff" strokeWidth={4} /></motion.span>
+      </span>
+    );
+    text = t("{0}수 체크메이트 성공", st.n); color = "#2B7A3A";
+  } else {
+    icon = <span style={{ display: "inline-flex", color: "rgba(90,58,34,.7)" }}><PendingDots size={14} /></span>;
+    text = t("체크메이트 수순을 찾는 중");
+  }
+  return (
+    <span aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 10.5, fontWeight: win ? 900 : 700, color }}>
+      <span key={st.s + ":" + (st.left ?? st.n ?? "")} style={{ display: "inline-flex", flexShrink: 0 }}>{icon}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+    </span>
+  );
+}
+const ATTACK_MATE_OF = { S: 1, A: 2, B: 3, C: 4 };
+// 봇 상태 — 대전 시작 때 미리 정한 계획(plan: 각 기회의 끝 시각·성공 여부·메이트 수 N·실패한 수 번호 fm)에서 지금(el, 시작 후 ms)의 상태를 계산한다.
+// 정답 수는 기회 시간 안에 고르게 흩어 두고, 끝난 기회의 결과(성공·실패)는 잠시(ATTACK_STATUS_HOLD) 계속 보여 준다.
+const ATTACK_STATUS_HOLD = { win: 2400, fail: 1800 };
+function attackBotStatusAt(plan, el) {
+  let a = plan.findIndex((b) => el < b.at);
+  if (a < 0) a = plan.length;
+  if (a > 0) {
+    const r = plan[a - 1];
+    if (el < r.at + (r.ok ? ATTACK_STATUS_HOLD.win : ATTACK_STATUS_HOLD.fail)) return r.ok ? { s: "win", n: r.N } : { s: "fail" };
+  }
+  if (a >= plan.length) return { s: "search" };
+  const b = plan[a], start = a ? plan[a - 1].at : 0, d = b.at - start;
+  const tk = (k) => start + d * (0.2 + 0.65 * k / b.N);
+  if (!b.ok && el >= tk(b.fm)) return { s: "fail" };
+  let j = 0;
+  for (let k = 1; k < b.N; k++) if (tk(k) <= el && (b.ok || k < b.fm)) j = k;
+  return j > 0 ? { s: "ok", left: b.N - j } : { s: "search" };
+}
+// 실시간 대전 — 상대 기회(events의 마지막)의 진행 상황(prog)·결과(ok)에서 상태를 만든다. 승·패 표시는 새 기회가 시작돼도 최소 시간 유지한다.
+function useAttackOppStatus(theirs) {
+  const e = theirs.length ? theirs[theirs.length - 1] : null;
+  const sig = e ? [e.idx, e.prog ? e.prog.s + ":" + (e.prog.left ?? e.prog.n ?? "") : "", e.ok].join("|") : "none";
+  const [st, setSt] = useState({ s: "search" });
+  const curRef = useRef({ st: { s: "search" }, at: 0 });
+  useEffect(() => {
+    const p = e && e.prog;
+    let next = { s: "search" };
+    if (p && p.s === "win") next = { s: "win", n: p.n };
+    else if (p && p.s === "ok") next = { s: "ok", left: p.left };
+    else if (p && p.s === "bad") next = { s: "fail" };
+    else if (e && e.ok === true) next = { s: "win", n: ATTACK_MATE_OF[e.g] || 1 };
+    else if (e && e.ok === false) next = { s: "fail" };
+    const cur = curRef.current;
+    const same = cur.st.s === next.s && cur.st.left === next.left && cur.st.n === next.n;
+    if (same) return undefined;
+    const hold = ATTACK_STATUS_HOLD[cur.st.s] || 0;
+    const wait = Math.max(0, cur.at + hold - Date.now());
+    const timer = setTimeout(() => { curRef.current = { st: next, at: Date.now() }; setSt(next); }, wait);
+    return () => clearTimeout(timer);
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+  return st;
+}
+// ---- (v0.6.1, 사용자 요청) 동점 정산 화면 — 총 체크메이트 수가 같으면 결과 화면 전에 등급별 성공 수를 긴 메이트(C)부터 하나씩 비교해
+// 보여 준다. 처음 차이가 나는 등급에서 승부가 갈리고, 등급이 전부 같으면 레이팅 행이 나온다(규칙은 attackDecide·서버 attack_finish와 같다).
+const ATTACK_TB_ORDER = ["C", "B", "A", "S"];
+const ATTACK_TB_STEP_MS = 1100;
+function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }) {
+  const decisive = ATTACK_TB_ORDER.findIndex((g) => me[g] !== opp[g]);
+  const lastRow = decisive >= 0 ? decisive : 4;   // 마지막으로 공개할 행(4 = 레이팅 행)
+  const verdict = attackDecide(me, opp, myRating, oppRating);
+  const [step, setStep] = useState(-1);           // 공개된 마지막 행 번호(-1: 아직 없음), lastRow + 1이면 판정 문구까지
+  const doneRef = useRef(onDone); doneRef.current = onDone;
+  useEffect(() => {
+    const ts = [];
+    for (let i = 0; i <= lastRow; i++) ts.push(setTimeout(() => { setStep(i); fx(i === lastRow ? "roundWin" : "tap"); buzz(18); }, 900 + i * ATTACK_TB_STEP_MS));
+    ts.push(setTimeout(() => setStep(lastRow + 1), 900 + (lastRow + 1) * ATTACK_TB_STEP_MS));
+    ts.push(setTimeout(() => doneRef.current && doneRef.current(), 900 + (lastRow + 1) * ATTACK_TB_STEP_MS + 2400));
+    return () => ts.forEach(clearTimeout);
+  }, [lastRow]);
+  const rows = ATTACK_TB_ORDER.map((g, i) => ({ i, key: g, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}><AttackGradeBadge grade={g} /><span style={{ fontSize: 10 }}>{attackGradeInfo(g).label}</span></span>, me: me[g], opp: opp[g], hide: decisive >= 0 && i > decisive }));
+  if (decisive < 0) rows.push({ i: 4, key: "rating", label: <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.8)" }}>{t("레이팅")}</span>, me: myRating, opp: oppRating, hide: false });
+  const color = verdict.winner === "me" ? MG_GOLD : verdict.winner === "opp" ? T.blunder : "#9C8563";
+  const cell = (hl, dim) => ({ padding: "9px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.22)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), boxShadow: hl ? "0 0 14px rgba(232,196,110,.45)" : "none", textAlign: "center", opacity: dim ? 0.45 : 1, transition: "all .25s ease" });
+  return (
+    <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "16px 6px", overflowY: "auto" }}>
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".12em", color: "rgba(90,58,34,.65)", marginBottom: 4 }}>TIEBREAKER</motion.div>
+      <motion.div initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 260, damping: 16 }} style={{ fontSize: 32, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, marginBottom: 2 }}>{t("동점 정산")}</motion.div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13, fontWeight: 800, color: "rgba(90,58,34,.80)", marginBottom: 6 }}>
+        <span>{t("나")}</span><span style={{ fontSize: 26, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{me.total} : {opp.total}</span><span>{oppLabel}</span>
+      </div>
+      <p style={{ fontSize: 11, color: "rgba(90,58,34,.72)", margin: "0 0 12px", maxWidth: 320, lineHeight: 1.5 }}>{t("동점. 긴 메이트부터 등급별 성공 수를 비교")}</p>
+      <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 7, marginBottom: 12 }}>
+        {rows.map((r) => {
+          const shown = step >= r.i, active = step === r.i;
+          const win = !shown ? null : r.me === r.opp ? null : r.me > r.opp ? "me" : "opp";
+          return (
+            <div key={r.key} style={{ display: "grid", gridTemplateColumns: "1fr 122px 1fr", gap: 6, alignItems: "stretch", opacity: r.hide ? 0.25 : 1, transition: "opacity .3s ease" }}>
+              <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "me", win === "opp")}>
+                <div style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown ? r.me : "?"}</div>
+              </motion.div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.72)" }}>
+                {r.label}{shown && win === null && !r.hide && <span style={{ color: "rgba(90,58,34,.55)", fontSize: 14 }}>=</span>}
+              </div>
+              <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "opp", win === "me")}>
+                <div style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown ? r.opp : "?"}</div>
+              </motion.div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ minHeight: 44 }}>
+        <AnimatePresence>
+          {step > lastRow && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "grid", gap: 4, justifyItems: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color, fontFamily: SITE_FONT }}>{verdict.winner === "me" ? t("승리") : verdict.winner === "opp" ? t("패배") : t("무승부")}</div>
+              {verdict.reason && <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.82)", maxWidth: 320, lineHeight: 1.5 }}>{verdict.reason}</div>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <button onClick={onDone} className="press" style={{ marginTop: 10, padding: "9px 24px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("최종 결과")}</button>
+    </div>
+  );
+}
 function attackClock(ms) { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
 // 대전 화면 공용 레이아웃 — 봇·PvP가 같은 화면을 쓰고, 기회 배분·결과 기록 방식만 다르다.
-function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabel, onResult, waitingNote }) {
+function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabel, oppStatus, onResult, onProgress, waitingNote }) {
   const now = useNow(true, 200);
   const left = endAt - Math.max(now, startAt);
   const started = now >= startAt;
@@ -4204,15 +4348,23 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
   const [boardSize, boardFitRef] = useSquareFit(460, 46);   // 보드 바로 위 등급 표시 줄(46px)만큼 비워 둔다
   const lastSecRef = useRef(null);
   useEffect(() => { const sec = Math.ceil(left / 1000); if (started && sec <= 10 && sec >= 1 && lastSecRef.current !== sec) { lastSecRef.current = sec; fx("warn"); } }, [left, started]);
-  const pos = current ? attackPick(pool, current.g, current.pick) : null;
+  // (v0.6.1) 포지션은 기회마다 한 번만 고른다(안 나온 것 중에서) — 매 렌더(0.2초)마다 고르면 느리고, 나온 것으로 기록한 뒤엔 결과가 바뀐다.
+  const picked = useMemo(() => (current && pool ? attackPick(pool, current.g, current.pick) : null), [pool, current && current.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pos = picked ? picked.pos : null;
+  useEffect(() => { if (picked && picked.pos) markAttackSeen(picked.pos, pool.byGrade[current.g], picked.reset); }, [picked]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MinigameScoreHeader myScore={myTally.total} oppScore={oppTally ? oppTally.total : 0} oppLabel={oppTally ? oppLabel : null}
         center={<span style={{ fontSize: 17, fontWeight: 900, color: left < 30000 ? T.blunder : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{attackClock(left)}</span>} />
       <MinigameTimeBar pct={left / (endAt - startAt)} />
-      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4, marginBottom: 6, flexShrink: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6, flexShrink: 0 }}>
         <AttackLedger tally={myTally} label={t("나")} />
-        {oppTally && <AttackLedger tally={oppTally} label={oppLabel} />}
+        {oppTally && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, minWidth: 0, minHeight: 20 }}>
+            {oppStatus ? <AttackOppStatus st={oppStatus} /> : <span />}
+            <AttackLedger tally={oppTally} label={oppLabel} />
+          </div>
+        )}
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
         {/* (v0.5.5, 사용자 요청) 등급·차례·몇 수 메이트인지는 보드를 가리지 않게, 보드 바로 위에 붙여 둔다. */}
@@ -4229,7 +4381,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
           </AnimatePresence>
         </div>
         <div style={{ position: "relative" }}>
-          {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} size={boardSize} />
+          {pos && current ? <AttackChance key={current.key} pos={pos} grade={current.g} enabled={started && !over} onResult={onResult} onProgress={onProgress} size={boardSize} />
             : <div style={{ width: boardSize, height: boardSize, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, background: "rgba(255,255,255,.45)" }}><PendingDots size={12} /></div>}
           <MinigameCountdown startAt={startAt} />
           {over && <div style={{ position: "absolute", inset: 0, zIndex: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(250,244,230,.82)", borderRadius: 6, fontSize: 26, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{t("시간 종료")}</div>}
@@ -4287,7 +4439,9 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
       const [lo, hi] = base[g];
       t += (lo + Math.random() * (hi - lo)) * bot.speed;
       if (t > ATTACK_MATCH_MS) break;
-      plan.push({ g, at: t, ok: Math.random() < Math.min(0.99, bot.acc + accAdj[g]) });
+      // (v0.6.1) N: 이 기회의 메이트 수, fm: 실패할 때 틀리는 수 번호 — 상대 상황 표시(attackBotStatusAt)용 연출 값.
+      const N = ATTACK_MATE_OF[g];
+      plan.push({ g, at: t, ok: Math.random() < Math.min(0.99, bot.acc + accAdj[g]), N, fm: 1 + Math.floor(Math.random() * N) });
     }
     return plan;
   }, [bot, myRating]);
@@ -4296,7 +4450,8 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
     const timers = botPlan.map((b, i) => setTimeout(() => { setBotDone((d) => [...d, b]); if (b.ok) fx("tap"); }, startAt - Date.now() + b.at));
     return () => timers.forEach(clearTimeout);
   }, [botPlan, startAt]);
-  const now = useNow(true, 500);
+  const now = useNow(true, 250);
+  const [tbDone, setTbDone] = useState(false); // (v0.6.1) 동점 정산 화면을 봤는지
   // 성공 보고는 메이트 연출 뒤 0.9초 늦게 오므로, 종료 직전 메이트가 집계되도록 결과 화면을 2.6초 뒤에 연다
   // (onResult는 종료 +2초까지의 성공을 인정한다).
   const over = now >= endAt + 2600;
@@ -4325,10 +4480,12 @@ function AttackBotBoard({ bot, myRating, onExit, onStatusChange, onRematch }) {
       note={soloBest.prev != null ? t("이전 최고 기록 {0}회", soloBest.prev) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
   }
   if (over) {
+    const meT = attackTally(mine), botT = attackTally(botDone);
+    if (meT.total === botT.total && !tbDone) return <AttackTiebreakSettle me={meT} opp={botT} myRating={myRating || 800} oppRating={bot.rating} oppLabel={t("봇({0})", bot.label)} onDone={() => setTbDone(true)} />;
     return <MinigameResult {...attackResultProps(mine, botDone, myRating || 800, bot.rating)} oppLabel={t("봇({0})", bot.label)} onExit={onExit} onRematch={onRematch} />;
   }
   if (startAt == null) return <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "rgba(90,58,34,.7)", fontSize: 12.5, fontWeight: 700 }}>{tx("{0}포지션 로드 중…", <PendingDots size={12} />)}</div>;
-  return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel={t("봇")} onResult={onResult} />;
+  return <AttackArena startAt={startAt} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={solo ? null : attackTally(botDone)} oppLabel={t("봇")} oppStatus={solo ? null : attackBotStatusAt(botPlan, now - startAt)} onResult={onResult} />;
 }
 function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const [pool] = useAttackPool();
@@ -4349,6 +4506,13 @@ function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const now = useNow(!finished, 500);
   const endAt = head ? new Date(head.endAt).getTime() : 0;
   const busyRef = useRef(false);
+  const oppStatus = useAttackOppStatus(theirs);
+  const [tbDone, setTbDone] = useState(false); // (v0.6.1) 동점 정산 화면을 봤는지
+  // (v0.6.1) 내 진행 상황(정확한 수·메이트 성공·오답)을 서버에 알려 상대 화면의 상태 표시에 쓴다 — 실패해도 게임엔 영향 없다. 응답은 쓰지 않는다(실시간 갱신이 온다).
+  const onProgress = useCallback((st) => {
+    if (!current) return;
+    sbRpc("attack_progress", { p_game_id: game.id, p_idx: current.idx, p_state: st.s, p_left: st.left ?? null, p_n: st.n ?? null }).catch(() => { });
+  }, [current, game.id]);
   useEffect(() => {
     if (finished) return;
     if (!head) { sbRpc("attack_start", { p_game_id: game.id }).then((g) => g && setGame(g)).catch(() => { }); return; }
@@ -4376,12 +4540,14 @@ function AttackPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   if (finished) {
     const myRating = head ? (me === "w" ? head.wr : head.br) : 0, oppRating = head ? (me === "w" ? head.br : head.wr) : 0;
     const props = attackResultProps(mine, theirs, myRating, oppRating);
+    const meT = attackTally(mine), oppT = attackTally(theirs);
+    if (meT.total === oppT.total && game.status !== "aborted" && game.result_reason !== "attack_forfeit" && !tbDone) return <AttackTiebreakSettle me={meT} opp={oppT} myRating={myRating} oppRating={oppRating} oppLabel={t("상대")} onDone={() => setTbDone(true)} />;
     const iWon = (me === "w" && game.status === "white_won") || (me === "b" && game.status === "black_won");
     const outcome = game.status === "draw" ? "draw" : iWon ? "win" : "lose";
     return <MinigameResult {...props} outcome={outcome} oppLabel={t("상대")} rating={minigameRatingOf(game, myUid)} note={game.result_reason === "attack_forfeit" ? (iWon ? t("상대가 대전 포기") : t("대전 포기")) : props.note} onExit={onExit} />;
   }
   if (!head) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><PendingDots size={12} /></div>;
-  return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel={t("상대")} onResult={onResult}
+  return <AttackArena startAt={new Date(head.startAt).getTime()} endAt={endAt} current={current} pool={pool} myTally={attackTally(mine)} oppTally={attackTally(theirs)} oppLabel={t("상대")} oppStatus={oppStatus} onResult={onResult} onProgress={onProgress}
     waitingNote={now >= endAt ? t("결과 집계 중...") : null} />;
 }
 // (v0.5.3 개발자 도구) 공격 기회 포지션 관리 — 개발자·공동 개발자만 보인다. ① 리체스 퍼즐 API에서
@@ -4518,9 +4684,12 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   // (v0.5.5, 사용자 요청) 일반 대국 설정(타임 컨트롤·상대)은 체스보드 버튼을 누르면 뜨는 별도 창에서 고른다 — 대국이
   // 시작되면(step → playing) 창을 닫고, 창을 닫을 때 진행 중이던 매칭 대기·친구 도전은 취소한다.
   const [setupOpen, setSetupOpen] = useState(false);
+  const [chessRankOpen, setChessRankOpen] = useState(false); // (v0.6.1) 일반 대국 랭킹 화면
   // (v0.5.5, 사용자 요청) "일반/스페셜" 토글을 없애고 일반 대국 화면 아래에 미니게임 목록을 함께 보여준다 —
   // 전역 알람 박스에서 미니게임 친구 도전장을 수락하면(specialResume) PlaySpecialGames가 곧장 그 대국을 연다.
   const [step, setStep] = useState("setup"); // "setup" | "playing"
+  // (v0.6.1, 사용자 요청) 일반 대국도 미니게임과 같은 전적·레이팅·랭킹 — 대국을 마치고 설정 화면으로 돌아올 때마다 다시 읽는다.
+  const chessStats = useMinigameMyStats(myUid, "chess", step + (setupOpen ? "o" : "c") + (chessRankOpen ? "r" : "n"));
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
   // (신규 기능) 사용자 요청 — /play에서 봇 대신 다른 OpenChess 사용자와 실시간으로 대국. mode가
@@ -5135,6 +5304,9 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             {setupOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
+                {!(mode === "pvp" && (pvpWaiting || myInvite)) && setupPhase === "choose" && (
+                  <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game="chess" row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
+                )}
                 {
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
              이제 설정 카드 안의 작은 블록이 아니라, 그 카드를 통째로 갈아치우는 별도 화면
@@ -5252,6 +5424,11 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
           )
                 }
                 </div>
+              </MinigameScreen>
+            )}
+            {chessRankOpen && (
+              <MinigameScreen title={t("일반 대국")} onBack={() => setChessRankOpen(false)}>
+                <MinigameLeaderboard game="chess" myUid={myUid} onOpenProfile={onOpenProfile} />
               </MinigameScreen>
             )}
           </>
