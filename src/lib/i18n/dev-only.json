@@ -66,5 +66,6 @@
   ],
   "deferredFunctions": [
     "seedLessons"
-  ]
+  ],
+  "deferredVars": []
 }

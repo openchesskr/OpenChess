@@ -2,11 +2,12 @@ import React from "react";
 import { ArrowLeft } from "lucide-react";
 import { CONTACT_EMAIL } from "./lib/siteConfig.js";
 
-import { t, tx } from "./lib/i18n.js";
+import { t, tx, fmtDateOnly } from "./lib/i18n.js";
+import LangSwitch from "./components/LangSwitch.jsx";
 // (v0.6.0, 앱 출시 준비) 개인정보처리방침(/privacy)·이용약관(/terms). App을 거치지 않는 가벼운 정적 페이지로,
 // main.jsx가 경로만 보고 이 컴포넌트를 렌더링한다(스토어 심사에서 로그인 없이 열리는 주소가 필요하다).
 // 문구는 사이트 규칙대로 명사형·개조식. 시행일을 바꿀 때는 아래 EFFECTIVE 한 곳만 고친다.
-const EFFECTIVE = t("2026년 10월 1일");
+const EFFECTIVE_ISO = "2026-10-01";
 const T = { ebony: "#1B1009", ivory: "#EBDDC4", ivoryHi: "#FAF2E2", inkSoft: "#B8A78C", brass: "#C49A50" };
 
 const PRIVACY = [
@@ -94,15 +95,16 @@ export default function LegalPage({ kind }) {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif" }}>
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
-        <div style={{ maxWidth: 760, margin: "0 auto", padding: "14px 20px" }}>
+        <div className="flex items-center justify-between" style={{ maxWidth: 760, margin: "0 auto", padding: "14px 20px" }}>
           <a href="/" style={{ display: "inline-flex", alignItems: "center" }}>
             <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto" }} />
           </a>
+          <LangSwitch />
         </div>
       </header>
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "44px 20px 80px" }}>
         <h1 style={{ fontSize: 26, fontWeight: 900, color: T.ivoryHi, margin: "0 0 6px" }}>{title}</h1>
-        <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 30px" }}>{tx("시행일: {0}", EFFECTIVE)}</p>
+        <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 30px" }}>{t("시행일: {0}", fmtDateOnly(EFFECTIVE_ISO, { year: "numeric", month: "long", day: "numeric" }))}</p>
         {sections.map((s) => (
           <section key={s.h} style={{ marginBottom: 26 }}>
             <h2 style={{ fontSize: 15.5, fontWeight: 800, color: T.brass, margin: "0 0 10px" }}>{s.h}</h2>

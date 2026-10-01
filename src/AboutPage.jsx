@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { t, tx } from "./lib/i18n.js";
+import LangSwitch from "./components/LangSwitch.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -919,6 +920,21 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.7.0", date: "2026.10.1",
+    summary: t("다국어 지원 · 체스 용어 표준 번역."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("5개 언어 선택 · 체스 용어 표준 번역") },
+    sections: [
+      { cat: "feature", items: [
+        t("다국어 지원. 설정 탭에서 English·日本語·中文(简体)·Español·हिन्दी 선택."),
+        t("체스 용어(체크메이트·앙파상·캐슬링 등)를 언어별 표준 용어로 번역."),
+      ] },
+      { cat: "ux", items: [
+        t("날짜·숫자 표기가 선택한 언어에 맞춰 표시됨."),
+        t("레슨 본문·오프닝 설명 일부는 한국어로 표시됨. 순차 번역 예정."),
+      ] },
+    ],
+  },
   {
     version: "0.6.0", date: "2026.10.1",
     summary: t("신고·차단 확대 · 개인정보처리방침·이용약관 · 앱 출시 준비."),
@@ -2649,6 +2665,7 @@ export default function AboutPage() {
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 20px" }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+          <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
           <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}
           </a>
         </div>

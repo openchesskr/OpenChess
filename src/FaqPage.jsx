@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowLeft, ChevronDown, HelpCircle, Sparkles, Mail } from "lucide-react";
 
 import { t, tx } from "./lib/i18n.js";
+import LangSwitch from "./components/LangSwitch.jsx";
 // (v0.4.3 기능, 사용자 요청) 사이트를 소개하는 /about과 마찬가지로, App(엔진 워커·Supabase 클라이언트
 // 등 무거운 초기화)을 거치지 않는 별도의 가벼운 정적 페이지(/faq)로 분리한다(main.jsx가 경로만 보고
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프도 App.jsx의 T 객체를 그대로
@@ -77,10 +78,7 @@ function KineticWord({ children, index, accent }) {
   );
 }
 function KineticTagline() {
-  const words = [
-    { t: t("궁금한"), accent: true },
-    { t: t("점"), accent: false },
-  ];
+  const words = t("궁금한 점").split(" ").map((w, i) => ({ t: w, accent: i === 0 }));
   return (
     <div style={{ padding: "10px 4px 8px", textAlign: "center", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0 .32em" }}>
       {words.map((w, i) => <KineticWord key={w.t} index={i} accent={w.accent}>{w.t}</KineticWord>)}
@@ -167,6 +165,7 @@ export default function FaqPage() {
           <a href="/" style={{ display: "inline-flex", alignItems: "center" }}>
             <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           </a>
+          <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
           <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}
           </a>
         </div>
