@@ -23,6 +23,7 @@ import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../l
 import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 
+import { t, tx } from "../lib/i18n.js";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
 // 냈다(분석 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
@@ -138,10 +139,10 @@ const OVERLAY = {
   "": { mascot: "백의 첫 수. e4는 개방적·공격적, d4는 전략적·폐쇄적" },
   "e4 e5 Nf3 Nc6 Bc4": {
     majorBranch: true,
-    branchNote: "이탈리안 게임의 갈림길. 흑 …Bc5(지우코 피아노, 조용한 전략전) 또는 …Nf6(투 나이츠, 날카로운 전술전). 채택률 비슷",
+    branchNote: t("이탈리안 게임의 갈림길. 흑 …Bc5(지우코 피아노, 조용한 전략전) 또는 …Nf6(투 나이츠, 날카로운 전술전). 채택률 비슷"),
   },
   "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5": {
-    branchNote: "4.Ng5는 f7 직접 위협. 평가를 지키는 수는 사실상 4...d5뿐",
+    branchNote: t("4.Ng5는 f7 직접 위협. 평가를 지키는 수는 사실상 4...d5뿐"),
     mascotByMove: { "Bc5": "트랙슬러 카운터어택. f7을 내주고 f2를 맞받는 함정 수" },
   },
 };
@@ -725,51 +726,51 @@ function seedLessons() {
     "18. 늘 예외를 생각하고, 필요하면 원칙을 어기기",
   ];
   L.l_intro = {
-    title: "오프닝 원칙", desc: "원칙의 목적 세 가지: 중앙 차지, 기물 전개, 킹의 안전", reward: 40, parent: null,
+    title: t("오프닝 원칙"), desc: t("원칙의 목적 세 가지: 중앙 차지, 기물 전개, 킹의 안전"), reward: 40, parent: null,
     pages: [
       { // 1페이지 — 도입 + 원칙 목록 + 세 가지 목적
         beats: [
-          { kind: "say", speaker: "milku", text: "첫 번째 레슨" },
-          { kind: "say", speaker: "milku", text: "코치 MILKU" },
-          { kind: "say", speaker: "milku", text: "오프닝 실력을 함께 키우기" },
-          { kind: "say", speaker: "milku", text: "오프닝에는 지켜야 할 원칙이 여러 개 있음" },
+          { kind: "say", speaker: "milku", text: t("첫 번째 레슨") },
+          { kind: "say", speaker: "milku", text: t("코치 MILKU") },
+          { kind: "say", speaker: "milku", text: t("오프닝 실력을 함께 키우기") },
+          { kind: "say", speaker: "milku", text: t("오프닝에는 지켜야 할 원칙이 여러 개 있음") },
           { kind: "principles", lines: PRINCIPLES },
-          { kind: "say", speaker: "milku", text: "원칙은 결국 세 가지 목적으로 모임" },
-          { kind: "say", speaker: "milku", text: "중앙 차지, 기물 전개, 킹의 안전" },
-          { kind: "say", speaker: "milku", text: "하나씩 확인" },
+          { kind: "say", speaker: "milku", text: t("원칙은 결국 세 가지 목적으로 모임") },
+          { kind: "say", speaker: "milku", text: t("중앙 차지, 기물 전개, 킹의 안전") },
+          { kind: "say", speaker: "milku", text: t("하나씩 확인") },
         ],
       },
       { // 2페이지 — 중앙 차지
         beats: [
-          { kind: "say", speaker: "milku", text: "거의 모든 오프닝은 중앙을 차지하려는 백과 흑의 수가 부딪히며 만들어짐" },
-          { kind: "say", speaker: "milku", text: "중앙은 주로 d열과 e열. 오프닝에서 양쪽이 맞붙는 곳은 주로 4행과 5행" },
+          { kind: "say", speaker: "milku", text: t("거의 모든 오프닝은 중앙을 차지하려는 백과 흑의 수가 부딪히며 만들어짐") },
+          { kind: "say", speaker: "milku", text: t("중앙은 주로 d열과 e열. 오프닝에서 양쪽이 맞붙는 곳은 주로 4행과 5행") },
           { kind: "board", dim: true, squares: lessonCross(["d", "e"], [4, 5]) },
-          { kind: "say", speaker: "milku", text: "중앙 차지는 정중앙 4칸(e4, e5, d4, d5)을 장악하는 것" },
+          { kind: "say", speaker: "milku", text: t("중앙 차지는 정중앙 4칸(e4, e5, d4, d5)을 장악하는 것") },
           { kind: "board", glow: true, squares: ["e4", "e5", "d4", "d5"] },
-          { kind: "say", speaker: "milku", text: "이 목표를 두고 선수들이 수를 연구했고, 그 결과가 오늘날의 오프닝 이론" },
+          { kind: "say", speaker: "milku", text: t("이 목표를 두고 선수들이 수를 연구했고, 그 결과가 오늘날의 오프닝 이론") },
         ],
       },
       { // 3페이지 — 기물의 전개
         beats: [
-          { kind: "say", speaker: "milku", text: "오프닝에서 기물 전개는 매우 중요" },
-          { kind: "say", speaker: "milku", text: "중앙 차지도 기물 전개와 균형이 필요" },
-          { kind: "say", speaker: "milku", text: "오프닝에서 같은 기물을 두 번 움직이는 건 보통 손해" },
-          { kind: "say", speaker: "milku", text: "가능한 한 많은 기물을 전개한 뒤 계획 실행" },
+          { kind: "say", speaker: "milku", text: t("오프닝에서 기물 전개는 매우 중요") },
+          { kind: "say", speaker: "milku", text: t("중앙 차지도 기물 전개와 균형이 필요") },
+          { kind: "say", speaker: "milku", text: t("오프닝에서 같은 기물을 두 번 움직이는 건 보통 손해") },
+          { kind: "say", speaker: "milku", text: t("가능한 한 많은 기물을 전개한 뒤 계획 실행") },
           { kind: "play", stepMs: 320, moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6", "Bc4", "Bd7", "O-O-O"] },
         ],
       },
       { // 4페이지 — 킹의 안전
         beats: [
-          { kind: "say", speaker: "milku", text: "체스는 상대 킹을 공격하는 게임. 내 킹의 안전도 그만큼 중요" },
-          { kind: "say", speaker: "milku", text: "킹이 중앙에 남아 있으면 공격받기 쉬움" },
-          { kind: "say", speaker: "milku", text: "캐슬링으로 한 수에 킹을 구석에 숨길 수 있음" },
+          { kind: "say", speaker: "milku", text: t("체스는 상대 킹을 공격하는 게임. 내 킹의 안전도 그만큼 중요") },
+          { kind: "say", speaker: "milku", text: t("킹이 중앙에 남아 있으면 공격받기 쉬움") },
+          { kind: "say", speaker: "milku", text: t("캐슬링으로 한 수에 킹을 구석에 숨길 수 있음") },
           { kind: "play", stepMs: 350, moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"] },
           { kind: "pause", ms: 2000 },
           { kind: "board", dim: true, squares: ["e1", "h1"] },
           { kind: "play", stepMs: 500, moves: ["O-O"] },
           { kind: "clear" },
-          { kind: "say", speaker: "milku", text: "캐슬링 조건: 킹과 룩 사이에 기물 없음, 상대가 경로를 공격하지 않음, 킹과 룩 모두 이동한 적 없음" },
-          { kind: "say", speaker: "milku", text: "교환으로 킹 앞 폰이 끌려가면 킹 주변이 급격히 약해지니 주의" },
+          { kind: "say", speaker: "milku", text: t("캐슬링 조건: 킹과 룩 사이에 기물 없음, 상대가 경로를 공격하지 않음, 킹과 룩 모두 이동한 적 없음") },
+          { kind: "say", speaker: "milku", text: t("교환으로 킹 앞 폰이 끌려가면 킹 주변이 급격히 약해지니 주의") },
           { kind: "play", stepMs: 350, moves: ["d6", "Qe1", "Bg4", "Nc3", "Bxf3"] },
           { kind: "pause", ms: 2000 },
           { kind: "board", dim: true, squares: ["g2"] },
@@ -781,7 +782,7 @@ function seedLessons() {
     ],
   };
   L.l_e4 = {
-    title: "1.e4 킹스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수", reward: 60, parent: "l_intro",
+    title: t("1.e4 킹스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수"), reward: 60, parent: "l_intro",
     pages: [
       explainPage([], "폰을 두 칸 전진시켜 중앙을 장악하고 비숍과 퀸의 대각선도 연다. 직접 두기"),
       movePage([], "중앙 폰을 두 칸 전진", ["e4"], "1.e4 킹스 폰 오프닝. 비숍(f1)과 퀸(d1) 대각선이 바로 열려 빠른 전개와 이른 전술전"),
@@ -789,7 +790,7 @@ function seedLessons() {
     ],
   };
   L.l_e4_e5 = {
-    title: "1...e5 오픈 게임", desc: "중앙에서 폰을 맞세워 대칭으로 공간을 나누는 가장 고전적인 응수", reward: 60, parent: "l_e4",
+    title: t("1...e5 오픈 게임"), desc: t("중앙에서 폰을 맞세워 대칭으로 공간을 나누는 가장 고전적인 응수"), reward: 60, parent: "l_e4",
     pages: [
       explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭으로 공간을 나누고 오픈된 전술전 준비. 이런 시작을 오픈 게임이라 부름"),
       mcPage(["e4", "e5"], "1.e4 e5에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 기물을 자연스럽게 전개하는 가장 흔한 수"),
@@ -797,7 +798,7 @@ function seedLessons() {
     ],
   };
   L.l_e4_e5_open = {
-    title: "이탈리안 게임으로", desc: "2.Nf3 Nc6 뒤 비숍을 전개해 이탈리안 게임으로", reward: 70, parent: "l_e4_e5",
+    title: t("이탈리안 게임으로"), desc: t("2.Nf3 Nc6 뒤 비숍을 전개해 이탈리안 게임으로"), reward: 70, parent: "l_e4_e5",
     pages: [
       explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5를 지킴. 백은 비숍을 f7을 겨누는 대각선으로 전개"),
       movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨누는 자리로 전개", ["Bc4"], "3.Bc4! 이탈리안 게임. 비숍이 약점인 f7 폰을 직접 겨눔"),
@@ -805,28 +806,28 @@ function seedLessons() {
     ],
   };
   L.l_e4_c5 = {
-    title: "1...c5 시칠리안 디펜스", desc: "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적으로 반격", reward: 60, parent: "l_e4",
+    title: t("1...c5 시칠리안 디펜스"), desc: t("중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적으로 반격"), reward: 60, parent: "l_e4",
     pages: [
       explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 반격하는 대표 오프닝. 시칠리안 디펜스"),
       mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 알맞은 것은?", ["대칭 구조로 무승부를 지향", "비대칭 구조로 양쪽 모두 승부 기회를 남김", "중앙 폰을 최대한 빨리 전부 교환", "킹사이드 캐슬링을 절대 안 함"], 1, "시칠리안은 통계상 승부(흑 승률 포함)가 가장 많이 나는 오프닝 중 하나"),
     ],
   };
   L.l_e4_e6 = {
-    title: "1...e6 프렌치 디펜스", desc: "d5를 다음 수에 밀어 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격", reward: 60, parent: "l_e4",
+    title: t("1...e6 프렌치 디펜스"), desc: t("d5를 다음 수에 밀어 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격"), reward: 60, parent: "l_e4",
     pages: [
       explainPage(["e4", "e6"], "d5를 다음 수에 밀어 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격. 프렌치 디펜스"),
       movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬 세우기", ["d5"], "2...d5! 중앙에서 폰이 맞부딪힘. 백이 e5로 전진하면 흑은 c5로 퀸사이드 반격 준비"),
     ],
   };
   L.l_e4_c6 = {
-    title: "1...c6 카로칸 디펜스", desc: "d5를 다음 수에 밀되 나이트 전개에 유연하게 대비하는 견고한 응수", reward: 60, parent: "l_e4",
+    title: t("1...c6 카로칸 디펜스"), desc: t("d5를 다음 수에 밀되 나이트 전개에 유연하게 대비하는 견고한 응수"), reward: 60, parent: "l_e4",
     pages: [
       explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍 길을 막지 않음) 나이트 전개(Nc3 대응)에 유연하게 대비. 카로칸 디펜스"),
       mcPage(["e4", "c6"], "프렌치(1...e6)와 비교한 카로칸(1...c6)의 장점은?", ["퀸을 바로 교환 가능", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있음", "킹사이드 캐슬링 금지", "중앙 폰을 절대 교환하지 않음"], 1, "프렌치는 1...e6로 c8 비숍의 길을 스스로 막지만 카로칸은 이 문제를 피함"),
     ],
   };
   L.l_d4 = {
-    title: "1.d4 퀸스 폰 오프닝", desc: "폰을 두 칸 전진시켜 중앙을 장악하되 e4보다 견고하고 점진적인 구조 싸움", reward: 60, parent: "l_intro",
+    title: t("1.d4 퀸스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 장악하되 e4보다 견고하고 점진적인 구조 싸움"), reward: 60, parent: "l_intro",
     pages: [
       explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진. e4보다 견고하고 점진적인 구조 싸움"),
       movePage([], "퀸 쪽 중앙 폰을 두 칸 전진", ["d4"], "1.d4 퀸스 폰 오프닝. 폰을 잃을 위험 없이 견고하게 중앙 장악"),
@@ -834,14 +835,14 @@ function seedLessons() {
     ],
   };
   L.l_d4_d5 = {
-    title: "1...d5 퀸스 갬빗", desc: "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응", reward: 60, parent: "l_d4",
+    title: t("1...d5 퀸스 갬빗"), desc: t("중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응"), reward: 60, parent: "l_d4",
     pages: [
       explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응. 백이 c4를 두면 퀸스 갬빗 시작"),
       movePage(["d4", "d5"], "폰을 내줄 각오로 c4를 두어 퀸스 갬빗 시작", ["c4"], "2.c4! 퀸스 갬빗. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾아 실질 손해 거의 없음(이름은 갬빗이지만 진짜 희생은 아님)"),
     ],
   };
   L.l_d4_nf6 = {
-    title: "1...Nf6 인디언 디펜스", desc: "중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응", reward: 60, parent: "l_d4",
+    title: t("1...Nf6 인디언 디펜스"), desc: t("중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응"), reward: 60, parent: "l_d4",
     pages: [
       explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 대응 방향을 정하는 계열. 인디언 디펜스"),
       mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제", "폰을 절대 전진시키지 않음", "킹을 캐슬링 없이 중앙에 둠", "나이트를 절대 f6에 두지 않음"], 0, "보통 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 멀리서 견제"),
@@ -2073,9 +2074,9 @@ export const VisualPrefsContext = createContext({ moveFx: true });
 // 쓴다 — 아이콘과 모양이 똑같다. 이미지는 기호에 딱 맞게 잘라 정사각형 가운데에 둔 것이고, glyph는 그 한 변이 칸의 몇 배인지다
 // (원래 아이콘 속 비율 0.632·0.653을 그대로 유지해 !!·!·★의 상대 크기가 아이콘과 같다).
 export const MOVE_FX = {
-  brilliant: { label: "탁월한 수", src: "/move-fx/brilliant.png", glyph: 0.6 },
-  only: { label: "유일한 수", src: "/move-fx/only.png", glyph: 0.6 },
-  best: { label: "최선의 수", src: "/move-fx/best.png", glyph: 0.62 },
+  brilliant: { label: t("탁월한 수"), src: "/move-fx/brilliant.png", glyph: 0.6 },
+  only: { label: t("유일한 수"), src: "/move-fx/only.png", glyph: 0.6 },
+  best: { label: t("최선의 수"), src: "/move-fx/best.png", glyph: 0.62 },
 };
 // 이펙트는 1.3초만 뜨므로 처음 재생 때 이미지를 받느라 기호가 빠지지 않게 미리 받아 둔다(세 장 합쳐 약 22KB).
 if (typeof window !== "undefined") Object.values(MOVE_FX).forEach((d) => { const im = new Image(); im.src = d.src; });
@@ -2665,7 +2666,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
     dragRef.current = null;
   };
   const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
-  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>시작 위치</span></div>;
+  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>{t("시작 위치")}</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
@@ -2975,7 +2976,7 @@ export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", s
       <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "10px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
           <Mascot name={mascot} emotion={emotion} size={40} />
-          <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800 }}>{ply > 0 ? moveNumber(ply - 1) + " 진행 · " + label : label + " 코치"}</div>
+          <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800 }}>{ply > 0 ? t("{0} 진행 · {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
         </div>
         <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.5 }}>{text}</p>
       </div>
@@ -2985,7 +2986,7 @@ export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", s
     <div className="flex items-start gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "11px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
       <Mascot name={mascot} emotion={emotion} size={88} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{ply > 0 ? moveNumber(ply - 1) + " 진행 · " + label : label + " 코치"}</div>
+        <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{ply > 0 ? t("{0} 진행 · {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
         <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.5 }}>{text}</p>
       </div>
     </div>
@@ -4327,16 +4328,16 @@ export function ReviewAvatar({ src, side, size = 22 }) {
 export function ReviewPromoPrompt({ onPick, onCancel, color = "b", portalTo }) {
   const content = (
     <div style={{ position: "absolute", inset: 0, background: "rgba(20,12,6,.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, borderRadius: 4, zIndex: 30 }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi }}>승격할 기물 선택</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: T.ivoryHi }}>{t("승격할 기물 선택")}</div>
       <div className="flex gap-3">
         {["Q", "R", "B", "N"].map((t) => (
           <button key={t} onClick={() => onPick(t)} className="press" style={{ width: 68, height: 68, borderRadius: 12, background: "linear-gradient(180deg,#FBF4E6,#E7D7BC)", border: "1px solid " + T.brass, boxShadow: "0 4px 0 #B59A6E", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
             <PieceGlyph type={t} color={color} size={34} />
-            <span style={{ fontSize: 10, fontWeight: 800, color: T.brass }}>{t === "Q" ? "퀸" : t === "R" ? "룩" : t === "B" ? "비숍" : "나이트"}</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: T.brass }}>{t === "Q" ? t("퀸") : t === "R" ? t("룩") : t === "B" ? t("비숍") : t("나이트")}</span>
           </button>
         ))}
       </div>
-      <button onClick={onCancel} className="press" style={{ fontSize: 12, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 8, padding: "6px 16px", cursor: "pointer" }}>취소</button>
+      <button onClick={onCancel} className="press" style={{ fontSize: 12, color: T.ivory, background: "transparent", border: "1px solid #5A4630", borderRadius: 8, padding: "6px 16px", cursor: "pointer" }}>{t("취소")}</button>
     </div>
   );
   return portalTo ? createPortal(content, portalTo) : content;
@@ -4379,18 +4380,18 @@ export const REVIEW_RESULT_CACHE_VERSION = 1;
 // (v0.4.3 UI 개편) 사용자 요청 — chess.com처럼 불렛/블리츠/래피드/스탠다드 4개 카테고리로 묶어 3개씩
 // 나열한 그리드로 바꾼다(각 항목의 cat이 그 그룹 헤더).
 export const TIME_CONTROLS = [
-  { key: "60-0", label: "1분", cat: "불렛", initialSec: 60, incSec: 0 },
-  { key: "120-0", label: "2분", cat: "불렛", initialSec: 120, incSec: 0 },
-  { key: "120-1", label: "2분+1초", cat: "불렛", initialSec: 120, incSec: 1 },
-  { key: "180-0", label: "3분", cat: "블리츠", initialSec: 180, incSec: 0 },
-  { key: "300-0", label: "5분", cat: "블리츠", initialSec: 300, incSec: 0 },
-  { key: "300-2", label: "5분+2초", cat: "블리츠", initialSec: 300, incSec: 2 },
-  { key: "600-0", label: "10분", cat: "래피드", initialSec: 600, incSec: 0 },
-  { key: "900-0", label: "15분", cat: "래피드", initialSec: 900, incSec: 0 },
-  { key: "900-10", label: "15분+10초", cat: "래피드", initialSec: 900, incSec: 10 },
-  { key: "1800-0", label: "30분", cat: "스탠다드", initialSec: 1800, incSec: 0 },
-  { key: "3600-0", label: "1시간", cat: "스탠다드", initialSec: 3600, incSec: 0 },
-  { key: "3600-30", label: "1시간+30초", cat: "스탠다드", initialSec: 3600, incSec: 30 },
+  { key: "60-0", label: t("1분"), cat: "불렛", initialSec: 60, incSec: 0 },
+  { key: "120-0", label: t("2분"), cat: "불렛", initialSec: 120, incSec: 0 },
+  { key: "120-1", label: t("2분+1초"), cat: "불렛", initialSec: 120, incSec: 1 },
+  { key: "180-0", label: t("3분"), cat: "블리츠", initialSec: 180, incSec: 0 },
+  { key: "300-0", label: t("5분"), cat: "블리츠", initialSec: 300, incSec: 0 },
+  { key: "300-2", label: t("5분+2초"), cat: "블리츠", initialSec: 300, incSec: 2 },
+  { key: "600-0", label: t("10분"), cat: "래피드", initialSec: 600, incSec: 0 },
+  { key: "900-0", label: t("15분"), cat: "래피드", initialSec: 900, incSec: 0 },
+  { key: "900-10", label: t("15분+10초"), cat: "래피드", initialSec: 900, incSec: 10 },
+  { key: "1800-0", label: t("30분"), cat: "스탠다드", initialSec: 1800, incSec: 0 },
+  { key: "3600-0", label: t("1시간"), cat: "스탠다드", initialSec: 3600, incSec: 0 },
+  { key: "3600-30", label: t("1시간+30초"), cat: "스탠다드", initialSec: 3600, incSec: 30 },
 ];
 export const DEFAULT_TIME_CONTROL = TIME_CONTROLS[6]; // 10분(래피드)
 // (v0.4.8, v0.5.0 예정인 보드 위 오리지널 미니게임 PvP 대비 선행 정리) pvp_queue/pvp_games/pvp_invites의
@@ -4409,7 +4410,7 @@ export function timeControlFromKey(key) {
   if (!m) return DEFAULT_TIME_CONTROL;
   const initialSec = parseInt(m[1], 10), incSec = parseInt(m[2], 10);
   const min = Math.round(initialSec / 60);
-  return { key, label: min + "분" + (incSec ? "+" + incSec + "초" : ""), cat: "", initialSec, incSec };
+  return { key, label: t("{0}분{1}", (min), incSec ? t("+{0}초", incSec) : ""), cat: "", initialSec, incSec };
 }
 export function fmtClock(ms) {
   if (ms == null) return "";
@@ -4467,9 +4468,9 @@ export function MgOppBadge({ opp, size = 16, inline }) {
   if (!opp) return null;
   const base = { width: size, height: size, borderRadius: "50%", border: "1.5px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.45)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" };
   const pos = inline ? {} : { position: "absolute", top: 2, right: 2, zIndex: 5 };
-  if (opp.bot) return <span aria-label="봇" style={{ ...base, ...pos, background: "#3A2516", color: T.brassHi }}><Cpu size={Math.round(size * 0.62)} /></span>;
+  if (opp.bot) return <span aria-label={t("봇")} style={{ ...base, ...pos, background: "#3A2516", color: T.brassHi }}><Cpu size={Math.round(size * 0.62)} /></span>;
   if (opp.photo) return <img src={opp.photo} alt="" draggable={false} style={{ ...base, ...pos, objectFit: "cover", background: "#EDE1C6" }} />;
-  return <span aria-label={opp.name || "상대"} style={{ ...base, ...pos, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: Math.round(size * 0.55), fontWeight: 900, lineHeight: 1 }}>{((opp.name || "?")[0] || "?").toUpperCase()}</span>;
+  return <span aria-label={opp.name || t("상대")} style={{ ...base, ...pos, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: Math.round(size * 0.55), fontWeight: 900, lineHeight: 1 }}>{((opp.name || "?")[0] || "?").toUpperCase()}</span>;
 }
 /* ============================================================ 도감 탭 ============================================================ */
 export function WinBar({ wdl, height = 8 }) {
@@ -4483,7 +4484,7 @@ export function WinBar({ wdl, height = 8 }) {
         <div style={{ width: d + "%", background: "#9C8A6A" }} />
         <div style={{ width: b + "%", background: "#241509" }} />
       </div>
-      <div className="flex justify-between" style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, fontFamily: SITE_FONT }}><span>백 {w}%</span><span>무 {d}%</span><span>흑 {b}%</span></div>
+      <div className="flex justify-between" style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2, fontFamily: SITE_FONT }}><span>{tx("백 {0}", w)}%</span><span>{tx("무 {0}", d)}%</span><span>{tx("흑 {0}", b)}%</span></div>
     </div>
   );
 }
@@ -4749,8 +4750,8 @@ export function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);
   if (!phase) return null;
   return compact
-    ? <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작"} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
-    : <span title={GAME_PHASE_LABEL[phase] + " 포지션에서 시작"} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
+    ? <span title={t("{0} 포지션에서 시작", (GAME_PHASE_LABEL[phase]))} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
+    : <span title={t("{0} 포지션에서 시작", (GAME_PHASE_LABEL[phase]))} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
 }
 /* ── (20차 기능1) 퍼즐 트리 유틸 ──
    구버전 퍼즐(lines/solution만 있는)도 공통 접두사를 병합해 동일한 트리 구조로 다룬다.
@@ -4877,11 +4878,11 @@ export function puzzleLineBaseRating(setupSans, tree, line, fenRoot) {
 // 레이팅)로 체감 난이도를 5단계로 매기고, 값에 따라 눈에 띄는 색을 준다 — 쉬울수록 초록, 적정은
 // 브라스(사이트 기본 강조색), 어려울수록 빨강으로 자연스럽게 이어지는 신호등 계열.
 export function puzzleDifficultyTier(diff) {
-  if (diff <= -300) return { label: "매우 쉬움", color: "#2E8B57" };
-  if (diff <= -100) return { label: "쉬움", color: "#6FBF73" };
-  if (diff < 100) return { label: "적정", color: T.brass };
-  if (diff < 300) return { label: "어려움", color: "#E0904A" };
-  return { label: "매우 어려움", color: "#D9534F" };
+  if (diff <= -300) return { label: t("매우 쉬움"), color: "#2E8B57" };
+  if (diff <= -100) return { label: t("쉬움"), color: "#6FBF73" };
+  if (diff < 100) return { label: t("적정"), color: T.brass };
+  if (diff < 300) return { label: t("어려움"), color: "#E0904A" };
+  return { label: t("매우 어려움"), color: "#D9534F" };
 }
 // (버그 수정) genPuzzleTree가 결국 실패해 트리를 못 만들었는데도(과거 로직 결함·중간에 취소된
 // 생성 등) 그 실패한 결과가 그대로 저장돼, 실제로는 통과 가능한 라인이 0개인 "빈 퍼즐"이 목록에
@@ -5342,7 +5343,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
       <div onClick={handleClick} className="press"
         style={{ position: "relative", width: "100%", borderRadius: 6, cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "0 0 0 2.5px rgba(255,255,255,.95)" : "none" }}>
         <img src={_img} alt={fam.label + " " + tier.suffix} draggable={false} style={{ display: "block", width: "100%", height: "auto" }} />
-        {equipped && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>장착됨</span>}
+        {equipped && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
         {locked && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.25)", borderRadius: 6 }}><Lock size={20} style={{ color: "#fff" }} /></div>}
         {condOverlay}
       </div>
@@ -5380,7 +5381,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
         <span style={{ width: 2, height: compact ? 18 : 24, background: "rgba(255,255,255,.55)", flexShrink: 0 }} />
         <span style={{ fontSize: compact ? 10.5 : 12.5, fontWeight: 900, letterSpacing: "1px", color: st.label, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{tier.suffix}</span>
       </div>
-      {equipped && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.28)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>장착됨</span>}
+      {equipped && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.28)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
       {condOverlay}
     </div>
   );
@@ -5459,17 +5460,17 @@ export function ExternalShareRow({ url, title, text }) {
   const linkBtnStyle = { display: "inline-flex", alignItems: "center", padding: "7px 13px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12, textDecoration: "none", cursor: "pointer" };
   return (
     <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>외부 앱으로 공유</div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>{t("외부 앱으로 공유")}</div>
       <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
         {canNativeShare && (
-          <button onClick={doNativeShare} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}><Share2 size={13} /> 공유하기(카카오톡·인스타그램 등)</button>
+          <button onClick={doNativeShare} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{tx("{0} 공유하기(카카오톡·인스타그램 등)", <Share2 size={13} />)}</button>
         )}
-        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? "복사됨" : "링크 복사"}</button>
+        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? t("복사됨") : t("링크 복사")}</button>
         {!canNativeShare && (
           <>
-            <a href={"https://story.kakao.com/share?url=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>카카오스토리</a>
-            <a href={"https://twitter.com/intent/tweet?url=" + encoded + "&text=" + encodeURIComponent(text || "")} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>X(트위터)</a>
-            <a href={"https://www.facebook.com/sharer/sharer.php?u=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>페이스북</a>
+            <a href={"https://story.kakao.com/share?url=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("카카오스토리")}</a>
+            <a href={"https://twitter.com/intent/tweet?url=" + encoded + "&text=" + encodeURIComponent(text || "")} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("X(트위터)")}</a>
+            <a href={"https://www.facebook.com/sharer/sharer.php?u=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("페이스북")}</a>
           </>
         )}
       </div>
@@ -5500,26 +5501,26 @@ export function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
   }, [myUid]);
   const send = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    if (!puzzle || puzzle.id == null) { setSendErr("퍼즐 정보를 불러오지 못해 전달 불가"); return; }
+    if (!puzzle || puzzle.id == null) { setSendErr(t("퍼즐 정보를 불러오지 못해 전달 불가")); return; }
     setBusy(toUid); setSendErr("");
     const ok = await puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid);
     setBusy(null);
     if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
-    else setSendErr("전달 실패. 잠시 후 다시 시도");
+    else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}><Send size={15} />퍼즐 공유</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}퍼즐 공유", <Send size={15} />)}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title="OpenChess 퍼즐" text={"OpenChess 퍼즐: " + (livePuzzleName(puzzle) || "퍼즐 풀어보기")} />}
+        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title={t("OpenChess 퍼즐")} text={t("OpenChess 퍼즐: {0}", livePuzzleName(puzzle) || t("퍼즐 풀어보기"))} />}
         <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>친구에게 보내기</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>{t("친구에게 보내기")}</div>
           {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>불러오는 중…</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>공유할 친구 없음. 먼저 친구 추가</div>
+          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {friends.map((u) => {
                   const pr = profiles[u] || {}; const pub = pr.pub || {};
@@ -5532,7 +5533,7 @@ export function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
                         <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
                       </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? "보냄" : (busy === u ? "…" : "보내기")}</button>
+                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
                     </div>
                   );
                 })}
@@ -5642,7 +5643,7 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
     /* (19차 UI2) 정사각 고정을 풀고(오프닝 이름·"n명이 풀었습니다"가 잘리지 않도록) 내용 높이에 맞춰 늘어나게 한다. */
     <div onClick={onClick} className="press text-left" style={{ borderRadius: 12, padding: 10, paddingTop: 13, paddingBottom: 16, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E"), border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ position: "absolute", top: -1, left: -1, right: -1, height: 3, borderRadius: "12px 12px 0 0", background: themeAccentBg(themes), zIndex: 2 }} />
-      {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label="삭제" className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
+      {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(p.id); }} aria-label={t("삭제")} className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, width: 22, height: 22, borderRadius: 7, background: "rgba(40,24,12,.78)", color: "#F4C8C8", border: "1px solid #000", fontSize: 12, fontWeight: 800, lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✕</button>}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {/* (사용자 요청) 카드 비율을 세로로 늘리고, 체스보드가 들어갈 여백 자체를 정사각형(aspectRatio
             1/1)으로 항상 예약해 둔다 — 미리보기가 있든 없든(레거시 퍼즐 등) 이 자리 크기는 그대로라
@@ -5673,7 +5674,7 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
         <FitPuzzleName text={livePuzzleName(p)} />
         {/* (사용자 요청) 퍼즐 유형·라인 개수를 알려주는 텍스트는 지운다 — 손상된(라인 0개) 퍼즐 경고만
             남긴다(유용한 오류 표시라 지우지 않는다). */}
-        {broken && <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, marginTop: 4 }}>⚠ 손상된 퍼즐 (라인 0개)</span>}
+        {broken && <span style={{ fontSize: 9, color: T.blunder, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, marginTop: 4 }}>{t("⚠ 손상된 퍼즐 (라인 0개)")}</span>}
         {/* (사용자 요청) 6자리 퍼즐 번호는 왼쪽, 퍼즐 레이팅은 같은 줄 오른쪽에 표시한다 — 예전엔
             번호가 오른쪽에, 레이팅은 그 아래 배지 줄 한가운데 섞여 있었다. */}
         <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 4, gap: 4 }}>
@@ -5686,19 +5687,19 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
               return (
                 <ClickInfoBadge width={210} align="left" content={
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div>이 퍼즐의 레이팅 : <b>{avgRating}</b></div>
-                    <div>내 레이팅 : <b>{myPuzzleRating}</b> (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
-                    <div>난이도 : <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span></div>
+                    <div>{tx("이 퍼즐의 레이팅 : {0}", <b>{avgRating}</b>)}</div>
+                    <div>{tx("내 레이팅 : {0}", <b>{myPuzzleRating}</b>)} (<span style={{ color: deltaColor, fontWeight: 900 }}>{myPuzzleRating - avgRating >= 0 ? "+" : ""}{myPuzzleRating - avgRating}</span>)</div>
+                    <div>{tx("난이도 : {0}", <span style={{ color: tier.color, fontWeight: 900 }}>{tier.label}</span>)}</div>
                   </div>
                 }>
                   {/* (사용자 요청) 퍼즐 풀이 카드(PuzzleSolver)의 레이팅 배지와 완전히 같은 디자인 —
                       "★" 글자 기호 대신 배경·테두리가 있는 알약형 배지로 표시한다. */}
-                  <span title="퍼즐 레이팅 (100~3000, 라인 평균 난이도). 눌러서 자세히" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
+                  <span title={t("퍼즐 레이팅 (100~3000, 라인 평균 난이도). 눌러서 자세히")} style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
                 </ClickInfoBadge>
               );
             })()
           ) : (
-            <span title="퍼즐 레이팅 (100~3000, 라인 평균 난이도)" style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
+            <span title={t("퍼즐 레이팅 (100~3000, 라인 평균 난이도)")} style={{ padding: "3px 8px", borderRadius: 8, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, color: T.brass, fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, flexShrink: 0 }}>{avgRating}</span>
           ))}
         </div>
         {/* (v0.2.2 UI#3) 다른 사람의 풀이 정보(예: "OO 외 3명이 풀었어요")는 좋아요·공유 버튼과 같은
@@ -5719,20 +5720,20 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
             순으로 바꿨다 — 그 퍼즐이 "어느 국면"인지가 가장 먼저 눈에 들어와야 할 정보라 맨 왼쪽에 둔다. */}
         <div className="flex items-center" style={{ marginTop: 4, gap: 5, rowGap: 4, flexWrap: "wrap", flexShrink: 0 }}>
             <GamePhaseBadge p={p} compact />
-            {p.setupSans && p.setupSans.length > 0 && <span title="PGN 기보로 시작 위치 지정" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
-            {p.fen && <span title="FEN 코드로 시작 위치 지정" style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
+            {p.setupSans && p.setupSans.length > 0 && <span title={t("PGN 기보로 시작 위치 지정")} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>PGN</span>}
+            {p.fen && <span title={t("FEN 코드로 시작 위치 지정")} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>FEN</span>}
         </div>
         {/* (사용자 요청) 좋아요·리포스트·공유 수는 왼쪽에 묶어 두고, 실제 공유하기 버튼만 카드 맨
             아래 줄의 오른쪽 끝(우하단)에 오도록 justify-between으로 분리한다 — 예전엔 넷 다 같은
             줄에 나란히 왼쪽 정렬돼 있어 공유 버튼이 카드 우하단이 아니라 그 옆에 붙어 있었다. */}
         <div className="flex items-center justify-between" style={{ marginTop: 6, gap: 10, flexShrink: 0 }}>
             <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
-            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label="좋아요" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            {onToggleLike && <button onClick={(e) => { e.stopPropagation(); onToggleLike(p.id); }} aria-label={t("좋아요")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Heart size={16} color={isLiked ? "#D9534F" : T.inkSoft} fill={isLiked ? "#D9534F" : "none"} />
               <span style={{ fontSize: 11.5, fontWeight: 800, color: isLiked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span>
             </button>}
             {/* (v0.1.0) 리포스트·공유 — 좋아요와 같은 자리에, 풀이수/좋아요와 무관한 별개 참여 지표로 노출 */}
-            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label="리포스트" title="리포스트" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            {onToggleRepost && <button onClick={(e) => { e.stopPropagation(); onToggleRepost(p.id); }} aria-label={t("리포스트")} title={t("리포스트")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
               <Repeat2 size={17} color={isReposted ? T.brilliant : T.inkSoft} />
               <span style={{ fontSize: 11.5, fontWeight: 800, color: isReposted ? T.brilliant : T.inkSoft }}>{repostCount || 0}</span>
             </button>}
@@ -5744,9 +5745,8 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
             </div>
             {/* (v0.1.3 UI) 공유하기 액션을 아이콘만 있던 것에서 라운딩된 사각형 배지(텍스트 포함)로 바꿔
                 눈에 더 잘 띄도록 함 — 바로 옆 공유 수 표시(아이콘만)와도 시각적으로 구분됨. */}
-            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label="공유하기" title="공유하기" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 13px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-              <Send size={13} color={T.brass} />공유
-            </button>}
+            {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(p); }} aria-label={t("공유하기")} title={t("공유하기")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 13px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {tx("{0}공유", <Send size={13} color={T.brass} />)}</button>}
         </div>
       </div>
     </div>
@@ -5816,7 +5816,7 @@ export function MaterialIcon({ name, size = 20, color = "currentColor", style })
 export function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);
   if (err) return <span style={{ fontSize: Math.round(size * 0.95), lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}>🪙</span>;
-  return <img src="/oc-coin.png" alt="OC 나이트 코인" onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
+  return <img src="/oc-coin.png" alt={t("OC 나이트 코인")} onError={() => setErr(true)} style={{ width: size, height: size, objectFit: "contain", display: "inline-block", verticalAlign: "middle" }} />;
 }
 // (21차) chess.com 데이터를 보여주는 곳에는 "chess.com"이라는 글자 대신(또는 함께) 실제 로고를 쓴다.
 // 밝은(양피지색) 카드 위에서는 검정 로고, 어두운(흑단색) 카드/버튼 위에서는 흰색 로고를 쓴다.
@@ -5851,18 +5851,18 @@ export function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEq
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tierLabel.label} 티어 전용 · 코인으로 구매 불가</span>
-            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>무료 · 기본 제공</span>
+          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tx("{0} 티어 전용 · 코인으로 구매 불가", tierLabel.label)}</span>
+            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("무료 · 기본 제공")}</span>
               : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
         </div>
         {equipped ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>✓ 장착됨</button>
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>{t("✓ 장착됨")}</button>
         ) : owned || isFree ? (
-          <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>장착하기</button>
+          <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("장착하기")}</button>
         ) : sk.tierLocked ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tierLabel.label} 티어 필요</button>
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tx("{0} 티어 필요", tierLabel.label)}</button>
         ) : (
-          <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? "코인 부족" : "구매하기"}</button>
+          <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? t("코인 부족") : t("구매하기")}</button>
         )}
       </div>
     </div>
@@ -5979,7 +5979,7 @@ export function OnlineDot({ lastSeenMs, size = 10, overlay }) {
   const style = overlay
     ? { position: "absolute", right: -1, bottom: -1, width: size, height: size, borderRadius: "50%", background: "#3BA55D", border: "2px solid " + T.paper, boxSizing: "content-box" }
     : { display: "inline-block", width: size, height: size, borderRadius: "50%", background: "#3BA55D", flexShrink: 0 };
-  return <span style={style} aria-label="온라인" title="온라인" />;
+  return <span style={style} aria-label={t("온라인")} title={t("온라인")} />;
 }
 // 접속 상태 텍스트 — 온라인이면 "온라인", 아니면 "n분 전 접속"(마지막 접속 시각을 모르면 빈 문자열).
 export function presenceLabel(lastSeenMs) {
@@ -6006,9 +6006,9 @@ export function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onOpen
   const openPuzzle = (p) => { onOpenPuzzle && onOpenPuzzle(p.id, p); };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>푼 퍼즐 <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span></div>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("푼 퍼즐 {0}", <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span>)}</div>
       {puzzles.length === 0 ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? "불러오는 중…" : "푼 퍼즐 없음"}</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? t("불러오는 중…") : t("푼 퍼즐 없음")}</p>
       ) : (
         /* (v0.1.3 버그 수정) 카드를 좁은 프로필 카드 폭에서 균등 3열(grid 1fr)로 강제 배치하면
            PuzzleCard가 퍼즐 탭 기준 최소폭(148px)보다 훨씬 좁게 눌려 오프닝 이름 같은 텍스트가 한
@@ -6016,7 +6016,7 @@ export function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onOpen
            늘리는 대신(공간이 좁으므로) 가로 스크롤로 전부 훑어보도록 한다. */
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
           {puzzles.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 230, minWidth: 230, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</FadeIn>)}
-          {loading && <div style={{ width: 230, minWidth: 230, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ fontSize: 11, color: T.inkSoft }}>더 불러오는 중…</p></div>}
+          {loading && <div style={{ width: 230, minWidth: 230, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ fontSize: 11, color: T.inkSoft }}>{t("더 불러오는 중…")}</p></div>}
         </div>
       )}
     </div>
@@ -6041,9 +6041,9 @@ export function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onOpen
 // ============================================================================
 // (사용자 요청) short — 유산 추가/편집 카드(LegacyManageModal) 제목에 "유산 • 최선"처럼 표시할 때 쓴다.
 export const LEGACY_TYPES = [
-  { key: "best", kind: "best", label: "최선의 유산", short: "최선" },
-  { key: "only", kind: "only", label: "유일한 유산", short: "유일" },
-  { key: "brilliant", kind: "brilliant", label: "탁월한 유산", short: "탁월" },
+  { key: "best", kind: "best", label: t("최선의 유산"), short: t("최선") },
+  { key: "only", kind: "only", label: t("유일한 유산"), short: t("유일") },
+  { key: "brilliant", kind: "brilliant", label: t("탁월한 유산"), short: t("탁월") },
 ];
 // (사용자 요청) 그랜드마스터 보너스 슬롯 키(예: "best2")에서 기반 종류 키("best")를 뽑아낸다 —
 // LEGACY_TYPES는 여전히 종류 3개뿐이라, 저장/조회 키와 등급 정보(kind/label/short) 조회 키를 분리한다.
@@ -6086,7 +6086,7 @@ export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
-      <button onClick={onOpen} className="press" title={typeInfo.label + " (눌러서 재생)"} style={LEGACY_BLOCK_BTN_STYLE}>
+      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
           textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
@@ -6095,15 +6095,15 @@ export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size
       <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
       {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. */}
       {onToggleLike && (
-        <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label="유산 좋아요" title="좋아요" className="press"
+        <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label={t("유산 좋아요")} title={t("좋아요")} className="press"
           style={{ position: "absolute", top: 4, left: 4, zIndex: 2, display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", borderRadius: 7, background: "rgba(0,0,0,.55)", color: isLiked ? T.brassHi : T.ivory, border: "1px solid #000", cursor: "pointer" }}>
           <ThumbsUp size={11} fill={isLiked ? T.brassHi : "none"} />
           <span style={{ fontSize: 10, fontWeight: 800 }}>{likeCount || 0}</span>
         </button>
       )}
       {/* (사용자 요청) 편집(펜) 아이콘은 좌하단으로, 공유(종이비행기) 아이콘은 우하단에 새로 추가. */}
-      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="유산 편집" title="편집" className="press" style={{ position: "absolute", bottom: 4, left: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
-      {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label="유산 공유" title="공유" className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Send size={11} /></button>}
+      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label={t("유산 편집")} title={t("편집")} className="press" style={{ position: "absolute", bottom: 4, left: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
+      {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label={t("유산 공유")} title={t("공유")} className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Send size={11} /></button>}
     </div>
   );
 }
@@ -6149,7 +6149,7 @@ export function InviteLinkBox({ mid }) {
   const shareInviteLink = async () => {
     if (!inviteLink) return;
     if (navigator.share) {
-      try { await navigator.share({ title: "OpenChess 친구 초대", url: inviteLink }); setShared(true); setTimeout(() => setShared(false), 1500); }
+      try { await navigator.share({ title: t("OpenChess 친구 초대"), url: inviteLink }); setShared(true); setTimeout(() => setShared(false), 1500); }
       catch { /* 사용자가 공유 시트를 취소한 경우 등 — 조용히 무시 */ }
     } else {
       await copyInviteLink();
@@ -6158,12 +6158,12 @@ export function InviteLinkBox({ mid }) {
   const btnStyle = { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" };
   return (
     <div style={{ padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 4 }}>친구 초대 링크</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 4 }}>{t("친구 초대 링크")}</div>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, wordBreak: "break-all", marginBottom: 8 }}>{inviteLink || "—"}</div>
       {!!inviteLink && (
         <div className="flex gap-2">
-          <button onClick={copyInviteLink} className="press" style={btnStyle}><Copy size={12} />{copied ? "복사됨" : "복사"}</button>
-          <button onClick={shareInviteLink} className="press" style={btnStyle}><Share2 size={12} />{shared ? "공유됨" : "공유"}</button>
+          <button onClick={copyInviteLink} className="press" style={btnStyle}><Copy size={12} />{copied ? t("복사됨") : t("복사")}</button>
+          <button onClick={shareInviteLink} className="press" style={btnStyle}><Share2 size={12} />{shared ? t("공유됨") : t("공유")}</button>
         </div>
       )}
     </div>

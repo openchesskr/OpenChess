@@ -23,6 +23,7 @@ import { CollectionTab } from "./app/dex.jsx";
 import { PuzzleTab } from "./app/puzzle.jsx";
 import { QuestTab } from "./app/quest.jsx";
 
+import { t, tx } from "./lib/i18n.js";
 export default function App() {
   const narrowHeader = useNarrow(480);
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
@@ -481,7 +482,7 @@ export default function App() {
   useEffect(() => { (async () => {
     const _rec = parseRecoveryHash(); if (_rec) setRecovery(_rec);
     const _oauth = _rec ? null : parseOAuthHash();
-    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음"); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
+    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice(t("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
     // (UX7) 세션 복구를 먼저 시도해 uid를 확정한 뒤, 그 uid(없으면 guest) 전용 로컬 캐시만 읽는다 —
     // 순서를 바꾸지 않으면 이전에 이 기기에서 로그인했던 "다른" 계정의 로컬 캐시를 먼저 읽어버린다.
     let acc = null;
@@ -1538,13 +1539,13 @@ export default function App() {
               않는다(이제 자식에 height를 따로 지정하지 않는다). 어느 브라우저에서도 border는 항상
               같은 방식으로 그려지므로 이 문제가 구조적으로 재발하지 않는다. */}
           <div className="flex" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, border: "1px solid " + T.brass, boxSizing: "border-box", alignItems: "stretch", overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label="유저 검색" className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label="친구" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label={t("유저 검색")} className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label={t("친구")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label="채팅" className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label={t("채팅")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -1557,8 +1558,8 @@ export default function App() {
               likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-              <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>로그인</button>
-              <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>회원가입</button>
+              <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{t("로그인")}</button>
+              <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{t("회원가입")}</button>
             </div>
           )}
         </div>
@@ -1575,7 +1576,7 @@ export default function App() {
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
-      {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>(탭하여 닫기)</span></div>}
+      {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>{t("(탭하여 닫기)")}</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={enterPvpGame} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
@@ -1594,11 +1595,11 @@ export default function App() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(10,6,3,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <motion.div initial={{ opacity: 0, y: 12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .97 }} transition={{ duration: 0.2, ease: MOTION_EASE }}
               style={{ width: "100%", maxWidth: 320, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 14, padding: 20, textAlign: "center", boxShadow: "0 20px 50px -12px rgba(0,0,0,.7)" }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>대국에서 나갈까요?</div>
-              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>지금 나가면 기권 처리</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ivoryHi, marginBottom: 6 }}>{t("대국에서 나갈까요?")}</div>
+              <div style={{ fontSize: 12.5, color: "rgba(244,238,226,.7)", marginBottom: 18, lineHeight: 1.5 }}>{t("지금 나가면 기권 처리")}</div>
               <div className="flex gap-2">
-                <button onClick={cancelPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>계속 두기</button>
-                <button onClick={confirmPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#E05C5C,#B23A3A)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>나가기(기권)</button>
+                <button onClick={cancelPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("계속 두기")}</button>
+                <button onClick={confirmPlayExit} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#E05C5C,#B23A3A)", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("나가기(기권)")}</button>
               </div>
             </motion.div>
           </motion.div>
@@ -1626,11 +1627,11 @@ export default function App() {
       {confirmLogout && (
         <div onClick={() => setConfirmLogout(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>로그아웃</div>
-            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{user} 계정에서 로그아웃할까요?</p>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("로그아웃")}</div>
+            <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{tx("{0} 계정에서 로그아웃할까요?", user)}</p>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmLogout(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>취소</button>
-              <button onClick={logout} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>로그아웃</button>
+              <button onClick={() => setConfirmLogout(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, cursor: "pointer" }}>{t("취소")}</button>
+              <button onClick={logout} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, cursor: "pointer" }}>{t("로그아웃")}</button>
             </div>
           </div>
         </div>
@@ -1650,7 +1651,7 @@ export default function App() {
         <div style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ animation: "xpStarPop 1.1s ease forwards", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
             <CoinIcon size={58} />
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.brass, letterSpacing: "-.01em" }}>+{toast.amount} OC 나이트 코인</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.brass, letterSpacing: "-.01em" }}>+{tx("{0} OC 나이트 코인", toast.amount)}</div>
           </div>
         </div>
       )}
@@ -1672,7 +1673,7 @@ export default function App() {
             /* (v0.1.0) 내가 공유한 퍼즐을 친구가 풀어 XP를 나눠 받았을 때 — 실시간으로 도착하는 순간 뜨는 알림. */
             <div className="flex items-center gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, padding: "12px 18px", borderRadius: 12, border: "1px solid " + T.brass, boxShadow: "0 10px 30px -8px rgba(0,0,0,.7)" }}>
               <span style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(196,154,80,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={20} style={{ color: T.brassHi }} /></span>
-              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>공유 보상</div><div style={{ fontSize: 12 }}>친구가 공유한 퍼즐을 풀어 <b>+{toast.amount} XP</b> 획득</div></div>
+              <div><div style={{ fontWeight: 800, fontSize: 13, color: T.brassHi }}>{t("공유 보상")}</div><div style={{ fontSize: 12 }}>{tx("친구가 공유한 퍼즐을 풀어 {0} 획득", <b>+{toast.amount} XP</b>)}</div></div>
             </div>
           ) : toast.type === "questClear" ? (
             /* (v0.2.9 기능) 일일 퀘스트 5개 중 하나를 클리어할 때 — 전체 클리어 팝업(DailyQuestClearedModal)과
@@ -1682,7 +1683,7 @@ export default function App() {
               <span className="gm-board-shine" style={{ borderRadius: 13 }} />
               <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: T.best, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)" }}><Check size={18} color="#fff" strokeWidth={3} /></span>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>퀘스트 완료</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi }}>{t("퀘스트 완료")}</div>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ivoryHi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.label}</div>
               </div>
               <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>

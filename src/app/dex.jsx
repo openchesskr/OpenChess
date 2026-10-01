@@ -15,6 +15,7 @@ import { playSfx } from "../lib/prefs.js";
 import { sansToPgnText } from "../lib/pgn.js";
 import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // (개편) 도감 오프닝 해금 기준 — 예전에는 분석 탭에서 "집중 분석"에 진입하면 해금됐지만, 이제는
 // chess.com 대국 기록에 그 수순이 실제로 한 번이라도 나온 적이 있어야 해금된다(개발자 devUnlockAll은
 // 예외). chess.com 연동이 안 되어 있으면 시작 위치를 제외한 모든 수가 잠긴 채로 보인다.
@@ -64,7 +65,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
       {/* (버그 수정) 아래 보드 미리보기 래퍼(position:relative)가 z-index 없이도 DOM 순서상 이 버튼
           위에 그려져, 카드 폭 전체에 걸친 그 래퍼의 투명 영역이 X 버튼 클릭을 가로채고 있었다 —
           명시적 z-index로 항상 위에 오도록 고정한다. */}
-      <button onClick={onClose} aria-label="블록 닫기" className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer", zIndex: 5 }}>✕</button>
+      <button onClick={onClose} aria-label={t("블록 닫기")} className="press" style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: 7, border: "none", background: "rgba(0,0,0,.15)", color: isUnlocked ? T.ink : T.ivory, cursor: "pointer", zIndex: 5 }}>✕</button>
       <div style={{ position: "relative" }}>
         {isUnlocked ? <AnimatedMove sans={path} san={m.san} size={200} />
           : <div style={{ width: 162, height: 162, margin: "0 auto", borderRadius: 9, background: "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 8px,#33261A 8px,#33261A 16px)", display: "flex", alignItems: "center", justifyContent: "center" }}><Lock size={28} style={{ color: T.brass }} /></div>}
@@ -77,7 +78,7 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
           ? <button onClick={() => onOpenLearn([...path, m.san])} className="press" style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
           : <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>}
         {evTxt && <span style={{ fontFamily: SITE_FONT, fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
-        <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>미해금</span>}</span>
+        <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>{t("미해금")}</span>}</span>
       </div>
       {/* (사용자 요청) 도감의 수 키워드도 수 블록·현재 수 블록과 완전히 같은 클릭형 안전 영역 말풍선을 쓴다. */}
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => <KeywordChip key={k} k={k} />)}</div>}
@@ -88,12 +89,12 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
-      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>채택률 {m.adopt != null ? m.adopt.toFixed(1) + "%" : "—"} · {fmtFull(m.games)}국</div>}
+      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>{tx("채택률 {0} · {1}국", m.adopt != null ? m.adopt.toFixed(1) + "%" : "—", fmtFull(m.games))}</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
-          <span style={{ fontWeight: 800, color: "#2E6E2E" }}>내 승률 {cc.winRate}%</span>
-          <span><span style={{ color: T.best }}>{cc.w}승</span> {cc.d}무 <span style={{ color: T.blunder }}>{cc.l}패</span> · {fmtFull(cc.total)}판</span>
+          <span style={{ fontWeight: 800, color: "#2E6E2E" }}>{tx("내 승률 {0}", cc.winRate)}%</span>
+          <span><span style={{ color: T.best }}>{tx("{0}승", cc.w)}</span> {tx("{0}무 {1} · {2}판", cc.d, <span style={{ color: T.blunder }}>{tx("{0}패", cc.l)}</span>, fmtFull(cc.total))}</span>
         </div>
       )}
       {/* (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 — 별도 화면 대신 선택한 수의 이 카드
@@ -123,12 +124,12 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
   const chip = (key, label, onRemove) => (
     <span key={key} style={{ ...ghostStyle, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 7px", fontSize: 10.5, fontWeight: 700, color: T.brassHi, marginRight: 5, marginBottom: 5 }}>
       {label}
-      <button onClick={onRemove} aria-label="대기 취소" className="press" style={{ background: "none", border: "none", color: T.brassHi, cursor: "pointer", padding: 0, display: "inline-flex" }}><X size={10} /></button>
+      <button onClick={onRemove} aria-label={t("대기 취소")} className="press" style={{ background: "none", border: "none", color: T.brassHi, cursor: "pointer", padding: 0, display: "inline-flex" }}><X size={10} /></button>
     </span>
   );
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + (isUnlocked ? "#CDB98E" : "#4A3826") }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>개발자 · 이론 수 편집(저장 전까지 미반영)</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자 · 이론 수 편집(저장 전까지 미반영)")}</div>
       {(editInfo.childAdds.length > 0 || editInfo.siblingAdds.length > 0) && (
         <div>
           {editInfo.childAdds.map((a) => chip("c" + a.san, "+ " + a.san + " (자녀)", () => onUnstageAdd([...path, san], a.san)))}
@@ -136,21 +137,21 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
         </div>
       )}
       <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-        <button onClick={() => openForm("child")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>＋ 자녀 수</button>
-        <button onClick={() => openForm("sibling")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>＋ 형제 수</button>
+        <button onClick={() => openForm("child")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>{t("＋ 자녀 수")}</button>
+        <button onClick={() => openForm("sibling")} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: T.brassHi, fontSize: 10.5, fontWeight: 800 }}>{t("＋ 형제 수")}</button>
         <button onClick={() => onToggleRemove(path, san)} className="press" style={{ ...ghostStyle, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", color: editInfo.selfRemoved ? T.blunder : T.inkSoft, fontSize: 10.5, fontWeight: 800, borderColor: editInfo.selfRemoved ? T.blunder : T.brassHi }}>
-          {editInfo.selfRemoved ? "삭제 취소" : "이 수 삭제"}
+          {editInfo.selfRemoved ? t("삭제 취소") : t("이 수 삭제")}
         </button>
       </div>
       {addKind && (
         <div style={{ ...ghostStyle, marginTop: 6, padding: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-          <div style={{ fontSize: 10, color: T.brassHi, fontWeight: 800 }}>{addKind === "child" ? "자녀 수 추가" : "형제 수 추가"}</div>
-          <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} placeholder="SAN (예: Nf3)" style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
-          <input value={nameIn} onChange={(e) => setNameIn(e.target.value)} placeholder="오프닝 이름(선택)" style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
+          <div style={{ fontSize: 10, color: T.brassHi, fontWeight: 800 }}>{addKind === "child" ? t("자녀 수 추가") : t("형제 수 추가")}</div>
+          <input value={sanIn} onChange={(e) => setSanIn(e.target.value)} placeholder={t("SAN (예: Nf3)")} style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
+          <input value={nameIn} onChange={(e) => setNameIn(e.target.value)} placeholder={t("오프닝 이름(선택)")} style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11.5, boxSizing: "border-box" }} />
           {err && <div style={{ fontSize: 10, color: T.blunder }}>{err}</div>}
           <div className="flex gap-2">
-            <button onClick={submit} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", background: T.brass, color: "#241509", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>추가 대기</button>
-            <button onClick={() => setAddKind(null)} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>닫기</button>
+            <button onClick={submit} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", background: T.brass, color: "#241509", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{t("추가 대기")}</button>
+            <button onClick={() => setAddKind(null)} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{t("닫기")}</button>
           </div>
         </div>
       )}
@@ -224,9 +225,9 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
           {evTxt && <span style={{ fontSize: 8.5, fontWeight: 700, opacity: 0.85 }}>{evTxt}</span>}
         </button>
         {showRec && (
-          <span title={"내 chess.com 전적 " + it.myN + "판: " + it.myW + "승 " + it.myD + "무 " + it.myL + "패, 승률 " + it.myWr + "%"}
+          <span title={t("내 chess.com 전적 {0}판: {1}승 {2}무 {3}패, 승률 {4}%", it.myN, it.myW, it.myD, it.myL, it.myWr)}
             style={{ position: "absolute", left: "50%", top: boxH + 3, transform: "translateX(-50%)", height: 16, padding: "0 6px", borderRadius: 8, background: "#FFFDF6", border: "1.5px solid " + wrColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 8.5, fontWeight: 800, color: T.ink, zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>
-            <span>{it.myW}승 {it.myD}무 {it.myL}패</span>
+            <span>{tx("{0}승 {1}무 {2}패", it.myW, it.myD, it.myL)}</span>
             <span style={{ color: wrColor }}>{it.myWr}%</span>
           </span>
         )}
@@ -1062,7 +1063,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       <div className="no-pan" style={{ position: "relative", zIndex: 70, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150 }}>
         <div style={{ display: "flex", gap: 4 }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="오프닝 이름으로 찾기"
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("오프닝 이름으로 찾기")}
             style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
           {/* (기능) 검색·드래그·확대로 화면이 흐트러졌을 때, 첫 4수(e4/d4/c4/Nf3)가 보이는 정중앙
               기본 화면으로 한 번에 되돌리는 버튼 — 줌을 100%로, 팬은 나침반 중심으로 되돌리고
@@ -1075,7 +1076,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
             const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
             const vc = { x: rect.width / 2, y: rect.height / 2 };
             setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
-          }} title="화면 가운데로 되돌리기" className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          }} title={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={14} />
           </button>
         </div>
@@ -1084,7 +1085,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         {query.trim() && (
           <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
             {matches.length === 0
-              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>일치하는 오프닝 없음</div>
+              ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 오프닝 없음")}</div>
               : matches.map((it) => (
                 <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
@@ -1105,12 +1106,12 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
       style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
       {!ready && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>불러오는 중…</div>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>{t("불러오는 중…")}</div>
       )}
       <div className="flex no-pan" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
-        <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title="축소" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title="초기화" style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
-        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title="확대" style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+        <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
+        <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
       <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden", willChange: "transform" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
@@ -1166,7 +1167,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title="회로에 전류 흘리기" style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
+        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
@@ -1203,12 +1204,11 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       {canAdd && (draftAddCount > 0 || draftRemoveCount > 0) && (
         <div className="no-pan" onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 62, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.5)" }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: T.brassHi }}>
-            대기 중인 변경:{draftAddCount > 0 ? " 추가 " + draftAddCount : ""}{draftRemoveCount > 0 ? " 삭제 " + draftRemoveCount : ""}
+          <span style={{ fontSize: 12, fontWeight: 800, color: T.brassHi }}>{tx("대기 중인 변경:{0}{1}", draftAddCount > 0 ? t(" 추가 {0}", draftAddCount) : "", draftRemoveCount > 0 ? t(" 삭제 {0}", draftRemoveCount) : "")}
           </span>
           <div className="flex items-center gap-2">
-            <button onClick={cancelDraft} disabled={draftSaving} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1 }}>취소</button>
-            <button onClick={commitDraft} disabled={draftSaving} className="press" style={{ padding: "7px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1, display: "inline-flex", alignItems: "center", gap: 5 }}><Save size={13} />{draftSaving ? "저장 중…" : "저장"}</button>
+            <button onClick={cancelDraft} disabled={draftSaving} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1 }}>{t("취소")}</button>
+            <button onClick={commitDraft} disabled={draftSaving} className="press" style={{ padding: "7px 16px", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: draftSaving ? "default" : "pointer", opacity: draftSaving ? .6 : 1, display: "inline-flex", alignItems: "center", gap: 5 }}><Save size={13} />{draftSaving ? t("저장 중…") : t("저장")}</button>
           </div>
         </div>
       )}
@@ -1266,14 +1266,14 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
       </div>
       {dexView === "skins" ? (
         <div>
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기</p>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>체스보드 스킨</div>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
               <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
             ))}
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>기물 스킨</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("기물 스킨")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
               <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
@@ -1284,7 +1284,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
         <div>
           {/* (20차 UX2) 획득 조건 설명을 상시 노출하던 문단은 삭제 — 칭호를 클릭하면 그 칭호의 조건만
               애니메이션으로 잠깐 떴다 사라진다(TitleBadge 내부). 여기는 그 상호작용을 안내하는 짧은 힌트만. */}
-          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>칭호를 클릭하면 획득 조건 표시. 획득한 칭호는 클릭해 장착</p>
+          <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>{t("칭호를 클릭하면 획득 조건 표시. 획득한 칭호는 클릭해 장착")}</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
           {/* (17차) 칭호 이미지가 오프닝당 세로로 이어지는 5단계 배너로 디자인되어 있어,
               오프닝을 가로로 나열하고 각 오프닝 내부에서는 등급을 위→아래로 쌓는다.
@@ -1300,7 +1300,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
                   </div>
                   {/* (19차 기능6) 퍼즐 해결 수 + chess.com 플레이 수를 함께 표기 */}
                   <div className="flex items-center gap-2" style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                    <span>퍼즐 {fmtFull(n)}</span><span style={{ opacity: .5 }}>·</span><span>체스컴 {fmtFull(ccN)}</span>
+                    <span>{tx("퍼즐 {0}", fmtFull(n))}</span><span style={{ opacity: .5 }}>·</span><span>{tx("체스컴 {0}", fmtFull(ccN))}</span>
                   </div>
                   {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
                   <div className="flex flex-col" style={{ gap: 6 }}>
@@ -1324,8 +1324,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
               {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>
-              도감 해금률 <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
             </div>
           </div>
         } />

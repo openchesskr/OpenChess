@@ -15,6 +15,7 @@ import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // (17차) 배경 장식의 기하학적 밀도 강화 — 저폴리곤 기물 아이콘과 어울리도록 와이어프레임 큐브·정팔면체·
 // 육각형 등을 페이지 전반(상단뿐 아니라 하단까지)에 흩뿌려 첨부 레퍼런스 이미지의 "떠있는 도형들" 느낌을 낸다.
 // (v0.0.5 성능) props 없는 순수 장식 SVG인데도 memo가 없으면 App이 리렌더될 때마다(3~30초 폴링 등)
@@ -620,16 +621,15 @@ export function AnnouncementModal({ onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
-          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>업데이트 소식</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{t("업데이트 소식")}</span>
         </div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>최신 버전 <b style={{ color: T.ink, fontFamily: SITE_FONT }}>v{latest.version}</b>({latest.date}) 변경 사항</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 8px" }}>{tx("최신 버전 {0}({1}) 변경 사항", <b style={{ color: T.ink, fontFamily: SITE_FONT }}>v{latest.version}</b>, latest.date)}</p>
         {/* (v0.1.2 기능) 소개 페이지(/about)의 버전 기록 파트로 이동 — 2페이지가 최신 버전(카테고리별로
             나뉜 더 자세한 설명)이라 ?page=2로 곧장 연다. */}
-        <a href="/about?page=2" target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, color: T.brass, textDecoration: "none", width: "fit-content" }}>
-          전체 업데이트 내역 <ChevronRight size={13} />
+        <a href="/about?page=2" target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 800, color: T.brass, textDecoration: "none", width: "fit-content" }}>{tx("전체 업데이트 내역 {0}", <ChevronRight size={13} />)}
         </a>
         <div style={{ maxHeight: 360, overflowY: "auto", paddingRight: 4 }}>
           {CHANGELOG.map((v, i) => (
@@ -637,12 +637,12 @@ export function AnnouncementModal({ onClose }) {
               <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
                 <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
-                {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>최신</span>}
+                {i === 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: T.brass, borderRadius: 999, padding: "1px 7px" }}>{t("최신")}</span>}
               </div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {v.items.map((t, j) => <li key={j} style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 4 }}>{t}</li>)}
               </ul>
-              {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>개발: {v.dev.join(", ")}</div>}
+              {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
             </div>
           ))}
         </div>
@@ -693,20 +693,20 @@ export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, on
   const labelRow = (
     <div className="flex items-center gap-1" style={{ marginBottom: 4 }}>
       <Bell size={narrow ? 12 : 11} style={{ color: T.brass, flexShrink: 0 }} />
-      <span style={{ fontSize: narrow ? 10.5 : 10, fontWeight: 800, color: T.brass }}>일일 퍼즐</span>
+      <span style={{ fontSize: narrow ? 10.5 : 10, fontWeight: 800, color: T.brass }}>{t("일일 퍼즐")}</span>
     </div>
   );
   const titleRow = <div style={{ fontSize: narrow ? 14.5 : 13, fontWeight: 800, color: T.ink, lineHeight: 1.3, marginBottom: narrow ? 6 : 5 }}>{livePuzzleName(puzzle) || puzzle.opening}</div>;
   const solveRow = solveCountText(solveCount, null) && <div style={{ fontSize: narrow ? 11 : 10, color: "#2E6E2E", fontWeight: 700, marginBottom: narrow ? 10 : 7 }}>{solveCountText(solveCount, null)}</div>;
   // (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다.
-  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "7px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 11.5, border: "none", cursor: "pointer" }}><Play size={narrow ? 13 : 11} fill="#241509" />풀기</button>;
+  const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "7px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 11.5, border: "none", cursor: "pointer" }}>{tx("{0}풀기", <Play size={narrow ? 13 : 11} fill="#241509" />)}</button>;
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: narrow ? 380 : 620, margin: "auto" }}>
         {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
         <div style={{ position: "absolute", top: narrow ? -38 : -54, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={narrow ? 62 : 96} /></div>
         <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: narrow ? "20px 18px 16px" : "40px 36px 32px" }}>
-          <button onClick={close} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
+          <button onClick={close} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
           {narrow ? (
             /* 모바일 — 보드를 상단에 별도의 큰 정사각형 구획으로 두고, 그 아래로 텍스트·버튼이 이어진다. */
             <>
@@ -742,16 +742,14 @@ export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, on
                   <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
-                  <MascotBubble text={(livePuzzleName(puzzle) || puzzle.opening) + "  포지션. 최선의 수 찾기"} ply={0} mascot="kokoa" emotion="wink" stacked />
+                  <MascotBubble text={t("{0}  포지션. 최선의 수 찾기", (livePuzzleName(puzzle) || puzzle.opening))} ply={0} mascot="kokoa" emotion="wink" stacked />
                 </div>
                 {playBtn}
               </div>
             </div>
           )}
           <label className="flex items-center gap-2" style={{ fontSize: narrow ? 12 : 15, color: T.inkSoft, cursor: "pointer", marginTop: narrow ? 14 : 20 }}>
-            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
-            오늘 하루 다시 보지 않기
-          </label>
+            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />{t("오늘 하루 다시 보지 않기")}</label>
         </div>
       </div>
     </div>
@@ -811,16 +809,16 @@ function QuestClearGameRow({ g, onOpenGameAnalyze }) {
   const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return (d.getMonth() + 1) + "." + d.getDate() + "."; };
   return (
     <div className="flex items-center gap-2" style={{ marginTop: 5, padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,.05)", border: "1px solid #E4D5B6" }}>
-      <span title={g.color === "w" ? "백" : "흑"} style={{ width: 4, alignSelf: "stretch", minHeight: 24, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+      <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 4, alignSelf: "stretch", minHeight: 24, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 11, color: T.ink }}>
-          <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+          <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
           {g.timeClass && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{(TIME_CLASS_LABEL[g.timeClass] || g.timeClass) + (g.endTime ? " · " + fmtD(g.endTime) : "")}</span>}
         </div>
         {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
       </div>
       {onOpenGameAnalyze && g.moves && g.moves.length > 0 && (
-        <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id })} aria-label="대국 분석" title="대국 분석" className="press"
+        <button onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id })} aria-label={t("대국 분석")} title={t("대국 분석")} className="press"
           style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={11} /></button>
       )}
     </div>
@@ -878,7 +876,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
           <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="kokoa" emotion="celebrate" size={68} />
           </div>
@@ -891,11 +889,11 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>오늘의 퀘스트 클리어</span>
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("오늘의 퀘스트 클리어")}</span>
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>일일 퀘스트 5개 모두 완료<br />완료 보상 획득</p>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px", lineHeight: 1.5 }}>{tx("일일 퀘스트 5개 모두 완료{0}완료 보상 획득", <br />)}</p>
           {/* (디자인) 보상 배지는 카드가 자리 잡은 뒤 살짝 늦게, 하나씩 튕기며 등장하고(questBadgePop),
               숫자는 0에서 목표치까지 빠르게 카운트업된다 — 둘 다 게임 보상 화면에서 흔히 보이는 연출. */}
           <div className="flex items-center justify-center" style={{ gap: 8, marginBottom: 16 }}>
@@ -904,7 +902,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           </div>
           {rows.length > 0 && (
             <>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, textAlign: "left", marginBottom: 6 }}>오늘 완료한 퀘스트</div>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, textAlign: "left", marginBottom: 6 }}>{t("오늘 완료한 퀘스트")}</div>
               {/* (버그 방지) 바깥 배경(overflowY:auto)이 이미 팝업 전체 스크롤을 맡고 있으므로, 여기 안에
                   또 maxHeight+overflow로 중첩 스크롤 상자를 만들면 그 상자 높이를 넘는 항목(예: 5개 슬롯
                   중 세 번째 chess.com 퀘스트)이 안 보이면서도 스크롤 힌트가 없어 통째로 빠진 것처럼
@@ -922,8 +920,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
               "특별한" 화면들과 같은 시각 언어로 은은한 하이라이트가 주기적으로 스쳐 지나가게 한다. */}
           <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
             <span className="gm-board-shine" style={{ borderRadius: 11 }} />
-            <Check size={14} strokeWidth={3} />확인
-          </button>
+            {tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
         </div>
       </motion.div>
     </motion.div>
@@ -953,7 +950,7 @@ export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
           <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="milku" emotion="wink" size={68} />
           </div>
@@ -962,19 +959,18 @@ export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>새 칭호 획득</span>
+            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("새 칭호 획득")}</span>
             <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam.label} 오프닝을 충분히 연습해서<br />새 칭호 획득</p>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{tx("{0} 오프닝을 충분히 연습해서{1}새 칭호 획득", fam.label, <br />)}</p>
           <div style={{ padding: "0 6px", marginBottom: 10 }}>
             <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
           </div>
-          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? "현재 장착 중인 칭호" : "칭호를 눌러 바로 장착"}</p>
+          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? t("현재 장착 중인 칭호") : t("칭호를 눌러 바로 장착")}</p>
           <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
             <span className="gm-board-shine" style={{ borderRadius: 11 }} />
-            <Check size={14} strokeWidth={3} />확인
-          </button>
+            {tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
         </div>
       </motion.div>
     </motion.div>
@@ -1074,27 +1070,27 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
       transition={{ duration: 0.34, ease: [0.22, 1.2, 0.36, 1] }}
       style={{ position: "relative", overflow: "hidden", pointerEvents: "auto", background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.book }}>최근 대국</span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.book }}>{t("최근 대국")}</span>
         {game.timeClass && <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>· {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</span>}
         <span style={{ flex: 1 }} />
-        {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#FFF6DE", background: T.book, borderRadius: 999, padding: "1px 7px" }}>다음 {more}판</span>}
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
+        {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#FFF6DE", background: T.book, borderRadius: 999, padding: "1px 7px" }}>{tx("다음 {0}판", more)}</span>}
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
       </div>
       <div className="flex items-center gap-2">
-        <span title={game.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 34, flexShrink: 0, borderRadius: 3, background: game.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (game.color === "w" ? "#C9B58C" : "#000") }} />
+        <span title={game.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 34, flexShrink: 0, borderRadius: 3, background: game.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (game.color === "w" ? "#C9B58C" : "#000") }} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, lineHeight: 1.2 }}>
-            <b style={{ color: resColor }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+            <b style={{ color: resColor }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
             {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(game.moves)})</span>}
             {ratingDelta != null && <span style={{ marginLeft: 4, fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT, color: ratingDelta > 0 ? T.best : ratingDelta < 0 ? T.blunder : T.inkSoft }}>({ratingDelta > 0 ? "+" + ratingDelta : ratingDelta})</span>}
           </div>
           {opp && opp.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{opp.username}</b>{opp.rating != null && <span style={{ fontFamily: SITE_FONT }}>({opp.rating})</span>}</div>}
         </div>
-        <button onClick={onSearch} aria-label="대국 보기" title="분석 보드로 불러오기" className="press" style={iconBtn}><Search size={13} /></button>
-        <BestMoveJumpButton title="게임 리뷰" onClick={onReview} />
+        <button onClick={onSearch} aria-label={t("대국 보기")} title={t("분석 보드로 불러오기")} className="press" style={iconBtn}><Search size={13} /></button>
+        <BestMoveJumpButton title={t("게임 리뷰")} onClick={onReview} />
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 9 }}>
-        <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : "전체 전적"}</span>
+        <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : t("전체 전적")}</span>
         {/* (v0.5.7, 사용자 요청) 전적 칩은 오른쪽 끝에 고정 — 오프닝 이름 길이나 뒤늦게 나타나는 승률 변화(▲8%p)에 밀려 움직이지 않게,
             변화 표시는 칩 왼쪽의 고정 폭 자리에 오른쪽 정렬로 둔다. */}
         <span style={{ flexShrink: 0, width: 58, display: "inline-flex", justifyContent: "flex-end" }}>
@@ -1102,7 +1098,7 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
             {phase === 1 && (
               <motion.span key="d" initial={{ opacity: 0, transform: "translateX(-6px)" }} animate={{ opacity: 1, transform: "translateX(0px)" }} transition={{ duration: 0.3, delay: 0.55 }}
                 style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: dWr == null ? T.book : dWr > 0 ? T.best : dWr < 0 ? T.blunder : T.inkSoft }}>
-                {dWr == null ? "첫 대국" : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : "승률 유지"}
+                {dWr == null ? t("첫 대국") : dWr > 0 ? "▲" + dWr + "%p" : dWr < 0 ? "▼" + (-dWr) + "%p" : t("승률 유지")}
               </motion.span>
             )}
           </AnimatePresence>
@@ -1110,7 +1106,7 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
         <span style={{ position: "relative", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + chipColor, boxShadow: "0 1px 3px rgba(0,0,0,.3)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: T.ink, transition: "border-color .3s" }}>
           {phase === 1 && <motion.span aria-hidden="true" initial={{ opacity: 0.8, transform: "scale(1)" }} animate={{ opacity: 0, transform: "scale(1.35)" }} transition={{ duration: 0.7, ease: "easeOut" }}
             style={{ position: "absolute", inset: -2, borderRadius: 12, border: "2px solid " + hotColor, pointerEvents: "none" }} />}
-          <span><CcFlipNum value={cur.w} hot={phase === 1 && rec.changed === "w"} color={hotColor} />승 <CcFlipNum value={cur.d} hot={phase === 1 && rec.changed === "d"} color={hotColor} />무 <CcFlipNum value={cur.l} hot={phase === 1 && rec.changed === "l"} color={hotColor} />패</span>
+          <span>{tx("{0}승 {1}무 {2}패", <CcFlipNum value={cur.w} hot={phase === 1 && rec.changed === "w"} color={hotColor} />, <CcFlipNum value={cur.d} hot={phase === 1 && rec.changed === "d"} color={hotColor} />, <CcFlipNum value={cur.l} hot={phase === 1 && rec.changed === "l"} color={hotColor} />)}</span>
           {/* 승률은 새 값까지 세어 가는 동안(useCountTween 750ms) 잔잔하게 떨리다 멈춘다 — 바뀐 전적 숫자보다 한 박자 뒤 */}
           <CcShake active={phase === 1 && dWr !== 0} delay={0.12} duration={0.75}><span style={{ color: chipColor, transition: "color .3s" }}>{wr != null ? wr + "%" : "–"}</span></CcShake>
         </span>
@@ -1140,7 +1136,7 @@ export const store = {
 // 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
 // (사용자 요청) 하단 탭 순서를 분석/플레이/퍼즐/학습/도감/설정으로 재배치 — 내부 키·경로 매핑은
 // 그대로 두고 배열 순서만 바꾼다(렌더링이 이 배열을 그대로 순회하므로 그 외 변경 불필요).
-export const TABS = [{ key: "learn", label: "분석", Icon: null }, { key: "store", label: "플레이", Icon: Play }, { key: "puzzle", label: "퍼즐", Icon: null }, { key: "quest", label: "학습", Icon: null }, { key: "dex", label: "도감", Icon: Library }, { key: "set", label: "설정", Icon: Settings }];
+export const TABS = [{ key: "learn", label: t("분석"), Icon: null }, { key: "store", label: t("플레이"), Icon: Play }, { key: "puzzle", label: t("퍼즐"), Icon: null }, { key: "quest", label: t("학습"), Icon: null }, { key: "dex", label: t("도감"), Icon: Library }, { key: "set", label: t("설정"), Icon: Settings }];
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 // (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
@@ -1414,7 +1410,7 @@ export function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }
           달라 "테두리가 잘려 보인다"는 제보가 반복됐다 — border-box 사이징의 진짜 border로 바꿔
           어느 브라우저에서도 항상 같은 모양으로 그려지게 한다(옆 세그먼트·프로필 버튼과 동일 처리).
           box-sizing:border-box라 border를 더해도 바깥 치수(width/height)는 그대로 27/34로 남는다. */}
-      <button onClick={toggle} aria-label="알림" className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, boxSizing: "border-box", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <button onClick={toggle} aria-label={t("알림")} className="press" style={{ position: "relative", width: compact ? 27 : 34, height: compact ? 27 : 34, borderRadius: 9, background: T.ebony3, color: T.brassHi, border: "1px solid " + T.brass, boxSizing: "border-box", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Bell size={compact ? 13 : 16} />
         {unread > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -1423,10 +1419,10 @@ export function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }
         <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }} transition={{ duration: 0.18, ease: MOTION_EASE }}
           onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: (notifRect && notifRect.top) || 40, left: (notifRect && notifRect.left) || 0, width: (notifRect && notifRect.width) || 320, maxHeight: (notifRect && notifRect.maxHeight) || 420, overflowY: "auto", background: T.paper, borderRadius: 12, border: "1px solid #DCCBA8", boxShadow: "0 16px 40px -10px rgba(0,0,0,.6)", zIndex: 90 }}>
           <div className="flex items-center justify-between" style={{ padding: "10px 14px", borderBottom: "1px solid #E4D5B6" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>알림</span>
-            {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>전체 삭제</button>}
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("알림")}</span>
+            {items.length > 0 && <button onClick={clearAll} className="press" style={{ padding: "3px 8px", borderRadius: 6, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, border: "1px solid #C9B58C", cursor: "pointer" }}>{t("전체 삭제")}</button>}
           </div>
-          {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>알림 없음</div> : (
+          {items.length === 0 ? <div style={{ padding: 16, fontSize: 12, color: T.inkSoft }}>{t("알림 없음")}</div> : (
             <div>
               <AnimatePresence>
               {items.map((n, i) => { const result = n.payload && n.payload.result; return (
@@ -1436,20 +1432,20 @@ export function NotificationBell({ myUid, onAccept, onReject, onClaim, compact }
                     <div style={{ fontSize: 12, color: T.ink, fontWeight: 600, lineHeight: 1.4 }}>{notifText(n)}</div>
                     <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 2 }}>{relTime(n.created_at)}</div>
                     {n.kind === "friend_request" && (result ? (
-                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: result === "accepted" ? T.best : T.inkSoft }}>{result === "accepted" ? "수락함" : "거절함"}</div>
+                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: result === "accepted" ? T.best : T.inkSoft }}>{result === "accepted" ? t("수락함") : t("거절함")}</div>
                     ) : (
                       <div className="flex items-center gap-2" style={{ marginTop: 6 }}>
-                        <button onClick={() => respond(n, "accepted")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>수락</button>
-                        <button onClick={() => respond(n, "rejected")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, border: "1px solid #C9B58C", cursor: "pointer" }}>거절</button>
+                        <button onClick={() => respond(n, "accepted")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>{t("수락")}</button>
+                        <button onClick={() => respond(n, "rejected")} className="press" style={{ padding: "4px 10px", borderRadius: 7, background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11, border: "1px solid #C9B58C", cursor: "pointer" }}>{t("거절")}</button>
                       </div>
                     ))}
                     {n.kind === "daily_puzzle_selected" && ((n.payload && n.payload.claimed) ? (
-                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: T.best }}>수령 완료</div>
+                      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: T.best }}>{t("수령 완료")}</div>
                     ) : (
-                      <button onClick={() => claim(n)} className="press flex items-center gap-1" style={{ marginTop: 6, padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>+{(n.payload && n.payload.reward) || 0} <CoinIcon size={13} /> 받기</button>
+                      <button onClick={() => claim(n)} className="press flex items-center gap-1" style={{ marginTop: 6, padding: "4px 10px", borderRadius: 7, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11, border: "none", cursor: "pointer" }}>+{(n.payload && n.payload.reward) || 0} {tx("{0} 받기", <CoinIcon size={13} />)}</button>
                     ))}
                   </div>
-                  <button onClick={() => removeOne(n)} aria-label="알림 삭제" className="press" style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, lineHeight: 1 }}>×</button>
+                  <button onClick={() => removeOne(n)} aria-label={t("알림 삭제")} className="press" style={{ flexShrink: 0, width: 20, height: 20, marginTop: 1, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, lineHeight: 1 }}>×</button>
                 </FadeIn>
               ); })}
               </AnimatePresence>
@@ -1491,7 +1487,7 @@ export function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzle
           border를 더해도 바깥 높이는 여전히 다른 두 버튼과 똑같은 27/34로 고정되고, 내용물(아바타·
           닉네임·화살표)의 세로 정렬은 그대로 alignItems:center가 맡으므로 border 유무와 무관하게
           항상 옆 버튼들과 정확히 같은 y좌표에 놓인다. */}
-      <button onClick={() => setOpen((o) => !o)} aria-label="계정 메뉴" className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
+      <button onClick={() => setOpen((o) => !o)} aria-label={t("계정 메뉴")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6, height: compact ? 27 : 34, boxSizing: "border-box", padding: compact ? "0 5px" : "0 10px 0 4px", borderRadius: 9, background: T.ebony3, border: "1px solid " + T.brass, cursor: "pointer" }}>
         {/* (버그 수정) 그랜드마스터 사진 테두리(gmPhotoRingStyle)는 border+바깥쪽 glow box-shadow를
             더하는데, 이 아바타는 다른 곳(56~64px)과 달리 22/27px로 아주 작아 그 9px 블러 glow가
             버튼 테두리 밖으로 넘쳐 나가 이 버튼만 유독 위아래로 더 커 보이는 원인이었다(그랜드마스터
@@ -1510,7 +1506,7 @@ export function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzle
               있다(예전엔 이 카드 전체를 눌러야 했다). */}
           <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
-            <button onClick={goToProfile} aria-label="프로필 자세히 보기" title="프로필 자세히 보기" className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+            <button onClick={goToProfile} aria-label={t("프로필 자세히 보기")} title={t("프로필 자세히 보기")} className="press" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
           </div>
           <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
             {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0, ...(gmPhotoRingStyle(tierFromXp(myPub.xp || 0).tier.key === "grandmaster") || {}) }} />
@@ -1533,8 +1529,8 @@ export function HeaderProfileMenu({ user, profile, currentTitle, totalXp, puzzle
           />
           {/* (v0.4.3 기능, 사용자 요청) 로그인 수단 연결/해제·로그아웃·계정 탈퇴를 한 곳에서 다루는
               계정 센터로 가는 입구. */}
-          <button onClick={() => { setOpen(false); onOpenAccountCenter(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: T.ebony2, border: "1px solid #000", color: T.ivory, fontWeight: 800, fontSize: 12.5, cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Settings size={14} />계정 센터</button>
-          <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+          <button onClick={() => { setOpen(false); onOpenAccountCenter(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: T.ebony2, border: "1px solid #000", color: T.ivory, fontWeight: 800, fontSize: 12.5, cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>{tx("{0}계정 센터", <Settings size={14} />)}</button>
+          <button onClick={() => { setOpen(false); onLogoutClick(); }} className="press" style={{ width: "100%", textAlign: "center", padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1px solid " + T.blunder, color: T.blunder, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("로그아웃")}</button>
         </div>
       )}
     </div>
@@ -1607,7 +1603,7 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
           돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
       <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onDone} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
         {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
             위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
             기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
@@ -1629,7 +1625,7 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
         {QUEST_CLEAR_SPARKLES.map((p, i) => (
           <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
         ))}
-        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>티어 승급</div>
+        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>{t("티어 승급")}</div>
         {/* (버그 수정) 기물 이미지 자체가 흰색/밝은 선화라 카드를 밝은 색으로 바꾸자 거의 안 보이게
             됐다(그랜드마스터만 홀로그램 다색이라 그나마 보임) — 사이트 전역 배경과 같은 톤의 짙은
             원판을 기물 전용 "무대"로 깔아, 카드는 밝게 유지하면서 기물만 원래처럼 잘 보이게 한다. */}
@@ -1663,15 +1659,15 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
             </AnimatePresence>
           </div>
         </div>
-        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{toLabel} 티어 도달</div>}
+        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{tx("{0} 티어 도달", toLabel)}</div>}
         {reward > 0 && (
           <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
-            <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+<AnimatedCountUp to={reward} /> OC 나이트 코인</span>
+            <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+{tx("{0} OC 나이트 코인", <AnimatedCountUp to={reward} />)}</span>
           </div>
         )}
         {/* (v0.2.9 기능) 우측 상단 X와 같은 역할의 확인 버튼 — 일일 퀘스트 클리어 팝업과 같은 스타일로,
             눌러야만 닫히는 걸 명확한 CTA로도 한 번 더 보여준다. */}
-        <button onClick={onDone} className="press" style={{ position: "relative", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 18, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}><Check size={14} strokeWidth={3} />확인</button>
+        <button onClick={onDone} className="press" style={{ position: "relative", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 18, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>{tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
       </motion.div>
     </div>
   );
@@ -1724,11 +1720,11 @@ export function UsernameSetupModal({ account, onDone, onCancel }) {
   const [ccId, setCcId] = useState(""); // (18차 UX6) Google 최초 가입 시에도 chess.com 아이디를 함께 입력(선택)
   const submit = async () => {
     setErr("");
-    if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자"); return; }
+    if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr(t("아이디는 영문+숫자 3~20자")); return; }
     setBusy(true);
     try {
       const r = await claimUsername(account.uid, id);
-      if (!r.ok) { setErr(r.error === "username_taken" ? "이미 사용 중인 아이디" : r.error === "invalid" ? "아이디 형식이 올바르지 않음" : "처리 중 오류 발생"); setBusy(false); return; }
+      if (!r.ok) { setErr(r.error === "username_taken" ? t("이미 사용 중인 아이디") : r.error === "invalid" ? t("아이디 형식이 올바르지 않음") : t("처리 중 오류 발생")); setBusy(false); return; }
       // (버그 수정) AuthModal의 이메일 가입 경로와 같은 문제 — 여기서도 chess.com 아이디를 검증 없이
       // 사용자가 입력한 원형 그대로 저장하고 있었다. fetchChesscomProfile로 실제 계정의 정확한
       // 대소문자를 조회해 저장하고, 조회 실패 시에만 입력한 원형을 그대로 대체값으로 쓴다.
@@ -1736,7 +1732,7 @@ export function UsernameSetupModal({ account, onDone, onCancel }) {
       let ccFinal = ccRaw;
       if (ccRaw) { try { const p = await fetchChesscomProfile(ccRaw); ccFinal = p.username; } catch { } }
       onDone({ uid: account.uid, username: id.toLowerCase(), pub: { ...(account.pub || {}), displayId: id.trim(), ...(ccFinal ? { chesscom: ccFinal } : {}) }, progress: account.progress || {} });
-    } catch { setErr("처리 중 오류 발생"); setBusy(false); }
+    } catch { setErr(t("처리 중 오류 발생")); setBusy(false); }
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
@@ -1745,16 +1741,16 @@ export function UsernameSetupModal({ account, onDone, onCancel }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>아이디 설정</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{t("아이디 설정")}</div>
           <button onClick={onCancel} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         </div>
-        <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginBottom: 12 }}>Google 계정으로 첫 로그인. 친구 검색·프로필에 표시될 아이디 설정</p>
-        <input value={id} onChange={(e) => setId(e.target.value)} placeholder="아이디 (영문+숫자 3~20자)" autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
-        <input value={ccId} onChange={(e) => setCcId(e.target.value)} placeholder="chess.com 아이디 (선택)" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
-        <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "-2px 0 8px" }}>chess.com 아이디는 생략 가능, 나중에 설정 탭에서 변경</p>
+        <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginBottom: 12 }}>{t("Google 계정으로 첫 로그인. 친구 검색·프로필에 표시될 아이디 설정")}</p>
+        <input value={id} onChange={(e) => setId(e.target.value)} placeholder={t("아이디 (영문+숫자 3~20자)")} autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+        <input value={ccId} onChange={(e) => setCcId(e.target.value)} placeholder={t("chess.com 아이디 (선택)")} onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+        <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "-2px 0 8px" }}>{t("chess.com 아이디는 생략 가능, 나중에 설정 탭에서 변경")}</p>
         {err && <div style={{ fontSize: 12, color: T.blunder, marginBottom: 8 }}>{err}</div>}
-        <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{busy ? "설정 중…" : "시작하기"}</button>
-        <div style={{ textAlign: "center", marginTop: 8 }}><button onClick={onCancel} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>취소하고 로그아웃</button></div>
+        <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{busy ? t("설정 중…") : t("시작하기")}</button>
+        <div style={{ textAlign: "center", marginTop: 8 }}><button onClick={onCancel} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{t("취소하고 로그아웃")}</button></div>
       </div>
     </div>
   );
@@ -1772,7 +1768,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
     setErr(""); setHintProvider(null);
     if (mode === "reset") {
       const who = email.trim();
-      if (!who) { setErr("아이디 또는 이메일 입력 필요"); return; }
+      if (!who) { setErr(t("아이디 또는 이메일 입력 필요")); return; }
       setBusy(true);
       try { await authRecover(who); } catch { }
       setBusy(false); setSent(true);
@@ -1780,12 +1776,12 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
     }
     const isEmail = email.includes("@");
     const em = email.trim();
-    if (mode === "signup" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setErr("올바른 이메일 입력 필요"); return; }
-    if (mode === "login" && !em) { setErr("아이디 또는 이메일 입력 필요"); return; }
-    if (pw.length < 6) { setErr("비밀번호는 6자 이상"); return; }
+    if (mode === "signup" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setErr(t("올바른 이메일 입력 필요")); return; }
+    if (mode === "login" && !em) { setErr(t("아이디 또는 이메일 입력 필요")); return; }
+    if (pw.length < 6) { setErr(t("비밀번호는 6자 이상")); return; }
     if (mode === "signup") {
-      if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr("아이디는 영문+숫자 3~20자"); return; }
-      if (pw !== pw2) { setErr("비밀번호 불일치"); return; }
+      if (!ALNUM.test(id) || id.length < 3 || id.length > 20) { setErr(t("아이디는 영문+숫자 3~20자")); return; }
+      if (pw !== pw2) { setErr(t("비밀번호 불일치")); return; }
     }
     setBusy(true);
     try {
@@ -1795,13 +1791,13 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
           if (r && r.error === "email_taken") {
             const provs = await accountProviders(em);
             const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
-            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 이메일은 " + lb + " 계정으로 가입됨. 아래 ‘" + lb + "로 계속하기’로 로그인"); setBusy(false); return; }
-            setErr("이미 가입된 이메일. 로그인 필요"); setBusy(false); return;
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr(t("이 이메일은 {0} 계정으로 가입됨. 아래 ‘{1}로 계속하기’로 로그인", lb, lb)); setBusy(false); return; }
+            setErr(t("이미 가입된 이메일. 로그인 필요")); setBusy(false); return;
           }
-          setErr(r && r.error === "username_taken" ? "이미 사용 중인 아이디"
-            : r && r.error === "confirm_required" ? "확인 메일 발송. 인증 후 로그인"
-            : r && r.error === "offline" ? "서버 연결 필요"
-            : "가입 처리 중 오류 발생");
+          setErr(r && r.error === "username_taken" ? t("이미 사용 중인 아이디")
+            : r && r.error === "confirm_required" ? t("확인 메일 발송. 인증 후 로그인")
+            : r && r.error === "offline" ? t("서버 연결 필요")
+            : t("가입 처리 중 오류 발생"));
           setBusy(false); return;
         }
         // (17차) 회원가입 시 chess.com 아이디도 함께 입력받는다(생략 가능, 나중에 설정에서 변경 가능).
@@ -1818,18 +1814,18 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
       } else {
         const r = await authLogin(em, pw);
         if (!r || !r.ok) {
-          if (r && r.error === "offline") { setErr("서버 연결 필요"); setBusy(false); return; }
+          if (r && r.error === "offline") { setErr(t("서버 연결 필요")); setBusy(false); return; }
           const probe = (r && r.email) || (isEmail ? em : "");
           if (probe) {
             const provs = await accountProviders(probe);
             const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
-            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr("이 계정은 " + lb + "로 가입됨. 아래 ‘" + lb + "로 계속하기’로 로그인"); setBusy(false); return; }
+            if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr(t("이 계정은 {0}로 가입됨. 아래 ‘{1}로 계속하기’로 로그인", lb, lb)); setBusy(false); return; }
           }
-          setErr("아이디/이메일 또는 비밀번호가 올바르지 않음"); setBusy(false); return;
+          setErr(t("아이디/이메일 또는 비밀번호가 올바르지 않음")); setBusy(false); return;
         }
         onAuth(r.account);
       }
-    } catch { setErr("처리 중 오류 발생"); }
+    } catch { setErr(t("처리 중 오류 발생")); }
     setBusy(false);
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
@@ -1861,44 +1857,44 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
         </div>
         {mode === "reset" ? (sent ? (
           <>
-            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>입력한 계정이 존재하면 연동된 이메일로 재설정 링크 발송. 스팸함 포함 메일함 확인</p>
-            <button onClick={() => { setMode("login"); setSent(false); setErr(""); setPw(""); }} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>로그인으로 돌아가기</button>
+            <p style={{ fontSize: 13, color: T.ink, fontWeight: 600, lineHeight: 1.6, marginBottom: 14 }}>{t("입력한 계정이 존재하면 연동된 이메일로 재설정 링크 발송. 스팸함 포함 메일함 확인")}</p>
+            <button onClick={() => { setMode("login"); setSent(false); setErr(""); setPw(""); }} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{t("로그인으로 돌아가기")}</button>
           </>
         ) : (
           <>
-            <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>가입 시 사용한 아이디 또는 이메일 입력. 연동된 이메일로 재설정 링크 발송</p>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="아이디 또는 이메일" autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+            <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>{t("가입 시 사용한 아이디 또는 이메일 입력. 연동된 이메일로 재설정 링크 발송")}</p>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("아이디 또는 이메일")} autoComplete="username" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
             {err && <div style={{ fontSize: 12, color: T.blunder, marginBottom: 8 }}>{err}</div>}
-            <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? "보내는 중…" : "재설정 메일 보내기"}</button>
+            <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? t("보내는 중…") : t("재설정 메일 보내기")}</button>
             <div style={{ textAlign: "center", fontSize: 12.5, color: T.inkSoft }}>
-              <button onClick={() => { setMode("login"); setErr(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>로그인으로 돌아가기</button>
+              <button onClick={() => { setMode("login"); setErr(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{t("로그인으로 돌아가기")}</button>
             </div>
           </>
         )) : (
           <>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={mode === "login" ? "아이디 또는 이메일" : "이메일"} type={mode === "login" ? "text" : "email"} autoComplete={mode === "login" ? "username" : "email"} onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
-            {mode === "signup" && <input value={id} onChange={(e) => setId(e.target.value)} placeholder="아이디 (영문+숫자 3~20자, 공개 표시)" style={inputStyle} />}
-            {mode === "signup" && <input value={chesscomId} onChange={(e) => setChesscomId(e.target.value)} placeholder="chess.com 아이디 (선택, 나중에 변경 가능)" autoComplete="off" style={inputStyle} />}
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={mode === "login" ? t("아이디 또는 이메일") : t("이메일")} type={mode === "login" ? "text" : "email"} autoComplete={mode === "login" ? "username" : "email"} onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+            {mode === "signup" && <input value={id} onChange={(e) => setId(e.target.value)} placeholder={t("아이디 (영문+숫자 3~20자, 공개 표시)")} style={inputStyle} />}
+            {mode === "signup" && <input value={chesscomId} onChange={(e) => setChesscomId(e.target.value)} placeholder={t("chess.com 아이디 (선택, 나중에 변경 가능)")} autoComplete="off" style={inputStyle} />}
             <div style={{ position: "relative" }}>
-              <input type={showPw ? "text" : "password"} value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호 (6자 이상)" autoComplete={mode === "login" ? "current-password" : "new-password"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ ...inputStyle, paddingRight: 40 }} />
-              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보이기"} title={showPw ? "비밀번호 숨기기" : "비밀번호 보이기"} style={{ position: "absolute", right: 6, top: 5, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: T.inkSoft }}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+              <input type={showPw ? "text" : "password"} value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t("비밀번호 (6자 이상)")} autoComplete={mode === "login" ? "current-password" : "new-password"} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ ...inputStyle, paddingRight: 40 }} />
+              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? t("비밀번호 숨기기") : t("비밀번호 보이기")} title={showPw ? t("비밀번호 숨기기") : t("비밀번호 보이기")} style={{ position: "absolute", right: 6, top: 5, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: T.inkSoft }}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button>
             </div>
-            {mode === "signup" && <input type={showPw ? "text" : "password"} value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="비밀번호 확인" autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />}
+            {mode === "signup" && <input type={showPw ? "text" : "password"} value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder={t("비밀번호 확인")} autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />}
             {err && <div style={{ fontSize: 12, color: hintProvider ? T.ink : T.blunder, marginBottom: 8, lineHeight: 1.5, fontWeight: hintProvider ? 700 : 400 }}>{err}</div>}
-            <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? "처리 중…" : (mode === "login" ? "로그인" : "가입하고 시작")}</button>
-            {mode === "signup" && <p style={{ fontSize: 11, color: T.inkSoft, lineHeight: 1.6, margin: "0 0 10px", textAlign: "center" }}>가입 시 <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>이용약관</a>·<a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>개인정보처리방침</a>에 동의로 간주</p>}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 10px" }}><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /><span style={{ fontSize: 11, color: T.inkSoft }}>또는</span><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /></div>
+            <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? t("처리 중…") : (mode === "login" ? t("로그인") : t("가입하고 시작"))}</button>
+            {mode === "signup" && <p style={{ fontSize: 11, color: T.inkSoft, lineHeight: 1.6, margin: "0 0 10px", textAlign: "center" }}>{tx("가입 시 {0}·{1}에 동의로 간주", <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>{t("이용약관")}</a>, <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>{t("개인정보처리방침")}</a>)}</p>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 10px" }}><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /><span style={{ fontSize: 11, color: T.inkSoft }}>{t("또는")}</span><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /></div>
             {/* (v0.4.3 기능, 사용자 요청) Apple/Facebook 로그인 추가 — Google과 완전히 같은 방식(GoTrue
                 authorize 리다이렉트, provider 이름만 다름)이라 authOAuthStart(provider) 하나로 통일했다. */}
-            <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><GoogleG /> Google로 계속하기</button>
-            <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><AppleLogo /> Apple로 계속하기</button>
-            <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><FacebookLogo /> Facebook으로 계속하기</button>
-            {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>비밀번호 찾기</button></div>}
+            <button onClick={() => authOAuthStart("google")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#fff", color: "#3c4043", fontWeight: 700, border: "1px solid #CDB98E", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Google로 계속하기", <GoogleG />)}</button>
+            <button onClick={() => authOAuthStart("apple")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#000", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Apple로 계속하기", <AppleLogo />)}</button>
+            <button onClick={() => authOAuthStart("facebook")} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, background: "#1877F2", color: "#fff", fontWeight: 700, border: "none", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0} Facebook으로 계속하기", <FacebookLogo />)}</button>
+            {mode === "login" && <div style={{ textAlign: "center", marginBottom: 8 }}><button onClick={() => { setMode("reset"); setErr(""); setSent(false); setPw(""); }} style={{ color: T.inkSoft, fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{t("비밀번호 찾기")}</button></div>}
             <div style={{ textAlign: "center", fontSize: 12.5, color: T.inkSoft }}>
-              {mode === "login" ? "계정이 없나요? " : "이미 계정이 있나요? "}
-              <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setHintProvider(null); setPw2(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{mode === "login" ? "회원가입" : "로그인"}</button>
+              {mode === "login" ? t("계정이 없나요? ") : t("이미 계정이 있나요? ")}
+              <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setHintProvider(null); setPw2(""); }} style={{ color: "#5A3A22", fontWeight: 800, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{mode === "login" ? t("회원가입") : t("로그인")}</button>
             </div>
-            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.4 }}>이메일·비밀번호로 가입. 아이디는 친구 검색·프로필에 공개 표시, 진도(도감·해결한 퍼즐)는 계정에 저장</p>
+            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.4 }}>{t("이메일·비밀번호로 가입. 아이디는 친구 검색·프로필에 공개 표시, 진도(도감·해결한 퍼즐)는 계정에 저장")}</p>
           </>
         )}
       </motion.div>
@@ -1910,11 +1906,11 @@ export function NewPasswordModal({ recovery, onDone, onClose }) {
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const submit = async () => {
     setErr("");
-    if (pw.length < 6) { setErr("비밀번호는 6자 이상"); return; }
-    if (pw !== pw2) { setErr("비밀번호 불일치"); return; }
+    if (pw.length < 6) { setErr(t("비밀번호는 6자 이상")); return; }
+    if (pw !== pw2) { setErr(t("비밀번호 불일치")); return; }
     setBusy(true);
-    try { const r = await authSetPassword(recovery, pw); if (!r.ok) { setErr("재설정 실패. 링크가 만료되었을 수 있음"); setBusy(false); return; } onDone(r.account || null); }
-    catch { setErr("처리 중 오류 발생"); setBusy(false); }
+    try { const r = await authSetPassword(recovery, pw); if (!r.ok) { setErr(t("재설정 실패. 링크가 만료되었을 수 있음")); setBusy(false); return; } onDone(r.account || null); }
+    catch { setErr(t("처리 중 오류 발생")); setBusy(false); }
   };
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
@@ -1923,13 +1919,13 @@ export function NewPasswordModal({ recovery, onDone, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>새 비밀번호 설정</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{t("새 비밀번호 설정")}</div>
           <button onClick={onClose} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
         </div>
-        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="새 비밀번호 (6자 이상)" autoComplete="new-password" style={inputStyle} />
-        <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="새 비밀번호 확인" autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t("새 비밀번호 (6자 이상)")} autoComplete="new-password" style={inputStyle} />
+        <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder={t("새 비밀번호 확인")} autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />
         {err && <div style={{ fontSize: 12, color: T.blunder, marginBottom: 8 }}>{err}</div>}
-        <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{busy ? "설정 중…" : "비밀번호 변경하고 로그인"}</button>
+        <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer" }}>{busy ? t("설정 중…") : t("비밀번호 변경하고 로그인")}</button>
       </div>
     </div>
   );
@@ -1984,13 +1980,12 @@ export function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{invite.fromUsername || "누군가"}님이 {specialGame ? "실시간 대결을" : "대국을"} 신청
-            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tc.cat : "")}</span>
+            @{tx("{0}님이 {1} 신청{2}", invite.fromUsername || t("누군가"), specialGame ? t("실시간 대결을") : t("대국을"), <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tc.cat : "")}</span>)}
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>수락</button>
-          <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>거절</button>
+          <button onClick={() => respond(true)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("수락")}</button>
+          <button onClick={() => respond(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("거절")}</button>
         </div>
       </div>
     </div>
@@ -2043,13 +2038,12 @@ export function GlobalMinigameRematchBanner({ myUid, onAccepted }) {
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
           <MgOppBadge opp={{ photo: offer.photo, name: offer.name }} size={30} inline />
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            {offer.name}님이 재대국 신청
-            <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{special ? special.name : "미니게임"}</span>
+            {tx("{0}님이 재대국 신청{1}", offer.name, <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{special ? special.name : t("미니게임")}</span>)}
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => respond(true)} disabled={busy} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>수락</button>
-          <button onClick={() => respond(false)} disabled={busy} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>거절</button>
+          <button onClick={() => respond(true)} disabled={busy} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("수락")}</button>
+          <button onClick={() => respond(false)} disabled={busy} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("거절")}</button>
         </div>
       </motion.div>
     </div>

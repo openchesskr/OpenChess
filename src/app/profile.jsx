@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // (신규 기능, 사용자 요청) 약점 리포트 — 이미 리뷰해 본 대국들(reviewUnlocked)의 크라우드소싱
 // 분석 결과를 한 번에 모아 온다. reviewedAnalysisFetch처럼 한 판씩 묻지 않고 cc_id 여러 개를
 // in.() 한 번으로 묻는다 — 프로필을 열 때마다 리뷰한 대국 수만큼 왕복이 생기는 걸 피하기 위함.
@@ -82,7 +83,7 @@ function MinigameProfileStats({ uid }) {
   if (!list.length) return null;
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}><Trophy size={13} color={T.brass} /> 미니게임</div>
+      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("{0} 미니게임", <Trophy size={13} color={T.brass} />)}</div>
       <div style={{ display: "grid", gap: 6 }}>
         {list.map(({ g, r }) => {
           const GIcon = g.Icon || Lock;
@@ -93,11 +94,11 @@ function MinigameProfileStats({ uid }) {
               <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{g.name}</span>
-                <span style={{ display: "block", fontSize: 10, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{minigameRecordText(r)}{best != null ? " · 혼자 최고 " + minigameBestLabel(g.gameType, best) : ""}</span>
+                <span style={{ display: "block", fontSize: 10, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{minigameRecordText(r)}{best != null ? t(" · 혼자 최고 {0}", minigameBestLabel(g.gameType, best)) : ""}</span>
               </span>
               <span style={{ flexShrink: 0, textAlign: "right" }}>
                 <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
-                <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? "레이팅" : "배치 중"}</span>
+                <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? t("레이팅") : t("배치 중")}</span>
               </span>
             </div>
           );
@@ -171,11 +172,11 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
           {onOpenOpening
             ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
             : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: SITE_FONT, color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {node.n}판</span>
+          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: SITE_FONT, color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {tx("{0}판", node.n)}</span>
         </div>
         {/* 이름 버튼(누르면 도감으로 이동)과 별개의 클릭 영역 — 접기/펼치기가 이동 동작을 가리지 않는다. */}
         {hasChildren && (
-          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "하위 갈래 접기" : "하위 갈래 펼치기"} className="press" style={{ flexShrink: 0, width: 22, height: 22, marginTop: 1, borderRadius: 6, background: "rgba(0,0,0,.05)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={() => setOpen((v) => !v)} aria-label={open ? t("하위 갈래 접기") : t("하위 갈래 펼치기")} className="press" style={{ flexShrink: 0, width: 22, height: 22, marginTop: 1, borderRadius: 6, background: "rgba(0,0,0,.05)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ChevronDown size={13} style={{ color: T.inkSoft, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
           </button>
         )}
@@ -245,7 +246,7 @@ function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
         <AnimatePresence mode="wait">
           <motion.div key={cur.n} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.35, ease: MOTION_EASE }} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, lineHeight: 1.3 }}>{cur.name}</span>
-            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, flexShrink: 0, whiteSpace: "nowrap" }}>{fmtFull(cur.count)}회</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, flexShrink: 0, whiteSpace: "nowrap" }}>{tx("{0}회", fmtFull(cur.count))}</span>
           </motion.div>
         </AnimatePresence>
       </div>
@@ -289,11 +290,11 @@ function TopOpeningsPair({ games, label }) {
 // 시간 규정·흑백 필터와는 별개 축). 대국이 아예 없으면 표시하지 않고, 고른 기간 안에 대국이 2판
 // 미만이면(선을 그릴 수 없음) 버튼은 그대로 둔 채 안내 문구만 보여준다.
 const RATING_CHART_PERIODS = [
-  { key: "1d", label: "1일", days: 1 },
-  { key: "7d", label: "1주", days: 7 },
-  { key: "30d", label: "1달", days: 30 },
-  { key: "180d", label: "6개월", days: 182 },
-  { key: "365d", label: "1년", days: 365 },
+  { key: "1d", label: t("1일"), days: 1 },
+  { key: "7d", label: t("1주"), days: 7 },
+  { key: "30d", label: t("1달"), days: 30 },
+  { key: "180d", label: t("6개월"), days: 182 },
+  { key: "365d", label: t("1년"), days: 365 },
 ];
 // (v0.2.6 버그 수정) 위 시간 규정 필터가 "전체"일 때 이 그래프가 래피드/블리츠/불릿 대국을 시간순으로
 // 그냥 한 줄에 뒤섞어 그리고 있었다 — 세 시간 규정은 레이팅 체계 자체가 서로 달라(보통 래피드>블리츠>
@@ -332,7 +333,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   // 걸린다 — 아직 로딩 중인데 이 시간 규정의 대국을 하나도 못 찾았다고 "그래프가 안 그려지는 버그"로
   // 오해하기 쉽다(예: 최근엔 안 둔 시간 규정이 사실은 더 최근 달에 있는데 아직 그 달을 못 받은 경우).
   // 로딩 중엔 아예 숨기는 대신 "불러오는 중" 안내를 보여준다.
-  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>대국 기록 로드 중…</div> : null;
+  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>{t("대국 기록 로드 중…")}</div> : null;
   const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
   const cutoff = Date.now() / 1000 - periodDef.days * 86400;
   const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
@@ -366,7 +367,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   };
   const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
   const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
-  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? "대국 기록 추가 로드 중…" : "이 기간 대국 부족"}</div>;
+  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? t("대국 기록 추가 로드 중…") : t("이 기간 대국 부족")}</div>;
   let body;
   if (isAll) {
     // (기능) 이 기간에 그 시간 규정 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재
@@ -492,7 +493,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
     body = (
       <>
         <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 10.5, fontFamily: SITE_FONT, color: T.inkSoft }}>{realCount}판{flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}> · 최근 레이팅 유지</span>}</span>
+          <span style={{ fontSize: 10.5, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판{1}", realCount, flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}>{" "}{t("· 최근 레이팅 유지")}</span>)}</span>
           <span style={{ fontSize: 11, fontFamily: SITE_FONT, color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
         </div>
         <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
@@ -537,7 +538,7 @@ function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   return (
     <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>기간별 레이팅 변동</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("기간별 레이팅 변동")}</span>
         <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
           {RATING_CHART_PERIODS.map((p) => (
             <button key={p.key} onClick={() => setPeriod(p.key)} className="press" style={{ padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 9.5, fontWeight: 800, background: period === p.key ? T.ebony2 : "transparent", color: period === p.key ? T.brassHi : T.inkSoft }}>{p.label}</button>
@@ -685,8 +686,8 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
   const [recentPage, setRecentPage] = useState(0);
   useEffect(() => { setRecentPage(0); }, [username, timeFilter]);
 
-  if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>기보를 불러오는 중…</p>;
-  if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>기보 로드 실패. 계정 확인 필요</p>;
+  if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>{t("기보를 불러오는 중…")}</p>;
+  if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>{t("기보 로드 실패. 계정 확인 필요")}</p>;
   if (!ready) return null;
 
   // (사용자 요청) 유산(Legacy) 관리 화면에서 재사용할 때(onSelectGame이 있을 때)는 프로필 헤더·전적·
@@ -716,11 +717,11 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, textAlign: "right", flexShrink: 0 }}>
             {prof ? (
               <>
-                <div>래피드 : {prof.rapid ?? "—"}</div>
-                <div>블리츠 : {prof.blitz ?? "—"}</div>
-                <div>불릿 : {prof.bullet ?? "—"}</div>
+                <div>{tx("래피드 : {0}", prof.rapid ?? "—")}</div>
+                <div>{tx("블리츠 : {0}", prof.blitz ?? "—")}</div>
+                <div>{tx("불릿 : {0}", prof.bullet ?? "—")}</div>
               </>
-            ) : "레이팅 불러오는 중…"}
+            ) : t("레이팅 불러오는 중…")}
           </div>
         </div>
       </div>
@@ -742,20 +743,20 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
         {reviewUnlocked && (
           <label className="flex items-center press" style={{ gap: 5, cursor: "pointer", padding: "5px 9px", borderRadius: 9, background: onlyReviewed ? T.ebony2 : "rgba(0,0,0,.06)" }}>
             <input type="checkbox" checked={onlyReviewed} onChange={(e) => setOnlyReviewed(e.target.checked)} style={{ margin: 0, accentColor: T.brass }} />
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: onlyReviewed ? T.brassHi : T.inkSoft }}>리뷰한 대국만</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: onlyReviewed ? T.brassHi : T.inkSoft }}>{t("리뷰한 대국만")}</span>
           </label>
         )}
       </div>
       {/* 전적 */}
-      {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "조건에 맞는 리뷰 대국 없음" : "이 시간 규정의 대국 없음"}</p>}
+      {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {!recentOnly && overall && (
         <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>전체 기간 전적</span>
-            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{fmtFull(overall.total)}판</span>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("전체 기간 전적")}</span>
+            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판", fmtFull(overall.total))}</span>
           </div>
           <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
-            <span style={{ color: T.best, fontWeight: 800 }}>{overall.w}승</span> {overall.d}무 <span style={{ color: T.blunder, fontWeight: 800 }}>{overall.l}패</span> · 승률 <b>{overall.winRate}%</b>
+            <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1} · 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
           </div>
           <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
             <div style={{ width: (100 * overall.w / overall.total) + "%", background: T.best }} />
@@ -764,7 +765,7 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
           </div>
         </div>
       )}
-      {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? "조건에 맞는 리뷰 대국 없음" : "이 시간 규정의 대국 없음"}</p>}
+      {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
@@ -778,7 +779,7 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
         const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
         return (
           <div style={{ marginBottom: 12 }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>최근 대국</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{allGames.length}판</span></div>
+            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>{t("최근 대국")}</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", allGames.length)}</span></div>
             {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g);
               // (v0.2.0 기능) 상대 닉네임·대국 당시 레이팅 — useChessCom이 이제 g.white/g.black에
               // 양쪽 정보를 다 담아 주므로, 내 진영(g.color)의 반대쪽을 상대로 표시한다.
@@ -786,9 +787,9 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
               return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
                 {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 분석 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
-                <span title={g.color === "w" ? "백" : "흑"} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
+                <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? "승리" : lost ? "패배" : "무승부"}</b>
+                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
                     {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
                     {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
                     {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
@@ -799,9 +800,9 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
                   {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
                 </div>
                 {onSelectGame ? (() => { const gid = g.id != null ? g.id : g.endTime; const isSel = selectedGameId != null && gid === selectedGameId;
-                  return <button onClick={() => onSelectGame(g, gid)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: isSel ? "linear-gradient(180deg,#3E7CC4,#2C5A94)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSel ? "#fff" : "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>{isSel ? "선택됨" : "선택"}</button>; })() : onOpenGame && (
+                  return <button onClick={() => onSelectGame(g, gid)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: isSel ? "linear-gradient(180deg,#3E7CC4,#2C5A94)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSel ? "#fff" : "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>{isSel ? t("선택됨") : t("선택")}</button>; })() : onOpenGame && (
                   <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                    <button onClick={() => onOpenGame(g.moves)} aria-label="대국 보기" title="대국 보기" className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                    <button onClick={() => onOpenGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                     {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id })} />}
                   </div>
                 )}
@@ -815,12 +816,12 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
         <>
           {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
               애니메이션한다. 바로 아래에 흑 오프닝 레파토리도 같은 방식으로 보여준다. */}
-          <TopOpeningsPair games={games} label="가장 많이 둔 오프닝" />
+          <TopOpeningsPair games={games} label={t("가장 많이 둔 오프닝")} />
           {/* 오프닝별 승률 — 하위(더 구체적인) 오프닝을 상위 오프닝 아래 중첩해서, 상위 오프닝 행이
               그 아래 하위 갈래들의 합산임을 보여준다. */}
           {openingTree.length > 0 && (
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>오프닝별 승률</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{t("오프닝별 승률")}</div>
               <div>
                 {openingTree.map((node) => <OpeningWinrateRow key={node.name} node={node} depth={0} onOpenOpening={onOpenOpening} />)}
               </div>
@@ -833,28 +834,26 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
               참고). */}
           {reviewedGames.length > 0 && (
             <div style={{ marginTop: 14 }}>
-              <div className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 6 }}><Target size={13} /> 약점 리포트</div>
-              {weaknessLoading ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>리뷰 기록을 모으는 중…</p>
+              <div className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("{0} 약점 리포트", <Target size={13} />)}</div>
+              {weaknessLoading ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("리뷰 기록을 모으는 중…")}</p>
                 : weaknessReport.openings.length === 0
-                ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>같은 오프닝을 2판 이상 리뷰해야 경향 확인 가능</p>
+                ? <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("같은 오프닝을 2판 이상 리뷰해야 경향 확인 가능")}</p>
                 : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {weaknessReport.openings.slice(0, 3).map((o) => (
                       <button key={o.name} onClick={() => onOpenOpening && onOpenOpening(o.name)} className="press" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", textAlign: "left", cursor: onOpenOpening ? "pointer" : "default" }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: o.blunderRate > 0 ? T.blunder : T.inkSoft, flexShrink: 0 }}>게임당 블런더 {o.blunderRate.toFixed(1)}회 ({o.n}판)</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: o.blunderRate > 0 ? T.blunder : T.inkSoft, flexShrink: 0 }}>{tx("게임당 블런더 {0}회 ({1}판)", o.blunderRate.toFixed(1), o.n)}</span>
                       </button>
                     ))}
                     {(weaknessReport.kindTotals.blunder || weaknessReport.kindTotals.mistake) > 0 && (
-                      <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>
-                        최근 리뷰한 {weaknessReport.gamesUsed}판 기준: 블런더 {weaknessReport.kindTotals.blunder || 0}회 · 실수 {weaknessReport.kindTotals.mistake || 0}회
-                      </p>
+                      <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{tx("최근 리뷰한 {0}판 기준: 블런더 {1}회 · 실수 {2}회", weaknessReport.gamesUsed, weaknessReport.kindTotals.blunder || 0, weaknessReport.kindTotals.mistake || 0)}</p>
                     )}
                   </div>
                 )}
             </div>
           )}
-          {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>수록된 오프닝과 일치하는 대국 없음</p>}
+          {mostUsed.length === 0 && <p style={{ fontSize: 12, color: T.inkSoft }}>{t("수록된 오프닝과 일치하는 대국 없음")}</p>}
         </>
       )}
     </div>
@@ -876,7 +875,7 @@ function FirstMovesDisplay({ firstMoves }) {
   const headStyle = { fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginBottom: 4, textAlign: "center" };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>자주 두는 첫 수</div>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("자주 두는 첫 수")}</div>
       {/* (버그 수정) 두 박스 폭이 90px/200px로 고정돼 있어, 유산 타일처럼 카드 폭에 비례해(%) 커지는
           다른 요소와 달리 컴퓨터(넓은 화면)에서는 카드 안에 작은 섬처럼 떠 보였다 — 카드 폭에 비례한
           flex 비율(백 1 : 흑 2)로 바꿔, 모바일이든 컴퓨터든 카드가 넓어지는 만큼 이 블록도 함께
@@ -884,7 +883,7 @@ function FirstMovesDisplay({ firstMoves }) {
       <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
         {fm.white && (
           <div style={{ flex: blackEntries.length ? "1 1 0" : "1 1 auto", minWidth: 0, maxWidth: blackEntries.length ? 170 : "none", display: "flex", flexDirection: "column" }}>
-            <div style={headStyle}>백</div>
+            <div style={headStyle}>{t("백")}</div>
             <div style={{ ...boxStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 6px" }}>
               <span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: SEQ_FONT, whiteSpace: "nowrap" }}>1.{fm.white}</span>
             </div>
@@ -892,7 +891,7 @@ function FirstMovesDisplay({ firstMoves }) {
         )}
         {blackEntries.length > 0 && (
           <div style={{ flex: "2 1 0", minWidth: 0, display: "flex", flexDirection: "column" }}>
-            <div style={headStyle}>흑</div>
+            <div style={headStyle}>{t("흑")}</div>
             <div style={{ ...boxStyle, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
               {blackEntries.map(([w, b], i) => (
                 <div key={w} style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, padding: "6px 8px", borderTop: i >= 2 ? "1px solid #DCCBA8" : "none", borderLeft: i % 2 === 1 ? "1px solid #DCCBA8" : "none" }}>
@@ -950,7 +949,7 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves, 
 function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
   return (
     <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
-      <button onClick={onClick} className="press" title={typeInfo.label + (bonus ? " 추가(그랜드마스터 보너스 칸)" : " 추가")} style={LEGACY_BLOCK_BTN_STYLE}>
+      <button onClick={onClick} className="press" title={typeInfo.label + (bonus ? t(" 추가(그랜드마스터 보너스 칸)") : t(" 추가"))} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span aria-hidden="true" style={{ position: "relative", fontSize: 26, fontWeight: 300, lineHeight: 1, color: T.brassHi, opacity: 0.85 }}>+</span>
       </button>
@@ -1021,7 +1020,7 @@ function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroActive 
 // (사용자 요청) "다시 보기" 버튼을 없애는 대신, 이 블록 자체를 눌러 언제든 처음부터 다시 재생한다.
 function LegacyProjectorBlock({ entry, size = 76, onClick }) {
   return (
-    <button onClick={onClick} title="다시 재생" className="press" style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
+    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
       background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
       border: "1.5px solid " + T.brass, cursor: onClick ? "pointer" : "default",
       boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), 0 0 26px 6px rgba(196,154,80,.5), 0 6px 14px -6px rgba(0,0,0,.7)",
@@ -1240,7 +1239,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
       style={{ position: "fixed", inset: 0, zIndex: 210, background: "#000", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
       {/* 배경 별 입자(순수 CSS 장식) */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.55, backgroundImage: "radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 65%, #fff, transparent), radial-gradient(1.5px 1.5px at 85% 20%, #fff, transparent), radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 55% 45%, #fff, transparent), radial-gradient(1px 1px at 12% 68%, #fff, transparent), radial-gradient(1.5px 1.5px at 92% 55%, #fff, transparent)" }} />
-      <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
+      <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
       {phase === "charge" ? (
         <motion.div initial={{ scale: 1, opacity: 0 }} animate={{ scale: [1, 1.14, 1.08], opacity: 1 }} transition={{ duration: 0.9, ease: "easeOut" }}
           style={{ width: 150, height: 150, borderRadius: 20, position: "relative", overflow: "hidden",
@@ -1434,21 +1433,21 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>유산 전체 보기</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("유산 전체 보기")}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
           <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
           {histItems.length > 0 && (
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>지난 유산</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("지난 유산")}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
                 {histItems.map((h) => (
                   <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
                     <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(h.entry)}</div>
-                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? " · " + new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }) + " 교체/삭제됨" : ""}</div>
+                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? t(" · {0} 교체/삭제됨", new Date(h.replacedAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })) : ""}</div>
                     </div>
                   </button>
                 ))}
@@ -1512,9 +1511,9 @@ function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy
   return (
     <div style={{ marginBottom: 12 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>유산</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("유산")}</span>
         {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
-        <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>더보기 <ChevronRight size={12} /></button>
+        <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>{tx("더보기 {0}", <ChevronRight size={12} />)}</button>
       </div>
       <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
       <AnimatePresence>
@@ -1543,8 +1542,8 @@ export function TierRatingRow({ pub }) {
       {tierMapOpen && <TierJourneyMap totalXp={pub.xp || 0} onClose={() => setTierMapOpen(false)} />}
       <TierStatPill totalXp={pub.xp || 0} size={52} onClick={() => setTierMapOpen(true)} />
       {pub.puzzleRating != null && (
-        <ClickInfoBadge text={"퍼즐 레이팅 : " + fmtFull(pub.puzzleRating)}>
-          <span title="퍼즐 레이팅: 라인을 풀면 상승, 틀린 수를 두면 하락" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
+        <ClickInfoBadge text={t("퍼즐 레이팅 : {0}", fmtFull(pub.puzzleRating))}>
+          <span title={t("퍼즐 레이팅: 라인을 풀면 상승, 틀린 수를 두면 하락")} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: "rgba(0,0,0,.05)", border: "1px solid #DCCBA8", color: T.ink, fontSize: 11.5, fontWeight: 800 }}>
             <MaterialIcon name="extension" size={12} /> {fmtFull(pub.puzzleRating)}
           </span>
         </ClickInfoBadge>
@@ -1564,8 +1563,8 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
       {mq && mq.totalChapters > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>레슨 진척도</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{mq.totalChapters} 레슨 완료</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("레슨 진척도")}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{tx("{0} 레슨 완료", mq.totalChapters)}</span>
           </div>
           <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
             <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
@@ -1599,7 +1598,7 @@ export function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, o
       ) : (
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.6 }}>chess.com 계정 미연동</p>
+          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.6 }}>{t("chess.com 계정 미연동")}</p>
         </div>
       )}
     </div>

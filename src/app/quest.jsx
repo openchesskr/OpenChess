@@ -10,6 +10,7 @@ import { boardFromSans, liveLegalDests, buildSan, stripSuffix } from "../lib/che
 import { playMoveSfx } from "../lib/prefs.js";
 import { Board, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, questLabelNode, questOpeningMovesText, useBoardSize, useNarrow } from "./common.jsx";
 
+import { t, tx } from "../lib/i18n.js";
 // 다음 KST 자정까지 남은 밀리초
 function msUntilKstMidnight(now) {
   now = now || new Date();
@@ -83,11 +84,11 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
       <div className="flex items-center justify-between flex-wrap" style={{ marginBottom: 10, gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>일일 퀘스트</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("일일 퀘스트")}</div>
         <div className="flex items-center gap-2">
-          {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>모두 완료</span>}
+          {allDone && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.best }}>{t("모두 완료")}</span>}
           {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
-          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.06)", borderRadius: 6, padding: "2px 8px" }}>갱신까지 {fmtRemainHMS(remain)}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(0,0,0,.06)", borderRadius: 6, padding: "2px 8px" }}>{tx("갱신까지 {0}", fmtRemainHMS(remain))}</span>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -106,7 +107,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
               {row("cc_" + i, questLabelNode(q), !hasChesscom ? "설정에서 chess.com 계정 연동 필요" : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
-                  <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title="이 퀘스트만 교체 (퀘스트당 1회)"
+                  <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title={t("이 퀘스트만 교체 (퀘스트당 1회)")}
                     style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 7, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.04)", color: "#8A6A2F", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={12} /></button>
                 ) : null, highlighted)}
             </div>
@@ -120,10 +121,10 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, border: "1px solid " + (allDone ? "rgba(63,122,58,.5)" : T.brass), background: allDone ? "rgba(63,122,58,.1)" : "rgba(196,154,80,.1)", display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={46} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? T.best : "#8A6A2F" }}>모든 퀘스트 완료 보상</div>
-              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>OC 나이트 코인 <b style={{ color: "#8A6A2F" }}>50개</b> · {doneCount}/5 완료</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? T.best : "#8A6A2F" }}>{t("모든 퀘스트 완료 보상")}</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>{tx("OC 나이트 코인 {0} · {1}/5 완료", <b style={{ color: "#8A6A2F" }}>{t("50개")}</b>, doneCount)}</div>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? "획득 완료" : "획득") : "잠김"}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? t("획득 완료") : t("획득")) : t("잠김")}</span>
           </div>
         );
       })()}
@@ -277,7 +278,7 @@ function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
           )}
         </span>
       </button>
-      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title="레슨 편집" style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.85)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: -6, right: -6, zIndex: 1 }}><Settings size={10} /></button>}
+      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title={t("레슨 편집")} style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.85)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: -6, right: -6, zIndex: 1 }}><Settings size={10} /></button>}
     </div>
   );
 }
@@ -335,12 +336,12 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>레슨</span>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{overall.totalChapters} 완료</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("레슨")}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{tx("{0} 완료", overall.totalChapters)}</span>
       </div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>체스 개념과 오프닝 학습 코스. 갈래를 따라 순서대로 해금</div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>{t("체스 개념과 오프닝 학습 코스. 갈래를 따라 순서대로 해금")}</div>
       {ids.length === 0 ? (
-        <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>등록된 레슨 없음</div>
+        <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>{t("등록된 레슨 없음")}</div>
       ) : (
         <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
           <div style={{ position: "relative", width, height }}>
@@ -364,7 +365,7 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
           </div>
         </div>
       )}
-      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>+ 새 레슨 추가</button>}
+      {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>{t("+ 새 레슨 추가")}</button>}
       {openKey && CONTENT.lessons[openKey] && <LessonScreen lessonKey={openKey} lesson={CONTENT.lessons[openKey]} mainQuest={mainQuest} onAnswer={onAnswer} onClaim={onClaim} onClose={() => setOpenKey(null)} />}
       {editKey && <LessonEditor lessonKey={editKey} bumpContent={bumpContent} onClose={() => setEditKey(null)} />}
     </div>
@@ -612,7 +613,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
   const interactionPanel = (
     <div style={{ flex: 1, minWidth: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: T.paper }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "10px 14px" : "18px 24px 8px", flexShrink: 0 }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "#fff", color: T.ink, border: "1px solid #DCCBA8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "#fff", color: T.ink, border: "1px solid #DCCBA8", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: 4, gap: 6 }}>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title}</span>
@@ -627,9 +628,9 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
         {lessonDone ? (
           <div style={{ textAlign: "center", padding: "24px 0" }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? "레슨 복습 완료" : "레슨 완료"}</div>
-            {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: "#8A6A2F", marginBottom: 16 }}><CoinIcon size={18} /> +{lesson.reward || 60} OC 나이트 코인</div>}
-            <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? "닫기" : "보상 받기"}</button>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.best, marginBottom: 8 }}>{claimedAlready ? t("레슨 복습 완료") : t("레슨 완료")}</div>
+            {!claimedAlready && <div className="flex items-center justify-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: "#8A6A2F", marginBottom: 16 }}><CoinIcon size={18} /> +{tx("{0} OC 나이트 코인", lesson.reward || 60)}</div>}
+            <button onClick={claimAndClose} className="press" style={{ padding: "11px 22px", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 13.5 }}>{claimedAlready ? t("닫기") : t("보상 받기")}</button>
           </div>
         ) : (
           <>
@@ -642,7 +643,7 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
               <div className="flex flex-col items-center" style={{ flex: "1 1 auto", minHeight: narrow ? "26vh" : "32vh", justifyContent: "center", gap: 14, textAlign: "center", background: "#fff", borderRadius: 16, padding: narrow ? "22px 18px" : "32px 40px", border: "1px solid #DCCBA8", marginBottom: 14, position: "relative", boxSizing: "border-box" }}>
                 <Mascot name={bubble.speaker} emotion={mcFeedback === "correct" || moveDone ? "celebrate" : mcFeedback === "wrong" ? "surprise" : "great"} size={narrow ? 84 : 108} />
                 <div style={{ minWidth: 0, maxWidth: 520 }}>
-                  <div style={{ color: "#8A6A2F", fontSize: 12, fontWeight: 800, marginBottom: 6 }}>{bubble.speaker === "kokoa" ? "KOKOA" : "MILKU"} 코치</div>
+                  <div style={{ color: "#8A6A2F", fontSize: 12, fontWeight: 800, marginBottom: 6 }}>{tx("{0} 코치", bubble.speaker === "kokoa" ? "KOKOA" : "MILKU")}</div>
                   <p style={{ color: T.ink, fontSize: narrow ? 15.5 : 18, lineHeight: 1.6, minHeight: "1.6em" }}>{bubble.text}{bubble.typing && <span style={{ animation: "lessonCaretBlink 1s step-end infinite" }}>▌</span>}</p>
                 </div>
                 {sayActive && !bubble.typing && <ChevronDown size={16} color={T.inkSoft} style={{ position: "absolute", bottom: 10, right: 14, animation: "dotbounceSm 1.1s ease-in-out infinite" }} />}
@@ -661,23 +662,23 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
                         background: showCorrect ? "rgba(63,122,58,.12)" : showWrong ? "rgba(200,80,80,.12)" : "#fff", color: T.ink }}>{op}</button>
                   );
                 })}
-                {mcFeedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 6 }}>✕ 다른 설명. 다시 선택</div>}
+                {mcFeedback === "wrong" && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginTop: 6 }}>{t("✕ 다른 설명. 다시 선택")}</div>}
                 {mcFeedback === "correct" && (
                   <div style={{ marginTop: 6 }}>
                     {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
-                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음</button>
+                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>{t("다음")}</button>
                   </div>
                 )}
               </div>
             )}
             {beat && beat.kind === "move" && (
               <div>
-                {moveWrongSq && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>✕ 다른 수. 보드를 다시 확인</div>}
-                {!moveDone && !moveWrongSq && <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>보드에서 기물을 눌러(또는 끌어서) 두기</div>}
+                {moveWrongSq && <div style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, marginBottom: 6 }}>{t("✕ 다른 수. 보드를 다시 확인")}</div>}
+                {!moveDone && !moveWrongSq && <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 8 }}>{t("보드에서 기물을 눌러(또는 끌어서) 두기")}</div>}
                 {moveDone && (
                   <>
                     {beat.note && <div style={{ fontSize: 11.5, color: T.best, fontWeight: 700, marginBottom: 8 }}>✓ {beat.note}</div>}
-                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>다음</button>
+                    <button onClick={advanceBeat} className="press" style={{ width: "100%", padding: "10px 18px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>{t("다음")}</button>
                   </>
                 )}
               </div>
@@ -688,10 +689,10 @@ function LessonScreen({ lessonKey, lesson, mainQuest, onAnswer, onClaim, onClose
       {!lessonDone && (
         <div className="flex items-center justify-between" style={{ padding: narrow ? "10px 16px 16px" : "10px 28px 22px", flexShrink: 0, gap: 10 }}>
           <button onClick={onPrev} disabled={pageIdx === 0} className={pageIdx === 0 ? "" : "press"}
-            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 14px", borderRadius: 10, border: "1px solid #DCCBA8", background: "#fff", color: pageIdx === 0 ? "#C9BBA0" : T.ink, fontWeight: 800, fontSize: 12, cursor: pageIdx === 0 ? "default" : "pointer" }}><ChevronLeft size={14} /> 이전</button>
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 14px", borderRadius: 10, border: "1px solid #DCCBA8", background: "#fff", color: pageIdx === 0 ? "#C9BBA0" : T.ink, fontWeight: 800, fontSize: 12, cursor: pageIdx === 0 ? "default" : "pointer" }}>{tx("{0} 이전", <ChevronLeft size={14} />)}</button>
           <button onClick={onNext} disabled={!canGoNext} className={canGoNext ? "press" : ""}
             style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "8px 14px", borderRadius: 10, border: "none", background: canGoNext ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#E4D5B4", color: canGoNext ? "#241509" : "#B7A57C", fontWeight: 800, fontSize: 12, cursor: canGoNext ? "pointer" : "default" }}>
-            {isLastPage && pageBeatsDone ? "레슨 마치기" : "다음 페이지"} <ChevronRight size={14} /></button>
+            {isLastPage && pageBeatsDone ? t("레슨 마치기") : t("다음 페이지")} <ChevronRight size={14} /></button>
         </div>
       )}
     </div>
@@ -729,8 +730,8 @@ const linesToArr = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 function LsReorderBtns({ onUp, onDown, disabledUp, disabledDown }) {
   return (
     <>
-      <button type="button" onClick={onUp} disabled={disabledUp} className="press" title="위로" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledUp ? "default" : "pointer", opacity: disabledUp ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={12} /></button>
-      <button type="button" onClick={onDown} disabled={disabledDown} className="press" title="아래로" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledDown ? "default" : "pointer", opacity: disabledDown ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={12} /></button>
+      <button type="button" onClick={onUp} disabled={disabledUp} className="press" title={t("위로")} style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledUp ? "default" : "pointer", opacity: disabledUp ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={12} /></button>
+      <button type="button" onClick={onDown} disabled={disabledDown} className="press" title={t("아래로")} style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.7)", color: T.inkSoft, cursor: disabledDown ? "default" : "pointer", opacity: disabledDown ? 0.35 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={12} /></button>
     </>
   );
 }
@@ -769,7 +770,7 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
           {LESSON_BEAT_KINDS.map((k) => <option key={k} value={k}>{LESSON_BEAT_LABELS[k]}</option>)}
         </select>
         <LsReorderBtns onUp={onMoveUp} onDown={onMoveDown} disabledUp={index === 0} disabledDown={index === total - 1} />
-        <button type="button" onClick={onRemove} className="press" title="beat 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+        <button type="button" onClick={onRemove} className="press" title={t("beat 삭제")} style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
       </div>
       {kind === "say" && (
         <>
@@ -777,76 +778,76 @@ function BeatEditor({ beat, index, total, onChange, onRemove, onMoveUp, onMoveDo
             <option value="milku">milku</option>
             <option value="kokoa">kokoa</option>
           </select>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => patch({ text })} placeholder="대사 텍스트" rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => patch({ text })} placeholder={t("대사 텍스트")} rows={2} style={{ ...lsField, resize: "vertical" }} />
         </>
       )}
       {kind === "principles" && (
-        <textarea value={linesText} onChange={(e) => setLinesText(e.target.value)} onBlur={() => patch({ lines: linesToArr(linesText) })} placeholder={"원칙 목록 (한 줄에 하나씩)"} rows={4} style={{ ...lsField, resize: "vertical" }} />
+        <textarea value={linesText} onChange={(e) => setLinesText(e.target.value)} onBlur={() => patch({ lines: linesToArr(linesText) })} placeholder={t("원칙 목록 (한 줄에 하나씩)")} rows={4} style={{ ...lsField, resize: "vertical" }} />
       )}
       {kind === "mc" && (
         <>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
-          <textarea value={optsText} onChange={(e) => setOptsText(e.target.value)} onBlur={() => patch({ opts: linesToArr(optsText) })} placeholder={"선택지 (한 줄에 하나씩)"} rows={3} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder={t("질문(prompt)")} rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={optsText} onChange={(e) => setOptsText(e.target.value)} onBlur={() => patch({ opts: linesToArr(optsText) })} placeholder={t("선택지 (한 줄에 하나씩)")} rows={3} style={{ ...lsField, resize: "vertical" }} />
           <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-            <span style={{ fontSize: 10.5, color: T.inkSoft }}>정답 인덱스(0부터)</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft }}>{t("정답 인덱스(0부터)")}</span>
             <input type="number" min={0} value={beat.answer ?? 0} onChange={(e) => patch({ answer: parseInt(e.target.value, 10) || 0 })} style={{ width: 60, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
           </div>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder="정답 해설(note)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder={t("정답 해설(note)")} rows={2} style={{ ...lsField, resize: "vertical" }} />
         </>
       )}
       {kind === "move" && (
         <>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder="질문(prompt)" rows={2} style={{ ...lsField, resize: "vertical" }} />
-          <textarea value={answersText} onChange={(e) => setAnswersText(e.target.value)} onBlur={() => patch({ answers: linesToArr(answersText) })} placeholder={"정답으로 인정할 수 (SAN, 한 줄에 하나씩, 예: e4)"} rows={2} style={{ ...lsField, resize: "vertical" }} />
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder="정답 해설(note)" rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={() => patch({ prompt })} placeholder={t("질문(prompt)")} rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={answersText} onChange={(e) => setAnswersText(e.target.value)} onBlur={() => patch({ answers: linesToArr(answersText) })} placeholder={t("정답으로 인정할 수 (SAN, 한 줄에 하나씩, 예: e4)")} rows={2} style={{ ...lsField, resize: "vertical" }} />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => patch({ note })} placeholder={t("정답 해설(note)")} rows={2} style={{ ...lsField, resize: "vertical" }} />
         </>
       )}
       {kind === "play" && (
         <>
-          <input value={movesText} onChange={(e) => setMovesText(e.target.value)} onBlur={() => patch({ moves: spaceToArr(movesText) })} placeholder={"이어서 재생할 수 (SAN, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={lsField} />
+          <input value={movesText} onChange={(e) => setMovesText(e.target.value)} onBlur={() => patch({ moves: spaceToArr(movesText) })} placeholder={t("이어서 재생할 수 (SAN, 띄어쓰기로 구분, 예: e4 e5 Nf3)")} style={lsField} />
           <div className="flex items-center gap-2">
-            <span style={{ fontSize: 10.5, color: T.inkSoft }}>한 수당 재생 간격(ms)</span>
+            <span style={{ fontSize: 10.5, color: T.inkSoft }}>{t("한 수당 재생 간격(ms)")}</span>
             <input type="number" min={0} value={stepMs} onChange={(e) => setStepMs(e.target.value)} onBlur={() => patch({ stepMs: stepMs === "" ? undefined : parseInt(stepMs, 10) || 420 })} placeholder="420" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
           </div>
         </>
       )}
       {kind === "pause" && (
         <div className="flex items-center gap-2">
-          <span style={{ fontSize: 10.5, color: T.inkSoft }}>대기 시간(ms)</span>
+          <span style={{ fontSize: 10.5, color: T.inkSoft }}>{t("대기 시간(ms)")}</span>
           <input type="number" min={0} value={ms} onChange={(e) => setMs(e.target.value)} onBlur={() => patch({ ms: parseInt(ms, 10) || 800 })} style={{ width: 80, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
         </div>
       )}
       {kind === "board" && (
         <>
-          <input value={squaresText} onChange={(e) => setSquaresText(e.target.value)} onBlur={() => patch({ squares: spaceToArr(squaresText) })} placeholder={"강조할 칸 (띄어쓰기로 구분, 예: e4 e5 d4 d5)"} style={lsField} />
+          <input value={squaresText} onChange={(e) => setSquaresText(e.target.value)} onBlur={() => patch({ squares: spaceToArr(squaresText) })} placeholder={t("강조할 칸 (띄어쓰기로 구분, 예: e4 e5 d4 d5)")} style={lsField} />
           <div className="flex items-center gap-3" style={{ marginBottom: 4 }}>
-            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.dim} onChange={(e) => patch({ dim: e.target.checked })} /> dim(음영)</label>
-            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.glow} onChange={(e) => patch({ glow: e.target.checked })} /> glow(발광)</label>
-            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.siren} onChange={(e) => patch({ siren: e.target.checked })} /> siren(경고)</label>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.dim} onChange={(e) => patch({ dim: e.target.checked })} />{" "}{t("dim(음영)")}</label>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.glow} onChange={(e) => patch({ glow: e.target.checked })} />{" "}{t("glow(발광)")}</label>
+            <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer" }}><input type="checkbox" checked={!!beat.siren} onChange={(e) => patch({ siren: e.target.checked })} />{" "}{t("siren(경고)")}</label>
           </div>
           {/* (기능) 공격/방어 화살표 — 행마다 from/to 칸과 공격(빨강)/방어(초록) 종류를 지정한다. */}
           <div style={{ marginBottom: 4 }}>
             <div className="flex items-center justify-between" style={{ marginBottom: 3 }}>
-              <span style={{ fontSize: 10.5, color: T.inkSoft }}>화살표 (arrows)</span>
-              <button type="button" onClick={() => patch({ arrows: [...(beat.arrows || []), { from: "", to: "", type: "attacker" }] })} className="press" title="화살표 추가" style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>
+              <span style={{ fontSize: 10.5, color: T.inkSoft }}>{t("화살표 (arrows)")}</span>
+              <button type="button" onClick={() => patch({ arrows: [...(beat.arrows || []), { from: "", to: "", type: "attacker" }] })} className="press" title={t("화살표 추가")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>
             </div>
             {(beat.arrows || []).map((a, ai) => (
               <div key={ai} className="flex items-center gap-2" style={{ marginBottom: 3 }}>
-                <input value={a.from} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, from: e.target.value } : x)) })} placeholder="from (예: e4)" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+                <input value={a.from} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, from: e.target.value } : x)) })} placeholder={t("from (예: e4)")} style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
                 <span style={{ fontSize: 11, color: T.inkSoft }}>→</span>
-                <input value={a.to} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, to: e.target.value } : x)) })} placeholder="to (예: d5)" style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
+                <input value={a.to} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, to: e.target.value } : x)) })} placeholder={t("to (예: d5)")} style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11 }} />
                 <select value={a.type || "attacker"} onChange={(e) => patch({ arrows: beat.arrows.map((x, xi) => (xi === ai ? { ...x, type: e.target.value } : x)) })} style={{ fontSize: 10.5, padding: "3px 5px", borderRadius: 6, border: "1px solid #C9B58C" }}>
-                  <option value="attacker">공격(빨강)</option>
-                  <option value="defender">방어(초록)</option>
+                  <option value="attacker">{t("공격(빨강)")}</option>
+                  <option value="defender">{t("방어(초록)")}</option>
                 </select>
-                <button type="button" onClick={() => patch({ arrows: beat.arrows.filter((_, xi) => xi !== ai) })} className="press" title="화살표 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+                <button type="button" onClick={() => patch({ arrows: beat.arrows.filter((_, xi) => xi !== ai) })} className="press" title={t("화살표 삭제")} style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
               </div>
             ))}
           </div>
         </>
       )}
-      {kind === "clear" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>이 beat는 보드 연출(dim/glow/siren)만 초기화</div>}
-      <input value={sansText} onChange={(e) => setSansText(e.target.value)} onBlur={commitSans} placeholder={"(선택) 즉시 전환할 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={{ ...lsField, marginBottom: 0, fontSize: 10.5, color: T.inkSoft }} />
+      {kind === "clear" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{t("이 beat는 보드 연출(dim/glow/siren)만 초기화")}</div>}
+      <input value={sansText} onChange={(e) => setSansText(e.target.value)} onBlur={commitSans} placeholder={t("(선택) 즉시 전환할 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)")} style={{ ...lsField, marginBottom: 0, fontSize: 10.5, color: T.inkSoft }} />
     </div>
   );
 }
@@ -866,17 +867,16 @@ function PageEditor({ page, index, total, onChange, onRemove, onMoveUp, onMoveDo
   return (
     <div style={{ padding: 10, borderRadius: 10, background: T.ivoryHi, border: "1px solid #DCCBA8", marginBottom: 8 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>페이지 {index + 1}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{tx("페이지 {0}", index + 1)}</span>
         <span style={{ fontSize: 10, color: T.inkSoft }}>({beats.length} beats)</span>
         <div className="flex items-center gap-1" style={{ marginLeft: "auto" }}>
           <LsReorderBtns onUp={onMoveUp} onDown={onMoveDown} disabledUp={index === 0} disabledDown={index === total - 1} />
-          <button type="button" onClick={onRemove} className="press" title="페이지 삭제" style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
+          <button type="button" onClick={onRemove} className="press" title={t("페이지 삭제")} style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={11} /></button>
         </div>
       </div>
-      <input value={startSansText} onChange={(e) => setStartSansText(e.target.value)} onBlur={commitStartSans} placeholder={"(선택) 시작 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)"} style={lsField} />
+      <input value={startSansText} onChange={(e) => setStartSansText(e.target.value)} onBlur={commitStartSans} placeholder={t("(선택) 시작 위치 (SAN 수순, 띄어쓰기로 구분, 예: e4 e5 Nf3)")} style={lsField} />
       <label className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, cursor: "pointer", marginBottom: 6 }}>
-        <input type="checkbox" checked={!!page.flip} onChange={(e) => onChange({ ...page, flip: e.target.checked })} /> flip(보드 반전, 흑 시점으로 보기)
-      </label>
+        <input type="checkbox" checked={!!page.flip} onChange={(e) => onChange({ ...page, flip: e.target.checked })} />{" "}{t("flip(보드 반전, 흑 시점으로 보기)")}</label>
       {beats.map((b, bi) => (
         <BeatEditor key={bi} beat={b} index={bi} total={beats.length} onChange={(nb) => updateBeatAt(bi, nb)} onRemove={() => removeBeatAt(bi)} onMoveUp={() => moveBeatAt(bi, -1)} onMoveDown={() => moveBeatAt(bi, 1)} />
       ))}
@@ -884,7 +884,7 @@ function PageEditor({ page, index, total, onChange, onRemove, onMoveUp, onMoveDo
         <select value={addKind} onChange={(e) => setAddKind(e.target.value)} style={{ fontSize: 10.5, padding: "4px 6px", borderRadius: 6, border: "1px solid #C9B58C" }}>
           {LESSON_BEAT_KINDS.map((k) => <option key={k} value={k}>{LESSON_BEAT_LABELS[k]}</option>)}
         </select>
-        <button type="button" onClick={addBeat} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "4px 9px", borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>+ beat 추가</button>
+        <button type="button" onClick={addBeat} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "4px 9px", borderRadius: 7, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>{t("+ beat 추가")}</button>
       </div>
     </div>
   );
@@ -921,15 +921,15 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
-        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? "새 레슨 추가" : "레슨 편집"} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>저장 중…</span>}</div>
-        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder="레슨 키 (예: l_e4_c4)" style={{ ...field, fontFamily: SITE_FONT }} />}
-        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 제목" style={{ ...field, fontWeight: 700 }} />
-        <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder="레슨 설명" rows={2} style={{ ...field, resize: "vertical" }} />
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? t("새 레슨 추가") : t("레슨 편집")} {saving && <span style={{ fontSize: 10, color: T.inkSoft, fontWeight: 600 }}>{t("저장 중…")}</span>}</div>
+        {isNew && <input value={key} onChange={(e) => setKey(e.target.value)} onBlur={() => key.trim() && save(draft)} placeholder={t("레슨 키 (예: l_e4_c4)")} style={{ ...field, fontFamily: SITE_FONT }} />}
+        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onBlur={() => save(draft)} placeholder={t("레슨 제목")} style={{ ...field, fontWeight: 700 }} />
+        <textarea value={draft.desc} onChange={(e) => setDraft({ ...draft, desc: e.target.value })} onBlur={() => save(draft)} placeholder={t("레슨 설명")} rows={2} style={{ ...field, resize: "vertical" }} />
         <div style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 4 }}>선행 레슨 (여러 개 선택 가능, 전부 완료해야 열림)</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 4 }}>{t("선행 레슨 (여러 개 선택 가능, 전부 완료해야 열림)")}</div>
           {otherLessonKeys.length === 0 ? (
-            <div style={{ fontSize: 11, color: T.inkSoft }}>없음(최상위)</div>
+            <div style={{ fontSize: 11, color: T.inkSoft }}>{t("없음(최상위)")}</div>
           ) : (
             <div className="flex items-center gap-1" style={{ flexWrap: "wrap" }}>
               {otherLessonKeys.map((k) => {
@@ -938,7 +938,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
                 // 선택하면 k → ... → 이 레슨 → k처럼 순환이 생기기 때문.
                 const blocked = !isNew && lessonDescendants(lessonKey, CONTENT.lessons).has(k);
                 return (
-                  <label key={k} title={blocked ? "순환이 생겨 선택 불가" : ""}
+                  <label key={k} title={blocked ? t("순환이 생겨 선택 불가") : ""}
                     style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, padding: "3px 7px", borderRadius: 7,
                       border: "1px solid #C9B58C", background: checked ? "rgba(196,154,80,.22)" : "transparent",
                       opacity: blocked ? 0.4 : 1, cursor: blocked ? "not-allowed" : "pointer" }}>
@@ -958,18 +958,18 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
           )}
         </div>
         <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-          <span style={{ fontSize: 11, color: T.inkSoft }}>완료 보상</span>
+          <span style={{ fontSize: 11, color: T.inkSoft }}>{t("완료 보상")}</span>
           <input type="number" value={draft.reward} onChange={(e) => setDraft({ ...draft, reward: parseInt(e.target.value, 10) || 0 })} onBlur={() => save(draft)} style={{ width: 70, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
-          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}><CoinIcon size={17} /> OC 나이트 코인</span>
+          <span className="flex items-center gap-1" style={{ fontSize: 11, color: T.inkSoft }}>{tx("{0} OC 나이트 코인", <CoinIcon size={17} />)}</span>
         </div>
-        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>페이지·스크립트: {pages.length}페이지</div>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>{tx("페이지·스크립트: {0}페이지", pages.length)}</div>
         {pages.map((p, i) => (
           <PageEditor key={i} page={p} index={i} total={pages.length} onChange={(np) => updatePageAt(i, np)} onRemove={() => removePageAt(i)} onMoveUp={() => movePageAt(i, -1)} onMoveDown={() => movePageAt(i, 1)} />
         ))}
-        <button onClick={addPage} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer", marginBottom: 10 }}>+ 페이지 추가</button>
+        <button onClick={addPage} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer", marginBottom: 10 }}>{t("+ 페이지 추가")}</button>
         <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-          <span style={{ fontSize: 10, color: T.inkSoft }}>{saving ? "저장 중…" : "모든 필드는 변경 즉시(포커스 이동 시) 저장"}</span>
-          {!isNew && <button onClick={delLesson} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>레슨 삭제</button>}
+          <span style={{ fontSize: 10, color: T.inkSoft }}>{saving ? t("저장 중…") : t("모든 필드는 변경 즉시(포커스 이동 시) 저장")}</span>
+          {!isNew && <button onClick={delLesson} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("레슨 삭제")}</button>}
         </div>
       </div>
     </div>
@@ -982,7 +982,7 @@ export function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpen
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
       {/* (v0.4.0 UI) 사용자 요청 — 이 탭의 하단 탭바 이름이 "퀘스트"에서 "학습"으로 바뀌어, 탭 안
           제목도 같은 이름으로 맞춘다(퀘스트 내용·기능 자체는 그대로). */}
-      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>학습</h2></div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("학습")}</h2></div>
       {/* (버그 수정) FadeIn의 기본 layout(FLIP 애니메이션)을 켠 채로 두면, dailyQuest가 비동기로
           늦게 채워져 이 카드가 마운트 직후 거의 0높이에서 실제 높이로 커질 때 framer-motion이 그
           변화를 transform으로 보간해 화면 왼쪽 위(탭에서 가장 먼저 보이는 자리)가 순간적으로
