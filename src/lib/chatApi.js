@@ -120,6 +120,17 @@ export async function userReport(targetUid, messageId, reason, detail) {
   catch (e) { return { ok: false, error: /too many/.test(String(e && e.message)) ? "limit" : "failed" }; }
 }
 
+// (v0.6.1) 개발자 모드 신고 열람 — 개발자 계정만 서버가 돌려준다(그 밖은 빈 배열). 실패 이유는 error로 구분.
+export async function reportsForDev(limit) {
+  if (!SB_ON) return { ok: false, error: "unavailable", rows: [] };
+  try { const rows = await sbRpc("reports_for_dev", { p_limit: limit || 100 }); return { ok: true, rows: Array.isArray(rows) ? rows : [] }; }
+  catch (e) { return { ok: false, error: /PGRST202|42883|reports_for_dev/.test(String(e && (e.code || e.message))) ? "setup" : "failed", rows: [] }; }
+}
+export async function reportSetStatus(id, status) {
+  if (!SB_ON) return false;
+  try { await sbRpc("report_set_status", { p_id: id, p_status: status }); return true; } catch { return false; }
+}
+
 // 대화방 목록 요약(BUG-019) — [{ uid, m, unread }] 최근 순. RPC가 없으면(SQL 미반영) null을 돌려 호출부가 예전 방식으로 대신한다.
 export async function chatRoomsFetch() {
   if (!SB_ON) return [];

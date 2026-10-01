@@ -11,7 +11,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
-import { BlockListSheet } from "../components/chatPlus.jsx";
+import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
 import { ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
@@ -1056,6 +1056,11 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
           <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
           <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
+          {/* (v0.6.1, 사용자 요청) 신고 열람 — 대화 내용이 들어 있어 개발자 계정(공동 개발자 제외)만 */}
+          {canManageCodev && (<>
+            <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+            <ReportsDevPanel />
+          </>)}
         </div>
       )}
 
