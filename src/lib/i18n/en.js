@@ -1756,4 +1756,6 @@ export default {
   "레슨 본문·오프닝 설명 일부는 한국어로 표시됨. 순차 번역 예정.": "Some lesson text and opening descriptions are shown in Korean. Translation is planned.",
   "5개 언어 선택 · 체스 용어 표준 번역": "5 languages · standard chess terminology",
   "다국어 지원 · 체스 용어 표준 번역.": "Multilingual support · standard chess terminology.",
+  "설정 탭 정리. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합.": "Settings tidied up. Account and language cards moved to the top; \"Show controlled squares\" merged into Visual effects.",
+  "처음 접속하면 기기 언어로 자동 설정. 직접 선택하면 그 언어로 고정.": "On first visit the language is set automatically from your device. Choosing one yourself locks it.",
 };

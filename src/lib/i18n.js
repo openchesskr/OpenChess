@@ -21,22 +21,32 @@ const CODES = LANGS.map((l) => l.code);
 
 function readStored() { try { const v = window.localStorage.getItem(LANG_PREF_KEY); return CODES.includes(v) ? v : null; } catch { return null; } }
 function hasPriorVisit() { try { for (let i = 0; i < window.localStorage.length; i++) { const k = window.localStorage.key(i); if (k && k.startsWith("occ_")) return true; } } catch { } return false; }
+// 브라우저(OS) 언어 목록을 앞에서부터 보고, 지원하는 언어가 없으면 접속한 시간대로 짐작한 뒤, 그래도 모르면 영어.
+const TZ_LANG = { "Asia/Kolkata": "hi", "Asia/Calcutta": "hi", "Asia/Tokyo": "ja", "Asia/Seoul": "ko", "Asia/Shanghai": "zh", "Asia/Chongqing": "zh", "Asia/Harbin": "zh", "Asia/Urumqi": "zh", "Europe/Madrid": "es", "Atlantic/Canary": "es", "Africa/Ceuta": "es" };
 function detectFromBrowser() {
   const list = (typeof navigator !== "undefined" && (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language])) || [];
   for (const raw of list) {
     const c = String(raw || "").toLowerCase().split("-")[0];
     if (CODES.includes(c)) return c;
   }
+  let tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { }
+  if (TZ_LANG[tz]) return TZ_LANG[tz];
+  if (/^America\/(Mexico_City|Bogota|Lima|Santiago|Argentina|Buenos_Aires|Caracas|Montevideo|Guayaquil|La_Paz|Asuncion)/.test(tz)) return "es";
   return "en"; // 지원하지 않는 언어권은 영어
 }
-// 처음 방문(저장된 선택도, 이전 방문 흔적도 없음)이면 브라우저 언어를 따르고, 그 결과를 저장해 이후엔 고정한다.
+// 처음 방문(저장된 선택도, 이전 방문 흔적도 없음)이면 접속자의 브라우저 언어를 따른다. 이때는 "자동"으로 표시해 두고,
+// 사용자가 직접 고르기 전까지는 접속할 때마다 브라우저 언어를 다시 확인한다(기기 언어를 바꾸면 따라감).
 // 이미 쓰던 사용자는 한국어를 유지한다(영어 OS를 쓰는 기존 사용자가 갑자기 영어를 보지 않도록).
+const AUTO_KEY = "occ_lang_auto";
 function resolveLang() {
   if (typeof window === "undefined") return DEFAULT_LANG;
   let l = readStored();
-  if (l) return l;
-  l = hasPriorVisit() ? DEFAULT_LANG : detectFromBrowser();
-  try { window.localStorage.setItem(LANG_PREF_KEY, l); } catch { }
+  let auto = false; try { auto = window.localStorage.getItem(AUTO_KEY) === "1"; } catch { }
+  if (l && !auto) return l;
+  if (l && auto) { const d = detectFromBrowser(); try { window.localStorage.setItem(LANG_PREF_KEY, d); } catch { } return d; }
+  const fresh = !hasPriorVisit();
+  l = fresh ? detectFromBrowser() : DEFAULT_LANG;
+  try { window.localStorage.setItem(LANG_PREF_KEY, l); if (fresh) window.localStorage.setItem(AUTO_KEY, "1"); } catch { }
   return l;
 }
 
@@ -114,6 +124,6 @@ export function fmtDateOnly(d, opts) { try { return new Date(d).toLocaleDateStri
 /** 언어를 바꾸고 새로고침한다(모듈 최상위 문자열까지 전부 새 언어로 다시 만들기 위해). */
 export function setLang(code) {
   if (!CODES.includes(code) || code === lang) return;
-  try { window.localStorage.setItem(LANG_PREF_KEY, code); } catch { }
+  try { window.localStorage.setItem(LANG_PREF_KEY, code); window.localStorage.removeItem(AUTO_KEY); } catch { }
   window.location.reload();
 }
