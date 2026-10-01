@@ -9,6 +9,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-theory-merge.mjs
  */
 import fs from "node:fs";
+import { readAppSource } from "./lib/appSource.mjs";
 import path from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -28,7 +29,7 @@ const walk = (dir) => {
 };
 walk(path.join(root, "src"));
 
-const app = fs.readFileSync(path.join(root, "src/App.jsx"), "utf8");
+const app = readAppSource();
 // 함수 본문 — 중괄호 짝을 세어 정확히 그 함수만 잘라낸다(한 줄짜리 함수 포함).
 const body = (name) => {
   const i = app.indexOf("function " + name + "(");

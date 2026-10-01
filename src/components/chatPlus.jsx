@@ -10,6 +10,7 @@ import { parseFenFull, replayFromFen, replaySans, boardFromSans, epTarget, fenLe
 import { parsePgnSans, sanSequenceValid } from "../lib/pgn.js";
 import { CHAT_REACTIONS, REPORT_REASONS, FEN_IN_TEXT, MOVETEXT_IN_TEXT } from "../lib/chatApi.js";
 
+import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 const menuBtn = { display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "7px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", whiteSpace: "nowrap" };
 const stop = (e) => e.stopPropagation();
 
@@ -24,17 +25,17 @@ export function ChatMsgMenu({ myReacts, onReact, onReply, onCopy, onEdit, onDele
           {CHAT_REACTIONS.map((e) => {
             const on = myReacts && myReacts.has(e);
             return (
-              <button key={e} onClick={() => onReact(e)} aria-label={"반응 " + e} aria-pressed={!!on} className="press"
+              <button key={e} onClick={() => onReact(e)} aria-label={t("반응 {0}", e)} aria-pressed={!!on} className="press"
                 style={{ width: 30, height: 30, borderRadius: 999, border: "none", cursor: "pointer", fontSize: 17, lineHeight: 1, background: on ? "rgba(196,154,80,.35)" : "transparent", padding: 0 }}>{e}</button>
             );
           })}
         </div>
       )}
-      {onReply && <button onClick={onReply} className="press" style={menuBtn}><Reply size={14} />답장</button>}
-      {onCopy && <button onClick={onCopy} className="press" style={menuBtn}><Copy size={14} />복사</button>}
-      {onEdit && <button onClick={onEdit} className="press" style={menuBtn}><Pencil size={14} />수정</button>}
-      {onDelete && <button onClick={onDelete} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}><Trash2 size={14} />삭제</button>}
-      {onReport && <button onClick={onReport} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}><Flag size={14} />신고</button>}
+      {onReply && <button onClick={onReply} className="press" style={menuBtn}>{tx("{0}답장", <Reply size={14} />)}</button>}
+      {onCopy && <button onClick={onCopy} className="press" style={menuBtn}>{tx("{0}복사", <Copy size={14} />)}</button>}
+      {onEdit && <button onClick={onEdit} className="press" style={menuBtn}>{tx("{0}수정", <Pencil size={14} />)}</button>}
+      {onDelete && <button onClick={onDelete} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}>{tx("{0}삭제", <Trash2 size={14} />)}</button>}
+      {onReport && <button onClick={onReport} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}>{tx("{0}신고", <Flag size={14} />)}</button>}
     </div>
   );
 }
@@ -65,15 +66,15 @@ export function ReactionChips({ list, myUid, onToggle, align = "flex-start" }) {
 
 // 답장·검색 결과에 쓰는 한 줄 요약 — 특수 메시지는 종류 이름으로.
 export function chatSnippet(m) {
-  if (!m) return "삭제된 메시지";
+  if (!m) return t("삭제된 메시지");
   if (m.body) return m.body.length > 60 ? m.body.slice(0, 60) + "…" : m.body;
-  if (m.emoji) return "이모티콘";
-  if (m.puzzle_no != null) return "퍼즐 #" + m.puzzle_no;
-  if (m.review_id != null) return "리뷰 공유";
-  if (m.legacy_slot != null) return "유산 공유";
-  if (m.poll) return "수 투표";
-  if (m.cobo) return "같이 보기 보드";
-  return "메시지";
+  if (m.emoji) return t("이모티콘");
+  if (m.puzzle_no != null) return t("퍼즐 #{0}", m.puzzle_no);
+  if (m.review_id != null) return t("리뷰 공유");
+  if (m.legacy_slot != null) return t("유산 공유");
+  if (m.poll) return t("수 투표");
+  if (m.cobo) return t("같이 보기 보드");
+  return t("메시지");
 }
 
 // ---- 말풍선 위 답장 인용 — 누르면 원문으로 이동. ----
@@ -93,9 +94,9 @@ export function ReplyBar({ target, authorName, onCancel }) {
   return (
     <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", borderLeft: "3px solid " + T.brass }}>
       <span style={{ minWidth: 0, fontSize: 10.5, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        <Reply size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} /><b style={{ color: T.ink }}>{authorName}</b>에게 답장 · {chatSnippet(target)}
+        {tx("{0}{1}에게 답장 · {2}", <Reply size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} />, <b style={{ color: T.ink }}>{authorName}</b>, chatSnippet(target))}
       </span>
-      <button onClick={onCancel} aria-label="답장 취소" className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 0, flexShrink: 0 }}><X size={14} /></button>
+      <button onClick={onCancel} aria-label={t("답장 취소")} className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 0, flexShrink: 0 }}><X size={14} /></button>
     </div>
   );
 }
@@ -109,7 +110,7 @@ function Sheet({ title, onClose, children, width = 360 }) {
         onClick={stop} style={{ width: "100%", maxWidth: width, maxHeight: "90vh", overflowY: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 16, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</span>
-          <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0001", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0001", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {children}
       </motion.div>
@@ -131,10 +132,10 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
     const r = await onSubmit(reason, detail.trim(), alsoBlock);
     setBusy(false);
     if (r && r.ok) onClose();
-    else setMsg(r && r.error === "limit" ? "오늘은 더 신고할 수 없음 (하루 20건)" : "신고 전송 실패. 잠시 후 다시 시도");
+    else setMsg(r && r.error === "limit" ? t("오늘은 더 신고할 수 없음 (하루 20건)") : t("신고 전송 실패. 잠시 후 다시 시도"));
   };
   return (
-    <Sheet title={targetName + "님 신고"} onClose={onClose}>
+    <Sheet title={t("{0}님 신고", (targetName))} onClose={onClose}>
       {snippet && <div style={{ fontSize: 11.5, color: T.inkSoft, padding: "7px 10px", borderRadius: 8, background: "#fff", border: "1px solid #E4D5B6", marginBottom: 10 }}>“{snippet}”</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {REPORT_REASONS.map((r) => (
@@ -142,16 +143,15 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
             style={{ textAlign: "left", padding: "9px 11px", borderRadius: 9, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: T.ink, background: reason === r.key ? "rgba(196,154,80,.2)" : "#fff", border: "1px solid " + (reason === r.key ? T.brass : "#E4D5B6") }}>{r.label}</button>
         ))}
       </div>
-      <textarea value={detail} onChange={(e) => setDetail(e.target.value.slice(0, 500))} placeholder="자세한 내용(선택)" rows={3}
+      <textarea value={detail} onChange={(e) => setDetail(e.target.value.slice(0, 500))} placeholder={t("자세한 내용(선택)")} rows={3}
         style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", fontSize: 12, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }} />
       {!alreadyBlocked && (
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 12, cursor: "pointer" }}>
-          <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} />이 사용자 차단 (서로 메시지 전송 불가)
-        </label>
+          <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} />{t("이 사용자 차단 (서로 메시지 전송 불가)")}</label>
       )}
       {msg && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{msg}</p>}
-      <button onClick={submit} disabled={!reason || busy} className="press" style={primaryBtn(!!reason && !busy)}>{busy ? "보내는 중…" : "신고하기"}</button>
-      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>신고한 메시지는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음</p>
+      <button onClick={submit} disabled={!reason || busy} className="press" style={primaryBtn(!!reason && !busy)}>{busy ? t("보내는 중…") : t("신고하기")}</button>
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>{t("신고한 메시지는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")}</p>
     </Sheet>
   );
 }
@@ -179,19 +179,19 @@ export function ChatSearchPanel({ onSearch, onPick, onClose, nameOf }) {
       <div className="flex items-center gap-2">
         <div style={{ flex: 1, position: "relative" }}>
           <Search size={14} color={T.inkSoft} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="대화 내용 검색" style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 30px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", fontSize: 12.5, color: T.ink }} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("대화 내용 검색")} style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 30px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", fontSize: 12.5, color: T.ink }} />
         </div>
-        <button onClick={onClose} className="press" style={{ padding: "7px 10px", borderRadius: 9, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>닫기</button>
+        <button onClick={onClose} className="press" style={{ padding: "7px 10px", borderRadius: 9, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("닫기")}</button>
       </div>
       {q.trim() && (
         <div style={{ marginTop: 6, maxHeight: 180, overflowY: "auto", borderRadius: 10, border: "1px solid #E4D5B6", background: "#fff" }}>
-          {busy && !res ? <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>찾는 중…</div>
+          {busy && !res ? <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("찾는 중…")}</div>
             : res && res.length ? res.map((m) => (
               <button key={m.id} onClick={() => onPick(m)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", border: "none", borderBottom: "1px solid #F1E6D0", background: "transparent", cursor: "pointer" }}>
-                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {new Date(m.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {fmtDate(m.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
                 <div style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mark(m.body || "")}</div>
               </button>
-            )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>검색 결과 없음</div>}
+            )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("검색 결과 없음")}</div>}
         </div>
       )}
     </div>
@@ -258,10 +258,9 @@ export function ChessSnippetCard({ Board, snippet, onOpen }) {
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 196, marginTop: 4, padding: 6, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
       <ChatMoveBoard Board={Board} root={root} sans={sans} size={184} interactive={false} flip={root ? root.turn === "b" : false} />
       <div className="flex items-center justify-between" style={{ marginTop: 5, gap: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{snippet.kind === "fen" ? "FEN 포지션 · " + (root.turn === "w" ? "백" : "흑") + " 차례" : Math.ceil(sans.length / 2) + "수 진행"}</span>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{snippet.kind === "fen" ? t("FEN 포지션 · {0} 차례", root.turn === "w" ? t("백") : t("흑")) : t("{0}수 진행", (Math.ceil(sans.length / 2)))}</span>
         <button onClick={onOpen} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>
-          <ExternalLink size={11} />분석하기
-        </button>
+          {tx("{0}분석하기", <ExternalLink size={11} />)}</button>
       </div>
     </div>
   );
@@ -276,14 +275,14 @@ export function ChatAttachMenu({ onPoll, onCobo, onClose, anchorStyle }) {
   }, [onClose]);
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 40, width: 220, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", ...anchorStyle }}>
-      <button onClick={onPoll} className="press" style={menuBtn}><BarChart3 size={14} />"여기서 뭐 둘래?" 수 투표</button>
-      <button onClick={onCobo} className="press" style={menuBtn}><Users size={14} />같이 보기 보드</button>
+      <button onClick={onPoll} className="press" style={menuBtn}>{tx("{0}\"여기서 뭐 둘래?\" 수 투표", <BarChart3 size={14} />)}</button>
+      <button onClick={onCobo} className="press" style={menuBtn}>{tx("{0}같이 보기 보드", <Users size={14} />)}</button>
     </div>
   );
 }
 export function AttachButton({ open, onClick }) {
   return (
-    <button onClick={onClick} onMouseDown={stop} onTouchStart={stop} aria-label="더 보내기" aria-expanded={open} className="press"
+    <button onClick={onClick} onMouseDown={stop} onTouchStart={stop} aria-label={t("더 보내기")} aria-expanded={open} className="press"
       style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: open ? T.brass : "#fff", color: open ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
       <Plus size={17} style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform .15s" }} />
     </button>
@@ -300,18 +299,18 @@ export function PositionPickSheet({ Board, title, cta, onSend, onClose }) {
   useEffect(() => { setSans([]); }, [fenText]);
   return (
     <Sheet title={title} onClose={onClose} width={380}>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 8px", lineHeight: 1.5 }}>보드에서 직접 수를 두거나 FEN을 붙여넣어 포지션 지정</p>
-      <input value={fenText} onChange={(e) => setFenText(e.target.value)} placeholder="FEN 붙여넣기 (비우면 시작 위치)"
+      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 8px", lineHeight: 1.5 }}>{t("보드에서 직접 수를 두거나 FEN을 붙여넣어 포지션 지정")}</p>
+      <input value={fenText} onChange={(e) => setFenText(e.target.value)} placeholder={t("FEN 붙여넣기 (비우면 시작 위치)")}
         style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid " + (fenBad ? T.blunder : "#C9B58C"), background: "#fff", fontSize: 11.5, color: T.ink, marginBottom: 8, fontFamily: "ui-monospace,monospace" }} />
-      {fenBad && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "-4px 0 8px" }}>FEN 형식이 올바르지 않음</p>}
+      {fenBad && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "-4px 0 8px" }}>{t("FEN 형식이 올바르지 않음")}</p>}
       <div style={{ display: "flex", justifyContent: "center" }}>
         <ChatMoveBoard Board={Board} root={root} sans={sans} size={300} onMove={(san) => setSans((s) => [...s, san])} flip={root ? root.turn === "b" : false} />
       </div>
       <div className="flex items-center justify-between" style={{ margin: "8px 0 12px", gap: 8 }}>
-        <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{sans.length ? sans.length + "수 둠" : "그대로"} · {chatPosInfo(root, sans).color === "w" ? "백" : "흑"} 차례</span>
+        <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{sans.length ? t("{0}수 둠", (sans.length)) : t("그대로")} · {tx("{0} 차례", chatPosInfo(root, sans).color === "w" ? t("백") : t("흑"))}</span>
         <div className="flex gap-1">
-          <button onClick={() => setSans((s) => s.slice(0, -1))} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><Undo2 size={12} />무르기</button>
-          <button onClick={() => setSans([])} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><RotateCcw size={12} />처음</button>
+          <button onClick={() => setSans((s) => s.slice(0, -1))} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}무르기", <Undo2 size={12} />)}</button>
+          <button onClick={() => setSans([])} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}처음", <RotateCcw size={12} />)}</button>
         </div>
       </div>
       <button onClick={() => !fenBad && onSend(fen)} disabled={fenBad} className="press" style={primaryBtn(!fenBad)}>{cta}</button>
@@ -332,7 +331,7 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
     (votes || []).forEach((v) => { const t = m.get(v.san) || { san: v.san, uids: [] }; t.uids.push(v.uid); m.set(v.san, t); });
     return [...m.values()].sort((a, b) => b.uids.length - a.uids.length);
   }, [votes]);
-  if (!root) return <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>포지션을 읽을 수 없는 투표</div>;
+  if (!root) return <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6" }}>{t("포지션을 읽을 수 없는 투표")}</div>;
   const voting = !myVote || changing;
   const total = (votes || []).length;
   const reveal = async () => {
@@ -343,8 +342,8 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
   };
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 236, padding: 8, borderRadius: 14, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
-      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 900, color: T.ink, marginBottom: 2 }}><BarChart3 size={13} color={T.brass} />여기서 뭐 둘래?</div>
-      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{(root.turn === "w" ? "백" : "흑") + " 차례 · " + (voting ? "보드에서 수를 두면 투표" : "투표 " + total + "표")}</div>
+      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 900, color: T.ink, marginBottom: 2 }}>{tx("{0}여기서 뭐 둘래?", <BarChart3 size={13} color={T.brass} />)}</div>
+      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{t("{0} 차례 · {1}", (root.turn === "w" ? t("백") : t("흑")), voting ? t("보드에서 수를 두면 투표") : t("투표 {0}표", total))}</div>
       <ChatMoveBoard Board={Board} root={root} sans={[]} size={220} interactive={voting} flip={root.turn === "b"} onMove={(san) => { setChanging(false); onVote(san); }} />
       {!voting && (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -363,24 +362,23 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
             );
           })}
           <div className="flex items-center gap-1" style={{ marginTop: 2 }}>
-            <button onClick={() => setChanging(true)} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>표 바꾸기</button>
+            <button onClick={() => setChanging(true)} className="press" style={{ flex: 1, padding: "5px 0", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>{t("표 바꾸기")}</button>
             {engineBest && (
               <button onClick={reveal} disabled={best === "loading"} className="press" style={{ flex: 1.4, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 3, padding: "5px 0", borderRadius: 7, border: "none", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>
-                <Cpu size={11} />{best === "loading" ? "계산 중…" : "엔진 정답 보기"}
+                <Cpu size={11} />{best === "loading" ? t("계산 중…") : t("엔진 정답 보기")}
               </button>
             )}
           </div>
           {best && typeof best === "object" && (
             <motion.div initial={{ opacity: 0, transform: "translateY(4px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }}
-              style={{ fontSize: 11.5, fontWeight: 800, color: T.best, textAlign: "center", marginTop: 2 }}>
-              엔진 최선의 수: {best.san} <span style={{ color: T.inkSoft, fontWeight: 700 }}>({best.evalTxt})</span>
-              {myVote && <span style={{ display: "block", fontSize: 10.5, color: myVote.san === best.san ? T.best : T.inkSoft }}>{myVote.san === best.san ? "정답" : "내 선택: " + myVote.san}</span>}
+              style={{ fontSize: 11.5, fontWeight: 800, color: T.best, textAlign: "center", marginTop: 2 }}>{tx("엔진 최선의 수: {0}", best.san)} <span style={{ color: T.inkSoft, fontWeight: 700 }}>({best.evalTxt})</span>
+              {myVote && <span style={{ display: "block", fontSize: 10.5, color: myVote.san === best.san ? T.best : T.inkSoft }}>{myVote.san === best.san ? t("정답") : t("내 선택: {0}", myVote.san)}</span>}
             </motion.div>
           )}
-          {best === "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, textAlign: "center" }}>엔진 준비 중. 잠시 후 다시 시도</div>}
+          {best === "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, textAlign: "center" }}>{t("엔진 준비 중. 잠시 후 다시 시도")}</div>}
         </div>
       )}
-      {mine && voting && myVote == null && total > 0 && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>{total}명 투표. 나도 두면 결과 표시</div>}
+      {mine && voting && myVote == null && total > 0 && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 4 }}>{tx("{0}명 투표. 나도 두면 결과 표시", total)}</div>}
     </div>
   );
 }
@@ -389,9 +387,9 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
 export function CoboCard({ msg, mine, otherName, onJoin }) {
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 220, padding: "10px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#241509)", border: "1px solid " + T.brass, color: T.ivoryHi, boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
-      <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 900 }}><Users size={15} color={T.brassHi} />같이 보기 보드</div>
-      <div style={{ fontSize: 11, color: "rgba(250,242,226,.75)", margin: "4px 0 9px", lineHeight: 1.45 }}>{mine ? otherName + "님과 한 보드를 같이 봄. 누가 두든 서로의 화면에 바로 표시" : otherName + "님이 같이 보기 보드에 초대"}</div>
-      <button onClick={onJoin} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{mine ? "보드 열기" : "참여하기"}</button>
+      <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 900 }}>{tx("{0}같이 보기 보드", <Users size={15} color={T.brassHi} />)}</div>
+      <div style={{ fontSize: 11, color: "rgba(250,242,226,.75)", margin: "4px 0 9px", lineHeight: 1.45 }}>{mine ? t("{0}님과 한 보드를 같이 봄. 누가 두든 서로의 화면에 바로 표시", (otherName)) : t("{0}님이 같이 보기 보드에 초대", (otherName))}</div>
+      <button onClick={onJoin} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{mine ? t("보드 열기") : t("참여하기")}</button>
     </div>
   );
 }
@@ -434,23 +432,23 @@ export function CoBoardScreen({ Board, sbClient, msg, myUid, myName, otherName, 
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={stop} onTouchStart={stop}
       style={{ position: "fixed", inset: 0, zIndex: 390, background: "linear-gradient(180deg,#F7EFDF 0%,#EDE0C6 100%)", display: "flex", flexDirection: "column", alignItems: "center", padding: "calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)", overflowY: "auto" }}>
       <div className="flex items-center justify-between" style={{ width: "100%", maxWidth: boardPx + 40, marginBottom: 10 }}>
-        <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,.55)", border: "1px solid rgba(90,58,34,.18)", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={16} /></button>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>같이 보기</div>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: peerHere ? T.best : T.inkSoft }}>{peerHere ? "● " + otherName + "님도 보는 중" : "○ " + otherName + "님을 기다리는 중"}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("같이 보기")}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: peerHere ? T.best : T.inkSoft }}>{peerHere ? t("● {0}님도 보는 중", otherName) : t("○ {0}님을 기다리는 중", otherName)}</div>
         </div>
         <span style={{ width: 32 }} />
       </div>
       <ChatMoveBoard Board={Board} root={root} sans={sans} size={boardPx} onMove={(san) => push([...sans, san])} flip={false} />
       <div style={{ width: "100%", maxWidth: boardPx + 40, marginTop: 10 }}>
         <div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginBottom: 6, minHeight: 16 }}>
-          {info.color === "w" ? "백" : "흑"} 차례{lastBy && sans.length ? " · 마지막 수: " + (lastBy === myUid ? (myName || "나") : otherName) : ""}
+          {tx("{0} 차례{1}", info.color === "w" ? t("백") : t("흑"), lastBy && sans.length ? t(" · 마지막 수: {0}", lastBy === myUid ? (myName || t("나")) : otherName) : "")}
         </div>
-        <div style={{ fontSize: 12, color: T.ink, fontFamily: "ui-monospace,monospace", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "7px 10px", minHeight: 20, marginBottom: 10, wordBreak: "break-word" }}>{movesTxt || "둔 수 없음. 먼저 두기"}</div>
+        <div style={{ fontSize: 12, color: T.ink, fontFamily: "ui-monospace,monospace", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "7px 10px", minHeight: 20, marginBottom: 10, wordBreak: "break-word" }}>{movesTxt || t("둔 수 없음. 먼저 두기")}</div>
         <div className="flex gap-2">
-          <button onClick={() => push(sans.slice(0, -1))} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><Undo2 size={13} />무르기</button>
-          <button onClick={() => push([])} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}><RotateCcw size={13} />처음부터</button>
-          <button onClick={() => onOpenAnalysis(root, sans)} className="press" style={{ flex: 1.3, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 12, fontWeight: 800, cursor: "pointer" }}><ExternalLink size={13} />분석 탭에서 열기</button>
+          <button onClick={() => push(sans.slice(0, -1))} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}무르기", <Undo2 size={13} />)}</button>
+          <button onClick={() => push([])} disabled={!sans.length} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}처음부터", <RotateCcw size={13} />)}</button>
+          <button onClick={() => onOpenAnalysis(root, sans)} className="press" style={{ flex: 1.3, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 0", borderRadius: 9, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{tx("{0}분석 탭에서 열기", <ExternalLink size={13} />)}</button>
         </div>
       </div>
     </motion.div>
@@ -462,9 +460,9 @@ export function ChatHeaderActions({ onSearch, onReport, blocked, onToggleBlock }
   const b = { width: 30, height: 30, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
   return (
     <div className="flex items-center gap-1" style={{ marginLeft: "auto" }}>
-      <button onClick={onSearch} aria-label="대화 검색" title="대화 검색" className="press" style={b}><Search size={14} /></button>
-      <button onClick={onReport} aria-label="신고" title="신고" className="press" style={b}><Flag size={14} /></button>
-      <button onClick={onToggleBlock} aria-label={blocked ? "차단 해제" : "차단"} title={blocked ? "차단 해제" : "차단"} className="press" style={{ ...b, color: blocked ? T.blunder : T.inkSoft, borderColor: blocked ? T.blunder : "#C9B58C" }}><Ban size={14} /></button>
+      <button onClick={onSearch} aria-label={t("대화 검색")} title={t("대화 검색")} className="press" style={b}><Search size={14} /></button>
+      <button onClick={onReport} aria-label={t("신고")} title={t("신고")} className="press" style={b}><Flag size={14} /></button>
+      <button onClick={onToggleBlock} aria-label={blocked ? t("차단 해제") : t("차단")} title={blocked ? t("차단 해제") : t("차단")} className="press" style={{ ...b, color: blocked ? T.blunder : T.inkSoft, borderColor: blocked ? T.blunder : "#C9B58C" }}><Ban size={14} /></button>
     </div>
   );
 }
@@ -490,7 +488,7 @@ export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickCho
     );
   }
   return (
-    <div role="listbox" aria-label="명령어" onMouseDown={(e) => e.preventDefault()}
+    <div role="listbox" aria-label={t("명령어")} onMouseDown={(e) => e.preventDefault()}
       style={{ marginBottom: 6, maxHeight: 220, overflowY: "auto", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 8px 20px -10px rgba(0,0,0,.35)", padding: 4 }}>
       {sugg.items.map((c, i) => (
         <button key={c.name} role="option" aria-selected={i === activeIdx} onClick={() => onPick(c)} onMouseEnter={() => onHover && onHover(i)} className="press"
@@ -499,7 +497,7 @@ export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickCho
           <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 1 }}>{c.desc}</span>
         </button>
       ))}
-      <div style={{ fontSize: 9.5, color: T.inkSoft, padding: "4px 9px 2px" }}>↑↓ 고르기 · Tab/Enter 채우기 · Esc 닫기</div>
+      <div style={{ fontSize: 9.5, color: T.inkSoft, padding: "4px 9px 2px" }}>{t("↑↓ 고르기 · Tab/Enter 채우기 · Esc 닫기")}</div>
     </div>
   );
 }
@@ -510,8 +508,8 @@ export function ChatHelpCard({ commands, onPick, onClose }) {
   commands.forEach((c) => { let g = groups.find((x) => x.name === c.group); if (!g) { g = { name: c.group, items: [] }; groups.push(g); } g.items.push(c); });
   return (
     <div style={{ position: "relative", marginBottom: 6, padding: "10px 13px", borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", maxHeight: 260, overflowY: "auto" }}>
-      <button onClick={onClose} aria-label="도움말 닫기" className="press" style={{ position: "absolute", top: 6, right: 6, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 2 }}><X size={14} /></button>
-      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, marginBottom: 2 }}>명령어 (나에게만 표시)</div>
+      <button onClick={onClose} aria-label={t("도움말 닫기")} className="press" style={{ position: "absolute", top: 6, right: 6, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 2 }}><X size={14} /></button>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{t("명령어 (나에게만 표시)")}</div>
       {groups.map((g) => (
         <div key={g.name} style={{ marginTop: 6 }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>{g.name}</div>
@@ -522,7 +520,51 @@ export function ChatHelpCard({ commands, onPick, onClose }) {
           ))}
         </div>
       ))}
-      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>블라인드 대국 중에는 "2.Nf3", "2...Nc6"처럼 수순 번호를 붙여 전송</div>
+      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>{t("블라인드 대국 중에는 \"2.Nf3\", \"2...Nc6\"처럼 수순 번호를 붙여 전송")}</div>
     </div>
+  );
+}
+
+// ---- (v0.6.0, 스토어 심사 대비) 프로필 화면 신고·차단 메뉴 + 설정의 차단 목록 ----
+// 채팅 밖(프로필·차단 목록)에서도 같은 신고 시트(ReportSheet)·차단 동작을 쓴다.
+export function UserSafetyMenu({ blocked, onReport, onToggleBlock }) {
+  const [open, setOpen] = useState(false);
+  const item = { ...menuBtn, color: "#F4A0A0" };
+  return (
+    <span style={{ position: "relative", display: "inline-flex" }}>
+      <button onClick={() => setOpen((v) => !v)} aria-label={t("신고·차단")} aria-expanded={open} title={t("신고·차단")} className="press"
+        style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag size={14} /></button>
+      {open && (
+        <>
+          <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />
+          <div role="menu" style={{ position: "absolute", right: 0, top: 36, zIndex: 21, width: 150, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+            <button onClick={() => { setOpen(false); onReport(); }} className="press" style={item}>{tx("{0}신고", <Flag size={14} />)}</button>
+            <button onClick={() => { setOpen(false); onToggleBlock(); }} className="press" style={item}><Ban size={14} />{blocked ? t("차단 해제") : t("차단")}</button>
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+export function BlockListSheet({ items, loading, onUnblock, onClose }) {
+  const [busy, setBusy] = useState(null);
+  return (
+    <Sheet title={t("차단 목록")} onClose={onClose}>
+      {loading ? <p style={{ fontSize: 12.5, color: T.inkSoft, margin: 0 }}>{t("불러오는 중…")}</p>
+        : !items.length ? <p style={{ fontSize: 12.5, color: T.inkSoft, margin: 0 }}>{t("차단한 사용자 없음")}</p>
+          : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {items.map((u) => (
+                <div key={u.uid} className="flex items-center justify-between" style={{ gap: 10, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.name}</span>
+                  <button disabled={busy === u.uid} onClick={async () => { setBusy(u.uid); await onUnblock(u.uid); setBusy(null); }} className="press"
+                    style={{ flexShrink: 0, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("차단 해제")}</button>
+                </div>
+              ))}
+            </div>
+          )}
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "10px 0 0", lineHeight: 1.5 }}>{t("차단하면 서로 메시지·친구 요청·도전장 전송 불가. 상대에게는 알리지 않음")}</p>
+    </Sheet>
   );
 }

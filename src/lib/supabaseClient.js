@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { apiUrl } from "./siteConfig.js";
 
 /* ===== Supabase 백엔드 (선택) — Vite 환경변수로 주입, 미설정 시 자동으로 localStorage 폴백 =====
    VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 를 .env / 호스트 환경변수에 넣으면 활성화됨 */
@@ -66,7 +67,7 @@ export async function sbDelete(table, filter) { const r = await fetch(SB_URL + "
 export async function pvpFinishVerified(gameId, status) {
   if (!SB_ON || !SB_TOKEN) return false;
   try {
-    const r = await fetch("/api/pvp-finish", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ game_id: gameId, status }) });
+    const r = await fetch(apiUrl("/api/pvp-finish"), { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ game_id: gameId, status }) });
     return r.ok;
   } catch { return false; }
 }

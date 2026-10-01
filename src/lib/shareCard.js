@@ -2,6 +2,7 @@ import { T, PIECE_IMG_SETS } from "./theme.js";
 import { QCOLOR, ANALYSIS_KIND_ROWS, BADGE_ICON_SRC } from "./moveKinds.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 
+import { t } from "./i18n.js";
 // 리뷰 요약 공유 이미지 카드(1080×1080) — 순수 Canvas 2D. OpenChess 로고·기물·수 등급 배지는 같은
 // 출처(public/)라 그대로 그린다. chess.com 아바타는 다른 도메인이라 <img crossOrigin="anonymous">로
 // 불러온다 — 서버가 CORS를 허용하지 않으면 오염된 이미지가 그려지는 게 아니라 로드 자체가
@@ -142,7 +143,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
   if (resultText) {
     ctx.font = "900 34px " + SITE_FONT;
     const rw = ctx.measureText(resultText).width;
-    ctx.fillStyle = resultText === "승리" ? "#8FB55E" : resultText === "패배" ? "#C8453B" : "#E0B53A";
+    ctx.fillStyle = resultText === t("승리") ? "#8FB55E" : resultText === t("패배") ? "#C8453B" : "#E0B53A";
     ctx.fillText(resultText, cx, 178);
     ctx.strokeStyle = "rgba(196,154,80,.5)"; ctx.fillStyle = T.brass;
     for (const dir of [-1, 1]) {
@@ -173,16 +174,16 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     }
     if (accHi === side) {
       ctx.font = "800 12px " + SITE_FONT;
-      const tw = ctx.measureText("정확도 우위").width + 18;
+      const tw = ctx.measureText(t("정확도 우위")).width + 18;
       ctx.fillStyle = "rgba(143,181,94,.2)"; ctx.strokeStyle = "rgba(143,181,94,.7)"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(x + boxW - tw - 14, boxY + 14, tw, 22, 11); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#A9CC7C"; ctx.textAlign = "center"; ctx.fillText("정확도 우위", x + boxW - 14 - tw / 2, boxY + 29);
+      ctx.fillStyle = "#A9CC7C"; ctx.textAlign = "center"; ctx.fillText(t("정확도 우위"), x + boxW - 14 - tw / 2, boxY + 29);
     }
     drawAvatar(ctx, isWhite ? whiteAvatarImg : blackAvatarImg, bcx, boxY + 52, 36, name[0].toUpperCase(), isMe ? T.brassHi : null);
     if (isMe) {
       ctx.fillStyle = T.brassHi; ctx.beginPath(); ctx.arc(bcx + 28, boxY + 80, 12, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#241509"; ctx.font = "800 12px " + SITE_FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("나", bcx + 28, boxY + 81); ctx.textBaseline = "alphabetic";
+      ctx.fillText(t("나"), bcx + 28, boxY + 81); ctx.textBaseline = "alphabetic";
     }
     ctx.font = "700 22px " + SITE_FONT;
     const kingW = kingImg ? 19 * (kingImg.width / kingImg.height) : 0;
@@ -196,7 +197,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     }
     ctx.fillStyle = CREAM; ctx.textAlign = "left"; ctx.fillText(fitName, gx, boxY + 121);
     ctx.textAlign = "center";
-    if (rating != null) { ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = CREAM_SOFT; ctx.fillText("레이팅 " + rating, bcx, boxY + 144); }
+    if (rating != null) { ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = CREAM_SOFT; ctx.fillText(t("레이팅 {0}", rating), bcx, boxY + 144); }
     ctx.fillStyle = T.brassHi; ctx.font = "800 44px " + SITE_FONT;
     ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "—", bcx, boxY + 192);
     // 그 진영의 수 등급 분포 막대(표와 같은 순서·색).
@@ -215,7 +216,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     }
     ctx.restore();
     ctx.font = "600 12px " + SITE_FONT; ctx.fillStyle = CREAM_FAINT;
-    ctx.fillText("정확도 · 수 분포", bcx, boxY + 236);
+    ctx.fillText(t("정확도 · 수 분포"), bcx, boxY + 236);
   };
   drawPlayer("w", pad);
   drawPlayer("b", pad + boxW + gap);
@@ -239,8 +240,8 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
   const sq = Math.max(3, cell - Math.max(1, cell * 0.16));
   const rowGap = 5;
   ctx.font = "700 12px " + SITE_FONT; ctx.fillStyle = CREAM_SOFT; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillText("백", pad, y + sq / 2);
-  ctx.fillText("흑", pad, y + sq + rowGap + sq / 2);
+  ctx.fillText(t("백"), pad, y + sq / 2);
+  ctx.fillText(t("흑"), pad, y + sq + rowGap + sq / 2);
   ctx.textBaseline = "alphabetic";
   for (let i = 0; i < perSide; i++) {
     for (const row of [0, 1]) {
@@ -265,7 +266,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     // 머리글과 행을 한 덩어리로 세로 가운데 정렬한다(행이 적을 때 머리글만 위에 떠 있지 않게).
     const top = y + Math.max(0, (bottom - y - headH - rowH * rows.length) / 2);
     ctx.font = "700 12px " + SITE_FONT; ctx.fillStyle = CREAM_FAINT; ctx.textAlign = "center";
-    ctx.fillText("백", tx + 34, top + 10); ctx.fillText("수 등급", cx, top + 10); ctx.fillText("흑", tx + tw - 34, top + 10);
+    ctx.fillText(t("백"), tx + 34, top + 10); ctx.fillText(t("수 등급"), cx, top + 10); ctx.fillText(t("흑"), tx + tw - 34, top + 10);
     let ry = top + headH;
     const maxN = Math.max(1, ...rows.map((r) => Math.max(r.w, r.b)));
     const barMax = 190, barH = 6;
