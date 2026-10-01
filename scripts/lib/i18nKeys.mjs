@@ -21,7 +21,10 @@ export function listSourceFiles(dir = SRC_ROOT, out = []) {
 export function extractFromFile(file) {
   const src = readFileSync(file, "utf8");
   const ast = parser.parse(src, { sourceType: "module", plugins: ["jsx"] });
-  const keys = new Map(), dynamic = [], badBinding = [], deferred = new Map();
+  const keys = new Map(), dynamic = [], badBinding = [], deferred = new Map(), txKinds = new Map();
+  // 이 파일이 lucide-react에서 가져온 아이콘 이름 — tx()에 아이콘이 끼워진 자리를 알아내는 데 쓴다.
+  const icons = new Set();
+  for (const n of ast.program.body) if (n.type === "ImportDeclaration" && n.source.value === "lucide-react") n.specifiers.forEach((sp) => icons.add(sp.local.name));
   traverse(ast, {
     CallExpression(p) {
       const c = p.node.callee;
@@ -31,20 +34,27 @@ export function extractFromFile(file) {
       const isImport = b && b.kind === "module" && b.path.parent.source && /i18n\.js$/.test(b.path.parent.source.value);
       const a = p.node.arguments[0];
       if (!isImport) { if (a && a.type === "StringLiteral" && /[가-힣]/.test(a.value)) badBinding.push(p.node.loc.start.line); return; }
+      if (a && a.type === "StringLiteral" && !DEV_KEYS.has(a.value)) {
+        // 자리표시자 번호별 종류: "icon"(lucide 아이콘 = 글자·숫자가 아님), "jsx"(그 밖의 요소), "str"(문자열 상수·t() 결과 = 숫자가 아님), "val"(그 밖의 식)
+        const isStr = (x) => x.type === "StringLiteral" || x.type === "TemplateLiteral" || (x.type === "CallExpression" && x.callee.type === "Identifier" && (x.callee.name === "t" || x.callee.name === "tx")) || (x.type === "ConditionalExpression" && isStr(x.consequent) && isStr(x.alternate)) || (x.type === "ParenthesizedExpression" && isStr(x.expression));
+        const kinds = p.node.arguments.slice(1).map((x) => x.type === "JSXElement" ? (x.openingElement.name.type === "JSXIdentifier" && icons.has(x.openingElement.name.name) ? "icon" : "jsx") : isStr(x) ? "str" : "val");
+        const prev = txKinds.get(a.value) || []; kinds.forEach((kd, i) => { if (!prev[i] || prev[i] === "val" || kd === "icon") prev[i] = kd; }); txKinds.set(a.value, prev);
+      }
       if (a && a.type === "StringLiteral") { if (DEV_KEYS.has(a.value)) return; const fn = p.findParent((x) => x.isFunctionDeclaration() && x.parentPath.isProgram()); if (fn && fn.node.id && DEV_FUNCS.has(fn.node.id.name)) return; if (fn && fn.node.id && DEFERRED_FUNCS.has(fn.node.id.name)) { const dl = deferred.get(a.value) || []; dl.push(p.node.loc.start.line); deferred.set(a.value, dl); return; } const l = keys.get(a.value) || []; l.push(p.node.loc.start.line); keys.set(a.value, l); }
       else dynamic.push(p.node.loc.start.line);
     },
   });
-  return { keys, dynamic, badBinding, deferred };
+  return { keys, dynamic, badBinding, deferred, txKinds };
 }
 export function extractAll() {
-  const byFile = {}; const all = new Map(); const deferredAll = new Set();
+  const byFile = {}; const all = new Map(); const deferredAll = new Set(); const txKinds = new Map();
   for (const f of listSourceFiles()) {
     const r = extractFromFile(f); const rel = relative(SRC_ROOT, f);
     byFile[rel] = r;
+    for (const [k, kinds] of r.txKinds) { const prev = txKinds.get(k) || []; kinds.forEach((kd, i) => { if (!prev[i] || prev[i] === "val" || kd === "icon") prev[i] = kd; }); txKinds.set(k, prev); }
     for (const k of r.deferred.keys()) if (!all.has(k)) deferredAll.add(k);
     for (const [k, lines] of r.keys) { const e = all.get(k) || { files: new Set(), lines: [] }; e.files.add(rel); e.lines.push(...lines.map((l) => rel + ":" + l)); all.set(k, e); }
   }
   for (const k of all.keys()) deferredAll.delete(k);
-  return { byFile, all, deferredAll };
+  return { byFile, all, deferredAll, txKinds };
 }

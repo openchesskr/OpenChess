@@ -23,7 +23,7 @@ import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../l
 import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 
-import { t, tx } from "../lib/i18n.js";
+import { t, tx, lcLatin } from "../lib/i18n.js";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
 // 냈다(분석 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
@@ -3967,7 +3967,7 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
     if (threatOut) threatOut.keyword = t("체크메이트");
     if (kind === "brilliant") {
       const mateMoveInfo = sanSrc(beforeBoard, san, color);
-      const piece = mateMoveInfo ? PIECE_KOR[mateMoveInfo.piece] : t("기물");
+      const piece = mateMoveInfo ? PIECE_KOR[mateMoveInfo.piece] : lcLatin(t("기물"));
       return [MEC_PHRASES.checkmateBrilliant(piece)];
     }
     if (kind === "only") return [MEC_PHRASES.checkmateOnly()];
@@ -4604,7 +4604,8 @@ export function computeDexLayout(treeData, contentVer) {
   return out;
 }
 /* ============================================================ 퍼즐 탭 ============================================================ */
-export const PIECE_KOR = { K: t("킹"), Q: t("퀸"), R: t("룩"), B: t("비숍"), N: t("나이트"), P: t("폰") };
+// 기물 이름은 문장 중간에 끼워 쓰므로(영어·스페인어는 소문자 "queen"·"dama") lcLatin으로 소문자화한다. 단독 라벨(승격 선택 등)은 t("퀸")을 직접 쓴다.
+export const PIECE_KOR = { K: lcLatin(t("킹")), Q: lcLatin(t("퀸")), R: lcLatin(t("룩")), B: lcLatin(t("비숍")), N: lcLatin(t("나이트")), P: lcLatin(t("폰")) };
 // (v0.1.0) 퍼즐 테마 다중 태그 — 실수/부정확한 수를 응징·전환하는 수가 그 자체로 탁월한(희생) 수이면,
 // "실수 응징하기(또는 우위 점하기) 위치에서 생성한 퍼즐"과 "그 탁월한 수 위치에서 생성한 퍼즐"이
 // setupSans+mistakeSan(실제 체스 포지션)이 완전히 같은데도 서로 다른 id(테마 접두어로 구분)로 갈려
@@ -4752,8 +4753,8 @@ export function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);
   if (!phase) return null;
   return compact
-    ? <span title={t("{0} 포지션에서 시작", (GAME_PHASE_LABEL[phase]))} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
-    : <span title={t("{0} 포지션에서 시작", (GAME_PHASE_LABEL[phase]))} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
+    ? <span title={t("{0} 포지션에서 시작", lcLatin(GAME_PHASE_LABEL[phase]))} style={{ fontSize: 9.5, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, flexShrink: 0, padding: "1px 5px", borderRadius: 5, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>
+    : <span title={t("{0} 포지션에서 시작", lcLatin(GAME_PHASE_LABEL[phase]))} style={{ fontSize: 11, fontWeight: 800, color: "#1B4C86", fontFamily: SITE_FONT, padding: "3px 7px", borderRadius: 8, border: "1px solid " + T.only, background: "rgba(62,124,196,.22)" }}>{GAME_PHASE_LABEL[phase]}</span>;
 }
 /* ── (20차 기능1) 퍼즐 트리 유틸 ──
    구버전 퍼즐(lines/solution만 있는)도 공통 접두사를 병합해 동일한 트리 구조로 다룬다.
