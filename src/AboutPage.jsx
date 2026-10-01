@@ -955,6 +955,27 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.6.0", date: "2026.10.1",
+    summary: "신고·차단 확대 · 개인정보처리방침·이용약관 · 앱 출시 준비.",
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: "프로필 신고·차단 · 차단 목록 · 개인정보처리방침·이용약관 · 앱 출시 준비" },
+    sections: [
+      { cat: "feature", items: [
+        "프로필 화면에서 사용자 신고·차단. 설정 탭 '차단 목록'에서 차단 해제.",
+        "개인정보처리방침(/privacy)·이용약관(/terms) 페이지 추가. 회원가입 화면·설정 탭에서 이동.",
+      ] },
+      { cat: "ui", items: [
+        "chess.com 로고 이미지를 글자 표기로 변경.",
+      ] },
+      { cat: "perf", items: [
+        "화면별 파일 분리로 내부 구조 개선. 사용 방식 변화 없음.",
+      ] },
+      { cat: "fix", items: [
+        "차단이 채팅에만 적용되던 문제 수정. 차단하면 친구 요청·도전장도 불가, 친구 추천에도 표시되지 않음.",
+        "공유·초대 링크를 항상 openchess.kr 주소로 생성.",
+      ] },
+    ],
+  },
+  {
     version: "0.5.9", date: "2026.9.30",
     summary: "도전장 전송 오류 수정 · 수 등급 판정 개선 · 사이트 문구 개조식 통일.",
     highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: "도전장 전송 수정 · 탁월한 수·유일한 수 판정 · 이론 수 판정 · 문구 개조식 통일" },

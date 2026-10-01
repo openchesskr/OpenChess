@@ -55,23 +55,39 @@
 - 안드로이드 하드웨어 뒤로가기 버튼을 앱의 화면 스택(`pushScreen`/history)에 연결할 것.
 
 **심사에서 걸릴 부분**
-- 신고·차단 기능 없음: 자유 텍스트 채팅(`chatSend`)·닉네임·프로필 사진·퍼즐 이름 등 사용자 콘텐츠가 있으면 Apple은 신고·차단·부적절한 내용 거르기를 요구한다(Google Play도 유사). DB 표와 화면 모두 필요.
-- 개인정보처리방침·이용약관 페이지 없음: 두 스토어 모두 주소 필수. 수집 항목(이메일, chess.com 아이디, 프로필 사진, 보드 사진 인식 시 Google Gemini로 보내는 사진)을 문서와 스토어 데이터 항목(App Privacy·Data safety)에 똑같이 적을 것.
+- 신고·차단 기능(v0.6.0 반영: 채팅·프로필 신고, 차단 목록, 서버 강제): 자유 텍스트 채팅(`chatSend`)·닉네임·프로필 사진·퍼즐 이름 등 사용자 콘텐츠가 있으면 Apple은 신고·차단·부적절한 내용 거르기를 요구한다(Google Play도 유사). DB 표와 화면 모두 필요.
+- 개인정보처리방침·이용약관 페이지(v0.6.0에 `/privacy`·`/terms` 추가, 법률 검토 필요): 두 스토어 모두 주소 필수. 수집 항목(이메일, chess.com 아이디, 프로필 사진, 보드 사진 인식 시 Google Gemini로 보내는 사진)을 문서와 스토어 데이터 항목(App Privacy·Data safety)에 똑같이 적을 것.
 - 계정 탈퇴는 이미 있음(계정 센터) — 서버 데이터까지 실제로 지워지는지 확인하고, Google Play용 웹 삭제 요청 주소를 따로 마련할 것.
-- chess.com 로고: `public/`의 chess.com 로고 이미지는 남의 상표라 심사에서 문제될 수 있다 — 허락을 받거나 글자로 바꿀 것.
+- chess.com 로고(v0.6.0에 글자로 교체 완료): `public/`의 chess.com 로고 이미지는 남의 상표라 심사에서 문제될 수 있다 — 허락을 받거나 글자로 바꿀 것.
 - "웹사이트를 감싼 앱" 거절 위험: Apple은 웹을 그대로 담기만 한 앱을 거절하기도 한다. 친구 도전장·오늘의 퍼즐 푸시 알림(FCM/APNs + 서버 발송), 진동 피드백, 뒤로가기 연결 등 앱다운 기능을 갖출 것.
 - 결제: 지금은 없지만 코인을 돈 받고 팔게 되면 스토어 인앱결제만 쓸 수 있다 — 상점 경제 설계 시 미리 고려.
 
 **이미 돼 있는 것**: 안전 영역 여백(`env(safe-area-inset-*)`), `100dvh` 높이, 모바일 터치 드래그, 저장소 접근이 `store` 객체 하나로 모여 있어 앱 전용 저장소로 바꾸기 쉬움, 설치용 manifest·아이콘.
 
 **추천 순서**
-1. 작은 준비: API 주소·사이트 주소 상수 분리, 개인정보처리방침·이용약관 페이지, chess.com 로고 정리
-2. 신고·차단 기능(DB 포함), `App.jsx` 탭별 분할(앱 필수 조건은 아니지만, 34,000줄 한 파일에 앱 전용 분기를 넣고 관리하기 어려워 앱 작업 전에 끝내 두는 게 맞음)
+1. (v0.6.0 완료) 작은 준비: API 주소·사이트 주소 상수 분리, 개인정보처리방침·이용약관 페이지, chess.com 로고 정리
+2. (v0.6.0 완료) 신고·차단 기능(채팅·프로필·차단 목록, 서버 강제), `App.jsx` 탭별 분할(앱 필수 조건은 아니지만, 34,000줄 한 파일에 앱 전용 분기를 넣고 관리하기 어려워 앱 작업 전에 끝내 두는 게 맞음)
 3. 엔진 필요할 때 내려받기, 시스템 브라우저 로그인 + 딥링크, 앱 링크 연결 파일(`apple-app-site-association`, `assetlinks.json`)을 openchess.kr에 배포
 4. 개발자 계정·D-U-N-S·비공개 테스트 14일
 5. 0.9.0: 앱 틀(Capacitor 등), 푸시 알림, 진동, 뒤로가기 버튼 연결
 
 ## 버전 기록
+
+### OpenChess v0.6.0 — 2026/10/1
+
+**보안·안전**
+- 차단 강제 범위 확대(BUG-042): 차단이 채팅 전송에만 걸려 있어 차단한 상대가 친구 요청·도전장·친구 추천으로 계속 닿을 수 있었다. `chat_blocked_between`을 `friend_request`·`friend_request_by_mid`(반환 `'blocked'`)·`pvp_invite_friend`(예외 `blocked`)에 적용하고 `friend_suggestions`에서 양방향 차단 관계 제외. 함수가 먼저 정의되도록 `user_blocks` 블록을 `friend_edges` 절 앞으로 이동. `check-block-enforcement`(prebuild)가 연락 경로 4곳과 추천, 프로필·차단 목록 UI 존재를 검사.
+- 프로필 신고: `user_report`에 `p_message_id = null`(프로필 신고) 경로 추가. 서버가 신고 순간의 아이디·닉네임·소개·사진 여부를 `message_snapshot`에 복사.
+
+**기능**
+- 프로필 화면(`UserProfilePage`) 상단 신고·차단 메뉴(`UserSafetyMenu`). 신고 시트는 채팅과 같은 `ReportSheet` 재사용(차단 동시 선택 가능).
+- 설정 탭 '차단 목록'(`BlockListSheet`): 차단한 사용자 이름 목록과 차단 해제.
+- 개인정보처리방침(`/privacy`)·이용약관(`/terms`): App을 거치지 않는 정적 페이지(`src/LegalPage.jsx`, `main.jsx` 경로 분기). 회원가입 폼 동의 문구와 설정 탭 링크.
+
+**시스템**
+- 앱 출시 준비 1단계: `src/lib/siteConfig.js`(`SITE_URL`·`apiUrl`·`CONTACT_EMAIL`). 서버 API 호출(`/api/scan-board`·`/api/lichess`·`/api/pvp-finish`)은 `apiUrl()`, 공유·초대 링크(퍼즐·리뷰·친구 초대)는 `SITE_URL`. 앱 빌드는 `VITE_API_BASE`로 API 주소 지정. OAuth `redirect_to`는 현재 출처 유지(앱 로그인 설계 때 변경). `check-site-config`(prebuild)가 상대 `/api/` 호출·공유 링크의 `window.location.origin`·chess.com 로고 이미지 재도입을 막는다.
+- chess.com 로고 이미지 3장(`public/`) 삭제, 글자 표기(`ChesscomLogo`)로 대체(상표 심사 대응).
+- App.jsx 분할(Phase 3): 34,241줄 → `src/App.jsx` 1,766줄 + `src/app/*.jsx` 12개(learn·dex·puzzle·quest·settings·play·review·social·profile·shell·common·changelog). 의존 관계 분석으로 한 탭에서만 쓰는 코드는 그 탭 파일로, 공용은 `common.jsx`. 동작 변경 없음. `check-app-split`(prebuild)이 import 순환·방향·App.jsx 3,000줄 상한 검사. 검사 스크립트 8개는 `scripts/lib/appSource.mjs`로 App 전체 소스를 읽음. CHANGELOG 배열 위치는 `src/app/changelog.js`.
 
 ### OpenChess v0.5.9 — 2026/9/30
 
