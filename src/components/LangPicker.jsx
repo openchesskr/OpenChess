@@ -1,4 +1,4 @@
-// (v0.7.0, 다국어) 국기가 붙은 언어 선택 상자. 눌러서 펼치고 고르면 저장 후 새로고침한다(setLang).
+// (v0.6.0, 다국어) 국기가 붙은 언어 선택 상자. 눌러서 펼치고 고르면 저장 후 새로고침한다(setLang).
 // 설정 탭(기본형)과 정적 페이지 머리글(compact: 작은 알약 모양, 오른쪽 정렬)이 함께 쓴다.
 import React, { useState, useEffect, useRef } from "react";
 import { Check, ChevronDown } from "lucide-react";

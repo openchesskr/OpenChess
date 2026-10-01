@@ -1,4 +1,4 @@
-// (v0.7.0, 다국어) English 번역. 키 = 한국어 원문, 값 = 번역. 체스 용어는 glossary.js의 표기를 쓴다. 자리표시자 {0}, 복수형 {0|단수|복수}.
+// (v0.6.0, 다국어) English 번역. 키 = 한국어 원문, 값 = 번역. 체스 용어는 glossary.js의 표기를 쓴다. 자리표시자 {0}, 복수형 {0|단수|복수}.
 // AI가 초안을 쓴 번역이다. 원어민 검수 전에는 미세한 어감이 어색할 수 있다.
 export default {
   "탁월한 수": "Brilliant move",
@@ -1753,8 +1753,6 @@ export default {
   "체스 용어(체크메이트·앙파상·캐슬링 등)를 언어별 표준 용어로 번역.": "Chess terms (checkmate, en passant, castling, etc.) are translated with each language's standard terminology.",
   "날짜·숫자 표기가 선택한 언어에 맞춰 표시됨.": "Dates and numbers are displayed in the selected language's format.",
   "레슨 본문·오프닝 설명 일부는 한국어로 표시됨. 순차 번역 예정.": "Some lesson text and opening descriptions are shown in Korean. Translation is planned.",
-  "5개 언어 선택 · 체스 용어 표준 번역": "5 languages · standard chess terminology",
-  "다국어 지원 · 체스 용어 표준 번역.": "Multilingual support · standard chess terminology.",
   "설정 탭 정리. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합.": "Settings tidied up. Account and language cards moved to the top; \"Show controlled squares\" merged into Visual effects.",
   "처음 접속하면 기기 언어로 자동 설정. 직접 선택하면 그 언어로 고정.": "On first visit the language is set automatically from your device. Choosing one yourself locks it.",
   "번역 화면의 복수형·대소문자·문장 연결 오류 수정. 체스 용어 표기 전수 점검.": "Fixed plural, capitalization, and sentence-assembly errors in translated screens. Chess terminology re-checked throughout.",
@@ -1762,4 +1760,6 @@ export default {
   "수 블록의 Lichess 통계를 위쪽 블록부터 도착하는 대로 표시.": "Lichess stats on move blocks now appear as they arrive, starting from the top blocks.",
   "수 블록의 키워드가 끝에서 되돌아오지 않고 같은 순서로 계속 흘러감.": "Move block keywords now keep flowing in the same order instead of jumping back at the end.",
   "엔진 depth가 한 단계 깊어질 때마다 수 블록 평가치·정렬 갱신.": "Move block evaluations and ordering refresh each time the engine depth increases by one.",
+  "다국어 지원 · 신고·차단 확대 · 개인정보처리방침·이용약관 · 분석 탭 개선 · 앱 출시 준비.": "Multilingual support · expanded reporting and blocking · Privacy Policy and Terms of Service · Analysis tab improvements · app launch prep.",
+  "5개 언어 선택 · 체스 용어 표준 번역 · 프로필 신고·차단 · 개인정보처리방침·이용약관 · 분석 탭 개선": "5 languages · standard chess terminology · profile reporting and blocking · Privacy Policy and Terms · Analysis tab improvements",
 };

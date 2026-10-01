@@ -1,4 +1,4 @@
-// (v0.7.0, 다국어) 소스에서 t()/tx() 키를 뽑는 공용 도구 — check-i18n·번역 작업 스크립트가 같이 쓴다.
+// (v0.6.0, 다국어) 소스에서 t()/tx() 키를 뽑는 공용 도구 — check-i18n·번역 작업 스크립트가 같이 쓴다.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";

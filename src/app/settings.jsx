@@ -695,7 +695,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
     return () => clearTimeout(t);
   }, [loginShakeTick]);
   const card = { background: T.paper, borderRadius: 14, padding: 16, border: "1px solid #DCCBA8", marginTop: 12, boxShadow: "0 1px 0 rgba(255,255,255,.5) inset, 0 4px 14px rgba(20,10,4,.12)" };
-  // (v0.7.0, 설정 탭 정리) 카드 제목을 아이콘 + 굵은 글씨로 통일. 카드마다 제각각이던 제목 크기·간격을 한 곳에서 맞춘다.
+  // (v0.6.0, 설정 탭 정리) 카드 제목을 아이콘 + 굵은 글씨로 통일. 카드마다 제각각이던 제목 크기·간격을 한 곳에서 맞춘다.
   const cardTitle = (Icon, text) => (
     <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
       <Icon size={16} style={{ color: T.brass, flexShrink: 0 }} />
@@ -774,7 +774,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine} earnedTitles={earnedTitles} onEquipTitle={onEquipTitle} isDev={isDev} isCodev={isCodev}
           devOn={devOn} codevOn={codevOn} chesscomStatus={chesscomStatus} chesscom={chesscom} />
       )}
-      {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
+      {/* (v0.6.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
       <div style={card}>
         {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
         <LangPicker />
@@ -938,7 +938,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label={t("수 등급 이펙트")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
-        {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.7.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
+        {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.6.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>

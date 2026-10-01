@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.7.0, 다국어) i18n 런타임 회귀 테스트 — t()/tx()의 복수형·한국어 조사·소문자화가 언어별로 맞게 나오는지 확인한다.
+/** (v0.6.0, 다국어) i18n 런타임 회귀 테스트 — t()/tx()의 복수형·한국어 조사·소문자화가 언어별로 맞게 나오는지 확인한다.
  *  배경: tx()가 복수형 표지를 처리하지 않아 영어 화면에 "suggested {0|move|moves}"가 그대로 보인 적이 있다(BUG-047).
  *  언어는 모듈이 처음 불릴 때 정해지므로 언어마다 자식 프로세스를 따로 띄워 검사한다. 실행: node scripts/test-i18n-runtime.mjs */
 import { spawnSync } from "node:child_process";
