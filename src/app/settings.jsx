@@ -733,7 +733,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
 
       {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("언어")} / Language</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{lang === "en" ? t("언어") : t("언어") + " / Language"}</div>
         <p style={{ fontSize: 11, color: T.inkSoft, margin: "0 0 10px" }}>{t("선택하면 페이지가 새로고침됨")}</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="radiogroup" aria-label="Language">
           {LANGS.map((l) => {
