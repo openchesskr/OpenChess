@@ -1269,8 +1269,8 @@ function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
       {/* 글자 레이어 — 가운데 엠블럼과 네 버튼 이름. */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", fontFamily: SITE_FONT }}>
         <div style={{ ...box(50 - MG_HEX_S, MG_HEX_CY - MG_HEX_A, 2 * MG_HEX_S, 2 * MG_HEX_A), display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.9cqw", lineHeight: 1, letterSpacing: "-.02em", textAlign: "center", fontWeight: 900 }}>
+          {/* (v0.6.1, 사용자 요청) "MiniGame" 글자는 없애고 로고만 정중앙에 둔다. */}
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", width: "72%", height: "auto", filter: "drop-shadow(0 1px 1px rgba(90,58,34,.25))" }} />
-          <span style={{ fontSize: "4.4cqw", color: T.brass }}>MiniGame</span>
         </div>
         {MG_LABELS.map((lb) => {
           const st = stats && stats[lb.gameType];

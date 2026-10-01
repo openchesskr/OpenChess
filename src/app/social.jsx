@@ -734,10 +734,11 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
       <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
         <div className="flex items-center gap-2">
           <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("프로필")}</span>
+          {/* (v0.6.1, 사용자 요청) "프로필" 글자 자리에 @아이디 — 카드 안의 @아이디 줄은 없앴다. */}
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{pub || pubUsername ? <>@{(pub && pub.displayId) || pubUsername}{roleIcon(pubUsername)}</> : t("프로필")}</span>
         </div>
-        {me && pubUid && !isSelf && <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} />}
-        {!wide && <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>}
+        {/* (v0.6.1) 우상단 X 버튼은 없애고 그 자리를 점 3개 메뉴(신고·차단)로 — 내 프로필이면 자리만 비운다. */}
+        {me && pubUid && !isSelf ? <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} /> : <span style={{ width: 30 }} />}
       </div>
       <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
@@ -751,8 +752,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(pub.displayId || pubUsername)}{roleIcon(pubUsername)}</span>
+              <div className="flex items-center justify-end" style={{ marginBottom: 12 }}>
                 {/* (사용자 요청, 재조정) /user 페이지 전용 토글 크기 — 이전 1.75배와 0.5배의 중간값. */}
                 {statsViewToggle(statsView, setStatsView, 1.1)}
               </div>
@@ -904,7 +904,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
           {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.brass, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12, fontWeight: 800, color: T.ivoryHi }}>
-            {mine ? t("{0}님에게 {1}신청함", (otherUsername), what) : t("{0}님이 {1}신청함", (otherUsername), what)}
+            {mine ? t("{0}님에게 {1} 신청함", (otherUsername), what) : t("{0}님이 {1} 신청함", (otherUsername), what)}
             <span style={{ display: "block", minHeight: 14, fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{detail}</span>
           </div>
         </div>
@@ -922,7 +922,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
             <button onClick={() => onAccepted(liveGame)} className="press" style={{ width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{t("수락됨. 입장하기")}</button>
           ) : (
             <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(244,238,226,.65)" }}>
-              {status === "accepted" ? (liveGame ? t("끝난 {0}", special ? t("대결") : t("대국")) : t("수락됨")) : status === "declined" ? t("거절됨") : t("취소됨")}
+              {status === "accepted" ? (liveGame ? (special ? t("대결 종료됨") : t("대국 종료됨")) : t("수락됨")) : status === "declined" ? t("거절됨") : t("취소됨")}
             </div>
           )
         )}
@@ -1573,43 +1573,66 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const { dx, dy } = sideBubbleAnchor(anchorEl.getBoundingClientRect(), w, h, mine, 8, bounds);
     setMenuDx(dx); setMenuDy(dy);
   };
-  return (
-    <div style={{ padding: 18, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, height: narrow ? "100%" : undefined, boxSizing: "border-box" }}>
-      {/* (v0.3.3 UI) 채팅창 자체가 "채팅"+닫기(X) 헤더를 따로 갖는 곳(ChatsModal)에서는 대화를
-          선택하면 그 헤더를 숨기므로, 이 헤더 하나가 뒤로가기(←)·닫기 역할을 모두 겸한다 —
-          ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
-      <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
-        <button onClick={onBack} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
-        {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
-            지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독.
-            (사용자 요청) 사진·아이디 크기를 1.5배(28→42, 14→21)로 키우고, 둘 다 누르면 그 유저의
-            프로필로 이동한다(onOpenUserProfile이 이미 pushState로 히스토리를 쌓아 두므로 뒤로가기를
-            누르면 popstate 핸들러가 이 채팅창 위의 프로필 오버레이만 닫고 채팅창으로 자연스럽게
-            돌아온다 — 별도 배선 불필요). */}
-        <button onClick={() => setViewProfile(otherUsername)} aria-label={t("{0} 프로필 보기", (otherUsername))} className="press" style={{ position: "relative", display: "inline-flex", flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
-          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 42, height: 42, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
-            : <span style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
-          <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={13} />
-        </button>
-        <button onClick={() => setViewProfile(otherUsername)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", minWidth: 0, textAlign: "left" }}>
-          <span style={{ fontSize: 21, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{otherUsername}</span>
-        </button>
-        {/* (v0.5.7) 대화 검색·신고·차단 */}
-        <ChatHeaderActions onSearch={() => setSearchOpen((v) => !v)} onReport={() => setReportFor({ msg: null })} blocked={blockedByMe} onToggleBlock={() => setBlocked(!blockedByMe)} />
-      </div>
-      {searchOpen && <ChatSearchPanel onSearch={(q) => chatSearch(myUid, otherUid, q)} nameOf={nameOf} onClose={() => setSearchOpen(false)} onPick={(m) => { setSearchOpen(false); jumpTo(m.id, m.created_at); }} />}
-      {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
-          높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
-      <div ref={listRef} onScroll={onListScroll} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>{t("대화 없음. 첫 메시지 보내기")}</div>}
-        {/* (v0.5.7) 위로 스크롤하면 이전 메시지를 이어서 불러온다(버튼으로도) */}
-        {hasOlder && msgs.length > 0 && (
-          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
-            {loadingOlder ? <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{t("이전 메시지 불러오는 중…")}</span>
-              : <button onClick={loadOlder} className="press" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 999, padding: "3px 10px", cursor: "pointer" }}>{t("이전 메시지 더 보기")}</button>}
+  // (v0.6.1, 사용자 요청) 채팅에 보이는 모든 요소(말풍선·카드·시스템 알림)에 반응을 달 수 있게 한다 — 각 종류의 렌더(renderMsg)는 그대로 두고, 이 래퍼가
+  // ① 더블클릭(터치는 빠른 두 번 탭)하면 하트 반응 ② 반응 칩을 말풍선 바로 아래에 붙여 표시 ③ 자체 메뉴가 없는 카드(대국 신청·명령어 카드·보상 알림)는
+  // 우클릭·꾹 누르기로 반응 메뉴를 연다. 반응 칩과 메뉴의 반응 줄은 모든 종류가 같은 toggleReaction을 쓴다.
+  const heartGuardRef = useRef({ id: null, t: 0 });
+  const lastTapRef = useRef({ id: null, t: 0 });
+  const tapMovedRef = useRef(false);
+  const [heartPop, setHeartPop] = useState(null); // { id, k }
+  const heartMsg = (m) => {
+    const now = Date.now();
+    if (heartGuardRef.current.id === m.id && now - heartGuardRef.current.t < 600) return; // 더블클릭 + 터치 탭이 한 번에 두 번 불리는 것 방지
+    heartGuardRef.current = { id: m.id, t: now };
+    setHeartPop({ id: m.id, k: now });
+    setTimeout(() => setHeartPop((p) => (p && p.k === now ? null : p)), 900);
+    if (!(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === "❤️")) toggleReaction(m, "❤️", true);
+  };
+  const wrapMsg = (m, el) => {
+    const mine = m.from_uid === myUid;
+    const rx = reactions[m.id];
+    const generic = m.pvp_invite_id != null || !!m.share_reward || !!(m.body && /^\/help$/i.test(m.body.trim()));
+    const myReacts = new Set((rx || []).filter((r) => r.uid === myUid).map((r) => r.emoji));
+    const textInput = (e) => e.target && e.target.closest && e.target.closest("input, textarea");
+    const handlers = {
+      onDoubleClick: (e) => { if (!textInput(e)) heartMsg(m); },
+      onTouchStart: (e) => {
+        tapMovedRef.current = false;
+        if (generic) { const anchor = e.currentTarget; clearTimeout(longPressTimerRef.current); longPressTimerRef.current = setTimeout(() => openMsgMenu(m.id, anchor, mine, CHAT_MENU_W, 60), 520); }
+      },
+      onTouchMove: () => { tapMovedRef.current = true; if (generic) clearTimeout(longPressTimerRef.current); },
+      onTouchEnd: (e) => {
+        if (generic) clearTimeout(longPressTimerRef.current);
+        if (tapMovedRef.current || textInput(e)) return;
+        const now = Date.now();
+        if (lastTapRef.current.id === m.id && now - lastTapRef.current.t < 320) { lastTapRef.current = { id: null, t: 0 }; heartMsg(m); }
+        else lastTapRef.current = { id: m.id, t: now };
+      },
+    };
+    if (generic) handlers.onContextMenu = (e) => { e.preventDefault(); openMsgMenu(m.id, e.currentTarget, mine, CHAT_MENU_W, 60); };
+    return (
+      <div key={m.id} {...handlers} style={{ position: "relative", display: "flex", flexDirection: "column", gap: 6 }}>
+        {el}
+        {generic && menuFor === m.id && (
+          <ChatMsgMenu style={{ [mine ? "right" : "left"]: 8, top: 0, transform: "none" }} myReacts={myReacts}
+            onReact={(emoji) => toggleReaction(m, emoji, !myReacts.has(emoji))} />
+        )}
+        <AnimatePresence>
+          {heartPop && heartPop.id === m.id && (
+            <motion.span key={heartPop.k} aria-hidden="true" initial={{ opacity: 0, scale: 0.3 }} animate={{ opacity: [0, 1, 1, 0], scale: [0.3, 1.35, 1.1, 1.5], y: [0, 0, -4, -14] }} transition={{ duration: 0.85, times: [0, 0.25, 0.6, 1] }}
+              style={{ position: "absolute", left: "50%", top: "42%", marginLeft: -15, fontSize: 30, lineHeight: 1, zIndex: 40, pointerEvents: "none", filter: "drop-shadow(0 2px 4px rgba(120,20,20,.35))" }}>❤️</motion.span>
+          )}
+        </AnimatePresence>
+        {/* 반응 칩 — 말풍선 아래에 바짝 붙여(겹쳐) 표시한다. 상대 말풍선은 프로필 사진 폭만큼 들여 쓴다. */}
+        {rx && rx.length > 0 && (
+          <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", paddingLeft: mine ? 0 : 26 + 6 + 6, paddingRight: mine ? 6 : 0, marginTop: -13, position: "relative", zIndex: 2 }}>
+            <ReactionChips list={rx} myUid={myUid} align={mine ? "flex-end" : "flex-start"} dense onToggle={(emoji, on) => toggleReaction(m, emoji, on)} />
           </div>
         )}
-        {msgs.map((m, i) => {
+      </div>
+    );
+  };
+  const renderMsg = (m, i) => {
           const mine = m.from_uid === myUid;
           // (v0.4.3 기능) 실시간 대국 신청 카드 — pvp_invite_friend가 함께 남긴 메시지.
           if (m.pvp_invite_id != null) {
@@ -1657,11 +1680,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
             const onDown = (e) => {
               dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
-              if (mine) {
+              {
                 clearTimeout(longPressTimerRef.current);
                 const anchorEl = e.currentTarget;
                 longPressTimerRef.current = setTimeout(() => {
-                  openMsgMenu(m.id, anchorEl, true);
+                  openMsgMenu(m.id, anchorEl, mine, CHAT_MENU_W, 60);
                   dragRef.current = null; setDrag(null);
                 }, 480);
               }
@@ -1675,7 +1698,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               setDrag({ id: m.id, dx: d2 });
             };
             const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
-            const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, true); };
+            const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine, CHAT_MENU_W, 60); };
             const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
               <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
@@ -1689,10 +1712,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
-                {menuFor === m.id && mine && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>
-                  </div>
+                {menuFor === m.id && (
+                  <ChatMsgMenu style={{ [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))" }}
+                    myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
+                    onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
+                    onDelete={mine ? () => doDelete(m) : null} />
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {/* (v0.3.4 UI) 프로필 카드의 유산 타일(LegacyStoneTile)과 정확히 같은 디자인으로 통일 —
@@ -1719,11 +1743,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             const timeTxt = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + " " + ampm + " " + h12 + ":" + String(d.getMinutes()).padStart(2, "0");
             const onDown = (e) => {
               dragRef.current = { id: m.id, startX: e.clientX ?? (e.touches && e.touches[0].clientX) ?? 0, mine };
-              if (mine) {
+              {
                 clearTimeout(longPressTimerRef.current);
                 const anchorEl = e.currentTarget;
                 longPressTimerRef.current = setTimeout(() => {
-                  openMsgMenu(m.id, anchorEl, true);
+                  openMsgMenu(m.id, anchorEl, mine, CHAT_MENU_W, 60);
                   dragRef.current = null; setDrag(null);
                 }, 480);
               }
@@ -1737,7 +1761,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               setDrag({ id: m.id, dx: d2 });
             };
             const onUp = () => { clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); };
-            const onContext = (e) => { if (!mine) return; e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, true); };
+            const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine, CHAT_MENU_W, 60); };
             const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
               <div key={m.id} className="flex items-end" style={{ justifyContent: mine ? "flex-end" : "flex-start", gap: 6, position: "relative" }}>
@@ -1751,10 +1775,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                   onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
-                {menuFor === m.id && mine && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", right: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>
-                  </div>
+                {menuFor === m.id && (
+                  <ChatMsgMenu style={{ [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))" }}
+                    myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
+                    onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
+                    onDelete={mine ? () => doDelete(m) : null} />
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {/* (사용자 요청) 리뷰 공유 카드의 chess.com 대국 표시를 /user 프로필의 chess.com
@@ -1830,7 +1855,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               clearTimeout(longPressTimerRef.current);
               const anchorEl = e.currentTarget;
               longPressTimerRef.current = setTimeout(() => {
-                openMsgMenu(m.id, anchorEl, mine);
+                openMsgMenu(m.id, anchorEl, mine, CHAT_MENU_W, 120);
                 dragRef.current = null; setDrag(null);
               }, 480);
             };
@@ -1846,7 +1871,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
             // (사용자 요청) 컴퓨터(마우스) 환경에서는 꾹 누르기 대신 오른쪽 클릭으로도 전달/삭제
             // 메뉴를 열 수 있게 한다 — 브라우저 기본 컨텍스트 메뉴는 막고, 같은 openMsgMenu(안전한
             // 중앙 쪽 배치 계산까지 그대로 재사용)로 연다.
-            const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine); };
+            const onContext = (e) => { e.preventDefault(); clearTimeout(longPressTimerRef.current); dragRef.current = null; setDrag(null); openMsgMenu(m.id, e.currentTarget, mine, CHAT_MENU_W, 120); };
             // (v0.2.6 기능) 상대 말풍선 묶음 중 가장 위에만 프로필 사진을 왼쪽에 표시.
             const showAvatar = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             return (
@@ -1862,10 +1887,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                   onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp} onContextMenu={onContext}>
                 {Math.abs(dx) > 6 && <span style={{ position: "absolute", [mine ? "right" : "left"]: 2, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, whiteSpace: "nowrap", pointerEvents: "none" }}>{timeTxt}</span>}
                 {menuFor === m.id && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ position: "absolute", [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))", zIndex: 20, display: "flex", gap: 4, background: T.ebony2, borderRadius: 8, border: "1px solid #000", padding: 3, boxShadow: "0 6px 16px -4px rgba(0,0,0,.5)" }}>
-                    <button onClick={() => { setMenuFor(null); setForwardTarget(pz || null); }} disabled={!pz} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 10.5, border: "none", cursor: pz ? "pointer" : "default", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 3 }}>{tx("{0}전달", <Send size={10} />)}</button>
-                    {mine && <button onClick={() => doDelete(m)} className="press" style={{ padding: "5px 9px", borderRadius: 6, background: "transparent", color: "#F4A0A0", fontWeight: 700, fontSize: 10.5, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>{t("삭제")}</button>}
-                  </div>
+                  <ChatMsgMenu style={{ [mine ? "right" : "left"]: "calc(100% + 8px)", top: "50%", transform: "translate(" + menuDx + "px, calc(-50% + " + menuDy + "px))" }}
+                    myReacts={new Set((reactions[m.id] || []).filter((r) => r.uid === myUid).map((r) => r.emoji))}
+                    onReact={(emoji) => toggleReaction(m, emoji, !(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === emoji))}
+                    onForward={pz ? () => { setMenuFor(null); setForwardTarget(pz); } : null}
+                    onDelete={mine ? () => doDelete(m) : null} />
                 )}
                 <div style={{ position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", touchAction: "pan-y" }}>
                   {/* (UI) 사용자 요청 — 채팅 공유 퍼즐 블록도 퍼즐 탭의 PuzzleCard와 동일한 UI를 그대로 쓴다. */}
@@ -1915,9 +1941,6 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                       ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
                       : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
                   </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start", paddingLeft: mine ? 0 : 32, marginTop: -2 }}>
-                  <ReactionChips list={reactions[m.id]} myUid={myUid} align={mine ? "flex-end" : "flex-start"} onToggle={(emoji, on) => toggleReaction(m, emoji, on)} />
                 </div>
               </React.Fragment>
             );
@@ -2021,18 +2044,57 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
               {(() => {
                 // (v0.5.7) 본문 속 FEN·수순은 미니 보드로, 반응은 말풍선 아래 칩으로.
                 const snip = m.body ? chessSnippetOf(m.body) : null;
-                const rx = reactions[m.id];
-                if (!snip && !(rx && rx.length)) return null;
+                if (!snip) return null;
                 return (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", paddingLeft: mine ? 0 : 32, marginTop: -2 }}>
-                    {snip && <ChessSnippetCard Board={Board} snippet={snip} onOpen={() => (snip.kind === "fen" ? onOpenBoardFen && onOpenBoardFen(snip.fen) : onOpenBoardSans && onOpenBoardSans(snip.sans))} />}
-                    <ReactionChips list={rx} myUid={myUid} align={mine ? "flex-end" : "flex-start"} onToggle={(emoji, on) => toggleReaction(m, emoji, on)} />
+                    <ChessSnippetCard Board={Board} snippet={snip} onOpen={() => (snip.kind === "fen" ? onOpenBoardFen && onOpenBoardFen(snip.fen) : onOpenBoardSans && onOpenBoardSans(snip.sans))} />
                   </div>
                 );
               })()}
             </React.Fragment>
           );
-        })}
+  };
+  return (
+    <div style={{ padding: 18, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, height: narrow ? "100%" : undefined, boxSizing: "border-box" }}>
+      {/* (v0.3.3 UI) 채팅창 자체가 "채팅"+닫기(X) 헤더를 따로 갖는 곳(ChatsModal)에서는 대화를
+          선택하면 그 헤더를 숨기므로, 이 헤더 하나가 뒤로가기(←)·닫기 역할을 모두 겸한다 —
+          ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
+      <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
+        <button onClick={onBack} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
+            지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독.
+            (사용자 요청) 사진·아이디 크기를 1.5배(28→42, 14→21)로 키우고, 둘 다 누르면 그 유저의
+            프로필로 이동한다(onOpenUserProfile이 이미 pushState로 히스토리를 쌓아 두므로 뒤로가기를
+            누르면 popstate 핸들러가 이 채팅창 위의 프로필 오버레이만 닫고 채팅창으로 자연스럽게
+            돌아온다 — 별도 배선 불필요). */}
+        <button onClick={() => setViewProfile(otherUsername)} aria-label={t("{0} 프로필 보기", (otherUsername))} className="press" style={{ position: "relative", display: "inline-flex", flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+          {otherPhoto ? <img src={otherPhoto} alt="" style={{ width: 42, height: 42, borderRadius: 11, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
+            : <span style={{ width: 42, height: 42, borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 17, flexShrink: 0 }}>{(otherUsername || "?")[0].toUpperCase()}</span>}
+          <OnlineDot lastSeenMs={otherPresence[otherUid]} overlay size={13} />
+        </button>
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <button onClick={() => setViewProfile(otherUsername)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", minWidth: 0, textAlign: "left" }}>
+            <span style={{ fontSize: 21, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{otherUsername}</span>
+          </button>
+          {/* (v0.6.1, 사용자 요청) 아이디 아래 작은 글씨로 마지막 접속 시각 */}
+          {!!otherPresence[otherUid] && <span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkSoft, marginTop: 1, whiteSpace: "nowrap" }}>{t("최근 활동 : {0}", relTimeFromMs(otherPresence[otherUid]))}</span>}
+        </div>
+        {/* (v0.5.7) 대화 검색·신고·차단 */}
+        <ChatHeaderActions onSearch={() => setSearchOpen((v) => !v)} onReport={() => setReportFor({ msg: null })} blocked={blockedByMe} onToggleBlock={() => setBlocked(!blockedByMe)} />
+      </div>
+      {searchOpen && <ChatSearchPanel onSearch={(q) => chatSearch(myUid, otherUid, q)} nameOf={nameOf} onClose={() => setSearchOpen(false)} onPick={(m) => { setSearchOpen(false); jumpTo(m.id, m.created_at); }} />}
+      {/* (사용자 요청) 위 사진·아이디가 1.5배 커진 만큼(28→42px, 대략 14px 차이), 그 여백을 대화 목록
+          높이에서 그대로 빼 전체 카드 크기는 늘어나지 않도록 한다. */}
+      <div ref={listRef} onScroll={onListScroll} style={{ height: narrow ? undefined : 306, flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto", background: "#FBF5E8", border: "1px solid #E4D5B6", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+        {msgs.length === 0 && <div style={{ fontSize: 12, color: T.inkSoft, textAlign: "center", marginTop: 20 }}>{t("대화 없음. 첫 메시지 보내기")}</div>}
+        {/* (v0.5.7) 위로 스크롤하면 이전 메시지를 이어서 불러온다(버튼으로도) */}
+        {hasOlder && msgs.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
+            {loadingOlder ? <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{t("이전 메시지 불러오는 중…")}</span>
+              : <button onClick={loadOlder} className="press" style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 999, padding: "3px 10px", cursor: "pointer" }}>{t("이전 메시지 더 보기")}</button>}
+          </div>
+        )}
+        {msgs.map((m, i) => wrapMsg(m, renderMsg(m, i)))}
         {/* (v0.1.4 기능) 실시간 타이핑 표시 — 3-dot 바운스 모션 + "입력 중" 텍스트. */}
         <AnimatePresence>
         {otherTyping && (
