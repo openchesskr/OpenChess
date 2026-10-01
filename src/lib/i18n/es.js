@@ -1758,4 +1758,8 @@ export default {
   "설정 탭 정리. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합.": "Pestaña de Ajustes reorganizada. Las tarjetas de cuenta e idioma pasan arriba y «Mostrar casillas controladas» se integra en Efectos visuales.",
   "처음 접속하면 기기 언어로 자동 설정. 직접 선택하면 그 언어로 고정.": "En la primera visita el idioma se establece según tu dispositivo. Si eliges uno, queda fijo.",
   "번역 화면의 복수형·대소문자·문장 연결 오류 수정. 체스 용어 표기 전수 점검.": "Corregidos errores de plurales, mayúsculas y unión de frases en las pantallas traducidas. Terminología de ajedrez revisada por completo.",
+  "분석 탭 보드를 더 크게 표시. 엔진 라인·평가치 막대도 같은 폭으로 확대.": "Tablero más grande en la pestaña de Análisis. Las líneas del motor y la barra de evaluación se ensanchan igual.",
+  "수 블록의 Lichess 통계를 위쪽 블록부터 도착하는 대로 표시.": "Las estadísticas de Lichess de los bloques de jugadas aparecen según llegan, empezando por los de arriba.",
+  "수 블록의 키워드가 끝에서 되돌아오지 않고 같은 순서로 계속 흘러감.": "Las palabras clave de los bloques de jugadas siguen fluyendo en el mismo orden en lugar de volver al principio.",
+  "엔진 depth가 한 단계 깊어질 때마다 수 블록 평가치·정렬 갱신.": "Las evaluaciones y el orden de los bloques se actualizan cada vez que la profundidad del motor aumenta en uno.",
 };
