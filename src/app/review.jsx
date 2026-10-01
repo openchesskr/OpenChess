@@ -17,7 +17,7 @@ import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, friendEdges, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, usersProfiles } from "./common.jsx";
 
-import { t, tx } from "../lib/i18n.js";
+import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 // (버그 수정) movetime 없이 "go depth 14"만 보내면 워커 큐의 기본 워치독(15000ms)에 걸릴 때까지
 // 걸릴 수 있어, 코치 카드에서 이 결과를 기다리는 UI가 몇 초씩(plies가 2면 최악 30초 가까이) 응답이
@@ -148,7 +148,7 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
   let typeSentence;
   if (sub.type === "underpromo") {
     const info = sanSrc(board, san, color);
-    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || t("기물");
+    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || lcLatin(t("기물"));
     const reason = underpromoReason(board, san, color);
     if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 스테일메이트(무승부). 대신 {0} 승진", promoKor);
     else if (reason === "safety") typeSentence = t("퀸으로 승진하면 바로 잡힘. {0} 승진은 안전하게 남음", promoKor);
@@ -167,7 +167,7 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     try {
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
-        const endKor = drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복");
+        const endKor = lcLatin(drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복"));
         reasonSentence = t("이미 불리한 상황. {0} 수순으로 {1} 무승부를 강제", drawSeek.line.join(" "), endKor);
       }
     } catch { }
@@ -232,7 +232,7 @@ function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
   return best;
 }
 function relocationPlanPhrase(plan) {
-  return t("{0} 재배치 계획: {1}", (PIECE_KOR[plan.piece] || t("기물")), plan.squares.join(" → "));
+  return t("{0} 재배치 계획: {1}", (PIECE_KOR[plan.piece] || lcLatin(t("기물"))), plan.squares.join(" → "));
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
 // (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이

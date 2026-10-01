@@ -91,13 +91,14 @@ function batchimOf(w) { // 0: 받침 없음, 1: 받침 있음, 2: ㄹ 받침
 }
 // 복수형: 번역문에서 "{0|move|moves}" — 앞 값이 하나일 때/아닐 때의 단어를 고른다(영어·스페인어: 1만 단수, 힌디어: 0과 1이 단수, 일본어·중국어는 단수 형태 하나).
 function pluralPick(n, one, other) { const x = Number(n); if (lang === "ja" || lang === "zh" || lang === "ko") return one; if (lang === "hi") return x === 0 || x === 1 ? one : other; return x === 1 ? one : other; }
+function josaAttach(v, josa) { const [a, b] = josa.split("/"); const bt = batchimOf(v); return v + (a === "으로" ? (bt === 1 ? "으로" : "로") : (bt ? a : b)); }
 function fmt(s, params) {
   if (!params.length) return s;
   return s.replace(/\{(\d+)\|([^|}]*)\|([^}]*)\}/g, (m, i, a, b) => (i < params.length ? pluralPick(params[i], a, b) : m))
     .replace(/\{(\d+)(?::([^}]*))?\}/g, (m, i, josa) => {
       if (i >= params.length) return m;
       const v = String(params[i]);
-      if (josa && lang === DEFAULT_LANG) { const [a, b] = josa.split("/"); const bt = batchimOf(v); return v + (a === "으로" ? (bt === 1 ? "으로" : "로") : (bt ? a : b)); }
+      if (josa && lang === DEFAULT_LANG) return josaAttach(v, josa);
       return v;
     });
 }
@@ -107,14 +108,22 @@ export function t(key, ...params) {
   if (lang !== DEFAULT_LANG) { const v = catalog[key]; if (v == null) { if (missing.size < 5000) missing.add(key); } else s = v; }
   return fmt(s, params);
 }
+/** 문장 중간에 끼워 쓸 때: 영어·스페인어는 첫 글자를 소문자로("Queen"→"queen", "Dama"→"dama"). 나머지 언어는 그대로. 고유명사(오프닝 이름·사용자 이름)에는 쓰지 말 것. */
+export function lcLatin(s) { return (lang === "en" || lang === "es") && typeof s === "string" && s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
 /** 번역 + JSX 끼워 넣기. 자리표시자 자리에 React 노드를 그대로 넣은 Fragment를 돌려준다. */
 export function tx(key, ...params) {
   const s = lang !== DEFAULT_LANG && catalog[key] != null ? catalog[key] : key;
   if (lang !== DEFAULT_LANG && catalog[key] == null && missing.size < 5000) missing.add(key);
-  const parts = s.split(/(\{\d+\})/);
+  // 복수형·한국어 조사 표지도 t()와 똑같이 처리한다. 자리에 들어가는 값이 JSX(<b>{n}</b> 등)여도 안에 든 숫자·글자를 읽어 판단한다.
+  const plain = (p) => (p == null || typeof p === "boolean" ? "" : typeof p === "object" ? (Array.isArray(p) ? p : [p.props && p.props.children]).map(plain).join("") : String(p));
+  const resolved = s.replace(/\{(\d+)\|([^|}]*)\|([^}]*)\}/g, (m, i, a, b) => (+i < params.length ? pluralPick(plain(params[+i]), a, b) : m));
+  const parts = resolved.split(/(\{\d+(?::[^}]*)?\})/);
   return createElement(Fragment, null, ...parts.map((p, i) => {
-    const m = /^\{(\d+)\}$/.exec(p);
-    return m ? createElement(Fragment, { key: i }, params[+m[1]]) : p;
+    const m = /^\{(\d+)(?::([^}]*))?\}$/.exec(p);
+    if (!m) return p;
+    const v = params[+m[1]];
+    if (m[2] && lang === DEFAULT_LANG && (typeof v === "string" || typeof v === "number")) return josaAttach(String(v), m[2]);
+    return createElement(Fragment, { key: i }, v);
   }));
 }
 /** 언어별 숫자·날짜 서식(인도는 hi-IN의 10만·천만 단위 구분). */
