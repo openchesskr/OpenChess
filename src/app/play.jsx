@@ -22,7 +22,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -3517,7 +3517,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
       setHist((h) => [...h, entry]);
       setView(rushView(res.state, ids));
       setBusy(false);
-      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash(t("상대 {0} 상대가 미끼를 물음", RUSH_PIECE_SUBJ[rest[0].piece[1]]), "info"); }
+      if (rest.some((e) => e.kind === "lure")) { fx("capture"); buzz(50); flash(t("상대 {0:이/가} 미끼를 물음", PIECE_KOR[rest[0].piece[1]]), "info"); }
       else if (rest.some((e) => e.kind === "reply")) { fx("capture"); flash(t("체크. 상대 응수"), "info"); }
       if (res.status === "win") {
         setStatus("win");
@@ -3553,7 +3553,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const canDrag = (i) => enabled && !busy && status === "play" && !!(cur.state.board[i] && cur.state.board[i][0] === "w");
   return { view, selected, targets, danger, showDanger, setShowDanger, onCell, canDrag, undo, reset, restart, moves, status, msg, shakeControls, lastMove: cur.last, busy };
 }
-const RUSH_PIECE_SUBJ = { P: t("폰이"), N: t("나이트가"), B: t("비숍이"), R: t("룩이"), Q: t("퀸이"), K: t("킹이") };
+
 function RushMsg({ msg }) {
   return (
     <div style={{ minHeight: 26, display: "flex", justifyContent: "center", alignItems: "center", flexShrink: 0, margin: "6px 0 2px" }}>
