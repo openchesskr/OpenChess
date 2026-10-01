@@ -2218,7 +2218,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
       const color = validated.length % 2 === 0 ? "w" : "b";
       const clean = t_.replace(/[+#]/g, "");
       const src = sanSrc(board, clean, color);
-      if (!src) { setPgnErr(t("기보에 불법적인 수가 포함되어 있어요({0}{1}번째 수).", validated.length, 1)); return; }
+      if (!src) { setPgnErr(t("기보에 불법적인 수가 포함되어 있어요({0}번째 수).", validated.length + 1)); return; }
       board = applySan(board, t_, color);
       validated.push(t_);
     }
