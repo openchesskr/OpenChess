@@ -12,8 +12,8 @@ import { readFileSync } from "node:fs";
 import { Chess } from "chess.js";
 import { decodeAttackRow, attackGradeOfMate, pickAttackPosition, markAttackSeen, loadAttackSeen, dedupeAttackPositions } from "../src/lib/attackPool.js";
 
-const MIN = { S: 150, A: 150, B: 100, C: 50 };       // 등급별 최소 개수
-const MIN_THEMES = 8;                                // 서로 다른 대표 테마(th[0]) 최소 종류
+const MIN = { S: 1000, A: 1000, B: 500, C: 300 };       // 등급별 최소 개수
+const MIN_THEMES = 12;                               // 서로 다른 대표 테마(th[0]) 최소 종류
 const MAX_THEME_SHARE = 0.7;                         // 한 테마가 풀 전체에서 차지할 수 있는 최대 비율
 const fails = [];
 const rows = JSON.parse(readFileSync("src/data/attackPositions.json", "utf8"));

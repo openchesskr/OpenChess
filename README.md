@@ -74,6 +74,32 @@
 
 ## 버전 기록
 
+### OpenChess v0.6.1 — 2026/10/1
+
+**버그 수정**
+- 분석 탭 수 블록 Lichess 통계 비정상 표시(BUG-050): 포지션 전체 통계(`fetchLichess(sans)`)가 한 번 실패하면 `posGames`가 비어 "1,500,000 / —"와 빈 채택률 막대만 남았다(보충 조회는 나중에 성공해 회수만 채워지고, 채택률은 `posGames`를 클로저로 붙잡은 `statPumpRef`가 계산 못 함). ① 실패하면 1.5초·3초 간격으로 두 번 더 시도 ② `posGames`가 정해지면 채택률이 빈 수를 다시 계산 ③ 끝내 못 얻으면 수별 회수의 합을 전체 표본으로 사용. 요청을 가로채는 Playwright 모의 응답으로 수정 전(`/ — —` 계속)·후(채워짐)를 확인.
+- 나이트 레이스 거리 판정 연출 어긋남(BUG-051): 보드 틀(`BOARD_GLOSS`)이 2px 테두리인데 연출·잡는 기물이 칸 크기를 `size/8`로 계산해 오른쪽·아래 칸일수록 최대 4px 어긋났다. `KNIGHT_GRID_BORDER`로 `(size-4)/8` 계산. `check-board-overlay`(prebuild)가 상수·계산식·`BOARD_GLOSS` 두께 일치를 검사.
+- 무한 체크메이트 포지션 반복(BUG-052): 풀이 295개뿐이고 pick % 개수로 골라 같은 포지션이 자주 반복. 아래 "무한 체크메이트" 참고. `check-attack-positions`(prebuild).
+
+**기능**
+- 일반 대국 전적·레이팅·랭킹: 일반 대국 설정 화면에 미니게임과 같은 통계 카드(레이팅·전적·최고 레이팅)와 랭킹 버튼, 랭킹 화면은 미니게임과 같은 `MinigameLeaderboard`(레이팅 탭만, 전체·친구). 서버는 `minigame_stats`에 `game = 'chess'` 행을 쓰고 같은 Elo 트리거가 처리 — 제약을 `alter`로 넓히고(기존 DB용, 트리거보다 앞), 트리거 대상에 `'chess'` 추가, `pvp_queue_join`이 모든 랜덤 매칭을 `rated`로(친구 도전·재대결은 전적만). 트리거는 집계 실패를 삼켜(`exception when others`) 대국 결과 확정을 막지 않는다. 로컬 PostgreSQL 16에서 전체 SQL 재실행, 3판 랭킹 노출, 친선전 레이팅 불변, 제약이 막힌 옛 DB에서도 결과 확정을 확인. `check-chess-rating`(prebuild).
+- 나이트 레이스: 이동 수 제한(par+1) 삭제 — 제한시간·잡힘으로만 끝난다(봇은 자기 일정 안에서만 움직임). 혼자 플레이에서 못 닿으면 정산 전에 시작 칸→목표 칸 최단 경로(`knightExactPath`, 기물 잡기 포함)를 분석 탭과 같은 금색(`T.arrow`) 화살표로 한 칸씩(230ms) 그린다. 헤더 "내 수 N"만 표시(번역 키 `내 수 {0} · 상대 {1}`로 변경).
+- 무한 체크메이트:
+  - 포지션 풀: 295개 → 수천 개. `scripts/build-attack-positions.mjs`가 마스터 대국 12.8만 판의 마지막 20플라이에서 Stockfish로 강제 메이트(1~4수, 공격 수 유일, 수비는 엔진 최선 응수)를 대국당 최대 2개, 코어 병렬로 뽑는다(캐시·재개 지원). 형식은 `[fen, "uci …", "테마 …", 출처]`. Lichess 퍼즐 DB를 받을 수 없는 환경에서 만들었으므로, 받은 CSV가 있으면 `--lichess-csv=파일`로 인기 메이트 퍼즐을 테마별로 합칠 수 있다.
+  - 테마: `scripts/lib/mateThemes.mjs`가 Lichess 이름 그대로 메이트 모양을 분류(backRankMate·smotheredMate·anastasiaMate·arabianMate·hookMate·bodenMate·doubleBishopMate·dovetailMate·epauletteMate·doubleCheckMate·promotionMate 등). 조립 단계는 등급별 상한 안에서 테마 라운드 로빈으로 희귀 테마를 전부 남긴다.
+  - 중복 금지: `src/lib/attackPool.js` — 포지션 id는 FEN 해시, 나온 id를 `localStorage(occ_attack_seen)`에 기록, 선택은 아직 안 나온 것 중에서(테마를 개수의 제곱근 가중으로 먼저 고름). 등급을 한 바퀴 다 돌면 그 등급만 다시 시작. 화면에 뜬 뒤에 기록하므로 같은 기회는 새로고침 전까지 같은 포지션. 기록은 브라우저별이다(계정 간 공유 안 됨).
+  - 상대 상황 표시: 상대 등급 점수 왼쪽에 3점 바운스 "체크메이트 수순을 찾는 중" / 체크 "정확한 수순, 체크메이트까지 n수 남음" / X "체크메이트 실패" / 애니메이션 체크 "n수 체크메이트 성공". 봇은 대전 시작 때 정한 일정(`attackBotStatusAt`), 실시간 대전은 새 RPC `attack_progress`(내 기회에 `prog {s,left,n,t}` 기록, 표시 전용·판정 무관)를 상대가 실시간으로 받아 표시(`useAttackOppStatus`, 승·패 표시는 최소 시간 유지). **배포 시 supabase-setup.sql 재실행 필요.**
+  - 동점 정산: 총 체크메이트 수가 같으면 결과 전에 `AttackTiebreakSettle` — 4수 이상→3→2→1수 순으로 한 행씩 공개해 처음 차이 나는 등급에서 결정, 모두 같으면 레이팅 행. 규칙은 `attackDecide`·서버 `attack_finish`와 같다.
+
+**UI**
+- 프로필 통계 전환 버튼: 아이콘 대신 글자 "OpenChess"·"chess.com"(`statsViewToggle`).
+- 미니게임 랭킹 화면의 "< 로비" 버튼 삭제(← 버튼과 중복).
+
+**시스템**
+- 번역: 신규 문구 5개 언어 추가(상태 표시·동점 정산·최고 레이팅·릴리스 노트).
+- 새 검사(prebuild): `check-attack-positions`(데이터 합법성·중복·등급별 개수·테마 다양성·선택 로직), `check-chess-rating`, `check-board-overlay`.
+- 알려진 한계: 일반 대국 종료 화면에는 레이팅 변화가 아직 표시되지 않는다(랭킹·통계 카드에서 확인). 무한 체크메이트 포지션은 마스터 대국 종반에서 뽑아 퀸·룩 메이트가 많다 — Lichess 퍼즐 CSV로 보강 권장.
+
 ### OpenChess v0.6.0 — 2026/10/1
 
 **보안·안전**

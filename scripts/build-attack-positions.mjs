@@ -11,7 +11,7 @@
  *      진행 결과는 scripts/.attack-cache/found.jsonl에 계속 쌓이므로 중간에 멈췄다 다시 돌려도 이어서 한다(--fresh로 처음부터).
  *   ② Lichess 퍼즐 DB(CSV, database.lichess.org/lichess_db_puzzle.csv.zst를 푼 것) — 인기 있는 메이트 퍼즐을 테마별로 골라 합친다.
  *        node scripts/build-attack-positions.mjs --lichess-csv=lichess_db_puzzle.csv [--per-bucket=400]
- *  마지막에 캐시 + 기존 JSON을 합쳐(FEN 중복 제거) src/data/attackPositions.json을 다시 쓴다. 캐시만 합치려면 --assemble.
+ *  마지막에 캐시 + 기존 JSON을 합쳐(FEN 중복 제거, 등급별 상한 --cap=S:2600,A:3000,B:2200,C:1400 안에서 테마 균등) src/data/attackPositions.json을 다시 쓴다. 캐시만 합치려면 --assemble.
  *
  *  출력 형식(용량 때문에 배열): [fen, "uci uci ...", "theme theme", 출처]  — mateIn은 수순 길이에서 구한다.
  */
@@ -162,6 +162,26 @@ function assemble(extra = []) {
     if (seen.has(k)) continue;
     seen.add(k); out.push(r);
   }
+  // 등급(1·2·3·4+수)별 상한 — 번들 용량 때문에 흔한 테마(퀸·룩 메이트)는 줄이고 희귀 테마는 전부 남긴다(라운드 로빈).
+  const capEnv = (arg("cap", "S:2600,A:3000,B:2200,C:1400")).split(",").map((x) => x.split(":"));
+  const caps = Object.fromEntries(capEnv.map(([g, n]) => [g, parseInt(n, 10)]));
+  const gradeOf = (r) => { const n = (r[1].split(" ").length + 1) / 2; return n <= 1 ? "S" : n === 2 ? "A" : n === 3 ? "B" : "C"; };
+  const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; };
+  const kept = [];
+  for (const g of ["S", "A", "B", "C"]) {
+    const list = out.filter((r) => gradeOf(r) === g);
+    if (!caps[g] || list.length <= caps[g]) { kept.push(...list); continue; }
+    const byTheme = new Map();
+    list.sort((a, b) => hash(a[0]) - hash(b[0])).forEach((r) => { const k = r[2].split(" ")[0] || "mate"; if (!byTheme.has(k)) byTheme.set(k, []); byTheme.get(k).push(r); });
+    const queues = [...byTheme.entries()].sort((a, b) => a[1].length - b[1].length).map(([, v]) => v);
+    let taken = 0;
+    for (let round = 0; taken < caps[g]; round++) {
+      let any = false;
+      for (const q of queues) { if (round < q.length && taken < caps[g]) { kept.push(q[round]); taken++; any = true; } }
+      if (!any) break;
+    }
+  }
+  out.length = 0; out.push(...kept);
   // 결정적 순서(FEN 순) — 두 클라이언트가 같은 목록을 같은 순서로 갖는다.
   out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   writeFileSync(OUT, JSON.stringify(out));
