@@ -494,12 +494,12 @@ function questMatchingGames(q, chesscom) {
 // 팝업(DailyQuestClearedModal)의 체크리스트와, 개별 퀘스트 하나를 클리어했을 때 뜨는 토스트가 똑같은
 // 라벨 로직을 공유해야 두 화면에서 같은 퀘스트를 다른 이름으로 부르는 일이 없다.
 export function questSlotLabel(key, dq) {
-  if (key === "puzzle") return "새 퍼즐 " + ((dq && dq.puzzleTarget) || 2) + "회 풀기";
-  if (key === "dailypuzzle") return "일일 퍼즐 풀기";
+  if (key === "puzzle") return t("새 퍼즐 {0}회 풀기", (dq && dq.puzzleTarget) || 2);
+  if (key === "dailypuzzle") return t("일일 퍼즐 풀기");
   if (key.indexOf("cc_") === 0) {
     const i = parseInt(key.slice(3), 10);
     const q = dq && dq.quests && dq.quests[i];
-    return q ? questLabel(q) : "chess.com 활동 퀘스트";
+    return q ? questLabel(q) : t("chess.com 활동 퀘스트");
   }
   return "";
 }
@@ -662,8 +662,8 @@ export function AnnouncementModal({ onClose }) {
 export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLearn }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
-  const t = todayStr();
-  const dateLabel = t.slice(0, 4) + "." + parseInt(t.slice(5, 7), 10) + "." + parseInt(t.slice(8, 10), 10);
+  const t_ = todayStr();
+  const dateLabel = t_.slice(0, 4) + "." + parseInt(t_.slice(5, 7), 10) + "." + parseInt(t_.slice(8, 10), 10);
   // (스케치 개편) 격자는 더 이상 장식용 달력 모식이 아니라, 캐러셀 카드와 같은 실제 오늘의 퍼즐
   // 포지션 미리보기(AnimatedMove)다 — 사용자 스케치의 "정사각형 격자 = 미니 체스보드" 의도를
   // 그대로 반영한다.
@@ -1308,13 +1308,13 @@ async function notifyDelete(row) { if (!SB_ON || row.id == null) return true; tr
 async function notifyDeleteAll(uid) { if (!SB_ON || !uid) return true; try { const r = await fetch(SB_URL + "/rest/v1/notifications?to_uid=eq." + uid, { method: "DELETE", headers: { ...sbHeaders(), Prefer: "return=minimal" } }); return r.ok; } catch { return false; } }
 function notifText(n) {
   const p = n.payload || {};
-  if (n.kind === "friend_request") return (p.fromUsername || "누군가") + "님이 친구 요청을 보냄";
-  if (n.kind === "friend_accepted") return (p.byUsername || "상대") + "님이 친구 요청을 수락함";
-  if (n.kind === "title_earned") return "새 칭호 획득: " + (titleLabel(p.titleId) || p.titleId);
-  if (n.kind === "tier_up") return "티어 " + p.tierLabel + " 승급";
+  if (n.kind === "friend_request") return t("{0}님이 친구 요청을 보냄", (p.fromUsername || t("누군가")));
+  if (n.kind === "friend_accepted") return t("{0}님이 친구 요청을 수락함", (p.byUsername || t("상대")));
+  if (n.kind === "title_earned") return t("새 칭호 획득: {0}", titleLabel(p.titleId) || p.titleId);
+  if (n.kind === "tier_up") return t("티어 {0} 승급", p.tierLabel);
   // (v0.5.6, 사용자 요청) 선정 팝업(PuzzleSelectedModal)을 없애고 알림 창에서만 알린다 — 어떤 퍼즐인지 번호까지.
-  if (n.kind === "daily_puzzle_selected") return p.no != null ? "내가 만든 " + josaIGa("퍼즐 #" + p.no) + " 오늘의 퍼즐로 선정" : "내 퍼즐이 오늘의 퍼즐로 선정";
-  return "알림";
+  if (n.kind === "daily_puzzle_selected") return p.no != null ? t("내가 만든 {0:이/가} 오늘의 퍼즐로 선정", t("퍼즐 #{0}", p.no)) : t("내 퍼즐이 오늘의 퍼즐로 선정");
+  return t("알림");
 }
 function notifIcon(kind) {
   if (kind === "friend_request" || kind === "friend_accepted") return <Users size={15} style={{ color: T.brass }} />;
@@ -1831,7 +1831,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
   // (17차) box-sizing 기본값(content-box)에서 width:100%에 padding/border가 더해져 입력 박스가
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
   const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #C9B58C", marginBottom: 8, background: "#fff", color: T.ink, boxSizing: "border-box" };
-  const title = mode === "login" ? "로그인" : mode === "signup" ? "회원가입" : "비밀번호 찾기";
+  const title = mode === "login" ? t("로그인") : mode === "signup" ? t("회원가입") : t("비밀번호 찾기");
   return (
     <motion.div
       onClick={onClose}
@@ -2009,7 +2009,7 @@ export function GlobalMinigameRematchBanner({ myUid, onAccepted }) {
       const who = g.rematch_offered_by;
       const prof = await usersProfiles([who]);
       const p = prof[who] || {};
-      setOffer({ game: g, name: (p.pub && p.pub.nickname) || p.username || "상대", photo: (p.pub && p.pub.photo) || null });
+      setOffer({ game: g, name: (p.pub && p.pub.nickname) || p.username || t("상대"), photo: (p.pub && p.pub.photo) || null });
     } catch { }
   }, [myUid]);
   useEffect(() => { load(); }, [load]);

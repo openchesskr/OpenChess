@@ -114,20 +114,20 @@ async function fetchAnyMasterGamePgn(id) {
 }
 /* ============================================================ 내부 해설 데이터 (한글) ============================================================ */
 const EXPLAIN = {
-  "": "백의 첫 수. e4·d4가 압도적. b4(폴란드)·f4(버드)처럼 평가가 떨어지는 수는 부정확으로 분류",
-  "e4": "킹 폰 오프닝. 중앙 점유, 비숍·퀸 길을 열어 빠른 전개와 공격",
-  "d4": "퀸 폰 오프닝. e4보다 폐쇄적·전략적, 안정적인 중앙 장악",
-  "e4 e5 Nf3 Nc6 Bc4": "이탈리안 게임. 비숍을 c4로 보내 f7 약점 공략. 흑 …Bc5(지우코 피아노) 또는 …Nf6(투 나이츠)",
-  "e4 e5 Nf3 Nc6 Bb5": "루이 로페즈(스패니시). 흑 c6 나이트를 압박해 e5 폰 수비를 흔듦. 가장 깊이 연구된 오프닝 중 하나",
-  "e4 c5": "시칠리안 디펜스. 비대칭 구조로 반격. 최상위에서 가장 인기 있는 e4 대응",
-  "d4 Nf6 c4 e6": "님조/퀸즈 인디언 계열 입구. 흑이 유연하게 중앙 통제",
+  "": t("백의 첫 수. e4·d4가 압도적. b4(폴란드)·f4(버드)처럼 평가가 떨어지는 수는 부정확으로 분류"),
+  "e4": t("킹 폰 오프닝. 중앙 점유, 비숍·퀸 길을 열어 빠른 전개와 공격"),
+  "d4": t("퀸 폰 오프닝. e4보다 폐쇄적·전략적, 안정적인 중앙 장악"),
+  "e4 e5 Nf3 Nc6 Bc4": t("이탈리안 게임. 비숍을 c4로 보내 f7 약점 공략. 흑 …Bc5(지우코 피아노) 또는 …Nf6(투 나이츠)"),
+  "e4 e5 Nf3 Nc6 Bb5": t("루이 로페즈(스패니시). 흑 c6 나이트를 압박해 e5 폰 수비를 흔듦. 가장 깊이 연구된 오프닝 중 하나"),
+  "e4 c5": t("시칠리안 디펜스. 비대칭 구조로 반격. 최상위에서 가장 인기 있는 e4 대응"),
+  "d4 Nf6 c4 e6": t("님조/퀸즈 인디언 계열 입구. 흑이 유연하게 중앙 통제"),
 };
 function explainFor(sans) {
   const k = sans.join(" ");
   if (CONTENT.explains[k]) return CONTENT.explains[k];
   if (EXPLAIN[k]) return EXPLAIN[k];
   const n = snapNode(sans);
-  if (n && n.opening) return n.opening.name + " 정석 이론대로 전개되는 라인";
+  if (n && n.opening) return t("{0} 정석 이론대로 전개되는 라인", (n.opening.name));
   return null;
 }
 function explainMove(sans, san) {
@@ -140,13 +140,13 @@ function explainMove(sans, san) {
 const PUNISH = {
   "e4 e5 Nf3|f6": {
     opening: "Damiano Defense", mistake: "f6",
-    why: "2...f6는 f7-킹 대각선을 약화시키고 나이트 출구를 막는 대표적인 악수. 백은 e5 폰을 희생해 바로 응징 가능",
+    why: t("2...f6는 f7-킹 대각선을 약화시키고 나이트 출구를 막는 대표적인 악수. 백은 e5 폰을 희생해 바로 응징 가능"),
     line: ["Nxe5", "fxe5", "Qh5+"],
     steps: [t("3.Nxe5! 나이트를 내주고 폰을 잡으며 f7-h5 대각선 공략"), t("3...fxe5 받으면(거의 강제) e8-h5 대각선이 완전히 열림"), t("4.Qh5+ 더블 어택. 4...Ke7 5.Qxe5+로 룩까지 따내며 백 대승")],
   },
   "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5 d5 exd5|Nxd5": {
     opening: "Fried Liver Attack", mistake: "Nxd5",
-    why: "5...Nxd5?는 폰을 되찾지만 f7이 무방비. 백은 나이트를 희생하는 프라이드 리버로 응징",
+    why: t("5...Nxd5?는 폰을 되찾지만 f7이 무방비. 백은 나이트를 희생하는 프라이드 리버로 응징"),
     line: ["Nxf7", "Kxf7", "Qf3+"],
     steps: [t("6.Nxf7! 나이트를 희생해 킹을 끌어냄"), t("6...Kxf7 받으면 킹이 노출"), t("7.Qf3+ 킹과 d5 나이트를 동시에 공격. 백이 주도권")],
   },
@@ -207,7 +207,7 @@ function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
   const [copied, setCopied] = useState(false);
   const iconBtn = { width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 };
   const copy = async () => {
-    const out = sansToPgnText(sans, startColor) || "(시작 위치)";
+    const out = sansToPgnText(sans, startColor) || t("(시작 위치)");
     try { await navigator.clipboard.writeText(out); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { }
   };
   const submit = () => {
@@ -1632,7 +1632,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
           <button onClick={onClose} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer" }}><X size={15} /></button>
         </div>
         <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, marginBottom: 12 }}>
-          {[["single", "직접 입력"], ["bulk", "대량 가져오기"]].map(([k, label]) => (
+          {[["single", t("직접 입력")], ["bulk", t("대량 가져오기")]].map(([k, label]) => (
             <button key={k} onClick={() => setMode(k)} className="press" style={{ fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 6, border: "none", cursor: "pointer", background: mode === k ? T.brass : "transparent", color: mode === k ? "#241509" : T.inkSoft }}>{label}</button>
           ))}
         </div>
@@ -1654,7 +1654,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>{tx("대국 결과{0}", !resultTouched && result && <span style={{ color: T.inkSoft, fontWeight: 600 }}>{" "}{t("(자동 입력됨)")}</span>)}</label>
           <div className="flex" style={{ gap: 6 }}>
-            {[["1-0", "백 승"], ["0-1", "흑 승"], ["1/2-1/2", "무승부"]].map(([k, label]) => (
+            {[["1-0", t("백 승")], ["0-1", t("흑 승")], ["1/2-1/2", t("무승부")]].map(([k, label]) => (
               <button key={k} onClick={() => { setResult(k); setResultTouched(true); }} className="press" style={{ flex: 1, fontSize: 11.5, fontWeight: 800, padding: "7px 4px", borderRadius: 8, border: "1px solid " + T.brass, cursor: "pointer", background: result === k ? T.brass : "transparent", color: result === k ? "#241509" : T.brass }}>{label}</button>
             ))}
           </div>
@@ -2032,13 +2032,13 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   const myNotes = uid && notes ? notes.filter((n) => n.uid === uid) : [];
   const canAddMore = !!uid && myNotes.length < cap;
   const submit = async () => {
-    const t = draft.trim();
-    if (!t) return;
-    if (moveNoteEffectiveLen(t) > MOVE_NOTE_MAX_LEN) { setErr(t("글자 수가 너무 길어요({0}자까지).", MOVE_NOTE_MAX_LEN)); return; }
-    if (containsBannedWord(t)) { setErr(t("부적절한 표현 포함")); return; }
+    const t_ = draft.trim();
+    if (!t_) return;
+    if (moveNoteEffectiveLen(t_) > MOVE_NOTE_MAX_LEN) { setErr(t("글자 수가 너무 길어요({0}자까지).", MOVE_NOTE_MAX_LEN)); return; }
+    if (containsBannedWord(t_)) { setErr(t("부적절한 표현 포함")); return; }
     setBusy(true); setErr("");
     try {
-      await sbInsert("move_notes", { move_key: moveKey, uid, author_username: username || "", body: t });
+      await sbInsert("move_notes", { move_key: moveKey, uid, author_username: username || "", body: t_ });
       setDraft(""); await load();
     } catch { setErr(t("등록 실패. 잠시 후 다시 시도")); }
     setBusy(false);
@@ -2350,12 +2350,12 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
         {chesscom && chesscom.status === "ready" && (
           <div className="flex items-center" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
             <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+              {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
                 <button key={k} onClick={() => setMyTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myTimeFilter === k ? T.ebony2 : "transparent", color: myTimeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
               ))}
             </div>
             <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+              {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
                 <button key={k} onClick={() => setMyColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myColorFilter === k ? T.ebony2 : "transparent", color: myColorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
               ))}
             </div>
@@ -2492,7 +2492,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
           {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
           {masterGames.length > 1 && (
             <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
-              {[["default", "기본"], ["recent", "최신순"], ["rating", "레이팅순"]].map(([k, label]) => (
+              {[["default", t("기본")], ["recent", t("최신순")], ["rating", t("레이팅순")]].map(([k, label]) => (
                 <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
               ))}
             </div>
@@ -2567,8 +2567,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
 /* ============================================================ 분석 탭 ============================================================ */
 function mascotFor(sans, san) {
   const n = snapNode([...sans, san]); const om = n && n.opening ? n.opening.name : null;
-  if (om) return om + " 라인 진입. 보드에서 직접 두며 확인";
-  return moveNumber(sans.length) + san + " 보드에서 자유롭게 탐구";
+  if (om) return t("{0} 라인 진입. 보드에서 직접 두며 확인", (om));
+  return t("{0} 보드에서 자유롭게 탐구", (moveNumber(sans.length) + san));
 }
 // (18차 기능4) 수 추천 블록의 "추천 이유"를 개발자 모드에서 직접 편집(비우면 자동 문구로 복귀).
 function RecommendReasonEditor({ sentKey, bumpContent }) {
@@ -2597,7 +2597,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   useEffect(() => { setEditing(false); }, [sentKey]);
-  const save = async () => { if (!CONTENT.branches18) CONTENT.branches18 = {}; CONTENT.branches18[sentKey] = draft.trim() || "주요 분기점"; await bumpContent(); setEditing(false); setDraft(""); };
+  const save = async () => { if (!CONTENT.branches18) CONTENT.branches18 = {}; CONTENT.branches18[sentKey] = draft.trim() || t("주요 분기점"); await bumpContent(); setEditing(false); setDraft(""); };
   const remove = async () => { if (CONTENT.branches18) delete CONTENT.branches18[sentKey]; await bumpContent(); };
   if (!reason && !editing) {
     if (canEdit || canAdd) return <button onClick={() => { setDraft(""); setEditing(true); }} className="press" style={{ marginBottom: 12, fontSize: 11.5, fontWeight: 700, padding: "6px 12px", borderRadius: 9, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("+ 주요 분기점으로 지정")}</button>;
@@ -3163,7 +3163,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
   const onOpenMasterGame = async (gameId) => {
     const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
-    if (!gameSans || !gameSans.length) throw new Error("빈 기보");
+    if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     // (18차 UX8) 전체 기보를 불러오되, 보드는 집중분석에서 보던 수까지만 진행된 상태로 열고
     // 이후 수들은 future로 보존 — 기보에는 전체 수순이 흐리게 표시되고 클릭/▶로 이어볼 수 있다.
     const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
@@ -3174,7 +3174,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 형태라 reviewPlayerInfo가 기대하는 {username,rating}로 옮겨 담아야 실제 대국자 이름·레이팅이 뜬다.
   const onOpenMasterGameReview = async (g) => {
     const gameSans = await fetchAnyMasterGamePgn(g.id);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
-    if (!gameSans || !gameSans.length) throw new Error("빈 기보");
+    if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     onOpenReview && onOpenReview({
       sans: gameSans,
       white: { username: (g.white && g.white.name) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
@@ -3199,7 +3199,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
   const node = fenRoot ? null : snapNode(sans);
   const openingName = node && node.opening ? node.opening.name : null;
-  const stageTitle = fenRoot ? moveNumber(ply, startColor) + " " + (color === "w" ? "백" : "흑") + " 차례" : ply === 0 ? "1수 · 백의 첫 수" : (openingName || moveNumber(ply) + " 차례");
+  const stageTitle = fenRoot ? t("{0} {1} 차례", (moveNumber(ply, startColor)), color === "w" ? t("백") : t("흑")) : ply === 0 ? t("1수 · 백의 첫 수") : (openingName || t("{0} 차례", (moveNumber(ply))));
 
   // (UI5) 헤더 블록에 현재 수(직전에 두어진 수) 정보 표기
   const lastSan = sans.length ? sans[sans.length - 1] : null;
@@ -3326,7 +3326,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
               <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
                 {[
                   { label: "FEN", key: "fen", value: fenRoot.raw },
-                  { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || "(시작 위치)" },
+                  { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || t("(시작 위치)") },
                 ].map((row) => (
                   <div key={row.key} className="flex items-center gap-2">
                     <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
@@ -3437,7 +3437,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 const branch = branchFor(key);
                 const rec = !branch ? (moves.find((m) => m.book && m.isMain) || moves.find((m) => m.book) || moves[0] || null) : null;
                 const recSan = rec ? (rec.disp || rec.san) : null;
-                const autoReason = rec ? ((rec.name ? "‘" + rec.name + "’ 이어지는 " : "이 위치의 ") + (rec.book ? "대표 이론 수" : "유력한 수") + (rec.adopt != null ? ". 전체 대국의 " + rec.adopt.toFixed(1) + "%가 선택" : "")) : null;
+                const autoReason = rec ? ((rec.name ? t("‘{0}’ 이어지는 ", rec.name) : t("이 위치의 ")) + (rec.book ? t("대표 이론 수") : t("유력한 수")) + (rec.adopt != null ? t(". 전체 대국의 {0}%가 선택", rec.adopt.toFixed(1)) : "")) : null;
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
                   <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>

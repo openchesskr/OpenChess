@@ -719,10 +719,10 @@ function KineticWord({ children, index, accent }) {
 }
 function KineticTagline() {
   const words = [
-    { t: "생각하고,", accent: false },
-    { t: "분석하고,", accent: false },
-    { t: "성장하는", accent: true },
-    { t: "체스.", accent: true },
+    { t: t("생각하고,"), accent: false },
+    { t: t("분석하고,"), accent: false },
+    { t: t("성장하는"), accent: true },
+    { t: t("체스."), accent: true },
   ];
   return (
     <div style={{ padding: "18px 4px 44px", textAlign: "center", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0 .32em" }}>
@@ -767,7 +767,7 @@ function IntroPage() {
             <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "13px 20px", borderRadius: 999, border: "1px solid rgba(196,154,80,.4)", color: T.ivory, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>{t("기능 둘러보기")}</a>
           </div></Reveal>
           <Reveal delay={0.2}><nav className="flex items-center flex-wrap" style={{ gap: 8 }}>
-            {[["#features", "학습·도감·퍼즐"], ["#tiers", "티어"], ["#accuracy", "정확도 체계"]].map(([href, label]) => (
+            {[["#features", t("학습·도감·퍼즐")], ["#tiers", t("티어")], ["#accuracy", t("정확도 체계")]].map(([href, label]) => (
               <a key={href} href={href} style={{
                 fontSize: 11.5, fontWeight: 700, color: T.brass, letterSpacing: ".02em", textDecoration: "none",
                 padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(196,154,80,.28)",

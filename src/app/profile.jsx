@@ -53,7 +53,7 @@ function weaknessReportFromAnalyses(games, analysesByCcId) {
     if (!result) continue;
     gamesUsed++;
     const myWhite = g.color === "w";
-    const name = g.opening || "기타";
+    const name = g.opening || t("기타");
     let ob = byOpening.get(name);
     if (!ob) { ob = { name, n: 0, blunders: 0, mistakes: 0 }; byOpening.set(name, ob); }
     ob.n++;
@@ -229,7 +229,7 @@ function computeTopOpenings(games, color) {
 // 단일 타이머로 그 목록만 순환해 두 박스가 항상 같은 n에서 함께 움직이도록 했다.
 function OpeningBox({ label, color, cur, dotsLen, dotsIdx }) {
   if (!cur) return null;
-  const nBadge = (color === "w" ? "백" : "흑") + " " + cur.n + "수";
+  const nBadge = t("{0} {1}수", (color === "w" ? t("백") : t("흑")), cur.n);
   // (v0.2.6 UI) "백 n수"/"흑 n수" 배지를 라벨과 같은 줄에 붙이지 않고 오프닝 이름 바로 위 자기
   // 줄에 두며, 배지 배경을 금색 그라데이션으로 통일했다(백/흑 공통).
   const badgeStyle = { display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", fontSize: 10, fontWeight: 800, color: "#241509", fontFamily: SITE_FONT };
@@ -730,12 +730,12 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
           (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
       <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", "전체"], ["rapid", "래피드"], ["blitz", "블리츠"], ["bullet", "불릿"]].map(([k, lab]) => (
+          {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
             <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
           ))}
         </div>
         <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", "전체"], ["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+          {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
             <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
           ))}
         </div>

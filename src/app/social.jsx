@@ -454,7 +454,7 @@ export function ProfileWindow({ onClose, profile, setProfile, user, myUid, curre
               <div><div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{pending.username}</div><div style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("플레이한 게임 {0}국", fmtFull(pending.games))}</div></div>
             </div>
             <div className="flex gap-2" style={{ marginBottom: 14 }}>
-              {[["래피드", pending.rapid], ["블리츠", pending.blitz], ["불릿", pending.bullet]].map(([lb, v]) => (
+              {[[t("래피드"), pending.rapid], [t("블리츠"), pending.blitz], [t("불릿"), pending.bullet]].map(([lb, v]) => (
                 <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{v != null ? v : "—"}</div></div>
               ))}
             </div>
@@ -691,7 +691,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
       if (r && r.status === "blocked") { setInviteMsg(t("요청할 수 없는 사용자")); return; }
       if (r && r.ok) {
         const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
-        const name = (pub && pub.nickname) || pubUsername || "상대";
+        const name = (pub && pub.nickname) || pubUsername || t("상대");
         setReqState(status);
         setInviteMsg(status === "accepted" ? t("친구 추가 완료") : status === "exists" ? t("이미 친구이거나 요청함") : t("친구 요청을 자동 발송"));
         if (status === "pending") { notifyCreate(pubUid, "friend_request", { fromUsername: me, fromUid: myUid }); setReqPopup(t("{0}님에게 친구 요청 발송", (name))); }
@@ -707,7 +707,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
     if (r && r.status === "blocked") { setInviteMsg(t("요청할 수 없는 사용자")); return; }
     if (r && r.ok) {
       const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
-      const name = (pub && pub.nickname) || pubUsername || "상대";
+      const name = (pub && pub.nickname) || pubUsername || t("상대");
       if (status === "pending") setReqPopup(t("{0}님에게 친구 요청 발송", (name)));
       else if (status === "accepted") setReqPopup(t("{0}님과 친구 추가 완료", (name)));
       setReqState(status);
@@ -883,7 +883,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
   const special = inv ? PLAY_SPECIAL_GAMES.find((g) => g.gameType === inv.game_type) : null;
   // (v0.5.7, 사용자 요청 "미니게임 도전장도 일반 도전장과 똑같은 디자인") 제목 한 줄은 같은 틀로 두고, 무엇을 하는지는 그 아래 한 줄로 —
   // 체스는 시간 제한, 미니게임은 게임 이름. 게임 이름을 제목에 넣으면 줄이 바뀌어 카드 모양이 달라졌다.
-  const what = special ? "실시간 대결" : "실시간 대국";
+  const what = special ? t("실시간 대결") : t("실시간 대국");
   const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? " · " + tc.cat : ""); })();
   const [liveGame, setLiveGame] = useState(null);
   const gameId = inv && inv.status === "accepted" ? inv.game_id : null;
@@ -958,7 +958,7 @@ function BlindMoveBubble({ body, color }) {
 }
 // /eval 명령어 표시 형식 — 예: "+0.31(depth=25)", 메이트는 "#3(depth=25)"/"-#3(depth=25)".
 function formatBlindEval(ev) {
-  if (!ev) return "분석 중…";
+  if (!ev) return t("분석 중…");
   const depth = ev.depth != null ? ev.depth : "?";
   if (ev.mate != null) return (ev.mate > 0 ? "#" : "-#") + Math.abs(ev.mate) + "(depth=" + depth + ")";
   const cp = ev.cp || 0;
@@ -1008,7 +1008,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   const noticeTimerRef = useRef(null);
   const showNotice = useCallback((t) => { setNotice(t); clearTimeout(noticeTimerRef.current); noticeTimerRef.current = setTimeout(() => setNotice(""), 1600); }, []);
   const scrollModeRef = useRef("bottom");           // 다음 목록 변화 때 스크롤 처리: "bottom" | { keepFrom: 이전 scrollHeight } | { jumpTo: id }
-  const nameOf = useCallback((uid) => (uid === myUid ? (myUsername || "나") : otherUsername), [myUid, myUsername, otherUsername]);
+  const nameOf = useCallback((uid) => (uid === myUid ? (myUsername || t("나")) : otherUsername), [myUid, myUsername, otherUsername]);
   // (v0.4.8 기능) 지금 이 대화의 블라인드 대국 상태 — deriveBlindGame 참고(대화 기록 자체가 유일한
   // 진실 공급원이라 서버에 별도로 저장하지 않는다).
   const blindGame = useMemo(() => deriveBlindGame(msgs), [msgs]);
@@ -1164,7 +1164,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           if (!w) { n[id] = null; return; }
           const g = w.game;
           const hasPD = !!(g.white || g.black || g.color);
-          const label = hasPD ? (reviewPlayerInfo(g, "w").name + " vs " + reviewPlayerInfo(g, "b").name) : (g.fenRoot && (!g.sans || !g.sans.length) ? "FEN 포지션 분석" : "PGN 대국 리뷰");
+          const label = hasPD ? (reviewPlayerInfo(g, "w").name + " vs " + reviewPlayerInfo(g, "b").name) : (g.fenRoot && (!g.sans || !g.sans.length) ? t("FEN 포지션 분석") : t("PGN 대국 리뷰"));
           n[id] = { game: g, label };
         });
         return n;
@@ -1362,7 +1362,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
   };
   // (v0.5.7, 사용자 요청 "명령어 체계 정리") 보내기 — "/…"는 src/lib/chatCommands.js의 parseChatCommand 하나로 해석한다(목록·자동완성과
   // 같은 표). 명령어가 아니면 블라인드 대국 수인지 보고, 그것도 아니면 평범한 메시지(답장 포함)로 보낸다.
-  const failMsg = "전송 실패. 잠시 후 다시 시도";
+  const failMsg = t("전송 실패. 잠시 후 다시 시도");
   const finish = (ok, err) => { if (ok) { setText(""); setReplyTo(null); load(); } else if (err) setCmdError(err); };
   const send = async (body, emoji) => {
     if (sending) return;
@@ -1380,7 +1380,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const cmd = body ? parseChatCommand(body, { blindActive: blindGame.active }) : null;
     if (cmd && cmd.error) { setCmdError(cmd.error); return; }
     setCmdError("");
-    const nameFor = (uid) => uid === myUid ? (myUsername || "나") : otherUsername;
+    const nameFor = (uid) => uid === myUid ? (myUsername || t("나")) : otherUsername;
     if (cmd) {
       switch (cmd.name) {
         // /help는 보내지 않고 입력창 위 도움말 카드로만(사용자 결정 — 상대 채팅 기록에 남지 않게).
@@ -1396,7 +1396,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           setSending(true);
           const ok = await chatSend(myUid, otherUid, "/resign", null);
           if (ok) await chatSend(myUid, otherUid, nameFor(myUid) + "님 기권 " + nameFor(otherUid) + "님 승리", null);
-          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("명령어 처리 실패. 잠시 후 다시 시도")); return;
         }
         case "draw": {
           // (버그 수정, 사용자 제보) /draw는 상대의 동의가 있어야 끝난다 — 내가 이미 제안했으면 중복이라 막고, 상대가 먼저
@@ -1406,12 +1406,12 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           const isAccepting = blindGame.drawOfferUid === otherUid;
           const ok = await chatSend(myUid, otherUid, "/draw", null);
           if (ok) await chatSend(myUid, otherUid, isAccepting ? "합의 무승부로 대국 종료" : nameFor(myUid) + "님이 무승부 제안. /draw로 동의하면 대국 종료", null);
-          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("명령어 처리 실패. 잠시 후 다시 시도")); return;
         }
         case "eval": {
           setSending(true);
           const ok = await chatSend(myUid, otherUid, formatBlindEval(blindEvalRef.current), null);
-          setSending(false); finish(ok, "명령어 처리 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("명령어 처리 실패. 잠시 후 다시 시도")); return;
         }
         case "puzzle": {
           // (v0.2.7 버그 수정) 존재하지 않는 퍼즐 번호는 공유 카드로 보낼 수 없다 — 서버에 실제로 있는지 먼저 확인한다.
@@ -1419,7 +1419,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           const data = puzzlePreviews[cmd.no] !== undefined ? puzzlePreviews[cmd.no] : await puzzleFetch(cmd.no);
           if (!data) { setSending(false); setCmdError(t("#{0} 번호의 퍼즐 없음. 전송 불가", cmd.no)); return; }
           const ok = await puzzleShareSend(cmd.no, myUid, otherUid);
-          setSending(false); finish(ok, "퍼즐 전송 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("퍼즐 전송 실패. 잠시 후 다시 시도")); return;
         }
         case "legacy": {
           const slotKey = LEGACY_SLOT_ORDER[cmd.slot - 1];
@@ -1427,7 +1427,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           if (!myLegacies || !myLegacies[slotKey]) { setCmdError(t("#{0}번 유산 미등록", cmd.slot)); return; }
           setSending(true);
           const ok = await legacyShareSend(myUid, otherUid, slotKey);
-          setSending(false); finish(ok, "유산 전송 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("유산 전송 실패. 잠시 후 다시 시도")); return;
         }
         case "review": {
           // 코드가 실제로 재생 가능한지(sanSequenceValid)부터 확인하고 보낸다 — 틀린 /review는 평범한 텍스트로 흘려보내지 않는다(사용자 요청).
@@ -1451,7 +1451,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           if (!rid) { setSending(false); setCmdError(t("유효하지 않은 코드")); return; }
           if (game.id) reviewedGameShare(game.id, game).catch(() => { });
           const ok = await reviewShareSend(myUid, otherUid, rid);
-          setSending(false); finish(ok, "리뷰 전송 실패. 잠시 후 다시 시도"); return;
+          setSending(false); finish(ok, t("리뷰 전송 실패. 잠시 후 다시 시도")); return;
         }
         case "play": {
           // (v0.5.7, 사용자 요청) 미니게임 대결 — 친구 로스터의 도전장과 같은 RPC(p_game_type만 다름)라, 수락되면 두 사람 모두 그 미니게임 대전으로 들어간다.
@@ -2017,7 +2017,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
                     onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
                 )}
                 <span style={{ display: "inline-flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start", position: "relative", transform: "translateX(" + dx + "px)", transition: dx === 0 ? "transform .18s ease" : "none", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
-                  {m.reply_to != null && (() => { const t = replyTargetOf(m.reply_to); return <ReplyQuote target={t} authorName={t ? nameOf(t.from_uid) : t("답장")} mine={mine} onJump={() => jumpTo(m.reply_to, t && t.created_at)} />; })()}
+                  {m.reply_to != null && (() => { const t_ = replyTargetOf(m.reply_to); return <ReplyQuote target={t_} authorName={t_ ? nameOf(t_.from_uid) : t("답장")} mine={mine} onJump={() => jumpTo(m.reply_to, t_ && t_.created_at)} />; })()}
                   {m.emoji ? <img src={"/emoji/" + m.emoji + ".png"} alt="" draggable={false} style={{ display: "block", width: 72, height: 72 }} />
                     : blindGame.moveColors[m.id] ? <BlindMoveBubble body={m.body} color={blindGame.moveColors[m.id]} />
                     : <span style={{ display: "inline-block", maxWidth: "min(50vw, 320px)", padding: "7px 11px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.4, background: mine ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", color: mine ? "#241509" : T.ink, border: mine ? "none" : "1px solid #E4D5B6", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{renderMentionText(m.body)}</span>}
@@ -2214,13 +2214,13 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     // (검증) NotationTools.submit과 동일한 방식 — 시작 위치부터 한 수씩 실제로 재생해, 불법적인
     // 수가 섞여 있으면(오타·변화수 등) 저장 전에 걸러낸다.
     let board = startBoard(); const validated = [];
-    for (const t of tokens) {
+    for (const t_ of tokens) {
       const color = validated.length % 2 === 0 ? "w" : "b";
-      const clean = t.replace(/[+#]/g, "");
+      const clean = t_.replace(/[+#]/g, "");
       const src = sanSrc(board, clean, color);
       if (!src) { setPgnErr(t("기보에 불법적인 수가 포함되어 있어요({0}{1}번째 수).", validated.length, 1)); return; }
-      board = applySan(board, t, color);
-      validated.push(t);
+      board = applySan(board, t_, color);
+      validated.push(t_);
     }
     if (validated.length < 1) { setPgnErr(t("기보가 너무 짧음")); return; }
     setPgnErr(""); setSans(validated); setStep("analyzing");
@@ -2303,7 +2303,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>{t("플레이한 진영")}</div>
               <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-                {[["w", "백"], ["b", "흑"]].map(([k, lab]) => (
+                {[["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
                   <button key={k} type="button" onClick={() => setSide(k)} className="press" style={{ padding: "6px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: side === k ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: side === k ? T.ivoryHi : T.inkSoft }}>{lab}</button>
                 ))}
               </div>
@@ -2850,7 +2850,7 @@ function PvpSpectateModal({ gameId, onClose }) {
   const narrow = useNarrow(640);
   const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 400;
 
-  const resultLabel = game && game.status !== "active" ? ({ white_won: "백 승", black_won: "흑 승", draw: "무승부", aborted: "중단" }[game.status] || "종료") : null;
+  const resultLabel = game && game.status !== "active" ? ({ white_won: t("백 승"), black_won: t("흑 승"), draw: t("무승부"), aborted: t("중단") }[game.status] || t("종료")) : null;
 
   const playerRow = (name, pub, ms) => (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 2px" }}>
@@ -3064,9 +3064,9 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
           const hasActions = rel === "sent" || rel === "incoming" || rel === "none";
           const actions = hasActions ? (
             <>
-              {rel === "sent" && statusChip("요청 보냄", <Clock size={12} />)}
-              {rel === "incoming" && <>{btn("수락", () => doAccept(sel.uid), "gold", busyId)}{btn("거절", () => doReject(sel.uid), "ghost", busyId)}</>}
-              {rel === "none" && btn("친구 요청", () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
+              {rel === "sent" && statusChip(t("요청 보냄"), <Clock size={12} />)}
+              {rel === "incoming" && <>{btn(t("수락"), () => doAccept(sel.uid), "gold", busyId)}{btn(t("거절"), () => doReject(sel.uid), "ghost", busyId)}</>}
+              {rel === "none" && btn(t("친구 요청"), () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
             </>
           ) : null;
           return (
@@ -3107,9 +3107,9 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
         })() : (
           <>
             <div style={{ display: "flex", gap: 4, padding: "10px 12px 0", flexShrink: 0 }}>
-              {tabBtn("friends", "친구")}
-              {tabBtn("requests", "요청", incoming.length)}
-              {tabBtn("add", "추가")}
+              {tabBtn("friends", t("친구"))}
+              {tabBtn("requests", t("요청"), incoming.length)}
+              {tabBtn("add", t("추가"))}
             </div>
             <div style={{ padding: 14, minHeight: 180, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
               {!SB_ON ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("친구 기능은 서버 연결이 필요합니다. (현재 오프라인 모드)")}</div>
@@ -3131,13 +3131,13 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                         {incoming.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>{t("받은 요청")}</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{incoming.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>{btn("수락", () => doAccept(u), "gold", !!pending[u])}{btn("거절", () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>{btn(t("수락"), () => doAccept(u), "gold", !!pending[u])}{btn(t("거절"), () => doReject(u), "ghost", !!pending[u])}</>} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                         {outgoing.length > 0 && <div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 6, letterSpacing: ".02em" }}>{t("보낸 요청")}</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{outgoing.map((u, i) => (
-                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={btn("취소", () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
+                            <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={btn(t("취소"), () => doRemove(u), "ghost", !!pending[u])} /></FadeIn>
                           ))}</AnimatePresence></div>
                         </div>}
                       </div>
@@ -3153,10 +3153,10 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                       : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("일치하는 유저 없음")}</div> : null)
                         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
                             const uid = r.id; const rel = relOf(uid); const busyId = !!pending[uid];
-                            const right = rel === "friend" ? statusChip("친구", <UserCheck size={12} />)
-                              : rel === "sent" ? statusChip("요청됨", <Clock size={12} />)
-                                : rel === "incoming" ? btn("수락", () => doAccept(uid), "gold", busyId)
-                                  : btn("요청", () => doRequestByName(r.username, uid), "gold", busyId);
+                            const right = rel === "friend" ? statusChip(t("친구"), <UserCheck size={12} />)
+                              : rel === "sent" ? statusChip(t("요청됨"), <Clock size={12} />)
+                                : rel === "incoming" ? btn(t("수락"), () => doAccept(uid), "gold", busyId)
+                                  : btn(t("요청"), () => doRequestByName(r.username, uid), "gold", busyId);
                             return <FadeIn key={uid} index={i}><FriendRow id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} /></FadeIn>;
                           })}</div>}
                   </div>

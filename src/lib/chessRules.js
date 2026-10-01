@@ -1,5 +1,6 @@
 import { FILES } from "./theme.js";
 
+import { t } from "./i18n.js";
 /* ============================================================ 기보(SAN) 엔진 ============================================================ */
 export function startBoard() {
   const b = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -410,7 +411,7 @@ export function gameEndState(sans, fenRoot) {
 // 합의했거나, 불충분한 기물·50수 규칙 등 이 앱이 별도로 판정하지 않는 경우) "합의 무승부"로 간주한다.
 export function drawKindLabel(moves) {
   const end = moves && moves.length ? gameEndState(moves).end : null;
-  return end === "stalemate" ? "스테일메이트" : end === "threefold" ? "3회 동형 반복" : "합의 무승부";
+  return end === "stalemate" ? t("스테일메이트") : end === "threefold" ? t("3회 동형 반복") : t("합의 무승부");
 }
 export function buildSanBare(board, fr, fc, tr, tc, color, ep, promo) {
   const p = board[fr][fc]; if (!p) return null;

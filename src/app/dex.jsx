@@ -132,8 +132,8 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
       <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자 · 이론 수 편집(저장 전까지 미반영)")}</div>
       {(editInfo.childAdds.length > 0 || editInfo.siblingAdds.length > 0) && (
         <div>
-          {editInfo.childAdds.map((a) => chip("c" + a.san, "+ " + a.san + " (자녀)", () => onUnstageAdd([...path, san], a.san)))}
-          {editInfo.siblingAdds.map((a) => chip("s" + a.san, "+ " + a.san + " (형제)", () => onUnstageAdd(path, a.san)))}
+          {editInfo.childAdds.map((a) => chip("c" + a.san, t("+ {0} (자녀)", a.san), () => onUnstageAdd([...path, san], a.san)))}
+          {editInfo.siblingAdds.map((a) => chip("s" + a.san, t("+ {0} (형제)", a.san), () => onUnstageAdd(path, a.san)))}
         </div>
       )}
       <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
@@ -906,10 +906,10 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   const [draft, setDraft] = useState({ adds: {}, removes: {} }); // adds: {parentKey:[{san,name}]}, removes: {"parentKey|san":true}
   const stageAdd = (parentPath, sanRaw, nameRaw) => {
     const san = (sanRaw || "").trim();
-    if (!san) return "수 입력 필요";
+    if (!san) return t("수 입력 필요");
     const board = boardFromSans(parentPath);
     const color = parentPath.length % 2 === 0 ? "w" : "b";
-    if (!sanSrc(board, san, color)) return "불법 수";
+    if (!sanSrc(board, san, color)) return t("불법 수");
     const key = parentPath.join(" ");
     let dup = false;
     setDraft((d) => {
@@ -917,7 +917,7 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
       if (list.some((x) => x.san === san)) { dup = true; return d; }
       return { ...d, adds: { ...d.adds, [key]: [...list, { san, name: (nameRaw || "").trim() }] } };
     });
-    return dup ? "이미 추가 대기 중인 수" : null;
+    return dup ? t("이미 추가 대기 중인 수") : null;
   };
   const unstageAdd = (parentPath, san) => {
     const key = parentPath.join(" ");
@@ -1260,7 +1260,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   return (
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
-        {[["openings", "오프닝"], ["titles", "칭호"], ["skins", "스킨"]].map(([k, lb]) => { const on = dexView === k; return (
+        {[["openings", t("오프닝")], ["titles", t("칭호")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
           <button key={k} onClick={() => setDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
         ); })}
       </div>

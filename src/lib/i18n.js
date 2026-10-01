@@ -72,7 +72,25 @@ if (typeof document !== "undefined") {
 export const missing = new Set(); // 번역이 없어 원문(한국어)이 그대로 나온 키 — 개발 중 확인용(window.__i18nMissing)
 if (typeof window !== "undefined") window.__i18nMissing = missing;
 
-function fmt(s, params) { return params.length ? s.replace(/\{(\d+)\}/g, (m, i) => (i < params.length ? String(params[i]) : m)) : s; }
+// 한국어 조사 표지: "{0:이/가}" — 한국어일 때만 앞 값의 받침에 맞는 조사를 붙인다. 다른 언어 번역에서는 그냥 "{0}"로 쓴다(표지는 무시).
+function batchimOf(w) { // 0: 받침 없음, 1: 받침 있음, 2: ㄹ 받침
+  const last = w[w.length - 1]; const ch = w.charCodeAt(w.length - 1);
+  if (ch >= 48 && ch <= 57) return "178".includes(last) ? 2 : "036".includes(last) ? 1 : 0; // 읽는 소리: 영·삼·육 / 일·칠·팔
+  if (ch < 0xAC00 || ch > 0xD7A3) return 0; // 한글 밖(영문 등)은 받침 없는 쪽
+  const j = (ch - 0xAC00) % 28; return j === 0 ? 0 : j === 8 ? 2 : 1;
+}
+// 복수형: 번역문에서 "{0|move|moves}" — 앞 값이 하나일 때/아닐 때의 단어를 고른다(영어·스페인어: 1만 단수, 힌디어: 0과 1이 단수, 일본어·중국어는 단수 형태 하나).
+function pluralPick(n, one, other) { const x = Number(n); if (lang === "ja" || lang === "zh" || lang === "ko") return one; if (lang === "hi") return x === 0 || x === 1 ? one : other; return x === 1 ? one : other; }
+function fmt(s, params) {
+  if (!params.length) return s;
+  return s.replace(/\{(\d+)\|([^|}]*)\|([^}]*)\}/g, (m, i, a, b) => (i < params.length ? pluralPick(params[i], a, b) : m))
+    .replace(/\{(\d+)(?::([^}]*))?\}/g, (m, i, josa) => {
+      if (i >= params.length) return m;
+      const v = String(params[i]);
+      if (josa && lang === DEFAULT_LANG) { const [a, b] = josa.split("/"); const bt = batchimOf(v); return v + (a === "으로" ? (bt === 1 ? "으로" : "로") : (bt ? a : b)); }
+      return v;
+    });
+}
 /** 번역. 한국어일 때는 원문 그대로(자리표시자만 채움). */
 export function t(key, ...params) {
   let s = key;
