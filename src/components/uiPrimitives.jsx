@@ -4,7 +4,7 @@ import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 
 import { t } from "../lib/i18n.js";
-export function BestMoveJumpButton({ onClick, disabled, title = "이 대국 분석 모드로 바로 보기", size = 30 }) {
+export function BestMoveJumpButton({ onClick, disabled, title = t("이 대국 분석 모드로 바로 보기"), size = 30 }) {
   const dotSize = Math.round(size * 0.6), starSize = Math.round(size * 0.367);
   return (
     <button onClick={onClick} disabled={disabled} title={title} className="press"

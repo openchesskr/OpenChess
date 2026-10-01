@@ -66,15 +66,15 @@ export function ReactionChips({ list, myUid, onToggle, align = "flex-start" }) {
 
 // 답장·검색 결과에 쓰는 한 줄 요약 — 특수 메시지는 종류 이름으로.
 export function chatSnippet(m) {
-  if (!m) return "삭제된 메시지";
+  if (!m) return t("삭제된 메시지");
   if (m.body) return m.body.length > 60 ? m.body.slice(0, 60) + "…" : m.body;
-  if (m.emoji) return "이모티콘";
-  if (m.puzzle_no != null) return "퍼즐 #" + m.puzzle_no;
-  if (m.review_id != null) return "리뷰 공유";
-  if (m.legacy_slot != null) return "유산 공유";
-  if (m.poll) return "수 투표";
-  if (m.cobo) return "같이 보기 보드";
-  return "메시지";
+  if (m.emoji) return t("이모티콘");
+  if (m.puzzle_no != null) return t("퍼즐 #{0}", m.puzzle_no);
+  if (m.review_id != null) return t("리뷰 공유");
+  if (m.legacy_slot != null) return t("유산 공유");
+  if (m.poll) return t("수 투표");
+  if (m.cobo) return t("같이 보기 보드");
+  return t("메시지");
 }
 
 // ---- 말풍선 위 답장 인용 — 누르면 원문으로 이동. ----

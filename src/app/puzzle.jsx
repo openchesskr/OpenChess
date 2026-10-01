@@ -138,7 +138,7 @@ function PuzzlePgnBox({ text, sans, startColor, onPick }) {
     </div>
   );
 }
-const THEME_LABEL = { sacrifice: "기물 희생하기", advantage: "우위 점하기", punish: "실수 응징하기" };
+const THEME_LABEL = { sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") };
 function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(" · "); }
 // (기능) firstNamedOpening/lastNamedOpening은 각각 "가장 처음"/"가장 마지막" 이름 하나만 골라
 // 반환한다 — 퍼즐 탭에서 세부 갈래 이름(예: "Sicilian Defense: Najdorf Variation, English Attack")
@@ -530,7 +530,7 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
     </div>
   );
 }
-const LINE_TAG_LABEL = { best: "최선의 응수", eval2: "차선의 응수", adopt: "실전에서 가장 많이 둔 응수", eval3: "세 번째로 좋은 응수" };
+const LINE_TAG_LABEL = { best: t("최선의 응수"), eval2: t("차선의 응수"), adopt: t("실전에서 가장 많이 둔 응수"), eval3: t("세 번째로 좋은 응수") };
 /* ── (20차 기능1) 퍼즐 모식도 ──
    퍼즐의 분기 트리를 오프닝 모식도와 같은 가로(직선) 다이어그램으로 그린다.
    · 선 두께 = 그 수의 실전 채택률(%) — 많이 두어질수록 굵다
@@ -880,7 +880,7 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
             const kind = it.node.kind || m.kind;
             const adopt = it.node.adopt != null ? it.node.adopt : m.adopt;
             // 수 번호(예: "3.Nxe5"/"3...fxe5") — setup에 이어지는 전체 수순에서의 위치로 계산
-            const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : "시작") : moveNumber(setupLen + it.depth - 1) + it.node.san;
+            const label = isRoot ? (rootLabel ? moveNumber(setupLen - 1) + rootLabel : t("시작")) : moveNumber(setupLen + it.depth - 1) + it.node.san;
             const canAddHere = canEdit && !isRoot && it.isLeaf;
             // (20차 기능3) 라인은 항상 사용자 수(홀수 깊이)로 끝나야 완결된다 — 짝수 깊이에서 끝난
             // 리프는 개발자가 상대 응수만 추가하고 뒤이을 사용자 수를 아직 안 넣은 "미완성" 상태.
@@ -1036,18 +1036,18 @@ function hintPathSquares(pieceType, from, to) {
 function summarizePosition(board, userColor) {
   const oppColor = userColor === "w" ? "b" : "w";
   const kp = kingPos(board, oppColor);
-  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return "상대 킹 체크. 공격 진행 중";
+  if (kp && isAttacked(board, kp[0], kp[1], userColor)) return t("상대 킹 체크. 공격 진행 중");
   // (기능) 자체 포지션 평가 AI의 기물 긴장 신호 — 걸린 기물이 있으면 막연한 점수차 안내보다 훨씬
   // 구체적인 힌트가 된다(FEN 기반 tensionFacts, Stockfish 없이 즉시 계산).
-  const t = tensionFacts(board, userColor);
-  if (t.theirs.length) return "상대 " + PIECE_KOR[t.theirs[0].piece] + " 노출. 잡을 기회 찾기";
-  if (t.mine.length) return "내 " + PIECE_KOR[t.mine[0].piece] + " 위험. 안전하게 지킬 수 찾기";
+  const t_ = tensionFacts(board, userColor);
+  if (t_.theirs.length) return t("상대 {0} 노출. 잡을 기회 찾기", PIECE_KOR[t_.theirs[0].piece]);
+  if (t_.mine.length) return t("내 {0} 위험. 안전하게 지킬 수 찾기", PIECE_KOR[t_.mine[0].piece]);
   const diff = materialDiff(board, userColor);
-  if (diff >= 3) return "기물 점수 크게 우세. 확실히 마무리할 수 찾기";
-  if (diff >= 1) return "기물 점수 소폭 우세. 이점을 굳히는 수 찾기";
-  if (diff <= -3) return "기물 점수 크게 열세. 반격할 결정적인 수 필요";
-  if (diff <= -1) return "기물 점수 소폭 열세. 포지션을 뒤집을 수 찾기";
-  return "기물 점수 팽팽. 포지션을 유리하게 이끌 수 찾기";
+  if (diff >= 3) return t("기물 점수 크게 우세. 확실히 마무리할 수 찾기");
+  if (diff >= 1) return t("기물 점수 소폭 우세. 이점을 굳히는 수 찾기");
+  if (diff <= -3) return t("기물 점수 크게 열세. 반격할 결정적인 수 필요");
+  if (diff <= -1) return t("기물 점수 소폭 열세. 포지션을 뒤집을 수 찾기");
+  return t("기물 점수 팽팽. 포지션을 유리하게 이끌 수 찾기");
 }
 // (사용자 요청, v0.3.9) 퍼즐 라인 클리어 — 아래 PuzzleClearBanner와 완전히 같은 디자인·애니메이션
 // (typoLetters 글자별 팝인, 같은 글자 크기·재생 시간, 방사형 글로우 배경)을 쓴다. 별 3개 대신, 그
@@ -1607,9 +1607,9 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   }, [reply, pathNodes.length, wrong, reverting, curSans.join(" "), puzzle.id, liveOn, engine && engine.status]);
   // (v0.2.6 버그 수정) "당신 차례" 안내 문구 대신, 코치 말풍선이 지금 보드 포지션을 짧게 요약해
   // 설명하도록 바꾼다(막연한 "힌트 버튼을 눌러보세요" 대신 실제로 도움이 되는 상황 설명).
-  const idleBubble = intro ? "직전 수 확인 중…" : wrong ? (wrongReply ? "이 수를 두면 이렇게 당함" : "다른 수. 다시 시도") : reply ? "상대 응수 중…" : (mecBubble || summarizePosition(board, color));
-  const doneBubble = fullyComplete ? "모든 라인 정복"
-    : "라인 완료. 모식도에서 다른 가지에 도전";
+  const idleBubble = intro ? t("직전 수 확인 중…") : wrong ? (wrongReply ? t("이 수를 두면 이렇게 당함") : t("다른 수. 다시 시도")) : reply ? t("상대 응수 중…") : (mecBubble || summarizePosition(board, color));
+  const doneBubble = fullyComplete ? t("모든 라인 정복")
+    : t("라인 완료. 모식도에서 다른 가지에 도전");
   const bubbleText = done ? doneBubble : idleBubble;
   const nextTag = (allLines.find((l) => !solvedNow.has(l.tag)) || {}).tag;
   // (v0.3.4 기능·버그 수정) 클리어 애니메이션은 잠깐만 재생하고 스스로 꺼진다(반복 재생 방지) — 그
@@ -1635,7 +1635,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     return () => clearTimeout(t);
   }, [celebrate, fullyComplete, nextTag]);
   const lineIdx = targetLine ? allLines.findIndex((l) => l.tag === targetLine.tag) : -1;
-  const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || ("라인 " + (lineIdx + 1))) : "";
+  const lineLabel = targetLine ? (LINE_TAG_LABEL[targetLine.tag] || (t("라인 {0}{1}", lineIdx, 1))) : "";
   // (18차 보충 UX10→20차) 퍼즐에서 두어지는 모든 수의 수 체계 아이콘 — 트리에 저장된 등급을 즉시 쓰고,
   // 등급이 없는 수(직전 실수 수·구버전 트리)만 엔진으로 정밀 판정한다.
   const [moveIcon, setMoveIcon] = useState(null);   // { key, to, kind }
@@ -1782,23 +1782,23 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // 비어도 카운터가 리셋되지 않아, 예전 라인이 쓰던 번호를 새 라인이 재사용해 "이미 해결됨"으로
   // 잘못 표시되는 사고를 막는다(nextLeafTag 주석 참고).
   const addMoveToLeaf = async (path, sanRaw) => {
-    if (!canEditPuzzle) return "편집 권한 없음";
-    if (!path) return "라인 없음";
+    if (!canEditPuzzle) return t("편집 권한 없음");
+    if (!path) return t("라인 없음");
     const res = extendPuzzleLeaf(tree, setup, path, sanRaw, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장 실패. 잠시 후 다시 시도"; }
+    catch { return t("저장 실패. 잠시 후 다시 시도"); }
     return null;
   };
   // (20차 기능3) 모식도의 리프에서 "삭제"를 누르면 그 라인의 마지막 수를 하나 지운다. 실수로
   // 라인 전체가 한 번에 사라지지 않도록 항상 정확히 한 수만(그 리프 자신) 지운다.
   const deleteMoveFromLeaf = async (path) => {
-    if (!canEditPuzzle) return "편집 권한 없음";
-    if (!path) return "라인 없음";
+    if (!canEditPuzzle) return t("편집 권한 없음");
+    if (!path) return t("라인 없음");
     const res = removeLastMoveOfLine(tree, path, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장 실패. 잠시 후 다시 시도"; }
+    catch { return t("저장 실패. 잠시 후 다시 시도"); }
     return null;
   };
   // (v0.3.0 기능) 임의의 상대 응수 노드에 형제 갈래를 추가한다. genPuzzleTree가 실제로 계산해
@@ -1815,18 +1815,18 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
     } catch { return []; }
   };
   const addSibling = async (path, cand) => {
-    if (!canEditPuzzle) return "편집 권한 없음";
+    if (!canEditPuzzle) return t("편집 권한 없음");
     let finalCand = cand;
     if (cand.manual) {
       const board = boardOfRoot(fenRoot, [...setup, ...path]);
       const color = plyIsWhite(setup.length + path.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
-      if (!sanSrc(board, cand.san, color)) return "불법 수";
+      if (!sanSrc(board, cand.san, color)) return t("불법 수");
       finalCand = { san: decorateSan(board, cand.san, color), kind: null, ev: null, adopt: null };
     }
     const res = addSiblingBranch(tree, path, finalCand, seedTagSeq());
     if (res.error) return res.error;
     try { await persistEdit(res.tree, treeLinesOf(res.tree).map((l) => ({ tag: l.tag, solution: l.sans })), res.seq); }
-    catch { return "저장 실패. 잠시 후 다시 시도"; }
+    catch { return t("저장 실패. 잠시 후 다시 시도"); }
     return null;
   };
   // (20차 기능3) 이 퍼즐의 "기본 이점 기준"(자동 생성이 확실한 이점으로 볼 cp 기준)을 퍼즐마다
@@ -2160,7 +2160,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0} · 공개 설정", canEdit ? t("개발자") : t("제작자"))}</div>
                 <div className="flex items-center gap-2">
-                  {[[true, "공개"], [false, "비공개"]].map(([v, lb]) => (
+                  {[[true, t("공개")], [false, t("비공개")]].map(([v, lb]) => (
                     <button key={String(v)} onClick={() => saveVisibility(v)} disabled={visBusy} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: publicInput === v ? T.brass : "transparent", color: publicInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: visBusy ? "default" : "pointer", opacity: visBusy ? 0.6 : 1 }}>{lb}</button>
                   ))}
                 </div>
@@ -2181,7 +2181,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                     제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0} · 퍼즐 종류", canEdit ? t("개발자") : t("제작자"))}</div>
                 <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginBottom: 10 }}>
-                  {[["positional", "포지션 우위"], ["material", "기물 우위"]].map(([v, label]) => (
+                  {[["positional", t("포지션 우위")], ["material", t("기물 우위")]].map(([v, label]) => (
                     <button key={v} onClick={() => savePuzzleType(v)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: puzzleTypeInput === v ? T.brass : "transparent", color: puzzleTypeInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{label}</button>
                   ))}
                 </div>
@@ -2330,7 +2330,7 @@ function DailyStreakStrip({ streak }) {
   );
 }
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
-  const label = dateStr.slice(5).replace("-", ".") + (isToday ? " · 오늘" : "");
+  const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(" · 오늘") : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
   // (버그 보충) 모든 카드가 이제 항상 같은 폭(DAILY_CARD_W)이라 여백이 균등해진다 — "활성" 표시는
   // 더 이상 크기가 아니라 밝기·테두리·그림자 차이만으로 한다.
@@ -2719,7 +2719,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     setPcCreating(true);
     let pz;
     if (pcParsed.kind === "fen") {
-      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: "FEN 포지션 퍼즐", fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(pcParsed.fenRoot, []) };
+      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: t("FEN 포지션 퍼즐"), fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(pcParsed.fenRoot, []) };
     } else {
       const fullSetupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), sacSan = pcSelectedMove.san;
       // (v0.4.3 변경, 사용자 요청) 희생 테마는 "선택한 수(희생 수) 직전 수"를 컴퓨터의 응수로 자동
@@ -2786,7 +2786,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     window.addEventListener("scroll", onScroll, true);
     return () => window.removeEventListener("scroll", onScroll, true);
   }, [sortMenuOpen]);
-  const PUZZLE_SORT_OPTIONS = [["score", "추천순"], ["recent", "최신순"], ["rating", "레이팅순"], ["popular", "인기순"]];
+  const PUZZLE_SORT_OPTIONS = [["score", t("추천순")], ["recent", t("최신순")], ["rating", t("레이팅순")], ["popular", t("인기순")]];
   const [numInput, setNumInput] = useState("");
   const [numMsg, setNumMsg] = useState("");
   const [numFocus, setNumFocus] = useState(false);
@@ -2936,7 +2936,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // 이미 그렇게 쓰고 있음, 여긴 건드리지 않는다), openingKeyOf는 이제 검색·필터 UI 밖에서는
   // 쓰이지 않는다 — 필터 매칭 자체는 이제 openingNamesAlong(경로 전체를 따라가며 만나는 모든
   // 이름) 기준으로 바뀌었으므로(아래 matchesOpeningFilter), 이 값은 더는 필터 판정에 쓰지 않는다.
-  const openingKeyOf = (p) => (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "기타";
+  const openingKeyOf = (p) => (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || t("기타");
   // (사용자 요청) 도감 탭에서 검색되는 모든 세부 갈래 이름까지 퍼즐 탭에서도 검색·필터할 수 있게,
   // 기존 퍼즐에 실제로 붙어 있는 (최상위) 이름만 모으던 것 대신 SNAP.tree 전체에서 나올 수 있는
   // "모든" 오프닝 이름(allOpeningEntries, 도감과 동일한 중복 제거·상위 경로 우선 규칙)을 후보로
@@ -3055,7 +3055,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   };
   const feed = sortPuzzles(themed);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare, myPuzzleRating });
-  const chips = [["all", "전체"], ["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]];
+  const chips = [["all", t("전체")], ["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
   const filteredForCount = playablePuzzles.filter((p) => matchesOpeningFilter(p) && matchesCreatorFilter(p));
   const count = (k) => (k === "all" ? filteredForCount.length : filteredForCount.filter((p) => themesOf(p).includes(k)).length);
@@ -3152,7 +3152,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
               {pcParsed.kind === "fen" ? (
                 // FEN은 고를 후보 수 자체가 없다(포지션 자체가 시작점) — 유형을 고르면 곧바로 생성한다.
                 <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-                  {[["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => (
+                  {[["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]].map(([k, lb]) => (
                     <button key={k} onClick={() => pickPcThemeFen(k)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 999, border: "1px solid " + (pcTheme === k ? T.brass : "#C9B58C"), background: pcTheme === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcTheme === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 12, cursor: pcGenerating ? "default" : "pointer" }}>
                       <span style={{ display: "inline-flex", alignItems: "center" }}>
                         {PC_THEME_KINDS[k].map((kind, i) => (
@@ -3169,7 +3169,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   {pcAnalyzing && !pcAnalyzeResult && <div style={{ fontSize: 11.5, color: T.inkSoft }}>{t("기보를 채점하는 중...")}</div>}
                   {/* (사용자 요청) 유형 버튼을 먼저 고르게 하지 않고, 세 유형 모두 후보를 한꺼번에
                       나열한다 — 아이콘으로 각 유형이 어떤 등급을 다루는지 보여준다. */}
-                  {pcAnalyzeResult && [["sacrifice", "기물 희생하기"], ["advantage", "우위 점하기"], ["punish", "실수 응징하기"]].map(([k, lb]) => {
+                  {pcAnalyzeResult && [["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]].map(([k, lb]) => {
                     const kinds = PC_THEME_KINDS[k];
                     const qualifying = pcAnalyzeResult.moves.filter((m) => kinds.includes(m.kind));
                     return (
@@ -3239,7 +3239,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
             <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginBottom: 10 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("4. 공개 설정")}</div>
               <div className="flex gap-2">
-                {[[true, "공개", "다른 사람도 보고 풀 수 있음"], [false, "비공개", "나만 보고 풀 수 있음"]].map(([v, lb, desc]) => (
+                {[[true, t("공개"), t("다른 사람도 보고 풀 수 있음")], [false, t("비공개"), t("나만 보고 풀 수 있음")]].map(([v, lb, desc]) => (
                   <button key={String(v)} onClick={() => setPcPublic(v)} className="press" style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: "1px solid " + (pcPublic === v ? T.brass : "#C9B58C"), background: pcPublic === v ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcPublic === v ? "#241509" : T.ink, cursor: "pointer", textAlign: "left" }}>
                     <span style={{ display: "block", fontWeight: 800, fontSize: 12.5 }}>{lb}</span>
                     <span style={{ display: "block", fontSize: 10, marginTop: 2, opacity: 0.85 }}>{desc}</span>
@@ -3371,7 +3371,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("전체 · 좋아요 · 리포스트")}</div>
                     <div className="flex flex-wrap gap-1">
-                      {[["all", "전체"], ["liked", "좋아요"], ["reposted", "리포스트"]].map(([k, lb]) => { const on = k === "all" ? selectedEngagement.length === 0 : selectedEngagement.includes(k); return (
+                      {[["all", t("전체")], ["liked", t("좋아요")], ["reposted", t("리포스트")]].map(([k, lb]) => { const on = k === "all" ? selectedEngagement.length === 0 : selectedEngagement.includes(k); return (
                         <button key={k} onClick={() => toggleEngagement(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>
@@ -3387,7 +3387,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("빠른 필터")}</div>
                     <div className="flex flex-wrap gap-1">
-                      {[["all", "전체"], ["mine", "내가 만든 퍼즐"], ["inprogress", "풀고 있는 중"]].map(([k, lb]) => { const on = quickFilter === k; return (
+                      {[["all", t("전체")], ["mine", t("내가 만든 퍼즐")], ["inprogress", t("풀고 있는 중")]].map(([k, lb]) => { const on = quickFilter === k; return (
                         <button key={k} onClick={() => setQuickFilter(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.best : "rgba(255,255,255,.15)"), background: on ? "rgba(60,138,60,.28)" : "rgba(255,255,255,.06)", color: on ? "#BEEAB0" : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>
@@ -3405,7 +3405,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("시작 포지션")}</div>
                     <div className="flex flex-wrap gap-1">
-                      {[["all", "전체"], ["pgn", "PGN"], ["fen", "FEN"]].map(([k, lb]) => { const on = k === "all" ? selectedSources.length === 0 : selectedSources.includes(k); return (
+                      {[["all", t("전체")], ["pgn", "PGN"], ["fen", "FEN"]].map(([k, lb]) => { const on = k === "all" ? selectedSources.length === 0 : selectedSources.includes(k); return (
                         <button key={k} onClick={() => toggleSource(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>
@@ -3414,7 +3414,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("포지션 단계")}</div>
                     <div className="flex flex-wrap gap-1">
-                      {[["all", "전체"], ["opening", "오프닝"], ["middlegame", "미들게임"], ["endgame", "엔드게임"]].map(([k, lb]) => { const on = k === "all" ? selectedPhases.length === 0 : selectedPhases.includes(k); return (
+                      {[["all", t("전체")], ["opening", t("오프닝")], ["middlegame", t("미들게임")], ["endgame", t("엔드게임")]].map(([k, lb]) => { const on = k === "all" ? selectedPhases.length === 0 : selectedPhases.includes(k); return (
                         <button key={k} onClick={() => togglePhase(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>
                       ); })}
                     </div>

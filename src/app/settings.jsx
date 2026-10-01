@@ -98,7 +98,7 @@ async function puzzleListAllForDedup() {
 // 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 const FAQ_ITEMS = [];
 function openInquiryEmail(user) {
-  const subject = "[OpenChess 문의]";
+  const subject = t("[OpenChess 문의]");
   const body = [
     "문의 내용을 아래에 적기",
     "",
@@ -328,7 +328,7 @@ function usePuzzleRegenRun() {
 // 필요한지)만 알려준다 — 실제 upsert·CONTENT 변형은 이 함수가 전담한다.
 async function regenerateOnePuzzle(engine, no) {
   const data = await puzzleFetch(no);
-  if (!data) throw new Error("퍼즐 데이터를 찾을 수 없음");
+  if (!data) throw new Error(t("퍼즐 데이터를 찾을 수 없음"));
   const setup = [...(data.setupSans || []), data.mistakeSan].filter(Boolean);
   const fenRoot = (!data.setupSans || !data.setupSans.length) && data.fen ? parseFenFull(data.fen) : null;
   const th = primaryTheme(data);
@@ -337,7 +337,7 @@ async function regenerateOnePuzzle(engine, no) {
   const firstSan = th === "sacrifice" ? (curLines[0] && curLines[0].sans[0]) : null;
   const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
   const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
-  if (!gen) throw new Error("이 기준으로는 트리를 만들 수 없음");
+  if (!gen) throw new Error(t("이 기준으로는 트리를 만들 수 없음"));
   await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
   let overridesTouched = false;
   if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
@@ -619,7 +619,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       )}
       {dedup.status === "scanned" && dedup.groups.length > 0 && (
         <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
-          {dedup.groups.map((g) => "#" + g.keep + " 유지 ← " + g.remove.map((no) => "#" + no).join(", ")).join(" · ")}
+          {dedup.groups.map((g) => t("#{0} 유지 ← {1}", g.keep, g.remove.map((no) => "#" + no).join(", "))).join(" · ")}
         </div>
       )}
       {dedup.deleteFailed.length > 0 && (
@@ -671,7 +671,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
     setBlockListOpen(true); setBlockLoading(true);
     const uids = await chatBlocksFetch(myUid);
     const prof = uids.length ? await usersProfiles(uids) : {};
-    setBlockItems(uids.map((uid) => ({ uid, name: (prof[uid] && ((prof[uid].pub && prof[uid].pub.nickname) || prof[uid].username)) || "알 수 없는 사용자" })));
+    setBlockItems(uids.map((uid) => ({ uid, name: (prof[uid] && ((prof[uid].pub && prof[uid].pub.nickname) || prof[uid].username)) || t("알 수 없는 사용자") })));
     setBlockLoading(false);
   };
   const unblockFromList = async (uid) => { if (await chatBlockSet(myUid, uid, false)) setBlockItems((l) => l.filter((x) => x.uid !== uid)); };

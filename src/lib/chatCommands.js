@@ -11,10 +11,10 @@ import { t } from "./i18n.js";
 // (v0.5.7, 사용자 요청) /play로 바로 신청할 수 있는 미니게임 — gameType은 pvp_invites.game_type·PLAY_SPECIAL_GAMES와 같은 값.
 // 영문 키와 한국어 별칭을 모두 받는다(대소문자·공백 무시).
 export const CHAT_PLAY_GAMES = [
-  { gameType: "coord", key: "coord", label: t("좌표 인지 게임"), aliases: ["좌표", "좌표인지", "좌표게임", "coordrace", "coordinate", "coordinates"] },
-  { gameType: "knight", key: "knight", label: t("나이트 레이스"), aliases: ["나이트", "나이트경주", "knightrace"] },
-  { gameType: "rush", key: "rush", label: t("백랭크 러시아워"), aliases: ["러시", "러시아워", "백랭크", "rushhour", "backrank", "backrankrushhour"] },
-  { gameType: "attack", key: "attack", label: t("무한 체크메이트 게임"), aliases: ["메이트", "체크메이트", "무한체크메이트", "무한메이트", "공격모드", "attackmode", "mate", "checkmate"] },
+  { gameType: "coord", key: "coord", label: t("좌표 인지 게임"), aliases: [t("좌표"), t("좌표인지"), t("좌표게임"), "coordrace", "coordinate", "coordinates"] },
+  { gameType: "knight", key: "knight", label: t("나이트 레이스"), aliases: [t("나이트"), t("나이트경주"), "knightrace"] },
+  { gameType: "rush", key: "rush", label: t("백랭크 러시아워"), aliases: [t("러시"), t("러시아워"), t("백랭크"), "rushhour", "backrank", "backrankrushhour"] },
+  { gameType: "attack", key: "attack", label: t("무한 체크메이트 게임"), aliases: [t("메이트"), t("체크메이트"), t("무한체크메이트"), t("무한메이트"), t("공격모드"), "attackmode", "mate", "checkmate"] },
 ];
 // (v0.5.7 BUG-028) 사용자가 화면에 보이는 이름 그대로("무한 체크메이트 게임", "Knight Race" 등) 적어도 알아듣도록 — 소문자·공백·기호를
 // 없앤 뒤 키·gameType·화면 이름·별칭과 비교하고, 끝에 붙은 "게임"·"대결"·"한판"도 떼어 본다.
@@ -80,21 +80,21 @@ export function parseChatCommand(body, ctx) {
   }
   switch (name) {
     case "help": case "blind": case "resign": case "draw": case "eval":
-      return rest ? err(name, "이 명령어는 뒤에 아무것도 붙이지 않음") : { name };
+      return rest ? err(name, t("이 명령어는 뒤에 아무것도 붙이지 않음")) : { name };
     case "puzzle": {
       const pm = /^(?:-num\s+)?#?(\d{1,7})$/i.exec(rest);
-      return pm ? { name, no: parseInt(pm[1], 10) } : err(name, "퍼즐 번호(숫자) 입력 필요");
+      return pm ? { name, no: parseInt(pm[1], 10) } : err(name, t("퍼즐 번호(숫자) 입력 필요"));
     }
     case "legacy": {
       const lm = /^([1-6])$/.exec(rest);
-      return lm ? { name, slot: parseInt(lm[1], 10) } : err(name, "1~6 중 하나 입력 필요");
+      return lm ? { name, slot: parseInt(lm[1], 10) } : err(name, t("1~6 중 하나 입력 필요"));
     }
     case "review": {
       const rm = /^-?(recent|pgn|fen)(?:\s+([\s\S]+))?$/i.exec(rest);
       if (!rm) return err(name);
       const kind = rm[1].toLowerCase(), code = (rm[2] || "").trim();
       if (kind === "recent") return code ? err(name) : { name, kind };
-      if (!code) return err(name, (kind === "pgn" ? "PGN" : "FEN") + " 코드 붙여넣기 필요");
+      if (!code) return err(name, t("{0} 코드 붙여넣기 필요", (kind === "pgn" ? "PGN" : "FEN")));
       return { name, kind, code };
     }
     case "play": {
@@ -102,17 +102,17 @@ export function parseChatCommand(body, ctx) {
       // — "/play 아무개랑 하고 싶다" 같은 말을 막지 않으려는 것. 형식 검사는 호출부(parsePlayCommandArg)가 한다.
       // (v0.5.7 BUG-028) 단, 한 단어짜리 인자는 명령어를 치려던 것이라(예: "/play 백랭크") 문장으로 흘려보내지 않고 쓸 수 있는 이름을 알려 준다
       // — 예전엔 못 알아들은 게임 이름이 평범한 메시지로 조용히 나가 "신청이 안 된다"로만 보였다.
-      if (!rest) return err(name, "시간(분)이나 미니게임 이름 입력 필요");
+      if (!rest) return err(name, t("시간(분)이나 미니게임 이름 입력 필요"));
       const mg = chatPlayGameOf(rest);
       if (mg) return { name, gameType: mg.gameType };
-      const t = chatPlayTimeArg(rest);
-      if (t) return { name, arg: t };
+      const t_ = chatPlayTimeArg(rest);
+      if (t_) return { name, arg: t_ };
       if (/\s/.test(rest)) return null;
-      return err(name, "\"" + rest + "\" 알 수 없는 이름. 미니게임: " + CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ") + ".");
+      return err(name, t("\"{0}\" 알 수 없는 이름. 미니게임: {1}.", rest, CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ")));
     }
     case "poll": case "board": {
       if (!rest) return { name, fen: null };
-      return FENISH.test(rest) ? { name, fen: rest } : err(name, "FEN 형식 아님");
+      return FENISH.test(rest) ? { name, fen: rest } : err(name, t("FEN 형식 아님"));
     }
     default:
       return null;

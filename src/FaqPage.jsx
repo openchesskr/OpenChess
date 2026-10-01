@@ -78,8 +78,8 @@ function KineticWord({ children, index, accent }) {
 }
 function KineticTagline() {
   const words = [
-    { t: "궁금한", accent: true },
-    { t: "점", accent: false },
+    { t: t("궁금한"), accent: true },
+    { t: t("점"), accent: false },
   ];
   return (
     <div style={{ padding: "10px 4px 8px", textAlign: "center", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0 .32em" }}>

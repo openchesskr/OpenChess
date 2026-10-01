@@ -89,7 +89,7 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
   }
   return counts;
 }
-const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"];
+const TIME_CONTROL_CATS = [t("불렛"), t("블리츠"), t("래피드"), t("스탠다드")];
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
   { elo: 800, label: "800", desc: t("초보") },
@@ -321,7 +321,7 @@ function MatchmakingScreen({ active, variant, opponent, timeControlLabel, onCanc
     return () => clearInterval(id);
   }, [active]);
   const isInvite = variant === "invite";
-  const oppName = (opponent && opponent.name) || "상대";
+  const oppName = (opponent && opponent.name) || t("상대");
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
@@ -565,11 +565,11 @@ const MG_GOLD = "#A97A2C";
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: "좌표 인지 게임", desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: "나이트 레이스", desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
+  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "knight-race", gameType: "knight", name: t("나이트 레이스"), desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: "백랭크 러시아워", desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: "무한 체크메이트 게임", desc: t("3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급"), Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
+  { key: "rush-hour", gameType: "rush", name: t("백랭크 러시아워"), desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
+  { key: "attack-mode", gameType: "attack", name: t("무한 체크메이트 게임"), desc: t("3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급"), Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
 ];
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
@@ -783,7 +783,7 @@ function mgShapes() {
   };
 }
 const MG_KEYS = ["coord", "knight", "attack", "rush"];
-const MG_NAMES = { coord: "좌표 인지 게임", knight: "나이트 레이스", attack: "무한 체크메이트 게임", rush: "백랭크 러시아워" };
+const MG_NAMES = { coord: t("좌표 인지 게임"), knight: t("나이트 레이스"), attack: t("무한 체크메이트 게임"), rush: t("백랭크 러시아워") };
 // 버튼 글자 자리 — 보드 반대편(가운데 가로선 쪽)에 둔다: 위 버튼은 보드 아래, 아래 버튼은 보드 위. 육각형 홈을
 // 피하도록 왼쪽 버튼은 왼쪽 정렬, 오른쪽 버튼은 오른쪽 정렬(x는 정렬한 쪽 끝, top은 viewBox 좌표).
 const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED;            // 버튼 안에 보이는 보드 높이
@@ -1448,18 +1448,18 @@ function MinigameCountdown({ startAt }) {
     return () => clearInterval(t);
   }, [startAt]);
   const left = startAt ? startAt - now : 0;
-  const label = left > 0 ? String(Math.min(3, Math.ceil(left / 1000))) : "시작!";
+  const label = left > 0 ? String(Math.min(3, Math.ceil(left / 1000))) : t("시작!");
   useEffect(() => {
     if (!active || lastRef.current === label) return;
     lastRef.current = label;
-    if (label === "시작!") { fx("go"); buzz(40); } else fx("tick");
+    if (label === t("시작!")) { fx("go"); buzz(40); } else fx("tick");
   }, [label, active]);
   if (!active) return null;
   return (
     <div aria-live="polite" style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: left > 0 ? "rgba(250,244,230,.72)" : "transparent", backdropFilter: left > 0 ? "blur(2px)" : "none", borderRadius: 6, pointerEvents: left > 0 ? "auto" : "none", transition: "background .25s" }}>
       <AnimatePresence mode="popLayout">
         <motion.div key={label} initial={{ scale: 2.2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={{ duration: 0.32, ease: MOTION_EASE }}
-          style={{ fontSize: label === "시작!" ? 44 : 84, fontWeight: 900, color: label === "시작!" ? T.brass : T.ink, fontFamily: SITE_FONT, textShadow: "0 3px 14px rgba(90,58,34,.25), 0 0 30px " + (label === "시작!" ? "rgba(232,196,110,.6)" : "rgba(255,255,255,.25)") }}>
+          style={{ fontSize: label === t("시작!") ? 44 : 84, fontWeight: 900, color: label === t("시작!") ? T.brass : T.ink, fontFamily: SITE_FONT, textShadow: "0 3px 14px rgba(90,58,34,.25), 0 0 30px " + (label === "시작!" ? "rgba(232,196,110,.6)" : "rgba(255,255,255,.25)") }}>
           {label}
         </motion.div>
       </AnimatePresence>
@@ -1489,7 +1489,7 @@ function MinigameScoreHeader({ myScore, oppScore, oppLabel, center, right }) {
   );
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 12px", marginBottom: 8, borderRadius: 12, background: "linear-gradient(180deg,rgba(255,255,255,.55),rgba(255,255,255,.45))", border: "1px solid rgba(150,112,58,.37)", flexShrink: 0 }}>
-      {side("나", myScore, MG_GOLD, lead === "me", "left")}
+      {side(t("나"), myScore, MG_GOLD, lead === "me", "left")}
       <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>{center}</div>
       {oppLabel ? side(oppLabel, oppScore, "#8FC1EC", lead === "opp", "right") : (right || <span style={{ minWidth: 20 }} />)}
     </div>
@@ -1504,7 +1504,7 @@ function MinigameRoundBanner({ result, roundKey, text }) {
     if (result === "me") { fx("roundWin"); buzz([30, 40, 30]); } else if (result === "opp") { fx("roundLose"); buzz(120); } else fx("roundDraw");
   }, [result, roundKey]);
   const color = result === "me" ? T.best : result === "opp" ? T.blunder : "#B89A6A";
-  const label = text || (result === "me" ? "라운드 승리" : result === "opp" ? "라운드 패배" : "무승부");
+  const label = text || (result === "me" ? t("라운드 승리") : result === "opp" ? t("라운드 패배") : t("무승부"));
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 15, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
       <AnimatePresence>
@@ -1541,7 +1541,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
     if (outcome === "win") { fx("win"); buzz([40, 60, 40, 60, 120]); } else if (outcome === "lose") { fx("lose"); buzz(200); } else fx("roundDraw");
   }, [outcome]);
   // (v0.5.3) 혼자 플레이하기는 승패가 없어 title(예: "신기록!", "기록")·scoreText(예: "12개")로 바꿔 쓴다.
-  const title = titleOverride || (outcome === "win" ? "승리" : outcome === "lose" ? "패배" : "무승부");
+  const title = titleOverride || (outcome === "win" ? t("승리") : outcome === "lose" ? t("패배") : t("무승부"));
   const color = outcome === "win" ? MG_GOLD : outcome === "lose" ? T.blunder : "#9C8563";
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "20px 6px", overflowY: "auto" }}>
@@ -1624,13 +1624,13 @@ function useRoundSettle(roundKey, resolved, resolvedAtMs) {
   return { phase: "settle", until: mark.t + ROUND_SETTLE_TOTAL, skip };
 }
 // rows: [{ label, me, opp, win: "me"|"opp"|null }] — opp가 없으면(혼자 플레이) 내 값만 한 칸으로 보여준다.
-function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, oppLabel, rows, reason, sub, until, onNext, nextLabel = "다음 라운드", solo }) {
+function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, oppLabel, rows, reason, sub, until, onNext, nextLabel = t("다음 라운드"), solo }) {
   useEffect(() => {
     if (result === "me") { fx("roundWin"); buzz([30, 40, 30]); } else if (result === "opp") { fx("roundLose"); buzz(120); } else fx("roundDraw");
   }, [result]);
   const now = useNow(true, 100);
   const left = Math.max(0, (until || now) - now);
-  const title = solo ? (result === "me" ? "도착 성공" : "실패") : result === "me" ? "라운드 승리" : result === "opp" ? "라운드 패배" : "라운드 무승부";
+  const title = solo ? (result === "me" ? t("도착 성공") : t("실패")) : result === "me" ? t("라운드 승리") : result === "opp" ? t("라운드 패배") : t("라운드 무승부");
   const color = result === "me" ? MG_GOLD : result === "opp" ? T.blunder : "#9C8563";
   const cellStyle = (hl) => ({ padding: "8px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.16)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), textAlign: "center", minWidth: 0 });
   return (
@@ -1675,47 +1675,47 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
     </div>
   );
 }
-const fmtSec = (ms) => (ms == null ? "-" : (Math.max(0, ms) / 1000).toFixed(1) + "초");
+const fmtSec = (ms) => (ms == null ? "-" : t("{0}초", ((Math.max(0, ms) / 1000).toFixed(1))));
 // 나이트 경주 한 라운드 정산 행·사유. me/opp: { reached, moves, ms, captured } | null(미보고).
 // dist — (v0.5.7) 거리 판정 라운드면 { basis, me, opp, meMs, oppMs }: 목표까지 거리·소모 시간 행과 사유를 더한다.
 function knightSettleInfo(me, opp, result, par, solo, dist) {
-  const st = (x) => (!x ? "미완료" : x.reached ? "도착" : x.captured ? "잡힘" : "실패");
+  const st = (x) => (!x ? t("미완료") : x.reached ? t("도착") : x.captured ? t("잡힘") : t("실패"));
   const both = me && opp && me.reached && opp.reached;
   const rows = [
     { label: t("결과"), me: st(me), opp: st(opp), win: null },
-    { label: t("이동 수"), me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: t("이동 수"), me: me ? t("{0}수", (me.moves)) : "-", opp: opp ? t("{0}수", (opp.moves)) : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
     { label: t("걸린 시간"), me: me && me.reached ? fmtSec(me.ms) : "-", opp: opp && opp.reached ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
-  if (solo) reason = me && me.reached ? (me.moves <= par ? "최소 수로 도착" : "도착. 최소 " + par + "수로도 가능") : me && me.captured ? "상대 기물이 지배하는 칸에 들어가 나이트가 잡힘" : "제한 안에 도착 못 함";
-  else if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 도착해 승리" : "상대가 더 적은 수로 도착") : result === "me" ? "같은 수, 더 빨리 도착해 승리" : result === "opp" ? "같은 수, 상대가 더 빨리 도착" : "수도 시간도 같아 무승부";
-  else if (me && me.reached) reason = opp && opp.captured ? "상대 나이트가 잡혀 도착한 내가 승리" : "나만 도착해 승리";
-  else if (opp && opp.reached) reason = me && me.captured ? "나이트가 잡혀 도착한 상대가 승리" : "상대만 도착";
-  else if (dist && dist.basis === "distance") reason = "둘 다 도착 못 함. " + (result === "me" ? "내가 목표에 더 가까워 승리" : "상대가 목표에 더 가까움");
-  else if (dist && dist.basis === "distanceTime") reason = "둘 다 도착 못 했고 거리도 같음. " + (result === "draw" ? "시간도 같아 무승부" : result === "me" ? "시간을 덜 써서 승리" : "상대가 시간을 덜 씀");
-  else reason = "둘 다 도착 못 함:" + (result === "draw" ? " 무승부" : " 목표에 더 가까이 간 쪽 승리");
+  if (solo) reason = me && me.reached ? (me.moves <= par ? t("최소 수로 도착") : t("도착. 최소 {0}수로도 가능", par)) : me && me.captured ? t("상대 기물이 지배하는 칸에 들어가 나이트가 잡힘") : t("제한 안에 도착 못 함");
+  else if (both) reason = me.moves !== opp.moves ? (result === "me" ? t("더 적은 수로 도착해 승리") : t("상대가 더 적은 수로 도착")) : result === "me" ? t("같은 수, 더 빨리 도착해 승리") : result === "opp" ? t("같은 수, 상대가 더 빨리 도착") : t("수도 시간도 같아 무승부");
+  else if (me && me.reached) reason = opp && opp.captured ? t("상대 나이트가 잡혀 도착한 내가 승리") : t("나만 도착해 승리");
+  else if (opp && opp.reached) reason = me && me.captured ? t("나이트가 잡혀 도착한 상대가 승리") : t("상대만 도착");
+  else if (dist && dist.basis === "distance") reason = t("둘 다 도착 못 함. {0}", result === "me" ? t("내가 목표에 더 가까워 승리") : t("상대가 목표에 더 가까움"));
+  else if (dist && dist.basis === "distanceTime") reason = t("둘 다 도착 못 했고 거리도 같음. {0}", result === "draw" ? t("시간도 같아 무승부") : result === "me" ? t("시간을 덜 써서 승리") : t("상대가 시간을 덜 씀"));
+  else reason = t("둘 다 도착 못 함:{0}", result === "draw" ? t(" 무승부") : t(" 목표에 더 가까이 간 쪽 승리"));
   if (dist && (dist.basis === "distance" || dist.basis === "distanceTime")) {
-    const dl = (d) => (d == null ? "-" : d >= 99 ? "잡힘" : d + "수 거리");
+    const dl = (d) => (d == null ? "-" : d >= 99 ? t("잡힘") : t("{0}수 거리", (d)));
     rows.push({ label: t("목표까지"), me: dl(dist.me), opp: dl(dist.opp), win: dist.me !== dist.opp ? ((dist.me ?? 99) < (dist.opp ?? 99) ? "me" : "opp") : null });
     if (dist.basis === "distanceTime") rows.push({ label: t("소모 시간"), me: fmtSec(dist.meMs), opp: fmtSec(dist.oppMs), win: dist.meMs !== dist.oppMs ? (dist.meMs < dist.oppMs ? "me" : "opp") : null });
   }
-  return { rows, reason: reason + (par ? " (이 라운드 최소 " + par + "수)" : "") };
+  return { rows, reason: reason + (par ? t(" (이 라운드 최소 {0}수)", par) : "") };
 }
 // 러시아워 한 라운드 정산 행·사유. me/opp: { solved, moves, ms, captured } | null.
 function rushSettleInfo(me, opp, result, par) {
-  const st = (x) => (!x ? "미완료" : x.solved ? "메이트" : x.captured ? "룩 잡힘" : "시간 초과");
+  const st = (x) => (!x ? t("미완료") : x.solved ? t("메이트") : x.captured ? t("룩 잡힘") : t("시간 초과"));
   const both = me && opp && me.solved && opp.solved;
   const rows = [
     { label: t("결과"), me: st(me), opp: st(opp), win: null },
-    { label: t("이동 수"), me: me ? me.moves + "수" : "-", opp: opp ? opp.moves + "수" : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
+    { label: t("이동 수"), me: me ? t("{0}수", (me.moves)) : "-", opp: opp ? t("{0}수", (opp.moves)) : "-", win: both && me.moves !== opp.moves ? (me.moves < opp.moves ? "me" : "opp") : null },
     { label: t("걸린 시간"), me: me && me.solved ? fmtSec(me.ms) : "-", opp: opp && opp.solved ? fmtSec(opp.ms) : "-", win: both && me.moves === opp.moves && me.ms !== opp.ms ? (me.ms < opp.ms ? "me" : "opp") : null },
   ];
   let reason;
-  if (both) reason = me.moves !== opp.moves ? (result === "me" ? "더 적은 수로 메이트해 승리" : "상대가 더 적은 수로 메이트") : result === "me" ? "같은 수, 더 빨리 풀어 승리" : result === "opp" ? "같은 수, 상대가 더 빨리 풂" : "수도 시간도 같아 무승부";
-  else if (me && me.solved) reason = opp ? "나만 풀어 승리" : "상대가 더 적은 수로 따라잡을 수 없어 승리";
-  else if (opp && opp.solved) reason = me && me.captured ? "룩이 잡힘. 푼 상대가 승리" : "상대만 풂";
-  else reason = "둘 다 풀지 못해 무승부";
-  return { rows, reason: reason + (par ? " (최단 " + par + "수)" : "") };
+  if (both) reason = me.moves !== opp.moves ? (result === "me" ? t("더 적은 수로 메이트해 승리") : t("상대가 더 적은 수로 메이트")) : result === "me" ? t("같은 수, 더 빨리 풀어 승리") : result === "opp" ? t("같은 수, 상대가 더 빨리 풂") : t("수도 시간도 같아 무승부");
+  else if (me && me.solved) reason = opp ? t("나만 풀어 승리") : t("상대가 더 적은 수로 따라잡을 수 없어 승리");
+  else if (opp && opp.solved) reason = me && me.captured ? t("룩이 잡힘. 푼 상대가 승리") : t("상대만 풂");
+  else reason = t("둘 다 풀지 못해 무승부");
+  return { rows, reason: reason + (par ? t(" (최단 {0}수)", par) : "") };
 }
 // 제한시간 막대 — 남은 비율이 25% 아래로 떨어지면 빨갛게 바뀌고 맥동한다.
 function MinigameTimeBar({ pct }) {
@@ -1763,8 +1763,8 @@ function useCoordFeedback(roundIdx, targetSq) {
   const stats = useMemo(() => {
     const avg = reactions.length ? Math.round(reactions.reduce((a, b) => a + b, 0) / reactions.length) : null;
     const best = reactions.length ? Math.min(...reactions) : null;
-    const fmt = (ms) => (ms == null ? "-" : (ms / 1000).toFixed(2) + "초");
-    return [{ label: t("평균 반응속도"), value: fmt(avg) }, { label: t("최고 반응속도"), value: fmt(best) }, { label: t("오답 클릭"), value: misses + "회" }];
+    const fmt = (ms) => (ms == null ? "-" : t("{0}초", ((ms / 1000).toFixed(2))));
+    return [{ label: t("평균 반응속도"), value: fmt(avg) }, { label: t("최고 반응속도"), value: fmt(best) }, { label: t("오답 클릭"), value: t("{0}회", (misses)) }];
   }, [reactions, misses]);
   return { onMyClick, shakeControls, stats };
 }
@@ -2046,9 +2046,9 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
       </div>
       {myUid ? (
         <div style={{ display: "flex" }}>
-          {cell("레이팅", row ? row.rating : 1200, placed ? "최고 " + row.peak_rating : "배치 " + Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT) + "/" + MINIGAME_PLACEMENT, true)}
-          {cell("전적", minigameRecordText(row), row && row.streak >= 2 ? row.streak + "연승 중" : row && row.best_streak >= 2 ? "최다 " + row.best_streak + "연승" : null)}
-          {cell("혼자 최고", best == null ? "-" : minigameBestLabel(game, best))}
+          {cell(t("레이팅"), row ? row.rating : 1200, placed ? t("최고 {0}", row.peak_rating) : t("배치 {0}/{1}", Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT), true)}
+          {cell(t("전적"), minigameRecordText(row), row && row.streak >= 2 ? t("{0}연승 중", (row.streak)) : row && row.best_streak >= 2 ? t("최다 {0}연승", row.best_streak) : null)}
+          {cell(t("혼자 최고"), best == null ? "-" : minigameBestLabel(game, best))}
         </div>
       ) : (
         <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>{t("로그인하면 전적·레이팅·기록이 랭킹에 반영")}</div>
@@ -2115,7 +2115,7 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile, onBack }) {
   }, [game, kind, scope]);
   const top = rows ? rows.filter((r) => r.rank <= 50) : [];
   const meOutside = rows ? rows.find((r) => r.is_me && r.rank > 50) : null;
-  const empty = kind === "rating" ? "랭킹 없음. 랜덤 매칭 " + MINIGAME_PLACEMENT + "판을 마치면 등록" : "기록 없음. 혼자 플레이로 첫 기록 도전";
+  const empty = kind === "rating" ? t("랭킹 없음. 랜덤 매칭 {0}판을 마치면 등록", MINIGAME_PLACEMENT) : t("기록 없음. 혼자 플레이로 첫 기록 도전");
   // (v0.5.7) 데스크톱에서 탭·순위 줄이 화면 폭 끝까지 늘어나지 않게 로비(520px)보다 조금 넓은 폭으로 모은다.
   return (
     <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", padding: "8px 2px 4px" }}>
@@ -2334,7 +2334,7 @@ function MinigameForfeitConfirm({ onCancel, onConfirm, bot }) {
 // 상대가 누른 칸·상대 기물·상대 진행 표시의 우상단에 MgOppBadge(작은 프로필 사진)를 붙인다 — "지금 저건 상대가 한 것"이 한눈에 보이게.
 // MgPvpContext — 실시간 대전 화면일 때만 { game, myUid, startNewGame }. MinigameResult가 이걸 보고 재대국 버튼(MgPvpRematch)을 그린다.
 const MgOppContext = createContext(null);
-const MG_BOT_OPP = { bot: true, name: "봇" };
+const MG_BOT_OPP = { bot: true, name: t("봇") };
 const MgPvpContext = createContext(null);
 // 상대 프로필(사진·닉네임) — 대전 행의 두 참가자 중 내가 아닌 쪽.
 function useMgOpponent(game, myUid) {
@@ -2343,8 +2343,8 @@ function useMgOpponent(game, myUid) {
   useEffect(() => {
     if (!oppUid) { setOpp(null); return; }
     let off = false;
-    setOpp({ name: "상대" });
-    usersProfiles([oppUid]).then((m) => { if (off) return; const p = m[oppUid] || {}; setOpp({ photo: (p.pub && p.pub.photo) || null, name: (p.pub && p.pub.nickname) || p.username || "상대" }); }).catch(() => { });
+    setOpp({ name: t("상대") });
+    usersProfiles([oppUid]).then((m) => { if (off) return; const p = m[oppUid] || {}; setOpp({ photo: (p.pub && p.pub.photo) || null, name: (p.pub && p.pub.nickname) || p.username || t("상대") }); }).catch(() => { });
     return () => { off = true; };
   }, [oppUid]);
   return opp;
@@ -2389,7 +2389,7 @@ function MgPvpRematch({ pvp }) {
     } catch (e) { setNote(t("재대국 신청 실패")); }
     setBusy(false);
   };
-  const label = mine ? "상대 응답 대기 중… (취소)" : theirs ? "재대국 수락" : "재대국 신청";
+  const label = mine ? t("상대 응답 대기 중… (취소)") : theirs ? t("재대국 수락") : t("재대국 신청");
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
       <button onClick={onClick} disabled={busy} className="press" style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: theirs ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.14)", color: theirs ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: busy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
@@ -2435,7 +2435,7 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   else if (mode && mode.kind === "rank") body = <MinigameLeaderboard game={gameType} myUid={myUid} onOpenProfile={onOpenProfile} onBack={toLobby} />;
   else if (m.waiting || m.myInvite) body = (
     <MatchmakingScreen active variant={m.myInvite ? "invite" : "queue"}
-      opponent={m.myInvite ? { name: m.myInvite.toUsername || "상대", photo: m.myInvite.toPhoto } : null}
+      opponent={m.myInvite ? { name: m.myInvite.toUsername || t("상대"), photo: m.myInvite.toPhoto } : null}
       timeControlLabel={title} onCancel={() => { if (m.waiting) m.leave(); if (m.myInvite) m.cancelInvite(); }} />
   );
   const inLobby = !m.game && !mode && !m.waiting && !m.myInvite;
@@ -2631,7 +2631,7 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
   if (settle.phase === "settle") {
     const res = round.winner === "w" ? "me" : "opp";
     const info = knightSettleInfo(round.mine, null, res, round.par, true);
-    return <MinigameRoundSettle solo roundNo={idx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} rows={info.rows.filter((r) => r.label !== "결과")} reason={info.reason}
+    return <MinigameRoundSettle solo roundNo={idx + 1} roundTotal={KNIGHT_BO_TOTAL} result={res} rows={info.rows.filter((r) => r.label !== t("결과"))} reason={info.reason}
       sub={t("지금까지 {0}회 도착", reached.length)} until={settle.until} onNext={settle.skip} nextLabel={finished ? t("최종 결과") : t("다음 라운드")} />;
   }
   if (finished && settle.phase === "done") {
@@ -2929,9 +2929,9 @@ function KnightRaceLegend() {
   );
   return (
     <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0, marginTop: 6 }}>
-      {dangerOn && chip("rgba(196,60,50,.75)", "위협 칸 (진입 시 잡힘)")}
-      {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, "상대 기물 (도달 시 잡음)")}
-      {chip("rgba(196,154,80,.6)", "이동 가능")}
+      {dangerOn && chip("rgba(196,60,50,.75)", t("위협 칸 (진입 시 잡힘)"))}
+      {chip({ background: "transparent", boxShadow: "inset 0 0 0 2px " + T.brassHi, borderRadius: "50%" }, t("상대 기물 (도달 시 잡음)"))}
+      {chip("rgba(196,154,80,.6)", t("이동 가능"))}
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{tx("{0}목표 칸", <Star size={11} color={MG_GOLD} fill={T.brassHi} />)}</span>
     </div>
   );
@@ -3240,7 +3240,7 @@ function knightResultStats(mine) {
   return [
     { label: t("목표 도달"), value: reached.length + "/" + mine.length },
     { label: t("평균 이동 수"), value: avgMoves },
-    { label: t("최단 도달"), value: fastest == null ? "-" : (fastest / 1000).toFixed(1) + "초" },
+    { label: t("최단 도달"), value: fastest == null ? "-" : t("{0}초", ((fastest / 1000).toFixed(1))) },
   ];
 }
 function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
@@ -3553,7 +3553,7 @@ function useRushPuzzle(level, { enabled = true, onSolved, onFailed } = {}) {
   const canDrag = (i) => enabled && !busy && status === "play" && !!(cur.state.board[i] && cur.state.board[i][0] === "w");
   return { view, selected, targets, danger, showDanger, setShowDanger, onCell, canDrag, undo, reset, restart, moves, status, msg, shakeControls, lastMove: cur.last, busy };
 }
-const RUSH_PIECE_SUBJ = { P: "폰이", N: "나이트가", B: "비숍이", R: "룩이", Q: "퀸이", K: "킹이" };
+const RUSH_PIECE_SUBJ = { P: t("폰이"), N: t("나이트가"), B: t("비숍이"), R: t("룩이"), Q: t("퀸이"), K: t("킹이") };
 function RushMsg({ msg }) {
   return (
     <div style={{ minHeight: 26, display: "flex", justifyContent: "center", alignItems: "center", flexShrink: 0, margin: "6px 0 2px" }}>
@@ -3576,9 +3576,9 @@ function RushToolbar({ p }) {
   );
   return (
     <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
-      {btn(p.undo, Undo2, "되돌리기", p.moves === 0 || p.status !== "play")}
-      {btn(p.reset, RotateCcw, "처음부터", p.moves === 0 || p.status !== "play")}
-      {dangerOn && btn(() => p.setShowDanger((v) => !v), Eye, "위험 칸", false, p.showDanger)}
+      {btn(p.undo, Undo2, t("되돌리기"), p.moves === 0 || p.status !== "play")}
+      {btn(p.reset, RotateCcw, t("처음부터"), p.moves === 0 || p.status !== "play")}
+      {dangerOn && btn(() => p.setShowDanger((v) => !v), Eye, t("위험 칸"), false, p.showDanger)}
     </div>
   );
 }
@@ -3916,10 +3916,10 @@ const ATTACK_MATCH_MS = 180000;
 // (v0.5.5, 사용자 요청) 화면에서는 S·A·B·C 글자 대신 리뷰의 수 등급 아이콘으로 보여준다 — 탁월(S)·유일(A)·최선(B)·우수(C).
 // 내부 값(서버 _attack_grade·집계 키)은 그대로 S·A·B·C다.
 const ATTACK_GRADES = [
-  { g: "S", mate: 1, kind: "brilliant", name: "탁월", color: QCOLOR.brilliant, label: t("1수 메이트") },
-  { g: "A", mate: 2, kind: "only", name: "유일", color: QCOLOR.only, label: t("2수 메이트") },
-  { g: "B", mate: 3, kind: "best", name: "최선", color: QCOLOR.best, label: t("3수 메이트") },
-  { g: "C", mate: 4, kind: "excellent", name: "우수", color: QCOLOR.excellent, label: t("4수 이상 메이트") },
+  { g: "S", mate: 1, kind: "brilliant", name: t("탁월"), color: QCOLOR.brilliant, label: t("1수 메이트") },
+  { g: "A", mate: 2, kind: "only", name: t("유일"), color: QCOLOR.only, label: t("2수 메이트") },
+  { g: "B", mate: 3, kind: "best", name: t("최선"), color: QCOLOR.best, label: t("3수 메이트") },
+  { g: "C", mate: 4, kind: "excellent", name: t("우수"), color: QCOLOR.excellent, label: t("4수 이상 메이트") },
 ];
 const attackGradeInfo = (g) => ATTACK_GRADES.find((x) => x.g === g) || ATTACK_GRADES[3];
 const attackGradeOfMate = (n) => (n <= 1 ? "S" : n === 2 ? "A" : n === 3 ? "B" : "C");
@@ -4137,10 +4137,10 @@ function attackTally(list) { const t = { S: 0, A: 0, B: 0, C: 0, total: 0, tries
 function attackDecide(me, opp, myRating, oppRating) {
   if (me.total !== opp.total) return { winner: me.total > opp.total ? "me" : "opp", reason: null };
   for (const g of ["C", "B", "A", "S"]) {
-    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: "동점. " + attackGradeInfo(g).label + " 성공 수로 결정 (긴 메이트부터 비교)" };
+    if (me[g] !== opp[g]) return { winner: me[g] > opp[g] ? "me" : "opp", reason: t("동점. {0} 성공 수로 결정 (긴 메이트부터 비교)", attackGradeInfo(g).label) };
   }
-  if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: "등급별 성공 수도 같아 레이팅이 높은 쪽 승리" };
-  return { winner: "draw", reason: "모든 기록이 같아 무승부" };
+  if (myRating !== oppRating) return { winner: myRating > oppRating ? "me" : "opp", reason: t("등급별 성공 수도 같아 레이팅이 높은 쪽 승리") };
+  return { winner: "draw", reason: t("모든 기록이 같아 무승부") };
 }
 function AttackLedger({ tally, label }) {
   return (
@@ -4374,7 +4374,7 @@ async function fetchLichessMatePuzzle(mateIn) {
       if (!v.error) return { fen: c.fen(), ...v, source: "lichess:" + data.puzzle.id };
     } catch { }
   }
-  throw new Error("퍼즐 수순 검증 실패");
+  throw new Error(t("퍼즐 수순 검증 실패"));
 }
 function AttackDevPanel({ pool, onChanged }) {
   const [open, setOpen] = useState(false);
@@ -5101,7 +5101,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             <MatchmakingScreen
               active={pvpWaiting || !!myInvite}
               variant={myInvite ? "invite" : "queue"}
-              opponent={myInvite ? { name: myInvite.toUsername || "상대", photo: myInvite.toPhoto } : null}
+              opponent={myInvite ? { name: myInvite.toUsername || t("상대"), photo: myInvite.toPhoto } : null}
               timeControlLabel={timeControl.label}
               onCancel={() => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); }}
             />
@@ -5186,7 +5186,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                   {tx("{0} 뒤로", <ChevronLeft size={16} />)}</button>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
-                  {[["w", "백"], ["b", "흑"], ["random", "랜덤"]].map(([k, lb]) => (
+                  {[["w", t("백")], ["b", t("흑")], ["random", t("랜덤")]].map(([k, lb]) => (
                     <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
                   ))}
                 </div>

@@ -6,7 +6,7 @@ import { t, tx } from "./lib/i18n.js";
 // (v0.6.0, 앱 출시 준비) 개인정보처리방침(/privacy)·이용약관(/terms). App을 거치지 않는 가벼운 정적 페이지로,
 // main.jsx가 경로만 보고 이 컴포넌트를 렌더링한다(스토어 심사에서 로그인 없이 열리는 주소가 필요하다).
 // 문구는 사이트 규칙대로 명사형·개조식. 시행일을 바꿀 때는 아래 EFFECTIVE 한 곳만 고친다.
-const EFFECTIVE = "2026년 10월 1일";
+const EFFECTIVE = t("2026년 10월 1일");
 const T = { ebony: "#1B1009", ivory: "#EBDDC4", ivoryHi: "#FAF2E2", inkSoft: "#B8A78C", brass: "#C49A50" };
 
 const PRIVACY = [
@@ -88,7 +88,7 @@ const TERMS = [
 
 export default function LegalPage({ kind }) {
   const isPrivacy = kind === "privacy";
-  const title = isPrivacy ? "개인정보처리방침" : "이용약관";
+  const title = isPrivacy ? t("개인정보처리방침") : t("이용약관");
   const sections = isPrivacy ? PRIVACY : TERMS;
   const other = isPrivacy ? { href: "/terms", label: t("이용약관") } : { href: "/privacy", label: t("개인정보처리방침") };
   return (

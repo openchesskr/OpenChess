@@ -92,9 +92,9 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {row("puzzle", "새 퍼즐 " + dq.puzzleTarget + "회 풀기", dq.puzzleCount + "/" + dq.puzzleTarget)}
+        {row("puzzle", t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), dq.puzzleCount + "/" + dq.puzzleTarget)}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row("dailypuzzle", "일일 퍼즐 풀기", "퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기")}
+        {row("dailypuzzle", t("일일 퍼즐 풀기"), t("퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기"))}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -104,7 +104,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
             // (사용자 요청) key에 highlight.nonce를 섞어, 같은 오프닝을 배지로 연달아 눌러도 매번
             // 새로 마운트되어 하이라이트 애니메이션이 다시 재생되게 한다.
             <div key={i + (highlighted ? "-" + highlight.nonce : "")} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row("cc_" + i, questLabelNode(q), !hasChesscom ? "설정에서 chess.com 계정 연동 필요" : (isOpening ? openingMovesTexts[i] : null),
+              {row("cc_" + i, questLabelNode(q), !hasChesscom ? t("설정에서 chess.com 계정 연동 필요") : (isOpening ? openingMovesTexts[i] : null),
                 /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
                 canReroll ? (
                   <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title={t("이 퀘스트만 교체 (퀘스트당 1회)")}
@@ -722,7 +722,7 @@ function defaultBeat(kind) {
   }
 }
 const LESSON_BEAT_KINDS = ["say", "principles", "mc", "move", "play", "pause", "board", "clear"];
-const LESSON_BEAT_LABELS = { say: "대사 (say)", principles: "원칙 목록 (principles)", mc: "객관식 (mc)", move: "주관식 (move)", play: "자동 재생 (play)", pause: "대기 (pause)", board: "보드 연출 (board)", clear: "연출 초기화 (clear)" };
+const LESSON_BEAT_LABELS = { say: t("대사 (say)"), principles: t("원칙 목록 (principles)"), mc: t("객관식 (mc)"), move: t("주관식 (move)"), play: t("자동 재생 (play)"), pause: t("대기 (pause)"), board: t("보드 연출 (board)"), clear: t("연출 초기화 (clear)") };
 const lsField = { width: "100%", padding: "5px 7px", borderRadius: 6, border: "1px solid #C9B58C", fontSize: 11, marginBottom: 4, boxSizing: "border-box" };
 const spaceToArr = (s) => s.trim() ? s.trim().split(/\s+/) : [];
 const linesToArr = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);

@@ -148,32 +148,32 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
   let typeSentence;
   if (sub.type === "underpromo") {
     const info = sanSrc(board, san, color);
-    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || "기물";
+    const promoKor = PIECE_KOR[(info && info.promo) || "N"] || t("기물");
     const reason = underpromoReason(board, san, color);
-    if (reason === "stalemate") typeSentence = "퀸으로 승진하면 스테일메이트(무승부). 대신 " + promoKor + " 승진";
-    else if (reason === "safety") typeSentence = "퀸으로 승진하면 바로 잡힘. " + promoKor + " 승진은 안전하게 남음";
-    else typeSentence = "퀸이 아닌 " + promoKor + " 승진. 흔치 않은 선택";
+    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 스테일메이트(무승부). 대신 {0} 승진", promoKor);
+    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 바로 잡힘. {0} 승진은 안전하게 남음", promoKor);
+    else typeSentence = t("퀸이 아닌 {0} 승진. 흔치 않은 선택", promoKor);
   } else if (sub.type === "exchangeSac") {
-    typeSentence = josaGwaWa(PIECE_KOR[sub.give]) + " " + PIECE_KOR[sub.get] + " 교환. 쉽지 않지만 이 상황에선 탁월한 선택";
+    typeSentence = t("{0:과/와} {1} 교환. 쉽지 않지만 이 상황에선 탁월한 선택", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
   } else if (sub.type === "neglect" && sub.piece) {
-    typeSentence = PIECE_KOR[sub.piece] + " 위협을 무시하고 더 큰 이득을 얻는 수";
+    typeSentence = t("{0} 위협을 무시하고 더 큰 이득을 얻는 수", (PIECE_KOR[sub.piece]));
   } else if (sub.piece) {
-    typeSentence = PIECE_KOR[sub.piece] + " 희생. 눈앞의 손해를 감수하고 더 큰 것을 노림";
+    typeSentence = t("{0} 희생. 눈앞의 손해를 감수하고 더 큰 것을 노림", (PIECE_KOR[sub.piece]));
   } else {
-    typeSentence = "눈에 보이는 손해를 감수하고 더 큰 것을 노리는 수";
+    typeSentence = t("눈에 보이는 손해를 감수하고 더 큰 것을 노리는 수");
   }
   let reasonSentence = null;
   if (alreadyLosing) {
     try {
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
-        const endKor = drawSeek.end === "stalemate" ? "스테일메이트" : "3회 동형 반복";
-        reasonSentence = "이미 불리한 상황. " + drawSeek.line.join(" ") + " 수순으로 " + endKor + " 무승부를 강제";
+        const endKor = drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복");
+        reasonSentence = t("이미 불리한 상황. {0} 수순으로 {1} 무승부를 강제", drawSeek.line.join(" "), endKor);
       }
     } catch { }
   }
   let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
-  if (notBest) text += " 엔진 최선은 아니지만 찾기 어려운 수.";
+  if (notBest) text += t(" 엔진 최선은 아니지만 찾기 어려운 수.");
   return text;
 }
 // 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
@@ -232,7 +232,7 @@ function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
   return best;
 }
 function relocationPlanPhrase(plan) {
-  return (PIECE_KOR[plan.piece] || "기물") + " 재배치 계획: " + plan.squares.join(" → ");
+  return t("{0} 재배치 계획: {1}", (PIECE_KOR[plan.piece] || t("기물")), plan.squares.join(" → "));
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
 // (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이
@@ -337,17 +337,17 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
 // 지킵니다")까지 자연어로 분석해 주지만, 그 수준의 맥락 분석 엔진은 이 세션 범위를 벗어난다 — 등급별로
 // 뜻이 통하는 일반적인 설명 템플릿을 여러 개 두고 ply로 순환시켜, 같은 등급이 반복돼도 문구가 안 겹치게 한다.
 const REVIEW_COACH_COPY = {
-  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: ["기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수", "찾기 어려운 수를 정확히 찾아냄"] },
-  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: ["엔진이 찾은 이 포지션의 가장 좋은 수", "정확한 수"] },
-  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: ["다른 수는 크게 불리. 반드시 이 수", "이 수 외엔 답이 없음"] },
-  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: ["최선은 아니지만 아주 좋은 선택", "이 포지션의 좋은 수 중 하나"] },
-  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: ["무난하고 안정적인 수", "포지션을 잘 유지하는 수"] },
-  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: ["오래 검증된 정석 수", "책에 나오는 잘 알려진 수"] },
-  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: ["더 나은 수가 있음. 큰 손해는 아니지만 아쉬움", "포지션이 살짝 나빠짐"] },
-  miss: { head: t(" : 기회를 놓침"), mascot: ["kokoa", "surprise"], body: ["상대 실수를 응징할 기회를 활용하지 못함", "더 강한 수가 있었음"] },
-  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: ["포지션이 눈에 띄게 나빠짐", "더 나은 대안이 있었음"] },
-  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: ["크게 불리해짐", "포지션이 크게 무너짐"] },
-  pending: { head: "", mascot: ["milku", "think"], body: ["아직 분석되지 않은 수"] },
+  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: [t("기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수"), t("찾기 어려운 수를 정확히 찾아냄")] },
+  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: [t("엔진이 찾은 이 포지션의 가장 좋은 수"), t("정확한 수")] },
+  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: [t("다른 수는 크게 불리. 반드시 이 수"), t("이 수 외엔 답이 없음")] },
+  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: [t("최선은 아니지만 아주 좋은 선택"), t("이 포지션의 좋은 수 중 하나")] },
+  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: [t("무난하고 안정적인 수"), t("포지션을 잘 유지하는 수")] },
+  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: [t("오래 검증된 정석 수"), t("책에 나오는 잘 알려진 수")] },
+  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: [t("더 나은 수가 있음. 큰 손해는 아니지만 아쉬움"), t("포지션이 살짝 나빠짐")] },
+  miss: { head: t(" : 기회를 놓침"), mascot: ["kokoa", "surprise"], body: [t("상대 실수를 응징할 기회를 활용하지 못함"), t("더 강한 수가 있었음")] },
+  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: [t("포지션이 눈에 띄게 나빠짐"), t("더 나은 대안이 있었음")] },
+  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: [t("크게 불리해짐"), t("포지션이 크게 무너짐")] },
+  pending: { head: "", mascot: ["milku", "think"], body: [t("아직 분석되지 않은 수")] },
 };
 // (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
 // Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
@@ -362,11 +362,11 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
   if (m.kind !== "book") {
     const extra = [];
-    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push("상대 응징 수순: " + punishLine.join(" "));
+    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push(t("상대 응징 수순: {0}", punishLine.join(" ")));
     // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
     // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
     if (m.kind === "only" && onlyRefutation) {
-      extra.push(onlyRefutation.altSan + " 등 다른 수는 상대의 " + onlyRefutation.continuation.join(" ") + " 응징으로 불리해짐");
+      extra.push(t("{0} 등 다른 수는 상대의 {1} 응징으로 불리해짐", onlyRefutation.altSan, onlyRefutation.continuation.join(" ")));
     }
     if (extra.length) body = body + " " + extra.join(" ");
   }
@@ -559,7 +559,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   // (v0.2.1) 단계 아이콘을 누르면 그 단계·진영의 부분 정확도를 잠깐 보여준다(등급 설명 대신).
   const [accShow, setAccShow] = useState(null); // "라벨:side"
   const won = game.result === "win", lost = game.result === "loss";
-  const headline = !game.result ? "주요 장면 분석" : won ? "좋은 전술을 찾아낸 대국" : lost ? "아쉬운 순간이 있는 대국. 놓친 부분 확인" : "주요 장면 리뷰";
+  const headline = !game.result ? t("주요 장면 분석") : won ? t("좋은 전술을 찾아낸 대국") : lost ? t("아쉬운 순간이 있는 대국. 놓친 부분 확인") : t("주요 장면 리뷰");
   const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
   const whiteAvatar = useChesscomAvatar(avatarUsernameFor(game, "w"));
   const blackAvatar = useChesscomAvatar(avatarUsernameFor(game, "b"));
@@ -2002,7 +2002,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
     if (!activeMove || activeMove.kind === "book") return [];
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
-      return [mecPick(["체크메이트 강제 수순. 메이트까지 " + n + "수", "체크메이트 수순 진입. " + n + "수 뒤 체크메이트", "메이트 " + n + "수 전. 체크메이트로 끝나는 강제 수순"], effSans.length)];
+      return [mecPick([t("체크메이트 강제 수순. 메이트까지 {0}수", n), t("체크메이트 수순 진입. {0}수 뒤 체크메이트", n), t("메이트 {0}수 전. 체크메이트로 끝나는 강제 수순", n)], effSans.length)];
     }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
   }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
@@ -2048,7 +2048,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
     }
   }, [engine, effSans, fenRoot, planKey, planByKey]);
   const planText = planEntry && !planEntry.loading
-    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : "뚜렷한 재배치 계획 없음")
+    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : t("뚜렷한 재배치 계획 없음"))
     : null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
@@ -2227,7 +2227,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   const [reviewId, setReviewId] = useState(null);
   useEffect(() => { let cc = false; reviewGameIdentifier(game).then((id) => { if (!cc) setReviewId(id); }); return () => { cc = true; }; }, [game]);
   const [shareOpen, setShareOpen] = useState(false);
-  const shareLabel = hasPlayerData ? (reviewPlayerInfo(game, "w").name + " vs " + reviewPlayerInfo(game, "b").name) : (fenRoot ? "FEN 포지션 분석" : "PGN 대국 리뷰");
+  const shareLabel = hasPlayerData ? (reviewPlayerInfo(game, "w").name + " vs " + reviewPlayerInfo(game, "b").name) : (fenRoot ? t("FEN 포지션 분석") : t("PGN 대국 리뷰"));
   // (신규 기능, 사용자 요청) 리뷰 요약 카드 이미지 공유용 데이터. 정확성은 이미 ReviewSummary가 쓰는
   // 것과 같은 값(result.whiteAcc/blackAcc, 항상 보정 켜짐)을 그대로 재사용해 화면에 보이는 숫자와
   // 카드 숫자가 어긋나지 않게 한다.
@@ -2242,7 +2242,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
     // 정확도·블런더 수로 카드를 만들어 공유해 버릴 수 있다(화면에 최종적으로 보이는 값과 다름).
     if (!hasPlayerData || !result || !resultDone) return null;
     const whiteInfo = reviewPlayerInfo(game, "w"), blackInfo = reviewPlayerInfo(game, "b");
-    const resultText = !game.result ? null : game.result === "win" ? "승리" : game.result === "loss" ? "패배" : "무승부";
+    const resultText = !game.result ? null : game.result === "win" ? t("승리") : game.result === "loss" ? t("패배") : t("무승부");
     // (버그 수정, 코드 리뷰 지적) result.whiteAcc/blackAcc는 항상 sharpOn=true로 고정 계산된 값이라,
     // 설정에서 "포지션 변동성 보정"을 꺼 둔 상태로 리뷰를 볼 때 화면에 보이는 정확도(핏·ReviewSummary가
     // reviewPhaseAccuracy(...,sharpOn)로 다시 계산한 값)와 카드 숫자가 달라졌다 — 같은 함수·같은
@@ -2254,7 +2254,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
     const metaText = [
       game.timeClass ? (TIME_CLASS_LABEL[game.timeClass] || game.timeClass) : null,
       d ? d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0") : null,
-      result.moves.length ? Math.ceil(result.moves.length / 2) + "수" : null,
+      result.moves.length ? t("{0}수", Math.ceil(result.moves.length / 2)) : null,
     ].filter(Boolean).join(" · ");
     return {
       whiteName: whiteInfo.name, blackName: blackInfo.name,
