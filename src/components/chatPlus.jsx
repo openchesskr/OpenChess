@@ -10,7 +10,7 @@ import { parseFenFull, replayFromFen, replaySans, boardFromSans, epTarget, fenLe
 import { parsePgnSans, sanSequenceValid } from "../lib/pgn.js";
 import { CHAT_REACTIONS, REPORT_REASONS, FEN_IN_TEXT, MOVETEXT_IN_TEXT } from "../lib/chatApi.js";
 
-import { t, tx } from "../lib/i18n.js";
+import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 const menuBtn = { display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "7px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", whiteSpace: "nowrap" };
 const stop = (e) => e.stopPropagation();
 
@@ -188,7 +188,7 @@ export function ChatSearchPanel({ onSearch, onPick, onClose, nameOf }) {
           {busy && !res ? <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("찾는 중…")}</div>
             : res && res.length ? res.map((m) => (
               <button key={m.id} onClick={() => onPick(m)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", border: "none", borderBottom: "1px solid #F1E6D0", background: "transparent", cursor: "pointer" }}>
-                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {new Date(m.created_at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {fmtDate(m.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
                 <div style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mark(m.body || "")}</div>
               </button>
             )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("검색 결과 없음")}</div>}
