@@ -191,6 +191,27 @@ create policy "friend edges select own" on public.friend_edges for select using 
 grant select on public.friend_edges to authenticated;
 -- insert/update/delete는 아래 RPC로만 가능(SECURITY DEFINER) — 테이블 직접 쓰기 권한은 부여하지 않는다.
 
+-- (v0.5.7 기능, 스토어 심사 대비 → v0.6.0 친구 요청·도전장·추천까지 확대) 사용자 차단 — 둘 중 한쪽이라도 차단했으면 서로 메시지·친구 요청·도전장을 보낼 수 없고 친구 추천에도 뜨지 않는다.
+-- (v0.6.0) friend_request·pvp_invite_friend가 쓰므로 그 함수들보다 앞에 둔다(chat insert own 정책도 같은 함수를 쓴다).
+-- 차단 목록은 차단한 본인만 볼 수 있어, 정책 안에서 "상대가 나를 차단했는지"는 SECURITY DEFINER 함수로 확인한다.
+create table if not exists public.user_blocks (
+  blocker uuid not null references auth.users(id) on delete cascade,
+  blocked uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker, blocked),
+  check (blocker <> blocked)
+);
+alter table public.user_blocks enable row level security;
+drop policy if exists "blocks own" on public.user_blocks;
+create policy "blocks own" on public.user_blocks for all using (auth.uid() = blocker) with check (auth.uid() = blocker);
+grant select, insert, delete on public.user_blocks to authenticated;
+create or replace function public.chat_blocked_between(p_a uuid, p_b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a));
+$$;
+revoke all on function public.chat_blocked_between(uuid, uuid) from public, anon;
+grant execute on function public.chat_blocked_between(uuid, uuid) to authenticated;
+
 -- 요청 상대가 이미 나에게 보낸 요청이 있으면 자동으로 서로 수락(맞요청) 처리한다.
 drop function if exists public.friend_request(text) cascade;
 create or replace function public.friend_request(p_to_username text)
@@ -201,6 +222,8 @@ begin
   select id into v_to from public.profiles where username = lower(p_to_username);
   if v_to is null then return 'notfound'; end if;
   if v_to = v_me then return 'self'; end if;
+  -- (v0.6.0) 차단 관계(어느 쪽이든)면 요청 불가. 누가 차단했는지는 알려주지 않는다.
+  if public.chat_blocked_between(v_me, v_to) then return 'blocked'; end if;
 
   select status into v_existing from public.friend_edges where from_uid = v_me and to_uid = v_to;
   if v_existing is not null then return 'exists'; end if;
@@ -229,6 +252,8 @@ begin
   select id into v_to from public.profiles where mid = upper(p_mid);
   if v_to is null then return 'notfound'; end if;
   if v_to = v_me then return 'self'; end if;
+  -- (v0.6.0) 차단 관계(어느 쪽이든)면 요청 불가. 누가 차단했는지는 알려주지 않는다.
+  if public.chat_blocked_between(v_me, v_to) then return 'blocked'; end if;
 
   select status into v_existing from public.friend_edges where from_uid = v_me and to_uid = v_to;
   if v_existing is not null then return 'exists'; end if;
@@ -312,25 +337,6 @@ alter table public.chat_messages add column if not exists poll jsonb;
 -- (v0.5.7) 같이 보기(공동 분석) 보드 초대 카드 — {fen, sans}. 보드 조작 자체는 DB 없이 Realtime broadcast로만 주고받는다.
 alter table public.chat_messages add column if not exists cobo jsonb;
 create index if not exists idx_chat_messages_to_time on public.chat_messages(to_uid, created_at desc);
--- (v0.5.7 기능, 스토어 심사 대비) 사용자 차단 — 둘 중 한쪽이라도 차단했으면 서로 메시지를 보낼 수 없다(아래 "chat insert own").
--- 차단 목록은 차단한 본인만 볼 수 있어, 정책 안에서 "상대가 나를 차단했는지"는 SECURITY DEFINER 함수로 확인한다.
-create table if not exists public.user_blocks (
-  blocker uuid not null references auth.users(id) on delete cascade,
-  blocked uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (blocker, blocked),
-  check (blocker <> blocked)
-);
-alter table public.user_blocks enable row level security;
-drop policy if exists "blocks own" on public.user_blocks;
-create policy "blocks own" on public.user_blocks for all using (auth.uid() = blocker) with check (auth.uid() = blocker);
-grant select, insert, delete on public.user_blocks to authenticated;
-create or replace function public.chat_blocked_between(p_a uuid, p_b uuid)
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a));
-$$;
-revoke all on function public.chat_blocked_between(uuid, uuid) from public, anon;
-grant execute on function public.chat_blocked_between(uuid, uuid) to authenticated;
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
 drop policy if exists "chat insert own" on public.chat_messages;
@@ -763,6 +769,11 @@ language sql stable security definer set search_path = public as $$
     select auth.uid() as uid
     union
     select case when from_uid = auth.uid() then to_uid else from_uid end from my_edges
+    union
+    -- (v0.6.0) 차단한 사람·나를 차단한 사람은 추천하지 않는다.
+    select blocked from public.user_blocks where blocker = auth.uid()
+    union
+    select blocker from public.user_blocks where blocked = auth.uid()
   ),
   candidates as (
     select (case when fe.from_uid = mf.uid then fe.to_uid else fe.from_uid end) as uid,
@@ -2132,6 +2143,8 @@ declare v_me uuid := auth.uid(); v_are_friends boolean; v_inv public.pvp_invites
 begin
   if v_me is null then raise exception 'auth required'; end if;
   if v_me = p_to_uid then raise exception 'cannot invite self'; end if;
+  -- (v0.6.0) 차단 관계면 도전장 불가.
+  if public.chat_blocked_between(v_me, p_to_uid) then raise exception 'blocked'; end if;
   select exists (
     select 1 from public.friend_edges
     where status = 'accepted' and ((from_uid = v_me and to_uid = p_to_uid) or (from_uid = p_to_uid and to_uid = v_me))
@@ -3632,6 +3645,12 @@ begin
     select to_jsonb(m) - 'read' into v_snap from public.chat_messages m
     where m.id = p_message_id and m.from_uid = p_target and m.to_uid = v_me;
     if v_snap is null then raise exception 'message not found'; end if;
+  else
+    -- (v0.6.0) 프로필 신고 — 신고 순간의 아이디·닉네임·소개·사진 여부를 서버가 복사해 둔다(나중에 고쳐도 검토 가능, 위조 불가).
+    select jsonb_build_object('kind', 'profile', 'username', pr.username, 'nickname', pr.pub ->> 'nickname',
+                              'bio', pr.pub ->> 'bio', 'has_photo', (pr.pub ->> 'photo') is not null)
+      into v_snap from public.profiles pr where pr.id = p_target;
+    if v_snap is null then raise exception 'target not found'; end if;
   end if;
   -- 같은 사람이 짧은 시간에 신고를 쏟아내지 못하게(스팸 신고) 하루 20건으로 제한한다.
   if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then

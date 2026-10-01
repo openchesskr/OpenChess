@@ -12,8 +12,10 @@ import App from "./App.jsx";
 // 둔다 — 동적으로 바꾸면 진입 스크립트를 받은 뒤에야 App을 요청하게 돼 왕복이 한 번 늘어난다.
 const AboutPage = lazy(() => import("./AboutPage.jsx"));
 const FaqPage = lazy(() => import("./FaqPage.jsx"));
+// (v0.6.0, 앱 출시 준비) 스토어 심사용 개인정보처리방침·이용약관 — 로그인 없이 열리는 정적 페이지.
+const LegalPage = lazy(() => import("./LegalPage.jsx"));
 
 const path = window.location.pathname.replace(/\/$/, "") || "/";
 createRoot(document.getElementById("root")).render(
-  path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : <App />
+  path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />
 );

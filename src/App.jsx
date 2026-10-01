@@ -88,7 +88,7 @@ import {
 import {
   ChatMsgMenu, CHAT_MENU_W, ReactionChips, ReplyQuote, ReplyBar, ReportSheet, ChatSearchPanel, chessSnippetOf, ChessSnippetCard,
   ChatAttachMenu, AttachButton, PositionPickSheet, PollCard, CoboCard, CoBoardScreen, ChatHeaderActions, chatSnippet,
-  ChatCommandPalette, ChatHelpCard,
+  ChatCommandPalette, ChatHelpCard, UserSafetyMenu, BlockListSheet,
 } from "./components/chatPlus.jsx";
 import { RI, reviewIntroLayout } from "./lib/reviewIntroLayout.js";
 import { CHAT_COMMANDS as CHAT_CMD_LIST, parseChatCommand, chatCommandSuggestions, chatCommandAvailable, blindMoveToken, deriveBlindGame } from "./lib/chatCommands.js";
@@ -113,6 +113,7 @@ import { QCOLOR, ANALYSIS_KIND_ROWS, BADGE_ICON_SRC } from "./lib/moveKinds.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "./lib/shareCard.js";
 import { KW, KeywordScroll, KeywordChip } from "./components/keywordScroll.jsx";
 import { BestMoveJumpButton, ListPager, NavBtn } from "./components/uiPrimitives.jsx";
+import { SITE_URL, CONTACT_EMAIL, apiUrl } from "./lib/siteConfig.js";
 
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
@@ -407,7 +408,7 @@ async function scanImageFile(file, onProgress) {
   const data = await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let simTimer = null;
-    xhr.open("POST", "/api/scan-board");
+    xhr.open("POST", apiUrl("/api/scan-board"));
     xhr.setRequestHeader("content-type", "application/json");
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
@@ -21283,14 +21284,12 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
 // 이게 무슨 링크인지 알 수 없었다 — "/puzzle/"을 붙여 리뷰 링크("/review/...")와 같은 방식으로
 // 용도가 URL만 봐도 드러나게 했다(번호-라인 사이는 그대로 "-"로 연결).
 function puzzleShareUrl(no, lineNo) {
-  const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
-  return origin + "/puzzle/" + no + "-" + (lineNo || 1);
+  return SITE_URL + "/puzzle/" + no + "-" + (lineNo || 1);
 }
 // (v0.3.4 기능) 리뷰 고유 딥링크(openchess.kr/review/(식별자)) — reviewGameIdentifier가 만든 식별자를
 // 그대로 이어붙인다.
 function reviewShareUrl(reviewId) {
-  const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://openchess.kr";
-  return origin + "/review/" + reviewId;
+  return SITE_URL + "/review/" + reviewId;
 }
 // (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
 // 공유할 수 있게 한다. 각 앱마다 별도 SDK·API 키를 등록하는 대신, 표준 Web Share API
@@ -24793,7 +24792,7 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
         <img src="/favicon.png" alt="OpenChess" style={{ width: s(17), height: s(17), objectFit: "contain", opacity: statsView === "oc" ? 1 : 0.55 }} />
       </button>
       <button onClick={() => setStatsView("cc")} aria-label="Chess.com 통계" title="Chess.com 통계" className="press" style={{ width: s(30), height: s(26), borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === "cc" ? "#fff" : "transparent", boxShadow: statsView === "cc" ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease" }}>
-        <img src="/chess.com_Icon.png" alt="Chess.com" style={{ width: s(15), height: s(15), objectFit: "contain", opacity: statsView === "cc" ? 1 : 0.55 }} />
+        <span aria-hidden="true" style={{ fontSize: s(11), fontWeight: 900, letterSpacing: "-.03em", color: "#fff", opacity: statsView === "cc" ? 1 : 0.55 }}>cc</span>
       </button>
     </div>
   );
@@ -26883,6 +26882,18 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
     return () => { cancelled = true; };
   }, [contentVer]);
   const [inquiryOpen, setInquiryOpen] = useState(false);
+  // (v0.6.0, 스토어 심사 대비) 차단 목록 — 채팅·프로필에서 차단한 사용자를 한 곳에서 보고 해제한다.
+  const [blockListOpen, setBlockListOpen] = useState(false);
+  const [blockItems, setBlockItems] = useState([]);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const openBlockList = async () => {
+    setBlockListOpen(true); setBlockLoading(true);
+    const uids = await chatBlocksFetch(myUid);
+    const prof = uids.length ? await usersProfiles(uids) : {};
+    setBlockItems(uids.map((uid) => ({ uid, name: (prof[uid] && ((prof[uid].pub && prof[uid].pub.nickname) || prof[uid].username)) || "알 수 없는 사용자" })));
+    setBlockLoading(false);
+  };
+  const unblockFromList = async (uid) => { if (await chatBlockSet(myUid, uid, false)) setBlockItems((l) => l.filter((x) => x.uid !== uid)); };
   const [devLogOpen, setDevLogOpen] = useState(false);
   // (v0.3.9 기능) 사용자 요청 — 로그아웃 상태에서 뜨는 "계정" 박스와 같은 자리에, 로그인 상태에서는
   // OpenChess 프로필의 상단 요소(아바타·칭호·닉네임·소개, MyProfileCard 최상단과 같은 구성)를 압축해
@@ -27194,6 +27205,15 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
 
       {/* (18차 UI10) chess.com 연동 UI는 프로필 편집 모달 안으로 이동 */}
 
+      {/* (v0.6.0) 차단 목록 — 로그인한 경우만 */}
+      {myUid && (
+        <div style={card}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2"><Users size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>차단 목록</span></div>
+            <button onClick={openBlockList} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>관리</button>
+          </div>
+        </div>
+      )}
       {/* 문의 / FAQ */}
       <div style={card}>
         <div className="flex items-center justify-between">
@@ -27202,6 +27222,8 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
             {/* (v0.4.3 기능, 사용자 요청) /about처럼 반응형 타이포그래피·애니메이션 중심으로 만든
                 별도 FAQ 페이지(/faq) — 이 카드에서 실제 페이지 이동(같은 탭 새 로드)으로 연결한다. */}
             <a href="/faq" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>FAQ 보기</a>
+            <a href="/terms" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>이용약관</a>
+            <a href="/privacy" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>개인정보처리방침</a>
             <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>문의하기</button>
           </div>
         </div>
@@ -27209,6 +27231,9 @@ function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiv
       </div>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
+      <AnimatePresence>
+        {blockListOpen && <BlockListSheet key="block-list" items={blockItems} loading={blockLoading} onUnblock={unblockFromList} onClose={() => setBlockListOpen(false)} />}
+      </AnimatePresence>
 
       {/* (v0.3.5 기능) 개발자 도구 — 예전엔 페이지 곳곳에 흩어져 있던 개발자 전용 패널을 관련 주제별로
           순서를 맞춰(권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 관리) 카드 하나로 모았다. 스크롤을 내려야
@@ -27286,11 +27311,9 @@ function CoinIcon({ size = 16 }) {
 }
 // (21차) chess.com 데이터를 보여주는 곳에는 "chess.com"이라는 글자 대신(또는 함께) 실제 로고를 쓴다.
 // 밝은(양피지색) 카드 위에서는 검정 로고, 어두운(흑단색) 카드/버튼 위에서는 흰색 로고를 쓴다.
+// (v0.6.0, 앱 출시 준비) chess.com 로고 이미지는 남의 상표라 스토어 심사에서 문제될 수 있어 글자로 바꿨다.
 function ChesscomLogo({ height = 14, dark }) {
-  return <img src={dark ? "/chess.com_Logo(White).png" : "/chess.com_Logo(Black).png"} alt="chess.com" style={{ height, width: "auto", display: "inline-block", verticalAlign: "middle" }} />;
-}
-function ChesscomIcon({ size = 16 }) {
-  return <img src="/chess.com_Icon.png" alt="chess.com" style={{ height: size, width: "auto", display: "inline-block", verticalAlign: "middle" }} />;
+  return <span aria-label="chess.com" style={{ display: "inline-block", verticalAlign: "middle", lineHeight: 1, fontWeight: 900, letterSpacing: "-.02em", fontSize: Math.round(height * 0.78), color: dark ? "#EBDDC4" : "#3B2A1A" }}>chess.com</span>;
 }
 // (19차 UI5) 상점 탭 — 보유 코인 표기 + 아이템(체스보드/기물 스킨)은 추후 추가 예정.
 /* (20차 기능4) 스킨 상점 카드 — 보드/기물 공용. 미리보기(작은 체크보드 4칸 또는 기물 2개) + 가격/보유/
@@ -27557,9 +27580,9 @@ async function userProfileByMid(mid) { if (!SB_ON || !mid) return null; try { co
 async function friendSuggestions(limit) { if (!SB_ON) return []; try { const r = await sbRpc("friend_suggestions", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 async function leaderboardTop(limit) { if (!SB_ON) return []; try { const r = await sbRpc("leaderboard_top", { p_limit: limit || 8 }); return Array.isArray(r) ? r : []; } catch { return []; } }
 /* ---- 친구 시스템 (요청 → 수락). Auth 미사용·anon 접근이라 기존 profiles_public/puzzle_solve와 동일 보안 수준 ---- */
-async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
+async function friendRequest(toUsername) { if (!SB_ON || !toUsername) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request", { p_to_username: toUsername.toLowerCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self", "blocked"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 // (v0.4.4 기능, 사용자 요청) MID 초대 링크(openchess.kr/user/<MID>?invite=friend)로 들어오면 자동으로 부른다.
-async function friendRequestByMid(mid) { if (!SB_ON || !mid) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request_by_mid", { p_mid: mid.toUpperCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
+async function friendRequestByMid(mid) { if (!SB_ON || !mid) return { ok: false, error: "offline" }; try { const r = await sbRpc("friend_request_by_mid", { p_mid: mid.toUpperCase() }); const s = (Array.isArray(r) ? r[0] : r) || ""; return { ok: !["unauth", "notfound", "self", "blocked"].includes(s), status: s }; } catch { return { ok: false, error: "network" }; } }
 async function friendAccept(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_accept", { p_other_uid: otherUid }); return true; } catch { return false; } }
 async function friendRemove(otherUid) { if (!SB_ON || !otherUid) return false; try { await sbRpc("friend_remove", { p_other_uid: otherUid }); return true; } catch { return false; } }
 /* (17차) 알림 — 친구 요청 수신/수락, 칭호 획득, 티어 승급 */
@@ -28046,6 +28069,27 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
   }, [reqPopup]);
   const wide = !useNarrow(880);
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
+  // (v0.6.0, 스토어 심사 대비) 프로필 신고·차단 — 채팅 밖에서도 사용자 콘텐츠(닉네임·사진·소개)를 신고하고 차단할 수 있어야 한다.
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [safetyMsg, setSafetyMsg] = useState("");
+  useEffect(() => { if (!safetyMsg) return undefined; const t = setTimeout(() => setSafetyMsg(""), 2600); return () => clearTimeout(t); }, [safetyMsg]);
+  useEffect(() => {
+    if (!myUid || !pubUid || myUid === pubUid) { setBlockedByMe(false); return undefined; }
+    let off = false;
+    chatBlocksFetch(myUid).then((l) => { if (!off) setBlockedByMe(l.includes(pubUid)); });
+    return () => { off = true; };
+  }, [myUid, pubUid]);
+  const setBlocked = async (on) => {
+    const ok = await chatBlockSet(myUid, pubUid, on);
+    if (ok) { setBlockedByMe(on); setSafetyMsg(on ? "차단됨" : "차단 해제됨"); } else setSafetyMsg(on ? "차단 실패" : "차단 해제 실패");
+    return ok;
+  };
+  const submitProfileReport = async (reason, detail, alsoBlock) => {
+    const r = await userReport(pubUid, null, reason, detail);
+    if (r.ok) { if (alsoBlock && !blockedByMe) await setBlocked(true); setSafetyMsg("신고 접수. 검토 후 조치"); }
+    return r;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -28090,6 +28134,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     autoInviteTriedRef.current = mid;
     (async () => {
       const r = await friendRequestByMid(mid);
+      if (r && r.status === "blocked") { setInviteMsg("요청할 수 없는 사용자"); return; }
       if (r && r.ok) {
         const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
         const name = (pub && pub.nickname) || pubUsername || "상대";
@@ -28105,6 +28150,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
     setReqBusy(true);
     const r = await friendRequestByMid(mid);
     setReqBusy(false);
+    if (r && r.status === "blocked") { setInviteMsg("요청할 수 없는 사용자"); return; }
     if (r && r.ok) {
       const status = r.status === "accepted" ? "accepted" : (r.status === "exists" ? "exists" : "pending");
       const name = (pub && pub.nickname) || pubUsername || "상대";
@@ -28118,6 +28164,10 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
   const isSelf = !!(myUid && pubUid && myUid === pubUid);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      {safetyMsg && <div role="status" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 410, padding: "10px 16px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700 }}>{safetyMsg}</div>}
+      <AnimatePresence>
+        {reportOpen && <ReportSheet key="profile-report" targetName={(pub && pub.nickname) || pubUsername || "사용자"} snippet={null} alreadyBlocked={blockedByMe} onSubmit={submitProfileReport} onClose={() => setReportOpen(false)} />}
+      </AnimatePresence>
       {/* (사용자 요청) 친구 요청이 나갔을 때(초대 링크 자동 요청·수동 버튼 공통) 화면 위쪽에 잠깐
           떴다 사라지는 팝업 알림 — 카드 안쪽의 작은 inviteMsg 문구만으로는 눈에 잘 안 띈다는 피드백. */}
       <AnimatePresence>
@@ -28138,6 +28188,7 @@ function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, o
           <button onClick={onClose} aria-label="뒤로" className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>프로필</span>
         </div>
+        {me && pubUid && !isSelf && <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} />}
         {!wide && <button onClick={onClose} aria-label="닫기" className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>}
       </div>
       <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
@@ -32160,6 +32211,7 @@ function AuthModal({ onClose, onAuth, initialMode }) {
             {mode === "signup" && <input type={showPw ? "text" : "password"} value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="비밀번호 확인" autoComplete="new-password" onKeyDown={(e) => e.key === "Enter" && submit()} style={inputStyle} />}
             {err && <div style={{ fontSize: 12, color: hintProvider ? T.ink : T.blunder, marginBottom: 8, lineHeight: 1.5, fontWeight: hintProvider ? 700 : 400 }}>{err}</div>}
             <button onClick={submit} disabled={busy} className="press" style={{ width: "100%", padding: "11px 0", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", marginBottom: 10 }}>{busy ? "처리 중…" : (mode === "login" ? "로그인" : "가입하고 시작")}</button>
+            {mode === "signup" && <p style={{ fontSize: 11, color: T.inkSoft, lineHeight: 1.6, margin: "0 0 10px", textAlign: "center" }}>가입 시 <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>이용약관</a>·<a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#5A3A22", fontWeight: 800 }}>개인정보처리방침</a>에 동의로 간주</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 10px" }}><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /><span style={{ fontSize: 11, color: T.inkSoft }}>또는</span><div style={{ flex: 1, height: 1, background: "#C9B58C" }} /></div>
             {/* (v0.4.3 기능, 사용자 요청) Apple/Facebook 로그인 추가 — Google과 완전히 같은 방식(GoTrue
                 authorize 리다이렉트, provider 이름만 다름)이라 authOAuthStart(provider) 하나로 통일했다. */}
@@ -32199,7 +32251,7 @@ const ACCOUNT_CENTER_PROVIDERS = [
 function InviteLinkBox({ mid }) {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
-  const inviteLink = mid ? window.location.origin + "/user/" + mid + "?invite=friend" : "";
+  const inviteLink = mid ? SITE_URL + "/user/" + mid + "?invite=friend" : "";
   const copyInviteLink = async () => { if (!inviteLink) return; try { await navigator.clipboard.writeText(inviteLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { } };
   const shareInviteLink = async () => {
     if (!inviteLink) return;
