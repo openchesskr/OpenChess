@@ -77,6 +77,7 @@
 **버그 수정**
 - 친구 도전장 전송 실패(BUG-035): `pvp_invites.game_type` 컬럼 누락. `supabase-setup.sql`에 `add column if not exists` 추가, `check-sql-table-columns`(prebuild)로 재발 방지.
 - 탁월한 수·유일한 수 누락(BUG-036·037·038): 채점 규칙을 `gradeMoveKind` 하나로 통일. 탁월한 수는 엔진 PV로 희생·회수를 확인. `check-move-grading`(prebuild).
+- 미니게임 중 새로고침 먹통(BUG-041): 진행 중 대전 이어받기가 `game_type`을 안 봐 미니게임을 체스 대국(시계 0)으로 열었다. 체스만 체스로 열고 미니게임은 해당 화면이 이어받음. `check-pvp-entry`(prebuild)가 검사.
 - 나이트 레이스 최소 수 오표시(BUG-040): par를 잡지 않는 경로로만 계산해 지름길이 있으면 실제 최단 수보다 컸다. 실제 최단 수 = par인 라운드만 출제(`knightTryGen`, 서버 `knight_exact_dist`). `check-knight-rounds`(prebuild)가 검사.
 - 리뷰 이론 수 오표시(BUG-039): 수순이 아닌 포지션 기준 판정 + ECO 포지션(`src/data/ecoBook.json`). `check-book-transposition`(prebuild).
 
