@@ -1,16 +1,17 @@
-// (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
+
+import { t } from "./i18n.js";// (v0.0.6 개편) 예전 레벨/XP 시스템은 피보나치 곡선이 너무 가팔라(레벨 10에 누적 23,100 XP, 레벨
 // 20엔 286만 XP) 사실상 아무도 레벨 10~13을 넘기지 못했다 — chess.com 퍼즐 티어처럼, 랭크 게임의
 // 7단계 티어(아이언→브론즈→실버→골드→다이아몬드→마스터→그랜드마스터)로 재편해 퍼즐을 꾸준히
 // 풀면 몇 주 안에 다음 티어로 오르는 게 실제로 체감되게 한다. 기물 테마(폰→나이트→…→킹)는 그대로
 // 두고, 티어마다 그 기물에 입히는 색만 등급에 맞게 달리한다(TIER_COLORS).
 export const TIERS = [
-  { key: "iron", label: "아이언", piece: "P" },
-  { key: "bronze", label: "브론즈", piece: "N" },
-  { key: "silver", label: "실버", piece: "B" },
-  { key: "gold", label: "골드", piece: "R" },
-  { key: "diamond", label: "다이아몬드", piece: "Q" },
-  { key: "master", label: "마스터", piece: "K" },
-  { key: "grandmaster", label: "그랜드마스터", piece: "GM" }, // gm.png(기물 + 하단 "GM" 워드마크 합성본) 사용
+  { key: "iron", label: t("아이언"), piece: "P" },
+  { key: "bronze", label: t("브론즈"), piece: "N" },
+  { key: "silver", label: t("실버"), piece: "B" },
+  { key: "gold", label: t("골드"), piece: "R" },
+  { key: "diamond", label: t("다이아몬드"), piece: "Q" },
+  { key: "master", label: t("마스터"), piece: "K" },
+  { key: "grandmaster", label: t("그랜드마스터"), piece: "GM" }, // gm.png(기물 + 하단 "GM" 워드마크 합성본) 사용
   // (v0.1.4 버그 수정) 한때 이 자리가 "grandmaster.png"를 가리켰는데, 그 파일이 GitHub 웹 업로드로
   // 아우로라 사진에 덮어써진 채 방치돼 배지에 배경 사진이 뜨는 버그가 있었다 — 파일명 충돌을 아예
   // 없애기 위해 원본 기물 아이콘으로 새로 받아 교체하면서 실수로 워드마크 없는 gm-piece.png(기물만

@@ -5,14 +5,15 @@
 // 그대로 동작해야 하므로, 새 기능 쪽만 조용히 빈 값으로 떨어진다.
 import { SB_ON, SB_URL, sbHeaders, sbSelect, sbInsert, sbUpsert, sbRpc } from "./supabaseClient.js";
 
+import { t } from "./i18n.js";
 export const CHAT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 export const CHAT_PAGE = 300;          // 한 번에 받는 메시지 수(최신 페이지·이전 페이지 공통)
 export const REPORT_REASONS = [
-  { key: "spam", label: "스팸·광고" },
-  { key: "abuse", label: "욕설·괴롭힘" },
-  { key: "sexual", label: "음란·불쾌한 내용" },
-  { key: "cheating", label: "부정행위(대국 조작 등)" },
-  { key: "other", label: "기타" },
+  { key: "spam", label: t("스팸·광고") },
+  { key: "abuse", label: t("욕설·괴롭힘") },
+  { key: "sexual", label: t("음란·불쾌한 내용") },
+  { key: "cheating", label: t("부정행위(대국 조작 등)") },
+  { key: "other", label: t("기타") },
 ];
 
 const pairFilter = (a, b) => "or=(and(from_uid.eq." + a + ",to_uid.eq." + b + "),and(from_uid.eq." + b + ",to_uid.eq." + a + "))";

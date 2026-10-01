@@ -341,3 +341,31 @@ Phase 1-3는 순수 상수/함수만 옮겼다. Phase 4는 처음으로 실제 J
   안 보이거나 클릭이 안 먹으면 BestMoveJumpButton을, 페이지 번호/화살표 넘김이 안 되면 ListPager를,
   분석 탭 하단 되돌리기·앞으로가기·설정 버튼(둥근 정사각 아이콘 버튼) 스타일이 깨지면 NavBtn을
   src/components/uiPrimitives.jsx에서 확인.
+
+## Phase 3 (v0.6.0) — App.jsx를 탭·기능별 파일로 분할
+
+34,241줄이던 `src/App.jsx`를 `src/App.jsx`(App 컴포넌트, 약 1,770줄) + `src/app/*.jsx`(12개)로 나눴다. 이름·시그니처·동작은 그대로이고
+문장을 통째로 옮기기만 했다(1,065개 최상위 문장 전부 이동 확인, 빠진 것·중복 없음).
+
+### 나눈 기준 (손으로 자르지 않고 의존 관계로 계산)
+- 각 파일은 "뿌리 컴포넌트"를 정해 두고, **그 뿌리에서만 닿는 코드**를 같이 옮겼다. 여러 파일이 같이 쓰는 코드는 `common.jsx`로 갔다.
+- 파일 → 뿌리: `learn`(LearnTab) · `dex`(CollectionTab) · `puzzle`(PuzzleTab·PuzzleSolver) · `quest`(QuestTab·LessonScreen) ·
+  `settings`(SettingsTab·AccountCenterModal) · `play`(PlayPage·미니게임 전부·PLAY_SPECIAL_GAMES) · `review`(ReviewPage) ·
+  `social`(친구·채팅·프로필 창) · `profile`(공개 프로필 통계·전적·레거시) · `changelog`(CHANGELOG·APP_VERSION) · `shell`(App만 쓰는 헤더·알림·모달) · `common`.
+- 모듈 변수를 다른 문장이 재대입하는 경우(캐시 `let` 등)와 최상위 부수효과 문장은 대상과 같은 파일에 묶었다(import한 값은 재대입 불가).
+- 다른 파일이 쓰는 이름에만 `export`를 붙였다. 외부 import는 파일별로 실제 쓰는 것만 다시 구성, `import("./data/…")` 동적 경로는 `../`로 고쳤다.
+
+### 의존 방향 (순환 금지)
+`App.jsx` → `shell` → 탭·기능 파일 → `common` → `src/lib/*`. `common`은 탭·기능 파일을 import하지 않는다. 순환이 생기면 모듈 최상위 const가
+초기화되기 전에 쓰여 화면이 통째로 안 뜬다. `scripts/check-app-split.mjs`(prebuild)가 순환·방향·App.jsx 줄 수 상한(3,000줄)을 검사한다.
+
+### 검증
+- `npm run build`(prebuild 검사 전부 포함) 통과. 분할 전후 ESLint `no-undef`·`no-use-before-define`(최상위) 위반 0.
+- 브라우저(Playwright) 스모크: `/`·`/analysis`·`/book`·`/puzzle`·`/learn`·`/play`·`/setting`·`/faq`·`/about`·`/privacy`·`/terms` 로드, 하단 탭 6개 순회 중 페이지 오류·콘솔 오류 0.
+- 검사 스크립트 8개는 App 코드를 문자열로 읽었다. `scripts/lib/appSource.mjs`의 `readAppSource()`(App.jsx + src/app/*.jsx 이어붙임)로 바꿔 계속 같은 검사를 한다.
+
+### 오류가 나면 어디부터 볼까
+- 화면이 통째로 안 뜨고 콘솔에 `Cannot access 'X' before initialization`: import 순환. `node scripts/check-app-split.mjs`.
+- `X is not defined`: 그 이름을 쓰는 파일의 import 누락. 이름이 선언된 파일에서 `export`가 붙었는지, 쓰는 파일이 import하는지 확인.
+- 코드를 찾을 때: 이름을 `grep -rn "function 이름" src/App.jsx src/app`. 한 탭에서만 쓰는 코드는 그 탭 파일, 여러 탭이 쓰면 `common.jsx`.
+- 새 코드: 한 탭에서만 쓰면 그 탭 파일, 둘 이상이 쓰면 `common.jsx`. App.jsx에는 App 컴포넌트만 둔다.

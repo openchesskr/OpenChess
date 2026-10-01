@@ -1,9 +1,10 @@
 import { T } from "./theme.js";
 
+import { t } from "./i18n.js";
 // 수 등급(brilliant~blunder)별 색·표 행 순서·배지 이미지 — 리뷰 화면(App.jsx)과 공유 이미지
 // 카드(shareCard.js)가 반드시 같은 기준을 써야 숫자·색이 어긋나지 않으므로 한곳에 둔다.
 export const QCOLOR = { brilliant: T.brilliant, best: T.best, only: T.only, excellent: T.excellent, good: T.good, inaccuracy: T.inaccuracy, miss: "#C8562F", mistake: T.mistake, blunder: T.blunder, book: T.book, pending: T.inkSoft };
-export const ANALYSIS_KIND_ROWS = [["brilliant", "탁월한 수"], ["only", "유일한 수"], ["best", "최선의 수"], ["excellent", "우수한 수"], ["good", "좋은 수"], ["book", "이론"], ["inaccuracy", "부정확"], ["mistake", "실수"], ["miss", "놓친 수"], ["blunder", "블런더"]];
+export const ANALYSIS_KIND_ROWS = [["brilliant", t("탁월한 수")], ["only", t("유일한 수")], ["best", t("최선의 수")], ["excellent", t("우수한 수")], ["good", t("좋은 수")], ["book", t("이론")], ["inaccuracy", t("부정확")], ["mistake", t("실수")], ["miss", t("놓친 수")], ["blunder", t("블런더")]];
 // (21차) 직접 제작한 원형 배지 이미지(chess.com 스타일). "유일한 수"는 chess.com이 "Great Move"라
 // 부르는 자리라 Great 이미지를 쓴다. "Inaccuarcy"는 실제 업로드된 파일명의 오타를 그대로 반영한 것.
 export const BADGE_ICON_SRC = {
