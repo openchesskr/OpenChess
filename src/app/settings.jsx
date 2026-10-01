@@ -14,6 +14,7 @@ import { BlockListSheet } from "../components/chatPlus.jsx";
 import { ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
+import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
 
 // (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
 // 구조 자체는 있지만 그 안의 수순이 실제로는 그 자리에서 둘 수 없는(예: setupSans·mistakeSan이 그
@@ -733,6 +734,20 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>설정</h2></div>
       <div className="settings-cols">
 
+      {/* (v0.7.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("언어")} / Language</div>
+        <p style={{ fontSize: 11, color: T.inkSoft, margin: "0 0 10px" }}>{t("선택하면 페이지가 새로고침됨")}</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="radiogroup" aria-label="Language">
+          {LANGS.map((l) => {
+            const on = l.code === lang;
+            return (
+              <button key={l.code} role="radio" aria-checked={on} lang={l.code} onClick={() => setLang(l.code)} className="press"
+                style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", color: T.ink, background: on ? "rgba(196,154,80,.22)" : "#fff", border: "1.5px solid " + (on ? T.brass : "#E4D5B6") }}>{l.name}</button>
+            );
+          })}
+        </div>
+      </div>
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
       {!user ? (
         <div style={{ ...card, animation: loginShaking ? "lineShake .55s ease 3" : "none" }}>

@@ -91,7 +91,7 @@ export default function LegalPage({ kind }) {
   const sections = isPrivacy ? PRIVACY : TERMS;
   const other = isPrivacy ? { href: "/terms", label: "이용약관" } : { href: "/privacy", label: "개인정보처리방침" };
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif" }}>
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "14px 20px" }}>
           <a href="/" style={{ display: "inline-flex", alignItems: "center" }}>
