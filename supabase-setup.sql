@@ -1830,9 +1830,10 @@ begin
   delete from public.pvp_queue where uid = v_me;
   delete from public.pvp_queue where uid = v_other;
   if random() < 0.5 then v_w := v_me; v_b := v_other; else v_w := v_other; v_b := v_me; end if;
-  -- (v0.5.4) 미니게임 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  -- (v0.5.4) 랜덤 매칭만 레이팅 대전(rated)이다 — 친구 도전·재대결은 전적만 남고 레이팅은 그대로.
+  -- (v0.6.1) 일반 체스 랜덤 매칭도 레이팅 대전이다(예전엔 미니게임만).
   insert into public.pvp_games(white_uid, black_uid, time_control, game_type, white_ms, black_ms, clock_synced_at, rated)
-    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), p_game_type <> 'chess')
+    values (v_w, v_b, p_time_control, p_game_type, public._pvp_initial_ms(p_time_control), public._pvp_initial_ms(p_time_control), now(), true)
     returning * into v_game;
   return v_game;
 end; $$;
@@ -2575,7 +2576,7 @@ end; $$;
 
 -- (v0.5.4 난이도 대폭 상향 → v0.5.7 개편) 라운드 하나를 만든다 — src/lib/knightRace.js의 knightTryGen/knightGenRound와 같은 규칙.
 -- par = 위협 칸과 모든 기물 칸을 피한(잡지 않고 가는) 최단 수(knight_safe_walls). 라운드별 조건(minDist~maxDist, 기물 쌍,
--- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. 이동 수 제한은 par+1.
+-- 기물이 없을 때보다 최소 minDetour수 더 돌아가기, 퀸 쌍 수, 첫 수가 하나뿐인지)을 만족할 때만 채택한다. moveBudget(par+1)은 (v0.6.1) 플레이어의 이동 제한이 아니라 봇이 따라갈 수 있는 경로 길이의 상한일 뿐이다.
 --   1: par 3~4, 1쌍, 5초 / 2: par 4~5, 2쌍, +1 / 3: par 5~6, 3쌍, +1 / 4: par 6~7, 4쌍, +1, 14초
 --   5: par 6~8, 5쌍(1쌍은 반드시 퀸), +2, 첫 수 하나뿐, 17초 — (v0.5.7, 사용자 요청) 반드시 상대 퀸이 나오는 매우 어려운 라운드
 -- 시작 칸·기물은 목표를 중심으로 점대칭이고, 흑 쪽 par도 같을 때만 쓴다. 4000번 안에 못 찾으면 조건을 한 단계씩 낮추되,
@@ -3076,10 +3077,12 @@ grant execute on function public.rush_forfeit(bigint) to authenticated;
 -- ② 등급별로도 전부 같으면, 불리한 확률로 플레이한(레이팅이 높은) 쪽 ③ 레이팅도 같으면 무승부.
 -- 포지션 풀: 저장소에 번들된 시드(src/data/attackPositions.json — 실전 마스터 대국에서 Stockfish로
 -- 검증해 뽑은 강제 메이트) + 개발자가 추가한 포지션(아래 attack_positions 테이블 — 직접 FEN 입력 또는
--- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 두 클라이언트는 같은
--- 풀(번들+테이블, id순 정렬)의 그 등급 목록에서 pick % 개수번째 포지션을 꺼낸다.
+-- 리체스 퍼즐 API에서 가져오기). 서버는 등급과 무작위 정수(pick)만 정하고, 각 클라이언트는 자기 기회의
+-- 포지션을 번들+테이블 풀의 그 등급 목록에서 직접 고른다(src/lib/attackPool.js — 이 브라우저에서 아직 안 나온
+-- 포지션 중, 테마를 균등하게 섞어 pick을 시드로 추첨). 상대 화면에는 포지션이 보이지 않으므로 두 클라이언트가
+-- 같은 포지션을 고를 필요는 없다(v0.6.1부터).
 --   sans[0] = { "h": 1, "startAt": ts, "endAt": ts, "wr": int, "br": int }  (헤더)
---   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null }
+--   sans[i>0] = { "c": "w"|"b", "g": "S"|"A"|"B"|"C", "pick": int, "at": ts, "ok": true|false|null, "doneAt": ts|null, "prog": { "s": "ok"|"bad"|"win", "left", "n", "t" }|없음 }
 create table if not exists public.attack_positions (
   id bigint generated always as identity primary key,
   fen text not null,
@@ -3181,6 +3184,27 @@ begin
 end; $$;
 grant execute on function public.attack_report(bigint, int, boolean) to authenticated;
 
+-- (v0.6.1) 내 진행 상황 알림 — 상대 화면의 "상대 상황 표시"(체크메이트 수순을 찾는 중 / 정확한 수순 / 실패 / n수 메이트 성공)용.
+-- 내 것이고 아직 안 끝난 기회에만 prog = { s: 'ok'|'bad'|'win', left, n, t }를 붙인다. 판정(attack_report·attack_finish)에는 쓰이지 않는 표시값이다.
+create or replace function public.attack_progress(p_game_id bigint, p_idx int, p_state text, p_left int, p_n int)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_game public.pvp_games; v_c text; v_e jsonb;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_state is null or p_state not in ('ok', 'bad', 'win') then return; end if;
+  select * into v_game from public.pvp_games where id = p_game_id for update;
+  if not found then return; end if;
+  if v_game.game_type <> 'attack' or v_game.status <> 'active' then return; end if;
+  if v_me = v_game.white_uid then v_c := 'w'; elsif v_me = v_game.black_uid then v_c := 'b'; else raise exception 'not a participant'; end if;
+  if p_idx < 1 or p_idx >= jsonb_array_length(v_game.sans) then return; end if;
+  v_e := v_game.sans -> p_idx;
+  if v_e ->> 'c' <> v_c then return; end if;
+  if v_e -> 'ok' is not null and jsonb_typeof(v_e -> 'ok') <> 'null' then return; end if;
+  v_e := v_e || jsonb_build_object('prog', jsonb_build_object('s', p_state, 'left', least(greatest(coalesce(p_left, 0), 0), 9), 'n', least(greatest(coalesce(p_n, 0), 0), 9), 't', now()));
+  update public.pvp_games set sans = jsonb_set(sans, array[p_idx::text], v_e), updated_at = now() where id = p_game_id;
+end; $$;
+grant execute on function public.attack_progress(bigint, int, text, int, int) to authenticated;
+
 -- 결과 확정 — 종료 시각(+3초 여유, 마지막 보고를 기다린다)이 지난 뒤에만. 규칙은 위 설명 참고.
 create or replace function public.attack_finish(p_game_id bigint)
 returns public.pvp_games language plpgsql security definer set search_path = public as $$
@@ -3253,7 +3277,7 @@ grant execute on function public.attack_forfeit(bigint) to authenticated;
 -- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
 create table if not exists public.minigame_stats (
   uid uuid not null references auth.users(id) on delete cascade,
-  game text not null check (game in ('coord', 'knight', 'rush', 'attack')),
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess')),
   rating int not null default 1200,
   peak_rating int not null default 1200,
   rated_games int not null default 0,
@@ -3269,6 +3293,10 @@ create table if not exists public.minigame_stats (
   updated_at timestamptz not null default now(),
   primary key (uid, game)
 );
+-- (v0.6.1) 일반 체스 대국('chess')도 같은 표에 전적·레이팅을 쌓는다. 이미 만들어진 표는 위 create table을 건너뛰므로 제약을 따로 바꾼다.
+-- 이 제약이 먼저 넓혀져야 아래 트리거가 'chess' 행을 넣을 수 있다(순서 중요).
+alter table public.minigame_stats drop constraint if exists minigame_stats_game_check;
+alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess'));
 create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
 create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
 alter table public.minigame_stats enable row level security;
@@ -3289,6 +3317,9 @@ declare
   w public.minigame_stats; b public.minigame_stats;
   v_ws numeric; v_wr int; v_br int;
 begin
+  -- (v0.6.1) 전적·레이팅 집계가 어떤 이유로 실패해도(제약·권한 등) 대국 결과를 확정하는 update 자체는 막지 않는다 — 집계는 부가 기능이고,
+  -- 일반 체스까지 이 트리거를 타므로 여기서 예외가 나면 모든 대국이 끝나지 못하는 사고가 된다.
+  begin
   insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
     on conflict (uid, game) do nothing;
   select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
@@ -3324,6 +3355,9 @@ begin
     best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
     updated_at = now()
   where uid = new.black_uid and game = new.game_type;
+  exception when others then
+    raise warning 'minigame stats skipped for game %: %', new.id, sqlerrm;
+  end;
   return new;
 end; $$;
 -- BEFORE 트리거라 rating_delta를 같은 update 안에서 채운다 — 대전 화면이 구독 중인 그 한 번의 실시간
@@ -3332,7 +3366,7 @@ drop trigger if exists minigame_game_end_trigger on public.pvp_games;
 create trigger minigame_game_end_trigger
   before update of status on public.pvp_games
   for each row
-  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack'))
+  when (old.status = 'active' and new.status in ('white_won', 'black_won', 'draw') and new.game_type in ('coord', 'knight', 'rush', 'attack', 'chess'))
   execute function public._minigame_on_game_end();
 
 -- 혼자 플레이하기 기록 제출 — 이전 기록보다 좋을 때만 바꾸고, 바뀌었는지 돌려준다. 클라이언트가 계산한
@@ -3624,19 +3658,23 @@ create table if not exists public.user_reports (
   target_uid uuid not null references auth.users(id) on delete cascade,
   message_id bigint references public.chat_messages(id) on delete set null,
   message_snapshot jsonb,
-  reason text not null check (reason in ('spam', 'abuse', 'sexual', 'cheating', 'other')),
+  reason text not null check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$'),
   detail text check (detail is null or char_length(detail) <= 500),
   status text not null default 'open',
   created_at timestamptz not null default now(),
   check (reporter <> target_uid)
 );
+-- (v0.6.1) 신고 사유를 여러 개("spam,abuse") 고를 수 있고, 신고 순간의 최근 대화(context)도 함께 남긴다. 이미 만들어진 표는 위 create table을 건너뛰므로 따로 바꾼다.
+alter table public.user_reports drop constraint if exists user_reports_reason_check;
+alter table public.user_reports add constraint user_reports_reason_check check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$');
+alter table public.user_reports add column if not exists context jsonb;
 alter table public.user_reports enable row level security;
 drop policy if exists "reports read own" on public.user_reports;
 create policy "reports read own" on public.user_reports for select using (auth.uid() = reporter);
 grant select on public.user_reports to authenticated;
 create or replace function public.user_report(p_target uuid, p_message_id bigint, p_reason text, p_detail text)
 returns bigint language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint;
+declare v_me uuid := auth.uid(); v_snap jsonb; v_id bigint; v_ctx jsonb;
 begin
   if v_me is null then raise exception 'auth required'; end if;
   if p_target is null or p_target = v_me then raise exception 'bad target'; end if;
@@ -3645,6 +3683,12 @@ begin
     select to_jsonb(m) - 'read' into v_snap from public.chat_messages m
     where m.id = p_message_id and m.from_uid = p_target and m.to_uid = v_me;
     if v_snap is null then raise exception 'message not found'; end if;
+    -- (v0.6.1) 신고 순간 두 사람의 최근 대화 15개를 복사해 둔다 — 앞뒤 맥락을 보고 판단하고, 나중에 지워져도 남게(서버가 복사하므로 위조 불가).
+    select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'from_uid', x.from_uid, 'body', x.body, 'emoji', x.emoji, 'created_at', x.created_at) order by x.created_at, x.id), '[]'::jsonb)
+      into v_ctx from (
+        select c.id, c.from_uid, c.body, c.emoji, c.created_at from public.chat_messages c
+        where (c.from_uid = v_me and c.to_uid = p_target) or (c.from_uid = p_target and c.to_uid = v_me)
+        order by c.created_at desc, c.id desc limit 15) x;
   else
     -- (v0.6.0) 프로필 신고 — 신고 순간의 아이디·닉네임·소개·사진 여부를 서버가 복사해 둔다(나중에 고쳐도 검토 가능, 위조 불가).
     select jsonb_build_object('kind', 'profile', 'username', pr.username, 'nickname', pr.pub ->> 'nickname',
@@ -3656,12 +3700,39 @@ begin
   if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then
     raise exception 'too many reports';
   end if;
-  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, reason, detail)
-  values (v_me, p_target, p_message_id, v_snap, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
+  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, context, reason, detail)
+  values (v_me, p_target, p_message_id, v_snap, v_ctx, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
   returning id into v_id;
   return v_id;
 end; $$;
 grant execute on function public.user_report(uuid, bigint, text, text) to authenticated;
+
+-- (v0.6.1, 사용자 요청) 개발자 모드에서 신고 열람 — 개발자 계정(openchesskr)만. 신고한 사람·신고당한 사람 아이디, 사유, 신고된 메시지와 최근 대화를 돌려준다.
+-- 공동 개발자에게는 열지 않는다(개인 대화 내용이 들어 있어서). 표 자체는 신고자 본인만 읽을 수 있고(RLS), 이 함수만 개발자에게 전체를 보여 준다.
+create or replace function public._is_dev_account(p_uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles pr where pr.id = p_uid and pr.username = 'openchesskr');
+$$;
+create or replace function public.reports_for_dev(p_limit int default 100)
+returns table (id bigint, reporter_username text, target_username text, reason text, detail text, message_id bigint, message_snapshot jsonb, context jsonb, status text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select r.id, rp.username, tp.username, r.reason, r.detail, r.message_id, r.message_snapshot, r.context, r.status, r.created_at
+  from public.user_reports r
+  join public.profiles rp on rp.id = r.reporter
+  join public.profiles tp on tp.id = r.target_uid
+  where public._is_dev_account(auth.uid())
+  order by r.created_at desc
+  limit least(greatest(coalesce(p_limit, 100), 1), 300);
+$$;
+grant execute on function public.reports_for_dev(int) to authenticated;
+create or replace function public.report_set_status(p_id bigint, p_status text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public._is_dev_account(auth.uid()) then raise exception 'dev only'; end if;
+  if p_status not in ('open', 'done') then raise exception 'bad status'; end if;
+  update public.user_reports set status = p_status where id = p_id;
+end; $$;
+grant execute on function public.report_set_status(bigint, text) to authenticated;
 
 -- 대화방 목록 요약(BUG-019 수정) — 예전엔 나와 관련된 최근 메시지 200개로 클라이언트가 방 목록을 추정해, 오래된 대화방이
 -- 목록에서 빠지고 안 읽은 수도 200개 안에 든 것만 셌다. 대화 상대마다 "나에게서만 삭제" 워터마크 뒤의 마지막 메시지와

@@ -4,11 +4,11 @@
 // 체스 보드는 앱의 Board(스킨·드래그 포함)를 그대로 쓰도록 prop(Board)으로 받는다 — App.jsx를 되부르는 순환 import를 피하려는 것.
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus } from "lucide-react";
+import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus, MoreVertical, Send } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { parseFenFull, replayFromFen, replaySans, boardFromSans, epTarget, fenLegalDests, buildSan, colorOfRoot, fenOfRoot } from "../lib/chessRules.js";
 import { parsePgnSans, sanSequenceValid } from "../lib/pgn.js";
-import { CHAT_REACTIONS, REPORT_REASONS, FEN_IN_TEXT, MOVETEXT_IN_TEXT } from "../lib/chatApi.js";
+import { CHAT_REACTIONS, REPORT_REASONS, FEN_IN_TEXT, MOVETEXT_IN_TEXT, reportsForDev, reportSetStatus } from "../lib/chatApi.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 const menuBtn = { display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "7px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", whiteSpace: "nowrap" };
@@ -16,12 +16,12 @@ const stop = (e) => e.stopPropagation();
 
 // ---- 메시지 메뉴 — 위에 반응 줄, 아래에 동작 버튼. 말풍선이 없는 쪽(대화창 가운데 쪽)에 뜬다(위치는 호출부가 잡는다). ----
 export const CHAT_MENU_W = 214;
-export function ChatMsgMenu({ myReacts, onReact, onReply, onCopy, onEdit, onDelete, onReport, style }) {
+export function ChatMsgMenu({ myReacts, onReact, onReply, onCopy, onForward, onEdit, onDelete, onReport, style }) {
   return (
     <div onMouseDown={stop} onTouchStart={stop} role="menu"
       style={{ position: "absolute", zIndex: 30, width: CHAT_MENU_W, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", ...style }}>
       {onReact && (
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 2px 6px", borderBottom: onReply || onCopy || onEdit || onDelete || onReport ? "1px solid rgba(255,255,255,.08)" : "none", marginBottom: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 2px 6px", borderBottom: onReply || onCopy || onForward || onEdit || onDelete || onReport ? "1px solid rgba(255,255,255,.08)" : "none", marginBottom: 4 }}>
           {CHAT_REACTIONS.map((e) => {
             const on = myReacts && myReacts.has(e);
             return (
@@ -33,6 +33,7 @@ export function ChatMsgMenu({ myReacts, onReact, onReply, onCopy, onEdit, onDele
       )}
       {onReply && <button onClick={onReply} className="press" style={menuBtn}>{tx("{0}답장", <Reply size={14} />)}</button>}
       {onCopy && <button onClick={onCopy} className="press" style={menuBtn}>{tx("{0}복사", <Copy size={14} />)}</button>}
+      {onForward && <button onClick={onForward} className="press" style={menuBtn}>{tx("{0}전달", <Send size={14} />)}</button>}
       {onEdit && <button onClick={onEdit} className="press" style={menuBtn}>{tx("{0}수정", <Pencil size={14} />)}</button>}
       {onDelete && <button onClick={onDelete} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}>{tx("{0}삭제", <Trash2 size={14} />)}</button>}
       {onReport && <button onClick={onReport} className="press" style={{ ...menuBtn, color: "#F4A0A0" }}>{tx("{0}신고", <Flag size={14} />)}</button>}
@@ -41,7 +42,7 @@ export function ChatMsgMenu({ myReacts, onReact, onReply, onCopy, onEdit, onDele
 }
 
 // ---- 반응 칩 — 이모지별로 묶어 개수 표시, 내가 단 것은 금색 테두리. 누르면 내 반응을 켜고 끈다. ----
-export function ReactionChips({ list, myUid, onToggle, align = "flex-start" }) {
+export function ReactionChips({ list, myUid, onToggle, align = "flex-start", dense }) {
   const groups = useMemo(() => {
     const m = new Map();
     (list || []).forEach((r) => { const g = m.get(r.emoji) || { emoji: r.emoji, n: 0, mine: false }; g.n++; if (r.uid === myUid) g.mine = true; m.set(r.emoji, g); });
@@ -49,13 +50,13 @@ export function ReactionChips({ list, myUid, onToggle, align = "flex-start" }) {
   }, [list, myUid]);
   if (!groups.length) return null;
   return (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: align, marginTop: 3 }}>
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: align, marginTop: dense ? 0 : 3 }}>
       <AnimatePresence initial={false}>
         {groups.map((g) => (
           <motion.button key={g.emoji} layout initial={{ opacity: 0, transform: "scale(0.6)" }} animate={{ opacity: 1, transform: "scale(1)" }} exit={{ opacity: 0, transform: "scale(0.6)" }}
             transition={{ duration: 0.18 }} onClick={() => onToggle && onToggle(g.emoji, !g.mine)} className="press" aria-pressed={g.mine}
             style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 7px", height: 22, borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 800, color: T.ink,
-              background: g.mine ? "rgba(196,154,80,.22)" : "#fff", border: "1px solid " + (g.mine ? T.brass : "#E4D5B6") }}>
+              background: g.mine ? "#F6E7C4" : "#fff", border: "1px solid " + (g.mine ? T.brass : "#E4D5B6"), boxShadow: dense ? "0 0 0 2px #FBF5E8, 0 1px 3px rgba(0,0,0,.15)" : "none" }}>
             <span style={{ fontSize: 13, lineHeight: 1 }}>{g.emoji}</span>{g.n > 1 && <span>{g.n}</span>}
           </motion.button>
         ))}
@@ -121,15 +122,17 @@ const primaryBtn = (on = true) => ({ width: "100%", padding: "10px 0", borderRad
 
 // ---- 신고 시트 — 사유 + 자세한 내용(선택) + "차단도 하기" ----
 export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlocked }) {
-  const [reason, setReason] = useState(null);
+  // (v0.6.1, 사용자 요청) 사유를 체크박스로 여러 개 고를 수 있다 — 서버에는 "spam,abuse"처럼 쉼표로 이어 보낸다.
+  const [reasons, setReasons] = useState([]);
+  const toggleReason = (k) => setReasons((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]));
   const [detail, setDetail] = useState("");
   const [alsoBlock, setAlsoBlock] = useState(!alreadyBlocked);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const submit = async () => {
-    if (!reason || busy) return;
+    if (!reasons.length || busy) return;
     setBusy(true); setMsg("");
-    const r = await onSubmit(reason, detail.trim(), alsoBlock);
+    const r = await onSubmit(REPORT_REASONS.map((x) => x.key).filter((k) => reasons.includes(k)).join(","), detail.trim(), alsoBlock);
     setBusy(false);
     if (r && r.ok) onClose();
     else setMsg(r && r.error === "limit" ? t("오늘은 더 신고할 수 없음 (하루 20건)") : t("신고 전송 실패. 잠시 후 다시 시도"));
@@ -137,11 +140,17 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
   return (
     <Sheet title={t("{0}님 신고", (targetName))} onClose={onClose}>
       {snippet && <div style={{ fontSize: 11.5, color: T.inkSoft, padding: "7px 10px", borderRadius: 8, background: "#fff", border: "1px solid #E4D5B6", marginBottom: 10 }}>“{snippet}”</div>}
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("신고 사유 (중복 선택 가능)")}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-        {REPORT_REASONS.map((r) => (
-          <button key={r.key} onClick={() => setReason(r.key)} className="press" aria-pressed={reason === r.key}
-            style={{ textAlign: "left", padding: "9px 11px", borderRadius: 9, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: T.ink, background: reason === r.key ? "rgba(196,154,80,.2)" : "#fff", border: "1px solid " + (reason === r.key ? T.brass : "#E4D5B6") }}>{r.label}</button>
-        ))}
+        {REPORT_REASONS.map((r) => {
+          const on = reasons.includes(r.key);
+          return (
+            <label key={r.key} className="press"
+              style={{ display: "flex", alignItems: "center", gap: 9, textAlign: "left", padding: "9px 11px", borderRadius: 9, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: T.ink, background: on ? "rgba(196,154,80,.2)" : "#fff", border: "1px solid " + (on ? T.brass : "#E4D5B6") }}>
+              <input type="checkbox" checked={on} onChange={() => toggleReason(r.key)} style={{ width: 16, height: 16, accentColor: T.brass, flexShrink: 0, margin: 0 }} />{r.label}
+            </label>
+          );
+        })}
       </div>
       <textarea value={detail} onChange={(e) => setDetail(e.target.value.slice(0, 500))} placeholder={t("자세한 내용(선택)")} rows={3}
         style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", fontSize: 12, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }} />
@@ -150,8 +159,8 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
           <input type="checkbox" checked={alsoBlock} onChange={(e) => setAlsoBlock(e.target.checked)} />{t("이 사용자 차단 (서로 메시지 전송 불가)")}</label>
       )}
       {msg && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{msg}</p>}
-      <button onClick={submit} disabled={!reason || busy} className="press" style={primaryBtn(!!reason && !busy)}>{busy ? t("보내는 중…") : t("신고하기")}</button>
-      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>{t("신고한 메시지는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")}</p>
+      <button onClick={submit} disabled={!reasons.length || busy} className="press" style={primaryBtn(!!reasons.length && !busy)}>{busy ? t("보내는 중…") : t("신고하기")}</button>
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>{t("신고한 메시지와 최근 대화는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")}</p>
     </Sheet>
   );
 }
@@ -461,8 +470,8 @@ export function ChatHeaderActions({ onSearch, onReport, blocked, onToggleBlock }
   return (
     <div className="flex items-center gap-1" style={{ marginLeft: "auto" }}>
       <button onClick={onSearch} aria-label={t("대화 검색")} title={t("대화 검색")} className="press" style={b}><Search size={14} /></button>
-      <button onClick={onReport} aria-label={t("신고")} title={t("신고")} className="press" style={b}><Flag size={14} /></button>
-      <button onClick={onToggleBlock} aria-label={blocked ? t("차단 해제") : t("차단")} title={blocked ? t("차단 해제") : t("차단")} className="press" style={{ ...b, color: blocked ? T.blunder : T.inkSoft, borderColor: blocked ? T.blunder : "#C9B58C" }}><Ban size={14} /></button>
+      {/* (v0.6.1, 사용자 요청) 신고·차단 버튼은 /user 페이지와 같은 점 3개 메뉴 하나로 */}
+      <UserSafetyMenu blocked={blocked} onReport={onReport} onToggleBlock={onToggleBlock} />
     </div>
   );
 }
@@ -533,7 +542,7 @@ export function UserSafetyMenu({ blocked, onReport, onToggleBlock }) {
   return (
     <span style={{ position: "relative", display: "inline-flex" }}>
       <button onClick={() => setOpen((v) => !v)} aria-label={t("신고·차단")} aria-expanded={open} title={t("신고·차단")} className="press"
-        style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag size={14} /></button>
+        style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MoreVertical size={16} /></button>
       {open && (
         <>
           <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />
@@ -544,6 +553,80 @@ export function UserSafetyMenu({ blocked, onReport, onToggleBlock }) {
         </>
       )}
     </span>
+  );
+}
+
+// ---- (v0.6.1, 사용자 요청) 개발자 모드 신고 열람 — 신고한 사람·신고당한 사람 아이디, 사유, 신고된 메시지, 신고 순간의 최근 대화 ----
+export function ReportsDevPanel() {
+  const [state, setState] = useState({ loading: true, ok: true, rows: [], error: null });
+  const [filter, setFilter] = useState("open");
+  const load = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true }));
+    const r = await reportsForDev(150);
+    setState({ loading: false, ok: r.ok, rows: r.rows, error: r.error || null });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const setStatus = async (row, status) => {
+    setState((s) => ({ ...s, rows: s.rows.map((x) => (x.id === row.id ? { ...x, status } : x)) }));
+    if (!(await reportSetStatus(row.id, status))) load();
+  };
+  const reasonLabel = (key) => { const f = REPORT_REASONS.find((r) => r.key === key); return f ? f.label : key; };
+  const rows = state.rows.filter((r) => (filter === "all" ? true : (r.status || "open") === filter));
+  const seg = (k, label) => <button key={k} onClick={() => setFilter(k)} className="press" style={{ padding: "5px 11px", borderRadius: 8, border: "1px solid " + (filter === k ? T.brass : "#C9B58C"), background: filter === k ? "rgba(196,154,80,.22)" : "#fff", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{label}</button>;
+  const nameOf = (r, uid) => (uid === (r.message_snapshot && r.message_snapshot.from_uid) ? r.target_username : null);
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("신고 목록")}</div>
+        <button onClick={load} className="press" style={{ padding: "5px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{state.loading ? t("불러오는 중…") : t("새로 고침")}</button>
+      </div>
+      <div className="flex gap-2" style={{ marginBottom: 10 }}>{seg("open", t("처리 대기"))}{seg("done", t("처리 완료"))}{seg("all", t("전체"))}</div>
+      {state.error === "setup" && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700 }}>{t("서버에 반영되지 않음. supabase-setup.sql 재실행 필요")}</p>}
+      {state.error === "failed" && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700 }}>{t("불러오기 실패")}</p>}
+      {!state.loading && state.ok && !rows.length && <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("신고 없음")}</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 460, overflowY: "auto" }}>
+        {rows.map((r) => {
+          const snap = r.message_snapshot || {};
+          const ctx = Array.isArray(r.context) ? r.context : [];
+          const profile = snap.kind === "profile";
+          return (
+            <div key={r.id} style={{ padding: "9px 11px", borderRadius: 10, background: "#fff", border: "1px solid " + ((r.status || "open") === "done" ? "#E4D5B6" : T.brass) }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>@{r.reporter_username} → @{r.target_username}</div>
+              <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>#{r.id} · {fmtDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                {String(r.reason || "").split(",").filter(Boolean).map((k) => <span key={k} style={{ padding: "2px 8px", borderRadius: 999, background: "rgba(217,115,106,.14)", border: "1px solid rgba(217,115,106,.5)", color: T.ink, fontSize: 10.5, fontWeight: 800 }}>{reasonLabel(k)}</span>)}
+              </div>
+              {r.detail && <div style={{ fontSize: 11.5, color: T.ink, marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{r.detail}</div>}
+              {profile ? (
+                <div style={{ marginTop: 6, fontSize: 11, color: T.inkSoft, padding: "6px 8px", borderRadius: 8, background: "#FBF5E8" }}>
+                  <b style={{ color: T.ink }}>{t("프로필 신고")}</b> · @{snap.username}{snap.nickname ? " · " + snap.nickname : ""}{snap.bio ? " · " + snap.bio : ""}
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, fontSize: 11, color: T.inkSoft }}>
+                  <div style={{ fontWeight: 800, marginBottom: 3 }}>{t("신고된 메시지")}</div>
+                  <div style={{ padding: "6px 8px", borderRadius: 8, background: "#FFF1EE", border: "1px solid rgba(217,115,106,.4)", color: T.ink, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{snap.body || (snap.emoji ? t("이모티콘") : chatSnippet(snap))}</div>
+                  {ctx.length > 0 && (
+                    <>
+                      <div style={{ fontWeight: 800, margin: "7px 0 3px" }}>{t("대화 기록")}</div>
+                      <div style={{ maxHeight: 150, overflowY: "auto", padding: "6px 8px", borderRadius: 8, background: "#FBF5E8", display: "flex", flexDirection: "column", gap: 2 }}>
+                        {ctx.map((c) => (
+                          <div key={c.id} style={{ fontSize: 11, color: T.ink, background: c.id === r.message_id ? "rgba(236,203,134,.55)" : "transparent", borderRadius: 4, padding: "1px 3px", wordBreak: "break-word" }}>
+                            <b>@{c.from_uid === snap.from_uid ? r.target_username : r.reporter_username}</b>: {c.body || (c.emoji ? t("이모티콘") : "…")}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                <button onClick={() => setStatus(r, (r.status || "open") === "done" ? "open" : "done")} className="press" style={{ padding: "5px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: (r.status || "open") === "done" ? "#fff" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: (r.status || "open") === "done" ? T.ink : "#241509", fontWeight: 800, fontSize: 11.5, cursor: "pointer" }}>{(r.status || "open") === "done" ? t("처리 대기") : t("처리 완료")}</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
