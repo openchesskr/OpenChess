@@ -13719,7 +13719,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume, myPuzzleRating, canEditContent }) {
+function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -13969,6 +13969,12 @@ function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUi
         const rows = await sbSelect("pvp_games?status=eq.active&or=(white_uid.eq." + myUid + ",black_uid.eq." + myUid + ")&order=updated_at.desc&limit=1");
         const g = rows && rows[0];
         if (!g || cancelled) return;
+        // (v0.5.9, BUG-041) 진행 중인 대전이 미니게임이면 체스 대국으로 열면 안 된다 — 새로고침하면 미니게임 대전(시계 0-0)이 체스 대국으로
+        // 열려 "시간 초과 패배"가 뜨고 사이트가 잠시 먹통이 됐다. 체스가 아닌 대전은 그 미니게임 화면이 이어받는다(최근 10분 안일 때만).
+        if ((g.game_type || PVP_GAME_TYPE) !== PVP_GAME_TYPE) {
+          if (onResumeSpecial && PLAY_SPECIAL_GAMES.some((x) => x.gameType === g.game_type) && Date.now() - new Date(g.updated_at).getTime() <= 10 * 60 * 1000) onResumeSpecial(g);
+          return;
+        }
         // (버그 수정, 사용자 제보) 마지막 갱신이 오래전이면 상대도 나도 이미 떠난 죽은 대국일 수 있다.
         // 그런데도 무조건 이어받다 보니, 클럭이 진작 0을 지나 곧장 "패배" 화면으로 떨어지고 —
         // /play를 열 때마다(심지어 "대국 상대 찾기"를 누르기도 전에) 이 죽은 대국을 계속 다시 붙잡아,
@@ -25046,6 +25052,7 @@ const CHANGELOG = [
       "게임 리뷰·분석에서 탁월한 수·유일한 수가 누락되던 문제 수정. 탁월한 수는 엔진이 희생 이후 수순을 확인해 판정.",
       "게임 리뷰에서 이론 수가 비이론 수로 표시되던 문제 수정. 수순 전환과 이름 있는 오프닝(ECO) 포지션도 이론으로 인식.",
       "나이트 레이스 '최소 수' 표시가 실제보다 크던 문제 수정. 기물을 잡는 지름길이 있는 라운드는 출제하지 않음.",
+      "친구와 미니게임 중 새로고침하면 사이트가 멈추고 패배 처리되던 문제 수정. 새로고침 후 미니게임 화면으로 복귀.",
       "사이트 전체 문구를 명사형·개조식으로 통일. 중요도가 낮은 안내 문구 삭제.",
       "업데이트 내역·FAQ·공지 문구 전면 정리.",
     ]
@@ -34203,7 +34210,7 @@ export default function App() {
             않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
         {playGame && (
           <div style={tab === "store" ? undefined : { display: "none" }}>
-            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
           </div>
         )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxOn={moveFxOn} setMoveFxOn={setMoveFxOn} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
