@@ -1,5 +1,5 @@
 import {
-  canMove, exposesKing, sanSrc, applySan, kingPos, isAttacked, plyIsWhite, boardOfRoot,
+  canMove, exposesKing, sanSrc, applySan, kingPos, isAttacked, plyIsWhite, boardOfRoot, legalDests, buildSan,
 } from "./chessRules.js";
 
 export const PIECE_VAL_MAT = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
@@ -444,6 +444,20 @@ export function ownPriorMoveWasSacrifice(prevSans, color, fenRoot) {
 //   secondCp  2순위 수 평가(둔 쪽 관점). undefined = 모름(유일한 수 판정 안 함), null = 2순위 수가 없음
 //   isSac()   isSacrifice 결과(필요할 때만 계산) · priorSac  직전 자신의 수가 이미 희생(콤보 연결 수)
 //   singleRecapture()  대안 없는 단순 되잡기 · oppJustErred  상대 직전 수가 실수·블런더(놓친 수 판정) · san  언더프로모션 판정용
+// (v0.6.2 BUG-055) 이 포지션에서 color가 둘 수 있는 합법 수 중 isSacrifice(정적 판정)가 참인 수의 SAN 목록. 엔진 MultiPV 상위권에 안 잡히는 희생
+// (최선수보다 조금 못하지만 탁월한 수인 1.Rc7 같은 수)을 퍼즐 생성이 놓치지 않도록 후보를 직접 열거한다. 승진은 퀸 승진만 만든다.
+export function staticSacrificeSans(board, color, ep) {
+  const out = [];
+  for (let fr = 0; fr < 8; fr++) for (let fc = 0; fc < 8; fc++) {
+    const pc = board[fr][fc]; if (!pc || pc.c !== color) continue;
+    for (const d of legalDests(board, fr, fc, color, ep)) {
+      const promo = pc.t === "P" && (d[0] === 0 || d[0] === 7) ? "Q" : undefined;
+      const san = buildSan(board, fr, fc, d[0], d[1], color, ep, promo);
+      if (san && isSacrifice(board, san, color)) out.push(san);
+    }
+  }
+  return out;
+}
 // (v0.5.9 BUG-036) 탁월로 인정하는 "둔 뒤 평가"(둔 쪽 관점) 하한. 예전엔 -40(-0.4)이라, 11...Bxc6처럼 엔진이 흑을 -0.66 정도로 보는
 // 평범한 오픈 시실리안 포지션의 교환 희생까지 막았다(리뷰 depth에서 흑 포지션은 -0.3~-0.7이 흔하다). chess.com 기준("둔 뒤 나쁜
 // 포지션이 아닐 것")에 맞춰 폰 하나(-1.0)까지 허용한다 — 그보다 나쁘면 희생이 아니라 그냥 불리해지는 수로 본다.

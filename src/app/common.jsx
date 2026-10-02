@@ -5,8 +5,8 @@ import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
-import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, SAC_POISON_MIN_GAIN_CP, SAC_POISON_BIG_GAIN_CP, pvRegainsMaterial, isSacrifice, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
+import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
+import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, SAC_POISON_MIN_GAIN_CP, SAC_POISON_BIG_GAIN_CP, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -22,6 +22,7 @@ import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZO
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
 import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
+import { poolFallbackWorker } from "../lib/enginePool.js";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
@@ -335,12 +336,57 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
   }
   return cands;
 }
+// (v0.6.2 BUG-055) 희생 테마 퍼즐의 첫 수 찾기 — FEN 포지션 전용(PGN은 게임 채점이 고른 탁월한 수를 쓴다).
+// 예전엔 FEN 모드가 첫 수를 지정하지 않고 genPuzzleTree에 맡겨, 희생이 아닌 엔진 최선수(예: 3kr3/5R2/7p/p4K1B/P7/7P/8/8 w의 1.Rg7)가
+// "기물 희생하기" 퍼즐의 정답 라인으로 만들어졌다. 이제 ① 엔진 상위 후보 중 탁월한 수와 ② 엔진 상위권 밖이라도 정적으로 희생인 모든 합법 수
+// (1.Rc7처럼 최선수가 아니어서 MultiPV에 안 잡히는 희생)를 직접 평가해, 사이트 전체와 같은 규칙(gradeMoveKindConfirmed)으로 탁월한 수가 된 것만 고른다.
+// 없으면 null — 호출부가 "희생이 없는 포지션"이라고 알려야 하며, 희생이 아닌 수로 대신 만들지 않는다.
+const SAC_SEARCH_MAX_EXTRA = 10;
+// 희생은 "최선수보다 조금 못한 수"인 경우가 많아(손실 ≤ 70cp면 탁월) 얕은 탐색의 평가 노이즈에 판정이 뒤집힌다(1.Rc7: 1.5초 탐색 −1.2 → 깊은 탐색 −0.5).
+// 사용자가 직접 누른 단발 작업이고 평가할 수가 몇 개뿐이라, 이 탐색만 리뷰보다 깊게(후보마다 5초) 돌려 최선수와 같은 깊이로 비교한다.
+const SAC_SEARCH_MOVETIME_MS = 5000;
+export async function findSacrificeFirstMove(engine, preSans, fenRoot) {
+  const pool = await getAnalysisPool(engine.profile, engine.urls);
+  const workers = pool.length ? pool : [engine];
+  let wi = 0; const nextWorker = () => workers[wi++ % workers.length];
+  const color = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
+  let pvs = null;
+  try { pvs = await nextWorker().evaluateMulti(fenOfRoot(fenRoot, preSans), MAX_SEARCH_DEPTH, 6, SAC_SEARCH_MOVETIME_MS); } catch { }
+  if (!pvs || !pvs.length || !pvs[0] || !pvs[0].uci) return null;
+  const bestCp = cpOfLine(pvs[0]);
+  const brilliant = [];   // { san, loss }
+  const cands = (await puzzleCandidatesAt(nextWorker(), preSans, pvs, fenRoot)) || [];
+  for (const c of cands) if (c.kind === "brilliant") brilliant.push({ san: c.san, loss: c.loss });
+  const seen = new Set(cands.map((c) => stripSuffix(c.san)));
+  // 엔진 상위 후보에 없는 정적 희생 수 — 합법 수를 전부 만들어 isSacrifice로 걸러낸 뒤, 둔 뒤 포지션을 평가한다.
+  const brd = boardOfRoot(fenRoot, preSans);
+  const ep = fenRoot ? replayFromFen(fenRoot, preSans).ep : null;
+  const extras = staticSacrificeSans(brd, color, ep).filter((san) => !seen.has(stripSuffix(san)));
+  const sacEval = (fen) => nextWorker().evaluate(fen, REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
+  const graded = await Promise.all(extras.slice(0, SAC_SEARCH_MAX_EXTRA).map(async (san) => {
+    try {
+      const evc = await nextWorker().evaluate(fenOfRoot(fenRoot, [...preSans, san]), MAX_SEARCH_DEPTH, undefined, SAC_SEARCH_MOVETIME_MS);
+      if (!evc || (evc.cp == null && evc.mate == null)) return null;
+      const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
+      const loss = Math.max(0, bestCp - mvCp);
+      const kind = await gradeMoveKindConfirmed({ loss, matched: false, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(preSans, color, fenRoot), san }, { fenRoot, prevSans: preSans, san, color, evaluate: sacEval });
+      return kind === "brilliant" ? { san, loss } : null;
+    } catch { return null; }
+  }));
+  for (const g of graded) if (g) brilliant.push(g);
+  if (!brilliant.length) return null;
+  brilliant.sort((a, b) => a.loss - b.loss);
+  return brilliant[0].san;
+}
 // (UX) onProgress(0~1) — 트리 확장 중 지금까지 만든 노드 수를 maxNodes 대비 대략적인 진행률로
 // 알려준다. 최종 노드 수는 미리 알 수 없어(재귀적으로 조건에 따라 가지치기) 정확한 %는 아니지만,
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
 export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
     firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
+  // (v0.6.2 BUG-055) 희생 테마(requireMaterialRecovery)는 첫 수가 탁월한 수로 지정돼야만 의미가 있다 — 지정 없이 부르면 희생이 아닌 최선수로
+  // "희생 퍼즐"이 만들어지므로(1.Rg7 사례) 만들지 않는다. 호출부는 findSacrificeFirstMove(FEN) 또는 게임 채점(PGN)으로 firstSan을 넘긴다.
+  if (requireMaterialRecovery && !firstSan) return null;
   const userColor = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
   const startMat = materialDiff(boardOfRoot(fenRoot, preSans), userColor);
   let nodeCount = 0;
@@ -1506,7 +1552,7 @@ export function getAnalysisPool(profile, urls) {
 // 고정해 절대 다른 기능과 겹치지 않게 하고, 나머지 idx는 그 뒤의 워커들에만 분산시킨다(풀 크기가
 // 작아 겹치더라도 idx 0과는 절대 겹치지 않는다). 풀이 통째로 없으면(부팅 실패) engine으로 폴백한다.
 export function poolWorker(pool, idx, engine) {
-  if (!pool || !pool.length) return engine;
+  if (!pool || !pool.length) return poolFallbackWorker(engine);   // (v0.6.2 BUG-054) 풀 워커와 같은 인자 순서의 어댑터 — src/lib/enginePool.js
   if (idx <= 0 || pool.length === 1) return pool[0];
   return pool[1 + ((idx - 1) % (pool.length - 1))];
 }
@@ -1855,7 +1901,7 @@ const QDESC = {
   pending: t("엔진이 분석 중"),
 };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중분석의 대국 목록에서 공용.
-export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), daily: t("일일") };
+export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), standard: t("스탠다드"), daily: t("일일") };
 export function deriveKeywords(m) {
   if (m.kw && m.kw.length) return m.kw;
   const ks = []; const a = m.adopt || 0; const ma = m.masterAdopt; const nm = m.name || "";
@@ -4472,6 +4518,13 @@ export async function fetchMinigameStats(uid) {
   (rows || []).forEach((r) => { out[r.game] = r; });
   return out;
 }
+// (v0.6.2) 레이팅 칩 — 미니게임 허브 버튼 이름 옆에 붙던 금색 알약을 공용으로 뺐다. 일반 대국 타임 컨트롤 선택·/user 성취도 카드가 똑같이 쓴다.
+// 배치(MINIGAME_PLACEMENT판)를 마친 레이팅만 보여준다 — 호출부가 placed를 판단해 넘긴다.
+export const MG_RATING_GOLD = "#A97A2C";
+export function MgRatingChip({ children, style }) {
+  return <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, padding: "0.2em 0.6em", borderRadius: 999, background: "rgba(196,154,80,.18)", color: MG_RATING_GOLD, letterSpacing: 0, fontVariantNumeric: "tabular-nums", ...style }}>{children}</span>;
+}
+export function isPlacedStat(row) { return !!(row && row.rated_games >= MINIGAME_PLACEMENT); }
 export function minigameRecordText(r) { return r ? t("{0}승 {1}패{2}", (r.wins), r.losses, r.draws ? t(" {0}무", r.draws) : "") : t("0승 0패"); }
 export function MgOppBadge({ opp, size = 16, inline }) {
   if (!opp) return null;

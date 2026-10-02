@@ -1,6 +1,7 @@
 {
   "app_content":["key","value","updated_at"],
   "attack_positions":["id","fen","moves","mate_in","source","created_by","created_at"],
+  "bot_games":["id","uid","sans","color","result","bot_elo","time_control","created_at"],
   "chat_conv_prefs":["uid","other_uid","pinned","muted","cleared_before","updated_at"],
   "chat_messages":["id","from_uid","to_uid","body","emoji","puzzle_no","share_reward","read","created_at"],
   "chat_poll_votes":["message_id","uid","san","created_at"],

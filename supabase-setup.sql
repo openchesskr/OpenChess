@@ -3277,7 +3277,7 @@ grant execute on function public.attack_forfeit(bigint) to authenticated;
 -- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
 create table if not exists public.minigame_stats (
   uid uuid not null references auth.users(id) on delete cascade,
-  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess')),
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess', 'chess_bullet', 'chess_blitz', 'chess_rapid', 'chess_standard')),
   rating int not null default 1200,
   peak_rating int not null default 1200,
   rated_games int not null default 0,
@@ -3296,7 +3296,7 @@ create table if not exists public.minigame_stats (
 -- (v0.6.1) 일반 체스 대국('chess')도 같은 표에 전적·레이팅을 쌓는다. 이미 만들어진 표는 위 create table을 건너뛰므로 제약을 따로 바꾼다.
 -- 이 제약이 먼저 넓혀져야 아래 트리거가 'chess' 행을 넣을 수 있다(순서 중요).
 alter table public.minigame_stats drop constraint if exists minigame_stats_game_check;
-alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess'));
+alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess', 'chess_bullet', 'chess_blitz', 'chess_rapid', 'chess_standard'));
 create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
 create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
 alter table public.minigame_stats enable row level security;
@@ -3311,19 +3311,38 @@ returns int language sql immutable as $$
     * (p_score - 1.0 / (1.0 + power(10.0, (p_opp - p_me) / 400.0))))::int);
 $$;
 
+-- (v0.6.2) 일반 체스 대국의 레이팅은 타임 컨트롤 분류별로 따로 쌓는다 — minigame_stats.game에 'chess_bullet' | 'chess_blitz' | 'chess_rapid' | 'chess_standard'.
+-- 분류 기준: 예상 대국 시간 = 초기시간(초) + 40 × 증가시간(초)가 180 미만 불렛, 480 미만 블리츠, 1500 미만 래피드, 그 이상 스탠다드.
+-- src/lib/chessRating.js의 상수와 같아야 한다(scripts/check-chess-rating.mjs가 대조). 형식이 이상한 값은 래피드.
+create or replace function public._chess_tc_category(p_time_control text)
+returns text language sql immutable as $$
+  select case
+    when p_time_control ~ '^[0-9]{1,6}-[0-9]{1,4}$' then
+      case
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 180 then 'bullet'
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 480 then 'blitz'
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 1500 then 'rapid'
+        else 'standard'
+      end
+    else 'rapid'
+  end;
+$$;
+
 create or replace function public._minigame_on_game_end()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
   w public.minigame_stats; b public.minigame_stats;
-  v_ws numeric; v_wr int; v_br int;
+  v_ws numeric; v_wr int; v_br int; v_game text;
 begin
   -- (v0.6.1) 전적·레이팅 집계가 어떤 이유로 실패해도(제약·권한 등) 대국 결과를 확정하는 update 자체는 막지 않는다 — 집계는 부가 기능이고,
   -- 일반 체스까지 이 트리거를 타므로 여기서 예외가 나면 모든 대국이 끝나지 못하는 사고가 된다.
   begin
-  insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
+  -- (v0.6.2) 일반 체스('chess')는 타임 컨트롤 분류별 행('chess_blitz' 등)에 집계한다. 미니게임은 game_type 그대로.
+  v_game := case when new.game_type = 'chess' then 'chess_' || public._chess_tc_category(new.time_control) else new.game_type end;
+  insert into public.minigame_stats(uid, game) values (new.white_uid, v_game), (new.black_uid, v_game)
     on conflict (uid, game) do nothing;
-  select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
-  select * into b from public.minigame_stats where uid = new.black_uid and game = new.game_type for update;
+  select * into w from public.minigame_stats where uid = new.white_uid and game = v_game for update;
+  select * into b from public.minigame_stats where uid = new.black_uid and game = v_game for update;
   v_ws := case new.status when 'white_won' then 1 when 'black_won' then 0 else 0.5 end;
   v_wr := w.rating; v_br := b.rating;
   if new.rated then
@@ -3343,7 +3362,7 @@ begin
     streak = case when v_ws = 1 then streak + 1 else 0 end,
     best_streak = greatest(best_streak, case when v_ws = 1 then streak + 1 else 0 end),
     updated_at = now()
-  where uid = new.white_uid and game = new.game_type;
+  where uid = new.white_uid and game = v_game;
   update public.minigame_stats set
     rating = v_br, peak_rating = greatest(peak_rating, v_br),
     rated_games = rated_games + (case when new.rated then 1 else 0 end),
@@ -3354,7 +3373,7 @@ begin
     streak = case when v_ws = 0 then streak + 1 else 0 end,
     best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
     updated_at = now()
-  where uid = new.black_uid and game = new.game_type;
+  where uid = new.black_uid and game = v_game;
   exception when others then
     raise warning 'minigame stats skipped for game %: %', new.id, sqlerrm;
   end;
@@ -3418,6 +3437,65 @@ language sql stable security definer set search_path = public as $$
   order by r.rank;
 $$;
 grant execute on function public.minigame_leaderboard(text, text, text, int) to anon, authenticated;
+
+-- (v0.6.2) 봇과 둔 일반 대국 기록 — 실시간 대국(pvp_games)과 달리 서버에 남는 곳이 없어 "내 일반 대국 기록"에서 빠졌다. 대국이 끝나면 클라이언트가 bot_game_record로
+-- 한 번 올린다. 레이팅·랭킹에는 전혀 반영되지 않는 순수 기록이라(클라이언트가 보내는 값이므로) 입력 크기·범위만 검증하고, 사람마다 최근 100판만 남긴다.
+create table if not exists public.bot_games (
+  id bigserial primary key,
+  uid uuid not null references auth.users(id) on delete cascade,
+  sans text[] not null,
+  color text not null check (color in ('w', 'b')),
+  result text not null check (result in ('win', 'loss', 'draw')),
+  bot_elo int not null,
+  time_control text not null default '600-0',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_bot_games_uid on public.bot_games (uid, created_at desc);
+alter table public.bot_games enable row level security;
+drop policy if exists "bot games select own" on public.bot_games;
+create policy "bot games select own" on public.bot_games for select using (auth.uid() = uid);
+grant select on public.bot_games to authenticated;
+create or replace function public.bot_game_record(p_sans text[], p_color text, p_result text, p_bot_elo int, p_time_control text default '600-0')
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_id bigint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_color not in ('w', 'b') or p_result not in ('win', 'loss', 'draw') then raise exception 'bad value'; end if;
+  if p_sans is null or coalesce(array_length(p_sans, 1), 0) < 2 or array_length(p_sans, 1) > 600 then raise exception 'bad sans'; end if;
+  if p_bot_elo is null or p_bot_elo < 100 or p_bot_elo > 3200 then raise exception 'bad bot'; end if;
+  if p_time_control is null or p_time_control !~ '^[0-9]{1,6}-[0-9]{1,4}$' then p_time_control := '600-0'; end if;
+  insert into public.bot_games(uid, sans, color, result, bot_elo, time_control)
+    values (v_me, p_sans, p_color, p_result, p_bot_elo, p_time_control) returning id into v_id;
+  delete from public.bot_games where uid = v_me and id not in (select id from public.bot_games where uid = v_me order by created_at desc, id desc limit 100);
+  return v_id;
+end; $$;
+grant execute on function public.bot_game_record(text[], text, text, int, text) to authenticated;
+
+-- (v0.6.2) /user 프로필의 "일반 대국 기록" — 누구의 프로필이든(내 것·남의 것) 같은 함수로 읽는다. pvp_games·bot_games는 본인만 select할 수 있어 남의 기록은 직접 못 읽으므로,
+-- 끝난 일반 대국(실시간 pvp_games + 봇 bot_games)의 공개해도 되는 필드(수순·결과·시간 규정·레이팅 증감·상대 이름)만 돌려준다. 채팅·무승부 제안 등 다른 컬럼은 노출하지 않는다.
+-- 상대 이름은 닉네임(없으면 아이디). 대국마다 p_uid 기준으로 색(color)과 결과(result)를 계산해 주고, 최근 p_limit판(최대 100)만.
+create or replace function public.profile_recent_games(p_uid uuid, p_limit int default 100)
+returns table (kind text, id bigint, color text, result text, sans jsonb, time_control text, rated boolean, rating_delta jsonb, bot_elo int, opp_name text, ended_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  with lim as (select least(greatest(coalesce(p_limit, 100), 1), 100) as n),
+  pvp as (
+    select 'pvp'::text as kind, g.id, case when g.white_uid = p_uid then 'w' else 'b' end as color,
+      case g.status when 'draw' then 'draw' when 'white_won' then (case when g.white_uid = p_uid then 'win' else 'loss' end)
+        else (case when g.black_uid = p_uid then 'win' else 'loss' end) end as result,
+      g.sans, g.time_control, g.rated, g.rating_delta, null::int as bot_elo,
+      coalesce(nullif(pr.pub ->> 'nickname', ''), pr.username) as opp_name, g.updated_at as ended_at
+    from public.pvp_games g
+    left join public.profiles pr on pr.id = case when g.white_uid = p_uid then g.black_uid else g.white_uid end
+    where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw')
+      and (g.white_uid = p_uid or g.black_uid = p_uid) and jsonb_array_length(g.sans) > 0
+    order by g.updated_at desc limit (select n from lim)
+  ), bots as (
+    select 'bot'::text, b.id, b.color, b.result, to_jsonb(b.sans), b.time_control, false, null::jsonb, b.bot_elo, null::text, b.created_at
+    from public.bot_games b where b.uid = p_uid order by b.created_at desc limit (select n from lim)
+  )
+  select * from (select * from pvp union all select * from bots) x order by x.ended_at desc limit (select n from lim);
+$$;
+grant execute on function public.profile_recent_games(uuid, int) to anon, authenticated;
 
 -- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
