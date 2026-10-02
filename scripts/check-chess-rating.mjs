@@ -41,6 +41,16 @@ if (!/<MinigameLeaderboard game=\{chessGame\}/.test(app)) fails.push("일반 대
     if (!new RegExp("<" + c + "[ >]").test(prof)) fails.push("chess.com 통계(profile.jsx)가 공용 " + c + "를 쓰지 않음 — 두 화면의 UI가 갈라진다");
   }
 }
+// ⑧ (v0.6.2) 봇 대국 기록: 표·RPC·권한, 대국 종료 시 업로드, 나이트 레이스 범례 삭제 유지
+{
+  if (!/create table if not exists public\.bot_games/.test(sql)) fails.push("bot_games 표가 없음");
+  if (!/create policy "bot games select own" on public\.bot_games for select using \(auth\.uid\(\) = uid\)/.test(sql)) fails.push("bot_games select 정책(본인만)이 없음");
+  if (/grant (insert|update|delete)[^;]*on public\.bot_games/.test(sql)) fails.push("bot_games에 직접 쓰기 권한이 있음 — bot_game_record RPC로만 쓰게 해야 함");
+  if (!/grant execute on function public\.bot_game_record\(text\[\], text, text, int, text\) to authenticated/.test(sql)) fails.push("bot_game_record 실행 권한 grant가 없음");
+  const play = readFileSync(new URL("../src/app/play.jsx", import.meta.url), "utf8");
+  if (!/sbRpc\("bot_game_record"/.test(play)) fails.push("봇 대국 종료 시 bot_game_record를 부르지 않음");
+  if (/<KnightRaceLegend/.test(play)) fails.push("나이트 레이스 범례(KnightRaceLegend)가 다시 쓰이고 있음 — 사용자 요청으로 삭제됨");
+}
 // ⑥ (v0.6.2) 타임 컨트롤 분류별 레이팅 — 서버·클라이언트 분류 기준 일치
 for (const g of CHESS_RATING_GAMES) {
   if (!new RegExp("minigame_stats_game_check check \\(game in \\([^)]*'" + g + "'").test(sql)) fails.push("minigame_stats 제약에 '" + g + "'가 없음");

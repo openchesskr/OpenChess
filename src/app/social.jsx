@@ -1574,7 +1574,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     setMenuDx(dx); setMenuDy(dy);
   };
   // (v0.6.1, 사용자 요청) 채팅에 보이는 모든 요소(말풍선·카드·시스템 알림)에 반응을 달 수 있게 한다 — 각 종류의 렌더(renderMsg)는 그대로 두고, 이 래퍼가
-  // ① 더블클릭(터치는 빠른 두 번 탭)하면 하트 반응 ② 반응 칩을 말풍선 바로 아래에 붙여 표시 ③ 자체 메뉴가 없는 카드(대국 신청·명령어 카드·보상 알림)는
+  // ① 더블클릭(터치는 빠른 두 번 탭)하면 하트 반응(이미 눌러 둔 하트는 다시 더블클릭하면 해제) ② 반응 칩을 말풍선 바로 아래에 붙여 표시 ③ 자체 메뉴가 없는 카드(대국 신청·명령어 카드·보상 알림)는
   // 우클릭·꾹 누르기로 반응 메뉴를 연다. 반응 칩과 메뉴의 반응 줄은 모든 종류가 같은 toggleReaction을 쓴다.
   const heartGuardRef = useRef({ id: null, t: 0 });
   const lastTapRef = useRef({ id: null, t: 0 });
@@ -1584,9 +1584,11 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
     const now = Date.now();
     if (heartGuardRef.current.id === m.id && now - heartGuardRef.current.t < 600) return; // 더블클릭 + 터치 탭이 한 번에 두 번 불리는 것 방지
     heartGuardRef.current = { id: m.id, t: now };
+    // (v0.6.2, 사용자 요청) 이미 내가 하트를 눌러 둔 요소를 다시 더블클릭하면 하트가 사라진다(토글) — 팝 애니메이션은 켤 때만.
+    if ((reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === "❤️")) { toggleReaction(m, "❤️", false); return; }
     setHeartPop({ id: m.id, k: now });
     setTimeout(() => setHeartPop((p) => (p && p.k === now ? null : p)), 900);
-    if (!(reactions[m.id] || []).some((r) => r.uid === myUid && r.emoji === "❤️")) toggleReaction(m, "❤️", true);
+    toggleReaction(m, "❤️", true);
   };
   const wrapMsg = (m, el) => {
     const mine = m.from_uid === myUid;
