@@ -2,6 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
+import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
 import { loadLastGameQuality, playSfx, saveLastGameQuality, playMoveSfx } from "../lib/prefs.js";
 import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS, PIECE_SKINS } from "../lib/theme.js";
@@ -23,7 +24,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
+import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -1283,7 +1284,7 @@ function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
                   <span key={l} style={{ display: "flex", alignItems: "center", gap: "1.2cqw", justifyContent: lb.right ? "flex-end" : "flex-start" }}>
                     {l}
                     {/* 레이팅(배치 완료한 게임만)은 마지막 줄 옆 작은 칩으로 — 보드 쪽으로 줄이 늘어나지 않게 */}
-                    {rated && i === lb.lines.length - 1 && <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, padding: "0.2em 0.6em", borderRadius: 999, background: "rgba(196,154,80,.18)", color: MG_GOLD, letterSpacing: 0, fontVariantNumeric: "tabular-nums" }}>{st.rating}</span>}
+                    {rated && i === lb.lines.length - 1 && <MgRatingChip>{st.rating}</MgRatingChip>}
                   </span>
                 ))}
               </span>
@@ -2023,6 +2024,17 @@ function useMinigameMyStats(myUid, game, tick) {
   }, [myUid, game, tick]);
   return row;
 }
+// (v0.6.2) 내 전적 전체(게임별 행 모음) — 일반 대국 타임 컨트롤 4종의 레이팅을 한 번에 읽는다. tick이 바뀔 때마다 다시 읽는다.
+function useMinigameAllStats(myUid, tick) {
+  const [all, setAll] = useState({});
+  useEffect(() => {
+    if (!myUid) { setAll({}); return undefined; }
+    let cancelled = false;
+    fetchMinigameStats(myUid).then((r) => { if (!cancelled) setAll(r || {}); }).catch(() => { });
+    return () => { cancelled = true; };
+  }, [myUid, tick]);
+  return all;
+}
 // 로비 상단 — 내 레이팅·전적·혼자 최고 기록 + 랭킹 버튼.
 function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   const localBest = minigameLocalBest(game);
@@ -2039,7 +2051,7 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   return (
     <div style={{ ...MG_LOBBY_CARD_STYLE, padding: "12px 14px 14px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: myUid ? 12 : 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t("내 기록")}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t("내 기록")}{isChessRatingGame(game) ? " · " + tcCatLabel(TC_KEY_CAT[game.slice(6)]) : ""}</span>
         <button onClick={onOpenRanking} className="press" aria-label={t("랭킹")}
           style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px 4px 9px", borderRadius: 999, border: "1px solid rgba(169,122,44,.35)", background: "rgba(196,154,80,.1)", color: MG_GOLD, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
           {tx("{0}랭킹{1}", <Trophy size={12} />, <ChevronRight size={12} />)}
@@ -2049,7 +2061,7 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
         <div style={{ display: "flex" }}>
           {cell(t("레이팅"), row ? row.rating : 1200, placed ? t("최고 {0}", row.peak_rating) : t("배치 {0}/{1}", Math.min(row ? row.rated_games : 0, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT), true)}
           {cell(t("전적"), minigameRecordText(row), row && row.streak >= 2 ? t("{0}연승 중", (row.streak)) : row && row.best_streak >= 2 ? t("최다 {0}연승", row.best_streak) : null)}
-          {game === "chess" ? cell(t("최고 레이팅"), row ? row.peak_rating : 1200) : cell(t("혼자 최고"), best == null ? "-" : minigameBestLabel(game, best))}
+          {isChessRatingGame(game) ? cell(t("최고 레이팅"), row ? row.peak_rating : 1200) : cell(t("혼자 최고"), best == null ? "-" : minigameBestLabel(game, best))}
         </div>
       ) : (
         <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.72)", lineHeight: 1.55 }}>{t("로그인하면 전적·레이팅·기록이 랭킹에 반영")}</div>
@@ -2100,7 +2112,9 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
     </motion.button>
   );
 }
-function MinigameLeaderboard({ game, myUid, onOpenProfile }) {
+function MinigameLeaderboard({ game: initialGame, myUid, onOpenProfile }) {
+  // (v0.6.2) 일반 대국은 타임 컨트롤 분류(불렛·블리츠·래피드·스탠다드)마다 랭킹이 따로 있어 위쪽 탭으로 바꿔 본다.
+  const [game, setGame] = useState(initialGame);
   const [kind, setKind] = useState("rating");
   const [scope, setScope] = useState("all");
   const [rows, setRows] = useState(null);
@@ -2124,7 +2138,8 @@ function MinigameLeaderboard({ game, myUid, onOpenProfile }) {
         <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, display: "inline-flex", alignItems: "center", gap: 5 }}>{tx("{0}랭킹", <Trophy size={15} color={MG_GOLD} />)}</span>
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
-        {game !== "chess" && <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />}
+        {isChessRatingGame(game) && <MinigameSegmented value={game} onChange={setGame} options={CHESS_RATING_CATS.map((c) => ({ key: "chess_" + c, label: tcCatLabel(TC_KEY_CAT[c]) }))} />}
+        {!isChessRatingGame(game) && <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />}
         <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: t("전체") }, { key: "friends", label: t("친구"), disabled: !myUid }]} />
       </div>
       {rows == null ? (
@@ -4689,7 +4704,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   // 전역 알람 박스에서 미니게임 친구 도전장을 수락하면(specialResume) PlaySpecialGames가 곧장 그 대국을 연다.
   const [step, setStep] = useState("setup"); // "setup" | "playing"
   // (v0.6.1, 사용자 요청) 일반 대국도 미니게임과 같은 전적·레이팅·랭킹 — 대국을 마치고 설정 화면으로 돌아올 때마다 다시 읽는다.
-  const chessStats = useMinigameMyStats(myUid, "chess", step + (setupOpen ? "o" : "c") + (chessRankOpen ? "r" : "n"));
+  const chessAll = useMinigameAllStats(myUid, step + (setupOpen ? "o" : "c") + (chessRankOpen ? "r" : "n"));
   const [colorPick, setColorPick] = useState("w"); // "w" | "b" | "random"
   const [botTier, setBotTier] = useState(PLAY_BOT_TIERS[2]);
   // (신규 기능) 사용자 요청 — /play에서 봇 대신 다른 OpenChess 사용자와 실시간으로 대국. mode가
@@ -4717,6 +4732,9 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   // (신규 기능) 사용자 요청 — 봇/실시간 대국 모두 타임 컨트롤 선택. pvp에서는 매칭·초대 시점에
   // 서버(pvp_games.time_control)에 확정된 값을 그대로 따르도록 매칭 후 다시 맞춘다(아래 applyPvpGame).
   const [timeControl, setTimeControl] = useState(DEFAULT_TIME_CONTROL);
+  // (v0.6.2) 고른 타임 컨트롤이 속한 분류의 레이팅 행 — 설정 화면 상단 "내 기록"과 랭킹이 이 분류를 따른다.
+  const chessGame = chessRatingGame(timeControl.key);
+  const chessStats = chessAll[chessGame] || null;
   const [clock, setClock] = useState(null); // { w: ms, b: ms } | null(무제한)
   const [flagged, setFlagged] = useState(null); // "w" | "b" | null — 시간 초과로 진 쪽
   const toMoveColorRef = useRef("w");
@@ -5305,7 +5323,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
                 {!(mode === "pvp" && (pvpWaiting || myInvite)) && setupPhase === "choose" && (
-                  <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game="chess" row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
+                  <div style={{ marginBottom: 12 }}><MinigameStatsBar myUid={myUid} game={chessGame} row={chessStats} onOpenRanking={() => setChessRankOpen(true)} /></div>
                 )}
                 {
           /* (v0.4.4 리디자인, 사용자 요청) 매칭 대기(랜덤 상대 찾는 중 · 친구 응답 기다리는 중)는
@@ -5334,7 +5352,11 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center" }}>{tcCatLabel(cat)}</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexWrap: "wrap", minHeight: 20 }}>
+                        {tcCatLabel(cat)}
+                        {/* (v0.6.2) 분류별 레이팅(배치를 마친 것만) — 미니게임 허브 버튼의 레이팅 칩과 같은 디자인 */}
+                        {(() => { const r = chessAll["chess_" + TC_CAT_KEY[cat]]; return r && r.rated_games >= MINIGAME_PLACEMENT ? <MgRatingChip style={{ fontSize: 10.5 }}>{r.rating}</MgRatingChip> : null; })()}
+                      </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
                         <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
@@ -5428,7 +5450,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             )}
             {chessRankOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={() => setChessRankOpen(false)}>
-                <MinigameLeaderboard game="chess" myUid={myUid} onOpenProfile={onOpenProfile} />
+                <MinigameLeaderboard game={chessGame} myUid={myUid} onOpenProfile={onOpenProfile} />
               </MinigameScreen>
             )}
           </>

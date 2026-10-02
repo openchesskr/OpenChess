@@ -3,7 +3,7 @@
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
-import { Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
+import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { computeRatingChanges, countryFlag } from "../lib/chesscom.js";
@@ -14,8 +14,9 @@ import { badgeIcon } from "../components/badges.jsx";
 import { PieceGlyph, TierPieceGlyph } from "../components/pieces.jsx";
 import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tierSystem.js";
 import { createPortal } from "react-dom";
-import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
+import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 // (신규 기능, 사용자 요청) 약점 리포트 — 이미 리뷰해 본 대국들(reviewUnlocked)의 크라우드소싱
@@ -70,40 +71,91 @@ function weaknessReportFromAnalyses(games, analysesByCcId) {
     .sort((a, b) => b.blunderRate - a.blunderRate || b.n - a.n);
   return { openings, kindTotals, gamesUsed };
 }
-// 프로필(내 프로필·다른 사람 프로필 공용)의 미니게임 전적 — 한 판이라도 했거나 기록이 있는 게임만 보여준다.
-function MinigameProfileStats({ uid }) {
+// (v0.6.2, 사용자 요청) /user 페이지 성취도 — XP·퍼즐·레슨·일반 대국(타임 컨트롤별)·미니게임 기록을 한 곳에 모은다.
+// 위에서부터 ① 핵심 수치 4칸(XP·퍼즐 레이팅·푼 퍼즐·레슨) ② 일반 대국 4칸(불렛·블리츠·래피드·스탠다드 레이팅·전적) ③ 미니게임 2×2.
+// 전적은 한 번만 읽어(minigame_stats) 일반 대국과 미니게임이 함께 쓴다. 기록이 없는 칸도 자리는 그대로 두고 흐리게 보여 줘 화면 구성이 사람마다 같다.
+const ACH_CARD = { border: "1px solid #DCCBA8", borderRadius: 14, background: "rgba(255,255,255,.45)", padding: "12px 12px 12px" };
+function AchSection({ title, icon, right, children }) {
+  return (
+    <div style={{ ...ACH_CARD, marginBottom: 10 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{icon}{title}</span>
+        {right && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{right}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+// 값 하나를 크게, 위에 이름·아래에 보조 설명 — 핵심 수치·타임 컨트롤 칸이 같은 틀을 쓴다.
+function AchCell({ label, value, sub, dim, chip }) {
+  return (
+    <div style={{ minWidth: 0, padding: "9px 8px 8px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.2)", textAlign: "center", opacity: dim ? 0.55 : 1 }}>
+      <div className="flex items-center justify-center" style={{ gap: 4, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.7)", marginBottom: 3 }}>{label}{chip}</div>
+      <div style={{ fontSize: 19, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.58)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
+    </div>
+  );
+}
+function AchievementDashboard({ pub, uid, mq }) {
   const [stats, setStats] = useState(null);
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) { setStats({}); return undefined; }
     let cancelled = false;
-    fetchMinigameStats(uid).then((s) => { if (!cancelled) setStats(s); }).catch(() => { });
+    fetchMinigameStats(uid).then((r) => { if (!cancelled) setStats(r || {}); }).catch(() => { if (!cancelled) setStats({}); });
     return () => { cancelled = true; };
   }, [uid]);
-  const list = stats ? PLAY_SPECIAL_GAMES.map((g) => ({ g, r: stats[g.gameType] })).filter((x) => x.r && (x.r.games > 0 || x.r.best_score != null)) : [];
-  if (!list.length) return null;
+  const st = stats || {};
+  // 열 수는 /user 페이지의 데스크톱 배치(880px 이상, 통계 열 약 540px)일 때만 넓게 — 좁은 화면(콘텐츠 최대 448px)은 2열·미니게임은 1열.
+  const wide = !useNarrow(880);
+  const cols4 = wide ? "repeat(4, 1fr)" : "repeat(2, 1fr)";
+  const info = tierFromXp(pub.xp || 0);
+  const solved = Array.isArray(pub.solvedNos) ? pub.solvedNos.length : 0;
+  const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
+  const chessRows = CHESS_RATING_CATS.map((c) => ({ c, r: st["chess_" + c] }));
+  const totalGames = Object.values(st).reduce((a, r) => a + (r && r.games ? r.games : 0), 0);   // 일반 대국 + 미니게임 (예전 단일 'chess' 행 포함)
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("{0} 미니게임", <Trophy size={13} color={T.brass} />)}</div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {list.map(({ g, r }) => {
-          const GIcon = g.Icon || Lock;
-          const best = minigameBestFromServer(g.gameType, r.best_score, r.best_detail);
-          const placed = r.rated_games >= MINIGAME_PLACEMENT;
-          return (
-            <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 10, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)" }}>
-              <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{g.name}</span>
-                <span style={{ display: "block", fontSize: 10, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{minigameRecordText(r)}{best != null ? t(" · 혼자 최고 {0}", minigameBestLabel(g.gameType, best)) : ""}</span>
-              </span>
-              <span style={{ flexShrink: 0, textAlign: "right" }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
-                <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? t("레이팅") : t("배치 중")}</span>
-              </span>
-            </div>
-          );
-        })}
+    <div style={{ marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8, marginBottom: 10 }}>
+        <AchCell label="XP" value={fmtFull(pub.xp || 0)} sub={info.tier.label + (info.division ? " " + info.division : "")} />
+        <AchCell label={t("퍼즐 레이팅")} value={pub.puzzleRating != null ? fmtFull(pub.puzzleRating) : "-"} sub={t("푼 퍼즐 {0}개", fmtFull(solved))} dim={pub.puzzleRating == null} />
+        <AchCell label={t("레슨")} value={mq && mq.totalChapters > 0 ? mq.claimed + "/" + mq.totalChapters : "-"} sub={mq && mq.totalChapters > 0 ? t("{0}% 완료", mqPct) : null} dim={!(mq && mq.totalChapters > 0)} />
+        <AchCell label={t("총 대국")} value={t("{0}판", fmtFull(totalGames))} sub={stats ? null : "…"} dim={!totalGames} />
       </div>
+      <AchSection title={t("일반 대국")} icon={<Swords size={13} color={T.brass} />} right={t("타임 컨트롤별 레이팅")}>
+        <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8 }}>
+          {chessRows.map(({ c, r }) => {
+            const placed = isPlacedStat(r);
+            return <AchCell key={c} label={tcCatLabel(TC_KEY_CAT[c])} value={placed ? r.rating : "-"} dim={!r || !r.games}
+              sub={!r || !r.games ? t("기록 없음") : placed ? minigameRecordText(r) : t("배치 {0}/{1}", Math.min(r.rated_games, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT)} />;
+          })}
+        </div>
+      </AchSection>
+      <AchSection title={t("미니게임")} icon={<Trophy size={13} color={T.brass} />}>
+        <div style={{ display: "grid", gridTemplateColumns: wide ? "repeat(2, 1fr)" : "1fr", gap: 8 }}>
+          {PLAY_SPECIAL_GAMES.map((g) => {
+            const r = st[g.gameType];
+            const GIcon = g.Icon || Lock;
+            const has = !!(r && (r.games > 0 || r.best_score != null));
+            const placed = isPlacedStat(r);
+            const best = r ? minigameBestFromServer(g.gameType, r.best_score, r.best_detail) : null;
+            return (
+              <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.2)", opacity: has ? 1 : 0.55, minWidth: 0 }}>
+                <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {has ? minigameRecordText(r) + (best != null ? " · " + minigameBestLabel(g.gameType, best) : "") : t("기록 없음")}
+                  </span>
+                </span>
+                <span style={{ flexShrink: 0, textAlign: "right" }}>
+                  <span style={{ display: "block", fontSize: 15, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
+                  <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? t("레이팅") : r && r.games ? t("배치 중") : ""}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </AchSection>
     </div>
   );
 }
@@ -1554,28 +1606,16 @@ export function TierRatingRow({ pub }) {
 export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
-  const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
   return (
     <div style={{ marginBottom: 12 }}>
       {!hideTierRow && <TierRatingRow pub={pub} />}
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {mq && mq.totalChapters > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("레슨 진척도")}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{tx("{0} 레슨 완료", mq.totalChapters)}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
-            <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
-          </div>
-        </div>
-      )}
+      {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
+      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      {/* (v0.5.4) 미니게임 레이팅·전적·혼자 최고 기록 — 한 판이라도 한 게임만. */}
-      <MinigameProfileStats uid={ownerUid} />
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );

@@ -4518,6 +4518,13 @@ export async function fetchMinigameStats(uid) {
   (rows || []).forEach((r) => { out[r.game] = r; });
   return out;
 }
+// (v0.6.2) 레이팅 칩 — 미니게임 허브 버튼 이름 옆에 붙던 금색 알약을 공용으로 뺐다. 일반 대국 타임 컨트롤 선택·/user 성취도 카드가 똑같이 쓴다.
+// 배치(MINIGAME_PLACEMENT판)를 마친 레이팅만 보여준다 — 호출부가 placed를 판단해 넘긴다.
+export const MG_RATING_GOLD = "#A97A2C";
+export function MgRatingChip({ children, style }) {
+  return <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, padding: "0.2em 0.6em", borderRadius: 999, background: "rgba(196,154,80,.18)", color: MG_RATING_GOLD, letterSpacing: 0, fontVariantNumeric: "tabular-nums", ...style }}>{children}</span>;
+}
+export function isPlacedStat(row) { return !!(row && row.rated_games >= MINIGAME_PLACEMENT); }
 export function minigameRecordText(r) { return r ? t("{0}승 {1}패{2}", (r.wins), r.losses, r.draws ? t(" {0}무", r.draws) : "") : t("0승 0패"); }
 export function MgOppBadge({ opp, size = 16, inline }) {
   if (!opp) return null;

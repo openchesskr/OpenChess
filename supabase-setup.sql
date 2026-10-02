@@ -3277,7 +3277,7 @@ grant execute on function public.attack_forfeit(bigint) to authenticated;
 -- 테이블 직접 쓰기 권한은 없다 — 전적·레이팅은 트리거만, 최고 기록은 minigame_submit_best만 바꾼다.
 create table if not exists public.minigame_stats (
   uid uuid not null references auth.users(id) on delete cascade,
-  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess')),
+  game text not null check (game in ('coord', 'knight', 'rush', 'attack', 'chess', 'chess_bullet', 'chess_blitz', 'chess_rapid', 'chess_standard')),
   rating int not null default 1200,
   peak_rating int not null default 1200,
   rated_games int not null default 0,
@@ -3296,7 +3296,7 @@ create table if not exists public.minigame_stats (
 -- (v0.6.1) 일반 체스 대국('chess')도 같은 표에 전적·레이팅을 쌓는다. 이미 만들어진 표는 위 create table을 건너뛰므로 제약을 따로 바꾼다.
 -- 이 제약이 먼저 넓혀져야 아래 트리거가 'chess' 행을 넣을 수 있다(순서 중요).
 alter table public.minigame_stats drop constraint if exists minigame_stats_game_check;
-alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess'));
+alter table public.minigame_stats add constraint minigame_stats_game_check check (game in ('coord', 'knight', 'rush', 'attack', 'chess', 'chess_bullet', 'chess_blitz', 'chess_rapid', 'chess_standard'));
 create index if not exists idx_minigame_stats_rating on public.minigame_stats (game, rating desc) where rated_games >= 3;
 create index if not exists idx_minigame_stats_best on public.minigame_stats (game, best_score desc) where best_score is not null;
 alter table public.minigame_stats enable row level security;
@@ -3311,19 +3311,38 @@ returns int language sql immutable as $$
     * (p_score - 1.0 / (1.0 + power(10.0, (p_opp - p_me) / 400.0))))::int);
 $$;
 
+-- (v0.6.2) 일반 체스 대국의 레이팅은 타임 컨트롤 분류별로 따로 쌓는다 — minigame_stats.game에 'chess_bullet' | 'chess_blitz' | 'chess_rapid' | 'chess_standard'.
+-- 분류 기준: 예상 대국 시간 = 초기시간(초) + 40 × 증가시간(초)가 180 미만 불렛, 480 미만 블리츠, 1500 미만 래피드, 그 이상 스탠다드.
+-- src/lib/chessRating.js의 상수와 같아야 한다(scripts/check-chess-rating.mjs가 대조). 형식이 이상한 값은 래피드.
+create or replace function public._chess_tc_category(p_time_control text)
+returns text language sql immutable as $$
+  select case
+    when p_time_control ~ '^[0-9]{1,6}-[0-9]{1,4}$' then
+      case
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 180 then 'bullet'
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 480 then 'blitz'
+        when split_part(p_time_control, '-', 1)::bigint + 40 * split_part(p_time_control, '-', 2)::bigint < 1500 then 'rapid'
+        else 'standard'
+      end
+    else 'rapid'
+  end;
+$$;
+
 create or replace function public._minigame_on_game_end()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
   w public.minigame_stats; b public.minigame_stats;
-  v_ws numeric; v_wr int; v_br int;
+  v_ws numeric; v_wr int; v_br int; v_game text;
 begin
   -- (v0.6.1) 전적·레이팅 집계가 어떤 이유로 실패해도(제약·권한 등) 대국 결과를 확정하는 update 자체는 막지 않는다 — 집계는 부가 기능이고,
   -- 일반 체스까지 이 트리거를 타므로 여기서 예외가 나면 모든 대국이 끝나지 못하는 사고가 된다.
   begin
-  insert into public.minigame_stats(uid, game) values (new.white_uid, new.game_type), (new.black_uid, new.game_type)
+  -- (v0.6.2) 일반 체스('chess')는 타임 컨트롤 분류별 행('chess_blitz' 등)에 집계한다. 미니게임은 game_type 그대로.
+  v_game := case when new.game_type = 'chess' then 'chess_' || public._chess_tc_category(new.time_control) else new.game_type end;
+  insert into public.minigame_stats(uid, game) values (new.white_uid, v_game), (new.black_uid, v_game)
     on conflict (uid, game) do nothing;
-  select * into w from public.minigame_stats where uid = new.white_uid and game = new.game_type for update;
-  select * into b from public.minigame_stats where uid = new.black_uid and game = new.game_type for update;
+  select * into w from public.minigame_stats where uid = new.white_uid and game = v_game for update;
+  select * into b from public.minigame_stats where uid = new.black_uid and game = v_game for update;
   v_ws := case new.status when 'white_won' then 1 when 'black_won' then 0 else 0.5 end;
   v_wr := w.rating; v_br := b.rating;
   if new.rated then
@@ -3343,7 +3362,7 @@ begin
     streak = case when v_ws = 1 then streak + 1 else 0 end,
     best_streak = greatest(best_streak, case when v_ws = 1 then streak + 1 else 0 end),
     updated_at = now()
-  where uid = new.white_uid and game = new.game_type;
+  where uid = new.white_uid and game = v_game;
   update public.minigame_stats set
     rating = v_br, peak_rating = greatest(peak_rating, v_br),
     rated_games = rated_games + (case when new.rated then 1 else 0 end),
@@ -3354,7 +3373,7 @@ begin
     streak = case when v_ws = 0 then streak + 1 else 0 end,
     best_streak = greatest(best_streak, case when v_ws = 0 then streak + 1 else 0 end),
     updated_at = now()
-  where uid = new.black_uid and game = new.game_type;
+  where uid = new.black_uid and game = v_game;
   exception when others then
     raise warning 'minigame stats skipped for game %: %', new.id, sqlerrm;
   end;
