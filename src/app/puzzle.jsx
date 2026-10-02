@@ -17,7 +17,7 @@ import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
-import { AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, MOVE_FX, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
+import { AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, MOVE_FX, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
 import { AccountChessStats } from "./profile.jsx";
 
 import { t, tx } from "../lib/i18n.js";
@@ -2661,7 +2661,13 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     try {
       let gen;
       if (fenRoot) {
-        gen = await genPuzzleTree(engine, [], puzzleThemeOpts(theme), onProgress, fenRoot);
+        // (v0.6.2 BUG-055) 희생 테마는 첫 수를 탁월한 수로 먼저 찾아 고정한다 — 예전엔 첫 수 지정 없이 만들어 희생이 아닌 최선수(1.Rg7)가 정답이 됐다.
+        let firstSan = null;
+        if (theme === "sacrifice") {
+          firstSan = await findSacrificeFirstMove(engine, [], fenRoot);
+          if (!firstSan) { setPcGenErr(t("이 포지션에서 탁월한 수(희생)를 찾지 못함. 다른 유형이나 포지션으로 시도")); return; }
+        }
+        gen = await genPuzzleTree(engine, [], { ...puzzleThemeOpts(theme), firstSan }, onProgress, fenRoot);
       } else if (theme === "sacrifice") {
         // (기존 자동 생성 규칙과 동일) 희생 테마는 "그 수 자체"가 첫 수로 고정되며, 그 직전
         // 위치부터 트리를 만든다 — 풀이자는 이 수를 스스로 찾아내야 한다.

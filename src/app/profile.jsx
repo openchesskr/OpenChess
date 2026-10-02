@@ -3,7 +3,7 @@
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
-import { Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
+import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { computeRatingChanges, countryFlag } from "../lib/chesscom.js";
@@ -14,8 +14,10 @@ import { badgeIcon } from "../components/badges.jsx";
 import { PieceGlyph, TierPieceGlyph } from "../components/pieces.jsx";
 import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tierSystem.js";
 import { createPortal } from "react-dom";
-import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
+import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
+import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 // (신규 기능, 사용자 요청) 약점 리포트 — 이미 리뷰해 본 대국들(reviewUnlocked)의 크라우드소싱
@@ -70,40 +72,93 @@ function weaknessReportFromAnalyses(games, analysesByCcId) {
     .sort((a, b) => b.blunderRate - a.blunderRate || b.n - a.n);
   return { openings, kindTotals, gamesUsed };
 }
-// 프로필(내 프로필·다른 사람 프로필 공용)의 미니게임 전적 — 한 판이라도 했거나 기록이 있는 게임만 보여준다.
-function MinigameProfileStats({ uid }) {
+// (v0.6.2, 사용자 요청) /user 페이지 성취도 — XP·퍼즐·레슨·일반 대국(타임 컨트롤별)·미니게임 기록을 한 곳에 모은다.
+// 위에서부터 ① 핵심 수치 4칸(XP·퍼즐 레이팅·푼 퍼즐·레슨) ② 미니게임 ③ 일반 대국(타임 컨트롤별 레이팅 4칸 + 최근 대국 기록).
+// 전적은 한 번만 읽어(minigame_stats) 일반 대국과 미니게임이 함께 쓴다. 기록이 없는 칸도 자리는 그대로 두고 흐리게 보여 줘 화면 구성이 사람마다 같다.
+const ACH_CARD = { border: "1px solid #DCCBA8", borderRadius: 14, background: "rgba(255,255,255,.45)", padding: "12px 12px 12px" };
+function AchSection({ title, icon, right, children }) {
+  return (
+    <div style={{ ...ACH_CARD, marginBottom: 10 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{icon}{title}</span>
+        {right && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{right}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+// 값 하나를 크게, 위에 이름·아래에 보조 설명 — 핵심 수치·타임 컨트롤 칸이 같은 틀을 쓴다.
+function AchCell({ label, value, sub, dim, chip }) {
+  return (
+    <div style={{ minWidth: 0, padding: "9px 8px 8px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.2)", textAlign: "center", opacity: dim ? 0.55 : 1 }}>
+      <div className="flex items-center justify-center" style={{ gap: 4, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.7)", marginBottom: 3 }}>{label}{chip}</div>
+      <div style={{ fontSize: 19, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.58)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
+    </div>
+  );
+}
+function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
   const [stats, setStats] = useState(null);
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) { setStats({}); return undefined; }
     let cancelled = false;
-    fetchMinigameStats(uid).then((s) => { if (!cancelled) setStats(s); }).catch(() => { });
+    fetchMinigameStats(uid).then((r) => { if (!cancelled) setStats(r || {}); }).catch(() => { if (!cancelled) setStats({}); });
     return () => { cancelled = true; };
   }, [uid]);
-  const list = stats ? PLAY_SPECIAL_GAMES.map((g) => ({ g, r: stats[g.gameType] })).filter((x) => x.r && (x.r.games > 0 || x.r.best_score != null)) : [];
-  if (!list.length) return null;
+  const st = stats || {};
+  // 열 수는 /user 페이지의 데스크톱 배치(880px 이상, 통계 열 약 540px)일 때만 넓게 — 좁은 화면(콘텐츠 최대 448px)은 2열·미니게임은 1열.
+  const wide = !useNarrow(880);
+  const cols4 = wide ? "repeat(4, 1fr)" : "repeat(2, 1fr)";
+  const info = tierFromXp(pub.xp || 0);
+  const solved = Array.isArray(pub.solvedNos) ? pub.solvedNos.length : 0;
+  const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
+  const chessRows = CHESS_RATING_CATS.map((c) => ({ c, r: st["chess_" + c] }));
+  const totalGames = Object.values(st).reduce((a, r) => a + (r && r.games ? r.games : 0), 0);   // 일반 대국 + 미니게임 (예전 단일 'chess' 행 포함)
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("{0} 미니게임", <Trophy size={13} color={T.brass} />)}</div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {list.map(({ g, r }) => {
-          const GIcon = g.Icon || Lock;
-          const best = minigameBestFromServer(g.gameType, r.best_score, r.best_detail);
-          const placed = r.rated_games >= MINIGAME_PLACEMENT;
-          return (
-            <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 10, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)" }}>
-              <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{g.name}</span>
-                <span style={{ display: "block", fontSize: 10, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{minigameRecordText(r)}{best != null ? t(" · 혼자 최고 {0}", minigameBestLabel(g.gameType, best)) : ""}</span>
-              </span>
-              <span style={{ flexShrink: 0, textAlign: "right" }}>
-                <span style={{ display: "block", fontSize: 14, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
-                <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? t("레이팅") : t("배치 중")}</span>
-              </span>
-            </div>
-          );
-        })}
+    <div style={{ marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8, marginBottom: 10 }}>
+        <AchCell label="XP" value={fmtFull(pub.xp || 0)} sub={info.tier.label + (info.division ? " " + info.division : "")} />
+        <AchCell label={t("퍼즐 레이팅")} value={pub.puzzleRating != null ? fmtFull(pub.puzzleRating) : "-"} sub={t("푼 퍼즐 {0}개", fmtFull(solved))} dim={pub.puzzleRating == null} />
+        <AchCell label={t("레슨")} value={mq && mq.totalChapters > 0 ? mq.claimed + "/" + mq.totalChapters : "-"} sub={mq && mq.totalChapters > 0 ? t("{0}% 완료", mqPct) : null} dim={!(mq && mq.totalChapters > 0)} />
+        <AchCell label={t("총 대국")} value={t("{0}판", fmtFull(totalGames))} sub={stats ? null : "…"} dim={!totalGames} />
       </div>
+      <AchSection title={t("미니게임")} icon={<Trophy size={13} color={T.brass} />}>
+        <div style={{ display: "grid", gridTemplateColumns: wide ? "repeat(2, 1fr)" : "1fr", gap: 8 }}>
+          {PLAY_SPECIAL_GAMES.map((g) => {
+            const r = st[g.gameType];
+            const GIcon = g.Icon || Lock;
+            const has = !!(r && (r.games > 0 || r.best_score != null));
+            const placed = isPlacedStat(r);
+            const best = r ? minigameBestFromServer(g.gameType, r.best_score, r.best_detail) : null;
+            return (
+              <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.2)", opacity: has ? 1 : 0.55, minWidth: 0 }}>
+                <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + g.accent + ",#241509)" }}><GIcon size={14} color="#fff" /></span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {has ? minigameRecordText(r) + (best != null ? " · " + minigameBestLabel(g.gameType, best) : "") : t("기록 없음")}
+                  </span>
+                </span>
+                <span style={{ flexShrink: 0, textAlign: "right" }}>
+                  <span style={{ display: "block", fontSize: 15, fontWeight: 900, color: placed ? T.ink : T.inkSoft, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{placed ? r.rating : "-"}</span>
+                  <span style={{ display: "block", fontSize: 9.5, color: T.inkSoft }}>{placed ? t("레이팅") : r && r.games ? t("배치 중") : ""}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </AchSection>
+      <AchSection title={t("일반 대국")} icon={<Swords size={13} color={T.brass} />} right={t("타임 컨트롤별 레이팅")}>
+        <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8 }}>
+          {chessRows.map(({ c, r }) => {
+            const placed = isPlacedStat(r);
+            return <AchCell key={c} label={tcCatLabel(TC_KEY_CAT[c])} value={placed ? r.rating : "-"} dim={!r || !r.games}
+              sub={!r || !r.games ? t("기록 없음") : placed ? minigameRecordText(r) : t("배치 {0}/{1}", Math.min(r.rated_games, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT)} />;
+          })}
+        </div>
+        {/* (v0.6.2, 사용자 요청) 일반 대국 최근 기록 — chess.com 대국 통계와 같은 UI(필터·전적·레이팅 그래프·최근 대국). 실시간·봇 대국 모두. */}
+        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      </AchSection>
     </div>
   );
 }
@@ -285,270 +340,6 @@ function TopOpeningsPair({ games, label }) {
     </>
   );
 }
-// (v0.2.6 기능) 기간별 레이팅 변동 그래프 — 지금 필터(시간 규정·흑/백)가 적용된 대국들을 시간순으로
-// 이어 선 그래프로 보여준다. 최근 1주/1달/6개월/1년 중 고를 수 있는 기간 필터를 추가로 얹는다(위
-// 시간 규정·흑백 필터와는 별개 축). 대국이 아예 없으면 표시하지 않고, 고른 기간 안에 대국이 2판
-// 미만이면(선을 그릴 수 없음) 버튼은 그대로 둔 채 안내 문구만 보여준다.
-const RATING_CHART_PERIODS = [
-  { key: "1d", label: t("1일"), days: 1 },
-  { key: "7d", label: t("1주"), days: 7 },
-  { key: "30d", label: t("1달"), days: 30 },
-  { key: "180d", label: t("6개월"), days: 182 },
-  { key: "365d", label: t("1년"), days: 365 },
-];
-// (v0.2.6 버그 수정) 위 시간 규정 필터가 "전체"일 때 이 그래프가 래피드/블리츠/불릿 대국을 시간순으로
-// 그냥 한 줄에 뒤섞어 그리고 있었다 — 세 시간 규정은 레이팅 체계 자체가 서로 달라(보통 래피드>블리츠>
-// 불릿 순으로 값 자체가 다름) 뒤섞은 선은 오르내림이 실제 실력 변화가 아니라 그날 어떤 시간 규정을
-// 뒀는지에 따라 요동치는, 사실상 의미 없는 그래프였다. "전체"일 때는 세 시간 규정을 각자 다른 색의
-// 선으로 같은 그래프 위에 겹쳐 그리고 범례를 달아 구분하고(대국이 2판 이상 있는 시간 규정만), 특정
-// 시간 규정 하나로 좁혀져 있을 때는 기존처럼 그 하나만 선 아래 영역 채우기와 함께 보여준다.
-// (v0.2.6 UI) 색을 빛의 삼원색(RGB)에 가깝게 골랐다 — 아래 영역 채우기에 mix-blend-mode:screen
-// (가산혼합)을 걸어, 두 색이 겹치는 자리는 그 둘을 섞은 밝은 색으로, 세 색이 다 겹치는 자리는 흰색에
-// 가깝게 빛나 보인다. 특정 시간 규정 하나만 볼 때도 이제 평가치 등락 색 대신 이 색으로 고정해, 어느
-// 화면에서 보든 같은 시간 규정은 항상 같은 색으로 알아볼 수 있게 했다.
-const TIME_CLASS_CHART_COLOR = { rapid: "#FF3B30", blitz: "#34C759", bullet: "#0A84FF" };
-// (버그 수정) "전체" 모드는 x좌표를 실제 시간(time-based)으로 잡는데, 대국이 적은 시간 규정(예:
-// 블리츠 딱 2판)은 그 두 판이 실제로 짧은 시간 안에 몰려 있으면 전체 기간 폭 안에서 거의 한 점처럼
-// 뭉쳐, 선이 그냥 수직으로 선 하나만 있는 것처럼 보였다(양옆으로 이어지는 선이 전혀 없으므로). 실제
-// 대국 구간 앞뒤로 그 시점의 레이팅을 유지한 채 기간의 시작(cutoff)·끝(nowT)까지 수평으로 이어
-// 붙여, 항상 기간 전체 폭을 채우는 선(대국이 있는 구간만 오르내리고 나머지는 평평)으로 보이게 한다.
-function extendToPeriodEdges(points, cutoff, nowT) {
-  if (!points.length) return points;
-  const out = points.slice();
-  if (out[0].endTime > cutoff) out.unshift({ endTime: cutoff, rating: out[0].rating });
-  if (out[out.length - 1].endTime < nowT) out.push({ endTime: nowT, rating: out[out.length - 1].rating });
-  return out;
-}
-// (v0.2.6 기능) 리뷰 페이지 EvalGraph와 같은 방식의 드래그 크로스헤어를 얹었다 — 그래프를 누른 채
-// 좌우로 끌면(포인터 캡처) 그 x좌표에 해당하는 지점의 날짜·레이팅을 점선+역삼각형+말풍선으로 보여준다.
-// "전체"(여러 시간 규정 동시 표시) 모드에서는 x좌표가 시간 값이라, 시리즈마다 그 시간에 가장 가까운
-// 자기 지점을 각자 찾아 말풍선에 함께 나열한다.
-function RatingHistoryChart({ games, timeFilter, stillFetching }) {
-  const allPoints = useMemo(() => [...games].filter((g) => g.rating != null && g.endTime).sort((a, b) => (a.endTime || 0) - (b.endTime || 0)), [games]);
-  const [period, setPeriod] = useState("180d");
-  const [dragFrac, setDragFrac] = useState(null);
-  const wrapRef = useRef(null);
-  const draggingRef = useRef(false);
-  // (버그 수정) 대국이 아주 많은 계정은 달(月)을 배치로 병렬 로드해도 전체 기록을 다 받기까지 시간이
-  // 걸린다 — 아직 로딩 중인데 이 시간 규정의 대국을 하나도 못 찾았다고 "그래프가 안 그려지는 버그"로
-  // 오해하기 쉽다(예: 최근엔 안 둔 시간 규정이 사실은 더 최근 달에 있는데 아직 그 달을 못 받은 경우).
-  // 로딩 중엔 아예 숨기는 대신 "불러오는 중" 안내를 보여준다.
-  if (!allPoints.length) return stillFetching ? <div style={{ padding: "10px 12px", fontSize: 11, color: T.inkSoft }}>{t("대국 기록 로드 중…")}</div> : null;
-  const periodDef = RATING_CHART_PERIODS.find((p) => p.key === period) || RATING_CHART_PERIODS[2];
-  const cutoff = Date.now() / 1000 - periodDef.days * 86400;
-  const inPeriod = allPoints.filter((g) => g.endTime >= cutoff);
-  // (v0.2.6 UI) 그래프를 더 크게(320x120 → 360x210), 축 기준선도 더 촘촘하게(y 3단 → 5단, x축
-  // 세로 기준선 신규) 다시 그렸다.
-  const W = 360, H = 210, padL = 40, padR = 12, padT = 14, padB = 26;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const fmtAxisDate = (t) => { const dt = new Date(t * 1000); return (dt.getMonth() + 1) + "/" + dt.getDate(); };
-  const isAll = timeFilter === "all";
-  const jumpToClientX = (clientX) => {
-    if (!wrapRef.current) return;
-    const rect = wrapRef.current.getBoundingClientRect();
-    if (!rect.width) return;
-    setDragFrac(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
-  };
-  // (버그 수정) 드래그가 SVG 안의 축 라벨(<text>) 위를 지나가면 브라우저 기본 텍스트 선택이
-  // 함께 시작돼, 크로스헤어 대신 파란 텍스트 선택 영역이 생기며 드래그 자체가 씹혔다 —
-  // preventDefault로 마우스 드래그의 기본 선택 동작을 막고, CSS로도 선택을 비활성화한다.
-  const onPointerDown = (e) => { e.preventDefault(); draggingRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } jumpToClientX(e.clientX); };
-  const onPointerMove = (e) => { if (draggingRef.current) jumpToClientX(e.clientX); };
-  const onPointerUp = (e) => { draggingRef.current = false; setDragFrac(null); try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
-  const dragX = dragFrac != null ? dragFrac * W : null;
-  // (v0.2.6 UI) 말풍선이 역삼각형 마커·점선을 가리지 않도록, 크로스헤어가 그래프 오른쪽 절반에
-  // 있으면 말풍선을 좌하단에, 왼쪽 절반에 있으면 우하단에 붙여 옆으로 비켜서게 한다.
-  const tooltipPos = (x) => {
-    const rightHalf = x / W > 0.5;
-    const leftPct = (x / W) * 100;
-    const gap = 3;
-    const anchorPct = rightHalf ? Math.max(6, leftPct - gap) : Math.min(94, leftPct + gap);
-    return { left: anchorPct + "%", top: "56%", transform: rightHalf ? "translate(-100%, 0)" : "translate(0, 0)" };
-  };
-  const yTicks = (min, max) => [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(min + (max - min) * f));
-  const xFracTicks = [0, 0.2, 0.4, 0.6, 0.8, 1];
-  const emptyMsg = <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: T.inkSoft }}>{stillFetching ? t("대국 기록 추가 로드 중…") : t("이 기간 대국 부족")}</div>;
-  let body;
-  if (isAll) {
-    // (기능) 이 기간에 그 시간 규정 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재
-    // 레이팅)을 기간 전체에 걸친 평평한 선으로 이어 보여준다 — "기록이 없으니 그래프가 사라짐" 대신
-    // "최근 그 값에서 머물러 있음"을 보여주기 위함.
-    const nowT = Date.now() / 1000;
-    const series = ["rapid", "blitz", "bullet"].map((k) => {
-      const periodPts = inPeriod.filter((g) => g.timeClass === k);
-      if (periodPts.length >= 2) return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: extendToPeriodEdges(periodPts, cutoff, nowT), flat: false };
-      const allForClass = allPoints.filter((g) => g.timeClass === k);
-      if (!allForClass.length) return null;
-      const lastRating = allForClass[allForClass.length - 1].rating;
-      return { key: k, label: TIME_CLASS_LABEL[k], color: TIME_CLASS_CHART_COLOR[k], points: [{ endTime: cutoff, rating: lastRating }, { endTime: nowT, rating: lastRating }], flat: true };
-    }).filter(Boolean);
-    if (!series.length) {
-      body = emptyMsg;
-    } else {
-      const allRatings = series.flatMap((s) => s.points.map((g) => g.rating));
-      const min = Math.min(...allRatings), max = Math.max(...allRatings);
-      const span = Math.max(1, max - min);
-      const allTimes = series.flatMap((s) => s.points.map((g) => g.endTime));
-      const tMin = Math.min(...allTimes), tMax = Math.max(...allTimes);
-      const tSpan = Math.max(1, tMax - tMin);
-      const xAt = (t) => padL + ((t - tMin) / tSpan) * plotW;
-      const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
-      // 드래그 중인 x좌표(시간)에서 시리즈마다 가장 가까운 지점을 각자 찾는다.
-      const dragT = dragX != null ? tMin + ((dragX - padL) / plotW) * tSpan : null;
-      const nearest = dragT != null ? series.map((s) => {
-        let best = s.points[0], bestDiff = Infinity;
-        for (const g of s.points) { const d = Math.abs(g.endTime - dragT); if (d < bestDiff) { bestDiff = d; best = g; } }
-        return { key: s.key, label: s.label, color: s.color, point: best };
-      }) : null;
-      body = (
-        <>
-          <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-            style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
-            {dragX != null && <div aria-hidden style={{ position: "absolute", top: -1, left: (dragX / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + T.brassHi, pointerEvents: "none", zIndex: 2 }} />}
-            {nearest && (
-              <div style={{ position: "absolute", ...tooltipPos(dragX), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)" }}>
-                <div style={{ fontWeight: 800, marginBottom: 2, color: T.brassHi }}>{fmtAxisDate(dragT)}</div>
-                {nearest.map((s) => (
-                  <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
-                    {s.label} <b style={{ fontFamily: SITE_FONT }}>{s.point.rating}</b>
-                  </div>
-                ))}
-              </div>
-            )}
-            <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
-              <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
-              {yTicks(min, max).map((r, i) => (
-                <g key={i}>
-                  <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
-                  <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
-                </g>
-              ))}
-              {xFracTicks.slice(1, -1).map((f, i) => (
-                <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
-              ))}
-              <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
-              <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
-              {/* (v0.2.6 기능) 세 시리즈 모두 선 아래 반투명 영역을 채우고, isolate된 그룹 안에서
-                  mix-blend-mode:screen(가산혼합)으로 겹쳐 — 두 색이 겹치면 둘을 섞은 밝은 색, 세 색이
-                  다 겹치면 흰색에 가깝게 빛난다(빛의 삼원색 원리). */}
-              <g style={{ isolation: "isolate" }}>
-                {series.map((s) => {
-                  const lineD = s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
-                  const areaD = lineD + " L" + xAt(s.points[s.points.length - 1].endTime).toFixed(1) + "," + (padT + plotH) + " L" + xAt(s.points[0].endTime).toFixed(1) + "," + (padT + plotH) + " Z";
-                  // (버그 수정) opacity를 너무 낮게(0.55) 두면 screen 블렌드가 배경과 다시 섞이며
-                  // 밝아지는 정도가 옅어져 겹치는 자리가 탁한 카키색으로 보였다 — 그렇다고 너무
-                  // 높이면(0.88) 반투명한 느낌 없이 거의 불투명한 색 블록처럼 보인다. 0.7 정도가
-                  // 바닥까지 은은하게 비치면서도 겹침 구간은 여전히 또렷하게 밝아지는 절충점이다.
-                  return <path key={s.key} d={areaD} fill={s.color} opacity={0.7} stroke="none" style={{ mixBlendMode: "screen" }} />;
-                })}
-              </g>
-              {series.map((s) => (
-                <path key={s.key} d={s.points.map((g, i) => (i === 0 ? "M" : "L") + xAt(g.endTime).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ")} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.flat ? "4 3" : undefined} opacity={s.flat ? 0.65 : 1} />
-              ))}
-              {dragX != null && <line x1={dragX} x2={dragX} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
-              {nearest && nearest.map((s) => <circle key={s.key} cx={xAt(s.point.endTime)} cy={yAt(s.point.rating)} r="3" fill={s.color} stroke="#14100C" strokeWidth="0.8" />)}
-              {xFracTicks.map((f, i) => (
-                <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(tMin + f * tSpan)}</text>
-              ))}
-            </svg>
-          </div>
-          {/* (v0.2.6 UI) 범례를 그래프 위에서 아래로 옮겼다 — 시간 규정별 색상 점 + 첫 레이팅→마지막 레이팅.
-              (v0.2.6 UI 재조정) 3개 항목이 줄바꿈 없이 한 줄에 들어가도록 글자·점·간격을 더 줄였다. */}
-          <div className="flex items-center justify-center" style={{ gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
-            {series.map((s) => (
-              <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8.5, fontFamily: SITE_FONT, color: T.inkSoft, fontWeight: 700, whiteSpace: "nowrap" }}>
-                <span aria-hidden style={{ width: 6, height: 6, borderRadius: 999, background: s.color, display: "inline-block", flexShrink: 0 }} />
-                <b style={{ color: T.ink }}>{s.label}</b> {s.points[0].rating}→{s.points[s.points.length - 1].rating}
-              </span>
-            ))}
-          </div>
-        </>
-      );
-    }
-  } else if (inPeriod.length < 2 && !allPoints.length) {
-    body = emptyMsg;
-  } else {
-    // (기능) 이 기간에 대국이 없어도(전체 기록엔 있으면) 마지막 대국 당시 레이팅(=현재 레이팅)을
-    // 기간 전체에 걸친 평평한 선으로 이어 보여준다 — inPeriod가 비었을 때만 쓰는 fallback이라
-    // realCount(실제 이 기간 대국 수)는 별도로 남겨 "0판"이 정직하게 보이도록 한다.
-    const flatFallback = inPeriod.length < 2;
-    const realCount = inPeriod.length;
-    const nowT = Date.now() / 1000;
-    const points = flatFallback
-      ? [{ endTime: cutoff, rating: allPoints[allPoints.length - 1].rating }, { endTime: nowT, rating: allPoints[allPoints.length - 1].rating }]
-      : inPeriod;
-    const ratings = points.map((g) => g.rating);
-    const min = Math.min(...ratings), max = Math.max(...ratings);
-    const span = Math.max(1, max - min);
-    const xAt = (i) => padL + (i / (points.length - 1)) * plotW;
-    const yAt = (r) => padT + plotH - ((r - min) / span) * plotH;
-    const lineD = points.map((g, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + "," + yAt(g.rating).toFixed(1)).join(" ");
-    const areaD = lineD + " L" + xAt(points.length - 1).toFixed(1) + "," + (padT + plotH) + " L" + xAt(0).toFixed(1) + "," + (padT + plotH) + " Z";
-    const first = points[0].rating, last = points[points.length - 1].rating;
-    const rising = !flatFallback && last >= first;
-    const lineColor = TIME_CLASS_CHART_COLOR[timeFilter] || T.brassHi;
-    const dragIdx = dragX != null ? Math.round(Math.max(0, Math.min(1, (dragX - padL) / plotW)) * (points.length - 1)) : null;
-    const dragPoint = dragIdx != null ? points[dragIdx] : null;
-    body = (
-      <>
-        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-          <span style={{ fontSize: 10.5, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판{1}", realCount, flatFallback && <span style={{ color: T.inkSoft, fontWeight: 700 }}>{" "}{t("· 최근 레이팅 유지")}</span>)}</span>
-          <span style={{ fontSize: 11, fontFamily: SITE_FONT, color: T.ink, fontWeight: 800 }}>{first} → {last} {!flatFallback && <span style={{ color: rising ? T.best : last < first ? T.blunder : T.inkSoft }}>{rising ? "▲" : last < first ? "▼" : ""}</span>}</span>
-        </div>
-        <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-          style={{ position: "relative", touchAction: "none", cursor: "ew-resize", userSelect: "none", WebkitUserSelect: "none" }}>
-          {dragPoint && <div aria-hidden style={{ position: "absolute", top: -1, left: (xAt(dragIdx) / W) * 100 + "%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: "7px solid " + lineColor, pointerEvents: "none", zIndex: 2 }} />}
-          {dragPoint && (
-            <div style={{ position: "absolute", ...tooltipPos(xAt(dragIdx)), background: "#14100C", border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 9.5, color: T.ivory, whiteSpace: "nowrap", pointerEvents: "none", zIndex: 3, boxShadow: "0 4px 12px rgba(0,0,0,.5)", textAlign: "center" }}>
-              <div style={{ fontWeight: 800, color: T.brassHi }}>{fmtAxisDate(dragPoint.endTime)}</div>
-              <div style={{ fontFamily: SITE_FONT }}>{dragPoint.rating}</div>
-            </div>
-          )}
-          <svg viewBox={"0 0 " + W + " " + H} style={{ display: "block", width: "100%", height: "auto", aspectRatio: W + " / " + H }}>
-            <rect x="0" y="0" width={W} height={H} fill="#211A13" rx="8" />
-            {/* y축 그리드 — 값 라벨을 왼쪽에 함께 표시 */}
-            {yTicks(min, max).map((r, i) => (
-              <g key={i}>
-                <line x1={padL} x2={W - padR} y1={yAt(r)} y2={yAt(r)} stroke="rgba(255,255,255,.08)" strokeWidth={1} />
-                <text x={padL - 4} y={yAt(r) + 3} fontSize={8} textAnchor="end" fill="#B8A98C">{r}</text>
-              </g>
-            ))}
-            {/* x축 세로 기준선 */}
-            {xFracTicks.slice(1, -1).map((f, i) => (
-              <line key={i} x1={padL + f * plotW} x2={padL + f * plotW} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.06)" strokeWidth={1} />
-            ))}
-            {/* x/y축 선 */}
-            <line x1={padL} x2={padL} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
-            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="rgba(255,255,255,.3)" strokeWidth={1} />
-            {/* 선 아래 영역을 반투명하게 채움 */}
-            <path d={areaD} fill={lineColor} opacity={flatFallback ? 0.22 : 0.4} stroke="none" />
-            <path d={lineD} fill="none" stroke={lineColor} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={flatFallback ? "4 3" : undefined} opacity={flatFallback ? 0.65 : 1} />
-            {dragPoint && <line x1={xAt(dragIdx)} x2={xAt(dragIdx)} y1={padT} y2={padT + plotH} stroke={T.brassHi} strokeWidth={0.9} strokeDasharray="2.5 2.5" />}
-            {dragPoint && <circle cx={xAt(dragIdx)} cy={yAt(dragPoint.rating)} r="3.4" fill={lineColor} stroke="#14100C" strokeWidth="0.8" />}
-            {/* x축 날짜 라벨 */}
-            {xFracTicks.map((f, i) => (
-              <text key={i} x={padL + f * plotW} y={H - 6} fontSize={8} textAnchor={i === 0 ? "start" : i === xFracTicks.length - 1 ? "end" : "middle"} fill="#B8A98C">{fmtAxisDate(points[Math.round(f * (points.length - 1))].endTime)}</text>
-            ))}
-          </svg>
-        </div>
-      </>
-    );
-  }
-  return (
-    <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("기간별 레이팅 변동")}</span>
-        <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
-          {RATING_CHART_PERIODS.map((p) => (
-            <button key={p.key} onClick={() => setPeriod(p.key)} className="press" style={{ padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 9.5, fontWeight: 800, background: period === p.key ? T.ebony2 : "transparent", color: period === p.key ? T.brassHi : T.inkSoft }}>{p.label}</button>
-          ))}
-        </div>
-      </div>
-      {body}
-    </div>
-  );
-}
 // (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
 // 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
 // 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
@@ -682,9 +473,6 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
   // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
   // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중분석의 ListPager와 동일한 방식).
-  const RECENT_GAMES_PAGE_SIZE = 5;
-  const [recentPage, setRecentPage] = useState(0);
-  useEffect(() => { setRecentPage(0); }, [username, timeFilter]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>{t("기보를 불러오는 중…")}</p>;
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>{t("기보 로드 실패. 계정 확인 필요")}</p>;
@@ -729,16 +517,8 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외.
           (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
       <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
-            <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-          ))}
-        </div>
-        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-            <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-          ))}
-        </div>
+        <GameFilterPills options={[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]]} value={timeFilter} onChange={setTimeFilter} />
+        <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
         {/* (v0.3.1 기능) 리뷰(분석)해 본 대국만 모아 보기 */}
         {reviewUnlocked && (
           <label className="flex items-center press" style={{ gap: 5, cursor: "pointer", padding: "5px 9px", borderRadius: 9, background: onlyReviewed ? T.ebony2 : "rgba(0,0,0,.06)" }}>
@@ -749,69 +529,14 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       </div>
       {/* 전적 */}
       {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
-      {!recentOnly && overall && (
-        <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("전체 기간 전적")}</span>
-            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판", fmtFull(overall.total))}</span>
-          </div>
-          <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
-            <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1} · 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
-          </div>
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
-            <div style={{ width: (100 * overall.w / overall.total) + "%", background: T.best }} />
-            <div style={{ width: (100 * overall.d / overall.total) + "%", background: "#9C8A6A" }} />
-            <div style={{ width: (100 * overall.l / overall.total) + "%", background: T.blunder }} />
-          </div>
-        </div>
-      )}
+      {!recentOnly && overall && <GameRecordSummary overall={overall} />}
       {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중분석의 "내 최근 대국" 목록과 통일. */}
-      {(() => {
-        const allGames = [...games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-        if (!allGames.length) return null;
-        const pageCount = Math.max(1, Math.ceil(allGames.length / RECENT_GAMES_PAGE_SIZE));
-        const page = Math.min(recentPage, pageCount - 1);
-        const recent = allGames.slice(page * RECENT_GAMES_PAGE_SIZE, page * RECENT_GAMES_PAGE_SIZE + RECENT_GAMES_PAGE_SIZE);
-        const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
-        return (
-          <div style={{ marginBottom: 12 }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>{t("최근 대국")}</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", allGames.length)}</span></div>
-            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g);
-              // (v0.2.0 기능) 상대 닉네임·대국 당시 레이팅 — useChessCom이 이제 g.white/g.black에
-              // 양쪽 정보를 다 담아 주므로, 내 진영(g.color)의 반대쪽을 상대로 표시한다.
-              const oppSide = g.color === "w" ? g.black : g.white;
-              return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
-                {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 분석 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
-                <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                    {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                    {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                    {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
-                        라벨 뒤에 괄호로 이어 붙인다. */}
-                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
-                  </div>
-                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                </div>
-                {onSelectGame ? (() => { const gid = g.id != null ? g.id : g.endTime; const isSel = selectedGameId != null && gid === selectedGameId;
-                  return <button onClick={() => onSelectGame(g, gid)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: isSel ? "linear-gradient(180deg,#3E7CC4,#2C5A94)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSel ? "#fff" : "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>{isSel ? t("선택됨") : t("선택")}</button>; })() : onOpenGame && (
-                  <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                    <button onClick={() => onOpenGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                    {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id })} />}
-                  </div>
-                )}
-              </div>
-            ); })}
-            <ListPager page={page} setPage={setRecentPage} pageCount={pageCount} />
-          </div>
-        );
-      })()}
+      <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
+        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />
       {!recentOnly && (
         <>
           {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
@@ -1554,28 +1279,16 @@ export function TierRatingRow({ pub }) {
 export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
-  const mqPct = mq && mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
   return (
     <div style={{ marginBottom: 12 }}>
       {!hideTierRow && <TierRatingRow pub={pub} />}
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
-      {mq && mq.totalChapters > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("레슨 진척도")}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, fontFamily: SITE_FONT }}>{mq.claimed}/{tx("{0} 레슨 완료", mq.totalChapters)}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
-            <div style={{ width: mqPct + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .5s ease" }} />
-          </div>
-        </div>
-      )}
+      {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
+      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
-      {/* (v0.5.4) 미니게임 레이팅·전적·혼자 최고 기록 — 한 판이라도 한 게임만. */}
-      <MinigameProfileStats uid={ownerUid} />
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
   );
