@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+const jsxShim = (f) => fileURLToPath(new URL("./src/lib/jsx/" + f + ".js", import.meta.url));
 // 단일 스레드 Stockfish는 COOP/COEP가 필요 없지만, 멀티스레드 빌드(SharedArrayBuffer)를 쓰려면
 // 교차 출처 격리가 되어야 한다 — 배포지(vercel.json)와 동일한 헤더를 로컬 개발 서버에도 달아 둔다.
 // credentialless: require-corp과 달리 CORP 헤더가 없는 외부 이미지(구글 프로필 사진 등)도
@@ -11,7 +13,11 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = {
 // base: Vercel/Netlify/Cloudflare(루트 도메인)는 "/", GitHub Pages 하위경로는 VITE_BASE 로 주입.
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
-  plugins: [react()],
+  // (v0.6.2) 언어별 글자 크기 보정 — JSX 런타임을 src/lib/jsx/로 바꿔 한국어 외 언어에서 inline fontSize를 일괄로 줄인다(src/lib/langScale.js).
+  plugins: [react({ jsxImportSource: "oc-jsx" })],
+  resolve: { alias: [{ find: /^oc-jsx\/jsx-runtime$/, replacement: jsxShim("jsx-runtime") }, { find: /^oc-jsx\/jsx-dev-runtime$/, replacement: jsxShim("jsx-dev-runtime") }] },
+  // 개발 서버의 의존성 사전 번들이 JSX 런타임(→ i18n.js의 최상위 await)까지 따라가므로 빌드 target(es2022)과 맞춘다.
+  optimizeDeps: { exclude: ["oc-jsx"], esbuildOptions: { target: "es2022" } },
   server: { headers: CROSS_ORIGIN_ISOLATION_HEADERS },
   preview: { headers: CROSS_ORIGIN_ISOLATION_HEADERS },
   // (v0.5.7 성능) 라이브러리를 앱 코드와 다른 파일로 나눈다 — 앱 코드는 배포마다 바뀌지만 라이브러리는 거의 그대로라,
