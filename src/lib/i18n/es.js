@@ -1039,6 +1039,7 @@ export default {
   "기보 채점 실패. 잠시 후 다시 시도": "No se pudo evaluar la partida. Inténtalo de nuevo en un momento",
   "엔진 준비 중": "El motor se está preparando",
   "뚜렷한 전술 라인 없음. 다른 PGN·FEN이나 유형으로 시도": "No hay una línea táctica clara. Prueba otro PGN/FEN u otro tipo",
+  "이 포지션에서 탁월한 수(희생)를 찾지 못함. 다른 유형이나 포지션으로 시도": "No se encontró ninguna jugada Brillante (sacrificio) en esta posición. Prueba otro tipo u otra posición",
   "퍼즐 생성 실패. 잠시 후 다시 시도": "No se pudo crear el puzle. Inténtalo de nuevo en un momento",
   "FEN 포지션 퍼즐": "Puzle de posición FEN",
   "추천순": "Recomendados",
@@ -1798,4 +1799,9 @@ export default {
   "엔진 depth가 한 단계 깊어질 때마다 수 블록 평가치·정렬 갱신.": "Las evaluaciones y el orden de los bloques se actualizan cada vez que la profundidad del motor aumenta en uno.",
   "다국어 지원 · 신고·차단 확대 · 개인정보처리방침·이용약관 · 분석 탭 개선 · 앱 출시 준비.": "Compatibilidad multilingüe · más denuncias y bloqueos · Política de privacidad y Términos de servicio · mejoras en la pestaña de Análisis · preparación para el lanzamiento de la app.",
   "5개 언어 선택 · 체스 용어 표준 번역 · 프로필 신고·차단 · 개인정보처리방침·이용약관 · 분석 탭 개선": "5 idiomas · terminología estándar de ajedrez · denuncia y bloqueo desde el perfil · Privacidad y Términos · mejoras en Análisis",
+  "분석 탭 FEN 모드에서 평가치가 0.00으로 남고 엔진 라인이 비던 문제 수정. 엔진 준비가 늦으면 이미 켜진 엔진으로 바로 분석.": "Corregido el modo FEN de la pestaña Análisis, que mostraba 0.00 sin líneas del motor. Si el motor tarda en iniciarse, el análisis empieza de inmediato con el motor que ya está activo.",
+  "퍼즐 만들기에서 FEN 포지션의 '기물 희생하기'가 희생이 아닌 최선수를 정답으로 만들던 문제 수정. 탁월한 수(희생)를 먼저 찾아 첫 수로 고정하고, 없으면 안내.": "Corregidos los puzles «Sacrificar una pieza» creados desde una posición FEN, que usaban como respuesta una mejor jugada sin sacrificio. Ahora se busca primero la jugada Brillante (sacrificio) y se fija como primera jugada; si no existe, se muestra un aviso.",
+  "보드 편집 화면에 보드 뒤집기 버튼 추가.": "Añadido un botón para girar el tablero en el editor de tablero.",
+  "FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기.": "Corrección del motor en modo FEN · primera jugada de los puzles de sacrificio · botón de giro en el editor de tablero.",
+  "FEN 모드 엔진 · 희생 퍼즐 · 보드 뒤집기": "Motor en modo FEN · puzles de sacrificio · girar tablero",
 };

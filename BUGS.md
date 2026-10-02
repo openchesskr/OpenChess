@@ -10,6 +10,9 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-056 | P3 | 보드 편집 화면의 뒤집기 버튼이 팔레트 안 작은 아이콘이라 "뒤집기가 없다"고 보임 | 수정 완료(v0.6.2, 사용자 요청) | 2026-10-02 |
+| BUG-055 | P1 | 퍼즐 만들기에서 FEN 포지션의 "기물 희생하기"가 희생이 아닌 최선수(1.Rg7)를 정답 라인으로 생성 — 첫 수를 탁월한 수로 고정하지 않았고, 1.Rc7 같은 희생은 MultiPV 상위권에 안 잡힘 | 수정 완료(v0.6.2, 사용자 요청) · `check-sacrifice-puzzle` | 2026-10-02 |
+| BUG-054 | P1 | 분석 탭 FEN 모드에서 평가치 0.00·엔진 라인/후보 수 없음 — 풀 부팅 대기와 풀 폴백 엔진의 evaluateMulti 인자 순서 불일치(TypeError가 삼켜짐) | 수정 완료(v0.6.2, 사용자 요청) · `check-sacrifice-puzzle` | 2026-10-02 |
 | BUG-053 | P3 | 채팅 대국 신청 카드가 "실시간 대국신청함"처럼 띄어쓰기 없이 붙어 표시 — 문구 키에 공백이 빠져 있었음 | 수정 완료(v0.6.1, 사용자 요청) | 2026-10-01 |
 | BUG-052 | P2 | 무한 체크메이트에서 같은 포지션이 자주 반복 — 풀이 295개뿐이고 서버 난수를 개수로 나눈 나머지로 골라 한 판에도 중복 | 수정 완료(v0.6.1, 사용자 요청) · `check-attack-positions` | 2026-10-01 |
 | BUG-051 | P2 | 나이트 레이스 거리 판정(타이브레이커) 연출과 잡으러 날아오는 기물이 칸에서 최대 4px 어긋남 — 보드 테두리 2px를 빼지 않고 칸 크기를 계산 | 수정 완료(v0.6.1, 사용자 요청) · `check-board-overlay` | 2026-10-01 |
@@ -67,6 +70,30 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-056 · [P3] 보드 편집 뒤집기 버튼이 눈에 띄지 않음
+- **상태**: 수정 완료 (v0.6.2, 사용자 요청)
+- **위치**: `src/app/learn.jsx` `BoardEditorModal`
+- **증상**: 뒤집기가 흑 기물 팔레트 줄 맨 앞의 작은 아이콘 하나뿐이라 사용자가 기능이 없다고 느낌.
+- **수정 내용**: 초기화·지우기 줄에 분석 탭과 같은 ⇅ 버튼(`aria-pressed`, `title` 포함) 추가, 팔레트의 중복 버튼은 자리만 남김.
+
+### BUG-055 · [P1] FEN 포지션 희생 퍼즐이 희생이 아닌 최선수를 정답으로 생성
+- **상태**: 수정 완료 (v0.6.2, 사용자 요청)
+- **위치**: `src/app/puzzle.jsx` `runPcGenerate`, `src/app/common.jsx` `genPuzzleTree`·`findSacrificeFirstMove`, `src/lib/moveQuality.js` `staticSacrificeSans`
+- **증상**: 3kr3/5R2/7p/p4K1B/P7/7P/8/8 w에서 "기물 희생하기"를 고르면 탁월한 수가 아닌 1.Rg7이 최선 수로 표시되고 라인이 생성됨. 단독 평가에서 최선 이상인 탁월한 수 1.Rc7은 선택되지 않음.
+- **근본 원인**: ① FEN 분기는 희생 테마에서도 `firstSan` 없이 `genPuzzleTree`를 호출 → 일반 "통과 수(최선·우수…)" 1순위가 첫 수가 됨(PGN 분기는 게임 채점의 탁월한 수를 `firstSan`으로 고정). ② 후보를 엔진 MultiPV 상위 6줄에서만 뽑는데, 희생은 얕은 탐색에서 점수가 낮아 상위권에서 밀림(1.Rc7: MultiPV 6줄엔 없고 단독 5초 평가 +5.06, 1.Rg7은 +4.74).
+- **수정 내용**: FEN 희생 테마는 `findSacrificeFirstMove`로 첫 수를 먼저 찾는다 — 엔진 후보 중 탁월한 수 + 상위권 밖 정적 희생 수(`staticSacrificeSans`)를 후보마다 5초로 평가해 `gradeMoveKindConfirmed` 규칙으로 채택, 없으면 안내 후 생성하지 않음. `genPuzzleTree`는 희생 테마에 `firstSan`이 없으면 null.
+- **재발 방지 안전장치**: `scripts/check-sacrifice-puzzle.mjs`(prebuild·`npm run check:sacrifice-puzzle`) — 해당 FEN의 희생 후보에 Rc7이 있고 Rg7이 없음, 가드·FEN 분기 호출 계약 검사.
+- **검증**: 가드를 지우면 스크립트 실패, 복구하면 통과. Stockfish 18로 후보 평가 재현(Rc7 최선 이상 → brilliant, 다른 희생 수는 mistake). `npm run build` 통과. 저장 이후 UI 흐름은 로그인이 필요해 브라우저로 끝까지 확인하지 못함.
+
+### BUG-054 · [P1] 분석 탭 FEN 모드에서 엔진이 동작하지 않음
+- **상태**: 수정 완료 (v0.6.2, 사용자 요청) · 사용자 기기(모바일)에서 직접 재현은 못 했고, 코드 분석과 시뮬레이션으로 확인한 원인을 고침
+- **위치**: `src/app/learn.jsx`(FEN 모드 엔진 effect), `src/app/common.jsx` `poolWorker`, `src/lib/enginePool.js`
+- **증상**: FEN을 불러오면 평가치 0.00, 엔진 라인·후보 수 블록 없음.
+- **근본 원인**: ① effect가 `await getAnalysisPool(...)`로 풀 전체 부팅을 기다림(신경망이 큰 프로필은 워커를 차례로 부팅해 오래 걸리고 그동안 화면이 비어 있음). ② 풀이 비면 `poolWorker`가 `useEngine` 인스턴스를 돌려주는데 `evaluateMulti(fen,d,multipv,mt,onProgress,onLines,slot)`와 풀 워커의 `(fen,d,multipv,mt,onLines,slot)` 인자 순서가 달라 slot 문자열이 `onLines`로 들어가 TypeError → try/catch가 삼켜 아무 표시 없이 실패. 같은 패턴이 리뷰 엔진 라인·채팅 봇·블라인드 평가 등 `poolWorker` 사용처(learn·review·social) 전체에 있었음.
+- **수정 내용**: 2.5초 안에 풀이 안 뜨면 공용 엔진으로 즉시 시작, `poolFallbackWorker` 어댑터로 인자 순서 통일.
+- **재발 방지 안전장치**: `check-sacrifice-puzzle`이 어댑터의 인자 전달 순서와 `poolWorker`의 어댑터 사용을 검사.
+- **검증**: 풀 부팅을 7초 지연시킨 헤드리스 브라우저(Playwright)에서 FEN 모드가 정상 표시됨 확인(수정 전에도 이 지연만으로는 재현되지 않아 사용자 기기의 정확한 원인은 단정하지 못함).
 
 ### BUG-053 · [P3] 대국 신청 카드 띄어쓰기 오류
 - **상태**: 수정 완료 (v0.6.1, 사용자 요청)
