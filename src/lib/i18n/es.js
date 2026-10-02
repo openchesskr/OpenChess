@@ -1810,4 +1810,5 @@ export default {
   "/user 페이지의 XP·퍼즐 레이팅·레슨·총 대국 요약과 일반 대국(타임 컨트롤별)·미니게임 기록을 카드로 묶어 정리.": "Reorganizada la página /user: resumen de XP, rating de puzles, lecciones y partidas totales, con los registros de partidas normales (por control de tiempo) y de minijuegos agrupados en tarjetas.",
   "타임 컨트롤별 레이팅 · /user 성취도 정리 · FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기.": "Rating por control de tiempo · logros en /user · corrección del motor en modo FEN · primera jugada de los puzles de sacrificio · botón de giro en el editor de tablero.",
   "타임 컨트롤별 레이팅 · /user 성취도 · FEN 모드 엔진 · 희생 퍼즐": "Rating por control de tiempo · logros en /user · motor en modo FEN · puzles de sacrificio",
+  "플레이 탭에서 미니게임을 일반 대국보다 위에 표시. 일반 대국 아래에 chess.com 대국 통계와 같은 UI로 내 대국 기록(시간 규정·색 필터, 전체 기간 전적, 최근 대국 목록) 추가. 봇 대국은 기록되지 않음.": "La pestaña Jugar ahora muestra los minijuegos encima de las partidas normales. Debajo del botón de partida normal aparece tu historial con la misma interfaz que las estadísticas de chess.com (filtros de control de tiempo y color, balance total, partidas recientes). Las partidas contra bots no se registran.",
 };

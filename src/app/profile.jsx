@@ -16,6 +16,7 @@ import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tier
 import { createPortal } from "react-dom";
 import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { GameFilterPills, GameRecordSummary, RecentGamesList } from "./gameHistory.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
@@ -734,9 +735,6 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
   const mostUsed = useMemo(() => [...openingStats].sort((a, b) => b.n - a.n), [openingStats]);
   // (버그 보충) "최근 대국"이 최신 5판만 보여주고 더 예전 대국은 볼 방법이 없었다 — 전부 가져와
   // 두고 5판씩 페이지를 넘겨 보게 한다(내 대국 목록·집중분석의 ListPager와 동일한 방식).
-  const RECENT_GAMES_PAGE_SIZE = 5;
-  const [recentPage, setRecentPage] = useState(0);
-  useEffect(() => { setRecentPage(0); }, [username, timeFilter]);
 
   if (chesscom && chesscom.status === "loading") return <p style={{ fontSize: 12, color: T.inkSoft, marginTop: 10 }}>{t("기보를 불러오는 중…")}</p>;
   if (chesscom && chesscom.status === "error") return <p style={{ fontSize: 12, color: T.blunder, marginTop: 10 }}>{t("기보 로드 실패. 계정 확인 필요")}</p>;
@@ -781,16 +779,8 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       {/* (v0.2.2 UI#6#5) 시간 규정 필터 — 전체/래피드/블리츠/불릿. 일일·체스960은 집계에서 제외.
           (v0.2.6 기능) 타임 컨트롤 선택 박스를 조금 줄이고, 같은 줄 우측에 흑/백 색 필터를 추가했다. */}
       <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
-            <button key={k} onClick={() => setTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: timeFilter === k ? T.ebony2 : "transparent", color: timeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-          ))}
-        </div>
-        <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-          {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-            <button key={k} onClick={() => setColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: colorFilter === k ? T.ebony2 : "transparent", color: colorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-          ))}
-        </div>
+        <GameFilterPills options={[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]]} value={timeFilter} onChange={setTimeFilter} />
+        <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
         {/* (v0.3.1 기능) 리뷰(분석)해 본 대국만 모아 보기 */}
         {reviewUnlocked && (
           <label className="flex items-center press" style={{ gap: 5, cursor: "pointer", padding: "5px 9px", borderRadius: 9, background: onlyReviewed ? T.ebony2 : "rgba(0,0,0,.06)" }}>
@@ -801,69 +791,14 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       </div>
       {/* 전적 */}
       {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
-      {!recentOnly && overall && (
-        <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("전체 기간 전적")}</span>
-            <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판", fmtFull(overall.total))}</span>
-          </div>
-          <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
-            <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1} · 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
-          </div>
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
-            <div style={{ width: (100 * overall.w / overall.total) + "%", background: T.best }} />
-            <div style={{ width: (100 * overall.d / overall.total) + "%", background: "#9C8A6A" }} />
-            <div style={{ width: (100 * overall.l / overall.total) + "%", background: T.blunder }} />
-          </div>
-        </div>
-      )}
+      {!recentOnly && overall && <GameRecordSummary overall={overall} />}
       {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중분석의 "내 최근 대국" 목록과 통일. */}
-      {(() => {
-        const allGames = [...games].sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-        if (!allGames.length) return null;
-        const pageCount = Math.max(1, Math.ceil(allGames.length / RECENT_GAMES_PAGE_SIZE));
-        const page = Math.min(recentPage, pageCount - 1);
-        const recent = allGames.slice(page * RECENT_GAMES_PAGE_SIZE, page * RECENT_GAMES_PAGE_SIZE + RECENT_GAMES_PAGE_SIZE);
-        const fmtD = (t) => { if (!t) return ""; const d = new Date(t * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
-        return (
-          <div style={{ marginBottom: 12 }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><span style={{ fontSize: 12, fontWeight: 800, color: T.brass }}>{t("최근 대국")}</span><span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", allGames.length)}</span></div>
-            {recent.map((g, i) => { const won = g.result === "win", lost = g.result === "loss"; const rc = ratingChanges.get(g);
-              // (v0.2.0 기능) 상대 닉네임·대국 당시 레이팅 — useChessCom이 이제 g.white/g.black에
-              // 양쪽 정보를 다 담아 주므로, 내 진영(g.color)의 반대쪽을 상대로 표시한다.
-              const oppSide = g.color === "w" ? g.black : g.white;
-              return (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #E4D5B6" }}>
-                {/* (v0.2.2 UI#6#7) "⬜ 백"/"⬛ 흑" 텍스트 대신, 분석 탭 수 블록처럼 행 좌측에 진영 색 막대로 표시 */}
-                <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                    {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                    {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                    {/* (v0.2.6 버그 수정) 대국 날짜를 오프닝 이름 옆 별도 줄에 붙이는 대신, 타임컨트롤
-                        라벨 뒤에 괄호로 이어 붙인다. */}
-                    {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtD(g.endTime) + ")" : ""}</span>}
-                  </div>
-                  {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                  {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                </div>
-                {onSelectGame ? (() => { const gid = g.id != null ? g.id : g.endTime; const isSel = selectedGameId != null && gid === selectedGameId;
-                  return <button onClick={() => onSelectGame(g, gid)} className="press" style={{ flexShrink: 0, padding: "7px 14px", borderRadius: 8, background: isSel ? "linear-gradient(180deg,#3E7CC4,#2C5A94)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSel ? "#fff" : "#241509", border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 800 }}>{isSel ? t("선택됨") : t("선택")}</button>; })() : onOpenGame && (
-                  <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                    <button onClick={() => onOpenGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                    {onOpenGameAnalyze && <BestMoveJumpButton onClick={() => onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id })} />}
-                  </div>
-                )}
-              </div>
-            ); })}
-            <ListPager page={page} setPage={setRecentPage} pageCount={pageCount} />
-          </div>
-        );
-      })()}
+      <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
+        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />
       {!recentOnly && (
         <>
           {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아

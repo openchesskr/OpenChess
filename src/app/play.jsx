@@ -2,6 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
+import { OpenChessGameHistory } from "./gameHistory.jsx";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
 import { loadLastGameQuality, playSfx, saveLastGameQuality, playMoveSfx } from "../lib/prefs.js";
@@ -4688,7 +4689,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
+export function PlayPage({ seed, onClose, engine, onOpenReview, onOpenGame, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -5314,11 +5315,18 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
     // 일반 대국 부분만 460px로 가운데에 둔다.
     <div style={sideShop ? { maxWidth: PLAY_HUB_MAX_W_DESKTOP + 28 + 420, margin: "0 auto", display: "grid", gridTemplateColumns: PLAY_HUB_MAX_W_DESKTOP + "px minmax(0,1fr)", columnGap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
       <div style={{ minWidth: 0 }}>
+        {/* (v0.5.5) 미니게임 — (v0.6.2, 사용자 요청) 일반 대국 버튼·기록보다 위에 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
+            그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
+        <div style={{ display: step === "setup" ? "block" : "none", marginBottom: 14 }}>
+          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
+        </div>
         <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
           <>
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
             <PlayNormalButton onClick={() => setSetupOpen(true)} />
+            {/* (v0.6.2, 사용자 요청) 내 일반 대국 기록 — chess.com 대국 통계와 같은 UI(필터·전적·최근 대국). 대국이 끝나 설정 화면으로 돌아올 때마다 다시 읽는다. */}
+            <OpenChessGameHistory myUid={myUid} username={username} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenReview} tick={step} />
             {setupOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
@@ -5540,11 +5548,6 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             </div>
           </div>
         )}
-        </div>
-        {/* (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
-            그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
-        <div style={{ display: step === "setup" ? "block" : "none", marginTop: 14 }}>
-          <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
       </div>
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
