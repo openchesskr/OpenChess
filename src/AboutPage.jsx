@@ -922,10 +922,14 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.6.2", date: "2026.10.2",
-    summary: t("FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("FEN 모드 엔진 · 희생 퍼즐 · 보드 뒤집기") },
+    summary: t("타임 컨트롤별 레이팅 · /user 성취도 정리 · FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("타임 컨트롤별 레이팅 · /user 성취도 · FEN 모드 엔진 · 희생 퍼즐") },
     sections: [
+      { cat: "feature", items: [
+        t("일반 대국 레이팅을 타임 컨트롤(불렛·블리츠·래피드·스탠다드)별로 분리. 타임 컨트롤 선택 화면의 분류 이름 옆에 레이팅 표시, 랭킹도 분류별 탭으로 구분. 기존 일반 대국 레이팅은 초기화."),
+      ] },
       { cat: "ui", items: [
+        t("/user 페이지의 XP·퍼즐 레이팅·레슨·총 대국 요약과 일반 대국(타임 컨트롤별)·미니게임 기록을 카드로 묶어 정리."),
         t("보드 편집 화면에 보드 뒤집기 버튼 추가."),
       ] },
       { cat: "fix", items: [

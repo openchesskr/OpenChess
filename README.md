@@ -76,6 +76,10 @@
 
 ### OpenChess v0.6.2 — 2026/10/2
 
+**기능**
+- 일반 대국 레이팅을 타임 컨트롤 분류별로 분리: `minigame_stats.game`에 `chess_bullet|chess_blitz|chess_rapid|chess_standard`(제약 확장), 대국 종료 트리거가 `pvp_games.time_control`로 `_chess_tc_category`(예상 시간 = 초기시간 + 40×증가시간 → 180 미만 불렛 · 480 미만 블리츠 · 1500 미만 래피드 · 그 이상 스탠다드. 프리셋 12개가 기존 분류와 일치)를 계산해 해당 행에 Elo 집계. 클라이언트 기준은 `src/lib/chessRating.js`(`chessTcCategory`)로 일원화. 예전 단일 `chess` 행은 화면에서 쓰지 않고(이어받지 않음) 새 분류별 레이팅은 1200부터 시작. 타임 컨트롤 선택 화면의 분류 이름 옆에 미니게임 허브 버튼과 같은 레이팅 칩(`MgRatingChip`, 배치 3판 이후만), 상단 "내 기록"은 고른 타임 컨트롤 분류 기준, 랭킹은 분류 탭 4개. `check-chess-rating`이 SQL 분류 기준·프리셋 분류·집계 연결을 대조.
+- /user 성취도 재배치: `AchievementDashboard` — 핵심 수치 4칸(XP·퍼즐 레이팅·레슨 진척·총 대국) → 일반 대국(타임 컨트롤별 4칸) → 미니게임(게임별 행). 전적은 `minigame_stats`를 한 번만 읽어 공유하고, 기록이 없는 칸도 자리를 유지(흐리게). 좁은 화면 2열/1열, 데스크톱 통계 열 4열/2열.
+
 **버그 수정**
 - 분석 탭 FEN 모드 엔진 먹통(BUG-054): FEN 모드의 평가·엔진 라인·후보 수는 분석 풀(`getAnalysisPool`)의 전용 워커로 돌린다. ① 풀 부팅이 끝나기를 끝까지 기다려, 신경망이 큰 프로필(모바일)에서 워커 여러 개를 차례로 부팅하는 동안 평가치 0.00·빈 엔진 라인으로 남았다 → 2.5초 안에 풀이 안 뜨면 이미 켜진 공용 엔진으로 바로 시작(`Promise.race`). ② 풀이 비면 `poolWorker`가 `useEngine` 인스턴스를 그대로 돌려줬는데, 이 인스턴스는 풀 워커와 `evaluateMulti` 인자 순서가 달라(`onProgress`가 끼어 있음) `onLines` 자리에 slot 문자열이 들어가 TypeError → try/catch에 삼켜져 조용히 빈 화면이 됐다. `src/lib/enginePool.js`의 `poolFallbackWorker` 어댑터로 풀 워커와 같은 인자 순서를 보장(리뷰·채팅 봇 등 `poolWorker`를 쓰는 모든 호출부에 해당). `check-sacrifice-puzzle`(prebuild)이 인자 전달 순서를 검사.
 - 희생 퍼즐 오생성(BUG-055): 퍼즐 만들기에서 FEN 포지션에 "기물 희생하기"를 고르면 첫 수를 지정하지 않고 `genPuzzleTree`에 맡겨, 희생이 아닌 엔진 최선수(3kr3/5R2/7p/p4K1B/P7/7P/8/8 w의 1.Rg7)가 정답 라인이 됐다(PGN 경로는 게임 채점이 고른 탁월한 수를 `firstSan`으로 넘겨 정상). 신규 `findSacrificeFirstMove`: 엔진 상위 후보 중 탁월한 수 + 상위권 밖이라도 정적으로 희생인 모든 합법 수(`staticSacrificeSans`)를 직접 열거해, 후보마다 5초 깊이로 평가한 뒤 사이트 공용 규칙(`gradeMoveKindConfirmed`)으로 탁월한 수만 채택(1.Rc7은 MultiPV 6줄에 안 잡혀도 단독 평가에서 최선 이상). 없으면 "탁월한 수(희생)를 찾지 못함" 안내. `genPuzzleTree`는 희생 테마(`requireMaterialRecovery`)에 `firstSan`이 없으면 아예 만들지 않아(null) 같은 사고가 다른 호출부에서도 불가능. 이미 저장된 옛 FEN 희생 퍼즐은 개발자 재생성 도구로 다시 만들 때 `firstSan`(저장된 첫 수)을 그대로 유지.
