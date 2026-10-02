@@ -1901,7 +1901,7 @@ const QDESC = {
   pending: t("엔진이 분석 중"),
 };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중분석의 대국 목록에서 공용.
-export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), daily: t("일일") };
+export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), standard: t("스탠다드"), daily: t("일일") };
 export function deriveKeywords(m) {
   if (m.kw && m.kw.length) return m.kw;
   const ks = []; const a = m.adopt || 0; const ma = m.masterAdopt; const nm = m.name || "";

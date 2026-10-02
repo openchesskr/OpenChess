@@ -926,6 +926,7 @@ const VERSION_HISTORY = [
     highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("타임 컨트롤별 레이팅 · /user 성취도 · FEN 모드 엔진 · 희생 퍼즐") },
     sections: [
       { cat: "feature", items: [
+        t("플레이 탭에서 미니게임을 일반 대국보다 위에 표시. 일반 대국 아래에 chess.com 대국 통계와 같은 UI로 내 대국 기록(시간 규정·색 필터, 전체 기간 전적, 최근 대국 목록) 추가. 봇 대국은 기록되지 않음."),
         t("일반 대국 레이팅을 타임 컨트롤(불렛·블리츠·래피드·스탠다드)별로 분리. 타임 컨트롤 선택 화면의 분류 이름 옆에 레이팅 표시, 랭킹도 분류별 탭으로 구분. 기존 일반 대국 레이팅은 초기화."),
       ] },
       { cat: "ui", items: [

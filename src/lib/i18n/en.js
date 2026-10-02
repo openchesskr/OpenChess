@@ -1810,4 +1810,5 @@ export default {
   "/user 페이지의 XP·퍼즐 레이팅·레슨·총 대국 요약과 일반 대국(타임 컨트롤별)·미니게임 기록을 카드로 묶어 정리.": "Reorganized the /user page: XP, puzzle rating, lessons and total games are summarized, with regular game (by time control) and minigame records grouped into cards.",
   "타임 컨트롤별 레이팅 · /user 성취도 정리 · FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기.": "Rating by time control · /user achievements layout · FEN mode engine fix · sacrifice puzzle first move fix · flip button in board editor.",
   "타임 컨트롤별 레이팅 · /user 성취도 · FEN 모드 엔진 · 희생 퍼즐": "Rating by time control · /user achievements · FEN mode engine · sacrifice puzzles",
+  "플레이 탭에서 미니게임을 일반 대국보다 위에 표시. 일반 대국 아래에 chess.com 대국 통계와 같은 UI로 내 대국 기록(시간 규정·색 필터, 전체 기간 전적, 최근 대국 목록) 추가. 봇 대국은 기록되지 않음.": "The Play tab now shows minigames above regular games. Below the regular game button, your game history appears in the same UI as chess.com game stats (time control and color filters, overall record, recent games). Bot games are not recorded.",
 };

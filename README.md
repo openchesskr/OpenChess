@@ -78,6 +78,7 @@
 
 **기능**
 - 일반 대국 레이팅을 타임 컨트롤 분류별로 분리: `minigame_stats.game`에 `chess_bullet|chess_blitz|chess_rapid|chess_standard`(제약 확장), 대국 종료 트리거가 `pvp_games.time_control`로 `_chess_tc_category`(예상 시간 = 초기시간 + 40×증가시간 → 180 미만 불렛 · 480 미만 블리츠 · 1500 미만 래피드 · 그 이상 스탠다드. 프리셋 12개가 기존 분류와 일치)를 계산해 해당 행에 Elo 집계. 클라이언트 기준은 `src/lib/chessRating.js`(`chessTcCategory`)로 일원화. 예전 단일 `chess` 행은 화면에서 쓰지 않고(이어받지 않음) 새 분류별 레이팅은 1200부터 시작. 타임 컨트롤 선택 화면의 분류 이름 옆에 미니게임 허브 버튼과 같은 레이팅 칩(`MgRatingChip`, 배치 3판 이후만), 상단 "내 기록"은 고른 타임 컨트롤 분류 기준, 랭킹은 분류 탭 4개. `check-chess-rating`이 SQL 분류 기준·프리셋 분류·집계 연결을 대조.
+- 플레이 탭 배치 변경 + 일반 대국 기록: 미니게임 허브를 일반 대국 버튼 위로 올리고, 일반 대국 버튼 아래에 `OpenChessGameHistory`(`src/app/gameHistory.jsx`) — 끝난 실시간·친구 대국(`pvp_games`, 봇 대국은 서버에 없어 제외)을 chess.com 형태 대국 객체로 바꿔(`pvpRowToGame`: 레이팅 증감·상대 레이팅은 `rating_delta`, 분류는 `chessTcCategory`) 시간 규정·색 필터 → 전체 기간 전적 → 최근 대국(5판씩 페이지)으로 표시. chess.com 통계(`AccountChessStats`)의 필터 알약·전적 박스·대국 목록을 `GameFilterPills`·`GameRecordSummary`·`RecentGamesList`로 뽑아 두 화면이 같은 컴포넌트를 쓴다(유산 관리 화면의 "선택" 모드 포함). 보기 버튼은 분석 탭으로, 분석 버튼은 게임 리뷰로 연결.
 - /user 성취도 재배치: `AchievementDashboard` — 핵심 수치 4칸(XP·퍼즐 레이팅·레슨 진척·총 대국) → 일반 대국(타임 컨트롤별 4칸) → 미니게임(게임별 행). 전적은 `minigame_stats`를 한 번만 읽어 공유하고, 기록이 없는 칸도 자리를 유지(흐리게). 좁은 화면 2열/1열, 데스크톱 통계 열 4열/2열.
 
 **버그 수정**

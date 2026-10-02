@@ -28,6 +28,19 @@ if (!/now\(\), true\)\s*\n\s*returning \* into v_game;\s*\n\s*return v_game;/.te
 const app = readAppSource();
 if (!/<MinigameStatsBar[^>]*game=\{chessGame\}/.test(app)) fails.push("일반 대국 화면에 MinigameStatsBar(game={chessGame})가 없음 — 고른 타임 컨트롤 분류의 레이팅을 보여야 함");
 if (!/<MinigameLeaderboard game=\{chessGame\}/.test(app)) fails.push("일반 대국 랭킹 화면(MinigameLeaderboard game={chessGame})이 없음");
+// ⑦ (v0.6.2) 플레이 탭: 미니게임이 일반 대국 버튼보다 위, 일반 대국 기록(chess.com 통계와 같은 컴포넌트) 연결
+{
+  const play = readFileSync(new URL("../src/app/play.jsx", import.meta.url), "utf8");
+  const iMini = play.indexOf("<PlaySpecialGames myUid"), iNormal = play.indexOf("<PlayNormalButton onClick");
+  if (iMini < 0 || iNormal < 0 || iMini > iNormal) fails.push("플레이 탭에서 미니게임(PlaySpecialGames)이 일반 대국 버튼(PlayNormalButton)보다 위에 있지 않음");
+  if (!/<OpenChessGameHistory /.test(play)) fails.push("일반 대국 기록(OpenChessGameHistory)이 플레이 탭에 없음");
+  const hist = readFileSync(new URL("../src/app/gameHistory.jsx", import.meta.url), "utf8");
+  const prof = readFileSync(new URL("../src/app/profile.jsx", import.meta.url), "utf8");
+  for (const c of ["RecentGamesList", "GameRecordSummary", "GameFilterPills"]) {
+    if (!new RegExp("export function " + c + "\\b").test(hist)) fails.push("gameHistory.jsx에 " + c + "가 없음");
+    if (!new RegExp("<" + c + "[ >]").test(prof)) fails.push("chess.com 통계(profile.jsx)가 공용 " + c + "를 쓰지 않음 — 두 화면의 UI가 갈라진다");
+  }
+}
 // ⑥ (v0.6.2) 타임 컨트롤 분류별 레이팅 — 서버·클라이언트 분류 기준 일치
 for (const g of CHESS_RATING_GAMES) {
   if (!new RegExp("minigame_stats_game_check check \\(game in \\([^)]*'" + g + "'").test(sql)) fails.push("minigame_stats 제약에 '" + g + "'가 없음");
