@@ -3438,6 +3438,39 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function public.minigame_leaderboard(text, text, text, int) to anon, authenticated;
 
+-- (v0.6.2) 봇과 둔 일반 대국 기록 — 실시간 대국(pvp_games)과 달리 서버에 남는 곳이 없어 "내 일반 대국 기록"에서 빠졌다. 대국이 끝나면 클라이언트가 bot_game_record로
+-- 한 번 올린다. 레이팅·랭킹에는 전혀 반영되지 않는 순수 기록이라(클라이언트가 보내는 값이므로) 입력 크기·범위만 검증하고, 사람마다 최근 100판만 남긴다.
+create table if not exists public.bot_games (
+  id bigserial primary key,
+  uid uuid not null references auth.users(id) on delete cascade,
+  sans text[] not null,
+  color text not null check (color in ('w', 'b')),
+  result text not null check (result in ('win', 'loss', 'draw')),
+  bot_elo int not null,
+  time_control text not null default '600-0',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_bot_games_uid on public.bot_games (uid, created_at desc);
+alter table public.bot_games enable row level security;
+drop policy if exists "bot games select own" on public.bot_games;
+create policy "bot games select own" on public.bot_games for select using (auth.uid() = uid);
+grant select on public.bot_games to authenticated;
+create or replace function public.bot_game_record(p_sans text[], p_color text, p_result text, p_bot_elo int, p_time_control text default '600-0')
+returns bigint language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_id bigint;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  if p_color not in ('w', 'b') or p_result not in ('win', 'loss', 'draw') then raise exception 'bad value'; end if;
+  if p_sans is null or coalesce(array_length(p_sans, 1), 0) < 2 or array_length(p_sans, 1) > 600 then raise exception 'bad sans'; end if;
+  if p_bot_elo is null or p_bot_elo < 100 or p_bot_elo > 3200 then raise exception 'bad bot'; end if;
+  if p_time_control is null or p_time_control !~ '^[0-9]{1,6}-[0-9]{1,4}$' then p_time_control := '600-0'; end if;
+  insert into public.bot_games(uid, sans, color, result, bot_elo, time_control)
+    values (v_me, p_sans, p_color, p_result, p_bot_elo, p_time_control) returning id into v_id;
+  delete from public.bot_games where uid = v_me and id not in (select id from public.bot_games where uid = v_me order by created_at desc, id desc limit 100);
+  return v_id;
+end; $$;
+grant execute on function public.bot_game_record(text[], text, text, int, text) to authenticated;
+
 -- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴
 -- ============================================================================
