@@ -4,9 +4,9 @@ import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { chessTcCategory } from "../lib/chessRating.js";
-import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
+import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
-import { TIME_CLASS_LABEL, fmtFull, openingNameOf, usersProfiles } from "./common.jsx";
+import { TIME_CLASS_LABEL, fmtFull, openingNameOf } from "./common.jsx";
 import { t, tx } from "../lib/i18n.js";
 
 // (v0.6.2) chess.com 대국 통계(AccountChessStats)의 필터·전적·"최근 대국" UI를 공용으로 뺀 것 — chess.com 통계와 OpenChess 일반 대국 기록이 같은 컴포넌트를 쓴다.
@@ -365,78 +365,51 @@ export function RecentGamesList({ games, ratingChanges, username, resetKey, onOp
   );
 }
 
-// ---- OpenChess 일반 대국(실시간 pvp_games) 기록 ----
-// 끝난 일반 대국 행(pvp_games) → chess.com 대국 객체. 봇과 둔 대국은 서버에 남지 않아 여기 없다(실시간·친구 대국만).
-// 레이팅 증감·상대 레이팅은 서버 트리거가 채운 rating_delta(레이팅 대국만)에서 읽는다.
-export function pvpRowToGame(row, myUid, names, myName) {
-  const mine = row.white_uid === myUid ? "w" : "b";
-  const oppUid = mine === "w" ? row.black_uid : row.white_uid;
-  const status = row.status;
-  const result = status === "draw" ? "draw" : (status === "white_won") === (mine === "w") ? "win" : "loss";
+// ---- OpenChess 일반 대국 기록 (/user 프로필) ----
+// 서버 함수 profile_recent_games가 돌려주는 행(실시간 pvp 대국 + 봇 대국) → chess.com 대국 객체.
+// 행은 이미 이 프로필 주인 기준으로 color·result가 계산돼 있다. 레이팅 증감·상대 레이팅은 레이팅 대국(rating_delta가 있는 것)만.
+export function profileGameRowToGame(row, ownerName) {
+  const mine = row.color;
+  const sans = Array.isArray(row.sans) ? row.sans : [];
   const d = row.rating_delta || null;
   const side = (c) => (d && d[c] ? d[c] : null);
-  const mk = (c, uid) => ({ username: uid === myUid ? (myName || null) : ((names[uid] && (names[uid].pub && names[uid].pub.nickname || names[uid].username)) || "?"), rating: side(c) ? side(c).before : null });
-  const sans = Array.isArray(row.sans) ? row.sans : [];
   const mySide = side(mine);
+  const isBot = row.kind === "bot";
+  const me = { username: ownerName || null, rating: mySide ? mySide.before : null };
+  const opp = isBot ? { username: t("봇"), rating: row.bot_elo } : { username: row.opp_name || "?", rating: side(mine === "w" ? "b" : "w") ? side(mine === "w" ? "b" : "w").before : null };
   return {
-    id: "pvp-" + row.id, moves: sans, color: mine, result,
-    timeClass: chessTcCategory(row.time_control), endTime: Math.floor(new Date(row.updated_at || row.created_at).getTime() / 1000),
+    id: row.kind + "-" + row.id, moves: sans, color: mine, result: row.result,
+    timeClass: chessTcCategory(row.time_control), endTime: Math.floor(new Date(row.ended_at).getTime() / 1000),
     rating: mySide ? mySide.after : null, rated: !!row.rated,
-    white: mk("w", row.white_uid), black: mk("b", row.black_uid),
+    white: mine === "w" ? me : opp, black: mine === "w" ? opp : me,
     opening: sans.length ? openingNameOf(sans) : null,
     _delta: mySide ? mySide.after - mySide.before : null,
   };
 }
 
-// 봇 대국 행(bot_games) → 같은 대국 객체. 봇은 레이팅이 대국 상대의 고정 등급(400~2800)이고, 레이팅 대국이 아니라 증감은 없다.
-export function botRowToGame(row, myName) {
-  const mine = row.color;
-  const sans = Array.isArray(row.sans) ? row.sans : [];
-  const me = { username: myName || null, rating: null }, bot = { username: t("봇"), rating: row.bot_elo };
-  return {
-    id: "bot-" + row.id, moves: sans, color: mine, result: row.result,
-    timeClass: chessTcCategory(row.time_control), endTime: Math.floor(new Date(row.created_at).getTime() / 1000),
-    rating: null, rated: false, white: mine === "w" ? me : bot, black: mine === "w" ? bot : me,
-    opening: sans.length ? openingNameOf(sans) : null, _delta: null,
-  };
-}
-
-// 내 일반 대국 기록 — chess.com 대국 통계와 같은 구성(시간 규정·색 필터 → 전체 기간 전적 → 최근 대국). tick이 바뀌면 다시 읽는다.
-export function OpenChessGameHistory({ myUid, username, onOpenGame, onOpenGameAnalyze, tick }) {
+// 일반 대국 기록 — chess.com 대국 통계와 같은 구성(시간 규정·색 필터 → 전체 기간 전적 → 레이팅 그래프 → 최근 대국). uid: 프로필 주인. 기록이 없으면 안내 문구만.
+export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnalyze }) {
   const [rows, setRows] = useState(null);
-  const [names, setNames] = useState({});
   const [timeFilter, setTimeFilter] = useState("all");
   const [colorFilter, setColorFilter] = useState("all");
-  const [botRows, setBotRows] = useState([]);
   useEffect(() => {
-    if (!SB_ON || !myUid) { setBotRows([]); return undefined; }
+    if (!SB_ON || !uid) { setRows([]); return undefined; }
     let cancelled = false;
-    sbSelect("bot_games?uid=eq." + myUid + "&order=created_at.desc&limit=100&select=id,sans,color,result,bot_elo,time_control,created_at")
-      .then((r) => { if (!cancelled) setBotRows(r || []); }).catch(() => { if (!cancelled) setBotRows([]); });
-    return () => { cancelled = true; };
-  }, [myUid, tick]);
-  useEffect(() => {
-    if (!SB_ON || !myUid) { setRows([]); return undefined; }
-    let cancelled = false;
-    sbSelect("pvp_games?game_type=eq.chess&status=in.(white_won,black_won,draw)&or=(white_uid.eq." + myUid + ",black_uid.eq." + myUid + ")&order=updated_at.desc&limit=100&select=id,white_uid,black_uid,sans,status,time_control,rated,rating_delta,created_at,updated_at")
-      .then(async (r) => {
-        const list = (r || []).filter((x) => Array.isArray(x.sans) && x.sans.length > 0);
-        const uids = list.map((x) => (x.white_uid === myUid ? x.black_uid : x.white_uid)).filter(Boolean);
-        const n = await usersProfiles(uids);
-        if (!cancelled) { setNames(n); setRows(list); }
-      })
+    setRows(null);
+    sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 })
+      .then((r) => { if (!cancelled) setRows(Array.isArray(r) ? r.filter((x) => Array.isArray(x.sans) && x.sans.length > 0) : []); })
       .catch(() => { if (!cancelled) setRows([]); });
     return () => { cancelled = true; };
-  }, [myUid, tick]);
-  const all = useMemo(() => [...(rows || []).map((r) => pvpRowToGame(r, myUid, names, username)), ...botRows.map((r) => botRowToGame(r, username))], [rows, botRows, myUid, names, username]);
+  }, [uid]);
+  const all = useMemo(() => (rows || []).map((r) => profileGameRowToGame(r, username)), [rows, username]);
   const games = useMemo(() => all.filter((g) => (timeFilter === "all" || g.timeClass === timeFilter) && (colorFilter === "all" || g.color === colorFilter)), [all, timeFilter, colorFilter]);
   const ratingChanges = useMemo(() => { const m = new Map(); games.forEach((g) => { if (g._delta != null) m.set(g, g._delta); }); return m; }, [games]);
   const overall = useMemo(() => summarizeGames(games), [games]);
   // 레이팅 그래프는 색 필터와 무관하게 시간 규정만 적용한 목록으로 — 레이팅은 어느 색으로 뒀든 하나로 합산된다. 레이팅 대국(rating 있음)만 점이 된다.
   const gamesForRating = useMemo(() => all.filter((g) => timeFilter === "all" || g.timeClass === timeFilter), [all, timeFilter]);
-  if (!myUid || rows == null || !all.length) return null;
+  if (rows == null || !all.length) return null;
   return (
-    <div style={{ marginTop: 14 }}>
+    <div style={{ marginTop: 12 }}>
       <div className="flex items-center" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
         <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />

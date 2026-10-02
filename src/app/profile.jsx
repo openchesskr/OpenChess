@@ -16,7 +16,7 @@ import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tier
 import { createPortal } from "react-dom";
 import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
-import { GameFilterPills, GameRecordSummary, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
+import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
@@ -73,7 +73,7 @@ function weaknessReportFromAnalyses(games, analysesByCcId) {
   return { openings, kindTotals, gamesUsed };
 }
 // (v0.6.2, 사용자 요청) /user 페이지 성취도 — XP·퍼즐·레슨·일반 대국(타임 컨트롤별)·미니게임 기록을 한 곳에 모은다.
-// 위에서부터 ① 핵심 수치 4칸(XP·퍼즐 레이팅·푼 퍼즐·레슨) ② 일반 대국 4칸(불렛·블리츠·래피드·스탠다드 레이팅·전적) ③ 미니게임 2×2.
+// 위에서부터 ① 핵심 수치 4칸(XP·퍼즐 레이팅·푼 퍼즐·레슨) ② 미니게임 ③ 일반 대국(타임 컨트롤별 레이팅 4칸 + 최근 대국 기록).
 // 전적은 한 번만 읽어(minigame_stats) 일반 대국과 미니게임이 함께 쓴다. 기록이 없는 칸도 자리는 그대로 두고 흐리게 보여 줘 화면 구성이 사람마다 같다.
 const ACH_CARD = { border: "1px solid #DCCBA8", borderRadius: 14, background: "rgba(255,255,255,.45)", padding: "12px 12px 12px" };
 function AchSection({ title, icon, right, children }) {
@@ -97,7 +97,7 @@ function AchCell({ label, value, sub, dim, chip }) {
     </div>
   );
 }
-function AchievementDashboard({ pub, uid, mq }) {
+function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
   const [stats, setStats] = useState(null);
   useEffect(() => {
     if (!uid) { setStats({}); return undefined; }
@@ -122,15 +122,6 @@ function AchievementDashboard({ pub, uid, mq }) {
         <AchCell label={t("레슨")} value={mq && mq.totalChapters > 0 ? mq.claimed + "/" + mq.totalChapters : "-"} sub={mq && mq.totalChapters > 0 ? t("{0}% 완료", mqPct) : null} dim={!(mq && mq.totalChapters > 0)} />
         <AchCell label={t("총 대국")} value={t("{0}판", fmtFull(totalGames))} sub={stats ? null : "…"} dim={!totalGames} />
       </div>
-      <AchSection title={t("일반 대국")} icon={<Swords size={13} color={T.brass} />} right={t("타임 컨트롤별 레이팅")}>
-        <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8 }}>
-          {chessRows.map(({ c, r }) => {
-            const placed = isPlacedStat(r);
-            return <AchCell key={c} label={tcCatLabel(TC_KEY_CAT[c])} value={placed ? r.rating : "-"} dim={!r || !r.games}
-              sub={!r || !r.games ? t("기록 없음") : placed ? minigameRecordText(r) : t("배치 {0}/{1}", Math.min(r.rated_games, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT)} />;
-          })}
-        </div>
-      </AchSection>
       <AchSection title={t("미니게임")} icon={<Trophy size={13} color={T.brass} />}>
         <div style={{ display: "grid", gridTemplateColumns: wide ? "repeat(2, 1fr)" : "1fr", gap: 8 }}>
           {PLAY_SPECIAL_GAMES.map((g) => {
@@ -156,6 +147,17 @@ function AchievementDashboard({ pub, uid, mq }) {
             );
           })}
         </div>
+      </AchSection>
+      <AchSection title={t("일반 대국")} icon={<Swords size={13} color={T.brass} />} right={t("타임 컨트롤별 레이팅")}>
+        <div style={{ display: "grid", gridTemplateColumns: cols4, gap: 8 }}>
+          {chessRows.map(({ c, r }) => {
+            const placed = isPlacedStat(r);
+            return <AchCell key={c} label={tcCatLabel(TC_KEY_CAT[c])} value={placed ? r.rating : "-"} dim={!r || !r.games}
+              sub={!r || !r.games ? t("기록 없음") : placed ? minigameRecordText(r) : t("배치 {0}/{1}", Math.min(r.rated_games, MINIGAME_PLACEMENT), MINIGAME_PLACEMENT)} />;
+          })}
+        </div>
+        {/* (v0.6.2, 사용자 요청) 일반 대국 최근 기록 — chess.com 대국 통계와 같은 UI(필터·전적·레이팅 그래프·최근 대국). 실시간·봇 대국 모두. */}
+        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       </AchSection>
     </div>
   );
@@ -1283,7 +1285,7 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
-      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} />
+      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
