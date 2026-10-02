@@ -1039,6 +1039,7 @@ export default {
   "기보 채점 실패. 잠시 후 다시 시도": "Couldn't grade the game record. Please try again shortly",
   "엔진 준비 중": "The engine is getting ready",
   "뚜렷한 전술 라인 없음. 다른 PGN·FEN이나 유형으로 시도": "No clear tactical line. Try another PGN/FEN or puzzle type",
+  "이 포지션에서 탁월한 수(희생)를 찾지 못함. 다른 유형이나 포지션으로 시도": "No Brilliant move (sacrifice) found in this position. Try another type or position",
   "퍼즐 생성 실패. 잠시 후 다시 시도": "Couldn't create the puzzle. Please try again shortly",
   "FEN 포지션 퍼즐": "FEN position puzzle",
   "추천순": "Recommended",
@@ -1798,4 +1799,9 @@ export default {
   "엔진 depth가 한 단계 깊어질 때마다 수 블록 평가치·정렬 갱신.": "Move block evaluations and ordering refresh each time the engine depth increases by one.",
   "다국어 지원 · 신고·차단 확대 · 개인정보처리방침·이용약관 · 분석 탭 개선 · 앱 출시 준비.": "Multilingual support · expanded reporting and blocking · Privacy Policy and Terms of Service · Analysis tab improvements · app launch prep.",
   "5개 언어 선택 · 체스 용어 표준 번역 · 프로필 신고·차단 · 개인정보처리방침·이용약관 · 분석 탭 개선": "5 languages · standard chess terminology · profile reporting and blocking · Privacy Policy and Terms · Analysis tab improvements",
+  "분석 탭 FEN 모드에서 평가치가 0.00으로 남고 엔진 라인이 비던 문제 수정. 엔진 준비가 늦으면 이미 켜진 엔진으로 바로 분석.": "Fixed FEN mode in the Analysis tab showing 0.00 with no engine lines. If the engine is slow to start, analysis now begins right away with the engine that is already running.",
+  "퍼즐 만들기에서 FEN 포지션의 '기물 희생하기'가 희생이 아닌 최선수를 정답으로 만들던 문제 수정. 탁월한 수(희생)를 먼저 찾아 첫 수로 고정하고, 없으면 안내.": "Fixed 'Sacrifice a piece' puzzles made from a FEN position using a non-sacrifice best move as the answer. The Brilliant move (sacrifice) is now found first and fixed as the first move; if none exists, a notice is shown.",
+  "보드 편집 화면에 보드 뒤집기 버튼 추가.": "Added a flip board button to the board editor.",
+  "FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기.": "FEN mode engine fix · sacrifice puzzle first move fix · flip button in board editor.",
+  "FEN 모드 엔진 · 희생 퍼즐 · 보드 뒤집기": "FEN mode engine · sacrifice puzzles · board flip",
 };

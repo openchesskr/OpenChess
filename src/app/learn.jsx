@@ -7,7 +7,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Repeat2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "lucide-react";
+import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "lucide-react";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -578,6 +578,8 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
     <div className="flex gap-2">
       <button onClick={doReset} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 초기화", <RefreshCw size={13} />)}</button>
       <button onClick={doClear} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: "rgba(200,69,59,.18)", color: "#F4A0A0", fontWeight: 800, fontSize: 12.5, border: "1px solid " + T.blunder, cursor: "pointer" }}>{tx("{0} 지우기", <Trash2 size={13} />)}</button>
+      {/* (v0.6.2) 보드 뒤집기를 팔레트 안 작은 아이콘에서 꺼내 분석 탭과 같은 ⇅ 버튼으로 — 눈에 띄지 않아 "뒤집기가 없다"는 제보가 있었다. */}
+      <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} aria-label={t("보드 뒤집기")} aria-pressed={flipped} className="press" style={{ flexShrink: 0, width: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 10, background: flipped ? "rgba(255,255,255,.18)" : T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer" }}><ArrowUpDown size={17} /></button>
     </div>
   );
   const turnCastleGrid = (
@@ -619,7 +621,7 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
         ))}
       </div>
       <div className="flex" style={{ gap: 4 }}>
-        <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} className="press" style={{ ...paletteBtnStyle(false), background: "rgba(0,0,0,.15)" }}><Repeat2 size={Math.round(paletteSq * 0.42)} color="#3A1E0E" /></button>
+        <div style={{ width: paletteSq, height: paletteSq }} aria-hidden="true" />
         {EDITOR_PALETTE_PIECES.map((p) => (
           <button key={"b" + p}
             onClick={paletteClick(() => setTool((cur) => (cur && cur !== "delete" && cur.piece === p && cur.color === "b") ? null : { piece: p, color: "b" }))}
@@ -2895,7 +2897,10 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
         // 공용 엔진(engine, 워커 하나짜리 단일 FIFO 큐) 위에서 이미 돌리고 있을 수 있다 — 같은 engine
         // 객체에 바로 요청하면 그 작업(최대 20초짜리 심화 탐색 단계 포함) 뒤에 줄을 서게 되어 FEN 모드
         // 평가가 한참 늦게 뜬다. 게임 리뷰 엔진 라인과 동일하게 독립된 풀에서 전용 워커를 받아 쓴다.
-        const pool = await getAnalysisPool(engine.profile, engine.urls);
+        // (v0.6.2 BUG-054) 풀 부팅을 끝까지 기다리지 않는다 — 신경망이 큰 프로필(모바일)은 워커 여러 개를 차례로 부팅하느라 수십 초가 걸려,
+        // 그동안 FEN 모드의 평가치(0.00)·엔진 라인·후보 수가 통째로 비어 보였다. 2.5초 안에 풀이 안 뜨면 이미 떠 있는 공용 엔진으로 바로 시작한다.
+        const pool = await Promise.race([getAnalysisPool(engine.profile, engine.urls), new Promise((r) => setTimeout(() => r(null), 2500))]);
+        if (cancelled) return;
         const w = poolWorker(pool, 0, engine);
         const pvsAll = await w.evaluateMulti(fen, MAX_SEARCH_DEPTH, 5, 700, onLines, "learn-fen-lines");
         if (cancelled) return;

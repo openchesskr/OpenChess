@@ -921,6 +921,20 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.6.2", date: "2026.10.2",
+    summary: t("FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("FEN 모드 엔진 · 희생 퍼즐 · 보드 뒤집기") },
+    sections: [
+      { cat: "ui", items: [
+        t("보드 편집 화면에 보드 뒤집기 버튼 추가."),
+      ] },
+      { cat: "fix", items: [
+        t("분석 탭 FEN 모드에서 평가치가 0.00으로 남고 엔진 라인이 비던 문제 수정. 엔진 준비가 늦으면 이미 켜진 엔진으로 바로 분석."),
+        t("퍼즐 만들기에서 FEN 포지션의 '기물 희생하기'가 희생이 아닌 최선수를 정답으로 만들던 문제 수정. 탁월한 수(희생)를 먼저 찾아 첫 수로 고정하고, 없으면 안내."),
+      ] },
+    ],
+  },
+  {
     version: "0.6.1", date: "2026.10.1",
     summary: t("일반 대국 랭킹 · 나이트 레이스 개선 · 무한 체크메이트 대폭 확장 · Lichess 통계 표시 수정."),
     highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("일반 대국 랭킹 · 나이트 레이스 최단 경로 화살표 · 체크메이트 포지션 수천 개 · 상대 진행 상황 표시") },

@@ -74,6 +74,15 @@
 
 ## 버전 기록
 
+### OpenChess v0.6.2 — 2026/10/2
+
+**버그 수정**
+- 분석 탭 FEN 모드 엔진 먹통(BUG-054): FEN 모드의 평가·엔진 라인·후보 수는 분석 풀(`getAnalysisPool`)의 전용 워커로 돌린다. ① 풀 부팅이 끝나기를 끝까지 기다려, 신경망이 큰 프로필(모바일)에서 워커 여러 개를 차례로 부팅하는 동안 평가치 0.00·빈 엔진 라인으로 남았다 → 2.5초 안에 풀이 안 뜨면 이미 켜진 공용 엔진으로 바로 시작(`Promise.race`). ② 풀이 비면 `poolWorker`가 `useEngine` 인스턴스를 그대로 돌려줬는데, 이 인스턴스는 풀 워커와 `evaluateMulti` 인자 순서가 달라(`onProgress`가 끼어 있음) `onLines` 자리에 slot 문자열이 들어가 TypeError → try/catch에 삼켜져 조용히 빈 화면이 됐다. `src/lib/enginePool.js`의 `poolFallbackWorker` 어댑터로 풀 워커와 같은 인자 순서를 보장(리뷰·채팅 봇 등 `poolWorker`를 쓰는 모든 호출부에 해당). `check-sacrifice-puzzle`(prebuild)이 인자 전달 순서를 검사.
+- 희생 퍼즐 오생성(BUG-055): 퍼즐 만들기에서 FEN 포지션에 "기물 희생하기"를 고르면 첫 수를 지정하지 않고 `genPuzzleTree`에 맡겨, 희생이 아닌 엔진 최선수(3kr3/5R2/7p/p4K1B/P7/7P/8/8 w의 1.Rg7)가 정답 라인이 됐다(PGN 경로는 게임 채점이 고른 탁월한 수를 `firstSan`으로 넘겨 정상). 신규 `findSacrificeFirstMove`: 엔진 상위 후보 중 탁월한 수 + 상위권 밖이라도 정적으로 희생인 모든 합법 수(`staticSacrificeSans`)를 직접 열거해, 후보마다 5초 깊이로 평가한 뒤 사이트 공용 규칙(`gradeMoveKindConfirmed`)으로 탁월한 수만 채택(1.Rc7은 MultiPV 6줄에 안 잡혀도 단독 평가에서 최선 이상). 없으면 "탁월한 수(희생)를 찾지 못함" 안내. `genPuzzleTree`는 희생 테마(`requireMaterialRecovery`)에 `firstSan`이 없으면 아예 만들지 않아(null) 같은 사고가 다른 호출부에서도 불가능. 이미 저장된 옛 FEN 희생 퍼즐은 개발자 재생성 도구로 다시 만들 때 `firstSan`(저장된 첫 수)을 그대로 유지.
+
+**UI**
+- 보드 편집 화면의 뒤집기 버튼을 팔레트 안 작은 아이콘에서 초기화·지우기 줄의 ⇅ 버튼(분석 탭과 같은 아이콘)으로 이동(BUG-056).
+
 ### OpenChess v0.6.1 — 2026/10/1
 
 **버그 수정**
