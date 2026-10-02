@@ -1811,4 +1811,5 @@ export default {
   "채팅에서 이미 누른 하트를 다시 더블클릭하면 하트 해제.": "Double-clicking a heart you already added in chat now removes it.",
   "나이트 레이스 보드 아래 색 범례 삭제.": "Removed the color legend below the Knight Race board.",
   "모든 미니게임 상단 강화: 짙은 상단 바와 큰 뒤로가기 버튼, 큰 점수(30px)와 앞선 쪽 왕관 표시, 굵은 시간 막대, 큰 라운드 점, 내 수·상대 수·남은 시간을 담은 정보 줄.": "Stronger top area in every minigame: dark top bar with a larger back button, bigger scores (30px) with a crown for the leader, a thicker time bar, larger round dots, and an info strip with your moves, opponent moves and time left.",
+  "한국어 외 모든 언어에서 글자 크기를 줄여, 번역 문구가 길어져도 화면이 일그러지지 않도록 보정.": "Text size is now reduced in every language other than Korean, so longer translations no longer distort the layout.",
 };

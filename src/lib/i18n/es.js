@@ -1811,4 +1811,5 @@ export default {
   "채팅에서 이미 누른 하트를 다시 더블클릭하면 하트 해제.": "Hacer doble clic en un corazón que ya pusiste en el chat ahora lo quita.",
   "나이트 레이스 보드 아래 색 범례 삭제.": "Eliminada la leyenda de colores debajo del tablero de Carrera del Caballo.",
   "모든 미니게임 상단 강화: 짙은 상단 바와 큰 뒤로가기 버튼, 큰 점수(30px)와 앞선 쪽 왕관 표시, 굵은 시간 막대, 큰 라운드 점, 내 수·상대 수·남은 시간을 담은 정보 줄.": "Zona superior reforzada en todos los minijuegos: barra superior oscura con botón de volver más grande, puntuaciones más grandes (30px) con corona para quien va ganando, barra de tiempo más gruesa, puntos de ronda más grandes y una franja con tus jugadas, las del rival y el tiempo restante.",
+  "한국어 외 모든 언어에서 글자 크기를 줄여, 번역 문구가 길어져도 화면이 일그러지지 않도록 보정.": "El tamaño del texto ahora se reduce en todos los idiomas salvo el coreano, para que las traducciones más largas no deformen la interfaz.",
 };
