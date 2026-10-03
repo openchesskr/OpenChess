@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
 import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
 import { SB_ON, sbRpc } from "./lib/supabaseClient.js";
+import { engineNeedsDownload, initDownloadedEngines } from "./lib/engineDownload.js";
+import { closeExternalBrowser, listenDeepLinks, parseAuthFragment, parseDeepLink } from "./lib/nativeApp.js";
 import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref } from "./lib/prefs.js";
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
@@ -374,7 +376,10 @@ export default function App() {
     setLearnFenSeed(root);
   }, []);
   const [enginePref, setEnginePrefState] = useState(loadEnginePref);
-  const setEnginePref = useCallback((v) => { setEnginePrefState(v); saveEnginePref(v); }, []);
+  // (v0.6.3) 앱에서 아직 내려받지 않은 큰 엔진은 고르지 못한다(설정 탭이 내려받기 버튼을 보여 준다).
+  const setEnginePref = useCallback((v) => { if (engineNeedsDownload(v)) return; setEnginePrefState(v); saveEnginePref(v); }, []);
+  // (v0.6.3) 앱: 이미 내려받은 큰 엔진을 연결하고, 저장해 둔 엔진 선택을 되살린다(웹은 즉시 끝나 아무 일도 안 함).
+  useEffect(() => { let off = false; initDownloadedEngines(ENGINE_PROFILES).then(() => { if (!off) setEnginePrefState(loadEnginePref()); }).catch(() => { }); return () => { off = true; }; }, []);
   const engine = useEngine(enginePref);
   // (v0.5.9 BUG-038) 분석 탭 후보 블록·FEN 모드·도감처럼 엔진을 직접 들고 있지 않은 동기 채점이 요청하는 희생 엔진 확인은 공용 분석
   // 풀의 마지막 워커로 돌린다(메인 엔진은 실시간 분석 큐가 길 수 있어 피한다). 풀을 못 띄우면 메인 엔진으로.
@@ -647,6 +652,10 @@ export default function App() {
   // 것처럼 보였다("계정을 바꿔도 퍼즐 데이터가 남아있다" 버그의 원인). dismissedAnnounceVersion·
   // 스킨 필드에는 이미 적용돼 있던 "없으면 기본값" 패턴을 나머지 모든 계정 데이터 필드에도 동일하게
   // 적용해, 로그인할 때마다 항상 이 계정의 실제 값(없으면 로그아웃과 동일한 기본값)으로 확정한다.
+  // (v0.6.3, 앱) 딥링크 — 시스템 브라우저 로그인 복귀(kr.openchess.app://auth/callback#access_token=…)와 앱 링크(https://openchess.kr/…)로 앱이 열릴 때.
+  // 웹에서는 listenDeepLinks가 아무 일도 하지 않는다. 로그인 복귀는 기존 OAuth 해시 경로(authFromHash)와 같은 처리를 거친다.
+  const deepLinkRef = useRef(null);
+  useEffect(() => listenDeepLinks((url) => { if (deepLinkRef.current) deepLinkRef.current(url); }), []);
   const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {};
     setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setTotalXp(pr.xp != null ? pr.xp : 0); setPuzzleRating(pr.puzzleRating != null ? pr.puzzleRating : 800); setPuzzleMomentum(pr.puzzleMomentum != null ? pr.puzzleMomentum : 0.5); setOcCoins(pr.coins != null ? pr.coins : 0); setDevBonusGranted(!!pr.devBonusGranted); setReviewUnlocked(new Set(pr.reviewUnlocked || [])); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(new Set(pr.titles || [])); setCurrentTitle(pr.currentTitle || null); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
@@ -676,6 +685,17 @@ export default function App() {
     setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); setShareReferral(null);
     setDailyPuzzleLastShownAt(0); setDailyPuzzleHideDate(null);
   }, []);
+  deepLinkRef.current = async (url) => {
+    const link = parseDeepLink(url);
+    if (!link) return;
+    if (link.kind === "route") { if (link.path && link.path !== window.location.pathname + window.location.search) window.location.assign(link.path); return; }
+    closeExternalBrowser();
+    const r = parseAuthFragment(link.hash || link.query);
+    if (!r) return;
+    if (r.kind === "error") { setAuthNotice(t("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); return; }
+    if (r.kind === "recovery") { setRecovery(r.session); return; }
+    try { const oa = await authFromHash(r.session); if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { }
+  };
   // (v0.4.3 변경, 사용자 요청) "같은 기기(로컬 환경)에서는 로그인이 자동으로 풀리지 않게 해달라" —
   // 30분 유휴 자동 로그아웃(UX7)을 없앤다. 대신, 액세스 토큰(보통 발급 후 1시간 뒤 만료)이 오래
   // 열어 둔 탭에서 조용히 만료돼 API 호출이 하나둘 실패하기 시작하는(겉으로는 "이유 없이 뭔가 안

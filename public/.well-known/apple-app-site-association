@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.kr.openchess.app"],
+        "components": [
+          { "/": "/api/*", "exclude": true },
+          { "/": "/engine/*", "exclude": true },
+          { "/": "/*" }
+        ]
+      }
+    ]
+  }
+}

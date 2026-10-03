@@ -2,6 +2,8 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useState, useCallback, useEffect, useMemo, useLayoutEffect } from "react";
 import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken, SB_TOKEN, sbHeaders, sbPatch } from "../lib/supabaseClient.js";
+import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
+import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
 import { T, MOTION_EASE, tierPieceSrc } from "../lib/theme.js";
@@ -116,7 +118,8 @@ const ENGINE_PREF_KEY = "occ_engine_pref";
 // (v0.2.4) 기기 종류와 무관하게 항상 Stockfish 18 Lite를 기본값으로 쓴다.
 export function defaultEnginePref() { return "lite"; }
 export function loadEnginePref() {
-  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ANALYSIS_ENGINE_IDS.includes(v)) return v; } catch { }
+  // (v0.6.3) 앱에서는 큰 엔진이 내려받아지기 전까지 Lite로 시작한다(engineUsable) — 내려받은 걸 확인하면 App이 저장값으로 다시 맞춘다.
+  try { const v = window.localStorage.getItem(ENGINE_PREF_KEY); if (v && ANALYSIS_ENGINE_IDS.includes(v) && engineUsable(v)) return v; } catch { }
   return defaultEnginePref();
 }
 export function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PREF_KEY, v); } catch { } }
@@ -246,7 +249,7 @@ export function useEngine(enginePref) {
       const { url, threads, bootTimeoutMs } = bootList[idx++];
       try {
         let w;
-        if (url.startsWith("/")) w = new Worker(url);
+        if (url.startsWith("/") || isSameOriginUrl(url)) w = new Worker(url);
         else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
         let booted = false;
         w.onmessage = (e) => { const line = typeof e.data === "string" ? e.data : ""; if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) { booted = true; ref.current = w; setStatus("ready"); pump(); } handleLine(line); };
@@ -1681,10 +1684,11 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
 }
 // (v0.4.3 기능) OAuth 시작 — Google 전용이던 것을 provider 인자로 일반화(구글/애플/페이스북 공통).
 // GoTrue authorize 로 리다이렉트. 복귀 시 URL 해시에 세션 토큰이 담겨 돌아온다.
+// (v0.6.3) 앱에서는 시스템 브라우저로 열고(구글은 웹뷰 로그인을 막음) 커스텀 스킴 딥링크로 돌아온다(src/lib/nativeApp.js).
 function authOAuthStart(provider) {
   if (!SB_ON) return;
-  const redirect = window.location.origin + window.location.pathname;
-  window.location.href = SB_URL + "/auth/v1/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect);
+  const redirect = oauthRedirectUrl();
+  startOAuthNavigation(SB_URL + "/auth/v1/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect));
 }
 const OAUTH_PROVIDER_LABELS = { google: "Google", apple: "Apple", facebook: "Facebook" };
 /* OAuth 복귀 해시(access_token 있고 recovery 아님) 파싱 */

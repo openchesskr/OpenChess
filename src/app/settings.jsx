@@ -2,6 +2,8 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/chessRules.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
+import { isNativeApp, oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
+import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
 import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
@@ -641,8 +643,36 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
+/* (v0.6.3, 앱) 앱에 포함되지 않은 큰 엔진의 내려받기 행 — 크기 안내 + 내려받기/진행률/취소/실패 재시도. */
+function EngineDownloadRow({ id, label }) {
+  const st = engineDownloadState(id);
+  const busy = st.status === "downloading";
+  const pct = Math.round((st.progress || 0) * 100);
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, border: "1.5px dashed #DCCBA8", background: "#fff" }}>
+      <div className="flex items-center justify-between gap-2">
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{label}</span>
+        {busy
+          ? <button onClick={() => cancelEngineDownload(id)} className="press" style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>{t("취소")}</button>
+          : <button onClick={() => downloadEngine(id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer" }}>{t("{0} 내려받기", engineDownloadSizeLabel(id))}</button>}
+      </div>
+      {busy && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ height: 6, borderRadius: 3, background: "#EADFC6", overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width .25s" }} /></div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>{t("내려받는 중 {0}%", pct)}</div>
+        </div>
+      )}
+      {!busy && st.status === "error" && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 6 }}>{t("내려받기 실패. 연결 확인 후 다시 시도")}</div>}
+      {!busy && st.status !== "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>{t("앱에 포함되지 않은 엔진. 내려받은 뒤 사용")}</div>}
+    </div>
+  );
+}
 export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxOn, setMoveFxOn,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
+  // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
+  const [, setEngineUiTick] = useState(0);
+  const bumpEngineUi = useCallback(() => setEngineUiTick((n) => n + 1), []);
+  useEffect(() => subscribeEngineDownloads(bumpEngineUi), [bumpEngineUi]);
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
@@ -824,6 +854,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
             const on = enginePref === p.id;
+            // (v0.6.3, 앱) 앱에 포함되지 않은 큰 엔진은 선택 대신 내려받기 행으로 보여 준다.
+            if (engineNeedsDownload(id)) return <EngineDownloadRow key={p.id} id={p.id} label={p.label} />;
             return (
               <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
                 style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
@@ -835,6 +867,10 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
               </button>
             );
           })}
+          {/* (v0.6.3, 앱) 내려받은 큰 엔진 삭제 — 저장 공간 확보. 지금 쓰는 엔진은 지울 수 없다. */}
+          {ANALYSIS_ENGINE_IDS.filter((id) => HEAVY_ENGINE_IDS.includes(id) && engineDownloadState(id).status === "ready" && engineUsable(id) && isNativeApp() && enginePref !== id).map((id) => (
+            <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 10.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
+          ))}
         </div>
         <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
 
@@ -1085,12 +1121,12 @@ async function getUserIdentities() {
    (SETUP_OAUTH.md 참고) — 꺼져 있으면 여기서 오류가 난다. */
 async function linkIdentityRedirect(provider) {
   if (!SB_ON || !SB_TOKEN) throw new Error("no session");
-  const redirect = window.location.origin + window.location.pathname;
+  const redirect = oauthRedirectUrl();
   const url = SB_URL + "/auth/v1/user/identities/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect);
   const r = await fetch(url, { headers: sbHeaders() });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j || !j.url) throw new Error("link_failed");
-  window.location.href = j.url;
+  await startOAuthNavigation(j.url);
 }
 /* 연결된 로그인 수단 해제(마지막 하나는 서버가 거부한다 — 로그인 수단이 하나도 없는 계정을 막기
    위한 GoTrue 자체 규칙). */

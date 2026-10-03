@@ -6,7 +6,7 @@
  *  16(NNUE)은 v0.3.5에서 폐기했다 — 게임 리뷰도 이제 이 아래 엔진 중 사용자가 설정 탭에서 고른 것을
  *  그대로 쓴다(App.jsx ENGINE_PROFILES 참고). 같은 npm 패키지 이름을 여러 버전으로 동시에 설치할 수
  *  없어 package.json에서 "stockfish171"/"stockfish18" 별칭(npm:stockfish@<버전>)으로 나눠 받는다. */
-import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -90,3 +90,17 @@ writeFileSync(join(out18, "boot-single.js"),
   "self.fetch=function(u,o){if(typeof u===\"string\"&&u.indexOf(\".wasm\")!==-1)return merged.then(function(m){return new Response(m,{headers:{\"Content-Type\":\"application/wasm\"}});});return f(u,o);};" +
   "importScripts(" + JSON.stringify("./" + SF18_LOADER) + ");})();\n");
 console.log("wrote boot-single.js (18 같은 출처 조각 이어붙이기)");
+
+// (v0.6.3, 앱 출시 준비) 앱 빌드는 큰 엔진(17.1·18)을 번들에 넣지 않고(Google Play 기본 한도 200MB) 설정에서 고를 때
+// 내려받는다(src/lib/engineDownload.js). 내려받을 파일 목록·크기를 public/engine/manifest.json에 적어 둔다.
+{
+  // 앱 웹뷰는 교차 출처 격리가 안 돼 멀티스레드 빌드(boot-mt.js·8e4d048 조각)를 못 쓰므로 목록에서 뺀다(약 80MB 절약).
+  const listDir = (dir) => readdirSync(dir).filter((f) => !f.startsWith(".") && f !== "boot-mt.js" && !f.includes("8e4d048")).sort().map((name) => ({ name, size: statSync(join(dir, name)).size }));
+  const manifest = {};
+  for (const [id, dir] of [["full17", "17"], ["full18", "18"]]) {
+    const path = join("public/engine", dir);
+    if (existsSync(path)) manifest[id] = { dir, files: listDir(path) };
+  }
+  writeFileSync("public/engine/manifest.json", JSON.stringify(manifest) + "\n");
+  console.log("wrote manifest.json (", Object.keys(manifest).join(", "), ")");
+}
