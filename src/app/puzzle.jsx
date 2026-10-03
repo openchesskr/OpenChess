@@ -17,7 +17,7 @@ import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
-import { AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, MOVE_FX, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
+import { AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, moveFxKindOn, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
 import { AccountChessStats } from "./profile.jsx";
 
 import { t, tx } from "../lib/i18n.js";
@@ -1680,13 +1680,13 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   const lastQpz = (!intro && !reply && !reverting && !wrong) ? moveIcon : null;
   // (v0.5.6, 사용자 요청) 보드의 수 등급 이펙트가 끝날 때까지 다음 수(상대 응수·클리어 화면 전환)를 미룬다. Board는 lastQ의
   // (도착 칸, 등급)이 탁월·유일·최선으로 바뀌는 순간 MOVE_FX_MS 동안 이펙트를 재생하므로 같은 조건으로 끝 시각을 기록해 둔다.
-  const { moveFx: pzMoveFxOn } = useContext(VisualPrefsContext);
+  const { moveFx: pzMoveFxOn, moveFxMode: pzMoveFxMode } = useContext(VisualPrefsContext);
   const moveIconRef = useRef(moveIcon);
   moveIconRef.current = moveIcon;
   const fxUntilRef = useRef(0);
   const lastQpzKey = lastQpz && lastQpz.to ? lastQpz.to[0] + "," + lastQpz.to[1] + ":" + lastQpz.kind : "";
   useEffect(() => {
-    if (pzMoveFxOn && lastQpz && MOVE_FX[lastQpz.kind]) fxUntilRef.current = Date.now() + MOVE_FX_MS;
+    if (pzMoveFxOn && lastQpz && moveFxKindOn(pzMoveFxMode, lastQpz.kind)) fxUntilRef.current = Date.now() + MOVE_FX_MS;
   }, [lastQpzKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // 등급이 아직 엔진 계산 중("pending")이면 최대 2.5초 기다린 뒤, 이펙트가 재생 중이면 끝날 때까지 기다린다.
   async function waitMoveFx(isCancelled, timers) {

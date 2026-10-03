@@ -251,7 +251,6 @@ export default {
   "효과음 음량": "Volumen de los efectos",
   "시각 효과": "Efectos visuales",
   "수 등급 이펙트": "Efectos de calificación de jugadas",
-  "탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시": "Mostrar un efecto en el tablero al jugar una Jugada brillante, una Única jugada o la Mejor jugada",
   "개발진": "Equipo de desarrollo",
   "개발자": "Desarrollador",
   "등록된 공동 개발자 없음": "No hay codesarrolladores registrados",
@@ -1817,4 +1816,8 @@ export default {
   "복사 실패. 링크를 직접 선택해 복사": "Error al copiar. Selecciona el enlace y cópialo manualmente",
   "OpenChess에서 함께 체스 두기": "Juega al ajedrez conmigo en OpenChess",
   "퍼즐 공유": "Compartir puzle",
+  "수를 두면 보드에 표시할 등급 이펙트의 범위": "Efectos de calificación que se muestran en el tablero al jugar",
+  "모두 표시": "Mostrar todos",
+  "탁월한 수 및 유일한 수만 표시": "Mostrar solo jugadas Brillantes y Únicas",
+  "표시하지 않음": "No mostrar",
 };

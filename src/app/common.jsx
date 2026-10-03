@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { openExternal } from "../lib/nativeApp.js";
+import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
@@ -2125,7 +2126,10 @@ const HINT_GOLD_GLOW = "0 0 16px 5px rgba(255,196,64,.9), inset 0 0 10px rgba(25
 // 색으로 진하게 덮이고 가운데에 큰 흰 기호(!!, !, ★)가, 오른쪽 위에 등급 이름 알약("탁월한 수")이 뜬다. 약 1.1초 뒤 알약이
 // 오른쪽 위 원형 배지로 줄어들며 색이 바뀌고, 칸 색·큰 기호가 평소 하이라이트로 가라앉는다 — 끝 모습이 Board의 평소 배지와
 // 같은 자리·크기라 이펙트가 사라져도 이어져 보인다. 설정 탭 "시각 효과"에서 끌 수 있다(VisualPrefsContext).
-export const VisualPrefsContext = createContext({ moveFx: true });
+// (v0.6.3, 사용자 요청) 수 등급 이펙트 표시 범위(모두 / 탁월·유일만 / 끔) — 판정 로직은 src/lib/moveFxPrefs.js. moveFx(불리언)는 "이펙트를 하나라도 쓰는가"(= off가 아님)라,
+// 대국 종료 이펙트처럼 등급과 무관한 곳은 그대로 이 값을 본다.
+export { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn };
+export const VisualPrefsContext = createContext({ moveFx: true, moveFxMode: DEFAULT_MOVE_FX_MODE });
 // (v0.5.6) 가운데 큰 기호는 글꼴 문자(!!)·lucide 별 대신, 수 체계 아이콘 PNG에서 흰 기호만 그대로 떼어낸 이미지(public/move-fx/)를
 // 쓴다 — 아이콘과 모양이 똑같다. 이미지는 기호에 딱 맞게 잘라 정사각형 가운데에 둔 것이고, glyph는 그 한 변이 칸의 몇 배인지다
 // (원래 아이콘 속 비율 0.632·0.653을 그대로 유지해 !!·!·★의 상대 크기가 아이콘과 같다).
@@ -2133,6 +2137,15 @@ export const MOVE_FX = {
   brilliant: { label: t("탁월한 수"), src: "/move-fx/brilliant.png", glyph: 0.6 },
   only: { label: t("유일한 수"), src: "/move-fx/only.png", glyph: 0.6 },
   best: { label: t("최선의 수"), src: "/move-fx/best.png", glyph: 0.62 },
+  // (v0.6.3, 사용자 요청) 나머지 등급도 같은 형식(등급 색 칸 + 큰 흰 기호 + 이름 알약 → 배지). 기호 이미지는 scripts/build-move-fx-glyphs.py가
+  // 수 체계 아이콘에서 떼어 만들고, glyph(기호 한 변 ÷ 칸)는 그 스크립트가 출력한 아이콘 속 비율 × 0.95다.
+  excellent: { label: t("우수한 수"), src: "/move-fx/excellent.png", glyph: 0.55 },
+  good: { label: t("좋은 수"), src: "/move-fx/good.png", glyph: 0.66 },
+  book: { label: t("이론"), src: "/move-fx/book.png", glyph: 0.63 },
+  inaccuracy: { label: t("부정확"), src: "/move-fx/inaccuracy.png", glyph: 0.6 },
+  mistake: { label: t("실수"), src: "/move-fx/mistake.png", glyph: 0.6 },
+  miss: { label: t("놓친 수"), src: "/move-fx/miss.png", glyph: 0.54 },
+  blunder: { label: t("블런더"), src: "/move-fx/blunder.png", glyph: 0.63 },
 };
 // 이펙트는 1.3초만 뜨므로 처음 재생 때 이미지를 받느라 기호가 빠지지 않게 미리 받아 둔다(세 장 합쳐 약 22KB).
 if (typeof window !== "undefined") Object.values(MOVE_FX).forEach((d) => { const im = new Image(); im.src = d.src; });
@@ -2271,7 +2284,7 @@ export function Board({ board, flip, size = 336, arrows = [], haloSquares = [], 
   // (v0.5.5) 수 등급 이펙트 — lastQ가 탁월·유일·최선으로 새로 바뀌면 한 번 재생한다(처음 그려질 때는 재생하지 않는다).
   // (v0.5.7, 사용자 요청) 예전엔 보드가 바뀐 직후면 출발 칸에서 기물이 미끄러져 들어오는 연출(MoveFxSlide)을 함께 재생했다 —
   // 사용자가 직접 둔 수는 기물이 이미 도착 칸에 놓인 뒤라, 같은 이동을 한 번 더 보여 줘 어색했다. 이동 연출을 빼고 칸 이펙트만 재생한다.
-  const { moveFx: moveFxOn } = useContext(VisualPrefsContext);
+  const { moveFx: moveFxOn, moveFxMode } = useContext(VisualPrefsContext);
   const lastQKey = lastQ && lastQ.to ? lastQ.to[0] + "," + lastQ.to[1] + ":" + lastQ.kind : "";
   const qKeyRef = useRef(undefined);
   const [moveFxState, setMoveFxState] = useState(null); // { id, to, kind }
@@ -2312,9 +2325,9 @@ export function Board({ board, flip, size = 336, arrows = [], haloSquares = [], 
     if (prev === undefined || lastQKey === prev || !lastQKey) return;
     // (v0.5.6 버그 수정 BUG-009·010) 예전엔 기기의 "애니메이션 줄이기"(prefers-reduced-motion)가 켜져 있으면 이펙트를 통째로 껐다 —
     // 설정 탭 토글은 켜져 있는데 이펙트가 전혀 안 떠 고장처럼 보였다. 켜고 끄는 건 설정 탭 토글만 정한다(기기 설정은 보지 않는다).
-    if (!moveFxOn || !MOVE_FX[lastQ.kind]) { setMoveFxState(null); return; }
+    if (!moveFxOn || !moveFxKindOn(moveFxMode, lastQ.kind)) { setMoveFxState(null); return; }
     setMoveFxState({ id: Date.now(), to: lastQ.to, kind: lastQ.kind });
-  }, [lastQKey, moveFxOn]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastQKey, moveFxOn, moveFxMode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!moveFxState) return undefined;
     const t = setTimeout(() => setMoveFxState(null), MOVE_FX_MS);

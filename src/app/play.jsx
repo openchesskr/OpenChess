@@ -24,7 +24,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX, MOVE_FX_MS, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
+import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -4102,7 +4102,7 @@ function AttackChance({ pos, grade, enabled, onResult, onProgress, size }) {
   const [mark, setMark] = useState(null); // { sq, ok: null(조준)|true|false, key }
   // (v0.5.5, 사용자 요청) 내가 둔 수를 엔진으로 채점해(분석 탭과 같은 규칙) 탁월·유일·최선이면 도착 칸에 수 등급 이펙트를 띄운다 —
   // 메이트를 완성한 수든 중간 수든 상관없다. 설정 탭 "시각 효과"로 끌 수 있다.
-  const { moveFx: moveFxOn } = useContext(VisualPrefsContext);
+  const { moveFx: moveFxOn, moveFxMode } = useContext(VisualPrefsContext);
   const engine = useContext(EngineContext);
   const fenRoot = useMemo(() => { try { return parseFenFull(pos.fen); } catch { return null; } }, [pos.fen]);
   const [moveFx, setMoveFx] = useState(null); // { sq, kind, key }
@@ -4139,7 +4139,7 @@ function AttackChance({ pos, grade, enabled, onResult, onProgress, size }) {
       const next = (ms) => { if (moved || !aliveRef.current) return; moved = true; later(ms, () => onResult(true)); };
       gradeMove(prevSans, mv.san).then((kind) => {
         if (!aliveRef.current || moved) return;
-        if (MOVE_FX[kind]) { setMark(null); setMoveFx({ sq: to, kind, key }); next(MOVE_FX_MS + 250); }
+        if (moveFxKindOn(moveFxMode, kind)) { setMark(null); setMoveFx({ sq: to, kind, key }); next(MOVE_FX_MS + 250); }
         else next(Math.max(0, 900 - (Date.now() - movedAt)));
       });
       later(1600, () => next(0));
@@ -4157,7 +4157,7 @@ function AttackChance({ pos, grade, enabled, onResult, onProgress, size }) {
     onProgress && onProgress({ s: "ok", left: Math.max(1, pos.mateIn - done) });
     later(A, () => { setMark({ sq: to, ok: true, key }); fx("tap"); });
     gradeMove(prevSans, mv.san).then((kind) => {
-      if (!aliveRef.current || !MOVE_FX[kind] || seq !== moveSeqRef.current) return;
+      if (!aliveRef.current || !moveFxKindOn(moveFxMode, kind) || seq !== moveSeqRef.current) return;
       setMark((m) => (m && m.key === key ? null : m));
       setMoveFx({ sq: to, kind, key });
     });

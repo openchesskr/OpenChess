@@ -14,7 +14,7 @@ import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -667,7 +667,7 @@ function EngineDownloadRow({ id, label }) {
     </div>
   );
 }
-export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxOn, setMoveFxOn,
+export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
@@ -962,16 +962,20 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label={t("효과음 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
       </div>
 
-      {/* (v0.5.5, 사용자 요청) 시각 효과 — 탁월한 수·유일한 수·최선의 수를 두었을 때의 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰
-          페이지, 무한 체크메이트 게임). 기본값은 켜짐, 계정에 저장된다. */}
+      {/* (v0.5.5, 사용자 요청) 시각 효과 — 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰 페이지, 무한 체크메이트 게임). v0.6.3부터 모든 등급을
+          지원하고 표시 범위를 고른다(기본 모두 표시), 계정에 저장된다. */}
       <div style={card}>
         {cardTitle(Sparkles, t("시각 효과"))}
-        <div className="flex items-center justify-between">
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시")}</div>
-          </div>
-          <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label={t("수 등급 이펙트")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        {/* (v0.6.3, 사용자 요청) 온·오프 토글 대신 표시 범위 선택 — 모두 표시 / 탁월한 수·유일한 수만 / 표시하지 않음. */}
+        <div>
+          <label htmlFor="move-fx-mode" style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</label>
+          <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, marginBottom: 8 }}>{t("수를 두면 보드에 표시할 등급 이펙트의 범위")}</div>
+          <select id="move-fx-mode" value={normalizeMoveFxMode(moveFxMode)} onChange={(e) => setMoveFxMode(normalizeMoveFxMode(e.target.value))}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", boxSizing: "border-box" }}>
+            <option value="all">{t("모두 표시")}</option>
+            <option value="key">{t("탁월한 수 및 유일한 수만 표시")}</option>
+            <option value="off">{t("표시하지 않음")}</option>
+          </select>
         </div>
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
         {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.6.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
