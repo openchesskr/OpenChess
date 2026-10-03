@@ -487,7 +487,7 @@ export default function App() {
   useEffect(() => { (async () => {
     const _rec = parseRecoveryHash(); if (_rec) setRecovery(_rec);
     const _oauth = _rec ? null : parseOAuthHash();
-    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice(t("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
+    if (!_rec && !_oauth) { const _oerr = parseOAuthError(); if (_oerr) { setAuthNotice(t("로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } } }
     // (UX7) 세션 복구를 먼저 시도해 uid를 확정한 뒤, 그 uid(없으면 guest) 전용 로컬 캐시만 읽는다 —
     // 순서를 바꾸지 않으면 이전에 이 기기에서 로그인했던 "다른" 계정의 로컬 캐시를 먼저 읽어버린다.
     let acc = null;
@@ -692,7 +692,7 @@ export default function App() {
     closeExternalBrowser();
     const r = parseAuthFragment(link.hash || link.query);
     if (!r) return;
-    if (r.kind === "error") { setAuthNotice(t("Google 로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); return; }
+    if (r.kind === "error") { setAuthNotice(t("로그인 실패. 이미 다른 방식으로 가입된 이메일일 수 있음")); return; }
     if (r.kind === "recovery") { setRecovery(r.session); return; }
     try { const oa = await authFromHash(r.session); if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { }
   };
