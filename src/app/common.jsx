@@ -2,6 +2,8 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
+import { openExternal } from "../lib/nativeApp.js";
+import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
@@ -5503,55 +5505,92 @@ export function LineStars({ total, solved }) {
 function puzzleShareUrl(no, lineNo) {
   return SITE_URL + "/puzzle/" + no + "-" + (lineNo || 1);
 }
-// (v0.3.4 기능) 사용자 요청 — 인앱 친구 목록뿐 아니라 카카오톡·인스타그램 등 외부 앱으로도 퍼즐을
-// 공유할 수 있게 한다. 각 앱마다 별도 SDK·API 키를 등록하는 대신, 표준 Web Share API
-// (navigator.share)에 이 퍼즐의 딥링크를 넘긴다 — 모바일 브라우저에서는 OS가 지금 이 기기에 설치된
-// 모든 공유 대상 앱(카카오톡·인스타그램 DM·문자 등)을 담은 공유 시트를 그대로 보여주므로, 이 방법
-// 하나로 사실상 모든 외부 앱을 다 지원한다. navigator.share를 지원하지 않는 환경(대부분의 데스크톱
-// 브라우저)에서는 링크 복사와, URL만으로 공유 가능한 서비스(카카오스토리·X·페이스북) 바로가기로
-// 대신한다 — 인스타그램은 웹에 "이 링크를 공유받아라"라는 공개 URL 방식 자체가 없어(앱 전용 공유만
-// 지원) 데스크톱 대체 목록에는 넣지 않았다(모바일에서는 위 Web Share API 경로로 인스타그램 DM
-// 공유가 가능하다).
-export function ExternalShareRow({ url, title, text }) {
-  const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
-  const [copied, setCopied] = useState(false);
-  const doNativeShare = async () => {
-    try { await navigator.share({ title, text, url }); } catch { /* 사용자가 취소했거나(AbortError) 지원하지 않음 — 조용히 무시 */ }
-  };
-  const copyLink = async () => {
-    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { }
-  };
-  const encoded = encodeURIComponent(url);
-  const linkBtnStyle = { display: "inline-flex", alignItems: "center", padding: "7px 13px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 800, fontSize: 12, textDecoration: "none", cursor: "pointer" };
+// (v0.6.3, 외부 공유 UI 정리) 공유 시트 3종(퍼즐·리뷰·유산)이 따로 복사해 쓰던 틀·섹션·친구 목록과, 퍼즐·리뷰·친구 초대가
+// 따로 만들던 링크 복사·공유 UI를 아래 공통 컴포넌트로 합쳤다. 복사·공유·바로가기 로직은 src/lib/share.js.
+const SHARE_BTN_PRIMARY = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" };
+const SHARE_BTN_GHOST = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" };
+export const shareBtnStyles = { primary: SHARE_BTN_PRIMARY, ghost: SHARE_BTN_GHOST };
+
+/* 공유 시트 틀 — 데스크톱은 가운데 카드, 좁은 화면은 전체 화면. 본문은 한 덩어리로 스크롤, Esc·배경 클릭으로 닫힘. */
+export function ShareSheetFrame({ title, icon, onClose, zIndex = 90, children }) {
+  const narrow = useNarrow(640);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>{t("외부 앱으로 공유")}</div>
-      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-        {canNativeShare && (
-          <button onClick={doNativeShare} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{tx("{0} 공유하기(카카오톡·인스타그램 등)", <Share2 size={13} />)}</button>
-        )}
-        <button onClick={copyLink} className="press" style={linkBtnStyle}><Copy size={13} style={{ marginRight: 5 }} /> {copied ? t("복사됨") : t("링크 복사")}</button>
-        {!canNativeShare && (
-          <>
-            <a href={"https://story.kakao.com/share?url=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("카카오스토리")}</a>
-            <a href={"https://twitter.com/intent/tweet?url=" + encoded + "&text=" + encodeURIComponent(text || "")} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("X(트위터)")}</a>
-            <a href={"https://www.facebook.com/sharer/sharer.php?u=" + encoded} target="_blank" rel="noopener noreferrer" className="press" style={linkBtnStyle}>{t("페이스북")}</a>
-          </>
-        )}
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex, display: "flex", alignItems: narrow ? "stretch" : "center", justifyContent: "center", padding: narrow ? 0 : "24px 16px" }}>
+      <div role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: narrow ? "100%" : 400, height: narrow ? "100%" : undefined, maxHeight: narrow ? undefined : "calc(100dvh - 48px)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", paddingTop: narrow ? "env(safe-area-inset-top)" : 0, paddingBottom: narrow ? "env(safe-area-inset-bottom)" : 0 }}>
+        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
+          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{icon || <Send size={15} />}{title}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+        </div>
+        <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>{children}</div>
       </div>
     </div>
   );
 }
-// (v0.1.0) 퍼즐 공유 시트 — 인스타그램 릴스 공유처럼 친구 목록에서 골라 대화창으로 퍼즐을 보낸다.
-// 친구별로 독립적으로 "보내기" 가능(여러 명에게 동시에 보낼 수 있음), 보낸 친구는 "보냄"으로 표시만 바뀌고 시트는 유지된다.
-export function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
+/* 시트 안 구획 — 작은 제목 + 내용, 구획 사이 구분선. */
+export function ShareSection({ label, children, last }) {
+  return (
+    <div style={{ padding: "12px 16px", borderBottom: last ? "none" : "1px solid #E4D5B6" }}>
+      {label && <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>{label}</div>}
+      {children}
+    </div>
+  );
+}
+
+/* 링크 공유 블록 — 링크 표시·복사, 설치된 앱으로 공유(Web Share API) 또는 서비스 바로가기. 퍼즐·리뷰·친구 초대가 함께 쓴다. */
+export function ShareLinkBlock({ url, title, text }) {
+  const canNativeShare = canWebShare();
+  const [status, setStatus] = useState(""); // "" | "copied" | "copyFail" | "shared"
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const flash = (s) => { setStatus(s); clearTimeout(timer.current); timer.current = setTimeout(() => setStatus(""), 2200); };
+  const doCopy = async () => flash((await copyText(url)) ? "copied" : "copyFail");
+  const doShare = async () => { const r = await webShare({ title, text, url }); if (r === "shared") flash("shared"); else if (r === "error") flash("copyFail"); };
+  const openTarget = (e, href) => { e.preventDefault(); openExternal(href); };
+  const targetLabel = { kakaostory: t("카카오스토리"), x: t("X(트위터)"), facebook: t("페이스북"), email: t("이메일") };
+  return (
+    <div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+        <input readOnly value={url} onFocus={(e) => e.target.select()} aria-label={t("링크")} style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 9, border: "1px solid #DCCBA8", background: "#FBF5E8", color: T.inkSoft, fontSize: 11.5, fontWeight: 700, fontFamily: SITE_FONT, textOverflow: "ellipsis" }} />
+        <button onClick={doCopy} className="press" aria-label={t("링크 복사")} style={{ ...SHARE_BTN_GHOST, padding: "8px 11px", flexShrink: 0, color: status === "copied" ? T.best : T.ink, borderColor: status === "copied" ? T.best : "#C9B58C" }}>
+          {status === "copied" ? <Check size={14} /> : <Copy size={14} />}{status === "copied" ? t("복사됨") : t("복사")}
+        </button>
+      </div>
+      {canNativeShare ? (
+        <>
+          <button onClick={doShare} className="press" style={{ ...SHARE_BTN_PRIMARY, width: "100%" }}><Share2 size={14} />{status === "shared" ? t("공유됨") : t("공유하기")}</button>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, textAlign: "center", marginTop: 6 }}>{t("카카오톡·인스타그램 등 설치된 앱으로 전송")}</div>
+        </>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          {shareTargets(url, text).map((g) => (
+            <a key={g.id} href={g.href} {...(g.mail ? {} : { target: "_blank", rel: "noopener noreferrer", onClick: (e) => openTarget(e, g.href) })} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, textDecoration: "none", minWidth: 0 }}>
+              <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 12, background: g.color, color: g.fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, fontFamily: SITE_FONT }}>{g.glyph}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: T.ink, textAlign: "center", lineHeight: 1.25, wordBreak: "keep-all" }}>{targetLabel[g.id]}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      <div role="status" aria-live="polite" style={{ minHeight: 16, marginTop: 6, fontSize: 11, fontWeight: 700, color: T.blunder, textAlign: "center" }}>{status === "copyFail" ? t("복사 실패. 링크를 직접 선택해 복사") : ""}</div>
+    </div>
+  );
+}
+/* 시트용 외부 공유 구획(링크 블록 + 제목) */
+export function ExternalShareRow({ url, title, text }) {
+  return <ShareSection label={t("외부 앱으로 공유")}><ShareLinkBlock url={url} title={title} text={text} /></ShareSection>;
+}
+
+/* 친구에게 보내기 — 친구 목록을 불러와 친구별로 "보내기"(여러 명 가능, 보낸 친구는 "보냄" 표시). send(toUid) → Promise<boolean>. */
+export function FriendSendList({ myUid, send, onSent, blockedReason }) {
   const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
   const [profiles, setProfiles] = useState({});
   const [sent, setSent] = useState(() => new Set());
-  const [busy, setBusy] = useState(null); // 전송 중인 uid
-  // (버그 수정) 전송이 실패해도(puzzleShareSend가 false를 돌려줘도) 아무 표시가 없어 버튼만
-  // "보내기"로 돌아가고 끝 — 사용자 입장에서는 "전달이 눌리지 않는다"로 보였다. 실패 시 짧은
-  // 안내 문구를 보여준다.
+  const [busy, setBusy] = useState(null);
   const [sendErr, setSendErr] = useState("");
   useEffect(() => {
     let cc = false;
@@ -5564,48 +5603,50 @@ export function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
     })();
     return () => { cc = true; };
   }, [myUid]);
-  const send = async (toUid) => {
+  const doSend = async (toUid) => {
     if (busy || sent.has(toUid)) return;
-    if (!puzzle || puzzle.id == null) { setSendErr(t("퍼즐 정보를 불러오지 못해 전달 불가")); return; }
+    if (blockedReason) { setSendErr(blockedReason); return; }
     setBusy(toUid); setSendErr("");
-    const ok = await puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid);
+    let ok = false;
+    try { ok = await send(toUid); } catch { ok = false; }
     setBusy(null);
-    if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
+    if (ok) { setSent((s) => new Set(s).add(toUid)); onSent && onSent(); }
     else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
   };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}퍼즐 공유", <Send size={15} />)}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        {puzzle && puzzle.id != null && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title={t("OpenChess 퍼즐")} text={t("OpenChess 퍼즐: {0}", livePuzzleName(puzzle) || t("퍼즐 풀어보기"))} />}
-        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>{t("친구에게 보내기")}</div>
-          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
-            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {friends.map((u) => {
-                  const pr = profiles[u] || {}; const pub = pr.pub || {};
-                  const isSent = sent.has(u);
-                  return (
-                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
-                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
-                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
-                      </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
-                    </div>
-                  );
-                })}
-              </div>}
-        </div>
-      </div>
-    </div>
+    <ShareSection label={t("친구에게 보내기")} last>
+      {sendErr && <p role="alert" style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
+      {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+        : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {friends.map((u) => {
+              const pr = profiles[u] || {}; const pub = pr.pub || {};
+              const isSent = sent.has(u);
+              return (
+                <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
+                  {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+                    : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
+                    <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
+                  </div>
+                  <button onClick={() => doSend(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: busy && !isSent && busy !== u ? 0.5 : 1 }}>{isSent ? t("보냄") : busy === u ? "…" : t("보내기")}</button>
+                </div>
+              );
+            })}
+          </div>}
+    </ShareSection>
+  );
+}
+// (v0.1.0) 퍼즐 공유 시트 — 인스타그램 릴스 공유처럼 친구 목록에서 골라 대화창으로 퍼즐을 보낸다.
+// 친구별로 독립적으로 "보내기" 가능(여러 명에게 동시에 보낼 수 있음), 보낸 친구는 "보냄"으로 표시만 바뀌고 시트는 유지된다.
+export function PuzzleShareSheet({ puzzle, myUid, onClose, onShared }) {
+  const hasId = !!(puzzle && puzzle.id != null);
+  return (
+    <ShareSheetFrame title={t("퍼즐 공유")} onClose={onClose}>
+      {hasId && <ExternalShareRow url={puzzleShareUrl(puzzleNo(puzzle.id))} title={t("OpenChess 퍼즐")} text={t("OpenChess 퍼즐: {0}", livePuzzleName(puzzle) || t("퍼즐 풀어보기"))} />}
+      <FriendSendList myUid={myUid} send={(toUid) => puzzleShareSend(puzzleNo(puzzle.id), myUid, toUid)} onSent={onShared} blockedReason={hasId ? null : t("퍼즐 정보를 불러오지 못해 전달 불가")} />
+    </ShareSheetFrame>
   );
 }
 // (버그 수정) 퍼즐 탭은 auto-fill 그리드라 같은 행의 카드끼리 기본적으로 가장 키 큰 카드에
@@ -6207,30 +6248,12 @@ export function FacebookLogo() {
 // 버튼은 예전에 복사 버튼이 쓰던 Share2 아이콘을 그대로 물려받고 브라우저의 공유 시트(Web Share
 // API)를 띄운다 — 지원하지 않는 브라우저(대부분의 데스크톱)에서는 조용히 복사로 대신한다.
 export function InviteLinkBox({ mid }) {
-  const [copied, setCopied] = useState(false);
-  const [shared, setShared] = useState(false);
-  const inviteLink = mid ? SITE_URL + "/user/" + mid + "?invite=friend" : "";
-  const copyInviteLink = async () => { if (!inviteLink) return; try { await navigator.clipboard.writeText(inviteLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { } };
-  const shareInviteLink = async () => {
-    if (!inviteLink) return;
-    if (navigator.share) {
-      try { await navigator.share({ title: t("OpenChess 친구 초대"), url: inviteLink }); setShared(true); setTimeout(() => setShared(false), 1500); }
-      catch { /* 사용자가 공유 시트를 취소한 경우 등 — 조용히 무시 */ }
-    } else {
-      await copyInviteLink();
-    }
-  };
-  const btnStyle = { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "7px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" };
+  if (!mid) return null;
+  const inviteLink = SITE_URL + "/user/" + mid + "?invite=friend";
   return (
-    <div style={{ padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 4 }}>{t("친구 초대 링크")}</div>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, wordBreak: "break-all", marginBottom: 8 }}>{inviteLink || "—"}</div>
-      {!!inviteLink && (
-        <div className="flex gap-2">
-          <button onClick={copyInviteLink} className="press" style={btnStyle}><Copy size={12} />{copied ? t("복사됨") : t("복사")}</button>
-          <button onClick={shareInviteLink} className="press" style={btnStyle}><Share2 size={12} />{shared ? t("공유됨") : t("공유")}</button>
-        </div>
-      )}
+    <div style={{ padding: "10px 12px 4px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 8 }}>{t("친구 초대 링크")}</div>
+      <ShareLinkBlock url={inviteLink} title={t("OpenChess 친구 초대")} text={t("OpenChess에서 함께 체스 두기")} />
     </div>
   );
 }
