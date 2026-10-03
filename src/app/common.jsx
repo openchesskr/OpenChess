@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
+import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
@@ -1440,7 +1441,7 @@ export function bootAnalysisWorker(urls) {
       const url = urls[idx++];
       try {
         let w;
-        if (url.startsWith("/")) w = new Worker(url);
+        if (url.startsWith("/") || isSameOriginUrl(url)) w = new Worker(url);
         else { const blob = new Blob(["importScripts('" + url + "');"], { type: "text/javascript" }); w = new Worker(URL.createObjectURL(blob)); }
         w.onmessage = (e) => {
           const line = typeof e.data === "string" ? e.data : "";

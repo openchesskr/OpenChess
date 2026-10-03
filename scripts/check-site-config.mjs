@@ -2,7 +2,7 @@
 /** (v0.6.0, 앱 출시 준비) 앱(웹뷰) 안에서 깨지는 주소 사용과 상표 이미지 재도입을 막는다.
  *   · 서버 API(/api/…)는 siteConfig의 apiUrl()로만 호출 — 상대 경로를 그대로 쓰면 앱에서 localhost로 가 실패한다.
  *   · 사용자에게 내보내는 공유·초대 링크는 SITE_URL로 만든다 — window.location.origin은 앱에서 capacitor://localhost가 된다.
- *     (OAuth redirect_to는 현재 출처가 필요해 예외. 앱 로그인을 만들 때 별도로 바꾼다.)
+ *     (OAuth redirect_to는 현재 출처가 필요해 예외 — v0.6.3부터 앱은 nativeApp.js oauthRedirectUrl()이 앱 스킴으로 바꾼다.)
  *   · public/의 chess.com 로고 이미지(남의 상표)를 다시 참조하지 않는다.
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-site-config.mjs
  */
