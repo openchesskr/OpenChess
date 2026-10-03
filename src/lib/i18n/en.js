@@ -251,7 +251,6 @@ export default {
   "효과음 음량": "Sound effects volume",
   "시각 효과": "Visual effects",
   "수 등급 이펙트": "Move rating effects",
-  "탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시": "Show a board effect when you play a Brilliant move, Only move, or Best move",
   "개발진": "Development team",
   "개발자": "Developer",
   "등록된 공동 개발자 없음": "No co-developers registered",
@@ -1817,4 +1816,8 @@ export default {
   "복사 실패. 링크를 직접 선택해 복사": "Copy failed. Select the link and copy it manually",
   "OpenChess에서 함께 체스 두기": "Play chess together on OpenChess",
   "퍼즐 공유": "Share puzzle",
+  "수를 두면 보드에 표시할 등급 이펙트의 범위": "Which move-grade effects appear on the board when you move",
+  "모두 표시": "Show all",
+  "탁월한 수 및 유일한 수만 표시": "Show Brilliant and Only moves only",
+  "표시하지 않음": "Don't show",
 };
