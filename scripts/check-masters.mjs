@@ -109,7 +109,8 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
 }
 const IDX = JSON.parse(rf("src/data/tournamentIndex.json", "utf8"));
 const EDITIONS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDITIONS[id] = v.editions.map((e) => e[0]);
-const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDITIONS);
+const FIRSTS = {}; for (const [id, v] of Object.entries(IDX.byId)) if (v.first) FIRSTS[id] = v.first;
+const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDITIONS, FIRSTS);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
 eq(L.nodes.filter((n) => n.kind === "sat").length, CHAMPIONS.reduce((n, c) => n + satellitesOf(c).length, 0), "위성 노드 수");
 for (let i = 0; i < L.nodes.length; i++) {
@@ -124,36 +125,30 @@ for (const t of TRANSFERS) { const a = L.byNodeId.get(t.from), b = L.byNodeId.ge
 const lx = (id) => L.byNodeId.get(id).x;
 if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클래식) 줄이 오른쪽(FIDE) 줄보다 오른쪽에 있음");
 
-// 대회 부채꼴: 챔피언 줄 오른쪽 시작점(origin)에서 오른쪽 180° 안으로 방사형 — 허브는 챔피언 블록과 같은 크기·연도순으로 위→아래 호 위, 에디션 칩은 같은 각도로 바깥(오른쪽)으로 연도순
+// 대회 열: 챔피언 줄 오른쪽에 연도순 위→아래(챔피언 블록 크기), 각 허브 오른쪽에 첫 에디션 참가자 노드가 오른쪽 180° 방사형, 그 오른쪽으로 다음 연도 칩이 연도순
 {
-  const tours = L.nodes.filter((n) => n.kind === "tour"), eds = L.nodes.filter((n) => n.kind === "edition"), others = L.nodes.filter((n) => n.kind === "champ" || n.kind === "sat" || n.kind === "upcoming");
+  const tours = L.nodes.filter((n) => n.kind === "tour"), others = L.nodes.filter((n) => n.kind === "champ" || n.kind === "sat" || n.kind === "upcoming");
   eq(tours.length, TOURNAMENTS.length, "대회 허브 수");
   const maxRight = Math.max(...others.map((n) => n.x + n.w));
-  if (!L.origin || L.origin.x <= maxRight) fails.push("부채꼴 시작점이 챔피언 줄 오른쪽에 없음");
   for (const n of tours) {
     eq([n.w, n.h], [MT.CH_W, MT.CH_H], "대회 허브는 챔피언 블록과 같은 크기: " + n.id);
     if (n.x < maxRight) fails.push("대회 허브가 챔피언 열을 침범: " + n.id);
-    if (!(n.angle >= -90 && n.angle <= 90)) fails.push("대회 허브가 오른쪽 180° 밖: " + n.id);
-    if (n.x + n.w / 2 < L.origin.x - 1) fails.push("대회 허브가 시작점보다 왼쪽: " + n.id);
+    if (n.y + 1 < n.anchorY - MT.TOUR_H / 2) fails.push("대회 허브가 개최 연도 높이보다 위로 올라감: " + n.id);
   }
-  for (let i = 1; i < tours.length; i++) {
-    if (tours[i].angle < tours[i - 1].angle) fails.push("대회 허브가 연도순(위→아래)이 아님: " + tours[i].id);
-    if (tours[i].tour.from < tours[i - 1].tour.from) fails.push("대회 허브 연도 역순: " + tours[i].id);
-  }
+  for (let i = 1; i < tours.length; i++) if (tours[i].y < tours[i - 1].y + tours[i - 1].h) fails.push("대회 허브가 연도순 위→아래가 아니거나 겹침: " + tours[i].id);
+  if (!L.rail || L.rail.x >= Math.min(...tours.map((n) => n.x))) fails.push("대회 열 세로선(rail)이 허브 왼쪽에 없음");
   for (const t of TOURNAMENTS) {
-    const chain = eds.filter((e) => e.tourId === t.id), hub = L.byNodeId.get("tour:" + t.id);
-    const want = EDITIONS[t.id] && EDITIONS[t.id].length ? EDITIONS[t.id].length : 1;
-    eq(chain.length, want, "에디션 칩 수: " + t.id);
-    const hc = { x: hub.x + hub.w / 2, y: hub.y + hub.h / 2 }, ang = (a) => Math.atan2(a.y + a.h / 2 - hc.y, a.x + a.w / 2 - hc.x);
-    let prev = 0;
-    for (let i = 0; i < chain.length; i++) {
-      if (i > 0 && chain[i].year < chain[i - 1].year) fails.push("에디션 칩이 연도순이 아님: " + t.id);
-      const d = Math.hypot(chain[i].x + chain[i].w / 2 - hc.x, chain[i].y + chain[i].h / 2 - hc.y);
-      if (d <= prev) fails.push("에디션 칩이 허브에서 바깥으로 이어지지 않음: " + t.id);
-      prev = d;
-      if (Math.abs(ang(chain[i]) - (hub.angle * Math.PI) / 180) > 0.01) fails.push("에디션 칩이 허브와 같은 각도가 아님: " + t.id);
-      if (chain[i].x + chain[i].w / 2 < hc.x - 1) fails.push("에디션 칩이 허브보다 왼쪽(오른쪽 방향 아님): " + t.id);
+    const hub = L.byNodeId.get("tour:" + t.id), hy = hub.y + hub.h / 2;
+    const pls = L.nodes.filter((n) => n.kind === "player" && n.tourId === t.id), eds = L.nodes.filter((n) => n.kind === "edition" && n.tourId === t.id).sort((a, b) => a.x - b.x);
+    eq(pls.length, FIRSTS[t.id] ? FIRSTS[t.id].players.length : 0, "첫 에디션 참가자 노드 수: " + t.id);
+    for (const p of pls) if (p.x < hub.x + hub.w) fails.push("참가자 노드가 허브 왼쪽(오른쪽 180° 밖): " + t.id);
+    const fanRight = pls.length ? Math.max(...pls.map((p) => p.x + p.w)) : hub.x + hub.w;
+    for (let i = 0; i < eds.length; i++) {
+      if (Math.abs(eds[i].y + eds[i].h / 2 - hy) > 1) fails.push("에디션 칩이 허브와 같은 높이가 아님: " + t.id);
+      if (eds[i].x < fanRight) fails.push("에디션 칩이 방사 영역 안쪽: " + t.id);
+      if (i > 0 && eds[i].year < eds[i - 1].year) fails.push("에디션 칩이 연도순이 아님: " + t.id);
     }
+    if (pls.length && eds.some((e) => e.year === FIRSTS[t.id].y)) fails.push("첫 에디션이 칩으로도 중복 표시됨: " + t.id);
   }
 }
 
@@ -164,9 +159,9 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
     if (l.x < 0 || l.y < 0 || l.x + l.w > L.width) fails.push("열 이름 라벨이 캔버스 밖: " + l.key);
     for (const n of L.nodes) if (l.x < n.x + n.w && n.x < l.x + l.w && l.y < n.y + n.h && n.y < l.y + l.h) fails.push("열 이름 라벨(" + l.key + ")이 노드와 겹침: " + n.id);
   }
-  const first = L.byNodeId.get(CHAMPIONS[0].id);
+  const first = L.byNodeId.get(CHAMPIONS[0].id), tourTop = Math.min(...L.nodes.filter((n) => n.kind === "tour").map((n) => n.y));
   if (!(L.labels[0].y + L.labels[0].h <= first.y)) fails.push("챔피언 라벨이 첫 챔피언 노드 위쪽이 아님");
-  if (!(L.labels[1].y + L.labels[1].h <= L.origin.y && Math.abs(L.labels[1].x + L.labels[1].w / 2 - L.origin.x) < 1)) fails.push("주요 대회 라벨이 부채꼴 시작점 바로 위가 아님");
+  if (!(L.labels[1].y + L.labels[1].h <= tourTop)) fails.push("주요 대회 라벨이 첫 대회 노드 위쪽이 아님");
 }
 // 마스터 트리 배율: 예전 75%(0.5625)가 새 100%, 25%p 격자·핀치 스냅
 {

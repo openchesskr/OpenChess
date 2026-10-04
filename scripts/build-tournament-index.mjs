@@ -60,7 +60,14 @@ for (const t of TOURNAMENTS) {
     wc[year] = ok ? "ok" : "conflict";
     if (!ok) conflicts.push(t.id + " " + year + " " + names.join("/"));
   }
-  out.byId[t.id] = { games: rows.length, y0: editions.length ? editions[0][0] : null, y1: editions.length ? editions[editions.length - 1][0] : null, editions, players, top, complete, partial, winnerCheck: wc };
+  // 첫 에디션(대회 시작 연도에 DB 대국이 있으면 그 해, 없으면 DB에 있는 가장 이른 해) — 도감 모식도의 방사형 노드(참가자)가 쓴다. 출전 대국 수가 많은 순, 최대 FIRST_MAX명.
+  let first = null;
+  if (editions.length) {
+    const fy = ed.has(t.from) ? t.from : editions[0][0], fc = new Map();
+    for (const r of ed.get(fy)) for (const n of [r.g.white, r.g.black]) fc.set(n, (fc.get(n) || 0) + 1);
+    first = { y: fy, n: fc.size, games: ed.get(fy).length, players: [...fc.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 16).map(([k]) => k) };
+  }
+  out.byId[t.id] = { games: rows.length, first, y0: editions.length ? editions[0][0] : null, y1: editions.length ? editions[editions.length - 1][0] : null, editions, players, top, complete, partial, winnerCheck: wc };
 }
 writeFileSync(new URL("../src/data/tournamentIndex.json", import.meta.url), JSON.stringify(out));
 for (const t of TOURNAMENTS) { const o = out.byId[t.id]; const wc = Object.values(o.winnerCheck); console.log(t.id.padEnd(14), String(o.games).padStart(5), "games", String(o.editions.length).padStart(3), "editions", "complete", o.complete.length, "partial", o.partial.length, "| winners ok", wc.filter((x) => x === "ok").length, "nodata", wc.filter((x) => x === "nodata").length, "conflict", wc.filter((x) => x === "conflict").length); }
