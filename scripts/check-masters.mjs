@@ -78,6 +78,18 @@ eq(clampMasterPan({ x: 500, y: 500 }, 1, 800, 600, big), { x: 20, y: 20 }, "큰 
 eq(clampMasterPan({ x: -9999, y: -99999 }, 1, 800, 600, big), { x: 800 - 2000 - 20, y: 600 - 5000 - 20 }, "큰 내용: 오른쪽·아래 한계(바닥에서 멈춤)");
 eq(clampMasterPan({ x: -300, y: -300 }, 1, 800, 600, big), { x: -300, y: -300 }, "범위 안은 그대로");
 
+// 월계수 가지: 잎이 SVG 영역(viewBox)에 잘리지 않고, 양쪽이 서로 거울상이다.
+const { laurelBranch, laurelExtent } = await import("../src/lib/laurel.js");
+for (const side of [1, -1]) {
+  const b = laurelBranch({ side, len: 36, leaves: 7, leaf: 7.5 }), e = laurelExtent(b);
+  if (e.minX < 0 || e.minY < 0 || e.maxX > b.width || e.maxY > b.height) fails.push("월계수 가지(side " + side + ")의 잎이 viewBox 밖으로 나가 잘림: " + JSON.stringify(e) + " / " + b.width + "×" + b.height);
+}
+{
+  const a = laurelBranch({ side: 1 }), m = laurelBranch({ side: -1 });
+  eq(a.leaves.length, m.leaves.length, "좌우 가지 잎 수");
+  a.leaves.forEach((l, i) => { const r = m.leaves[i]; if (Math.abs(l.x + r.x - a.width) > 1e-6 || Math.abs(l.y - r.y) > 1e-6) fails.push("좌우 가지가 거울상이 아님(잎 " + i + ")"); });
+}
+
 // ④ 연결
 const dex = readFileSync("src/app/dex.jsx", "utf8"), mast = readFileSync("src/app/dexMasters.jsx", "utf8");
 if (!/\["masters", t\("마스터"\)\]/.test(dex) || !/<MastersSchematic /.test(dex)) fails.push("도감에 마스터 탭·MastersSchematic 연결이 없음");
@@ -85,6 +97,7 @@ if (!/useFitPanelHeight\(boxRef, vertical\)/.test(dex) || !/useFitPanelHeight\(b
 const { SCHEMATIC_DRAG_MULT } = await import("../src/lib/schematicGeometry.js");
 eq(SCHEMATIC_DRAG_MULT, 1, "드래그 감도 기준값");
 if (!/SCHEMATIC_DRAG_MULT/.test(mast) || /const SCHEMATIC_DRAG_MULT\s*=/.test(dex) || !/SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED/.test(dex)) fails.push("오프닝·마스터 모식도가 같은 드래그 감도(SCHEMATIC_DRAG_MULT)를 공유하지 않음");
+if (!/<Laurel side=\{1\} \/>[\s\S]*<Laurel side=\{-1\} \/>/.test(mast) || !/overflow: "visible"/.test(mast)) fails.push("챔피언 블록 월계수: 왼쪽 side=1·오른쪽 side=-1(잎 끝이 안쪽) 또는 overflow visible 누락");
 if (/ChevronsUp|ChevronsDown/.test(mast)) fails.push("마스터 모식도 좌상단 이동 버튼이 다시 생김");
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }

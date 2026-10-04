@@ -3,11 +3,12 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { Crown, X } from "lucide-react";
+import { X } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
+import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { MT, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_STEP, SCHEMATIC_DRAG_MULT, anchoredZoomPan, schematicZoomLabel, snapSchematicZoom } from "../lib/schematicGeometry.js";
@@ -26,27 +27,43 @@ function CountryChip({ cc, dark }) {
   return <span style={{ fontSize: 9, fontWeight: 800, fontFamily: SITE_FONT, letterSpacing: ".04em", padding: "1px 5px", borderRadius: 5, background: dark ? "rgba(236,203,134,.16)" : "rgba(60,40,20,.08)", color: dark ? T.brassHi : T.inkSoft }}>{cc}</span>;
 }
 
+/* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
+function Laurel({ side, h = 56 }) {
+  const b = React.useMemo(() => laurelBranch({ side, len: 36, leaves: 7, leaf: 7.5 }), [side]);
+  const k = h / b.height;
+  return (
+    <svg width={b.width * k} height={h} viewBox={"0 0 " + b.width + " " + b.height} style={{ overflow: "visible", display: "block" }} aria-hidden="true">
+      <path d={b.stem} fill="none" stroke="#8f6a22" strokeWidth="1.4" strokeLinecap="round" />
+      {b.leaves.map((l, i) => <path key={i} transform={"translate(" + l.x + " " + l.y + ") rotate(" + l.rot + ")"} d={leafPath(l.sz)} fill="url(#mt-laurel-gold)" stroke="#8f6a22" strokeWidth=".5" />)}
+    </svg>
+  );
+}
+function MasterDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+      <defs><linearGradient id="mt-laurel-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F6DE97" /><stop offset="1" stopColor="#B98A34" /></linearGradient></defs>
+    </svg>
+  );
+}
+/* 챔피언 블록(시안 A) — 금속성 금색 프레임 안의 어두운 명판, 이름 양옆에 월계수. 현 챔피언은 ♛와 금빛 발광. 줄(PCA·클래식/FIDE)은 태그 칩 색으로 구분한다. */
 function ChampNode({ n, onPick, picked }) {
-  const c = n.champ, color = LANE_COLOR[n.lane], current = c.to == null;
+  const c = n.champ, current = c.to == null;
   return (
     <button className="no-pan press" onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
-      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "7px 12px", textAlign: "left", cursor: "pointer", borderRadius: 14,
-        border: "2px solid " + color, background: "linear-gradient(180deg," + T.ebony3 + "," + T.ebony + ")", color: T.ivoryHi,
-        boxShadow: picked ? "0 0 0 3px rgba(236,203,134,.55), 0 6px 16px rgba(0,0,0,.35)" : current ? "0 0 14px 2px rgba(236,203,134,.5)" : "0 3px 8px rgba(0,0,0,.28)" }}>
-      <div className="flex items-center justify-between gap-2" style={{ marginBottom: 3 }}>
-        <span className="flex items-center gap-1" style={{ minWidth: 0 }}>
-          {c.no && <span style={{ fontSize: 9.5, fontWeight: 900, padding: "1px 6px", borderRadius: 5, background: T.brass, color: "#241509", whiteSpace: "nowrap" }}>{numText(c)}</span>}
-          <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{reignText(c)}</span>
+      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 14, border: "1.5px solid #6E4E18",
+        background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(80,50,10,.45)," + (picked ? " 0 0 0 3px rgba(255,243,211,.85)," : "") + (current ? " 0 0 18px 4px rgba(236,203,134,.65)," : "") + " 0 4px 10px rgba(60,40,10,.38)" }}>
+      <span aria-hidden="true" style={{ position: "absolute", inset: 5, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55), inset 0 2px 6px rgba(0,0,0,.6)" }} />
+      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)" }}><Laurel side={1} /></span>
+      <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)" }}><Laurel side={-1} /></span>
+      <span style={{ position: "absolute", inset: 0, padding: "11px 38px 8px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, textAlign: "center", minWidth: 0 }}>
+        <span className="flex items-center justify-center gap-1" style={{ whiteSpace: "nowrap" }}>
+          {c.no && <span style={{ fontSize: 9.5, fontWeight: 900, padding: "1px 7px", borderRadius: 6, background: "linear-gradient(180deg,#F6DE97,#C49A50)", color: "#2A1807" }}>{numText(c)}</span>}
+          <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{reignText(c)}</span>
+          {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: LANE_COLOR[n.lane], color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
         </span>
-        <span className="flex items-center gap-1">
-          {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: color, color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
-          <CountryChip cc={c.cc} dark />
-        </span>
-      </div>
-      <div className="flex items-center gap-1" style={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {current && <Crown size={13} color={T.brassHi} fill={T.brassHi} style={{ flexShrink: 0 }} />}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{personName(c)}</span>
-      </div>
+        <span style={{ maxWidth: "100%", fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{current ? "♛ " : ""}{personName(c)}</span>
+      </span>
     </button>
   );
 }
@@ -185,6 +202,7 @@ export function MastersSchematic({ vertical, tabsSlot }) {
           <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
+          <MasterDefs />
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.filter((e) => e.kind === "sat").map((e, i) => {
               const a = e.a, b = e.b, ay = a.y + a.h / 2, by = b.y + b.h / 2;
