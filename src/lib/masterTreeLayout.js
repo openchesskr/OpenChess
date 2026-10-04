@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 24 };
+export const MT = { TOUR_W: 214, TOUR_H: 56, TOUR_GAP: 8, TOUR_COL_GAP: 100, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 24 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -16,7 +16,23 @@ export function satellitesOf(champ) {
   return out;
 }
 
-export function layoutMasters(champions, transfers, splitRows, upcoming) {
+/* 개최 연도에 재위 중이던 정통 계보(C·L 줄) 챔피언. 재위는 [from, to) — 같은 해 교체면 새 챔피언. 분열기 FIDE 줄(R)은 제외. 없으면 null(1946~47년 공위기 등). */
+export function championAt(champions, year) {
+  let found = null;
+  for (const c of champions) if (c.lane !== "R" && c.from <= year && (c.to == null || year < c.to)) found = c;
+  return found;
+}
+/* 연도 → 세로 위치: 챔피언 노드 중심들을 (재위 시작 연도, y) 기준점으로 삼아 사이를 선형 보간한다. 범위 밖은 양 끝에 붙인다. */
+export function yearToY(anchors, year) {
+  if (year <= anchors[0].year) return anchors[0].y;
+  for (let i = 1; i < anchors.length; i++) {
+    const a = anchors[i - 1], b = anchors[i];
+    if (year <= b.year) return b.year === a.year ? b.y : a.y + ((year - a.year) / (b.year - a.year)) * (b.y - a.y);
+  }
+  return anchors[anchors.length - 1].y;
+}
+
+export function layoutMasters(champions, transfers, splitRows, upcoming, tournaments = []) {
   const byId = new Map(champions.map((c) => [c.id, c]));
   const splitIds = new Set(splitRows.flat().filter(Boolean));
   const nodes = [], edges = [], champNode = new Map();
@@ -69,15 +85,37 @@ export function layoutMasters(champions, transfers, splitRows, upcoming) {
     y = upNode.y + upNode.h + MT.ROW_GAP;
   }
   for (const t of transfers) edges.push({ kind: "transfer", from: t.from, to: t.to, t });
+  // 오른쪽 대회 열 — 개최 연도를 챔피언 행의 높이에 맞추되(기준점 보간), 같은 구간에 몰리면 연도순을 지키며 아래로 밀어 겹치지 않게 한다.
+  let rail = null;
+  if (tournaments.length) {
+    const anchors = champions.filter((c) => c.lane !== "R").map((c) => ({ year: c.from, y: champNode.get(c.id).y + MT.CH_H / 2 })).sort((a, b) => a.year - b.year);
+    if (upNode) anchors.push({ year: 2026.9, y: upNode.y + upNode.h / 2 });
+    const colX = nodes.reduce((m, n) => Math.max(m, n.x + n.w), -Infinity) + MT.TOUR_COL_GAP;
+    let prevBottom = -Infinity;
+    const sorted = tournaments.map((tr, i) => ({ tr, i })).sort((a, b) => a.tr.from - b.tr.from || a.i - b.i);
+    const tourNodes = [];
+    for (const { tr } of sorted) {
+      const anchorY = yearToY(anchors, tr.from);
+      const top = Math.max(anchorY - MT.TOUR_H / 2, prevBottom + MT.TOUR_GAP);
+      prevBottom = top + MT.TOUR_H;
+      const n = { id: "tour:" + tr.id, kind: "tour", tour: tr, x: colX, y: top, w: MT.TOUR_W, h: MT.TOUR_H, anchorY };
+      nodes.push(n); tourNodes.push(n);
+    }
+    const first = tourNodes[0], last = tourNodes[tourNodes.length - 1];
+    rail = { x: colX - 28, y1: first.y + first.h / 2, y2: last.y + last.h / 2 };
+    for (const n of tourNodes) edges.push({ kind: "tour", from: n.id, to: n.id });
+    y = Math.max(y, last.y + last.h + MT.ROW_GAP);
+  }
   // 좌표를 양수로 옮긴다.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const n of nodes) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
   const dx = MT.PAD - minX, dy = 0;
   for (const n of nodes) { n.x += dx; n.y += dy; }
+  if (rail) rail.x += dx;
   const byNodeId = new Map(nodes.map((n) => [n.id, n]));
   for (const e of edges) { e.a = byNodeId.get(e.from); e.b = byNodeId.get(e.to); }
   const width = maxX - minX + MT.PAD * 2, height = maxY + MT.PAD / 2;
-  return { nodes, edges, width, height, centerX: dx, bounds: { minX: MT.PAD, maxX: width - MT.PAD - MT.CH_W, minY: MT.TOP_PAD, maxY: height - MT.CH_H }, byNodeId };
+  return { nodes, edges, rail, width, height, centerX: dx, bounds: { minX: MT.PAD, maxX: width - MT.PAD - MT.CH_W, minY: MT.TOP_PAD, maxY: height - MT.CH_H }, byNodeId };
 }
 
 /* 챔피언 노드끼리 잇는 선의 경로(SVG path)와 라벨 위치. 위 노드 아래 가운데 → 아래 노드 위 가운데를 세로 곡선으로 잇는다. */
