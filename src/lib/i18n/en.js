@@ -1842,8 +1842,7 @@ export default {
   "통합전": "Unification match",
   "패": "Lost",
   "등극": "Crowned",
-  "{0}대": "No. {0}",
-  "{0}기": "Reign {0}",
-  "{0}대 세계 챔피언": "World Champion No. {0}",
   "FIDE 세계 챔피언(분열기)": "FIDE World Champion (split era)",
+  "{0}대 챔피언": "{0}",
+  "{0}대 챔피언({1}기)": "{0} (Reign {1})",
 };

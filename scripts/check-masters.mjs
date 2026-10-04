@@ -55,6 +55,11 @@ eq(CHAMPIONS.find((c) => c.to == null).no, new Set(numbered.map((c) => c.name)).
 const bySame = new Map(); for (const c of numbered) { if (!bySame.has(c.name)) bySame.set(c.name, []); bySame.get(c.name).push(c); }
 for (const [name, list] of bySame) { const gaps = list.filter((c, i) => i === 0 || list[i - 1].to !== c.from); if (gaps.length > 1) for (const c of list) if (!c.reign) fails.push(name + ": 재위가 떨어져 여러 번이면 reign 번호 필요(" + c.id + ")"); }
 
+// 순서 표기(영어 6th·1st·11th·22nd, 스페인어 6.º, 그 외 숫자)
+const { ordinalParam } = await import("../src/lib/ordinal.js");
+eq([1, 2, 3, 4, 6, 11, 12, 13, 18, 21, 22].map((n) => ordinalParam(n, "en")), ["1st", "2nd", "3rd", "4th", "6th", "11th", "12th", "13th", "18th", "21st", "22nd"], "영어 서수");
+eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º", 6, 6], "그 외 언어 서수");
+
 // ② 배치
 const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");

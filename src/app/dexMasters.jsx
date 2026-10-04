@@ -9,6 +9,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
+import { ordinalParam } from "../lib/ordinal.js";
 import { MT, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_STEP, SCHEMATIC_DRAG_MULT, anchoredZoomPan, schematicZoomLabel, snapSchematicZoom } from "../lib/schematicGeometry.js";
@@ -18,7 +19,8 @@ const BY_ID = new Map(CHAMPIONS.map((c) => [c.id, c]));
 const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
 const personName = (p) => (lang === "ko" && p.ko ? p.ko : (p.name || p.opp));
 const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
-const numText = (c) => (c.no ? t("{0}대", c.no) + (c.reign ? " " + t("{0}기", c.reign) : "") : "");
+// "6대 챔피언(1기)" · en "6th (Reign 1)" — 재위가 한 번뿐인 사람은 "(n기)"를 붙이지 않는다.
+const numText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
 const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
 const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? " · " + k : "") + (tr.score ? " · " + tr.score : ""); };
@@ -28,7 +30,7 @@ function CountryChip({ cc, dark }) {
 }
 
 /* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
-function Laurel({ side, h = 56 }) {
+function Laurel({ side, h = 60 }) {
   const b = React.useMemo(() => laurelBranch({ side, len: 36, leaves: 7, leaf: 7.5 }), [side]);
   const k = h / b.height;
   return (
@@ -56,9 +58,9 @@ function ChampNode({ n, onPick, picked }) {
       <span aria-hidden="true" style={{ position: "absolute", inset: 5, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55), inset 0 2px 6px rgba(0,0,0,.6)" }} />
       <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)" }}><Laurel side={1} /></span>
       <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)" }}><Laurel side={-1} /></span>
-      <span style={{ position: "absolute", inset: 0, padding: "11px 38px 8px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, textAlign: "center", minWidth: 0 }}>
+      <span style={{ position: "absolute", inset: 0, padding: "9px 38px 7px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, textAlign: "center", minWidth: 0 }}>
+        {c.no && <span style={{ fontSize: 9.5, fontWeight: 900, padding: "1px 8px", borderRadius: 6, background: "linear-gradient(180deg,#F6DE97,#C49A50)", color: "#2A1807", whiteSpace: "nowrap" }}>{numText(c)}</span>}
         <span className="flex items-center justify-center gap-1" style={{ whiteSpace: "nowrap" }}>
-          {c.no && <span style={{ fontSize: 9.5, fontWeight: 900, padding: "1px 7px", borderRadius: 6, background: "linear-gradient(180deg,#F6DE97,#C49A50)", color: "#2A1807" }}>{numText(c)}</span>}
           <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{reignText(c)}</span>
           {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: LANE_COLOR[n.lane], color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
         </span>
@@ -104,7 +106,7 @@ function DetailCard({ pick, onClose }) {
     const c = BY_ID.get(pick.id);
     title = personName(c); sub = lang === "ko" ? c.name : ""; cc = c.cc;
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
-    blocks.push({ head: t("재위"), lines: [(c.no ? t("{0}대 세계 챔피언", c.no) + (c.reign ? " (" + t("{0}기", c.reign) + ")" : "") : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
+    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
     if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
     if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + " · " + personName(d) + " · " + d.score + (d.won ? " · " + t("등극") : d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : "")) });
     if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.to))) });
