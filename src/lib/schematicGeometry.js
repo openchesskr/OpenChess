@@ -30,6 +30,15 @@ export function snapPuzzleZoom(z) {
   const clamped = Math.min(PUZZLE_ZOOM_MAX, Math.max(PUZZLE_ZOOM_MIN, z));
   return Math.round(clamped / PUZZLE_ZOOM_STEP) * PUZZLE_ZOOM_STEP;
 }
+// (v0.6.3, 사용자 요청) 마스터 트리(세계 챔피언 모식도)는 예전 "75%" 배율(0.5625)을 새 기준(100%)으로 다시 정의한다 — 퍼즐 모식도(PUZZLE_*)와 같은 방식.
+// raw CSS scale 값은 SCHEMATIC_ZOOM_LABEL_BASE의 0.75배라, 좌표 계산 코드는 그대로 두고 표시 라벨·25%p 격자만 이 기준에 맞춘다.
+export const MASTER_ZOOM_LABEL_BASE = SCHEMATIC_ZOOM_LABEL_BASE * 0.75;
+export function masterZoomLabel(z) { return Math.round((z / MASTER_ZOOM_LABEL_BASE) * 100) + "%"; }
+export const MASTER_ZOOM_STEP = 0.25 * MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_MIN = MASTER_ZOOM_STEP, MASTER_ZOOM_MAX = 2 * MASTER_ZOOM_LABEL_BASE;
+export function snapMasterZoom(z) {
+  const clamped = Math.min(MASTER_ZOOM_MAX, Math.max(MASTER_ZOOM_MIN, z));
+  return Math.round(clamped / MASTER_ZOOM_STEP) * MASTER_ZOOM_STEP;
+}
 // (버그 수정) 확대/축소 버튼·휠·핀치가 pan은 그대로 두고 zoom만 바꾸다 보니, 화면 좌상단(콘텐츠
 // 원점)을 기준으로 확대/축소가 일어났다 — 원점에서 멀리 떨어진 곳(팬으로 옮겨온 화면 중앙, 또는
 // 핀치 중심)을 보고 있을 때는 그 지점이 배율만큼 훌쩍 밀려나 트리 전체가 화면 밖으로 사라진

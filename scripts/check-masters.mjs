@@ -136,6 +136,26 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   if (!L.rail || L.rail.x >= Math.min(...tours.map((n) => n.x))) fails.push("대회 열 세로선(rail)이 카드 왼쪽에 없음");
 }
 
+// 열 이름 라벨("역대 세계 챔피언"·"주요 대회"): 두 개, 노드와 겹치지 않고 캔버스 안, 각 열 맨 위 노드 바로 위
+{
+  eq(L.labels.map((l) => l.key), ["champs", "tours"], "열 이름 라벨");
+  for (const l of L.labels) {
+    if (l.x < 0 || l.y < 0 || l.x + l.w > L.width) fails.push("열 이름 라벨이 캔버스 밖: " + l.key);
+    for (const n of L.nodes) if (l.x < n.x + n.w && n.x < l.x + l.w && l.y < n.y + n.h && n.y < l.y + l.h) fails.push("열 이름 라벨(" + l.key + ")이 노드와 겹침: " + n.id);
+  }
+  const first = L.byNodeId.get(CHAMPIONS[0].id), tourTop = Math.min(...L.nodes.filter((n) => n.kind === "tour").map((n) => n.y));
+  if (!(L.labels[0].y + L.labels[0].h <= first.y)) fails.push("챔피언 라벨이 첫 챔피언 노드 위쪽이 아님");
+  if (!(L.labels[1].y + L.labels[1].h <= tourTop)) fails.push("주요 대회 라벨이 첫 대회 노드 위쪽이 아님");
+}
+// 마스터 트리 배율: 예전 75%(0.5625)가 새 100%, 25%p 격자·핀치 스냅
+{
+  const G = await import("../src/lib/schematicGeometry.js");
+  eq(G.MASTER_ZOOM_LABEL_BASE, G.SCHEMATIC_ZOOM_LABEL_BASE * 0.75, "마스터 100% = 예전 75%");
+  eq(G.MASTER_ZOOM_LABEL_BASE, 0.5625, "마스터 100%의 실제 배율");
+  eq([G.masterZoomLabel(0.5625), G.masterZoomLabel(G.MASTER_ZOOM_MIN), G.masterZoomLabel(G.MASTER_ZOOM_MAX)], ["100%", "25%", "200%"], "마스터 배율 라벨");
+  eq([G.snapMasterZoom(0.01), G.snapMasterZoom(99), G.snapMasterZoom(0.58) === G.MASTER_ZOOM_LABEL_BASE], [G.MASTER_ZOOM_MIN, G.MASTER_ZOOM_MAX, true], "마스터 배율 스냅");
+}
+
 // ③ 팬 한계
 const small = { width: 400, height: 300 }, big = { width: 2000, height: 5000 };
 eq(clampMasterPan({ x: -999, y: -999 }, 1, 800, 600, small), { x: 200, y: 20 }, "작은 내용은 가로 가운데·세로 위 고정");
@@ -165,6 +185,11 @@ if (!/SCHEMATIC_DRAG_MULT/.test(mast) || /const SCHEMATIC_DRAG_MULT\s*=/.test(de
 if (!/<Laurel side=\{1\} \/>[\s\S]*<Laurel side=\{-1\} \/>/.test(mast) || !/overflow: "visible"/.test(mast)) fails.push("챔피언 블록 월계수: 왼쪽 side=1·오른쪽 side=-1(잎 끝이 안쪽) 또는 overflow visible 누락");
 if (/ChevronsUp|ChevronsDown/.test(mast)) fails.push("마스터 모식도 좌상단 이동 버튼이 다시 생김");
 if (!/onOpenGame=\{onOpenGame\}/.test(readFileSync("src/App.jsx", "utf8")) || !/<MastersSchematic[^>]*onOpenGame=\{onOpenGame\}/.test(dex)) fails.push("대표 대국을 열 onOpenGame이 App → CollectionTab → MastersSchematic로 연결되지 않음");
+if (/className="no-pan press" onClick=\{\(\) => onPick/.test(mast)) fails.push("노드가 no-pan이라 노드 위에서 끌기·핀치가 안 됨(오프닝 트리처럼 노드 위에서도 끌려야 함)");
+if (!/pinchRef/.test(mast) || !/setPointerCapture/.test(mast)) fails.push("마스터 모식도에 두 손가락 핀치 확대·축소가 없음");
+if (!/snapMasterZoom/.test(mast) || /snapSchematicZoom|SCHEMATIC_ZOOM_STEP/.test(mast)) fails.push("마스터 모식도가 마스터 전용 배율(MASTER_ZOOM_*)이 아니라 오프닝 배율을 씀");
+if (/위에서 아래로 시간순/.test(mast) || /const hint\b/.test(mast)) fails.push("마스터 모식도 위쪽 안내 문구가 다시 생김(열 이름 라벨로 대체)");
+if (!/역대 세계 챔피언/.test(mast) || !/주요 대회/.test(mast)) fails.push("열 이름 라벨 문구(역대 세계 챔피언·주요 대회) 없음");
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-masters: 챔피언 " + CHAMPIONS.length + "명·타이틀 이동 " + TRANSFERS.length + "건·위성 " + L.nodes.filter((n) => n.kind === "sat").length + "명 데이터 정합, 노드 겹침 0, 시간순 배치, 팬 한계, 도감 연결이 유지된다");

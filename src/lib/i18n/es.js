@@ -1856,7 +1856,6 @@ export default {
   "슈퍼 토너먼트": "Supertorneo",
   "여자 대회": "Torneos femeninos",
   "역사적 대회": "Torneos históricos",
-  "위에서 아래로 시간순. 챔피언 옆은 탈락한 도전자, 오른쪽은 주요 대회": "De arriba abajo en orden cronológico. Junto a cada campeón: retadores derrotados. A la derecha: grandes torneos",
   "일회성": "Edición única",
   "종류": "Tipo",
   "팀 대회": "Torneos por equipos",
@@ -1875,4 +1874,5 @@ export default {
   "최다 출전": "Más partidas",
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmado = todas las partidas están en la base. Referencia = faltan algunas",
   "확정": "Confirmado",
+  "주요 대회": "Grandes torneos",
 };
