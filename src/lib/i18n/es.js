@@ -1821,8 +1821,6 @@ export default {
   "탁월한 수 및 유일한 수만 표시": "Mostrar solo jugadas Brillantes y Únicas",
   "표시하지 않음": "No mostrar",
   "2026 타이틀전 · 예정": "Match por el título 2026 · Próximo",
-  "FIDE(1993–2006)": "FIDE (1993–2006)",
-  "PCA·클래식(1993–2006)": "PCA / Clásico (1993–2006)",
   "녹아웃": "Eliminatoria",
   "다음 타이틀전": "Próximo match por el título",
   "몰수승": "Victoria por incomparecencia",
@@ -1832,7 +1830,6 @@ export default {
   "역대 세계 챔피언": "Campeones mundiales de la historia",
   "재위": "Reinado",
   "점수는 챔피언–도전자 순. 괄호는 타이브레이크": "Marcador campeón–retador. Entre paréntesis, el desempate",
-  "정통 계보": "Línea tradicional",
   "클래식": "Clásico",
   "타이틀 상실": "Pérdida del título",
   "타이틀 획득": "Título ganado",
@@ -1875,4 +1872,6 @@ export default {
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmado = todas las partidas están en la base. Referencia = faltan algunas",
   "확정": "Confirmado",
   "주요 대회": "Grandes torneos",
+  "대진표": "Cuadro",
+  "마스터 대국 DB에 이 연도 대국 없음": "No hay partidas de este año en la base de partidas de maestros",
 };

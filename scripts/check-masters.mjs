@@ -109,8 +109,8 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
 }
 const IDX = JSON.parse(rf("src/data/tournamentIndex.json", "utf8"));
 const EDITIONS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDITIONS[id] = v.editions.map((e) => e[0]);
-const FIRSTS = {}; for (const [id, v] of Object.entries(IDX.byId)) if (v.first) FIRSTS[id] = v.first;
-const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDITIONS, FIRSTS);
+const EDS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDS[id] = v.editions;
+const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, null);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
 eq(L.nodes.filter((n) => n.kind === "sat").length, CHAMPIONS.reduce((n, c) => n + satellitesOf(c).length, 0), "위성 노드 수");
 for (let i = 0; i < L.nodes.length; i++) {
@@ -125,13 +125,14 @@ for (const t of TRANSFERS) { const a = L.byNodeId.get(t.from), b = L.byNodeId.ge
 const lx = (id) => L.byNodeId.get(id).x;
 if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클래식) 줄이 오른쪽(FIDE) 줄보다 오른쪽에 있음");
 
-// 대회 열: 챔피언 줄 오른쪽에 연도순 위→아래(챔피언 블록 크기), 각 허브 오른쪽에 첫 에디션 참가자 노드가 오른쪽 180° 방사형, 그 오른쪽으로 다음 연도 칩이 연도순
+// 대회 열: 챔피언 줄 오른쪽에 연도순 위→아래(챔피언 블록보다 큰 블록), 각 허브 오른쪽으로 연도 블록이 한 줄로 이어지고, 연도 블록을 펼치면 그 아래에 그 연도 대진표 영역이 생기며 아래 대회가 밀려난다
 {
   const tours = L.nodes.filter((n) => n.kind === "tour"), others = L.nodes.filter((n) => n.kind === "champ" || n.kind === "sat" || n.kind === "upcoming");
   eq(tours.length, TOURNAMENTS.length, "대회 허브 수");
+  eq(L.nodes.filter((n) => n.kind === "player").length, 0, "접힌 상태에는 대진표 노드가 없음");
   const maxRight = Math.max(...others.map((n) => n.x + n.w));
   for (const n of tours) {
-    eq([n.w, n.h], [MT.CH_W, MT.CH_H], "대회 허브는 챔피언 블록과 같은 크기: " + n.id);
+    if (n.w < MT.CH_W || n.h < MT.CH_H) fails.push("대회 허브가 챔피언 블록보다 작음: " + n.id);
     if (n.x < maxRight) fails.push("대회 허브가 챔피언 열을 침범: " + n.id);
     if (n.y + 1 < n.anchorY - MT.TOUR_H / 2) fails.push("대회 허브가 개최 연도 높이보다 위로 올라감: " + n.id);
   }
@@ -139,16 +140,30 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   if (!L.rail || L.rail.x >= Math.min(...tours.map((n) => n.x))) fails.push("대회 열 세로선(rail)이 허브 왼쪽에 없음");
   for (const t of TOURNAMENTS) {
     const hub = L.byNodeId.get("tour:" + t.id), hy = hub.y + hub.h / 2;
-    const pls = L.nodes.filter((n) => n.kind === "player" && n.tourId === t.id), eds = L.nodes.filter((n) => n.kind === "edition" && n.tourId === t.id).sort((a, b) => a.x - b.x);
-    eq(pls.length, FIRSTS[t.id] ? FIRSTS[t.id].players.length : 0, "첫 에디션 참가자 노드 수: " + t.id);
-    for (const p of pls) if (p.x < hub.x + hub.w) fails.push("참가자 노드가 허브 왼쪽(오른쪽 180° 밖): " + t.id);
-    const fanRight = pls.length ? Math.max(...pls.map((p) => p.x + p.w)) : hub.x + hub.w;
+    const eds = L.nodes.filter((n) => n.kind === "edition" && n.tourId === t.id).sort((a, b) => a.x - b.x);
+    if (!eds.length) fails.push("연도 블록이 없음: " + t.id);
+    if (!eds.some((e) => e.year === t.from)) fails.push("시작 연도 블록이 없음: " + t.id);
     for (let i = 0; i < eds.length; i++) {
-      if (Math.abs(eds[i].y + eds[i].h / 2 - hy) > 1) fails.push("에디션 칩이 허브와 같은 높이가 아님: " + t.id);
-      if (eds[i].x < fanRight) fails.push("에디션 칩이 방사 영역 안쪽: " + t.id);
-      if (i > 0 && eds[i].year < eds[i - 1].year) fails.push("에디션 칩이 연도순이 아님: " + t.id);
+      if (Math.abs(eds[i].y + eds[i].h / 2 - hy) > 1) fails.push("연도 블록이 허브와 같은 줄이 아님: " + t.id);
+      if (eds[i].x < hub.x + hub.w) fails.push("연도 블록이 허브보다 왼쪽: " + t.id);
+      if (i > 0 && eds[i].year <= eds[i - 1].year) fails.push("연도 블록이 연도순이 아니거나 중복: " + t.id);
     }
-    if (pls.length && eds.some((e) => e.year === FIRSTS[t.id].y)) fails.push("첫 에디션이 칩으로도 중복 표시됨: " + t.id);
+  }
+  // 펼침: 연도 블록 아래에 대진표 영역 → 겹침 없음, 아래 대회가 그 높이만큼 밀림, 캔버스가 커짐
+  for (const key of ["hastings:1895", "tata:2000", "candidates:2024"]) {
+    const [tid, yr] = key.split(":");
+    const E = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, key);
+    const open = E.nodes.find((n) => n.kind === "edition" && n.open);
+    if (!open || open.tourId !== tid || open.year !== +yr) { if (EDS[tid] && EDS[tid].some((e) => e[0] === +yr)) fails.push("펼친 연도 블록이 표시되지 않음: " + key); continue; }
+    const pan = E.panels[0];
+    eq(E.panels.length, 1, "펼침은 한 번에 하나: " + key);
+    if (!(pan.y >= open.y + open.h)) fails.push("대진표 영역이 연도 블록 아래가 아님: " + key);
+    const names = (EDS[tid].find((e) => e[0] === +yr) || [])[3] || [];
+    eq(E.nodes.filter((n) => n.kind === "player").length, names.length, "대진표 노드 수: " + key);
+    for (const n of E.nodes) if (pan.x < n.x + n.w && n.x < pan.x + pan.w && pan.y < n.y + n.h && n.y < pan.y + pan.h && n.kind !== "player") fails.push("대진표 영역이 노드와 겹침: " + key + " ↔ " + n.id);
+    for (let i = 0; i < E.nodes.length; i++) for (let j = i + 1; j < E.nodes.length; j++) { const a = E.nodes[i], b = E.nodes[j]; if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) fails.push("펼친 상태 노드 겹침: " + a.id + " ↔ " + b.id); }
+    const later = TOURNAMENTS.slice().sort((a, b) => a.from - b.from).filter((t) => t.from > TOURNAMENTS.find((x) => x.id === tid).from);
+    if (later.length && !(E.byNodeId.get("tour:" + later[0].id).y >= pan.y + pan.h - 1)) fails.push("아래 대회가 대진표 영역만큼 밀리지 않음: " + key);
   }
 }
 
