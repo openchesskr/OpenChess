@@ -15,7 +15,7 @@ const { MT, layoutMasters, satellitesOf, clampMasterPan } = await import("../src
 // ① 데이터
 const ids = CHAMPIONS.map((c) => c.id); eq(new Set(ids).size, ids.length, "챔피언 id 중복");
 const byId = new Map(CHAMPIONS.map((c) => [c.id, c]));
-const N = "(?:\\d+½?|½)"; const SCORE = new RegExp("^" + N + "–" + N + "(?: \\(" + N + "–" + N + "\\))?$|^" + N + "/\\d+$");
+const N = "(?:\\d+(?:\\.5)?)"; const SCORE = new RegExp("^" + N + "–" + N + "(?: \\(" + N + "–" + N + "\\))?$|^" + N + "/\\d+$");
 for (const c of CHAMPIONS) {
   if (!c.name || !c.ko || !c.cc || !["C", "L", "R"].includes(c.lane)) fails.push(c.id + ": 필수 필드(name·ko·cc·lane) 누락");
   if (!(c.from >= 1886) || (c.to != null && c.to < c.from)) fails.push(c.id + ": 재위 해 오류 " + c.from + "–" + c.to);
