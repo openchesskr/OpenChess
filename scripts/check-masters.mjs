@@ -134,7 +134,6 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   for (const n of tours) {
     if (n.w < MT.CH_W || n.h < MT.CH_H) fails.push("대회 허브가 챔피언 블록보다 작음: " + n.id);
     if (n.x < maxRight) fails.push("대회 허브가 챔피언 열을 침범: " + n.id);
-    if (n.y + 1 < n.anchorY - MT.TOUR_H / 2) fails.push("대회 허브가 개최 연도 높이보다 위로 올라감: " + n.id);
   }
   for (let i = 1; i < tours.length; i++) if (tours[i].y < tours[i - 1].y + tours[i - 1].h) fails.push("대회 허브가 연도순 위→아래가 아니거나 겹침: " + tours[i].id);
   if (!L.rail || L.rail.x >= Math.min(...tours.map((n) => n.x))) fails.push("대회 열 세로선(rail)이 허브 왼쪽에 없음");
@@ -174,9 +173,8 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
     if (l.x < 0 || l.y < 0 || l.x + l.w > L.width) fails.push("열 이름 라벨이 캔버스 밖: " + l.key);
     for (const n of L.nodes) if (l.x < n.x + n.w && n.x < l.x + l.w && l.y < n.y + n.h && n.y < l.y + l.h) fails.push("열 이름 라벨(" + l.key + ")이 노드와 겹침: " + n.id);
   }
-  const first = L.byNodeId.get(CHAMPIONS[0].id), tourTop = Math.min(...L.nodes.filter((n) => n.kind === "tour").map((n) => n.y));
+  const first = L.byNodeId.get(CHAMPIONS[0].id);
   if (!(L.labels[0].y + L.labels[0].h <= first.y)) fails.push("챔피언 라벨이 첫 챔피언 노드 위쪽이 아님");
-  if (!(L.labels[1].y + L.labels[1].h <= tourTop)) fails.push("주요 대회 라벨이 첫 대회 노드 위쪽이 아님");
 }
 // 중심 회로 칩(오프닝 트리와 같은 디자인): 동서남북 4갈래 — 남=첫 챔피언 위, 동=대회 세로선 꼭대기, 북·서=끝 패드. 칩은 모든 챔피언 노드 위·북쪽 끝은 그보다 위
 {
@@ -186,14 +184,15 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   if (!(C.cy + C.size / 2 < first.y)) fails.push("회로 칩이 첫 챔피언 위에 없음");
   const end = (t) => t.pts[t.pts.length - 1], len = (t) => t.pts.reduce((m, q, i) => (i ? m + Math.abs(q[0] - t.pts[i - 1][0]) + Math.abs(q[1] - t.pts[i - 1][1]) : 0), 0);
   eq(end(byDir.S), [C.cx, first.y], "남쪽 선은 첫 챔피언 노드 위 가운데에 닿음");
-  eq(end(byDir.E), [L.rail.x, L.rail.mid], "동쪽 선은 대회 트리(세로선)의 가운데 높이에 닿음");
-  if (!(L.rail.y1 < L.rail.mid && L.rail.mid < L.rail.y2)) fails.push("동쪽 선이 닿는 점이 대회 세로선 안쪽 가운데가 아님");
-  if (Math.abs(L.rail.mid - (L.rail.y1 + L.rail.y2) / 2) > 1) fails.push("동쪽 선이 대회 세로선의 가운데가 아님");
+  eq(byDir.E.pts.length, 2, "동쪽 선은 꺾임 없는 일직선");
+  eq(end(byDir.E), [L.rail.x, C.cy], "동쪽 선은 칩과 같은 높이에서 대회 세로선에 닿음");
+  if (!(L.rail.y1 < C.cy && C.cy < L.rail.y2)) fails.push("칩 높이가 대회 세로선 안쪽이 아님");
+  if (Math.abs((L.rail.y1 + L.rail.y2) / 2 - C.cy) > 1) fails.push("대회 열의 가운데가 중심 회로 칩과 같은 높이가 아님");
+  { const mids = L.nodes.filter((n) => n.kind === "tour"); const m = (mids[0].y + mids[0].h / 2 + mids[mids.length - 1].y + mids[mids.length - 1].h / 2) / 2; if (Math.abs(m - C.cy) > 1) fails.push("첫·마지막 대회 허브의 가운데가 칩 높이와 다름"); }
   for (const t of L.traces) if (len(t) < 250) fails.push("첫 회로선이 너무 짧음(" + t.dir + " " + Math.round(len(t)) + "px)");
-  if (!(len(byDir.E) > 600)) fails.push("동쪽 회로선이 충분히 길지 않음");
+  if (!(len(byDir.E) > 400)) fails.push("동쪽 회로선이 충분히 길지 않음");
   const others = L.nodes.filter((n) => n.kind !== "tour" && n.kind !== "edition" && n.kind !== "player");
   for (const [a0, a1] of byDir.E.pts.slice(1).map((q, i) => [byDir.E.pts[i], q])) for (const n of others) { const x0 = Math.min(a0[0], a1[0]), x1 = Math.max(a0[0], a1[0]), y0 = Math.min(a0[1], a1[1]), y1 = Math.max(a0[1], a1[1]); if (x0 <= n.x + n.w && n.x <= x1 && y0 <= n.y + n.h && n.y <= y1) fails.push("동쪽 회로선이 노드를 가로지름: " + n.id); }
-  eq(L.rail.y1 > C.cy, true, "대회 세로선은 칩보다 아래에서 시작");
   if (!(byDir.N.pts[1][1] < C.cy) || !(byDir.W.pts[1][0] < C.cx)) fails.push("북·서쪽 선 방향이 틀림");
   eq(L.pads.map((p) => p.dir).sort(), ["N", "W"], "북·서쪽 끝 패드");
   for (const l of L.labels) if (l.x < 0 || l.y < 0) fails.push("라벨이 캔버스 밖: " + l.key);
