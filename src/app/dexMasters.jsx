@@ -3,20 +3,21 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { Crown, X, ChevronsUp, ChevronsDown } from "lucide-react";
+import { Crown, X } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { MT, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
-import { SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_STEP, anchoredZoomPan, schematicZoomLabel, snapSchematicZoom } from "../lib/schematicGeometry.js";
+import { SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_STEP, SCHEMATIC_DRAG_MULT, anchoredZoomPan, schematicZoomLabel, snapSchematicZoom } from "../lib/schematicGeometry.js";
 
 const LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);
 const BY_ID = new Map(CHAMPIONS.map((c) => [c.id, c]));
 const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
 const personName = (p) => (lang === "ko" && p.ko ? p.ko : (p.name || p.opp));
 const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
+const numText = (c) => (c.no ? t("{0}대", c.no) + (c.reign ? " " + t("{0}기", c.reign) : "") : "");
 const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
 const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? " · " + k : "") + (tr.score ? " · " + tr.score : ""); };
@@ -28,12 +29,15 @@ function CountryChip({ cc, dark }) {
 function ChampNode({ n, onPick, picked }) {
   const c = n.champ, color = LANE_COLOR[n.lane], current = c.to == null;
   return (
-    <button className="no-pan press" onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + reignText(c)}
+    <button className="no-pan press" onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
       style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "7px 12px", textAlign: "left", cursor: "pointer", borderRadius: 14,
         border: "2px solid " + color, background: "linear-gradient(180deg," + T.ebony3 + "," + T.ebony + ")", color: T.ivoryHi,
         boxShadow: picked ? "0 0 0 3px rgba(236,203,134,.55), 0 6px 16px rgba(0,0,0,.35)" : current ? "0 0 14px 2px rgba(236,203,134,.5)" : "0 3px 8px rgba(0,0,0,.28)" }}>
       <div className="flex items-center justify-between gap-2" style={{ marginBottom: 3 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{reignText(c)}</span>
+        <span className="flex items-center gap-1" style={{ minWidth: 0 }}>
+          {c.no && <span style={{ fontSize: 9.5, fontWeight: 900, padding: "1px 6px", borderRadius: 5, background: T.brass, color: "#241509", whiteSpace: "nowrap" }}>{numText(c)}</span>}
+          <span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{reignText(c)}</span>
+        </span>
         <span className="flex items-center gap-1">
           {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: color, color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
           <CountryChip cc={c.cc} dark />
@@ -83,7 +87,7 @@ function DetailCard({ pick, onClose }) {
     const c = BY_ID.get(pick.id);
     title = personName(c); sub = lang === "ko" ? c.name : ""; cc = c.cc;
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
-    blocks.push({ head: t("재위"), lines: [reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
+    blocks.push({ head: t("재위"), lines: [(c.no ? t("{0}대 세계 챔피언", c.no) + (c.reign ? " (" + t("{0}기", c.reign) + ")" : "") : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
     if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
     if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + " · " + personName(d) + " · " + d.score + (d.won ? " · " + t("등극") : d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : "")) });
     if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.to))) });
@@ -134,11 +138,6 @@ export function MastersSchematic({ vertical, tabsSlot }) {
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
-  // 노드를 위쪽 1/3 지점에 오게 이동(처음·현재 버튼).
-  const focus = useCallback((id) => {
-    const n = LAYOUT.byNodeId.get(id); if (!n) return; const r = rect(), z = viewRef.current.z;
-    apply({ x: r.width / 2 - (n.x + n.w / 2) * z, y: r.height * 0.32 - n.y * z }, z);
-  }, [apply]);
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z; apply({ x: r.width / 2 - LAYOUT.centerX * z, y: 0 }, z); }, [apply]);
   useLayoutEffect(() => { toTop(); }, [panelH]); // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
@@ -162,7 +161,7 @@ export function MastersSchematic({ vertical, tabsSlot }) {
     const d = dragRef.current; if (!d) return;
     const dx = e.clientX - d.px, dy = e.clientY - d.py;
     if (!movedRef.current && Math.hypot(dx, dy) < 4) return;
-    movedRef.current = true; apply({ x: d.vx + dx, y: d.vy + dy }, viewRef.current.z);
+    movedRef.current = true; apply({ x: d.vx + dx * SCHEMATIC_DRAG_MULT, y: d.vy + dy * SCHEMATIC_DRAG_MULT }, viewRef.current.z);
   };
   const onPointerUp = () => { dragRef.current = null; };
   const { nodes, edges, width, height } = LAYOUT;
@@ -180,10 +179,6 @@ export function MastersSchematic({ vertical, tabsSlot }) {
       <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
-        <div className="no-pan flex items-center" style={{ position: "absolute", top: 6, left: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
-          <button onClick={toTop} title={t("처음으로")} aria-label={t("처음으로")} className="press" style={{ width: 24, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsUp size={14} /></button>
-          <button onClick={() => focus(UPCOMING.champ)} title={t("현재로")} aria-label={t("현재로")} className="press" style={{ width: 24, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsDown size={14} /></button>
-        </div>
         <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
           <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(view.z)}</button>

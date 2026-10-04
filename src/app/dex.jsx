@@ -3,12 +3,12 @@
 import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRules.js";
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
-import { T, DRAG_SCROLL_MULT, BOARD_SKINS, PIECE_SKINS } from "../lib/theme.js";
+import { T, BOARD_SKINS, PIECE_SKINS } from "../lib/theme.js";
 import { Lock, Check, X, RotateCcw, ChevronRight, Cpu, Save } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";
-import { DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
+import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -510,9 +510,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     };
     motionRafRef.current = requestAnimationFrame(step);
   };
-  // (기능) 트리가 훨씬 더 큰 반지름까지 뻗어나가게 되면서 화면 하나로 훑기엔 캔버스가 넓어 기본 스크롤 감도를 1.5배로 쓴다.
-  // (사용자 요청, v0.3.3) 빈 공간에서 감도를 더 올리던 것은 취소 — 항상 일정한 배율만 쓴다.
-  const SCHEMATIC_DRAG_MULT = DRAG_SCROLL_MULT * 1.5;
+  // (v0.6.3, 사용자 요청) 드래그 감도는 마스터 트리와 같은 1배(SCHEMATIC_DRAG_MULT, schematicGeometry.js). 예전엔 3.3배였다.
   const SCHEMATIC_WHEEL_MULT = 1.5;
   const DRAG_THRESHOLD = 6;
   const pointersRef = useRef(new Map()); // pointerId -> {x, y}

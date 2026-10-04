@@ -43,6 +43,18 @@ for (const c of CHAMPIONS) if ((c.lane !== "C") !== splitSet.has(c.id)) fails.pu
 if (!byId.has(UPCOMING.champ) || byId.get(UPCOMING.champ).to != null) fails.push("UPCOMING.champ은 현 챔피언(to=null)이어야 함");
 eq(CHAMPIONS.filter((c) => c.to == null).length, 1, "현 챔피언은 정확히 1명");
 
+// 대수(no): 정통 계보(C·L 줄)는 번호가 있고 같은 사람은 같은 번호, 새 사람마다 1씩 증가, FIDE 계보(R)는 번호 없음. 현 챔피언 번호 = 정통 챔피언 수.
+const numbered = CHAMPIONS.filter((c) => c.lane !== "R");
+for (const c of CHAMPIONS) if ((c.lane === "R") === (c.no != null)) fails.push(c.id + ": 대수(no)와 줄(lane) 불일치(FIDE 줄만 번호 없음)");
+const noByName = new Map(); let lastNo = 0;
+for (const c of numbered) {
+  if (noByName.has(c.name)) { if (noByName.get(c.name) !== c.no) fails.push(c.id + ": 같은 사람인데 대수가 다름(" + c.no + " ≠ " + noByName.get(c.name) + ")"); }
+  else { if (c.no !== lastNo + 1) fails.push(c.id + ": 대수가 연속되지 않음(" + c.no + ", 기대 " + (lastNo + 1) + ")"); noByName.set(c.name, c.no); lastNo = c.no; }
+}
+eq(CHAMPIONS.find((c) => c.to == null).no, new Set(numbered.map((c) => c.name)).size, "현 챔피언 대수 = 정통 챔피언 수");
+const bySame = new Map(); for (const c of numbered) { if (!bySame.has(c.name)) bySame.set(c.name, []); bySame.get(c.name).push(c); }
+for (const [name, list] of bySame) { const gaps = list.filter((c, i) => i === 0 || list[i - 1].to !== c.from); if (gaps.length > 1) for (const c of list) if (!c.reign) fails.push(name + ": 재위가 떨어져 여러 번이면 reign 번호 필요(" + c.id + ")"); }
+
 // ② 배치
 const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
@@ -70,6 +82,10 @@ eq(clampMasterPan({ x: -300, y: -300 }, 1, 800, 600, big), { x: -300, y: -300 },
 const dex = readFileSync("src/app/dex.jsx", "utf8"), mast = readFileSync("src/app/dexMasters.jsx", "utf8");
 if (!/\["masters", t\("마스터"\)\]/.test(dex) || !/<MastersSchematic /.test(dex)) fails.push("도감에 마스터 탭·MastersSchematic 연결이 없음");
 if (!/useFitPanelHeight\(boxRef, vertical\)/.test(dex) || !/useFitPanelHeight\(boxRef, vertical\)/.test(mast)) fails.push("오프닝·마스터 모식도가 같은 높이 계산(useFitPanelHeight)을 쓰지 않음");
+const { SCHEMATIC_DRAG_MULT } = await import("../src/lib/schematicGeometry.js");
+eq(SCHEMATIC_DRAG_MULT, 1, "드래그 감도 기준값");
+if (!/SCHEMATIC_DRAG_MULT/.test(mast) || /const SCHEMATIC_DRAG_MULT\s*=/.test(dex) || !/SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED/.test(dex)) fails.push("오프닝·마스터 모식도가 같은 드래그 감도(SCHEMATIC_DRAG_MULT)를 공유하지 않음");
+if (/ChevronsUp|ChevronsDown/.test(mast)) fails.push("마스터 모식도 좌상단 이동 버튼이 다시 생김");
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-masters: 챔피언 " + CHAMPIONS.length + "명·타이틀 이동 " + TRANSFERS.length + "건·위성 " + L.nodes.filter((n) => n.kind === "sat").length + "명 데이터 정합, 노드 겹침 0, 시간순 배치, 팬 한계, 도감 연결이 유지된다");
