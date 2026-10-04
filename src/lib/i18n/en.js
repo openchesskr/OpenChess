@@ -1856,7 +1856,6 @@ export default {
   "슈퍼 토너먼트": "Super tournament",
   "여자 대회": "Women's events",
   "역사적 대회": "Historic events",
-  "위에서 아래로 시간순. 챔피언 옆은 탈락한 도전자, 오른쪽은 주요 대회": "Top to bottom in time order. Beside each champion: challengers who lost. On the right: major tournaments",
   "일회성": "One-off",
   "종류": "Type",
   "팀 대회": "Team events",
@@ -1875,4 +1874,5 @@ export default {
   "최다 출전": "Most games",
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmed = every game is in the DB. Reference = some games missing",
   "확정": "Confirmed",
+  "주요 대회": "Major tournaments",
 };

@@ -15,7 +15,7 @@ import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
 import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
-import { SCHEMATIC_ZOOM_LABEL_BASE, SCHEMATIC_ZOOM_STEP, SCHEMATIC_DRAG_MULT, anchoredZoomPan, schematicZoomLabel, snapSchematicZoom } from "../lib/schematicGeometry.js";
+import { MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_STEP, SCHEMATIC_DRAG_MULT, anchoredZoomPan, masterZoomLabel, snapMasterZoom } from "../lib/schematicGeometry.js";
 
 const LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS);
 const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66" };
@@ -59,7 +59,7 @@ function MasterDefs() {
 function ChampNode({ n, onPick, picked }) {
   const c = n.champ, current = c.to == null;
   return (
-    <button className="no-pan press" onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
+    <button className="press" onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
       style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 14, border: "1.5px solid #6E4E18",
         background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(80,50,10,.45)," + (picked ? " 0 0 0 3px rgba(255,243,211,.85)," : "") + (current ? " 0 0 18px 4px rgba(236,203,134,.65)," : "") + " 0 4px 10px rgba(60,40,10,.38)" }}>
@@ -82,7 +82,7 @@ function ChampNode({ n, onPick, picked }) {
 function TourNode({ n, onPick, picked }) {
   const r = n.tour, color = TOUR_COLOR[r.type];
   return (
-    <button className="no-pan press" onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
+    <button className="press" onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
       style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "6px 10px 6px 16px", textAlign: "left", cursor: "pointer", borderRadius: 11, overflow: "hidden",
         border: "1.5px solid " + (picked ? color : "#DCCBA8"), background: "#fff", color: T.ink, boxShadow: picked ? "0 0 0 3px " + color + "44" : "0 1px 4px rgba(60,40,20,.12)" }}>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, background: color }} />
@@ -95,7 +95,7 @@ function TourNode({ n, onPick, picked }) {
 function SatNode({ n, onPick, picked }) {
   const s = n.sat;
   return (
-    <button className="no-pan press" onClick={() => onPick({ type: "sat", id: n.id })} aria-label={personName(s) + " " + s.years.join(", ")}
+    <button className="press" onClick={() => onPick({ type: "sat", id: n.id })} aria-label={personName(s) + " " + s.years.join(", ")}
       style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", textAlign: "left", cursor: "pointer", borderRadius: 11,
         border: "1.5px solid " + (picked ? T.brass : "#C9B58C"), background: "#fff", color: T.ink, boxShadow: picked ? "0 0 0 3px rgba(196,154,80,.35)" : "0 1px 4px rgba(60,40,20,.12)" }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{personName(s)}</div>
@@ -224,8 +224,8 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const boxRef = useRef(null);
   const panelH = useFitPanelHeight(boxRef, vertical);
-  // 좁은 화면(모바일)은 챔피언 + 양옆 도전자가 한 화면에 들어오도록 75%(0.5625)로 시작한다.
-  const baseZ = vertical ? SCHEMATIC_ZOOM_LABEL_BASE * 0.75 : SCHEMATIC_ZOOM_LABEL_BASE;
+  // (v0.6.3, 사용자 요청) 예전 75% 배율이 새 100%(MASTER_ZOOM_LABEL_BASE)다 — 데스크톱·모바일 모두 이 배율로 시작한다.
+  const baseZ = MASTER_ZOOM_LABEL_BASE;
   const [view, setView] = useState({ x: 0, y: 0, z: baseZ });
   const viewRef = useRef(view); viewRef.current = view;
   const [pick, setPick] = useState(null);
@@ -234,7 +234,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const clamp = (p, z) => { const r = rect(); return clampMasterPan(p, z, r.width, r.height, LAYOUT); };
   const apply = useCallback((p, z) => setView({ ...clamp(p, z), z }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const zoomBy = useCallback((dz, ax, ay) => {
-    const v = viewRef.current, r = rect(), nz = snapSchematicZoom(v.z + dz); if (nz === v.z) return;
+    const v = viewRef.current, r = rect(), nz = snapMasterZoom(v.z + dz); if (nz === v.z) return;
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
@@ -246,43 +246,67 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     const onWheel = (e) => {
       e.preventDefault();
       const v = viewRef.current;
-      if (e.ctrlKey || e.metaKey) { const r = el.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? SCHEMATIC_ZOOM_STEP : -SCHEMATIC_ZOOM_STEP, e.clientX - r.left, e.clientY - r.top); return; }
+      if (e.ctrlKey || e.metaKey) { const r = el.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? MASTER_ZOOM_STEP : -MASTER_ZOOM_STEP, e.clientX - r.left, e.clientY - r.top); return; }
       apply({ x: v.x - e.deltaX, y: v.y - e.deltaY }, v.z);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [apply, zoomBy]);
+  // 포인터: 한 손가락·마우스는 끌기(이동), 두 손가락은 핀치 확대·축소(오프닝 트리와 같은 방식 — 값은 25%p 단계로 스냅).
+  const pointersRef = useRef(new Map()), pinchRef = useRef(null);
+  const localPt = (e) => { const r = rect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const startPinch = () => {
+    const pts = [...pointersRef.current.values()], v = viewRef.current;
+    const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    pinchRef.current = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1, zoom: v.z, content: { x: (mid.x - v.x) / v.z, y: (mid.y - v.y) / v.z } };
+    dragRef.current = null; movedRef.current = true;   // 핀치가 끝나도 그 손가락 떼기가 노드 클릭으로 새지 않게
+  };
   const onPointerDown = (e) => {
     if (e.target.closest && e.target.closest(".no-pan")) return;
+    pointersRef.current.set(e.pointerId, localPt(e));
+    if (pointersRef.current.size === 2) { for (const id of pointersRef.current.keys()) { try { e.currentTarget.setPointerCapture(id); } catch { } } startPinch(); return; }
+    if (pointersRef.current.size > 2) return;
+    // 노드 위에서도 끌 수 있게 노드는 no-pan이 아니다. 포인터 캡처는 실제로 끌기가 시작될 때만 건다(누르자마자 걸면 노드 클릭이 캔버스로 넘어가 사라진다).
     dragRef.current = { px: e.clientX, py: e.clientY, vx: viewRef.current.x, vy: viewRef.current.y }; movedRef.current = false;
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
   };
   const onPointerMove = (e) => {
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, localPt(e));
+    if (pinchRef.current && pointersRef.current.size >= 2) {
+      const pts = [...pointersRef.current.values()], pr = pinchRef.current;
+      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const nz = snapMasterZoom(pr.zoom * dist / pr.dist);
+      apply({ x: mid.x - pr.content.x * nz, y: mid.y - pr.content.y * nz }, nz);
+      return;
+    }
     const d = dragRef.current; if (!d) return;
     const dx = e.clientX - d.px, dy = e.clientY - d.py;
     if (!movedRef.current && Math.hypot(dx, dy) < 4) return;
+    if (!movedRef.current) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { } }
     movedRef.current = true; apply({ x: d.vx + dx * SCHEMATIC_DRAG_MULT, y: d.vy + dy * SCHEMATIC_DRAG_MULT }, viewRef.current.z);
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const onPointerUp = (e) => {
+    if (e && e.pointerId != null) pointersRef.current.delete(e.pointerId);
+    if (pinchRef.current) {
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+      // 한 손가락이 남으면 그 손가락으로 이어서 끌 수 있게 기준점을 다시 잡는다.
+      if (pointersRef.current.size === 1) { const [pt] = [...pointersRef.current.values()], r = rect(); dragRef.current = { px: pt.x + r.left, py: pt.y + r.top, vx: viewRef.current.x, vy: viewRef.current.y }; movedRef.current = true; }
+      return;
+    }
+    dragRef.current = null;
+  };
   const { nodes, edges, width, height } = LAYOUT;
   const champEdges = edges.filter((e) => e.kind === "transfer");
-  const hint = t("위에서 아래로 시간순. 챔피언 옆은 탈락한 도전자, 오른쪽은 주요 대회");
   return (
     <div>
-      <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
-        {tabsSlot}
-        <div style={{ minWidth: 0, flex: 1, textAlign: vertical ? "left" : "right" }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: T.brassHi }}>{t("역대 세계 챔피언")}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{hint}</div>
-        </div>
-      </div>
+      {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
       <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
         <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
-          <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
-          <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(view.z)}</button>
-          <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+          <button onClick={() => zoomBy(-MASTER_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
+          <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{masterZoomLabel(view.z)}</button>
+          <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
@@ -304,6 +328,13 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             const p = transferPath(e.a, e.b);
             return <span key={"l" + i} style={{ position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
           })}
+          {LAYOUT.labels.map((l) => (
+            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 3 }}>
+              <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 16, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+                ✦ {l.key === "champs" ? t("역대 세계 챔피언") : t("주요 대회")} ✦
+              </span>
+            </div>
+          ))}
           {nodes.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} />
             : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} /> : <UpcomingNode key={n.id} n={n} />)}

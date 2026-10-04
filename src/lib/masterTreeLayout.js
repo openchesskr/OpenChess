@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 214, TOUR_H: 56, TOUR_GAP: 8, TOUR_COL_GAP: 100, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 24 };
+export const MT = { TOUR_W: 214, TOUR_H: 56, TOUR_GAP: 8, TOUR_COL_GAP: 100, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -109,13 +109,19 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   // 좌표를 양수로 옮긴다.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const n of nodes) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
+  // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 각 열 맨 위 노드 위쪽에 가운데 맞춰 놓는다(오프닝 트리의 금색 오프닝 이름과 같은 자리 개념).
+  const labels = [];
+  { const first = champNode.get(champions[0].id); labels.push({ id: "champs", key: "champs", x: first.x + first.w / 2 - MT.LABEL_W / 2, y: first.y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
+  { const tn = nodes.filter((n) => n.kind === "tour"); if (tn.length) labels.push({ id: "tours", key: "tours", x: tn[0].x + tn[0].w / 2 - MT.LABEL_W / 2, y: tn[0].y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
+  for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = 0;
+  for (const l of labels) { l.x += dx; l.y += dy; }
   for (const n of nodes) { n.x += dx; n.y += dy; }
   if (rail) rail.x += dx;
   const byNodeId = new Map(nodes.map((n) => [n.id, n]));
   for (const e of edges) { e.a = byNodeId.get(e.from); e.b = byNodeId.get(e.to); }
   const width = maxX - minX + MT.PAD * 2, height = maxY + MT.PAD / 2;
-  return { nodes, edges, rail, width, height, centerX: dx, bounds: { minX: MT.PAD, maxX: width - MT.PAD - MT.CH_W, minY: MT.TOP_PAD, maxY: height - MT.CH_H }, byNodeId };
+  return { nodes, edges, labels, rail, width, height, centerX: dx, bounds: { minX: MT.PAD, maxX: width - MT.PAD - MT.CH_W, minY: MT.TOP_PAD, maxY: height - MT.CH_H }, byNodeId };
 }
 
 /* 챔피언 노드끼리 잇는 선의 경로(SVG path)와 라벨 위치. 위 노드 아래 가운데 → 아래 노드 위 가운데를 세로 곡선으로 잇는다. */
