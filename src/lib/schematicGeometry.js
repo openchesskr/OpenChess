@@ -49,6 +49,9 @@ export function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
 // (v0.1.2 기능) 도감 오프닝 트리 캔버스 좌상단에는 검색창이 떠 있어(대략 이 높이만큼), 팬 한계가
 // 스냅한 블록이 그 뒤에 가려지지 않도록 유효 뷰포트 상단을 이만큼 안으로 줄인다.
 export const SCHEMATIC_TOP_INSET = 44;
+// (v0.6.3, 사용자 요청) 도감 모식도(오프닝·마스터)의 드래그 감도 — 손가락·마우스가 움직인 화면 거리만큼 그대로(1배) 따라 움직인다.
+// 예전엔 오프닝 트리만 2.2×1.5 = 3.3배라 마스터 트리(1배)와 감도가 달랐다. 두 모식도가 이 값 하나를 함께 쓴다.
+export const SCHEMATIC_DRAG_MULT = 1;
 // (사용자 요청) 예전엔 나침반 중심 회로 칩을 "실제로 화면에 보이는 범위의 절반"(visibleBoxCenter,
 // 박스가 뷰포트보다 커서 잘릴 때를 대비한 보정)에 맞췄으나, 이제 모식도 박스 자신이 항상 뷰포트
 // 안에 통째로 들어오도록 높이가 동적으로 계산되므로(OpeningSchematic의 panelH) 그런 보정이 필요

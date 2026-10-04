@@ -1841,6 +1841,9 @@ export default {
   "토너먼트": "Torneo",
   "통합전": "Match de unificación",
   "패": "Derrota",
-  "현재로": "Ir al presente",
   "등극": "Coronado",
+  "{0}대": "N.º {0}",
+  "{0}기": "Reinado {0}",
+  "{0}대 세계 챔피언": "Campeón mundial n.º {0}",
+  "FIDE 세계 챔피언(분열기)": "Campeón mundial FIDE (era de la escisión)",
 };
