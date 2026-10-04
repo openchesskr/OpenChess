@@ -12,31 +12,31 @@ export const CHAMPIONS = [
     { y: 1891, opp: "Isidor Gunsberg", ko: "이시도르 군스베르크", cc: "GBR", score: "10.5–8.5", sat: true },
     { y: 1892, opp: "Mikhail Chigorin", ko: "미하일 치고린", cc: "RUS", score: "12.5–10.5", sat: true },
   ] },
-  { id: "lasker", name: "Emanuel Lasker", ko: "에마누엘 라스커", cc: "GER", no: 2, from: 1894, to: 1921, lane: "C", defenses: [
+  { id: "lasker", name: "Emanuel Lasker", ko: "엠마누엘 라스커", cc: "GER", no: 2, from: 1894, to: 1921, lane: "C", defenses: [
     { y: 1897, opp: "Wilhelm Steinitz", ko: "빌헬름 슈타이니츠", cc: "AUT", score: "12.5–4.5" },
     { y: 1907, opp: "Frank Marshall", ko: "프랭크 마셜", cc: "USA", score: "11.5–3.5", sat: true },
-    { y: 1908, opp: "Siegbert Tarrasch", ko: "지크베르트 타라슈", cc: "GER", score: "10.5–5.5", sat: true },
+    { y: 1908, opp: "Siegbert Tarrasch", ko: "지크베르트 타라시", cc: "GER", score: "10.5–5.5", sat: true },
     { y: 1909, opp: "David Janowski", ko: "다비드 야노프스키", cc: "FRA", score: "8–2", sat: true },
     { y: 1910, opp: "Carl Schlechter", ko: "카를 슐레히터", cc: "AUT", score: "5–5", sat: true, draw: true },
     { y: 1910, opp: "David Janowski", ko: "다비드 야노프스키", cc: "FRA", score: "9.5–1.5", sat: true },
   ] },
   { id: "capablanca", name: "José Raúl Capablanca", ko: "호세 라울 카파블랑카", cc: "CUB", no: 3, from: 1921, to: 1927, lane: "C", defenses: [] },
-  { id: "alekhine1", name: "Alexander Alekhine", ko: "알렉산드르 알레힌", cc: "FRA", no: 4, reign: 1, from: 1927, to: 1935, lane: "C", defenses: [
+  { id: "alekhine1", name: "Alexander Alekhine", ko: "알렉산더 알레킨", cc: "FRA", no: 4, reign: 1, from: 1927, to: 1935, lane: "C", defenses: [
     { y: 1929, opp: "Efim Bogoljubov", ko: "예핌 보골류보프", cc: "GER", score: "15.5–9.5", sat: true },
     { y: 1934, opp: "Efim Bogoljubov", ko: "예핌 보골류보프", cc: "GER", score: "15.5–10.5", sat: true },
   ] },
-  { id: "euwe", name: "Max Euwe", ko: "막스 오이버", cc: "NED", no: 5, from: 1935, to: 1937, lane: "C", defenses: [] },
-  { id: "alekhine2", name: "Alexander Alekhine", ko: "알렉산드르 알레힌", cc: "FRA", no: 4, reign: 2, from: 1937, to: 1946, lane: "C", defenses: [] },
-  { id: "botvinnik1", name: "Mikhail Botvinnik", ko: "미하일 보트비니크", cc: "URS", no: 6, reign: 1, from: 1948, to: 1957, lane: "C", defenses: [
+  { id: "euwe", name: "Max Euwe", ko: "막스 오이베", cc: "NED", no: 5, from: 1935, to: 1937, lane: "C", defenses: [] },
+  { id: "alekhine2", name: "Alexander Alekhine", ko: "알렉산더 알레킨", cc: "FRA", no: 4, reign: 2, from: 1937, to: 1946, lane: "C", defenses: [] },
+  { id: "botvinnik1", name: "Mikhail Botvinnik", ko: "미하일 보트비닉", cc: "URS", no: 6, reign: 1, from: 1948, to: 1957, lane: "C", defenses: [
     { y: 1948, opp: "Paul Keres", ko: "파울 케레스", cc: "EST", score: "10.5/20", sat: true, tourney: true },
     { y: 1948, opp: "Samuel Reshevsky", ko: "새뮤얼 레셰프스키", cc: "USA", score: "10.5/20", sat: true, tourney: true },
     { y: 1951, opp: "David Bronstein", ko: "다비드 브론슈타인", cc: "URS", score: "12–12", sat: true, draw: true },
     { y: 1954, opp: "Vasily Smyslov", ko: "바실리 스미슬로프", cc: "URS", score: "12–12", draw: true },
   ] },
   { id: "smyslov", name: "Vasily Smyslov", ko: "바실리 스미슬로프", cc: "URS", no: 7, from: 1957, to: 1958, lane: "C", defenses: [] },
-  { id: "botvinnik2", name: "Mikhail Botvinnik", ko: "미하일 보트비니크", cc: "URS", no: 6, reign: 2, from: 1958, to: 1960, lane: "C", defenses: [] },
+  { id: "botvinnik2", name: "Mikhail Botvinnik", ko: "미하일 보트비닉", cc: "URS", no: 6, reign: 2, from: 1958, to: 1960, lane: "C", defenses: [] },
   { id: "tal", name: "Mikhail Tal", ko: "미하일 탈", cc: "LAT", no: 8, from: 1960, to: 1961, lane: "C", defenses: [] },
-  { id: "botvinnik3", name: "Mikhail Botvinnik", ko: "미하일 보트비니크", cc: "URS", no: 6, reign: 3, from: 1961, to: 1963, lane: "C", defenses: [] },
+  { id: "botvinnik3", name: "Mikhail Botvinnik", ko: "미하일 보트비닉", cc: "URS", no: 6, reign: 3, from: 1961, to: 1963, lane: "C", defenses: [] },
   { id: "petrosian", name: "Tigran Petrosian", ko: "티그란 페트로시안", cc: "ARM", no: 9, from: 1963, to: 1969, lane: "C", defenses: [
     { y: 1966, opp: "Boris Spassky", ko: "보리스 스파스키", cc: "URS", score: "12.5–11.5" },
   ] },
@@ -84,7 +84,7 @@ export const CHAMPIONS = [
     { y: 2010, opp: "Veselin Topalov", ko: "베셀린 토팔로프", cc: "BUL", score: "6.5–5.5", sat: true },
     { y: 2012, opp: "Boris Gelfand", ko: "보리스 겔판트", cc: "ISR", score: "6–6 (2.5–1.5)", sat: true },
   ] },
-  { id: "carlsen", name: "Magnus Carlsen", ko: "마그누스 칼센", cc: "NOR", no: 16, from: 2013, to: 2023, lane: "C", defenses: [
+  { id: "carlsen", name: "Magnus Carlsen", ko: "매그너스 칼슨", cc: "NOR", no: 16, from: 2013, to: 2023, lane: "C", defenses: [
     { y: 2014, opp: "Viswanathan Anand", ko: "비스와나탄 아난드", cc: "IND", score: "6.5–4.5" },
     { y: 2016, opp: "Sergey Karjakin", ko: "세르게이 카르야킨", cc: "RUS", score: "6–6 (3–1)", sat: true },
     { y: 2018, opp: "Fabiano Caruana", ko: "파비아노 카루아나", cc: "USA", score: "6–6 (3–0)", sat: true },
@@ -93,7 +93,7 @@ export const CHAMPIONS = [
   { id: "ding", name: "Ding Liren", ko: "딩 리런", cc: "CHN", no: 17, from: 2023, to: 2024, lane: "C", defenses: [
     { y: 2023, opp: "Ian Nepomniachtchi", ko: "이안 네포므냐시", cc: "RUS", score: "7–7 (2.5–1.5)", sat: true, won: true },
   ] },
-  { id: "gukesh", name: "Gukesh Dommaraju", ko: "구케시 도마라주", cc: "IND", no: 18, from: 2024, to: null, lane: "C", defenses: [] },
+  { id: "gukesh", name: "Gukesh Dommaraju", ko: "구케시 돔마라주", cc: "IND", no: 18, from: 2024, to: null, lane: "C", defenses: [] },
 ];
 
 // 챔피언 사이 타이틀 이동 — from/to는 CHAMPIONS의 id. kind: match(맞대결) | tournament(토너먼트) | forfeit(몰수승) | split(분열) | unify(통합 합류) | knockout(녹아웃)
