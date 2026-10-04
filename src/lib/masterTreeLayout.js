@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 214, TOUR_H: 56, TOUR_GAP: 8, TOUR_COL_GAP: 100, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
+export const MT = { TOUR_W: 224, TOUR_H: 88, TOUR_GAP: 18, ORIGIN_GAP: 90, ED_W: 76, ED_H: 34, ED_GAP: 10, ARC_FROM: -85, ARC_TO: 85, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -32,7 +32,7 @@ export function yearToY(anchors, year) {
   return anchors[anchors.length - 1].y;
 }
 
-export function layoutMasters(champions, transfers, splitRows, upcoming, tournaments = []) {
+export function layoutMasters(champions, transfers, splitRows, upcoming, tournaments = [], editions = {}) {
   const byId = new Map(champions.map((c) => [c.id, c]));
   const splitIds = new Set(splitRows.flat().filter(Boolean));
   const nodes = [], edges = [], champNode = new Map();
@@ -85,43 +85,63 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
     y = upNode.y + upNode.h + MT.ROW_GAP;
   }
   for (const t of transfers) edges.push({ kind: "transfer", from: t.from, to: t.to, t });
-  // 오른쪽 대회 열 — 개최 연도를 챔피언 행의 높이에 맞추되(기준점 보간), 같은 구간에 몰리면 연도순을 지키며 아래로 밀어 겹치지 않게 한다.
-  let rail = null;
+  // 오른쪽 대회 부채꼴 — 챔피언 줄 오른쪽의 한 점(origin)에서 오른쪽 180° 안으로 방사형으로 퍼진다.
+  //  · 대회 허브(챔피언 블록과 같은 크기)는 개최 시작 연도순으로 위(-85°)→아래(+85°) 호 위에 놓인다. 서로 겹치지 않는 가장 작은 반지름 R을 이분 탐색으로 구한다.
+  //  · 각 허브에서 같은 각도로 바깥(오른쪽)을 향해 연도순 에디션 칩(ED_W×ED_H)이 줄지어 이어진다(editions[id] = 연도 배열, 없으면 시작 연도 하나).
+  let origin = null;
   if (tournaments.length) {
-    const anchors = champions.filter((c) => c.lane !== "R").map((c) => ({ year: c.from, y: champNode.get(c.id).y + MT.CH_H / 2 })).sort((a, b) => a.year - b.year);
-    if (upNode) anchors.push({ year: 2026.9, y: upNode.y + upNode.h / 2 });
-    const colX = nodes.reduce((m, n) => Math.max(m, n.x + n.w), -Infinity) + MT.TOUR_COL_GAP;
-    let prevBottom = -Infinity;
-    const sorted = tournaments.map((tr, i) => ({ tr, i })).sort((a, b) => a.tr.from - b.tr.from || a.i - b.i);
-    const tourNodes = [];
-    for (const { tr } of sorted) {
-      const anchorY = yearToY(anchors, tr.from);
-      const top = Math.max(anchorY - MT.TOUR_H / 2, prevBottom + MT.TOUR_GAP);
-      prevBottom = top + MT.TOUR_H;
-      const n = { id: "tour:" + tr.id, kind: "tour", tour: tr, x: colX, y: top, w: MT.TOUR_W, h: MT.TOUR_H, anchorY };
-      nodes.push(n); tourNodes.push(n);
-    }
-    const first = tourNodes[0], last = tourNodes[tourNodes.length - 1];
-    rail = { x: colX - 28, y1: first.y + first.h / 2, y2: last.y + last.h / 2 };
-    for (const n of tourNodes) edges.push({ kind: "tour", from: n.id, to: n.id });
-    y = Math.max(y, last.y + last.h + MT.ROW_GAP);
+    const rights = nodes.map((n) => n.x + n.w), tops = nodes.map((n) => n.y), bottoms = nodes.map((n) => n.y + n.h);
+    origin = { x: Math.max(...rights) + MT.ORIGIN_GAP, y: (Math.min(...tops) + Math.max(...bottoms)) / 2 };
+    const sorted = tournaments.map((tr, i) => ({ tr, i })).sort((a, b) => a.tr.from - b.tr.from || a.i - b.i).map((e) => e.tr);
+    const rad = (d) => (d * Math.PI) / 180;
+    const place = (R) => {
+      const out = []; let th = MT.ARC_FROM;
+      for (let i = 0; i < sorted.length; i++) {
+        for (;;) {
+          if (th > MT.ARC_TO) return null;
+          const cx = origin.x + R * Math.cos(rad(th)), cy = origin.y + R * Math.sin(rad(th));
+          const r = { x: cx - MT.TOUR_W / 2, y: cy - MT.TOUR_H / 2, w: MT.TOUR_W, h: MT.TOUR_H };
+          if (!out.some((q) => r.x < q.x + q.w + MT.TOUR_GAP && q.x < r.x + r.w + MT.TOUR_GAP && r.y < q.y + q.h + MT.TOUR_GAP && q.y < r.y + r.h + MT.TOUR_GAP)) { out.push({ ...r, th, cx, cy }); break; }
+          th += 0.1;
+        }
+      }
+      return out;
+    };
+    let lo = 200, hi = 6000;
+    while (hi - lo > 4) { const mid = (lo + hi) / 2; if (place(mid)) hi = mid; else lo = mid; }
+    const hubs = place(hi);
+    sorted.forEach((tr, i) => {
+      const h = hubs[i], c = Math.cos(rad(h.th)), s = Math.sin(rad(h.th));
+      const hub = { id: "tour:" + tr.id, kind: "tour", tour: tr, x: h.x, y: h.y, w: h.w, h: h.h, angle: h.th };
+      nodes.push(hub);
+      const years = ((editions[tr.id] && editions[tr.id].length) ? [...editions[tr.id]] : [tr.from]).sort((a, b) => a - b);
+      const hubExt = Math.abs(c) * MT.TOUR_W / 2 + Math.abs(s) * MT.TOUR_H / 2, edExt = Math.abs(c) * MT.ED_W / 2 + Math.abs(s) * MT.ED_H / 2;
+      let dist = hubExt + MT.ED_GAP * 2 + edExt, last = { x: h.cx, y: h.cy };
+      years.forEach((yr) => {
+        const ex = h.cx + c * dist, ey = h.cy + s * dist;
+        nodes.push({ id: "ed:" + tr.id + ":" + yr, kind: "edition", tourId: tr.id, tour: tr, year: yr, x: ex - MT.ED_W / 2, y: ey - MT.ED_H / 2, w: MT.ED_W, h: MT.ED_H });
+        last = { x: ex, y: ey }; dist += 2 * edExt + MT.ED_GAP;
+      });
+      edges.push({ kind: "ray", tour: tr, from: hub.id, to: hub.id, x1: origin.x, y1: origin.y, x2: last.x, y2: last.y });
+    });
   }
   // 좌표를 양수로 옮긴다.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const n of nodes) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
-  // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 각 열 맨 위 노드 위쪽에 가운데 맞춰 놓는다(오프닝 트리의 금색 오프닝 이름과 같은 자리 개념).
+  // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 챔피언 열은 첫 챔피언 노드 위, 대회 부채꼴은 시작점(origin) 위에 가운데 맞춰 놓는다.
   const labels = [];
   { const first = champNode.get(champions[0].id); labels.push({ id: "champs", key: "champs", x: first.x + first.w / 2 - MT.LABEL_W / 2, y: first.y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
-  { const tn = nodes.filter((n) => n.kind === "tour"); if (tn.length) labels.push({ id: "tours", key: "tours", x: tn[0].x + tn[0].w / 2 - MT.LABEL_W / 2, y: tn[0].y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
-  for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
-  const dx = MT.PAD - minX, dy = 0;
+  if (origin) labels.push({ id: "tours", key: "tours", x: origin.x - MT.LABEL_W / 2, y: origin.y - 22 - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
+  for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); maxY = Math.max(maxY, l.y + l.h); }
+  const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;
   for (const l of labels) { l.x += dx; l.y += dy; }
   for (const n of nodes) { n.x += dx; n.y += dy; }
-  if (rail) rail.x += dx;
+  if (origin) { origin.x += dx; origin.y += dy; }
+  for (const e of edges) if (e.kind === "ray") { e.x1 += dx; e.y1 += dy; e.x2 += dx; e.y2 += dy; }
   const byNodeId = new Map(nodes.map((n) => [n.id, n]));
   for (const e of edges) { e.a = byNodeId.get(e.from); e.b = byNodeId.get(e.to); }
-  const width = maxX - minX + MT.PAD * 2, height = maxY + MT.PAD / 2;
-  return { nodes, edges, labels, rail, width, height, centerX: dx, bounds: { minX: MT.PAD, maxX: width - MT.PAD - MT.CH_W, minY: MT.TOP_PAD, maxY: height - MT.CH_H }, byNodeId };
+  const width = maxX - minX + MT.PAD * 2, height = maxY - minY + MT.TOP_PAD + MT.PAD;
+  return { nodes, edges, labels, origin, width, height, centerX: dx, byNodeId };
 }
 
 /* 챔피언 노드끼리 잇는 선의 경로(SVG path)와 라벨 위치. 위 노드 아래 가운데 → 아래 노드 위 가운데를 세로 곡선으로 잇는다. */
