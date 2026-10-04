@@ -13,6 +13,7 @@ import FIDE from "../data/fideRankings.json";
 import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
 import { dbPlayerName, playerName } from "../data/playerNames.js";
+import { masterName } from "../data/masterNames.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
 import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
@@ -111,11 +112,11 @@ function TourNode({ n, onPick, picked, fx }) {
 function FideNode({ n, onPick, picked, fx }) {
   const f = n.fide;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + dbPlayerName(f.name, lang) + " " + f.rating}
+    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px 0 28px", textAlign: "left", cursor: "pointer", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontFamily: SITE_FONT, color: T.ink,
         border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "none" }}>
       <CornerBadge bg={n.rank <= 3 ? T.brass : "#8A7458"}><span style={{ fontSize: 8.5, fontWeight: 900 }}>{n.rank}</span></CornerBadge>
-      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dbPlayerName(f.name, lang)}</span>
+      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, lang)}</span>
       <span style={{ fontSize: 11.5, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{f.rating}</span>
     </button>
   );
@@ -124,11 +125,11 @@ function FideNode({ n, onPick, picked, fx }) {
 function DbMasterNode({ n, onPick, picked, fx }) {
   const m = n.dbm;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={dbPlayerName(m.name, lang)}
+    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px 0 14px", textAlign: "left", cursor: "pointer", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontFamily: SITE_FONT, color: T.ink,
         border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "none" }}>
       <CornerBadge bg="#8A7458"><User size={10} /></CornerBadge>
-      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dbPlayerName(m.name, lang)}</span>
+      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(m.name, lang)}</span>
       <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{m.games}</span>
     </button>
   );
@@ -270,14 +271,14 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
     blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
-    title = dbPlayerName(f[2], lang); sub = lang === "ko" ? f[2] : ""; cc = f[3];
+    title = masterName(f[2], lang); sub = lang === "ko" ? masterName(f[2], "en") : ""; cc = f[3];
     blocks.push({ head: t("순위"), lines: ["FIDE " + cat + " #" + f[0]] });
     blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
     if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
     blocks.push({ head: "FIDE", lines: [FIDE.month] });
   } else if (pick.type === "dbm") {
     const m = DBM.masters[+pick.id.split(":")[1]];
-    title = dbPlayerName(m[0], lang); sub = lang === "ko" ? m[0] : "";
+    title = masterName(m[0], lang); sub = lang === "ko" ? masterName(m[0], "en") : "";
     blocks.push({ head: t("마스터 대국 DB"), lines: [t("대국 {0}판", m[1])] });
     if (m[2]) blocks.push({ head: t("최고 레이팅"), lines: [String(m[2])] });
   } else {
@@ -423,8 +424,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const fxOf = (n) => (electric ? { delay: surgeAt(n.x + n.w / 2, n.y + n.h / 2) } : null);
   // 선택한 노드까지 칩에서 이어지는 회로선 — 챔피언·도전자는 남쪽 선과 타이틀 이동선, 대회는 동쪽 선과 세로선(rail).
   const lit = React.useMemo(() => {
-    const keys = new Set(); let railTo = null, wrailTo = null;
-    if (!pick) return { keys, railTo, wrailTo };
+    const keys = new Set(); let railTo = null, wrailTo = null, wrailCol = 0;
+    if (!pick) return { keys, railTo, wrailTo, wrailCol };
     const last = CHAMPIONS[CHAMPIONS.length - 1].id;
     const champPath = (cid) => {
       keys.add("N"); if (LAYOUT.lastChamp.kind === "upcoming") keys.add("up");
@@ -436,8 +437,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     else if (pick.type === "sat") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { champPath(n.champId); keys.add("sat:" + n.id); } }
     else if (pick.type === "tour") { const h = LAYOUT.byNodeId.get("tour:" + pick.id); if (h) { keys.add("E"); keys.add("hl:" + h.id); railTo = h.y + h.h / 2; } }
     else if (pick.type === "fide") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { keys.add("S"); keys.add("bus"); keys.add("drop:" + n.list); for (let r = 2; r <= n.rank; r++) keys.add("fc:" + n.list + ":" + r); } }
-    else if (pick.type === "dbm") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { keys.add("W"); keys.add("dl:" + n.index); wrailTo = n.y + n.h / 2; } }
-    return { keys, railTo, wrailTo };
+    else if (pick.type === "dbm") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { keys.add("W"); for (let k = 1; k <= n.col; k++) keys.add("wseg:" + k); keys.add("dl:" + n.index); wrailTo = n.y + n.h / 2; wrailCol = n.col; } }
+    return { keys, railTo, wrailTo, wrailCol };
   }, [pick, LAYOUT]);
   const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} {...extra} />;
   return (
@@ -456,8 +457,9 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
             {traces.map((tr) => { const a0 = tr.pts[0], a1 = tr.pts[tr.pts.length - 1]; return wire(tr.dir, "M" + tr.pts.map((q) => q[0] + " " + q[1]).join(" L"), (a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2, { opacity: 0.5 }); })}
-            {LAYOUT.wrail && wire("wrail", "M" + LAYOUT.wrail.x + " " + LAYOUT.wrail.y1 + " V" + LAYOUT.wrail.y2, LAYOUT.wrail.x, chip.cy, { opacity: 0.9 })}
-            {LAYOUT.wrail && lit.wrailTo != null && <Wire key="wrailLit" d={"M" + LAYOUT.wrail.x + " " + chip.cy + " V" + lit.wrailTo} lit delay={litDelay(LAYOUT.wrail.x, lit.wrailTo)} />}
+            {LAYOUT.wrails && LAYOUT.wrails.map((w) => wire("wrail:" + w.col, "M" + w.x + " " + w.y1 + " V" + w.y2, w.x, chip.cy, { opacity: 0.9 }))}
+            {edges.filter((e) => e.kind === "wseg").map((e) => wire("wseg:" + e.col, "M" + e.x1 + " " + chip.cy + " H" + e.x2, (e.x1 + e.x2) / 2, chip.cy, { opacity: 0.9 }))}
+            {LAYOUT.wrails && lit.wrailTo != null && <Wire key="wrailLit" d={"M" + LAYOUT.wrails[lit.wrailCol].x + " " + chip.cy + " V" + lit.wrailTo} lit delay={litDelay(LAYOUT.wrails[lit.wrailCol].x, lit.wrailTo)} />}
             {edges.filter((e) => e.kind === "dlink").map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
             {LAYOUT.south && wire("bus", "M" + LAYOUT.south.bus.x1 + " " + LAYOUT.south.jy + " H" + LAYOUT.south.bus.x2, chip.cx, LAYOUT.south.jy, { opacity: 0.9 })}
             {LAYOUT.south && LAYOUT.south.cols.map((c) => wire("drop:" + c.key, "M" + c.drop.x + " " + c.drop.y1 + " V" + c.drop.y2, c.drop.x, (c.drop.y1 + c.drop.y2) / 2))}
