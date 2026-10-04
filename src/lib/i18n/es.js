@@ -1872,6 +1872,12 @@ export default {
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmado = todas las partidas están en la base. Referencia = faltan algunas",
   "확정": "Confirmado",
   "주요 대회": "Grandes torneos",
+  "순위": "Puesto",
+  "출생 연도": "Año de nacimiento",
+  "마스터 대국 DB 선수": "Jugadores de la base de maestros",
+  "FIDE 스탠다드 순위": "Ranking FIDE clásico",
+  "FIDE 래피드 순위": "Ranking FIDE rápido",
+  "FIDE 블리츠 순위": "Ranking FIDE blitz",
   "대진표": "Cuadro",
   "마스터 대국 DB에 이 연도 대국 없음": "No hay partidas de este año en la base de partidas de maestros",
 };
