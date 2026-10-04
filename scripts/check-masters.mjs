@@ -178,6 +178,25 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   if (!(L.labels[0].y + L.labels[0].h <= first.y)) fails.push("챔피언 라벨이 첫 챔피언 노드 위쪽이 아님");
   if (!(L.labels[1].y + L.labels[1].h <= tourTop)) fails.push("주요 대회 라벨이 첫 대회 노드 위쪽이 아님");
 }
+// 중심 회로 칩(오프닝 트리와 같은 디자인): 동서남북 4갈래 — 남=첫 챔피언 위, 동=대회 세로선 꼭대기, 북·서=끝 패드. 칩은 모든 챔피언 노드 위·북쪽 끝은 그보다 위
+{
+  const C = L.chip, byDir = Object.fromEntries(L.traces.map((t) => [t.dir, t]));
+  eq(Object.keys(byDir).sort(), ["E", "N", "S", "W"], "회로선 4갈래");
+  const first = L.byNodeId.get(CHAMPIONS[0].id);
+  if (!(C.cy + C.size / 2 < first.y)) fails.push("회로 칩이 첫 챔피언 위에 없음");
+  eq([byDir.S.x2, byDir.S.y2], [C.cx, first.y], "남쪽 선은 첫 챔피언 노드 위 가운데에 닿음");
+  eq([byDir.E.y1, byDir.E.y2, byDir.E.x2], [C.cy, C.cy, L.rail.x], "동쪽 선은 대회 세로선(rail)까지");
+  eq(L.rail.y1, C.cy, "대회 세로선은 칩 높이에서 시작");
+  if (!(byDir.N.y2 < C.cy) || !(byDir.W.x2 < C.cx)) fails.push("북·서쪽 선 방향이 틀림");
+  eq(L.pads.map((p) => p.dir).sort(), ["N", "W"], "북·서쪽 끝 패드");
+  for (const l of L.labels) if (l.x < 0 || l.y < 0) fails.push("라벨이 캔버스 밖: " + l.key);
+  const tl = L.labels.find((l) => l.key === "tours"); if (!(tl.y + tl.h <= C.cy)) fails.push("주요 대회 라벨이 동쪽 선 위가 아님");
+  const cl = L.labels.find((l) => l.key === "champs"); if (!(cl.y >= C.cy + C.size / 2 && cl.y + cl.h <= first.y)) fails.push("챔피언 라벨이 남쪽 선 옆(칩과 첫 챔피언 사이)이 아님");
+  // 화면 연결: 회로 효과 클래스·칩·선택 경로
+  const src = rf("src/app/dexMasters.jsx", "utf8");
+  for (const needle of ["dex-chip-surge", "dex-surge-node", "dex-surge-line", "dex-current-line", "회로에 전류 흘리기", "SCHEMATIC_ELECTRIC", "DEX_ELECTRIC_FLOW_SPEED", "DEX_SELECT_FLOW_SPEED"]) if (!src.includes(needle)) fails.push("마스터 트리에 오프닝 트리 회로 요소 없음: " + needle);
+}
+
 // 마스터 트리 배율: 예전 75%(0.5625)가 새 100%, 25%p 격자·핀치 스냅
 {
   const G = await import("../src/lib/schematicGeometry.js");
