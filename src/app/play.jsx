@@ -1182,22 +1182,23 @@ function PlayNormalButton({ onClick, ratings }) {
           <MgMasterReplay cellPx={cellPx} onGameChange={setGame} />
         </MgBoardPiece>
       </span>
-      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-end", gap: "2.2cqw", padding: "3cqw 4.5cqw 3.4cqw 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
-        {/* (v0.6.3, 사용자 요청) "봇 · 랜덤 매칭 · 친구" 문구는 없애고, 나머지 요소를 아래로 내려 생긴 가운데 공간에 분류별 레이팅을 한 줄 2개씩 2줄로 둔다. */}
-        <span style={{ flex: 1, alignSelf: "stretch", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.6cqw 3cqw", alignItems: "center" }}>
-            {TIME_CONTROL_CATS.map((cat) => {
-              const r = ratings && ratings["chess_" + TC_CAT_KEY[cat]];
-              return (
-                <span key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4cqw", fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, color: T.inkSoft, lineHeight: 1.1 }}>
-                  {tcCatLabel(cat)}
-                  <MgRatingChip>{r ? r.rating : 1200}</MgRatingChip>
-                </span>
-              );
-            })}
-          </span>
-        </span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "2.2cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
         <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("일반 대국")}</span>
+        {/* (v0.6.3, 사용자 요청) 분류별 레이팅 — 제목과 대국 시작 버튼 사이 한 줄, 오른쪽 정렬. 배치 중인 분류는 표시하지 않는다. */}
+        {(() => {
+          const placed = TIME_CONTROL_CATS.filter((cat) => { const r = ratings && ratings["chess_" + TC_CAT_KEY[cat]]; return r && r.rated_games >= MINIGAME_PLACEMENT; });
+          if (!placed.length) return null;
+          return (
+            <span style={{ display: "flex", flexWrap: "nowrap", justifyContent: "flex-end", gap: "1cqw", maxWidth: "100%" }}>
+              {placed.map((cat) => (
+                <span key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4cqw", fontSize: "clamp(7px, 1.9cqw, 12px)", fontWeight: 800, color: T.inkSoft, lineHeight: 1.1, whiteSpace: "nowrap" }}>
+                  {tcCatLabel(cat)}
+                  <MgRatingChip style={{ fontSize: "clamp(8px, 2cqw, 13px)", padding: "0.15em 0.4em" }}>{ratings["chess_" + TC_CAT_KEY[cat]].rating}</MgRatingChip>
+                </span>
+              ))}
+            </span>
+          );
+        })()}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.9cqw, 18px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
           {tx("{0}대국 시작", <Play size={14} fill="#241509" />)}</span>
         {game && (
