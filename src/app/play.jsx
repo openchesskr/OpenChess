@@ -3,7 +3,7 @@
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
-import { useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
+import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
 import { loadLastGameQuality, playSfx, saveLastGameQuality, playMoveSfx } from "../lib/prefs.js";
 import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS, PIECE_SKINS } from "../lib/theme.js";
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
@@ -793,11 +793,14 @@ const MG_NAMES = { coord: t("좌표 인지 게임"), knight: t("나이트 레이
 // 피하도록 왼쪽 버튼은 왼쪽 정렬, 오른쪽 버튼은 오른쪽 정렬(x는 정렬한 쪽 끝, top은 viewBox 좌표).
 const MG_STRIP_H = MG_STRIP.rows * MG_STRIP_CELL - MG_BLEED;            // 버튼 안에 보이는 보드 높이
 const MG_LABEL_UP_TOP = MG_STRIP_H + 2.4, MG_LABEL_DN_TOP = 50 + MG_GAP / 2 + 2.2;
+// (v0.6.3, 사용자 요청) 나이트 레이스: 레이팅을 글자 왼쪽 · 무한 체크메이트: 아래쪽 보드에 붙이고 "체크메이트 게임"을 한 줄로, 레이팅은 "무한" 오른쪽 ·
+// 백랭크 러시아워: 아래쪽 보드에 붙이고 레이팅은 왼쪽 빈 공간. bottom은 아래 보드 윗변에서의 거리(컨테이너 높이 %).
+const MG_LABEL_BOTTOM = MG_STRIP_H + 1.6;
 const MG_LABELS = [
   { gameType: "coord", lines: [t("좌표 인지"), t("게임")], x: MG_PAD + 1, top: MG_LABEL_UP_TOP },
-  { gameType: "knight", lines: [t("나이트"), t("레이스")], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true },
-  { gameType: "attack", lines: [t("무한"), t("체크메이트"), t("게임")], x: MG_PAD + 1, top: MG_LABEL_DN_TOP },
-  { gameType: "rush", lines: [t("백랭크"), t("러시아워")], x: 100 - MG_PAD - 1, top: MG_LABEL_DN_TOP, right: true },
+  { gameType: "knight", lines: [t("나이트"), t("레이스")], x: 100 - MG_PAD - 1, top: MG_LABEL_UP_TOP, right: true, chip: "left" },
+  { gameType: "attack", lines: [t("무한"), t("체크메이트 게임")], x: MG_PAD + 1, bottom: MG_LABEL_BOTTOM, chip: "line0", small: 1 },
+  { gameType: "rush", lines: [t("백랭크"), t("러시아워")], x: 100 - MG_PAD - 1, bottom: MG_LABEL_BOTTOM, right: true, chip: "farLeft" },
 ];
 // 앱 체스보드 조각 — 장착한 보드 스킨·기물 스킨을 그대로 쓴다. rows×cols와 전역 좌표 오프셋(rowOffset·colOffset,
 // 위에서 아래·왼쪽에서 오른쪽)을 받아, 조각끼리 이어 붙이거나 8×8의 일부를 잘라도 체크 무늬가 실제 보드와 같다.
@@ -1154,7 +1157,7 @@ function MgMasterReplay({ cellPx, onGameChange }) {
     </div>
   );
 }
-function PlayNormalButton({ onClick }) {
+function PlayNormalButton({ onClick, ratings }) {
   const [width, setWidth] = useState(360);
   const roRef = useRef(null);
   const measureRef = useCallback((el) => {
@@ -1179,9 +1182,22 @@ function PlayNormalButton({ onClick }) {
           <MgMasterReplay cellPx={cellPx} onGameChange={setGame} />
         </MgBoardPiece>
       </span>
-      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "2.2cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-end", gap: "2.2cqw", padding: "3cqw 4.5cqw 3.4cqw 3cqw", fontFamily: SITE_FONT, color: T.ink }}>
+        {/* (v0.6.3, 사용자 요청) "봇 · 랜덤 매칭 · 친구" 문구는 없애고, 나머지 요소를 아래로 내려 생긴 가운데 공간에 분류별 레이팅을 한 줄 2개씩 2줄로 둔다. */}
+        <span style={{ flex: 1, alignSelf: "stretch", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.6cqw 3cqw", alignItems: "center" }}>
+            {TIME_CONTROL_CATS.map((cat) => {
+              const r = ratings && ratings["chess_" + TC_CAT_KEY[cat]];
+              return (
+                <span key={cat} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.4cqw", fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 800, color: T.inkSoft, lineHeight: 1.1 }}>
+                  {tcCatLabel(cat)}
+                  <MgRatingChip>{r ? r.rating : 1200}</MgRatingChip>
+                </span>
+              );
+            })}
+          </span>
+        </span>
         <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("일반 대국")}</span>
-        <span style={{ fontSize: "clamp(11px, 3cqw, 20px)", fontWeight: 700, color: T.inkSoft, lineHeight: 1.35 }}>{t("봇 · 랜덤 매칭 · 친구")}</span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0.5em 1.1em", borderRadius: 999, fontSize: "clamp(11px, 2.9cqw, 18px)", fontWeight: 800, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" }}>
           {tx("{0}대국 시작", <Play size={14} fill="#241509" />)}</span>
         {game && (
@@ -1279,19 +1295,25 @@ function MinigameHubBoard({ stats, onPick, maxWidth = PLAY_HUB_MAX_W }) {
         {MG_LABELS.map((lb) => {
           const st = stats && stats[lb.gameType];
           const rated = st && st.rated_games >= MINIGAME_PLACEMENT;
-          const pos = { ...(lb.right ? { right: (100 - lb.x) + "%" } : { left: lb.x + "%" }), top: lb.top + "%" };
+          const chip = rated ? <MgRatingChip>{st.rating}</MgRatingChip> : null;
+          const vert = lb.bottom != null ? { bottom: lb.bottom + "%" } : { top: lb.top + "%" };
+          const pos = { ...(lb.right ? { right: (100 - lb.x) + "%" } : { left: lb.x + "%" }), ...vert };
+          const chipLine = lb.chip === "line0" ? 0 : lb.chip === undefined ? lb.lines.length - 1 : -1;   // 레이팅을 줄 끝에 붙일 줄(없으면 -1)
           return (
-            <div key={lb.gameType} style={{ position: "absolute", ...pos, display: "flex", flexDirection: "column", alignItems: lb.right ? "flex-end" : "flex-start", textAlign: lb.right ? "right" : "left", gap: "0.6cqw", color: T.ink }}>
-              <span style={{ fontSize: labelFont, fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", whiteSpace: "nowrap" }}>
-                {lb.lines.map((l, i) => (
-                  <span key={l} style={{ display: "flex", alignItems: "center", gap: "1.2cqw", justifyContent: lb.right ? "flex-end" : "flex-start" }}>
-                    {l}
-                    {/* 레이팅(배치 완료한 게임만)은 마지막 줄 옆 작은 칩으로 — 보드 쪽으로 줄이 늘어나지 않게 */}
-                    {rated && i === lb.lines.length - 1 && <MgRatingChip>{st.rating}</MgRatingChip>}
-                  </span>
-                ))}
-              </span>
-            </div>
+            <Fragment key={lb.gameType}>
+              <div style={{ position: "absolute", ...pos, display: "flex", flexDirection: "row", alignItems: "center", gap: "1.6cqw", color: T.ink }}>
+                {lb.chip === "left" && chip}
+                <span style={{ display: "flex", flexDirection: "column", alignItems: lb.right ? "flex-end" : "flex-start", textAlign: lb.right ? "right" : "left", fontSize: labelFont, fontWeight: 900, lineHeight: 1.15, letterSpacing: "-.03em", whiteSpace: "nowrap" }}>
+                  {lb.lines.map((l, i) => (
+                    <span key={l} style={{ display: "flex", alignItems: "center", gap: "1.2cqw", justifyContent: lb.right ? "flex-end" : "flex-start", ...(lb.small === i ? { fontSize: "0.86em" } : null) }}>
+                      {l}
+                      {i === chipLine && chip}
+                    </span>
+                  ))}
+                </span>
+              </div>
+              {lb.chip === "farLeft" && chip && <div style={{ position: "absolute", left: "60%", bottom: lb.bottom + "%", display: "flex", alignItems: "center" }}>{chip}</div>}
+            </Fragment>
           );
         })}
       </div>
@@ -2068,7 +2090,8 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   return (
     <div style={{ ...MG_LOBBY_CARD_STYLE, padding: "12px 14px 14px" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: myUid ? 12 : 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t("내 기록")}{isChessRatingGame(game) ? " · " + tcCatLabel(TC_KEY_CAT[game.slice(6)]) : ""}</span>
+        {/* (v0.6.3) 일반 대국(분류별 레이팅)은 "내 기록 · 래피드" 제목을 두지 않는다 — 분류는 위쪽 타임 컨트롤에 이미 보인다. */}
+        {isChessRatingGame(game) ? <span /> : <span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{t("내 기록")}</span>}
         <button onClick={onOpenRanking} className="press" aria-label={t("랭킹")}
           style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 8px 4px 9px", borderRadius: 999, border: "1px solid rgba(169,122,44,.35)", background: "rgba(196,154,80,.1)", color: MG_GOLD, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
           {tx("{0}랭킹{1}", <Trophy size={12} />, <ChevronRight size={12} />)}
@@ -5321,7 +5344,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
         {step === "setup" ? (
           <>
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
-            <PlayNormalButton onClick={() => setSetupOpen(true)} />
+            <PlayNormalButton onClick={() => setSetupOpen(true)} ratings={chessAll} />
             {setupOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
@@ -5355,10 +5378,10 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexWrap: "wrap", minHeight: 20 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "nowrap", whiteSpace: "nowrap", minHeight: 20 }}>
                         {tcCatLabel(cat)}
-                        {/* (v0.6.2) 분류별 레이팅(배치를 마친 것만) — 미니게임 허브 버튼의 레이팅 칩과 같은 디자인 */}
-                        {(() => { const r = chessAll["chess_" + TC_CAT_KEY[cat]]; return r && r.rated_games >= MINIGAME_PLACEMENT ? <MgRatingChip style={{ fontSize: 10.5 }}>{r.rating}</MgRatingChip> : null; })()}
+                        {/* (v0.6.3) 분류별 레이팅 — 미니게임 허브 버튼의 레이팅 칩과 같은 디자인, 배치 전이어도 항상 표시(기본 1200) */}
+                        <MgRatingChip style={{ fontSize: 10.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
                       </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
                         <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
