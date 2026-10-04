@@ -10,7 +10,8 @@ import { readFileSync } from "node:fs";
 const fails = [];
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
 const { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } = await import("../src/data/worldChampions.js");
-const { MT, layoutMasters, satellitesOf, clampMasterPan } = await import("../src/lib/masterTreeLayout.js");
+const { MT, layoutMasters, satellitesOf, clampMasterPan, championAt, yearToY } = await import("../src/lib/masterTreeLayout.js");
+const { TOURNAMENTS, TOURNAMENT_TYPES } = await import("../src/data/chessTournaments.js");
 
 // ① 데이터
 const ids = CHAMPIONS.map((c) => c.id); eq(new Set(ids).size, ids.length, "챔피언 id 중복");
@@ -61,7 +62,25 @@ eq([1, 2, 3, 4, 6, 11, 12, 13, 18, 21, 22].map((n) => ordinalParam(n, "en")), ["
 eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º", 6, 6], "그 외 언어 서수");
 
 // ② 배치
-const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);
+// 대회 데이터
+{
+  const tids = TOURNAMENTS.map((r) => r.id); eq(new Set(tids).size, tids.length, "대회 id 중복");
+  for (const id of tids) if (byId.has(id)) fails.push("대회 id가 챔피언 id와 겹침: " + id);
+  TOURNAMENTS.forEach((r, i) => {
+    if (!r.name || !r.ko) fails.push(r.id + ": 이름(name·ko) 누락");
+    if (!TOURNAMENT_TYPES.includes(r.type)) fails.push(r.id + ": 알 수 없는 종류 " + r.type);
+    if (!(r.from >= 1850 && r.from <= 2030) || (r.to != null && r.to < r.from)) fails.push(r.id + ": 연도 오류 " + r.from + "–" + r.to);
+    if (r.freq && !["annual", "biennial", "oneoff"].includes(r.freq)) fails.push(r.id + ": freq 오류 " + r.freq);
+    if (!["various", "online"].includes(r.place) && !r.placeKo) fails.push(r.id + ": 도시 개최 대회는 placeKo 필요");
+    if (i && r.from < TOURNAMENTS[i - 1].from) fails.push(r.id + ": 대회 목록이 시작 연도순이 아님");
+  });
+  for (const ty of TOURNAMENT_TYPES) if (!TOURNAMENTS.some((r) => r.type === ty)) fails.push("대회 종류 " + ty + "에 해당하는 대회가 없음");
+  eq([championAt(CHAMPIONS, 1895)?.id, championAt(CHAMPIONS, 1938)?.id, championAt(CHAMPIONS, 2013)?.id, championAt(CHAMPIONS, 2025)?.id, championAt(CHAMPIONS, 1947)], ["lasker", "alekhine2", "carlsen", "gukesh", null], "개최 당시 챔피언");
+  eq(championAt(CHAMPIONS, 2003)?.id, "kramnik1", "분열기는 정통(클래식) 줄 챔피언 기준");
+  const anc = [{ year: 1900, y: 100 }, { year: 1910, y: 200 }];
+  eq([yearToY(anc, 1890), yearToY(anc, 1905), yearToY(anc, 1999)], [100, 150, 200], "연도→높이 보간");
+}
+const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
 eq(L.nodes.filter((n) => n.kind === "sat").length, CHAMPIONS.reduce((n, c) => n + satellitesOf(c).length, 0), "위성 노드 수");
 for (let i = 0; i < L.nodes.length; i++) {
@@ -75,6 +94,20 @@ for (const e of L.edges) if (!e.a || !e.b) fails.push("선의 끝 노드 없음:
 for (const t of TRANSFERS) { const a = L.byNodeId.get(t.from), b = L.byNodeId.get(t.to); if (b.y + 1 < a.y) fails.push("타이틀 이동이 위로 거슬러 올라감: " + t.from + "→" + t.to); }
 const lx = (id) => L.byNodeId.get(id).x;
 if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클래식) 줄이 오른쪽(FIDE) 줄보다 오른쪽에 있음");
+
+// 대회 열: 모든 챔피언·도전자 노드의 오른쪽, 연도순으로 위→아래, 개최 연도의 챔피언 행 높이 근처(아래로만 밀림, 지나치게 벗어나지 않음)
+{
+  const tours = L.nodes.filter((n) => n.kind === "tour"), others = L.nodes.filter((n) => n.kind !== "tour");
+  eq(tours.length, TOURNAMENTS.length, "대회 노드 수");
+  const maxRight = Math.max(...others.map((n) => n.x + n.w));
+  for (const n of tours) {
+    if (n.x < maxRight) fails.push("대회 노드가 왼쪽 노드와 같은 열을 침범: " + n.id);
+    if (n.y + 1 < n.anchorY - MT.TOUR_H / 2) fails.push("대회 노드가 개최 연도 높이보다 위로 올라감: " + n.id);
+    if (n.y - (n.anchorY - MT.TOUR_H / 2) > 400) fails.push("대회 노드가 개최 연도 높이에서 너무 멀리 밀림(" + Math.round(n.y - (n.anchorY - MT.TOUR_H / 2)) + "px): " + n.id);
+  }
+  for (let i = 1; i < tours.length; i++) if (tours[i].y < tours[i - 1].y + tours[i - 1].h) fails.push("대회 노드가 연도순 위→아래가 아니거나 겹침: " + tours[i].id);
+  if (!L.rail || L.rail.x >= Math.min(...tours.map((n) => n.x))) fails.push("대회 열 세로선(rail)이 카드 왼쪽에 없음");
+}
 
 // ③ 팬 한계
 const small = { width: 400, height: 300 }, big = { width: 2000, height: 5000 };
