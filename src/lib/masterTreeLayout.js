@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 224, TOUR_H: 88, TOUR_GAP: 24, TOUR_COL_GAP: 100, PL_W: 124, PL_H: 30, PL_GAP: 10, FAN_GAP: 36, FAN_ARC: 80, FAN_MIN_R: 90, ED_W: 76, ED_H: 34, ED_GAP: 12, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
+export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 100, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -32,7 +32,7 @@ export function yearToY(anchors, year) {
   return anchors[anchors.length - 1].y;
 }
 
-export function layoutMasters(champions, transfers, splitRows, upcoming, tournaments = [], editions = {}, firsts = {}) {
+export function layoutMasters(champions, transfers, splitRows, upcoming, tournaments = [], editions = {}, expanded = null) {
   const byId = new Map(champions.map((c) => [c.id, c]));
   const splitIds = new Set(splitRows.flat().filter(Boolean));
   const nodes = [], edges = [], champNode = new Map();
@@ -85,52 +85,44 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
     y = upNode.y + upNode.h + MT.ROW_GAP;
   }
   for (const t of transfers) edges.push({ kind: "transfer", from: t.from, to: t.to, t });
-  // 오른쪽 대회 열 — 개최 연도를 챔피언 행의 높이에 맞추되(기준점 보간), 챔피언 블록 크기로 키운 대회 블록(허브) 오른쪽에 "첫 에디션 참가자 노드"가 오른쪽 180° 방사형으로 펼쳐지고
-  // (firsts[id] = { players: [이름…] }), 그 오른쪽으로 다음 연도 에디션 칩이 연도순으로 이어진다(editions[id] = 연도 배열). 펼침 공간만큼 다음 대회가 아래로 밀려 서로 겹치지 않는다.
+  // 오른쪽 대회 열 — 개최 연도를 챔피언 행의 높이에 맞추되(기준점 보간), 대회 블록(허브) 오른쪽으로 연도 블록이 한 줄로 이어진다(editions[id] = [[연도, 대국 수, 선수 수, 이름들], …]).
+  // expanded = "대회id:연도" 하나면 그 연도 블록 아래에 대진표 영역(panel)이 펼쳐지고, 그 높이만큼 아래 대회들이 밀려난다.
   let rail = null;
+  const panels = [];
   if (tournaments.length) {
     const anchors = champions.filter((c) => c.lane !== "R").map((c) => ({ year: c.from, y: champNode.get(c.id).y + MT.CH_H / 2 })).sort((a, b) => a.year - b.year);
     if (upNode) anchors.push({ year: 2026.9, y: upNode.y + upNode.h / 2 });
     const colX = nodes.reduce((m, n) => Math.max(m, n.x + n.w), -Infinity) + MT.TOUR_COL_GAP;
-    const rad = (d) => (d * Math.PI) / 180;
-    // 반지름 R의 호(-FAN_ARC~+FAN_ARC) 위에 n개의 PL_W×PL_H 노드를 겹치지 않게 순서대로 놓는다. 불가능하면 null.
-    const fan = (n, R) => {
-      const out = []; let th = -MT.FAN_ARC;
-      for (let i = 0; i < n; i++) {
-        for (;;) {
-          if (th > MT.FAN_ARC + 1e-9) return null;
-          const cx = R * Math.cos(rad(th)), cy = R * Math.sin(rad(th));
-          if (!out.some((q) => Math.abs(cx - q.cx) < MT.PL_W + MT.PL_GAP && Math.abs(cy - q.cy) < MT.PL_H + MT.PL_GAP)) { out.push({ cx, cy }); break; }
-          th += 0.1;
-        }
-      }
-      return out;
-    };
-    const fanOf = (n) => { if (!n) return { R: 0, pts: [] }; let lo = MT.FAN_MIN_R, hi = 3000; if (fan(n, lo)) return { R: lo, pts: fan(n, lo) }; while (hi - lo > 2) { const mid = (lo + hi) / 2; if (fan(n, mid)) hi = mid; else lo = mid; } return { R: hi, pts: fan(n, hi) }; };
     let prevBottom = -Infinity;
     const sorted = tournaments.map((tr, i) => ({ tr, i })).sort((a, b) => a.tr.from - b.tr.from || a.i - b.i);
     const tourNodes = [];
     for (const { tr } of sorted) {
-      const names = (firsts[tr.id] && firsts[tr.id].players) || [];
-      const { R, pts } = fanOf(names.length);
-      const halfH = names.length ? Math.max(MT.TOUR_H / 2, Math.max(...pts.map((p) => Math.abs(p.cy))) + MT.PL_H / 2) : MT.TOUR_H / 2;
+      const eds = (editions[tr.id] || []).map((e) => ({ y: e[0], games: e[1], n: e[2], names: e[3] || [] }));
+      if (!eds.some((e) => e.y === tr.from)) eds.push({ y: tr.from, games: 0, n: 0, names: [] });
+      eds.sort((a, b) => a.y - b.y);
+      const exp = expanded && expanded.startsWith(tr.id + ":") ? eds.find((e) => tr.id + ":" + e.y === expanded) : null;
+      const rows = exp ? Math.ceil(exp.names.length / MT.PANEL_COLS) : 0;
+      const panelW = MT.PANEL_COLS * MT.PL_W + (MT.PANEL_COLS - 1) * MT.PL_GAP + MT.PANEL_PAD * 2;
+      const panelH = exp ? (exp.names.length ? MT.PANEL_HEAD + MT.PANEL_PAD + rows * MT.PL_H + (rows - 1) * MT.PL_GAP + MT.PANEL_PAD : MT.PANEL_HEAD + MT.PANEL_EMPTY_H) : 0;
+      const halfDown = Math.max(MT.TOUR_H / 2, exp ? MT.ED_H / 2 + MT.PANEL_GAP + panelH : 0);
       const anchorY = yearToY(anchors, tr.from);
-      const cy = Math.max(anchorY, prevBottom + MT.TOUR_GAP + halfH);
-      prevBottom = cy + halfH;
+      const cy = Math.max(anchorY, prevBottom + MT.TOUR_GAP + MT.TOUR_H / 2);
+      prevBottom = cy + halfDown;
       const hub = { id: "tour:" + tr.id, kind: "tour", tour: tr, x: colX, y: cy - MT.TOUR_H / 2, w: MT.TOUR_W, h: MT.TOUR_H, anchorY };
       nodes.push(hub); tourNodes.push(hub);
-      const fcx = colX + MT.TOUR_W + MT.FAN_GAP + MT.PL_W / 2;       // 방사 중심(허브 오른쪽)
-      let right = colX + MT.TOUR_W;
-      names.forEach((nm, i) => {
-        const p = pts[i], pn = { id: "pl:" + tr.id + ":" + i, kind: "player", tourId: tr.id, tour: tr, name: nm, year: firsts[tr.id].y, x: fcx + p.cx - MT.PL_W / 2, y: cy + p.cy - MT.PL_H / 2, w: MT.PL_W, h: MT.PL_H };
-        nodes.push(pn); edges.push({ kind: "fan", from: hub.id, to: pn.id }); right = Math.max(right, pn.x + pn.w);
+      let ex = colX + MT.TOUR_W + MT.ED_START;
+      eds.forEach((e) => {
+        const en = { id: "ed:" + tr.id + ":" + e.y, kind: "edition", tourId: tr.id, tour: tr, year: e.y, games: e.games, open: exp === e, x: ex, y: cy - MT.ED_H / 2, w: MT.ED_W, h: MT.ED_H };
+        nodes.push(en);
+        if (exp === e) {
+          const pn = { id: "panel:" + en.id, tourId: tr.id, tour: tr, year: e.y, empty: !e.names.length, x: en.x, y: en.y + en.h + MT.PANEL_GAP, w: panelW, h: panelH };
+          panels.push(pn);
+          e.names.forEach((nm, i) => nodes.push({ id: "pl:" + tr.id + ":" + e.y + ":" + i, kind: "player", tourId: tr.id, tour: tr, name: nm, year: e.y, x: pn.x + MT.PANEL_PAD + (i % MT.PANEL_COLS) * (MT.PL_W + MT.PL_GAP), y: pn.y + MT.PANEL_HEAD + Math.floor(i / MT.PANEL_COLS) * (MT.PL_H + MT.PL_GAP), w: MT.PL_W, h: MT.PL_H }));
+          edges.push({ kind: "drop", tour: tr, from: en.id, to: en.id, enId: en.id, panel: pn });
+        }
+        ex += MT.ED_W + MT.ED_GAP;
       });
-      const firstY = (firsts[tr.id] && firsts[tr.id].y) || null;
-      const later = ((editions[tr.id] || []).filter((y) => y !== firstY));
-      const years = names.length ? later : [firstY || tr.from, ...later.filter((y) => y !== (firstY || tr.from))];
-      let ex = right + MT.FAN_GAP; const rowY = cy - MT.ED_H / 2;
-      years.sort((a, b) => a - b).forEach((yr) => { nodes.push({ id: "ed:" + tr.id + ":" + yr, kind: "edition", tourId: tr.id, tour: tr, year: yr, x: ex, y: rowY, w: MT.ED_W, h: MT.ED_H }); ex += MT.ED_W + MT.ED_GAP; });
-      if (years.length) edges.push({ kind: "row", from: hub.id, to: hub.id, tour: tr, x1: right, x2: ex - MT.ED_GAP, y: cy });
+      edges.push({ kind: "row", from: hub.id, to: hub.id, tour: tr, x1: colX + MT.TOUR_W, x2: ex - MT.ED_GAP, y: cy });
     }
     const first = tourNodes[0], last = tourNodes[tourNodes.length - 1];
     rail = { x: colX - 28, y1: first.y + first.h / 2, y2: last.y + last.h / 2 };
@@ -138,7 +130,7 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   }
   // 좌표를 양수로 옮긴다.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const n of nodes) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
+  for (const n of [...nodes, ...panels]) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
   // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 각 열 맨 위 노드 위쪽에 가운데 맞춰 놓는다(오프닝 트리의 금색 오프닝 이름과 같은 자리 개념).
   const labels = [];
   { const first = champNode.get(champions[0].id); labels.push({ id: "champs", key: "champs", x: first.x + first.w / 2 - MT.LABEL_W / 2, y: first.y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
@@ -146,13 +138,13 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;
   for (const l of labels) { l.x += dx; l.y += dy; }
-  for (const n of nodes) { n.x += dx; n.y += dy; }
+  for (const n of [...nodes, ...panels]) { n.x += dx; n.y += dy; }
   if (rail) { rail.x += dx; rail.y1 += dy; rail.y2 += dy; }
   for (const e of edges) if (e.kind === "row") { e.x1 += dx; e.x2 += dx; e.y += dy; }
   const byNodeId = new Map(nodes.map((n) => [n.id, n]));
   for (const e of edges) { e.a = byNodeId.get(e.from); e.b = byNodeId.get(e.to); }
   const width = maxX - minX + MT.PAD * 2, height = maxY - minY + MT.TOP_PAD + MT.PAD;
-  return { nodes, edges, labels, rail, width, height, centerX: dx, byNodeId };
+  return { nodes, panels, edges, labels, rail, width, height, centerX: dx, byNodeId };
 }
 
 /* 챔피언 노드끼리 잇는 선의 경로(SVG path)와 라벨 위치. 위 노드 아래 가운데 → 아래 노드 위 가운데를 세로 곡선으로 잇는다. */

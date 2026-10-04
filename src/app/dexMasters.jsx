@@ -83,32 +83,45 @@ function TourNode({ n, onPick, picked }) {
   const r = n.tour, color = TOUR_COLOR[r.type];
   return (
     <button className="press" onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
-      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "10px 12px 10px 20px", textAlign: "left", cursor: "pointer", borderRadius: 12, overflow: "hidden", zIndex: 2,
+      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "14px 16px 14px 24px", textAlign: "left", cursor: "pointer", borderRadius: 14, overflow: "hidden", zIndex: 2,
         border: "1.5px solid " + (picked ? color : "#DCCBA8"), background: "#fff", color: T.ink, boxShadow: picked ? "0 0 0 3px " + color + "44" : "0 2px 6px rgba(60,40,20,.16)" }}>
-      <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 8, background: color }} />
-      <div style={{ fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{personName(r)}</div>
-      <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)} · {tourPlace(r)}</div>
+      <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, background: color }} />
+      <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{personName(r)}</div>
+      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)} · {tourPlace(r)}</div>
     </button>
   );
 }
 
-/* 대회 허브 오른쪽에 방사형으로 펼쳐진 첫 에디션 참가자 노드(마스터 대국 DB의 실제 출전자). 이후 대진표 노드로 바뀔 자리. */
-function PlayerNode({ n, onPick }) {
+/* 연도 블록 아래 대진표 영역에 놓이는 그 연도 출전자(마스터 대국 DB). PGN의 라운드 정보가 들어오면 실제 대진표 노드로 바뀔 자리. */
+function PlayerNode({ n }) {
   const color = TOUR_COLOR[n.tour.type];
   return (
-    <button className="press" onClick={() => onPick({ type: "tour", id: n.tourId })} aria-label={dbPlayerName(n.name, lang) + " " + n.year}
-      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 8px", cursor: "pointer", borderRadius: 8, zIndex: 2, fontSize: 11, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        border: "1.5px solid " + color + "99", background: "#fff", boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{dbPlayerName(n.name, lang)}</button>
+    <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px", display: "flex", alignItems: "center", borderRadius: 9, zIndex: 2, fontSize: 12.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      border: "1.5px solid " + color + "99", background: "#fff" }}>{dbPlayerName(n.name, lang)}</div>
   );
 }
 
-/* 대회 허브에서 오른쪽으로 이어지는 연도(에디션) 칩 — 눌러서 대회 카드를 연다. 이후 대진표 노드가 이 자리에 붙는다. */
-function EditionNode({ n, onPick, picked }) {
+/* 대회 허브에서 오른쪽으로 한 줄로 이어지는 연도 블록 — 누르면 그 연도의 대진표 영역이 아래로 펼쳐지고(아래 대회들이 밀려난다), 다시 누르면 접힌다. */
+function EditionNode({ n, onToggle }) {
   const color = TOUR_COLOR[n.tour.type];
   return (
-    <button className="press" onClick={() => onPick({ type: "tour", id: n.tourId })} aria-label={personName(n.tour) + " " + n.year}
-      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 999, zIndex: 2, fontSize: 12.5, fontWeight: 800, fontFamily: SITE_FONT, color: T.ink,
-        border: "1.5px solid " + (picked ? color : color + "99"), background: "#fff", boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{n.year}</button>
+    <button className="press" onClick={() => onToggle(n.tourId + ":" + n.year)} aria-expanded={n.open} aria-label={personName(n.tour) + " " + n.year}
+      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 14, zIndex: 2, fontFamily: SITE_FONT, color: n.open ? "#241509" : T.ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+        border: "2px solid " + color, background: n.open ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "#fff", boxShadow: n.open ? "0 0 0 3px " + color + "44" : "0 2px 5px rgba(60,40,20,.16)" }}>
+      <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>{n.year}</span>
+      <span aria-hidden="true" style={{ fontSize: 11, fontWeight: 800, opacity: .7 }}>{n.open ? "▲" : "▼"}</span>
+    </button>
+  );
+}
+
+/* 펼쳐진 연도의 대진표 영역 틀(제목 + 안내). 안의 노드는 PlayerNode. */
+function BracketPanel({ p }) {
+  const color = TOUR_COLOR[p.tour.type];
+  return (
+    <div style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h, boxSizing: "border-box", borderRadius: 14, border: "2px solid " + color + "88", background: "rgba(255,255,255,.55)", zIndex: 1, padding: "10px 14px", fontFamily: SITE_FONT, pointerEvents: "none" }}>
+      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{personName(p.tour)} {p.year} · {t("대진표")}</div>
+      {p.empty && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>{t("마스터 대국 DB에 이 연도 대국 없음")}</div>}
+    </div>
   );
 }
 
@@ -218,7 +231,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
   }
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
-      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
+      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
@@ -244,10 +257,11 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const [idx, setIdx] = useState(null);
   useEffect(() => { let off = false; import("../data/tournamentIndex.json").then((m) => { if (!off) setIdx(m.default || m); }).catch(() => { }); return () => { off = true; }; }, []);
+  const [openEd, setOpenEd] = useState(null);   // "대회id:연도" — 펼쳐 둔 연도 블록(한 번에 하나)
   const LAYOUT = React.useMemo(() => {
-    const ed = {}, fs = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) { ed[id] = v.editions.map((e) => e[0]); if (v.first) fs[id] = v.first; }
-    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, fs);
-  }, [idx]);
+    const ed = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) ed[id] = v.editions;
+    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, openEd);
+  }, [idx, openEd]);
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
   const boxRef = useRef(null);
   const panelH = useFitPanelHeight(boxRef, vertical);
@@ -266,7 +280,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     apply(a, nz);
   }, [apply]);
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.centerX * z, y: -(L.labels[0].y - 24) * z }, z); }, [apply]);
-  useLayoutEffect(() => { toTop(); }, [panelH, LAYOUT]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
   useEffect(() => {
     const el = boxRef.current; if (!el) return undefined;
@@ -327,7 +341,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   return (
     <div>
       {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
-      <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
+      <div ref={boxRef} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
         <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
@@ -345,7 +359,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             })}
             {LAYOUT.rail && <line x1={LAYOUT.rail.x} y1={LAYOUT.rail.y1} x2={LAYOUT.rail.x} y2={LAYOUT.rail.y2} stroke="#DCCBA8" strokeWidth={3} strokeLinecap="round" />}
             {LAYOUT.rail && nodes.filter((n) => n.kind === "tour").map((n) => <g key={"r" + n.id}><line x1={LAYOUT.rail.x} y1={n.y + n.h / 2} x2={n.x} y2={n.y + n.h / 2} stroke="#DCCBA8" strokeWidth={2} /><circle cx={LAYOUT.rail.x} cy={n.y + n.h / 2} r={5} fill={TOUR_COLOR[n.tour.type]} stroke="#fff" strokeWidth={1.5} /></g>)}
-            {edges.filter((e) => e.kind === "fan").map((e, i) => <line key={"f" + i} x1={e.a.x + e.a.w} y1={e.a.y + e.a.h / 2} x2={e.b.x} y2={e.b.y + e.b.h / 2} stroke={TOUR_COLOR[e.a.tour.type]} strokeOpacity={0.55} strokeWidth={1.6} />)}
+            {edges.filter((e) => e.kind === "drop").map((e, i) => { const en = LAYOUT.byNodeId.get(e.enId); return <line key={"d" + i} x1={en.x + en.w / 2} y1={en.y + en.h} x2={en.x + en.w / 2} y2={e.panel.y} stroke={TOUR_COLOR[e.tour.type]} strokeOpacity={0.6} strokeWidth={2} />; })}
             {edges.filter((e) => e.kind === "row").map((e, i) => <line key={"w" + i} x1={e.x1} y1={e.y} x2={e.x2} y2={e.y} stroke={TOUR_COLOR[e.tour.type]} strokeOpacity={0.5} strokeWidth={2} strokeLinecap="round" />)}
             {edges.filter((e) => e.kind === "upcoming").map((e, i) => { const p = transferPath(e.a, e.b); return <path key={"u" + i} d={p.d} fill="none" stroke={T.brass} strokeWidth={2} strokeDasharray="5 5" />; })}
             {champEdges.map((e, i) => {
@@ -364,10 +378,11 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               </span>
             </div>
           ))}
+          {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}
           {nodes.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} />
             : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} />
-            : n.kind === "player" ? <PlayerNode key={n.id} n={n} onPick={setPick} />
-            : n.kind === "edition" ? <EditionNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tourId} />
+            : n.kind === "player" ? <PlayerNode key={n.id} n={n} />
+            : n.kind === "edition" ? <EditionNode key={n.id} n={n} onToggle={(k) => setOpenEd((v) => (v === k ? null : k))} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
         {pick && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}

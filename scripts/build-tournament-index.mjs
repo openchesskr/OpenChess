@@ -26,7 +26,9 @@ for (const t of TOURNAMENTS) {
   const rows = byT.get(t.id);
   const ed = new Map();
   for (const r of rows) { if (r.y == null) continue; if (!ed.has(r.y)) ed.set(r.y, []); ed.get(r.y).push(r); }
-  const editions = [...ed.entries()].sort((a, b) => a[0] - b[0]).map(([y, rs]) => { const p = new Set(); rs.forEach((r) => { p.add(r.g.white); p.add(r.g.black); }); return [y, rs.length, p.size]; });
+  // editions[i] = [연도, 대국 수, 선수 수, 출전 대국이 많은 선수 이름 최대 EDITION_NAMES명] — 도감 모식도의 연도 블록을 눌렀을 때 펼쳐지는 대진표 영역이 쓴다.
+  const EDITION_NAMES = 16;
+  const editions = [...ed.entries()].sort((a, b) => a[0] - b[0]).map(([y, rs]) => { const c = new Map(); rs.forEach((r) => { for (const n of [r.g.white, r.g.black]) c.set(n, (c.get(n) || 0) + 1); }); return [y, rs.length, c.size, [...c.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, EDITION_NAMES).map(([n]) => n)]; });
   const cnt = new Map(); for (const r of rows) for (const n of [r.g.white, r.g.black]) cnt.set(n, (cnt.get(n) || 0) + 1);
   const players = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   // 대표 대국: 높은 쪽 레이팅 순(없으면 길이), 기보 24수 이상, 결과가 난 대국
@@ -60,14 +62,7 @@ for (const t of TOURNAMENTS) {
     wc[year] = ok ? "ok" : "conflict";
     if (!ok) conflicts.push(t.id + " " + year + " " + names.join("/"));
   }
-  // 첫 에디션(대회 시작 연도에 DB 대국이 있으면 그 해, 없으면 DB에 있는 가장 이른 해) — 도감 모식도의 방사형 노드(참가자)가 쓴다. 출전 대국 수가 많은 순, 최대 FIRST_MAX명.
-  let first = null;
-  if (editions.length) {
-    const fy = ed.has(t.from) ? t.from : editions[0][0], fc = new Map();
-    for (const r of ed.get(fy)) for (const n of [r.g.white, r.g.black]) fc.set(n, (fc.get(n) || 0) + 1);
-    first = { y: fy, n: fc.size, games: ed.get(fy).length, players: [...fc.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 16).map(([k]) => k) };
-  }
-  out.byId[t.id] = { games: rows.length, first, y0: editions.length ? editions[0][0] : null, y1: editions.length ? editions[editions.length - 1][0] : null, editions, players, top, complete, partial, winnerCheck: wc };
+  out.byId[t.id] = { games: rows.length, y0: editions.length ? editions[0][0] : null, y1: editions.length ? editions[editions.length - 1][0] : null, editions, players, top, complete, partial, winnerCheck: wc };
 }
 writeFileSync(new URL("../src/data/tournamentIndex.json", import.meta.url), JSON.stringify(out));
 for (const t of TOURNAMENTS) { const o = out.byId[t.id]; const wc = Object.values(o.winnerCheck); console.log(t.id.padEnd(14), String(o.games).padStart(5), "games", String(o.editions.length).padStart(3), "editions", "complete", o.complete.length, "partial", o.partial.length, "| winners ok", wc.filter((x) => x === "ok").length, "nodata", wc.filter((x) => x === "nodata").length, "conflict", wc.filter((x) => x === "conflict").length); }

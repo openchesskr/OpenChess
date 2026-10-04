@@ -1821,8 +1821,6 @@ export default {
   "탁월한 수 및 유일한 수만 표시": "Show Brilliant and Only moves only",
   "표시하지 않음": "Don't show",
   "2026 타이틀전 · 예정": "2026 title match · Upcoming",
-  "FIDE(1993–2006)": "FIDE (1993–2006)",
-  "PCA·클래식(1993–2006)": "PCA / Classical (1993–2006)",
   "녹아웃": "Knockout",
   "다음 타이틀전": "Next title match",
   "몰수승": "Won by forfeit",
@@ -1832,7 +1830,6 @@ export default {
   "역대 세계 챔피언": "World champions through history",
   "재위": "Reign",
   "점수는 챔피언–도전자 순. 괄호는 타이브레이크": "Scores are champion–challenger. Parentheses show tiebreaks",
-  "정통 계보": "Lineal line",
   "클래식": "Classical",
   "타이틀 상실": "Title lost",
   "타이틀 획득": "Title won",
@@ -1875,4 +1872,6 @@ export default {
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmed = every game is in the DB. Reference = some games missing",
   "확정": "Confirmed",
   "주요 대회": "Major tournaments",
+  "대진표": "Bracket",
+  "마스터 대국 DB에 이 연도 대국 없음": "No games for this year in the master games DB",
 };
