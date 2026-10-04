@@ -12,6 +12,10 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.pus
 const { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } = await import("../src/data/worldChampions.js");
 const { MT, layoutMasters, satellitesOf, clampMasterPan, championAt, yearToY } = await import("../src/lib/masterTreeLayout.js");
 const { TOURNAMENTS, TOURNAMENT_TYPES } = await import("../src/data/chessTournaments.js");
+const { WINNERS, COUNTRY_KO } = await import("../src/data/chessTournamentWinners.js");
+const { EVENT_RULES } = await import("./lib/tournamentEvents.mjs");
+const { Chess } = await import("chess.js");
+import { readFileSync as rf } from "node:fs";
 
 // ① 데이터
 const ids = CHAMPIONS.map((c) => c.id); eq(new Set(ids).size, ids.length, "챔피언 id 중복");
@@ -62,6 +66,29 @@ eq([1, 2, 3, 4, 6, 11, 12, 13, 18, 21, 22].map((n) => ordinalParam(n, "en")), ["
 eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º", 6, 6], "그 외 언어 서수");
 
 // ② 배치
+// 대회 우승 기록·마스터 대국 DB 색인(src/data/tournamentIndex.json — scripts/build-tournament-index.mjs 산출)
+{
+  const idx = JSON.parse(rf("src/data/tournamentIndex.json", "utf8"));
+  const ids = TOURNAMENTS.map((r) => r.id);
+  for (const id of Object.keys(WINNERS)) if (!ids.includes(id)) fails.push("WINNERS에 없는 대회 id: " + id);
+  for (const id of Object.keys(EVENT_RULES)) if (!ids.includes(id)) fails.push("EVENT_RULES에 없는 대회 id: " + id);
+  for (const id of ids) {
+    if (!EVENT_RULES[id]) fails.push(id + ": DB 이벤트 매칭 규칙(EVENT_RULES) 없음");
+    if (!idx.byId[id]) { fails.push(id + ": tournamentIndex.json에 없음 — node scripts/build-tournament-index.mjs 다시 실행"); continue; }
+    const r = TOURNAMENTS.find((x) => x.id === id), list = WINNERS[id] || [];
+    list.forEach(([y, names], i) => {
+      if (!Array.isArray(names) || !names.length) fails.push(id + " " + y + ": 우승자 이름 없음");
+      if (y < r.from || y > (r.to ?? 2030)) fails.push(id + " " + y + ": 우승 연도가 대회 기간(" + r.from + "–" + (r.to ?? "") + ") 밖");
+      if (i && y < list[i - 1][0]) fails.push(id + ": 우승 기록이 연도순이 아님(" + y + ")");
+      if (r.type === "team") for (const n of names) if (!COUNTRY_KO[n]) fails.push(id + " " + y + ": 나라 이름 번역(COUNTRY_KO) 없음 — " + n);
+      const ck = idx.byId[id].winnerCheck[y];
+      if (ck === undefined) fails.push(id + " " + y + ": 색인에 대조 결과가 없음 — 우승 기록을 고친 뒤 node scripts/build-tournament-index.mjs를 다시 실행할 것");
+      if (ck === "conflict") fails.push(id + " " + y + ": 우승자(" + names.join("/") + ")가 마스터 대국 DB의 그 연도 출전자 중에 없음(입력 오류 후보)");
+    });
+    // 대표 대국은 도감에서 바로 열리므로 전부 합법 수순이어야 한다.
+    for (const g of idx.byId[id].top) { try { const c = new Chess(); for (const san of g.m.split(" ")) c.move(san); } catch { fails.push(id + ": 대표 대국 " + g.id + "의 기보가 합법이 아님"); } }
+  }
+}
 // 대회 데이터
 {
   const tids = TOURNAMENTS.map((r) => r.id); eq(new Set(tids).size, tids.length, "대회 id 중복");
@@ -137,6 +164,7 @@ eq(SCHEMATIC_DRAG_MULT, 1, "드래그 감도 기준값");
 if (!/SCHEMATIC_DRAG_MULT/.test(mast) || /const SCHEMATIC_DRAG_MULT\s*=/.test(dex) || !/SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED/.test(dex)) fails.push("오프닝·마스터 모식도가 같은 드래그 감도(SCHEMATIC_DRAG_MULT)를 공유하지 않음");
 if (!/<Laurel side=\{1\} \/>[\s\S]*<Laurel side=\{-1\} \/>/.test(mast) || !/overflow: "visible"/.test(mast)) fails.push("챔피언 블록 월계수: 왼쪽 side=1·오른쪽 side=-1(잎 끝이 안쪽) 또는 overflow visible 누락");
 if (/ChevronsUp|ChevronsDown/.test(mast)) fails.push("마스터 모식도 좌상단 이동 버튼이 다시 생김");
+if (!/onOpenGame=\{onOpenGame\}/.test(readFileSync("src/App.jsx", "utf8")) || !/<MastersSchematic[^>]*onOpenGame=\{onOpenGame\}/.test(dex)) fails.push("대표 대국을 열 onOpenGame이 App → CollectionTab → MastersSchematic로 연결되지 않음");
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-masters: 챔피언 " + CHAMPIONS.length + "명·타이틀 이동 " + TRANSFERS.length + "건·위성 " + L.nodes.filter((n) => n.kind === "sat").length + "명 데이터 정합, 노드 겹침 0, 시간순 배치, 팬 한계, 도감 연결이 유지된다");

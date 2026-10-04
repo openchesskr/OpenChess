@@ -18,6 +18,7 @@
     "build-rush-levels": "node scripts/build-rush-levels.mjs",
     "build-attack-positions": "node scripts/build-attack-positions.mjs",
     "build-master-showcase": "node scripts/build-master-showcase.mjs",
+    "build-tournament-index": "node scripts/build-tournament-index.mjs",
     "build-hub-scenes": "node scripts/build-hub-scenes.mjs",
     "check:rpc-rows": "node scripts/check-rpc-null-rows.mjs",
     "check:reduced-motion": "node scripts/check-reduced-motion.mjs",
