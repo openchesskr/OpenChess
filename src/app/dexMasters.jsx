@@ -92,6 +92,16 @@ function TourNode({ n, onPick, picked }) {
   );
 }
 
+/* 대회 허브 오른쪽에 방사형으로 펼쳐진 첫 에디션 참가자 노드(마스터 대국 DB의 실제 출전자). 이후 대진표 노드로 바뀔 자리. */
+function PlayerNode({ n, onPick }) {
+  const color = TOUR_COLOR[n.tour.type];
+  return (
+    <button className="press" onClick={() => onPick({ type: "tour", id: n.tourId })} aria-label={dbPlayerName(n.name, lang) + " " + n.year}
+      style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 8px", cursor: "pointer", borderRadius: 8, zIndex: 2, fontSize: 11, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        border: "1.5px solid " + color + "99", background: "#fff", boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{dbPlayerName(n.name, lang)}</button>
+  );
+}
+
 /* 대회 허브에서 오른쪽으로 이어지는 연도(에디션) 칩 — 눌러서 대회 카드를 연다. 이후 대진표 노드가 이 자리에 붙는다. */
 function EditionNode({ n, onPick, picked }) {
   const color = TOUR_COLOR[n.tour.type];
@@ -235,8 +245,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const [idx, setIdx] = useState(null);
   useEffect(() => { let off = false; import("../data/tournamentIndex.json").then((m) => { if (!off) setIdx(m.default || m); }).catch(() => { }); return () => { off = true; }; }, []);
   const LAYOUT = React.useMemo(() => {
-    const ed = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) ed[id] = v.editions.map((e) => e[0]);
-    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed);
+    const ed = {}, fs = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) { ed[id] = v.editions.map((e) => e[0]); if (v.first) fs[id] = v.first; }
+    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, fs);
   }, [idx]);
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
   const boxRef = useRef(null);
@@ -333,8 +343,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               const ax = e.side === "L" ? a.x : a.x + a.w, bx = e.side === "L" ? b.x + b.w : b.x;
               return <line key={"s" + i} x1={ax} y1={ay} x2={bx} y2={by} stroke="#C9B58C" strokeWidth={1.6} />;
             })}
-            {edges.filter((e) => e.kind === "ray").map((e, i) => <line key={"ray" + i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={TOUR_COLOR[e.tour.type]} strokeOpacity={0.5} strokeWidth={2} strokeLinecap="round" />)}
-            {LAYOUT.origin && <circle cx={LAYOUT.origin.x} cy={LAYOUT.origin.y} r={9} fill="#C49A50" stroke="#fff" strokeWidth={2.5} />}
+            {LAYOUT.rail && <line x1={LAYOUT.rail.x} y1={LAYOUT.rail.y1} x2={LAYOUT.rail.x} y2={LAYOUT.rail.y2} stroke="#DCCBA8" strokeWidth={3} strokeLinecap="round" />}
+            {LAYOUT.rail && nodes.filter((n) => n.kind === "tour").map((n) => <g key={"r" + n.id}><line x1={LAYOUT.rail.x} y1={n.y + n.h / 2} x2={n.x} y2={n.y + n.h / 2} stroke="#DCCBA8" strokeWidth={2} /><circle cx={LAYOUT.rail.x} cy={n.y + n.h / 2} r={5} fill={TOUR_COLOR[n.tour.type]} stroke="#fff" strokeWidth={1.5} /></g>)}
+            {edges.filter((e) => e.kind === "fan").map((e, i) => <line key={"f" + i} x1={e.a.x + e.a.w} y1={e.a.y + e.a.h / 2} x2={e.b.x} y2={e.b.y + e.b.h / 2} stroke={TOUR_COLOR[e.a.tour.type]} strokeOpacity={0.55} strokeWidth={1.6} />)}
+            {edges.filter((e) => e.kind === "row").map((e, i) => <line key={"w" + i} x1={e.x1} y1={e.y} x2={e.x2} y2={e.y} stroke={TOUR_COLOR[e.tour.type]} strokeOpacity={0.5} strokeWidth={2} strokeLinecap="round" />)}
             {edges.filter((e) => e.kind === "upcoming").map((e, i) => { const p = transferPath(e.a, e.b); return <path key={"u" + i} d={p.d} fill="none" stroke={T.brass} strokeWidth={2} strokeDasharray="5 5" />; })}
             {champEdges.map((e, i) => {
               const p = transferPath(e.a, e.b), lane = e.b.lane !== "C" ? e.b.lane : e.a.lane;
@@ -354,17 +366,11 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           ))}
           {nodes.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} />
             : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} />
+            : n.kind === "player" ? <PlayerNode key={n.id} n={n} onPick={setPick} />
             : n.kind === "edition" ? <EditionNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tourId} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
         {pick && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      </div>
-      <div className="flex items-center gap-3" style={{ marginTop: 8, flexWrap: "wrap", fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>
-        {Object.keys(TOUR_COLOR).map((k) => <span key={k} className="flex items-center gap-1"><span style={{ width: 9, height: 9, borderRadius: 3, background: TOUR_COLOR[k] }} />{TOUR_LABEL()[k]}</span>)}
-        <span style={{ opacity: .4 }}>|</span>
-        {[["C", t("정통 계보")], ["L", t("PCA·클래식(1993–2006)")], ["R", t("FIDE(1993–2006)")]].map(([k, lb]) => (
-          <span key={k} className="flex items-center gap-1"><span style={{ width: 14, height: 4, borderRadius: 2, background: LANE_COLOR[k] }} />{lb}</span>
-        ))}
       </div>
     </div>
   );
