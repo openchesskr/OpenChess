@@ -24,5 +24,6 @@
   "lib/theme.js",
   "lib/tierSystem.js",
   "FaqPage.jsx",
-  "LegalPage.jsx"
+  "LegalPage.jsx",
+  "app/dexMasters.jsx"
 ]

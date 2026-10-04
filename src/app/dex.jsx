@@ -12,6 +12,8 @@ import { DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCH
 import { badgeIcon } from "../components/badges.jsx";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
+import { useFitPanelHeight } from "../lib/dexPanel.js";
+import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
 import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
@@ -235,7 +237,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
+function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (v0.3.2 개편 → v0.5.6) 나침반형 방사 트리 — 1수(e4/d4)는 중심 회로 칩에서 정확히 위/아래 ROOT_GAP 거리에 두고, 그 아래는 팔마다
   // 반원 안에서 방사형으로 뻗는다. 각도·반지름·라벨 자리 계산 규칙은 전부 src/lib/dexTreeLayout.js 머리 주석에 모았다.
@@ -348,23 +350,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 맞춘다 — 박스 자신의 top은 자기 높이와 무관(그 위 형제 요소들의 높이로만 결정)하므로 되먹임 없이
   // 한 번에 계산된다. 이렇게 박스가 항상 뷰포트 안에 통째로 들어오면, 나침반 중심 칩을 "박스 자신의
   // 중심"에 맞추는 것만으로도 항상 뷰포트 정중앙에 오게 된다(visibleBoxCenter류의 별도 보정 불필요).
-  const [panelH, setPanelH] = useState(640);
-  useLayoutEffect(() => {
-    const compute = () => {
-      const el = boxRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      // (사용자 요청) 데스크톱에서 모식도 흰 영역을 조금 더 늘려 달라는 요청 — 하단 고정 내비게이션
-      // 높이(66px) 자체는 줄일 수 없지만, 그 위 여백은 모바일처럼 손가락으로 조작할 일이 없는
-      // 데스크톱(마우스 기준)에서는 더 좁혀도 된다. 모바일은 기존 16px 여백을 그대로 유지한다.
-      const BOTTOM_SAFE = 66 + (vertical ? 16 : 4); // 하단 고정 내비게이션 + 여백
-      const avail = window.innerHeight - top - BOTTOM_SAFE;
-      setPanelH(Math.max(360, Math.round(avail)));
-    };
-    compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, [vertical]);
+  // (v0.6.3) 높이 계산은 src/lib/dexPanel.js(오프닝·마스터 모식도 공용).
+  const panelH = useFitPanelHeight(boxRef, vertical);
   // (기능) 검색·클릭으로 오프닝을 선택하면 화면 중앙으로 이동시키고 살짝 확대해 강조하는데, 이후
   // 사용자가 직접 드래그·휠로 그 노드를 중앙에서 멀리 치워버리면(즉 더 이상 "선택 직후" 뷰가 아니게
   // 되면) 강조 확대만 100%로 되돌리고 색 강조는 그대로 유지한다. 팬/줌 핸들러(특히 한 번만 등록되는
@@ -1061,7 +1048,8 @@ function OpeningSchematic({ treeData, treeVersion, openKey, onToggleOpen, chessc
   // 그대로— 위치와 스타일만 바뀐다.
   const searchHeader = (
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
-      <div className="no-pan" style={{ position: "relative", zIndex: 70, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150 }}>
+      {tabsSlot}
+      <div className="no-pan" style={{ position: "relative", zIndex: 70, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 4 }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("오프닝 이름으로 찾기")}
             style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
@@ -1257,14 +1245,21 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   }, []);
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
-  return (
-    <div>
-      <div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
-        {[["openings", t("오프닝")], ["titles", t("칭호")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
+  // (v0.6.3) 탭 알약 — 데스크톱의 오프닝·마스터 모식도는 검색·안내 줄과 같은 한 줄에 넣어(inlineTabs) 모식도 높이를 늘린다. 모바일·칭호·스킨은 예전처럼 위에 따로 둔다.
+  const tabPills = (mb) => (
+    <div className="flex items-center gap-2" style={{ marginBottom: mb, flexShrink: 0 }}>
+      {[["openings", t("오프닝")], ["masters", t("마스터")], ["titles", t("칭호")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
           <button key={k} onClick={() => setDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
         ); })}
-      </div>
-      {dexView === "skins" ? (
+    </div>
+  );
+  const inlineTabs = !vertical && (dexView === "openings" || dexView === "masters");
+  return (
+    <div>
+      {!inlineTabs && tabPills(14)}
+      {dexView === "masters" ? (
+        <MastersSchematic vertical={vertical} tabsSlot={inlineTabs ? tabPills(0) : undefined} />
+      ) : dexView === "skins" ? (
         <div>
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
@@ -1318,7 +1313,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한
           브라스/금색 강조 숫자로 보이도록 스타일을 키운다. 실제 렌더 위치는 OpeningSchematic이
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
-      <OpeningSchematic treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
+      <OpeningSchematic tabsSlot={inlineTabs ? tabPills(0) : undefined} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
           <div style={{ textAlign: vertical ? "left" : "right" }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
