@@ -1872,6 +1872,12 @@ export default {
   "확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락": "Confirmed = every game is in the DB. Reference = some games missing",
   "확정": "Confirmed",
   "주요 대회": "Major tournaments",
+  "순위": "Rank",
+  "출생 연도": "Year of birth",
+  "마스터 대국 DB 선수": "Master games DB players",
+  "FIDE 스탠다드 순위": "FIDE Standard ranking",
+  "FIDE 래피드 순위": "FIDE Rapid ranking",
+  "FIDE 블리츠 순위": "FIDE Blitz ranking",
   "대진표": "Bracket",
   "마스터 대국 DB에 이 연도 대국 없음": "No games for this year in the master games DB",
 };

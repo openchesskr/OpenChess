@@ -110,7 +110,8 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
 const IDX = JSON.parse(rf("src/data/tournamentIndex.json", "utf8"));
 const EDITIONS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDITIONS[id] = v.editions.map((e) => e[0]);
 const EDS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDS[id] = v.editions;
-const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, null);
+const FIDE = JSON.parse(rf("src/data/fideRankings.json", "utf8")), DBM = JSON.parse(rf("src/data/dbMasters.json", "utf8"));
+const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, null, FIDE, DBM.masters);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
 eq(L.nodes.filter((n) => n.kind === "sat").length, CHAMPIONS.reduce((n, c) => n + satellitesOf(c).length, 0), "위성 노드 수");
 for (let i = 0; i < L.nodes.length; i++) {
@@ -151,7 +152,7 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   // 펼침: 연도 블록 아래에 대진표 영역 → 겹침 없음, 아래 대회가 그 높이만큼 밀림, 캔버스가 커짐
   for (const key of ["hastings:1895", "tata:2000", "candidates:2024"]) {
     const [tid, yr] = key.split(":");
-    const E = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, key);
+    const E = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, key, FIDE, DBM.masters);
     const open = E.nodes.find((n) => n.kind === "edition" && n.open);
     if (!open || open.tourId !== tid || open.year !== +yr) { if (EDS[tid] && EDS[tid].some((e) => e[0] === +yr)) fails.push("펼친 연도 블록이 표시되지 않음: " + key); continue; }
     const pan = E.panels[0];
@@ -166,41 +167,55 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   }
 }
 
-// 열 이름 라벨("역대 세계 챔피언"·"주요 대회"): 두 개, 노드와 겹치지 않고 캔버스 안, 각 열 맨 위 노드 바로 위
+// 열 이름 라벨: 북(챔피언)·동(대회)·서(DB 선수)·남(FIDE 세 갈래) 6개, 노드와 겹치지 않고 캔버스 안
 {
-  eq(L.labels.map((l) => l.key), ["champs", "tours"], "열 이름 라벨");
+  eq(L.labels.map((l) => l.key).sort(), ["champs", "db", "fide-blitz", "fide-rapid", "fide-standard", "tours"], "열 이름 라벨");
   for (const l of L.labels) {
     if (l.x < 0 || l.y < 0 || l.x + l.w > L.width) fails.push("열 이름 라벨이 캔버스 밖: " + l.key);
     for (const n of L.nodes) if (l.x < n.x + n.w && n.x < l.x + l.w && l.y < n.y + n.h && n.y < l.y + l.h) fails.push("열 이름 라벨(" + l.key + ")이 노드와 겹침: " + n.id);
   }
-  const first = L.byNodeId.get(CHAMPIONS[0].id);
-  if (!(L.labels[0].y + L.labels[0].h <= first.y)) fails.push("챔피언 라벨이 첫 챔피언 노드 위쪽이 아님");
 }
-// 중심 회로 칩(오프닝 트리와 같은 디자인): 동서남북 4갈래 — 남=첫 챔피언 위, 동=대회 세로선 꼭대기, 북·서=끝 패드. 칩은 모든 챔피언 노드 위·북쪽 끝은 그보다 위
+// 중심 회로 칩(오프닝 트리와 같은 디자인): 동서남북 4갈래 — 북=역대 챔피언(최근이 칩 가까이), 동=주요 대회, 남=FIDE 세 갈래, 서=DB 마스터(알파벳순)
 {
   const C = L.chip, byDir = Object.fromEntries(L.traces.map((t) => [t.dir, t]));
   eq(Object.keys(byDir).sort(), ["E", "N", "S", "W"], "회로선 4갈래");
-  const first = L.byNodeId.get(CHAMPIONS[0].id);
-  if (!(C.cy + C.size / 2 < first.y)) fails.push("회로 칩이 첫 챔피언 위에 없음");
   const end = (t) => t.pts[t.pts.length - 1], len = (t) => t.pts.reduce((m, q, i) => (i ? m + Math.abs(q[0] - t.pts[i - 1][0]) + Math.abs(q[1] - t.pts[i - 1][1]) : 0), 0);
-  eq(end(byDir.S), [C.cx, first.y], "남쪽 선은 첫 챔피언 노드 위 가운데에 닿음");
+  for (const t of L.traces) if (len(t) < 250) fails.push("첫 회로선이 너무 짧음(" + t.dir + " " + Math.round(len(t)) + "px)");
+  // 북: 챔피언은 모두 칩 위, 최근 챔피언(마지막)이 칩 가장 가까이, 과거로 갈수록 위. 선은 가장 가까운 노드 아래 가운데에 닿는다.
+  const champNodes = CHAMPIONS.map((c) => L.byNodeId.get(c.id));
+  for (const n of [...champNodes, ...L.nodes.filter((n) => n.kind === "sat" || n.kind === "upcoming")]) if (!(n.y + n.h < C.cy - C.size / 2)) fails.push("챔피언 줄이 칩 위쪽이 아님: " + n.id);
+  eq(end(byDir.N), [C.cx, L.lastChamp.y + L.lastChamp.h], "북쪽 선은 칩에서 가장 가까운 챔피언 노드 아래에 닿음");
+  eq(L.lastChamp.id, UPCOMING ? "upcoming" : CHAMPIONS[CHAMPIONS.length - 1].id, "칩에 가장 가까운 노드");
+  // 동: 일직선, 대회 열 가운데 = 칩 높이
   eq(byDir.E.pts.length, 2, "동쪽 선은 꺾임 없는 일직선");
   eq(end(byDir.E), [L.rail.x, C.cy], "동쪽 선은 칩과 같은 높이에서 대회 세로선에 닿음");
-  if (!(L.rail.y1 < C.cy && C.cy < L.rail.y2)) fails.push("칩 높이가 대회 세로선 안쪽이 아님");
   if (Math.abs((L.rail.y1 + L.rail.y2) / 2 - C.cy) > 1) fails.push("대회 열의 가운데가 중심 회로 칩과 같은 높이가 아님");
-  { const mids = L.nodes.filter((n) => n.kind === "tour"); const m = (mids[0].y + mids[0].h / 2 + mids[mids.length - 1].y + mids[mids.length - 1].h / 2) / 2; if (Math.abs(m - C.cy) > 1) fails.push("첫·마지막 대회 허브의 가운데가 칩 높이와 다름"); }
-  for (const t of L.traces) if (len(t) < 250) fails.push("첫 회로선이 너무 짧음(" + t.dir + " " + Math.round(len(t)) + "px)");
-  if (!(len(byDir.E) > 400)) fails.push("동쪽 회로선이 충분히 길지 않음");
-  const others = L.nodes.filter((n) => n.kind !== "tour" && n.kind !== "edition" && n.kind !== "player");
-  for (const [a0, a1] of byDir.E.pts.slice(1).map((q, i) => [byDir.E.pts[i], q])) for (const n of others) { const x0 = Math.min(a0[0], a1[0]), x1 = Math.max(a0[0], a1[0]), y0 = Math.min(a0[1], a1[1]), y1 = Math.max(a0[1], a1[1]); if (x0 <= n.x + n.w && n.x <= x1 && y0 <= n.y + n.h && n.y <= y1) fails.push("동쪽 회로선이 노드를 가로지름: " + n.id); }
-  if (!(byDir.N.pts[1][1] < C.cy) || !(byDir.W.pts[1][0] < C.cx)) fails.push("북·서쪽 선 방향이 틀림");
-  eq(L.pads.map((p) => p.dir).sort(), ["N", "W"], "북·서쪽 끝 패드");
-  for (const l of L.labels) if (l.x < 0 || l.y < 0) fails.push("라벨이 캔버스 밖: " + l.key);
-  const tl = L.labels.find((l) => l.key === "tours"); if (!(tl.y + tl.h <= C.cy) || tl.x < C.cx) fails.push("주요 대회 라벨이 동쪽 선 위가 아님");
-  const cl = L.labels.find((l) => l.key === "champs"); if (!(cl.y >= C.cy + C.size / 2 && cl.y + cl.h <= first.y)) fails.push("챔피언 라벨이 남쪽 선 옆(칩과 첫 챔피언 사이)이 아님");
+  // 서: 일직선, DB 선수 열 가운데 = 칩 높이, 알파벳(성) 순, TOP_N명
+  const dbn = L.nodes.filter((n) => n.kind === "dbm").sort((a, b) => a.index - b.index);
+  eq(dbn.length, DBM.masters.length, "서쪽 DB 마스터 노드 수");
+  eq(byDir.W.pts.length, 2, "서쪽 선은 꺾임 없는 일직선");
+  eq(end(byDir.W), [L.wrail.x, C.cy], "서쪽 선은 칩과 같은 높이에서 DB 선수 세로선에 닿음");
+  if (Math.abs((L.wrail.y1 + L.wrail.y2) / 2 - C.cy) > 1) fails.push("DB 선수 열의 가운데가 칩 높이가 아님");
+  for (let i = 1; i < dbn.length; i++) { if (!(dbn[i].y > dbn[i - 1].y)) fails.push("DB 선수가 위→아래가 아님"); if (dbn[i].dbm.name.length && DBM.masters[i][0] !== dbn[i].dbm.name) fails.push("DB 선수 순서 불일치"); }
+  { const key = (nm) => { const i = nm.indexOf(","); const sur = (i < 0 ? nm : nm.slice(0, i)); return sur.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim(); };
+    for (let i = 1; i < DBM.masters.length; i++) if (key(DBM.masters[i][0]) < key(DBM.masters[i - 1][0])) fails.push("dbMasters.json이 성 기준 알파벳 순이 아님: " + DBM.masters[i - 1][0] + " → " + DBM.masters[i][0]); }
+  for (const n of dbn) if (!(n.x + n.w < L.wrail.x)) fails.push("DB 선수 노드가 세로선 오른쪽: " + n.id);
+  // 남: 칩 아래 선 → 분기점에서 세 갈래(스탠다드·래피드·블리츠, 불렛 없음) → 각 줄에 1위부터 100위까지
+  eq(L.south.cols.map((c) => c.key), ["standard", "rapid", "blitz"], "남쪽 세 갈래(FIDE는 불렛 레이팅이 없다)");
+  eq(end(byDir.S), [C.cx, L.south.jy], "남쪽 선은 분기점까지");
+  eq([L.south.bus.x1 < C.cx, L.south.bus.x2 > C.cx], [true, true], "분기선이 칩 가운데를 가로지름");
+  for (const col of L.south.cols) {
+    const list = L.nodes.filter((n) => n.kind === "fide" && n.list === col.key).sort((a, b) => a.rank - b.rank);
+    eq(list.map((n) => n.rank), Array.from({ length: 100 }, (_, i) => i + 1), "순위 1부터 100까지: " + col.key);
+    eq(list.map((n) => n.fide.rating).every((v, i, a) => i === 0 || v <= a[i - 1]), true, "레이팅이 1위부터 내림차순: " + col.key);
+    if (!(list[0].y > L.south.jy)) fails.push("FIDE 1위가 분기점 아래가 아님: " + col.key);
+    eq(Math.round(list[0].x + list[0].w / 2), Math.round(col.cx), "첫 노드가 갈래 선 아래: " + col.key);
+    for (let i = 1; i < list.length; i++) if (!(list[i].y >= list[i - 1].y + list[i - 1].h)) fails.push("FIDE 노드 겹침: " + col.key + " " + list[i].rank);
+  }
+  eq(FIDE.month, FIDE.month.match(/^[A-Z][a-z]+ \d{4}$/)?.[0], "FIDE 목록의 월 표기");
   // 화면 연결: 회로 효과 클래스·칩·선택 경로
   const src = rf("src/app/dexMasters.jsx", "utf8");
-  for (const needle of ["dex-chip-surge", "dex-surge-node", "dex-surge-line", "dex-current-line", "회로에 전류 흘리기", "SCHEMATIC_ELECTRIC", "DEX_ELECTRIC_FLOW_SPEED", "DEX_SELECT_FLOW_SPEED"]) if (!src.includes(needle)) fails.push("마스터 트리에 오프닝 트리 회로 요소 없음: " + needle);
+  for (const needle of ["dex-chip-surge", "dex-surge-node", "dex-surge-line", "dex-current-line", "회로에 전류 흘리기", "SCHEMATIC_ELECTRIC", "DEX_ELECTRIC_FLOW_SPEED", "DEX_SELECT_FLOW_SPEED", "fideRankings.json", "dbMasters.json"]) if (!src.includes(needle)) fails.push("마스터 트리에 필요한 요소 없음: " + needle);
 }
 
 // 마스터 트리 배율: 예전 75%(0.5625)가 새 100%, 25%p 격자·핀치 스냅
