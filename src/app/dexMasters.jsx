@@ -409,7 +409,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <MasterDefs />
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
-            {traces.map((tr) => wire(tr.dir, "M" + tr.x1 + " " + tr.y1 + " L" + tr.x2 + " " + tr.y2, (tr.x1 + tr.x2) / 2, (tr.y1 + tr.y2) / 2, { opacity: 0.5 }))}
+            {traces.map((tr) => { const a0 = tr.pts[0], a1 = tr.pts[tr.pts.length - 1]; return wire(tr.dir, "M" + tr.pts.map((q) => q[0] + " " + q[1]).join(" L"), (a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2, { opacity: 0.5 }); })}
             {LAYOUT.pads.map((pd) => <circle key={"pad" + pd.dir} cx={pd.x} cy={pd.y} r={7} fill="#FBF5E8" stroke={T.brass} strokeWidth={2} opacity={0.6} strokeDasharray="3 3" />)}
             {edges.filter((e) => e.kind === "sat").map((e) => {
               const a = e.a, b = e.b, ay = a.y + a.h / 2, by = b.y + b.h / 2;
@@ -417,7 +417,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               return wire("sat:" + b.id, elbowH(ax, ay, bx, by), (ax + bx) / 2, (ay + by) / 2);
             })}
             {LAYOUT.rail && wire("rail", "M" + LAYOUT.rail.x + " " + LAYOUT.rail.y1 + " V" + LAYOUT.rail.y2, LAYOUT.rail.x, (LAYOUT.rail.y1 + LAYOUT.rail.y2) / 2, { opacity: 0.9 })}
-            {LAYOUT.rail && lit.railTo != null && <Wire key="railLit" d={"M" + LAYOUT.rail.x + " " + LAYOUT.rail.y1 + " V" + lit.railTo} lit delay={litDelay(LAYOUT.rail.x, lit.railTo)} />}
+            {LAYOUT.rail && lit.railTo != null && <Wire key="railLit" d={"M" + LAYOUT.rail.x + " " + LAYOUT.rail.mid + " V" + lit.railTo} lit delay={litDelay(LAYOUT.rail.x, lit.railTo)} />}
             {LAYOUT.rail && nodes.filter((n) => n.kind === "tour").map((n) => wire("hl:" + n.id, "M" + LAYOUT.rail.x + " " + (n.y + n.h / 2) + " H" + n.x, (LAYOUT.rail.x + n.x) / 2, n.y + n.h / 2))}
             {edges.filter((e) => e.kind === "drop").map((e) => { const en = LAYOUT.byNodeId.get(e.enId); return wire("drop:" + e.enId, "M" + (en.x + en.w / 2) + " " + (en.y + en.h) + " V" + e.panel.y, en.x + en.w / 2, e.panel.y, { stroke: TOUR_COLOR[e.tour.type] }); })}
             {edges.filter((e) => e.kind === "row").map((e) => wire("row:" + e.tour.id, "M" + e.x1 + " " + e.y + " H" + e.x2, (e.x1 + e.x2) / 2, e.y, { stroke: TOUR_COLOR[e.tour.type], opacity: 0.6 }))}

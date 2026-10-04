@@ -184,13 +184,20 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   eq(Object.keys(byDir).sort(), ["E", "N", "S", "W"], "회로선 4갈래");
   const first = L.byNodeId.get(CHAMPIONS[0].id);
   if (!(C.cy + C.size / 2 < first.y)) fails.push("회로 칩이 첫 챔피언 위에 없음");
-  eq([byDir.S.x2, byDir.S.y2], [C.cx, first.y], "남쪽 선은 첫 챔피언 노드 위 가운데에 닿음");
-  eq([byDir.E.y1, byDir.E.y2, byDir.E.x2], [C.cy, C.cy, L.rail.x], "동쪽 선은 대회 세로선(rail)까지");
-  eq(L.rail.y1, C.cy, "대회 세로선은 칩 높이에서 시작");
-  if (!(byDir.N.y2 < C.cy) || !(byDir.W.x2 < C.cx)) fails.push("북·서쪽 선 방향이 틀림");
+  const end = (t) => t.pts[t.pts.length - 1], len = (t) => t.pts.reduce((m, q, i) => (i ? m + Math.abs(q[0] - t.pts[i - 1][0]) + Math.abs(q[1] - t.pts[i - 1][1]) : 0), 0);
+  eq(end(byDir.S), [C.cx, first.y], "남쪽 선은 첫 챔피언 노드 위 가운데에 닿음");
+  eq(end(byDir.E), [L.rail.x, L.rail.mid], "동쪽 선은 대회 트리(세로선)의 가운데 높이에 닿음");
+  if (!(L.rail.y1 < L.rail.mid && L.rail.mid < L.rail.y2)) fails.push("동쪽 선이 닿는 점이 대회 세로선 안쪽 가운데가 아님");
+  if (Math.abs(L.rail.mid - (L.rail.y1 + L.rail.y2) / 2) > 1) fails.push("동쪽 선이 대회 세로선의 가운데가 아님");
+  for (const t of L.traces) if (len(t) < 250) fails.push("첫 회로선이 너무 짧음(" + t.dir + " " + Math.round(len(t)) + "px)");
+  if (!(len(byDir.E) > 600)) fails.push("동쪽 회로선이 충분히 길지 않음");
+  const others = L.nodes.filter((n) => n.kind !== "tour" && n.kind !== "edition" && n.kind !== "player");
+  for (const [a0, a1] of byDir.E.pts.slice(1).map((q, i) => [byDir.E.pts[i], q])) for (const n of others) { const x0 = Math.min(a0[0], a1[0]), x1 = Math.max(a0[0], a1[0]), y0 = Math.min(a0[1], a1[1]), y1 = Math.max(a0[1], a1[1]); if (x0 <= n.x + n.w && n.x <= x1 && y0 <= n.y + n.h && n.y <= y1) fails.push("동쪽 회로선이 노드를 가로지름: " + n.id); }
+  eq(L.rail.y1 > C.cy, true, "대회 세로선은 칩보다 아래에서 시작");
+  if (!(byDir.N.pts[1][1] < C.cy) || !(byDir.W.pts[1][0] < C.cx)) fails.push("북·서쪽 선 방향이 틀림");
   eq(L.pads.map((p) => p.dir).sort(), ["N", "W"], "북·서쪽 끝 패드");
   for (const l of L.labels) if (l.x < 0 || l.y < 0) fails.push("라벨이 캔버스 밖: " + l.key);
-  const tl = L.labels.find((l) => l.key === "tours"); if (!(tl.y + tl.h <= C.cy)) fails.push("주요 대회 라벨이 동쪽 선 위가 아님");
+  const tl = L.labels.find((l) => l.key === "tours"); if (!(tl.y + tl.h <= C.cy) || tl.x < C.cx) fails.push("주요 대회 라벨이 동쪽 선 위가 아님");
   const cl = L.labels.find((l) => l.key === "champs"); if (!(cl.y >= C.cy + C.size / 2 && cl.y + cl.h <= first.y)) fails.push("챔피언 라벨이 남쪽 선 옆(칩과 첫 챔피언 사이)이 아님");
   // 화면 연결: 회로 효과 클래스·칩·선택 경로
   const src = rf("src/app/dexMasters.jsx", "utf8");
