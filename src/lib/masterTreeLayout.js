@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 100, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14 };
+export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 100, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 224, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 360, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14, CHIP: 60, CHIP_GAP: 96, STUB_N: 110, STUB_W: 170 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -36,7 +36,9 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   const byId = new Map(champions.map((c) => [c.id, c]));
   const splitIds = new Set(splitRows.flat().filter(Boolean));
   const nodes = [], edges = [], champNode = new Map();
-  let y = MT.TOP_PAD;
+  // 도감 오프닝 트리와 같은 중심 회로 칩 — 칩에서 동서남북 네 갈래 회로선이 뻗는다. 남쪽: 역대 세계 챔피언, 동쪽: 주요 대회, 북·서쪽은 아직 비어 있는 단자(끝 패드)만 둔다.
+  const chip = { cx: 0, cy: MT.TOP_PAD + MT.STUB_N + MT.CHIP / 2, size: MT.CHIP };
+  let y = chip.cy + MT.CHIP / 2 + MT.CHIP_GAP;
   const laneX = { C: 0, L: -MT.LANE_DX / 2, R: MT.LANE_DX / 2 };
   const placeRow = (cells) => {
     // cells: [{ champ, lane }] — 같은 행의 칸들. 행 높이 = 칸마다 필요한 높이(챔피언 또는 위성 쌓임)의 최댓값.
@@ -125,26 +127,37 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
       edges.push({ kind: "row", from: hub.id, to: hub.id, tour: tr, x1: colX + MT.TOUR_W, x2: ex - MT.ED_GAP, y: cy });
     }
     const first = tourNodes[0], last = tourNodes[tourNodes.length - 1];
-    rail = { x: colX - 28, y1: first.y + first.h / 2, y2: last.y + last.h / 2 };
+    rail = { x: colX - 28, y1: chip.cy, y2: last.y + last.h / 2 };
     for (const n of tourNodes) edges.push({ kind: "tour", from: n.id, to: n.id });
   }
+  // 회로 칩의 네 갈래(trace)와 북·서쪽 끝 패드 — 남쪽은 첫 챔피언 노드 위, 동쪽은 대회 열 세로선(rail) 꼭대기까지.
+  const half = chip.size / 2, firstChamp = champNode.get(champions[0].id);
+  const traces = [{ dir: "S", x1: chip.cx, y1: chip.cy + half, x2: chip.cx, y2: firstChamp.y }];
+  if (rail) traces.push({ dir: "E", x1: chip.cx + half, y1: chip.cy, x2: rail.x, y2: chip.cy });
+  traces.push({ dir: "N", x1: chip.cx, y1: chip.cy - half, x2: chip.cx, y2: chip.cy - half - MT.STUB_N });
+  traces.push({ dir: "W", x1: chip.cx - half, y1: chip.cy, x2: chip.cx - half - MT.STUB_W, y2: chip.cy });
+  const pads = traces.filter((t) => t.dir === "N" || t.dir === "W").map((t) => ({ dir: t.dir, x: t.x2, y: t.y2 }));
   // 좌표를 양수로 옮긴다.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const n of [...nodes, ...panels]) { minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x + n.w); minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y + n.h); }
-  // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 각 열 맨 위 노드 위쪽에 가운데 맞춰 놓는다(오프닝 트리의 금색 오프닝 이름과 같은 자리 개념).
+  for (const pd of pads) { minX = Math.min(minX, pd.x - 8); minY = Math.min(minY, pd.y - 8); }
+  // 열 이름 라벨("역대 세계 챔피언"·"주요 대회") — 오프닝 트리의 금색 오프닝 이름처럼 해당 회로선 옆에 놓는다: 챔피언은 남쪽 선 오른쪽, 대회는 동쪽 선 위.
   const labels = [];
-  { const first = champNode.get(champions[0].id); labels.push({ id: "champs", key: "champs", x: first.x + first.w / 2 - MT.LABEL_W / 2, y: first.y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
-  { const tn = nodes.filter((n) => n.kind === "tour"); if (tn.length) labels.push({ id: "tours", key: "tours", x: tn[0].x + tn[0].w / 2 - MT.LABEL_W / 2, y: tn[0].y - MT.LABEL_GAP - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H }); }
+  labels.push({ id: "champs", key: "champs", align: "left", x: chip.cx + 16, y: chip.cy + half + (MT.CHIP_GAP - MT.LABEL_H) / 2, w: MT.LABEL_W, h: MT.LABEL_H });
+  if (rail) labels.push({ id: "tours", key: "tours", align: "center", x: (chip.cx + half + rail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
   for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;
   for (const l of labels) { l.x += dx; l.y += dy; }
   for (const n of [...nodes, ...panels]) { n.x += dx; n.y += dy; }
   if (rail) { rail.x += dx; rail.y1 += dy; rail.y2 += dy; }
+  chip.cx += dx; chip.cy += dy;
+  for (const t of traces) { t.x1 += dx; t.x2 += dx; t.y1 += dy; t.y2 += dy; }
+  for (const pd of pads) { pd.x += dx; pd.y += dy; }
   for (const e of edges) if (e.kind === "row") { e.x1 += dx; e.x2 += dx; e.y += dy; }
   const byNodeId = new Map(nodes.map((n) => [n.id, n]));
   for (const e of edges) { e.a = byNodeId.get(e.from); e.b = byNodeId.get(e.to); }
   const width = maxX - minX + MT.PAD * 2, height = maxY - minY + MT.TOP_PAD + MT.PAD;
-  return { nodes, panels, edges, labels, rail, width, height, centerX: dx, byNodeId };
+  return { nodes, panels, edges, labels, rail, chip, traces, pads, width, height, centerX: chip.cx, byNodeId };
 }
 
 /* 챔피언 노드끼리 잇는 선의 경로(SVG path)와 라벨 위치. 위 노드 아래 가운데 → 아래 노드 위 가운데를 세로 곡선으로 잇는다. */
