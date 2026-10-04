@@ -9,6 +9,8 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
+import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
+import { dbPlayerName, playerName } from "../data/playerNames.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
 import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
@@ -120,7 +122,58 @@ function UpcomingNode({ n }) {
 }
 
 /* 선택한 노드의 상세 — 챔피언: 획득·상실·방어전 / 도전자: 도전 기록. */
-function DetailCard({ pick, onClose }) {
+/* 대회 카드 아래 — 역대 우승 기록(입력 자료 + DB 교차확인 ✓), 마스터 대국 DB 요약, DB 집계 결과, 대표 대국(눌러서 보드·리뷰로 열기). 색인(tournamentIndex.json)은 카드를 처음 열 때 지연 로드한다. */
+const fmtScore = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
+  const [idx, setIdx] = useState(null);
+  useEffect(() => { let off = false; import("../data/tournamentIndex.json").then((m) => { if (!off) setIdx(m.default || m); }).catch(() => { }); return () => { off = true; }; }, []);
+  const info = idx && idx.byId ? idx.byId[r.id] : null;
+  const checks = (info && info.winnerCheck) || {};
+  const winners = WINNERS[r.id] || [];
+  const isTeam = r.type === "team";
+  const winName = (n) => (isTeam ? (lang === "ko" && COUNTRY_KO[n] ? COUNTRY_KO[n] : n) : playerName(n, lang));
+  const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "10px 0 3px" }}>{txt}</div>;
+  const rowSty = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
+  const results = info ? [...(info.complete || []).map((x) => ({ ...x, sure: true })), ...(info.partial || []).map((x) => ({ ...x, sure: false }))].sort((a, b) => b.y - a.y) : [];
+  const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: g.m.split(" "), white: { username: dbPlayerName(g.w, "en"), rating: g.we }, black: { username: dbPlayerName(g.b, "en"), rating: g.be } });
+  return (
+    <div>
+      {winners.length > 0 && <>
+        {head(WINNER_KIND[r.id] === "titleChanges" ? t("챔피언이 바뀐 해") : t("역대 우승"))}
+        <div style={{ maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
+          {[...winners].reverse().map(([y, names]) => (
+            <div key={y} style={rowSty}>{y} · {names.map(winName).join(" · ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
+          ))}
+        </div>
+        <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>{t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료")}</div>
+      </>}
+      {head(t("마스터 대국 DB"))}
+      {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
+        <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => dbPlayerName(n, lang) + " (" + c + ")").join(" · ")}</div>}
+        <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>
+        {results.length > 0 && <>
+          {head(t("DB 집계 결과"))}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => dbPlayerName(n, lang)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
+        </>}
+        {info.top.length > 0 && <>
+          {head(t("대표 대국"))}
+          {info.top.map((g) => (
+            <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
+              <button onClick={() => onOpenGame && onOpenGame(g.m.split(" "))} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {g.y} · {dbPlayerName(g.w, lang)} {g.we ? "(" + g.we + ")" : ""} – {dbPlayerName(g.b, lang)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+              </button>
+              <button onClick={() => openReview(g)} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
+            </div>
+          ))}
+        </>}
+      </>}
+    </div>
+  );
+}
+
+function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
   let title = "", sub = "", cc = "", rows = [], blocks = [];
   if (pick.type === "champ") {
     const c = BY_ID.get(pick.id);
@@ -145,7 +198,7 @@ function DetailCard({ pick, onClose }) {
   }
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
-      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, width: 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
+      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
@@ -159,15 +212,16 @@ function DetailCard({ pick, onClose }) {
       {blocks.map((b, i) => (
         <div key={i} style={{ marginTop: i ? 10 : 0 }}>
           <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3 }}>{b.head}</div>
-          {b.lines.map((l, j) => <div key={j} style={{ fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT }}>{l}</div>)}
+          {(b.lines || []).map((l, j) => <div key={j} style={{ fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT }}>{l}</div>)}
         </div>
       ))}
+      {pick.type === "tour" && <TourExtra r={TOURNAMENTS.find((x) => x.id === pick.id)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       {pick.type !== "tour" && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 12 }}>{t("점수는 챔피언–도전자 순. 괄호는 타이브레이크")}</div>}
     </div>
   );
 }
 
-export function MastersSchematic({ vertical, tabsSlot }) {
+export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const boxRef = useRef(null);
   const panelH = useFitPanelHeight(boxRef, vertical);
   // 좁은 화면(모바일)은 챔피언 + 양옆 도전자가 한 화면에 들어오도록 75%(0.5625)로 시작한다.
@@ -254,7 +308,7 @@ export function MastersSchematic({ vertical, tabsSlot }) {
             : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
-        {pick && <DetailCard pick={pick} onClose={() => setPick(null)} />}
+        {pick && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
       </div>
       <div className="flex items-center gap-3" style={{ marginTop: 8, flexWrap: "wrap", fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>
         {Object.keys(TOUR_COLOR).map((k) => <span key={k} className="flex items-center gap-1"><span style={{ width: 9, height: 9, borderRadius: 3, background: TOUR_COLOR[k] }} />{TOUR_LABEL()[k]}</span>)}
