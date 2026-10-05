@@ -24,11 +24,11 @@ import { playSfx } from "../lib/prefs.js";
 
 const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
 const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66" };
-const LABEL_TEXT = () => ({ champs: t("역대 세계 챔피언"), tours: t("주요 대회"), db: t("마스터 대국 DB 선수"), "fide-standard": t("FIDE 스탠다드 순위"), "fide-rapid": t("FIDE 래피드 순위"), "fide-blitz": t("FIDE 블리츠 순위") });
+const LABEL_TEXT = () => ({ champs: t("역대 세계 챔피언"), tours: t("주요 대회"), db: t("마스터 대국 DB 선수"), "fide-standard": t("FIDE 스탠다드 랭킹"), "fide-rapid": t("FIDE 래피드 랭킹"), "fide-blitz": t("FIDE 블리츠 랭킹") });
 const TOUR_LABEL = () => ({ elite: t("슈퍼 토너먼트"), cycle: t("세계선수권 사이클"), team: t("팀 대회"), speed: t("속기·프리스타일·온라인"), women: t("여자 대회"), historic: t("역사적 대회") });
 const FREQ_LABEL = () => ({ annual: t("매년"), biennial: t("격년"), oneoff: t("일회성") });
 const tourPeriod = (r) => (r.to === r.from ? String(r.from) : r.from + "–" + (r.to == null ? "" : r.to));
-const tourPlace = (r) => (r.place === "various" ? t("개최지 매번 변경") : r.place === "online" ? t("온라인") : (lang === "ko" && r.placeKo ? r.placeKo : r.place) + (r.cc ? " (" + r.cc + ")" : ""));
+const tourPlace = (r) => (r.place === "various" ? t("개최지 매번 변경") : r.place === "online" ? t("온라인") : (lang === "ko" && r.placeKo ? r.placeKo : r.place) + (r.cc ? " " + flagEmoji(r.cc) : ""));
 const BY_ID = new Map(CHAMPIONS.map((c) => [c.id, c]));
 const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
 const personName = (p) => (lang === "ko" && p.ko ? p.ko : (p.name || p.opp));
@@ -39,8 +39,10 @@ const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
 const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? " · " + k : "") + (tr.score ? " · " + tr.score : ""); };
 
-function CountryChip({ cc, dark }) {
-  return <span style={{ fontSize: 9, fontWeight: 800, fontFamily: SITE_FONT, letterSpacing: ".04em", padding: "1px 5px", borderRadius: 5, background: dark ? "rgba(236,203,134,.16)" : "rgba(60,40,20,.08)", color: dark ? T.brassHi : T.inkSoft }}>{cc}</span>;
+/* 국적은 3글자 코드 대신 국기 이모지로 표기한다(코드는 마우스를 올렸을 때 툴팁으로만). */
+function CountryChip({ cc, size = 15 }) {
+  const f = flagEmoji(cc);
+  return f ? <span title={cc} aria-label={cc} style={{ fontSize: size, lineHeight: 1 }}>{f}</span> : null;
 }
 
 /* 오프닝 트리와 같은 노드 장식 — 왼쪽 위 모서리에 걸친 17px 원형 배지, 전류 서지(dex-surge-node)·선택(하늘색 테두리+발광). */
@@ -113,8 +115,8 @@ function TourNode({ n, onPick, picked, fx }) {
   );
 }
 
-/* ── 남쪽 FIDE 순위 블록(270×84) ──
-   왼쪽 순위 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리) · 윗줄 국기+이름 · 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅 · 맨 아래 연맹·출생 연도. */
+/* ── 남쪽 FIDE 랭킹 블록(270×84) ──
+   왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리) · 윗줄 국기+이름 · 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅 · 맨 아래 연맹·출생 연도. */
 const FIDE_RANGE = Object.fromEntries(Object.entries(FIDE.lists).map(([k, l]) => [k, [l[l.length - 1][4], l[0][4]]]));
 const RANK_TIER = {
   1: { frame: "linear-gradient(135deg,#FBEAB0,#DDAE45 45%,#8F6A22)", ribbon: "linear-gradient(180deg,#F8E3A0,#CFA13E)", ink: "#2A1807", bg: "linear-gradient(160deg,#FFF8E0,#F6E6B4)", glow: "0 0 14px 2px rgba(236,203,134,.6)" },
@@ -143,7 +145,7 @@ function FideNode({ n, onPick, picked, fx }) {
             </span>
             <span style={{ fontSize: 16, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums", letterSpacing: -.2 }}>{f.rating}</span>
           </span>
-          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, letterSpacing: .3 }}>{f.fed}{f.born ? " · " + f.born : ""}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, letterSpacing: .3 }}>{f.born ? t("{0}년생", f.born) : ""}</span>
         </span>
       </span>
     </button>
@@ -311,7 +313,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
     title = masterName(f[2], lang); sub = lang === "ko" ? masterName(f[2], "en") : ""; cc = f[3]; flag = flagEmoji(f[3]);
-    blocks.push({ head: t("순위"), lines: ["FIDE " + cat + " #" + f[0]] });
+    blocks.push({ head: t("랭킹"), lines: ["FIDE " + cat + " #" + f[0]] });
     blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
     if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
     blocks.push({ head: "FIDE", lines: [FIDE.month] });
@@ -330,7 +332,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
       style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{flag ? flag + " " : ""}{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
           {sub && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1 }}>{sub}</div>}
         </div>
         <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
@@ -524,7 +526,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             return <span key={"l" + i} style={{ position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
           })}
           {LAYOUT.labels.map((l) => (l.plaque ? (
-            /* FIDE 순위 갈래 머리판 — 챔피언 명판처럼 어두운 바탕에 금테·금색 글자 */
+            /* FIDE 랭킹 갈래 머리판 — 챔피언 명판처럼 어두운 바탕에 금테·금색 글자 */
             <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
               background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(60,40,10,.38)" }}>
               <span aria-hidden="true" style={{ position: "absolute", inset: 4, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55)" }} />
