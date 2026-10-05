@@ -167,7 +167,7 @@ function DbMasterNode({ n, onPick, picked, fx }) {
         <span style={{ minWidth: 0, flex: 1, padding: "10px 12px 8px 12px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
           <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(m.name, lang)}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {m.elo ? <span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span> : null}
+            {m.elo ? <><span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: .8, color: MG_GOLD_TXT, marginLeft: -3 }}>MAX</span></> : null}
             <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
           </span>
         </span>
