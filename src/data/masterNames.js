@@ -3,6 +3,9 @@
 //    "성, 이름" 그대로 찾고, 없으면 성 + 이름 첫 글자로 찾는다. 그래도 없으면 playerNames.js의 성 검색 → 영문.
 //  · 그 밖의 언어: "Given Surname" (예: "Magnus Carlsen"). 이름이 이니셜뿐이면 "A. Surname".
 import KO from "./masterKo.json";
+import CC from "./masterCountry.json";
+import FIDE from "./fideRankings.json";
+import { flagEmoji } from "../lib/flags.js";
 import { dbPlayerName } from "./playerNames.js";
 
 const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim();
@@ -19,4 +22,12 @@ export function masterName(raw, lang) {
   const [sur, giv] = splitName(raw);
   if (!giv) return sur;
   return (giv.length <= 2 ? giv.replace(/\.?$/, ".") : giv) + " " + sur;
+}
+
+// 국적 → 국기 이모티콘. FIDE 순위에 있는 선수는 FIDE 연맹 코드, DB 선수는 masterCountry.json(위키데이터 시민권 — scripts 아닌 일회성 수집, 이름 → ISO 코드)에서 찾는다. 없으면 빈 문자열.
+const FED_BY_KEY = (() => { const m = new Map(); for (const l of Object.values(FIDE.lists)) for (const r of l) { const k = keyOf(r[2]); if (!m.has(k)) m.set(k, r[3]); } return m; })();
+export function masterFlag(raw, fed) {
+  if (fed) return flagEmoji(fed);
+  const code = CC[raw] || FED_BY_KEY.get(keyOf(raw));
+  return code ? flagEmoji(code) : "";
 }

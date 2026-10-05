@@ -228,9 +228,17 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
     const have = new Set(Object.keys(KO).map(keyOf));
     for (const l of Object.values(FIDE.lists)) for (const r of l) if (!KO[r[2]] && !have.has(keyOf(r[2]))) miss.push(r[2]);
     if (miss.length) fails.push("한국어 표기가 없는 선수 " + miss.length + "명: " + miss.slice(0, 5).join(" · ")); }
+  // 국기: 챔피언·도전자·FIDE 순위 선수의 연맹 코드가 전부 국기로 바뀌고, 잉글랜드·소련 같은 특수 코드도 처리된다
+  { const { flagEmoji, isoOf } = await import("../src/lib/flags.js"); const bad = new Set();
+    for (const c of CHAMPIONS) { if (!flagEmoji(c.cc)) bad.add(c.cc); for (const sat of satellitesOf(c)) if (!flagEmoji(sat.cc)) bad.add(sat.cc); }
+    for (const l of Object.values(FIDE.lists)) for (const r of l) if (!flagEmoji(r[3])) bad.add(r[3]);
+    if (bad.size) fails.push("국기로 바꾸지 못하는 연맹 코드: " + [...bad].join(", "));
+    eq([isoOf("URS"), isoOf("ENG"), isoOf("no"), isoOf("")], ["RU", "GB-ENG", "NO", null], "국기 코드 변환");
+    eq(flagEmoji("NOR"), "\u{1F1F3}\u{1F1F4}", "노르웨이 국기"); eq([...flagEmoji("ENG")].length, 7, "잉글랜드 국기(태그 시퀀스)");
+    const CCM = JSON.parse(rf("src/data/masterCountry.json", "utf8")); for (const [nm, code] of Object.entries(CCM)) if (!isoOf(code)) fails.push("masterCountry.json — 알 수 없는 국가 코드: " + nm + " " + code); }
   // 화면 연결: 회로 효과 클래스·칩·선택 경로
   const src = rf("src/app/dexMasters.jsx", "utf8");
-  for (const needle of ["dex-chip-surge", "dex-surge-node", "dex-surge-line", "dex-current-line", "회로에 전류 흘리기", "SCHEMATIC_ELECTRIC", "DEX_ELECTRIC_FLOW_SPEED", "DEX_SELECT_FLOW_SPEED", "fideRankings.json", "dbMasters.json"]) if (!src.includes(needle)) fails.push("마스터 트리에 필요한 요소 없음: " + needle);
+  for (const needle of ["flagEmoji", "masterFlag", "dex-chip-surge", "dex-surge-node", "dex-surge-line", "dex-current-line", "회로에 전류 흘리기", "SCHEMATIC_ELECTRIC", "DEX_ELECTRIC_FLOW_SPEED", "DEX_SELECT_FLOW_SPEED", "fideRankings.json", "dbMasters.json"]) if (!src.includes(needle)) fails.push("마스터 트리에 필요한 요소 없음: " + needle);
 }
 
 // 마스터 트리 배율: 예전 75%(0.5625)가 새 100%, 25%p 격자·핀치 스냅
