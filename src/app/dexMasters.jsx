@@ -129,21 +129,24 @@ function FideNode({ n, onPick, picked, fx }) {
   const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
   const ribbon = medal ? medal.ribbon : top10 ? "linear-gradient(180deg,#EBD7A6,#CDAA5E)" : "linear-gradient(180deg,#E9DDC2,#D3C09A)";
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
+    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : frame, fontFamily: SITE_FONT, color: T.ink,
         boxShadow: picked ? SEL_GLOW : (medal ? medal.glow + ", 0 3px 8px rgba(60,40,10,.3)" : "0 2px 6px rgba(60,40,20,.2)") }}>
       <span style={{ position: "absolute", inset: medal || picked ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: medal ? medal.bg : NODE_PARCH }}>
-        <span style={{ width: 58, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: ribbon, boxShadow: "inset -1px 0 0 rgba(90,58,20,.25)", color: medal ? medal.ink : "#4A3118" }}>
+        {/* 위쪽 광택 + 1~3위는 대각선 결 무늬 */}
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0) 42%)" + (medal ? ",repeating-linear-gradient(135deg,rgba(150,105,30,.06) 0 2px,transparent 2px 9px)" : "") }} />
+        <span style={{ position: "relative", width: 62, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: ribbon, clipPath: "polygon(0 0,100% 0,calc(100% - 9px) 50%,100% 100%,0 100%)", color: medal ? medal.ink : "#4A3118" }}>
           {medal ? <Medal size={15} strokeWidth={2.2} style={{ marginBottom: 1 }} /> : null}
-          <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 800, fontSize: n.rank >= 100 ? 21 : 27, lineHeight: 1 }}>{n.rank}</span>
+          <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 800, fontSize: n.rank >= 100 ? 21 : 28, lineHeight: 1, marginRight: 6, textShadow: "0 1px 0 rgba(255,255,255,.45)" }}>{n.rank}</span>
         </span>
-        <span style={{ minWidth: 0, flex: 1, padding: "9px 12px 7px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left" }}>
+        <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "9px 12px 7px 8px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left" }}>
           <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Flag code={f.fed} size={19} />{masterName(f.name, lang)}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span aria-hidden="true" style={{ flex: 1, height: 6, borderRadius: 3, background: "rgba(90,58,20,.14)", overflow: "hidden" }}>
-              <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 3, background: medal ? "linear-gradient(90deg,#E9C970,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
+            <span aria-hidden="true" style={{ position: "relative", flex: 1, height: 7, borderRadius: 4, background: "rgba(90,58,20,.14)", overflow: "hidden", boxShadow: "inset 0 1px 1px rgba(90,58,20,.25)" }}>
+              <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 4, background: medal ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
+              <span style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg,transparent 0 17px,rgba(255,255,255,.45) 17px 18px)" }} />
             </span>
-            <span style={{ fontSize: 16, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums", letterSpacing: -.2 }}>{f.rating}</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums", letterSpacing: -.3, textShadow: "0 1px 0 rgba(255,255,255,.5)" }}>{f.rating}</span>
           </span>
           <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, letterSpacing: .3 }}>{f.born ? t("{0}년생", f.born) : ""}</span>
         </span>
@@ -153,24 +156,31 @@ function FideNode({ n, onPick, picked, fx }) {
 }
 /* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
    왼쪽 국기 판(국기가 없으면 사람 아이콘) · 이름 · 최고 엘로 알약(2800+ 금 · 2700+ 황동 · 그 외 베이지)과 DB 대국 수. */
+const DB_ELO_RANGE = (() => { const e = DBM.masters.map((m) => m[2]).filter(Boolean); return [Math.min(...e), Math.max(...e)]; })();
 function DbMasterNode({ n, onPick, picked, fx }) {
-  const m = n.dbm, flag = masterFlag(m.name);
-  const eloTier = m.elo >= 2800 ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
+  const m = n.dbm, flag = masterFlag(m.name), star = m.elo >= 2800;
+  const eloTier = star ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
+  const pct = m.elo ? 10 + 90 * (m.elo - DB_ELO_RANGE[0]) / (DB_ELO_RANGE[1] - DB_ELO_RANGE[0]) : 0;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (m.elo >= 2800 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
-        boxShadow: picked ? SEL_GLOW : "0 2px 6px rgba(60,40,20,.2)" }}>
-      <span style={{ position: "absolute", inset: picked || m.elo >= 2800 ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: NODE_PARCH }}>
-        <span style={{ width: 58, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#EFE4CB,#DCCAA2)", boxShadow: "inset -1px 0 0 rgba(90,58,20,.22)", fontSize: 30, lineHeight: 1 }}>
-          {flag ? <span aria-hidden="true">{flag}</span> : <User size={24} color="#8A7458" strokeWidth={1.8} />}
-        </span>
-        <span style={{ minWidth: 0, flex: 1, padding: "10px 12px 8px 12px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
-          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(m.name, lang)}</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {m.elo ? <><span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: .8, color: MG_GOLD_TXT, marginLeft: -3 }}>MAX</span></> : null}
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
+    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (star ? "linear-gradient(135deg,#EFD9A3,#C49A50 55%,#8F6A22)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
+        boxShadow: picked ? SEL_GLOW : (star ? "0 0 12px 1px rgba(236,203,134,.5), 0 3px 8px rgba(60,40,10,.28)" : "0 2px 6px rgba(60,40,20,.2)") }}>
+      <span style={{ position: "absolute", inset: picked || star ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: star ? "linear-gradient(160deg,#FFF8E0,#F6E6B4)" : NODE_PARCH }}>
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,0) 40%)" }} />
+        <span style={{ position: "relative", width: 62, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#EFE4CB,#DCCAA2)", clipPath: "polygon(0 0,100% 0,calc(100% - 9px) 50%,100% 100%,0 100%)" }}>
+          <span style={{ width: 40, height: 40, marginRight: 5, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#F1E7CF)", border: "2px solid " + (star ? "#C49A50" : "#CDB98E"), boxShadow: "0 1px 3px rgba(60,40,10,.3), inset 0 -2px 3px rgba(150,110,40,.18)", fontSize: 23, lineHeight: 1 }}>
+            {flag ? <span aria-hidden="true">{flag}</span> : <User size={20} color="#8A7458" strokeWidth={1.8} />}
           </span>
         </span>
+        <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "10px 12px 11px 6px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
+          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{star ? <span aria-hidden="true" style={{ color: "#C49A50", marginRight: 4 }}>✦</span> : null}{masterName(m.name, lang)}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {m.elo ? <><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: .8, color: MG_GOLD_TXT }}>MAX</span><span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums", boxShadow: star ? "0 1px 2px rgba(90,58,20,.3)" : "none" }}>{m.elo}</span></> : null}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
+          </span>
+        </span>
+        {/* 아래쪽 가는 엘로 막대 — DB 선수들 사이에서의 최고 엘로 위치 */}
+        {m.elo ? <span aria-hidden="true" style={{ position: "absolute", left: 62, right: 0, bottom: 0, height: 4, background: "rgba(90,58,20,.1)" }}><span style={{ display: "block", width: pct + "%", height: "100%", background: star ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} /></span> : null}
       </span>
     </button>
   );
@@ -495,6 +505,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
         </div>
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
+          <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
             {traces.map((tr) => { const a0 = tr.pts[0], a1 = tr.pts[tr.pts.length - 1]; return wire(tr.dir, "M" + tr.pts.map((q) => q[0] + " " + q[1]).join(" L"), (a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2, { opacity: 0.5 }); })}
