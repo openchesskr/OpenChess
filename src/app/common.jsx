@@ -10,7 +10,7 @@ import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SC
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, SAC_POISON_MIN_GAIN_CP, SAC_POISON_BIG_GAIN_CP, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
+import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -1268,7 +1268,6 @@ function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
   if (hit !== undefined) return typeof hit === "boolean" ? Promise.resolve(hit) : hit;
   const ev = evaluate || sacConfirmDefaultEval;
   if (!ev) return Promise.resolve(undefined);
-  const cpOf = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : (x.cp || 0));
   const p = (async () => {
     const board = boardOfRoot(fenRoot, prevSans);
     const enemy = color === "w" ? "b" : "w";
@@ -1281,11 +1280,8 @@ function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
     if (!capSan) return false;
     const c = await ev(fenOfRoot(fenRoot, [...prevSans, san, capSan]));              // ② 따 간 포지션(다시 둔 쪽 차례)
     if (!c || (c.cp == null && c.mate == null)) return undefined;
-    const gain = cpOf(c) - (-cpOf(a));
-    if (gain < SAC_POISON_MIN_GAIN_CP) return false;                                // 따 가도 그만 — 가짜 희생
-    if (gain >= SAC_POISON_BIG_GAIN_CP || (c.mate != null && c.mate > 0)) return true; // 받으면 크게 무너지는 함정
     const afterCap = applySan(after, capSan, enemy);
-    return !(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color));              // 따 간 뒤 그대로 되찾으면 희생이 아님
+    return sacPoisonVerdict(a, c, () => !!(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color)));   // ② 독이 든 희생인가(순수 함수 — moveQuality.js)
   })().catch(() => undefined).then((v) => {
     if (typeof v === "boolean") { sacConfirmCache.set(key, v); sacConfirmListeners.forEach((f) => { try { f(); } catch { } }); }
     else sacConfirmCache.delete(key);   // 엔진이 답하지 못함 — 다음에 다시 시도
