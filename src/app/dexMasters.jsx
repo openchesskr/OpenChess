@@ -13,7 +13,8 @@ import FIDE from "../data/fideRankings.json";
 import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
 import { dbPlayerName, playerName } from "../data/playerNames.js";
-import { masterName } from "../data/masterNames.js";
+import { masterName, masterFlag } from "../data/masterNames.js";
+import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
 import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
@@ -45,9 +46,13 @@ function CountryChip({ cc, dark }) {
 /* 오프닝 트리와 같은 노드 장식 — 왼쪽 위 모서리에 걸친 17px 원형 배지, 전류 서지(dex-surge-node)·선택(하늘색 테두리+발광). */
 const MG_GOLD_TXT = "#A97A2C";
 const NODE_PARCH = "linear-gradient(160deg,#F8F1E1,#EEE1C4)", NODE_EDGE = "#CDB98E", SEL_GLOW = "0 0 9px 1px rgba(34,211,240,.65)";
-function CornerBadge({ children, bg = T.brass }) {
-  return <span aria-hidden="true" style={{ position: "absolute", left: -6, top: -6, width: 17, height: 17, borderRadius: "50%", background: bg, color: "#fff", border: "1.5px solid #fff", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: 3, pointerEvents: "none" }}>{children}</span>;
+function CornerBadge({ children, bg = T.brass, big }) {
+  const d = big ? 24 : 17, o = big ? -9 : -6;
+  return <span aria-hidden="true" style={{ position: "absolute", left: o, top: o, width: d, height: d, borderRadius: "50%", background: bg, color: "#fff", border: "1.5px solid #fff", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: 3, pointerEvents: "none" }}>{children}</span>;
 }
+/* 이름 왼쪽 국기 이모티콘(없으면 아무것도 안 그린다) */
+const Flag = ({ code, size = 16 }) => { const f = flagEmoji(code); return f ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{f}</span> : null; };
+const FlagE = ({ emoji, size = 16 }) => (emoji ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{emoji}</span> : null);
 const fxClass = (fx) => (fx ? " dex-surge-node" : "");
 const fxDelay = (fx) => (fx ? { animationDelay: fx.delay + "s" } : null);
 
@@ -87,7 +92,7 @@ function ChampNode({ n, onPick, picked, fx }) {
           <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{reignText(c)}</span>
           {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: LANE_COLOR[n.lane], color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
         </span>
-        <span style={{ maxWidth: "100%", fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{current ? "♛ " : ""}{personName(c)}</span>
+        <span style={{ maxWidth: "100%", fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag code={c.cc} size={15} />{current ? "♛ " : ""}{personName(c)}</span>
       </span>
     </button>
   );
@@ -108,29 +113,35 @@ function TourNode({ n, onPick, picked, fx }) {
   );
 }
 
-/* 남쪽 FIDE 순위 노드 — 왼쪽 순위 배지, 이름, 레이팅 칩. */
+/* 남쪽 FIDE 순위 노드 — 챔피언 블록과 비슷한 가로 직사각형(270×84): 윗줄 국기+이름, 아랫줄 레이팅 칩·연맹·출생 연도. 왼쪽 위 배지가 순위. */
 function FideNode({ n, onPick, picked, fx }) {
   const f = n.fide;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px 0 28px", textAlign: "left", cursor: "pointer", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontFamily: SITE_FONT, color: T.ink,
-        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "none" }}>
-      <CornerBadge bg={n.rank <= 3 ? T.brass : "#8A7458"}><span style={{ fontSize: 8.5, fontWeight: 900 }}>{n.rank}</span></CornerBadge>
-      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, lang)}</span>
-      <span style={{ fontSize: 11.5, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{f.rating}</span>
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "10px 14px 8px 22px", textAlign: "left", cursor: "pointer", borderRadius: 12, display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, fontFamily: SITE_FONT, color: T.ink,
+        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "0 2px 5px rgba(60,40,20,.14)" }}>
+      <CornerBadge bg={n.rank <= 3 ? T.brass : "#8A7458"} big><span style={{ fontSize: 11, fontWeight: 900 }}>{n.rank}</span></CornerBadge>
+      <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 18, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Flag code={f.fed} size={20} />{masterName(f.name, lang)}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 900, padding: "2px 10px", borderRadius: 999, background: "rgba(196,154,80,.2)", color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{f.rating}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>{f.fed}{f.born ? " · " + f.born : ""}</span>
+      </span>
     </button>
   );
 }
-/* 서쪽 마스터 대국 DB 선수 노드 — 이름과 DB 대국 수. */
+/* 서쪽 마스터 대국 DB 선수 노드(270×78) — 윗줄 국기+이름, 아랫줄 DB 대국 수·최고 엘로. */
 function DbMasterNode({ n, onPick, picked, fx }) {
   const m = n.dbm;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px 0 14px", textAlign: "left", cursor: "pointer", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, fontFamily: SITE_FONT, color: T.ink,
-        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "none" }}>
-      <CornerBadge bg="#8A7458"><User size={10} /></CornerBadge>
-      <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(m.name, lang)}</span>
-      <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{m.games}</span>
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "9px 14px 8px 22px", textAlign: "left", cursor: "pointer", borderRadius: 12, display: "flex", flexDirection: "column", justifyContent: "center", gap: 6, fontFamily: SITE_FONT, color: T.ink,
+        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "0 2px 5px rgba(60,40,20,.14)" }}>
+      <CornerBadge bg="#8A7458" big><User size={12} /></CornerBadge>
+      <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><FlagE emoji={masterFlag(m.name)} size={19} />{masterName(m.name, lang)}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>
+        {m.elo ? <span style={{ fontSize: 14, fontWeight: 900, padding: "1px 9px", borderRadius: 999, background: "rgba(196,154,80,.2)", color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span> : null}
+        <span>{t("대국 {0}판", m.games)}</span>
+      </span>
     </button>
   );
 }
@@ -176,7 +187,7 @@ function SatNode({ n, onPick, picked, fx }) {
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", textAlign: "left", cursor: "pointer", borderRadius: 8,
         border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, color: T.ink, boxShadow: picked ? SEL_GLOW : "none" }}>
       <CornerBadge bg="#8A7458"><Swords size={10} /></CornerBadge>
-      <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{personName(s)}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}><Flag code={s.cc} size={13} />{personName(s)}</div>
       <div className="flex items-center justify-between gap-1" style={{ marginTop: 2 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(" · ")}</span>
         <CountryChip cc={s.cc} />
@@ -252,10 +263,10 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
 }
 
 function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
-  let title = "", sub = "", cc = "", rows = [], blocks = [];
+  let title = "", sub = "", cc = "", flag = "", rows = [], blocks = [];
   if (pick.type === "champ") {
     const c = BY_ID.get(pick.id);
-    title = personName(c); sub = lang === "ko" ? c.name : ""; cc = c.cc;
+    title = personName(c); sub = lang === "ko" ? c.name : ""; cc = c.cc; flag = flagEmoji(c.cc);
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
     blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
     if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
@@ -271,19 +282,19 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
     blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
-    title = masterName(f[2], lang); sub = lang === "ko" ? masterName(f[2], "en") : ""; cc = f[3];
+    title = masterName(f[2], lang); sub = lang === "ko" ? masterName(f[2], "en") : ""; cc = f[3]; flag = flagEmoji(f[3]);
     blocks.push({ head: t("순위"), lines: ["FIDE " + cat + " #" + f[0]] });
     blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
     if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
     blocks.push({ head: "FIDE", lines: [FIDE.month] });
   } else if (pick.type === "dbm") {
     const m = DBM.masters[+pick.id.split(":")[1]];
-    title = masterName(m[0], lang); sub = lang === "ko" ? masterName(m[0], "en") : "";
+    title = masterName(m[0], lang); sub = lang === "ko" ? masterName(m[0], "en") : ""; flag = masterFlag(m[0]);
     blocks.push({ head: t("마스터 대국 DB"), lines: [t("대국 {0}판", m[1])] });
     if (m[2]) blocks.push({ head: t("최고 레이팅"), lines: [String(m[2])] });
   } else {
     const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
-    title = personName(s); sub = lang === "ko" ? s.name : ""; cc = s.cc;
+    title = personName(s); sub = lang === "ko" ? s.name : ""; cc = s.cc; flag = flagEmoji(s.cc);
     blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + " · " + personName(c) + " · " + d.score + (d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : " · " + t("패"))) });
   }
   return (
@@ -291,7 +302,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
       style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{flag ? flag + " " : ""}{title}</div>
           {sub && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1 }}>{sub}</div>}
         </div>
         <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
