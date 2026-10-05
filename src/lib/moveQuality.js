@@ -362,6 +362,20 @@ export const SAC_POISON_MIN_GAIN_CP = 100;
 // ②에서 따 간 뒤 엔진 수순으로 기물을 그대로 되찾으면(예: 14.Kf1 …Bxe5 Qxd5 Nxd5 Rxe5) 희생이 아니라 "지켜진 기물"이다 — 다만 이득이
 // 이만큼 크면(메이트 포함) 되찾더라도 받는 순간 크게 무너지는 함정이라 희생으로 인정한다.
 export const SAC_POISON_BIG_GAIN_CP = 300;
+// 엔진 평가({cp|mate})를 평가한 쪽(둘 차례) 관점의 cp로 — 메이트는 ±1e5로 뭉갠다(수 순서 정보는 사라진다).
+export const sacEvalCp = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : (x.cp || 0));
+/* ②의 판정(순수 함수) — a: 희생 수를 둔 직후 평가(상대 차례 관점), c: 상대가 그 기물을 가장 싼 기물로 따 간 포지션 평가(다시 둔 쪽 차례 관점),
+   pvRegains: c의 엔진 수순으로 따 간 기물을 되찾는가(호출부가 pvRegainsMaterial로 계산해 함수로 넘긴다). true면 "독이 든(진짜) 희생".
+   (v0.6.3 BUG-060) 예전엔 이득(gain = c − (−a))만 봤다. 메이트 점수는 ±1e5로 뭉개져, 이미 메이트가 보이는 포지션에서 따 가도 메이트면
+   gain이 0이 되어 "따 가도 그만 — 가짜 희생"으로 잘못 판정됐다. 예: 22.Bg8+ (Kg7로 받지 않으면 Kxg8 Qg6! 로 2수 메이트) — 따 가면 곧장 메이트 당하는
+   명백한 독이 든 희생인데 탁월로 인정되지 않았다. 따 간 포지션에서 둔 쪽이 메이트면 이득 크기와 무관하게 독이 든 희생이다. */
+export function sacPoisonVerdict(a, c, pvRegains) {
+  if (c.mate != null && c.mate > 0) return true;                       // 따 가면 곧장 메이트 — 이미 메이트 중이어도 같다
+  const gain = sacEvalCp(c) - (-sacEvalCp(a));
+  if (gain < SAC_POISON_MIN_GAIN_CP) return false;                      // 따 가도 그만 — 가짜 희생
+  if (gain >= SAC_POISON_BIG_GAIN_CP) return true;                      // 받으면 크게 무너지는 함정
+  return !(pvRegains && pvRegains());                                   // 따 간 뒤 그대로 되찾으면 희생이 아님
+}
 // UCI 한 수를 보드에 그대로 적용한다(합법성 검사 없음 — 엔진 수순 재생용). 캐슬링 룩 이동·앙파상·승진을 반영한다.
 export function applyUciRaw(board, uci) {
   const F = "abcdefgh";
