@@ -46,6 +46,9 @@ function CountryChip({ cc, size = 15 }) {
 }
 
 /* 오프닝 트리와 같은 노드 장식 — 왼쪽 위 모서리에 걸친 17px 원형 배지, 전류 서지(dex-surge-node)·선택(하늘색 테두리+발광). */
+/* 마스터 트리 서체 — 로마 대문자(Cinzel)·고전 세리프(Cormorant Garamond)·한글 명조(Noto Serif KR). 숫자는 항상 라이닝 숫자. */
+const FONT_DISPLAY = "'Cinzel','Noto Serif KR',serif", FONT_SERIF = "'Cormorant Garamond','Noto Serif KR',serif", FONT_MYEONGJO = "'Noto Serif KR','Cormorant Garamond',serif";
+const NUM = { fontVariantNumeric: "lining-nums tabular-nums" };
 const MG_GOLD_TXT = "#A97A2C";
 const NODE_PARCH = "linear-gradient(160deg,#F8F1E1,#EEE1C4)", NODE_EDGE = "#CDB98E", SEL_GLOW = "0 0 9px 1px rgba(34,211,240,.65)";
 function CornerBadge({ children, bg = T.brass, big }) {
@@ -94,7 +97,7 @@ function ChampNode({ n, onPick, picked, fx }) {
           <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{reignText(c)}</span>
           {c.tag && <span style={{ fontSize: 8.5, fontWeight: 900, padding: "1px 5px", borderRadius: 5, background: LANE_COLOR[n.lane], color: "#fff" }}>{TAG_LABEL()[c.tag]}</span>}
         </span>
-        <span style={{ maxWidth: "100%", fontSize: 14.5, fontWeight: 800, lineHeight: 1.2, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag code={c.cc} size={15} />{current ? "♛ " : ""}{personName(c)}</span>
+        <span style={{ maxWidth: "100%", fontFamily: FONT_MYEONGJO, fontSize: 15, fontWeight: 700, lineHeight: 1.2, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Flag code={c.cc} size={15} />{current ? "♛ " : ""}{personName(c)}</span>
       </span>
     </button>
   );
@@ -137,18 +140,18 @@ function FideNode({ n, onPick, picked, fx }) {
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0) 42%)" + (medal ? ",repeating-linear-gradient(135deg,rgba(150,105,30,.06) 0 2px,transparent 2px 9px)" : "") }} />
         <span style={{ position: "relative", width: 62, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: ribbon, clipPath: "polygon(0 0,100% 0,calc(100% - 9px) 50%,100% 100%,0 100%)", color: medal ? medal.ink : "#4A3118" }}>
           {medal ? <Medal size={15} strokeWidth={2.2} style={{ marginBottom: 1 }} /> : null}
-          <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 800, fontSize: n.rank >= 100 ? 21 : 28, lineHeight: 1, marginRight: 6, textShadow: "0 1px 0 rgba(255,255,255,.45)" }}>{n.rank}</span>
+          <span style={{ fontFamily: FONT_DISPLAY, ...NUM, fontWeight: 800, fontSize: n.rank >= 100 ? 20 : 27, lineHeight: 1, marginRight: 6, letterSpacing: n.rank >= 100 ? -1 : 0, textShadow: "0 1px 0 rgba(255,255,255,.55), 0 -1px 0 rgba(90,58,20,.2)" }}>{n.rank}</span>
         </span>
         <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "9px 12px 7px 8px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left" }}>
-          <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Flag code={f.fed} size={19} />{masterName(f.name, lang)}</span>
+          <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontFamily: FONT_SERIF, fontSize: 17.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0, whiteSpace: "nowrap" }}><Flag code={f.fed} size={19} /><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, lang)}</span></span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span aria-hidden="true" style={{ position: "relative", flex: 1, height: 7, borderRadius: 4, background: "rgba(90,58,20,.14)", overflow: "hidden", boxShadow: "inset 0 1px 1px rgba(90,58,20,.25)" }}>
               <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 4, background: medal ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
               <span style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg,transparent 0 17px,rgba(255,255,255,.45) 17px 18px)" }} />
             </span>
-            <span style={{ fontSize: 18, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums", letterSpacing: -.3, textShadow: "0 1px 0 rgba(255,255,255,.5)" }}>{f.rating}</span>
+            <span style={{ fontFamily: FONT_SERIF, ...NUM, fontSize: 22, fontWeight: 700, lineHeight: 1, color: MG_GOLD_TXT, textShadow: "0 1px 0 rgba(255,255,255,.6)" }}>{f.rating}</span>
           </span>
-          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, letterSpacing: .3 }}>{f.born ? t("{0}년생", f.born) : ""}</span>
+          <span style={{ fontFamily: FONT_SERIF, ...NUM, fontStyle: "italic", fontSize: 12.5, fontWeight: 600, color: T.inkSoft, letterSpacing: .3 }}>{f.born ? t("{0}년생", f.born) : ""}</span>
         </span>
       </span>
     </button>
@@ -173,10 +176,10 @@ function DbMasterNode({ n, onPick, picked, fx }) {
           </span>
         </span>
         <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "10px 12px 11px 6px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
-          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{star ? <span aria-hidden="true" style={{ color: "#C49A50", marginRight: 4 }}>✦</span> : null}{masterName(m.name, lang)}</span>
+          <span style={{ fontFamily: FONT_SERIF, fontSize: 19, fontWeight: 700, lineHeight: 1.1, letterSpacing: .1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{star ? <span aria-hidden="true" style={{ color: "#C49A50", marginRight: 4 }}>✦</span> : null}{masterName(m.name, lang)}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {m.elo ? <><span style={{ fontSize: 10, fontWeight: 900, letterSpacing: .8, color: MG_GOLD_TXT }}>MAX</span><span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums", boxShadow: star ? "0 1px 2px rgba(90,58,20,.3)" : "none" }}>{m.elo}</span></> : null}
-            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
+            {m.elo ? <><span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: MG_GOLD_TXT }}>MAX</span><span style={{ fontFamily: FONT_SERIF, ...NUM, fontSize: 16, fontWeight: 700, lineHeight: 1.15, padding: "0 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, boxShadow: star ? "0 1px 2px rgba(90,58,20,.3)" : "none" }}>{m.elo}</span></> : null}
+            <span style={{ marginLeft: "auto", fontFamily: FONT_SERIF, ...NUM, fontStyle: "italic", fontSize: 12.5, fontWeight: 600, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
           </span>
         </span>
         {/* 아래쪽 가는 엘로 막대 — DB 선수들 사이에서의 최고 엘로 위치 */}
@@ -542,11 +545,11 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(60,40,10,.38)" }}>
               <span aria-hidden="true" style={{ position: "absolute", inset: 4, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55)" }} />
               <Medal size={18} color={T.brassHi} style={{ position: "relative" }} />
-              <span style={{ position: "relative", fontFamily: "Georgia,'Noto Serif KR',serif", fontWeight: 800, fontSize: 17, letterSpacing: .3, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap" }}>{LABEL_TEXT()[l.key]}</span>
+              <span style={{ position: "relative", fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 16, letterSpacing: 1, color: "#FFF3D3", textShadow: "0 1px 0 #000, 0 0 8px rgba(236,203,134,.35)", whiteSpace: "nowrap" }}>{LABEL_TEXT()[l.key]}</span>
             </div>
           ) : (
             <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
-              <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 16, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+              <span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
                 ✦ {LABEL_TEXT()[l.key]} ✦
               </span>
             </div>
