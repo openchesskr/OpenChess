@@ -113,34 +113,62 @@ function TourNode({ n, onPick, picked, fx }) {
   );
 }
 
-/* 남쪽 FIDE 순위 노드 — 챔피언 블록과 비슷한 가로 직사각형(270×84): 윗줄 국기+이름, 아랫줄 레이팅 칩·연맹·출생 연도. 왼쪽 위 배지가 순위. */
+/* ── 남쪽 FIDE 순위 블록(270×84) ──
+   왼쪽 순위 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리) · 윗줄 국기+이름 · 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅 · 맨 아래 연맹·출생 연도. */
+const FIDE_RANGE = Object.fromEntries(Object.entries(FIDE.lists).map(([k, l]) => [k, [l[l.length - 1][4], l[0][4]]]));
+const RANK_TIER = {
+  1: { frame: "linear-gradient(135deg,#FBEAB0,#DDAE45 45%,#8F6A22)", ribbon: "linear-gradient(180deg,#F8E3A0,#CFA13E)", ink: "#2A1807", bg: "linear-gradient(160deg,#FFF8E0,#F6E6B4)", glow: "0 0 14px 2px rgba(236,203,134,.6)" },
+  2: { frame: "linear-gradient(135deg,#F4F6F8,#B9C0C7 45%,#7C858E)", ribbon: "linear-gradient(180deg,#EDF0F3,#B4BBC3)", ink: "#27313A", bg: "linear-gradient(160deg,#FAFBFC,#E8ECEF)", glow: "0 0 12px 1px rgba(190,198,206,.7)" },
+  3: { frame: "linear-gradient(135deg,#F0CDA6,#C0803F 45%,#7A4A1E)", ribbon: "linear-gradient(180deg,#EBC196,#BC7B3C)", ink: "#2F1805", bg: "linear-gradient(160deg,#FFF3E6,#F0D9BE)", glow: "0 0 12px 1px rgba(205,140,80,.55)" },
+};
 function FideNode({ n, onPick, picked, fx }) {
-  const f = n.fide;
+  const f = n.fide, medal = RANK_TIER[n.rank], top10 = n.rank <= 10;
+  const [lo, hi] = FIDE_RANGE[n.list], pct = hi > lo ? 12 + 88 * (f.rating - lo) / (hi - lo) : 100;
+  const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
+  const ribbon = medal ? medal.ribbon : top10 ? "linear-gradient(180deg,#EBD7A6,#CDAA5E)" : "linear-gradient(180deg,#E9DDC2,#D3C09A)";
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "10px 14px 8px 22px", textAlign: "left", cursor: "pointer", borderRadius: 12, display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, fontFamily: SITE_FONT, color: T.ink,
-        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "0 2px 5px rgba(60,40,20,.14)" }}>
-      <CornerBadge bg={n.rank <= 3 ? T.brass : "#8A7458"} big><span style={{ fontSize: 11, fontWeight: 900 }}>{n.rank}</span></CornerBadge>
-      <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 18, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Flag code={f.fed} size={20} />{masterName(f.name, lang)}</span>
-      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 15, fontWeight: 900, padding: "2px 10px", borderRadius: 999, background: "rgba(196,154,80,.2)", color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{f.rating}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>{f.fed}{f.born ? " · " + f.born : ""}</span>
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : frame, fontFamily: SITE_FONT, color: T.ink,
+        boxShadow: picked ? SEL_GLOW : (medal ? medal.glow + ", 0 3px 8px rgba(60,40,10,.3)" : "0 2px 6px rgba(60,40,20,.2)") }}>
+      <span style={{ position: "absolute", inset: medal || picked ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: medal ? medal.bg : NODE_PARCH }}>
+        <span style={{ width: 58, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: ribbon, boxShadow: "inset -1px 0 0 rgba(90,58,20,.25)", color: medal ? medal.ink : "#4A3118" }}>
+          {medal ? <Medal size={15} strokeWidth={2.2} style={{ marginBottom: 1 }} /> : null}
+          <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 800, fontSize: n.rank >= 100 ? 21 : 27, lineHeight: 1 }}>{n.rank}</span>
+        </span>
+        <span style={{ minWidth: 0, flex: 1, padding: "9px 12px 7px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left" }}>
+          <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Flag code={f.fed} size={19} />{masterName(f.name, lang)}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true" style={{ flex: 1, height: 6, borderRadius: 3, background: "rgba(90,58,20,.14)", overflow: "hidden" }}>
+              <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 3, background: medal ? "linear-gradient(90deg,#E9C970,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
+            </span>
+            <span style={{ fontSize: 16, fontWeight: 900, color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums", letterSpacing: -.2 }}>{f.rating}</span>
+          </span>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, letterSpacing: .3 }}>{f.fed}{f.born ? " · " + f.born : ""}</span>
+        </span>
       </span>
     </button>
   );
 }
-/* 서쪽 마스터 대국 DB 선수 노드(270×78) — 윗줄 국기+이름, 아랫줄 DB 대국 수·최고 엘로. */
+/* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
+   왼쪽 국기 판(국기가 없으면 사람 아이콘) · 이름 · 최고 엘로 알약(2800+ 금 · 2700+ 황동 · 그 외 베이지)과 DB 대국 수. */
 function DbMasterNode({ n, onPick, picked, fx }) {
-  const m = n.dbm;
+  const m = n.dbm, flag = masterFlag(m.name);
+  const eloTier = m.elo >= 2800 ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "9px 14px 8px 22px", textAlign: "left", cursor: "pointer", borderRadius: 12, display: "flex", flexDirection: "column", justifyContent: "center", gap: 6, fontFamily: SITE_FONT, color: T.ink,
-        border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, boxShadow: picked ? SEL_GLOW : "0 2px 5px rgba(60,40,20,.14)" }}>
-      <CornerBadge bg="#8A7458" big><User size={12} /></CornerBadge>
-      <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><FlagE emoji={masterFlag(m.name)} size={19} />{masterName(m.name, lang)}</span>
-      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>
-        {m.elo ? <span style={{ fontSize: 14, fontWeight: 900, padding: "1px 9px", borderRadius: 999, background: "rgba(196,154,80,.2)", color: MG_GOLD_TXT, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span> : null}
-        <span>{t("대국 {0}판", m.games)}</span>
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (m.elo >= 2800 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
+        boxShadow: picked ? SEL_GLOW : "0 2px 6px rgba(60,40,20,.2)" }}>
+      <span style={{ position: "absolute", inset: picked || m.elo >= 2800 ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: NODE_PARCH }}>
+        <span style={{ width: 58, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg,#EFE4CB,#DCCAA2)", boxShadow: "inset -1px 0 0 rgba(90,58,20,.22)", fontSize: 30, lineHeight: 1 }}>
+          {flag ? <span aria-hidden="true">{flag}</span> : <User size={24} color="#8A7458" strokeWidth={1.8} />}
+        </span>
+        <span style={{ minWidth: 0, flex: 1, padding: "10px 12px 8px 12px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
+          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(m.name, lang)}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {m.elo ? <span style={{ fontSize: 13.5, fontWeight: 900, padding: "1px 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, fontVariantNumeric: "tabular-nums" }}>{m.elo}</span> : null}
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
+          </span>
+        </span>
       </span>
     </button>
   );
@@ -495,13 +523,21 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             const p = transferPath(e.a, e.b);
             return <span key={"l" + i} style={{ position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
           })}
-          {LAYOUT.labels.map((l) => (
+          {LAYOUT.labels.map((l) => (l.plaque ? (
+            /* FIDE 순위 갈래 머리판 — 챔피언 명판처럼 어두운 바탕에 금테·금색 글자 */
+            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
+              background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(60,40,10,.38)" }}>
+              <span aria-hidden="true" style={{ position: "absolute", inset: 4, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55)" }} />
+              <Medal size={18} color={T.brassHi} style={{ position: "relative" }} />
+              <span style={{ position: "relative", fontFamily: "Georgia,'Noto Serif KR',serif", fontWeight: 800, fontSize: 17, letterSpacing: .3, color: "#FFF3D3", textShadow: "0 1px 0 #000", whiteSpace: "nowrap" }}>{LABEL_TEXT()[l.key]}</span>
+            </div>
+          ) : (
             <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
-              <span style={{ fontFamily: "Georgia',,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 16, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+              <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 16, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
                 ✦ {LABEL_TEXT()[l.key]} ✦
               </span>
             </div>
-          ))}
+          )))}
           {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}
           {/* 중심 회로 칩 — 오프닝 트리와 같은 칩(네 변 핀 + CPU 아이콘). 누르면 회로 전체에 전류가 흐른다. */}
           <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: chip.cx - chip.size / 2, top: chip.cy - chip.size / 2, width: chip.size, height: chip.size, cursor: "pointer", zIndex: 2 }}>

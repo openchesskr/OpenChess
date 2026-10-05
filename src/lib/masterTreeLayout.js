@@ -184,7 +184,7 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   labels.push({ id: "champs", key: "champs", align: "left", x: chip.cx + 16, y: chip.cy - half - MT.CHIP_GAP / 2 - MT.LABEL_H / 2, w: MT.LABEL_W, h: MT.LABEL_H });
   if (rail) labels.push({ id: "tours", key: "tours", align: "center", x: (chip.cx + half + rail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
   if (wrail) labels.push({ id: "db", key: "db", align: "center", x: (chip.cx - half + wrail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
-  if (south) for (const c of south.cols) labels.push({ id: "fide-" + c.key, key: "fide-" + c.key, align: "left", x: c.cx + 14, y: c.drop.y1 + (MT.S_DROP - MT.LABEL_H) / 2, w: MT.LABEL_W, h: MT.LABEL_H });
+  if (south) for (const c of south.cols) labels.push({ id: "fide-" + c.key, key: "fide-" + c.key, align: "center", plaque: true, x: c.cx - MT.FIDE_W / 2, y: c.drop.y1 + (MT.S_DROP - 52) / 2, w: MT.FIDE_W, h: 52 });
   for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;
   for (const l of labels) { l.x += dx; l.y += dy; }
