@@ -120,3 +120,26 @@ Google/Apple/Facebook으로 로그인을 시도해도 새 계정이 아니라 �
 - [ ] 배포 후 실제로 Apple/Facebook 버튼으로 로그인 → 계정 센터에서 다른 수단 연결 → 연결 해제 →
       계정 탈퇴까지 한 번씩 직접 눌러 확인했다(이 환경은 실제 Supabase 접속 정보가 없어 여기서는
       코드만 준비했고 실제 동작 확인은 배포 환경에서 필요합니다).
+
+---
+
+## 앱(Capacitor) 로그인·앱 링크·엔진 내려받기 설정 (v0.6.3, 앱 출시 준비 3단계)
+
+코드는 준비돼 있고(`src/lib/nativeApp.js`·`engineDownload.js`), 래퍼를 붙이는 0.9.0에서 아래 값만 채우면 된다. 앱 식별자(번들 ID·패키지명)는 `kr.openchess.app`로 정했다 — 바꾸려면 `nativeApp.js`의 `APP_SCHEME`, 두 앱 링크 파일, `check-app-links` 기대값을 함께 바꾼다.
+
+**시스템 브라우저 로그인**
+- 앱에서 로그인 버튼을 누르면 시스템 브라우저(Android Custom Tabs·iOS SFSafariViewController)로 열리고, 끝나면 `kr.openchess.app://auth/callback#access_token=…`으로 앱에 돌아온다(구글이 웹뷰 로그인을 막기 때문).
+- [ ] Supabase → Authentication → URL Configuration → Redirect URLs에 `kr.openchess.app://**` 추가. (웹은 기존 주소 그대로)
+- [ ] 래퍼에 `@capacitor/app`·`@capacitor/browser` 설치. iOS는 URL Types에 스킴 `kr.openchess.app`, Android는 intent-filter(scheme `kr.openchess.app`) 등록.
+- Apple 로그인은 Google 등 외부 로그인과 함께 제공해야 심사를 통과한다(위 1번 항목).
+
+**앱 링크(https://openchess.kr/… 링크를 앱에서 열기)** — 파일은 `public/.well-known/`에 있고 배포 시 그대로 서빙된다(`vercel.json`이 `.well-known`을 index.html 재작성에서 제외하고 `application/json`으로 내려준다).
+- [ ] `apple-app-site-association`의 `TEAMID`를 Apple 개발자 팀 ID(10자리)로 교체. iOS는 Associated Domains에 `applinks:openchess.kr` 추가.
+- [ ] `assetlinks.json`의 `REPLACE_WITH_RELEASE_KEY_SHA256`을 릴리스 서명 키의 SHA-256 지문으로 교체(Play 앱 서명을 쓰면 Play Console의 "앱 서명" 지문). Android는 intent-filter에 `autoVerify="true"`, host `openchess.kr`.
+- 두 파일의 자리표시자는 `npm run check:app-links`가 경고로 알려 준다(빌드를 막진 않음 — 출시 전에 반드시 교체).
+
+**엔진 내려받기**
+- `npm run build:app`이 `dist/engine/17`·`18`을 빼서 앱 번들에 Lite만 남긴다(약 154MB, Google Play 기본 한도 200MB). Stockfish 17.1(75MB)·18(108MB)은 설정 탭에서 고를 때 `https://openchess.kr/engine/…`(웹 배포본, CORS 허용 헤더 있음)에서 받아 기기 저장소(`Directory.Data/engine/`)에 둔다.
+- [ ] 래퍼에 `@capacitor/filesystem` 설치. 빌드 환경변수 `VITE_API_BASE=https://openchess.kr`(API 주소)도 지정.
+- 웹 배포본의 `engine/manifest.json`(`copy-engine` 스크립트가 빌드마다 생성)이 내려받을 파일 목록·크기다. 크기가 다르면 내려받기가 실패 처리된다.
+- [ ] 실기기 확인 필요: 내려받은 파일 주소(`convertFileSrc`)로 Worker가 뜨는지, 엔진이 연결되는지(iOS·Android 각각).

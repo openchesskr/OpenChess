@@ -30,6 +30,15 @@ export function snapPuzzleZoom(z) {
   const clamped = Math.min(PUZZLE_ZOOM_MAX, Math.max(PUZZLE_ZOOM_MIN, z));
   return Math.round(clamped / PUZZLE_ZOOM_STEP) * PUZZLE_ZOOM_STEP;
 }
+// (v0.6.3, 사용자 요청) 마스터 트리(세계 챔피언 모식도)는 예전 "75%" 배율(0.5625)을 새 기준(100%)으로 다시 정의한다 — 퍼즐 모식도(PUZZLE_*)와 같은 방식.
+// raw CSS scale 값은 SCHEMATIC_ZOOM_LABEL_BASE의 0.75배라, 좌표 계산 코드는 그대로 두고 표시 라벨·25%p 격자만 이 기준에 맞춘다.
+export const MASTER_ZOOM_LABEL_BASE = SCHEMATIC_ZOOM_LABEL_BASE * 0.75;
+export function masterZoomLabel(z) { return Math.round((z / MASTER_ZOOM_LABEL_BASE) * 100) + "%"; }
+export const MASTER_ZOOM_STEP = 0.25 * MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_MIN = MASTER_ZOOM_STEP, MASTER_ZOOM_MAX = 2 * MASTER_ZOOM_LABEL_BASE;
+export function snapMasterZoom(z) {
+  const clamped = Math.min(MASTER_ZOOM_MAX, Math.max(MASTER_ZOOM_MIN, z));
+  return Math.round(clamped / MASTER_ZOOM_STEP) * MASTER_ZOOM_STEP;
+}
 // (버그 수정) 확대/축소 버튼·휠·핀치가 pan은 그대로 두고 zoom만 바꾸다 보니, 화면 좌상단(콘텐츠
 // 원점)을 기준으로 확대/축소가 일어났다 — 원점에서 멀리 떨어진 곳(팬으로 옮겨온 화면 중앙, 또는
 // 핀치 중심)을 보고 있을 때는 그 지점이 배율만큼 훌쩍 밀려나 트리 전체가 화면 밖으로 사라진
@@ -49,6 +58,9 @@ export function anchoredZoomPan(pan, zoom, nextZoom, anchorX, anchorY) {
 // (v0.1.2 기능) 도감 오프닝 트리 캔버스 좌상단에는 검색창이 떠 있어(대략 이 높이만큼), 팬 한계가
 // 스냅한 블록이 그 뒤에 가려지지 않도록 유효 뷰포트 상단을 이만큼 안으로 줄인다.
 export const SCHEMATIC_TOP_INSET = 44;
+// (v0.6.3, 사용자 요청) 도감 모식도(오프닝·마스터)의 드래그 감도 — 손가락·마우스가 움직인 화면 거리만큼 그대로(1배) 따라 움직인다.
+// 예전엔 오프닝 트리만 2.2×1.5 = 3.3배라 마스터 트리(1배)와 감도가 달랐다. 두 모식도가 이 값 하나를 함께 쓴다.
+export const SCHEMATIC_DRAG_MULT = 1;
 // (사용자 요청) 예전엔 나침반 중심 회로 칩을 "실제로 화면에 보이는 범위의 절반"(visibleBoxCenter,
 // 박스가 뷰포트보다 커서 잘릴 때를 대비한 보정)에 맞췄으나, 이제 모식도 박스 자신이 항상 뷰포트
 // 안에 통째로 들어오도록 높이가 동적으로 계산되므로(OpeningSchematic의 panelH) 그런 보정이 필요

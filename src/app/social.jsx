@@ -17,7 +17,7 @@ import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "..
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -2174,71 +2174,18 @@ const LEGACY_SLOT_ORDER = ["best", "only", "brilliant", "best2", "only2", "brill
 // (사용자 요청) 유산 공유 — 퍼즐 공유(PuzzleShareSheet)와 같은 패턴의 친구 선택 시트. 위쪽에 공유할
 // 유산 미리보기(등급 배지+새겨진 수)를 보여주고, 아래 친구 목록에서 보낼 대상을 고른다.
 function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }) {
-  const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
-  const [profiles, setProfiles] = useState({});
-  const [sent, setSent] = useState(() => new Set());
-  const [busy, setBusy] = useState(null);
-  const [sendErr, setSendErr] = useState("");
-  useEffect(() => {
-    let cc = false;
-    (async () => {
-      const edges = await friendEdges();
-      const ids = edges.filter((e) => e.status === "accepted" && (e.from_uid === myUid || e.to_uid === myUid)).map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
-      if (cc) return;
-      setFriends(ids);
-      if (ids.length) { const pm = await usersProfiles(ids); if (!cc) setProfiles(pm); }
-    })();
-    return () => { cc = true; };
-  }, [myUid]);
-  const send = async (toUid) => {
-    if (busy || sent.has(toUid)) return;
-    setBusy(toUid); setSendErr("");
-    const ok = await legacyShareSend(myUid, toUid, slotKey);
-    setBusy(null);
-    if (ok) { setSent((s) => new Set(s).add(toUid)); onShared && onShared(); }
-    else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
-  };
   const color = QCOLOR[typeInfo.kind];
-  // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴.
-  const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 90, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 380, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}유산 공유", <Send size={15} />)}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)", flexShrink: 0 }}>
-          <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(entry)}</div>
-            <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
-          </div>
-        </div>
-        <div style={{ padding: 12, minHeight: 120, maxHeight: narrow ? undefined : 420, flex: narrow ? "1 1 auto" : undefined, overflowY: "auto" }}>
-          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
-            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {friends.map((u) => {
-                  const pr = profiles[u] || {}; const pub = pr.pub || {};
-                  const isSent = sent.has(u);
-                  return (
-                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
-                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
-                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
-                      </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
-                    </div>
-                  );
-                })}
-              </div>}
+    <ShareSheetFrame title={t("유산 공유")} onClose={onClose}>
+      <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)" }}>
+        <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(entry)}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
         </div>
       </div>
-    </div>
+      <FriendSendList myUid={myUid} send={(toUid) => legacyShareSend(myUid, toUid, slotKey)} onSent={onShared} />
+    </ShareSheetFrame>
   );
 }
 // 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
@@ -2954,6 +2901,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState(null); // 프로필 보기: { uid, username, pub }
   const [pending, setPending] = useState({}); // uid -> true
+  const [reqNotice, setReqNotice] = useState(""); // (BUG-043) 친구 요청이 서버에서 거절됐을 때(차단 관계 등) 안내 문구
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
   // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
   const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
@@ -3031,7 +2979,9 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
   const guard = (uid, fn) => async () => { if (pending[uid]) return; setPending((p) => ({ ...p, [uid]: true })); try { await fn(); await load(); } finally { setPending((p) => { const n = { ...p }; delete n[uid]; return n; }); } };
   // (17차) 친구 요청 발송/수락 시 상대에게 알림을 남긴다.
   const doRequestByName = (username, keyUid) => guard(keyUid || username, async () => {
+    setReqNotice("");
     const r = await friendRequest(username);
+    if (r && r.status === "blocked") { setReqNotice(t("요청할 수 없는 사용자")); return; }   // 프로필 화면과 같은 문구(누가 차단했는지는 알리지 않음)
     if (!r || !r.ok || !keyUid) return;
     if (r.status === "pending") notifyCreate(keyUid, "friend_request", { fromUsername: me, fromUid: meId });
     else if (r.status === "accepted") { notifyCreate(keyUid, "friend_accepted", { byUsername: me }); await notifyResolveFriendRequest(meId, keyUid, "accepted"); }
@@ -3084,7 +3034,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
   const statusChip = (label, icon) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 9px", borderRadius: 8, fontSize: 11, fontWeight: 700, color: T.inkSoft, background: "#EFE3C8", border: "1px solid #DCCBA8" }}>{icon}{label}</span>;
 
   const tabBtn = (key, label, badge) => (
-    <button onClick={() => setTab(key)} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 800, position: "relative", background: tab === key ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: tab === key ? T.ivoryHi : T.inkSoft }}>
+    <button onClick={() => { setReqNotice(""); setTab(key); }} className="press" style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 800, position: "relative", background: tab === key ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: tab === key ? T.ivoryHi : T.inkSoft }}>
       {label}
       {badge > 0 && <span style={{ position: "absolute", top: 2, right: 8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: T.blunder, color: "#fff", fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
     </button>
@@ -3098,7 +3048,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
             {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
-              {sel ? <button onClick={() => setSel(null)} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
+              {sel ? <button onClick={() => { setReqNotice(""); setSel(null); }} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? t("프로필") : t("친구")}</span>
             </span>
             {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
@@ -3125,6 +3075,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
               {rel === "sent" && statusChip(t("요청 보냄"), <Clock size={12} />)}
               {rel === "incoming" && <>{btn(t("수락"), () => doAccept(sel.uid), "gold", busyId)}{btn(t("거절"), () => doReject(sel.uid), "ghost", busyId)}</>}
               {rel === "none" && btn(t("친구 요청"), () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
+              {rel === "none" && reqNotice && <span role="status" style={{ fontSize: 11.5, fontWeight: 700, color: T.blunder }}>{reqNotice}</span>}
             </>
           ) : null;
           return (
@@ -3207,6 +3158,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                       <button onClick={runSearch} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{t("검색")}</button>
                     </div>
                     {!!myMid && <InviteLinkBox mid={myMid} />}
+                    {reqNotice && <div role="status" style={{ fontSize: 12, fontWeight: 700, color: T.blunder, padding: "2px 4px 8px" }}>{reqNotice}</div>}
                     {busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 중…")}</div>
                       : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("일치하는 유저 없음")}</div> : null)
                         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{results.map((r, i) => {
