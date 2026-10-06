@@ -285,5 +285,7 @@ if (!/snapMasterZoom/.test(mast) || /snapSchematicZoom|SCHEMATIC_ZOOM_STEP/.test
 if (/위에서 아래로 시간순/.test(mast) || /const hint\b/.test(mast)) fails.push("마스터 모식도 위쪽 안내 문구가 다시 생김(열 이름 라벨로 대체)");
 if (!/역대 세계 챔피언/.test(mast) || !/주요 대회/.test(mast)) fails.push("열 이름 라벨 문구(역대 세계 챔피언·주요 대회) 없음");
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
+// (v0.6.4) 마스터 이름은 언어와 상관없이 영어로만 표기한다 — 언어별 이름 함수에 lang을 넘기면 실패.
+if (/(masterName|dbPlayerName|playerName)\([^()]*,\s*lang\)/.test(mast) || /lang === "ko" && (p|c|r|s)\.ko/.test(mast)) fails.push("마스터 이름이 언어별로 표기됨(영어 공통 표기여야 함: \"en\"을 넘길 것)");
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-masters: 챔피언 " + CHAMPIONS.length + "명·타이틀 이동 " + TRANSFERS.length + "건·위성 " + L.nodes.filter((n) => n.kind === "sat").length + "명 데이터 정합, 노드 겹침 0, 시간순 배치, 팬 한계, 도감 연결이 유지된다");
