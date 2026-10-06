@@ -2,7 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
-import { openExternal } from "../lib/nativeApp.js";
+import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
@@ -5199,6 +5199,8 @@ const CHESSCOM_APP_FALLBACK_MS = 1500;
 function ChesscomTextLink({ children }) {
   const onClick = (e) => {
     e.stopPropagation();
+    // (v0.6.4) 앱(웹뷰)에서는 링크 가드가 AppLauncher로 chess.com 앱 링크를 직접 연다(data-prefer-app) — 아래 웹용 스토어 폴백 타이머는 쓰지 않는다.
+    if (isNativeApp()) return;
     const platform = chesscomMobilePlatform();
     if (!platform) return; // 데스크톱은 그냥 평범한 링크로 연다.
     const timer = setTimeout(() => {
@@ -5208,7 +5210,7 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href={CHESSCOM_GET_APP_URL} onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
 }
 export function questLabelNode(q) {
   const text = questLabel(q);
@@ -5560,7 +5562,7 @@ export function ShareLinkBlock({ url, title, text }) {
   const flash = (s) => { setStatus(s); clearTimeout(timer.current); timer.current = setTimeout(() => setStatus(""), 2200); };
   const doCopy = async () => flash((await copyText(url)) ? "copied" : "copyFail");
   const doShare = async () => { const r = await webShare({ title, text, url }); if (r === "shared") flash("shared"); else if (r === "error") flash("copyFail"); };
-  const openTarget = (e, href) => { e.preventDefault(); openExternal(href); };
+  const openTarget = (e, href) => { if (e.defaultPrevented) return; e.preventDefault(); openExternal(href); };
   const targetLabel = { kakaostory: t("카카오스토리"), x: t("X(트위터)"), facebook: t("페이스북"), email: t("이메일") };
   return (
     <div>

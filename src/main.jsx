@@ -17,5 +17,5 @@ const LegalPage = lazy(() => import("./LegalPage.jsx"));
 
 const path = window.location.pathname.replace(/\/$/, "") || "/";
 createRoot(document.getElementById("root")).render(
-  path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />
+  path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" || path === "/account-deletion" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />
 );
