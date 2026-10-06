@@ -2,6 +2,8 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/chessRules.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
+import { isNativeApp, oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
+import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
 import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
@@ -12,7 +14,7 @@ import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -641,8 +643,36 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
     </div>
   );
 }
-export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxOn, setMoveFxOn,
+/* (v0.6.3, 앱) 앱에 포함되지 않은 큰 엔진의 내려받기 행 — 크기 안내 + 내려받기/진행률/취소/실패 재시도. */
+function EngineDownloadRow({ id, label }) {
+  const st = engineDownloadState(id);
+  const busy = st.status === "downloading";
+  const pct = Math.round((st.progress || 0) * 100);
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, border: "1.5px dashed #DCCBA8", background: "#fff" }}>
+      <div className="flex items-center justify-between gap-2">
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{label}</span>
+        {busy
+          ? <button onClick={() => cancelEngineDownload(id)} className="press" style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>{t("취소")}</button>
+          : <button onClick={() => downloadEngine(id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer" }}>{t("{0} 내려받기", engineDownloadSizeLabel(id))}</button>}
+      </div>
+      {busy && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ height: 6, borderRadius: 3, background: "#EADFC6", overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width .25s" }} /></div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>{t("내려받는 중 {0}%", pct)}</div>
+        </div>
+      )}
+      {!busy && st.status === "error" && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 6 }}>{t("내려받기 실패. 연결 확인 후 다시 시도")}</div>}
+      {!busy && st.status !== "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>{t("앱에 포함되지 않은 엔진. 내려받은 뒤 사용")}</div>}
+    </div>
+  );
+}
+export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
+  // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
+  const [, setEngineUiTick] = useState(0);
+  const bumpEngineUi = useCallback(() => setEngineUiTick((n) => n + 1), []);
+  useEffect(() => subscribeEngineDownloads(bumpEngineUi), [bumpEngineUi]);
   const [codevId, setCodevId] = useState("");
   const [codevErr, setCodevErr] = useState("");
   const [codevBusy, setCodevBusy] = useState(false);
@@ -824,6 +854,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
             const on = enginePref === p.id;
+            // (v0.6.3, 앱) 앱에 포함되지 않은 큰 엔진은 선택 대신 내려받기 행으로 보여 준다.
+            if (engineNeedsDownload(id)) return <EngineDownloadRow key={p.id} id={p.id} label={p.label} />;
             return (
               <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
                 style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
@@ -835,6 +867,10 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
               </button>
             );
           })}
+          {/* (v0.6.3, 앱) 내려받은 큰 엔진 삭제 — 저장 공간 확보. 지금 쓰는 엔진은 지울 수 없다. */}
+          {ANALYSIS_ENGINE_IDS.filter((id) => HEAVY_ENGINE_IDS.includes(id) && engineDownloadState(id).status === "ready" && engineUsable(id) && isNativeApp() && enginePref !== id).map((id) => (
+            <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 10.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
+          ))}
         </div>
         <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
 
@@ -926,16 +962,20 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <input type="range" min={0} max={1} step={0.05} value={sfxVolume} onChange={(e) => onSfxVolumeChange(parseFloat(e.target.value))} disabled={!sfxOn} aria-label={t("효과음 음량")} style={{ width: "100%", marginTop: 8, accentColor: T.brass, opacity: sfxOn ? 1 : 0.4, cursor: sfxOn ? "pointer" : "default" }} />
       </div>
 
-      {/* (v0.5.5, 사용자 요청) 시각 효과 — 탁월한 수·유일한 수·최선의 수를 두었을 때의 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰
-          페이지, 무한 체크메이트 게임). 기본값은 켜짐, 계정에 저장된다. */}
+      {/* (v0.5.5, 사용자 요청) 시각 효과 — 수 등급 이펙트(분석·학습·퍼즐 탭, 리뷰 페이지, 무한 체크메이트 게임). v0.6.3부터 모든 등급을
+          지원하고 표시 범위를 고른다(기본 모두 표시), 계정에 저장된다. */}
       <div style={card}>
         {cardTitle(Sparkles, t("시각 효과"))}
-        <div className="flex items-center justify-between">
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("탁월한 수·유일한 수·최선의 수를 두면 보드에 이펙트 표시")}</div>
-          </div>
-          <button onClick={() => setMoveFxOn(!moveFxOn)} aria-pressed={!!moveFxOn} aria-label={t("수 등급 이펙트")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: moveFxOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: moveFxOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        {/* (v0.6.3, 사용자 요청) 온·오프 토글 대신 표시 범위 선택 — 모두 표시 / 탁월한 수·유일한 수만 / 표시하지 않음. */}
+        <div>
+          <label htmlFor="move-fx-mode" style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</label>
+          <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, marginBottom: 8 }}>{t("수를 두면 보드에 표시할 등급 이펙트의 범위")}</div>
+          <select id="move-fx-mode" value={normalizeMoveFxMode(moveFxMode)} onChange={(e) => setMoveFxMode(normalizeMoveFxMode(e.target.value))}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", boxSizing: "border-box" }}>
+            <option value="all">{t("모두 표시")}</option>
+            <option value="key">{t("탁월한 수 및 유일한 수만 표시")}</option>
+            <option value="off">{t("표시하지 않음")}</option>
+          </select>
         </div>
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
         {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.6.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
@@ -1085,12 +1125,12 @@ async function getUserIdentities() {
    (SETUP_OAUTH.md 참고) — 꺼져 있으면 여기서 오류가 난다. */
 async function linkIdentityRedirect(provider) {
   if (!SB_ON || !SB_TOKEN) throw new Error("no session");
-  const redirect = window.location.origin + window.location.pathname;
+  const redirect = oauthRedirectUrl();
   const url = SB_URL + "/auth/v1/user/identities/authorize?provider=" + provider + "&redirect_to=" + encodeURIComponent(redirect);
   const r = await fetch(url, { headers: sbHeaders() });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j || !j.url) throw new Error("link_failed");
-  window.location.href = j.url;
+  await startOAuthNavigation(j.url);
 }
 /* 연결된 로그인 수단 해제(마지막 하나는 서버가 거부한다 — 로그인 수단이 하나도 없는 계정을 막기
    위한 GoTrue 자체 규칙). */

@@ -15,7 +15,8 @@ import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
 import { playMoveSfx } from "../lib/prefs.js";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
-import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, friendEdges, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, usersProfiles } from "./common.jsx";
+import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
+import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
@@ -2465,11 +2466,6 @@ function reviewShareUrl(reviewId) {
 // 인앱 친구 대화창 공유)을 그대로 따르되, 퍼즐과 달리 리뷰는 전역 번호·좋아요 같은 부가 데이터가
 // 없어 훨씬 단순하다 — reviewId(딥링크 식별자)만 있으면 두 공유 경로 모두 동작한다.
 function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
-  const [friends, setFriends] = useState(null); // null=로딩중, [] = 없음
-  const [profiles, setProfiles] = useState({});
-  const [sent, setSent] = useState(() => new Set());
-  const [busy, setBusy] = useState(null); // 전송 중인 uid
-  const [sendErr, setSendErr] = useState("");
   // (신규 기능, 사용자 요청) 이미지 카드 미리보기 — 시트가 열리는 즉시 한 번만 만들어 <canvas>에
   // 그대로 그려 둔다(버튼을 눌러야 비로소 만들면 "공유하기"를 눌렀을 때 한 박자 늦게 반응하는
   // 것처럼 보임). 미리보기 canvas 자체가 1080×1080 전체 해상도라, 공유/다운로드는 그걸 그대로 toBlob한다.
@@ -2497,99 +2493,50 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
   }, [cardData]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardMsg, setCardMsg] = useState("");
-  const canNativeShareFiles = typeof navigator !== "undefined" && !!navigator.canShare && !!navigator.share;
+  const canNativeShareFiles = canWebShareFiles();
+  // 이미지 카드: 미리보기 캔버스(1080×1080)를 그대로 PNG로 만들어 공유하거나 저장한다.
+  const cardBlob = () => new Promise((resolve) => previewRef.current.toBlob((b) => resolve(b), "image/png"));
   const shareCardImage = async () => {
     if (!cardData || cardBusy || !cardReady || !previewRef.current) return;
     setCardBusy(true); setCardMsg("");
     try {
-      // (버그 수정, 코드 리뷰 지적) previewRef가 이미 같은 1080×1080 전체 해상도로 그려 둔 캔버스라
-      // (CSS의 aspectRatio/width:100%는 화면 표시 크기만 줄일 뿐 canvas.width/height 자체는 그대로),
-      // 굳이 다시 그릴 필요 없이 그 캔버스를 그대로 toBlob한다.
-      const blob = await new Promise((resolve) => previewRef.current.toBlob((b) => resolve(b), "image/png"));
+      const blob = await cardBlob();
       if (!blob) { setCardMsg(t("이미지 생성 실패")); return; }
       const file = new File([blob], "openchess-review.png", { type: "image/png" });
-      if (canNativeShareFiles && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: t("OpenChess 리뷰"), text: label || t("OpenChess 대국 리뷰") }); return; }
-        catch { return; } // 사용자가 공유 시트에서 취소 — 조용히 종료
+      if (canWebShareFiles(file)) {
+        const r = await webShare({ files: [file], title: t("OpenChess 리뷰"), text: label || t("OpenChess 대국 리뷰") });
+        if (r === "error") setCardMsg(t("이미지 생성 실패"));
+        return;   // 공유 완료·취소는 조용히 종료
       }
-      // 공유 API가 파일을 못 받는 환경(대부분의 데스크톱)은 바로 다운로드.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "openchess-review.png"; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setCardMsg(t("이미지 저장 완료"));
+      downloadBlob(blob, "openchess-review.png"); setCardMsg(t("이미지 저장 완료"));   // 파일 공유가 안 되는 환경(대부분의 데스크톱)은 바로 저장
     } catch { setCardMsg(t("이미지 생성 실패")); }
     finally { setCardBusy(false); }
   };
-  useEffect(() => {
-    let cc = false;
-    (async () => {
-      const edges = await friendEdges();
-      const ids = edges.filter((e) => e.status === "accepted" && (e.from_uid === myUid || e.to_uid === myUid)).map((e) => (e.from_uid === myUid ? e.to_uid : e.from_uid));
-      if (cc) return;
-      setFriends(ids);
-      if (ids.length) { const pm = await usersProfiles(ids); if (!cc) setProfiles(pm); }
-    })();
-    return () => { cc = true; };
-  }, [myUid]);
-  const send = async (toUid) => {
-    if (busy || sent.has(toUid)) return;
-    if (!reviewId) { setSendErr(t("리뷰 정보를 불러오지 못해 전달 불가")); return; }
-    setBusy(toUid); setSendErr("");
-    const ok = await reviewShareSend(myUid, toUid, reviewId);
-    setBusy(null);
-    if (ok) setSent((s) => new Set(s).add(toUid));
-    else setSendErr(t("전달 실패. 잠시 후 다시 시도"));
+  const saveCardImage = async () => {
+    if (!cardData || cardBusy || !cardReady || !previewRef.current) return;
+    try { const blob = await cardBlob(); if (!blob) { setCardMsg(t("이미지 생성 실패")); return; } downloadBlob(blob, "openchess-review.png"); setCardMsg(t("이미지 저장 완료")); }
+    catch { setCardMsg(t("이미지 생성 실패")); }
   };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 310, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 380, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", overflow: "hidden", boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6" }}>
-          <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tx("{0}리뷰 공유", <Send size={15} />)}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title={t("OpenChess 리뷰")} text={t("OpenChess 리뷰: {0}", label || t("대국 리뷰 보기"))} />
-          : <div style={{ padding: "10px 16px", fontSize: 12, color: T.inkSoft }}>{t("공유 링크를 만드는 중…")}</div>}
-        {/* (신규 기능, 사용자 요청) 이미지 카드 — 정확성·결과·오프닝을 한눈에 담은 정사각형 PNG를
-            SNS에 바로 올릴 수 있게(카카오톡·인스타그램 등은 링크보다 이미지가 훨씬 잘 퍼진다).
-            cardData가 없으면(FEN 모드 등 플레이어 정보가 없는 분석) 섹션 자체를 숨긴다. */}
-        {cardData && (
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid #E4D5B6" }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, marginBottom: 8 }}>{t("이미지 카드로 공유")}</div>
-            <canvas ref={previewRef} style={{ width: "100%", aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", marginBottom: 8, opacity: cardReady ? 1 : 0.5, transition: "opacity .2s" }} />
-            <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-              <button onClick={shareCardImage} disabled={cardBusy || !cardReady} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 13px", borderRadius: 8, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12, cursor: (cardBusy || !cardReady) ? "default" : "pointer", opacity: (cardBusy || !cardReady) ? .6 : 1 }}>
-                {canNativeShareFiles ? <Share2 size={13} /> : <ImageIcon size={13} />}
-                {cardBusy ? t("만드는 중…") : !cardReady ? t("카드 준비 중…") : canNativeShareFiles ? t("이미지로 공유") : t("이미지 저장")}
-              </button>
-              {cardMsg && <span style={{ fontSize: 11, color: T.inkSoft }}>{cardMsg}</span>}
-            </div>
+    <ShareSheetFrame title={t("리뷰 공유")} onClose={onClose} zIndex={310}>
+      {reviewId ? <ExternalShareRow url={reviewShareUrl(reviewId)} title={t("OpenChess 리뷰")} text={t("OpenChess 리뷰: {0}", label || t("대국 리뷰 보기"))} />
+        : <ShareSection label={t("외부 앱으로 공유")}><div style={{ fontSize: 12, color: T.inkSoft }}>{t("공유 링크를 만드는 중…")}</div></ShareSection>}
+      {/* 이미지 카드 — 정확성·결과·오프닝을 한눈에 담은 정사각형 PNG(카카오톡·인스타그램 등은 링크보다 이미지가 잘 퍼진다).
+          cardData가 없으면(FEN 모드 등 플레이어 정보가 없는 분석) 구획 자체를 숨긴다. */}
+      {cardData && (
+        <ShareSection label={t("이미지 카드로 공유")}>
+          <canvas ref={previewRef} style={{ width: "100%", maxWidth: 260, aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", margin: "0 auto 10px", opacity: cardReady ? 1 : 0.5, transition: "opacity .2s" }} />
+          <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+            <button onClick={shareCardImage} disabled={cardBusy || !cardReady} className="press" style={{ ...shareBtnStyles.primary, flex: 1, opacity: (cardBusy || !cardReady) ? 0.6 : 1, cursor: (cardBusy || !cardReady) ? "default" : "pointer" }}>
+              {canNativeShareFiles ? <Share2 size={14} /> : <ImageIcon size={14} />}
+              {cardBusy ? t("만드는 중…") : !cardReady ? t("카드 준비 중…") : canNativeShareFiles ? t("이미지로 공유") : t("이미지 저장")}
+            </button>
+            {canNativeShareFiles && <button onClick={saveCardImage} disabled={cardBusy || !cardReady} className="press" style={{ ...shareBtnStyles.ghost, opacity: (cardBusy || !cardReady) ? 0.6 : 1 }}><ImageIcon size={14} />{t("이미지 저장")}</button>}
           </div>
-        )}
-        <div style={{ padding: 12, minHeight: 120, maxHeight: 420, overflowY: "auto" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, margin: "0 0 8px" }}>{t("친구에게 보내기")}</div>
-          {sendErr && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-          {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
-            : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
-            : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {friends.map((u) => {
-                  const pr = profiles[u] || {}; const pub = pr.pub || {};
-                  const isSent = sent.has(u);
-                  return (
-                    <div key={u} style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, borderRadius: 10, border: "1px solid #E4D5B6", background: "#FBF5E8" }}>
-                      {pub.photo ? <img src={pub.photo} alt="" style={{ width: 34, height: 34, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
-                        : <span style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>{(pub.nickname || pr.username || "?")[0].toUpperCase()}</span>}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</div>
-                        <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(pub.displayId || pr.username)}</div>
-                      </div>
-                      <button onClick={() => send(u)} disabled={!!busy || isSent || !reviewId} className="press" style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 800, cursor: (busy || isSent) ? "default" : "pointer", flexShrink: 0, background: isSent ? "transparent" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: isSent ? T.best : "#241509", border: isSent ? "1px solid " + T.best : "none", opacity: (busy && busy !== u) ? .5 : 1 }}>{isSent ? t("보냄") : (busy === u ? "…" : t("보내기"))}</button>
-                    </div>
-                  );
-                })}
-              </div>}
-        </div>
-      </div>
-    </div>
+          <div role="status" aria-live="polite" style={{ minHeight: 16, marginTop: 6, fontSize: 11, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>{cardMsg}</div>
+        </ShareSection>
+      )}
+      <FriendSendList myUid={myUid} send={(toUid) => reviewShareSend(myUid, toUid, reviewId)} blockedReason={reviewId ? null : t("리뷰 정보를 불러오지 못해 전달 불가")} />
+    </ShareSheetFrame>
   );
 }

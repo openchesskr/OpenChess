@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { readAppSource } from "./lib/appSource.mjs";
 import { boardOfRoot, parseFenFull } from "../src/lib/chessRules.js";
 import { applySan } from "../src/lib/chessRules.js";
-import { isSacrifice, gradeMoveKind, pvLosesMaterial, pvRegainsMaterial, sacrificeCaptureUci } from "../src/lib/moveQuality.js";
+import { isSacrifice, gradeMoveKind, pvLosesMaterial, pvRegainsMaterial, sacrificeCaptureUci, sacPoisonVerdict, sacEvalCp, ownPriorMoveWasSacrifice } from "../src/lib/moveQuality.js";
 
 const fails = [];
 
@@ -60,6 +60,36 @@ for (const [name, line, pv, want, wantCap] of PV_CASES) {
   // 따 간 뒤 되찾지 못하는 수순(아무것도 안 잡음)이면 되찾지 못한 것
   if (pvRegainsMaterial(before, afterCap, "c1d2 f8e8 b1c3 c7c5".split(" "), "w")) fails.push("pvRegainsMaterial — 되찾지 못한 수순을 되찾았다고 봤다");
 }
+// ②-2 (BUG-060) 독이 든 희생 판정 — a: 둔 직후 평가(상대 차례 관점), c: 따 간 포지션 평가(둔 쪽 차례 관점). 메이트(±1e5로 뭉개짐)끼리의 비교가 gain 0이 되어 가짜 희생으로 판정되던 버그.
+const POISON = [
+  ["BUG-060 22.Bg8+ — 이미 메이트가 보이는 포지션(상대 메이트 4)에서 따 가면(Kxg8) 곧장 2수 메이트 → 독이 든 희생", { mate: -4 }, { mate: 2 }, false, true],
+  ["따 가면 오히려 내가 메이트 당하면 희생이 아니다", { cp: 120 }, { mate: -3 }, false, false],
+  ["이득이 크면(≥3점) 독이 든 희생", { cp: -120 }, { cp: 350 }, false, true],
+  ["따 가도 평가가 그대로(이득 <1점)면 가짜 희생", { cp: -100 }, { cp: -50 }, false, false],
+  ["중간 이득이라도 따 간 뒤 기물을 되찾으면 희생이 아니다", { cp: -50 }, { cp: 180 }, true, false],
+  ["중간 이득이고 되찾지 못하면 희생", { cp: -50 }, { cp: 180 }, false, true],
+  ["이미 메이트(상대 메이트 5)인데 따 간 뒤 평범한 +9점이면 따 가는 쪽이 낫다 → 희생 아님", { mate: -5 }, { cp: 900 }, false, false],
+];
+for (const [name, a, c, regains, want] of POISON) {
+  const got = sacPoisonVerdict(a, c, () => regains);
+  if (got !== want) fails.push("sacPoisonVerdict — " + name + ": 기대 " + want + ", 실제 " + got);
+}
+// BUG-060 전 과정(정적 판정 → 엔진 수순 → 독이 든 희생 → 등급) — 실제 Stockfish 18 기록값으로 22.Bg8+가 탁월로 매겨지는지
+{
+  const line = "e4 e6 d4 Nf6 Bd3 d6 c4 c6 Nc3 c5 d5 exd5 exd5 Be7 Nf3 O-O Qc2 g6 Bh6 Re8 O-O-O a5 h4 Bf8 Bg5 Be7 Rdg1 a4 g4 a3 h5 axb2+ Kb1 Qa5 a4 Na6 hxg6 fxg6 Bxg6 Nb4 Bxh7+ Kh8".split(" ");
+  const san = "Bg8+", board = boardOfRoot(null, line), after = applySan(board, san, "w");
+  const a = { mate: -4, pv: "h8g7 g5f6 g7f6 c2h7 c8f5 h7f5 f6g7 f5f7".split(" ") };   // 둔 직후(흑 차례): 흑이 Kg7로 받지 않는다
+  const c = { mate: 2, pv: "c2g6 g8f8 g5h6".split(" ") };                             // Kxg8 뒤(백 차례): Qg6! Kf8 Bh6#
+  if (!isSacrifice(board, san, "w")) fails.push("22.Bg8+ — 정적 희생 판정이 거짓");
+  if (pvLosesMaterial(board, after, a.pv, "w")) fails.push("22.Bg8+ — 엔진 수순에서 기물을 잃는 것으로 나옴(기록값은 흑이 받지 않는 수순)");
+  const capUci = sacrificeCaptureUci(board, san, "w");
+  if (capUci !== "h8g8") fails.push("22.Bg8+ — 따 가는 수가 Kxg8(h8g8)이 아님: " + capUci);
+  const verdict = sacPoisonVerdict(a, c, () => false);
+  if (verdict !== true) fails.push("22.Bg8+ — 독이 든 희생으로 확인되지 않음(BUG-060)");
+  const bestCp = 1e5, playedCp = -sacEvalCp(a);   // 최선수(Qg6, 메이트 4)와 같은 메이트권 — 손실 0, 1순위는 아님
+  const kind = gradeMoveKind({ loss: Math.max(0, bestCp - playedCp), matched: false, bestCp, playedCp, secondCp: undefined, isSac: () => verdict, priorSac: ownPriorMoveWasSacrifice([...line, san], "w", null), san });
+  if (kind !== "brilliant") fails.push("22.Bg8+ — 탁월한 수여야 하는데 " + kind);
+}
 // 평범한 퀸 교환(상대가 먼저 잡고 내가 곧바로 되잡음)의 순간적인 차이는 손해가 아니다
 {
   const sans = "e4 e5 Nf3 Nc6 d4 exd4 Nxd4 Nxd4 Qxd4".split(" ");
@@ -100,6 +130,12 @@ app.forEach((l, i) => {
   if (/\["best",\s*"excellent",\s*"good"\]\.includes\(/.test(code)) fails.push("src/App.jsx:" + (i + 1) + " — 탁월 승격 규칙을 직접 복사했다. gradeMoveKind로 매길 것");
   if (/\bkind\s*=\s*"only"/.test(code)) fails.push("src/App.jsx:" + (i + 1) + " — 유일한 수를 직접 매긴다. gradeMoveKind로 매길 것");
 });
+// (BUG-060) 독이 든 희생 판정 규칙은 sacPoisonVerdict(src/lib/moveQuality.js) 한 곳 — common.jsx가 이득(gain)·메이트 비교를 다시 구현하면(SAC_POISON_* 직접 사용) 실패
+{
+  const common = readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n").replace(/\/\/.*$/gm, "");
+  if (/SAC_POISON_(MIN|BIG)_GAIN_CP/.test(common)) fails.push("src/app/common.jsx — 독이 든 희생 임계값(SAC_POISON_*)을 직접 쓴다. sacPoisonVerdict로만 판정할 것");
+  if (!/sacPoisonVerdict\(/.test(common)) fails.push("src/app/common.jsx — confirmSacrifice가 sacPoisonVerdict를 쓰지 않는다");
+}
 // (BUG-038) 정적 희생 판정만으로 탁월을 매기는 곳은 gradeMoveKindConfirmed 안의 한 곳뿐이어야 한다(나머지는 엔진 확인을 거친다).
 const rawSac = app.filter((l) => { const c = l.replace(/\/\/.*$/, ""); return /isSac:\s*\(\)\s*=>\s*isSacrifice\(/.test(c) && !/sacVerdict\(/.test(c); }).length;
 if (rawSac !== 1) fails.push("src/App.jsx — 엔진 확인 없이 isSacrifice로 탁월을 매기는 곳이 " + rawSac + "곳(허용 1곳: gradeMoveKindConfirmed). gradeMoveKindConfirmed·sacCheckSync를 쓸 것");
@@ -108,4 +144,4 @@ if (fails.length) {
   console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038 재발 방지):\n  " + fails.join("\n  "));
   process.exit(1);
 }
-console.log("✓ 수 등급 판정 검사 통과 (희생 " + SAC_CASES.length + "건 · 엔진 확인 " + (PV_CASES.length + 3) + "건 · 등급 규칙 " + G.length + "건 · App.jsx 규칙 복사 없음)");
+console.log("✓ 수 등급 판정 검사 통과 (희생 " + SAC_CASES.length + "건 · 엔진 확인 " + (PV_CASES.length + 3 + POISON.length + 1) + "건 · 등급 규칙 " + G.length + "건 · App.jsx 규칙 복사 없음)");
