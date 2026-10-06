@@ -19,12 +19,81 @@ export function oauthRedirectUrl() {
   return webRedirect;
 }
 
-/* 외부 주소 열기 — 앱은 시스템 브라우저(Custom Tabs·SFSafariViewController), 웹은 새 탭. */
-export async function openExternal(url) {
-  const b = nativePlugin("Browser");
-  if (isNativeApp() && b && typeof b.open === "function") { try { await b.open({ url }); return true; } catch { /* 아래 폴백 */ } }
+/* 외부 주소 열기 — 앱은 시스템 브라우저(Custom Tabs·SFSafariViewController), 웹은 새 탭.
+   preferApp: 그 주소를 처리하는 다른 앱(예: chess.com 앱 링크)이 있으면 그 앱으로 바로 연다(AppLauncher). 없거나 실패하면 브라우저로. */
+export async function openExternal(url, opts) {
+  if (isNativeApp()) {
+    const l = opts && opts.preferApp ? nativePlugin("AppLauncher") : null;
+    if (l && typeof l.openUrl === "function") { try { const r = await l.openUrl({ url }); if (!r || r.completed !== false) return true; } catch { /* 아래 폴백 */ } }
+    const b = nativePlugin("Browser");
+    if (b && typeof b.open === "function") { try { await b.open({ url }); return true; } catch { /* 아래 폴백 */ } }
+  }
   try { window.open(url, "_blank", "noopener,noreferrer"); return true; } catch { return false; }
 }
+
+/* mailto:·tel: 열기 — 앱은 기본 메일 앱(AppLauncher, 없으면 웹뷰 기본 처리), 웹은 현재 위치 이동(OS가 메일 앱을 연다). 시스템 브라우저(Browser)는 이런 스킴을 못 연다. */
+export async function openMailto(url) {
+  if (isNativeApp()) {
+    const l = nativePlugin("AppLauncher");
+    if (l && typeof l.openUrl === "function") { try { await l.openUrl({ url }); return true; } catch { /* 아래 폴백 */ } }
+  }
+  try { window.location.href = url; return true; } catch { return false; }
+}
+
+/* (v0.6.4) 링크 클릭 분류 — 앱 웹뷰 안에서 <a>를 눌렀을 때 어떻게 처리할지 정한다. 순수 함수(테스트 대상).
+   · mailto:/tel: → "mail"(메일·전화 앱으로)
+   · 다른 출처 http(s) → "external"(시스템 브라우저로. 그대로 두면 웹뷰가 남의 사이트로 넘어가 앱 화면이 사라진다)
+   · 같은 출처 + target=_blank → "site"(앱 안이 아니라 대표 사이트 주소로 브라우저에서 열기 — 열려 있던 모달·입력 상태를 지키려고)
+   · 그 밖(같은 출처 일반 이동·#앵커·javascript: 등) → "none"(건드리지 않음) */
+export function classifyLinkClick(href, target, appOrigin, siteOrigin = "https://openchess.kr") {
+  let u, base;
+  try { base = new URL(appOrigin); u = new URL(String(href || ""), base); } catch { return { action: "none" }; }
+  if (u.protocol === "mailto:" || u.protocol === "tel:") return { action: "mail", url: u.href };
+  // 앱 웹뷰의 출처는 안드로이드 https://localhost, iOS capacitor://localhost처럼 http(s)가 아닐 수 있어 URL.origin(비표준 스킴은 "null") 대신 스킴·호스트를 직접 비교한다.
+  const sameApp = u.protocol === base.protocol && u.host === base.host;
+  if (!sameApp && u.protocol !== "http:" && u.protocol !== "https:") return { action: "none" };
+  if (!sameApp) return { action: "external", url: u.href };
+  if (target === "_blank") return { action: "site", url: siteOrigin + u.pathname + u.search + u.hash };
+  return { action: "none" };
+}
+/* 앱에서만: 문서 전체의 링크 클릭을 가로채 classifyLinkClick 결과대로 연다. 웹에서는 아무 일도 하지 않는다(해제 함수만 돌려줌). */
+export function installNativeLinkGuard() {
+  if (!isNativeApp() || typeof document === "undefined") return () => { };
+  const onClick = (e) => {
+    if (e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey) return;
+    const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (!a || a.hasAttribute("download")) return;
+    const c = classifyLinkClick(a.getAttribute("href"), a.getAttribute("target"), window.location.protocol + "//" + window.location.host);
+    if (c.action === "none") return;
+    e.preventDefault();
+    if (c.action === "mail") openMailto(c.url); else openExternal(c.url, { preferApp: a.dataset && a.dataset.preferApp === "1" });
+  };
+  document.addEventListener("click", onClick, true);
+  return () => document.removeEventListener("click", onClick, true);
+}
+
+/* (v0.6.4) 안드로이드 하드웨어 뒤로가기 — 웹뷰 히스토리(앱의 화면 스택 pushScreen·popstate)를 먼저 되감고, 더 되감을 곳이 없을 때만 아래 규칙을 쓴다.
+   반환: "back"(history.back) | "home"(홈 탭으로) | "hint"(한 번 더 누르면 종료 안내) | "exit"(앱 종료). 순수 함수(테스트 대상).
+   armedAt: 직전에 "hint"를 낸 시각(ms, 없으면 0). 2초 안에 다시 누르면 종료. */
+export const BACK_EXIT_WINDOW_MS = 2000;
+export function decideBackAction({ canGoBack, tab, homeTab, now, armedAt }) {
+  if (canGoBack) return "back";
+  if (tab && homeTab && tab !== homeTab) return "home";
+  return armedAt && now - armedAt <= BACK_EXIT_WINDOW_MS ? "exit" : "hint";
+}
+/* 뒤로가기 버튼 리스너. handler({canGoBack})를 부른다. 리스너를 등록하면 Capacitor의 기본 동작(웹뷰 뒤로가기·종료)이 꺼지므로 handler가 모두 책임진다. 웹에서는 아무 일도 안 한다. */
+export function listenBackButton(handler) {
+  if (!isNativeApp()) return () => { };
+  const app = nativePlugin("App");
+  if (!app || typeof app.addListener !== "function") return () => { };
+  let off = null, dead = false;
+  try {
+    const p = app.addListener("backButton", (ev) => { try { handler({ canGoBack: !!(ev && ev.canGoBack) }); } catch { } });
+    Promise.resolve(p).then((h) => { if (dead) { try { h && h.remove && h.remove(); } catch { } } else off = h; }).catch(() => { });
+  } catch { }
+  return () => { dead = true; try { off && off.remove && off.remove(); } catch { } };
+}
+export function exitApp() { const app = nativePlugin("App"); try { if (app && typeof app.exitApp === "function") app.exitApp(); } catch { } }
 
 /* 로그인 페이지로 보내기 — 앱은 시스템 브라우저(구글은 웹뷰 로그인을 막음), 웹은 같은 창 이동. */
 export async function startOAuthNavigation(url) {
