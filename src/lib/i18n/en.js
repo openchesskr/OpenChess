@@ -2005,4 +2005,8 @@ export default {
   "승률 흐름": "Win rate flow",
   "전체 화면": "Full screen",
   "전체 화면 닫기": "Exit full screen",
+  "지우기": "Clear",
+  "뒤집기": "Flip",
+  "클립보드에서 붙여넣기": "Paste from clipboard",
+  "PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환됨.": "A PGN is checked and then loaded as-is so you can keep playing from it on the Analysis tab. A FEN switches to FEN mode, continuing from that position (turn, castling rights, and en passant included).",
 };
