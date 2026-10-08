@@ -18,6 +18,7 @@ import { sansToPgnText } from "../lib/pgn.js";
 import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { useSchematicFullscreen, SchematicFsToggle, SchematicFsClose } from "../components/schematicFullscreen.jsx";
 // (개편) 도감 오프닝 해금 기준 — 예전에는 분석 탭에서 "집중 분석"에 진입하면 해금됐지만, 이제는
 // chess.com 대국 기록에 그 수순이 실제로 한 번이라도 나온 적이 있어야 해금된다(개발자 devUnlockAll은
 // 예외). chess.com 연동이 안 되어 있으면 시작 위치를 제외한 모든 수가 잠긴 채로 보인다.
@@ -238,6 +239,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
   });
 });
 function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
+  const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (v0.3.2 개편 → v0.5.6) 나침반형 방사 트리 — 1수(e4/d4)는 중심 회로 칩에서 정확히 위/아래 ROOT_GAP 거리에 두고, 그 아래는 팔마다
   // 반원 안에서 방사형으로 뻗는다. 각도·반지름·라벨 자리 계산 규칙은 전부 src/lib/dexTreeLayout.js 머리 주석에 모았다.
@@ -1087,7 +1089,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   return (
     <div>
     {searchHeader}
-    <div ref={boxRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={onClickCapture} onDoubleClick={onDoubleClick}
+    <div ref={boxRef} className={fsv.boxClass} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={onClickCapture} onDoubleClick={onDoubleClick}
       // (디자인) 양피지 단색 배경이 밋밋해 보여, 다른 화면의 브라스 와이어프레임 장식과 같은 톤의
       // 옅은 마름모 격자 무늬(대각 크로스해치)를 깔아 모식도 캔버스의 디자인 밀도를 높인다.
       style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
@@ -1098,7 +1100,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+        <SchematicFsToggle fs={fsv.fs} onToggle={fsv.toggle} />
       </div>
+      <SchematicFsClose fs={fsv.fs} onClose={fsv.close} />
       <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden", willChange: "transform" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
