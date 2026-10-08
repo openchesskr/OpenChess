@@ -85,3 +85,14 @@ html:not([lang="ko"]) button, html:not([lang="ko"]) input, html:not([lang="ko"])
   border-radius: 0 !important;
   border: none !important;
 }
+/* 전체 화면 동안 fixed의 기준이 되는 조상(변형·filter 등)의 효과를 잠시 푼다 — components/schematicFullscreen.jsx가 붙였다 뗀다. */
+.schematic-fs-unx {
+  transform: none !important;
+  filter: none !important;
+  perspective: none !important;
+  backdrop-filter: none !important;
+  contain: none !important;
+  will-change: auto !important;
+  transition: none !important;
+  animation: none !important;
+}

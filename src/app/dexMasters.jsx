@@ -7,7 +7,7 @@ import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User } from "lucide-react"
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
-import { useSchematicFullscreen, SchematicFsToggle, SchematicFsClose } from "../components/schematicFullscreen.jsx";
+import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
 import FIDE from "../data/fideRankings.json";
@@ -507,9 +507,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <button onClick={() => zoomBy(-MASTER_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{masterZoomLabel(view.z)}</button>
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
-          <SchematicFsToggle fs={fsv.fs} onToggle={fsv.toggle} />
         </div>
-        <SchematicFsClose fs={fsv.fs} onClose={fsv.close} />
+        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>

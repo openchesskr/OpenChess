@@ -22,7 +22,7 @@ import { AccountChessStats } from "./profile.jsx";
 import { GrowthEntryCard } from "./growth.jsx";
 
 import { t, tx } from "../lib/i18n.js";
-import { useSchematicFullscreen, SchematicFsToggle, SchematicFsClose } from "../components/schematicFullscreen.jsx";
+import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
 // (기능) 퍼즐 탭 오프닝 검색을 도감(CollectionTab) 트리와 똑같이 "이 게임에 존재하는 모든 개별
 // 오프닝 이름"까지 검색 가능하게 하기 위한 전역 오프닝 이름 목록 — SNAP.tree의 모든 키(=모든
 // 포지션)를 훑어 effectiveOpeningNameAt(오버라이드 우선)으로 각 위치의 '진짜' 이름을 구하고, 같은
@@ -838,9 +838,8 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
           <button onClick={() => zoomBy(-PUZZLE_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(PUZZLE_ZOOM_LABEL_BASE - zoom)} title={t("확대/축소 초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{puzzleZoomLabel(zoom)}</button>
           <button onClick={() => zoomBy(PUZZLE_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
-          <SchematicFsToggle fs={fsv.fs} onToggle={fsv.toggle} />
         </div>
-        <SchematicFsClose fs={fsv.fs} onClose={fsv.close} />
+        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.map(([p, c], i) => {
