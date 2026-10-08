@@ -2003,4 +2003,6 @@ export default {
   "OpenChess 대국 하이라이트": "OpenChess game highlights",
   "하이라이트 카드로 공유": "Share as highlight card",
   "승률 흐름": "Win rate flow",
+  "전체 화면": "Full screen",
+  "전체 화면 닫기": "Exit full screen",
 };

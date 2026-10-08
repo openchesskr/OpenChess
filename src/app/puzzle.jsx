@@ -22,6 +22,7 @@ import { AccountChessStats } from "./profile.jsx";
 import { GrowthEntryCard } from "./growth.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { useSchematicFullscreen, SchematicFsToggle, SchematicFsClose } from "../components/schematicFullscreen.jsx";
 // (기능) 퍼즐 탭 오프닝 검색을 도감(CollectionTab) 트리와 똑같이 "이 게임에 존재하는 모든 개별
 // 오프닝 이름"까지 검색 가능하게 하기 위한 전역 오프닝 이름 목록 — SNAP.tree의 모든 키(=모든
 // 포지션)를 훑어 effectiveOpeningNameAt(오버라이드 우선)으로 각 위치의 '진짜' 이름을 구하고, 같은
@@ -543,6 +544,7 @@ const LINE_TAG_LABEL = { best: t("최선의 응수"), eval2: t("차선의 응수
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
 function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, exploredKeys, setupSans, setupLen, onPick, canEdit, revealAll, onAddMove, onDeleteMove, onSuggestSiblings, onAddSibling, celebrateTag, shakeTag, fenRoot }) {
+  const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   // (기능) 라인 레이팅 — 각 라인 끝(리프)의 "라인 N" 옆에 그 라인의 기본 레이팅을 함께 보여준다.
   // 트리 구조가 실제로 바뀔 때만 다시 계산하면 되므로(정적 요소만 쓰는 puzzleLineBaseRating), tree·
   // allLines·setupSans가 바뀔 때만 새로 계산한다.
@@ -830,13 +832,15 @@ function PuzzleSchematic({ tree, rootLabel, meta, allLines, solvedNow, curKeys, 
   };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div ref={boxRef} className="no-swipe" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
+      <div ref={boxRef} className={"no-swipe" + (fsv.fs ? " schematic-fs" : "")} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: 208, borderRadius: 10, border: "1px solid #DCCBA8", background: "#FBF5E8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab" }}>
         <div className="no-pan flex" onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", top: 6, right: 6, zIndex: 30, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
           <button onClick={() => zoomBy(-PUZZLE_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(PUZZLE_ZOOM_LABEL_BASE - zoom)} title={t("확대/축소 초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{puzzleZoomLabel(zoom)}</button>
           <button onClick={() => zoomBy(PUZZLE_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
+          <SchematicFsToggle fs={fsv.fs} onToggle={fsv.toggle} />
         </div>
+        <SchematicFsClose fs={fsv.fs} onClose={fsv.close} />
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {edges.map(([p, c], i) => {

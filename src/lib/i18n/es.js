@@ -2003,4 +2003,6 @@ export default {
   "OpenChess 대국 하이라이트": "Destacados de la partida en OpenChess",
   "하이라이트 카드로 공유": "Compartir como tarjeta de destacados",
   "승률 흐름": "Evolución de la probabilidad de victoria",
+  "전체 화면": "Pantalla completa",
+  "전체 화면 닫기": "Salir de pantalla completa",
 };
