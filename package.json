@@ -6,7 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs && node scripts/check-chat-commands.mjs && node scripts/check-pvp-entry.mjs && node scripts/check-sql-order.mjs && node scripts/check-review-intro-layout.mjs && node scripts/check-coord-finish.mjs && node scripts/check-sql-table-columns.mjs && node scripts/check-move-grading.mjs && node scripts/check-book-transposition.mjs && node scripts/check-site-config.mjs && node scripts/check-block-enforcement.mjs && node scripts/check-app-split.mjs && node scripts/check-i18n.mjs && node scripts/test-i18n-runtime.mjs && node scripts/check-chess-rating.mjs && node scripts/check-board-overlay.mjs && node scripts/check-attack-positions.mjs && node scripts/check-sacrifice-puzzle.mjs && node scripts/check-lang-scale.mjs && node scripts/check-app-links.mjs && node scripts/check-share-ui.mjs && node scripts/check-move-fx.mjs && node scripts/check-masters.mjs && node scripts/check-account-deletion.mjs && node scripts/check-pvp-finish.mjs",
+    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs && node scripts/check-chat-commands.mjs && node scripts/check-pvp-entry.mjs && node scripts/check-sql-order.mjs && node scripts/check-review-intro-layout.mjs && node scripts/check-coord-finish.mjs && node scripts/check-sql-table-columns.mjs && node scripts/check-move-grading.mjs && node scripts/check-book-transposition.mjs && node scripts/check-site-config.mjs && node scripts/check-block-enforcement.mjs && node scripts/check-app-split.mjs && node scripts/check-i18n.mjs && node scripts/test-i18n-runtime.mjs && node scripts/check-chess-rating.mjs && node scripts/check-board-overlay.mjs && node scripts/check-attack-positions.mjs && node scripts/check-sacrifice-puzzle.mjs && node scripts/check-lang-scale.mjs && node scripts/check-app-links.mjs && node scripts/check-share-ui.mjs && node scripts/check-move-fx.mjs && node scripts/check-masters.mjs && node scripts/check-account-deletion.mjs && node scripts/check-pvp-finish.mjs && node scripts/check-growth.mjs",
     "build": "vite build",
     "build:app": "vite build && node scripts/prune-app-engines.mjs",
     "preview": "vite preview",
@@ -52,7 +52,8 @@
     "check:masters": "node scripts/check-masters.mjs",
     "check:account-deletion": "node scripts/check-account-deletion.mjs",
     "check:pvp-finish": "node scripts/check-pvp-finish.mjs",
-    "check:release": "node scripts/check-release-ready.mjs"
+    "check:release": "node scripts/check-release-ready.mjs",
+    "check:growth": "node scripts/check-growth.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
