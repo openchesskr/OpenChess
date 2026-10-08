@@ -20,7 +20,7 @@ const CREAM_FAINT = "rgba(235,221,196,.34)";
 // 정리한다(Map은 삽입 순서를 유지하므로 첫 키가 가장 오래된 항목).
 const imageCache = new Map();
 const IMAGE_CACHE_MAX = 200;
-function loadImageSafe(src, crossOrigin) {
+export function loadImageSafe(src, crossOrigin) {
   if (!src) return Promise.resolve(null);
   const key = (crossOrigin || "") + "|" + src;
   if (imageCache.has(key)) return imageCache.get(key);
