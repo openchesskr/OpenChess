@@ -2005,4 +2005,8 @@ export default {
   "승률 흐름": "Evolución de la probabilidad de victoria",
   "전체 화면": "Pantalla completa",
   "전체 화면 닫기": "Salir de pantalla completa",
+  "지우기": "Vaciar",
+  "뒤집기": "Girar",
+  "클립보드에서 붙여넣기": "Pegar del portapapeles",
+  "PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환됨.": "Un PGN se verifica y se carga tal cual para seguir jugando en la pestaña Análisis. Un FEN cambia al modo FEN y continúa desde esa posición (turno, derechos de enroque y captura al paso incluidos).",
 };
