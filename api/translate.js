@@ -4,6 +4,7 @@
 //  · 대상은 kind로 못 박는다 — "note"(수 설명)·"bio"(프로필 소개글)만 받는다. 채팅 메시지는 번역하지 않기로 한 범위라 kind에 "chat"을 두지 않았고,
 //    클라이언트가 어떻게 호출하든 서버가 채팅 번역을 거부한다(scripts/check-ugc-translate.mjs가 이 제한과 채팅 화면의 번역 호출 부재를 함께 검사).
 //  · 로그인한 사용자만(Supabase Auth에 위임해 확인) — Gemini 무료 쿼터를 아무나 쓰지 못하게 한다. 사용자별로 분당 호출 수도 제한한다(인스턴스 안에서의 최선 노력).
+//  · 글마다 Gemini를 따로 부르고(한 글 안의 지시문이 다른 글의 번역을 바꾸지 못하게), 이미 저장된 번역은 덮어쓰지 않는다(ignore-duplicates).
 //  · 같은 글을 여러 사람이 보므로 (원문 해시, 대상 언어) 번역을 text_translations 표에 저장해 두고 다시 쓴다(service_role 전용 표 — 브라우저는 직접 못 읽는다).
 //    작성자 정보 없이 해시와 번역문만 저장하고, 30일이 지난 줄은 읽지 않고 가끔 지운다.
 //  · 수 설명 안의 [[12.e5 Nf3 …]] 수순 표지와 기보는 번역하면 링크 인식이 깨지므로 클라이언트가 ⟦n⟧ 자리표시자로 바꿔 보내고, 서버는 응답에서 자리표시자가
@@ -24,11 +25,14 @@ const isModelUnavailableError = (e) => /not found|not supported|is not available
 const isTransientError = (e) => /high demand|overloaded|rate limit|too many requests|quota exceeded|resource_exhausted|try again later|503|429/.test(String((e && e.message) || "").toLowerCase());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (s) => createHash("sha256").update(s).digest("hex").slice(0, 40);
+// 번역에 원문에 없던 URL·@멘션이 끼면(주입 시도) 버린다.
+const extras = (s) => (String(s).match(/https?:\/\/\S+|www\.\S+|@\w+/gi) || []).map((x) => x.toLowerCase()).sort().join("|");
 const tokens = (s) => (String(s).match(/⟦\d+⟧/g) || []).sort().join("");
 
-function rateLimited(uid) {
+function rateLimited(uid, n = 1) {
   const now = Date.now(), arr = (hits.get(uid) || []).filter((t) => now - t < 60000);
-  arr.push(now); hits.set(uid, arr);
+  for (let i = 0; i < n; i++) arr.push(now);
+  hits.set(uid, arr);
   if (hits.size > 2000) for (const [k, v] of hits) if (!v.some((t) => now - t < 60000)) hits.delete(k);
   return arr.length > RATE_PER_MIN;
 }
@@ -106,7 +110,7 @@ export default async function handler(req, res) {
     if (!userRes.ok) { res.status(401).json({ error: "로그인이 만료됐어요." }); return; }
     const user = await userRes.json();
     if (!user || !user.id) { res.status(401).json({ error: "로그인이 만료됐어요." }); return; }
-    if (rateLimited(user.id)) { res.status(429).json({ error: "잠시 후 다시 시도해 주세요." }); return; }
+    if (rateLimited(user.id, texts.length)) { res.status(429).json({ error: "잠시 후 다시 시도해 주세요." }); return; }
 
     const sb = { apikey: SERVICE_KEY, Authorization: "Bearer " + SERVICE_KEY, "Content-Type": "application/json" };
     const hashes = texts.map((x) => sha(x.trim()));
@@ -123,23 +127,23 @@ export default async function handler(req, res) {
     // 2) 없는 것만 번역
     const missIdx = out.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
     if (missIdx.length) {
-      const list = missIdx.map((i) => texts[i].trim());
-      const parsed = await gemini(apiKey, buildPrompt(target, list));
-      const got = new Map(((parsed && parsed.items) || []).map((x) => [x.index, x]));
+      // 글마다 Gemini를 따로 부른다 — 한 프롬프트에 여러 글을 넣으면 한 글 안의 지시문이 같은 요청의 다른 글 번역(= 공유 저장소에 남는 값)을 바꿀 수 있다.
+      // 이렇게 하면 어떤 글의 번역도 그 글 자신의 내용에만 영향을 받는다.
+      const results = await Promise.all(missIdx.map((i) => gemini(apiKey, buildPrompt(target, [texts[i].trim()])).catch(() => null)));
       const fresh = [];
       missIdx.forEach((i, k) => {
-        const src = list[k], g = got.get(k);
+        const src = texts[i].trim(), g = results[k] && Array.isArray(results[k].items) ? results[k].items.find((x) => x && x.index === 0) : null;
         let translated = g && typeof g.translation === "string" ? g.translation.trim() : "";
         let same = !!(g && g.same_language);
         // 자리표시자가 하나라도 빠졌거나 번역이 비었거나 터무니없이 길면 버리고 원문을 쓴다(저장하지 않는다 — 다음에 다시 시도).
-        const ok = translated && tokens(translated) === tokens(src) && translated.length <= src.length * 3 + 40;
+        const ok = translated && tokens(translated) === tokens(src) && extras(translated) === extras(src) && translated.length <= src.length * 3 + 40;
         if (!ok) { out[i] = { translated: src, same: true, failed: true }; return; }
         if (same || translated === src) { translated = src; same = true; }
         out[i] = { translated, same };
         fresh.push({ hash: hashes[i], target, translated, same });
       });
       if (fresh.length) {
-        await fetch(SUPABASE_URL + "/rest/v1/text_translations?on_conflict=hash,target", { method: "POST", headers: { ...sb, Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(fresh.map((f) => ({ ...f, created_at: new Date().toISOString() }))) }).catch(() => { });
+        await fetch(SUPABASE_URL + "/rest/v1/text_translations?on_conflict=hash,target", { method: "POST", headers: { ...sb, Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify(fresh.map((f) => ({ ...f, created_at: new Date().toISOString() }))) }).catch(() => { });
       }
       if (Math.random() < 0.02) fetch(SUPABASE_URL + "/rest/v1/text_translations?created_at=lt." + encodeURIComponent(since), { method: "DELETE", headers: sb }).catch(() => { });
     }
