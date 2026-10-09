@@ -2057,4 +2057,6 @@ export default {
   "좁은 화면에서 프로필 카드 위쪽 아이디가 버튼과 겹치던 문제 수정. 통계 토글은 왼쪽, 프로필 편집은 오른쪽 정렬.": "Fixed the username at the top of the profile card overlapping the buttons on narrow screens. The stats toggle is aligned left and Edit profile right.",
   "성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 안드로이드 뒤로가기 · 계정 삭제 정리.": "Growth analysis · Highlights card · Full-screen schematics · Android back button · Account deletion cleanup.",
   "성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 계정 삭제 안내": "Growth analysis · Highlights card · Full-screen schematics · Account deletion guide",
+  "±{0}%p": "±{0}pp",
+  "{0}배": "{0}×",
 };
