@@ -281,14 +281,17 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
   }, [puzzles, solved]);
   return (
     <div style={card}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: "8px 10px" }}>
+        {/* (v0.6.4 UI 수정) 좁은 화면에서 긴 @아이디가 "프로필 편집"·통계 토글과 한 줄에 겹치던 문제 — 라벨은 줄어들 수 있게(minWidth 0 + 말줄임) 하고,
+            버튼 묶음은 자리가 모자라면 아래 줄로 내려가 오른쪽 정렬로 둔다. 아래 /user 검색 모달의 같은 헤더도 같은 규칙. */}
         {/* (사용자 요청) 이 자리의 라벨을 "내 프로필" 대신 @아이디로 표시 — 아래 이름·소개 사이에 있던
             별도 @아이디 표시는 지우고 이 라벨 하나로 합친다. (사용자 요청, v0.3.9) 통계 분리 토글은
             카드 최상단의 큰 세그먼트 바 대신 이 헤더 줄 우상단 여백으로 옮겨, 편집 버튼과 나란히 둔다. */}
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
-        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("프로필 편집")}</button>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(myPub.displayId || user)}{roleIcon(user)}</span>
+        {/* (v0.6.4) 통계 토글은 왼쪽, 프로필 편집은 오른쪽 — 한 줄이든 두 줄이든 이 순서·정렬을 유지한다. */}
+        <div className="flex items-center justify-between gap-2" style={{ flex: "1 1 270px", minWidth: 0 }}>
           {statsViewToggle(statsView, setStatsView)}
+          <button onClick={() => setEditOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{t("프로필 편집")}</button>
         </div>
       </div>
       {statsView === "cc" && myPub.chesscom ? (
@@ -3085,9 +3088,9 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
             <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
               {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
                   이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
-              <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
-                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: "8px 10px" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
+                <div className="flex items-center justify-between gap-2" style={{ flex: "1 1 270px", minWidth: 0 }}>
                   {statsViewToggle(statsView, setStatsView)}
                   {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
                 </div>

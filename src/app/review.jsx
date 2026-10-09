@@ -15,6 +15,9 @@ import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
 import { playMoveSfx } from "../lib/prefs.js";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
+import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
+import { pickHighlights } from "../lib/highlights.js";
+import { recordReviewMistakes } from "../lib/growthStore.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
@@ -2274,6 +2277,17 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
     // (카드와 무관한 다른 상태 변화로 리렌더될 때마다) 아바타 URL이 안 바뀌었는데도 카드를 새로
     // 그리게 만든다 — 실제로 값이 바뀔 때만 다시 계산되도록 아바타 URL(원시값)만 deps로 쓴다.
   }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
+  // (v0.6.4) 분석이 끝난 리뷰에서 내 실수를 성장 센터(약점 지도·복습 카드)에 기록한다. 같은 대국을 다시 열어도 같은 id라 중복·진도 초기화 없음.
+  useEffect(() => {
+    if (!resultDone || !result || !game.color || fenRoot) return;
+    try { recordReviewMistakes(myUid, result, { color: game.color, gameKey: reviewPosKey, fenRoot }); } catch { /* 기록 실패는 리뷰에 영향 없음 */ }
+  }, [resultDone, result, game.color, myUid, reviewPosKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // (v0.6.4) 하이라이트 카드 데이터 — 가장 극적인 수 최대 3개. 깨끗한 대국이면 비어 있어 시트에서 구획을 숨긴다.
+  const highlightData = useMemo(() => {
+    if (!resultDone || !result || fenRoot || !shareCardData) return null;
+    const moments = pickHighlights(result, 3);
+    return moments.length ? { whiteName: shareCardData.whiteName, blackName: shareCardData.blackName, metaText: shareCardData.metaText, resultText: shareCardData.resultText, myColor: shareCardData.myColor, evalWin: result.evalWin || null, moments } : null;
+  }, [resultDone, result, shareCardData, fenRoot]);
   const header = (
     <div className="flex items-center justify-between" style={{ padding: "12px 16px", position: narrow ? "sticky" : "static", top: 0, background: RV.head, zIndex: 5 }}>
       <button onClick={handleBack} aria-label={t("뒤로")} className="press" style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: "transparent", color: RV.text, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={20} /></button>
@@ -2359,7 +2373,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
               <EngineLines lines={engineLines} pending={linesPending} sans={effSans} startColor={fenRoot ? fenRoot.turn : undefined} width="100%" onPlayFirst={playFree} large font={SITE_FONT} />
             </div>
           )}
-        {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} />}
+        {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} highlightData={highlightData} />}
       </div>
     );
   }
@@ -2436,7 +2450,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
           )}
         </div>
       </div>
-      {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} />}
+      {shareOpen && <ReviewShareSheet reviewId={reviewId} label={shareLabel} myUid={myUid} onClose={() => setShareOpen(false)} cardData={shareCardData} highlightData={highlightData} />}
     </div>
   );
 }
@@ -2465,7 +2479,7 @@ function reviewShareUrl(reviewId) {
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 공유 시트. PuzzleShareSheet와 같은 두 축(외부 앱 공유 +
 // 인앱 친구 대화창 공유)을 그대로 따르되, 퍼즐과 달리 리뷰는 전역 번호·좋아요 같은 부가 데이터가
 // 없어 훨씬 단순하다 — reviewId(딥링크 식별자)만 있으면 두 공유 경로 모두 동작한다.
-function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
+function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData, highlightData }) {
   // (신규 기능, 사용자 요청) 이미지 카드 미리보기 — 시트가 열리는 즉시 한 번만 만들어 <canvas>에
   // 그대로 그려 둔다(버튼을 눌러야 비로소 만들면 "공유하기"를 눌렀을 때 한 박자 늦게 반응하는
   // 것처럼 보임). 미리보기 canvas 자체가 1080×1080 전체 해상도라, 공유/다운로드는 그걸 그대로 toBlob한다.
@@ -2536,7 +2550,46 @@ function ReviewShareSheet({ reviewId, label, myUid, onClose, cardData }) {
           <div role="status" aria-live="polite" style={{ minHeight: 16, marginTop: 6, fontSize: 11, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>{cardMsg}</div>
         </ShareSection>
       )}
+      {highlightData && <HighlightCardSection data={highlightData} label={label} />}
       <FriendSendList myUid={myUid} send={(toUid) => reviewShareSend(myUid, toUid, reviewId)} blockedReason={reviewId ? null : t("리뷰 정보를 불러오지 못해 전달 불가")} />
     </ShareSheetFrame>
+  );
+}
+
+// (v0.6.4) 대국 하이라이트 카드 — 가장 극적인 수 3개를 미니 보드 이미지 한 장으로(lib/highlightCard.js). 리뷰 요약 카드와 같은 방식으로 미리보기·공유·저장한다.
+function HighlightCardSection({ data, label }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [msg, setMsg] = useState("");
+  useEffect(() => {
+    if (!ref.current) return;
+    let cancelled = false; setReady(false);
+    loadHighlightCardAssets(data).then((assets) => {
+      if (cancelled || !ref.current) return;
+      const canvas = ref.current, ctx = canvas.getContext("2d"); canvas.width = 1080; canvas.height = 1080;
+      if (ctx) drawHighlightCard(ctx, 1080, 1080, data, assets);
+      setReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [data]);
+  const canFiles = canWebShareFiles();
+  const blob = () => new Promise((resolve) => ref.current.toBlob((b) => resolve(b), "image/png"));
+  const share = async () => {
+    if (busy || !ready || !ref.current) return;
+    setBusy(true); setMsg("");
+    try {
+      const b = await blob(); if (!b) { setMsg(t("이미지 생성 실패")); return; }
+      const file = new File([b], "openchess-highlights.png", { type: "image/png" });
+      if (canWebShareFiles(file)) { const r = await webShare({ files: [file], title: t("OpenChess 하이라이트"), text: label || t("OpenChess 대국 하이라이트") }); if (r === "error") setMsg(t("이미지 생성 실패")); return; }
+      downloadBlob(b, "openchess-highlights.png"); setMsg(t("이미지 저장 완료"));
+    } catch { setMsg(t("이미지 생성 실패")); } finally { setBusy(false); }
+  };
+  return (
+    <ShareSection label={t("하이라이트 카드로 공유")}>
+      <canvas ref={ref} style={{ width: "100%", maxWidth: 260, aspectRatio: "1", borderRadius: 10, border: "1px solid #E4D5B6", display: "block", margin: "0 auto 10px", opacity: ready ? 1 : 0.5, transition: "opacity .2s" }} />
+      <button onClick={share} disabled={busy || !ready} className="press" style={{ ...shareBtnStyles.primary, width: "100%", opacity: (busy || !ready) ? 0.6 : 1, cursor: (busy || !ready) ? "default" : "pointer" }}>
+        {canFiles ? <Share2 size={14} /> : <ImageIcon size={14} />}{busy ? t("만드는 중…") : !ready ? t("카드 준비 중…") : canFiles ? t("이미지로 공유") : t("이미지 저장")}
+      </button>
+      <div role="status" aria-live="polite" style={{ minHeight: 16, marginTop: 6, fontSize: 11, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>{msg}</div>
+    </ShareSection>
   );
 }

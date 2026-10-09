@@ -406,6 +406,15 @@ export function gameEndState(sans, fenRoot) {
   if (seen.get(positionKey(board, toMove)) >= 3) return { end: "threefold" };
   return { end: null };
 }
+// (v0.6.4) gameEndState 결과를 pvp_games.status 값으로 바꾼다 — 서버(api/pvp-finish.js)가 chess.js로 다시 계산하는 값과 같은 규칙이다.
+// 체크메이트면 걸린 쪽의 반대편 승, 스테일메이트·3회 동형 반복은 무승부, 진행 중이면 null. 이 변환을 한 곳에 둬 호출부마다 다르게 쓰지 않는다.
+export function pvpStatusFromEnd(es) {
+  if (!es || !es.end) return null;
+  if (es.end === "checkmate") return es.color === "w" ? "black_won" : "white_won";
+  return "draw";
+}
+// 수순이 이미 끝난 위치인지 안전하게 확인한다(불법 수가 섞여 있으면 재생이 던지므로 null).
+export function safeGameEndState(sans) { try { return gameEndState(sans || [], null); } catch { return { end: null }; } }
 // (v0.2.3 기능) 무승부로 기록된 대국(chess.com 동기화·마스터 대국 등)의 기보를 그대로 재생해 실제로
 // 스테일메이트·3회 동형 반복으로 끝났는지 확인하고, 그 이름을 돌려준다. 둘 다 아니면(기권 없이 서로
 // 합의했거나, 불충분한 기물·50수 규칙 등 이 앱이 별도로 판정하지 않는 경우) "합의 무승부"로 간주한다.

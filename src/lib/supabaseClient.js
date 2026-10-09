@@ -66,8 +66,16 @@ export async function sbDelete(table, filter) { const r = await fetch(SB_URL + "
 // 이 검증 경로를 대신 만들었다 — supabase-setup.sql의 pvp_finish/pvp_finish_verified 주석 참고).
 export async function pvpFinishVerified(gameId, status) {
   if (!SB_ON || !SB_TOKEN) return false;
-  try {
-    const r = await fetch(apiUrl("/api/pvp-finish"), { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ game_id: gameId, status }) });
-    return r.ok;
-  } catch { return false; }
+  // (v0.6.4) 네트워크 오류·서버 5xx는 몇 번 다시 시도한다 — 한 번 실패하면 아무도 결과를 확정하지 못한 채 대국이 active로 남는다.
+  // 4xx(검증 거절·권한 없음)는 다시 해도 같은 결과라 바로 포기한다.
+  const waits = [0, 800, 2500, 6000];
+  for (const w of waits) {
+    if (w) await new Promise((res) => setTimeout(res, w));
+    try {
+      const r = await fetch(apiUrl("/api/pvp-finish"), { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ game_id: gameId, status }) });
+      if (r.ok) return true;
+      if (r.status < 500) return false;
+    } catch { /* 네트워크 오류 — 다시 시도 */ }
+  }
+  return false;
 }

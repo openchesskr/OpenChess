@@ -87,11 +87,37 @@ const TERMS = [
   { h: t("8. 문의 및 준거법"), list: [t("문의: {0}", CONTACT_EMAIL), t("이 약관은 대한민국 법령에 따라 해석")] },
 ];
 
+// (v0.6.4) 계정·데이터 삭제 안내(/account-deletion) — Google Play 데이터 삭제 요청 주소, App Store 계정 삭제 안내로 쓴다. 로그인 없이 열려야 한다.
+// 삭제 대상 목록은 supabase-setup.sql의 delete_own_account가 실제로 지우는 것과 같아야 한다(scripts/check-account-deletion.mjs가 함수 쪽을 검사).
+const DELETION = [
+  { h: t("1. 앱·웹에서 직접 삭제"), list: [
+    t("OpenChess에 로그인한 뒤 설정 탭에서 계정 센터 열기"),
+    t("계정 센터 아래쪽의 \"계정 탈퇴\"를 누르고 아이디를 입력해 확인"),
+    t("확인하면 즉시 삭제되며 되돌릴 수 없음"),
+  ] },
+  { h: t("2. 삭제되는 데이터"), list: [
+    t("계정 정보(이메일, 로그인 수단 연결, 아이디, 닉네임, 회원 번호)와 프로필 사진·소개"),
+    t("학습 진도, 퍼즐 풀이 기록과 직접 만든 퍼즐, 대국·미니게임 기록과 레이팅"),
+    t("친구 관계, 채팅 메시지, 알림, 신고·차단 내역"),
+    t("진행 중이던 대국은 기권 처리되어 상대에게 승리로 기록된 뒤 삭제"),
+  ] },
+  { h: t("3. 삭제 후에도 남는 정보"), list: [
+    t("상대의 통계에 이미 반영된 승패·레이팅 변동 수치는 남지만 탈퇴한 이용자를 알아볼 수 없음"),
+    t("법령에서 보관을 요구하는 정보는 해당 기간 동안 보관"),
+  ] },
+  { h: t("4. 로그인할 수 없는 경우"), list: [
+    t("가입한 이메일 주소에서 {0}로 \"계정 삭제 요청\"과 아이디(또는 회원 번호)를 보내기", CONTACT_EMAIL),
+    t("본인 확인 후 삭제하고 처리 결과를 회신"),
+  ] },
+  { h: t("5. 문의처"), list: [t("문의: {0}", CONTACT_EMAIL)] },
+];
+
 export default function LegalPage({ kind }) {
-  const isPrivacy = kind === "privacy";
-  const title = isPrivacy ? t("개인정보처리방침") : t("이용약관");
-  const sections = isPrivacy ? PRIVACY : TERMS;
+  const isPrivacy = kind === "privacy", isDelete = kind === "account-deletion";
+  const title = isDelete ? t("계정 및 데이터 삭제 안내") : isPrivacy ? t("개인정보처리방침") : t("이용약관");
+  const sections = isDelete ? DELETION : isPrivacy ? PRIVACY : TERMS;
   const other = isPrivacy ? { href: "/terms", label: t("이용약관") } : { href: "/privacy", label: t("개인정보처리방침") };
+  const deletionLink = { href: "/account-deletion", label: t("계정 및 데이터 삭제 안내") };
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif" }}>
       <header style={{ borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
@@ -115,6 +141,7 @@ export default function LegalPage({ kind }) {
         ))}
         <div style={{ display: "flex", gap: 18, marginTop: 40, flexWrap: "wrap" }}>
           <a href={other.href} style={{ color: T.brass, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>{tx("{0} 보기", other.label)}</a>
+          {!isDelete && <a href={deletionLink.href} style={{ color: T.brass, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>{tx("{0} 보기", deletionLink.label)}</a>}
           <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: T.inkSoft, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>{tx("{0} OpenChess로 돌아가기", <ArrowLeft size={13} />)}</a>
         </div>
       </main>

@@ -3529,9 +3529,21 @@ returns void language plpgsql security definer set search_path = public as $$
 declare v_me uuid := auth.uid();
 begin
   if v_me is null then raise exception 'auth required'; end if;
+  -- (v0.6.4, BUG-061) 진행 중인 대국은 지우기 전에 기권 처리한다 — 그대로 지우면 상대 화면에서 대국이 아무 결과 없이 사라지고 레이팅·전적에도 반영되지 않는다.
+  -- 상태를 바꾸는 update가 결과 집계 트리거(_minigame_on_game_end)를 거치므로 상대는 정상적인 승리로 기록된다. (대국 행 자체는 아래 삭제의 cascade로 지워진다.)
+  update public.pvp_games
+     set status = case when white_uid = v_me then 'black_won' else 'white_won' end, updated_at = now()
+   where status = 'active' and (white_uid = v_me or black_uid = v_me);
+  -- (v0.6.4, BUG-061) 내가 만든 퍼즐은 같이 지운다. puzzles.creator_uid는 on delete set null이라 그냥 두면 퍼즐 행이 작성자 아이디(creator_username)를 단 채 남고,
+  -- creator_uid가 비어 "생성자 선점"(위 puzzle_claim_creator) 대상이 돼 아무나 그 퍼즐의 작성자가 될 수 있었다. 방침("퍼즐 등 모든 데이터 영구 삭제")과도 맞지 않았다.
+  delete from public.puzzles where creator_uid = v_me;
   delete from auth.users where id = v_me;
 end; $$;
 grant execute on function public.delete_own_account() to authenticated;
+-- (v0.6.4, BUG-061) 위 수정 이전에 탈퇴한 계정이 남긴 작성자 아이디 정리 — 작성자(creator_uid)가 비었는데 아이디만 남은 퍼즐 중, 그 아이디를 쓰는 현재 계정이 없는 것은 탈퇴 계정의 흔적이다.
+update public.puzzles set creator_username = null
+ where creator_uid is null and creator_username is not null and creator_username <> ''
+   and not exists (select 1 from public.profiles pr where pr.username = puzzles.creator_username);
 
 -- ============================================================================
 -- N+5) MID — (v0.5.7 BUG-029) 16-1) profiles_search_by_mid_prefix가 mid 컬럼을 쓰므로 그 앞(16-0)으로 옮겼다.
