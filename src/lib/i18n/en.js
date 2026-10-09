@@ -2015,7 +2015,6 @@ export default {
   "나와 닮은 마스터": "Masters you play like",
   "{0}와(과) 기준별 비교": "Criterion-by-criterion comparison with {0}",
   "비슷한 기준 {0}/{1}": "Similar criteria {0}/{1}",
-  "13가지 기보 특징을 하나씩 비교함. 값의 차이를 마스터 900명의 흩어진 정도로 나눠 단계를 정하며(거의 같음·비슷함·다름·많이 다름), 실력 비교가 아님": "Compares 13 move-record traits one by one. The gap in each value is divided by how widely 900 masters spread, which sets the level (almost the same, similar, different, very different). This is not a strength comparison",
   "성장 분석": "Growth analysis",
   "분석한 실수": "Mistakes analyzed",
   "백 1.e4 선택": "Plays 1.e4 as White",
@@ -2040,4 +2039,6 @@ export default {
   "다름": "Different",
   "많이 다름": "Very different",
   "비교 불가": "Not comparable",
+  "차이": "Gap",
+  "판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님": "How levels are set: for share criteria (opening choice, castling, queen trades, draws) the gap in percentage points decides — up to {0}%p almost the same, up to {1}%p similar, up to {2}%p different, more than that very different. Frequency and length criteria use the ratio of the two values: up to {3}× for checks and piece captures and up to {4}× for game length counts as almost the same. This is not a strength comparison",
 };

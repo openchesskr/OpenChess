@@ -11,7 +11,7 @@ import { Board } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { loadGrowth, saveGrowth } from "../lib/growthStore.js";
 import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weaknessReport, dueCards, gradeCard, srsStats, isCardAnswer } from "../lib/weakness.js";
-import { styleFeatures, matchMasters, sharedTraits, traitLabel, STYLE_KEYS, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, compareCriteria, levelLabel } from "../lib/masterStyle.js";
+import { styleFeatures, matchMasters, sharedTraits, traitLabel, STYLE_KEYS, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel, LEVEL_RULES } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { t } from "../lib/i18n.js";
 
@@ -191,7 +191,7 @@ function MasterStyle({ games }) {
   const m = useMemo(() => (data ? matchMasters(feat, data, 3) : null), [feat, data]);
   const picked = m && m.ok ? m.list[Math.min(sel, m.list.length - 1)] : null;
   const row = picked ? data.masters.find((r) => r[0] === picked.name) : null;
-  const rows = useMemo(() => (row ? compareCriteria(m.u, row[3], data) : []), [row, m, data]);
+  const rows = useMemo(() => (row ? compareCriteria(m.u, row[3]) : []), [row, m]);
   const byKey = useMemo(() => Object.fromEntries(rows.map((r) => [r.key, r])), [rows]);
   if (!data) return <div style={card}><h3 style={h3}>{t("마스터 스타일")}</h3><p style={{ ...sub, margin: "6px 0 0" }}>{t("불러오는 중…")}</p></div>;
   if (!m.ok) return (
@@ -229,10 +229,11 @@ function MasterStyle({ games }) {
             <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("{0}와(과) 기준별 비교", masterName(picked.name, "en"))}</span>
             <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 54px 54px 76px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
             <span />
             <span style={{ textAlign: "right" }}>{t("나")}</span>
             <span style={{ textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
+            <span style={{ textAlign: "right" }}>{t("차이")}</span>
             <span />
           </div>
           {CRITERIA_GROUPS.map((g) => (
@@ -241,17 +242,18 @@ function MasterStyle({ games }) {
               {g.keys.map((k) => {
                 const r = byKey[k]; if (!r) return null;
                 return (
-                  <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 54px 54px 76px", alignItems: "center", gap: 6, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)", fontSize: 11.5 }}>
+                  <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", alignItems: "center", gap: 6, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)", fontSize: 11.5 }}>
                     <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3 }}>{criterionLabel(k)}</span>
                     <span style={{ textAlign: "right", color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
                     <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
+                    <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, whiteSpace: "nowrap" }}>{formatDiff(k, r.diff)}</span>
                     <span style={{ textAlign: "center", fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 0", whiteSpace: "nowrap" }}>{levelLabel(r.level)}</span>
                   </div>
                 );
               })}
             </div>
           ))}
-          <p style={{ ...sub, fontSize: 10.5, margin: "8px 0 0" }}>{t("13가지 기보 특징을 하나씩 비교함. 값의 차이를 마스터 900명의 흩어진 정도로 나눠 단계를 정하며(거의 같음·비슷함·다름·많이 다름), 실력 비교가 아님")}</p>
+          <p style={{ ...sub, fontSize: 10.5, margin: "8px 0 0" }}>{t("판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님", Math.round(LEVEL_RULES.share[0] * 100), Math.round(LEVEL_RULES.share[1] * 100), Math.round(LEVEL_RULES.share[2] * 100), LEVEL_RULES.intensity[0], LEVEL_RULES.length[0])}</p>
         </div>
       )}
     </div>

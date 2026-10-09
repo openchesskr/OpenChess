@@ -114,15 +114,30 @@ export function formatCriterion(key, v) {
   if (key === "length") return t("약 {0}수", Math.round(v * 60));
   return Math.round(v * 100) + "%";
 }
+/* (v0.6.4) 판정은 기준마다 "사람이 보기에 큰 차이인가"로 직접 계산한다. 예전엔 차이를 마스터 900명의 표준편차로 나눴는데, 체크·기물 잡기 비율처럼
+   마스터끼리도 거의 같은 값이면 표준편차가 아주 작아 9% 대 7% 같은 2%p 차이가 "많이 다름"이 되는 문제가 있었다(순위 계산에는 그대로 쓰되 판정에는 쓰지 않는다).
+   · share(선택·응수·캐슬링·교환·무승부 비율): 두 값의 %p 차이 — 7%p 이하 거의 같음, 15%p 이하 비슷함, 30%p 이하 다름, 그 이상 많이 다름
+   · intensity(체크·기물 잡기 빈도): 큰 값 ÷ 작은 값 — 1.3배 이하 거의 같음, 1.7배 이하 비슷함, 2.5배 이하 다름, 그 이상 많이 다름(둘 다 2% 미만이면 거의 같음)
+   · length(평균 대국 길이): 큰 값 ÷ 작은 값 — 1.15배 이하 거의 같음, 1.35배 이하 비슷함, 1.8배 이하 다름, 그 이상 많이 다름 */
+export const CRITERION_KIND = { w_e4: "share", w_d4: "share", w_flank: "share", b_e5: "share", b_c5: "share", b_d5: "share", b_nf6: "share", castleQ: "share", queenTrade: "share", drawRate: "share", capRate: "intensity", checkRate: "intensity", length: "length" };
+export const LEVEL_RULES = { share: [0.07, 0.15, 0.30], intensity: [1.3, 1.7, 2.5], length: [1.15, 1.35, 1.8] };
 export const LEVELS = ["same", "close", "far", "veryFar"];
 export const levelLabel = (lv) => ({ same: t("거의 같음"), close: t("비슷함"), far: t("다름"), veryFar: t("많이 다름"), na: t("비교 불가") }[lv] || lv);
-/* 표준점수 차이로 단계를 나눈다: <0.35 거의 같음, <0.8 비슷함, <1.5 다름, 그 이상 많이 다름. 한쪽이 없으면 "na". */
-export function levelOf(dz) { return dz == null ? "na" : dz < 0.35 ? "same" : dz < 0.8 ? "close" : dz < 1.5 ? "far" : "veryFar"; }
-/* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, dz, level}] (STYLE_KEYS 순서). */
-export function compareCriteria(u, masterVec, data) {
-  return STYLE_KEYS.map((key, i) => {
-    const mine = u[i], theirs = masterVec[i], sd = data.std[i] || 1;
-    const dz = mine == null || theirs == null ? null : Math.abs(mine - theirs) / sd;
-    return { key, mine, theirs, dz, level: levelOf(dz) };
-  });
+/* 기준 하나의 차이(share=절대 차이 0~1, 그 밖=배수)와 단계. 한쪽이 없으면 null/"na". */
+export function criterionDiff(key, a, b) {
+  if (a == null || b == null) return { diff: null, level: "na" };
+  const kind = CRITERION_KIND[key] || "share", [t1, t2, t3] = LEVEL_RULES[kind];
+  let diff;
+  if (kind === "share") diff = Math.abs(a - b);
+  else { const hi = Math.max(a, b), lo = Math.min(a, b); if (kind === "intensity" && hi < 0.02) return { diff: 1, level: "same" }; diff = hi / Math.max(lo, kind === "intensity" ? 0.005 : 0.01); }
+  return { diff, level: diff <= t1 ? "same" : diff <= t2 ? "close" : diff <= t3 ? "far" : "veryFar" };
+}
+/* 차이 표기: share는 "±N%p", 배수는 "N.N배". */
+export function formatDiff(key, diff) {
+  if (diff == null) return "—";
+  return (CRITERION_KIND[key] || "share") === "share" ? "±" + Math.round(diff * 100) + "%p" : (Math.round(diff * 10) / 10).toFixed(1) + "배";
+}
+/* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, diff, level}] (STYLE_KEYS 순서). */
+export function compareCriteria(u, masterVec) {
+  return STYLE_KEYS.map((key, i) => ({ key, mine: u[i], theirs: masterVec[i], ...criterionDiff(key, u[i], masterVec[i]) }));
 }
