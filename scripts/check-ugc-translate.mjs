@@ -50,7 +50,7 @@ process.env.VITE_SUPABASE_URL = "https://sb.test"; process.env.VITE_SUPABASE_ANO
 const { default: handler } = await import("../api/translate.js");
 const calls = []; let cacheRows = [], geminiReply = null, upserts = [];
 globalThis.fetch = async (url, init = {}) => {
-  url = String(url); calls.push(url.replace(/\?.*/, "").replace(/https?:\/\/[^/]+/, ""));
+  url = String(url); calls.push(url.replace(/\?.*/, ""));
   const j = (b, ok = true) => ({ ok, status: ok ? 200 : 400, json: async () => b });
   if (url.includes("/auth/v1/user")) return j({ id: "u1" });
   if (url.includes("/rest/v1/text_translations") && (init.method || "GET") === "GET") return j(cacheRows);
@@ -83,6 +83,26 @@ cacheRows = [{ hash: createHash("sha256").update("저장됨").digest("hex").slic
 r = await run({ kind: "bio", target: "en", texts: ["저장됨"] });
 eq([r.body.items[0].translated, calls.some((c) => c.includes("generativelanguage"))], ["Saved", false], "저장된 번역을 쓰지 않고 Gemini를 다시 부름");
 
+// 공유 저장소 오염 방지: 글마다 Gemini를 따로 부르고, 저장은 기존 줄을 덮어쓰지 않는다.
+{ calls.length = 0; upserts = []; cacheRows = []; let upHeader = null; const prev = globalThis.fetch;
+  globalThis.fetch = async (u, i = {}) => { if (String(u).includes("/rest/v1/text_translations") && i.method === "POST") upHeader = i.headers.Prefer; return prev(u, i); };
+  geminiReply = { items: [{ index: 0, same_language: false, translation: "ok" }] };
+  r = await run({ kind: "note", target: "en", texts: ["첫째 글", "둘째 글"] });
+  eq([calls.filter((c) => c.includes("generativelanguage")).length, /ignore-duplicates/.test(upHeader || "")], [2, true], "여러 글이 한 번의 Gemini 호출로 묶이거나 저장이 기존 줄을 덮어쓸 수 있음");
+  globalThis.fetch = prev; }
+
+// 번역이 원문에 없던 URL·@멘션을 끼워 넣으면 버린다(공유 저장소 오염 방지).
+{ upserts = []; cacheRows = [];
+  geminiReply = { items: [{ index: 0, same_language: false, translation: "Good move, see https://evil.example now" }] };
+  r = await run({ kind: "note", target: "en", texts: ["좋은 수"] });
+  eq([r.body.items[0].failed, upserts.length], [true, 0], "원문에 없던 URL을 끼운 번역이 폐기되지 않음");
+  geminiReply = { items: [{ index: 0, same_language: false, translation: "Nice move @admin" }] };
+  r = await run({ kind: "note", target: "en", texts: ["좋은 수"] });
+  eq([r.body.items[0].failed, upserts.length], [true, 0], "원문에 없던 @멘션을 끼운 번역이 폐기되지 않음");
+  geminiReply = { items: [{ index: 0, same_language: false, translation: "Nice move" }] };
+  r = await run({ kind: "note", target: "en", texts: ["좋은 수"] });
+  eq([r.body.items[0].failed, upserts.length], [false, 1], "정상 번역이 폐기됨"); }
+
 // ④ 순수 로직
 const p = protectTokens("좋은 수 [[12.e5 Nf3]] 와 [[1.d4 d5]]");
 eq(p.text, "좋은 수 ⟦0⟧ 와 ⟦1⟧", "수순 표지 보호");
@@ -107,7 +127,7 @@ if (!/UGC_TRANSLATE_PREF_KEY\) !== "0"/.test(rd("src/lib/prefs.js"))) fails.push
 // ⑥ Gemini 쿼터 남용 방지(BUG-072) — 로그인 없이 쓰는 scan-board도 호출 제한이 있고, translate는 로그인과 호출 제한이 있다.
 const scan = rd("api/scan-board.js");
 if (!/scanRateLimited\(ip\)/.test(scan) || !/res\.status\(429\)/.test(scan)) fails.push("api/scan-board.js: 호출 제한이 없음 — 누구나 공유 Gemini 쿼터를 소진시킬 수 있다");
-if (!/rateLimited\(user\.id\)/.test(api)) fails.push("api/translate.js: 사용자별 호출 제한이 없음");
+if (!/rateLimited\(user\.id, texts\.length\)/.test(api)) fails.push("api/translate.js: 사용자별 호출 제한이 없음");
 { const h = { post: { method: "POST", headers: { "x-forwarded-for": "9.9.9.9" }, body: {} } }; const { default: scanHandler } = await import("../api/scan-board.js"); const codes = [];
   for (let i = 0; i < 14; i++) { const res = { status(c) { codes.push(c); return this; }, json() { } }; await scanHandler(h.post, res); }
   eq([codes.filter((c) => c === 429).length > 0, codes[0] !== 429], [true, true], "scan-board가 같은 IP의 연속 호출을 제한하지 않음"); }
