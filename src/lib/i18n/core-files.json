@@ -31,5 +31,7 @@
   "lib/highlights.js",
   "lib/masterStyle.js",
   "lib/highlightCard.js",
-  "components/schematicFullscreen.jsx"
+  "components/schematicFullscreen.jsx",
+  "components/UgcText.jsx",
+  "lib/ugcTranslate.js"
 ]

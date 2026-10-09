@@ -2059,4 +2059,12 @@ export default {
   "성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 계정 삭제 안내": "Growth analysis · Highlights card · Full-screen schematics · Account deletion guide",
   "±{0}%p": "±{0}pp",
   "{0}배": "{0}×",
+  "번역 보기": "Show translation",
+  "원문 보기": "Show original",
+  "원문": "Original",
+  "번역됨": "Translated",
+  "다른 언어로 쓴 글 자동 번역": "Auto-translate text written in other languages",
+  "수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음": "Show move notes and profile bios translated into your language. Chat messages are never translated",
+  "번역할 때 글이 번역 서비스(Google Gemini)로 전송됨": "When translating, the text is sent to a translation service (Google Gemini)",
+  "Google(Gemini API): 자동 번역을 켠 이용자가 수 설명·프로필 소개글을 볼 때 해당 글을 번역 목적으로만 전송. 번역문은 작성자 정보 없이 30일 이내 보관 후 삭제하며, 채팅 메시지는 전송하지 않음": "Google (Gemini API): when a user with auto-translate on views a move note or profile bio, that text is sent only to be translated. Translations are kept without author information for up to 30 days and then deleted. Chat messages are never sent",
 };

@@ -8,6 +8,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { T } from "../lib/theme.js";
 import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
 import LangPicker from "../components/LangPicker.jsx";
+import { loadUgcTranslatePref, saveUgcTranslatePref } from "../lib/prefs.js";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { parsePgnMoves } from "../lib/pgn.js";
@@ -667,6 +668,24 @@ function EngineDownloadRow({ id, label }) {
     </div>
   );
 }
+// (v0.6.5 기능, 사용자 요청) 다른 사람이 쓴 글(수 설명·프로필 소개글)을 내 언어로 번역해 보여줄지 — 언어 카드 안의 켜기/끄기. 채팅은 켜져 있어도 번역하지 않는다.
+function UgcTranslateToggle() {
+  const [on, setOn] = useState(loadUgcTranslatePref);
+  const flip = () => { const v = !on; setOn(v); saveUgcTranslatePref(v); };
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(0,0,0,.08)" }}>
+      <div className="flex items-center justify-between" style={{ gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("다른 언어로 쓴 글 자동 번역")}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
+        </div>
+        <button onClick={flip} role="switch" aria-checked={on} aria-label={t("다른 언어로 쓴 글 자동 번역")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+      </div>
+      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{t("번역할 때 글이 번역 서비스(Google Gemini)로 전송됨")}</div>
+    </div>
+  );
+}
+
 export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
@@ -809,6 +828,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
         <LangPicker />
         <p style={{ fontSize: 11, color: T.inkSoft, margin: "8px 2px 0" }}>{t("선택하면 페이지가 새로고침됨")}</p>
+        <UgcTranslateToggle />
       </div>
 
       {/* (18차 UI10) 개발자/공동 개발자 모드 — 블록·설명 없이 온오프 토글 한 줄만 */}

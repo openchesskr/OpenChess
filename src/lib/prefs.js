@@ -40,3 +40,8 @@ export function playSfx(name, maxMs) {
 // (v0.1.4 기능) SAN 표기상 포획 수는 항상 "x"를 포함(앙파상 포함) — 이 규칙만으로 클릭/무브 소리 중
 // 어느 쪽을 재생할지 나무 "탁" 소리(clack)와 "퍽" 소리(thud, 기물이 실제로 잡히는 느낌)로 나눈다.
 export function playMoveSfx(san) { playSfx(san && san.includes("x") ? "capture" : "move"); }
+// (v0.6.5 기능, 사용자 요청) 다른 사람이 쓴 글(수 설명·프로필 소개글)을 내 언어로 자동 번역해 보여줄지. 기본은 켜짐, 설정 탭 언어 카드에서 끈다.
+// 채팅 메시지는 이 설정과 상관없이 번역하지 않는다(lib/ugcTranslate.js). 바뀌면 "occ-ugc-translate" 이벤트로 화면이 바로 따라온다.
+export const UGC_TRANSLATE_PREF_KEY = "occ_ugc_translate";
+export function loadUgcTranslatePref() { try { return window.localStorage.getItem(UGC_TRANSLATE_PREF_KEY) !== "0"; } catch { return true; } }
+export function saveUgcTranslatePref(v) { try { window.localStorage.setItem(UGC_TRANSLATE_PREF_KEY, v ? "1" : "0"); } catch { } try { window.dispatchEvent(new Event("occ-ugc-translate")); } catch { } }

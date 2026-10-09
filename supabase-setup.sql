@@ -3863,6 +3863,24 @@ begin
 end $$;
 
 -- ============================================================================
+-- (v0.6.5, 사용자 요청) 사용자가 쓴 글(수 설명·프로필 소개글) 번역 저장소 — api/translate.js 전용.
+-- 같은 글을 여러 사람이 보므로 (원문 해시, 대상 언어)별 번역을 한 번만 만들어 다시 쓴다. 작성자 정보는 담지 않는다(해시 + 번역문).
+-- RLS를 켜고 정책을 하나도 만들지 않으며 anon·authenticated의 권한도 모두 거둔다 — 서버(SUPABASE_SERVICE_ROLE_KEY)만 읽고 쓴다.
+-- 30일이 지난 줄은 서버가 읽지 않고 가끔 지운다. 채팅 메시지는 번역 대상이 아니므로 여기에 들어오지 않는다(서버가 kind를 note·bio로 제한).
+-- ============================================================================
+create table if not exists public.text_translations (
+  hash text not null,
+  target text not null check (target in ('ko','en','es','hi','ja','zh')),
+  translated text not null check (char_length(translated) <= 1300),
+  same boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (hash, target)
+);
+create index if not exists idx_text_translations_created on public.text_translations (created_at);
+alter table public.text_translations enable row level security;
+revoke all on public.text_translations from anon, authenticated;
+
+-- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:
 --   1) Supabase 대시보드 → Database → Extensions 에서 "pg_cron"을 먼저 켠다(SQL로는 보통 켤 수
 --      없다 — shared_preload_libraries 설정이 필요해 인스턴스 차원에서 대시보드로만 켤 수 있음).

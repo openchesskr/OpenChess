@@ -30,6 +30,7 @@
   "pvp_invites":["id","from_uid","to_uid","time_control","status","game_id","created_at","updated_at"],
   "pvp_queue":["uid","created_at"],
   "reviewed_games":["cc_id","data","created_at"],
+  "text_translations":["hash","target","translated","same","created_at"],
   "user_blocks":["blocker","blocked","created_at"],
   "user_progress":["id","progress","updated_at"],
   "user_reports":["id","reporter","target_uid","message_id","message_snapshot","reason","detail","status","created_at"]

@@ -226,8 +226,22 @@ async function callGeminiResilient(apiKey, safeMediaType, image) {
   }
 }
 
+// (v0.6.5, BUG-072) 이 함수는 로그인 없이도 쓸 수 있어(비로그인 사용자의 보드 스캔을 막지 않기 위해) 누구나 반복 호출로 공유 Gemini 무료 쿼터를 소진시킬 수 있었다.
+// 쿼터는 번역(api/translate.js) 등 다른 기능도 같이 쓴다. 호출자(IP)당 분당 호출 수를 제한한다 — 서버리스 인스턴스 안에서의 최선 노력이라 완전한 차단은 아니다
+// (로그인 필수화·엣지 제한은 제품 결정이 필요해 BUGS.md에 남김). 한 번의 스캔이 Gemini를 최대 3번 부르므로 한도는 넉넉하게 둔다.
+const SCAN_RATE_PER_MIN = 12;
+const scanHits = new Map(); // ip -> [시각…]
+function scanRateLimited(ip) {
+  const now = Date.now(), arr = (scanHits.get(ip) || []).filter((t) => now - t < 60000);
+  arr.push(now); scanHits.set(ip, arr);
+  if (scanHits.size > 2000) for (const [k, v] of scanHits) if (!v.some((t) => now - t < 60000)) scanHits.delete(k);
+  return arr.length > SCAN_RATE_PER_MIN;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 지원합니다." }); return; }
+  const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "?").split(",")[0].trim() || "?";
+  if (scanRateLimited(ip)) { res.status(429).json({ error: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요." }); return; }
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) { res.status(500).json({ error: "서버에 GEMINI_API_KEY가 설정되어 있지 않아요." }); return; }
 
