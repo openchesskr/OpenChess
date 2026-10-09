@@ -6,7 +6,7 @@
  *    node scripts/fetch-pgnmentor.mjs --dry-run            # 받을 파일 목록과 총 용량만 확인(내려받지 않음)
  *    node scripts/fetch-pgnmentor.mjs                       # 전부 받아 ./pgnmentor-download/ 에 저장하고 pgnmentor-all.zip 으로 묶음
  *    node scripts/fetch-pgnmentor.mjs --only events         # 주소에 "events"가 든 파일만(쉼표로 여러 개: --only events,players)
- *  옵션: --out <폴더> · --start <시작 주소> · --delay <ms, 기본 1000> · --concurrency <1~3, 기본 1> · --no-archive · --contact <메일·주소>
+ *  옵션: --out <폴더> · --start <시작 주소> · --depth <따라갈 페이지 단계, 기본 2> · --delay <ms, 기본 1000> · --concurrency <1~3, 기본 1> · --no-archive · --contact <메일·주소>
  *
  *  예의·안전 규칙(대량 요청이라 반드시 지킨다)
  *   · robots.txt를 먼저 읽어 금지된 경로는 건드리지 않고, Crawl-delay가 있으면 그 값 이상으로 쉰다.
@@ -33,7 +33,8 @@ const ONLY = opt("only", null) ? String(opt("only")).split(",").map((s) => s.tri
 const CONTACT = String(opt("contact", "set --contact <email>"));
 const UA = "OpenChess-pgn-fetch/1.0 (personal data import; " + CONTACT + ")";
 const FILE_RE = /\.(zip|pgn|gz|7z)$/i;
-const MAX_PAGES = 200, MAX_DEPTH = 2, MAX_RETRY = 5;
+const MAX_PAGES = 200, MAX_RETRY = 5;
+const MAX_DEPTH = Math.max(0, Number(opt("depth", 2)));   // 0이면 시작 페이지의 링크만 쓴다(필요한 링크가 한 페이지에 다 있을 때 — 불필요한 요청을 줄인다)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (ms) => ms + Math.floor(Math.random() * ms * 0.4);
 const log = (...a) => console.log(...a);
