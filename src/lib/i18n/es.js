@@ -2015,7 +2015,6 @@ export default {
   "나와 닮은 마스터": "Maestros a los que te pareces",
   "{0}와(과) 기준별 비교": "Comparación criterio por criterio con {0}",
   "비슷한 기준 {0}/{1}": "Criterios parecidos {0}/{1}",
-  "13가지 기보 특징을 하나씩 비교함. 값의 차이를 마스터 900명의 흩어진 정도로 나눠 단계를 정하며(거의 같음·비슷함·다름·많이 다름), 실력 비교가 아님": "Compara 13 rasgos del registro de jugadas uno por uno. La diferencia de cada valor se divide por lo dispersos que están 900 maestros, y eso fija el nivel (casi igual, parecido, distinto, muy distinto). No es una comparación de nivel de juego",
   "성장 분석": "Análisis de crecimiento",
   "분석한 실수": "Errores analizados",
   "백 1.e4 선택": "Juega 1.e4 con blancas",
@@ -2040,4 +2039,6 @@ export default {
   "다름": "Distinto",
   "많이 다름": "Muy distinto",
   "비교 불가": "No comparable",
+  "차이": "Diferencia",
+  "판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님": "Cómo se fijan los niveles: en los criterios de proporción (elección de apertura, enroque, cambios de damas, tablas) decide la diferencia en puntos porcentuales — hasta {0} p.p. casi igual, hasta {1} p.p. parecido, hasta {2} p.p. distinto y más, muy distinto. Los criterios de frecuencia y duración usan el cociente de los dos valores: hasta {3}× en jaques y capturas de pieza y hasta {4}× en la duración de la partida cuenta como casi igual. No es una comparación de nivel de juego",
 };
