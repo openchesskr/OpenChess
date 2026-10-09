@@ -11,7 +11,7 @@ import { Board } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { loadGrowth, saveGrowth } from "../lib/growthStore.js";
 import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weaknessReport, dueCards, gradeCard, srsStats, isCardAnswer } from "../lib/weakness.js";
-import { styleFeatures, matchMasters, sharedTraits, traitLabel, STYLE_KEYS, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel, LEVEL_RULES } from "../lib/masterStyle.js";
+import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { t } from "../lib/i18n.js";
 
@@ -183,16 +183,34 @@ function ReviewCards({ list, update, filter, setFilter }) {
 }
 
 /* ── 마스터 스타일 ── */
+// 비교할 마스터를 이름으로 직접 검색해 고른다. 검색창은 퍼즐 탭의 "오프닝 · 생성자로 검색"과 같은 디자인(어두운 입력창 + 양피지색 드롭다운)이다.
+const normName = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 function MasterStyle({ games }) {
   const [data, setData] = useState(null);
-  const [sel, setSel] = useState(0);
+  const [pickedName, setPickedName] = useState(null);   // 사용자가 고른 마스터(null이면 가장 닮은 마스터)
+  const [query, setQuery] = useState("");
+  const [focus, setFocus] = useState(false);
   useEffect(() => { let on = true; import("../data/masterStyles.json").then((m) => { if (on) setData(m.default || m); }); return () => { on = false; }; }, []);
   const feat = useMemo(() => styleFeatures((games || []).slice(0, 200).map((g) => ({ moves: g.moves, color: g.color, result: g.result }))), [games]);
-  const m = useMemo(() => (data ? matchMasters(feat, data, 3) : null), [feat, data]);
-  const picked = m && m.ok ? m.list[Math.min(sel, m.list.length - 1)] : null;
+  const m = useMemo(() => (data ? matchMasters(feat, data, data.masters.length) : null), [feat, data]);
+  const top3 = m && m.ok ? m.list.slice(0, 3) : [];
+  const picked = m && m.ok ? (m.list.find((x) => x.name === pickedName) || m.list[0]) : null;
   const row = picked ? data.masters.find((r) => r[0] === picked.name) : null;
   const rows = useMemo(() => (row ? compareCriteria(m.u, row[3]) : []), [row, m]);
   const byKey = useMemo(() => Object.fromEntries(rows.map((r) => [r.key, r])), [rows]);
+  // 검색: 영문 이름에서 "맨 앞 일치 → 단어 앞 일치 → 포함 일치" 순서(도감·퍼즐 검색과 같은 규칙), 최대 8명.
+  const suggestions = useMemo(() => {
+    const q = normName(query).trim();
+    if (!q || !m || !m.ok) return [];
+    const scored = [];
+    for (const x of m.list) {
+      const nm = normName(masterName(x.name, "en")), raw = normName(x.name);
+      const rank = nm.startsWith(q) || raw.startsWith(q) ? 0 : nm.split(" ").some((w) => w.startsWith(q)) ? 1 : nm.includes(q) || raw.includes(q) ? 2 : -1;
+      if (rank >= 0) scored.push([rank, x]);
+    }
+    return scored.sort((a, b) => a[0] - b[0] || (b[1].elo || 0) - (a[1].elo || 0)).slice(0, 8).map((e) => e[1]);
+  }, [query, m]);
+  const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
   if (!data) return <div style={card}><h3 style={h3}>{t("마스터 스타일")}</h3><p style={{ ...sub, margin: "6px 0 0" }}>{t("불러오는 중…")}</p></div>;
   if (!m.ok) return (
     <div style={card}>
@@ -200,20 +218,16 @@ function MasterStyle({ games }) {
       <p style={{ ...sub, margin: "6px 0 0" }}>{t("chess.com 대국이 {0}판 이상 연동되면 나와 닮은 마스터를 알려 줌 (지금 {1}판)", MIN_STYLE_GAMES, m.n)}</p>
     </div>
   );
-  const mine = m.z.map((z, i) => ({ key: STYLE_KEYS[i], z })).filter((x) => x.z != null && Math.abs(x.z) >= 0.5).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 3);
   const similarN = rows.filter((r) => r.level === "same" || r.level === "close").length, comparable = rows.filter((r) => r.level !== "na").length;
   return (
     <div style={card}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <h3 style={h3}>{t("마스터 스타일")}</h3>
         <span style={sub}>{t("최근 {0}판 기준", m.n)}</span>
       </div>
-      <div style={{ ...sub, fontWeight: 800, marginBottom: 4 }}>{t("내 스타일")}</div>
-      <p style={{ ...sub, color: T.ink, margin: "0 0 12px" }}>{mine.length ? mine.map((x) => traitLabel(x.key, x.z > 0)).join(" · ") : t("평균적인 마스터와 비슷한 균형형")}</p>
-      <div style={{ ...sub, fontWeight: 800, marginBottom: 6 }}>{t("나와 닮은 마스터")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 12 }}>
-        {m.list.map((x, i) => (
-          <button key={x.name} className="press" onClick={() => setSel(i)} aria-pressed={i === sel} style={{ textAlign: "left", padding: "9px 11px", borderRadius: 10, cursor: "pointer", border: "1.5px solid " + (i === sel ? T.brass : "#DCCBA8"), background: i === sel ? "rgba(196,154,80,.16)" : "rgba(0,0,0,.025)", fontFamily: SITE_FONT, minWidth: 0 }}>
+        {top3.map((x, i) => (
+          <button key={x.name} className="press" onClick={() => choose(x)} aria-pressed={x.name === picked.name} style={{ textAlign: "left", padding: "9px 11px", borderRadius: 10, cursor: "pointer", border: "1.5px solid " + (x.name === picked.name ? T.brass : "#DCCBA8"), background: x.name === picked.name ? "rgba(196,154,80,.16)" : "rgba(0,0,0,.025)", fontFamily: SITE_FONT, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6 }}>
               <span style={{ fontSize: 11, fontWeight: 900, color: i === 0 ? T.brass : T.inkSoft }}>{i + 1}</span>
               <span style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
@@ -223,39 +237,53 @@ function MasterStyle({ games }) {
           </button>
         ))}
       </div>
-      {picked && (
-        <div>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("{0}와(과) 기준별 비교", masterName(picked.name, "en"))}</span>
-            <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
-            <span />
-            <span style={{ textAlign: "right" }}>{t("나")}</span>
-            <span style={{ textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
-            <span style={{ textAlign: "right" }}>{t("차이")}</span>
-            <span />
-          </div>
-          {CRITERIA_GROUPS.map((g) => (
-            <div key={g.id} style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "6px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
-              {g.keys.map((k) => {
-                const r = byKey[k]; if (!r) return null;
-                return (
-                  <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", alignItems: "center", gap: 6, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)", fontSize: 11.5 }}>
-                    <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3 }}>{criterionLabel(k)}</span>
-                    <span style={{ textAlign: "right", color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
-                    <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
-                    <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, whiteSpace: "nowrap" }}>{formatDiff(k, r.diff)}</span>
-                    <span style={{ textAlign: "center", fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 0", whiteSpace: "nowrap" }}>{levelLabel(r.level)}</span>
-                  </div>
-                );
-              })}
+      {/* 헤더의 마스터 자리가 검색창이다 — 이름을 입력해 다른 마스터를 골라 비교한다. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+        <div style={{ position: "relative", flex: "1 1 170px", minWidth: 150 }}>
+          <input value={focus ? query : masterName(picked.name, "en")} onChange={(e) => setQuery(e.target.value)} onFocus={() => { setQuery(""); setFocus(true); }} onBlur={() => setTimeout(() => setFocus(false), 150)}
+            onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) choose(suggestions[0]); }} aria-label={t("마스터 이름으로 검색")}
+            placeholder={focus ? t("마스터 이름으로 검색") : masterName(picked.name, "en")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(36,21,9,.92)", color: T.ivoryHi, fontSize: 12, fontFamily: SITE_FONT }} />
+          {focus && suggestions.length > 0 && (
+            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
+              {suggestions.map((x) => (
+                <button key={x.name} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(x)} className="press" style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600, fontFamily: SITE_FONT }}>
+                  <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>{x.elo ? "Elo " + x.elo : t("마스터")}</span>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</span>
+                </button>
+              ))}
             </div>
-          ))}
-          <p style={{ ...sub, fontSize: 10.5, margin: "8px 0 0" }}>{t("판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님", Math.round(LEVEL_RULES.share[0] * 100), Math.round(LEVEL_RULES.share[1] * 100), Math.round(LEVEL_RULES.share[2] * 100), LEVEL_RULES.intensity[0], LEVEL_RULES.length[0])}</p>
+          )}
         </div>
-      )}
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("와(과) 기준별 비교")}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", margin: "6px 0 8px" }}>
+        <span style={sub}>{picked.elo ? "Elo " + picked.elo + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
+        <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
+        <span />
+        <span style={{ textAlign: "right" }}>{t("나")}</span>
+        <span style={{ textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
+        <span style={{ textAlign: "right" }}>{t("차이")}</span>
+        <span />
+      </div>
+      {CRITERIA_GROUPS.map((g) => (
+        <div key={g.id} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "6px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
+          {g.keys.map((k) => {
+            const r = byKey[k]; if (!r) return null;
+            return (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", alignItems: "center", gap: 6, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)", fontSize: 11.5 }}>
+                <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3 }}>{criterionLabel(k)}</span>
+                <span style={{ textAlign: "right", color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
+                <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
+                <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, whiteSpace: "nowrap" }}>{formatDiff(k, r.diff)}</span>
+                <span style={{ textAlign: "center", fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 0", whiteSpace: "nowrap" }}>{levelLabel(r.level)}</span>
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

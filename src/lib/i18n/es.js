@@ -2041,4 +2041,7 @@ export default {
   "비교 불가": "No comparable",
   "차이": "Diferencia",
   "판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님": "Cómo se fijan los niveles: en los criterios de proporción (elección de apertura, enroque, cambios de damas, tablas) decide la diferencia en puntos porcentuales — hasta {0} p.p. casi igual, hasta {1} p.p. parecido, hasta {2} p.p. distinto y más, muy distinto. Los criterios de frecuencia y duración usan el cociente de los dos valores: hasta {3}× en jaques y capturas de pieza y hasta {4}× en la duración de la partida cuenta como casi igual. No es una comparación de nivel de juego",
+  "마스터 이름으로 검색": "Buscar maestros por nombre",
+  "와(과) 기준별 비교": "Comparado contigo, por criterio",
+  "일치도 {0}%": "Coincidencia {0}%",
 };

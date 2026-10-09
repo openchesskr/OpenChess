@@ -2041,4 +2041,7 @@ export default {
   "비교 불가": "Not comparable",
   "차이": "Gap",
   "판정 기준 — 비율 기준(오프닝 선택·캐슬링·퀸 교환·무승부)은 %p 차이로 {0}%p 이하 거의 같음, {1}%p 이하 비슷함, {2}%p 이하 다름, 그 이상 많이 다름. 빈도·길이 기준은 두 값의 배수로 판정하며 체크·기물 잡기는 {3}배, 대국 길이는 {4}배 이하면 거의 같음. 실력 비교가 아님": "How levels are set: for share criteria (opening choice, castling, queen trades, draws) the gap in percentage points decides — up to {0}%p almost the same, up to {1}%p similar, up to {2}%p different, more than that very different. Frequency and length criteria use the ratio of the two values: up to {3}× for checks and piece captures and up to {4}× for game length counts as almost the same. This is not a strength comparison",
+  "마스터 이름으로 검색": "Search masters by name",
+  "와(과) 기준별 비교": "Compared with you, by criterion",
+  "일치도 {0}%": "Match {0}%",
 };
