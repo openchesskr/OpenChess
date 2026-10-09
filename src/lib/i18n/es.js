@@ -2059,4 +2059,12 @@ export default {
   "성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 계정 삭제 안내": "Análisis de crecimiento · Tarjeta de destacados · Esquemas a pantalla completa · Guía de eliminación de cuenta",
   "±{0}%p": "±{0} p.p.",
   "{0}배": "{0}×",
+  "번역 보기": "Ver traducción",
+  "원문 보기": "Ver original",
+  "원문": "Original",
+  "번역됨": "Traducido",
+  "다른 언어로 쓴 글 자동 번역": "Traducir automáticamente textos escritos en otros idiomas",
+  "수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음": "Muestra las notas de jugada y las biografías traducidas a tu idioma. Los mensajes de chat nunca se traducen",
+  "번역할 때 글이 번역 서비스(Google Gemini)로 전송됨": "Al traducir, el texto se envía a un servicio de traducción (Google Gemini)",
+  "Google(Gemini API): 자동 번역을 켠 이용자가 수 설명·프로필 소개글을 볼 때 해당 글을 번역 목적으로만 전송. 번역문은 작성자 정보 없이 30일 이내 보관 후 삭제하며, 채팅 메시지는 전송하지 않음": "Google (Gemini API): cuando un usuario con la traducción automática activada ve una nota de jugada o una biografía, ese texto se envía solo para traducirlo. Las traducciones se conservan sin datos del autor hasta 30 días y luego se eliminan. Los mensajes de chat nunca se envían",
 };

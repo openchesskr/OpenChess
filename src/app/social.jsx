@@ -22,6 +22,7 @@ import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfile
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import UgcText from "../components/UgcText.jsx";
 // (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
 // 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
 // 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에
@@ -802,7 +803,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
                           올라오지 않는다). */}
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{pub.nickname || pub.displayId || pubUsername}</div>
-                        <div style={{ fontSize: 12, color: T.ink, marginTop: 5, minHeight: 15 }}>{pub.bio || ""}</div>
+                        <div style={{ fontSize: 12, color: T.ink, marginTop: 5, minHeight: 15 }}>{pub.bio ? <UgcText text={pub.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
                         {presenceLabel(selPresence[pubUid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[pubUid])}</div>}
                       </div>
                     </div>
@@ -2461,7 +2462,7 @@ function userSearchRow(r, onClick, right, opts) {
         <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || (p.displayId || r.username)}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}{isMe && <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brass, flexShrink: 0 }}>{t("나")}</span>}</div>
         {/* (사용자 요청) 소개 — 닉네임 바로 밑, @핸들 위. 촘촘한 리더보드(compact)에서는 줄 수를
             늘리지 않도록 생략한다. */}
-        {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+        {!compact && p.bio && <div style={{ fontSize: 11, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><UgcText text={p.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /></div>}
         <div className="flex items-center gap-1" style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT, overflow: "hidden" }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || r.username)}</span>
           <SearchRoleIcon username={r.username} />
@@ -3106,7 +3107,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                   </span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
-                    {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+                    {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><UgcText text={p.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /></div>}
                     {presenceLabel(selPresence[sel.uid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[sel.uid])}</div>}
                   </div>
                 </div>
