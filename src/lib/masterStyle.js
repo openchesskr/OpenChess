@@ -132,10 +132,10 @@ export function criterionDiff(key, a, b) {
   else { const hi = Math.max(a, b), lo = Math.min(a, b); if (kind === "intensity" && hi < 0.02) return { diff: 1, level: "same" }; diff = hi / Math.max(lo, kind === "intensity" ? 0.005 : 0.01); }
   return { diff, level: diff <= t1 ? "same" : diff <= t2 ? "close" : diff <= t3 ? "far" : "veryFar" };
 }
-/* 차이 표기: share는 "±N%p", 배수는 "N.N배". */
+/* 차이 표기: share는 "±N%p", 배수는 "N.N배". 단위도 언어마다 다르므로 t()를 거친다(예전엔 "배"가 영어 화면에도 그대로 나왔다 — BUG-070). */
 export function formatDiff(key, diff) {
   if (diff == null) return "—";
-  return (CRITERION_KIND[key] || "share") === "share" ? "±" + Math.round(diff * 100) + "%p" : (Math.round(diff * 10) / 10).toFixed(1) + "배";
+  return (CRITERION_KIND[key] || "share") === "share" ? t("±{0}%p", Math.round(diff * 100)) : t("{0}배", (Math.round(diff * 10) / 10).toFixed(1));
 }
 /* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, diff, level}] (STYLE_KEYS 순서). */
 export function compareCriteria(u, masterVec) {
