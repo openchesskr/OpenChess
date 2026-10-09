@@ -184,6 +184,8 @@ function ReviewCards({ list, update, filter, setFilter }) {
 
 /* ── 마스터 스타일 ── */
 // 비교할 마스터를 이름으로 직접 검색해 고른다. 검색창은 퍼즐 탭의 "오프닝 · 생성자로 검색"과 같은 디자인(어두운 입력창 + 양피지색 드롭다운)이다.
+// 최고 레이팅 표기는 모든 언어에서 "Peak 2xxx"로 통일한다(번역하지 않는 고정 표기).
+const peakText = (elo) => (elo ? "Peak " + elo : "");
 const normName = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 function MasterStyle({ games }) {
   const [data, setData] = useState(null);
@@ -233,7 +235,7 @@ function MasterStyle({ games }) {
               <span style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
             </div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</div>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? "Elo " + x.elo + " · " : ""}{t("{0}판 분석", x.games)}</div>
+            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + " · " : ""}{t("{0}판 분석", x.games)}</div>
           </button>
         ))}
       </div>
@@ -246,9 +248,9 @@ function MasterStyle({ games }) {
           {focus && suggestions.length > 0 && (
             <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
               {suggestions.map((x) => (
-                <button key={x.name} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(x)} className="press" style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600, fontFamily: SITE_FONT }}>
-                  <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>{x.elo ? "Elo " + x.elo : t("마스터")}</span>
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</span>
+                <button key={x.name} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(x)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600, fontFamily: SITE_FONT }}>
+                  <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</span>
+                  <span style={{ flexShrink: 0, marginLeft: "auto", textAlign: "right", fontSize: 11.5, fontWeight: 800, color: "#8A6A2F", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{peakText(x.elo)}</span>
                 </button>
               ))}
             </div>
@@ -257,7 +259,7 @@ function MasterStyle({ games }) {
         <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("와(과) 기준별 비교")}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", margin: "6px 0 8px" }}>
-        <span style={sub}>{picked.elo ? "Elo " + picked.elo + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
+        <span style={sub}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
         <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
