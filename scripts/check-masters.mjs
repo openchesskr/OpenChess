@@ -6,6 +6,8 @@
  *  ③ 팬 한계(clampMasterPan): 내용이 화면보다 작으면 고정, 크면 가장자리를 넘지 않음.
  *  ④ 연결: 도감에 "마스터" 탭과 MastersSchematic가 있고 오프닝·마스터가 같은 높이 계산(useFitPanelHeight)을 쓴다.
  *  실행: node scripts/check-masters.mjs */
+import { existsSync } from "node:fs";
+import { decodeMoves } from "../src/lib/moveCodec.js";
 import { readFileSync } from "node:fs";
 const fails = [];
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
@@ -73,7 +75,10 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
   for (const id of Object.keys(WINNERS)) if (!ids.includes(id)) fails.push("WINNERS에 없는 대회 id: " + id);
   for (const id of Object.keys(EVENT_RULES)) if (!ids.includes(id)) fails.push("EVENT_RULES에 없는 대회 id: " + id);
   for (const id of ids) {
-    if (!EVENT_RULES[id]) fails.push(id + ": DB 이벤트 매칭 규칙(EVENT_RULES) 없음");
+    const rr = TOURNAMENTS.find((x) => x.id === id);
+    // 손으로 쓴 대회는 DB 이벤트 매칭 규칙이 필요하다. PGN Mentor 파일에서 자동으로 만든 대회(auto)는 대회 데이터 파일(src/data/tournaments/<id>.json)이 있어야 한다.
+    if (rr.auto) { if (!existsSync(new URL("../src/data/tournaments/" + id + ".json", import.meta.url))) fails.push(id + ": 자동 대회인데 src/data/tournaments/" + id + ".json 없음 — node scripts/build-pgn-tournaments.mjs 다시 실행"); }
+    else if (!EVENT_RULES[id]) fails.push(id + ": DB 이벤트 매칭 규칙(EVENT_RULES) 없음");
     if (!idx.byId[id]) { fails.push(id + ": tournamentIndex.json에 없음 — node scripts/build-tournament-index.mjs 다시 실행"); continue; }
     const r = TOURNAMENTS.find((x) => x.id === id), list = WINNERS[id] || [];
     list.forEach(([y, names], i) => {
@@ -86,7 +91,9 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
       if (ck === "conflict") fails.push(id + " " + y + ": 우승자(" + names.join("/") + ")가 마스터 대국 DB의 그 연도 출전자 중에 없음(입력 오류 후보)");
     });
     // 대표 대국은 도감에서 바로 열리므로 전부 합법 수순이어야 한다.
-    for (const g of idx.byId[id].top) { try { const c = new Chess(); for (const san of g.m.split(" ")) c.move(san); } catch { fails.push(id + ": 대표 대국 " + g.id + "의 기보가 합법이 아님"); } }
+    // PGN에서 가공한 대회(pgn)의 대표 대국은 압축 부호(mc)다 — 전체 복원 검사는 check-tournament-data가 하므로 여기서는 대회마다 1판만 본다. DB 기반 대회는 평문(m) 전부.
+    const tops = idx.byId[id].pgn ? idx.byId[id].top.slice(0, 1) : idx.byId[id].top;
+    for (const g of tops) { try { const c = new Chess(); for (const san of (g.mc ? decodeMoves(g.mc) : g.m.split(" "))) c.move(san); } catch { fails.push(id + ": 대표 대국 " + g.id + "의 기보가 합법이 아님"); } }
   }
 }
 // 대회 데이터
@@ -99,7 +106,9 @@ eq([ordinalParam(6, "es"), ordinalParam(6, "ko"), ordinalParam(6, "ja")], ["6.º
     if (!(r.from >= 1850 && r.from <= 2030) || (r.to != null && r.to < r.from)) fails.push(r.id + ": 연도 오류 " + r.from + "–" + r.to);
     if (r.freq && !["annual", "biennial", "oneoff"].includes(r.freq)) fails.push(r.id + ": freq 오류 " + r.freq);
     if (!["various", "online"].includes(r.place) && !r.placeKo) fails.push(r.id + ": 도시 개최 대회는 placeKo 필요");
-    if (i && r.from < TOURNAMENTS[i - 1].from) fails.push(r.id + ": 대회 목록이 시작 연도순이 아님");
+    // 손으로 쓴 대회끼리, 자동 대회끼리 각각 시작 연도순(화면 배치는 목록 순서와 무관하게 연도로 정렬한다)
+    const prev = TOURNAMENTS.slice(0, i).reverse().find((x) => !!x.auto === !!r.auto);
+    if (prev && r.from < prev.from) fails.push(r.id + ": 대회 목록이 시작 연도순이 아님");
   });
   for (const ty of TOURNAMENT_TYPES) if (!TOURNAMENTS.some((r) => r.type === ty)) fails.push("대회 종류 " + ty + "에 해당하는 대회가 없음");
   eq([championAt(CHAMPIONS, 1895)?.id, championAt(CHAMPIONS, 1938)?.id, championAt(CHAMPIONS, 2013)?.id, championAt(CHAMPIONS, 2025)?.id, championAt(CHAMPIONS, 1947)], ["lasker", "alekhine2", "carlsen", "gukesh", null], "개최 당시 챔피언");
@@ -207,7 +216,12 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   for (let i = 1; i < dbn.length; i++) { if (dbn[i].col === dbn[i - 1].col && !(dbn[i].y > dbn[i - 1].y)) fails.push("DB 선수가 위→아래가 아님"); if (DBM.masters[i][0] !== dbn[i].dbm.name) fails.push("DB 선수 순서 불일치"); if (dbn[i].col < dbn[i - 1].col) fails.push("DB 열 순서가 거꾸로"); }
   { const key = (nm) => { const i = nm.indexOf(","); const sur = (i < 0 ? nm : nm.slice(0, i)); return sur.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim(); };
     for (let i = 1; i < DBM.masters.length; i++) if (key(DBM.masters[i][0]) < key(DBM.masters[i - 1][0])) fails.push("dbMasters.json이 성 기준 알파벳 순이 아님: " + DBM.masters[i - 1][0] + " → " + DBM.masters[i][0]);
-    const elos = DBM.masters.map((m) => m[2]); if (!elos.every((e) => e >= 2500)) fails.push("DB 마스터 최고 엘로가 2500 미만인 선수가 있음"); }
+    // 엘로 순위로 뽑은 DBM.top명은 2500 이상. 그 밖은 마스터 상세 프로필이 있는 선수(옛 대가 — 엘로 기록이 없거나 낮음)만 허용(build-db-masters가 프로필 선수를 더한다).
+    const prof = JSON.parse(rf("src/data/masterProfiles.json", "utf8")).p, pk = new Set(Object.keys(prof).map((k) => k.replace(/ /g, "")));
+    const pkey = (nm) => { const i = nm.indexOf(","); const a = (x) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, ""); return a(i < 0 ? nm : nm.slice(0, i)) + "|" + a(i < 0 ? "" : nm.slice(i + 1)).slice(0, 1); };
+    const low = DBM.masters.filter((m) => !(m[2] >= 2500)); const bad = low.filter((m) => !pk.has(pkey(m[0])));
+    if (bad.length) fails.push("DB 마스터 중 엘로 2500 미만이면서 프로필도 없는 선수: " + bad.slice(0, 5).map((m) => m[0]).join(" · "));
+    eq(DBM.masters.length - low.length >= DBM.top, true, "엘로 2500 이상 DB 마스터 수 ≥ " + DBM.top); }
   // 남: 칩 아래 선 → 분기점에서 세 갈래(스탠다드·래피드·블리츠, 불렛 없음) → 각 줄에 1위부터 100위까지
   eq(L.south.cols.map((c) => c.key), ["standard", "rapid", "blitz"], "남쪽 세 갈래(FIDE는 불렛 레이팅이 없다)");
   eq(end(byDir.S), [C.cx, L.south.jy], "남쪽 선은 분기점까지");

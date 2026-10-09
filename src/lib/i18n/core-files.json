@@ -33,5 +33,11 @@
   "lib/highlightCard.js",
   "components/schematicFullscreen.jsx",
   "components/UgcText.jsx",
-  "lib/ugcTranslate.js"
+  "lib/ugcTranslate.js",
+  "components/tournamentView.jsx",
+  "components/masterProfile.jsx",
+  "lib/tournamentView.js",
+  "lib/masterProfile.js",
+  "lib/moveCodec.js",
+  "lib/tournamentData.js"
 ]

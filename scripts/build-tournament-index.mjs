@@ -6,6 +6,8 @@
  *   · players: 최다 출전 5명 · top: 대표 대국 8판(최고 레이팅 우선, 기보 포함 — 도감에서 바로 열기)
  *   · complete: 모든 쌍이 같은 횟수로 붙은 "대국이 완전한" 라운드로빈 연도만 — 그 순위(우승자 추정, 승1·무0.5)
  *   · winnerCheck: 손으로 입력한 우승자(chessTournamentWinners.js)를 DB와 대조 — ok(우승자가 그 연도 출전자 중에 있음) · conflict(DB에 그 연도 대회가 있는데 우승자가 없음) · nodata(DB에 그 연도 대회 없음)
+ *  (v0.6.5) PGN Mentor 대회 파일로 가공한 대회(pgn: 1)는 scripts/build-pgn-tournaments.mjs가 이 파일의 결과 위에 덮어쓴다 — 이 스크립트를 다시 돌렸다면 build-pgn-tournaments도 다시 돌릴 것
+ *  (안 하면 check-tournament-data가 색인과 대회 데이터의 대국 수 불일치로 빌드를 막는다).
  *  실행: node scripts/build-tournament-index.mjs  (결과 요약과 conflict 목록을 출력한다 — conflict는 입력 오류 후보) */
 import { readFileSync, writeFileSync } from "node:fs";
 import { matchTournament } from "./lib/tournamentEvents.mjs";
