@@ -112,6 +112,7 @@ ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(
 ok(/<QuestTab growthUid=\{uid\} growthGames=\{chesscom\.games\}/.test(app), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음");
 ok(!/GrowthCenter|GrowthEntryCard|onOpenGrowth/.test(app + pz + quest), "성장 분석이 다시 별도 버튼·화면으로 분리됨(학습 탭 안에 바로 펼쳐 보여야 함)");
 ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 네 기능 로직(기준별 비교 포함)을 모두 쓰지 않음");
+ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");
 ok(CRITERIA_GROUPS.flatMap((g) => g.keys).length === S.STYLE_KEYS.length && S.STYLE_KEYS.every((k) => CRITERIA_GROUPS.some((g) => g.keys.includes(k))), "기준 표(CRITERIA_GROUPS)가 스타일 특징 13개를 하나도 빠짐없이 한 번씩 담지 않음");
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 실수 추출·분류, 간격 반복, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");
