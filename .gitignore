@@ -9,3 +9,7 @@ public/engine
 .env
 .env.local
 scripts/.attack-cache/
+
+# (v0.6.5) pgnmentor.com 원본 다운로드(scripts/fetch-pgnmentor.mjs) — 용량이 커서 저장소에 올리지 않는다
+pgnmentor-download/
+pgnmentor-all.*
