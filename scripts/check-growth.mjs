@@ -11,6 +11,7 @@ const fails = [];
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
 const ok = (c, m) => { if (!c) fails.push(m); };
 const W = await import("../src/lib/weakness.js"), H = await import("../src/lib/highlights.js"), S = await import("../src/lib/masterStyle.js");
+const { CRITERIA_GROUPS } = S;
 
 // ── ① 추출 ──  1.f3 e5 2.g4 Qh4# : 백(나)의 f3·g4가 실수. 최선수는 임의 값.
 const mk = (san, white, kind, extra = {}) => ({ san, white, kind, lossWinPct: 20, best: null, ...extra });
@@ -87,13 +88,25 @@ ok(mm.ok && mm.list[0].name === twin[0], "같은 성향이면 그 마스터가 �
 ok(mm.list[0].sim > mm.list[2].sim, "닮은 정도가 순서대로 줄어든다");
 ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key)), "닮은 점은 정의된 특징");
 
+// 기준별 비교: 같은 벡터는 모두 "거의 같음", 값 표기, 단계 경계
+{
+  const rowsSame = S.compareCriteria(twin[3], twin[3], data);
+  ok(rowsSame.length === 13 && rowsSame.every((r) => r.level === "same" || r.level === "na"), "같은 벡터는 모든 기준이 거의 같음");
+  eq([S.levelOf(0.2), S.levelOf(0.5), S.levelOf(1.0), S.levelOf(2), S.levelOf(null)], ["same", "close", "far", "veryFar", "na"], "단계 경계(0.35·0.8·1.5)");
+  eq([S.formatCriterion("w_e4", 0.456), S.formatCriterion("length", 0.7), S.formatCriterion("drawRate", null)], ["46%", "약 42수", "—"], "값 표기(비율·평균 수·없음)");
+  const far = S.compareCriteria(twin[3].map((v) => (v == null ? null : v + 5 * 0)), twin[3].map((v, i) => (v == null ? null : v + 3 * data.std[i])), data);
+  ok(far.every((r) => r.level === "veryFar" || r.level === "na"), "3표준편차 떨어지면 많이 다름");
+  ok(S.STYLE_KEYS.every((k) => S.criterionLabel(k) && S.criterionLabel(k) !== k), "모든 기준에 이름이 있다");
+}
 // ── ⑥ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), pz = rd("src/app/puzzle.jsx");
+const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/quest.jsx"), pz = rd("src/app/puzzle.jsx");
 ok(/recordReviewMistakes\(/.test(review), "ReviewPage가 리뷰가 끝나면 내 실수를 기록하지 않음");
 ok(/pickHighlights\(/.test(review) && /drawHighlightCard/.test(review), "리뷰 공유 시트가 하이라이트 카드를 쓰지 않음");
-ok(/GrowthCenter/.test(app) && /pushScreen\("growth"\)/.test(app) && /screens\.includes\("growth"\)/.test(app), "App이 성장 센터를 화면 스택(뒤로가기)과 함께 열지 않음");
-ok(/onOpenGrowth/.test(pz), "퍼즐 탭에 성장 센터 진입 카드가 없음");
-ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth), "성장 센터가 네 기능 로직을 모두 쓰지 않음");
+ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(QuestTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
+ok(/<QuestTab growthUid=\{uid\} growthGames=\{chesscom\.games\}/.test(app), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음");
+ok(!/GrowthCenter|GrowthEntryCard|onOpenGrowth/.test(app + pz + quest), "성장 분석이 다시 별도 버튼·화면으로 분리됨(학습 탭 안에 바로 펼쳐 보여야 함)");
+ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 네 기능 로직(기준별 비교 포함)을 모두 쓰지 않음");
+ok(CRITERIA_GROUPS.flatMap((g) => g.keys).length === S.STYLE_KEYS.length && S.STYLE_KEYS.every((k) => CRITERIA_GROUPS.some((g) => g.keys.includes(k))), "기준 표(CRITERIA_GROUPS)가 스타일 특징 13개를 하나도 빠짐없이 한 번씩 담지 않음");
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 실수 추출·분류, 간격 반복, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

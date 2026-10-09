@@ -10,6 +10,7 @@ import { boardFromSans, liveLegalDests, buildSan, stripSuffix } from "../lib/che
 import { playMoveSfx } from "../lib/prefs.js";
 import { Board, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, questLabelNode, questOpeningMovesText, useBoardSize, useNarrow } from "./common.jsx";
 
+import { GrowthPanel } from "./growth.jsx";
 import { t, tx } from "../lib/i18n.js";
 // 다음 KST 자정까지 남은 밀리초
 function msUntilKstMidnight(now) {
@@ -976,7 +977,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   );
 }
 // (18차 UI2) 학습 탭 — 일일 퀘스트를 퍼즐 탭에서 분리하고 메인 퀘스트와 함께 표시.
-export function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight }) {
+export function QuestTab({ growthUid, growthGames, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight }) {
   return (
     <div>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 퀘스트 아이콘과 중복돼 제거. */}
@@ -989,7 +990,9 @@ export function QuestTab({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpen
           확대되는 것처럼 보였다 — 이 두 블록은 재정렬·리사이즈를 애니메이션으로 보여줄 필요가
           없는 단순 비동기 데이터 채움이므로 layout을 끈다. */}
       <FadeIn index={0} layout={false}><DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /></FadeIn>
-      <FadeIn index={1} layout={false}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
+      {/* (v0.6.4) 성장 분석 — 약점 지도·복습 카드·마스터 스타일을 별도 버튼 없이 이 탭에 펼쳐 보인다. */}
+      <FadeIn index={1} layout={false}><GrowthPanel uid={growthUid || null} games={growthGames} /></FadeIn>
+      <FadeIn index={2} layout={false}><LessonMap mainQuest={mainQuest} onAnswer={onAnswerChapter} onClaim={onClaimChapter} canEdit={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} /></FadeIn>
     </div>
   );
 }

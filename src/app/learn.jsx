@@ -521,19 +521,23 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
   // 같은 조각을 모바일(전체 화면 한 칼럼)·데스크톱(보드 왼쪽 / 카드 오른쪽)이 나눠 쓴다. 기물 배치·드래그 로직은 그대로다.
   const edCard = { background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 12, padding: "11px 12px" };
   const edTitle = { fontSize: 11, fontWeight: 800, letterSpacing: ".05em", color: "rgba(244,238,226,.5)", marginBottom: 8 };
-  const edPill = (on) => ({ padding: "7px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.18)"), background: on ? "rgba(196,154,80,.24)" : "rgba(255,255,255,.05)", color: on ? T.brassHi : "rgba(244,238,226,.75)" });
-  const edBtn = (disabled) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minHeight: 32, padding: "0 9px", borderRadius: 9, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: SITE_FONT });
+  const edPill = (on) => ({ padding: "7px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.18)"), background: on ? "rgba(196,154,80,.24)" : "rgba(255,255,255,.05)", color: on ? T.brassHi : "rgba(244,238,226,.75)" });
+  const edBtn = (disabled) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minHeight: 32, padding: "0 9px", borderRadius: 9, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: SITE_FONT, whiteSpace: "nowrap", flexShrink: 0 });
+  // (v0.6.4) 도구 줄 — 글자가 낱글자 단위로 줄바꿈되지 않도록 버튼은 nowrap, 자리가 모자라면 "버튼 묶음" 단위로만 아랫줄로 내려간다.
   const resetClearRow = (
-    <div className="flex items-center" style={{ gap: 5, justifyContent: "center" }}>
-      <button onClick={doReset} className="press" style={edBtn(false)}><RefreshCw size={13} />{t("초기화")}</button>
-      <button onClick={doClear} className="press" style={{ ...edBtn(false), color: "#F4A0A0", borderColor: "rgba(200,69,59,.5)" }}><Trash2 size={13} />{t("지우기")}</button>
-      {/* (v0.6.2) 보드 뒤집기는 눈에 띄는 자리의 ⇅ 버튼 */}
-      <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} aria-label={t("보드 뒤집기")} aria-pressed={flipped} className="press" style={{ ...edBtn(false), ...(flipped ? { background: "rgba(196,154,80,.24)", borderColor: T.brass, color: T.brassHi } : {}) }}><ArrowUpDown size={13} />{t("뒤집기")}</button>
-      <span style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,.12)", margin: "0 2px" }} />
-      <button onClick={rewind} disabled={!canUndo} title={t("처음으로")} aria-label={t("처음으로")} className="press" style={{ ...edBtn(!canUndo), width: 28, padding: 0 }}><ChevronsLeft size={15} /></button>
-      <button onClick={undo} disabled={!canUndo} title={t("되돌리기")} aria-label={t("되돌리기")} className="press" style={{ ...edBtn(!canUndo), width: 28, padding: 0 }}><RotateCcw size={14} /></button>
-      <button onClick={redo} disabled={!canRedo} title={t("다시하기")} aria-label={t("다시하기")} className="press" style={{ ...edBtn(!canRedo), width: 28, padding: 0 }}><RotateCw size={14} /></button>
-      <button onClick={fastForward} disabled={!canRedo} title={t("마지막으로")} aria-label={t("마지막으로")} className="press" style={{ ...edBtn(!canRedo), width: 28, padding: 0 }}><ChevronsRight size={15} /></button>
+    <div className="flex items-center" style={{ gap: "6px 10px", justifyContent: "center", flexWrap: "wrap" }}>
+      <div className="flex items-center" style={{ gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
+        <button onClick={doReset} className="press" style={edBtn(false)}><RefreshCw size={13} />{t("초기화")}</button>
+        <button onClick={doClear} className="press" style={{ ...edBtn(false), color: "#F4A0A0", borderColor: "rgba(200,69,59,.5)" }}><Trash2 size={13} />{t("지우기")}</button>
+        {/* (v0.6.2) 보드 뒤집기는 눈에 띄는 자리의 ⇅ 버튼 */}
+        <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} aria-label={t("보드 뒤집기")} aria-pressed={flipped} className="press" style={{ ...edBtn(false), ...(flipped ? { background: "rgba(196,154,80,.24)", borderColor: T.brass, color: T.brassHi } : {}) }}><ArrowUpDown size={13} />{t("뒤집기")}</button>
+      </div>
+      <div className="flex items-center" style={{ gap: 4 }}>
+        <button onClick={rewind} disabled={!canUndo} title={t("처음으로")} aria-label={t("처음으로")} className="press" style={{ ...edBtn(!canUndo), width: 30, padding: 0 }}><ChevronsLeft size={15} /></button>
+        <button onClick={undo} disabled={!canUndo} title={t("되돌리기")} aria-label={t("되돌리기")} className="press" style={{ ...edBtn(!canUndo), width: 30, padding: 0 }}><RotateCcw size={14} /></button>
+        <button onClick={redo} disabled={!canRedo} title={t("다시하기")} aria-label={t("다시하기")} className="press" style={{ ...edBtn(!canRedo), width: 30, padding: 0 }}><RotateCw size={14} /></button>
+        <button onClick={fastForward} disabled={!canRedo} title={t("마지막으로")} aria-label={t("마지막으로")} className="press" style={{ ...edBtn(!canRedo), width: 30, padding: 0 }}><ChevronsRight size={15} /></button>
+      </div>
     </div>
   );
   const turnCastleGrid = (

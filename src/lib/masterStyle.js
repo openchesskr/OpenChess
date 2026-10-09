@@ -65,7 +65,7 @@ export function matchMasters(userFeat, data, k = 3) {
     list.push({ name, games, elo, dist, sim: 1 / (1 + dist) });
   }
   list.sort((a, b) => a.dist - b.dist);
-  return { ok: true, n: userFeat.n, list: list.slice(0, k), z, count: list.length };
+  return { ok: true, n: userFeat.n, list: list.slice(0, k), z, u, count: list.length };
 }
 /* 마스터와 내가 모두 평균보다 같은 방향으로 두드러진 특징(닮은 점) 최대 2개. */
 export function sharedTraits(z, master, data, max = 2) {
@@ -93,4 +93,36 @@ export function traitLabel(key, high) {
     queenTrade: high ? t("퀸 교환이 잦음") : t("퀸을 남겨 두는 편"),
     drawRate: high ? t("무승부가 많음") : t("승부를 가리는 편"),
   }[key] || key);
+}
+
+/* (v0.6.4) 기준 하나씩의 이름·값 표기·비교. 화면(app/growth.jsx)의 "어떤 점이 비슷한가" 표가 쓴다. */
+export const CRITERIA_GROUPS = [
+  { id: "open", keys: ["w_e4", "w_d4", "w_flank", "b_e5", "b_c5", "b_d5", "b_nf6"] },
+  { id: "mid", keys: ["capRate", "checkRate", "queenTrade", "castleQ"] },
+  { id: "game", keys: ["length", "drawRate"] },
+];
+export const criterionLabel = (key) => ({
+  w_e4: t("백 1.e4 선택"), w_d4: t("백 1.d4 선택"), w_flank: t("백 측면 오프닝(1.c4·1.Nf3 등)"),
+  b_e5: t("1.e4에 …e5 응수"), b_c5: t("1.e4에 …c5(시실리안) 응수"), b_d5: t("1.d4에 …d5 응수"), b_nf6: t("1.d4에 …Nf6 응수"),
+  castleQ: t("퀸사이드 캐슬링(캐슬링한 대국 중)"), capRate: t("기물을 잡는 수의 비율"), checkRate: t("체크를 거는 수의 비율"),
+  length: t("평균 대국 길이"), queenTrade: t("퀸 교환이 나온 대국"), drawRate: t("무승부 비율"),
+}[key] || key);
+export const criterionGroupLabel = (id) => ({ open: t("오프닝 선택"), mid: t("중반 성향"), game: t("대국 흐름") }[id] || id);
+/* 값 표기: 비율은 %, 대국 길이는 평균 수(한 수 = 백·흑 한 쌍; 특징값은 최대 120 plies = 60수 기준으로 0~1). */
+export function formatCriterion(key, v) {
+  if (v == null) return "—";
+  if (key === "length") return t("약 {0}수", Math.round(v * 60));
+  return Math.round(v * 100) + "%";
+}
+export const LEVELS = ["same", "close", "far", "veryFar"];
+export const levelLabel = (lv) => ({ same: t("거의 같음"), close: t("비슷함"), far: t("다름"), veryFar: t("많이 다름"), na: t("비교 불가") }[lv] || lv);
+/* 표준점수 차이로 단계를 나눈다: <0.35 거의 같음, <0.8 비슷함, <1.5 다름, 그 이상 많이 다름. 한쪽이 없으면 "na". */
+export function levelOf(dz) { return dz == null ? "na" : dz < 0.35 ? "same" : dz < 0.8 ? "close" : dz < 1.5 ? "far" : "veryFar"; }
+/* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, dz, level}] (STYLE_KEYS 순서). */
+export function compareCriteria(u, masterVec, data) {
+  return STYLE_KEYS.map((key, i) => {
+    const mine = u[i], theirs = masterVec[i], sd = data.std[i] || 1;
+    const dz = mine == null || theirs == null ? null : Math.abs(mine - theirs) / sd;
+    return { key, mine, theirs, dz, level: levelOf(dz) };
+  });
 }
