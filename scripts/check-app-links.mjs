@@ -97,6 +97,50 @@ if (!/startOAuthNavigation\(j\.url\)/.test(settings) || /window\.location\.origi
 for (const [n, src] of [["shell.jsx", shell], ["common.jsx", common]]) if (!/isSameOriginUrl\(url\)\) w = new Worker\(url\)/.test(src)) fails.push(n + " 워커 생성이 같은 출처 주소(내려받은 엔진)를 직접 쓰지 않음");
 if (!/listenDeepLinks\(/.test(app) || !/initDownloadedEngines\(ENGINE_PROFILES\)/.test(app)) fails.push("App.jsx에 딥링크 수신·내려받은 엔진 연결이 없음");
 
+// ⑤ (v0.6.4) 외부 링크 처리·안드로이드 뒤로가기
+{
+  const { classifyLinkClick, decideBackAction, BACK_EXIT_WINDOW_MS, listenBackButton, openMailto, openExternal } = await import("../src/lib/nativeApp.js");
+  const O = "capacitor://localhost";
+  eq(classifyLinkClick("https://www.chess.com/register?x=1", null, O), { action: "external", url: "https://www.chess.com/register?x=1" }, "다른 출처 링크는 시스템 브라우저");
+  eq(classifyLinkClick("https://openchess.kr/terms", "_blank", O), { action: "external", url: "https://openchess.kr/terms" }, "대표 사이트 주소도 앱 입장에서는 다른 출처");
+  eq(classifyLinkClick("/terms", "_blank", O), { action: "site", url: "https://openchess.kr/terms" }, "같은 출처 새 탭 링크는 대표 사이트 주소로");
+  eq(classifyLinkClick("/faq", null, O), { action: "none" }, "같은 출처 일반 이동은 건드리지 않음");
+  eq(classifyLinkClick("mailto:a@b.c?subject=x", null, O).action, "mail", "mailto는 메일 앱");
+  eq(classifyLinkClick("tel:+8210", null, O).action, "mail", "tel은 전화 앱");
+  eq(classifyLinkClick("javascript:alert(1)", null, O), { action: "none" }, "javascript: 스킴은 건드리지 않음");
+  eq(classifyLinkClick("#top", null, O), { action: "none" }, "앵커는 건드리지 않음");
+  const st = { canGoBack: false, tab: "learn", homeTab: "learn", now: 10000, armedAt: 0 };
+  eq(decideBackAction({ ...st, canGoBack: true }), "back", "되감을 히스토리가 있으면 history.back");
+  eq(decideBackAction({ ...st, tab: "set" }), "home", "홈이 아닌 탭이면 홈으로");
+  eq(decideBackAction(st), "hint", "홈에서 처음 누르면 종료 안내");
+  eq(decideBackAction({ ...st, armedAt: 10000 - BACK_EXIT_WINDOW_MS }), "exit", "안내 직후(2초 안) 다시 누르면 종료");
+  eq(decideBackAction({ ...st, armedAt: 10000 - BACK_EXIT_WINDOW_MS - 1 }), "hint", "2초가 지나면 다시 안내");
+  // 가짜 Capacitor — 뒤로가기 리스너·AppLauncher·Browser 연결
+  const calls = []; let backCb = null;
+  window.Capacitor = { isNativePlatform: () => true, getPlatform: () => "android", Plugins: {
+    App: { addListener: async (n, cb) => { if (n === "backButton") backCb = cb; return { remove() { calls.push("off"); } }; }, exitApp() { calls.push("exit"); } },
+    AppLauncher: { openUrl: async ({ url }) => { calls.push("launch:" + url); return { completed: !url.startsWith("https://nohandler") }; } },
+    Browser: { open: async ({ url }) => { calls.push("browser:" + url); } },
+  } };
+  const got = []; const off = listenBackButton((ev) => got.push(ev.canGoBack)); await Promise.resolve();
+  backCb({ canGoBack: true }); backCb({}); eq(got, [true, false], "뒤로가기 이벤트가 handler에 전달됨"); off(); await Promise.resolve(); eq(calls.includes("off"), true, "해제 함수가 리스너를 지움");
+  await openExternal("https://x.example/a"); eq(calls.pop(), "browser:https://x.example/a", "일반 외부 주소는 Browser");
+  await openExternal("https://www.chess.com/r", { preferApp: true }); eq(calls.pop(), "launch:https://www.chess.com/r", "preferApp이면 앱 링크(AppLauncher)");
+  await openExternal("https://nohandler.example/", { preferApp: true }); eq(calls.splice(-2), ["launch:https://nohandler.example/", "browser:https://nohandler.example/"], "처리할 앱이 없으면 브라우저로");
+  await openMailto("mailto:a@b.c"); eq(calls.pop(), "launch:mailto:a@b.c", "mailto는 AppLauncher");
+  delete window.Capacitor;
+  eq(listenBackButton(() => { }) instanceof Function, true, "웹에서도 해제 함수를 돌려줌(아무 일도 안 함)");
+  // 연결: App.jsx가 가드·뒤로가기를 실제로 설치하고, 개별 링크 호출부가 웹뷰를 덮어쓰는 방식으로 돌아가지 않는다.
+  if (!/installNativeLinkGuard\(\)/.test(app) || !/listenBackButton\(/.test(app) || !/decideBackAction\(/.test(app)) fails.push("App.jsx에 링크 가드·뒤로가기 연결이 없음");
+  if (/window\.location\.href\s*=\s*url;/.test(settings)) fails.push("settings.jsx 문의 메일이 openMailto를 거치지 않고 웹뷰 이동으로 돌아감");
+  if (!/data-prefer-app/.test(common)) fails.push("chess.com 앱 링크가 data-prefer-app(앱 링크 우선 열기)을 잃음");
+  // 새 window.open/location 이동이 코드에 늘어나면 앱에서 웹뷰를 덮어쓴다 — 허용 목록 밖이면 실패시켜 openExternal/링크 가드를 쓰게 한다.
+  const { readAppSource } = await import("./lib/appSource.mjs");
+  const bad = []; readAppSource().split("\n").forEach((l, i) => { if (!/^\s*(\/\/|\*|\{\/\*)/.test(l) && /window\.open\(|(window\.)?location\.(href\s*=[^=]|assign\()/.test(l)) bad.push(l.trim()); });
+  const ALLOWED = [/CHESSCOM_APP_STORE\[platform\]/, /window\.location\.assign\(link\.path\)/]; // 둘 다 앱 안(내부 경로 딥링크·웹 전용 폴백 타이머)에서만 쓴다
+  bad.filter((l) => !ALLOWED.some((re) => re.test(l))).forEach((l) => fails.push("웹뷰를 덮어쓰는 이동 발견(openExternal·링크 가드를 쓸 것): " + l.slice(0, 120)));
+}
+
 if (warns.length) console.warn("⚠ check-app-links 경고(출시 전 처리):\n  " + warns.join("\n  "));
 if (fails.length) { console.error("✖ check-app-links 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-app-links: 딥링크·로그인 복귀 분석, 엔진 내려받기 상태 전이, 앱 링크 파일·배포 설정, 앱 로그인·워커 연결이 유지된다");

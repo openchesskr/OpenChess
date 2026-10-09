@@ -25,5 +25,11 @@
   "lib/tierSystem.js",
   "FaqPage.jsx",
   "LegalPage.jsx",
-  "app/dexMasters.jsx"
+  "app/dexMasters.jsx",
+  "app/growth.jsx",
+  "lib/weakness.js",
+  "lib/highlights.js",
+  "lib/masterStyle.js",
+  "lib/highlightCard.js",
+  "components/schematicFullscreen.jsx"
 ]

@@ -196,63 +196,15 @@ function whiteEvalObj(m) {
   if (m.mate != null) return { mate: m.mate, win: m.mate > 0 ? "w" : "b" };
   return null;
 }
-// (UI2) 현재 기보 복사 + FEN/PGN 붙여넣기. PGN은 검증 후 분석 탭에 그대로 이어서 둘 수 있는 수순으로
-// 불러오고, FEN은(사용자 요청, v0.3.3) 더 이상 읽기 전용 미리보기로만 보여주지 않는다 — onLoadFen으로
-// 분석 탭을 아예 "FEN 모드"로 전환해, 그 위치(차례·캐슬링 권리·앙파상까지)에서부터 실제로 이어서 둘
-// 수 있게 한다. 예전의 읽기 전용 FEN 미리보기 모달 코드는 폐기했다.
-function NotationTools({ sans, startColor, onLoadPgn, onLoadFen }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [err, setErr] = useState("");
+// (UI2) 현재 기보 복사. (v0.6.4) 예전엔 FEN/PGN 붙여넣기 버튼과 모달도 여기 있었는데, 보드 편집 화면(BoardEditorModal)의 "불러오기"로 통합하고 버튼은 없앴다.
+function NotationTools({ sans, startColor }) {
   const [copied, setCopied] = useState(false);
   const iconBtn = { width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 };
   const copy = async () => {
     const out = sansToPgnText(sans, startColor) || t("(시작 위치)");
     try { await navigator.clipboard.writeText(out); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { }
   };
-  const submit = () => {
-    const raw = text.trim();
-    if (!raw) { setErr(t("붙여넣을 내용을 입력하세요")); return; }
-    if (looksLikeFen(raw)) {
-      const fenRoot = parseFenFull(raw);
-      if (!fenRoot) { setErr(t("올바른 FEN 형식이 아님")); return; }
-      onLoadFen(fenRoot); setOpen(false); setText(""); setErr("");
-      return;
-    }
-    const moves = parsePgnMoves(raw);
-    if (!moves.length) { setErr(t("인식할 수 있는 기보 없음")); return; }
-    let board = startBoard(), ok = true;
-    for (let i = 0; i < moves.length; i++) {
-      const color = i % 2 === 0 ? "w" : "b";
-      if (!sanSrc(board, moves[i], color)) { ok = false; break; }
-      board = applySan(board, moves[i], color);
-    }
-    if (!ok) { setErr(t("기보에 불법 수 포함")); return; }
-    onLoadPgn(moves); setOpen(false); setText(""); setErr("");
-  };
-  return (
-    <>
-      <div className="flex items-center gap-2">
-        <button onClick={copy} title={t("현재 기보 복사")} className="press" style={iconBtn}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
-        <button onClick={() => { setOpen(true); setErr(""); }} title={t("FEN/PGN 붙여넣기")} className="press" style={iconBtn}><ClipboardPaste size={13} /></button>
-      </div>
-      {open && (
-        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: 420, width: "100%", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-            <button onClick={() => setOpen(false)} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{t("FEN 또는 PGN 붙여넣기")}</div>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} placeholder={t("예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")} style={{ width: "100%", fontSize: 12.5, padding: 10, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "vertical", fontFamily: SITE_FONT, boxSizing: "border-box" }} />
-            {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{err}</div>}
-            <div className="flex gap-2" style={{ marginTop: 10 }}>
-              <button onClick={submit} className="press" style={{ padding: "8px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12.5 }}>{t("불러오기")}</button>
-              <button onClick={() => setOpen(false)} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>{t("취소")}</button>
-            </div>
-            <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>{t("PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환되고, 처음 두는 수가 1수로 표기됨")}</p>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return <button onClick={copy} title={t("현재 기보 복사")} aria-label={t("현재 기보 복사")} className="press" style={iconBtn}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>;
 }
 // (v0.3.5 기능) 사용자 요청 — 분석 탭 보드 편집기. 팔레트에서 기물을 골라 보드 칸에 콕콕 찍어 원하는
 // 포지션을 처음부터 구성하고, 차례·캐슬링 권리를 직접 지정한 뒤 완료하면 NotationTools의 FEN
@@ -327,7 +279,7 @@ function EditorBoardGrid({ board, flipped, size, selected, onSquareClick, gridRe
     </div>
   );
 }
-function BoardEditorModal({ initialFen, onClose, onApply }) {
+function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
   const narrow = useNarrow(760);
   // (v0.5.1 버그 수정, 사용자 요청) 캐슬링 권리 자동 해제는 이제 옵션이 아니라 항상 켜져 있다 — 초기
   // 배치를 불러오는 시점부터 이미 무효한 권리(킹·룩이 표준 시작 칸을 벗어났는데 권리는 남아 있는 FEN)가
@@ -518,15 +470,6 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   };
   const [copied, setCopied] = useState(false);
   const copyFen = async () => { try { await navigator.clipboard.writeText(fenText); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { } };
-  const pasteFen = async () => {
-    try {
-      const raw = (await navigator.clipboard.readText()).trim();
-      if (!looksLikeFen(raw)) { setFenErr(t("클립보드에 올바른 FEN 없음")); return; }
-      const p = parseFenFull(raw);
-      if (!p) { setFenErr(t("올바른 FEN 형식이 아님")); return; }
-      pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setFenErr("");
-    } catch { setFenErr(t("클립보드를 읽을 수 없음")); }
-  };
   // (v0.3.5 기능 → v0.3.9 백엔드 재전환 → v0.4.2 텍스트 인식 확장) 사용자 요청 — 이미지 스캔(사진 →
   // FEN). 서버(api/scan-board.js, Gemini API)가 이제 체스판 배치 사진뿐 아니라 PGN/FEN 텍스트가 담긴
   // 사진도 인식한다. 보드 배치 사진이면 여전히 캐슬링 권리·차례는 사용자가 이미 이 화면에서 설정해
@@ -574,36 +517,43 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
   const boardSize = narrow ? Math.min(320, (typeof window !== "undefined" ? window.innerWidth : 360) - 64) : 400;
   const paletteSq = narrow ? Math.min(40, Math.floor((boardSize + 15) / 7) - 4) : 42;
 
+  // (v0.6.4 재디자인) 보드 편집 화면 — 보드를 가운데 무대로 두고, 아래로 "도구 줄 → 기물 → 대국 설정 → 불러오기 → FEN" 카드를 순서대로 쌓는다.
+  // 같은 조각을 모바일(전체 화면 한 칼럼)·데스크톱(보드 왼쪽 / 카드 오른쪽)이 나눠 쓴다. 기물 배치·드래그 로직은 그대로다.
+  const edCard = { background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 12, padding: "11px 12px" };
+  const edTitle = { fontSize: 11, fontWeight: 800, letterSpacing: ".05em", color: "rgba(244,238,226,.5)", marginBottom: 8 };
+  const edPill = (on) => ({ padding: "7px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.18)"), background: on ? "rgba(196,154,80,.24)" : "rgba(255,255,255,.05)", color: on ? T.brassHi : "rgba(244,238,226,.75)" });
+  const edBtn = (disabled) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minHeight: 32, padding: "0 9px", borderRadius: 9, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: SITE_FONT, whiteSpace: "nowrap", flexShrink: 0 });
+  // (v0.6.4) 도구 줄 — 글자가 낱글자 단위로 줄바꿈되지 않도록 버튼은 nowrap, 자리가 모자라면 "버튼 묶음" 단위로만 아랫줄로 내려간다.
   const resetClearRow = (
-    <div className="flex gap-2">
-      <button onClick={doReset} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 초기화", <RefreshCw size={13} />)}</button>
-      <button onClick={doClear} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 10px", borderRadius: 10, background: "rgba(200,69,59,.18)", color: "#F4A0A0", fontWeight: 800, fontSize: 12.5, border: "1px solid " + T.blunder, cursor: "pointer" }}>{tx("{0} 지우기", <Trash2 size={13} />)}</button>
-      {/* (v0.6.2) 보드 뒤집기를 팔레트 안 작은 아이콘에서 꺼내 분석 탭과 같은 ⇅ 버튼으로 — 눈에 띄지 않아 "뒤집기가 없다"는 제보가 있었다. */}
-      <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} aria-label={t("보드 뒤집기")} aria-pressed={flipped} className="press" style={{ flexShrink: 0, width: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 10, background: flipped ? "rgba(255,255,255,.18)" : T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer" }}><ArrowUpDown size={17} /></button>
+    <div className="flex items-center" style={{ gap: "6px 10px", justifyContent: "center", flexWrap: "wrap" }}>
+      <div className="flex items-center" style={{ gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
+        <button onClick={doReset} className="press" style={edBtn(false)}><RefreshCw size={13} />{t("초기화")}</button>
+        <button onClick={doClear} className="press" style={{ ...edBtn(false), color: "#F4A0A0", borderColor: "rgba(200,69,59,.5)" }}><Trash2 size={13} />{t("지우기")}</button>
+        {/* (v0.6.2) 보드 뒤집기는 눈에 띄는 자리의 ⇅ 버튼 */}
+        <button onClick={() => setFlipped((f) => !f)} title={t("보드 뒤집기")} aria-label={t("보드 뒤집기")} aria-pressed={flipped} className="press" style={{ ...edBtn(false), ...(flipped ? { background: "rgba(196,154,80,.24)", borderColor: T.brass, color: T.brassHi } : {}) }}><ArrowUpDown size={13} />{t("뒤집기")}</button>
+      </div>
+      <div className="flex items-center" style={{ gap: 4 }}>
+        <button onClick={rewind} disabled={!canUndo} title={t("처음으로")} aria-label={t("처음으로")} className="press" style={{ ...edBtn(!canUndo), width: 30, padding: 0 }}><ChevronsLeft size={15} /></button>
+        <button onClick={undo} disabled={!canUndo} title={t("되돌리기")} aria-label={t("되돌리기")} className="press" style={{ ...edBtn(!canUndo), width: 30, padding: 0 }}><RotateCcw size={14} /></button>
+        <button onClick={redo} disabled={!canRedo} title={t("다시하기")} aria-label={t("다시하기")} className="press" style={{ ...edBtn(!canRedo), width: 30, padding: 0 }}><RotateCw size={14} /></button>
+        <button onClick={fastForward} disabled={!canRedo} title={t("마지막으로")} aria-label={t("마지막으로")} className="press" style={{ ...edBtn(!canRedo), width: 30, padding: 0 }}><ChevronsRight size={15} /></button>
+      </div>
     </div>
   );
   const turnCastleGrid = (
-    <div style={{ display: "grid", gridTemplateColumns: "auto auto 1fr", gap: "7px 16px", alignItems: "center", fontSize: 11 }}>
-      <div />
-      <div style={{ fontWeight: 800, color: "rgba(244,238,226,.6)" }}>{t("착수 차례")}</div>
-      <div style={{ fontWeight: 800, color: "rgba(244,238,226,.6)" }}>{t("캐슬링 (표준)")}</div>
-      {[["w", "K", "Q"], ["b", "k", "q"]].map(([col, kKey, qKey]) => (
-        <React.Fragment key={col}>
-          <label className="flex items-center" style={{ gap: 6, cursor: "pointer" }}>
-            <input type="radio" checked={turn === col} onChange={() => setTurnV(col)} />
-            <PieceGlyph type="P" color={col} size={20} />
-          </label>
-          <div />
-          <div className="flex items-center" style={{ gap: 14 }}>
-            <label className="flex items-center" style={{ gap: 5, cursor: "pointer", color: T.ivoryHi, fontWeight: 700 }}>
-              <input type="checkbox" checked={rights[kKey]} onChange={() => toggleRight(kKey)} /> 0-0
-            </label>
-            <label className="flex items-center" style={{ gap: 5, cursor: "pointer", color: T.ivoryHi, fontWeight: 700 }}>
-              <input type="checkbox" checked={rights[qKey]} onChange={() => toggleRight(qKey)} /> 0-0-0
-            </label>
-          </div>
-        </React.Fragment>
-      ))}
+    <div style={edCard}>
+      <div style={edTitle}>{t("착수 차례")}</div>
+      <div className="flex" style={{ gap: 8, marginBottom: 12 }}>
+        {[["w", t("백")], ["b", t("흑")]].map(([col, label]) => (
+          <button key={col} onClick={() => setTurnV(col)} aria-pressed={turn === col} className="press" style={{ ...edPill(turn === col), flex: 1, justifyContent: "center", borderRadius: 10, padding: "8px 10px" }}><PieceGlyph type="P" color={col} size={20} />{label}</button>
+        ))}
+      </div>
+      <div style={edTitle}>{t("캐슬링 (표준)")}</div>
+      <div className="flex" style={{ gap: 6, flexWrap: "wrap" }}>
+        {[["K", "w", "0-0"], ["Q", "w", "0-0-0"], ["k", "b", "0-0"], ["q", "b", "0-0-0"]].map(([key, col, label]) => (
+          <button key={key} onClick={() => toggleRight(key)} aria-pressed={!!rights[key]} className="press" style={edPill(!!rights[key])}><PieceGlyph type="K" color={col} size={17} />{label}</button>
+        ))}
+      </div>
     </div>
   );
   const boardEl = <EditorBoardGrid board={board} flipped={flipped} size={boardSize} selected={pickedSq} onSquareClick={onSqClickGuarded} gridRef={gridRef} onPieceDown={startDragFromBoard} dragOn={{ onMove: onDragPointerMove, onUp: onDragPointerUp, onCancel: onDragPointerCancel }} draggingFrom={ptrDrag && ptrDrag.source === "board" ? ptrDrag.from : null} />;
@@ -636,83 +586,113 @@ function BoardEditorModal({ initialFen, onClose, onApply }) {
       <PieceGlyph type={ptrDrag.piece.t} color={ptrDrag.piece.c} size={Math.round(boardSize / 8 * 0.9)} />
     </div>
   );
-  const fenActionsRow = (
-    <div className="flex gap-2">
-      <button onClick={pasteFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>{t("복사한 FEN 붙여넣기")}</button>
-      <button onClick={copyFen} className="press" style={{ flex: 1, padding: "8px 10px", borderRadius: 9, background: T.ebony2, color: T.ivoryHi, fontWeight: 700, fontSize: 11.5, border: "1px solid #000", cursor: "pointer" }}>{copied ? t("복사됨") : t("FEN 복사")}</button>
+  // ---- 불러오기: 예전 분석 탭의 "FEN/PGN 붙여넣기" 버튼을 이 화면으로 통합했다. FEN이면 이 편집 보드에 올려 계속 고치고, PGN이면 그 수순을 분석 탭 기보로 바로 불러온다. ----
+  const [importText, setImportText] = useState("");
+  const [importErr, setImportErr] = useState("");
+  const loadImport = (raw0) => {
+    const raw = String(raw0 == null ? importText : raw0).trim();
+    if (!raw) { setImportErr(t("붙여넣을 내용을 입력하세요")); return; }
+    if (looksLikeFen(raw)) {
+      const p = parseFenFull(raw);
+      if (!p) { setImportErr(t("올바른 FEN 형식이 아님")); return; }
+      pushSnap({ board: p.board, turn: p.turn, rights: p.rights, ep: p.ep || null }); setImportErr(""); setImportText("");
+      return;
+    }
+    const moves = parsePgnMoves(raw);
+    if (!moves.length) { setImportErr(t("인식할 수 있는 기보 없음")); return; }
+    let b2 = startBoard(), ok = true;
+    for (let i = 0; i < moves.length; i++) {
+      const color = i % 2 === 0 ? "w" : "b";
+      if (!sanSrc(b2, moves[i], color)) { ok = false; break; }
+      b2 = applySan(b2, moves[i], color);
+    }
+    if (!ok) { setImportErr(t("기보에 불법 수 포함")); return; }
+    if (onLoadPgn) onLoadPgn(moves);
+  };
+  const pasteClipboard = async () => {
+    try { const raw = (await navigator.clipboard.readText()) || ""; setImportText(raw); loadImport(raw); }
+    catch { setImportErr(t("클립보드를 읽을 수 없음")); }
+  };
+  const importCard = (
+    <div style={edCard}>
+      <div style={edTitle}>{t("불러오기")}</div>
+      <textarea value={importText} onChange={(e) => { setImportText(e.target.value); setImportErr(""); }} rows={3} placeholder={t("예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")}
+        style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: 9, borderRadius: 9, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, resize: "vertical" }} />
+      {importErr && <div style={{ fontSize: 11, color: T.blunder, marginTop: 5 }}>{importErr}</div>}
+      <div className="flex" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+        <button onClick={pasteClipboard} className="press" style={{ ...edBtn(false), flex: "1 1 120px" }}><ClipboardPaste size={13} />{t("클립보드에서 붙여넣기")}</button>
+        <button onClick={() => loadImport()} className="press" style={{ ...edBtn(false), flex: "1 1 80px", background: T.ebony2, color: T.brassHi, borderColor: "#000" }}>{t("불러오기")}</button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label={t("이미지 스캔")} busyLabel={t("인식하는 중... {0}%", scanProgress)}
+          buttonStyle={{ ...edBtn(scanning), width: "100%" }} />
+      </div>
+      <p style={{ fontSize: 10.5, color: "rgba(244,238,226,.5)", margin: "8px 0 0", lineHeight: 1.5 }}>{t("PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환됨.")}</p>
     </div>
   );
-  const fenInputRow = (
-    <div>
-      <div className="flex items-center gap-2">
-        <span title={t("이 FEN을 보드에 반영")} style={{ flexShrink: 0, color: "rgba(244,238,226,.5)" }}><Save size={15} /></span>
-        <input value={fenInput} onChange={(e) => { setFenInput(e.target.value); setFenErr(""); }} onKeyDown={(e) => e.key === "Enter" && applyFenInput()} onBlur={applyFenInput}
+  const fenCard = (
+    <div style={edCard}>
+      <div style={edTitle}>FEN</div>
+      <div className="flex items-center" style={{ gap: 6 }}>
+        <input value={fenInput} onChange={(e) => { setFenInput(e.target.value); setFenErr(""); }} onKeyDown={(e) => e.key === "Enter" && applyFenInput()} onBlur={applyFenInput} aria-label="FEN"
           style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 11 }} />
+        <button onClick={copyFen} title={t("FEN 복사")} aria-label={t("FEN 복사")} className="press" style={{ ...edBtn(false), width: 34, padding: 0, flexShrink: 0 }}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
       </div>
-      {fenErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{fenErr}</div>}
+      {fenErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{fenErr}</div>}
     </div>
   );
-  const scanAndHistoryRow = (
-    <div className="flex items-center justify-between">
-      <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label={t("이미지 스캔")} busyLabel={t("인식하는 중... {0}%", scanProgress)}
-        buttonStyle={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: 9, background: scanning ? "rgba(255,255,255,.06)" : T.ebony2, color: scanning ? "rgba(244,238,226,.4)" : T.brassHi, fontWeight: 700, fontSize: 11.5, border: "1px solid " + (scanning ? "rgba(255,255,255,.15)" : "#000"), cursor: scanning ? "default" : "pointer" }} />
-      <div className="flex items-center" style={{ gap: 4 }}>
-        <button onClick={rewind} disabled={!canUndo} title={t("처음으로")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsLeft size={15} /></button>
-        <button onClick={undo} disabled={!canUndo} title={t("되돌리기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canUndo ? "pointer" : "default", opacity: canUndo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
-        <button onClick={redo} disabled={!canRedo} title={t("다시하기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canRedo ? "pointer" : "default", opacity: canRedo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCw size={14} /></button>
-        <button onClick={fastForward} disabled={!canRedo} title={t("마지막으로")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(255,255,255,.08)", color: T.brassHi, border: "1px solid rgba(255,255,255,.15)", cursor: canRedo ? "pointer" : "default", opacity: canRedo ? 1 : 0.4, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronsRight size={15} /></button>
-      </div>
+  const paletteCard = (
+    <div style={edCard}>
+      <div style={edTitle}>{t("기물")}</div>
+      <div className="flex justify-center">{paletteEl}</div>
     </div>
   );
   const footerButtons = (
-    <div className="flex flex-col" style={{ gap: 8 }}>
-      <div className="flex gap-2">
-        <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("취소")}</button>
-        <button onClick={handleDone} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("완료")}</button>
-      </div>
+    <div className="flex gap-2">
+      <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: T.ivoryHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("취소")}</button>
+      <button onClick={handleDone} className="press" style={{ flex: 1.4, padding: "11px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("완료")}</button>
     </div>
   );
   const header = (
     <div className="flex items-center justify-between">
-      <div style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{t("보드 편집")}</div>
-      <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(255,255,255,.08)", color: T.ivoryHi, border: "1px solid rgba(255,255,255,.15)", cursor: "pointer" }}>✕</button>
+      <div className="flex items-center" style={{ gap: 8, fontSize: 15, fontWeight: 800, color: T.ivoryHi }}><Pencil size={15} style={{ color: T.brassHi }} />{t("보드 편집")}</div>
+      <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(255,255,255,.08)", color: T.ivoryHi, border: "1px solid rgba(255,255,255,.15)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
     </div>
   );
+  const bg = "linear-gradient(180deg,#2E1B10,#160C06)";
   if (narrow) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex" }}>
         {ghostEl}
-        <div style={{ width: "100%", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#2E1B10,#160C06)" }}>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>{header}</div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-            {resetClearRow}
-            {turnCastleGrid}
+        <div style={{ width: "100%", display: "flex", flexDirection: "column", background: bg }}>
+          <div style={{ padding: "calc(env(safe-area-inset-top) + 12px) 16px 12px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>{header}</div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="flex justify-center">{boardEl}</div>
-            {paletteEl}
-            {fenActionsRow}
-            {fenInputRow}
-            {scanAndHistoryRow}
+            {resetClearRow}
+            {paletteCard}
+            {turnCastleGrid}
+            {importCard}
+            {fenCard}
           </div>
-          <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,.1)" }}>{footerButtons}</div>
+          <div style={{ padding: "12px 16px calc(env(safe-area-inset-bottom) + 12px)", borderTop: "1px solid rgba(255,255,255,.1)" }}>{footerButtons}</div>
         </div>
       </div>
     );
   }
-  // (사용자 요청) 데스크톱 — 체스보드만 남기고 나머지 UI는 전부 보드 오른쪽에 모아, 가로 비율의 창 하나로.
+  // 데스크톱 — 보드를 왼쪽 무대에, 나머지 카드는 오른쪽 칼럼(넘치면 그 칼럼만 스크롤)에 둔다.
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       {ghostEl}
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(880px, 100%)", maxHeight: "min(680px, 100%)", display: "flex", gap: 26, background: "linear-gradient(180deg,#2E1B10,#160C06)", borderRadius: 18, border: "1px solid #000", boxShadow: "0 30px 70px -16px rgba(0,0,0,.7)", padding: 24, overflow: "auto" }}>
-        <div style={{ flexShrink: 0 }}>{boardEl}</div>
-        <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(940px, 100%)", maxHeight: "min(720px, 100%)", display: "flex", gap: 24, background: bg, borderRadius: 18, border: "1px solid #000", boxShadow: "0 30px 70px -16px rgba(0,0,0,.7)", padding: 22 }}>
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>{boardEl}{resetClearRow}</div>
+        <div style={{ flex: 1, minWidth: 300, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           {header}
-          {resetClearRow}
-          {turnCastleGrid}
-          {paletteEl}
-          {fenActionsRow}
-          {fenInputRow}
-          {scanAndHistoryRow}
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 2 }}>
+            {paletteCard}
+            {turnCastleGrid}
+            {importCard}
+            {fenCard}
+          </div>
           {footerButtons}
         </div>
       </div>
@@ -3435,8 +3415,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                   (UI) 사용자 요청 — 펜/리뷰 버튼을 복사·붙여넣기 버튼과 같은 26px 크기로 맞추고, 펜
                   버튼 디자인도 복사/붙여넣기 버튼(iconBtn)과 동일하게 통일. 네 버튼 모두 같은 부모의
                   gap-2(8px)로 감싸 간격도 통일한다. */}
-              <button onClick={() => setEditorOpen(true)} title={t("보드 편집")} className="press" style={{ width: 26, height: 26, borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Pencil size={13} /></button>
-              <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} onLoadPgn={onLoadPgn} onLoadFen={onLoadFen} />
+              <NotationTools sans={sans} startColor={fenRoot ? fenRoot.turn : undefined} />
+              <button onClick={() => setEditorOpen(true)} title={t("보드 편집")} aria-label={t("보드 편집")} className="press" style={{ height: 26, padding: "0 9px", borderRadius: 7, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: SITE_FONT }}><Pencil size={13} />{t("편집")}</button>
               {/* (18차 UI5) 와이파이 아이콘 + "라이브" 상태 텍스트 삭제 */}
               {/* (v0.2.0 기능) 기보 위 리뷰 버튼 — 예전엔 이 자리에서 즉석 분석 모드(AnalysisModal)를
                   띄웠지만, 이제 현재 기보(진행분+이후분)를 그대로 전용 /review 페이지로 넘긴다.
@@ -3454,6 +3434,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
               initialFen={fenOfRoot(fenRoot, sans)}
               onClose={() => setEditorOpen(false)}
               onApply={(root) => { onLoadFen(root); setEditorOpen(false); }}
+              onLoadPgn={(moves) => { onLoadPgn(moves); setEditorOpen(false); }}
             />
           )}
           {/* (사용자 요청) "잘리지 않을 정도로 최대한 크게" — 예전엔 이 폭을 모바일에서도 항상

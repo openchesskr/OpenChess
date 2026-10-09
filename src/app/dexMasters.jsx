@@ -7,6 +7,7 @@ import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User } from "lucide-react"
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
+import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
 import FIDE from "../data/fideRankings.json";
@@ -31,7 +32,8 @@ const tourPeriod = (r) => (r.to === r.from ? String(r.from) : r.from + "–" + (
 const tourPlace = (r) => (r.place === "various" ? t("개최지 매번 변경") : r.place === "online" ? t("온라인") : (lang === "ko" && r.placeKo ? r.placeKo : r.place) + (r.cc ? " " + flagEmoji(r.cc) : ""));
 const BY_ID = new Map(CHAMPIONS.map((c) => [c.id, c]));
 const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
-const personName = (p) => (lang === "ko" && p.ko ? p.ko : (p.name || p.opp));
+// (v0.6.4) 마스터 이름은 언어와 상관없이 영어 한 가지로 표기한다.
+const personName = (p) => (p.name || p.opp);
 const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
 // "6대 챔피언(1기)" · en "6th (Reign 1)" — 재위가 한 번뿐인 사람은 "(n기)"를 붙이지 않는다.
 const numText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
@@ -132,7 +134,7 @@ function FideNode({ n, onPick, picked, fx }) {
   const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
   const ribbon = medal ? medal.ribbon : top10 ? "linear-gradient(180deg,#EBD7A6,#CDAA5E)" : "linear-gradient(180deg,#E9DDC2,#D3C09A)";
   return (
-    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, lang) + " " + f.rating}
+    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, "en") + " " + f.rating}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : frame, fontFamily: SITE_FONT, color: T.ink,
         boxShadow: picked ? SEL_GLOW : (medal ? medal.glow + ", 0 3px 8px rgba(60,40,10,.3)" : "0 2px 6px rgba(60,40,20,.2)") }}>
       <span style={{ position: "absolute", inset: medal || picked ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: medal ? medal.bg : NODE_PARCH }}>
@@ -142,7 +144,7 @@ function FideNode({ n, onPick, picked, fx }) {
           <span style={{ fontFamily: FONT_NUM, ...NUM, fontWeight: 800, fontSize: n.rank >= 100 ? 19 : 26, lineHeight: 1, marginRight: 6, letterSpacing: n.rank >= 100 ? -1 : 0, textShadow: "0 1px 0 rgba(255,255,255,.55), 0 -1px 0 rgba(90,58,20,.2)" }}>{n.rank}</span>
         </span>
         <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "9px 12px 7px 8px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left" }}>
-          <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontFamily: FONT_SERIF, fontSize: 17.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0, whiteSpace: "nowrap" }}><Flag code={f.fed} size={19} /><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, lang)}</span></span>
+          <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontFamily: FONT_SERIF, fontSize: 17.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0, whiteSpace: "nowrap" }}><Flag code={f.fed} size={19} /><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, "en")}</span></span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span aria-hidden="true" style={{ position: "relative", flex: 1, height: 7, borderRadius: 4, background: "rgba(90,58,20,.14)", overflow: "hidden", boxShadow: "inset 0 1px 1px rgba(90,58,20,.25)" }}>
               <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 4, background: medal ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
@@ -164,7 +166,7 @@ function DbMasterNode({ n, onPick, picked, fx }) {
   const eloTier = star ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
   const pct = m.elo ? 10 + 90 * (m.elo - DB_ELO_RANGE[0]) / (DB_ELO_RANGE[1] - DB_ELO_RANGE[0]) : 0;
   return (
-    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, lang)}
+    <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, "en")}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (star ? "linear-gradient(135deg,#EFD9A3,#C49A50 55%,#8F6A22)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
         boxShadow: picked ? SEL_GLOW : (star ? "0 0 12px 1px rgba(236,203,134,.5), 0 3px 8px rgba(60,40,10,.28)" : "0 2px 6px rgba(60,40,20,.2)") }}>
       <span style={{ position: "absolute", inset: picked || star ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: star ? "linear-gradient(160deg,#FFF8E0,#F6E6B4)" : NODE_PARCH }}>
@@ -175,7 +177,7 @@ function DbMasterNode({ n, onPick, picked, fx }) {
           </span>
         </span>
         <span style={{ position: "relative", minWidth: 0, flex: 1, padding: "10px 12px 11px 6px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 7, textAlign: "left" }}>
-          <span style={{ fontFamily: FONT_SERIF, fontSize: 19, fontWeight: 700, lineHeight: 1.1, letterSpacing: .1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{star ? <span aria-hidden="true" style={{ color: "#C49A50", marginRight: 4 }}>✦</span> : null}{masterName(m.name, lang)}</span>
+          <span style={{ fontFamily: FONT_SERIF, fontSize: 19, fontWeight: 700, lineHeight: 1.1, letterSpacing: .1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{star ? <span aria-hidden="true" style={{ color: "#C49A50", marginRight: 4 }}>✦</span> : null}{masterName(m.name, "en")}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {m.elo ? <><span style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: MG_GOLD_TXT }}>MAX</span><span style={{ fontFamily: FONT_NUM, ...NUM, fontSize: 14.5, fontWeight: 700, lineHeight: 1.3, padding: "0 10px", borderRadius: 999, background: eloTier.bg, color: eloTier.ink, boxShadow: star ? "0 1px 2px rgba(90,58,20,.3)" : "none" }}>{m.elo}</span></> : null}
             <span style={{ marginLeft: "auto", fontFamily: FONT_NUM, ...NUM, fontSize: 11.5, fontWeight: 500, color: T.inkSoft }}>{t("대국 {0}판", m.games)}</span>
@@ -193,7 +195,7 @@ function PlayerNode({ n }) {
   const color = TOUR_COLOR[n.tour.type];
   return (
     <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px", display: "flex", alignItems: "center", borderRadius: 9, zIndex: 2, fontSize: 12.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      border: "1.5px solid " + color + "99", background: "#fff" }}>{dbPlayerName(n.name, lang)}</div>
+      border: "1.5px solid " + color + "99", background: "#fff" }}>{dbPlayerName(n.name, "en")}</div>
   );
 }
 
@@ -262,7 +264,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
   const checks = (info && info.winnerCheck) || {};
   const winners = WINNERS[r.id] || [];
   const isTeam = r.type === "team";
-  const winName = (n) => (isTeam ? (lang === "ko" && COUNTRY_KO[n] ? COUNTRY_KO[n] : n) : playerName(n, lang));
+  const winName = (n) => (isTeam ? (lang === "ko" && COUNTRY_KO[n] ? COUNTRY_KO[n] : n) : playerName(n, "en"));
   const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "10px 0 3px" }}>{txt}</div>;
   const rowSty = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
   const results = info ? [...(info.complete || []).map((x) => ({ ...x, sure: true })), ...(info.partial || []).map((x) => ({ ...x, sure: false }))].sort((a, b) => b.y - a.y) : [];
@@ -281,11 +283,11 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
       {head(t("마스터 대국 DB"))}
       {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
         <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => dbPlayerName(n, lang) + " (" + c + ")").join(" · ")}</div>}
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => dbPlayerName(n, "en") + " (" + c + ")").join(" · ")}</div>}
         <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>
         {results.length > 0 && <>
           {head(t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => dbPlayerName(n, lang)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => dbPlayerName(n, "en")).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
           <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
         </>}
         {info.top.length > 0 && <>
@@ -293,7 +295,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
               <button onClick={() => onOpenGame && onOpenGame(g.m.split(" "))} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y} · {dbPlayerName(g.w, lang)} {g.we ? "(" + g.we + ")" : ""} – {dbPlayerName(g.b, lang)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+                {g.y} · {dbPlayerName(g.w, "en")} {g.we ? "(" + g.we + ")" : ""} – {dbPlayerName(g.b, "en")} {g.be ? "(" + g.be + ")" : ""} · {g.r}
               </button>
               <button onClick={() => openReview(g)} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
             </div>
@@ -308,7 +310,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
   let title = "", sub = "", cc = "", flag = "", rows = [], blocks = [];
   if (pick.type === "champ") {
     const c = BY_ID.get(pick.id);
-    title = personName(c); sub = lang === "ko" ? c.name : ""; cc = c.cc; flag = flagEmoji(c.cc);
+    title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc);
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
     blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
     if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
@@ -317,26 +319,26 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
     if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + " · " + personName(UPCOMING)] });
   } else if (pick.type === "tour") {
     const r = TOURNAMENTS.find((x) => x.id === pick.id), at = championAt(CHAMPIONS, r.from);
-    title = personName(r); sub = lang === "ko" ? r.name : ""; cc = r.cc;
+    title = personName(r); sub = ""; cc = r.cc;
     blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? " · " + FREQ_LABEL()[r.freq] : "")] });
     blocks.push({ head: t("기간"), lines: [tourPeriod(r)] });
     blocks.push({ head: t("개최지"), lines: [tourPlace(r)] });
     blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
-    title = masterName(f[2], lang); sub = lang === "ko" ? masterName(f[2], "en") : ""; cc = f[3]; flag = flagEmoji(f[3]);
+    title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]);
     blocks.push({ head: t("랭킹"), lines: ["FIDE " + cat + " #" + f[0]] });
     blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
     if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
     blocks.push({ head: "FIDE", lines: [FIDE.month] });
   } else if (pick.type === "dbm") {
     const m = DBM.masters[+pick.id.split(":")[1]];
-    title = masterName(m[0], lang); sub = lang === "ko" ? masterName(m[0], "en") : ""; flag = masterFlag(m[0]);
+    title = masterName(m[0], "en"); sub = ""; flag = masterFlag(m[0]);
     blocks.push({ head: t("마스터 대국 DB"), lines: [t("대국 {0}판", m[1])] });
     if (m[2]) blocks.push({ head: t("최고 레이팅"), lines: [String(m[2])] });
   } else {
     const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
-    title = personName(s); sub = lang === "ko" ? s.name : ""; cc = s.cc; flag = flagEmoji(s.cc);
+    title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc);
     blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + " · " + personName(c) + " · " + d.score + (d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : " · " + t("패"))) });
   }
   return (
@@ -375,6 +377,7 @@ const elbowH = (x1, y1, x2, y2) => { const mx = (x1 + x2) / 2; return "M" + x1 +
 const elbowV = (x1, y1, x2, y2) => { const my = (y1 + y2) / 2; return "M" + x1 + " " + y1 + " V" + my + " H" + x2 + " V" + y2; };   // 세로로 나왔다가 꺾이는 ㄱ자(챔피언 사이)
 
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
+  const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const [idx, setIdx] = useState(null);
   useEffect(() => { let off = false; import("../data/tournamentIndex.json").then((m) => { if (!off) setIdx(m.default || m); }).catch(() => { }); return () => { off = true; }; }, []);
   const [openEd, setOpenEd] = useState(null);   // "대회id:연도" — 펼쳐 둔 연도 블록(한 번에 하나)
@@ -497,7 +500,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   return (
     <div>
       {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
-      <div ref={boxRef} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
+      <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
         <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
@@ -505,6 +508,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{masterZoomLabel(view.z)}</button>
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
+        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
         <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>

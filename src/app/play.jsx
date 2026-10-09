@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
+import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
@@ -4809,7 +4809,13 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
     if (!myUid) { setPvpErr(t("로그인 후 이용 가능")); return; }
     setPvpErr(""); setPvpWaiting(true);
     try {
-      const g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
+      let g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
+      // (v0.6.4, BUG-062) 수순이 이미 체크메이트·스테일메이트 등으로 끝났는데 아무도 결과를 확정하지 못해 active로 남은 대국이
+      // 돌아오면(상대가 탭을 닫음·보고 실패), 그 끝난 대국을 다시 열지 않고 서버 검증(api/pvp-finish)으로 먼저 확정한 뒤 새 매칭을 시도한다.
+      if (g && g.id != null && g.status === "active" && (g.game_type || "chess") === PVP_GAME_TYPE) {
+        const es = safeGameEndState(g.sans);
+        if (es.end && await pvpFinishVerified(g.id, pvpStatusFromEnd(es))) g = await sbRpcRow("pvp_queue_join", { p_time_control: timeControl.key, p_game_type: PVP_GAME_TYPE });
+      }
       // (버그 수정, 사용자 제보) pvp_queue_join은 매칭할 상대가 없으면(대기열에만 합류) SQL NULL을
       // 반환하는데, PostgREST가 단일 row를 반환하는 함수의 NULL을 순수 JSON null이 아니라 "모든 필드가
       // null인 객체"(예: {id:null, white_uid:null, ...})로 직렬화한다 — 이 객체는 `if (g)`로는 참(truthy)이라,
@@ -5071,8 +5077,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   useEffect(() => {
     if (mode !== "pvp" || !pvpGame || pvpFinishedRef.current || !endState.end) return;
     pvpFinishedRef.current = true;
-    const status = endState.end === "checkmate" ? (endState.color === "w" ? "black_won" : "white_won") : "draw";
-    pvpFinishVerified(pvpGame.id, status);
+    pvpFinishVerified(pvpGame.id, pvpStatusFromEnd(endState));
   }, [mode, pvpGame && pvpGame.id, endState.end, endState.color]);
 
   // (신규 기능) 타임 컨트롤 — 매 턴, 지금 둘 차례인 쪽의 시계를 실시간으로 줄인다. 서버가 시간을

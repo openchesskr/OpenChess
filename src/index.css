@@ -72,3 +72,27 @@ button, input, select, textarea { font-family: inherit; }
 /* (v0.6.2) 언어별 글자 크기 보정 — inline fontSize는 JSX 런타임(src/lib/jsx)이 줄이고, 글자 크기를 따로 안 준 요소(본문 기본값·버튼·입력창)는 여기서 같은 배율로 줄인다. --oc-fs-scale은 런타임이 html에 넣는다(한국어는 1). */
 html:not([lang="ko"]) body { font-size: calc(16px * var(--oc-fs-scale, 1)); }
 html:not([lang="ko"]) button, html:not([lang="ko"]) input, html:not([lang="ko"]) textarea, html:not([lang="ko"]) select { font-size: calc(13.3333px * var(--oc-fs-scale, 1)); }
+
+/* (v0.6.4) 모식도 전체 화면 보기 — components/schematicFullscreen.jsx가 박스에 붙인다. 인라인 높이·테두리를 덮어쓰려고 !important를 쓴다. */
+.schematic-fs {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 960 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+}
+/* 전체 화면 동안 fixed의 기준이 되는 조상(변형·filter 등)의 효과를 잠시 푼다 — components/schematicFullscreen.jsx가 붙였다 뗀다. */
+.schematic-fs-unx {
+  transform: none !important;
+  filter: none !important;
+  perspective: none !important;
+  backdrop-filter: none !important;
+  contain: none !important;
+  will-change: auto !important;
+  transition: none !important;
+  animation: none !important;
+}

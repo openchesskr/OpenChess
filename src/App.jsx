@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } fr
 import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
 import { SB_ON, sbRpc } from "./lib/supabaseClient.js";
 import { engineNeedsDownload, initDownloadedEngines } from "./lib/engineDownload.js";
-import { closeExternalBrowser, listenDeepLinks, parseAuthFragment, parseDeepLink } from "./lib/nativeApp.js";
+import { closeExternalBrowser, decideBackAction, exitApp, installNativeLinkGuard, isNativeApp, listenBackButton, listenDeepLinks, parseAuthFragment, parseDeepLink } from "./lib/nativeApp.js";
 import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref } from "./lib/prefs.js";
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
@@ -657,6 +657,23 @@ export default function App() {
   // 웹에서는 listenDeepLinks가 아무 일도 하지 않는다. 로그인 복귀는 기존 OAuth 해시 경로(authFromHash)와 같은 처리를 거친다.
   const deepLinkRef = useRef(null);
   useEffect(() => listenDeepLinks((url) => { if (deepLinkRef.current) deepLinkRef.current(url); }), []);
+  // (v0.6.4) 앱에서 외부 링크(남의 사이트·mailto)가 웹뷰를 덮어쓰지 않고 시스템 브라우저·메일 앱으로 열리게 한다. 웹에서는 아무 일도 안 한다.
+  useEffect(() => installNativeLinkGuard(), []);
+  // (v0.6.4) 안드로이드 뒤로가기 버튼. 화면 스택(pushScreen·popstate)이 웹뷰 히스토리 위에 쌓여 있으므로 되감을 수 있으면 history.back()이 곧 "한 단계 닫기"다.
+  // 더 되감을 곳이 없으면: 홈(분석) 탭이 아닐 때는 홈으로, 홈에서는 "한 번 더 누르면 종료" 안내 후 2초 안에 다시 누르면 종료한다.
+  const backRef = useRef({ tab: "learn", armedAt: 0 });
+  backRef.current.tab = tab;
+  useEffect(() => listenBackButton(({ canGoBack }) => {
+    const r = backRef.current;
+    const a = decideBackAction({ canGoBack, tab: r.tab, homeTab: "learn", now: Date.now(), armedAt: r.armedAt });
+    if (a === "back") { window.history.back(); return; }
+    // 홈으로: 더 되감을 히스토리가 없으니 새 항목을 쌓지 않고(쌓으면 다음 뒤로가기가 방금 떠난 탭으로 되돌아가 맴돈다) 현재 항목의 주소만 홈 탭 경로로 바꾼다.
+    if (a === "home") { r.armedAt = 0; if (r.goHome) r.goHome(); return; }
+    if (a === "exit") { exitApp(); return; }
+    r.armedAt = Date.now();
+    setToast({ type: "exitHint" });
+    setTimeout(() => setToast((x) => (x && x.type === "exitHint" ? null : x)), 2000);
+  }), []);
   const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {};
     setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setTotalXp(pr.xp != null ? pr.xp : 0); setPuzzleRating(pr.puzzleRating != null ? pr.puzzleRating : 800); setPuzzleMomentum(pr.puzzleMomentum != null ? pr.puzzleMomentum : 0.5); setOcCoins(pr.coins != null ? pr.coins : 0); setDevBonusGranted(!!pr.devBonusGranted); setReviewUnlocked(new Set(pr.reviewUnlocked || [])); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(new Set(pr.titles || [])); setCurrentTitle(pr.currentTitle || null); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
@@ -1069,6 +1086,10 @@ export default function App() {
   // 똑같이 "그냥 /play 페이지로 이동"하는 느낌을 준다 — 전환 뒤에는 아래 useLayoutEffect(tab==="store"
   // 감지)가 openPlay를 이어서 호출해 대국 설정 화면을 띄운다.
   const goToPlayTab = () => switchTab("store");
+  backRef.current.goHome = () => {
+    setNavNonce((n) => n + 1); setTab("learn"); urlTabRef.current = "learn"; setFocusReturnTab(null);
+    try { window.history.replaceState({ screens: [] }, "", TAB_PATH.learn); } catch { }
+  };
   // (사용자 요청) 집중 분석이 도감 탭·퍼즐 탭(일일 퍼즐 팝업 포함)에서 시작됐다면(focusReturnTab에
   // 그 탭 이름이 담김), 학습이 닫히는(learnFocus가 null로 바뀌는) 순간 그 탭으로 되돌아간다 —
   // switchTab을 쓰면 navNonce가 올라 CollectionTab/PuzzleTab이 강제로 새로 마운트돼(아래 render의
@@ -1538,7 +1559,7 @@ export default function App() {
             (버그 수정) 로고와 버전 텍스트 사이가 붕 떠 보여 음수 marginTop으로 로고 바로 아래에
             바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
         <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
-          <a href="https://openchess.kr" style={{ display: "block" }}>
+          <a href={isNativeApp() ? "/" : "https://openchess.kr"} style={{ display: "block" }}>
             <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: "pointer" }} />
           </a>
           <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
@@ -1667,6 +1688,12 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* (v0.6.4) 안드로이드 뒤로가기: 홈에서 한 번 눌렀을 때 뜨는 종료 안내 */}
+      {toast && toast.type === "exitHint" && (
+        <div role="status" style={{ position: "fixed", left: 0, right: 0, bottom: "calc(env(safe-area-inset-bottom) + 84px)", zIndex: 65, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ padding: "9px 16px", borderRadius: 999, background: "rgba(27,16,9,.92)", color: "#EBDDC4", fontSize: 12.5, fontWeight: 700, border: "1px solid rgba(196,154,80,.45)", boxShadow: "0 8px 24px -8px rgba(0,0,0,.6)" }}>{t("한 번 더 누르면 종료")}</div>
+        </div>
+      )}
       {/* (19차 기능5) 일일 퀘스트 전체 완료 → OC 나이트 코인 지급 토스트 */}
       {toast && toast.type === "coins" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -1748,7 +1775,7 @@ export default function App() {
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenLearn={(sans) => onOpenLearnFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenLearnFen={onOpenLearnFen} dailyPuzzleStreak={dailyPuzzleStreak} puzzleMomentum={puzzleMomentum} />}
-        {tab === "quest" && <QuestTab dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
+        {tab === "quest" && <QuestTab growthUid={uid} growthGames={chesscom.games} dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
             탭과 같은 이유(위 CollectionTab 주석 참고)로 언마운트는 하지 않고 display:none으로만

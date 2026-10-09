@@ -2,7 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { parseFenFull, startBoard, plyIsWhite, sanSrc, applySan } from "../lib/chessRules.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert, sbUpsert, SB_TOKEN, SB_URL, sbHeaders } from "../lib/supabaseClient.js";
-import { isNativeApp, oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
+import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from "../lib/nativeApp.js";
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
@@ -119,7 +119,7 @@ function openInquiryEmail(user) {
   // 가리지 않고 운영체제가 지정한 기본 메일 앱(Gmail 앱·Outlook·기본 Mail 앱 등)이 제목·본문까지
   // 채워진 채로 열린다 — 특정 메일 서비스 로그인 여부에 의존하지 않는다.
   const url = "mailto:openchesskr@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-  window.location.href = url;
+  openMailto(url);
 }
 function FaqAccordionItem({ q, a }) {
   const [open, setOpen] = useState(false);
