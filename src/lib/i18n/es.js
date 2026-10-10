@@ -115,6 +115,8 @@ export default {
   "최근 대국": "Partidas recientes",
   "다음 {0}판": "Siguientes {0} {0|partida|partidas}",
   "대국 보기": "Ver partida",
+  "이전 결과": "Resultado anterior",
+  "다음 결과": "Resultado siguiente",
   "분석 보드로 불러오기": "Cargar en el tablero de análisis",
   "게임 리뷰": "Revisión de partida",
   "전체 전적": "Historial total",

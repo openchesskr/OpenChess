@@ -1,9 +1,18 @@
 import React from "react";
-import { Star, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 
 import { t } from "../lib/i18n.js";
+// (v0.6.5) 금색 검색 버튼 — "대국 보기"(보드로 열기). 학습 탭 내 대국 목록에서 쓰던 버튼과 같은 모양을 공용으로 뽑았다. 옆에 BestMoveJumpButton(연두색 별 = 리뷰)을 나란히 둔다.
+export function GameViewButton({ onClick, disabled, title = t("대국 보기"), size = 30 }) {
+  return (
+    <button onClick={onClick} disabled={disabled} title={title} aria-label={title} className="press"
+      style={{ flexShrink: 0, width: size, height: size, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.5 : 1 }}>
+      <Search size={Math.round(size * 0.43)} />
+    </button>
+  );
+}
 export function BestMoveJumpButton({ onClick, disabled, title = t("이 대국 분석 모드로 바로 보기"), size = 30 }) {
   const dotSize = Math.round(size * 0.6), starSize = Math.round(size * 0.367);
   return (

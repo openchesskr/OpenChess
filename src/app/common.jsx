@@ -2233,7 +2233,7 @@ function MateGlyph({ size, color = "#fff" }) {
   return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>#</span>;
 }
 function HalfGlyph({ size, color = "#fff" }) {
-  return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>½</span>;
+  return <span style={{ display: "block", color, fontSize: Math.round(size * 0.62), fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>0.5</span>;
 }
 function gameEndRole(endFx, pieceColor) {
   if (!endFx) return null;
@@ -2736,7 +2736,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
     // 끝에 결과 기호(½-½)만 덧붙인다.
-    if (drawn) parts.push("½-½");
+    if (drawn) parts.push("0.5-0.5");
     return <div ref={scrollRef} {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
@@ -2755,7 +2755,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
       })}
       {/* (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
           끝에 결과 기호(½-½)만 덧붙인다. */}
-      {drawn && <span style={{ whiteSpace: "nowrap", fontWeight: 800, color: T.brassHi, padding: "1px 3px" }}>½-½</span>}
+      {drawn && <span style={{ whiteSpace: "nowrap", fontWeight: 800, color: T.brassHi, padding: "1px 3px" }}>0.5-0.5</span>}
     </div>
   );
 }

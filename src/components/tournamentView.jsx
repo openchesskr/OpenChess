@@ -8,6 +8,7 @@ import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { loadTournament } from "../lib/tournamentData.js";
+import { GameViewButton, BestMoveJumpButton } from "./uiPrimitives.jsx";
 import { decodeMoves } from "../lib/moveCodec.js";
 import { bracket, crosstable, filterGames, fmtScore, matchSummary, roundKey, roundsOf, standings, winnerOf, RES_TXT } from "../lib/tournamentView.js";
 import { enName } from "../data/playerNames.js";
@@ -22,23 +23,23 @@ const dateText = (ed) => (ed.d0 ? ed.d0.replace(/\./g, "-") + (ed.d1 && ed.d1 !=
 const tab = (on) => ({ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft, whiteSpace: "nowrap" });
 const th = { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, padding: "4px 6px", textAlign: "center", whiteSpace: "nowrap", background: "#F6EEDC", position: "sticky", top: 0, zIndex: 1 };
 const td = { fontSize: 12, fontWeight: 700, color: T.ink, padding: "3px 6px", textAlign: "center", borderTop: "1px solid rgba(0,0,0,.06)", whiteSpace: "nowrap" };
-const CELL = { "1": { bg: "rgba(63,122,58,.20)", fg: "#2F6A2A" }, "½": { bg: "rgba(120,110,95,.14)", fg: "#6B5C46" }, "0": { bg: "rgba(200,69,59,.14)", fg: "#A53B31" } };
+const CELL = { "1": { bg: "rgba(63,122,58,.20)", fg: "#2F6A2A" }, "0.5": { bg: "rgba(120,110,95,.14)", fg: "#6B5C46" }, "0": { bg: "rgba(200,69,59,.14)", fg: "#A53B31" } };
 
-/* 대국 한 줄 — 보드·리뷰 버튼. 수순은 누를 때 복원한다. */
+/* 대국 한 줄 — 오른쪽에 금색 검색 버튼(보드로 열기)과 연두색 별 버튼(리뷰). 수순은 누를 때 복원한다. */
 function GameRow({ ed, gi, onOpenGame, onOpenGameAnalyze, showRound = true }) {
-  const g = ed.g[gi], sans = () => decodeMoves(g[5]);
+  const g = ed.g[gi], sans = () => decodeMoves(g[5]), has = !!g[5];
   const st = g[7] ? ed.evs[g[7] - 1] : null;
   const label = (i) => nm(ed, i) + (ed.pl[i][1] ? " (" + ed.pl[i][1] + ")" : "");
-  const btn = { flexShrink: 0, fontSize: 10.5, fontWeight: 800, padding: "4px 8px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer", fontFamily: SITE_FONT };
   return (
     <div className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-      <button onClick={() => onOpenGame && onOpenGame(sans())} disabled={!g[5]} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "5px 8px", cursor: g[5] ? "pointer" : "default", color: T.ink, fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", opacity: g[5] ? 1 : 0.55 }}>
+      <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", opacity: has ? 1 : 0.55 }}>
         {showRound && g[0] ? <span style={{ color: T.brass, fontWeight: 800, marginRight: 6 }}>R{g[0]}{g[1] ? "." + g[1] : ""}</span> : null}
         {label(g[2])} <b style={{ margin: "0 3px" }}>{RES_TXT[g[4]]}</b> {label(g[3])}
         {g[6] ? <span style={{ color: T.inkSoft, marginLeft: 6, fontSize: 10.5 }}>{g[6]}</span> : null}
         {st ? <span style={{ color: T.inkSoft, marginLeft: 6, fontSize: 10.5 }}>· {st}</span> : null}
-      </button>
-      <button onClick={() => onOpenGameAnalyze && g[5] && onOpenGameAnalyze({ sans: sans(), white: { username: nm(ed, g[2]), rating: ed.pl[g[2]][1] || null }, black: { username: nm(ed, g[3]), rating: ed.pl[g[3]][1] || null } })} disabled={!g[5]} className="press" style={{ ...btn, opacity: g[5] ? 1 : 0.5 }}>{t("리뷰")}</button>
+      </div>
+      <GameViewButton onClick={() => onOpenGame && onOpenGame(sans())} disabled={!has} />
+      <BestMoveJumpButton onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: nm(ed, g[2]), rating: ed.pl[g[2]][1] || null }, black: { username: nm(ed, g[3]), rating: ed.pl[g[3]][1] || null } })} disabled={!has} />
     </div>
   );
 }

@@ -3,8 +3,8 @@
 //  ed.pl = [[이름, 엘로, 타이틀, 점수×2, 본 경기 대국 수], …]  (점수 순)
 //  ed.g  = [[라운드, 보드(또는 매치 안의 국 번호), 백 선수 번호, 흑 선수 번호, 결과(2 백승·1 무·0 흑승·-1 모름), 수순 부호, ECO, 단계(생략=본 경기)], …]
 //  ed.fmt = rr(라운드로빈) · swiss · ko(녹아웃) · match(두 사람의 매치) · list(라운드 정보 없음)
-export const RES_TXT = { 2: "1-0", 1: "½-½", 0: "0-1", "-1": "*" };
-export const fmtScore = (s2) => (s2 % 2 ? Math.floor(s2 / 2) + "½" : String(s2 / 2)).replace(/^0½$/, "½");
+export const RES_TXT = { 2: "1-0", 1: "0.5-0.5", 0: "0-1", "-1": "*" };   // ½ 기호는 쓰지 않는다(0.5 표기)
+export const fmtScore = (s2) => String(s2 / 2);   // 점수×2 → "8.5"·"10"
 const isMain = (g) => !g[7];
 
 /** 본 경기(단계 0)만 번호와 함께 돌려준다. */
@@ -15,13 +15,13 @@ export function standings(ed) {
   return ed.pl.map((p, i) => ({ i, name: p[0], elo: p[1], title: p[2], score2: p[3], n: p[4] })).filter((r) => r.n > 0);
 }
 
-/** 크로스테이블(라운드로빈): 행 선수 시점의 결과 문자 배열 cells[i][j] = [{ t: "1"|"½"|"0", gi }]. i·j는 standings 안의 위치. */
+/** 크로스테이블(라운드로빈): 행 선수 시점의 결과 문자 배열 cells[i][j] = [{ t: "1"|"0.5"|"0", gi }]. i·j는 standings 안의 위치. */
 export function crosstable(ed) {
   const rows = standings(ed), pos = new Map(rows.map((r, k) => [r.i, k]));
   const cells = rows.map(() => rows.map(() => []));
   for (const { g, i } of mainGames(ed)) {
     const a = pos.get(g[2]), b = pos.get(g[3]); if (a == null || b == null || g[4] < 0) continue;
-    const wa = g[4] === 2 ? "1" : g[4] === 1 ? "½" : "0", wb = g[4] === 0 ? "1" : g[4] === 1 ? "½" : "0";
+    const wa = g[4] === 2 ? "1" : g[4] === 1 ? "0.5" : "0", wb = g[4] === 0 ? "1" : g[4] === 1 ? "0.5" : "0";
     cells[a][b].push({ t: wa, gi: i, c: "w" }); cells[b][a].push({ t: wb, gi: i, c: "b" });
   }
   return { rows, cells };

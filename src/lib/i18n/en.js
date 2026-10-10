@@ -115,6 +115,8 @@ export default {
   "최근 대국": "Recent games",
   "다음 {0}판": "Next {0} {0|game|games}",
   "대국 보기": "View game",
+  "이전 결과": "Previous result",
+  "다음 결과": "Next result",
   "분석 보드로 불러오기": "Load onto analysis board",
   "게임 리뷰": "Game review",
   "전체 전적": "Overall record",
