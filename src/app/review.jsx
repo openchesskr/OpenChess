@@ -689,7 +689,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
         })}
         {/* (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
             끝에 결과 기호(½-½)만 덧붙인다. */}
-        {drawn && <span style={{ fontSize: 13, fontWeight: 800, color: RV.text, padding: "4px 8px", flexShrink: 0 }}>½-½</span>}
+        {drawn && <span style={{ fontSize: 13, fontWeight: 800, color: RV.text, padding: "4px 8px", flexShrink: 0 }}>0.5-0.5</span>}
       </div>
       <button onClick={onNext} disabled={!canNext} aria-label={t("다음 수")} className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "transparent", color: canNext ? RV.text : RV.dim, cursor: canNext ? "pointer" : "default", flexShrink: 0 }}><ChevronRight size={18} /></button>
     </div>
@@ -721,7 +721,7 @@ function ReviewMoveTable({ sans, moves, curPly, onJump, drawn }) {
       ))}
       {/* (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
           끝에 결과 기호(½-½)만 덧붙인다. */}
-      {drawn && <div className="flex items-center justify-center" style={{ fontSize: 12.5, fontWeight: 800, color: RV.text, padding: "6px 4px" }}>½-½</div>}
+      {drawn && <div className="flex items-center justify-center" style={{ fontSize: 12.5, fontWeight: 800, color: RV.text, padding: "6px 4px" }}>0.5-0.5</div>}
     </div>
   );
 }

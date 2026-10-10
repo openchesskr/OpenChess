@@ -8,6 +8,7 @@ import { t } from "../lib/i18n.js";
 import { loadMasterProfiles, loadTournamentSearch } from "../lib/tournamentData.js";
 import { findProfile, playedTournaments } from "../lib/masterProfile.js";
 import { decodeMoves } from "../lib/moveCodec.js";
+import { GameViewButton, BestMoveJumpButton } from "./uiPrimitives.jsx";
 import { enName } from "../data/playerNames.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
 
@@ -87,8 +88,9 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
           const sans = () => decodeMoves(code), w = color === "w" ? myName : enName(opp), b = color === "w" ? enName(opp) : myName;
           return (
             <div key={i} className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-              <button onClick={() => onOpenGame && onOpenGame(sans())} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""} · vs {enName(opp)} ({oe}) · {color === "w" ? t("백") : t("흑")} · {ev}</button>
-              <button onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
+              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""} · vs {enName(opp)} ({oe}) · {color === "w" ? t("백") : t("흑")} · {ev}</div>
+              <GameViewButton onClick={() => onOpenGame && onOpenGame(sans())} />
+              <BestMoveJumpButton onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} />
             </div>
           );
         })}
