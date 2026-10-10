@@ -40,3 +40,13 @@ export function dbPlayerName(raw, lang) {
   const ini = given ? given.split(/\s+/).map((g) => g[0]).filter(Boolean).slice(0, 1).join("") : "";
   return (ini ? ini + ". " : "") + sur;
 }
+/* (v0.6.5) 영어 원문 전체 이름 — "Carlsen, Magnus" → "Magnus Carlsen". 이름이 이니셜뿐이면("Carlsen, M") "M. Carlsen", 한 글자 낱말은 마침표를 붙인다("Beliavsky, Alexander G" → "Alexander G. Beliavsky").
+   끝의 숫자·나라 코드는 지운다. 도감 마스터 화면(챔피언·우승자·대국 선수)은 언어와 상관없이 이 표기를 쓴다. */
+export function enName(raw) {
+  const s = String(raw || "").replace(/\d+/g, "").replace(/\s+[A-Z]{3}$/, "").replace(/\s+/g, " ").trim();
+  const i = s.indexOf(","); if (i < 0) return s;
+  const sur = s.slice(0, i).trim(), given = s.slice(i + 1).trim(); if (!given) return sur;
+  if (given.replace(/[.\s]/g, "").length <= 2) return given[0].toUpperCase() + ". " + sur;
+  return given.split(" ").map((w) => (w.length === 1 ? w + "." : w)).join(" ") + " " + sur;
+}
+

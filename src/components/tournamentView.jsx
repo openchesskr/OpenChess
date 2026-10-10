@@ -10,12 +10,12 @@ import { t } from "../lib/i18n.js";
 import { loadTournament } from "../lib/tournamentData.js";
 import { decodeMoves } from "../lib/moveCodec.js";
 import { bracket, crosstable, filterGames, fmtScore, matchSummary, roundKey, roundsOf, standings, winnerOf, RES_TXT } from "../lib/tournamentView.js";
-import { dbPlayerName } from "../data/playerNames.js";
+import { enName } from "../data/playerNames.js";
 import { flagEmoji } from "../lib/flags.js";
 
 const FMT_LABEL = () => ({ rr: t("라운드로빈"), swiss: t("스위스"), ko: t("녹아웃"), match: t("매치"), list: t("기록") });
 const ROUND_LABEL = () => ({ final: t("결승"), semi: t("준결승"), qf: t("8강"), r16: t("16강"), r32: t("32강"), r64: t("64강") });
-const nm = (ed, i) => dbPlayerName(ed.pl[i][0], "en");
+const nm = (ed, i) => enName(ed.pl[i][0]);
 const cc = (site) => { const m = / ([A-Z]{3})$/.exec(site || ""); return m ? m[1] : ""; };
 const cityOf = (site) => String(site || "").replace(/ [A-Z]{3}$/, "");
 const dateText = (ed) => (ed.d0 ? ed.d0.replace(/\./g, "-") + (ed.d1 && ed.d1 !== ed.d0 ? " ~ " + ed.d1.replace(/\./g, "-") : "") : "");
@@ -208,7 +208,7 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
         {data && !ed && <div style={{ fontSize: 12, color: T.inkSoft }}>{t("이 연도의 대국 자료가 없음")}</div>}
         {ed && <>
           {win && <div className="flex items-center gap-2" style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(196,154,80,.16)", fontFamily: SITE_FONT, fontSize: 12.5, fontWeight: 800, color: T.ink }}>
-            <Trophy size={14} style={{ color: T.brass, flexShrink: 0 }} /><span>{win.tie ? t("공동 우승") : t("우승")}: {win.names.map((n) => dbPlayerName(n, "en")).join(" · ")} ({fmtScore(win.score * 2)})</span>
+            <Trophy size={14} style={{ color: T.brass, flexShrink: 0 }} /><span>{win.tie ? t("공동 우승") : t("우승")}: {win.names.map((n) => enName(n)).join(" · ")} ({fmtScore(win.score * 2)})</span>
           </div>}
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
             <button onClick={() => setMode("table")} className="press" style={tab(mode === "table")}>{ed.fmt === "ko" ? t("대진표") : ed.fmt === "rr" ? t("크로스테이블") : t("순위표")}</button>

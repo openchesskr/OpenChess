@@ -14,6 +14,7 @@ import { Chess } from "chess.js";
 import { encodeMoves, decodeMoves } from "../src/lib/moveCodec.js";
 import { standings, crosstable, bracket, winnerOf, mainGames, filterGames } from "../src/lib/tournamentView.js";
 import { findProfile, playedTournaments, candidateKeys } from "../src/lib/masterProfile.js";
+import { enName } from "../src/data/playerNames.js";
 const { TOURNAMENTS } = await import("../src/data/chessTournaments.js");
 const { CHAMPIONS } = await import("../src/data/worldChampions.js");
 const url = (p) => new URL("../" + p, import.meta.url);
@@ -77,7 +78,7 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
     if (e.fmt === "ko" && ko < 20) { ko++; const br = bracket(e), w = winnerOf(e); if (br.length < 2) fails.push(d.id + "/" + e.k + ": 녹아웃 대진표 라운드가 2개 미만"); if (!w && br.length) { /* 결승이 무승부(타이브레이크 자료 없음)면 우승자 없음은 허용 */ } }
   }
   const wc = data.get("worldCup"), e23 = wc && wc.eds.find((e) => e.y === 2023);
-  if (!e23) fails.push("월드컵 2023 회차가 없음"); else { eq([e23.fmt, (winnerOf(e23) || {}).names], ["ko", ["Carlsen, M"]], "월드컵 2023 대진표·우승자"); const br = bracket(e23); eq(br[br.length - 1].matches.filter((m) => m.bronze).length, 1, "월드컵 2023 3·4위전 구분"); }
+  if (!e23) fails.push("월드컵 2023 회차가 없음"); else { eq([e23.fmt, (winnerOf(e23) || {}).names], ["ko", ["Carlsen, Magnus"]], "월드컵 2023 대진표·우승자(영어 원문 전체 이름)"); const br = bracket(e23); eq(br[br.length - 1].matches.filter((m) => m.bronze).length, 1, "월드컵 2023 3·4위전 구분"); }
   const hs = data.get("hastings"), h61 = hs && hs.eds.find((e) => e.y === 1961); if (!h61) fails.push("헤이스팅스 1961 회차가 없음"); else eq([h61.fmt, standings(h61).length, (winnerOf(h61) || {}).names], ["rr", 10, ["Botvinnik, Mikhail"]], "헤이스팅스 1961");
   const fg = filterGames(h61 || { g: [], pl: [], evs: [] }, { text: "botvinnik" }); if (!fg.length) fails.push("대국 목록 필터가 동작하지 않음");
 }
@@ -110,5 +111,14 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
   if (sizeOf("src/data/tournamentSearch.json") > LIM.search) fails.push("tournamentSearch.json 용량 상한 초과");
   if (existsSync(url("src/data/tournamentsAuto.json"))) fails.push("tournamentsAuto.json이 남아 있음(js로 바뀜)");
 }
+// ⑦ 이름 표기(BUG-075): 짧은 표기("Carlsen, M")가 긴 표기("Carlsen, Magnus")로 합쳐져 있어야 하고, 화면 표기(enName)는 영어 원문 전체 이름이다.
+{
+  eq([enName("Carlsen, Magnus"), enName("Carlsen, M"), enName("Beliavsky, Alexander G"), enName("Ding Liren"), enName("Filippov, Anton UZB")], ["Magnus Carlsen", "M. Carlsen", "Alexander G. Beliavsky", "Ding Liren", "Anton Filippov"], "enName 표기");
+  const full = new Set(); for (const d of data.values()) for (const e of d.eds) for (const p of e.pl) full.add(p[0]);
+  // [성, 대표 이름 첫 글자] — 같은 성의 다른 선수(예: Anand, Nikhil)는 건드리지 않는다
+  const STARS = [["Carlsen", "M"], ["Kasparov", "G"], ["Karpov", "A"], ["Anand", "V"], ["Kramnik", "V"], ["Aronian", "L"], ["Nakamura", "H"], ["Korchnoi", "V"], ["Spassky", "B"], ["Tal", "M"]];
+  for (const [sur, ini] of STARS) { const names = [...full].filter((n) => n.startsWith(sur + ", " + ini)); const short = names.filter((n) => n.split(",")[1].trim().replace(/[.\s]/g, "").length <= 2); if (!names.length) fails.push(sur + ": 대회 데이터에 없음"); else if (short.length) fails.push(sur + ": 이니셜뿐인 표기가 남음(긴 표기와 합쳐지지 않음) — " + short.join(" | ")); }
+}
+
 if (fails.length) { console.error("✖ check-tournament-data 실패 (" + fails.length + "건):\n  " + fails.slice(0, 30).join("\n  ") + (fails.length > 30 ? "\n  … 외 " + (fails.length - 30) + "건" : "")); process.exit(1); }
 console.log("✔ check-tournament-data: 대회 " + files.length + "곳·대국 " + totalGames + "판의 점수·선수 참조가 맞고, 수순 표본 " + sOk + "판이 합법·왕복 복원되며, 색인·검색·프로필·화면 계산·용량 상한이 유지된다");

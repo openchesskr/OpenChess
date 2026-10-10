@@ -8,7 +8,7 @@ import { t } from "../lib/i18n.js";
 import { loadMasterProfiles, loadTournamentSearch } from "../lib/tournamentData.js";
 import { findProfile, playedTournaments } from "../lib/masterProfile.js";
 import { decodeMoves } from "../lib/moveCodec.js";
-import { dbPlayerName } from "../data/playerNames.js";
+import { enName } from "../data/playerNames.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
 
 const TOUR_BY_ID = new Map(TOURNAMENTS.map((x) => [x.id, x]));
@@ -52,7 +52,7 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
   const played = useMemo(() => playedTournaments(search, p ? p.name : name, 8), [search, p, name]);
   if (prof === undefined) return <div style={{ ...small, marginTop: 10 }}>{t("불러오는 중…")}</div>;
   if (!p && !played.length) return null;
-  const myName = p ? dbPlayerName(p.name, "en") : dbPlayerName(name, "en");
+  const myName = p ? enName(p.name) : enName(name);
   return (
     <div>
       {p && <>
@@ -70,7 +70,7 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
         {p.d4.length > 0 && <>{head(t("흑 · 1.d4에 대한 응수"))}<MoveList list={p.d4} prefix="1.d4 " /></>}
         {p.ecoW.length > 0 && <>{head(t("자주 둔 오프닝 · 백"))}<EcoList list={p.ecoW} /></>}
         {p.ecoB.length > 0 && <>{head(t("자주 둔 오프닝 · 흑"))}<EcoList list={p.ecoB} /></>}
-        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}>{dbPlayerName(n, "en")} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)} · {w}-{d}-{l}</span></div>)}</>}
+        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}>{enName(n)} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)} · {w}-{d}-{l}</span></div>)}</>}
         {p.ev.length > 0 && <>{head(t("자주 나온 대회"))}{p.ev.map(([n, c, y0, y1]) => <div key={n} style={row}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}{y0 ? " · " + y0 + (y1 !== y0 ? "–" + y1 : "") : ""}</span></div>)}</>}
       </>}
       {played.length > 0 && <>
@@ -84,10 +84,10 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
       {p && p.best.length > 0 && <>
         {head(t("강한 상대를 이긴 대표 대국"))}
         {p.best.map(([y, ev, opp, oe, color, code], i) => {
-          const sans = () => decodeMoves(code), w = color === "w" ? myName : dbPlayerName(opp, "en"), b = color === "w" ? dbPlayerName(opp, "en") : myName;
+          const sans = () => decodeMoves(code), w = color === "w" ? myName : enName(opp), b = color === "w" ? enName(opp) : myName;
           return (
             <div key={i} className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-              <button onClick={() => onOpenGame && onOpenGame(sans())} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""} · vs {dbPlayerName(opp, "en")} ({oe}) · {color === "w" ? t("백") : t("흑")} · {ev}</button>
+              <button onClick={() => onOpenGame && onOpenGame(sans())} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""} · vs {enName(opp)} ({oe}) · {color === "w" ? t("백") : t("흑")} · {ev}</button>
               <button onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
             </div>
           );
