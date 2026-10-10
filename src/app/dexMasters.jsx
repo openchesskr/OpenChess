@@ -13,7 +13,7 @@ import { TOURNAMENTS, TOURNAMENT_TYPES } from "../data/chessTournaments.js";
 import FIDE from "../data/fideRankings.json";
 import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
-import { dbPlayerName, playerName } from "../data/playerNames.js";
+import { enName, playerName } from "../data/playerNames.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
@@ -201,7 +201,7 @@ function PlayerNode({ n }) {
   const color = TOUR_COLOR[n.tour.type];
   return (
     <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px", display: "flex", alignItems: "center", borderRadius: 9, zIndex: 2, fontSize: 12.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      border: "1.5px solid " + color + "99", background: "#fff" }}>{dbPlayerName(n.name, "en")}</div>
+      border: "1.5px solid " + color + "99", background: "#fff" }}>{enName(n.name)}</div>
   );
 }
 
@@ -275,7 +275,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
   const rowSty = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
   const results = info ? [...(info.complete || []).map((x) => ({ ...x, sure: true })), ...(info.partial || []).map((x) => ({ ...x, sure: false }))].sort((a, b) => b.y - a.y) : [];
   const sansOf = (g) => (g.mc ? decodeMoves(g.mc) : g.m.split(" "));
-  const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sansOf(g), white: { username: dbPlayerName(g.w, "en"), rating: g.we }, black: { username: dbPlayerName(g.b, "en"), rating: g.be } });
+  const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sansOf(g), white: { username: enName(g.w), rating: g.we }, black: { username: enName(g.b), rating: g.be } });
   return (
     <div>
       {winners.length > 0 && <>
@@ -291,11 +291,11 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
       {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
       {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
         <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => dbPlayerName(n, "en") + " (" + c + ")").join(" · ")}</div>}
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(" · ")}</div>}
         {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
         {results.length > 0 && <>
           {head(info.pgn ? t("집계 결과") : t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => dbPlayerName(n, "en")).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => enName(n)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
           <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
         </>}
         {info.top.length > 0 && <>
@@ -303,7 +303,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
               <button onClick={() => onOpenGame && onOpenGame(sansOf(g))} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y} · {dbPlayerName(g.w, "en")} {g.we ? "(" + g.we + ")" : ""} – {dbPlayerName(g.b, "en")} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+                {g.y} · {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
               </button>
               <button onClick={() => openReview(g)} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
             </div>

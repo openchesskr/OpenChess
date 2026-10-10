@@ -60,7 +60,9 @@ function normalizeCore(counts) {
   for (const name of counts.keys()) { const p = parts(name), k = norm(p.sur) + "|" + givenKey(p.given); const cur = exact.get(k); if (!cur || counts.get(name) > counts.get(cur)) exact.set(k, name); }
   const rep = (name) => { const p = parts(name); return exact.get(norm(p.sur) + "|" + givenKey(p.given)) || name; };
   for (const list of bySur.values()) {
-    const longs = list.filter((x) => x.g.length > 2 || x.name.includes(" ")).sort((a, b) => b.g.length - a.g.length);
+    // 쉼표가 없는 표기("Ding Liren")는 이름이 이미 풀려 있는 것으로 본다. 쉼표 뒤 공백("Carlsen, M")은 이니셜일 수 있으므로 길이로만 판단한다
+    // (aliasName이 "Carlsen,M"을 "Carlsen, M"으로 바꾸므로 공백 유무로 가르면 짧은 표기가 긴 표기로 확장되지 못한다 — BUG-075).
+    const longs = list.filter((x) => x.g.length > 2 || !x.name.includes(",")).sort((a, b) => b.g.length - a.g.length);
     const canonOf = (x) => {
       const cands = longs.filter((l) => l !== x && l.g.startsWith(x.g) && x.g.length > 0);
       const uniq = [...new Set(cands.map((l) => l.g))];
@@ -71,7 +73,7 @@ function normalizeCore(counts) {
     };
     for (const x of list) {
       let c = x;
-      if (x.g.length <= 2 && !x.name.includes(" ")) c = canonOf(x);
+      if (x.g.length <= 2 && x.name.includes(",")) c = canonOf(x);
       else { const longer = longs.find((l) => l !== x && l.g.startsWith(x.g) && l.g.length > x.g.length && l.n >= x.n); if (longer && x.g.length > 0) c = longer; }
       map.set(x.name, rep(c.name));
     }
