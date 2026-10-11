@@ -1021,8 +1021,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           </div>
         </div>
       )}
-      {/* (v0.6.5, 사용자 요청) 문의·개발진을 하나의 하단 푸터로 묶었다 — chess.com 사이트 맨 아래처럼 흐린 글자 링크를 점으로 이어 가운데 정렬하고, 그 아래에 소셜 아이콘(Instagram·Discord)을 둔다. */}
-      <footer style={{ marginTop: 18, padding: "24px 14px 20px", borderRadius: 14, background: "linear-gradient(180deg,#2E1C10,#1E130B)", border: "1px solid #5A4630", textAlign: "center" }}>
+      {/* (v0.6.5, 사용자 요청) 문의·개발진을 하나의 하단 푸터로 묶었다 — chess.com 사이트 맨 아래처럼 카드·테두리 없이 페이지 하단에 흐린 글자 링크를 점으로 이어 가운데 정렬하고, 그 아래에 소셜 아이콘(Instagram·YouTube·Discord)을 둔다. */}
+      <footer style={{ marginTop: 34, padding: "8px 8px 28px", textAlign: "center" }}>
         <nav aria-label={t("문의 / FAQ")} style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "6px 0", lineHeight: 1.9 }}>
           {[
             { k: "faq", label: t("FAQ 보기"), href: "/faq" },
@@ -1032,9 +1032,9 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             { k: "devs", label: t("개발진"), onClick: () => setDevsOpen((v) => !v), on: devsOpen },
           ].map((l, i) => (
             <React.Fragment key={l.k}>
-              {i > 0 && <span aria-hidden="true" style={{ color: "#6E6150", margin: "0 9px", fontSize: 13 }}>•</span>}
-              {l.href ? <a href={l.href} className="press" style={{ color: "#A89B86", fontSize: 13.5, fontWeight: 700, textDecoration: "none" }}>{l.label}</a>
-                : <button onClick={l.onClick} aria-expanded={l.on === undefined ? undefined : l.on} className="press" style={{ color: l.on ? T.brassHi : "#A89B86", background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>{l.label}</button>}
+              {i > 0 && <span aria-hidden="true" style={{ color: "#B8A98A", margin: "0 9px", fontSize: 13 }}>•</span>}
+              {l.href ? <a href={l.href} className="press" style={{ color: T.inkSoft, fontSize: 13.5, fontWeight: 700, textDecoration: "none" }}>{l.label}</a>
+                : <button onClick={l.onClick} aria-expanded={l.on === undefined ? undefined : l.on} className="press" style={{ color: l.on ? T.brass : T.inkSoft, background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>{l.label}</button>}
             </React.Fragment>
           ))}
         </nav>
@@ -1082,13 +1082,13 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 22, marginTop: 20 }}>
-          <a href="https://www.instagram.com/openchesskr/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram @openchesskr" className="press" style={{ color: "#A89B86", display: "inline-flex" }}><Instagram size={28} strokeWidth={1.8} /></a>
-          <a href="https://www.youtube.com/@openchess-kr1" target="_blank" rel="noopener noreferrer" aria-label="YouTube" title="YouTube @openchess-kr1" className="press" style={{ color: "#A89B86", display: "inline-flex" }}><Youtube size={32} strokeWidth={1.7} /></a>
-          <a href="https://discord.gg/xtwjzQGnpS" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord" className="press" style={{ color: "#A89B86", display: "inline-flex" }}>
+          <a href="https://www.instagram.com/openchesskr/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram @openchesskr" className="press" style={{ color: T.inkSoft, display: "inline-flex" }}><Instagram size={28} strokeWidth={1.8} /></a>
+          <a href="https://www.youtube.com/@openchess-kr1" target="_blank" rel="noopener noreferrer" aria-label="YouTube" title="YouTube @openchess-kr1" className="press" style={{ color: T.inkSoft, display: "inline-flex" }}><Youtube size={32} strokeWidth={1.7} /></a>
+          <a href="https://discord.gg/xtwjzQGnpS" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord" className="press" style={{ color: T.inkSoft, display: "inline-flex" }}>
             <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" /></svg>
           </a>
         </div>
-        <div style={{ marginTop: 16, fontSize: 12, color: "#8A7D69", fontWeight: 600, fontFamily: SITE_FONT }}>© {new Date().getFullYear()} OpenChess</div>
+        <div style={{ marginTop: 16, fontSize: 12, color: T.inkSoft, fontWeight: 600, fontFamily: SITE_FONT }}>© {new Date().getFullYear()} OpenChess</div>
       </footer>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
