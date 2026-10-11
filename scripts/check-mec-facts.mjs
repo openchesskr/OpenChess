@@ -4,6 +4,7 @@
  *  · 앞 문장과 뒤 문장이 마침표 없이 붙은 문장("…나이트 전개 당장 …") 금지
  *  · "지켜 주는 기물 없이 … 공짜로"는 실제로 지키는 기물이 없을 때만
  *  · 잡는 수의 대표 문장은 잡은 결과(캡처·획득·되잡기·교환·수비자 제거·체크메이트 등)를 말해야 한다
+ *  · (BUG-079) 좋은 수 평가에 "손실 예정/위험" 단정 문구 금지, 아무도 노리지 않는 기물에는 "과보호" 금지, 킹 이동에 "과보호" 금지
  *  실행: node scripts/check-mec-facts.mjs  (prebuild)
  */
 import { build } from "esbuild";
@@ -42,6 +43,15 @@ for (const g of games) {
       if (recap) fails.push("되잡히는 수에 '수비자 제거': " + tag);
     }
     if (/전개 (당장|폰|상대|퀸|룩|비숍|나이트|킹|이 수|현재)|적절한 칸 (당장|현재|상대|이 수|퀸|폰|룩|비숍|나이트)/.test(text)) fails.push("문장 사이 마침표 없음: " + tag);
+    if (/손실 위험|방치 시 손실|손실 예정/.test(text)) fails.push("좋은 수에 '손실 예정/위험' 단정 문구(엔진 평가와 모순): " + tag);
+    if (/과보호/.test(text)) {
+      // 과보호는 상대가 실제로 노리는 아군 기물이 있을 때만 — 이동한 기물 주변에 상대가 공격 중인 아군이 하나도 없으면 오탐
+      const after = new Chess(c.fen()); const opp = color === "w" ? "b" : "w";
+      let attackedFriend = false;
+      for (const row of after.board()) for (const sqr of row) if (sqr && sqr.color === color && sqr.type !== "k" && after.attackers(sqr.square, opp).length) attackedFriend = true;
+      if (!attackedFriend) fails.push("공격받는 아군 기물이 없는데 '과보호': " + tag);
+      if (mv.piece === "k") fails.push("킹 이동에 '과보호': " + tag);
+    }
     if (/지켜 주는 기물 없이/.test(text)) {
       const d2 = new Chess(c.fen()); const defenders = d2.attackers ? d2.attackers(mv.to, color) : null;
       if (defenders && defenders.length) fails.push("지키는 기물이 있는데 '지켜 주는 기물 없이': " + tag);

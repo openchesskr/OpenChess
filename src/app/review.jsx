@@ -745,7 +745,7 @@ function ReviewOpeningBanner({ text }) {
 // 그냥 평범한 문단으로 렌더링한다. keyword가 문장 안에 없으면(방어적으로) 역시 평범하게 렌더링한다.
 function MecKeywordLine({ text, keyword, onClick, style }) {
   if (!keyword || !onClick) return <p style={style}>{text}</p>;
-  const idx = text.indexOf(keyword);
+  const idx = text.toLowerCase().indexOf(keyword.toLowerCase());   // 영어 등은 문장 중간에서 대소문자가 달라질 수 있다
   if (idx < 0) return <p style={style}>{text}</p>;
   const before = text.slice(0, idx), mid = text.slice(idx, idx + keyword.length), after = text.slice(idx + keyword.length);
   return (
