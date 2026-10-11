@@ -13,6 +13,7 @@ import { decodeMoves } from "../lib/moveCodec.js";
 import { bracket, crosstable, filterGames, fmtScore, matchSummary, roundKey, roundsOf, standings, winnerOf, RES_TXT } from "../lib/tournamentView.js";
 import { enName } from "../data/playerNames.js";
 import { flagEmoji } from "../lib/flags.js";
+import Dropdown from "./Dropdown.jsx";
 
 const FMT_LABEL = () => ({ rr: t("라운드로빈"), swiss: t("스위스"), ko: t("녹아웃"), match: t("매치"), list: t("기록") });
 const ROUND_LABEL = () => ({ final: t("결승"), semi: t("준결승"), qf: t("8강"), r16: t("16강"), r32: t("32강"), r64: t("64강") });
@@ -156,9 +157,9 @@ function GamesTab({ ed, filter, setFilter, onOpenGame, onOpenGameAnalyze }) {
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
         <input value={filter.text} onChange={(e) => setFilter({ ...filter, text: e.target.value })} placeholder={t("선수 이름 검색")} aria-label={t("선수 이름 검색")} style={{ ...sel, flex: "1 1 140px", minWidth: 120 }} />
-        {rounds.length > 0 && <select value={filter.round} onChange={(e) => setFilter({ ...filter, round: +e.target.value })} aria-label={t("라운드")} style={sel}><option value={0}>{t("모든 라운드")}</option>{rounds.map((r) => <option key={r} value={r}>{t("{0}라운드", r)}</option>)}</select>}
-        <select value={filter.res == null ? "" : filter.res} onChange={(e) => setFilter({ ...filter, res: e.target.value === "" ? null : +e.target.value })} aria-label={t("결과")} style={sel}><option value="">{t("모든 결과")}</option><option value={2}>{t("백 승")}</option><option value={1}>{t("무승부")}</option><option value={0}>{t("흑 승")}</option></select>
-        {ed.evs.length > 0 && <select value={filter.stage == null ? "" : filter.stage} onChange={(e) => setFilter({ ...filter, stage: e.target.value === "" ? null : +e.target.value })} aria-label={t("단계")} style={sel}><option value="">{t("모든 단계")}</option><option value={0}>{ed.ev}</option>{ed.evs.map((x, i) => <option key={i} value={i + 1}>{x}</option>)}</select>}
+        {rounds.length > 0 && <Dropdown size="sm" value={filter.round} onChange={(v) => setFilter({ ...filter, round: +v })} ariaLabel={t("라운드")} options={[{ value: 0, label: t("모든 라운드") }, ...rounds.map((r) => ({ value: r, label: t("{0}라운드", r) }))]} />}
+        <Dropdown size="sm" value={filter.res == null ? "" : filter.res} onChange={(v) => setFilter({ ...filter, res: v === "" ? null : +v })} ariaLabel={t("결과")} options={[{ value: "", label: t("모든 결과") }, { value: 2, label: t("백 승") }, { value: 1, label: t("무승부") }, { value: 0, label: t("흑 승") }]} />
+        {ed.evs.length > 0 && <Dropdown size="sm" value={filter.stage == null ? "" : filter.stage} onChange={(v) => setFilter({ ...filter, stage: v === "" ? null : +v })} ariaLabel={t("단계")} options={[{ value: "", label: t("모든 단계") }, { value: 0, label: ed.ev }, ...ed.evs.map((x, i) => ({ value: i + 1, label: x }))]} />}
       </div>
       <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 6 }}>{t("대국 {0}판", list.length)}</div>
       {list.slice(0, lim).map(({ i }) => <GameRow key={i} ed={ed} gi={i} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />)}
@@ -196,7 +197,7 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
           </div>
           <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
             <button onClick={() => go(-1)} disabled={yi <= 0} aria-label={t("이전 회차")} title={t("이전 회차")} className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", cursor: yi > 0 ? "pointer" : "default", opacity: yi > 0 ? 1 : 0.35, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.inkSoft }}><ChevronLeft size={15} /></button>
-            <select value={year} onChange={(e) => onYear(+e.target.value)} aria-label={t("연도")} style={{ height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT }}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select>
+            <Dropdown size="sm" align="right" value={year} onChange={(v) => onYear(+v)} ariaLabel={t("연도")} options={years.map((y) => ({ value: y, label: String(y) }))} />
             <button onClick={() => go(1)} disabled={yi < 0 || yi >= years.length - 1} aria-label={t("다음 회차")} title={t("다음 회차")} className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", cursor: yi < years.length - 1 ? "pointer" : "default", opacity: yi < years.length - 1 ? 1 : 0.35, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.inkSoft }}><ChevronRight size={15} /></button>
             <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 26, height: 26, borderRadius: 7, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
           </div>

@@ -19,6 +19,7 @@ import { normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, Co
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
+import Dropdown from "../components/Dropdown.jsx";
 
 // (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
 // 구조 자체는 있지만 그 안의 수순이 실제로는 그 자리에서 둘 수 없는(예: setupSans·mistakeSan이 그
@@ -990,12 +991,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <div>
           <label htmlFor="move-fx-mode" style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</label>
           <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, marginBottom: 8 }}>{t("수를 두면 보드에 표시할 등급 이펙트의 범위")}</div>
-          <select id="move-fx-mode" value={normalizeMoveFxMode(moveFxMode)} onChange={(e) => setMoveFxMode(normalizeMoveFxMode(e.target.value))}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", boxSizing: "border-box" }}>
-            <option value="all">{t("모두 표시")}</option>
-            <option value="key">{t("탁월한 수 및 유일한 수만 표시")}</option>
-            <option value="off">{t("표시하지 않음")}</option>
-          </select>
+          <Dropdown id="move-fx-mode" ariaLabel={t("수 등급 이펙트")} value={normalizeMoveFxMode(moveFxMode)} onChange={(v) => setMoveFxMode(normalizeMoveFxMode(v))}
+            options={[{ value: "all", label: t("모두 표시") }, { value: "key", label: t("탁월한 수 및 유일한 수만 표시") }, { value: "off", label: t("표시하지 않음") }]} />
         </div>
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
         {/* (v0.5.5) 통제 칸 표시 — 나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는(들어가면 잡히는) 칸을 보드에 빨갛게 표시할지. 기본 꺼짐. v0.6.0에서 미니게임 설정 카드를 없애고 시각 효과로 합침. */}
