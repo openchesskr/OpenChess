@@ -833,20 +833,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <UgcTranslateToggle />
       </div>
 
-      {/* (18차 UI10) 개발자/공동 개발자 모드 — 블록·설명 없이 온오프 토글 한 줄만 */}
-      {isDev && (
-        <div className="flex items-center justify-between" style={{ marginTop: 14, padding: "6px 2px" }}>
-          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>{t("개발자 모드")}</span></div>
-          <button onClick={() => setDevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: devOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: devOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
-        </div>
-      )}
-      {isCodev && (
-        <div className="flex items-center justify-between" style={{ marginTop: 14, padding: "6px 2px" }}>
-          <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ivoryHi }}>{t("공동 개발자 모드")}</span></div>
-          <button onClick={() => setCodevOn((v) => !v)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: codevOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: codevOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
-        </div>
-      )}
-
       {/* (v0.3.9 사용자 요청) 내 프로필 카드는 이제 설정 탭에 상시 표시하지 않는다 — 헤더 드롭다운
           (HeaderProfileMenu)의 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow, App 루트)으로
           옮겼다. */}
@@ -1100,13 +1086,29 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           순서를 맞춰(권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 관리) 카드 하나로 모았다. 스크롤을 내려야
           보이는 "2번째 페이지"처럼 맨 아래에 두고, 개발자/공동 개발자 모드를 막 켠 순간에는
           devToolsRef로 이 블록까지 자동 스크롤한다(위 devToolsRef 선언부 참고). */}
-      {canEdit && (
+      {(isDev || isCodev) && (
         <div ref={devToolsRef} style={{ ...card, marginTop: 28, border: "1.5px solid " + T.brass, background: "linear-gradient(180deg,#FBF4E2,#F2E8D5)" }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>
+          {/* (v0.6.5, 사용자 요청) 개발자·공동 개발자 모드 토글도 이 블록 안으로 — 설정 탭 가장 아래의 별도 블록. */}
+          <div style={{ marginBottom: canEdit ? 10 : 0 }}>
+            {isDev && (
+            <div className="flex items-center justify-between" style={{ padding: "6px 0" }}>
+              <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("개발자 모드")}</span></div>
+              <button onClick={() => setDevOn((v) => !v)} aria-pressed={devOn} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: devOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: devOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+            </div>
+            )}
+            {isCodev && (
+            <div className="flex items-center justify-between" style={{ padding: "6px 0" }}>
+              <div className="flex items-center gap-2"><Crown size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("공동 개발자 모드")}</span></div>
+              <button onClick={() => setCodevOn((v) => !v)} aria-pressed={codevOn} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: codevOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none" }}><span style={{ position: "absolute", top: 3, left: codevOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+            </div>
+            )}
+          </div>
+          {canEdit && <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>}
+          {canEdit && (<>
 
           {canManageCodev && (
             <>
@@ -1131,6 +1133,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           {canManageCodev && (<>
             <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
             <ReportsDevPanel />
+          </>)}
           </>)}
         </div>
       )}
