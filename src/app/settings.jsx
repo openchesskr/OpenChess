@@ -6,7 +6,7 @@ import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from 
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
+import { Instagram, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
 import LangPicker from "../components/LangPicker.jsx";
 import { loadUgcTranslatePref, saveUgcTranslatePref } from "../lib/prefs.js";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
@@ -727,6 +727,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
   };
   const unblockFromList = async (uid) => { if (await chatBlockSet(myUid, uid, false)) setBlockItems((l) => l.filter((x) => x.uid !== uid)); };
   const [devLogOpen, setDevLogOpen] = useState(false);
+  const [devsOpen, setDevsOpen] = useState(false);   // 푸터의 "개발진" 패널
   // (v0.3.9 기능) 사용자 요청 — 로그아웃 상태에서 뜨는 "계정" 박스와 같은 자리에, 로그인 상태에서는
   // OpenChess 프로필의 상단 요소(아바타·칭호·닉네임·소개, MyProfileCard 최상단과 같은 구성)를 압축해
   // 보여주고 "자세히 보기"로 전체 프로필 카드(ProfileWindow)를 연다 — 헤더 드롭다운의 화살표 버튼과
@@ -1009,47 +1010,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
 
       {/* (2차 개편) 이론 수 체계 추가는 도감 탭(오프닝)으로 이동 — 설정 탭에는 더 이상 두지 않는다. */}
 
-      {/* 개발진 명단 (수 기호 안내 대체) */}
-      <div style={card}>
-        {cardTitle(Users, t("개발진"))}
-        <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-          {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
-              아이디의 프로필로 이동한다. */}
-          <button onClick={() => onOpenUserProfile && onOpenUserProfile(DEV_ACCOUNT)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22", background: "none", border: "none", padding: 0, cursor: onOpenUserProfile ? "pointer" : "default" }}>{DEV_ACCOUNT}</button>
-          <span style={{ fontSize: 11, color: T.inkSoft }}>{t("개발자")}</span>
-        </div>
-        {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>{t("등록된 공동 개발자 없음")}</div>
-          : (CONTENT.codev || []).map((id) => (
-            <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
-                <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{codevDisplayIds[id] || id}</button>{" "}
-                <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>{t("공동 개발자")}</span>
-              </span>
-              {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button>}
-            </div>
-          ))}
-        {/* (v0.2.0) 업데이트 공지 팝업은 버전마다 최초 접속 시 한 번만 뜨고 다시 안 뜨므로, 그
-            내용(버전·날짜·항목·참여 개발자)을 여기 "개발자 기록"으로 항상 남겨 언제든 다시 볼 수 있게 한다. */}
-        <button onClick={() => setDevLogOpen((v) => !v)} className="press flex items-center justify-between" style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCCBA8", background: devLogOpen ? "#0000000d" : "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{tx("개발자 기록 {0}", devLogOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
-        </button>
-        {devLogOpen && (
-          <div style={{ marginTop: 10, maxHeight: 320, overflowY: "auto", paddingRight: 4 }}>
-            {CHANGELOG.map((v, i) => (
-              <div key={v.version} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
-                <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
-                  <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
-                </ul>
-                {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* (18차 UI10) chess.com 연동 UI는 프로필 편집 모달 안으로 이동 */}
 
       {/* (v0.6.0) 차단 목록 — 로그인한 경우만 */}
@@ -1061,21 +1021,74 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           </div>
         </div>
       )}
-      {/* 문의 / FAQ */}
-      <div style={card}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2"><HelpCircle size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("문의 / FAQ")}</span></div>
-          <div className="flex items-center gap-2">
-            {/* (v0.4.3 기능, 사용자 요청) /about처럼 반응형 타이포그래피·애니메이션 중심으로 만든
-                별도 FAQ 페이지(/faq) — 이 카드에서 실제 페이지 이동(같은 탭 새 로드)으로 연결한다. */}
-            <a href="/faq" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("FAQ 보기")}</a>
-            <a href="/terms" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("이용약관")}</a>
-            <a href="/privacy" className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", textDecoration: "none" }}>{t("개인정보처리방침")}</a>
-            <button onClick={() => setInquiryOpen(true)} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("문의하기")}</button>
+      {/* (v0.6.5, 사용자 요청) 문의·개발진을 하나의 하단 푸터로 묶었다 — chess.com 사이트 맨 아래처럼 흐린 글자 링크를 점으로 이어 가운데 정렬하고, 그 아래에 소셜 아이콘(Instagram·Discord)을 둔다. */}
+      <footer style={{ marginTop: 18, padding: "24px 14px 20px", borderRadius: 14, background: "linear-gradient(180deg,#2E1C10,#1E130B)", border: "1px solid #5A4630", textAlign: "center" }}>
+        <nav aria-label={t("문의 / FAQ")} style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "6px 0", lineHeight: 1.9 }}>
+          {[
+            { k: "faq", label: t("FAQ 보기"), href: "/faq" },
+            { k: "terms", label: t("이용약관"), href: "/terms" },
+            { k: "privacy", label: t("개인정보처리방침"), href: "/privacy" },
+            { k: "inquiry", label: t("문의하기"), onClick: () => setInquiryOpen(true) },
+            { k: "devs", label: t("개발진"), onClick: () => setDevsOpen((v) => !v), on: devsOpen },
+          ].map((l, i) => (
+            <React.Fragment key={l.k}>
+              {i > 0 && <span aria-hidden="true" style={{ color: "#6E6150", margin: "0 9px", fontSize: 13 }}>•</span>}
+              {l.href ? <a href={l.href} className="press" style={{ color: "#A89B86", fontSize: 13.5, fontWeight: 700, textDecoration: "none" }}>{l.label}</a>
+                : <button onClick={l.onClick} aria-expanded={l.on === undefined ? undefined : l.on} className="press" style={{ color: l.on ? T.brassHi : "#A89B86", background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>{l.label}</button>}
+            </React.Fragment>
+          ))}
+        </nav>
+        {devsOpen && (
+          <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8", textAlign: "left" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, marginBottom: 8 }}>{t("개발진")}</div>
+
+          <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+            {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
+                아이디의 프로필로 이동한다. */}
+            <button onClick={() => onOpenUserProfile && onOpenUserProfile(DEV_ACCOUNT)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 800, color: T.cocoa || "#5A3A22", background: "none", border: "none", padding: 0, cursor: onOpenUserProfile ? "pointer" : "default" }}>{DEV_ACCOUNT}</button>
+            <span style={{ fontSize: 11, color: T.inkSoft }}>{t("개발자")}</span>
           </div>
+          {(CONTENT.codev || []).length === 0 ? <div style={{ fontSize: 12, color: T.inkSoft }}>{t("등록된 공동 개발자 없음")}</div>
+            : (CONTENT.codev || []).map((id) => (
+              <div key={id} className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
+                  <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{codevDisplayIds[id] || id}</button>{" "}
+                  <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>{t("공동 개발자")}</span>
+                </span>
+                {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button>}
+              </div>
+            ))}
+          {/* (v0.2.0) 업데이트 공지 팝업은 버전마다 최초 접속 시 한 번만 뜨고 다시 안 뜨므로, 그
+              내용(버전·날짜·항목·참여 개발자)을 여기 "개발자 기록"으로 항상 남겨 언제든 다시 볼 수 있게 한다. */}
+          <button onClick={() => setDevLogOpen((v) => !v)} className="press flex items-center justify-between" style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid #DCCBA8", background: devLogOpen ? "#0000000d" : "transparent", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{tx("개발자 기록 {0}", devLogOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+          </button>
+          {devLogOpen && (
+            <div style={{ marginTop: 10, maxHeight: 320, overflowY: "auto", paddingRight: 4 }}>
+              {CHANGELOG.map((v, i) => (
+                <div key={v.version} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
+                  <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
+                    <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
+                  </ul>
+                  {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+  
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 22, marginTop: 20 }}>
+          <a href="https://www.instagram.com/openchesskr/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram @openchesskr" className="press" style={{ color: "#A89B86", display: "inline-flex" }}><Instagram size={28} strokeWidth={1.8} /></a>
+          <a href="https://discord.gg/xtwjzQGnpS" target="_blank" rel="noopener noreferrer" aria-label="Discord" title="Discord" className="press" style={{ color: "#A89B86", display: "inline-flex" }}>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" /></svg>
+          </a>
         </div>
-        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>{t("자주 묻는 질문 확인 또는 이메일 문의")}</p>
-      </div>
+        <div style={{ marginTop: 16, fontSize: 12, color: "#8A7D69", fontWeight: 600, fontFamily: SITE_FONT }}>© {new Date().getFullYear()} OpenChess</div>
+      </footer>
       </div>
       {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
       <AnimatePresence>
