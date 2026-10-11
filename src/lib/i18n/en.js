@@ -763,7 +763,7 @@ export default {
   "엔진으로 재배치 계획 찾기": "Find a rerouting plan with the engine",
   "{0} 계획": "{0} Plan",
   "완료": "Done",
-  "{0}분석 중…": "{0}Analyzing…",
+  "{0}분석 중…": "Analyzing {0}…",
   "정확도 계산 완료": "Accuracy calculated",
   "정확도 계산 중": "Calculating accuracy",
   "⬜ 백 정확도": "⬜ White accuracy",
@@ -2278,4 +2278,6 @@ export default {
   "킹 안전 확보는 대부분의 상황에서 좋은 선택": "Securing the king is a good choice in most situations",
   "캐슬링으로 킹을 안전하게 두는 건 우선순위가 높은 선택": "Castling to put the king in safety is a high-priority choice",
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Moving the king to safety early is a good choice",
+  "대회·개최지·마스터 이름 검색": "Search tournaments, venues, masters",
+  "조건에 맞는 결과 없음": "No matching results",
 };

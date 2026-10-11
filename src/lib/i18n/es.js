@@ -763,7 +763,7 @@ export default {
   "엔진으로 재배치 계획 찾기": "Buscar un plan de reubicación con el motor",
   "{0} 계획": "{0} Plan",
   "완료": "Hecho",
-  "{0}분석 중…": "{0}Analizando…",
+  "{0}분석 중…": "Analizando {0}…",
   "정확도 계산 완료": "Precisión calculada",
   "정확도 계산 중": "Calculando la precisión",
   "⬜ 백 정확도": "⬜ Precisión de las blancas",
@@ -2278,4 +2278,6 @@ export default {
   "킹 안전 확보는 대부분의 상황에서 좋은 선택": "Poner el rey a salvo es una buena elección en la mayoría de situaciones",
   "캐슬링으로 킹을 안전하게 두는 건 우선순위가 높은 선택": "Hacer el enroque para poner el rey a salvo es una elección prioritaria",
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Llevar el rey a un lugar seguro con antelación es buena elección",
+  "대회·개최지·마스터 이름 검색": "Buscar torneos, sedes, maestros",
+  "조건에 맞는 결과 없음": "Sin resultados",
 };

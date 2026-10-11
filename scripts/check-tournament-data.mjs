@@ -102,7 +102,7 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
 // ⑥ 연결·용량
 {
   const dm = readFileSync(url("src/app/dexMasters.jsx"), "utf8");
-  for (const [re, m] of [[/import EditionView from "..\/components\/tournamentView.jsx"/, "회차 화면 연결"], [/import MasterProfile from "..\/components\/masterProfile.jsx"/, "마스터 프로필 연결"], [/hasTournamentData\(n\.tourId\)/, "연도 블록 → 회차 화면"], [/tournamentsOfPlayerQuery/, "선수 이름 검색"], [/aria-label=\{t\("대회·개최지·선수 검색"\)\}/, "대회 검색 입력"]]) if (!re.test(dm)) fails.push("dexMasters.jsx: " + m + "이(가) 없음");
+  for (const [re, m] of [[/import EditionView from "..\/components\/tournamentView.jsx"/, "회차 화면 연결"], [/import MasterProfile from "..\/components\/masterProfile.jsx"/, "마스터 프로필 연결"], [/hasTournamentData\(n\.tourId\)/, "연도 블록 → 회차 화면"], [/tournamentsOfPlayerQuery/, "선수 이름 검색"], [/aria-label=\{t\("대회·개최지·마스터 이름 검색"\)\}/, "대회 검색 입력"]]) if (!re.test(dm)) fails.push("dexMasters.jsx: " + m + "이(가) 없음");
   const sizeOf = (p) => statSync(url(p)).size, dirSize = files.reduce((a, f) => a + statSync(new URL(f, dir)).size, 0);
   const LIM = { dir: 20 * 1048576, prof: 1048576, idx: 2 * 1048576, search: 600 * 1024 };
   if (dirSize > LIM.dir) fails.push("대회 데이터 용량 " + (dirSize / 1048576).toFixed(1) + "MB > 상한 20MB — 배포 저장 용량 규칙(README)");
