@@ -962,7 +962,7 @@ function formatBlindEval(ev) {
   const cp = ev.cp || 0;
   return (cp >= 0 ? "+" : "") + (cp / 100).toFixed(2) + "(depth=" + depth + ")";
 }
-function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, onOpenBoardFen, onOpenBoardSans, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, otherPhoto, onBack, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, fillNarrow, onOpenBoardFen, onOpenBoardSans, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   // (UI) 사용자 요청 — 채팅에 공유된 퍼즐 블록도 퍼즐 탭(PuzzleCard)과 완전히 같은 UI를 쓴다.
   // puzzlePreviews에 담긴 pz는 puzzles.data(전체 퍼즐 레코드, id 포함)라 PuzzleCard가 그대로 쓸 수
   // 있고, 좋아요·리포스트·공유·풀이수는 전역 상태(위 props)에서 puzzle_no로 바로 조회한다.
@@ -2066,7 +2066,7 @@ function ChatPanel({ myUid, myUsername, otherUid, otherUsername, otherPhoto, onB
           선택하면 그 헤더를 숨기므로, 이 헤더 하나가 뒤로가기(←)·닫기 역할을 모두 겸한다 —
           ←·상대 프로필 사진·아이디를 좌상단에 순서대로 배치한다. */}
       <div className="flex items-center gap-2" style={{ marginBottom: 12, flexShrink: 0 }}>
-        <button onClick={onBack} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>
+        {!hideBack && <button onClick={onBack} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button>}
         {/* (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅창에도 —
             지금 이 대화 상대 한 명의 접속 여부만 필요하므로 usePresenceMap([otherUid])로 가볍게 구독.
             (사용자 요청) 사진·아이디 크기를 1.5배(28→42, 14→21)로 키우고, 둘 다 누르면 그 유저의
@@ -2472,7 +2472,11 @@ function userSearchRow(r, onClick, right, opts) {
     </button>
   );
 }
-export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
+// (v0.6.5) 도킹 창 모드(docked) — 데스크톱에서 채팅·검색·친구를 배경을 막지 않는 작은 창(DockWindows)으로 띄울 때, 모달의 바깥 백드롭·카드 테두리를 없애고
+// 창 틀이 주는 제목 줄·닫기 버튼을 쓴다. 창의 높이·스크롤은 틀이 맡으므로 카드는 내용만큼 늘어난다.
+const dockedOuter = { position: "static", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 };
+const dockedCard = { width: "100%", maxWidth: "none", maxHeight: "none", height: "auto", minHeight: "100%", display: "flex", flexDirection: "column", background: T.paper, border: "none", borderRadius: 0, boxShadow: "none" };
+export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
   // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
@@ -2509,15 +2513,15 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile }) {
   // (사용자 요청) 모바일에서는 이 검색 창을 카드가 아니라 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+    <div onClick={docked ? undefined : onClose} style={docked ? dockedOuter : { position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
       {/* (버그 수정) 모달 카드에 높이 제한·스크롤이 없어, 프로필 내용이 화면보다 길면 카드가 뷰포트
           밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
           카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
+      <div onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        {!docked && <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t("유저 검색")}</span>
           <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
-        </div>
+        </div>}
         <div style={{ padding: 16, overflowY: "auto" }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
             {/* (v0.4.4 기능, 사용자 요청) "#ABCDE1234"처럼 MID로도 검색할 수 있다 — userSearch가 이
@@ -2582,7 +2586,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   );
 }
 // (18차 UX7) 채팅 모아보기 모달 — 대화가 있었던 상대를 최근 메시지와 함께 나열, 클릭하면 해당 채팅으로.
-export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+export function ChatsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const [rows, setRows] = useState(null);
   // (버그 수정, 사용자 요청) 프로필 사진의 Discord식 접속 표시(OnlineDot)를 채팅 목록에도.
   const chatPresence = usePresenceMap(useMemo(() => (rows || []).map((r) => r.uid), [rows]));
@@ -2624,6 +2628,8 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
   // 이미 다 읽은 상대에게 계속 빨간 배지가 떠 있던 원인. 대화창을 나갈 때(뒤로가기) 목록을 다시
   // 불러와 실제 읽음 상태를 반영한다.
   const closeChatWith = useCallback(() => { setChatWith(null); loadRows(); }, [loadRows]);
+  // 도킹 창 모드: 대화는 별도 창에서 읽히므로, 이 목록은 주기적으로 다시 불러와 안 읽은 수·마지막 메시지를 최신으로 둔다.
+  useEffect(() => { if (!docked) return undefined; const id = setInterval(loadRows, 15000); return () => clearInterval(id); }, [docked, loadRows]);
   // (v0.3.4 기능) 대화 행을 꾹 누르거나(모바일) 오른쪽 클릭하면(컴퓨터) 고정/고정 해제·알림 받기/
   // 끄기·삭제 메뉴가 뜬다 — 채팅 메시지 롱프레스와 같은 480ms 임계값, safeAreaDx로 화면 가장자리
   // 잘림을 막는다(이 메뉴는 전체 폭 목록 행에 뜨는 표준 드롭다운이라, 말풍선 옆으로 띄우는
@@ -2693,14 +2699,14 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
   const ctxItemStyle = { display: "flex", alignItems: "center", gap: 7, padding: "7px 9px", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", width: "100%" };
   return (
     <>
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
-      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={docked ? undefined : onClose} style={docked ? dockedOuter : { position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.25, ease: MOTION_EASE }} onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
         {/* (19차 UX3) 뒤로가기는 ChatPanel 좌상단 ←로 통일. 래퍼 헤더는 닫기(X)만 우상단에 둔다.
             (v0.3.3 UI) 특정 대화를 선택해 들어가면 이 "채팅"+닫기 헤더는 아예 감춘다 — 그 안의
             ChatPanel이 이미 자기 헤더(←·상대 프로필 사진·아이디)를 갖고 있어, 두 헤더가 겹겹이
             쌓여 보이던 것을 없앤다. 대화 목록으로 돌아오면(← 버튼) 이 헤더가 다시 나타나고, 모달
             전체를 닫으려면(X) 먼저 그 ←로 목록에 돌아와야 한다. */}
-        {!chatWith && (
+        {!chatWith && !docked && (
           <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("채팅")}</span>
             <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
@@ -2721,7 +2727,7 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
                   <FadeIn key={uid} index={i}>
                   <div style={{ position: "relative" }}>
                   <button
-                    onClick={() => { if (pressFiredRef.current) { pressFiredRef.current = false; return; } setChatWith({ uid, username: pub.displayId || pr.username || "", photo: pub.photo || null }); }}
+                    onClick={() => { if (pressFiredRef.current) { pressFiredRef.current = false; return; } const c = { uid, username: pub.displayId || pr.username || "", photo: pub.photo || null }; if (docked && onOpenChat) onOpenChat(c); else setChatWith(c); }}
                     onMouseDown={onRowDown(uid)} onMouseUp={onRowUp} onMouseLeave={onRowUp}
                     onTouchStart={onRowDown(uid)} onTouchEnd={onRowUp}
                     onContextMenu={onRowContext(uid)}
@@ -2774,6 +2780,16 @@ export function ChatsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans
       </div>
     )}
     </>
+  );
+}
+// (v0.6.5) 도킹 채팅 창 — 한 대화 상대와의 ChatPanel 하나를 창 안에 그린다(창 제목·닫기는 DockWindows 틀이 맡으므로 뒤로가기 버튼은 감춘다).
+//  채팅 목록(ChatsModal)·친구 창에서 대화를 누르면 이 창이 따로 열려, 여러 사람과 동시에 대화하며 다른 창·화면을 같이 쓸 수 있다.
+export function ChatWindow({ me, myUid, other, onClose, onOpenBoardFen, onOpenBoardSans, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenUserProfile, myLegacies, myIsGM, myChesscomGames, mySolved, myLineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: T.paper }}>
+      <ChatPanel hideBack onBack={onClose} onOpenBoardFen={onOpenBoardFen} onOpenBoardSans={onOpenBoardSans} myUid={myUid} myUsername={me} otherUid={other.uid} otherUsername={other.username} otherPhoto={other.photo} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
+        mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+    </div>
   );
 }
 // (기능7, 사용자 요청) PvP 관전 모드 — 친구의 진행 중인 실시간 대국을 참가자가 아닌 다른 로그인
@@ -2897,7 +2913,7 @@ function PvpSpectateModal({ gameId, onClose }) {
     </div>
   );
 }
-export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
+export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoardFen, onOpenBoardSans, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite, onOpenPuzzle, onOpenUserProfile, mySolved, myLineSolves, myLegacies, myIsGM, myChesscomGames, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, engine }) {
   const meId = myUid || "";
   const [tab, setTab] = useState("friends");
   const [edges, setEdges] = useState([]);
@@ -2907,6 +2923,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
   const [pending, setPending] = useState({}); // uid -> true
   const [reqNotice, setReqNotice] = useState(""); // (BUG-043) 친구 요청이 서버에서 거절됐을 때(차단 관계 등) 안내 문구
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
+  const startChat = (c) => { if (docked && onOpenChat) onOpenChat(c); else setChatWith(c); };   // 도킹 창 모드에서는 대화마다 별도 창
   // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
   const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
   // (사용자 요청, v0.3.9) 통계 분리 토글 — 카드 우상단(아이디 라벨과 같은 줄)에 두므로 이 모달이
@@ -3046,9 +3063,9 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
 
   return (
     <>
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 440, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        {!chatWith && (
+    <div onClick={docked ? undefined : onClose} style={docked ? dockedOuter : { position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 440, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+        {!chatWith && (!docked || sel) && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
             {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
@@ -3060,7 +3077,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
               {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
               {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label={t("친구 삭제")} title={t("친구 삭제")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
-              <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+              {!docked && <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>}
             </span>
           </div>
         )}
@@ -3093,7 +3110,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
                 <div className="flex items-center justify-between gap-2" style={{ flex: "1 1 270px", minWidth: 0 }}>
                   {statsViewToggle(statsView, setStatsView)}
-                  {rel === "friend" && <button onClick={() => setChatWith({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
+                  {rel === "friend" && <button onClick={() => startChat({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
                 </div>
               </div>
               {statsView === "cc" && p.chesscom ? (
@@ -3135,7 +3152,7 @@ export function FriendsModal({ me, myUid, onClose, onOpenBoardFen, onOpenBoardSa
                         <FadeIn key={u} index={i}><FriendRow id={uname(u)} pub={(profiles[u] || {}).pub} lastSeenMs={presenceMap[u]} onClick={() => viewProfileUid(u)} right={<>
                           {/* (기능7, 사용자 요청) 친구가 지금 실시간 대국 중이면 참가하지 않고 구경만 할 수 있는 관전 버튼. */}
                           {friendActiveGames[u] != null && <button onClick={() => setSpectateGameId(friendActiveGames[u])} aria-label={t("관전")} title={t("관전")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Eye size={14} /></button>}
-                          <button onClick={() => setChatWith({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
+                          <button onClick={() => startChat({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
                         </>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (

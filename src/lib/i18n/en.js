@@ -2280,4 +2280,7 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Moving the king to safety early is a good choice",
   "대회·개최지·마스터 이름 검색": "Search tournaments, venues, masters",
   "조건에 맞는 결과 없음": "No matching results",
+  "창 접기": "Minimize window",
+  "창 펼치기": "Expand window",
+  "두 번 누르면 아래에 다시 붙음": "Double-click to dock it back at the bottom",
 };
