@@ -2280,4 +2280,7 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Llevar el rey a un lugar seguro con antelación es buena elección",
   "대회·개최지·마스터 이름 검색": "Buscar torneos, sedes, maestros",
   "조건에 맞는 결과 없음": "Sin resultados",
+  "창 접기": "Minimizar ventana",
+  "창 펼치기": "Expandir ventana",
+  "두 번 누르면 아래에 다시 붙음": "Doble clic para volver a acoplarla abajo",
 };
