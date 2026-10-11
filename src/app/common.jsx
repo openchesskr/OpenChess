@@ -3506,6 +3506,8 @@ function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan, fenRoot)
   const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info) return null;
+  // (BUG-078) 이 수가 기물을 잡거나 체크를 거는 수면 "공짜 기물을 안 잡았다"는 말은 맞지 않는다.
+  if (info.isCap || /[+#]$/.test(san)) return null;
   const hanging = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = before[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
@@ -3556,6 +3558,18 @@ function attacksSquareRaw(board, fr, fc, tr, tc, color) {
   if (p.t === "K") return Math.abs(tr - fr) <= 1 && Math.abs(tc - fc) <= 1;
   return canMove(board, p.t, color, fr, fc, tr, tc, true);
 }
+// (BUG-078) 이 수가 상대 기물을 잡는 수인데도 코치가 잡은 사실을 한마디도 안 하고 엉뚱한 사실(안 잡은 폰, 잠재 위협,
+// 방치된 다른 기물)을 대표 문장으로 내던 문제 — 잡는 수는 "무엇을 얻었는가"가 가장 먼저 말해야 할 사실이다.
+// 잡기 전 SEE가 양수면 순이득(공짜·방어 부족), 0이면 대등 교환, 음수면 손해 보는 교환(희생은 다른 경로가 설명).
+function captureFact(sansBeforeMove, san, color, fenRoot) {
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  const captured = before[info.to[0]][info.to[1]];
+  if (!captured || captured.t === "K") return null;   // 앙파상은 폰 교환 쪽(pawnTradeFact)이 다룬다
+  const gain = seeSquare(before, info.to[0], info.to[1], color);
+  return { piece: captured.t, win: gain > 0, hang: gain > 0 && !(countAttackers(before, info.to[0], info.to[1], color === "w" ? "b" : "w") > 0) };
+}
 // (신규) "수비자 제거"(Remove the Defender) — 이 수가 상대 기물을 잡았는데, 잡힌 그 기물이 다른
 // 상대 기물 Y를 지키고 있었다면(=Y 칸을 되잡을 수 있었다면), 그 수비자가 사라지며 Y가 공짜로(SEE상
 // 순이득) 잡히게 된다. 이 수를 두기 전에는 Y가 이미 공짜로 잡히는 상태가 아니었어야(=이 수가 원인)
@@ -3570,6 +3584,9 @@ function removeDefenderFact(sansBeforeMove, san, color, fenRoot) {
   const removedDefender = before[dr][dc];
   if (!removedDefender || removedDefender.c !== enemy) return null;
   const after = applySan(before, san, color);
+  // (BUG-077) 잡은 기물이 바로 되잡히는 수는 "수비자 제거"가 아니라 그냥 교환이다 — 상대가 되잡느라 한 수를
+  // 쓰면 Y를 가져갈 틈도 사라진다. 잡은 칸에 상대가 합법적으로 되잡을 수 없을 때만 인정한다.
+  if (canCaptureSquareLegally(after, dr, dc, enemy)) return null;
   let best = null;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (r === dr && c === dc) continue;
@@ -3615,7 +3632,9 @@ function exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot) {
   const offered = !(seeSquare(after, tr, tc, enemy) > 0); // 상대가 잡아도 순손실 없음 = 되잡음
   if (offered) return { offered: true, piece: mover.t };
   if (kind === "brilliant") return null; // 탁월한 수의 희생은 이미 다른 경로로 설명된다
-  return { offered: false, piece: mover.t };
+  // (BUG-077) "지켜 주는 기물 없이 공짜로 내줌"은 실제로 지키는 기물이 하나도 없을 때만 맞다. 지키는 기물이 있는데
+  // 공격자가 더 많아 손해를 보는 경우(예: 폰이 지키는 나이트에 나이트·비숍이 겹침)는 별도 문구를 쓴다.
+  return { offered: false, piece: mover.t, guarded: countAttackers(after, tr, tc, color) > 0 };
 }
 // R2 — 교환 요청에 대한 응답. 상대의 직전 수가 exchangeOfferFact의 "교환 요청"이었고, 그 요청이
 // 걸린 내 기물을 이번 수로 잡으면 "수락", 그 기물을 다른 칸으로 옮겨 대치를 풀면 "거절"로 판정한다.
@@ -3817,7 +3836,7 @@ function overprotectFact(sansBeforeMove, san, color, fenRoot) {
   const after = applySan(before, san, color);
   const [tr, tc] = info.to;
   const mover = after[tr][tc];
-  if (!mover) return null;
+  if (!mover || mover.t === "K") return null;   // (BUG-078) 킹 이동은 "과보호"가 아니다(킹이 퀸·폰을 '지킨다'는 말은 어색)
   const { grid, counts } = pieceMoveState(sansBeforeMove, fenRoot);
   const candidates = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -3984,6 +4003,11 @@ const MEC_PHRASES = {
   castleLost: (s) => mecPick(["이 수로 캐슬링 권리 상실", "캐슬링 권리 소멸", "더 이상 캐슬링 불가"], s),
   queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 덜 안전", "퀸사이드 캐슬링. a열 폰이 약점이 될 수 있음", "퀸사이드 캐슬링. 킹사이드보다 살짝 덜 안전"], s),
   exchangeOffered: (p, s) => mecPick([p + " 상대 같은 기물이 공격 가능한 칸으로 이동. 교환 제안", "동가 기물 교환 제안", p + " 상대 기물과 마주 봄. 교환 제안"], s),
+  exchangeLosing: (p, s) => mecPick([p + " 지키는 기물이 부족해 교환하면 손해", "교환이 이어지면 " + p + " 쪽이 손해를 보는 자리로 이동", p + " 교환 시 손해. 지키는 기물 부족"], s),
+  captureFree: (p, s) => mecPick(["지켜 주는 기물이 없던 상대 " + p + " 획득", "상대 " + p + " 공짜로 획득", "방치된 상대 " + p + " 캡처"], s),
+  captureWin: (p, s) => mecPick(["교환 끝에 상대 " + p + " 획득", "상대 " + p + " 캡처. 순이득", "상대 " + p + " 획득. 교환이 이어져도 이득"], s),
+  captureTrade: (p, s) => mecPick(["상대 " + p + " 캡처. 대등한 교환", "상대 " + p + " 캡처, 기물 교환", "상대 " + p + " 캡처로 교환"], s),
+  checkForce: (s) => mecPick(["체크로 상대의 응수를 강제", "체크. 상대는 킹을 지키는 수밖에 없음", "체크로 주도권 확보"], s),
   exchangeFreeGive: (p, s) => mecPick([p + " 대가 없이 내줌", "지켜 주는 기물 없이 " + p + " 공짜로 내줌", p + " 공짜로 잡히는 자리로 이동"], s),
   exchangeAccepted: (p, s) => mecPick(["교환 제안 수락, 상대 " + p + " 캡처", "교환 수락. " + p + " 캡처", p + " 캡처로 교환 수락"], s),
   exchangeDeclined: (p, s) => mecPick(["교환 제안 거절, 기물 후퇴", "교환 거절. " + p + " 피신", "상대와의 교환 거절"], s),
@@ -4068,8 +4092,19 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
     const base = offerResponse.accepted ? MEC_PHRASES.exchangeAccepted(PIECE_KOR[offerResponse.piece], seed) : MEC_PHRASES.exchangeDeclined(PIECE_KOR[offerResponse.piece], seed);
     facts.push(redeployPhrase ? base + " " + redeployPhrase : base);
   } else {
-    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot);
-    if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
+    // (BUG-078) 상대 기물을 잡는 수는 "교환 제안"이 아니라 잡은 결과(되잡기·획득·교환)가 대표 사실이다.
+    let capFact = captureFact(sansBeforeMove, san, color, fenRoot);
+    // 잡고서 그 기물을 그대로 뺏기는 나쁜 수(블런더 등)는 "획득"으로 포장하지 않고 아래 기존 경로(걸린 기물 경고)에 맡긴다.
+    if (capFact && moveInfo && !MEC_GOOD_KINDS.includes(kind) && seeSquare(board, moveInfo.to[0], moveInfo.to[1], color === "w" ? "b" : "w") > 0) capFact = null;
+    const recapEarly = capFact ? recaptureFact(sansBeforeMove, san, color, fenRoot) : null;
+    const offer = capFact ? null : exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot);
+    if (capFact) {
+      const cp = PIECE_KOR[capFact.piece];
+      if (recapEarly) facts.push(MEC_PHRASES.recapture(PIECE_KOR[recapEarly.capturedPiece], seed));
+      else facts.push(capFact.win ? (capFact.hang ? MEC_PHRASES.captureFree(cp, seed) : MEC_PHRASES.captureWin(cp, seed)) : MEC_PHRASES.captureTrade(cp, seed));
+      if (redeployPhrase) facts[0] += " " + redeployPhrase;
+    }
+    else if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : (offer.guarded ? MEC_PHRASES.exchangeLosing(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed)));
     else {
       const mine = fairTradeSq ? t_.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t_.mine;
       if (mine.length) facts.push(MEC_PHRASES.mine(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
@@ -4184,7 +4219,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
   // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
   // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
   const devNote = developmentNote(sansBeforeMove, san, color, kind, fenRoot);
-  if (devNote) { if (facts.length) facts[0] = devNote + " " + facts[0]; else facts.push(devNote); }
+  // (BUG-078) 전개 문장과 뒤 문장이 마침표 없이 붙어("…나이트 전개 당장 위협은 없지만…") 한 문장처럼 읽히던 것을 분리한다.
+  if (devNote) { if (facts.length) facts[0] = devNote.replace(/[.!?]+$/, "") + ". " + facts[0]; else facts.push(devNote); }
   // R12 — 캐슬링은 판단 기준이 다르다. 좋은 수면 고정된 긍정 평가로 다른 사실을 전부 대체하고(퀸사이드면
   // 안전성 안내를 이어 붙인다), 나쁜 수인데 위에서 아무 원인도 못 찾았으면 "엔진에 의하면"으로 대체한다.
   if (/^O-O/.test(san)) {
@@ -4193,6 +4229,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       facts.length = 0;
       facts.push(/^O-O-O/.test(san) ? good + " " + MEC_PHRASES.queensideNote(seed) : good);
     } else if (!facts.length) facts.push(MEC_PHRASES.castleBadFallback(seed));
+  } else if (!facts.length && /\+$/.test(san) && MEC_GOOD_KINDS.includes(kind)) {
+    facts.push(MEC_PHRASES.checkForce(seed));
   } else if (!facts.length && MEC_GOOD_KINDS.includes(kind)) {
     // R2/R3의 "엔진에 의하면" 취지를 일반화 — 좋은 수인데 위 어떤 사실도 찾지 못했으면, 설명할 수
     // 있는 직관적인 이유가 없다는 사실 자체를 명시한다.
