@@ -599,7 +599,7 @@ function renderMentionText(body) {
 // 통합했다. MID 초대 링크(계정 센터에서 복사)로 들어오면 자동으로 친구 요청까지 보낸다(autoInvite).
 // 데스크톱처럼 폭이 넉넉하면 신원/친구 요청을 왼쪽 고정 열에, 통계·활동을 오른쪽 넓은 열에 나란히
 // 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
-export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
   const [pubUsername, setPubUsername] = useState(null);
@@ -619,7 +619,8 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
     const t = setTimeout(() => setReqPopup(""), 2600);
     return () => clearTimeout(t);
   }, [reqPopup]);
-  const wide = !useNarrow(880);
+  const narrowPage = useNarrow(880);
+  const wide = !docked && !narrowPage;   // 도킹 창(340px)은 항상 모바일 배치(세로 한 열)
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
   // (v0.6.0, 스토어 심사 대비) 프로필 신고·차단 — 채팅 밖에서도 사용자 콘텐츠(닉네임·사진·소개)를 신고하고 차단할 수 있어야 한다.
   const [blockedByMe, setBlockedByMe] = useState(false);
@@ -715,7 +716,7 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
   };
   const isSelf = !!(myUid && pubUid && myUid === pubUid);
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div style={docked ? { minHeight: "100%", background: T.paper } : { position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       {safetyMsg && <div role="status" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 410, padding: "10px 16px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700 }}>{safetyMsg}</div>}
       <AnimatePresence>
         {reportOpen && <ReportSheet key="profile-report" targetName={(pub && pub.nickname) || pubUsername || t("사용자")} snippet={null} alreadyBlocked={blockedByMe} onSubmit={submitProfileReport} onClose={() => setReportOpen(false)} />}
@@ -737,14 +738,14 @@ export function UserProfilePage({ mid, autoInvite, onClose, me, myUid, onOpenOpe
       </AnimatePresence>
       <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
         <div className="flex items-center gap-2">
-          <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>
+          {!docked && <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>}
           {/* (v0.6.1, 사용자 요청) "프로필" 글자 자리에 @아이디 — 카드 안의 @아이디 줄은 없앴다. */}
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{pub || pubUsername ? <>@{(pub && pub.displayId) || pubUsername}{roleIcon(pubUsername)}</> : t("프로필")}</span>
         </div>
         {/* (v0.6.1) 우상단 X 버튼은 없애고 그 자리를 점 3개 메뉴(신고·차단)로 — 내 프로필이면 자리만 비운다. */}
         {me && pubUid && !isSelf ? <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} /> : <span style={{ width: 30 }} />}
       </div>
-      <div style={{ maxWidth: wide ? 920 : 480, margin: "0 auto", padding: wide ? "26px 24px 60px" : "18px 16px 60px" }}>
+      <div style={{ maxWidth: docked ? "none" : wide ? 920 : 480, margin: "0 auto", padding: docked ? "14px 14px 40px" : wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
           <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>{t("이 MID의 유저 없음")}</p>
         ) : !pub ? (

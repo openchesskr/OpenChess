@@ -207,6 +207,8 @@ export default function App() {
   const openUserProfile = useCallback((mid, opts) => {
     if (!mid) return;
     const upperMid = mid.toUpperCase();
+    // (v0.6.5) 데스크톱에서는 프로필도 도킹 창으로 — 열어 둔 채팅·검색·친구 창과 나란히 본다(URL·히스토리는 건드리지 않음). 딥링크(/user/MID)로 처음 들어오면 전체 페이지.
+    if (dock.enabled) { dock.open({ id: "profile:" + upperMid, type: "profile", mid: upperMid, autoInvite: !!(opts && opts.invite) }); return; }
     setSearchOpen(false); setFriendsOpen(false);
     setViewedProfileMid(upperMid);
     setViewedProfileAutoInvite(!!(opts && opts.invite));
@@ -214,7 +216,7 @@ export default function App() {
       const path = "/user/" + upperMid;
       if (window.location.pathname !== path) window.history.pushState({ userProfile: true }, "", path);
     } catch { }
-  }, []);
+  }, [dock.enabled, dock.open]);   // eslint-disable-line react-hooks/exhaustive-deps
   const openUserProfileByUsername = useCallback(async (username) => {
     if (!username) return;
     const r = await userProfile(username);
@@ -1633,8 +1635,9 @@ export default function App() {
         const body = (w) => w.type === "search" ? <UserSearchModal docked me={user} myUid={uid} onClose={() => dock.close(w.id)} onOpenUserProfile={openUserProfileByUsername} />
           : w.type === "friends" ? <FriendsModal docked onOpenChat={openChat} {...common} onClose={() => dock.close(w.id)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} />
           : w.type === "chats" ? <ChatsModal docked onOpenChat={openChat} {...common} onClose={() => dock.close(w.id)} />
+          : w.type === "profile" ? <UserProfilePage docked mid={w.mid} autoInvite={!!w.autoInvite} onClose={() => dock.close(w.id)} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           : w.type === "chat" ? <ChatWindow {...common} other={{ uid: w.uid, username: w.username, photo: w.photo }} onClose={() => dock.close(w.id)} /> : null;
-        return <DockHost dock={dock} renderBody={body} titleOf={(w) => (w.type === "search" ? t("유저 검색") : w.type === "friends" ? t("친구") : w.type === "chats" ? t("채팅") : (w.username || t("채팅")))} />;
+        return <DockHost dock={dock} renderBody={body} titleOf={(w) => (w.type === "search" ? t("유저 검색") : w.type === "friends" ? t("친구") : w.type === "chats" ? t("채팅") : w.type === "profile" ? t("프로필") : (w.username || t("채팅")))} />;
       })()}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={enterPvpGame} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}

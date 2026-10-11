@@ -22,6 +22,8 @@ const app = readFileSync(join(ROOT, "src/App.jsx"), "utf8"), soc = readFileSync(
 for (const k of ["search", "friends", "chats"]) if (!new RegExp('dock\\.enabled\\) dock\\.open\\(\\{ id: "' + k + '"').test(app)) fails.push("헤더 버튼(" + k + ")이 데스크톱에서 도킹 창을 열지 않음");
 if (!/<DockHost dock=\{dock\}/.test(app)) fails.push("App에 DockHost 없음");
 for (const [name, re] of [["UserSearchModal", /export function UserSearchModal\(\{[^)]*docked/], ["ChatsModal", /export function ChatsModal\(\{ docked, onOpenChat/], ["FriendsModal", /export function FriendsModal\(\{ docked, onOpenChat/], ["ChatWindow", /export function ChatWindow\(/]]) if (!re.test(soc)) fails.push(name + " docked 지원 누락");
+if (!/dock\.enabled\) \{ dock\.open\(\{ id: "profile:"/.test(app) || !/<UserProfilePage docked/.test(app)) fails.push("데스크톱에서 다른 유저 프로필이 도킹 창으로 열리지 않음");
+if (!/export function UserProfilePage\(\{ docked/.test(soc)) fails.push("UserProfilePage docked 지원 누락");
 if ((soc.match(/style=\{docked \? dockedOuter/g) || []).length < 3) fails.push("모달 3종의 docked 바깥 틀(백드롭 제거) 누락");
 if (fails.length) { console.error("✗ 도킹 창 검사 실패:\n" + fails.map((x) => "  - " + x).join("\n")); process.exit(1); }
-console.log("✓ 도킹 창: 폭 맞춤(오래된 창부터 접기)·float 보호·헤더 연결·모달 docked 지원");
+console.log("✓ 도킹 창: 폭 맞춤(오래된 창부터 접기)·float 보호·헤더 연결·프로필 창·모달 docked 지원");
