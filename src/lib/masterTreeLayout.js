@@ -140,12 +140,13 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   // 열마다 세로선(wrail)을 두며 칩 높이의 서쪽 선이 일직선으로 모든 세로선을 지난다. 열은 같은 길이(짝수 줄)라 이 직선은 노드를 가로지르지 않는다.
   let wrails = null;
   if (dbMasters && dbMasters.length) {
-    const per = Math.ceil(dbMasters.length / MT.DB_COLS), perEven = per + (per % 2), total = (perEven - 1) * MT.DB_STEP;
+    // 열은 짝수 줄로 자르고(마지막 열만 모자랄 수 있다) 열마다 자기 줄 수로 칩 높이를 가운데에 맞춘다 — 줄 수가 짝수라 칩 높이의 직선은 노드 사이 빈틈을 지난다.
+    const per0 = Math.ceil(dbMasters.length / MT.DB_COLS), per = per0 + (per0 % 2);
     wrails = [];
     for (let k = 0; k < MT.DB_COLS; k++) {
       const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = dbMasters.slice(k * per, (k + 1) * per);
       if (!part.length) break;
-      // 짝수 줄 기준으로 칩 높이를 가운데로 맞춘다(줄이 모자란 마지막 열도 같은 자리에서 시작).
+      const total = (part.length - 1) * MT.DB_STEP;
       part.forEach((m, j) => {
         const cyy = chip.cy - total / 2 + j * MT.DB_STEP, i = k * per + j;
         const n = { id: "dbm:" + i, kind: "dbm", dbm: { name: m[0], games: m[1], elo: m[2] }, index: i, col: k, x: wx - MT.DB_LINK - MT.DB_W, y: cyy - MT.DB_H / 2, w: MT.DB_W, h: MT.DB_H };

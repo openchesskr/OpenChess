@@ -2233,7 +2233,7 @@ function MateGlyph({ size, color = "#fff" }) {
   return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>#</span>;
 }
 function HalfGlyph({ size, color = "#fff" }) {
-  return <span style={{ display: "block", color, fontSize: size, fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>½</span>;
+  return <span style={{ display: "block", color, fontSize: Math.round(size * 0.62), fontWeight: 900, lineHeight: 1, fontFamily: "'Nunito', 'Arial Black', " + SITE_FONT, letterSpacing: "-0.04em", textShadow: "0 1px 0 rgba(0,0,0,.2)" }}>0.5</span>;
 }
 function gameEndRole(endFx, pieceColor) {
   if (!endFx) return null;
@@ -2736,7 +2736,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
     // 끝에 결과 기호(½-½)만 덧붙인다.
-    if (drawn) parts.push("½-½");
+    if (drawn) parts.push("0.5-0.5");
     return <div ref={scrollRef} {...dragHandlers} style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em", WebkitOverflowScrolling: "touch", scrollBehavior: "smooth", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>{parts.join("  ")}</div>;
   }
   const cur = sans.length - 1; // 현재(마지막으로 둔) 수의 인덱스
@@ -2755,7 +2755,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
       })}
       {/* (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
           끝에 결과 기호(½-½)만 덧붙인다. */}
-      {drawn && <span style={{ whiteSpace: "nowrap", fontWeight: 800, color: T.brassHi, padding: "1px 3px" }}>½-½</span>}
+      {drawn && <span style={{ whiteSpace: "nowrap", fontWeight: 800, color: T.brassHi, padding: "1px 3px" }}>0.5-0.5</span>}
     </div>
   );
 }
@@ -3506,6 +3506,8 @@ function declinedCaptureFact(sansBeforeMove, san, color, kind, bestSan, fenRoot)
   const before = boardOfRoot(fenRoot, sansBeforeMove);
   const info = sanSrc(before, san, color);
   if (!info) return null;
+  // (BUG-078) 이 수가 기물을 잡거나 체크를 거는 수면 "공짜 기물을 안 잡았다"는 말은 맞지 않는다.
+  if (info.isCap || /[+#]$/.test(san)) return null;
   const hanging = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = before[r][c]; if (!p || p.c !== enemy || p.t === "K") continue;
@@ -3556,6 +3558,18 @@ function attacksSquareRaw(board, fr, fc, tr, tc, color) {
   if (p.t === "K") return Math.abs(tr - fr) <= 1 && Math.abs(tc - fc) <= 1;
   return canMove(board, p.t, color, fr, fc, tr, tc, true);
 }
+// (BUG-078) 이 수가 상대 기물을 잡는 수인데도 코치가 잡은 사실을 한마디도 안 하고 엉뚱한 사실(안 잡은 폰, 잠재 위협,
+// 방치된 다른 기물)을 대표 문장으로 내던 문제 — 잡는 수는 "무엇을 얻었는가"가 가장 먼저 말해야 할 사실이다.
+// 잡기 전 SEE가 양수면 순이득(공짜·방어 부족), 0이면 대등 교환, 음수면 손해 보는 교환(희생은 다른 경로가 설명).
+function captureFact(sansBeforeMove, san, color, fenRoot) {
+  const before = boardOfRoot(fenRoot, sansBeforeMove);
+  const info = sanSrc(before, san, color);
+  if (!info || !info.isCap || info.castle) return null;
+  const captured = before[info.to[0]][info.to[1]];
+  if (!captured || captured.t === "K") return null;   // 앙파상은 폰 교환 쪽(pawnTradeFact)이 다룬다
+  const gain = seeSquare(before, info.to[0], info.to[1], color);
+  return { piece: captured.t, win: gain > 0, hang: gain > 0 && !(countAttackers(before, info.to[0], info.to[1], color === "w" ? "b" : "w") > 0) };
+}
 // (신규) "수비자 제거"(Remove the Defender) — 이 수가 상대 기물을 잡았는데, 잡힌 그 기물이 다른
 // 상대 기물 Y를 지키고 있었다면(=Y 칸을 되잡을 수 있었다면), 그 수비자가 사라지며 Y가 공짜로(SEE상
 // 순이득) 잡히게 된다. 이 수를 두기 전에는 Y가 이미 공짜로 잡히는 상태가 아니었어야(=이 수가 원인)
@@ -3570,6 +3584,9 @@ function removeDefenderFact(sansBeforeMove, san, color, fenRoot) {
   const removedDefender = before[dr][dc];
   if (!removedDefender || removedDefender.c !== enemy) return null;
   const after = applySan(before, san, color);
+  // (BUG-077) 잡은 기물이 바로 되잡히는 수는 "수비자 제거"가 아니라 그냥 교환이다 — 상대가 되잡느라 한 수를
+  // 쓰면 Y를 가져갈 틈도 사라진다. 잡은 칸에 상대가 합법적으로 되잡을 수 없을 때만 인정한다.
+  if (canCaptureSquareLegally(after, dr, dc, enemy)) return null;
   let best = null;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     if (r === dr && c === dc) continue;
@@ -3615,7 +3632,9 @@ function exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot) {
   const offered = !(seeSquare(after, tr, tc, enemy) > 0); // 상대가 잡아도 순손실 없음 = 되잡음
   if (offered) return { offered: true, piece: mover.t };
   if (kind === "brilliant") return null; // 탁월한 수의 희생은 이미 다른 경로로 설명된다
-  return { offered: false, piece: mover.t };
+  // (BUG-077) "지켜 주는 기물 없이 공짜로 내줌"은 실제로 지키는 기물이 하나도 없을 때만 맞다. 지키는 기물이 있는데
+  // 공격자가 더 많아 손해를 보는 경우(예: 폰이 지키는 나이트에 나이트·비숍이 겹침)는 별도 문구를 쓴다.
+  return { offered: false, piece: mover.t, guarded: countAttackers(after, tr, tc, color) > 0 };
 }
 // R2 — 교환 요청에 대한 응답. 상대의 직전 수가 exchangeOfferFact의 "교환 요청"이었고, 그 요청이
 // 걸린 내 기물을 이번 수로 잡으면 "수락", 그 기물을 다른 칸으로 옮겨 대치를 풀면 "거절"로 판정한다.
@@ -3786,10 +3805,10 @@ function latentThreatFact(sansBeforeMove, san, color, fenRoot) {
         const target = after[r][c];
         if (target) {
           if (target.c === enemy && target.t !== "K") {
+            // (BUG-079) 첫 번째로 맞닥뜨린 기물만 대상 — 뒤에 가려진 기물은 실제로 공격받는 게 아니라서 제외한다.
             if (!(seeSquare(after, r, c, color) > 0)) out.push({ sq: [r, c], piece: target.t });
             pierced++;
-            if (pierced >= 2) break;
-            r += dr; c += dc; continue;
+            break;
           }
           break;
         }
@@ -3817,7 +3836,7 @@ function overprotectFact(sansBeforeMove, san, color, fenRoot) {
   const after = applySan(before, san, color);
   const [tr, tc] = info.to;
   const mover = after[tr][tc];
-  if (!mover) return null;
+  if (!mover || mover.t === "K") return null;   // (BUG-078) 킹 이동은 "과보호"가 아니다(킹이 퀸·폰을 '지킨다'는 말은 어색)
   const { grid, counts } = pieceMoveState(sansBeforeMove, fenRoot);
   const candidates = [];
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -3829,7 +3848,11 @@ function overprotectFact(sansBeforeMove, san, color, fenRoot) {
     if (wasWeak) continue; // 이미 위협받던 기물이면 controlFacts.defends("위협 대처") 몫이다
     const id = grid[r + "," + c];
     const developed = !!(id && counts[id]);
-    candidates.push({ piece: target.t, sq: [r, c], attackers: countAttackers(after, r, c, enemy), val: VAL[target.t], developed });
+    // (BUG-079) "과보호"는 상대가 실제로 노리는(공격자가 있는) 기물을 안전한 채로 더 지키는 경우만. 아무도 노리지 않는 기물에
+    // 방어자를 붙이는 건 과보호가 아니라 그냥 전개의 부산물이라 오프닝마다 "과보호"가 붙던 문제를 막는다.
+    const atk = countAttackers(after, r, c, enemy);
+    if (atk < 1) continue;
+    candidates.push({ piece: target.t, sq: [r, c], attackers: atk, val: VAL[target.t], developed });
   }
   if (!candidates.length) return null;
   candidates.sort((a, b) => (b.developed - a.developed) || (b.attackers - a.attackers) || (b.val - a.val));
@@ -3932,13 +3955,13 @@ function developmentNote(sansBeforeMove, san, color, kind, fenRoot) {
   const pieceKor = PIECE_KOR[info.piece];
   const seed = sansBeforeMove.length;
   return MEC_GOOD_KINDS.includes(kind)
-    ? mecPick([pieceKor + " " + sq + " 전개. 적절한 칸", "적절한 칸 " + sq + "로 " + pieceKor + " 전개", pieceKor + " " + sq + " 전개, 적절한 칸"], seed)
-    : mecPick([pieceKor + " " + sq + " 전개", sq + "로 " + pieceKor + " 전개", pieceKor + " " + sq + "로 이동해 전개"], seed);
+    ? mecPick([t("{0} {1} 전개. 적절한 칸", pieceKor, sq), t("적절한 칸 {1:으로/로} {0} 전개", pieceKor, sq), t("{0} {1} 전개, 적절한 칸", pieceKor, sq)], seed)
+    : mecPick([t("{0} {1} 전개", pieceKor, sq), t("{1:으로/로} {0} 전개", pieceKor, sq), t("{0} {1:으로/로} 이동해 전개", pieceKor, sq)], seed);
 }
 // R12 — 캐슬링 전용 평가. 좋은 수면 항상 같은 취지의 긍정 문구를, 나쁜 수인데 다른 사실로 원인을
 // 못 찾았으면 "엔진에 의하면" 키워드로 대체한다.
 function castleQualityGoodPhrase(seed) {
-  return mecPick(["킹 안전 확보는 대부분의 상황에서 좋은 선택", "캐슬링으로 킹을 안전하게 두는 건 우선순위가 높은 선택", "킹을 미리 안전지대로 옮기는 좋은 선택"], seed);
+  return mecPick([t("킹 안전 확보는 대부분의 상황에서 좋은 선택"), t("캐슬링으로 킹을 안전하게 두는 건 우선순위가 높은 선택"), t("킹을 미리 안전지대로 옮기는 좋은 선택")], seed);
 }
 // R7 — 위협 시각화용 데이터. "위협"(ctrl.threats)이 실제로 mecFacts의 대표 사실로 뽑혔을 때만, 그
 // 칸을 노리는 내 공격자 전부와 그 칸을 지키는 상대 수비자 전부를 모아 돌려준다(ReviewCoachCard가
@@ -3963,61 +3986,63 @@ function threatSquareDetail(board, sq, color) {
   return { targetSq: [tr, tc], attackers, defenders };
 }
 const MEC_PHRASES = {
-  mine: (sq, p, s) => mecPick([sq + " " + p + " 손실 위험", sq + " " + p + " 방치 시 손실", "현재 " + sq + " " + p + " 손실 예정"], s),
-  threat: (p, s) => mecPick(["상대 " + p + " 위협", "상대 " + p + " 공격 대상", "이 수로 상대 " + p + " 위협"], s),
-  preexistingTheirs: (p, s) => mecPick(["상대 " + p + " 노출. 잡을 기회", "상대 " + p + " 잡을 수 있는 상황", "상대 " + p + " 방치 중. 놓치지 말 것"], s),
-  declinedCapture: (p, s) => mecPick([p + " 안 잡았지만 좋은 수", p + " 잡을 수 있었지만 이 수도 충분", "당장 " + p + " 안 잡아도 충분"], s),
-  declinedBestCapture: (p, s) => mecPick(["상대 " + p + " 잡는 게 최선. 이 수도 좋음", "사실 " + p + " 잡을 수 있었음. 이 수도 좋은 선택", p + " 잡는 게 최선이었지만 이 수도 나쁘지 않음"], s),
-  exchangeAheadGood: (s) => mecPick(["유리할 때 기물 교환은 상황을 단순하게 만드는 좋은 방법", "앞서 있을 때 교환으로 단순화. 좋은 선택", "유리할 땐 기물을 바꿔 승리를 굳히기"], s),
-  exchangeBehindForced: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 불가피한 최선", "원래 피할 교환이지만 이번엔 어쩔 수 없는 최선", "불리해도 이 교환은 최선"], s),
-  exchangeBehindGood: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 좋은 선택", "원래 피할 교환이지만 이번엔 괜찮음", "불리해도 이 교환은 나쁘지 않음"], s),
-  exchangeAheadBad: (s) => mecPick(["유리해도 목적 없는 교환은 손해. 교환에는 목적 필요", "앞서 있어도 이 교환은 아쉬움. 교환에는 목적 필요", "유리한 상황을 단순화하려던 교환이라면 아쉬운 선택"], s),
-  exchangeBehindBad: (s) => mecPick(["불리할 땐 교환을 피하는 게 원칙. 이 교환은 아쉬움. 교환에는 목적 필요", "불리할 때 교환하면 역전 기회도 줄어듦. 아쉬운 교환", "역전을 노릴 때 목적 없는 교환은 아쉬움"], s),
-  defend: (p, s) => mecPick(["위태로운 " + p + " 방어 성공", "상대 위협에 대응해 " + p + " 안전 확보", p + " 안전하게 방어"], s),
-  evade: (p, s) => mecPick([p + " 위협 회피, 안전한 칸으로 이동", p + " 안전한 칸으로 피신", "이 수로 " + p + " 위협 회피"], s),
-  counter: (p, tgt, s) => mecPick(["위협을 피하며 상대 " + tgt + " 반격", "회피와 동시에 상대 " + tgt + " 공격", p + " 피신과 동시에 상대 " + tgt + " 반격"], s),
-  pawnTension: (s) => mecPick(["폰끼리 서로 겨눔", "폰 대치", "이 폰과 상대 폰이 서로 공격 가능"], s),
-  pawnTrade: (from, captured, good, s) => mecPick([from + "폰과 " + captured + "폰 교환: " + (good ? "좋은 선택" : "좋지 않은 선택"), (good ? "중앙 쪽" : "사이드 쪽") + " 교환(" + from + "폰x" + captured + "폰): " + (good ? "괜찮음" : "아쉬움"), from + "폰이 " + captured + "폰 캡처: " + (good ? "중앙 유지" : "중앙에서 멀어짐")], s),
-  tempo: (s) => mecPick(["처음에 두 칸 전진했다면 한 수 절약", "한 번에 갈 수 있는 두 칸을 나눠 전진", "처음부터 두 칸 밀었다면 템포 절약"], s),
-  pieceReturned: (p, s) => mecPick([p + " 시작 칸으로 복귀. 전개가 무의미해짐", "전개한 " + p + " 다시 시작 칸으로 복귀", p + " 원래 자리 복귀. 한 수 낭비"], s),
-  pieceDetour: (p, s) => mecPick([p + " 상대 폰에 쫓겨 이동. 처음부터 한 수에 갈 수 있었음", "상대 폰에 쫓겨 " + p + " 두 수 소요. 한 수면 충분", "상대 폰 한 수에 템포 손해. " + p + " 원래 한 번에 갈 자리"], s),
-  castleLost: (s) => mecPick(["이 수로 캐슬링 권리 상실", "캐슬링 권리 소멸", "더 이상 캐슬링 불가"], s),
-  queensideNote: (s) => mecPick(["퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 덜 안전", "퀸사이드 캐슬링. a열 폰이 약점이 될 수 있음", "퀸사이드 캐슬링. 킹사이드보다 살짝 덜 안전"], s),
-  exchangeOffered: (p, s) => mecPick([p + " 상대 같은 기물이 공격 가능한 칸으로 이동. 교환 제안", "동가 기물 교환 제안", p + " 상대 기물과 마주 봄. 교환 제안"], s),
-  exchangeFreeGive: (p, s) => mecPick([p + " 대가 없이 내줌", "지켜 주는 기물 없이 " + p + " 공짜로 내줌", p + " 공짜로 잡히는 자리로 이동"], s),
-  exchangeAccepted: (p, s) => mecPick(["교환 제안 수락, 상대 " + p + " 캡처", "교환 수락. " + p + " 캡처", p + " 캡처로 교환 수락"], s),
-  exchangeDeclined: (p, s) => mecPick(["교환 제안 거절, 기물 후퇴", "교환 거절. " + p + " 피신", "상대와의 교환 거절"], s),
-  recapture: (p, s) => mecPick(["상대 " + p + " 되잡아 기물 균형 유지", "상대가 잡은 자리에서 " + p + " 되잡음", "되잡기로 기물 균형 회복"], s),
-  redeployOpening: (p, s) => mecPick([p + " 여러 번 이동, 더 나은 자리로 재전개", "같은 " + p + " 반복 이동, 최적 위치로 재전개", p + " 최적 위치로 재전개"], s),
-  redeployMidgame: (p, s) => mecPick([p + " 여러 번 이동, 더 나은 자리로 재배치", "같은 " + p + " 반복 이동, 최적 위치로 재배치", p + " 최적 위치로 재배치"], s),
-  noObviousReason: (s) => mecPick(["직관적 이득은 찾기 어렵지만 엔진 평가상 좋은 수", "설명은 어렵지만 엔진 평가상 좋은 수", "엔진 평가상 좋은 수"], s),
-  preventDirect: (sq, blocker, targetP, s) => mecPick(["상대가 " + sq + "에 " + PIECE_KOR[blocker] + " 뒀다면 " + PIECE_KOR[targetP] + " 위협. " + sq + " 선점하는 예방 수", sq + " 상대 " + PIECE_KOR[blocker] + " 차지 시 " + PIECE_KOR[targetP] + " 위협. 미리 막는 예방 수", "예방 수. 상대 " + PIECE_KOR[blocker] + " " + sq + " 진입 시 " + PIECE_KOR[targetP] + " 위협"], s),
-  preventIndirect: (sq, blocker, targetP, s) => mecPick([sq + " 컨트롤 강화. 상대 " + PIECE_KOR[blocker] + " 진입 후 " + PIECE_KOR[targetP] + " 위협을 간접 차단", "간접 예방 수. 상대 " + PIECE_KOR[blocker] + " " + sq + " 진입 시 " + PIECE_KOR[targetP] + " 위협", "직접 차단은 아니지만 " + sq + " 컨트롤 강화로 상대 " + PIECE_KOR[blocker] + " 진입 차단"], s),
-  nextCastle: (s) => mecPick(["다음 수 캐슬링 가능", "다음 수에 캐슬링 가능해짐", "이제 다음 수 캐슬링 가능"], s),
-  overprotect: (p, s) => mecPick([p + " 아직 위협은 없지만 미리 과보호", "당장 위협은 없지만 " + p + " 지키는 기물 추가. 과보호", p + " 위협 없음. 과보호"], s),
-  latentThreat: (p, s) => mecPick(["상대 " + p + " 노리는 공격자 추가. 아직 못 잡지만 잠재 위협", "당장 잡히진 않지만 상대 " + p + " 잠재 위협", "상대 " + p + " 향한 잠재 위협 생성"], s),
-  openFile: (s) => mecPick(["룩을 오픈 파일에 배치", "폰이 하나도 없는 파일에 룩 배치", "완전히 열린 파일에 룩 배치. 좋은 수"], s),
-  semiOpenFile: (s) => mecPick(["룩을 세미오픈 파일에 배치", "내 폰은 없고 상대 폰만 있는 세미오픈 파일에 룩 배치", "세미오픈 파일 룩 배치. 상대 폰에 잠재 위협"], s),
-  connect: (p, s) => mecPick([p + " 서로 지켜 주는 연결 형성", "다른 " + josaGwaWa(p) + " 연결, 서로 보호", p + " 짝과 연결, 서로 보호"], s),
-  stacked: (s) => mecPick(["룩 두 개가 오픈 파일에서 중첩", "같은 파일에서 룩 중첩, 서로 보호", "룩 중첩으로 파일 장악"], s),
-  pawnSac: (sq, s) => mecPick([sq + "폰이 위협받지만 지키지 않음. 폰 희생", sq + "폰을 지키지 않고 희생", "위협받는 " + sq + "폰을 그대로 두고 폰 희생 선택"], s),
-  castleBadFallback: (s) => mecPick(["엔진 평가상 지금은 캐슬링 타이밍이 아님", "엔진 평가상 이 캐슬링은 타이밍이 아쉬움", "엔진 평가상 지금 캐슬링은 좋지 않음"], s),
-  // (신규) 수비자 제거 — 사용자 요청에 따라 매번 같은 고정 문구를 쓴다(다른 사실처럼 무작위로
-  // 바뀌지 않는다).
-  removeDefender: () => "수비자 제거. 단순하지만 강력한 전술",
-  // (사용자 요청) 체크메이트 — 다른 어떤 사실보다 우선하는 최상위 규칙이라 removeDefender와 같은
-  // 이유로 매번 같은 고정 문구를 쓴다. 탁월한 수·유일한 수와 연계된 두 문구는 그 등급을 상징하는
-  // 기호(체스 표기법 그대로 — 탁월한 수 "!!", 유일한 수 "!")로 끝난다(아래 mecFacts 끝의 일반
-  // 규칙과 자릿수를 맞춤). 그 외 등급의 체크메이트는 일반 문구를 쓴다.
-  checkmateBrilliant: (p) => "당신의 " + josaEunNeun(p) + " 상대 킹과 맞바꾸게 됨!!",
-  checkmateOnly: () => "체크메이트로 가는 유일한 길!",
-  checkmate: () => "체크메이트. 게임 종료",
+  mine: (sq, p, s) => mecPick([t("{0} {1} 손실 위험", sq, p), t("{0} {1} 방치 시 손실", sq, p), t("현재 {0} {1} 손실 예정", sq, p)], s),
+  mineOk: (sq, p, s) => mecPick([t("{0} {1} 당장 위험하지만 엔진 평가상 문제없는 수", sq, p), t("{0} {1} 위험을 안고 있지만 엔진 평가상 괜찮은 수", sq, p), t("{0} {1} 잃을 수 있어도 엔진 평가상 좋은 수", sq, p)], s),
+  threat: (p, s) => mecPick([t("상대 {0} 위협", p), t("상대 {0} 공격 대상", p), t("이 수로 상대 {0} 위협", p)], s),
+  preexistingTheirs: (p, s) => mecPick([t("상대 {0} 노출. 잡을 기회", p), t("상대 {0} 잡을 수 있는 상황", p), t("상대 {0} 방치 중. 놓치지 말 것", p)], s),
+  declinedCapture: (p, s) => mecPick([t("{0} 안 잡았지만 좋은 수", p), t("{0} 잡을 수 있었지만 이 수도 충분", p), t("당장 {0} 안 잡아도 충분", p)], s),
+  declinedBestCapture: (p, s) => mecPick([t("상대 {0} 잡는 게 최선. 이 수도 좋음", p), t("사실 {0} 잡을 수 있었음. 이 수도 좋은 선택", p), t("{0} 잡는 게 최선이었지만 이 수도 나쁘지 않음", p)], s),
+  exchangeAheadGood: (s) => mecPick([t("유리할 때 기물 교환은 상황을 단순하게 만드는 좋은 방법"), t("앞서 있을 때 교환으로 단순화. 좋은 선택"), t("유리할 땐 기물을 바꿔 승리를 굳히기")], s),
+  exchangeBehindForced: (s) => mecPick([t("불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 불가피한 최선"), t("원래 피할 교환이지만 이번엔 어쩔 수 없는 최선"), t("불리해도 이 교환은 최선")], s),
+  exchangeBehindGood: (s) => mecPick([t("불리할 땐 교환을 피하는 게 원칙이지만 이 교환은 좋은 선택"), t("원래 피할 교환이지만 이번엔 괜찮음"), t("불리해도 이 교환은 나쁘지 않음")], s),
+  exchangeAheadBad: (s) => mecPick([t("유리해도 목적 없는 교환은 손해. 교환에는 목적 필요"), t("앞서 있어도 이 교환은 아쉬움. 교환에는 목적 필요"), t("유리한 상황을 단순화하려던 교환이라면 아쉬운 선택")], s),
+  exchangeBehindBad: (s) => mecPick([t("불리할 땐 교환을 피하는 게 원칙. 이 교환은 아쉬움. 교환에는 목적 필요"), t("불리할 때 교환하면 역전 기회도 줄어듦. 아쉬운 교환"), t("역전을 노릴 때 목적 없는 교환은 아쉬움")], s),
+  defend: (p, s) => mecPick([t("위태로운 {0} 방어 성공", p), t("상대 위협에 대응해 {0} 안전 확보", p), t("{0} 안전하게 방어", p)], s),
+  evade: (p, s) => mecPick([t("{0} 위협 회피, 안전한 칸으로 이동", p), t("{0} 안전한 칸으로 피신", p), t("이 수로 {0} 위협 회피", p)], s),
+  counter: (p, tgt, s) => mecPick([t("위협을 피하며 상대 {1} 반격", p, tgt), t("회피와 동시에 상대 {1} 공격", p, tgt), t("{0} 피신과 동시에 상대 {1} 반격", p, tgt)], s),
+  pawnTension: (s) => mecPick([t("폰끼리 서로 겨눔"), t("폰 대치"), t("이 폰과 상대 폰이 서로 공격 가능")], s),
+  pawnTrade: (from, captured, good, s) => mecPick(good ? [t("{0}폰과 {1}폰 교환: 좋은 선택", from, captured), t("중앙 쪽 교환({0}폰x{1}폰): 괜찮음", from, captured), t("{0}폰이 {1}폰 캡처: 중앙 유지", from, captured)] : [t("{0}폰과 {1}폰 교환: 좋지 않은 선택", from, captured), t("사이드 쪽 교환({0}폰x{1}폰): 아쉬움", from, captured), t("{0}폰이 {1}폰 캡처: 중앙에서 멀어짐", from, captured)], s),
+  tempo: (s) => mecPick([t("처음에 두 칸 전진했다면 한 수 절약"), t("한 번에 갈 수 있는 두 칸을 나눠 전진"), t("처음부터 두 칸 밀었다면 템포 절약")], s),
+  pieceReturned: (p, s) => mecPick([t("{0} 시작 칸으로 복귀. 전개가 무의미해짐", p), t("전개한 {0} 다시 시작 칸으로 복귀", p), t("{0} 원래 자리 복귀. 한 수 낭비", p)], s),
+  pieceDetour: (p, s) => mecPick([t("{0} 상대 폰에 쫓겨 이동. 처음부터 한 수에 갈 수 있었음", p), t("상대 폰에 쫓겨 {0} 두 수 소요. 한 수면 충분", p), t("상대 폰 한 수에 템포 손해. {0} 원래 한 번에 갈 자리", p)], s),
+  castleLost: (s) => mecPick([t("이 수로 캐슬링 권리 상실"), t("캐슬링 권리 소멸"), t("더 이상 캐슬링 불가")], s),
+  queensideNote: (s) => mecPick([t("퀸사이드 캐슬링은 a열 폰이 보호받지 못해 킹사이드보다 덜 안전"), t("퀸사이드 캐슬링. a열 폰이 약점이 될 수 있음"), t("퀸사이드 캐슬링. 킹사이드보다 살짝 덜 안전")], s),
+  exchangeOffered: (p, s) => mecPick([t("{0} 상대 같은 기물이 공격 가능한 칸으로 이동. 교환 제안", p), t("동가 기물 교환 제안", p), t("{0} 상대 기물과 마주 봄. 교환 제안", p)], s),
+  exchangeLosing: (p, s) => mecPick([t("{0} 지키는 기물이 부족해 교환하면 손해", p), t("교환이 이어지면 {0} 손해를 보는 자리로 이동", p), t("{0} 교환 시 손해. 지키는 기물 부족", p)], s),
+  captureFree: (p, s) => mecPick([t("지켜 주는 기물이 없던 상대 {0} 획득", p), t("상대 {0} 공짜로 획득", p), t("방치된 상대 {0} 캡처", p)], s),
+  captureWin: (p, s) => mecPick([t("교환 끝에 상대 {0} 획득", p), t("상대 {0} 캡처. 순이득", p), t("상대 {0} 획득. 교환이 이어져도 이득", p)], s),
+  captureTrade: (p, s) => mecPick([t("상대 {0} 캡처. 대등한 교환", p), t("상대 {0} 캡처, 기물 교환", p), t("상대 {0} 캡처로 교환", p)], s),
+  checkForce: (s) => mecPick([t("체크로 상대의 응수를 강제"), t("체크. 상대는 킹을 지키는 수밖에 없음"), t("체크로 주도권 확보")], s),
+  exchangeFreeGive: (p, s) => mecPick([t("{0} 대가 없이 내줌", p), t("지켜 주는 기물 없이 {0} 공짜로 내줌", p), t("{0} 공짜로 잡히는 자리로 이동", p)], s),
+  exchangeAccepted: (p, s) => mecPick([t("교환 제안 수락, 상대 {0} 캡처", p), t("교환 수락. {0} 캡처", p), t("{0} 캡처로 교환 수락", p)], s),
+  exchangeDeclined: (p, s) => mecPick([t("교환 제안 거절, 기물 후퇴", p), t("교환 거절. {0} 피신", p), t("상대와의 교환 거절", p)], s),
+  recapture: (p, s) => mecPick([t("상대 {0} 되잡아 기물 균형 유지", p), t("상대가 잡은 자리에서 {0} 되잡음", p), t("되잡기로 기물 균형 회복", p)], s),
+  redeployOpening: (p, s) => mecPick([t("{0} 여러 번 이동, 더 나은 자리로 재전개", p), t("같은 {0} 반복 이동, 최적 위치로 재전개", p), t("{0} 최적 위치로 재전개", p)], s),
+  redeployMidgame: (p, s) => mecPick([t("{0} 여러 번 이동, 더 나은 자리로 재배치", p), t("같은 {0} 반복 이동, 최적 위치로 재배치", p), t("{0} 최적 위치로 재배치", p)], s),
+  noObviousReason: (s) => mecPick([t("직관적 이득은 찾기 어렵지만 엔진 평가상 좋은 수"), t("설명은 어렵지만 엔진 평가상 좋은 수"), t("엔진 평가상 좋은 수")], s),
+  preventDirect: (sq, blocker, targetP, s) => mecPick([t("상대가 {0}에 {1} 뒀다면 {2} 위협. {0} 선점하는 예방 수", sq, PIECE_KOR[blocker], PIECE_KOR[targetP]), t("{0} 상대 {1} 차지 시 {2} 위협. 미리 막는 예방 수", sq, PIECE_KOR[blocker], PIECE_KOR[targetP]), t("예방 수. 상대 {1} {0} 진입 시 {2} 위협", sq, PIECE_KOR[blocker], PIECE_KOR[targetP])], s),
+  preventIndirect: (sq, blocker, targetP, s) => mecPick([t("{0} 컨트롤 강화. 상대 {1} 진입 후 {2} 위협을 간접 차단", sq, PIECE_KOR[blocker], PIECE_KOR[targetP]), t("간접 예방 수. 상대 {1} {0} 진입 시 {2} 위협", sq, PIECE_KOR[blocker], PIECE_KOR[targetP]), t("직접 차단은 아니지만 {0} 컨트롤 강화로 상대 {1} 진입 차단", sq, PIECE_KOR[blocker], PIECE_KOR[targetP])], s),
+  nextCastle: (s) => mecPick([t("다음 수 캐슬링 가능"), t("다음 수에 캐슬링 가능해짐"), t("이제 다음 수 캐슬링 가능")], s),
+  overprotect: (p, s) => mecPick([t("{0} 공격받지만 아직 안전한 상태. 과보호로 방어 보강", p), t("{0} 노리는 상대 기물에 대비해 지키는 기물 추가. 과보호", p), t("{0} 방어 보강. 위협은 아직 없어도 과보호", p)], s),
+  latentThreat: (p, s) => mecPick([t("상대 {0} 노리는 공격자 추가. 아직 못 잡지만 잠재 위협", p), t("당장 잡히진 않지만 상대 {0} 잠재 위협", p), t("상대 {0} 향한 잠재 위협 생성", p)], s),
+  openFile: (s) => mecPick([t("룩을 오픈 파일에 배치"), t("폰이 하나도 없는 파일에 룩 배치"), t("완전히 열린 파일에 룩 배치. 좋은 수")], s),
+  semiOpenFile: (s) => mecPick([t("룩을 세미오픈 파일에 배치"), t("내 폰은 없고 상대 폰만 있는 세미오픈 파일에 룩 배치"), t("세미오픈 파일 룩 배치. 상대 폰에 잠재 위협")], s),
+  connect: (p, s) => mecPick([t("{0} 서로 지켜 주는 연결 형성", p), t("다른 {0:과/와} 연결, 서로 보호", p), t("{0} 짝과 연결, 서로 보호", p)], s),
+  stacked: (s) => mecPick([t("룩 두 개가 오픈 파일에서 중첩"), t("같은 파일에서 룩 중첩, 서로 보호"), t("룩 중첩으로 파일 장악")], s),
+  pawnSac: (sq, s) => mecPick([t("{0}폰이 위협받지만 지키지 않음. 폰 희생", sq), t("{0}폰을 지키지 않고 희생", sq), t("위협받는 {0}폰을 그대로 두고 폰 희생 선택", sq)], s),
+  castleBadFallback: (s) => mecPick([t("엔진 평가상 지금은 캐슬링 타이밍이 아님"), t("엔진 평가상 이 캐슬링은 타이밍이 아쉬움"), t("엔진 평가상 지금 캐슬링은 좋지 않음")], s),
+  // 아래 셋은 매번 같은 고정 문구(무작위 변주 없음) — 수비자 제거·체크메이트는 최우선 규칙이라 문구가 흔들리지 않게 한다.
+  removeDefender: () => t("수비자 제거. 단순하지만 강력한 전술"),
+  checkmateBrilliant: (p) => t("당신의 {0:은/는} 상대 킹과 맞바꾸게 됨!!", p),
+  checkmateOnly: () => t("체크메이트로 가는 유일한 길!"),
+  checkmate: () => t("체크메이트. 게임 종료"),
 };
 // 위 갈래를 우선순위대로 합쳐 문장 후보 목록을 만든다(엔진 불필요, 즉시 계산) — 걸린 기물이 있으면
 // 그게 가장 시급한 사실이라 항상 먼저 오고, 그다음 회피/반격, 폰 교환/긴장(폰 특유의 사실), 이 수가
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
 // 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
 // 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
+const capSentences = (x) => x.replace(/(^|[.!?]\s+)([a-záéíóúñ])(?![1-8])/g, (m, pre, ch) => pre + ch.toLocaleUpperCase());
 export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot) {
   const seed = sansBeforeMove.length;
   const beforeBoard = boardOfRoot(fenRoot, sansBeforeMove);
@@ -4068,11 +4093,23 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
     const base = offerResponse.accepted ? MEC_PHRASES.exchangeAccepted(PIECE_KOR[offerResponse.piece], seed) : MEC_PHRASES.exchangeDeclined(PIECE_KOR[offerResponse.piece], seed);
     facts.push(redeployPhrase ? base + " " + redeployPhrase : base);
   } else {
-    const offer = exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot);
-    if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed));
+    // (BUG-078) 상대 기물을 잡는 수는 "교환 제안"이 아니라 잡은 결과(되잡기·획득·교환)가 대표 사실이다.
+    let capFact = captureFact(sansBeforeMove, san, color, fenRoot);
+    // 잡고서 그 기물을 그대로 뺏기는 나쁜 수(블런더 등)는 "획득"으로 포장하지 않고 아래 기존 경로(걸린 기물 경고)에 맡긴다.
+    if (capFact && moveInfo && !MEC_GOOD_KINDS.includes(kind) && seeSquare(board, moveInfo.to[0], moveInfo.to[1], color === "w" ? "b" : "w") > 0) capFact = null;
+    const recapEarly = capFact ? recaptureFact(sansBeforeMove, san, color, fenRoot) : null;
+    const offer = capFact ? null : exchangeOfferFact(sansBeforeMove, san, color, kind, fenRoot);
+    if (capFact) {
+      const cp = PIECE_KOR[capFact.piece];
+      if (recapEarly) facts.push(MEC_PHRASES.recapture(PIECE_KOR[recapEarly.capturedPiece], seed));
+      else facts.push(capFact.win ? (capFact.hang ? MEC_PHRASES.captureFree(cp, seed) : MEC_PHRASES.captureWin(cp, seed)) : MEC_PHRASES.captureTrade(cp, seed));
+      if (redeployPhrase) facts[0] += " " + redeployPhrase;
+    }
+    else if (offer) facts.push(offer.offered ? MEC_PHRASES.exchangeOffered(PIECE_KOR[offer.piece], seed) : (offer.guarded ? MEC_PHRASES.exchangeLosing(PIECE_KOR[offer.piece], seed) : MEC_PHRASES.exchangeFreeGive(PIECE_KOR[offer.piece], seed)));
     else {
       const mine = fairTradeSq ? t_.mine.filter((x) => x.sq.join(",") !== fairTradeSq) : t_.mine;
-      if (mine.length) facts.push(MEC_PHRASES.mine(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
+      // (BUG-079) 엔진이 좋은 수로 평가한 수에 "손실 예정"이라고만 하면 평가와 모순이다 — 좋은 수면 "위험하지만 괜찮음"으로.
+      if (mine.length) facts.push((MEC_GOOD_KINDS.includes(kind) ? MEC_PHRASES.mineOk : MEC_PHRASES.mine)(FILES[mine[0].sq[1]] + (8 - mine[0].sq[0]), PIECE_KOR[mine[0].piece], seed));
       else {
         // 되잡기 — 상대가 방금 잡은 자리를 그대로 되잡는 것뿐인 수는 별다른 위협·방어 사실 없이도
         // "왜 좋은 수인지"가 명확하므로, noObviousReason으로 떨어지기 전에 여기서 짚어준다.
@@ -4184,7 +4221,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
   // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
   // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
   const devNote = developmentNote(sansBeforeMove, san, color, kind, fenRoot);
-  if (devNote) { if (facts.length) facts[0] = devNote + " " + facts[0]; else facts.push(devNote); }
+  // (BUG-078) 전개 문장과 뒤 문장이 마침표 없이 붙어("…나이트 전개 당장 위협은 없지만…") 한 문장처럼 읽히던 것을 분리한다.
+  if (devNote) { if (facts.length) facts[0] = devNote.replace(/[.!?]+$/, "") + ". " + facts[0]; else facts.push(devNote); }
   // R12 — 캐슬링은 판단 기준이 다르다. 좋은 수면 고정된 긍정 평가로 다른 사실을 전부 대체하고(퀸사이드면
   // 안전성 안내를 이어 붙인다), 나쁜 수인데 위에서 아무 원인도 못 찾았으면 "엔진에 의하면"으로 대체한다.
   if (/^O-O/.test(san)) {
@@ -4193,6 +4231,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       facts.length = 0;
       facts.push(/^O-O-O/.test(san) ? good + " " + MEC_PHRASES.queensideNote(seed) : good);
     } else if (!facts.length) facts.push(MEC_PHRASES.castleBadFallback(seed));
+  } else if (!facts.length && /\+$/.test(san) && MEC_GOOD_KINDS.includes(kind)) {
+    facts.push(MEC_PHRASES.checkForce(seed));
   } else if (!facts.length && MEC_GOOD_KINDS.includes(kind)) {
     // R2/R3의 "엔진에 의하면" 취지를 일반화 — 좋은 수인데 위 어떤 사실도 찾지 못했으면, 설명할 수
     // 있는 직관적인 이유가 없다는 사실 자체를 명시한다.
@@ -4205,7 +4245,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
   if (facts.length && (kind === "only" || kind === "brilliant")) {
     facts[0] = facts[0].replace(/[.!?]+$/, "") + (kind === "brilliant" ? "!!" : "!");
   }
-  return facts;
+  // 영어·스페인어는 기물 이름(소문자)·칸으로 시작하는 문장이 있어, 문장 첫 글자를 대문자로(칸 좌표 c4 같은 건 그대로).
+  return facts.map(capSentences);
 }
 // 등록 전 1차 방어선(클라이언트) — 완전한 검열은 아니지만, 흔한 욕설·혐오 표현을 공백·구두점을 뺀
 // 뒤 부분 문자열로 잡아낸다("시 발"처럼 띄어써서 피하는 경우도 걸러짐). 진짜 강제력은 서버 트리거

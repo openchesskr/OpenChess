@@ -16,7 +16,8 @@ import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, 
 import { ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, TitleEarnedModal, UsernameSetupModal, achievableTitles, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleShareReward, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
 import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
-import { ChatsModal, FriendsModal, ProfileWindow, UserProfilePage, UserSearchModal } from "./app/social.jsx";
+import { ChatsModal, ChatWindow, FriendsModal, ProfileWindow, UserProfilePage, UserSearchModal } from "./app/social.jsx";
+import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
 import { ReviewPage } from "./app/review.jsx";
 import { AccountCenterModal, SettingsTab } from "./app/settings.jsx";
@@ -193,6 +194,10 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false); // (18차 UX7) 채팅 모아보기
+  const dock = useDockWindows();   // (v0.6.5) 데스크톱 도킹 창 — 채팅·검색·친구를 여러 개 동시에(좁은 화면은 enabled=false라 기존 모달)
+  const dockKey = dock.wins.map((w) => w.id).join(",");
+  useEffect(() => { if (!user && dock.wins.length) dock.wins.forEach((w) => dock.close(w.id)); }, [user]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // (v0.4.4 기능, 사용자 요청) 다른 유저 프로필 — 검색·채팅·/play 친구 목록 등 어디서 열든 이제
   // openchess.kr/user/<MID> 고유 URL을 갖는 실제 페이지(UserProfilePage)로 연결된다. openUserProfile은
   // mid를 이미 알 때(예: 초대 링크 딥링크), openUserProfileByUsername은 username만 있을 때(기존
@@ -202,6 +207,8 @@ export default function App() {
   const openUserProfile = useCallback((mid, opts) => {
     if (!mid) return;
     const upperMid = mid.toUpperCase();
+    // (v0.6.5) 데스크톱에서는 프로필도 도킹 창으로 — 열어 둔 채팅·검색·친구 창과 나란히 본다(URL·히스토리는 건드리지 않음). 딥링크(/user/MID)로 처음 들어오면 전체 페이지.
+    if (dock.enabled) { dock.open({ id: "profile:" + upperMid, type: "profile", mid: upperMid, autoInvite: !!(opts && opts.invite) }); return; }
     setSearchOpen(false); setFriendsOpen(false);
     setViewedProfileMid(upperMid);
     setViewedProfileAutoInvite(!!(opts && opts.invite));
@@ -209,7 +216,7 @@ export default function App() {
       const path = "/user/" + upperMid;
       if (window.location.pathname !== path) window.history.pushState({ userProfile: true }, "", path);
     } catch { }
-  }, []);
+  }, [dock.enabled, dock.open]);   // eslint-disable-line react-hooks/exhaustive-deps
   const openUserProfileByUsername = useCallback(async (username) => {
     if (!username) return;
     const r = await userProfile(username);
@@ -227,7 +234,7 @@ export default function App() {
     const e = await friendEdges();
     setPendingFriendCount(e.filter((x) => x.status !== "accepted" && x.to_uid === uid).length);
   }, [uid]);
-  useEffect(() => { checkPending(); }, [checkPending, friendsOpen]);
+  useEffect(() => { checkPending(); }, [checkPending, friendsOpen, dockKey]);
   // (v0.0.5 성능) 30초 폴링 대신 나에게 온 친구 요청(friend_edges.to_uid=나) 변경을 Realtime으로 즉시
   // 반영하고, 소켓이 끊겼을 때를 대비해 2분 간격의 느슨한 안전망만 남긴다.
   useRealtimeTable("friend_edges", uid ? "to_uid=eq." + uid : null, checkPending, !!uid, 120000);
@@ -263,7 +270,7 @@ export default function App() {
       chatMarkRead(rewards);
     }
   }, [uid]);
-  useEffect(() => { checkUnreadChat(); }, [checkUnreadChat, chatsOpen]);
+  useEffect(() => { checkUnreadChat(); }, [checkUnreadChat, chatsOpen, dockKey]);
   // (v0.0.5 성능) 15초 폴링 대신 나에게 온 채팅(chat_messages.to_uid=나) 변경을 Realtime으로 즉시 반영,
   // 안전망으로 2분 간격 재조회만 남긴다.
   useRealtimeTable("chat_messages", uid ? "to_uid=eq." + uid : null, checkUnreadChat, !!uid, 120000);
@@ -1581,13 +1588,13 @@ export default function App() {
               않는다(이제 자식에 height를 따로 지정하지 않는다). 어느 브라우저에서도 border는 항상
               같은 방식으로 그려지므로 이 문제가 구조적으로 재발하지 않는다. */}
           <div className="flex" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, border: "1px solid " + T.brass, boxSizing: "border-box", alignItems: "stretch", overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { setSearchOpen(true); pushScreen("search"); }} aria-label={t("유저 검색")} className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { setFriendsOpen(true); pushScreen("friends"); }} aria-label={t("친구")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { if (dock.enabled) dock.open({ id: "search", type: "search" }); else { setSearchOpen(true); pushScreen("search"); } }} aria-label={t("유저 검색")} className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "friends", type: "friends" }); else { setFriendsOpen(true); pushScreen("friends"); } }} aria-label={t("친구")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { setChatsOpen(true); pushScreen("chats"); }} aria-label={t("채팅")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "chats", type: "chats" }); else { setChatsOpen(true); pushScreen("chats"); } }} aria-label={t("채팅")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -1620,6 +1627,18 @@ export default function App() {
       <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>{t("(탭하여 닫기)")}</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
+      {/* (v0.6.5) 데스크톱 도킹 창 — 채팅은 대화마다 창이 따로 열리고, 검색·친구·채팅 목록은 하나씩. 배경 화면은 그대로 쓸 수 있다. */}
+      {user && dock.enabled && (() => {
+        const common = { me: user, myUid: uid, onOpenBoardFen: onOpenLearnFen, onOpenBoardSans: onOpenGame, onOpenSharedPuzzle, onOpenSharedReview, onOpenSharedReviewOnBoard, onAcceptPvpInvite: enterPvpGame, onOpenUserProfile: openUserProfileByUsername, myLegacies: profile.legacies, myIsGM: tierFromXp(totalXp || 0).tier.key === "grandmaster", myChesscomGames: chesscom.games, engine,
+          mySolved: solved, myLineSolves: lineSolves, solveCounts, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare };
+        const openChat = (c) => dock.open({ id: "chat:" + c.uid, type: "chat", uid: c.uid, username: c.username, photo: c.photo || null });
+        const body = (w) => w.type === "search" ? <UserSearchModal docked me={user} myUid={uid} onClose={() => dock.close(w.id)} onOpenUserProfile={openUserProfileByUsername} />
+          : w.type === "friends" ? <FriendsModal docked onOpenChat={openChat} {...common} onClose={() => dock.close(w.id)} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} />
+          : w.type === "chats" ? <ChatsModal docked onOpenChat={openChat} {...common} onClose={() => dock.close(w.id)} />
+          : w.type === "profile" ? <UserProfilePage docked mid={w.mid} autoInvite={!!w.autoInvite} onClose={() => dock.close(w.id)} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+          : w.type === "chat" ? <ChatWindow {...common} other={{ uid: w.uid, username: w.username, photo: w.photo }} onClose={() => dock.close(w.id)} /> : null;
+        return <DockHost dock={dock} renderBody={body} titleOf={(w) => (w.type === "search" ? t("유저 검색") : w.type === "friends" ? t("친구") : w.type === "chats" ? t("채팅") : w.type === "profile" ? t("프로필") : (w.username || t("채팅")))} />;
+      })()}
       {searchOpen && <UserSearchModal me={user} myUid={uid} onClose={() => { setSearchOpen(false); popScreen("search"); }} onOpenUserProfile={openUserProfileByUsername} />}
       {friendsOpen && <FriendsModal me={user} myUid={uid} onOpenBoardFen={onOpenLearnFen} onOpenBoardSans={onOpenGame} onClose={() => { setFriendsOpen(false); popScreen("friends"); }} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={enterPvpGame} onOpenPuzzle={onOpenPuzzle} onOpenUserProfile={openUserProfileByUsername} mySolved={solved} myLineSolves={lineSolves} myLegacies={profile.legacies} myIsGM={tierFromXp(totalXp || 0).tier.key === "grandmaster"} myChesscomGames={chesscom.games} engine={engine}
         solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
