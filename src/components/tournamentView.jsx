@@ -10,7 +10,7 @@ import { t } from "../lib/i18n.js";
 import { loadTournament } from "../lib/tournamentData.js";
 import { GameViewButton, BestMoveJumpButton } from "./uiPrimitives.jsx";
 import { decodeMoves } from "../lib/moveCodec.js";
-import { bracket, crosstable, filterGames, fmtScore, matchSummary, roundKey, roundsOf, standings, winnerOf, RES_TXT } from "../lib/tournamentView.js";
+import { bracket, crosstable, pairTotal, filterGames, fmtScore, matchSummary, roundKey, roundsOf, standings, winnerOf, RES_TXT } from "../lib/tournamentView.js";
 import { enName } from "../data/playerNames.js";
 import { flagEmoji } from "../lib/flags.js";
 import Dropdown from "./Dropdown.jsx";
@@ -24,7 +24,7 @@ const dateText = (ed) => (ed.d0 ? ed.d0.replace(/\./g, "-") + (ed.d1 && ed.d1 !=
 const tab = (on) => ({ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: SITE_FONT, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft, whiteSpace: "nowrap" });
 const th = { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, padding: "4px 6px", textAlign: "center", whiteSpace: "nowrap", background: "#F6EEDC", position: "sticky", top: 0, zIndex: 1 };
 const td = { fontSize: 12, fontWeight: 700, color: T.ink, padding: "3px 6px", textAlign: "center", borderTop: "1px solid rgba(0,0,0,.06)", whiteSpace: "nowrap" };
-const CELL = { "1": { bg: "rgba(63,122,58,.20)", fg: "#2F6A2A" }, "0.5": { bg: "rgba(120,110,95,.14)", fg: "#6B5C46" }, "0": { bg: "rgba(200,69,59,.14)", fg: "#A53B31" } };
+const CELL = { w: { bg: "rgba(63,122,58,.20)", fg: "#2F6A2A" }, d: { bg: "rgba(120,110,95,.14)", fg: "#6B5C46" }, l: { bg: "rgba(200,69,59,.14)", fg: "#A53B31" } };
 
 /* 대국 한 줄 — 오른쪽에 금색 검색 버튼(보드로 열기)과 연두색 별 버튼(리뷰). 수순은 누를 때 복원한다. */
 function GameRow({ ed, gi, onOpenGame, onOpenGameAnalyze, showRound = true }) {
@@ -66,7 +66,9 @@ function Crosstable({ ed, ct, onPick, onPlayer, sel }) {
               if (a === b) return <td key={b} style={{ ...td, background: "rgba(0,0,0,.08)" }} />;
               const c = cells[a][b], on = sel && sel.a === a && sel.b === b;
               return <td key={b} style={{ ...td, padding: 0, background: on ? "rgba(34,211,240,.25)" : undefined }}>
-                {c.length ? <button onClick={() => onPick(a, b)} className="press" style={{ width: "100%", minWidth: 28, padding: "4px 3px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, fontFamily: SITE_FONT, background: CELL[c[0].t].bg, color: CELL[c[0].t].fg }}>{c.map((x) => x.t).join(" ")}</button> : <span style={{ color: "#C9B58C" }}>·</span>}
+                {c.length ? (() => { const pt = pairTotal(c); return <button onClick={() => onPick(a, b)} className="press" title={c.map((x) => x.t).join(" · ")} style={{ width: "100%", minWidth: 34, padding: pt.n > 1 ? "3px 3px" : "7px 3px", border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 800, lineHeight: 1.1, fontFamily: SITE_FONT, background: CELL[pt.kind].bg, color: CELL[pt.kind].fg }}>
+                  {fmtScore(pt.tot * 2)}{pt.n > 1 && <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.75, marginTop: 1, whiteSpace: "nowrap" }}>{c.map((x) => x.t).join(" · ")}</div>}
+                </button>; })() : <span style={{ color: "#C9B58C" }}>·</span>}
               </td>;
             })}
             <td style={{ ...td, fontWeight: 900 }}>{fmtScore(r.score2)}</td>
@@ -180,6 +182,8 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
   useEffect(() => { setWhich(0); setSelPair(null); setFilter({ round: 0, text: "", res: null, stage: null }); }, [tour.id, year]);
   const eds = data ? data.eds.filter((e) => e.y === year) : [];
   const ed = eds[Math.min(which, eds.length - 1)];
+  // DB 수록 대국뿐인 회차(partial)는 순위표가 실제와 다르므로 대국 목록부터 보여준다.
+  useEffect(() => { if (ed && ed.partial) setMode("games"); }, [ed && ed.partial, tour.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const win = useMemo(() => (ed ? winnerOf(ed) : null), [ed]);
   const ct = useMemo(() => (ed && ed.fmt === "rr" ? crosstable(ed) : null), [ed]);   // 라운드로빈만 크로스테이블
   const yi = years.indexOf(year);
@@ -193,7 +197,7 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{tour.name} {year}</div>
             {ed && ed.ev && ed.ev !== tour.name && <div style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{ed.ev}</div>}
-            {ed && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 2 }}>{flagEmoji(cc(ed.site)) ? flagEmoji(cc(ed.site)) + " " : ""}{cityOf(ed.site)}{dateText(ed) ? " · " + dateText(ed) : ""} · {FMT_LABEL()[ed.fmt]} · {t("{0}명 · {1}판", standings(ed).length || ed.pl.length, ed.g.length)}</div>}
+            {ed && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 2 }}>{[(flagEmoji(cc(ed.site)) ? flagEmoji(cc(ed.site)) + " " : "") + cityOf(ed.site), dateText(ed), ed.partial ? t("마스터 대국 DB") : FMT_LABEL()[ed.fmt], t("{0}명 · {1}판", standings(ed).length || ed.pl.length, ed.g.length)].filter((x) => x && x.trim()).join(" · ")}</div>}
           </div>
           <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
             <button onClick={() => go(-1)} disabled={yi <= 0} aria-label={t("이전 회차")} title={t("이전 회차")} className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", cursor: yi > 0 ? "pointer" : "default", opacity: yi > 0 ? 1 : 0.35, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.inkSoft }}><ChevronLeft size={15} /></button>
@@ -209,11 +213,12 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
         {data === null && <div style={{ fontSize: 12, color: T.inkSoft }}>{t("이 대회의 대국 자료가 없음")}</div>}
         {data && !ed && <div style={{ fontSize: 12, color: T.inkSoft }}>{t("이 연도의 대국 자료가 없음")}</div>}
         {ed && <>
+          {ed.partial && <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(120,110,95,.12)", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("마스터 대국 DB에 수록된 일부 대국만 있어 실제 대회보다 적음. 점수는 수록 대국 기준")}</div>}
           {win && <div className="flex items-center gap-2" style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(196,154,80,.16)", fontFamily: SITE_FONT, fontSize: 12.5, fontWeight: 800, color: T.ink }}>
             <Trophy size={14} style={{ color: T.brass, flexShrink: 0 }} /><span>{win.tie ? t("공동 우승") : t("우승")}: {win.names.map((n) => enName(n)).join(" · ")} ({fmtScore(win.score * 2)})</span>
           </div>}
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            <button onClick={() => setMode("table")} className="press" style={tab(mode === "table")}>{ed.fmt === "ko" ? t("대진표") : ed.fmt === "rr" ? t("크로스테이블") : t("순위표")}</button>
+            <button onClick={() => setMode("table")} className="press" style={tab(mode === "table")}>{ed.fmt === "ko" ? t("대진표") : ed.fmt === "rr" ? t("크로스테이블") : ed.partial ? t("출전자") : t("순위표")}</button>
             <button onClick={() => setMode("games")} className="press" style={tab(mode === "games")}>{t("대국 목록")}</button>
           </div>
           {mode === "table" && <>
