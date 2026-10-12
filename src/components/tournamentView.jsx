@@ -66,8 +66,8 @@ function Crosstable({ ed, ct, onPick, onPlayer, sel }) {
               if (a === b) return <td key={b} style={{ ...td, background: "rgba(0,0,0,.08)" }} />;
               const c = cells[a][b], on = sel && sel.a === a && sel.b === b;
               return <td key={b} style={{ ...td, padding: 0, background: on ? "rgba(34,211,240,.25)" : undefined }}>
-                {c.length ? (() => { const pt = pairTotal(c); return <button onClick={() => onPick(a, b)} className="press" title={c.map((x) => x.t).join(" · ")} style={{ width: "100%", minWidth: 34, padding: pt.n > 1 ? "3px 3px" : "7px 3px", border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 800, lineHeight: 1.1, fontFamily: SITE_FONT, background: CELL[pt.kind].bg, color: CELL[pt.kind].fg }}>
-                  {fmtScore(pt.tot * 2)}{pt.n > 1 && <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.75, marginTop: 1, whiteSpace: "nowrap" }}>{c.map((x) => x.t).join(" · ")}</div>}
+                {c.length ? (() => { const pt = pairTotal(c); return <button onClick={() => onPick(a, b)} className="press" title={c.map((x) => x.t).join(", ")} style={{ width: "100%", minWidth: 34, padding: pt.n > 1 ? "3px 3px" : "7px 3px", border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 800, lineHeight: 1.1, fontFamily: SITE_FONT, background: CELL[pt.kind].bg, color: CELL[pt.kind].fg }}>
+                  {fmtScore(pt.tot * 2)}{pt.n > 1 && <div style={{ fontSize: 9, fontWeight: 700, opacity: 0.75, marginTop: 1, whiteSpace: "nowrap" }}>{c.map((x) => x.t).join(", ")}</div>}
                 </button>; })() : <span style={{ color: "#C9B58C" }}>·</span>}
               </td>;
             })}
@@ -173,7 +173,7 @@ function GamesTab({ ed, filter, setFilter, onOpenGame, onOpenGameAnalyze }) {
 
 /** 대회(tour)의 year 회차 화면. years = 이 대회에 자료가 있는 연도(오름차순). */
 export default function EditionView({ tour, year, years, onYear, onClose, onOpenGame, onOpenGameAnalyze }) {
-  const [data, setData] = useState(undefined);   // undefined 불러오는 중 · null 자료 없음
+  const [data, setData] = useState(undefined);   // undefined 불러오는 중, null 자료 없음
   const [which, setWhich] = useState(0);         // 같은 해 회차가 여럿일 때 선택
   const [mode, setMode] = useState("table");
   const [filter, setFilter] = useState({ round: 0, text: "", res: null, stage: null });
@@ -197,7 +197,7 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{tour.name} {year}</div>
             {ed && ed.ev && ed.ev !== tour.name && <div style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{ed.ev}</div>}
-            {ed && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 2 }}>{[(flagEmoji(cc(ed.site)) ? flagEmoji(cc(ed.site)) + " " : "") + cityOf(ed.site), dateText(ed), ed.partial ? t("마스터 대국 DB") : FMT_LABEL()[ed.fmt], t("{0}명 · {1}판", standings(ed).length || ed.pl.length, ed.g.length)].filter((x) => x && x.trim()).join(" · ")}</div>}
+            {ed && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 2 }}>{[(flagEmoji(cc(ed.site)) ? flagEmoji(cc(ed.site)) + " " : "") + cityOf(ed.site), dateText(ed), ed.partial ? t("마스터 대국 DB") : FMT_LABEL()[ed.fmt], t("{0}명, {1}판", standings(ed).length || ed.pl.length, ed.g.length)].filter((x) => x && x.trim()).join(", ")}</div>}
           </div>
           <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
             <button onClick={() => go(-1)} disabled={yi <= 0} aria-label={t("이전 회차")} title={t("이전 회차")} className="press" style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", cursor: yi > 0 ? "pointer" : "default", opacity: yi > 0 ? 1 : 0.35, display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.inkSoft }}><ChevronLeft size={15} /></button>
@@ -215,7 +215,7 @@ export default function EditionView({ tour, year, years, onYear, onClose, onOpen
         {ed && <>
           {ed.partial && <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(120,110,95,.12)", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("마스터 대국 DB에 수록된 일부 대국만 있어 실제 대회보다 적음. 점수는 수록 대국 기준")}</div>}
           {win && <div className="flex items-center gap-2" style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(196,154,80,.16)", fontFamily: SITE_FONT, fontSize: 12.5, fontWeight: 800, color: T.ink }}>
-            <Trophy size={14} style={{ color: T.brass, flexShrink: 0 }} /><span>{win.tie ? t("공동 우승") : t("우승")}: {win.names.map((n) => enName(n)).join(" · ")} ({fmtScore(win.score * 2)})</span>
+            <Trophy size={14} style={{ color: T.brass, flexShrink: 0 }} /><span>{win.tie ? t("공동 우승") : t("우승")}: {win.names.map((n) => enName(n)).join(", ")} ({fmtScore(win.score * 2)})</span>
           </div>}
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
             <button onClick={() => setMode("table")} className="press" style={tab(mode === "table")}>{ed.fmt === "ko" ? t("대진표") : ed.fmt === "rr" ? t("크로스테이블") : ed.partial ? t("출전자") : t("순위표")}</button>

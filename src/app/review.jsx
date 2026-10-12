@@ -2259,7 +2259,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
       game.timeClass ? (TIME_CLASS_LABEL[game.timeClass] || game.timeClass) : null,
       d ? d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0") : null,
       result.moves.length ? t("{0}수", Math.ceil(result.moves.length / 2)) : null,
-    ].filter(Boolean).join(" · ");
+    ].filter(Boolean).join(", ");
     return {
       whiteName: whiteInfo.name, blackName: blackInfo.name,
       whiteRating: whiteInfo.rating, blackRating: blackInfo.rating,

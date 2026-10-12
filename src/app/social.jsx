@@ -392,10 +392,10 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
               {linked ? (
                 <div>
                   <div className="flex items-center gap-2">
-                    <button disabled className="flex items-center justify-center gap-2" style={{ flex: 1, padding: "10px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, border: "none", cursor: "default" }}>{tx("{0} 연동 완료 · {1}{2}", <Check size={16} />, profile.chesscom, chesscomStatus === "loading" ? t(" (불러오는 중…)") : "")}</button>
+                    <button disabled className="flex items-center justify-center gap-2" style={{ flex: 1, padding: "10px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3C8A3C,#2E6E2E)", color: "#fff", fontWeight: 800, border: "none", cursor: "default" }}>{tx("{0} 연동 완료, {1}{2}", <Check size={16} />, profile.chesscom, chesscomStatus === "loading" ? t(" (불러오는 중…)") : "")}</button>
                     <button onClick={changeChesscom} disabled={chesscomDaysLeft > 0} title={chesscomDaysLeft > 0 ? t("{0}일 후 변경 가능", (chesscomDaysLeft)) : undefined} className="press" style={{ padding: "10px 13px", borderRadius: 9, background: "transparent", color: chesscomDaysLeft > 0 ? T.inkSoft : T.ink, fontWeight: 700, border: "1px solid #C9B58C", cursor: chesscomDaysLeft > 0 ? "not-allowed" : "pointer", opacity: chesscomDaysLeft > 0 ? 0.55 : 1, whiteSpace: "nowrap" }}>{t("계정 변경")}</button>
                   </div>
-                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>{tx("계정 변경은 30일에 한 번만 가능 · {0}일 후 변경 가능", chesscomDaysLeft)}</p>}
+                  {chesscomDaysLeft > 0 && <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "6px 0 0" }}>{tx("계정 변경은 30일에 한 번만 가능, {0}일 후 변경 가능", chesscomDaysLeft)}</p>}
                 </div>
               ) : (
                 <div className="flex gap-2">
@@ -883,7 +883,7 @@ function PvpInviteChatCard({ msg, mine, otherUsername, otherPhoto, onAccepted })
   // (v0.5.7, 사용자 요청 "미니게임 도전장도 일반 도전장과 똑같은 디자인") 제목 한 줄은 같은 틀로 두고, 무엇을 하는지는 그 아래 한 줄로 —
   // 체스는 시간 제한, 미니게임은 게임 이름. 게임 이름을 제목에 넣으면 줄이 바뀌어 카드 모양이 달라졌다.
   const what = special ? t("실시간 대결") : t("실시간 대국");
-  const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? " · " + tcCatLabel(tc.cat) : ""); })();
+  const detail = !inv ? "" : special ? special.name : (() => { const tc = timeControlFromKey(inv.time_control); return tc.label + (tc.cat ? ", " + tcCatLabel(tc.cat) : ""); })();
   const [liveGame, setLiveGame] = useState(null);
   const gameId = inv && inv.status === "accepted" ? inv.game_id : null;
   useEffect(() => {
@@ -2133,7 +2133,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
         {/* (v0.5.7) /blind로 준비만 된 상태 — 첫 수를 어떻게 보내는지 입력창 바로 위에서 알려 준다(대국이 시작되면 사라짐). */}
         {blindGame.armed && editingId == null && (
           <p style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", border: "1px dashed " + T.brass, fontSize: 10.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 700 }}>
-            <span style={{ color: T.brass, fontWeight: 800 }}>{t("블라인드 대국 준비됨")}</span> · {tx("{0}처럼 백의 첫 수를 보내면 시작", <b style={{ color: T.ink }}>1.e4</b>)}</p>
+            <span style={{ color: T.brass, fontWeight: 800 }}>{t("블라인드 대국 준비됨")}</span>, {tx("{0}처럼 백의 첫 수를 보내면 시작", <b style={{ color: T.ink }}>1.e4</b>)}</p>
         )}
         {cmdError && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "0 0 6px" }}>{cmdError}</p>}
         <AnimatePresence>
@@ -2281,7 +2281,7 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.12)", flexShrink: 0 }}>
-          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{tx("유산 • {0}", typeInfo.short)}</span></div>
+          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{tx("유산, {0}", typeInfo.short)}</span></div>
           <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
@@ -2579,7 +2579,7 @@ function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
         </span>
         <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1"><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nickname || id}</span>{isGM && <Crown size={12} style={{ color: "#9B6BFF", flexShrink: 0 }} />}</div>
-          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT }}>@{id}{presenceLabel(lastSeenMs) && <span> · {presenceLabel(lastSeenMs)}</span>}</div>
+          <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: SITE_FONT }}>@{id}{presenceLabel(lastSeenMs) && <span>, {presenceLabel(lastSeenMs)}</span>}</div>
         </div>
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>{right}</div>
@@ -2906,7 +2906,7 @@ function PvpSpectateModal({ gameId, onClose }) {
                   <Board board={board} flip={false} size={boardSize} showEval={false} showCoords interactive={false} />
                 </div>
                 {playerRow(whiteName, whitePub, displayClock && displayClock.w)}
-                {resultLabel && <div style={{ marginTop: 10, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brass }}>{tx("대국 종료 · {0}", resultLabel)}</div>}
+                {resultLabel && <div style={{ marginTop: 10, textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.brass }}>{tx("대국 종료, {0}", resultLabel)}</div>}
               </>
             )}
         </div>

@@ -22,10 +22,10 @@ function WdlBar({ w, d, l }) {
   const n = w + d + l || 1;
   return (
     <div>
-      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: "rgba(90,58,20,.12)" }} role="img" aria-label={t("승 {0} · 무 {1} · 패 {2}", w, d, l)}>
+      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: "rgba(90,58,20,.12)" }} role="img" aria-label={t("승 {0}, 무 {1}, 패 {2}", w, d, l)}>
         <span style={{ width: (w / n) * 100 + "%", background: "#3F7A3A" }} /><span style={{ width: (d / n) * 100 + "%", background: "#B8A98A" }} /><span style={{ width: (l / n) * 100 + "%", background: "#C8453B" }} />
       </div>
-      <div style={{ ...small, marginTop: 2 }}>{t("승 {0} · 무 {1} · 패 {2}", w, d, l)}</div>
+      <div style={{ ...small, marginTop: 2 }}>{t("승 {0}, 무 {1}, 패 {2}", w, d, l)}</div>
     </div>
   );
 }
@@ -39,12 +39,12 @@ function Spark({ pts }) {
         <polyline fill="none" stroke={T.brass} strokeWidth="2" strokeLinejoin="round" points={pts.map((p) => X(p[0]) + "," + Y(p[1])).join(" ")} />
         {pts.map((p, i) => <circle key={i} cx={X(p[0])} cy={Y(p[1])} r="2" fill="#8A6A2F" />)}
       </svg>
-      <div className="flex justify-between" style={small}><span>{x0} · {Math.min(...ys)}</span><span>{x1} · {ys[ys.length - 1]}</span></div>
+      <div className="flex justify-between" style={small}><span>{x0}, {Math.min(...ys)}</span><span>{x1}, {ys[ys.length - 1]}</span></div>
     </div>
   );
 }
-const MoveList = ({ list, prefix }) => <div style={row}>{list.map(([san, n, p]) => <span key={san} style={{ marginRight: 10, whiteSpace: "nowrap" }}>{prefix}{san} <span style={{ color: T.inkSoft }}>{t("{0}판", n)} · {p}%</span></span>)}</div>;
-const EcoList = ({ list }) => <div>{list.map(([eco, name, n, p]) => <div key={eco} style={row}><b>{eco}</b> {name} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", n)} · {p}%</span></div>)}</div>;
+const MoveList = ({ list, prefix }) => <div style={row}>{list.map(([san, n, p]) => <span key={san} style={{ marginRight: 10, whiteSpace: "nowrap" }}>{prefix}{san} <span style={{ color: T.inkSoft }}>{t("{0}판", n)}, {p}%</span></span>)}</div>;
+const EcoList = ({ list }) => <div>{list.map(([eco, name, n, p]) => <div key={eco} style={row}><b>{eco}</b> {name} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", n)}, {p}%</span></div>)}</div>;
 
 export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onOpenTour }) {
   const [prof, setProf] = useState(undefined), [search, setSearch] = useState(null);
@@ -57,29 +57,29 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
   return (
     <div>
       {p && <>
-        {head(t("전적 · {0}판 · {1}–{2}", p.n, p.y0, p.y1))}
+        {head(t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1))}
         <WdlBar w={p.wdl[0]} d={p.wdl[1]} l={p.wdl[2]} />
-        <div style={{ ...row, marginTop: 4 }}>{t("백")} {pct(p.w[0] + p.w[1] / 2, p.w[0] + p.w[1] + p.w[2])}% · {t("흑")} {pct(p.b[0] + p.b[1] / 2, p.b[0] + p.b[1] + p.b[2])}% <span style={{ color: T.inkSoft, fontSize: 11 }}>({t("점수율")})</span></div>
-        <div style={row}>{t("평균 {0}수 · 무승부 {1}%", p.len, p.draw)}</div>
+        <div style={{ ...row, marginTop: 4 }}>{t("백")} {pct(p.w[0] + p.w[1] / 2, p.w[0] + p.w[1] + p.w[2])}%, {t("흑")} {pct(p.b[0] + p.b[1] / 2, p.b[0] + p.b[1] + p.b[2])}% <span style={{ color: T.inkSoft, fontSize: 11 }}>({t("점수율")})</span></div>
+        <div style={row}>{t("평균 {0}수, 무승부 {1}%", p.len, p.draw)}</div>
         {p.peak[0] > 0 && <>
           {head(t("최고 레이팅"))}
           <div style={row}>{p.peak[0]}{p.peak[1] ? " (" + p.peak[1] + ")" : ""}</div>
           <Spark pts={p.elo} />
         </>}
         {p.fm.length > 0 && <>{head(t("백 첫 수"))}<MoveList list={p.fm} prefix="1." /></>}
-        {p.e4.length > 0 && <>{head(t("흑 · 1.e4에 대한 응수"))}<MoveList list={p.e4} prefix="1.e4 " /></>}
-        {p.d4.length > 0 && <>{head(t("흑 · 1.d4에 대한 응수"))}<MoveList list={p.d4} prefix="1.d4 " /></>}
-        {p.ecoW.length > 0 && <>{head(t("자주 둔 오프닝 · 백"))}<EcoList list={p.ecoW} /></>}
-        {p.ecoB.length > 0 && <>{head(t("자주 둔 오프닝 · 흑"))}<EcoList list={p.ecoB} /></>}
-        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}>{enName(n)} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)} · {w}-{d}-{l}</span></div>)}</>}
-        {p.ev.length > 0 && <>{head(t("자주 나온 대회"))}{p.ev.map(([n, c, y0, y1]) => <div key={n} style={row}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}{y0 ? " · " + y0 + (y1 !== y0 ? "–" + y1 : "") : ""}</span></div>)}</>}
+        {p.e4.length > 0 && <>{head(t("흑, 1.e4에 대한 응수"))}<MoveList list={p.e4} prefix="1.e4 " /></>}
+        {p.d4.length > 0 && <>{head(t("흑, 1.d4에 대한 응수"))}<MoveList list={p.d4} prefix="1.d4 " /></>}
+        {p.ecoW.length > 0 && <>{head(t("자주 둔 오프닝, 백"))}<EcoList list={p.ecoW} /></>}
+        {p.ecoB.length > 0 && <>{head(t("자주 둔 오프닝, 흑"))}<EcoList list={p.ecoB} /></>}
+        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}>{enName(n)} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}, {w}-{d}-{l}</span></div>)}</>}
+        {p.ev.length > 0 && <>{head(t("자주 나온 대회"))}{p.ev.map(([n, c, y0, y1]) => <div key={n} style={row}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}{y0 ? ", " + y0 + (y1 !== y0 ? "–" + y1 : "") : ""}</span></div>)}</>}
       </>}
       {played.length > 0 && <>
         {head(t("대회 출전 기록"))}
         {played.map((x) => { const tr = TOUR_BY_ID.get(x.id); if (!tr) return null; return (
           <div key={x.id} style={row}>
             <button onClick={() => onOpenTour && onOpenTour(x.id)} className="press" style={{ border: "none", background: "none", padding: 0, cursor: onOpenTour ? "pointer" : "default", color: T.ink, textDecoration: onOpenTour ? "underline" : "none", fontWeight: 700, fontSize: 12, fontFamily: SITE_FONT, textAlign: "left" }}>{tr.name}</button>
-            <span style={{ color: T.inkSoft, fontSize: 11 }}> {t("{0}회", x.n)} · {x.y0}{x.y1 !== x.y0 ? "–" + x.y1 : ""}</span>
+            <span style={{ color: T.inkSoft, fontSize: 11 }}> {t("{0}회", x.n)}, {x.y0}{x.y1 !== x.y0 ? "–" + x.y1 : ""}</span>
           </div>); })}
       </>}
       {p && p.best.length > 0 && <>
@@ -88,7 +88,7 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
           const sans = () => decodeMoves(code), w = color === "w" ? myName : enName(opp), b = color === "w" ? enName(opp) : myName;
           return (
             <div key={i} className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""} · vs {enName(opp)} ({oe}) · {color === "w" ? t("백") : t("흑")} · {ev}</div>
+              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""}, vs {enName(opp)} ({oe}), {color === "w" ? t("백") : t("흑")}, {ev}</div>
               <GameViewButton onClick={() => onOpenGame && onOpenGame(sans())} />
               <BestMoveJumpButton onClick={() => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sans(), white: { username: w, rating: color === "w" ? null : oe }, black: { username: b, rating: color === "w" ? oe : null } })} />
             </div>

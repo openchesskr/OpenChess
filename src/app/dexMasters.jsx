@@ -15,6 +15,7 @@ import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
 import { enName, playerName } from "../data/playerNames.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { candidateKeys } from "../lib/masterProfile.js";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
@@ -49,7 +50,7 @@ const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
 const numText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
 const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
-const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? " · " + k : "") + (tr.score ? " · " + tr.score : ""); };
+const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? ", " + k : "") + (tr.score ? ", " + tr.score : ""); };
 
 /* 국적은 3글자 코드 대신 국기 이모지로 표기한다(코드는 마우스를 올렸을 때 툴팁으로만). */
 function CountryChip({ cc, size = 15 }) {
@@ -125,13 +126,13 @@ function TourNode({ n, onPick, picked, fx, dim }) {
       <CornerBadge bg={color}><Trophy size={10} /></CornerBadge>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, background: color, borderRadius: "13px 0 0 13px" }} />
       <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{personName(r)}</div>
-      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)} · {tourPlace(r)}</div>
+      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)}, {tourPlace(r)}</div>
     </button>
   );
 }
 
 /* ── 남쪽 FIDE 랭킹 블록(270×84) ──
-   왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리) · 윗줄 국기+이름 · 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅 · 맨 아래 연맹·출생 연도. */
+   왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리), 윗줄 국기+이름, 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅, 맨 아래 연맹·출생 연도. */
 const FIDE_RANGE = Object.fromEntries(Object.entries(FIDE.lists).map(([k, l]) => [k, [l[l.length - 1][4], l[0][4]]]));
 const RANK_TIER = {
   1: { frame: "linear-gradient(135deg,#FBEAB0,#DDAE45 45%,#8F6A22)", ribbon: "linear-gradient(180deg,#F8E3A0,#CFA13E)", ink: "#2A1807", bg: "linear-gradient(160deg,#FFF8E0,#F6E6B4)", glow: "0 0 14px 2px rgba(236,203,134,.6)" },
@@ -169,7 +170,7 @@ function FideNode({ n, onPick, picked, fx, dim }) {
   );
 }
 /* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
-   왼쪽 국기 판(국기가 없으면 사람 아이콘) · 이름 · 최고 엘로 알약(2800+ 금 · 2700+ 황동 · 그 외 베이지)과 DB 대국 수. */
+   왼쪽 국기 판(국기가 없으면 사람 아이콘), 이름, 최고 엘로 알약(2800+ 금, 2700+ 황동, 그 외 베이지)과 DB 대국 수. */
 const DB_ELO_RANGE = (() => { const e = DBM.masters.map((m) => m[2]).filter(Boolean); return [Math.min(...e), Math.max(...e)]; })();
 function DbMasterNode({ n, onPick, picked, fx, dim }) {
   const m = n.dbm, flag = masterFlag(m.name), star = m.elo >= 2800;
@@ -228,7 +229,7 @@ function BracketPanel({ p }) {
   const color = TOUR_COLOR[p.tour.type];
   return (
     <div style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h, boxSizing: "border-box", borderRadius: 14, border: "2px solid " + color + "88", background: "rgba(255,255,255,.55)", zIndex: 1, padding: "10px 14px", fontFamily: SITE_FONT, pointerEvents: "none" }}>
-      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{personName(p.tour)} {p.year} · {t("대진표")}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{personName(p.tour)} {p.year}, {t("대진표")}</div>
       {p.empty && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>{t("마스터 대국 DB에 이 연도 대국 없음")}</div>}
     </div>
   );
@@ -243,7 +244,7 @@ function SatNode({ n, onPick, picked, fx, dim }) {
       <CornerBadge bg="#8A7458"><Swords size={10} /></CornerBadge>
       <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}><Flag code={s.cc} size={13} />{personName(s)}</div>
       <div className="flex items-center justify-between gap-1" style={{ marginTop: 2 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(" · ")}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(", ")}</span>
       </div>
     </button>
   );
@@ -254,7 +255,7 @@ function UpcomingNode({ n }) {
   return (
     <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", borderRadius: 11, border: "2px dashed " + T.brass, background: "rgba(196,154,80,.1)", color: T.ink }}>
       <div className="flex items-center justify-between gap-1">
-        <span style={{ fontSize: 9.5, fontWeight: 900, color: T.brass, letterSpacing: ".04em" }}>{t("2026 타이틀전 · 예정")}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 900, color: T.brass, letterSpacing: ".04em" }}>{t("2026 타이틀전, 예정")}</span>
         <CountryChip cc={u.cc} />
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{personName(u)}</div>
@@ -285,7 +286,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
         {head(WINNER_KIND[r.id] === "titleChanges" ? t("챔피언이 바뀐 해") : t("역대 우승"))}
         <div style={{ maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
           {[...winners].reverse().map(([y, names]) => (
-            <div key={y} style={rowSty}>{y} · {names.map(winName).join(" · ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
+            <div key={y} style={rowSty}>{y}, {names.map(winName).join(", ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
           ))}
         </div>
         <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>{t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료")}</div>
@@ -293,12 +294,12 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
       {head(info && info.pgn ? t("대회 자료") : t("마스터 대국 DB"))}
       {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
       {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
-        <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(" · ")}</div>}
+        <div style={rowSty}>{t("대국 {0}판", info.games)}, {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(", ")}</div>}
         {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
         {results.length > 0 && <>
           {head(info.pgn ? t("집계 결과") : t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => enName(n)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y}, {x.winners.map((n) => enName(n)).join(", ")} ({fmtScore(x.score)}), <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
           <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
         </>}
         {info.top.length > 0 && <>
@@ -306,7 +307,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
               <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 7px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y} · {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+                {g.y}, {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""}, {g.r}
               </div>
               <GameViewButton onClick={() => onOpenGame && onOpenGame(sansOf(g))} />
               <BestMoveJumpButton onClick={() => openReview(g)} />
@@ -324,18 +325,18 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
     const c = BY_ID.get(pick.id);
     title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc); profName = c.name;
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
-    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
-    if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
-    if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + " · " + personName(d) + " · " + d.score + (d.won ? " · " + t("등극") : d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : "")) });
-    if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.to))) });
-    if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + " · " + personName(UPCOMING)] });
+    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? ", " + TAG_LABEL()[c.tag] : "")] });
+    if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.from))) });
+    if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + ", " + personName(d) + ", " + d.score + (d.won ? ", " + t("등극") : d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : "")) });
+    if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.to))) });
+    if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + ", " + personName(UPCOMING)] });
   } else if (pick.type === "tour") {
     const r = TOURNAMENTS.find((x) => x.id === pick.id), at = championAt(CHAMPIONS, r.from);
     title = personName(r); sub = ""; cc = r.cc;
-    blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? " · " + FREQ_LABEL()[r.freq] : "")] });
+    blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? ", " + FREQ_LABEL()[r.freq] : "")] });
     blocks.push({ head: t("기간"), lines: [tourPeriod(r)] });
     blocks.push({ head: t("개최지"), lines: [tourPlace(r)] });
-    blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
+    blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? ", " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
     title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]); profName = f[2];
@@ -351,7 +352,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
   } else {
     const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
     title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc); profName = s.name;
-    blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + " · " + personName(c) + " · " + d.score + (d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : " · " + t("패"))) });
+    blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + ", " + personName(c) + ", " + d.score + (d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : ", " + t("패"))) });
   }
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
@@ -406,24 +407,29 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, [idx, openEd]);
   // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
   //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
+  // (v0.6.6, 사용자 요청) 검색 대상은 세계 챔피언과 챔피언 도전자뿐이다. 같은 사람은 한 번만(챔피언 우선) 나오고, FIDE 레이팅 부문별 100위 안에 드는 선수만 이름 아래에 그 순위를 보여준다.
   const masterKeys = React.useMemo(() => {
-    const out = [];
+    const rankOf = new Map();   // 선수 키 → [부문, 순위] (가장 높은 순위)
+    for (const [list, rows] of Object.entries(FIDE.lists)) for (const r of rows) { const k = candidateKeys(r[2])[0]; if (!k) continue; const cur = rankOf.get(k); if (!cur || r[0] < cur[1]) rankOf.set(k, [list, r[0]]); }
+    const seen = new Map();
     for (const n of LAYOUT.nodes) {
-      let names = null, title = "", sub = "", flag = "";
-      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; title = personName(n.champ); sub = (n.champ.no ? numText(n.champ) + " · " : "") + reignText(n.champ); flag = flagEmoji(n.champ.cc); }
-      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; title = personName(n.sat); sub = t("타이틀전 도전자") + " · " + n.sat.years.join(" · "); flag = flagEmoji(n.sat.cc); }
-      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; title = masterName(n.fide.name, "en"); sub = LABEL_TEXT()["fide-" + n.list] + " · " + n.rank; flag = masterFlag(n.fide.name) || ""; }
-      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; title = masterName(n.dbm.name, "en"); sub = t("마스터 대국 DB 선수"); flag = masterFlag(n.dbm.name) || ""; }
-      if (names) out.push({ id: n.id, title, sub, flag, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
+      let names = null, title = "", flag = "", tag = "", nm = "";
+      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); tag = "champ"; }
+      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); tag = "sat"; }
+      if (!names) continue;
+      const pk = candidateKeys(nm)[0] || norm(nm), prev = seen.get(pk);
+      if (prev && !(tag === "champ" && prev.tag === "sat")) continue;
+      const rk = rankOf.get(pk);
+      seen.set(pk, { id: n.id, title, sub: rk ? LABEL_TEXT()["fide-" + rk[0]] + ", " + rk[1] : "", flag, tag, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
     }
-    return out;
+    return [...seen.values()];
   }, [LAYOUT]);
   const matches = React.useMemo(() => {
     const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
     if (!raw) return null;
     const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
-      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + " · " + tourPlace(tr), flag: "", tag: "tour" }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
+      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
+    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: m.tag }));
     return [...masters, ...tours];
   }, [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
@@ -433,8 +439,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // (BUG-082) 결과 "목록"이 바뀔 때만 첫 결과로 옮긴다. 예전엔 matches 배열이 새로 만들어질 때마다(연도 블록을 펼쳐 배치가 바뀔 때도) 옮겨, 검색 중에 연도를 누르면 화면이 대회 카드로 되돌아가 펼친 대진표가 화면 밖에 남았다.
   const matchSig = matches ? matches.map((x) => x.id).join("|") : "";
   const [dropOpen, setDropOpen] = useState(false);
-  useEffect(() => { setMatchIdx(0); if (matches && matches.length) { endIntro(); setFocusId(matches[0].id); } }, [matchSig]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); setFocusId(matches[i].id); };
+  useEffect(() => { setMatchIdx(0); }, [matchSig]);   // (v0.6.6, 사용자 요청) 찾아가는 연출은 결과를 눌렀을 때(또는 Enter)만 재생한다.   // eslint-disable-line react-hooks/exhaustive-deps
+  const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); };
   const pickMatch = (i) => { if (!matches || !matches[i]) return; endIntro(); setMatchIdx(i); setFocusId(matches[i].id); setDropOpen(false); };
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
   const openTour = useCallback((id) => { setQ(""); setEdView(null); setPick({ type: "tour", id }); setFocusId("tour:" + id); }, []);
@@ -677,17 +683,16 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
               {!matches || matches.length === 0
                 ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 마스터·대회 없음")}</div>
-                : matches.slice(0, 60).map((it, i) => (
+                : matches.map((it, i) => (
                   <button key={it.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pickMatch(i)} className="press"
                     style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: i === matchIdx ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>
-                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.tag === "tour" ? "#1F6B1F" : "#8A6A2F", background: it.tag === "tour" ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.22)" }}>{it.tag === "tour" ? t("대회") : t("마스터")}</span>
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.tag === "tour" ? "#1F6B1F" : "#8A6A2F", background: it.tag === "tour" ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.22)" }}>{it.tag === "tour" ? t("대회") : it.tag === "champ" ? t("챔피언") : t("챔피언 도전자")}</span>
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>{it.flag ? <span aria-hidden="true" style={{ fontSize: 13, lineHeight: 1 }}>{it.flag}</span> : null}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.title}</span></span>
                       {it.sub ? <span style={{ display: "block", fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub}</span> : null}
                     </span>
                   </button>
                 ))}
-              {matches && matches.length > 60 && <div style={{ padding: "6px 10px", fontSize: 10.5, color: T.inkSoft }}>{t("결과 {0}개 중 60개만 표시", matches.length)}</div>}
             </div>
           )}
         </div>

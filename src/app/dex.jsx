@@ -94,12 +94,12 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
-      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>{tx("채택률 {0} · {1}국", m.adopt != null ? m.adopt.toFixed(1) + "%" : "—", fmtFull(m.games))}</div>}
+      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>{tx("채택률 {0}, {1}국", m.adopt != null ? m.adopt.toFixed(1) + "%" : "—", fmtFull(m.games))}</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
           <span style={{ fontWeight: 800, color: "#2E6E2E" }}>{tx("내 승률 {0}", cc.winRate)}%</span>
-          <span><span style={{ color: T.best }}>{tx("{0}승", cc.w)}</span> {tx("{0}무 {1} · {2}판", cc.d, <span style={{ color: T.blunder }}>{tx("{0}패", cc.l)}</span>, fmtFull(cc.total))}</span>
+          <span><span style={{ color: T.best }}>{tx("{0}승", cc.w)}</span> {tx("{0}무 {1}, {2}판", cc.d, <span style={{ color: T.blunder }}>{tx("{0}패", cc.l)}</span>, fmtFull(cc.total))}</span>
         </div>
       )}
       {/* (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 — 별도 화면 대신 선택한 수의 이 카드
@@ -134,7 +134,7 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
   );
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + (isUnlocked ? "#CDB98E" : "#4A3826") }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자 · 이론 수 편집(저장 전까지 미반영)")}</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자, 이론 수 편집(저장 전까지 미반영)")}</div>
       {(editInfo.childAdds.length > 0 || editInfo.siblingAdds.length > 0) && (
         <div>
           {editInfo.childAdds.map((a) => chip("c" + a.san, t("+ {0} (자녀)", a.san), () => onUnstageAdd([...path, san], a.san)))}
@@ -1130,7 +1130,10 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
               ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 오프닝 없음")}</div>
               : matches.map((it) => (
                 <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    {/* (v0.6.6, 사용자 요청) 자물쇠 대신 어느 갈래(1수: e4·d4 …)인지 보여주는 칩 */}
+                    <span style={{ flexShrink: 0, fontFamily: SITE_FONT, fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>{it.path[0]}</span>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span></div>
                   <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
                 </button>
               ))}

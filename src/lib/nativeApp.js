@@ -41,10 +41,10 @@ export async function openMailto(url) {
 }
 
 /* (v0.6.4) 링크 클릭 분류 — 앱 웹뷰 안에서 <a>를 눌렀을 때 어떻게 처리할지 정한다. 순수 함수(테스트 대상).
-   · mailto:/tel: → "mail"(메일·전화 앱으로)
-   · 다른 출처 http(s) → "external"(시스템 브라우저로. 그대로 두면 웹뷰가 남의 사이트로 넘어가 앱 화면이 사라진다)
-   · 같은 출처 + target=_blank → "site"(앱 안이 아니라 대표 사이트 주소로 브라우저에서 열기 — 열려 있던 모달·입력 상태를 지키려고)
-   · 그 밖(같은 출처 일반 이동·#앵커·javascript: 등) → "none"(건드리지 않음) */
+  , mailto:/tel: → "mail"(메일·전화 앱으로)
+  , 다른 출처 http(s) → "external"(시스템 브라우저로. 그대로 두면 웹뷰가 남의 사이트로 넘어가 앱 화면이 사라진다)
+  , 같은 출처 + target=_blank → "site"(앱 안이 아니라 대표 사이트 주소로 브라우저에서 열기 — 열려 있던 모달·입력 상태를 지키려고)
+  , 그 밖(같은 출처 일반 이동·#앵커·javascript: 등) → "none"(건드리지 않음) */
 export function classifyLinkClick(href, target, appOrigin, siteOrigin = "https://openchess.kr") {
   let u, base;
   try { base = new URL(appOrigin); u = new URL(String(href || ""), base); } catch { return { action: "none" }; }

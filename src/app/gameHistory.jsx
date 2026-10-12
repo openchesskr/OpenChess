@@ -305,7 +305,7 @@ export function GameRecordSummary({ overall }) {
         <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판", fmtFull(overall.total))}</span>
       </div>
       <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
-        <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1} · 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
+        <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1}, 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
       </div>
       <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
         <div style={{ width: (100 * overall.w / overall.total) + "%", background: T.best }} />
