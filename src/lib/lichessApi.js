@@ -82,6 +82,6 @@ export function staticMasterGamesFor(sans, data) {
     const g = data.games[gi];
     const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
     const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
-    return { id: "extm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null };
+    return { id: "extm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "" };   // (v0.6.6) 대회 이름 — 집중 분석 마스터 대국의 검색·표시
   });
 }

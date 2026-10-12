@@ -1867,7 +1867,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
       ev: pv.mate != null
         ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) }
         : { cp: pv.cp * baseWhite },
-      sans: pvUciToSans(effSans, pv.pv, 15, fenRoot),
+      sans: pvUciToSans(effSans, pv.pv, pv.depth || 0, fenRoot),   // (v0.6.6, 사용자 요청) 길이 = 도달한 depth
     })));
     (async () => {
       try {
