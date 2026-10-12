@@ -3,6 +3,9 @@
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
+import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { masterFlag } from "../data/masterNames.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { tournamentOfEvent } from "../lib/eventLink.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
@@ -2377,7 +2380,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
   }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
-    return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
+    return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 40);
   }, [masterPlayerNames, masterSearchQuery]);
   // (v0.6.6, 사용자 요청) 판수 제한·페이지 넘김 없이 필터에 맞는 대국을 전부 한 목록으로 보여준다.
   const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
@@ -2726,12 +2729,8 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
               onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
               placeholder={t("선수·대회 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
             {masterSearchFocused && masterSuggestions.length > 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: T.paper, border: "1px solid #C9B58C", borderRadius: 8, boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)", zIndex: 5, overflow: "hidden" }}>
-                {masterSuggestions.map((nm) => (
-                  // onMouseDown(포커스 잃기 전에 먼저 발생)으로 골라야, input의 onBlur가 먼저 실행돼
-                  // 추천 목록이 사라지면서 클릭이 무산되는 걸 막을 수 있다.
-                  <div key={nm} onMouseDown={(e) => { e.preventDefault(); setMasterSearch(nm); }} className="press" style={{ padding: "7px 10px", fontSize: 12, color: T.ink, cursor: "pointer" }}>{nm}</div>
-                ))}
+              <div style={searchDropStyle}>
+                {masterSuggestions.map((nm) => <SearchResultRow key={nm} tag="master" tagLabel={t("마스터")} flag={masterFlag(nm)} title={nm} sub={masterInfoLine(nm)} onClick={() => setMasterSearch(nm)} />)}
               </div>
             )}
           </div>
@@ -3714,28 +3713,29 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
               {/* (19차 선행) 아무 수도 두어지지 않은 시작 위치(ply 0)에서는 현재 수 블록을 아예 표시하지 않는다. */}
               {sans.length > 0 && (
-              <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
-                {/* (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
+              <div style={{ position: "relative", minWidth: 0, borderRadius: 12, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + ((curKind && QCOLOR[curKind]) || T.brass), boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px" }}>
+                {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 바탕·좌측 색 테두리·여백. (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
                     (버그) 제목 헤더(✨ 오프닝 이름)는 UI에서 삭제 — 상세 블록이 첫 요소가 되어 상단 구분선/여백 제거. */}
                 {lastSan && (
                   <div>
                     {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 배치 — 키워드(최상단, 고정 높이) / 수 + 평가치 + 분석 버튼(우측 고정) / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
                     <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
+                      {curKind && QCOLOR[curKind] && <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={curKind} descOnClick /></span>}
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
-                          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
-                          {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 700, color: T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} /></div>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
+                              <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
+                              {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color: (curKind && QCOLOR[curKind]) || T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
+                            </div>
+                            <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName || ""}</MarqueeText>
+                          </div>
+                          {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                         </div>
-                        <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName || ""}</MarqueeText>
                       </div>
-                      {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                     </div>
-                    <div className="flex items-center flex-wrap" style={{ gap: 16, marginTop: 12 }}>
-                      {curKind && <span style={{ fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</span>}
-                      {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{tx("{0}회 진행", fmtFull(curGames))}</span>}
-                    </div>
+                    {curKind && <div style={{ marginTop: 7, fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</div>}
                     {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
                         (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
                         "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
@@ -3744,7 +3744,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                         인디케이터를 보여준다. */}
                     {(curStat || curStatLoading) && (
                       <>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
                           <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
                             <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                           </div>
@@ -3754,7 +3754,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                             <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
                           </span>
                         </div>
-                        {curStat && curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
+                        {curStat && curStat.wdl && <div style={{ marginTop: 7 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
                       </>
                     )}
                   </div>

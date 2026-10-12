@@ -2296,6 +2296,12 @@ export default {
   "이 수에서 대국 종료": "La partida termina en esta jugada",
   "이 수에서 열기": "Abrir desde esta jugada",
   // (v0.6.6) 마스터 트리 검색 드롭다운·DB 수록 회차 안내
+  "FIDE 스탠다드 #{0}": "FIDE Clásico #{0}",
+  "FIDE 래피드 #{0}": "FIDE Rápidas #{0}",
+  "FIDE 블리츠 #{0}": "FIDE Blitz #{0}",
+  "스탠다드 #{0}": "Clásico #{0}",
+  "래피드 #{0}": "Rápidas #{0}",
+  "블리츠 #{0}": "Blitz #{0}",
   "챔피언": "Campeón",
   "챔피언 도전자": "Aspirante al título",
   "일치하는 마스터·대회 없음": "Sin maestros ni torneos coincidentes",

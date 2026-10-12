@@ -13,6 +13,8 @@ import { loadGrowth, saveGrowth } from "../lib/growthStore.js";
 import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weaknessReport, dueCards, gradeCard, srsStats, isCardAnswer } from "../lib/weakness.js";
 import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { t } from "../lib/i18n.js";
 
 // 학습 탭의 다른 카드(일일 퀘스트 등)와 같은 종이 카드 톤.
@@ -213,7 +215,7 @@ function MasterStyle({ games }) {
       const rank = nm.startsWith(q) || raw.startsWith(q) ? 0 : nm.split(" ").some((w) => w.startsWith(q)) ? 1 : nm.includes(q) || raw.includes(q) ? 2 : -1;
       if (rank >= 0) scored.push([rank, x]);
     }
-    return scored.sort((a, b) => a[0] - b[0] || (b[1].elo || 0) - (a[1].elo || 0)).slice(0, 8).map((e) => e[1]);
+    return scored.sort((a, b) => a[0] - b[0] || (b[1].elo || 0) - (a[1].elo || 0)).slice(0, 40).map((e) => e[1]);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
   if (!data) return <div style={card}><h3 style={h3}>{t("마스터 스타일")}</h3><p style={{ ...sub, margin: "6px 0 0" }}>{t("불러오는 중…")}</p></div>;
@@ -249,13 +251,8 @@ function MasterStyle({ games }) {
             onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) choose(suggestions[0]); }} aria-label={t("마스터 이름으로 검색")}
             placeholder={focus ? t("마스터 이름으로 검색") : masterName(picked.name, "en")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(36,21,9,.92)", color: T.ivoryHi, fontSize: 12, fontFamily: SITE_FONT }} />
           {focus && suggestions.length > 0 && (
-            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
-              {suggestions.map((x) => (
-                <button key={x.name} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(x)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600, fontFamily: SITE_FONT }}>
-                  <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</span>
-                  <span style={{ flexShrink: 0, marginLeft: "auto", textAlign: "right", fontSize: 11.5, fontWeight: 800, color: "#8A6A2F", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{peakText(x.elo)}</span>
-                </button>
-              ))}
+            <div style={{ ...searchDropStyle, zIndex: 20 }}>
+              {suggestions.map((x) => <SearchResultRow key={x.name} tag="master" tagLabel={t("마스터")} flag={masterFlag(x.name)} title={masterName(x.name, "en")} sub={masterInfoLine(x.name)} onClick={() => choose(x)} />)}
             </div>
           )}
         </div>

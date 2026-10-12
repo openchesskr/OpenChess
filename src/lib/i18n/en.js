@@ -2296,6 +2296,12 @@ export default {
   "이 수에서 대국 종료": "Game ends at this move",
   "이 수에서 열기": "Open from this move",
   // (v0.6.6) 마스터 트리 검색 드롭다운·DB 수록 회차 안내
+  "FIDE 스탠다드 #{0}": "FIDE Standard #{0}",
+  "FIDE 래피드 #{0}": "FIDE Rapid #{0}",
+  "FIDE 블리츠 #{0}": "FIDE Blitz #{0}",
+  "스탠다드 #{0}": "Standard #{0}",
+  "래피드 #{0}": "Rapid #{0}",
+  "블리츠 #{0}": "Blitz #{0}",
   "챔피언": "Champion",
   "챔피언 도전자": "Challenger",
   "일치하는 마스터·대회 없음": "No matching masters or tournaments",

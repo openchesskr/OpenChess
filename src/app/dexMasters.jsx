@@ -16,9 +16,10 @@ import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners
 import { enName, playerName } from "../data/playerNames.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { candidateKeys } from "../lib/masterProfile.js";
+import { masterInfoLine, champNumText } from "../lib/masterSearchInfo.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
-import { ordinalParam } from "../lib/ordinal.js";
 import { MT, championAt, clampMasterPan, flightPoints, layoutMasters, polyLength, polyPointAt, transferPath } from "../lib/masterTreeLayout.js";
 import { takeMasterNav } from "../lib/masterNav.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
@@ -47,7 +48,7 @@ const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
 const personName = (p) => (p.name || p.opp);
 const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
 // "6대 챔피언(1기)" · en "6th (Reign 1)" — 재위가 한 번뿐인 사람은 "(n기)"를 붙이지 않는다.
-const numText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
+const numText = champNumText;
 const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
 const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? ", " + k : "") + (tr.score ? ", " + tr.score : ""); };
@@ -407,29 +408,29 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, [idx, openEd]);
   // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
   //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
-  // (v0.6.6, 사용자 요청) 검색 대상은 세계 챔피언과 챔피언 도전자뿐이다. 같은 사람은 한 번만(챔피언 우선) 나오고, FIDE 레이팅 부문별 100위 안에 드는 선수만 이름 아래에 그 순위를 보여준다.
+  // (v0.6.6, 사용자 요청) 같은 사람은 한 번만 나온다(챔피언 > 챔피언 도전자 > FIDE 순위 > 대국 DB 선수 순으로 노드를 고른다). 이름 아래에는 조건에 맞는 정보만(챔피언 대수, 챔피언 도전자, FIDE 부문 순위) 쉼표로 이어 보인다(masterInfoLine).
   const masterKeys = React.useMemo(() => {
-    const rankOf = new Map();   // 선수 키 → [부문, 순위] (가장 높은 순위)
-    for (const [list, rows] of Object.entries(FIDE.lists)) for (const r of rows) { const k = candidateKeys(r[2])[0]; if (!k) continue; const cur = rankOf.get(k); if (!cur || r[0] < cur[1]) rankOf.set(k, [list, r[0]]); }
-    const seen = new Map();
+    const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
     for (const n of LAYOUT.nodes) {
-      let names = null, title = "", flag = "", tag = "", nm = "";
-      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); tag = "champ"; }
-      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); tag = "sat"; }
+      let names = null, title = "", flag = "", nm = "";
+      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
+      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
+      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
+      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
       if (!names) continue;
-      const pk = candidateKeys(nm)[0] || norm(nm), prev = seen.get(pk);
-      if (prev && !(tag === "champ" && prev.tag === "sat")) continue;
-      const rk = rankOf.get(pk);
-      seen.set(pk, { id: n.id, title, sub: rk ? LABEL_TEXT()["fide-" + rk[0]] + ", " + rk[1] : "", flag, tag, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
+      const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
+      const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
+      if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
+      else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
     }
-    return [...seen.values()];
+    return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
   }, [LAYOUT]);
   const matches = React.useMemo(() => {
     const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
     if (!raw) return null;
     const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
       .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: m.tag }));
+    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
     return [...masters, ...tours];
   }, [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
@@ -680,19 +681,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             <button onClick={replayIntro} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
           </div>
           {q.trim() && dropOpen && (
-            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
+            <div style={searchDropStyle}>
               {!matches || matches.length === 0
                 ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 마스터·대회 없음")}</div>
-                : matches.map((it, i) => (
-                  <button key={it.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pickMatch(i)} className="press"
-                    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: i === matchIdx ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>
-                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.tag === "tour" ? "#1F6B1F" : "#8A6A2F", background: it.tag === "tour" ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.22)" }}>{it.tag === "tour" ? t("대회") : it.tag === "champ" ? t("챔피언") : t("챔피언 도전자")}</span>
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>{it.flag ? <span aria-hidden="true" style={{ fontSize: 13, lineHeight: 1 }}>{it.flag}</span> : null}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.title}</span></span>
-                      {it.sub ? <span style={{ display: "block", fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub}</span> : null}
-                    </span>
-                  </button>
-                ))}
+                : matches.map((it, i) => <SearchResultRow key={it.id} tag={it.tag} tagLabel={it.tag === "tour" ? t("대회") : t("마스터")} flag={it.flag} title={it.title} sub={it.sub} active={i === matchIdx} onClick={() => pickMatch(i)} />)}
             </div>
           )}
         </div>

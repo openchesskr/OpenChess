@@ -3,16 +3,17 @@
 // 데스크톱은 마우스 조작이라 하단 여백을 모바일(16px)보다 좁게(4px) 둔다.
 import { useLayoutEffect, useState } from "react";
 export const DEX_NAV_H = 66;
-export function dexPanelHeight(innerHeight, boxTop, vertical) {
-  return Math.max(360, Math.round(innerHeight - boxTop - (DEX_NAV_H + (vertical ? 16 : 4))));
+export function dexPanelHeight(innerHeight, boxTop, vertical, reserve = 0) {
+  return Math.max(360, Math.round(innerHeight - boxTop - reserve - (DEX_NAV_H + (vertical ? 16 : 4))));
 }
-export function useFitPanelHeight(boxRef, vertical, initial = 640) {
+// reserve: 박스 아래에 따로 두는 요소(오프닝 트리의 도감 해금률 줄)가 차지하는 높이.
+export function useFitPanelHeight(boxRef, vertical, initial = 640, reserve = 0) {
   const [panelH, setPanelH] = useState(initial);
   useLayoutEffect(() => {
-    const compute = () => { const el = boxRef.current; if (!el) return; setPanelH(dexPanelHeight(window.innerHeight, el.getBoundingClientRect().top, vertical)); };
+    const compute = () => { const el = boxRef.current; if (!el) return; setPanelH(dexPanelHeight(window.innerHeight, el.getBoundingClientRect().top, vertical, reserve)); };
     compute();
     window.addEventListener("resize", compute);
     return () => window.removeEventListener("resize", compute);
-  }, [vertical]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vertical, reserve]); // eslint-disable-line react-hooks/exhaustive-deps
   return panelH;
 }
