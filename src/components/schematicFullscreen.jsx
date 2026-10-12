@@ -48,11 +48,11 @@ export function useSchematicFullscreen() {
 }
 
 /* 모식도 박스 왼쪽 위의 버튼 하나 — 평소엔 전체 화면 아이콘, 전체 화면 중엔 같은 크기·같은 자리의 ✕(닫기). 박스 안(position: relative/fixed)에 둔다. */
-export function SchematicFsButton({ fs, onToggle }) {
+export function SchematicFsButton({ fs, onToggle, hidden }) {
   const label = fs ? t("전체 화면 닫기") : t("전체 화면");
   return (
     <button className="no-pan" onClick={onToggle} onPointerDown={(e) => e.stopPropagation()} title={label} aria-label={label}
-      style={{ position: "absolute", top: fs ? "calc(env(safe-area-inset-top) + 10px)" : 6, left: fs ? 10 : 6, zIndex: 70, width: 28, height: 28, padding: 0, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.92)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: fs ? "0 2px 8px rgba(0,0,0,.2)" : "none" }}>
+      style={{ position: "absolute", top: fs ? "calc(env(safe-area-inset-top) + 10px)" : 6, left: fs ? 10 : 6, zIndex: 70, opacity: hidden ? 0 : 1, pointerEvents: hidden ? "none" : "auto", transition: "opacity .5s ease", width: 28, height: 28, padding: 0, borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.92)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: fs ? "0 2px 8px rgba(0,0,0,.2)" : "none" }}>
       {fs ? <X size={16} /> : <Maximize2 size={14} />}
     </button>
   );

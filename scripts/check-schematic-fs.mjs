@@ -8,7 +8,7 @@ const SITES = [["src/app/dex.jsx", "OpeningSchematic", /className=\{fsv\.boxClas
 for (const [file, name, boxRe] of SITES) {
   const s = rd(file);
   if (!/useSchematicFullscreen\(\)/.test(s)) fails.push(name + ": useSchematicFullscreen 훅이 없음");
-  if (!/<SchematicFsButton fs=\{fsv\.fs\} onToggle=\{fsv\.toggle\} \/>/.test(s)) fails.push(name + ": 왼쪽 위 전체 화면/닫기 버튼이 없음");
+  if (!/<SchematicFsButton fs=\{fsv\.fs\} onToggle=\{fsv\.toggle\}[^>]*\/>/.test(s)) fails.push(name + ": 왼쪽 위 전체 화면/닫기 버튼이 없음");
   if (!boxRe.test(s)) fails.push(name + ": 모식도 박스에 전체 화면 클래스가 붙지 않음");
 }
 // 모식도(팬·확대 컨트롤이 있는 트리)가 새로 생기면 알린다 — 확대 버튼 호출 수와 전체 화면 토글 수가 같아야 한다.
