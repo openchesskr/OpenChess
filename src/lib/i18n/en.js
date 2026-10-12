@@ -2284,10 +2284,10 @@ export default {
   "기보 불러오는 중…": "Loading game record…",
   "기보를 불러오지 못함": "Could not load the game record",
   // (v0.6.6) 집중 분석 마스터 대국 요약·필터·이후 진행
-  "마스터 DB 전체": "Full masters DB",
+  "마스터 승률": "Master win rate",
   "표시 중인 대국 기준": "Based on games shown",
-  "이후 많이 둔 수": "Most played next moves",
-  "연도별 백 득점률": "White score by decade",
+  "채택률": "Play rate",
+  "승점 획득 확률": "Score rate",
   "선수·대회 이름으로 검색…": "Search by player or tournament…",
   "이후 진행": "Continuation",
   "이후 진행 불러오는 중…": "Loading continuation…",
