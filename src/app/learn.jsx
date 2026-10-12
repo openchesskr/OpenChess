@@ -1284,9 +1284,15 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
             // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
             // 뜨는 채로 멈추지 않는다.
-            const cached = cache.live.get(san);
-            if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
-            const ev = await cache.live.get(san).promise;
+            // (v0.6.6 버그 수정) 수 블록의 아이콘·평가치가 가끔 영영 안 뜨던 문제 — 엔진이 시간 초과 등으로 null을 돌려주면 그 null Promise가 캐시에 남아 이후 재실행도
+            // 같은 null을 그대로 받아, 그 수는 평가를 다시 요청하지 못했다. 실패하면 캐시를 지우고 최대 3번까지 다시 요청한다.
+            let ev = null;
+            for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
+              const cached = cache.live.get(san);
+              if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
+              ev = await cache.live.get(san).promise;
+              if (!ev) cache.live.delete(san);
+            }
             if (cancelled || !ev) continue;
             setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
           }
@@ -2867,7 +2873,6 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
   // 현재 수 블록은 그 값을 그대로 재사용한다.
   const pinnedKwRef = useRef({});
-  const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
   // (사용자 요청) FEN 모드 — 분석 탭 메인 보드에 FEN을 붙여넣으면 표준 시작 위치 대신 그 포지션(차례·
   // 캐슬링 권리·앙파상까지)에서부터 이어서 둘 수 있다. fenRoot가 있는 동안 sans는 "표준 시작 위치부터의
   // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
@@ -3054,7 +3059,6 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     window.scrollTo({ top: 0, behavior: "auto" });
     if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [focus]);
-  useEffect(() => { setShowAllNb(false); }, [key]);   // (UX1) 위치가 바뀌면 더보기 접기
   // (기능2) 퍼즐 자동 생성은 사용자가 "분석" 버튼을 눌러 FocusMode에 실제로 진입했을 때만 일어난다.
   // 예전엔 이 트리 탐색 화면을 그냥 넘겨보기만 해도(분석 버튼을 누르지 않아도) moves 배열이
   // 갱신될 때마다 여기서도 똑같이 퍼즐을 만들었는데, 이때의 kind는 엔진이 아직 얕은 깊이로만
@@ -3485,8 +3489,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
       ) : (() => {
         const bk = moves.filter((m) => m.book);
         const nb = moves.filter((m) => !m.book);
-        const shownNb = (showAllNb ? nb : nb.slice(0, 3));
-        const shown = [...bk, ...shownNb];
+        // (v0.6.6, 사용자 요청) 더보기·접기 없이 표시할 수 있는 수 블록을 항상 전부 보여준다.
+        const shown = [...bk, ...nb];
         return (
           <>
             {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
@@ -3496,12 +3500,6 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
             {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
-            {nb.length > 3 && (
-              <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
-                {showAllNb ? t("접기") : t("더보기")}
-              </button>
-            )}
           </>
         );
       })()}
@@ -3685,6 +3683,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                     <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
                       {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
                       <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
+                      {/* (v0.6.6, 사용자 요청) 현재 수 오른쪽에 이 포지션의 실시간 평가치(평가치 바와 같은 값) */}
+                      {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ marginLeft: -5, fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 700, color: T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
                       {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
                       {/* (사용자 요청) 집중 분석은 표준 시작 위치의 오프닝 이론을 전제로 하므로 FEN 모드에서는 숨긴다. */}
                       {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
