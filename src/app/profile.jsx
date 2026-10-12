@@ -136,7 +136,7 @@ function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
                   <span style={{ display: "block", fontSize: 10, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {has ? minigameRecordText(r) + (best != null ? " · " + minigameBestLabel(g.gameType, best) : "") : t("기록 없음")}
+                    {has ? minigameRecordText(r) + (best != null ? ", " + minigameBestLabel(g.gameType, best) : "") : t("기록 없음")}
                   </span>
                 </span>
                 <span style={{ flexShrink: 0, textAlign: "right" }}>
@@ -227,7 +227,7 @@ function OpeningWinrateRow({ node, depth, onOpenOpening }) {
           {onOpenOpening
             ? <button onClick={() => onOpenOpening(node.navName || node.name)} title={node.name} className="press" style={{ ...nameStyle, width: "100%", color: T.cocoa || "#5A3A22", fontWeight: isRoot ? 700 : 600, background: "none", border: "none", textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: "rgba(120,80,40,.35)", padding: 0 }}>{node.name}</button>
             : <span title={node.name} style={{ ...nameStyle, color: T.ink, fontWeight: isRoot ? 700 : 600 }}>{node.name}</span>}
-          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: SITE_FONT, color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b> · {node.w}/{node.d}/{node.l} · {tx("{0}판", node.n)}</span>
+          <span style={{ display: "block", marginTop: 2, fontSize: isRoot ? 12.5 : 11.5, fontFamily: SITE_FONT, color: T.inkSoft }}><b style={{ color: node.wr >= 55 ? T.best : node.wr >= 45 ? T.brass : T.blunder }}>{node.wr}%</b>, {node.w}/{node.d}/{node.l}, {tx("{0}판", node.n)}</span>
         </div>
         {/* 이름 버튼(누르면 도감으로 이동)과 별개의 클릭 영역 — 접기/펼치기가 이동 동작을 가리지 않는다. */}
         {hasChildren && (
@@ -572,7 +572,7 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
                       </button>
                     ))}
                     {(weaknessReport.kindTotals.blunder || weaknessReport.kindTotals.mistake) > 0 && (
-                      <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{tx("최근 리뷰한 {0}판 기준: 블런더 {1}회 · 실수 {2}회", weaknessReport.gamesUsed, weaknessReport.kindTotals.blunder || 0, weaknessReport.kindTotals.mistake || 0)}</p>
+                      <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{tx("최근 리뷰한 {0}판 기준: 블런더 {1}회, 실수 {2}회", weaknessReport.gamesUsed, weaknessReport.kindTotals.blunder || 0, weaknessReport.kindTotals.mistake || 0)}</p>
                     )}
                   </div>
                 )}
@@ -1172,7 +1172,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
                     <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(h.entry)}</div>
-                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? t(" · {0} 교체/삭제됨", fmtDateOnly(h.replacedAt, { year: "numeric", month: "2-digit", day: "2-digit" })) : ""}</div>
+                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? t(", {0} 교체/삭제됨", fmtDateOnly(h.replacedAt, { year: "numeric", month: "2-digit", day: "2-digit" })) : ""}</div>
                     </div>
                   </button>
                 ))}

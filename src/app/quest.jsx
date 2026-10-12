@@ -123,7 +123,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
             <div style={{ position: "relative", flexShrink: 0 }}><CoinIcon size={46} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: allDone ? T.best : "#8A6A2F" }}>{t("모든 퀘스트 완료 보상")}</div>
-              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>{tx("OC 나이트 코인 {0} · {1}/5 완료", <b style={{ color: "#8A6A2F" }}>{t("50개")}</b>, doneCount)}</div>
+              <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>{tx("OC 나이트 코인 {0}, {1}/5 완료", <b style={{ color: "#8A6A2F" }}>{t("50개")}</b>, doneCount)}</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800, flexShrink: 0, color: allDone ? T.best : T.inkSoft }}>{allDone ? (dq.bonusClaimed ? t("획득 완료") : t("획득")) : t("잠김")}</span>
           </div>
@@ -951,7 +951,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
                         delete nd.parent;
                         save(nd);
                       }} />
-                    {k} · {CONTENT.lessons[k].title}
+                    {k}, {CONTENT.lessons[k].title}
                   </label>
                 );
               })}

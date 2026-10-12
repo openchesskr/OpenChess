@@ -216,7 +216,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     }
     ctx.restore();
     ctx.font = "600 12px " + SITE_FONT; ctx.fillStyle = CREAM_FAINT;
-    ctx.fillText(t("정확도 · 수 분포"), bcx, boxY + 236);
+    ctx.fillText(t("정확도, 수 분포"), bcx, boxY + 236);
   };
   drawPlayer("w", pad);
   drawPlayer("b", pad + boxW + gap);

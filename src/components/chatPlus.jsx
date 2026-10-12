@@ -95,7 +95,7 @@ export function ReplyBar({ target, authorName, onCancel }) {
   return (
     <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 6, padding: "5px 10px", borderRadius: 8, background: "rgba(196,154,80,.12)", borderLeft: "3px solid " + T.brass }}>
       <span style={{ minWidth: 0, fontSize: 10.5, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {tx("{0}{1}에게 답장 · {2}", <Reply size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} />, <b style={{ color: T.ink }}>{authorName}</b>, chatSnippet(target))}
+        {tx("{0}{1}에게 답장, {2}", <Reply size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} />, <b style={{ color: T.ink }}>{authorName}</b>, chatSnippet(target))}
       </span>
       <button onClick={onCancel} aria-label={t("답장 취소")} className="press" style={{ background: "none", border: "none", color: T.inkSoft, cursor: "pointer", padding: 0, flexShrink: 0 }}><X size={14} /></button>
     </div>
@@ -197,7 +197,7 @@ export function ChatSearchPanel({ onSearch, onPick, onClose, nameOf }) {
           {busy && !res ? <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("찾는 중…")}</div>
             : res && res.length ? res.map((m) => (
               <button key={m.id} onClick={() => onPick(m)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", border: "none", borderBottom: "1px solid #F1E6D0", background: "transparent", cursor: "pointer" }}>
-                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)} · {fmtDate(m.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+                <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700 }}>{nameOf(m.from_uid)}, {fmtDate(m.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
                 <div style={{ fontSize: 12, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mark(m.body || "")}</div>
               </button>
             )) : <div style={{ fontSize: 11.5, color: T.inkSoft, padding: 10 }}>{t("검색 결과 없음")}</div>}
@@ -267,7 +267,7 @@ export function ChessSnippetCard({ Board, snippet, onOpen }) {
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 196, marginTop: 4, padding: 6, borderRadius: 12, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
       <ChatMoveBoard Board={Board} root={root} sans={sans} size={184} interactive={false} flip={root ? root.turn === "b" : false} />
       <div className="flex items-center justify-between" style={{ marginTop: 5, gap: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{snippet.kind === "fen" ? t("FEN 포지션 · {0} 차례", root.turn === "w" ? t("백") : t("흑")) : t("{0}수 진행", (Math.ceil(sans.length / 2)))}</span>
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{snippet.kind === "fen" ? t("FEN 포지션, {0} 차례", root.turn === "w" ? t("백") : t("흑")) : t("{0}수 진행", (Math.ceil(sans.length / 2)))}</span>
         <button onClick={onOpen} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 7, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>
           {tx("{0}분석하기", <ExternalLink size={11} />)}</button>
       </div>
@@ -316,7 +316,7 @@ export function PositionPickSheet({ Board, title, cta, onSend, onClose }) {
         <ChatMoveBoard Board={Board} root={root} sans={sans} size={300} onMove={(san) => setSans((s) => [...s, san])} flip={root ? root.turn === "b" : false} />
       </div>
       <div className="flex items-center justify-between" style={{ margin: "8px 0 12px", gap: 8 }}>
-        <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{sans.length ? t("{0}수 둠", (sans.length)) : t("그대로")} · {tx("{0} 차례", chatPosInfo(root, sans).color === "w" ? t("백") : t("흑"))}</span>
+        <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{sans.length ? t("{0}수 둠", (sans.length)) : t("그대로")}, {tx("{0} 차례", chatPosInfo(root, sans).color === "w" ? t("백") : t("흑"))}</span>
         <div className="flex gap-1">
           <button onClick={() => setSans((s) => s.slice(0, -1))} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}무르기", <Undo2 size={12} />)}</button>
           <button onClick={() => setSans([])} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}처음", <RotateCcw size={12} />)}</button>
@@ -352,7 +352,7 @@ export function PollCard({ Board, msg, votes, myUid, nameOf, onVote, engineBest,
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ width: 236, padding: 8, borderRadius: 14, background: "#fff", border: "1px solid #E4D5B6", boxShadow: "0 3px 10px -5px rgba(0,0,0,.4)" }}>
       <div className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 900, color: T.ink, marginBottom: 2 }}>{tx("{0}여기서 뭐 둘래?", <BarChart3 size={13} color={T.brass} />)}</div>
-      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{t("{0} 차례 · {1}", (root.turn === "w" ? t("백") : t("흑")), voting ? t("보드에서 수를 두면 투표") : t("투표 {0}표", total))}</div>
+      <div style={{ fontSize: 10, color: T.inkSoft, fontWeight: 700, marginBottom: 6 }}>{t("{0} 차례, {1}", (root.turn === "w" ? t("백") : t("흑")), voting ? t("보드에서 수를 두면 투표") : t("투표 {0}표", total))}</div>
       <ChatMoveBoard Board={Board} root={root} sans={[]} size={220} interactive={voting} flip={root.turn === "b"} onMove={(san) => { setChanging(false); onVote(san); }} />
       {!voting && (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -451,7 +451,7 @@ export function CoBoardScreen({ Board, sbClient, msg, myUid, myName, otherName, 
       <ChatMoveBoard Board={Board} root={root} sans={sans} size={boardPx} onMove={(san) => push([...sans, san])} flip={false} />
       <div style={{ width: "100%", maxWidth: boardPx + 40, marginTop: 10 }}>
         <div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginBottom: 6, minHeight: 16 }}>
-          {tx("{0} 차례{1}", info.color === "w" ? t("백") : t("흑"), lastBy && sans.length ? t(" · 마지막 수: {0}", lastBy === myUid ? (myName || t("나")) : otherName) : "")}
+          {tx("{0} 차례{1}", info.color === "w" ? t("백") : t("흑"), lastBy && sans.length ? t(", 마지막 수: {0}", lastBy === myUid ? (myName || t("나")) : otherName) : "")}
         </div>
         <div style={{ fontSize: 12, color: T.ink, fontFamily: "ui-monospace,monospace", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 9, padding: "7px 10px", minHeight: 20, marginBottom: 10, wordBreak: "break-word" }}>{movesTxt || t("둔 수 없음. 먼저 두기")}</div>
         <div className="flex gap-2">
@@ -484,7 +484,7 @@ export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickCho
     // (v0.5.7) 고를 수 있는 인자가 정해진 명령어(/play)는 힌트 아래 칩으로 보여 준다 — 누르면 입력창에 채워진다.
     return (
       <div onMouseDown={(e) => e.preventDefault()} style={{ marginBottom: 6, padding: "7px 11px", borderRadius: 10, background: "#fff", border: "1px solid #E4D5B6", fontSize: 11.5, color: T.inkSoft }}>
-        <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b> · {c.desc}
+        <b style={{ color: T.ink, fontFamily: "ui-monospace,monospace" }}>{c.usage}</b>, {c.desc}
         {c.choices && onPickChoice && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
             {c.choices.map((ch) => (
@@ -506,7 +506,7 @@ export function ChatCommandPalette({ sugg, activeIdx, onPick, onHover, onPickCho
           <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 1 }}>{c.desc}</span>
         </button>
       ))}
-      <div style={{ fontSize: 9.5, color: T.inkSoft, padding: "4px 9px 2px" }}>{t("↑↓ 고르기 · Tab/Enter 채우기 · Esc 닫기")}</div>
+      <div style={{ fontSize: 9.5, color: T.inkSoft, padding: "4px 9px 2px" }}>{t("↑↓ 고르기, Tab/Enter 채우기, Esc 닫기")}</div>
     </div>
   );
 }
@@ -592,14 +592,14 @@ export function ReportsDevPanel() {
           return (
             <div key={r.id} style={{ padding: "9px 11px", borderRadius: 10, background: "#fff", border: "1px solid " + ((r.status || "open") === "done" ? "#E4D5B6" : T.brass) }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>@{r.reporter_username} → @{r.target_username}</div>
-              <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>#{r.id} · {fmtDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>#{r.id}, {fmtDate(r.created_at, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                 {String(r.reason || "").split(",").filter(Boolean).map((k) => <span key={k} style={{ padding: "2px 8px", borderRadius: 999, background: "rgba(217,115,106,.14)", border: "1px solid rgba(217,115,106,.5)", color: T.ink, fontSize: 10.5, fontWeight: 800 }}>{reasonLabel(k)}</span>)}
               </div>
               {r.detail && <div style={{ fontSize: 11.5, color: T.ink, marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{r.detail}</div>}
               {profile ? (
                 <div style={{ marginTop: 6, fontSize: 11, color: T.inkSoft, padding: "6px 8px", borderRadius: 8, background: "#FBF5E8" }}>
-                  <b style={{ color: T.ink }}>{t("프로필 신고")}</b> · @{snap.username}{snap.nickname ? " · " + snap.nickname : ""}{snap.bio ? " · " + snap.bio : ""}
+                  <b style={{ color: T.ink }}>{t("프로필 신고")}</b>, @{snap.username}{snap.nickname ? ", " + snap.nickname : ""}{snap.bio ? ", " + snap.bio : ""}
                 </div>
               ) : (
                 <div style={{ marginTop: 6, fontSize: 11, color: T.inkSoft }}>

@@ -154,7 +154,7 @@ function DevResourcePanel({ totalXp, setTotalXp, ocCoins, setOcCoins, card }) {
   return (
     <div style={card}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{t("개발자: 재화·티어·경험치 설정")}</div>
-      <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>{tx("지금 {0} · 누적 {1}", <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b>, fmtFull(totalXp))} XP · <CoinIcon size={16} /> {fmtFull(ocCoins)}
+      <div className="flex items-center gap-1 flex-wrap" style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 12 }}>{tx("지금 {0}, 누적 {1}", <b style={{ color: T.ink }}>{tierDisplayLabel(info)}</b>, fmtFull(totalXp))} XP, <CoinIcon size={16} /> {fmtFull(ocCoins)}
       </div>
       <div className="flex items-center gap-2" style={rowStyle}>
         <CoinIcon size={20} />
@@ -247,7 +247,7 @@ function DailyPuzzleDevPanel({ card }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 110, overflowY: "auto" }}>
         {(picks || []).map((p) => (
           <div key={p.date} className="flex items-center justify-between" style={{ fontSize: 11, color: T.inkSoft }}>
-            <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>{tx("퍼즐 #{0} · 인기 점수 {1}", p.puzzle_no, Number(p.score || 0).toFixed(1))}</span>
+            <span>{p.date}</span><span style={{ fontWeight: 700, color: T.ink }}>{tx("퍼즐 #{0}, 인기 점수 {1}", p.puzzle_no, Number(p.score || 0).toFixed(1))}</span>
           </div>
         ))}
         {picks && picks.length === 0 && <span style={{ fontSize: 11, color: T.inkSoft }}>{t("확정 내역 없음 (자정 전 자동 실행 대기, 또는 아래에서 바로 실행)")}</span>}
@@ -360,7 +360,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>
             {status === "listing" ? t("퍼즐 목록 로드 중…") : status === "done" ? t("완료") : status === "stopped" ? t("중단됨") : t("진행 중…")}
-            {total > 0 && " · " + doneCount + " / " + total + (curNo != null && running ? t(" (지금 #{0})", curNo) : "")}
+            {total > 0 && ", " + doneCount + " / " + total + (curNo != null && running ? t(" (지금 #{0})", curNo) : "")}
           </div>
           {total > 0 && (
             <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8" }}>
@@ -592,7 +592,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
       )}
       {dedup.status === "scanned" && dedup.groups.length > 0 && (
         <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
-          {dedup.groups.map((g) => t("#{0} 유지 ← {1}", g.keep, g.remove.map((no) => "#" + no).join(", "))).join(" · ")}
+          {dedup.groups.map((g) => t("#{0} 유지 ← {1}", g.keep, g.remove.map((no) => "#" + no).join(", "))).join(", ")}
         </div>
       )}
       {dedup.deleteFailed.length > 0 && (
@@ -1043,7 +1043,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             { k: "inquiry", label: t("문의하기"), onClick: () => openInquiryEmail(user) },
           ].map((l, i) => (
             <React.Fragment key={l.k}>
-              {i > 0 && <span aria-hidden="true" style={{ color: "#B8A98A", margin: "0 9px", fontSize: 13 }}>•</span>}
+              {i > 0 && <span aria-hidden="true" style={{ color: "#B8A98A", margin: "0 9px", fontSize: 13 }}>,</span>}
               {l.href ? <a href={l.href} className="press" style={{ color: T.inkSoft, fontSize: 13.5, fontWeight: 700, textDecoration: "none" }}>{l.label}</a>
                 : <button onClick={l.onClick} aria-expanded={l.on === undefined ? undefined : l.on} className="press" style={{ color: l.on ? T.brass : T.inkSoft, background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>{l.label}</button>}
             </React.Fragment>

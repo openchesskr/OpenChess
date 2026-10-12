@@ -116,9 +116,9 @@ export function formatCriterion(key, v) {
 }
 /* (v0.6.4) 판정은 기준마다 "사람이 보기에 큰 차이인가"로 직접 계산한다. 예전엔 차이를 마스터 900명의 표준편차로 나눴는데, 체크·기물 잡기 비율처럼
    마스터끼리도 거의 같은 값이면 표준편차가 아주 작아 9% 대 7% 같은 2%p 차이가 "많이 다름"이 되는 문제가 있었다(순위 계산에는 그대로 쓰되 판정에는 쓰지 않는다).
-   · share(선택·응수·캐슬링·교환·무승부 비율): 두 값의 %p 차이 — 7%p 이하 거의 같음, 15%p 이하 비슷함, 30%p 이하 다름, 그 이상 많이 다름
-   · intensity(체크·기물 잡기 빈도): 큰 값 ÷ 작은 값 — 1.3배 이하 거의 같음, 1.7배 이하 비슷함, 2.5배 이하 다름, 그 이상 많이 다름(둘 다 2% 미만이면 거의 같음)
-   · length(평균 대국 길이): 큰 값 ÷ 작은 값 — 1.15배 이하 거의 같음, 1.35배 이하 비슷함, 1.8배 이하 다름, 그 이상 많이 다름 */
+  , share(선택·응수·캐슬링·교환·무승부 비율): 두 값의 %p 차이 — 7%p 이하 거의 같음, 15%p 이하 비슷함, 30%p 이하 다름, 그 이상 많이 다름
+  , intensity(체크·기물 잡기 빈도): 큰 값 ÷ 작은 값 — 1.3배 이하 거의 같음, 1.7배 이하 비슷함, 2.5배 이하 다름, 그 이상 많이 다름(둘 다 2% 미만이면 거의 같음)
+  , length(평균 대국 길이): 큰 값 ÷ 작은 값 — 1.15배 이하 거의 같음, 1.35배 이하 비슷함, 1.8배 이하 다름, 그 이상 많이 다름 */
 export const CRITERION_KIND = { w_e4: "share", w_d4: "share", w_flank: "share", b_e5: "share", b_c5: "share", b_d5: "share", b_nf6: "share", castleQ: "share", queenTrade: "share", drawRate: "share", capRate: "intensity", checkRate: "intensity", length: "length" };
 export const LEVEL_RULES = { share: [0.07, 0.15, 0.30], intensity: [1.3, 1.7, 2.5], length: [1.15, 1.35, 1.8] };
 export const LEVELS = ["same", "close", "far", "veryFar"];

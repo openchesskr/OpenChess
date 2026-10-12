@@ -86,7 +86,7 @@ function WeaknessMap({ list, onPractice }) {
           <div style={{ ...sub, fontWeight: 800, marginBottom: 6 }}>{t("실수가 난 칸")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", width: 168, maxWidth: "100%", border: "2px solid #B8955A" }} aria-label={t("실수한 수가 도착한 칸의 분포")}>
             {rep.heat.map((row, r) => row.map((n, f) => (
-              <div key={r + "-" + f} title={n ? "abcdefgh"[f] + (8 - r) + " · " + n : undefined} style={{ aspectRatio: "1", background: (r + f) % 2 === 0 ? "#E8D2A6" : "#7C4F2E", position: "relative" }}>
+              <div key={r + "-" + f} title={n ? "abcdefgh"[f] + (8 - r) + ", " + n : undefined} style={{ aspectRatio: "1", background: (r + f) % 2 === 0 ? "#E8D2A6" : "#7C4F2E", position: "relative" }}>
                 {n > 0 && <div style={{ position: "absolute", inset: 0, background: "rgba(200,69,59," + (0.25 + 0.7 * n / rep.heatMax).toFixed(2) + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 800 }}>{n}</div>}
               </div>)))}
           </div>
@@ -151,7 +151,7 @@ function ReviewCards({ list, update, filter, setFilter }) {
           </div>
           <p style={{ ...sub, margin: "0 0 10px" }}>{t("내가 두었던 실수 포지션에서 엔진 최선수를 찾기. 맞히면 복습 간격이 늘어나고(1·3·7·14·30일), 틀리면 곧 다시 나옴")}</p>
           <button className="press" onClick={start} disabled={!dueN} style={{ ...btn(true), width: "100%", opacity: dueN ? 1 : .5, cursor: dueN ? "pointer" : "default" }}>{dueN ? t("{0}장 복습 시작", Math.min(dueN, 10)) : t("오늘 복습할 카드를 모두 마침")}</button>
-          <p style={{ ...sub, margin: "8px 0 0", textAlign: "center" }}>{t("전체 {0}장 · 익힌 카드 {1}장", stats.total, stats.mastered)}</p>
+          <p style={{ ...sub, margin: "8px 0 0", textAlign: "center" }}>{t("전체 {0}장, 익힌 카드 {1}장", stats.total, stats.mastered)}</p>
         </div>
       ) : !cur ? (
         <div style={{ textAlign: "center", padding: "10px 0" }}>
@@ -171,11 +171,11 @@ function ReviewCards({ list, update, filter, setFilter }) {
             <ChatMoveBoard Board={Board} root={root} sans={[]} size={w} flip={cur.color === "b"} interactive={!res} halo={halo} onMove={(san) => grade(isCardAnswer(cur, san), san)} />
           </div>
           {!res ? (
-            <div style={{ display: "flex", justifyContent: "center" }}><button className="press" onClick={() => grade(false, null)} style={btn(false)}>{t("모르겠음 · 정답 보기")}</button></div>
+            <div style={{ display: "flex", justifyContent: "center" }}><button className="press" onClick={() => grade(false, null)} style={btn(false)}>{t("모르겠음, 정답 보기")}</button></div>
           ) : (
             <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid " + (res.ok ? "rgba(63,122,58,.6)" : "rgba(200,69,59,.6)"), background: res.ok ? "rgba(63,122,58,.08)" : "rgba(200,69,59,.07)" }}>
               <p style={{ fontSize: 14, fontWeight: 800, margin: "0 0 3px", color: res.ok ? T.best : T.blunder, display: "flex", alignItems: "center", gap: 6 }}>{res.ok ? <Check size={16} /> : <Target size={16} />}{res.ok ? t("정답! 다음 복습은 {0}일 뒤", SRS_DAYS[(list.find((m) => m.id === cur.id) || cur).box] || 1) : t("아쉬워요. 정답은 {0}", cur.best)}</p>
-              <p style={{ ...sub, margin: "0 0 9px" }}>{t("실제 대국에서는 {0}을(를) 두었음", cur.san)} · {themeAdvice(cur.theme)}</p>
+              <p style={{ ...sub, margin: "0 0 9px" }}>{t("실제 대국에서는 {0}을(를) 두었음", cur.san)}, {themeAdvice(cur.theme)}</p>
               <button className="press" onClick={next} style={{ ...btn(true), width: "100%" }}>{t("다음 카드")}</button>
             </div>
           )}
@@ -238,7 +238,7 @@ function MasterStyle({ games }) {
               <span style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
             </div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</div>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + " · " : ""}{t("{0}판 분석", x.games)}</div>
+            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + ", " : ""}{t("{0}판 분석", x.games)}</div>
           </button>
         ))}
       </div>
@@ -262,7 +262,7 @@ function MasterStyle({ games }) {
         <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("와(과) 기준별 비교")}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", margin: "6px 0 8px" }}>
-        <span style={sub}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
+        <span style={sub}>{picked.elo ? peakText(picked.elo) + ", " : ""}{t("{0}판 분석", picked.games)}, {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
         <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
       </div>
       {/* 표 전체가 한 격자다 — 숫자 3열은 내용 폭(auto)이라 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고, 열은 모든 줄에서 정렬된다.

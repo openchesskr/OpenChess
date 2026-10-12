@@ -1783,7 +1783,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         {bulkGames.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>
             {tx("{0}개 대국 인식, {1}", bulkGames.length, <b style={{ color: T.best }}>{tx("{0}개 가져오기 가능", bulkOk.length)}</b>)}
-            {bulkSkipped > 0 && <span style={{ color: T.blunder }}> · {tx("{0}개는 대국자·수순·결과 확인 불가로 제외", bulkSkipped)}</span>}
+            {bulkSkipped > 0 && <span style={{ color: T.blunder }}>, {tx("{0}개는 대국자·수순·결과 확인 불가로 제외", bulkSkipped)}</span>}
           </div>
         )}
         {bulkErr && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{bulkErr}</p>}
@@ -2239,7 +2239,7 @@ function MasterPgnBox({ sans, focusPly, onPick }) {
 function ResultBar({ w, d, b, h = 10, labeled }) {
   const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
   const seg = (pct, bg, fg, txt) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
-  return <div role="img" aria-label={t("백") + " " + Math.round(pw) + "% · " + t("무승부") + " " + Math.round(pd) + "% · " + t("흑") + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</div>;
+  return <div role="img" aria-label={t("백") + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + t("흑") + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</div>;
 }
 function FocusPanel(props) {
   if (!props.fa.active) return null;
@@ -2368,7 +2368,11 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
     // 연도별 추이 — 10년 단위, 3판 이상인 구간만. 승점 획득 확률 = (이 수를 둔 쪽의 승 + 무/2) / 판수 — 둔 수가 백의 수(ply 짝수)면 백 기준, 흑의 수면 흑 기준.
     const dec = new Map();
     for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; const r = masterResultOf(g); x.s += r === "d" ? 0.5 : r === (ply % 2 === 0 ? "w" : "b") ? 1 : 0; dec.set(k, x); }
-    const trend = [...dec.entries()].filter(([, x]) => x.n >= 3).sort((a, b2) => a[0] - b2[0]).slice(-8).map(([k, x]) => ({ k, n: x.n, pct: Math.round((100 * x.s) / x.n) }));
+    // 표본이 모자란(3판 미만)·없는 연대도 칸은 남긴다(pct: null) — 막대만 비우고 연도 표기는 그대로 둬 그래프 폭과 일체감을 유지한다.
+    const ok = [...dec.entries()].filter(([, x]) => x.n >= 3).map(([k]) => k).sort((a, b2) => a - b2);
+    const trend = [];
+    if (ok.length) for (let k = ok[0]; k <= ok[ok.length - 1]; k += 10) { const x = dec.get(k); trend.push(x && x.n >= 3 ? { k, n: x.n, pct: Math.round((100 * x.s) / x.n) } : { k, n: x ? x.n : 0, pct: null }); }
+    trend.splice(0, Math.max(0, trend.length - 8));
     return { w, d, b, n, full, trend };
   }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
   const masterSuggestions = useMemo(() => {
@@ -2474,7 +2478,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
       {/* 응징 시퀀스(퍼즐) */}
       {punish && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
-          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스 · 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
+          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스, 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
           <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.55, marginBottom: 8 }}>{punish.why}</p>
           <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
         </div>
@@ -2544,14 +2548,14 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
                   {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>{t("이 수순의 대국 통계 없음")}</p>
                     : (
                   <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                    <div><b>{tx("{0} 게임", fmtFull(stats.total))}</b> · <span style={{ color: T.best }}>{tx("{0}승", stats.w)}</span> {tx("{0}무 {1} · 승률 {2}", stats.d, <span style={{ color: T.blunder }}>{tx("{0}패", stats.l)}</span>, <b>{stats.winRate}%</b>)}</div>
+                    <div><b>{tx("{0} 게임", fmtFull(stats.total))}</b>, <span style={{ color: T.best }}>{tx("{0}승", stats.w)}</span> {tx("{0}무 {1}, 승률 {2}", stats.d, <span style={{ color: T.blunder }}>{tx("{0}패", stats.l)}</span>, <b>{stats.winRate}%</b>)}</div>
                     {stats.top.length > 0 && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontWeight: 800, color: T.inkSoft, fontSize: 11.5, marginBottom: 2 }}>{t("자주 둔 다음 수")}</div>
                         {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
                             onJump로 그 수의 집중분석 모드로 바로 이동할 수 있게 한다. */}
                         {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({tx("{0} 게임) • 총 {1}승 {2}무 {3}패 • 승률 {4}", t.n, t.w, t.d, t.l, t.wr)}%</button>
+                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({tx("{0} 게임), 총 {1}승 {2}무 {3}패, 승률 {4}", t.n, t.w, t.d, t.l, t.wr)}%</button>
                         ))}
                       </div>
                     )}
@@ -2655,7 +2659,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
         )}
         {!loadingMasterGames && masterSummary.n > 0 && (() => {
           const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
-          const trend = masterSummary.trend, pcts = trend.map((x) => x.pct);
+          const trend = masterSummary.trend, pcts = trend.filter((x) => x.pct != null).map((x) => x.pct);
           // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
           const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
           return (
@@ -2677,15 +2681,17 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
                 })}
               </div>
             )}
-            {trend.length >= 2 && (
+            {trend.filter((x) => x.pct != null).length >= 2 && (
               <div style={{ marginTop: 9 }}>
                 <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span><span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, fontFamily: SITE_FONT }}>{lo}–{hi}%</span></div>
                 <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", gap: 4, height: AREA + 26 })}>
                   <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
                   {trend.map((x) => (
                     <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
-                      <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
-                      <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                      {x.pct != null && <>
+                        <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
+                        <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                      </>}
                       <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12 }}>{x.k}s</span>
                     </div>
                   ))}
@@ -2751,7 +2757,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
                   </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.date || g.year}{g.event ? ", " : ""}{g.event ? (() => { const tg = tournamentOfEvent(g.event, g.year); return tg && onOpenTournament
                       ? <a role="link" tabIndex={0} title={t("도감 마스터 트리에서 이 대회 보기")} onClick={(e) => { e.stopPropagation(); onOpenTournament(tg); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenTournament(tg); } }} style={{ color: "#2E9BD6", textDecoration: "underline", cursor: "pointer" }}>{g.event}</a>
-                      : g.event; })() : null}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
+                      : g.event; })() : null}{openingGameId === g.id ? t(", 기보를 불러오는 중…") : reviewingGameId === g.id ? t(", 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                   {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
@@ -3447,7 +3453,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
   // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
   const node = fenRoot ? null : snapNode(sans);
   const openingName = node && node.opening ? node.opening.name : null;
-  const stageTitle = fenRoot ? t("{0} {1} 차례", (moveNumber(ply, startColor)), color === "w" ? t("백") : t("흑")) : ply === 0 ? t("1수 · 백의 첫 수") : (openingName || t("{0} 차례", (moveNumber(ply))));
+  const stageTitle = fenRoot ? t("{0} {1} 차례", (moveNumber(ply, startColor)), color === "w" ? t("백") : t("흑")) : ply === 0 ? t("1수, 백의 첫 수") : (openingName || t("{0} 차례", (moveNumber(ply))));
 
   // (UI5) 헤더 블록에 현재 수(직전에 두어진 수) 정보 표기
   const lastSan = sans.length ? sans[sans.length - 1] : null;
@@ -3690,7 +3696,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                         {rec ? (
                           <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
-                            {reason ? " · " + reason : null}
+                            {reason ? ", " + reason : null}
                           </ClampText>
                         ) : (
                           <ClampText resetKey={key}>{lastMascot}</ClampText>

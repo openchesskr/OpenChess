@@ -847,7 +847,7 @@ function QuestClearGameRow({ g, onOpenGameAnalyze }) {
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 11, color: T.ink }}>
           <b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-          {g.timeClass && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{(TIME_CLASS_LABEL[g.timeClass] || g.timeClass) + (g.endTime ? " · " + fmtD(g.endTime) : "")}</span>}
+          {g.timeClass && <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>{(TIME_CLASS_LABEL[g.timeClass] || g.timeClass) + (g.endTime ? ", " + fmtD(g.endTime) : "")}</span>}
         </div>
         {oppSide && oppSide.username && <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>vs {oppSide.username}{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}> ({oppSide.rating})</span>}</div>}
       </div>
@@ -2015,7 +2015,7 @@ export function GlobalPvpInviteBanner({ myUid, onAccepted }) {
           {invite.fromPub.photo ? <img src={invite.fromPub.photo} alt="" style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
             : <span style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>{(invite.fromPub.nickname || invite.fromUsername || "?")[0].toUpperCase()}</span>}
           <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>
-            @{tx("{0}님이 {1} 신청{2}", invite.fromUsername || t("누군가"), specialGame ? t("실시간 대결을") : t("대국을"), <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? " · " + tcCatLabel(tc.cat) : "")}</span>)}
+            @{tx("{0}님이 {1} 신청{2}", invite.fromUsername || t("누군가"), specialGame ? t("실시간 대결을") : t("대국을"), <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "rgba(244,238,226,.6)", marginTop: 2 }}>{specialGame ? specialGame.name : tc.label + (tc.cat ? ", " + tcCatLabel(tc.cat) : "")}</span>)}
           </div>
         </div>
         <div className="flex gap-2">
