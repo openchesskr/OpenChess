@@ -363,7 +363,8 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 한 번에 계산된다. 이렇게 박스가 항상 뷰포트 안에 통째로 들어오면, 나침반 중심 칩을 "박스 자신의
   // 중심"에 맞추는 것만으로도 항상 뷰포트 정중앙에 오게 된다(visibleBoxCenter류의 별도 보정 불필요).
   // (v0.6.3) 높이 계산은 src/lib/dexPanel.js(오프닝·마스터 모식도 공용).
-  const panelH = useFitPanelHeight(boxRef, vertical);
+  const UNLOCK_BAR_H = rightSlot ? 40 : 0;   // (v0.6.6) 박스 아래 도감 해금률 줄 높이(여백 포함)
+  const panelH = useFitPanelHeight(boxRef, vertical, 640, UNLOCK_BAR_H);
   // (기능) 검색·클릭으로 오프닝을 선택하면 화면 중앙으로 이동시키고 살짝 확대해 강조하는데, 이후
   // 사용자가 직접 드래그·휠로 그 노드를 중앙에서 멀리 치워버리면(즉 더 이상 "선택 직후" 뷰가 아니게
   // 되면) 강조 확대만 100%로 되돌리고 색 강조는 그대로 유지한다. 팬/줌 핸들러(특히 한 번만 등록되는
@@ -1247,9 +1248,6 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
       {/* (사용자 요청) 개발자 모드일 때만, 모식도 영역 하단에 저장·취소 버튼 — 대기 중인 변경(추가/
           삭제)이 하나라도 있을 때만 나타난다. 저장을 눌러야 비로소 CONTENT에 반영되고 트리가
           재생성된다(그 전까지는 이 draft만 쌓일 뿐 실시간으로 다시 그려지지 않는다). */}
-      {rightSlot && !fsv.fs && (
-        <div style={{ position: "absolute", left: 10, bottom: 10, zIndex: 55, pointerEvents: "none", padding: "6px 12px", borderRadius: 10, background: "rgba(36,21,9,.86)", border: "1px solid #5A4630", boxShadow: "0 3px 10px rgba(0,0,0,.3)" }}>{rightSlot}</div>
-      )}
       {canAdd && (draftAddCount > 0 || draftRemoveCount > 0) && (
         <div className="no-pan" onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 62, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.5)" }}>
@@ -1262,6 +1260,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         </div>
       )}
     </div>
+    {rightSlot && <div style={{ marginTop: 8, height: UNLOCK_BAR_H - 8, display: "flex", alignItems: "center" }}>{rightSlot}</div>}
     </div>
   );
 }
@@ -1376,11 +1375,11 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
       <OpeningSchematic tabsSlot={inlineTabs ? tabPills(0) : undefined} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
-          <div style={{ textAlign: "left" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
               {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.ivory, marginTop: 1 }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ivory }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
             </div>
           </div>
         } />
