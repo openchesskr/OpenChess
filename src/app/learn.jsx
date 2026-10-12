@@ -37,7 +37,7 @@ async function fetchMasterTopGames(sans, count = 15) {
   // (v0.6.6) moves=12 — 같은 요청으로 이 포지션의 마스터 DB 전체 승·무·패와 많이 둔 다음 수 통계도 받는다(집중 분석 마스터 통계 요약).
   const url = LICHESS_API + "?master=1&play=" + uci + "&moves=12&topGames=" + count;
   const j = await lichessFetchJson(url);
-  const games = (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year }));
+  const games = (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year, date: /^\d{4}-\d\d$/.test(g.month || "") ? g.month.replace("-", ".") : null }));   // Lichess는 월(month)까지 준다
   const stats = { white: j.white || 0, draws: j.draws || 0, black: j.black || 0, moves: (j.moves || []).map((m) => ({ san: m.san, white: m.white || 0, draws: m.draws || 0, black: m.black || 0, avg: m.averageRating || null })) };
   return { games, stats };
 }
@@ -833,6 +833,15 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
 const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], miss: ["kokoa", "surprise"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
 function mascotForKind(kind) { return Q_MASCOT[kind] || ["milku", "great"]; }
 /* ============================================================ 병합 훅 (Lichess 우선 + 사용자 착수 블록 + 백관점 평가) ============================================================ */
+// (v0.6.6, 사용자 요청: 분석 탭에서 수를 둘 때 렉 완화) 엔진이 depth마다 보내는 평가·라인 갱신을 최대 ~8회/초로 묶는다 — 갱신 하나마다 분석 탭 전체(3,500줄 컴포넌트)가
+// 다시 그려져, 수를 둔 직후 엔진이 depth를 쏟아낼 때 입력이 끊겼다. 마지막 값은 반드시 반영(trailing)하고, cancel()로 대기 중인 갱신을 버릴 수 있다(확정 결과가 먼저 들어간 뒤 옛 값이 덮지 않게).
+function throttled(fn, ms) {
+  let last = 0, timer = null, pend, has = false;
+  const run = () => { timer = null; last = performance.now(); if (has) { has = false; const a = pend; pend = undefined; fn(a); } };
+  const f = (a) => { pend = a; has = true; const w = ms - (performance.now() - last); if (w <= 0) run(); else if (!timer) timer = setTimeout(run, w); };
+  f.cancel = () => { if (timer) clearTimeout(timer); timer = null; has = false; pend = undefined; };
+  return f;
+}
 function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortBy) {
   const node = snapNode(sans);
   const key = sans.join(" ");
@@ -1116,6 +1125,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         if (Object.keys(evBy).length) setMoves((prev) => prev.map((m) => { const hit = evBy[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
       };
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); applyDepthEvals(raw); };
+      if (!cache.thr) cache.thr = [];
+      const mkThr = (fn) => { const f = throttled(fn, 120); cache.thr.push(f); return f; };
+      const cancelThr = () => cache.thr.forEach((f) => f.cancel());
+      const thrP = mkThr(onEvalProgress), thrS = mkThr(streamLines);
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
       // 목표 depth에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
@@ -1126,10 +1139,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth보다 훨씬 큰 값(MAX_SEARCH_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
       // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
       // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, onEvalProgress, streamLines, "learn-lines");
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, thrP, thrS, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
+      cancelThr();   // 확정 결과가 먼저 들어간 뒤 대기 중이던 옛 스트리밍 값이 덮어쓰지 않게
       const p0 = pvsAll[0];
       setPosEval(p0 && (p0.mate != null || p0.cp != null) ? mkPosEval(p0) : null);
       // (v0.2.1 버그) 스트리밍뿐 아니라 최종 확정 결과도 dedupe해, 같은 첫 수가 겹치는 라인이 남지 않게 한다.
@@ -1149,8 +1163,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
       if (cache.extraKey !== key) {
         cache.extraKey = key;
-        engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+        engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, thrP, thrS, "learn-lines").then((deepPvs) => {
           if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
+          cancelThr();
           setPosEval(mkPosEval(deepPvs[0]));
           const deepLines = toLines3(deepPvs);
           setEngineLines(deepLines);
@@ -1165,8 +1180,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           // extraKey와 별개인 thirdKey로 한 포지션당 정확히 한 번만 시작되게 가드한다.
           if (cache.thirdKey !== key) {
             cache.thirdKey = key;
-            engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 20000, onEvalProgress, streamLines, "learn-lines").then((deeperPvs) => {
+            engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 20000, thrP, thrS, "learn-lines").then((deeperPvs) => {
               if (posCacheRef.current.key !== key || !deeperPvs || !deeperPvs.length) return;
+              cancelThr();
               setPosEval(mkPosEval(deeperPvs[0]));
               const deeperLines = toLines3(deeperPvs);
               setEngineLines(deeperLines);
@@ -2138,6 +2154,9 @@ function normalizePlayerKey(name) {
 // 얇은 껍데기에 두고 훅을 쓰는 본문은 FocusPanelBody로 분리한다.
 // (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
+// 정렬 키 — 날짜(YYYY.MM.DD 또는 YYYY.MM)가 있으면 연·월·일, 없으면 연도만(월·일 0).
+const masterDateKey = (g) => { const m = /^(\d{4})\.(\d\d)(?:\.(\d\d))?$/.exec(g.date || ""); return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+(m[3] || 0)) : (g.year || 0) * 10000; };
+const masterMinRating = (g) => Math.min((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
 // (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 직접 그린 왕관 아이콘.
 const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#CDB98E" } };
@@ -2266,8 +2285,10 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     try { const gs = await fetchAnyMasterGamePgn(id); setContMap((m) => ({ ...m, [id]: gs && gs.length ? gs : "error" })); } catch { setContMap((m) => ({ ...m, [id]: "error" })); }
   };
   const sortedMasterGames = useMemo(() => {
-    if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
-    if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
+    // (v0.6.6, 사용자 요청) 최신순 — 같은 해 안에서도 날짜(월·일)까지 보고(대회 일정), 날짜가 같으면 레이팅이 높은 대국이 먼저.
+    if (masterSort === "recent") return [...masterGames].sort((a, b) => masterDateKey(b) - masterDateKey(a) || masterMaxRating(b) - masterMaxRating(a) || masterMinRating(b) - masterMinRating(a));
+    // 레이팅순 — 두 선수 중 높은 쪽 레이팅이 높은 순, 같으면 상대(낮은 쪽) 레이팅이 높은 순 — 가장 수준 높은 대국이 맨 위.
+    if (masterSort === "rating") return [...masterGames].sort((a, b) => masterMaxRating(b) - masterMaxRating(a) || masterMinRating(b) - masterMinRating(a) || masterDateKey(b) - masterDateKey(a));
     return masterGames;
   }, [masterGames, masterSort]);
   // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름을 모으되,
@@ -2684,7 +2705,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                     </div>
                     <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.date || g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                   {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
