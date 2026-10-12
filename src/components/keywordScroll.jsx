@@ -126,3 +126,27 @@ export function KeywordScroll({ kws, chipStyle }) {
     </div>
   );
 }
+
+// (v0.6.6, 사용자 요청) 한 줄 고정 높이의 오프닝 이름 — 칸보다 길면 KeywordScroll과 같은 CSS 흐름(kwMarquee)으로 자동으로 흘러가며 전체 명칭을 보여준다. 짧으면 그대로 멈춰 있다.
+export function MarqueeText({ children, height = 18, style }) {
+  const ref = useRef(null), oneRef = useRef(null);
+  const [over, setOver] = useState(false), [period, setPeriod] = useState(0);
+  const sig = typeof children === "string" ? children : "";
+  useLayoutEffect(() => {
+    const el = ref.current, one = oneRef.current; if (!el || !one) return undefined;
+    const check = () => { const w = one.offsetWidth; setOver(w > el.clientWidth + 1); setPeriod(w + MARQUEE_GAP); };
+    check();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(check); ro.observe(el);
+    return () => ro.disconnect();
+  }, [sig]);
+  return (
+    <div ref={ref} style={{ overflow: "hidden", whiteSpace: "nowrap", height, lineHeight: height + "px", ...style }}>
+      <div style={{ display: "flex", gap: MARQUEE_GAP, width: "max-content", willChange: over ? "transform" : undefined, ...(over && period > MARQUEE_GAP ? { "--kw-period": period + "px", animation: "kwMarquee " + (period / 24) + "s linear infinite" } : null) }}>
+        <span ref={oneRef}>{children}</span>
+        {over && <span aria-hidden="true">{children}</span>}
+      </div>
+    </div>
+  );
+}
+const MARQUEE_GAP = 28;
