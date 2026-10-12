@@ -1,4 +1,4 @@
-// (v0.6.5) PGN PGN 파싱 공용 도구 — 대회 가공(build-pgn-tournaments)과 마스터 가공(build-master-profiles)이 함께 쓴다.
+// (v0.6.5) PGN 파싱 공용 도구 — 대회 가공(build-pgn-tournaments)과 마스터 가공(build-master-profiles)이 함께 쓴다.
 //  · 줄 끝 CRLF·BOM·주석 {…}·변형 (…)·NAG $n·수 번호·결과 기호를 정리해 "e4 e5 Nf3 …" 형태의 SAN 문자열로 만든다.
 //  · 선수 이름은 "Aronian,L"과 "Aronian, Levon"처럼 표기가 섞여 있어 normalizeNames가 같은 사람을 하나의 대표 표기로 합친다.
 export const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, "");

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/** (v0.6.5) pgn.com의 PGN 파일을 사이트가 직접 제공하는 다운로드 링크를 따라 전부 받아 하나의 압축 파일로 묶는 도구.
+/** (v0.6.5) PGN 모음 사이트가 직접 제공하는 다운로드 링크를 따라 PGN 파일을 전부 받아 하나의 압축 파일로 묶는 도구. 시작 주소는 코드에 두지 않고 --start 또는 환경변수 PGN_ARCHIVE_URL로 넘긴다.
  *  앱 빌드(prebuild)에는 들어가지 않는 개발 도구다 — 받은 원본은 저장소에 커밋하지 않는다(용량·Vercel 배포 용량 규칙). 대회 색인 등 가공한 결과만 따로 커밋한다.
  *
  *  사용법 (Node 18 이상, 별도 설치 없음):
- *    node scripts/fetch-pgn-archive.mjs --dry-run            # 받을 파일 목록과 총 용량만 확인(내려받지 않음)
- *    node scripts/fetch-pgn-archive.mjs                       # 전부 받아 ./pgn-download/ 에 저장하고 pgn-all.zip 으로 묶음
- *    node scripts/fetch-pgn-archive.mjs --only events         # 주소에 "events"가 든 파일만(쉼표로 여러 개: --only events,players)
+ *    node scripts/fetch-pgn-archive.mjs --start <주소> --dry-run            # 받을 파일 목록과 총 용량만 확인(내려받지 않음)
+ *    node scripts/fetch-pgn-archive.mjs --start <주소>                       # 전부 받아 ./pgn-download/ 에 저장하고 pgn-all.zip 으로 묶음
+ *    node scripts/fetch-pgn-archive.mjs --start <주소> --only events         # 주소에 "events"가 든 파일만(쉼표로 여러 개: --only events,players)
  *  옵션: --out <폴더> · --start <시작 주소> · --depth <따라갈 페이지 단계, 기본 2> · --delay <ms, 기본 1000> · --concurrency <1~3, 기본 1> · --no-archive · --contact <메일·주소>
  *
  *  예의·안전 규칙(대량 요청이라 반드시 지킨다)
@@ -24,7 +24,8 @@ import { spawnSync } from "node:child_process";
 
 const argv = process.argv.slice(2);
 const opt = (name, def) => { const i = argv.indexOf("--" + name); return i >= 0 ? (argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : true) : def; };
-const START = String(opt("start", "https://example.invalid/pgn/files.html"));
+const START = String(opt("start", process.env.PGN_ARCHIVE_URL || ""));
+if (!/^https?:\/\//.test(START)) { console.error("시작 주소가 필요하다: --start <파일 목록 페이지 주소> (또는 환경변수 PGN_ARCHIVE_URL)"); process.exit(1); }
 const OUT = resolve(String(opt("out", "pgn-download")));
 const DELAY = Math.max(300, Number(opt("delay", 1000)));
 const CONC = Math.min(3, Math.max(1, Number(opt("concurrency", 1))));

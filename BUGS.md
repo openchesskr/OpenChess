@@ -102,7 +102,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 ### BUG-074 · [P3] 대회 PGN 가공·마스터 화면 개발 중 결함 6건(배포 전 수정)
 - **상태**: 수정 완료(배포 전에 발견·수정 — 사용자에게는 노출되지 않음)
-- **발견일**: 2026-10-09 (PGN 대회·마스터 데이터 가공 작업 중)
+- **발견일**: 2026-10-09 (대회·마스터 PGN 데이터 가공 작업 중)
 - **위치**: `scripts/build-pgn-tournaments.mjs`, `scripts/lib/pgnParse.mjs`, `src/lib/tournamentView.js`, `src/components/masterProfile.jsx`
 - **내용과 수정**
   1. 녹아웃 판정이 "한 라운드에 한 선수가 한 짝에만"을 엄격히 요구해 이름 표기 차이가 1건만 있어도 스위스로 판정(FIDE 2004) → 5%까지 허용.

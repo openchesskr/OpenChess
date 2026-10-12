@@ -2125,7 +2125,7 @@ export default {
   "자주 나온 대회": "Torneos frecuentes",
   "대회 출전 기록": "Participación en torneos",
   "강한 상대를 이긴 대표 대국": "Victorias destacadas ante rivales fuertes",
-  "래피드·블리츠·온라인 대국이 섞여 있음. 자료: PGN": "Incluye partidas Rapid, Blitz y en línea. Fuente: PGN",
+  "래피드·블리츠·온라인 대국이 섞여 있음.": "Incluye partidas Rapid, Blitz y en línea.",
   // (v0.6.5) 리뷰 코치(MEC) 문구
   "{0} {1} 손실 위험": "{1} en {0} en riesgo de perderse",
   "{0} {1} 방치 시 손실": "{1} en {0} se pierde si se deja",

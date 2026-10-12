@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.5) PGN 선수별 대국 모음(players/*.zip) → 마스터 상세 프로필(src/data/masterProfiles.json).
+/** (v0.6.5) 선수별 PGN 대국 모음(players/*.zip) → 마스터 상세 프로필(src/data/masterProfiles.json).
  *  입력: --src <players 폴더>  (scripts/fetch-pgn-archive.mjs --only players/ 로 받은 zip. 시스템 unzip 필요. 저장소에는 올리지 않는다)
  *  출력: src/data/masterProfiles.json  { p: { "성|이름첫글자": 프로필 } } — 도감 마스터 상세 카드가 처음 열 때 지연 로드
  *  프로필 항목(모두 그 선수의 시점):

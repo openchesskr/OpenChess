@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.5) PGN 대회 PGN(events/*.pgn) → 도감 "마스터" 대회 데이터 생성.
+/** (v0.6.5) 대회 PGN(events/*.pgn) → 도감 "마스터" 대회 데이터 생성.
  *  입력: --src <events 폴더>  (scripts/fetch-pgn-archive.mjs --only events/ 로 받은 파일. 저장소에는 올리지 않는다)
  *  출력(모두 저장소에 커밋하는 가공 결과):
  *   · src/data/tournaments/<대회id>.json   대회 하나의 모든 회차(선수·라운드·결과·압축한 수순) — 대회를 열 때만 지연 로드
@@ -169,7 +169,7 @@ for (const [id, list] of bySeries) {
   writeFileSync(join(OUT, id + ".json"), json); bytes += json.length; totalGames += list.reduce((a, e) => a + e.rows.length, 0);
   seriesList.push(id);
 }
-writeFileSync(join(ROOT, "src/data/tournamentsAuto.js"), "// (v0.6.5) scripts/build-pgn-tournaments.mjs가 만든 파일 — 직접 고치지 않는다. 새로 생긴 대회 시리즈(PGN 대회 파일 기준)의 메타.\nexport const AUTO_TOURNAMENTS = " + JSON.stringify(auto) + ";\n");
+writeFileSync(join(ROOT, "src/data/tournamentsAuto.js"), "// (v0.6.5) scripts/build-pgn-tournaments.mjs가 만든 파일 — 직접 고치지 않는다. 새로 생긴 대회 시리즈(대회 PGN 파일 기준)의 메타.\nexport const AUTO_TOURNAMENTS = " + JSON.stringify(auto) + ";\n");
 
 // ── 6) 색인(tournamentIndex.json 위에 덮어쓰기) + 우승자 대조 ──
 const idxPath = join(ROOT, "src/data/tournamentIndex.json");

@@ -1,4 +1,4 @@
-// (v0.6.5) 도감 "마스터" 상세 카드의 선수 상세 — PGN 선수별 대국 모음에서 가공한 통계(src/data/masterProfiles.json, scripts/build-master-profiles.mjs).
+// (v0.6.5) 도감 "마스터" 상세 카드의 선수 상세 — 선수별 PGN 대국 모음에서 가공한 통계(src/data/masterProfiles.json, scripts/build-master-profiles.mjs).
 //  전적·백흑 성적·최고 엘로와 엘로 추이·즐겨 두는 첫 수와 응수·자주 쓰는 오프닝·자주 만난 상대·자주 나온 대회·도감 대회 출전 기록·강한 상대를 이긴 대표 대국.
 //  카드를 열 때 지연 로드한다. 프로필이 없는 선수(250명 밖)는 아무것도 그리지 않는다.
 import React, { useEffect, useMemo, useState } from "react";
@@ -95,7 +95,7 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
           );
         })}
       </>}
-      {p && <div style={{ ...small, marginTop: 10 }}>{t("래피드·블리츠·온라인 대국이 섞여 있음. 자료: PGN")}</div>}
+      {p && <div style={{ ...small, marginTop: 10 }}>{t("래피드·블리츠·온라인 대국이 섞여 있음.")}</div>}
     </div>
   );
 }

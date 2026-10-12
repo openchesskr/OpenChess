@@ -2125,7 +2125,7 @@ export default {
   "자주 나온 대회": "Frequent events",
   "대회 출전 기록": "Event appearances",
   "강한 상대를 이긴 대표 대국": "Notable wins against strong opponents",
-  "래피드·블리츠·온라인 대국이 섞여 있음. 자료: PGN": "Includes Rapid, Blitz and online games. Source: PGN",
+  "래피드·블리츠·온라인 대국이 섞여 있음.": "Includes Rapid, Blitz and online games.",
   // (v0.6.5) 리뷰 코치(MEC) 문구
   "{0} {1} 손실 위험": "{0} {1} at risk of loss",
   "{0} {1} 방치 시 손실": "{0} {1} is lost if left alone",
