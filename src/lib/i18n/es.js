@@ -2302,6 +2302,7 @@ export default {
   "스탠다드 #{0}": "Clásico #{0}",
   "래피드 #{0}": "Rápidas #{0}",
   "블리츠 #{0}": "Blitz #{0}",
+  "주요 그랜드마스터": "Grandes maestros destacados",
   "챔피언": "Campeón",
   "챔피언 도전자": "Aspirante al título",
   "일치하는 마스터·대회 없음": "Sin maestros ni torneos coincidentes",
