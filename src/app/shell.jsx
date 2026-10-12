@@ -127,6 +127,11 @@ export function saveEnginePref(v) { try { window.localStorage.setItem(ENGINE_PRE
 export function useEngine(enginePref) {
   const ref = useRef(null);
   const [status, setStatus] = useState("loading");
+  // (v0.6.6, 사용자 요청) 엔진 안전장치 — 가끔 새로고침하기 전까지 엔진이 아예 작동하지 않던 문제를 막는다. 아래 5초 간격 점검이 부팅 실패("off")·부팅 무한 대기·
+  // 응답 없음(isready에 readyok가 안 옴)·요청이 쌓였는데 20초 넘게 아무 메시지도 없음을 발견하면 워커를 새로 띄운다(bootNonce를 올려 부팅 effect를 다시 돌림).
+  const [bootNonce, setBootNonce] = useState(0);
+  const statusRef = useRef("loading"); statusRef.current = status;
+  const loadingSinceRef = useRef(Date.now()), lastMsgRef = useRef(Date.now()), pingAtRef = useRef(0), lastRebootRef = useRef(0), rebootCountRef = useRef(0);
   const queue = useRef([]);
   const running = useRef(false);
   const offRef = useRef(false);
@@ -205,8 +210,10 @@ export function useEngine(enginePref) {
     // 이때 이전 워커를 가리키던 참조·상태를 반드시 초기화해야, 막 종료된 워커에 메시지를 보내
     // 응답이 영영 오지 않는 채로 남는 사고를 막는다.
     ref.current = null; offRef.current = false; running.current = false; setStatus("loading");
+    loadingSinceRef.current = Date.now(); lastMsgRef.current = Date.now(); pingAtRef.current = 0;
     const bootList = engineBootList(enginePref, mainEngineThreads());
     function handleLine(line) {
+      lastMsgRef.current = Date.now(); if (line.startsWith("readyok")) { pingAtRef.current = 0; rebootCountRef.current = 0; }   // 안전장치: 워커가 살아 있음
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && cb.multi) {
@@ -277,7 +284,24 @@ export function useEngine(enginePref) {
       while (queue.current.length) { const j = queue.current.shift(); settle(j, j.multi ? [] : null); }
       running.current = false; swallowBest.current = 0;
     };
-  }, [pump, enginePref]);
+  }, [pump, enginePref, bootNonce]);
+  useEffect(() => {
+    const reboot = (why) => {
+      const now = Date.now(); if (now - lastRebootRef.current < 10000 || rebootCountRef.current >= 6) return;   // 정말 못 켜는 환경이면 6번까지만 다시 시도
+      lastRebootRef.current = now; rebootCountRef.current++; console.warn("[engine] watchdog restart:", why);
+      setBootNonce((n) => n + 1);
+    };
+    const iv = setInterval(() => {
+      const st = statusRef.current, now = Date.now();
+      if (st === "off") { reboot("off"); return; }
+      if (st === "loading") { if (now - loadingSinceRef.current > 15000) reboot("boot-stuck"); return; }
+      if (!ref.current) { reboot("no-worker"); return; }
+      if (pingAtRef.current && now - pingAtRef.current > 6000) { pingAtRef.current = 0; reboot("no-readyok"); return; }
+      if (queue.current.length && now - lastMsgRef.current > 20000) { reboot("stalled"); return; }
+      if (!pingAtRef.current) { pingAtRef.current = now; try { ref.current.postMessage("isready"); } catch (_) { } }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
   // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.
   // watchMs: 이 요청의 워치독 제한. movetime을 준 배치 분석은 짧게(+버퍼), movetime 없는 실시간
