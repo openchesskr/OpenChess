@@ -2304,7 +2304,9 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     });
     if (mResult !== "all") out = out.filter((g) => masterResultOf(g) === mResult);
     if (mRating) out = out.filter((g) => masterMaxRating(g) >= mRating);
-    if (mEra) out = out.filter((g) => (g.year || 0) >= mEra);
+    // 연도: 1 = 2000년 이전(~2000), 2000/2010/2020 = 해당 연대(2000s 등)
+    if (mEra === 1) out = out.filter((g) => g.year && g.year < 2000);
+    else if (mEra) out = out.filter((g) => (g.year || 0) >= mEra && (g.year || 0) < mEra + 10);
     return out;
   }, [sortedMasterGames, masterSearchQuery, masterSearchKey, mResult, mRating, mEra]);
   const masterFiltersOn = !!masterSearchQuery || mResult !== "all" || !!mRating || !!mEra;
@@ -2594,7 +2596,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
         {masterSummary.n > 0 && (
           <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
             <div className="flex items-center justify-between" style={{ marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>
-              <span>{masterSummary.full ? t("마스터 승률") : t("표시 중인 대국 기준")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
+              <span>{t("마스터 승률")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
             </div>
             <ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled />
             {masterStats && masterStats.moves.length > 0 && !masterFiltersOn && (
@@ -2633,8 +2635,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
             {[
               [[["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
-              [[[0, t("전체")], [2600, "2600+"], [2700, "2700+"], [2750, "2750+"]], mRating, setMRating],
-              [[[0, t("전체")], [1990, "1990~"], [2010, "2010~"], [2020, "2020~"]], mEra, setMEra],
+              [[[0, t("전체")], [2500, "2500+"], [2600, "2600+"], [2700, "2700+"], [2800, "2800+"]], mRating, setMRating],
+              [[[0, t("전체")], [1, "~2000"], [2000, "2000s"], [2010, "2010s"], [2020, "2020s"]], mEra, setMEra],
             ].map(([opts, cur, set], gi) => (
               <div key={gi} className="flex items-center gap-2">
                 <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{[t("결과"), t("레이팅"), t("연도")][gi]}</span>
@@ -3370,10 +3372,10 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   const curKws = pinnedKw || ((curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []));   // 비이론 수는 개발자 키워드만
-  const curGames = curMove && curMove.games != null ? curMove.games : null;
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
+  const curGames = curStat && curStat.games != null ? curStat.games : (curMove && curMove.games != null ? curMove.games : null);   // (v0.6.6) 기준 토글(전체/마스터)을 따르는 실제 조회값 우선
   // (사용자 요청) 이 fetch가 아직 끝나지 않은 동안 통계 블록 자체를 숨기는 대신 3-dot bounce
   // 인디케이터로 로딩 중임을 보여준다 — MoveTile의 statsLoading과 같은 목적.
   const [curStatLoading, setCurStatLoading] = useState(false);
@@ -3385,13 +3387,14 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     // 들었다. fenRoot가 있으면 아예 조회하지 않는다.
     if (!lastSan || !liveOn || fenRoot) { setCurStatLoading(false); return; }
     setCurStatLoading(true);
-    fetchLichess(sans.slice(0, -1)).then((r) => {
+    // (v0.6.6 버그 수정) 위 기준 토글(전체/마스터)을 따른다 — 예전엔 항상 일반 통계만 조회해, 마스터로 바꿔도 현재 수 블록의 회수·채택률·승률이 그대로였다.
+    fetchLichess(sans.slice(0, -1), mode === "master").then((r) => {
       if (cc || !r) return;
       const mm = r.moves.find((x) => stripSuffix(x.san) === stripSuffix(lastSan));
       if (mm) setCurStat({ wdl: mm.wdl, adopt: mm.adopt, games: mm.games, posTotal: r.posTotal });
     }).catch(() => { }).finally(() => { if (!cc) setCurStatLoading(false); });
     return () => { cc = true; };
-  }, [key, liveOn, fenRoot]);
+  }, [key, liveOn, fenRoot, mode]);
   // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
   // 실제 값까지 세어 올라가는 애니메이션, 채택률 소수 둘째 자리 표기, 더 진한 강조색)을 이 "현재
   // 수 블록"에도 완전히 동일하게 적용한다.
