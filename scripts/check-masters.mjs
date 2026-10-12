@@ -301,5 +301,23 @@ if (!/역대 세계 챔피언/.test(mast) || !/주요 대회/.test(mast)) fails.
 if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
 // (v0.6.4) 마스터 이름은 언어와 상관없이 영어로만 표기한다 — 언어별 이름 함수에 lang을 넘기면 실패.
 if (/(masterName|dbPlayerName|playerName)\([^()]*,\s*lang\)/.test(mast) || /lang === "ko" && (p|c|r|s)\.ko/.test(mast)) fails.push("마스터 이름이 언어별로 표기됨(영어 공통 표기여야 함: \"en\"을 넘길 것)");
+// ⑤ (v0.6.6) 찾아가기 연출 경로(flightPoints) — 칩 중심에서 시작해 노드 중심에서 끝나고, 모든 마디가 가로·세로 직선(회로선을 따라감)이다.
+{
+  const { flightPoints, polyLength, polyPointAt } = await import("../src/lib/masterTreeLayout.js");
+  const FIDE = JSON.parse(readFileSync(new URL("../src/data/fideRankings.json", import.meta.url), "utf8")), DBM = JSON.parse(readFileSync(new URL("../src/data/dbMasters.json", import.meta.url), "utf8"));
+  const ed = { hastings: [[1895, 10, 5, []], [1961, 10, 5, []]] };
+  const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, null, FIDE, DBM.masters);
+  const pick = (kind) => L.nodes.find((n) => n.kind === kind);
+  const ids2 = [pick("champ").id, pick("sat").id, pick("fide").id, pick("dbm").id, "tour:hastings", "ed:hastings:1961"];
+  for (const id of ids2) {
+    const pts = flightPoints(L, id), n = L.byNodeId.get(id);
+    if (!pts || pts.length < 2) { fails.push("flightPoints 없음: " + id); continue; }
+    const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1;
+    if (!near(pts[0], [L.chip.cx, L.chip.cy])) fails.push("flightPoints가 칩에서 시작하지 않음: " + id);
+    if (!near(pts[pts.length - 1], [n.x + n.w / 2, n.y + n.h / 2])) fails.push("flightPoints가 노드 중심에서 끝나지 않음: " + id);
+    for (let i2 = 1; i2 < pts.length; i2++) if (Math.abs(pts[i2][0] - pts[i2 - 1][0]) > 1 && Math.abs(pts[i2][1] - pts[i2 - 1][1]) > 1) { fails.push("flightPoints 마디가 가로·세로가 아님: " + id); break; }
+    const len = polyLength(pts); if (!near(polyPointAt(pts, 0), pts[0]) || !near(polyPointAt(pts, len + 5), pts[pts.length - 1])) fails.push("polyPointAt 끝점: " + id);
+  }
+}
 if (fails.length) { console.error("✖ check-masters 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-masters: 챔피언 " + CHAMPIONS.length + "명·타이틀 이동 " + TRANSFERS.length + "건·위성 " + L.nodes.filter((n) => n.kind === "sat").length + "명 데이터 정합, 노드 겹침 0, 시간순 배치, 팬 한계, 도감 연결이 유지된다");

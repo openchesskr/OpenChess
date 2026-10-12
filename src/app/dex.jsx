@@ -10,6 +10,7 @@ import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";
 import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
+import { peekMasterNav } from "../lib/masterNav.js";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -1244,7 +1245,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   );
 }
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
   // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로

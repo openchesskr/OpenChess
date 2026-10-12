@@ -125,6 +125,14 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
 
 // ⑧ (v0.6.6, BUG-082·083)
 {
+  // 대회 이름 색인(eventIndex.json) — 모든 회차의 이름이 색인에 있어야 집중 분석의 대회 이름 링크가 그 연도 블록으로 간다(build-event-index.mjs)
+  const evx = rj("src/data/eventIndex.json").events, nk = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  for (const [id, d] of data) for (const e of d.eds) for (const ev of [e.ev, ...(e.evs || [])]) { const k = nk(ev); if (k && !(evx[k] || []).some((x) => x[0] === id && x[1] === e.y)) { fails.push("eventIndex.json에 없음: " + id + "/" + e.y + " " + ev + " — node scripts/build-event-index.mjs"); break; } }
+  { const ln = readFileSync(url("src/app/learn.jsx"), "utf8"), ap = readFileSync(url("src/App.jsx"), "utf8"), dxx = readFileSync(url("src/app/dex.jsx"), "utf8"), dm2 = readFileSync(url("src/app/dexMasters.jsx"), "utf8");
+    if (!/tournamentOfEvent\(g\.event/.test(ln) || !/onOpenTournament\(tg\)/.test(ln)) fails.push("집중 분석 마스터 통계의 대회 이름 링크 연결 없음");
+    if (/lichessRes\.games/.test(ln.slice(ln.indexOf("const games = [...dev"), ln.indexOf("const games = [...dev") + 220))) fails.push("마스터 통계 목록에 Lichess 대국이 다시 섞임(대회 정보가 없어 뺀 것)");
+    if (!/setMasterNav\(target\)/.test(ap) || !/peekMasterNav\(\)/.test(dxx) || !/takeMasterNav\(\)/.test(dm2) || !/flyTo\(focusId\)/.test(dm2)) fails.push("대회 이름 → 마스터 트리 찾아가기·검색 이동 연결 없음"); }
+
   for (const t of TOURNAMENTS) { const x = idx.byId[t.id]; if (x && x.editions.length && !ids.has(t.id)) fails.push(t.id + ": 연도 블록(" + x.editions.length + "개)이 있는데 회차 화면 데이터 파일이 없음 — node scripts/build-db-tournaments.mjs"); }
   let partials = 0; for (const d of data.values()) for (const e of d.eds) if (e.partial) { partials++; if (winnerOf(e)) fails.push(d.id + "/" + e.k + ": DB 수록(partial) 회차에 우승자가 정해짐"); if (e.fmt !== "list") fails.push(d.id + "/" + e.k + ": DB 수록 회차의 형식은 list여야 함"); }
   if (!partials) fails.push("DB 수록(partial) 회차가 하나도 없음 — build-db-tournaments를 다시 돌렸는지 확인");

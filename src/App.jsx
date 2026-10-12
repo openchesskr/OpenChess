@@ -1,3 +1,4 @@
+import { setMasterNav } from "./lib/masterNav.js";
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
 import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
 import { SB_ON, sbRpc } from "./lib/supabaseClient.js";
@@ -1093,6 +1094,8 @@ export default function App() {
   // 똑같이 "그냥 /play 페이지로 이동"하는 느낌을 준다 — 전환 뒤에는 아래 useLayoutEffect(tab==="store"
   // 감지)가 openPlay를 이어서 호출해 대국 설정 화면을 띄운다.
   const goToPlayTab = () => switchTab("store");
+  // (v0.6.6, 사용자 요청) 집중 분석 마스터 통계의 대회 이름을 누르면 도감 마스터 트리로 가서 시작 연출 뒤 그 대회(연도 블록)까지 회로선을 따라 찾아간다.
+  const onOpenTournament = (target) => { setMasterNav(target); switchTab("dex"); };
   backRef.current.goHome = () => {
     setNavNonce((n) => n + 1); setTab("learn"); urlTabRef.current = "learn"; setFocusReturnTab(null);
     try { window.history.replaceState({ screens: [] }, "", TAB_PATH.learn); } catch { }
@@ -1779,7 +1782,7 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
+        {tab === "learn" && <LearnTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={learnSans} setSans={setLearnSans} future={learnFuture} setFuture={setLearnFuture} extra={learnExtra} setExtra={setLearnExtra} focus={learnFocus} setFocus={setLearnFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} onOpenTournament={onOpenTournament} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={learnFenSeed} onConsumeFenSeed={() => setLearnFenSeed(null)} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다

@@ -3,6 +3,7 @@
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
+import { tournamentOfEvent } from "../lib/eventLink.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
@@ -78,7 +79,8 @@ async function fetchAllMasterGames(sans, count = 15) {
   const gameKey = (g) => normalizePlayerKey(g.white && g.white.name) + "|" + normalizePlayerKey(g.black && g.black.name) + "|" + (g.year || "") + "|" + (g.winner || "d");
   const staticGames = staticMasterGamesFor(sans, staticData);
   const inStatic = new Set(staticGames.map(gameKey));
-  const games = [...dev.filter((g) => !inStatic.has(gameKey(g))), ...staticGames, ...lichessRes.games.filter((g) => !inStatic.has(gameKey(g)))];
+  // (v0.6.6, 사용자 요청) Lichess 대표 대국은 대회 정보가 없어 마스터 통계 목록에서 뺀다(통계 숫자만 Lichess 집계를 쓴다).
+  const games = [...dev.filter((g) => !inStatic.has(gameKey(g))), ...staticGames];
   // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
   const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
   const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
@@ -2243,7 +2245,7 @@ function FocusPanel(props) {
   if (!props.fa.active) return null;
   return <FocusPanelBody {...props} />;
 }
-function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
+function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
     editKey, devEdit, setDevEdit,
@@ -2730,7 +2732,9 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                     </div>
                     <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.date || g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.date || g.year}{g.event ? ", " : ""}{g.event ? (() => { const tg = tournamentOfEvent(g.event, g.year); return tg && onOpenTournament
+                      ? <a role="link" tabIndex={0} title={t("도감 마스터 트리에서 이 대회 보기")} onClick={(e) => { e.stopPropagation(); onOpenTournament(tg); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenTournament(tg); } }} style={{ color: "#2E9BD6", textDecoration: "underline", cursor: "pointer" }}>{g.event}</a>
+                      : g.event; })() : null}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                   {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
@@ -2847,7 +2851,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
+export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -3634,7 +3638,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
+              <FocusPanel onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
         )}

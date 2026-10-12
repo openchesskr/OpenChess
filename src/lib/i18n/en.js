@@ -2280,6 +2280,7 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Moving the king to safety early is a good choice",
   "대회·개최지·마스터 이름 검색": "Search tournaments, venues, masters",
   "조건에 맞는 결과 없음": "No matching results",
+  "도감 마스터 트리에서 이 대회 보기": "View this tournament in the Masters tree",
   "비중": "Share",
   "기보 불러오는 중…": "Loading game record…",
   "기보를 불러오지 못함": "Could not load the game record",
