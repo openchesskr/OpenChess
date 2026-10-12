@@ -3735,30 +3735,30 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                           </div>
                           {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                         </div>
+                          {curKind && <div style={{ marginTop: 7, fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</div>}
+                          {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
+                              (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
+                              "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
+                              올라가는 애니메이션, 채택률은 소수 둘째 자리까지 진한 강조색으로 표기한다.
+                              fetch가 아직 안 끝났으면(curStatLoading) 블록을 숨기는 대신 3-dot bounce
+                              인디케이터를 보여준다. */}
+                          {(curStat || curStatLoading) && (
+                            <>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+                                <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+                                  <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
+                                </div>
+                                {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
+                                <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+                                  <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                                  <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                                </span>
+                              </div>
+                              {curStat && curStat.wdl && <div style={{ marginTop: 7 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
+                            </>
+                          )}
                       </div>
                     </div>
-                    {curKind && <div style={{ marginTop: 7, fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</div>}
-                    {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
-                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
-                        "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
-                        올라가는 애니메이션, 채택률은 소수 둘째 자리까지 진한 강조색으로 표기한다.
-                        fetch가 아직 안 끝났으면(curStatLoading) 블록을 숨기는 대신 3-dot bounce
-                        인디케이터를 보여준다. */}
-                    {(curStat || curStatLoading) && (
-                      <>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
-                          <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
-                            <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
-                          </div>
-                          {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
-                          <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                            <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
-                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
-                          </span>
-                        </div>
-                        {curStat && curStat.wdl && <div style={{ marginTop: 7 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
-                      </>
-                    )}
                   </div>
                 )}
                 {/* (v0.6.6, 사용자 요청) 내장 수 설명(explainFor)은 표시하지 않는다 — 해설은 유저가 직접 쓴 것만 */}
