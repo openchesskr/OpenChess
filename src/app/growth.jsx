@@ -1,7 +1,7 @@
 // (v0.6.4) 성장 분석 — 학습 탭 안에 한 화면으로 펼쳐 보이는 약점 지도 · 실수 복습 카드(간격 반복) · 마스터 스타일 매칭.
 // 로직은 lib/weakness.js·lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사), 저장은 lib/growthStore.js.
 // 대국 하이라이트 카드는 리뷰 공유 시트(review.jsx)에 있다.
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { Chess } from "chess.js";
 import { Target, Check, Sparkles, RotateCcw } from "lucide-react";
 import { T } from "../lib/theme.js";
@@ -21,6 +21,9 @@ const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: 0 };
 const sub = { fontSize: 11.5, color: T.inkSoft, lineHeight: 1.55 };
 const chip = (on) => ({ padding: "5px 11px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
 const btn = (primary) => ({ padding: "9px 14px", borderRadius: 10, border: primary ? "none" : "1px solid #C9B58C", background: primary ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: primary ? T.ivoryHi : T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT });
+const critHead = { fontSize: 10, fontWeight: 800, color: T.inkSoft, paddingBottom: 2, paddingLeft: 12 };
+const critCell = { borderTop: "1px solid rgba(0,0,0,.06)", padding: "6px 0" };
+const critNum = { textAlign: "right", paddingLeft: 12, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
 const LEVEL_COLOR = { same: "#3F7A3A", close: "#7FA04A", far: "#D9822B", veryFar: "#C8453B", na: "#9A8B72" };
 
 function useGrowth(uid) {
@@ -262,30 +265,33 @@ function MasterStyle({ games }) {
         <span style={sub}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
         <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", gap: 6, fontSize: 10, fontWeight: 800, color: T.inkSoft, marginBottom: 2 }}>
+      {/* 표 전체가 한 격자다 — 숫자 3열은 내용 폭(auto)이라 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고, 열은 모든 줄에서 정렬된다.
+          판정 알약은 열이 아니라 라벨 아래에 두어, 알약 글자가 긴 언어("Almost the same"·"Prácticamente igual")에서도 칸 밖으로 넘치지 않는다(BUG-071). */}
+      <div className="growth-crit-table" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", columnGap: 0, fontSize: 11.5 }}>
         <span />
-        <span style={{ textAlign: "right" }}>{t("나")}</span>
-        <span style={{ textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
-        <span style={{ textAlign: "right" }}>{t("차이")}</span>
-        <span />
+        <span style={{ ...critHead, textAlign: "right" }}>{t("나")}</span>
+        <span style={{ ...critHead, textAlign: "right", maxWidth: 76, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
+        <span style={{ ...critHead, textAlign: "right" }}>{t("차이")}</span>
+        {CRITERIA_GROUPS.map((g) => (
+          <Fragment key={g.id}>
+            <div style={{ gridColumn: "1 / -1", fontSize: 10.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "10px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
+            {g.keys.map((k) => {
+              const r = byKey[k]; if (!r) return null;
+              return (
+                <Fragment key={k}>
+                  <div style={{ ...critCell, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+                    <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3, overflowWrap: "anywhere" }}>{criterionLabel(k)}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 9px", lineHeight: 1.3, maxWidth: "100%", overflowWrap: "anywhere" }}>{levelLabel(r.level)}</span>
+                  </div>
+                  <span style={{ ...critCell, ...critNum, color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
+                  <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
+                  <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700, fontSize: 10.5 }}>{formatDiff(k, r.diff)}</span>
+                </Fragment>
+              );
+            })}
+          </Fragment>
+        ))}
       </div>
-      {CRITERIA_GROUPS.map((g) => (
-        <div key={g.id} style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "6px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
-          {g.keys.map((k) => {
-            const r = byKey[k]; if (!r) return null;
-            return (
-              <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 42px 42px 44px 62px", alignItems: "center", gap: 6, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)", fontSize: 11.5 }}>
-                <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3 }}>{criterionLabel(k)}</span>
-                <span style={{ textAlign: "right", color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
-                <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
-                <span style={{ textAlign: "right", color: T.inkSoft, fontWeight: 700, fontSize: 10.5, whiteSpace: "nowrap" }}>{formatDiff(k, r.diff)}</span>
-                <span style={{ textAlign: "center", fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 0", whiteSpace: "nowrap" }}>{levelLabel(r.level)}</span>
-              </div>
-            );
-          })}
-        </div>
-      ))}
     </div>
   );
 }

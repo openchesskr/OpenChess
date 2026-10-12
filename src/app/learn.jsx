@@ -20,6 +20,7 @@ import { playMoveSfx } from "../lib/prefs.js";
 import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, deriveKeywords, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import UgcText from "../components/UgcText.jsx";
 async function lichessFetchText(url) {
   const hit = _lichessCache.get(url);
   if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data;
@@ -1973,7 +1974,7 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
             </div>
           </div>
         ) : (
-          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(n.body, ownSans, onJump)}</p>
+          <UgcText text={n.body} kind="note" render={(shown) => <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, margin: 0, wordBreak: "break-word" }}>{renderMoveNoteBody(shown, ownSans, onJump)}</p>} />
         )}
       </div>
       {!editing && (
@@ -2589,7 +2590,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
                     <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
-                    <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "½–½"}</span>
+                    <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>

@@ -3,7 +3,7 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User } from "lucide-react";
+import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, Search, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
@@ -13,7 +13,7 @@ import { TOURNAMENTS } from "../data/chessTournaments.js";
 import FIDE from "../data/fideRankings.json";
 import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
-import { dbPlayerName, playerName } from "../data/playerNames.js";
+import { enName, playerName } from "../data/playerNames.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
@@ -22,11 +22,19 @@ import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { DEX_ELECTRIC_FLOW_SPEED, DEX_SELECT_FLOW_SPEED, MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_STEP, SCHEMATIC_DRAG_MULT, SCHEMATIC_ELECTRIC, anchoredZoomPan, masterZoomLabel, snapMasterZoom } from "../lib/schematicGeometry.js";
 import { playSfx } from "../lib/prefs.js";
+import EditionView from "../components/tournamentView.jsx";
+import { GameViewButton, BestMoveJumpButton } from "../components/uiPrimitives.jsx";
+import MasterProfile from "../components/masterProfile.jsx";
+import { hasTournamentData, loadTournamentSearch } from "../lib/tournamentData.js";
+import { tournamentsOfPlayerQuery } from "../lib/masterProfile.js";
+import { decodeMoves } from "../lib/moveCodec.js";
 
+const CULL_MARGIN = 1.0, CULL_Q = 240;   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
 const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
-const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66" };
+const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
+const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66", general: "#5F8A8B" };
 const LABEL_TEXT = () => ({ champs: t("역대 세계 챔피언"), tours: t("주요 대회"), db: t("마스터 대국 DB 선수"), "fide-standard": t("FIDE 스탠다드 랭킹"), "fide-rapid": t("FIDE 래피드 랭킹"), "fide-blitz": t("FIDE 블리츠 랭킹") });
-const TOUR_LABEL = () => ({ elite: t("슈퍼 토너먼트"), cycle: t("세계선수권 사이클"), team: t("팀 대회"), speed: t("속기·프리스타일·온라인"), women: t("여자 대회"), historic: t("역사적 대회") });
+const TOUR_LABEL = () => ({ elite: t("슈퍼 토너먼트"), cycle: t("세계선수권 사이클"), team: t("팀 대회"), speed: t("속기·프리스타일·온라인"), women: t("여자 대회"), historic: t("역사적 대회"), general: t("일반 대회") });
 const FREQ_LABEL = () => ({ annual: t("매년"), biennial: t("격년"), oneoff: t("일회성") });
 const tourPeriod = (r) => (r.to === r.from ? String(r.from) : r.from + "–" + (r.to == null ? "" : r.to));
 const tourPlace = (r) => (r.place === "various" ? t("개최지 매번 변경") : r.place === "online" ? t("온라인") : (lang === "ko" && r.placeKo ? r.placeKo : r.place) + (r.cc ? " " + flagEmoji(r.cc) : ""));
@@ -82,11 +90,11 @@ function MasterDefs() {
   );
 }
 /* 챔피언 블록(시안 A) — 금속성 금색 프레임 안의 어두운 명판, 이름 양옆에 월계수. 현 챔피언은 ♛와 금빛 발광. 줄(PCA·클래식/FIDE)은 태그 칩 색으로 구분한다. */
-function ChampNode({ n, onPick, picked, fx }) {
+function ChampNode({ n, onPick, picked, fx, dim }) {
   const c = n.champ, current = c.to == null;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 14, border: "1.5px solid #6E4E18",
+      style={{ ...fxDelay(fx), opacity: dim ? 0.3 : 1, position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 14, border: "1.5px solid #6E4E18",
         background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(80,50,10,.45)," + (picked ? " 0 0 0 3px " + SCHEMATIC_ELECTRIC + ", 0 0 12px 2px rgba(34,211,240,.65)," : "") + (current ? " 0 0 18px 4px rgba(236,203,134,.65)," : "") + " 0 4px 10px rgba(60,40,10,.38)" }}>
       <CornerBadge bg={current ? "#C2453A" : "#241509"}><Crown size={11} color={T.brassHi} /></CornerBadge>
@@ -106,12 +114,12 @@ function ChampNode({ n, onPick, picked, fx }) {
 }
 
 /* 오른쪽 대회 열의 대회 카드 — 왼쪽 띠 색이 종류(슈퍼 토너먼트·사이클·팀 …)다. */
-function TourNode({ n, onPick, picked, fx }) {
+function TourNode({ n, onPick, picked, fx, dim }) {
   const r = n.tour, color = TOUR_COLOR[r.type];
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "14px 16px 14px 24px", textAlign: "left", cursor: "pointer", borderRadius: 14, zIndex: 2,
-        border: (picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE), background: NODE_PARCH, color: T.ink, boxShadow: picked ? SEL_GLOW : "0 2px 6px rgba(60,40,20,.16)" }}>
+        border: (picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE), background: NODE_PARCH, color: T.ink, boxShadow: picked ? SEL_GLOW : "0 2px 6px rgba(60,40,20,.16)", opacity: dim ? 0.3 : 1 }}>
       <CornerBadge bg={color}><Trophy size={10} /></CornerBadge>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, background: color, borderRadius: "13px 0 0 13px" }} />
       <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{personName(r)}</div>
@@ -128,14 +136,14 @@ const RANK_TIER = {
   2: { frame: "linear-gradient(135deg,#F4F6F8,#B9C0C7 45%,#7C858E)", ribbon: "linear-gradient(180deg,#EDF0F3,#B4BBC3)", ink: "#27313A", bg: "linear-gradient(160deg,#FAFBFC,#E8ECEF)", glow: "0 0 12px 1px rgba(190,198,206,.7)" },
   3: { frame: "linear-gradient(135deg,#F0CDA6,#C0803F 45%,#7A4A1E)", ribbon: "linear-gradient(180deg,#EBC196,#BC7B3C)", ink: "#2F1805", bg: "linear-gradient(160deg,#FFF3E6,#F0D9BE)", glow: "0 0 12px 1px rgba(205,140,80,.55)" },
 };
-function FideNode({ n, onPick, picked, fx }) {
+function FideNode({ n, onPick, picked, fx, dim }) {
   const f = n.fide, medal = RANK_TIER[n.rank], top10 = n.rank <= 10;
   const [lo, hi] = FIDE_RANGE[n.list], pct = hi > lo ? 12 + 88 * (f.rating - lo) / (hi - lo) : 100;
   const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
   const ribbon = medal ? medal.ribbon : top10 ? "linear-gradient(180deg,#EBD7A6,#CDAA5E)" : "linear-gradient(180deg,#E9DDC2,#D3C09A)";
   return (
     <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "fide", id: n.id })} aria-label={n.rank + " " + masterName(f.name, "en") + " " + f.rating}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : frame, fontFamily: SITE_FONT, color: T.ink,
+      style={{ ...fxDelay(fx), opacity: dim ? 0.3 : 1, position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : frame, fontFamily: SITE_FONT, color: T.ink,
         boxShadow: picked ? SEL_GLOW : (medal ? medal.glow + ", 0 3px 8px rgba(60,40,10,.3)" : "0 2px 6px rgba(60,40,20,.2)") }}>
       <span style={{ position: "absolute", inset: medal || picked ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: medal ? medal.bg : NODE_PARCH }}>
         {/* 위쪽 광택 + 1~3위는 대각선 결 무늬 */}
@@ -161,13 +169,13 @@ function FideNode({ n, onPick, picked, fx }) {
 /* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
    왼쪽 국기 판(국기가 없으면 사람 아이콘) · 이름 · 최고 엘로 알약(2800+ 금 · 2700+ 황동 · 그 외 베이지)과 DB 대국 수. */
 const DB_ELO_RANGE = (() => { const e = DBM.masters.map((m) => m[2]).filter(Boolean); return [Math.min(...e), Math.max(...e)]; })();
-function DbMasterNode({ n, onPick, picked, fx }) {
+function DbMasterNode({ n, onPick, picked, fx, dim }) {
   const m = n.dbm, flag = masterFlag(m.name), star = m.elo >= 2800;
   const eloTier = star ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
   const pct = m.elo ? 10 + 90 * (m.elo - DB_ELO_RANGE[0]) / (DB_ELO_RANGE[1] - DB_ELO_RANGE[0]) : 0;
   return (
     <button className={"press mt-card" + fxClass(fx)} onClick={() => onPick({ type: "dbm", id: n.id })} aria-label={masterName(m.name, "en")}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (star ? "linear-gradient(135deg,#EFD9A3,#C49A50 55%,#8F6A22)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
+      style={{ ...fxDelay(fx), opacity: dim ? 0.3 : 1, position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: 0, cursor: "pointer", borderRadius: 15, border: "none", background: picked ? SCHEMATIC_ELECTRIC : (star ? "linear-gradient(135deg,#EFD9A3,#C49A50 55%,#8F6A22)" : NODE_EDGE), fontFamily: SITE_FONT, color: T.ink,
         boxShadow: picked ? SEL_GLOW : (star ? "0 0 12px 1px rgba(236,203,134,.5), 0 3px 8px rgba(60,40,10,.28)" : "0 2px 6px rgba(60,40,20,.2)") }}>
       <span style={{ position: "absolute", inset: picked || star ? 2.5 : 1.5, borderRadius: 13, overflow: "hidden", display: "flex", background: star ? "linear-gradient(160deg,#FFF8E0,#F6E6B4)" : NODE_PARCH }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,0) 40%)" }} />
@@ -195,20 +203,20 @@ function PlayerNode({ n }) {
   const color = TOUR_COLOR[n.tour.type];
   return (
     <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "0 10px", display: "flex", alignItems: "center", borderRadius: 9, zIndex: 2, fontSize: 12.5, fontWeight: 700, fontFamily: SITE_FONT, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      border: "1.5px solid " + color + "99", background: "#fff" }}>{dbPlayerName(n.name, "en")}</div>
+      border: "1.5px solid " + color + "99", background: "#fff" }}>{enName(n.name)}</div>
   );
 }
 
 /* 대회 허브에서 오른쪽으로 한 줄로 이어지는 연도 블록 — 누르면 그 연도의 대진표 영역이 아래로 펼쳐지고(아래 대회들이 밀려난다), 다시 누르면 접힌다. */
-function EditionNode({ n, onToggle, fx }) {
-  const color = TOUR_COLOR[n.tour.type];
+function EditionNode({ n, onToggle, fx, active, dim }) {
+  const color = TOUR_COLOR[n.tour.type], open = n.open || active;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n.tourId + ":" + n.year)} aria-expanded={n.open} aria-label={personName(n.tour) + " " + n.year}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 14, zIndex: 2, fontFamily: SITE_FONT, color: n.open ? "#241509" : T.ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
-        border: "2px solid " + (n.open ? T.brass : NODE_EDGE), background: n.open ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : NODE_PARCH, boxShadow: "0 2px 5px rgba(60,40,20,.16)" }}>
+    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n.tourId + ":" + n.year)} aria-expanded={!!open} aria-label={personName(n.tour) + " " + n.year}
+      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 14, zIndex: 2, fontFamily: SITE_FONT, color: open ? "#241509" : T.ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+        border: "2px solid " + (open ? T.brass : NODE_EDGE), background: open ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : NODE_PARCH, boxShadow: "0 2px 5px rgba(60,40,20,.16)", opacity: dim ? 0.3 : 1 }}>
       <CornerBadge bg={color}><CalendarDays size={10} /></CornerBadge>
       <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>{n.year}</span>
-      <span aria-hidden="true" style={{ fontSize: 11, fontWeight: 800, opacity: .7 }}>{n.open ? "▲" : "▼"}</span>
+      <span style={{ fontSize: 10, fontWeight: 800, opacity: .7 }}>{n.games ? t("{0}판", n.games) : ""}</span>
     </button>
   );
 }
@@ -224,11 +232,11 @@ function BracketPanel({ p }) {
   );
 }
 
-function SatNode({ n, onPick, picked, fx }) {
+function SatNode({ n, onPick, picked, fx, dim }) {
   const s = n.sat;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "sat", id: n.id })} aria-label={personName(s) + " " + s.years.join(", ")}
-      style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", textAlign: "left", cursor: "pointer", borderRadius: 8,
+      style={{ ...fxDelay(fx), opacity: dim ? 0.3 : 1, position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", textAlign: "left", cursor: "pointer", borderRadius: 8,
         border: picked ? "2px solid " + SCHEMATIC_ELECTRIC : "1.5px solid " + NODE_EDGE, background: NODE_PARCH, color: T.ink, boxShadow: picked ? SEL_GLOW : "none" }}>
       <CornerBadge bg="#8A7458"><Swords size={10} /></CornerBadge>
       <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}><Flag code={s.cc} size={13} />{personName(s)}</div>
@@ -268,7 +276,8 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
   const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "10px 0 3px" }}>{txt}</div>;
   const rowSty = { fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.5, fontFamily: SITE_FONT };
   const results = info ? [...(info.complete || []).map((x) => ({ ...x, sure: true })), ...(info.partial || []).map((x) => ({ ...x, sure: false }))].sort((a, b) => b.y - a.y) : [];
-  const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: g.m.split(" "), white: { username: dbPlayerName(g.w, "en"), rating: g.we }, black: { username: dbPlayerName(g.b, "en"), rating: g.be } });
+  const sansOf = (g) => (g.mc ? decodeMoves(g.mc) : g.m.split(" "));
+  const openReview = (g) => onOpenGameAnalyze && onOpenGameAnalyze({ sans: sansOf(g), white: { username: enName(g.w), rating: g.we }, black: { username: enName(g.b), rating: g.be } });
   return (
     <div>
       {winners.length > 0 && <>
@@ -280,24 +289,26 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
         </div>
         <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>{t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료")}</div>
       </>}
-      {head(t("마스터 대국 DB"))}
+      {head(info && info.pgn ? t("대회 자료") : t("마스터 대국 DB"))}
+      {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
       {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
         <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => dbPlayerName(n, "en") + " (" + c + ")").join(" · ")}</div>}
-        <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(" · ")}</div>}
+        {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
         {results.length > 0 && <>
-          {head(t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => dbPlayerName(n, "en")).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          {head(info.pgn ? t("집계 결과") : t("DB 집계 결과"))}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => enName(n)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
           <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
         </>}
         {info.top.length > 0 && <>
           {head(t("대표 대국"))}
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
-              <button onClick={() => onOpenGame && onOpenGame(g.m.split(" "))} className="press" style={{ flex: 1, minWidth: 0, textAlign: "left", background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "4px 7px", cursor: "pointer", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y} · {dbPlayerName(g.w, "en")} {g.we ? "(" + g.we + ")" : ""} – {dbPlayerName(g.b, "en")} {g.be ? "(" + g.be + ")" : ""} · {g.r}
-              </button>
-              <button onClick={() => openReview(g)} className="press" style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, padding: "4px 7px", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("리뷰")}</button>
+              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 7px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {g.y} · {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+              </div>
+              <GameViewButton onClick={() => onOpenGame && onOpenGame(sansOf(g))} />
+              <BestMoveJumpButton onClick={() => openReview(g)} />
             </div>
           ))}
         </>}
@@ -306,11 +317,11 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
   );
 }
 
-function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
-  let title = "", sub = "", cc = "", flag = "", rows = [], blocks = [];
+function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }) {
+  let title = "", sub = "", cc = "", flag = "", rows = [], blocks = [], profName = "";
   if (pick.type === "champ") {
     const c = BY_ID.get(pick.id);
-    title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc);
+    title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc); profName = c.name;
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
     blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
     if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
@@ -326,24 +337,24 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
     blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
-    title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]);
+    title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]); profName = f[2];
     blocks.push({ head: t("랭킹"), lines: ["FIDE " + cat + " #" + f[0]] });
     blocks.push({ head: t("레이팅"), lines: [String(f[4])] });
     if (f[5]) blocks.push({ head: t("출생 연도"), lines: [String(f[5])] });
     blocks.push({ head: "FIDE", lines: [FIDE.month] });
   } else if (pick.type === "dbm") {
     const m = DBM.masters[+pick.id.split(":")[1]];
-    title = masterName(m[0], "en"); sub = ""; flag = masterFlag(m[0]);
+    title = masterName(m[0], "en"); sub = ""; flag = masterFlag(m[0]); profName = m[0];
     blocks.push({ head: t("마스터 대국 DB"), lines: [t("대국 {0}판", m[1])] });
     if (m[2]) blocks.push({ head: t("최고 레이팅"), lines: [String(m[2])] });
   } else {
     const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
-    title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc);
+    title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc); profName = s.name;
     blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + " · " + personName(c) + " · " + d.score + (d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : " · " + t("패"))) });
   }
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
-      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
+      style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" || profName ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
@@ -361,7 +372,8 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze }) {
         </div>
       ))}
       {pick.type === "tour" && <TourExtra r={TOURNAMENTS.find((x) => x.id === pick.id)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
-      {pick.type !== "tour" && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 12 }}>{t("점수는 챔피언–도전자 순. 괄호는 타이브레이크")}</div>}
+      {profName && <MasterProfile name={profName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenTour={onOpenTour} />}
+      {pick.type === "champ" || pick.type === "sat" ? <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 12 }}>{t("점수는 챔피언–도전자 순. 괄호는 타이브레이크")}</div> : null}
     </div>
   );
 }
@@ -380,18 +392,54 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const [idx, setIdx] = useState(null);
   useEffect(() => { let off = false; import("../data/tournamentIndex.json").then((m) => { if (!off) setIdx(m.default || m); }).catch(() => { }); return () => { off = true; }; }, []);
-  const [openEd, setOpenEd] = useState(null);   // "대회id:연도" — 펼쳐 둔 연도 블록(한 번에 하나)
+  const [openEd, setOpenEd] = useState(null);   // "대회id:연도" — 펼쳐 둔 연도 블록(한 번에 하나). 대국 자료가 없는 대회만 이 방식(출전자 패널)이고, 자료가 있는 대회는 아래 edView 화면으로 연다.
+  const [edView, setEdView] = useState(null);   // { id, year } — 대회 회차 화면(순위·대진표·대국 목록)
+  const [q, setQ] = useState(""), [psearch, setPsearch] = useState(null), [focusId, setFocusId] = useState(null);
+  useEffect(() => { if (q.trim().length >= 2 && !psearch) loadTournamentSearch().then((x) => setPsearch(x)); }, [q, psearch]);
+  // 대회 찾기(v0.6.5): 모든 대회를 항상 트리에 그린다. 종류·검색어(대회 이름·개최지·선수 이름 — 선수는 출전한 대회)에 맞는 대회만 또렷하게 두고
+  // 나머지는 흐리게 하며(dim), 맞는 대회로 화면을 옮긴다. 맞는 대회가 없으면 흐리게 하지 않고 안내만 띄운다.
   const LAYOUT = React.useMemo(() => {
     const ed = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) ed[id] = v.editions;
     return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, openEd, FIDE, DBM.masters);
   }, [idx, openEd]);
+  // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
+  //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
+  const masterKeys = React.useMemo(() => {
+    const out = [];
+    for (const n of LAYOUT.nodes) {
+      let names = null;
+      if (n.kind === "champ") names = [n.champ.name, n.champ.ko];
+      else if (n.kind === "sat") names = [n.sat.opp, n.sat.ko];
+      else if (n.kind === "fide") names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")];
+      else if (n.kind === "dbm") names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")];
+      if (names) out.push({ id: n.id, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
+    }
+    return out;
+  }, [LAYOUT]);
+  const matches = React.useMemo(() => {
+    const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
+    if (!raw) return null;
+    const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
+      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id }));
+    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id }));
+    return [...masters, ...tours];
+  }, [q, psearch, masterKeys]);
+  const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
+  const matchTourIds = React.useMemo(() => (matches ? new Set(matches.filter((x) => x.tourId).map((x) => x.tourId)) : null), [matches]);
+  const dimOn = !!matches && matches.length > 0;
+  const [matchIdx, setMatchIdx] = useState(0);
+  useEffect(() => { setMatchIdx(0); if (matches && matches.length) setFocusId(matches[0].id); }, [matches]);
+  const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); setFocusId(matches[i].id); };
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
+  const openTour = useCallback((id) => { setQ(""); setEdView(null); setPick({ type: "tour", id }); setFocusId("tour:" + id); }, []);
   const boxRef = useRef(null);
   const panelH = useFitPanelHeight(boxRef, vertical);
   // (v0.6.3, 사용자 요청) 예전 75% 배율이 새 100%(MASTER_ZOOM_LABEL_BASE)다 — 데스크톱·모바일 모두 이 배율로 시작한다.
   const baseZ = MASTER_ZOOM_LABEL_BASE;
+  // (v0.6.5, 렉 수정) 시점(viewRef)이 항상 최신이다. 드래그·휠 중에는 캔버스 변환만 직접 바꾸고(paint) React는 다시 그리지 않는다 — 예전엔 포인터가 움직일 때마다
+  // setState로 노드 2,600여 개·선 수천 개를 통째로 다시 그려 프레임당 0.6초가 걸렸다. 배율 표시와 "화면 밖 노드 제외" 범위(cull)는 필요할 때만 state로 반영한다.
   const [view, setView] = useState({ x: 0, y: 0, z: baseZ });
-  const viewRef = useRef(view); viewRef.current = view;
+  const viewRef = useRef(view), canvasRef = useRef(null), commitTimerRef = useRef(null), cullRef = useRef(null);
   const [pick, setPick] = useState(null);
   // 오프닝 트리와 같은 "회로에 전류 흘리기" — 중심 칩을 누르면 모든 선·노드에 칩에서의 거리 비례 지연으로 전기 서지가 한 번 퍼진다.
   const [electric, setElectric] = useState(false);
@@ -409,12 +457,23 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const dragRef = useRef(null), movedRef = useRef(false);
   const rect = () => (boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 });
   const clamp = (p, z) => { const r = rect(); return clampMasterPan(p, z, r.width, r.height, layoutRef.current); };
-  const apply = useCallback((p, z) => setView({ ...clamp(p, z), z }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const paint = (v) => { const el = canvasRef.current; if (el) el.style.transform = "translate(" + v.x + "px," + v.y + "px) scale(" + v.z + ")"; };
+  const commit = useCallback(() => { commitTimerRef.current = null; setView({ ...viewRef.current }); }, []);
+  const apply = useCallback((p, z) => {
+    const v = { ...clamp(p, z), z }; viewRef.current = v; paint(v);
+    // 지금 보이는 영역(+여유)이 그려 둔 범위를 벗어나려 하면 바로 다시 그리고, 그렇지 않으면 움직임이 멈춘 뒤(150ms)에 배율 표시만 갱신한다.
+    const r = rect(), c = cullRef.current, m = Math.max(r.width, r.height) / v.z * CULL_MARGIN * 0.5;
+    const out = !c || -v.x / v.z - m < c.x0 || (r.width - v.x) / v.z + m > c.x1 || -v.y / v.z - m < c.y0 || (r.height - v.y) / v.z + m > c.y1;
+    if (out) { if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; } setView(v); }
+    else { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); commitTimerRef.current = setTimeout(commit, 150); }   // 움직임이 멈춘 뒤에만(디바운스)
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); }, []);
   const zoomBy = useCallback((dz, ax, ay) => {
     const v = viewRef.current, r = rect(), nz = snapMasterZoom(v.z + dz); if (nz === v.z) return;
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
+  const resetView = useCallback(() => { const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); }, [apply]);
   useLayoutEffect(() => { toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
@@ -472,7 +531,18 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     }
     dragRef.current = null;
   };
+  useEffect(() => {
+    if (!focusId) return;
+    const n = LAYOUT.byNodeId.get(focusId); if (!n) return;
+    const r = rect(), z = viewRef.current.z; apply({ x: r.width / 2 - (n.x + n.w / 2) * z, y: r.height / 2 - (n.y + n.h / 2) * z }, z); setFocusId(null);
+  }, [focusId, LAYOUT]); // eslint-disable-line react-hooks/exhaustive-deps
   const { nodes, edges, width, height, chip, traces } = LAYOUT;
+  // 지금 보이는 영역 둘레(여유 포함)에 걸친 노드·선만 그린다 — 전체는 논리적으로 모두 트리에 있고, 화면 밖은 움직여 오면 그려진다.
+  const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN;
+  const cull = { x0: Math.floor((-vv.x / vv.z - mg) / CULL_Q) * CULL_Q, x1: Math.ceil(((cr.width - vv.x) / vv.z + mg) / CULL_Q) * CULL_Q, y0: Math.floor((-vv.y / vv.z - mg) / CULL_Q) * CULL_Q, y1: Math.ceil(((cr.height - vv.y) / vv.z + mg) / CULL_Q) * CULL_Q };
+  cullRef.current = cull;
+  const inC = (x, y, w, h) => x + w > cull.x0 && x < cull.x1 && y + h > cull.y0 && y < cull.y1;
+  const shown = nodes.filter((n) => inC(n.x, n.y, n.w, n.h));
   const champEdges = edges.filter((e) => e.kind === "transfer");
   const distC = (x, y) => Math.abs(x - chip.cx) + Math.abs(y - chip.cy);
   const surgeAt = (x, y) => (electric ? distC(x, y) / DEX_ELECTRIC_FLOW_SPEED : 0);
@@ -500,6 +570,23 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   return (
     <div>
       {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
+      {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다). 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "nowrap" }}>
+        <div className="no-pan" style={{ display: "flex", gap: 4, flex: "0 1 260px", minWidth: 150, marginRight: "auto" }}><div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+          <Search size={14} aria-hidden="true" style={{ position: "absolute", left: 9, top: 9, color: T.inkSoft }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") stepMatch(e.shiftKey ? -1 : 1); }} placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")} style={{ width: "100%", height: 32, boxSizing: "border-box", padding: "0 9px 0 28px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontFamily: SITE_FONT }} />
+        </div>
+          {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
+          <button onClick={resetView} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+          {matches && matches.length > 0 && <>
+            <button onClick={() => stepMatch(-1)} aria-label={t("이전 결과")} title={t("이전 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={14} /></button>
+            <button onClick={() => stepMatch(1)} aria-label={t("다음 결과")} title={t("다음 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={14} /></button>
+          </>}
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap", fontFamily: SITE_FONT, minWidth: 44, textAlign: "right" }}>{matches ? (matches.length ? matchIdx + 1 : 0) + "/" + matches.length : TOURNAMENTS.length}</span>
+        </div>
+      </div>
       <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
@@ -509,7 +596,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
         <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
-        <div style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + view.x + "px," + view.y + "px) scale(" + view.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
+        <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
@@ -518,20 +605,20 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             {LAYOUT.wrails && LAYOUT.wrails.map((w) => wire("wrail:" + w.col, "M" + w.x + " " + w.y1 + " V" + w.y2, w.x, chip.cy, { opacity: 0.9 }))}
             {edges.filter((e) => e.kind === "wseg").map((e) => wire("wseg:" + e.col, "M" + e.x1 + " " + chip.cy + " H" + e.x2, (e.x1 + e.x2) / 2, chip.cy, { opacity: 0.9 }))}
             {LAYOUT.wrails && lit.wrailTo != null && <Wire key="wrailLit" d={"M" + LAYOUT.wrails[lit.wrailCol].x + " " + chip.cy + " V" + lit.wrailTo} lit delay={litDelay(LAYOUT.wrails[lit.wrailCol].x, lit.wrailTo)} />}
-            {edges.filter((e) => e.kind === "dlink").map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
+            {edges.filter((e) => e.kind === "dlink" && inC(e.a.x, e.a.y, e.a.w + 160, e.a.h)).map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
             {LAYOUT.south && wire("bus", "M" + LAYOUT.south.bus.x1 + " " + LAYOUT.south.jy + " H" + LAYOUT.south.bus.x2, chip.cx, LAYOUT.south.jy, { opacity: 0.9 })}
             {LAYOUT.south && LAYOUT.south.cols.map((c) => wire("drop:" + c.key, "M" + c.drop.x + " " + c.drop.y1 + " V" + c.drop.y2, c.drop.x, (c.drop.y1 + c.drop.y2) / 2))}
-            {edges.filter((e) => e.kind === "fchain").map((e) => wire("fc:" + e.list + ":" + e.rank, "M" + (e.a.x + e.a.w / 2) + " " + (e.a.y + e.a.h) + " V" + e.b.y, e.a.x + e.a.w / 2, e.b.y))}
-            {edges.filter((e) => e.kind === "sat").map((e) => {
+            {edges.filter((e) => e.kind === "fchain" && inC(e.a.x, e.a.y, e.a.w, e.b.y + e.b.h - e.a.y)).map((e) => wire("fc:" + e.list + ":" + e.rank, "M" + (e.a.x + e.a.w / 2) + " " + (e.a.y + e.a.h) + " V" + e.b.y, e.a.x + e.a.w / 2, e.b.y))}
+            {edges.filter((e) => e.kind === "sat" && inC(Math.min(e.a.x, e.b.x), Math.min(e.a.y, e.b.y), Math.abs(e.a.x - e.b.x) + e.a.w, Math.abs(e.a.y - e.b.y) + e.a.h)).map((e) => {
               const a = e.a, b = e.b, ay = a.y + a.h / 2, by = b.y + b.h / 2;
               const ax = e.side === "L" ? a.x : a.x + a.w, bx = e.side === "L" ? b.x + b.w : b.x;
               return wire("sat:" + b.id, elbowH(ax, ay, bx, by), (ax + bx) / 2, (ay + by) / 2);
             })}
             {LAYOUT.rail && wire("rail", "M" + LAYOUT.rail.x + " " + LAYOUT.rail.y1 + " V" + LAYOUT.rail.y2, LAYOUT.rail.x, (LAYOUT.rail.y1 + LAYOUT.rail.y2) / 2, { opacity: 0.9 })}
             {LAYOUT.rail && lit.railTo != null && <Wire key="railLit" d={"M" + LAYOUT.rail.x + " " + LAYOUT.rail.mid + " V" + lit.railTo} lit delay={litDelay(LAYOUT.rail.x, lit.railTo)} />}
-            {LAYOUT.rail && nodes.filter((n) => n.kind === "tour").map((n) => wire("hl:" + n.id, "M" + LAYOUT.rail.x + " " + (n.y + n.h / 2) + " H" + n.x, (LAYOUT.rail.x + n.x) / 2, n.y + n.h / 2))}
+            {LAYOUT.rail && nodes.filter((n) => n.kind === "tour" && inC(LAYOUT.rail.x, n.y, n.x - LAYOUT.rail.x + n.w, n.h)).map((n) => wire("hl:" + n.id, "M" + LAYOUT.rail.x + " " + (n.y + n.h / 2) + " H" + n.x, (LAYOUT.rail.x + n.x) / 2, n.y + n.h / 2))}
             {edges.filter((e) => e.kind === "drop").map((e) => { const en = LAYOUT.byNodeId.get(e.enId); return wire("drop:" + e.enId, "M" + (en.x + en.w / 2) + " " + (en.y + en.h) + " V" + e.panel.y, en.x + en.w / 2, e.panel.y, { stroke: TOUR_COLOR[e.tour.type] }); })}
-            {edges.filter((e) => e.kind === "row").map((e) => wire("row:" + e.tour.id, "M" + e.x1 + " " + e.y + " H" + e.x2, (e.x1 + e.x2) / 2, e.y, { stroke: TOUR_COLOR[e.tour.type], opacity: 0.6 }))}
+            {edges.filter((e) => e.kind === "row" && inC(e.x1, e.y - 2, e.x2 - e.x1, 4)).map((e) => wire("row:" + e.tour.id, "M" + e.x1 + " " + e.y + " H" + e.x2, (e.x1 + e.x2) / 2, e.y, { stroke: TOUR_COLOR[e.tour.type], opacity: 0.6 }))}
             {edges.filter((e) => e.kind === "upcoming").map((e) => wire("up", elbowV(e.a.x + e.a.w / 2, e.a.y + e.a.h, e.b.x + e.b.w / 2, e.b.y), e.a.x + e.a.w / 2, e.b.y, { dash: "5 5" }))}
             {champEdges.map((e) => {
               const x1 = e.a.x + e.a.w / 2, y1 = e.a.y + e.a.h, x2 = e.b.x + e.b.w / 2, y2 = e.b.y;
@@ -572,15 +659,22 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               <Cpu size={26} strokeWidth={1.6} />
             </div>
           </div>
-          {nodes.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} />
-            : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} fx={fxOf(n)} />
-            : n.kind === "fide" ? <FideNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} />
-            : n.kind === "dbm" ? <DbMasterNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} />
+          {shown.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
+            : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} fx={fxOf(n)} dim={dimOn && !matchTourIds.has(n.tour.id)} />
+            : n.kind === "fide" ? <FideNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
+            : n.kind === "dbm" ? <DbMasterNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
             : n.kind === "player" ? <PlayerNode key={n.id} n={n} />
-            : n.kind === "edition" ? <EditionNode key={n.id} n={n} onToggle={(k) => setOpenEd((v) => (v === k ? null : k))} fx={fxOf(n)} />
-            : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} /> : <UpcomingNode key={n.id} n={n} />)}
+            : n.kind === "edition" ? <EditionNode key={n.id} n={n} fx={fxOf(n)} dim={dimOn && !matchTourIds.has(n.tourId)} active={!!edView && edView.id === n.tourId && edView.year === n.year}
+              onToggle={(k) => { if (hasTournamentData(n.tourId)) { setPick(null); setEdView((v) => (v && v.id === n.tourId && v.year === n.year ? null : { id: n.tourId, year: n.year })); } else setOpenEd((v) => (v === k ? null : k)); }} />
+            : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
-        {pick && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
+        {pick && !edView && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenTour={openTour} />}
+        {edView && (() => {
+          const tr = TOURNAMENTS.find((x) => x.id === edView.id), info = idx && idx.byId[edView.id];
+          const years = info ? info.editions.map((e) => e[0]).filter((y) => y > 0) : [edView.year];
+          return tr ? <EditionView key={tr.id} tour={tr} year={edView.year} years={years.includes(edView.year) ? years : [...years, edView.year].sort((a, b) => a - b)} onYear={(y) => setEdView({ id: tr.id, year: y })} onClose={() => setEdView(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} /> : null;
+        })()}
+        {matches && matches.length === 0 && <div style={{ position: "absolute", left: 0, right: 0, top: "42%", textAlign: "center", fontSize: 13, fontWeight: 700, color: T.inkSoft, pointerEvents: "none", fontFamily: SITE_FONT }}>{t("조건에 맞는 결과 없음")}</div>}
       </div>
     </div>
   );

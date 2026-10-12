@@ -31,5 +31,15 @@
   "lib/highlights.js",
   "lib/masterStyle.js",
   "lib/highlightCard.js",
-  "components/schematicFullscreen.jsx"
+  "components/schematicFullscreen.jsx",
+  "components/UgcText.jsx",
+  "lib/ugcTranslate.js",
+  "components/tournamentView.jsx",
+  "components/masterProfile.jsx",
+  "lib/tournamentView.js",
+  "lib/masterProfile.js",
+  "lib/moveCodec.js",
+  "lib/tournamentData.js",
+  "components/DockWindows.jsx",
+  "components/Dropdown.jsx"
 ]
