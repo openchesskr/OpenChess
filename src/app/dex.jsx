@@ -440,6 +440,21 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     return undefined;
   }, [ready]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); }, []);
+  // (v0.6.6, 사용자 요청) "처음으로" 버튼 — 50% 배율의 중앙 화면으로 돌아가 시작 연출을 다시 재생한다.
+  const replayIntro = () => {
+    const rect = viewRect(), z = SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM;
+    applyView({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z }, z); commitView();
+    setIntroOn(false);
+    requestAnimationFrame(() => {
+      setIntroOn(true);
+      introStartedRef.current = true;
+      introTimerRef.current = setTimeout(() => {
+        introTimerRef.current = null;
+        const r = viewRect(), bz = SCHEMATIC_ZOOM_LABEL_BASE;
+        animateView({ x: r.width / 2 - centerRef.current.x * bz, y: r.height / 2 - centerRef.current.y * bz }, bz, INTRO_ZOOM_MS, () => setIntroOn(false), introEase);
+      }, INTRO_HOLD_MS);
+    });
+  };
   useEffect(() => {
     const onResize = () => { if (!userPannedRef.current) recenterHome(); };
     window.addEventListener("resize", onResize);
@@ -1070,7 +1085,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 그림자)로 맞춘다. 오른쪽 빈자리에는 CollectionTab이 넘겨주는 도감 해금률(rightSlot)을 배치해
   // "검색+새로고침(좌) / 해금률(우)"의 좌우 배치 줄이 되도록 한다. 팬/줌/검색 매칭 로직 자체는
   // 그대로— 위치와 스타일만 바뀐다.
-  const searchHeader = (
+  const searchHeader = (<>
+    {/* (v0.6.6, 사용자 요청) 도감 해금률은 검색 줄 위에 따로 둔다 */}
+    {rightSlot && <div style={{ marginBottom: 8 }}>{rightSlot}</div>}
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       {tabsSlot}
       <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
@@ -1084,10 +1101,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
             stopMotion();
             userPannedRef.current = false;
             selectionLockRef.current = false;
-            setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
-            const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
-            const vc = { x: rect.width / 2, y: rect.height / 2 };
-            setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
+            replayIntro();
           }} title={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={14} />
           </button>
@@ -1107,9 +1121,8 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
           </div>
         )}
       </div>
-      {rightSlot && <div style={{ flexShrink: 0 }}>{rightSlot}</div>}
     </div>
-  );
+  </>);
   return (
     <div>
     {searchHeader}

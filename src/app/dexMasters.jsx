@@ -243,7 +243,6 @@ function SatNode({ n, onPick, picked, fx, dim }) {
       <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}><Flag code={s.cc} size={13} />{personName(s)}</div>
       <div className="flex items-center justify-between gap-1" style={{ marginTop: 2 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(" · ")}</span>
-        <CountryChip cc={s.cc} />
       </div>
     </button>
   );
@@ -484,7 +483,9 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, [apply]);
   const introRafRef = useRef(null), introTimerRef = useRef(null);
   const endIntro = useCallback(() => { if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, []);
-  useEffect(() => {
+  const startIntro = useCallback(() => {
+    if (introTimerRef.current) clearTimeout(introTimerRef.current);
+    if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; }
     introTimerRef.current = setTimeout(() => {
       introTimerRef.current = null;
       const z0 = viewRef.current.z, t0 = performance.now();
@@ -495,7 +496,14 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
       };
       introRafRef.current = requestAnimationFrame(step);
     }, INTRO_HOLD_MS);
-    return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { startIntro(); return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); }; }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // (v0.6.6) "처음으로" 버튼 — 시작 연출을 다시 재생한다(50% 배율로 돌아가 칩부터 다시 그려진 뒤 100%로 확대).
+  const replayIntro = useCallback(() => {
+    const z = baseZ * INTRO_FROM, r = rect(), L = layoutRef.current;
+    setIntroOn(false);
+    apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); commit();
+    requestAnimationFrame(() => { setIntroOn(true); startIntro(); });
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const resetView = useCallback(() => { endIntro(); const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); }, [apply]);
@@ -605,18 +613,18 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} intro={introAt(mx, my)} {...extra} />;
   return (
     <div>
-      {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
       {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다).
           (v0.6.6, 사용자 요청) 검색창·되돌리기 버튼은 오프닝 트리(dex.jsx searchHeader)와 같은 모양, 결과 드롭다운은 퍼즐 탭 검색(puzzle.jsx searchSuggestions)과 같은 모양(종류 태그 + 이름)이다. 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "nowrap" }}>
-        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+      <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
+        {tabsSlot}
+        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
           <div style={{ display: "flex", gap: 4 }}>
             <input value={q} onChange={(e) => { setQ(e.target.value); setDropOpen(true); }} onFocus={() => setDropOpen(true)} onBlur={() => setTimeout(() => setDropOpen(false), 150)}
               onKeyDown={(e) => { if (e.key === "Enter") { if (matches && matches.length) pickMatch(dropOpen ? matchIdx : (matchIdx + 1) % matches.length); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepMatch(e.key === "ArrowDown" ? 1 : -1); setDropOpen(true); } else if (e.key === "Escape") setDropOpen(false); }}
               placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")}
               style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
             {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
-            <button onClick={resetView} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
+            <button onClick={replayIntro} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
           </div>
           {q.trim() && dropOpen && (
             <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
@@ -636,7 +644,6 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             </div>
           )}
         </div>
-        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap", fontFamily: SITE_FONT, minWidth: 44, textAlign: "right" }}>{matches ? matches.length : TOURNAMENTS.length}</span>
       </div>
       <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
