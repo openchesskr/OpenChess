@@ -17,6 +17,7 @@ import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "..
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
+import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -217,14 +218,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // (사용자 요청) /user 페이지에서만 이 토글을 75% 더 크게(scale=1.75) 보여준다 — 다른 화면(내 프로필
 // 카드·친구 모달 등)은 기존 크기 그대로 scale=1 기본값을 쓴다.
 function statsViewToggle(statsView, setStatsView, scale = 1) {
-  const s = (n) => Math.round(n * scale);
-  return (
-    <div className="flex items-center" style={{ padding: s(2), borderRadius: s(9), background: "rgba(0,0,0,.08)", border: "1px solid #DCCBA8", gap: s(2), flexShrink: 0 }}>
-      {[["oc", "OpenChess", t("OpenChess 통계")], ["cc", "chess.com", t("Chess.com 통계")]].map(([key, label, aria]) => (
-        <button key={key} onClick={() => setStatsView(key)} aria-label={aria} title={aria} aria-pressed={statsView === key} className="press" style={{ height: s(26), padding: "0 " + s(8) + "px", borderRadius: s(7), border: "none", cursor: "pointer", background: statsView === key ? "#fff" : "transparent", boxShadow: statsView === key ? "0 1px 4px rgba(0,0,0,.28)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "background .15s ease", fontSize: s(11), fontWeight: 800, letterSpacing: "-.02em", whiteSpace: "nowrap", color: statsView === key ? "#3B2A1A" : "rgba(59,42,26,.55)" }}>{label}</button>
-      ))}
-    </div>
-  );
+  return <StatsViewToggle value={statsView} onChange={setStatsView} scale={scale} />;
 }
 // (사용자 요청) chess.com 통계 보기의 카드 상단 신원 표시 — 사진·아이디는 여기 한 곳에서만 보여주고
 // (AccountChessStats 안의 중복 사진·아이디 줄은 compact 옵션으로 생략), 국적·시간 규정별 레이팅도

@@ -4,6 +4,8 @@ import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameDa
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { StatsViewToggle } from "../components/statsViewToggle.jsx";
+import { profileGameRowToGame } from "./gameHistory.jsx";
 import { masterFlag } from "../data/masterNames.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { tournamentOfEvent } from "../lib/eventLink.js";
@@ -1797,77 +1799,48 @@ function AddMasterGameModal({ onClose, onSaved }) {
     </div>
   );
 }
-// (v0.2.6 버그 수정) 미니보드 하단 콘텐츠(chess.com 통계+마스터 대국 / 다음 수 블록)를 좌우로
-// 드래그하거나 </> 버튼으로 넘기는 2페이지 구성 — 집중분석이 전체화면 오버레이라 다음 수 블록이
-// 화면 아래로 스크롤해도 보이지 않던 문제(특히 모바일)를 해결한다. 휠·트랙패드 스크롤에는 반응하지
-// 않고(overflow가 아니라 transform 기반 캐러셀이라 애초에 스크롤 이벤트를 받지 않음), 오직
-// 드래그와 화살표 버튼으로만 페이지가 넘어간다.
-function FocusBoxPager({ pages }) {
+// (v0.6.6, 사용자 요청) 집중 분석 하단 4페이지(유저 통계·마스터 통계·해설·탐색) — 좌우 스크롤(스냅)로 넘기거나 위의 버튼으로 이동한다.
+//  · 버튼은 화면 위쪽에 붙는(sticky) 줄이다. 누르면 그 페이지로 좌우 스크롤 애니메이션이 재생되고, 동시에 집중 분석 화면을 부드럽게 스크롤해 버튼 줄이 맨 위에 오고 그 페이지 정보가 바로 아래 화면을 채운다.
+//    이미 그 위치(맨 위에 붙은 상태)면 세로 이동은 없고 좌우 스크롤 애니메이션만 재생된다.
+//  · 페이지 높이가 제각각이라 지금 보이는 페이지의 높이로만 감싸는 칸 높이를 맞춘다(ResizeObserver) — 짧은 페이지 아래에 빈 공간이 남지 않게.
+function FocusPages({ labels, pages }) {
   const [idx, setIdx] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const [dragDx, setDragDx] = useState(0);
-  // (버그 수정) flex row(양옆으로 페이지를 늘어놓는 트랙)는 기본적으로 자기 자식 중 가장 키가 큰
-  // 페이지(보통 다음 수 블록 목록)에 맞춰 전체 높이가 정해진다 — 짧은 페이지(chess.com 통계 등)를
-  // 보고 있을 때도 항상 가장 긴 페이지 높이만큼 빈 공간이 아래에 크게 남았다. 각 페이지의 실제
-  // 콘텐츠 높이를 ResizeObserver로 재 두고, 지금 보이는 페이지의 높이로만 바깥 wrapper 높이를
-  // 맞춰(부드러운 트랜지션과 함께) 페이지를 넘길 때마다 자연스럽게 늘었다 줄었다 하게 한다.
   const [heights, setHeights] = useState([]);
-  const wrapRef = useRef(null);
-  const dragRef = useRef(null);
-  const pageRefs = useRef([]);
+  const sectionRef = useRef(null), trackRef = useRef(null), pageRefs = useRef([]), rafRef = useRef(null);
   const n = pages.length;
-  useEffect(() => { setIdx((i) => Math.min(i, n - 1)); }, [n]);
+  // 페이지가 짧아도 버튼 줄이 항상 화면 맨 위까지 올라올 수 있게 칸 높이를 화면 높이만큼은 확보한다.
+  const minPageH = (typeof window !== "undefined" ? window.innerHeight : 800) - 64;
   useLayoutEffect(() => {
     const measure = () => setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
     measure();
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
     pageRefs.current.forEach((el) => el && ro.observe(el));
     return () => ro.disconnect();
   }, [pages, n]);
-  if (n <= 1) return pages[0] || null;
-  const goTo = (i) => setIdx(Math.max(0, Math.min(n - 1, i)));
-  // (버그 수정) 정렬·검색·페이지 이동 버튼이 이 드래그 캐러셀 안에 있으면 눌러도 반응하지 않던
-  // 문제 — onPointerDown이 어디를 눌렀든 무조건 setPointerCapture를 걸어, 뒤이어 발생하는 클릭
-  // 이벤트의 타깃이 실제로 누른 버튼이 아니라 이 캡처한 바깥 div로 리다이렉트됐다. 버튼·링크·
-  // 입력창 등 상호작용 요소 위에서 시작한 포인터는 애초에 드래그로 잡지 않도록 건너뛴다.
-  const onPointerDown = (e) => {
-    // (v0.6.6) 자체 좌우 스크롤이 있는 영역(마스터 기보 박스, data-no-pager)에서 시작한 포인터는 페이지 넘김으로 잡지 않는다 — 안 그러면 기보를 끌 때 페이지가 넘어가거나 스크롤이 먹통이 됐다.
-    if (e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"], [data-no-pager]')) return;
-    dragRef.current = { x: e.clientX };
-    setDragging(true);
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+  const scrollParentOf = (el) => { for (let q = el && el.parentElement; q; q = q.parentElement) { const o = getComputedStyle(q).overflowY; if (o === "auto" || o === "scroll") return q; } return null; };
+  const goTo = (i) => {
+    setIdx(i);
+    const tr = trackRef.current; if (!tr) return;
+    tr.scrollTo({ left: i * tr.clientWidth, behavior: "smooth" });
+    const sec = sectionRef.current, sc = scrollParentOf(sec);
+    if (sc && sec) { const top = sc.scrollTop + (sec.getBoundingClientRect().top - sc.getBoundingClientRect().top); if (Math.abs(top - sc.scrollTop) > 1) sc.scrollTo({ top, behavior: "smooth" }); }
   };
-  const onPointerMove = (e) => {
-    if (!dragRef.current) return;
-    setDragDx(e.clientX - dragRef.current.x);
+  // 손가락·휠로 좌우 스크롤이 멈추면 가장 가까운 페이지를 현재 페이지로 맞춘다.
+  const onScroll = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => { const tr = trackRef.current; if (tr && tr.clientWidth) setIdx(Math.max(0, Math.min(n - 1, Math.round(tr.scrollLeft / tr.clientWidth)))); });
   };
-  const endDrag = () => {
-    if (dragRef.current) {
-      const w = (wrapRef.current && wrapRef.current.clientWidth) || 300;
-      const threshold = w * 0.16;
-      if (dragDx < -threshold && idx < n - 1) goTo(idx + 1);
-      else if (dragDx > threshold && idx > 0) goTo(idx - 1);
-    }
-    dragRef.current = null;
-    setDragging(false);
-    setDragDx(0);
-  };
-  const activeHeight = heights[idx];
   return (
-    <div>
-      <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-        style={{ overflow: "hidden", touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab", height: activeHeight != null ? activeHeight : "auto", transition: dragging ? "none" : "height .32s cubic-bezier(.22,.9,.32,1)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", transform: "translateX(calc(" + (-idx * 100) + "% + " + dragDx + "px))", transition: dragging ? "none" : "transform .32s " + "cubic-bezier(.22,.9,.32,1)" }}>
-          {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ width: "100%", flexShrink: 0, minWidth: 0 }}>{p}</div>)}
-        </div>
+    <div ref={sectionRef} style={{ marginTop: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
+        {labels.map((lab, i) => (
+          <button key={i} onClick={() => goTo(i)} aria-pressed={idx === i} className="press" style={{ flex: 1, minWidth: 0, padding: "9px 4px", borderRadius: 10, border: "1px solid " + (idx === i ? T.brass : "#5A4630"), background: idx === i ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(0,0,0,.3)", color: idx === i ? "#241509" : T.ivory, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background .2s ease, color .2s ease" }}>{lab}</button>
+        ))}
       </div>
-      <div className="flex items-center justify-center" style={{ gap: 10, marginTop: 8 }}>
-        <button onClick={() => goTo(idx - 1)} disabled={idx === 0} aria-label={t("이전 페이지")} className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === 0 ? "#C9B58C" : T.inkSoft, cursor: idx === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
-        <div className="flex items-center" style={{ gap: 5 }}>
-          {pages.map((_, i) => <span key={i} style={{ width: i === idx ? 16 : 6, height: 5, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .25s ease" }} />)}
-        </div>
-        <button onClick={() => goTo(idx + 1)} disabled={idx === n - 1} aria-label={t("다음 페이지")} className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === n - 1 ? "#C9B58C" : T.inkSoft, cursor: idx === n - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
+        {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start" }}>{p}</div>)}
       </div>
     </div>
   );
@@ -2204,11 +2177,11 @@ function CrownIcon({ size = 14 }) {
   );
 }
 // 선수 한 줄 — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·왕관은 항상 보임).
-function MasterPlayerLine({ side, name, rating, winner }) {
+function MasterPlayerLine({ side, name, rating, winner, plain }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
-      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{fullPlayerName(name)}</b>
+      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
       <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}</span>
       {winner && <CrownIcon />}
     </div>
@@ -2244,11 +2217,130 @@ function ResultBar({ w, d, b, h = 10, labeled }) {
   const seg = (pct, bg, fg, txt) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
   return <div role="img" aria-label={t("백") + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + t("흑") + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</div>;
 }
+
+// (v0.6.6) 통계 요약(승률·채택률·승점 획득 확률) 공용 계산 — 마스터 통계와 내 통계가 같이 쓴다. list의 각 대국은 winner("white"|"black"|null)와 year를 가진다.
+//  승점 획득 확률 = (이 수를 둔 쪽의 승 + 무/2) / 판수 — 둔 수가 백의 수(ply 짝수)면 백 기준, 흑의 수면 흑 기준. 표본이 3판 미만이면 그 구간은 pct: null(막대만 비우고 칸·연도 표기는 유지).
+//  bucket: { keyOf(g) → 구간 키(숫자), step, label(k) }. 구간은 처음~마지막 유효 구간 사이를 빠짐없이 채우고 최대 8칸.
+const DECADE_BUCKET = { keyOf: (g) => Math.floor(g.year / 10) * 10, step: 10, label: (k) => k + "s" };
+function summarizeForStats(list, ply, bucket) {
+  let w = 0, d = 0, b = 0;
+  for (const g of list) { const r = masterResultOf(g); if (r === "w") w++; else if (r === "b") b++; else d++; }
+  const map = new Map();
+  for (const g of list) { if (!g.year) continue; const k = bucket.keyOf(g); const x = map.get(k) || { n: 0, s: 0 }; x.n++; const r = masterResultOf(g); x.s += r === "d" ? 0.5 : r === (ply % 2 === 0 ? "w" : "b") ? 1 : 0; map.set(k, x); }
+  const ok = [...map.entries()].filter(([, x]) => x.n >= 3).map(([k]) => k).sort((a, c) => a - c);
+  const trend = [];
+  if (ok.length) for (let k = ok[0]; k <= ok[ok.length - 1]; k += bucket.step) { const x = map.get(k); trend.push(x && x.n >= 3 ? { k, label: bucket.label(k), n: x.n, pct: Math.round((100 * x.s) / x.n) } : { k, label: bucket.label(k), n: x ? x.n : 0, pct: null }); }
+  trend.splice(0, Math.max(0, trend.length - 8));
+  return { w, d, b, n: w + d + b, trend };
+}
+// 통계 요약 카드 — 승률 바, 채택률(수 + 실제 판수(비중) + 승률 바), 승점 획득 확률 막대. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려진다.
+function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, sideOfMove }) {
+  if (loading) {
+    const sk = (i, st) => <div key={i} className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />;
+    return (
+      <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+        {sk(0, { height: 10, width: "42%", marginBottom: 6 })}
+        {sk(1, { height: 14 })}
+        {sk(2, { height: 10, width: "24%", marginTop: 12, marginBottom: 6 })}
+        {[3, 4, 5, 6, 7].map((i) => sk(i, { height: 15, marginBottom: 6 }))}
+        {sk(8, { height: 10, width: "36%", marginTop: 10, marginBottom: 6 })}
+        {sk(9, { height: 70 })}
+      </div>
+    );
+  }
+  if (!summary || summary.n <= 0) return null;
+  const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
+  const trend = summary.trend, valid = trend.filter((x) => x.pct != null), pcts = valid.map((x) => x.pct);
+  // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
+  const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
+  return (
+    <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+      <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
+      <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled /></div>
+      {moves && moves.length > 0 && (
+        <div style={{ marginTop: 9 }}>
+          <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
+          {moves.slice(0, 5).map((mv, ri) => {
+            const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (summary.n || 1));
+            return (
+              <button key={mv.san} onClick={() => onPickMove && onPickMove(mv.san)} {...ap(3 + ri, { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" })}>
+                <span style={{ width: 52, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
+                <span title={t("비중")} style={{ flexShrink: 0, minWidth: 74, fontSize: 11, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{fmtFull(tot)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>({share}%)</span></span>
+                <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled /></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {valid.length >= 2 && (
+        <div style={{ marginTop: 9 }}>
+          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span><span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, fontFamily: SITE_FONT }}>{lo}–{hi}%</span></div>
+          <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", gap: 4, height: AREA + 26 })}>
+            <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
+            {trend.map((x) => (
+              <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+                {x.pct != null && <>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
+                  <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                </>}
+                <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12 }}>{x.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// 필터 칩 줄들 — rows: [[라벨, [[값, 표시], …], 현재값, 설정함수], …]. 마스터 통계·내 통계 공용.
+function StatsFilterRows({ rows }) {
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+      {rows.map(([label, opts, cur, set]) => (
+        <div key={label} className="flex items-center gap-2">
+          <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{label}</span>
+          <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, flexWrap: "wrap" }}>
+            {opts.map(([k, lab]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{lab}</button>)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+// chess.com·OpenChess 대국(내 통계)을 마스터 대국과 같은 모양(winner·year·date)으로 바꾼다 — 요약 계산과 목록이 같은 코드를 쓴다.
+const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
+const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
+const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => String((k % 12) + 1).padStart(2, "0") };
+const YEAR_BUCKET = { keyOf: (g) => g.year, step: 1, label: (k) => "'" + String(k).slice(-2) };
+// 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
+function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
+  const won = g.result === "win", lost = g.result === "loss";
+  const dateTxt = g.endTime ? (() => { const d = new Date(g.endTime * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); })() : "";
+  const orig = g._orig || g;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            <MasterPlayerLine plain side="w" name={g.white && g.white.username} rating={g.white && g.white.rating} winner={g.winner === "white"} />
+            <MasterPlayerLine plain side="b" name={g.black && g.black.username} rating={g.black && g.black.rating} winner={g.winner === "black"} />
+          </div>
+          <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+        </div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{g.timeClass ? ", " + (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : ""}{ratingChange != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: ratingChange > 0 ? T.best : ratingChange < 0 ? T.blunder : T.inkSoft }}>{", " + (ratingChange > 0 ? "+" + ratingChange : ratingChange)}</span>}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+      </div>
+      <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+        <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+        <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(orig)} />
+      </div>
+    </div>
+  );
+}
 function FocusPanel(props) {
   if (!props.fa.active) return null;
   return <FocusPanelBody {...props} />;
 }
-function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
+function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
     editKey, devEdit, setDevEdit,
@@ -2257,6 +2349,21 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
+  // (v0.6.6, 사용자 요청) 집중 분석 안에서 지나온 경로 기록 — 가장 멀리 본 수순을 기보로 남기고, 수를 눌러 그 시점으로 이동한다. 새 수를 열면 그 수순으로 이어지고(되돌아간 뒤 다른 수를 열면 그 갈래로 바뀐다), 이전 수순 안의 수로 가면 기록은 그대로다.
+  const curLine = [...sans, san], curKey = curLine.join(" ");
+  const [line, setLine] = useState(curLine);
+  useEffect(() => {
+    setLine((prev) => {
+      if (curLine.length <= prev.length && curLine.every((x, i) => prev[i] === x)) return prev;
+      return curLine;
+    });
+  }, [curKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const curIdx = curLine.length - 1;
+  const lineSafe = line.length > curIdx && curLine.every((x, i) => line[i] === x) ? line : curLine;
+  // 수 이름 — 이 수에 이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름
+  const dispName = useMemo(() => { if (title) return title; for (let k = curLine.length; k >= 1; k--) { const nd = snapNode(curLine.slice(0, k)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; } return null; }, [curKey, title]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const focusKws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+  const focusBoardPx = Math.max(200, Math.min(boardSize || 360, (typeof window !== "undefined" ? window.innerWidth : 400) - 32, 588));
   const [openingGameId, setOpeningGameId] = useState(null);
   const [gameOpenError, setGameOpenError] = useState(false);
   const [addGameOpen, setAddGameOpen] = useState(false);   // (v0.2.3 기능) 개발자 마스터 대국 추가 모달
@@ -2264,23 +2371,51 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
   // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
   // (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게, 이 수가 두어진 내 대국 목록도 시간
   // 규정·진영으로 나눠 볼 수 있게 한다.
+  // (v0.6.6, 사용자 요청) 내 통계 — chess.com / OpenChess 대국을 플랫폼 토글로 나눠 보고, 마스터 통계와 같은 요약·필터·대국 목록을 쓴다.
+  const [myView, setMyView] = useState(() => (chesscom && chesscom.status !== "idle" ? "cc" : "oc"));
+  const [ocGames, setOcGames] = useState(null);   // OpenChess 대국(실시간·봇) — 처음 토글할 때 한 번 불러온다
+  useEffect(() => {
+    if (myView !== "oc" || ocGames !== null) return undefined;
+    if (!SB_ON || !uid) { setOcGames([]); return undefined; }
+    let off = false;
+    sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 })
+      .then((r) => { if (!off) setOcGames((Array.isArray(r) ? r : []).filter((x) => Array.isArray(x.sans) && x.sans.length > 0).map((x) => profileGameRowToGame(x, username))); })
+      .catch(() => { if (!off) setOcGames([]); });
+    return () => { off = true; };
+  }, [myView, uid]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [myTimeFilter, setMyTimeFilter] = useState("all");
   const [myColorFilter, setMyColorFilter] = useState("all");
+  const [myResult, setMyResult] = useState("all");   // all | win | draw | loss
+  const [myRating, setMyRating] = useState(0);       // 두 선수 중 높은 쪽 레이팅 하한(0 = 전체)
+  const [myPeriod, setMyPeriod] = useState(0);       // 최근 N일 이내(0 = 전체)
   // (사용자 요청) 오프닝 실수 수순을 누르면 곧장 분석 탭으로 이동하는 대신, 그 수순으로 실제 진행된
   // 내 chess.com 대국을 바로 아래에 펼쳐 보여준다 — 펼쳐진 항목의 인덱스.
   const [expandedMistakeIdx, setExpandedMistakeIdx] = useState(null);
   useEffect(() => { setExpandedMistakeIdx(null); }, [sans.join(","), san]);
+  const myLoading = myView === "cc" ? !!chesscom && chesscom.status === "loading" : ocGames === null;
+  const myPool = useMemo(() => (myView === "cc" ? (chesscom && chesscom.status === "ready" ? chesscom.games : []) : (ocGames || [])), [myView, chesscom && chesscom.games, chesscom && chesscom.status, ocGames]);
+  const myPath = [...sans, san];
+  // 이 수까지 진행된 내 대국(필터 전) — 필터는 이 위에서 걸린다. 마스터 통계 대국과 같은 모양으로 바꿔 둔다.
+  const myBase = useMemo(() => myPool.filter((g) => g.moves.length >= myPath.length && myPath.every((s2, i) => g.moves[i] === s2)).map(adaptMyGame).sort((a, c) => (c.endTime || 0) - (a.endTime || 0)), [myPool, sans.join(","), san]);   // eslint-disable-line react-hooks/exhaustive-deps
   const myGames = useMemo(() => {
-    if (!chesscom || chesscom.status !== "ready") return [];
-    const path = [...sans, san];
-    let out = chesscom.games.filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s));
-    if (myTimeFilter !== "all") out = out.filter((g) => g.timeClass === myTimeFilter);
-    if (myColorFilter !== "all") out = out.filter((g) => g.color === myColorFilter);
-    return out.sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san, myTimeFilter, myColorFilter]);
-  const MY_GAMES_PAGE_SIZE = 5;
+    const now = Math.floor(Date.now() / 1000);
+    return myBase.filter((g) => (myTimeFilter === "all" || g.timeClass === myTimeFilter) && (myColorFilter === "all" || g.color === myColorFilter) && (myResult === "all" || g.result === myResult)
+      && (!myRating || Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0) >= myRating) && (!myPeriod || (g.endTime || 0) >= now - myPeriod * 86400));
+  }, [myBase, myTimeFilter, myColorFilter, myResult, myRating, myPeriod]);
+  const mySummary = useMemo(() => {
+    const spanYears = new Set(myGames.map((g) => g.year).filter(Boolean)).size;
+    const base = summarizeForStats(myGames, ply, spanYears >= 2 ? YEAR_BUCKET : MONTH_BUCKET);
+    return base;
+  }, [myGames, ply]);
+  // 채택률 — 이 수 다음에 내가(또는 상대가) 둔 수별 판수와 백·무·흑 결과(필터 적용 후).
+  const myMoves = useMemo(() => {
+    const by = new Map();
+    for (const g of myGames) { const nx = g.moves[myPath.length]; if (!nx) continue; const x = by.get(nx) || { san: nx, white: 0, draws: 0, black: 0 }; const r = masterResultOf(g); if (r === "w") x.white++; else if (r === "b") x.black++; else x.draws++; by.set(nx, x); }
+    return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
+  }, [myGames]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
-  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myTimeFilter, myColorFilter]);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myView, myTimeFilter, myColorFilter, myResult, myRating, myPeriod]);
   const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
   const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
@@ -2364,19 +2499,9 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
   // 통계 요약 — 필터가 없고 Lichess 마스터 DB 전체 집계가 있으면 그 값(표본이 가장 큼), 아니면 지금 표시 중인 대국 기준.
   const masterSummary = useMemo(() => {
     const lt = masterStats ? masterStats.white + masterStats.draws + masterStats.black : 0;
-    let w = 0, d = 0, b = 0, full = false;
-    if (!masterFiltersOn && lt > 0) { w = masterStats.white; d = masterStats.draws; b = masterStats.black; full = true; }
-    else for (const g of filteredMasterGames) { const r = masterResultOf(g); if (r === "w") w++; else if (r === "b") b++; else d++; }
-    const n = w + d + b;
-    // 연도별 추이 — 10년 단위, 3판 이상인 구간만. 승점 획득 확률 = (이 수를 둔 쪽의 승 + 무/2) / 판수 — 둔 수가 백의 수(ply 짝수)면 백 기준, 흑의 수면 흑 기준.
-    const dec = new Map();
-    for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; const r = masterResultOf(g); x.s += r === "d" ? 0.5 : r === (ply % 2 === 0 ? "w" : "b") ? 1 : 0; dec.set(k, x); }
-    // 표본이 모자란(3판 미만)·없는 연대도 칸은 남긴다(pct: null) — 막대만 비우고 연도 표기는 그대로 둬 그래프 폭과 일체감을 유지한다.
-    const ok = [...dec.entries()].filter(([, x]) => x.n >= 3).map(([k]) => k).sort((a, b2) => a - b2);
-    const trend = [];
-    if (ok.length) for (let k = ok[0]; k <= ok[ok.length - 1]; k += 10) { const x = dec.get(k); trend.push(x && x.n >= 3 ? { k, n: x.n, pct: Math.round((100 * x.s) / x.n) } : { k, n: x ? x.n : 0, pct: null }); }
-    trend.splice(0, Math.max(0, trend.length - 8));
-    return { w, d, b, n, full, trend };
+    const base = summarizeForStats(filteredMasterGames, ply, DECADE_BUCKET);
+    if (!masterFiltersOn && lt > 0) return { ...base, w: masterStats.white, d: masterStats.draws, b: masterStats.black, n: lt, full: true };
+    return { ...base, full: false };
   }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
@@ -2403,165 +2528,64 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
         <button onClick={onBack} className="press" title={t("집중 분석 종료")} style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
-        <div className="flex items-center gap-2">
+        {/* (v0.6.6, 사용자 요청) 분석 탭 메인의 기보를 가져와 집중 분석 안에서 지나온 경로를 기록하고, 수를 눌러 그 시점으로 자유롭게 이동한다. */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex" }}><SequenceBar sans={lineSafe.slice(0, curIdx + 1)} future={lineSafe.slice(curIdx + 1)} onJump={(k) => onJump && onJump(lineSafe.slice(0, k - 1), lineSafe[k - 1], { replace: true })} font={SITE_FONT} /></div>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title={t("이론 수로 추가")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 이론 수로 추가", <Book size={14} />)}</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title={t("이론 수에서 삭제")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 이론 수에서 삭제", <Trash2 size={14} />)}</button>}
         </div>
       </div>
-      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치·등급(수 이름 바로 옆) · 퍼즐 만들기 버튼(우측) */}
-      {/* (사용자 요청) 평가치·등급 텍스트를 우측 끝(별도 칼럼)이 아니라 수 이름 바로 옆으로 옮기고,
-          둘 다 같은 진한 색(QCOLOR를 검정과 섞어 더 짙게)·같은 폰트(사이트 기본 IBM Plex Sans KR,
-          예전엔 평가치만 monospace라 서로 다른 폰트로 보였다)로 통일했다. 그렇게 비게 된 우측 자리엔
-          위 툴바에 있던 "퍼즐 풀기" 버튼(생성 중이면 진행 게이지)을 옮겨 왔다. */}
+      {/* (v0.6.6, 사용자 요청) 헤더: 아이콘 · 수(크게) + 그 아래 수 이름(이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름) · 평가치·등급 · 퍼즐 만들기 버튼(우측) */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
-          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
-            {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{title}</div>}
-            {/* (사용자 요청) 어두운 배경 위에서 색을 더 짙게(color-mix로 검정을 섞음) 했더니 오히려
-                더 안 보였다 — 반대로 배경과 대비가 가장 뚜렷한 크림색으로 통일한다. (재조정) T.ivoryHi
-                (#FAF2E2)는 흰색에 너무 가까워 보인다는 피드백으로, 더 진한 크림색인 T.ivory(#EBDDC4)로 낮춘다. */}
+          <div style={{ marginTop: 3, fontSize: 15, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{dispName || "\u00A0"}</div>
+          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 3 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? t("이론") : "—")}</div>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
         </div>
-        {/* (v0.4.4 개편, 사용자 요청) 예전엔 여기서 곧장 퍼즐을 만들어(auto:true) 준비되는 대로
-            "퍼즐 풀기"가 PuzzleSolver를 직접 열었다 — 이제는 항상 퍼즐 탭의 "퍼즐 만들기" 마법사로
-            이동한다. 같은 위치에 이미 누군가(나 자신 포함) 만든 퍼즐이 있으면 마법사가 곧장
-            "~님이 이미 이 퍼즐을 만들었어요!"와 "퍼즐 풀기"를 보여준다(퍼즐 탭에서 직접 만들 때와
-            완전히 같은 코드 경로). 로컬에 이미 있는 걸 알고 있으면 버튼 문구만 미리 맞춰 둔다. */}
         {wizardSeed && onOpenPuzzleWizard && (
           <button onClick={() => onOpenPuzzleWizard(wizardSeed)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}>
             <Pencil size={14} /> {existingPuzzle && existingPuzzle.tree ? t("퍼즐 풀기") : t("퍼즐 만들기")}
           </button>
         )}
       </div>
-      {/* 미니보드(좌) + 해설(우) */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flexShrink: 0 }}>
-          <AnimatedMove sans={sans} san={san} size={200} extraArrows={extraArrows} />
-          {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
-        </div>
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
-        </div>
-      </div>
-      {(canEdit || canAdd) && (
-        <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
-            <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5 }}>{tx("{0} 개발자 편집", <Crown size={14} />)}</div>
-            {!devEdit && <div className="flex gap-2">
-              <button onClick={openDevEdit} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름·키워드 편집")}</button>
-              {canEdit && (m.book || isUnbooked(editKey, san)) && <button onClick={toggleUnbook} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + (isUnbooked(editKey, san) ? T.excellent : T.blunder), background: "transparent", color: isUnbooked(editKey, san) ? T.excellent : T.blunder, cursor: "pointer" }}>{isUnbooked(editKey, san) ? t("이론 수로 복구") : t("이론 수에서 삭제")}</button>}
-            </div>}
-          </div>
-          {devEdit && (
-            <div>
-              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t("수 이름 (예: 이탈리안 게임)")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, marginBottom: 8, boxSizing: "border-box" }} />
-              <div style={{ marginBottom: 8 }}>
-                {KW_PAIRS.map(([a, b]) => (
-                  <div key={a} className="flex items-center gap-2" style={{ marginBottom: 5 }}>
-                    {[a, b].map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ flex: 1, fontSize: 9.5, fontWeight: 800, padding: "5px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "rgba(255,255,255,.15)"), background: on ? KW[k].bg : "rgba(255,255,255,.06)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
-                  </div>
-                ))}
-                <div className="flex flex-wrap gap-1" style={{ marginTop: 8 }}>
-                  {KW_SINGLES.map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "3px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "transparent"), background: on ? KW[k].bg : "rgba(255,255,255,.08)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={saveMeta} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
-                <button onClick={() => setDevEdit(false)} className="press" style={{ fontSize: 11, padding: "5px 12px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.ivory, cursor: "pointer" }}>{t("취소")}</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {/* 응징 시퀀스(퍼즐) */}
-      {punish && (
-        <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
-          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스, 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
-          <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.55, marginBottom: 8 }}>{punish.why}</p>
-          <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
-        </div>
-      )}
-      {/* (v0.2.6 버그 수정) 미니보드 하단 콘텐츠를 2페이지로 나눈다 — 1페이지: chess.com 통계+마스터
-          대국(기존과 동일), 2페이지: 다음 수 블록(nextMovesPanel, LearnTab에서 전달). 드래그 또는
-          </> 버튼으로만 넘긴다(휠·스크롤 무반응). */}
-      <FocusBoxPager pages={[
+      {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기, 그 아래에 수 키워드(누르면 설명 말풍선) */}
+      <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
+      <div style={{ marginTop: 10, minHeight: 22 }}><KeywordScroll kws={focusKws} /></div>
+      <FocusPages labels={[t("유저 통계"), t("마스터 통계"), t("해설"), t("탐색")]} pages={[
         <>
-      {/* (버그) 내 chess.com 통계를 마스터 대국보다 위에 표시 — 최근 대국 목록 + 전적 요약 통합 블록 */}
+      {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
       <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span className="flex items-center" style={{ gap: 6, fontSize: 14, fontWeight: 800, color: T.ink }}>{tx("{0} 통계", <ChesscomLogo height={19} />)}</span></div>
-        {/* (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게 시간 규정·진영 선택 박스를 추가 —
-            이 수가 두어진 내 대국 목록을 시간 규정/진영으로 좁혀 볼 수 있다. */}
-        {chesscom && chesscom.status === "ready" && (
-          <div className="flex items-center" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
-                <button key={k} onClick={() => setMyTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myTimeFilter === k ? T.ebony2 : "transparent", color: myTimeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-              ))}
-            </div>
-            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-                <button key={k} onClick={() => setMyColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myColorFilter === k ? T.ebony2 : "transparent", color: myColorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-              ))}
-            </div>
-          </div>
-        )}
-        {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("설정에서 chess.com 계정을 연동하면 이 수의 내 대국과 통계 표시")}</p>
-          : chesscom.status === "loading" ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("기보를 불러오는 중…")}</p>
-            : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
-              : (
-                <div>
-                  {/* 이 수가 두어진 내 최근 대국 — 없으면 "없다"고 표시 */}
-                  <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>{t("이 수를 둔 내 최근 대국")}</span>{myGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", myGames.length)}</span>}</div>
-                  {myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px" }}>{t("최근 대국 없음")}</p>
-                    : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
-                        const won = g.result === "win", lost = g.result === "loss";
-                        const rc = ratingChanges.get(g);
-                        // (v0.2.6 버그 수정) 프로필 카드의 "최근 대국" 목록과 UI를 통일 —
-                        // "⬜ 백"/"⬛ 흑" 텍스트 대신 진영 색 막대, 상대 닉네임·레이팅 표시를 그대로 반영.
-                        const oppSide = g.color === "w" ? g.black : g.white;
-                        return (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
-                            <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                                {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
-                              </div>
-                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                              {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                            </div>
-                            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                              {/* (v0.2.6 버그 수정) 이 버튼만 28px로 옆의 리뷰 버튼(BestMoveJumpButton, 30px)과
-                                  크기가 미묘하게 달랐다 — 프로필 카드·마스터 대국 목록과 같은 30px로 통일. */}
-                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                              <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
-                    </div>}
-                  {/* 전적 요약 */}
-                  {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>{t("이 수순의 대국 통계 없음")}</p>
-                    : (
-                  <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                    <div><b>{tx("{0} 게임", fmtFull(stats.total))}</b>, <span style={{ color: T.best }}>{tx("{0}승", stats.w)}</span> {tx("{0}무 {1}, 승률 {2}", stats.d, <span style={{ color: T.blunder }}>{tx("{0}패", stats.l)}</span>, <b>{stats.winRate}%</b>)}</div>
-                    {stats.top.length > 0 && (
-                      <div style={{ marginTop: 6 }}>
-                        <div style={{ fontWeight: 800, color: T.inkSoft, fontSize: 11.5, marginBottom: 2 }}>{t("자주 둔 다음 수")}</div>
-                        {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
-                            onJump로 그 수의 집중분석 모드로 바로 이동할 수 있게 한다. */}
-                        {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({tx("{0} 게임), 총 {1}승 {2}무 {3}패, 승률 {4}", t.n, t.w, t.d, t.l, t.wr)}%</button>
-                        ))}
-                      </div>
-                    )}
+        <div className="flex items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("내 통계")}</span>
+          <StatsViewToggle value={myView} onChange={setMyView} />
+        </div>
+        {myView === "cc" && (!chesscom || chesscom.status === "idle") ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("설정에서 chess.com 계정을 연동하면 이 수의 내 대국과 통계 표시")}</p>
+          : myView === "cc" && chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
+            : (
+              <div>
+                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
+                {!myLoading && myBase.length > 0 && <StatsFilterRows rows={[
+                  [t("시간"), [["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]], myTimeFilter, setMyTimeFilter],
+                  [t("진영"), [["all", t("전체")], ["w", t("백")], ["b", t("흑")]], myColorFilter, setMyColorFilter],
+                  [t("결과"), [["all", t("전체")], ["win", t("승리")], ["draw", t("무승부")], ["loss", t("패배")]], myResult, setMyResult],
+                  [t("레이팅"), [[0, t("전체")], [1000, "1000+"], [1500, "1500+"], [2000, "2000+"], [2500, "2500+"]], myRating, setMyRating],
+                  [t("기간"), [[0, t("전체")], [365, t("1년 이내")], [30, t("1달 이내")], [7, t("1주 이내")], [1, t("1일 이내")]], myPeriod, setMyPeriod],
+                ]} />}
+                <div style={{ height: 8 }} />
+                {myLoading ? null
+                  : myBase.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("최근 대국 없음")}</p>
+                  : myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("조건에 맞는 결과 없음")}</p>
+                  : <>
+                    {myGamesPageItems.map((g) => <UserGameRow key={g.id || g.endTime + g.moves.length} g={g} ratingChange={myView === "cc" ? ratingChanges.get(g._orig) : g._delta} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />)}
+                    <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
+                  </>}
+                {myView === "cc" && chesscom.status === "ready" && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>{t("오프닝 실수")}</div>
                       {analyzing && mistakes.length === 0 ? (
@@ -2627,10 +2651,12 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
                         })}
                     </div>
                   </div>
-                    )}
-                </div>
                 )}
+              </div>
+            )}
       </div>
+        </>,
+        <>
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
@@ -2648,79 +2674,13 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
           )}
         </div>
         {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 채택률(선택된 수), 승점 획득 확률. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려지고, 데이터가 오면 실제 요소가 위에서부터 하나씩 그려진다. */}
-        {loadingMasterGames && (
-          <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
-            {(() => { const sk = (i, st) => <div className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />; return (<>
-              {sk(0, { height: 10, width: "42%", marginBottom: 6 })}
-              {sk(1, { height: 14 })}
-              {sk(2, { height: 10, width: "24%", marginTop: 12, marginBottom: 6 })}
-              {[3, 4, 5, 6, 7].map((i) => sk(i, { height: 15, marginBottom: 6 }))}
-              {sk(8, { height: 10, width: "36%", marginTop: 10, marginBottom: 6 })}
-              {sk(9, { height: 70 })}
-            </>); })()}
-          </div>
-        )}
-        {!loadingMasterGames && masterSummary.n > 0 && (() => {
-          const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
-          const trend = masterSummary.trend, pcts = trend.filter((x) => x.pct != null).map((x) => x.pct);
-          // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
-          const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
-          return (
-          <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
-            <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{t("마스터 승률")}</div>
-            <div {...ap(1)}><ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled /></div>
-            {masterStats && masterStats.moves.length > 0 && !masterFiltersOn && (
-              <div style={{ marginTop: 9 }}>
-                <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
-                {masterStats.moves.slice(0, 5).map((mv, ri) => {
-                  const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (masterSummary.n || 1));
-                  return (
-                    <button key={mv.san} onClick={() => onJump && onJump([...sans, san], mv.san)} {...ap(3 + ri, { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" })}>
-                      <span style={{ width: 52, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
-                      <span title={t("비중")} style={{ flexShrink: 0, minWidth: 74, fontSize: 11, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{fmtFull(tot)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>({share}%)</span></span>
-                      <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled /></span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {trend.filter((x) => x.pct != null).length >= 2 && (
-              <div style={{ marginTop: 9 }}>
-                <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span><span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, fontFamily: SITE_FONT }}>{lo}–{hi}%</span></div>
-                <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", gap: 4, height: AREA + 26 })}>
-                  <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
-                  {trend.map((x) => (
-                    <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
-                      {x.pct != null && <>
-                        <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
-                        <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
-                      </>}
-                      <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12 }}>{x.k}s</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          );
-        })()}
+        <StatsSummaryCard loading={loadingMasterGames} summary={masterSummary} title={t("마스터 승률")} moves={masterStats && !masterFiltersOn ? masterStats.moves : null} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
         {/* (v0.6.6, 사용자 요청) 필터 — 결과·레이팅·연도 */}
-        {masterGames.length > 1 && (
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-            {[
-              [[["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
-              [[[0, t("전체")], [2500, "2500+"], [2600, "2600+"], [2700, "2700+"], [2800, "2800+"]], mRating, setMRating],
-              [[[0, t("전체")], [1, "~2000"], [2000, "2000s"], [2010, "2010s"], [2020, "2020s"]], mEra, setMEra],
-            ].map(([opts, cur, set], gi) => (
-              <div key={gi} className="flex items-center gap-2">
-                <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{[t("결과"), t("레이팅"), t("연도")][gi]}</span>
-                <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, flexWrap: "wrap" }}>
-                  {opts.map(([k, label]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{label}</button>)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {masterGames.length > 1 && <StatsFilterRows rows={[
+          [t("결과"), [["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
+          [t("레이팅"), [[0, t("전체")], [2500, "2500+"], [2600, "2600+"], [2700, "2700+"], [2800, "2800+"]], mRating, setMRating],
+          [t("연도"), [[0, t("전체")], [1, "~2000"], [2000, "2000s"], [2010, "2010s"], [2020, "2020s"]], mEra, setMEra],
+        ]} />}
         {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
             포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
         {masterGames.length > 1 && (
@@ -2783,7 +2743,48 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
       </div>
         </>,
-        nextMovesPanel,
+        <>
+        <div style={{ marginTop: 12 }}><MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} /></div>
+      {(canEdit || canAdd) && (
+        <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
+            <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5 }}>{tx("{0} 개발자 편집", <Crown size={14} />)}</div>
+            {!devEdit && <div className="flex gap-2">
+              <button onClick={openDevEdit} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름·키워드 편집")}</button>
+              {canEdit && (m.book || isUnbooked(editKey, san)) && <button onClick={toggleUnbook} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + (isUnbooked(editKey, san) ? T.excellent : T.blunder), background: "transparent", color: isUnbooked(editKey, san) ? T.excellent : T.blunder, cursor: "pointer" }}>{isUnbooked(editKey, san) ? t("이론 수로 복구") : t("이론 수에서 삭제")}</button>}
+            </div>}
+          </div>
+          {devEdit && (
+            <div>
+              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t("수 이름 (예: 이탈리안 게임)")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, marginBottom: 8, boxSizing: "border-box" }} />
+              <div style={{ marginBottom: 8 }}>
+                {KW_PAIRS.map(([a, b]) => (
+                  <div key={a} className="flex items-center gap-2" style={{ marginBottom: 5 }}>
+                    {[a, b].map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ flex: 1, fontSize: 9.5, fontWeight: 800, padding: "5px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "rgba(255,255,255,.15)"), background: on ? KW[k].bg : "rgba(255,255,255,.06)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
+                  </div>
+                ))}
+                <div className="flex flex-wrap gap-1" style={{ marginTop: 8 }}>
+                  {KW_SINGLES.map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "3px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "transparent"), background: on ? KW[k].bg : "rgba(255,255,255,.08)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveMeta} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
+                <button onClick={() => setDevEdit(false)} className="press" style={{ fontSize: 11, padding: "5px 12px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.ivory, cursor: "pointer" }}>{t("취소")}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {/* 응징 시퀀스(퍼즐) */}
+      {punish && (
+        <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
+          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스, 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
+          <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.55, marginBottom: 8 }}>{punish.why}</p>
+          <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
+        </div>
+      )}
+        </>,
+        <div style={{ marginTop: 12 }}>{nextMovesPanel}</div>,
       ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
     </div>
@@ -3401,14 +3402,15 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
     if (focus) { setSans([...focus.sans, focus.san]); setFuture([]); setSel(null); setLastQ(null); }
     setFocus(null);
   };
-  const enterFocusAt = (tSans, tSan) => {
+  const enterFocusAt = (tSans, tSan, opts) => {
     const node2 = snapNode([...tSans, tSan]);
     const name = (node2 && node2.opening) ? node2.opening.name : tSan;
     unlockOpening([...tSans, tSan].join(" "), name);
     const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
     // 이미 집중 분석 중이었다면(다른 집중 분석에서 링크를 눌러 옮겨온 것) 그 집중 분석을 스택에
     // 쌓아 뒤로가기로 되돌아올 수 있게 한다. 집중 분석 밖(보드·PGN 등)에서의 진입이면 새 세션이다.
-    setFocusStack((s) => (focus ? [...s, focus] : []));
+    // (v0.6.6) 집중 분석 기보에서 수를 눌러 옮길 때(opts.replace)는 되돌아갈 스택을 쌓지 않는다 — 한 경로 안의 이동이다.
+    if (!(opts && opts.replace)) setFocusStack((s) => (focus ? [...s, focus] : []));
     setFocus({ sans: [...tSans], san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name });
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
@@ -3660,7 +3662,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
+              <FocusPanel boardSize={boardSize} onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
         )}
