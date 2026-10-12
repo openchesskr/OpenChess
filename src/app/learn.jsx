@@ -33,9 +33,12 @@ async function lichessFetchText(url) {
 // 실제로 내려주는 최대치(15개)까지 가져와, 화면에서는 페이지를 넘기며(+ 정렬) 볼 수 있게 한다.
 async function fetchMasterTopGames(sans, count = 15) {
   const uci = sansToUci(sans).join(",");
-  const url = LICHESS_API + "?master=1&play=" + uci + "&moves=0&topGames=" + count;
+  // (v0.6.6) moves=12 — 같은 요청으로 이 포지션의 마스터 DB 전체 승·무·패와 많이 둔 다음 수 통계도 받는다(집중 분석 마스터 통계 요약).
+  const url = LICHESS_API + "?master=1&play=" + uci + "&moves=12&topGames=" + count;
   const j = await lichessFetchJson(url);
-  return (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year }));
+  const games = (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year }));
+  const stats = { white: j.white || 0, draws: j.draws || 0, black: j.black || 0, moves: (j.moves || []).map((m) => ({ san: m.san, white: m.white || 0, draws: m.draws || 0, black: m.black || 0, avg: m.averageRating || null })) };
+  return { games, stats };
 }
 // (v0.2.3 기능) 개발자가 수동으로 추가한 마스터 대국(master_games_dev) — Lichess 마스터 DB에 없는
 // 유명 대국을 보충한다. sans(그 대국의 전체 SAN 배열)가 지금 보고 있는 수순을 접두사로 포함하는
@@ -64,13 +67,13 @@ async function fetchDevMasterGames(sans) {
 // Lichess 마스터 DB + 개발자 추가분 + 외부 정적 데이터를 한 목록으로 합친다 —
 // 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichess, dev, staticData] = await Promise.all([
-    fetchMasterTopGames(sans, count).catch(() => []),
+  const [lichessRes, dev, staticData] = await Promise.all([
+    fetchMasterTopGames(sans, count).catch(() => ({ games: [], stats: null })),
     fetchDevMasterGames(sans).catch(() => []),
     loadMasterGameData(),
   ]);
   const staticGames = staticMasterGamesFor(sans, staticData);
-  return [...dev, ...staticGames, ...lichess];
+  return { games: [...dev, ...staticGames, ...lichessRes.games], stats: lichessRes.stats };
 }
 async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
   await sbInsert("master_games_dev", {
@@ -1084,7 +1087,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         try {
           return {
             ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
-            sans: pvUciToSans(sans, pv.pv, 15),
+            sans: pvUciToSans(sans, pv.pv, pv.depth || 0),   // (v0.6.6, 사용자 요청) 수순 길이 = 지금 도달한 depth(예전엔 15수 고정)
           };
         } catch { return null; }
       }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
@@ -1599,6 +1602,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const isTheory = active && (m.book || addedTheory);
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
+  const [masterStats, setMasterStats] = useState(null);   // (v0.6.6) Lichess 마스터 DB 전체 승·무·패 + 많이 둔 다음 수
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
   // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
   // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
@@ -1606,11 +1610,11 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const [masterGamesError, setMasterGamesError] = useState(false);
   const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setLoadingMasterGames(false); setMasterGamesError(false);
+    setMasterGames([]); setMasterStats(null); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchAllMasterGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
+    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
@@ -1619,7 +1623,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
+    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -2200,6 +2204,15 @@ function normalizePlayerKey(name) {
 // (v0.5.5 버그 수정) 예전엔 FocusPanel 본문 맨 앞에서 `if (!fa.active) return null`로 조기 반환한 뒤 수십 개의 훅을
 // 불러, 같은 인스턴스에서 active가 바뀌면 훅 개수가 달라져 React 오류가 날 수 있는 구조였다 — 조기 반환은
 // 얇은 껍데기에 두고 훅을 쓰는 본문은 FocusPanelBody로 분리한다.
+// (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
+const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
+const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
+// 백·무·흑 비율 막대 — 백(밝은색)·무(회색)·흑(어두운색). labeled면 막대 안에 백분율을 적는다.
+function ResultBar({ w, d, b, h = 10, labeled }) {
+  const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
+  const seg = (pct, bg, fg, txt) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
+  return <div role="img" aria-label={t("백") + " " + Math.round(pw) + "% · " + t("무승부") + " " + Math.round(pd) + "% · " + t("흑") + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</div>;
+}
 function FocusPanel(props) {
   if (!props.fa.active) return null;
   return <FocusPanelBody {...props} />;
@@ -2210,7 +2223,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
     stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
-    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
+    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
   const [openingGameId, setOpeningGameId] = useState(null);
@@ -2255,7 +2268,21 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // 입력창에 포커스가 있는 동안엔 실시간으로 일치하는 선수 이름을 추천해 보여준다.
   const [masterSearch, setMasterSearch] = useState("");
   const [masterSearchFocused, setMasterSearchFocused] = useState(false);
-  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch]);
+  // (v0.6.6, 사용자 요청) 필터 강화 — 결과·레이팅·연도 칩. 이 수 직후 진행 미리보기(펼침)와 통계 요약도 이 목록을 따른다.
+  const [mResult, setMResult] = useState("all");   // all | w | d | b
+  const [mRating, setMRating] = useState(0);       // 두 선수 중 높은 쪽 레이팅 하한(0 = 전체)
+  const [mEra, setMEra] = useState(0);             // 이 연도 이후(0 = 전체)
+  const [expandedMasterId, setExpandedMasterId] = useState(null);
+  const [contMap, setContMap] = useState({});      // 대국 id → 수순(SAN 배열) | "loading" | "error"
+  useEffect(() => { setExpandedMasterId(null); }, [sans.join(","), san]);
+  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
+  const toggleMasterGame = async (id) => {
+    if (expandedMasterId === id) { setExpandedMasterId(null); return; }
+    setExpandedMasterId(id);
+    if (Array.isArray(contMap[id])) return;
+    setContMap((m) => ({ ...m, [id]: "loading" }));
+    try { const gs = await fetchAnyMasterGamePgn(id); setContMap((m) => ({ ...m, [id]: gs && gs.length ? gs : "error" })); } catch { setContMap((m) => ({ ...m, [id]: "error" })); }
+  };
   const sortedMasterGames = useMemo(() => {
     if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
     if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
@@ -2284,24 +2311,42 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // (성 + 이름 이니셜 일치) 동일인으로 보고 함께 포함시킨다.
   const masterSearchKey = masterSearchQuery ? normalizePlayerKey(masterSearch) : "";
   const filteredMasterGames = useMemo(() => {
-    if (!masterSearchQuery) return sortedMasterGames;
-    return sortedMasterGames.filter((g) => {
+    let out = sortedMasterGames;
+    if (masterSearchQuery) out = out.filter((g) => {
       const wName = (g.white && g.white.name) || "";
       const bName = (g.black && g.black.name) || "";
-      if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery)) return true;
+      if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery) || (g.event || "").toLowerCase().includes(masterSearchQuery)) return true;
       return masterSearchKey && (normalizePlayerKey(wName) === masterSearchKey || normalizePlayerKey(bName) === masterSearchKey);
     });
-  }, [sortedMasterGames, masterSearchQuery, masterSearchKey]);
+    if (mResult !== "all") out = out.filter((g) => masterResultOf(g) === mResult);
+    if (mRating) out = out.filter((g) => masterMaxRating(g) >= mRating);
+    if (mEra) out = out.filter((g) => (g.year || 0) >= mEra);
+    return out;
+  }, [sortedMasterGames, masterSearchQuery, masterSearchKey, mResult, mRating, mEra]);
+  const masterFiltersOn = !!masterSearchQuery || mResult !== "all" || !!mRating || !!mEra;
+  // 통계 요약 — 필터가 없고 Lichess 마스터 DB 전체 집계가 있으면 그 값(표본이 가장 큼), 아니면 지금 표시 중인 대국 기준.
+  const masterSummary = useMemo(() => {
+    const lt = masterStats ? masterStats.white + masterStats.draws + masterStats.black : 0;
+    let w = 0, d = 0, b = 0, full = false;
+    if (!masterFiltersOn && lt > 0) { w = masterStats.white; d = masterStats.draws; b = masterStats.black; full = true; }
+    else for (const g of filteredMasterGames) { const r = masterResultOf(g); if (r === "w") w++; else if (r === "b") b++; else d++; }
+    const n = w + d + b;
+    // 연도별 추이 — 10년 단위, 3판 이상인 구간만(백 득점률 = (백승 + 무/2) / 판수)
+    const dec = new Map();
+    for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; x.s += masterResultOf(g) === "w" ? 1 : masterResultOf(g) === "d" ? 0.5 : 0; dec.set(k, x); }
+    const trend = [...dec.entries()].filter(([, x]) => x.n >= 3).sort((a, b2) => a[0] - b2[0]).map(([k, x]) => ({ k, n: x.n, pct: Math.round((100 * x.s) / x.n) }));
+    return { w, d, b, n, full, trend };
+  }, [masterStats, masterFiltersOn, filteredMasterGames]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
     return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
   }, [masterPlayerNames, masterSearchQuery]);
   const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
   const masterPageItems = filteredMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
-  const handleOpenGame = async (id) => {
+  const handleOpenGame = async (id, atPly) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
-    try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국 열기 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
+    try { await onOpenMasterGame(id, atPly); } catch (e) { console.error("마스터 대국 열기 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
   };
   // (v0.2.1 기능) chess.com 통계의 "보기"+초록 리뷰 버튼 쌍과 동일하게, 마스터 대국도 목록에서
   // 바로 /review로 진입할 수 있게 한다 — "보기"(handleOpenGame)와 별개 상태로 바쁨/에러를 추적한다.
@@ -2560,13 +2605,68 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             </div>
           )}
         </div>
+        {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 이후 많이 둔 수, 연도별 추이 */}
+        {masterSummary.n > 0 && (
+          <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>
+              <span>{masterSummary.full ? t("마스터 DB 전체") : t("표시 중인 대국 기준")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
+            </div>
+            <ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled />
+            {masterStats && masterStats.moves.length > 0 && !masterFiltersOn && (
+              <div style={{ marginTop: 9 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("이후 많이 둔 수")}</div>
+                {masterStats.moves.slice(0, 5).map((mv) => {
+                  const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (masterSummary.n || 1));
+                  return (
+                    <button key={mv.san} onClick={() => onJump && onJump([...sans, san], mv.san)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" }}>
+                      <span style={{ width: 64, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
+                      <span style={{ width: 34, flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{share}%</span>
+                      <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={8} /></span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {masterSummary.trend.length >= 2 && (
+              <div style={{ marginTop: 9 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("연도별 백 득점률")}</div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 46 }}>
+                  {masterSummary.trend.map((x) => (
+                    <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
+                      <span style={{ width: "100%", height: Math.max(3, (x.pct / 100) * 28), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                      <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{x.k}s</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* (v0.6.6, 사용자 요청) 필터 — 결과·레이팅·연도 */}
+        {masterGames.length > 1 && (
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+            {[
+              [[["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
+              [[[0, t("전체")], [2600, "2600+"], [2700, "2700+"], [2750, "2750+"]], mRating, setMRating],
+              [[[0, t("전체")], [1990, "1990~"], [2010, "2010~"], [2020, "2020~"]], mEra, setMEra],
+            ].map(([opts, cur, set], gi) => (
+              <div key={gi} className="flex items-center gap-2">
+                <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{[t("결과"), t("레이팅"), t("연도")][gi]}</span>
+                <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, flexWrap: "wrap" }}>
+                  {opts.map(([k, label]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{label}</button>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
             포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
         {masterGames.length > 1 && (
           <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
             <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
               onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
-              placeholder={t("선수 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
+              placeholder={t("선수·대회 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
             {masterSearchFocused && masterSuggestions.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: T.paper, border: "1px solid #C9B58C", borderRadius: 8, boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)", zIndex: 5, overflow: "hidden" }}>
                 {masterSuggestions.map((nm) => (
@@ -2586,22 +2686,43 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
           : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{tx("{0}\" 검색 결과 없음", masterSearch.trim())}</p>
             : (<>
             {masterPageItems.map((g) => (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
+              <React.Fragment key={g.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
                     <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
                     <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{g.event ? " · " + g.event : ""}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                  {/* (v0.6.6) 이 수 직후 진행 미리보기 펼치기 */}
+                  <button onClick={() => toggleMasterGame(g.id)} aria-expanded={expandedMasterId === g.id} aria-label={t("이후 진행")} title={t("이후 진행")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: expandedMasterId === g.id ? T.brass : "transparent", color: expandedMasterId === g.id ? "#241509" : T.brass, border: "1px solid " + T.brass, cursor: "pointer", fontSize: 13, fontWeight: 900 }}>{expandedMasterId === g.id ? "▴" : "▾"}</button>
                   {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
                   <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                   {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
                   {onOpenMasterGameReview && <BestMoveJumpButton onClick={() => handleReviewGame(g)} disabled={!!openingGameId || !!reviewingGameId} />}
                 </div>
               </div>
+              {expandedMasterId === g.id && (() => {
+                const gs = contMap[g.id];
+                const after = Array.isArray(gs) ? gs.slice(ply + 1, ply + 1 + 12) : [];
+                return (
+                  <div style={{ margin: "0 0 6px", padding: "7px 9px", borderRadius: 8, background: "rgba(0,0,0,.04)", fontFamily: SEQ_FONT, fontSize: 12, lineHeight: 1.9, color: T.ink }}>
+                    {gs === "loading" || gs == null ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.inkSoft }}>{t("이후 진행 불러오는 중…")}</span>
+                      : gs === "error" ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.blunder }}>{t("이후 진행을 불러오지 못함")}</span>
+                      : after.length === 0 ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.inkSoft }}>{t("이 수에서 대국 종료")}</span>
+                      : <>
+                        {after.map((mv, i) => (
+                          <button key={i} onClick={() => handleOpenGame(g.id, ply + 2 + i)} title={t("이 수에서 열기")} className="press" style={{ background: "none", border: "none", padding: "0 2px", cursor: "pointer", fontFamily: SEQ_FONT, fontSize: 12, fontWeight: i === 0 ? 900 : 600, color: T.ink }}>{moveNumber(ply + 1 + i)}{mv}</button>
+                        ))}
+                        {gs.length > ply + 1 + 12 && <span style={{ color: T.inkSoft }}> …</span>}
+                      </>}
+                  </div>
+                );
+              })()}
+              </React.Fragment>
             ))}
             <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
             </>)}
@@ -2819,7 +2940,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     const mkEv = (ev) => ev.mate != null
       ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
       : { cp: ev.cp * baseWhite };
-    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, pv.depth || 0, fenRoot) }))).slice(0, 3);   // (v0.6.6) 길이 = 도달한 depth
     // 엔진 라인과 같은 raw MultiPV 결과에서 각 줄의 첫 수만 뽑아 "다음 수" 블록 형태(MoveTile이
     // 기대하는 필드)로 바꾼다 — book/adopt/games는 이 위치엔 존재하지 않는 데이터라 그대로 없앤다.
     const board = boardOfRoot(fenRoot, sans);
@@ -3227,12 +3348,13 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
-  const onOpenMasterGame = async (gameId) => {
+  const onOpenMasterGame = async (gameId, atPly) => {
     const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     // (18차 UX8) 전체 기보를 불러오되, 보드는 집중분석에서 보던 수까지만 진행된 상태로 열고
     // 이후 수들은 future로 보존 — 기보에는 전체 수순이 흐리게 표시되고 클릭/▶로 이어볼 수 있다.
-    const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
+    // (v0.6.6) atPly(그 대국에서 n번째 수까지)가 오면 거기까지 진행된 상태로 연다 — 이 수 직후 진행 미리보기에서 고른 수.
+    const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
   // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 분석 보드는 그대로

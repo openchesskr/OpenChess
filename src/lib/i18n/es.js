@@ -2280,6 +2280,17 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Llevar el rey a un lugar seguro con antelación es buena elección",
   "대회·개최지·마스터 이름 검색": "Buscar torneos, sedes, maestros",
   "조건에 맞는 결과 없음": "Sin resultados",
+  // (v0.6.6) 집중 분석 마스터 대국 요약·필터·이후 진행
+  "마스터 DB 전체": "Base de maestros completa",
+  "표시 중인 대국 기준": "Según las partidas mostradas",
+  "이후 많이 둔 수": "Jugadas siguientes más frecuentes",
+  "연도별 백 득점률": "Puntuación de blancas por década",
+  "선수·대회 이름으로 검색…": "Buscar por jugador o torneo…",
+  "이후 진행": "Continuación",
+  "이후 진행 불러오는 중…": "Cargando continuación…",
+  "이후 진행을 불러오지 못함": "No se pudo cargar la continuación",
+  "이 수에서 대국 종료": "La partida termina en esta jugada",
+  "이 수에서 열기": "Abrir desde esta jugada",
   // (v0.6.6) 마스터 트리 검색 드롭다운·DB 수록 회차 안내
   "타이틀전 도전자": "Retador al título",
   "일치하는 마스터·대회 없음": "Sin maestros ni torneos coincidentes",

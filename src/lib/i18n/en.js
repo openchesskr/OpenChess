@@ -2280,6 +2280,17 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Moving the king to safety early is a good choice",
   "대회·개최지·마스터 이름 검색": "Search tournaments, venues, masters",
   "조건에 맞는 결과 없음": "No matching results",
+  // (v0.6.6) 집중 분석 마스터 대국 요약·필터·이후 진행
+  "마스터 DB 전체": "Full masters DB",
+  "표시 중인 대국 기준": "Based on games shown",
+  "이후 많이 둔 수": "Most played next moves",
+  "연도별 백 득점률": "White score by decade",
+  "선수·대회 이름으로 검색…": "Search by player or tournament…",
+  "이후 진행": "Continuation",
+  "이후 진행 불러오는 중…": "Loading continuation…",
+  "이후 진행을 불러오지 못함": "Could not load the continuation",
+  "이 수에서 대국 종료": "Game ends at this move",
+  "이 수에서 열기": "Open from this move",
   // (v0.6.6) 마스터 트리 검색 드롭다운·DB 수록 회차 안내
   "타이틀전 도전자": "Title match challenger",
   "일치하는 마스터·대회 없음": "No matching masters or tournaments",
