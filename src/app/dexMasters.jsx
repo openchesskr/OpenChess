@@ -18,7 +18,8 @@ import { masterName, masterFlag } from "../data/masterNames.js";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
 import { ordinalParam } from "../lib/ordinal.js";
-import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
+import { MT, championAt, clampMasterPan, flightPoints, layoutMasters, polyLength, polyPointAt, transferPath } from "../lib/masterTreeLayout.js";
+import { takeMasterNav } from "../lib/masterNav.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { DEX_ELECTRIC_FLOW_SPEED, DEX_SELECT_FLOW_SPEED, MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_STEP, SCHEMATIC_DRAG_MULT, SCHEMATIC_ELECTRIC, anchoredZoomPan, masterZoomLabel, snapMasterZoom } from "../lib/schematicGeometry.js";
 import { playSfx } from "../lib/prefs.js";
@@ -482,7 +483,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     apply(a, nz);
   }, [apply]);
   const introRafRef = useRef(null), introTimerRef = useRef(null);
-  const endIntro = useCallback(() => { if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, []);
+  // (v0.6.6, 사용자 요청) 찾아가기 연출 — 중심 회로 칩에서 회로선(꺾은선)을 따라 목표 노드까지 빠르게 이동하며 파란 선이 그려진다. 검색·대회 이름 링크가 함께 쓴다.
+  const flightRef = useRef(null), flightRafRef = useRef(null);
+  const cancelFlight = useCallback(() => { if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; } if (flightRef.current) flightRef.current.style.display = "none"; }, []);
+  const endIntro = useCallback(() => { cancelFlight(); if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, [cancelFlight]);
   const startIntro = useCallback(() => {
     if (introTimerRef.current) clearTimeout(introTimerRef.current);
     if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; }
@@ -564,12 +568,41 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     }
     dragRef.current = null;
   };
-  useEffect(() => {
-    if (!focusId) return;
-    const n = LAYOUT.byNodeId.get(focusId); if (!n) return;
+  // 칩에서 nodeId까지 flightPoints(회로선)를 따라 카메라가 이동한다(길이에 비례해 0.75~1.7초). 끝나면 onDone. 사용자가 화면을 건드리면 endIntro가 중단시킨다.
+  const flyTo = useCallback((nodeId, onDone) => {
+    const L = layoutRef.current, pts = flightPoints(L, nodeId);
     endIntro();
-    const r = rect(), z = viewRef.current.z; apply({ x: r.width / 2 - (n.x + n.w / 2) * z, y: r.height / 2 - (n.y + n.h / 2) * z }, z); setFocusId(null);
+    if (!pts) { if (onDone) onDone(); return; }
+    const total = polyLength(pts), z = baseZ, dur = Math.min(1700, Math.max(750, total / 3.2)), t0 = performance.now(), line = flightRef.current;
+    const prefix = (s2) => { const out = [pts[0]]; let acc = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (acc + d <= s2) { out.push(pts[i]); acc += d; } else { out.push(polyPointAt(pts, s2)); break; } } return out.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" "); };
+    const r0 = rect(); apply({ x: r0.width / 2 - pts[0][0] * z, y: r0.height / 2 - pts[0][1] * z }, z);   // 칩이 화면 가운데에 오게 하고 출발
+    if (line) { line.style.display = "block"; line.setAttribute("points", pts[0][0] + "," + pts[0][1]); }
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), s2 = total * introEase(k), p2 = polyPointAt(pts, s2), r = rect();
+      apply({ x: r.width / 2 - p2[0] * z, y: r.height / 2 - p2[1] * z }, z);
+      if (line) line.setAttribute("points", prefix(s2));
+      if (k < 1) flightRafRef.current = requestAnimationFrame(step);
+      else { flightRafRef.current = null; commit(); if (onDone) onDone(); setTimeout(() => { if (!flightRafRef.current && line) line.style.display = "none"; }, 900); }
+    };
+    flightRafRef.current = requestAnimationFrame(step);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 검색 결과를 고르거나(입력이 잠시 멈추면 첫 결과로) 하면 그 위치로 찾아간다 — 오프닝 트리 검색과 같은 연출.
+  useEffect(() => {
+    if (!focusId) return undefined;
+    const n = LAYOUT.byNodeId.get(focusId); if (!n) return undefined;
+    const tm = setTimeout(() => { setFocusId(null); flyTo(focusId); }, 260);
+    return () => clearTimeout(tm);
   }, [focusId, LAYOUT]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 다른 탭(집중 분석의 대회 이름)에서 "이 대회로 찾아가기" 요청이 오면, 시작 연출이 끝난 뒤 그 연도 블록까지 이동하고 회차 화면을 연다.
+  const [navTarget] = useState(() => takeMasterNav());
+  const navFiredRef = useRef(false);
+  useEffect(() => {
+    if (!navTarget || navFiredRef.current || introOn) return;
+    const ed = LAYOUT.byNodeId.get("ed:" + navTarget.tourId + ":" + navTarget.year), hub = LAYOUT.byNodeId.get("tour:" + navTarget.tourId);
+    if (!(ed || hub) || (!ed && !idx)) return;   // 연도 블록은 색인(idx)이 올 때 생긴다 — 기다린다
+    navFiredRef.current = true;
+    flyTo(ed ? ed.id : hub.id, () => { if (ed && hasTournamentData(navTarget.tourId)) { setPick(null); setEdView({ id: navTarget.tourId, year: navTarget.year }); } else if (hub) setPick({ type: "tour", id: navTarget.tourId }); });
+  }, [introOn, LAYOUT, idx, navTarget]); // eslint-disable-line react-hooks/exhaustive-deps
   // 연도 블록을 펼치면(대회 데이터가 없는 대회의 출전자 상자) 상자가 보이도록 화면을 그 블록 쪽으로 옮긴다 — 예전엔 상자가 화면 밖에 열려 "아무것도 안 뜨는" 것처럼 보였다(BUG-082).
   useEffect(() => {
     if (!openEd) return;
@@ -672,6 +705,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               const ax = e.side === "L" ? a.x : a.x + a.w, bx = e.side === "L" ? b.x + b.w : b.x;
               return wire("sat:" + b.id, elbowH(ax, ay, bx, by), (ax + bx) / 2, (ay + by) / 2);
             })}
+            <polyline ref={flightRef} points="" fill="none" stroke={SCHEMATIC_ELECTRIC} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="9 6" className="dex-current-line" style={{ display: "none", filter: "drop-shadow(0 0 5px rgba(34,211,240,.8))" }} />
             {LAYOUT.rail && wire("rail", "M" + LAYOUT.rail.x + " " + LAYOUT.rail.y1 + " V" + LAYOUT.rail.y2, LAYOUT.rail.x, (LAYOUT.rail.y1 + LAYOUT.rail.y2) / 2, { opacity: 0.9 })}
             {LAYOUT.rail && lit.railTo != null && <Wire key="railLit" d={"M" + LAYOUT.rail.x + " " + LAYOUT.rail.mid + " V" + lit.railTo} lit delay={litDelay(LAYOUT.rail.x, lit.railTo)} />}
             {LAYOUT.rail && nodes.filter((n) => n.kind === "tour" && inC(LAYOUT.rail.x, n.y, n.x - LAYOUT.rail.x + n.w, n.h)).map((n) => wire("hl:" + n.id, "M" + LAYOUT.rail.x + " " + (n.y + n.h / 2) + " H" + n.x, (LAYOUT.rail.x + n.x) / 2, n.y + n.h / 2))}

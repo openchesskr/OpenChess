@@ -216,3 +216,32 @@ export function clampMasterPan(pan, zoom, viewW, viewH, layout, margin = 20) {
   const axis = (p, view, size, center) => (size + margin * 2 <= view ? (center ? (view - size) / 2 : margin) : Math.max(view - size - margin, Math.min(margin, p)));
   return { x: axis(pan.x, viewW, cw, true), y: axis(pan.y, viewH, ch, false) };
 }
+
+/* (v0.6.6, 사용자 요청) 중심 회로 칩에서 노드까지 회로선(칩 → 동·서·남·북 갈래 → 세로선 → 허브 → 연도 블록)을 따라가는 꺾은선 — 마스터 트리의 "찾아가기" 연출 경로.
+   L = layoutMasters 결과. 점은 캔버스 좌표 [x, y]이고 첫 점은 칩 중심, 마지막 점은 노드 중심이다. 모르는 노드는 칩 → 노드 직선. */
+export function flightPoints(L, nodeId) {
+  const n = L.byNodeId.get(nodeId); if (!n) return null;
+  const cx = (q) => q.x + q.w / 2, cy = (q) => q.y + q.h / 2, chip = [L.chip.cx, L.chip.cy], c = [cx(n), cy(n)];
+  const dedupe = (pts) => pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.5);
+  if ((n.kind === "edition" || n.kind === "tour" || n.kind === "player") && L.rail) {
+    const hub = L.byNodeId.get("tour:" + (n.tourId || (n.tour && n.tour.id)));
+    if (hub) {
+      const pts = [chip, [L.rail.x, chip[1]], [L.rail.x, cy(hub)], [hub.x, cy(hub)]];
+      if (n.kind !== "tour") { const ed = n.kind === "edition" ? n : L.byNodeId.get("ed:" + n.tourId + ":" + n.year) || n; pts.push([hub.x + hub.w, cy(hub)], [cx(ed), cy(ed)]); if (n.kind === "player") pts.push(c); }
+      else pts.push([cx(hub), cy(hub)]);
+      return dedupe(pts);
+    }
+  }
+  if (n.kind === "champ") return dedupe([chip, [chip[0], c[1]], c]);
+  if (n.kind === "sat") { const ch = L.byNodeId.get(n.champId); return ch ? dedupe([chip, [chip[0], cy(ch)], [cx(ch), cy(ch)], [c[0], cy(ch)], c]) : dedupe([chip, c]); }
+  if (n.kind === "fide" && L.south) { const col = L.south.cols.find((q) => q.key === n.list); if (col) return dedupe([chip, [chip[0], L.south.jy], [col.cx, L.south.jy], [col.cx, c[1]]]); }
+  if (n.kind === "dbm" && L.wrails && L.wrails[n.col]) { const wr = L.wrails[n.col]; return dedupe([chip, [wr.x, chip[1]], [wr.x, c[1]], c]); }
+  return dedupe([chip, c]);
+}
+export function polyLength(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return s; }
+/** 꺾은선 위 길이 s 지점의 [x, y]. */
+export function polyPointAt(pts, s) {
+  let rest = Math.max(0, s);
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (rest <= d || i === pts.length - 1) { const k = d ? Math.min(1, rest / d) : 1; return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k]; } rest -= d; }
+  return pts[pts.length - 1];
+}

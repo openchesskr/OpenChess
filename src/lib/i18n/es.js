@@ -2280,6 +2280,7 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Llevar el rey a un lugar seguro con antelación es buena elección",
   "대회·개최지·마스터 이름 검색": "Buscar torneos, sedes, maestros",
   "조건에 맞는 결과 없음": "Sin resultados",
+  "도감 마스터 트리에서 이 대회 보기": "Ver este torneo en el árbol de maestros",
   "비중": "Proporción",
   "기보 불러오는 중…": "Cargando la partida…",
   "기보를 불러오지 못함": "No se pudo cargar la partida",
