@@ -1786,7 +1786,8 @@ function FocusBoxPager({ pages }) {
   // 이벤트의 타깃이 실제로 누른 버튼이 아니라 이 캡처한 바깥 div로 리다이렉트됐다. 버튼·링크·
   // 입력창 등 상호작용 요소 위에서 시작한 포인터는 애초에 드래그로 잡지 않도록 건너뛴다.
   const onPointerDown = (e) => {
-    if (e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"]')) return;
+    // (v0.6.6) 자체 좌우 스크롤이 있는 영역(마스터 기보 박스, data-no-pager)에서 시작한 포인터는 페이지 넘김으로 잡지 않는다 — 안 그러면 기보를 끌 때 페이지가 넘어가거나 스크롤이 먹통이 됐다.
+    if (e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"], [data-no-pager]')) return;
     dragRef.current = { x: e.clientX };
     setDragging(true);
     if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
@@ -2138,19 +2139,34 @@ function normalizePlayerKey(name) {
 // (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
+// (v0.6.6, 사용자 요청) 이름이 길어 한 줄에 안 들어가면 글자 크기를 줄여 잘리거나 줄바꿈되지 않게 한다(최소 60%).
+function FitLine({ children, base = 12.5 }) {
+  const outer = useRef(null), inner = useRef(null);
+  const [fs, setFs] = useState(base);
+  useLayoutEffect(() => {
+    const o = outer.current, i = inner.current; if (!o || !i) return undefined;
+    const fit = () => { const prev = i.style.fontSize; i.style.fontSize = base + "px"; const w = i.getBoundingClientRect().width, cw = o.clientWidth; i.style.fontSize = prev; setFs(w > cw && cw > 0 ? Math.max(base * 0.6, Math.floor(base * (cw / w) * 10) / 10) : base); };
+    fit();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(fit); ro.observe(o);
+    return () => ro.disconnect();
+  }, [base, children]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return <div ref={outer} style={{ minWidth: 0, flex: 1, overflow: "hidden", whiteSpace: "nowrap" }}><span ref={inner} style={{ fontSize: fs }}>{children}</span></div>;
+}
 // (v0.6.6, 사용자 요청) 마스터 대국의 기보 — 한 줄(nowrap)로 두고 일일 퍼즐 팝업(puzzle.jsx PuzzlePgnBox)처럼 좌우로 끌어 스크롤한다. 집중 분석 중인 수부터 보이게 열고,
 // 수를 누르면 그 수까지 진행된 보드로 연다(드래그로 이동했으면 클릭 무시).
 function MasterPgnBox({ sans, focusPly, onPick }) {
   const scrollRef = useRef(null), markRef = useRef(null), dragRef = useRef(null);
   const deco = useMemo(() => decorateLine(sans || []), [(sans || []).join(" ")]);
   useEffect(() => { const box = scrollRef.current, mk = markRef.current; if (box && mk) box.scrollLeft = Math.max(0, mk.offsetLeft - 6); }, [sans, focusPly]);
-  const onPointerDown = (e) => { dragRef.current = { x: e.clientX, left: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false }; if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } } };
+  // 터치는 브라우저 기본 가로 스크롤(touch-action: pan-x)에 맡기고, 마우스만 끌어서 스크롤한다.
+  const onPointerDown = (e) => { if (e.pointerType !== "mouse") return; dragRef.current = { x: e.clientX, left: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false }; if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } } };
   const onPointerMove = (e) => { const d = dragRef.current; if (!d || !scrollRef.current) return; const dx = e.clientX - d.x; if (Math.abs(dx) > 3) d.moved = true; scrollRef.current.scrollLeft = d.left - dx; };
   const end = () => { dragRef.current = null; };
   const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } dragRef.current = null; };
   return (
-    <div className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end} onClickCapture={onClickCapture} style={{ borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
-      <div ref={scrollRef} style={{ position: "relative", overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, fontFamily: SEQ_FONT, fontWeight: 600, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+    <div className="no-pan" data-no-pager="1" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end} onClickCapture={onClickCapture} style={{ borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
+      <div ref={scrollRef} style={{ position: "relative", overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, fontFamily: SEQ_FONT, fontWeight: 600, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-x pan-y" }}>
         {deco.map((san, i) => (
           <span key={i} ref={i === focusPly ? markRef : undefined}>
             {(i === 0 || plyIsWhite(i)) && <span style={{ color: T.inkSoft }}>{moveNumber(i)} </span>}
@@ -2655,11 +2671,11 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               <React.Fragment key={g.id}>
               <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
-                    <span>⬜ <b style={{ color: T.ink }}>{fullPlayerName(g.white && g.white.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
-                    <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+                  <div className="flex items-center justify-between" style={{ fontSize: 12.5, gap: 8 }}>
+                    <FitLine>⬜ <b style={{ color: T.ink }}>{fullPlayerName(g.white && g.white.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</FitLine>
+                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{fullPlayerName(g.black && g.black.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
+                  <div style={{ marginTop: 2, display: "flex" }}><FitLine>⬛ <b style={{ color: T.ink }}>{fullPlayerName(g.black && g.black.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</FitLine></div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
