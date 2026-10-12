@@ -2139,19 +2139,16 @@ function normalizePlayerKey(name) {
 // (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
-// (v0.6.6, 사용자 요청) 이름이 길어 한 줄에 안 들어가면 글자 크기를 줄여 잘리거나 줄바꿈되지 않게 한다(최소 60%).
-function FitLine({ children, base = 12.5 }) {
-  const outer = useRef(null), inner = useRef(null);
-  const [fs, setFs] = useState(base);
-  useLayoutEffect(() => {
-    const o = outer.current, i = inner.current; if (!o || !i) return undefined;
-    const fit = () => { const prev = i.style.fontSize; i.style.fontSize = base + "px"; const w = i.getBoundingClientRect().width, cw = o.clientWidth; i.style.fontSize = prev; setFs(w > cw && cw > 0 ? Math.max(base * 0.6, Math.floor(base * (cw / w) * 10) / 10) : base); };
-    fit();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(fit); ro.observe(o);
-    return () => ro.disconnect();
-  }, [base, children]);   // eslint-disable-line react-hooks/exhaustive-deps
-  return <div ref={outer} style={{ minWidth: 0, flex: 1, overflow: "hidden", whiteSpace: "nowrap" }}><span ref={inner} style={{ fontSize: fs }}>{children}</span></div>;
+// (v0.6.6, 사용자 요청) 마스터 대국 한 줄(선수) — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·승자 왕관은 항상 보임).
+function MasterPlayerLine({ icon, name, rating, winner }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flex: 1, whiteSpace: "nowrap", fontSize: 12.5 }}>
+      <span style={{ flexShrink: 0 }}>{icon}</span>
+      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{fullPlayerName(name)}</b>
+      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}</span>
+      {winner && <span style={{ flexShrink: 0 }} title={t("승리")}>👑</span>}
+    </div>
+  );
 }
 // (v0.6.6, 사용자 요청) 마스터 대국의 기보 — 한 줄(nowrap)로 두고 일일 퍼즐 팝업(puzzle.jsx PuzzlePgnBox)처럼 좌우로 끌어 스크롤한다. 집중 분석 중인 수부터 보이게 열고,
 // 수를 누르면 그 수까지 진행된 보드로 연다(드래그로 이동했으면 클릭 무시).
@@ -2672,10 +2669,10 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5, gap: 8 }}>
-                    <FitLine>⬜ <b style={{ color: T.ink }}>{fullPlayerName(g.white && g.white.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</FitLine>
+                    <MasterPlayerLine icon="⬜" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
                     <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ marginTop: 2, display: "flex" }}><FitLine>⬛ <b style={{ color: T.ink }}>{fullPlayerName(g.black && g.black.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</FitLine></div>
+                  <div style={{ marginTop: 2, display: "flex" }}><MasterPlayerLine icon="⬛" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} /></div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
