@@ -387,6 +387,24 @@ export function profileGameRowToGame(row, ownerName) {
   };
 }
 
+// (v0.6.6) 이 사람의 끝난 일반 대국 전부(실시간 대국은 서버에 영구 저장) — 서버가 한 번에 주는 양(최대 500판)씩 끝까지 이어 읽는다. 아직 새 서버 함수(p_offset)가 반영 전이면 예전 방식(최근 100판)으로 한 번만 읽는다.
+export async function fetchProfileGameRows(uid) {
+  const PAGE = 500, out = [];
+  try {
+    for (let off = 0; off < 20000; off += PAGE) {
+      const r = await sbRpc("profile_recent_games", { p_uid: uid, p_limit: PAGE, p_offset: off });
+      const rows = Array.isArray(r) ? r : [];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+    }
+    return out;
+  } catch (e) {
+    if (out.length) return out;
+    const r = await sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 });   // 예전 서버 함수
+    return Array.isArray(r) ? r : [];
+  }
+}
+
 // 일반 대국 기록 — chess.com 대국 통계와 같은 구성(시간 규정·색 필터 → 전체 기간 전적 → 레이팅 그래프 → 최근 대국). uid: 프로필 주인. 기록이 없으면 안내 문구만.
 export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnalyze }) {
   const [rows, setRows] = useState(null);
@@ -396,7 +414,7 @@ export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnal
     if (!SB_ON || !uid) { setRows([]); return undefined; }
     let cancelled = false;
     setRows(null);
-    sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 })
+    fetchProfileGameRows(uid)
       .then((r) => { if (!cancelled) setRows(Array.isArray(r) ? r.filter((x) => Array.isArray(x.sans) && x.sans.length > 0) : []); })
       .catch(() => { if (!cancelled) setRows([]); });
     return () => { cancelled = true; };

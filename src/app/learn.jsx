@@ -5,7 +5,7 @@ import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc,
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { profileGameRowToGame } from "./gameHistory.jsx";
+import { profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
 import { masterFlag } from "../data/masterNames.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { tournamentOfEvent } from "../lib/eventLink.js";
@@ -2378,7 +2378,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     if (myView !== "oc" || ocGames !== null) return undefined;
     if (!SB_ON || !uid) { setOcGames([]); return undefined; }
     let off = false;
-    sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 })
+    fetchProfileGameRows(uid)
       .then((r) => { if (!off) setOcGames((Array.isArray(r) ? r : []).filter((x) => Array.isArray(x.sans) && x.sans.length > 0).map((x) => profileGameRowToGame(x, username))); })
       .catch(() => { if (!off) setOcGames([]); });
     return () => { off = true; };

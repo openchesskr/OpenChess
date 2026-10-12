@@ -33,7 +33,8 @@ import { hasTournamentData, loadTournamentSearch } from "../lib/tournamentData.j
 import { tournamentsOfPlayerQuery } from "../lib/masterProfile.js";
 import { decodeMoves } from "../lib/moveCodec.js";
 
-const CULL_MARGIN = 1.0, CULL_Q = 240;   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
+const CULL_MARGIN = 1.0, CULL_Q = 240;
+const cullK = (z) => (z < 0.5 * MASTER_ZOOM_LABEL_BASE ? 0.3 : 1);   // (v0.6.6) 낮은 배율에서는 화면 안에 노드가 수백 개라 여유 범위를 좁혀 그리는 노드 수를 줄인다   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
 const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
 const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
 const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66", general: "#5F8A8B" };
@@ -94,7 +95,7 @@ function MasterDefs() {
   );
 }
 /* 챔피언 블록(시안 A) — 금속성 금색 프레임 안의 어두운 명판, 이름 양옆에 월계수. 현 챔피언은 ♛와 금빛 발광. 줄(PCA·클래식/FIDE)은 태그 칩 색으로 구분한다. */
-function ChampNode({ n, onPick, picked, fx, dim }) {
+const ChampNode = React.memo(function ChampNode({ n, onPick, picked, fx, dim }) {
   const c = n.champ, current = c.to == null;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
@@ -115,10 +116,10 @@ function ChampNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 
 /* 오른쪽 대회 열의 대회 카드 — 왼쪽 띠 색이 종류(슈퍼 토너먼트·사이클·팀 …)다. */
-function TourNode({ n, onPick, picked, fx, dim }) {
+const TourNode = React.memo(function TourNode({ n, onPick, picked, fx, dim }) {
   const r = n.tour, color = TOUR_COLOR[r.type];
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
@@ -130,7 +131,7 @@ function TourNode({ n, onPick, picked, fx, dim }) {
       <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)}, {tourPlace(r)}</div>
     </button>
   );
-}
+});
 
 /* ── 남쪽 FIDE 랭킹 블록(270×84) ──
    왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리), 윗줄 국기+이름, 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅, 맨 아래 연맹·출생 연도. */
@@ -140,7 +141,7 @@ const RANK_TIER = {
   2: { frame: "linear-gradient(135deg,#F4F6F8,#B9C0C7 45%,#7C858E)", ribbon: "linear-gradient(180deg,#EDF0F3,#B4BBC3)", ink: "#27313A", bg: "linear-gradient(160deg,#FAFBFC,#E8ECEF)", glow: "0 0 12px 1px rgba(190,198,206,.7)" },
   3: { frame: "linear-gradient(135deg,#F0CDA6,#C0803F 45%,#7A4A1E)", ribbon: "linear-gradient(180deg,#EBC196,#BC7B3C)", ink: "#2F1805", bg: "linear-gradient(160deg,#FFF3E6,#F0D9BE)", glow: "0 0 12px 1px rgba(205,140,80,.55)" },
 };
-function FideNode({ n, onPick, picked, fx, dim }) {
+const FideNode = React.memo(function FideNode({ n, onPick, picked, fx, dim }) {
   const f = n.fide, medal = RANK_TIER[n.rank], top10 = n.rank <= 10;
   const [lo, hi] = FIDE_RANGE[n.list], pct = hi > lo ? 12 + 88 * (f.rating - lo) / (hi - lo) : 100;
   const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
@@ -169,11 +170,11 @@ function FideNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 /* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
    왼쪽 국기 판(국기가 없으면 사람 아이콘), 이름, 최고 엘로 알약(2800+ 금, 2700+ 황동, 그 외 베이지)과 DB 대국 수. */
 const DB_ELO_RANGE = (() => { const e = DBM.masters.map((m) => m[2]).filter(Boolean); return [Math.min(...e), Math.max(...e)]; })();
-function DbMasterNode({ n, onPick, picked, fx, dim }) {
+const DbMasterNode = React.memo(function DbMasterNode({ n, onPick, picked, fx, dim }) {
   const m = n.dbm, flag = masterFlag(m.name), star = m.elo >= 2800;
   const eloTier = star ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
   const pct = m.elo ? 10 + 90 * (m.elo - DB_ELO_RANGE[0]) / (DB_ELO_RANGE[1] - DB_ELO_RANGE[0]) : 0;
@@ -200,7 +201,7 @@ function DbMasterNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 
 /* 연도 블록 아래 대진표 영역에 놓이는 그 연도 출전자(마스터 대국 DB). PGN의 라운드 정보가 들어오면 실제 대진표 노드로 바뀔 자리. */
 function PlayerNode({ n }) {
@@ -212,10 +213,10 @@ function PlayerNode({ n }) {
 }
 
 /* 대회 허브에서 오른쪽으로 한 줄로 이어지는 연도 블록 — 누르면 그 연도의 대진표 영역이 아래로 펼쳐지고(아래 대회들이 밀려난다), 다시 누르면 접힌다. */
-function EditionNode({ n, onToggle, fx, active, dim }) {
+const EditionNode = React.memo(function EditionNode({ n, onToggle, fx, active, dim }) {
   const color = TOUR_COLOR[n.tour.type], open = n.open || active;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n.tourId + ":" + n.year)} aria-expanded={!!open} aria-label={personName(n.tour) + " " + n.year}
+    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n)} aria-expanded={!!open} aria-label={personName(n.tour) + " " + n.year}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 14, zIndex: 2, fontFamily: SITE_FONT, color: open ? "#241509" : T.ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
         border: "2px solid " + (open ? T.brass : NODE_EDGE), background: open ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : NODE_PARCH, boxShadow: "0 2px 5px rgba(60,40,20,.16)", opacity: dim ? 0.3 : 1 }}>
       <CornerBadge bg={color}><CalendarDays size={10} /></CornerBadge>
@@ -223,7 +224,7 @@ function EditionNode({ n, onToggle, fx, active, dim }) {
       <span style={{ fontSize: 10, fontWeight: 800, opacity: .7 }}>{n.games ? t("{0}판", n.games) : ""}</span>
     </button>
   );
-}
+});
 
 /* 펼쳐진 연도의 대진표 영역 틀(제목 + 안내). 안의 노드는 PlayerNode. */
 function BracketPanel({ p }) {
@@ -236,7 +237,7 @@ function BracketPanel({ p }) {
   );
 }
 
-function SatNode({ n, onPick, picked, fx, dim }) {
+const SatNode = React.memo(function SatNode({ n, onPick, picked, fx, dim }) {
   const s = n.sat;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "sat", id: n.id })} aria-label={personName(s) + " " + s.years.join(", ")}
@@ -249,7 +250,7 @@ function SatNode({ n, onPick, picked, fx, dim }) {
       </div>
     </button>
   );
-}
+});
 
 function UpcomingNode({ n }) {
   const u = n.upcoming;
@@ -381,12 +382,6 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
   );
 }
 
-/* (v0.6.6, 렉 수정) 25% 같은 낮은 배율의 간략 노드 — 카드의 그라데이션·그림자·아이콘·여러 겹 요소 대신 색 상자와 이름 한 줄만 그려, 보이는 노드가 수천 개여도 그리기 비용이 가볍다. 누르면 원래 카드와 같은 동작을 한다. */
-const LOD_STYLE = { champ: ["#2A1B10", "#E2B652", "#FFF3D3"], sat: ["#F6EEDC", "#C9B58C", "#3A2A18"], fide: ["#F3E6CC", "#C49A50", "#3A2A18"], dbm: ["#F3E6CC", "#C49A50", "#3A2A18"], edition: ["#FFFFFF", "#C49A50", "#3A2A18"] };
-const LodNode = React.memo(function LodNode({ n, label, onClick, picked, dim }) {
-  const [bg, bd, fg] = n.kind === "tour" ? [(TOUR_COLOR[n.tour.type] || "#8A6A2F"), "#3A2A18", "#fff"] : LOD_STYLE[n.kind];
-  return <div role="button" onClick={onClick} style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", background: bg, border: (picked ? 8 : 4) + "px solid " + (picked ? SCHEMATIC_ELECTRIC : bd), borderRadius: 14, color: fg, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 10px", cursor: "pointer", opacity: dim ? 0.3 : 1, fontWeight: 800, fontSize: n.kind === "edition" ? 30 : 34, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>;
-});
 /* 회로선 — 오프닝 트리의 선과 같은 규칙: 기본은 황동색 2px 둥근 끝, 전류 서지(electric)나 선택 경로(lit)면 하늘색 3px 점선이 흐른다. delay는 칩에서의 거리에 비례. */
 function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash, intro }) {
   const on = lit || surge;
@@ -484,7 +479,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const apply = useCallback((p, z) => {
     const v = { ...clamp(p, z), z }; viewRef.current = v; paint(v);
     // 지금 보이는 영역(+여유)이 그려 둔 범위를 벗어나려 하면 바로 다시 그리고, 그렇지 않으면 움직임이 멈춘 뒤(150ms)에 배율 표시만 갱신한다.
-    const r = rect(), c = cullRef.current, m = Math.max(r.width, r.height) / v.z * CULL_MARGIN * 0.5;
+    const r = rect(), c = cullRef.current, m = Math.max(r.width, r.height) / v.z * CULL_MARGIN * cullK(v.z) * 0.5;
     const out = !c || -v.x / v.z - m < c.x0 || (r.width - v.x) / v.z + m > c.x1 || -v.y / v.z - m < c.y0 || (r.height - v.y) / v.z + m > c.y1;
     if (out) { if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; } setView(v); }
     else { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); commitTimerRef.current = setTimeout(commit, 150); }   // 움직임이 멈춘 뒤에만(디바운스)
@@ -639,14 +634,12 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, [openEd]);   // eslint-disable-line react-hooks/exhaustive-deps
   const { nodes, edges, width, height, chip, traces } = LAYOUT;
   // 지금 보이는 영역 둘레(여유 포함)에 걸친 노드·선만 그린다 — 전체는 논리적으로 모두 트리에 있고, 화면 밖은 움직여 오면 그려진다.
-  const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN;
+  const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN * cullK(vv.z);
   const cull = { x0: Math.floor((-vv.x / vv.z - mg) / CULL_Q) * CULL_Q, x1: Math.ceil(((cr.width - vv.x) / vv.z + mg) / CULL_Q) * CULL_Q, y0: Math.floor((-vv.y / vv.z - mg) / CULL_Q) * CULL_Q, y1: Math.ceil(((cr.height - vv.y) / vv.z + mg) / CULL_Q) * CULL_Q };
   cullRef.current = cull;
   const inC = (x, y, w, h) => x + w > cull.x0 && x < cull.x1 && y + h > cull.y0 && y < cull.y1;
   const shown = nodes.filter((n) => inC(n.x, n.y, n.w, n.h));
-  const editionToggle = (n) => { if (hasTournamentData(n.tourId)) { setPick(null); setEdView((v) => (v && v.id === n.tourId && v.year === n.year ? null : { id: n.tourId, year: n.year })); } else { const k = n.tourId + ":" + n.year; setOpenEd((v) => (v === k ? null : k)); } };
-  const lod = view.z < baseZ * 0.45;   // (v0.6.6) 배율 45% 미만(25%·37.5% 단계)이면 간략 노드·묶음 선으로 그린다
-  const batch = (list, f, stroke, w) => (list.length ? <path d={list.map(f).join(" ")} fill="none" stroke={stroke} strokeWidth={w} strokeLinecap="round" opacity={0.7} /> : null);
+  const editionToggle = useCallback((n) => { if (hasTournamentData(n.tourId)) { setPick(null); setEdView((v) => (v && v.id === n.tourId && v.year === n.year ? null : { id: n.tourId, year: n.year })); } else { const k = n.tourId + ":" + n.year; setOpenEd((v) => (v === k ? null : k)); } }, []);
   const champEdges = edges.filter((e) => e.kind === "transfer");
   const distC = (x, y) => Math.abs(x - chip.cx) + Math.abs(y - chip.cy);
   const surgeAt = (x, y) => (electric ? distC(x, y) / DEX_ELECTRIC_FLOW_SPEED : 0);
@@ -734,10 +727,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             {LAYOUT.wrails && LAYOUT.wrails.filter((w) => inC(w.x - 1, w.y1, 2, w.y2 - w.y1)).map((w) => wire("wrail:" + w.col, "M" + w.x + " " + w.y1 + " V" + w.y2, w.x, chip.cy, { opacity: 0.9 }))}
             {edges.filter((e) => e.kind === "wseg" && inC(e.x2, chip.cy - 1, e.x1 - e.x2, 2)).map((e) => wire("wseg:" + e.col, "M" + e.x1 + " " + chip.cy + " H" + e.x2, (e.x1 + e.x2) / 2, chip.cy, { opacity: 0.9 }))}
             {LAYOUT.wrails && lit.wrailTo != null && <Wire key="wrailLit" d={"M" + LAYOUT.wrails[lit.wrailCol].x + " " + chip.cy + " V" + lit.wrailTo} lit delay={litDelay(LAYOUT.wrails[lit.wrailCol].x, lit.wrailTo)} />}
-            {lod ? batch(edges.filter((e) => e.kind === "dlink" && inC(e.a.x, e.a.y, e.a.w + 160, e.a.h)), (e) => "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), T.brass, 4) : edges.filter((e) => e.kind === "dlink" && inC(e.a.x, e.a.y, e.a.w + 160, e.a.h)).map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
+            {edges.filter((e) => e.kind === "dlink" && inC(e.a.x, e.a.y, e.a.w + 160, e.a.h)).map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
             {LAYOUT.south && wire("bus", "M" + LAYOUT.south.bus.x1 + " " + LAYOUT.south.jy + " H" + LAYOUT.south.bus.x2, chip.cx, LAYOUT.south.jy, { opacity: 0.9 })}
             {LAYOUT.south && LAYOUT.south.cols.map((c) => wire("drop:" + c.key, "M" + c.drop.x + " " + c.drop.y1 + " V" + c.drop.y2, c.drop.x, (c.drop.y1 + c.drop.y2) / 2))}
-            {lod ? batch(edges.filter((e) => e.kind === "fchain" && inC(e.a.x, e.a.y, e.a.w, e.b.y + e.b.h - e.a.y)), (e) => "M" + (e.a.x + e.a.w / 2) + " " + (e.a.y + e.a.h) + " V" + e.b.y, T.brass, 4) : edges.filter((e) => e.kind === "fchain" && inC(e.a.x, e.a.y, e.a.w, e.b.y + e.b.h - e.a.y)).map((e) => wire("fc:" + e.list + ":" + e.rank, "M" + (e.a.x + e.a.w / 2) + " " + (e.a.y + e.a.h) + " V" + e.b.y, e.a.x + e.a.w / 2, e.b.y))}
+            {edges.filter((e) => e.kind === "fchain" && inC(e.a.x, e.a.y, e.a.w, e.b.y + e.b.h - e.a.y)).map((e) => wire("fc:" + e.list + ":" + e.rank, "M" + (e.a.x + e.a.w / 2) + " " + (e.a.y + e.a.h) + " V" + e.b.y, e.a.x + e.a.w / 2, e.b.y))}
             {edges.filter((e) => e.kind === "sat" && inC(Math.min(e.a.x, e.b.x), Math.min(e.a.y, e.b.y), Math.abs(e.a.x - e.b.x) + e.a.w, Math.abs(e.a.y - e.b.y) + e.a.h)).map((e) => {
               const a = e.a, b = e.b, ay = a.y + a.h / 2, by = b.y + b.h / 2;
               const ax = e.side === "L" ? a.x : a.x + a.w, bx = e.side === "L" ? b.x + b.w : b.x;
@@ -790,19 +783,13 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               <Cpu size={26} strokeWidth={1.6} />
             </div>
           </div>
-          {lod ? shown.map((n) => {
-            if (n.kind === "player" || n.kind === "upcoming") return null;
-            const label = n.kind === "champ" ? personName(n.champ) : n.kind === "sat" ? personName(n.sat) : n.kind === "fide" ? masterName(n.fide.name, "en") : n.kind === "dbm" ? masterName(n.dbm.name, "en") : n.kind === "tour" ? personName(n.tour) : String(n.year);
-            const dim = dimOn && !(n.kind === "tour" ? matchTourIds.has(n.tour.id) : n.kind === "edition" ? matchTourIds.has(n.tourId) : matchIds.has(n.id));
-            const onClick = n.kind === "tour" ? () => setPick({ type: "tour", id: n.tour.id }) : n.kind === "edition" ? () => editionToggle(n) : () => setPick({ type: n.kind, id: n.id });
-            return <LodNode key={n.id} n={n} label={label} onClick={onClick} dim={dim} picked={pick && (pick.id === n.id || (n.kind === "tour" && pick.id === n.tour.id))} />;
-          }) : shown.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
+          {shown.map((n) => n.kind === "champ" ? <ChampNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
             : n.kind === "tour" ? <TourNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.tour.id} fx={fxOf(n)} dim={dimOn && !matchTourIds.has(n.tour.id)} />
             : n.kind === "fide" ? <FideNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
             : n.kind === "dbm" ? <DbMasterNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
             : n.kind === "player" ? <PlayerNode key={n.id} n={n} />
             : n.kind === "edition" ? <EditionNode key={n.id} n={n} fx={fxOf(n)} dim={dimOn && !matchTourIds.has(n.tourId)} active={!!edView && edView.id === n.tourId && edView.year === n.year}
-              onToggle={() => editionToggle(n)} />
+              onToggle={editionToggle} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
         {pick && !edView && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenTour={openTour} />}
