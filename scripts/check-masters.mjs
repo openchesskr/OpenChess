@@ -201,7 +201,8 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   eq(end(byDir.E), [L.rail.x, C.cy], "동쪽 선은 칩과 같은 높이에서 대회 세로선에 닿음");
   if (Math.abs((L.rail.y1 + L.rail.y2) / 2 - C.cy) > 1) fails.push("대회 열의 가운데가 중심 회로 칩과 같은 높이가 아님");
   // 서: 칩 높이의 일직선이 모든 세로선을 지나고, DB 선수는 6줄씩 서쪽으로 이어지는 열(앞 열이 칩에 가깝다)에 알파벳(성) 순으로 이어진다 — 열마다 같은 길이(짝수 줄)라 직선이 노드를 가로지르지 않는다
-  const dbn = L.nodes.filter((n) => n.kind === "dbm").sort((a, b) => a.index - b.index);
+  const dbn = L.nodes.filter((n) => n.kind === "dbm").sort((a, b) => a.rank - b.rank);   // 배치 순서(엘로 높은 순)
+  { const byElo = DBM.masters.map((m, i) => [m[2] || 0, m[1] || 0, i]).sort((a, b) => b[0] - a[0] || b[1] - a[1] || a[2] - b[2]); byElo.forEach(([, , oi], r) => { if (dbn[r].index !== oi) fails.push("서쪽 배치가 엘로 높은 순이 아님: " + r); }); eq(dbn[0].dbm.elo >= dbn[dbn.length - 1].dbm.elo, true, "가장 높은 엘로가 칩에 가장 가깝다"); }
   eq(dbn.length, DBM.masters.length, "서쪽 DB 마스터 노드 수");
   eq(DBM.masters.length >= 900, true, "DB 마스터는 900명");
   eq(byDir.W.pts.length, 2, "서쪽 선은 꺾임 없는 일직선");
@@ -215,7 +216,7 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
     for (const n of col) { if (!(n.x + n.w < w.x)) fails.push("DB 선수 노드가 세로선 오른쪽: " + n.id); if (n.y < C.cy && C.cy < n.y + n.h) fails.push("서쪽 직선이 DB 노드를 가로지름: " + n.id); }
     eq(Math.round((col[0].y + col[col.length - 1].y + col[0].h) / 2) , Math.round(C.cy), "DB 열 가운데가 칩 높이: " + k);
   }
-  for (let i = 1; i < dbn.length; i++) { if (dbn[i].col === dbn[i - 1].col && !(dbn[i].y > dbn[i - 1].y)) fails.push("DB 선수가 위→아래가 아님"); if (DBM.masters[i][0] !== dbn[i].dbm.name) fails.push("DB 선수 순서 불일치"); if (dbn[i].col < dbn[i - 1].col) fails.push("DB 열 순서가 거꾸로"); }
+  for (let i = 1; i < dbn.length; i++) { if (dbn[i].col === dbn[i - 1].col && !(dbn[i].y > dbn[i - 1].y)) fails.push("DB 선수가 위→아래가 아님"); if (DBM.masters[dbn[i].index][0] !== dbn[i].dbm.name) fails.push("DB 선수 데이터 불일치"); if (dbn[i].col < dbn[i - 1].col) fails.push("DB 열 순서가 거꾸로"); }
   { const key = (nm) => { const i = nm.indexOf(","); const sur = (i < 0 ? nm : nm.slice(0, i)); return sur.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim(); };
     for (let i = 1; i < DBM.masters.length; i++) if (key(DBM.masters[i][0]) < key(DBM.masters[i - 1][0])) fails.push("dbMasters.json이 성 기준 알파벳 순이 아님: " + DBM.masters[i - 1][0] + " → " + DBM.masters[i][0]);
     // 엘로 순위로 뽑은 DBM.top명은 2500 이상. 그 밖은 마스터 상세 프로필이 있는 선수(옛 대가 — 엘로 기록이 없거나 낮음)만 허용(build-db-masters가 프로필 선수를 더한다).

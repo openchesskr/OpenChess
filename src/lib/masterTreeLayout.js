@@ -136,20 +136,22 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
     for (const n of tourNodes) edges.push({ kind: "tour", from: n.id, to: n.id });
   }
   const half = chip.size / 2;
-  // 서쪽 — 마스터 대국 DB 선수(알파벳 순). 한 줄로 쭉 늘어놓으면 너무 길어 DB_COLS개의 세로 열로 나누고(앞 열이 칩에 가깝고 A→Z가 열을 따라 이어진다),
+  // 서쪽 — 주요 그랜드마스터(최고 엘로 높은 순, 앞 열이 칩에 가깝다). 한 줄로 쭉 늘어놓으면 너무 길어 DB_COLS개의 세로 열로 나누고(앞 열이 칩에 가깝고 A→Z가 열을 따라 이어진다),
   // 열마다 세로선(wrail)을 두며 칩 높이의 서쪽 선이 일직선으로 모든 세로선을 지난다. 열은 같은 길이(짝수 줄)라 이 직선은 노드를 가로지르지 않는다.
   let wrails = null;
   if (dbMasters && dbMasters.length) {
     // (v0.6.6, 사용자 요청) 위아래 DB_ROWS(6)줄로 서쪽으로 길게 뻗는다 — 열마다 6명(칩 높이를 가운데에 두고 위 3·아래 3)이라 칩 높이의 직선이 노드 사이 빈틈을 지난다. 마지막 열만 모자랄 수 있다(그 열의 줄 수로 칩 높이를 가운데에 맞춘다).
+    // (v0.6.6, 사용자 요청) 레이팅이 높은(= 유명한) 마스터가 중심 회로에 가깝다 — 최고 엘로 내림차순(같으면 대국 수 많은 순, 그다음 원래 순서)으로 줄을 세운다. id·index는 원래 목록(dbMasters.json) 순번 그대로라 상세 카드가 같은 데이터를 찾는다.
+    const order = dbMasters.map((_, i) => i).sort((a, b) => (dbMasters[b][2] || 0) - (dbMasters[a][2] || 0) || (dbMasters[b][1] || 0) - (dbMasters[a][1] || 0) || a - b);
     const per = MT.DB_ROWS, cols = Math.ceil(dbMasters.length / per);
     wrails = [];
     for (let k = 0; k < cols; k++) {
-      const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = dbMasters.slice(k * per, (k + 1) * per);
+      const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = order.slice(k * per, (k + 1) * per);
       if (!part.length) break;
       const total = (part.length - 1) * MT.DB_STEP;
-      part.forEach((m, j) => {
-        const cyy = chip.cy - total / 2 + j * MT.DB_STEP, i = k * per + j;
-        const n = { id: "dbm:" + i, kind: "dbm", dbm: { name: m[0], games: m[1], elo: m[2] }, index: i, col: k, x: wx - MT.DB_LINK - MT.DB_W, y: cyy - MT.DB_H / 2, w: MT.DB_W, h: MT.DB_H };
+      part.forEach((i, j) => {
+        const m = dbMasters[i], cyy = chip.cy - total / 2 + j * MT.DB_STEP;
+        const n = { id: "dbm:" + i, kind: "dbm", dbm: { name: m[0], games: m[1], elo: m[2] }, index: i, rank: k * per + j, col: k, x: wx - MT.DB_LINK - MT.DB_W, y: cyy - MT.DB_H / 2, w: MT.DB_W, h: MT.DB_H };
         nodes.push(n); edges.push({ kind: "dlink", from: n.id, to: n.id, wx });
       });
       wrails.push({ x: wx, y1: chip.cy - total / 2, y2: chip.cy - total / 2 + (part.length - 1) * MT.DB_STEP, col: k });
