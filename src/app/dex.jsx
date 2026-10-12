@@ -412,6 +412,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 트리 구조가 자랄 때(로딩 중 계속 발생)마다 강제로 다시 계산해, 새로 나타난 노드가 지금 보이는
   // 범위 안에 있으면 곧바로 그려지게 한다.
   useEffect(() => { refreshCullWindow(true); }, [items, refreshCullWindow]);
+  // (v0.6.6) 시작 연출 때 트리가 깜빡이던 원인 — 그릴 범위가 아직 갱신 전의 팬·배율(ref)로 계산돼 엉뚱한 곳이 잡혔다가 150ms 뒤에야 고쳐졌다.
+  // 팬·배율·박스 높이가 확정(state 반영)되면 ref도 맞춘 뒤 곧바로 다시 계산한다.
+  useLayoutEffect(() => { panRef.current = pan; zoomRef.current = zoom; refreshCullWindow(true); }, [pan, zoom, panelH, refreshCullWindow]);
   // 그 사이(팬/줌/확대버튼/검색 이동 애니메이션 등 팬을 바꾸는 모든 경로)는 여기 한 곳에서 주기적으로
   // 드리프트만 저렴하게 확인한다 — 매 지점마다 일일이 훅을 걸 필요가 없다.
   useEffect(() => {
@@ -456,6 +459,20 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
       }, INTRO_HOLD_MS);
     });
   };
+  // (v0.6.6) 박스 크기가 바뀌면(전체 화면 전환 등) 보던 중심 지점을 그대로 유지한다 — 예전엔 팬이 그대로여서 중심이 좌상단으로 밀렸다.
+  useEffect(() => {
+    const el = boxRef.current; if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let last = null;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (last && (w !== last.w || h !== last.h) && !motionRafRef.current) {
+        const p = panRef.current; applyView({ x: p.x + (w - last.w) / 2, y: p.y + (h - last.h) / 2 }, zoomRef.current); commitSoon(60);
+      }
+      last = { w, h };
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onResize = () => { if (!userPannedRef.current) recenterHome(); };
     window.addEventListener("resize", onResize);
@@ -1087,8 +1104,6 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // "검색+새로고침(좌) / 해금률(우)"의 좌우 배치 줄이 되도록 한다. 팬/줌/검색 매칭 로직 자체는
   // 그대로— 위치와 스타일만 바뀐다.
   const searchHeader = (<>
-    {/* (v0.6.6, 사용자 요청) 도감 해금률은 검색 줄 위에 따로 둔다 */}
-    {rightSlot && <div style={{ marginBottom: 8 }}>{rightSlot}</div>}
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       {tabsSlot}
       <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
@@ -1134,12 +1149,12 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
       {!ready && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>{t("불러오는 중…")}</div>
       )}
-      <div className="flex no-pan" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
+      <div className="flex no-pan" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden", opacity: introOn || flightPath ? 0 : 1, pointerEvents: introOn || flightPath ? "none" : "auto", transition: "opacity .5s ease" }}>
         <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
-      <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
+      <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || !!flightPath} />
       <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden", willChange: "transform" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
@@ -1229,6 +1244,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
       {/* (사용자 요청) 개발자 모드일 때만, 모식도 영역 하단에 저장·취소 버튼 — 대기 중인 변경(추가/
           삭제)이 하나라도 있을 때만 나타난다. 저장을 눌러야 비로소 CONTENT에 반영되고 트리가
           재생성된다(그 전까지는 이 draft만 쌓일 뿐 실시간으로 다시 그려지지 않는다). */}
+      {rightSlot && !fsv.fs && (
+        <div style={{ position: "absolute", left: 10, bottom: 10, zIndex: 55, pointerEvents: "none", padding: "6px 12px", borderRadius: 10, background: "rgba(36,21,9,.86)", border: "1px solid #5A4630", boxShadow: "0 3px 10px rgba(0,0,0,.3)" }}>{rightSlot}</div>
+      )}
       {canAdd && (draftAddCount > 0 || draftRemoveCount > 0) && (
         <div className="no-pan" onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 62, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 10px 24px -8px rgba(0,0,0,.5)" }}>
@@ -1355,11 +1373,11 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
       <OpeningSchematic tabsSlot={inlineTabs ? tabPills(0) : undefined} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
-          <div style={{ textAlign: vertical ? "left" : "right" }}>
+          <div style={{ textAlign: "left" }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
               {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.ivory, marginTop: 1 }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
             </div>
           </div>
         } />

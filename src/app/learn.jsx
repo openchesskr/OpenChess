@@ -80,7 +80,7 @@ async function fetchAllMasterGames(sans, count = 15) {
   const staticGames = staticMasterGamesFor(sans, staticData);
   const inStatic = new Set(staticGames.map(gameKey));
   // (v0.6.6, 사용자 요청) Lichess 대표 대국은 대회 정보가 없어 마스터 통계 목록에서 뺀다(통계 숫자만 Lichess 집계를 쓴다).
-  const games = [...dev.filter((g) => !inStatic.has(gameKey(g))), ...staticGames];
+  const games = staticGames;   // (v0.6.6, 사용자 요청) 개발자가 직접 추가한 대국도 대회 정보가 없어 마스터 통계에서 뺀다
   // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
   const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
   const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
@@ -2627,7 +2627,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", fmtFull(filteredMasterGames.length))}</span>}
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>
             {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
             {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title={t("마스터 대국 추가")} aria-label={t("마스터 대국 추가")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
           </div>
@@ -2640,44 +2640,61 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
             </div>
           )}
         </div>
-        {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 이후 많이 둔 수, 연도별 추이 */}
-        {masterSummary.n > 0 && (
+        {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 채택률(선택된 수), 승점 획득 확률. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려지고, 데이터가 오면 실제 요소가 위에서부터 하나씩 그려진다. */}
+        {loadingMasterGames && (
           <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>
-              <span>{t("마스터 승률")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
-            </div>
-            <ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled />
+            {(() => { const sk = (i, st) => <div className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />; return (<>
+              {sk(0, { height: 10, width: "42%", marginBottom: 6 })}
+              {sk(1, { height: 14 })}
+              {sk(2, { height: 10, width: "24%", marginTop: 12, marginBottom: 6 })}
+              {[3, 4, 5, 6, 7].map((i) => sk(i, { height: 15, marginBottom: 6 }))}
+              {sk(8, { height: 10, width: "36%", marginTop: 10, marginBottom: 6 })}
+              {sk(9, { height: 70 })}
+            </>); })()}
+          </div>
+        )}
+        {!loadingMasterGames && masterSummary.n > 0 && (() => {
+          const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
+          const trend = masterSummary.trend, pcts = trend.map((x) => x.pct);
+          // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
+          const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
+          return (
+          <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+            <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{t("마스터 승률")}</div>
+            <div {...ap(1)}><ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled /></div>
             {masterStats && masterStats.moves.length > 0 && !masterFiltersOn && (
               <div style={{ marginTop: 9 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("채택률")}</div>
-                {masterStats.moves.slice(0, 5).map((mv) => {
+                <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
+                {masterStats.moves.slice(0, 5).map((mv, ri) => {
                   const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (masterSummary.n || 1));
                   return (
-                    <button key={mv.san} onClick={() => onJump && onJump([...sans, san], mv.san)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" }}>
-                      <span style={{ width: 64, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
-                      <span title={t("비중")} style={{ width: 34, flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{share}%</span>
+                    <button key={mv.san} onClick={() => onJump && onJump([...sans, san], mv.san)} {...ap(3 + ri, { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" })}>
+                      <span style={{ width: 52, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
+                      <span title={t("비중")} style={{ flexShrink: 0, minWidth: 74, fontSize: 11, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{fmtFull(tot)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>({share}%)</span></span>
                       <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled /></span>
                     </button>
                   );
                 })}
               </div>
             )}
-            {masterSummary.trend.length >= 2 && (
+            {trend.length >= 2 && (
               <div style={{ marginTop: 9 }}>
-                <div className="flex items-center" style={{ gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 46 }}>
-                  {masterSummary.trend.map((x) => (
+                <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span><span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, fontFamily: SITE_FONT }}>{lo}–{hi}%</span></div>
+                <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", gap: 4, height: AREA + 26 })}>
+                  <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
+                  {trend.map((x) => (
                     <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
                       <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
-                      <span style={{ width: "100%", height: Math.max(3, (x.pct / 100) * 28), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
-                      <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{x.k}s</span>
+                      <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                      <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12 }}>{x.k}s</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
         {/* (v0.6.6, 사용자 요청) 필터 — 결과·레이팅·연도 */}
         {masterGames.length > 1 && (
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -2713,7 +2730,7 @@ function FocusPanelBody({ onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJu
             )}
           </div>
         )}
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 검색 중…")}</p>
+        {loadingMasterGames ? null
           : masterGamesError ? (
             <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 로드 실패")}{" "}<button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
           )
@@ -3697,10 +3714,10 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                 {lastSan && (
                   <div>
                     {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 배치 — 키워드(최상단, 고정 높이) / 수 + 평가치 + 분석 버튼(우측 고정) / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
-                    <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
                       {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
                       <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
                           {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 700, color: T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}

@@ -446,6 +446,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // setState로 노드 2,600여 개·선 수천 개를 통째로 다시 그려 프레임당 0.6초가 걸렸다. 배율 표시와 "화면 밖 노드 제외" 범위(cull)는 필요할 때만 state로 반영한다.
   // (v0.6.6, 사용자 요청) 시작 연출: 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대된다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다.
   const [introOn, setIntroOn] = useState(true);
+  const [flying, setFlying] = useState(false);
   const [view, setView] = useState({ x: 0, y: 0, z: baseZ * INTRO_FROM });
   const viewRef = useRef(view), canvasRef = useRef(null), commitTimerRef = useRef(null), cullRef = useRef(null);
   const [pick, setPick] = useState(null);
@@ -482,10 +483,22 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
+  // (v0.6.6) 박스 크기가 바뀌면(전체 화면 전환 등) 보던 중심 지점을 유지한다.
+  useEffect(() => {
+    const el = boxRef.current; if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let last = null;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (last && (w !== last.w || h !== last.h) && !introRafRef.current && !flightRafRef.current) { const v = viewRef.current; apply({ x: v.x + (w - last.w) / 2, y: v.y + (h - last.h) / 2 }, v.z); }
+      last = { w, h };
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const introRafRef = useRef(null), introTimerRef = useRef(null);
   // (v0.6.6, 사용자 요청) 찾아가기 연출 — 중심 회로 칩에서 회로선(꺾은선)을 따라 목표 노드까지 빠르게 이동하며 파란 선이 그려진다. 검색·대회 이름 링크가 함께 쓴다.
   const flightRef = useRef(null), flightRafRef = useRef(null);
-  const cancelFlight = useCallback(() => { if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; } if (flightRef.current) flightRef.current.style.display = "none"; }, []);
+  const cancelFlight = useCallback(() => { if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; } if (flightRef.current) flightRef.current.style.display = "none"; setFlying(false); }, []);
   const endIntro = useCallback(() => { cancelFlight(); if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, [cancelFlight]);
   const startIntro = useCallback(() => {
     if (introTimerRef.current) clearTimeout(introTimerRef.current);
@@ -573,6 +586,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     const L = layoutRef.current, pts = flightPoints(L, nodeId);
     endIntro();
     if (!pts) { if (onDone) onDone(); return; }
+    setFlying(true);
     const total = polyLength(pts), z = baseZ, dur = Math.min(1700, Math.max(750, total / 3.2)), t0 = performance.now(), line = flightRef.current;
     const prefix = (s2) => { const out = [pts[0]]; let acc = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (acc + d <= s2) { out.push(pts[i]); acc += d; } else { out.push(polyPointAt(pts, s2)); break; } } return out.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" "); };
     const r0 = rect(); apply({ x: r0.width / 2 - pts[0][0] * z, y: r0.height / 2 - pts[0][1] * z }, z);   // 칩이 화면 가운데에 오게 하고 출발
@@ -582,7 +596,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
       apply({ x: r.width / 2 - p2[0] * z, y: r.height / 2 - p2[1] * z }, z);
       if (line) line.setAttribute("points", prefix(s2));
       if (k < 1) flightRafRef.current = requestAnimationFrame(step);
-      else { flightRafRef.current = null; commit(); if (onDone) onDone(); setTimeout(() => { if (!flightRafRef.current && line) line.style.display = "none"; }, 900); }
+      else { flightRafRef.current = null; setFlying(false); commit(); if (onDone) onDone(); setTimeout(() => { if (!flightRafRef.current && line) line.style.display = "none"; }, 900); }
     };
     flightRafRef.current = requestAnimationFrame(step);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -681,12 +695,12 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
       <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
-        <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+        <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, opacity: introOn || flying ? 0 : 1, pointerEvents: introOn || flying ? "none" : "auto", transition: "opacity .5s ease" }}>
           <button onClick={() => zoomBy(-MASTER_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{masterZoomLabel(view.z)}</button>
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
-        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
+        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || flying} />
         <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
