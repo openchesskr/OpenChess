@@ -3,7 +3,7 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, Search, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
+import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
@@ -22,6 +22,7 @@ import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { DEX_ELECTRIC_FLOW_SPEED, DEX_SELECT_FLOW_SPEED, MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_STEP, SCHEMATIC_DRAG_MULT, SCHEMATIC_ELECTRIC, anchoredZoomPan, masterZoomLabel, snapMasterZoom } from "../lib/schematicGeometry.js";
 import { playSfx } from "../lib/prefs.js";
+import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import EditionView from "../components/tournamentView.jsx";
 import { GameViewButton, BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import MasterProfile from "../components/masterProfile.jsx";
@@ -68,7 +69,7 @@ function CornerBadge({ children, bg = T.brass, big }) {
 /* 이름 왼쪽 국기 이모티콘(없으면 아무것도 안 그린다) */
 const Flag = ({ code, size = 16 }) => { const f = flagEmoji(code); return f ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{f}</span> : null; };
 const FlagE = ({ emoji, size = 16 }) => (emoji ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{emoji}</span> : null);
-const fxClass = (fx) => (fx ? " dex-surge-node" : "");
+const fxClass = (fx) => (fx ? (fx.intro ? " dex-intro-node" : " dex-surge-node") : "");
 const fxDelay = (fx) => (fx ? { animationDelay: fx.delay + "s" } : null);
 
 /* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
@@ -379,8 +380,9 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
 }
 
 /* 회로선 — 오프닝 트리의 선과 같은 규칙: 기본은 황동색 2px 둥근 끝, 전류 서지(electric)나 선택 경로(lit)면 하늘색 3px 점선이 흐른다. delay는 칩에서의 거리에 비례. */
-function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash }) {
+function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash, intro }) {
   const on = lit || surge;
+  if (intro != null && !on) return <path d={d} pathLength={1} fill="none" stroke={stroke} strokeWidth={2} opacity={opacity} strokeLinecap="round" strokeLinejoin="round" className="dex-intro-line" style={{ animationDelay: intro + "s" }} />;   // 시작 연출: 칩에서 바깥으로 선이 그려진다
   return <path d={d} fill="none" stroke={on ? SCHEMATIC_ELECTRIC : stroke} strokeWidth={on ? 3 : 2} opacity={on ? 1 : opacity} strokeLinecap="round" strokeLinejoin="round"
     className={surge ? "dex-surge-line" : lit ? "dex-current-line" : undefined}
     style={on ? { strokeDasharray: "7 5", transition: lit ? "stroke .25s ease " + delay + "s, opacity .25s ease " + delay + "s" : undefined, animationDelay: surge ? delay + "s" : undefined } : (dash ? { strokeDasharray: dash } : undefined)} />;
@@ -407,12 +409,12 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const masterKeys = React.useMemo(() => {
     const out = [];
     for (const n of LAYOUT.nodes) {
-      let names = null;
-      if (n.kind === "champ") names = [n.champ.name, n.champ.ko];
-      else if (n.kind === "sat") names = [n.sat.opp, n.sat.ko];
-      else if (n.kind === "fide") names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")];
-      else if (n.kind === "dbm") names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")];
-      if (names) out.push({ id: n.id, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
+      let names = null, title = "", sub = "", flag = "";
+      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; title = personName(n.champ); sub = (n.champ.no ? numText(n.champ) + " · " : "") + reignText(n.champ); flag = flagEmoji(n.champ.cc); }
+      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; title = personName(n.sat); sub = t("타이틀전 도전자") + " · " + n.sat.years.join(" · "); flag = flagEmoji(n.sat.cc); }
+      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; title = masterName(n.fide.name, "en"); sub = LABEL_TEXT()["fide-" + n.list] + " · " + n.rank; flag = masterFlag(n.fide.name) || ""; }
+      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; title = masterName(n.dbm.name, "en"); sub = t("마스터 대국 DB 선수"); flag = masterFlag(n.dbm.name) || ""; }
+      if (names) out.push({ id: n.id, title, sub, flag, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
     }
     return out;
   }, [LAYOUT]);
@@ -420,16 +422,20 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
     if (!raw) return null;
     const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
-      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id }));
+      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + " · " + tourPlace(tr), flag: "", tag: "tour" }));
+    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
     return [...masters, ...tours];
   }, [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
   const matchTourIds = React.useMemo(() => (matches ? new Set(matches.filter((x) => x.tourId).map((x) => x.tourId)) : null), [matches]);
   const dimOn = !!matches && matches.length > 0;
   const [matchIdx, setMatchIdx] = useState(0);
-  useEffect(() => { setMatchIdx(0); if (matches && matches.length) setFocusId(matches[0].id); }, [matches]);
+  // (BUG-082) 결과 "목록"이 바뀔 때만 첫 결과로 옮긴다. 예전엔 matches 배열이 새로 만들어질 때마다(연도 블록을 펼쳐 배치가 바뀔 때도) 옮겨, 검색 중에 연도를 누르면 화면이 대회 카드로 되돌아가 펼친 대진표가 화면 밖에 남았다.
+  const matchSig = matches ? matches.map((x) => x.id).join("|") : "";
+  const [dropOpen, setDropOpen] = useState(false);
+  useEffect(() => { setMatchIdx(0); if (matches && matches.length) { endIntro(); setFocusId(matches[0].id); } }, [matchSig]);   // eslint-disable-line react-hooks/exhaustive-deps
   const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); setFocusId(matches[i].id); };
+  const pickMatch = (i) => { if (!matches || !matches[i]) return; endIntro(); setMatchIdx(i); setFocusId(matches[i].id); setDropOpen(false); };
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
   const openTour = useCallback((id) => { setQ(""); setEdView(null); setPick({ type: "tour", id }); setFocusId("tour:" + id); }, []);
   const boxRef = useRef(null);
@@ -438,7 +444,9 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const baseZ = MASTER_ZOOM_LABEL_BASE;
   // (v0.6.5, 렉 수정) 시점(viewRef)이 항상 최신이다. 드래그·휠 중에는 캔버스 변환만 직접 바꾸고(paint) React는 다시 그리지 않는다 — 예전엔 포인터가 움직일 때마다
   // setState로 노드 2,600여 개·선 수천 개를 통째로 다시 그려 프레임당 0.6초가 걸렸다. 배율 표시와 "화면 밖 노드 제외" 범위(cull)는 필요할 때만 state로 반영한다.
-  const [view, setView] = useState({ x: 0, y: 0, z: baseZ });
+  // (v0.6.6, 사용자 요청) 시작 연출: 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대된다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다.
+  const [introOn, setIntroOn] = useState(true);
+  const [view, setView] = useState({ x: 0, y: 0, z: baseZ * INTRO_FROM });
   const viewRef = useRef(view), canvasRef = useRef(null), commitTimerRef = useRef(null), cullRef = useRef(null);
   const [pick, setPick] = useState(null);
   // 오프닝 트리와 같은 "회로에 전류 흘리기" — 중심 칩을 누르면 모든 선·노드에 칩에서의 거리 비례 지연으로 전기 서지가 한 번 퍼진다.
@@ -469,18 +477,34 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); }, []);
   const zoomBy = useCallback((dz, ax, ay) => {
+    endIntro();
     const v = viewRef.current, r = rect(), nz = snapMasterZoom(v.z + dz); if (nz === v.z) return;
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
-  const resetView = useCallback(() => { const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const introRafRef = useRef(null), introTimerRef = useRef(null);
+  const endIntro = useCallback(() => { if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, []);
+  useEffect(() => {
+    introTimerRef.current = setTimeout(() => {
+      introTimerRef.current = null;
+      const z0 = viewRef.current.z, t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / INTRO_ZOOM_MS), z = z0 + (baseZ - z0) * introEase(k), r = rect(), L = layoutRef.current;
+        apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z);
+        if (k < 1) introRafRef.current = requestAnimationFrame(step); else { introRafRef.current = null; setIntroOn(false); commit(); }
+      };
+      introRafRef.current = requestAnimationFrame(step);
+    }, INTRO_HOLD_MS);
+    return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const resetView = useCallback(() => { endIntro(); const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); }, [apply]);
   useLayoutEffect(() => { toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
   useEffect(() => {
     const el = boxRef.current; if (!el) return undefined;
     const onWheel = (e) => {
-      e.preventDefault();
+      e.preventDefault(); endIntro();
       const v = viewRef.current;
       if (e.ctrlKey || e.metaKey) { const r = el.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? MASTER_ZOOM_STEP : -MASTER_ZOOM_STEP, e.clientX - r.left, e.clientY - r.top); return; }
       apply({ x: v.x - e.deltaX, y: v.y - e.deltaY }, v.z);
@@ -499,6 +523,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   };
   const onPointerDown = (e) => {
     if (e.target.closest && e.target.closest(".no-pan")) return;
+    endIntro();
     pointersRef.current.set(e.pointerId, localPt(e));
     if (pointersRef.current.size === 2) { for (const id of pointersRef.current.keys()) { try { e.currentTarget.setPointerCapture(id); } catch { } } startPinch(); return; }
     if (pointersRef.current.size > 2) return;
@@ -534,8 +559,16 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   useEffect(() => {
     if (!focusId) return;
     const n = LAYOUT.byNodeId.get(focusId); if (!n) return;
+    endIntro();
     const r = rect(), z = viewRef.current.z; apply({ x: r.width / 2 - (n.x + n.w / 2) * z, y: r.height / 2 - (n.y + n.h / 2) * z }, z); setFocusId(null);
   }, [focusId, LAYOUT]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 연도 블록을 펼치면(대회 데이터가 없는 대회의 출전자 상자) 상자가 보이도록 화면을 그 블록 쪽으로 옮긴다 — 예전엔 상자가 화면 밖에 열려 "아무것도 안 뜨는" 것처럼 보였다(BUG-082).
+  useEffect(() => {
+    if (!openEd) return;
+    const en = LAYOUT.nodes.find((n) => n.kind === "edition" && n.open); if (!en) return;
+    endIntro(); const r = rect(), z = viewRef.current.z;
+    apply({ x: Math.min(r.width * 0.12, 20) - en.x * z, y: Math.min(r.height * 0.18, 90) - en.y * z }, z);
+  }, [openEd]);   // eslint-disable-line react-hooks/exhaustive-deps
   const { nodes, edges, width, height, chip, traces } = LAYOUT;
   // 지금 보이는 영역 둘레(여유 포함)에 걸친 노드·선만 그린다 — 전체는 논리적으로 모두 트리에 있고, 화면 밖은 움직여 오면 그려진다.
   const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN;
@@ -547,7 +580,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const distC = (x, y) => Math.abs(x - chip.cx) + Math.abs(y - chip.cy);
   const surgeAt = (x, y) => (electric ? distC(x, y) / DEX_ELECTRIC_FLOW_SPEED : 0);
   const litDelay = (x, y) => Math.min(1, distC(x, y) / DEX_SELECT_FLOW_SPEED);
-  const fxOf = (n) => (electric ? { delay: surgeAt(n.x + n.w / 2, n.y + n.h / 2) } : null);
+  // 시작 연출(introOn): 칩에서 멀수록 늦게 나타난다. 50% 배율에서 화면에 보이는 범위(introReach) 밖은 연출 없이 그대로 둔다.
+  const reach = introOn ? introReach(cr.width, cr.height, baseZ * INTRO_FROM) : 0;
+  const introAt = (x, y) => (introOn ? introDelay(Math.hypot(x - chip.cx, y - chip.cy), reach) : null);
+  const fxOf = (n) => { if (electric) return { delay: surgeAt(n.x + n.w / 2, n.y + n.h / 2) }; const d = introAt(n.x + n.w / 2, n.y + n.h / 2); return d == null ? null : { delay: d, intro: true }; };
   // 선택한 노드까지 칩에서 이어지는 회로선 — 챔피언·도전자는 남쪽 선과 타이틀 이동선, 대회는 동쪽 선과 세로선(rail).
   const lit = React.useMemo(() => {
     const keys = new Set(); let railTo = null, wrailTo = null, wrailCol = 0;
@@ -566,26 +602,41 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     else if (pick.type === "dbm") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { keys.add("W"); for (let k = 1; k <= n.col; k++) keys.add("wseg:" + k); keys.add("dl:" + n.index); wrailTo = n.y + n.h / 2; wrailCol = n.col; } }
     return { keys, railTo, wrailTo, wrailCol };
   }, [pick, LAYOUT]);
-  const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} {...extra} />;
+  const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} intro={introAt(mx, my)} {...extra} />;
   return (
     <div>
       {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
-      {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다). 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "nowrap" }}>
-        <div className="no-pan" style={{ display: "flex", gap: 4, flex: "0 1 260px", minWidth: 150, marginRight: "auto" }}><div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-          <Search size={14} aria-hidden="true" style={{ position: "absolute", left: 9, top: 9, color: T.inkSoft }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") stepMatch(e.shiftKey ? -1 : 1); }} placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")} style={{ width: "100%", height: 32, boxSizing: "border-box", padding: "0 9px 0 28px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontFamily: SITE_FONT }} />
+      {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다).
+          (v0.6.6, 사용자 요청) 검색창·되돌리기 버튼은 오프닝 트리(dex.jsx searchHeader)와 같은 모양, 결과 드롭다운은 퍼즐 탭 검색(puzzle.jsx searchSuggestions)과 같은 모양(종류 태그 + 이름)이다. 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "nowrap" }}>
+        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input value={q} onChange={(e) => { setQ(e.target.value); setDropOpen(true); }} onFocus={() => setDropOpen(true)} onBlur={() => setTimeout(() => setDropOpen(false), 150)}
+              onKeyDown={(e) => { if (e.key === "Enter") { if (matches && matches.length) pickMatch(dropOpen ? matchIdx : (matchIdx + 1) % matches.length); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepMatch(e.key === "ArrowDown" ? 1 : -1); setDropOpen(true); } else if (e.key === "Escape") setDropOpen(false); }}
+              placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")}
+              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+            {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
+            <button onClick={resetView} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
+          </div>
+          {q.trim() && dropOpen && (
+            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 40, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 280, overflowY: "auto" }}>
+              {!matches || matches.length === 0
+                ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 마스터·대회 없음")}</div>
+                : matches.slice(0, 60).map((it, i) => (
+                  <button key={it.id} onMouseDown={(e) => e.preventDefault()} onClick={() => pickMatch(i)} className="press"
+                    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left", padding: "7px 10px", background: i === matchIdx ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600 }}>
+                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: it.tag === "tour" ? "#1F6B1F" : "#8A6A2F", background: it.tag === "tour" ? "rgba(60,138,60,.18)" : "rgba(196,154,80,.22)" }}>{it.tag === "tour" ? t("대회") : t("마스터")}</span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>{it.flag ? <span aria-hidden="true" style={{ fontSize: 13, lineHeight: 1 }}>{it.flag}</span> : null}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.title}</span></span>
+                      {it.sub ? <span style={{ display: "block", fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub}</span> : null}
+                    </span>
+                  </button>
+                ))}
+              {matches && matches.length > 60 && <div style={{ padding: "6px 10px", fontSize: 10.5, color: T.inkSoft }}>{t("결과 {0}개 중 60개만 표시", matches.length)}</div>}
+            </div>
+          )}
         </div>
-          {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
-          <button onClick={resetView} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-          {matches && matches.length > 0 && <>
-            <button onClick={() => stepMatch(-1)} aria-label={t("이전 결과")} title={t("이전 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={14} /></button>
-            <button onClick={() => stepMatch(1)} aria-label={t("다음 결과")} title={t("다음 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={14} /></button>
-          </>}
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap", fontFamily: SITE_FONT, minWidth: 44, textAlign: "right" }}>{matches ? (matches.length ? matchIdx + 1 : 0) + "/" + matches.length : TOURNAMENTS.length}</span>
-        </div>
+        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap", fontFamily: SITE_FONT, minWidth: 44, textAlign: "right" }}>{matches ? matches.length : TOURNAMENTS.length}</span>
       </div>
       <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
@@ -626,26 +677,26 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             })}
           </svg>
           {champEdges.filter((e) => !e.t.loser && (e.t.score || e.t.kind !== "match")).map((e, i) => {
-            const p = transferPath(e.a, e.b);
-            return <span key={"l" + i} style={{ position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
+            const p = transferPath(e.a, e.b), pd = introAt(p.lx, p.ly);
+            return <span key={"l" + i} className={pd == null ? undefined : "dex-intro-fade"} style={{ ...(pd == null ? null : { animationDelay: pd + "s" }), position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
           })}
-          {LAYOUT.labels.map((l) => (l.plaque ? (
+          {LAYOUT.labels.map((l) => { const ld = introAt(l.x + l.w / 2, l.y + l.h / 2), lc = ld == null ? undefined : "dex-intro-fade", lx = ld == null ? null : { animationDelay: ld + "s" }; return (l.plaque ? (
             /* FIDE 랭킹 갈래 머리판 — 챔피언 명판처럼 어두운 바탕에 금테·금색 글자 */
-            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
+            <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
               background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(60,40,10,.38)" }}>
               <span aria-hidden="true" style={{ position: "absolute", inset: 4, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55)" }} />
               <span style={{ position: "relative", fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 17, letterSpacing: .6, color: "#FFF3D3", textShadow: "0 1px 0 #000, 0 0 8px rgba(236,203,134,.35)", whiteSpace: "nowrap" }}>{LABEL_TEXT()[l.key]}</span>
             </div>
           ) : (
-            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
+            <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
               <span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
                 ✦ {LABEL_TEXT()[l.key]} ✦
               </span>
             </div>
-          )))}
+          )); })}
           {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}
           {/* 중심 회로 칩 — 오프닝 트리와 같은 칩(네 변 핀 + CPU 아이콘). 누르면 회로 전체에 전류가 흐른다. */}
-          <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: chip.cx - chip.size / 2, top: chip.cy - chip.size / 2, width: chip.size, height: chip.size, cursor: "pointer", zIndex: 2 }}>
+          <div className={"no-pan" + (electric ? " dex-chip-surge" : introOn ? " dex-intro-node" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: chip.cx - chip.size / 2, top: chip.cy - chip.size / 2, width: chip.size, height: chip.size, cursor: "pointer", zIndex: 2 }}>
             <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
             {[0, 1, 2].map((i) => (
               <React.Fragment key={i}>

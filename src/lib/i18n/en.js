@@ -2280,6 +2280,13 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Moving the king to safety early is a good choice",
   "대회·개최지·마스터 이름 검색": "Search tournaments, venues, masters",
   "조건에 맞는 결과 없음": "No matching results",
+  // (v0.6.6) 마스터 트리 검색 드롭다운·DB 수록 회차 안내
+  "타이틀전 도전자": "Title match challenger",
+  "일치하는 마스터·대회 없음": "No matching masters or tournaments",
+  "대회": "Tournament",
+  "출전자": "Players",
+  "결과 {0}개 중 60개만 표시": "Showing 60 of {0} results",
+  "마스터 대국 DB에 수록된 일부 대국만 있어 실제 대회보다 적음. 점수는 수록 대국 기준": "Only some games are in the masters game DB, so this is fewer than the real event. Scores are based on the games included.",
   "창 접기": "Minimize window",
   "창 펼치기": "Expand window",
   "두 번 누르면 아래에 다시 붙음": "Double-click to dock it back at the bottom",
