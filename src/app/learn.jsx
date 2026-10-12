@@ -917,6 +917,24 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
   const isMaster = mode === "master";
+  // (v0.6.6, 사용자 요청) 엔진이 되살아났을 때(상태가 ready로 돌아옴)·라인 계산이 한참 멈춰 있을 때 이 포지션의 엔진 계산 캐시를 비우고 다시 시작한다.
+  //  안전장치 1) 엔진 워치독(shell.jsx useEngine)이 워커를 다시 띄우면 status가 바뀌므로, 비어 있는 채로 캐시된 옛 결과를 버리고 처음부터 다시 계산한다.
+  //  안전장치 2) 5초마다 점검 — 계산 중 표시(linesPending)가 15초 넘게 같은 depth에서 안 움직이면 캐시를 비우고(kick) 계산을 다시 건다.
+  const [kick, setKick] = useState(0);
+  useEffect(() => { posCacheRef.current = { key: null, multiPromise: null, live: new Map() }; }, [engine.status]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const watchRef = useRef({ pending: false, depth: null, since: Date.now(), ready: false });
+  watchRef.current.pending = linesPending; watchRef.current.ready = !!liveOn && engine.status === "ready";
+  useEffect(() => {
+    const w = watchRef.current;
+    if (w.depth !== curDepth || !linesPending) { w.depth = curDepth; w.since = Date.now(); }
+  }, [curDepth, linesPending, key]);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const w = watchRef.current;
+      if (w.ready && w.pending && Date.now() - w.since > 15000) { w.since = Date.now(); posCacheRef.current = { key: null, multiPromise: null, live: new Map() }; setKick((k) => k + 1); }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1302,7 +1320,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }
     })();
     return () => { cancelled = true; };
-  }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty]);
+  }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty, kick]);
 
   const statMountedRef = useRef(true);
   useEffect(() => () => { statMountedRef.current = false; }, []);
@@ -2775,7 +2793,7 @@ function RecommendReasonEditor({ sentKey, bumpContent }) {
 }
 // (v0.6.6, 사용자 요청) 말풍선 본문은 고정 높이(3줄)로 두고, 넘치면 잘리는 경계에 "…"와 오른쪽 회색 "자세히 보기"를 띄운다. 눌러야만 아래로 늘어나고,
 // resetKey(포지션)가 바뀌면 다시 고정 크기로 접힌다(새로고침하면 당연히 접힌 상태).
-function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 56 }) {
+function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 40 }) {
   const [open, setOpen] = useState(false), [over, setOver] = useState(false);
   const ref = useRef(null);
   useEffect(() => { setOpen(false); }, [resetKey]);
@@ -3605,14 +3623,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 경로에서 앙파상이 불가능해지는 버그가 있었다. 근본적으로 "모든 /play 대국은 공통된
                 표준 시작 위치로만" 진입하도록, 지금 보드가 표준 시작 위치 그대로가 아니면(fenRoot가
                 있거나 sans에 이미 둔 수가 있으면) 이 버튼 자체를 비활성화하고 항상 빈 sans만 넘긴다. */}
-            {onOpenPlay && !focus && (() => {
-              const atStart = !fenRoot && sans.length === 0;
-              return (
-                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? t("PLAY: 봇과 대국") : t("PLAY: 표준 시작 위치에서만 가능")} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 46, padding: "0 14px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 13, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
-                  <Play size={15} color={atStart ? "#241509" : "rgba(244,238,226,.35)"} fill={atStart ? "#241509" : "rgba(244,238,226,.35)"} />PLAY
-                </button>
-              );
-            })()}
+            {/* (v0.6.6, 사용자 요청) PLAY 버튼 제거 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={19} /></NavBtn>
               <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={19} /></NavBtn>
@@ -3646,7 +3657,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
                   <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
-                    <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
+                    <div style={{ position: "absolute", top: 0, right: 6 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={42} /></div>
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
