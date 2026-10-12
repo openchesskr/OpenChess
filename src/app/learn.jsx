@@ -2139,14 +2139,29 @@ function normalizePlayerKey(name) {
 // (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
-// (v0.6.6, 사용자 요청) 마스터 대국 한 줄(선수) — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·승자 왕관은 항상 보임).
-function MasterPlayerLine({ icon, name, rating, winner }) {
+// (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 직접 그린 왕관 아이콘.
+const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#3A2A18" } };
+function SideSquare({ side }) {
+  const c = MASTER_SIDE_COLOR[side];
+  return <span aria-label={side === "w" ? t("백") : t("흑")} style={{ display: "inline-block", flexShrink: 0, width: 11, height: 11, borderRadius: 3, background: c.bg, border: "1.5px solid " + c.bd, boxSizing: "border-box", alignSelf: "center" }} />;
+}
+function CrownIcon({ size = 14 }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, flex: 1, whiteSpace: "nowrap", fontSize: 12.5 }}>
-      <span style={{ flexShrink: 0 }}>{icon}</span>
+    <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={t("승리")} style={{ flexShrink: 0, alignSelf: "center" }}>
+      <path d="M3 8.5 7.6 12 12 5l4.4 7L21 8.5 19 18H5z" fill="#E2B652" stroke="#8F6A22" strokeWidth="1.4" strokeLinejoin="round" />
+      <rect x="5" y="19.2" width="14" height="2.2" rx="1" fill="#B98A34" stroke="#8F6A22" strokeWidth="1" />
+      <circle cx="3" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="12" cy="4.6" r="1.7" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="21" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" />
+    </svg>
+  );
+}
+// 선수 한 줄 — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·왕관은 항상 보임).
+function MasterPlayerLine({ side, name, rating, winner }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
+      <SideSquare side={side} />
       <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{fullPlayerName(name)}</b>
       <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}</span>
-      {winner && <span style={{ flexShrink: 0 }} title={t("승리")}>👑</span>}
+      {winner && <CrownIcon />}
     </div>
   );
 }
@@ -2228,7 +2243,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // 넘기면 나머지 매칭 대국을 계속 보여준다 — masterGames는 이미 fetchAllMasterGames가 전부
   // 불러와 둔 배열이라(build-master-games.mjs가 더 이상 노드당 상한을 두지 않음) 페이지를 넘길 때
   // 추가 네트워크 요청 없이 그대로 슬라이스만 바뀐다.
-  const MASTER_PAGE_SIZE = 20;
+  const MASTER_PAGE_SIZE = 10;   // (v0.6.6, 사용자 요청) 10판씩 페이지로 나눠 보여준다
   const [masterSort, setMasterSort] = useState("default"); // default(원래 채택률순) | recent(최신순) | rating(레이팅순)
   const [masterPage, setMasterPage] = useState(0);
   // (기능) 마스터 이름 검색 — 백/흑 어느 쪽이든 이름에 검색어가 포함된 대국만 남긴다.
@@ -2242,9 +2257,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   const [expandedMasterId, setExpandedMasterId] = useState(null);
   const [contMap, setContMap] = useState({});      // 대국 id → 수순(SAN 배열) | "loading" | "error"
   useEffect(() => { setExpandedMasterId(null); }, [sans.join(","), san]);
-  const MASTER_CHUNK = 40;
-  const [masterVisible, setMasterVisible] = useState(MASTER_CHUNK);   // 한 번에 그리는 대국 수 — 아래로 스크롤하면 계속 이어서 불러온다(끝까지)
-  useEffect(() => { setMasterPage(0); setMasterVisible(MASTER_CHUNK); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
+  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
   const toggleMasterGame = async (id) => {
     if (expandedMasterId === id) { setExpandedMasterId(null); return; }
     setExpandedMasterId(id);
@@ -2313,15 +2326,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
   }, [masterPlayerNames, masterSearchQuery]);
   // (v0.6.6, 사용자 요청) 판수 제한·페이지 넘김 없이 필터에 맞는 대국을 전부 한 목록으로 보여준다.
-  const masterPageItems = filteredMasterGames.slice(0, masterVisible);
-  const masterMoreRef = useRef(null);
-  useEffect(() => {
-    const el = masterMoreRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return undefined;
-    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setMasterVisible((v) => v + MASTER_CHUNK * 2); }, { rootMargin: "600px" });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [masterVisible, filteredMasterGames.length]);
+  const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
+  const masterPageItems = filteredMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
   const handleOpenGame = async (id, atPly) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
@@ -2668,11 +2674,10 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               <React.Fragment key={g.id}>
               <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="flex items-center justify-between" style={{ fontSize: 12.5, gap: 8 }}>
-                    <MasterPlayerLine icon="⬜" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
-                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
-                  </div>
-                  <div style={{ marginTop: 2, display: "flex" }}><MasterPlayerLine icon="⬛" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} /></div>
+                  <MasterPlayerLine side="w" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
+                  {/* 결과는 흑·백 가운데에 둔다(두 선수 사이의 승부라는 의미) */}
+                  <div style={{ textAlign: "center", margin: "1px 0", fontWeight: 800, fontSize: 12, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</div>
+                  <MasterPlayerLine side="b" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} />
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
@@ -2694,11 +2699,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               })()}
               </React.Fragment>
             ))}
-            {filteredMasterGames.length > masterVisible && (
-              <div ref={masterMoreRef} style={{ textAlign: "center", padding: "10px 0 2px" }}>
-                <button onClick={() => setMasterVisible((v) => v + MASTER_CHUNK * 5)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "5px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer" }}>{t("더 보기")} ({fmtFull(filteredMasterGames.length - masterVisible)})</button>
-              </div>
-            )}
+            <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} jump={masterPageCount > 1000 ? 100 : masterPageCount > 100 ? 10 : 5} />
             </>)}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
