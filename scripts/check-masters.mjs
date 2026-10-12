@@ -120,7 +120,7 @@ const IDX = JSON.parse(rf("src/data/tournamentIndex.json", "utf8"));
 const EDITIONS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDITIONS[id] = v.editions.map((e) => e[0]);
 const EDS = {}; for (const [id, v] of Object.entries(IDX.byId)) EDS[id] = v.editions;
 const FIDE = JSON.parse(rf("src/data/fideRankings.json", "utf8")), DBM = JSON.parse(rf("src/data/dbMasters.json", "utf8"));
-const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, null, FIDE, DBM.masters);
+const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, EDS, null, FIDE, DBM.masters);
 eq(L.nodes.filter((n) => n.kind === "champ").length, CHAMPIONS.length, "챔피언 노드 수");
 eq(L.nodes.filter((n) => n.kind === "sat").length, CHAMPIONS.reduce((n, c) => n + satellitesOf(c).length, 0), "위성 노드 수");
 for (let i = 0; i < L.nodes.length; i++) {
@@ -161,7 +161,7 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   // 펼침: 연도 블록 아래에 대진표 영역 → 겹침 없음, 아래 대회가 그 높이만큼 밀림, 캔버스가 커짐
   for (const key of ["hastings:1895", "tata:2000", "candidates:2024"]) {
     const [tid, yr] = key.split(":");
-    const E = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, EDS, key, FIDE, DBM.masters);
+    const E = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, EDS, key, FIDE, DBM.masters);
     const open = E.nodes.find((n) => n.kind === "edition" && n.open);
     if (!open || open.tourId !== tid || open.year !== +yr) { if (EDS[tid] && EDS[tid].some((e) => e[0] === +yr)) fails.push("펼친 연도 블록이 표시되지 않음: " + key); continue; }
     const pan = E.panels[0];
@@ -178,7 +178,7 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
 
 // 열 이름 라벨: 북(챔피언)·동(대회)·서(DB 선수)·남(FIDE 세 갈래) 6개, 노드와 겹치지 않고 캔버스 안
 {
-  eq(L.labels.map((l) => l.key).sort(), ["champs", "db", "fide-blitz", "fide-rapid", "fide-standard", "tours"], "열 이름 라벨");
+  eq(L.labels.map((l) => l.key).sort(), ["champs", "db", "fide-blitz", "fide-rapid", "fide-standard", "rank", "tours"], "열 이름 라벨");
   for (const l of L.labels) {
     if (l.x < 0 || l.y < 0 || l.x + l.w > L.width) fails.push("열 이름 라벨이 캔버스 밖: " + l.key);
     for (const n of L.nodes) if (l.x < n.x + n.w && n.x < l.x + l.w && l.y < n.y + n.h && n.y < l.y + l.h) fails.push("열 이름 라벨(" + l.key + ")이 노드와 겹침: " + n.id);
@@ -194,18 +194,20 @@ if (!(lx("kasparov2") < lx("karpov2"))) fails.push("분열기: 왼쪽(PCA·클�
   const champNodes = CHAMPIONS.map((c) => L.byNodeId.get(c.id));
   for (const n of [...champNodes, ...L.nodes.filter((n) => n.kind === "sat" || n.kind === "upcoming")]) if (!(n.y + n.h < C.cy - C.size / 2)) fails.push("챔피언 줄이 칩 위쪽이 아님: " + n.id);
   eq(end(byDir.N), [C.cx, L.lastChamp.y + L.lastChamp.h], "북쪽 선은 칩에서 가장 가까운 챔피언 노드 아래에 닿음");
-  eq(L.lastChamp.id, UPCOMING ? "upcoming" : CHAMPIONS[CHAMPIONS.length - 1].id, "칩에 가장 가까운 노드");
+  eq(L.lastChamp.id, CHAMPIONS[CHAMPIONS.length - 1].id, "칩에 가장 가까운 노드(타이틀전 예정 블록은 없다)");
+  eq(L.nodes.some((n) => n.kind === "upcoming"), false, "북쪽 타이틀전 예정 블록 없음");
   // 동: 일직선, 대회 열 가운데 = 칩 높이
   eq(byDir.E.pts.length, 2, "동쪽 선은 꺾임 없는 일직선");
   eq(end(byDir.E), [L.rail.x, C.cy], "동쪽 선은 칩과 같은 높이에서 대회 세로선에 닿음");
   if (Math.abs((L.rail.y1 + L.rail.y2) / 2 - C.cy) > 1) fails.push("대회 열의 가운데가 중심 회로 칩과 같은 높이가 아님");
-  // 서: 칩 높이의 일직선이 모든 세로선을 지나고, DB 선수는 3개 열(앞 열이 칩에 가깝다)에 알파벳(성) 순으로 이어진다 — 열마다 같은 길이(짝수 줄)라 직선이 노드를 가로지르지 않는다
+  // 서: 칩 높이의 일직선이 모든 세로선을 지나고, DB 선수는 6줄씩 서쪽으로 이어지는 열(앞 열이 칩에 가깝다)에 알파벳(성) 순으로 이어진다 — 열마다 같은 길이(짝수 줄)라 직선이 노드를 가로지르지 않는다
   const dbn = L.nodes.filter((n) => n.kind === "dbm").sort((a, b) => a.index - b.index);
   eq(dbn.length, DBM.masters.length, "서쪽 DB 마스터 노드 수");
   eq(DBM.masters.length >= 900, true, "DB 마스터는 900명");
   eq(byDir.W.pts.length, 2, "서쪽 선은 꺾임 없는 일직선");
   eq(end(byDir.W), [L.wrails[0].x, C.cy], "서쪽 선은 칩과 같은 높이에서 첫 세로선에 닿음");
-  eq(L.wrails.length, 3, "DB 선수 열 수");
+  eq(L.wrails.length, Math.ceil(DBM.masters.length / 6), "DB 선수 열 수(위아래 6줄로 서쪽으로 뻗는다)");
+  for (const w of L.wrails.slice(0, -1)) eq(Math.round((w.y2 - w.y1) / 90), 5, "서쪽 열은 6줄");
   for (let k = 0; k < L.wrails.length; k++) {
     const w = L.wrails[k], col = dbn.filter((n) => n.col === k);
     if (!(w.y1 < C.cy && C.cy < w.y2)) fails.push("칩 높이가 DB 열 안쪽이 아님: " + k);
@@ -306,7 +308,7 @@ if (/(masterName|dbPlayerName|playerName)\([^()]*,\s*lang\)/.test(mast) || /lang
   const { flightPoints, polyLength, polyPointAt } = await import("../src/lib/masterTreeLayout.js");
   const FIDE = JSON.parse(readFileSync(new URL("../src/data/fideRankings.json", import.meta.url), "utf8")), DBM = JSON.parse(readFileSync(new URL("../src/data/dbMasters.json", import.meta.url), "utf8"));
   const ed = { hastings: [[1895, 10, 5, []], [1961, 10, 5, []]] };
-  const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, null, FIDE, DBM.masters);
+  const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, ed, null, FIDE, DBM.masters);
   const pick = (kind) => L.nodes.find((n) => n.kind === kind);
   const ids2 = [pick("champ").id, pick("sat").id, pick("fide").id, pick("dbm").id, "tour:hastings", "ed:hastings:1961"];
   for (const id of ids2) {

@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 300, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 280, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 420, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14, CHIP: 60, CHIP_GAP: 260, W_COL_GAP: 300, S_LEN: 260, S_DROP: 150, FIDE_W: 292, FIDE_H: 84, FIDE_STEP: 98, FIDE_COL_DX: 420, DB_W: 292, DB_H: 78, DB_STEP: 90, DB_LINK: 50, DB_COLS: 3, DB_COL_GAP: 60 };
+export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 300, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 280, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 420, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14, CHIP: 60, CHIP_GAP: 260, W_COL_GAP: 300, S_LEN: 260, S_DROP: 150, FIDE_W: 292, FIDE_H: 84, FIDE_STEP: 98, FIDE_COL_DX: 420, DB_W: 292, DB_H: 78, DB_STEP: 90, DB_LINK: 50, DB_ROWS: 6, DB_COL_GAP: 60 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -140,10 +140,10 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   // 열마다 세로선(wrail)을 두며 칩 높이의 서쪽 선이 일직선으로 모든 세로선을 지난다. 열은 같은 길이(짝수 줄)라 이 직선은 노드를 가로지르지 않는다.
   let wrails = null;
   if (dbMasters && dbMasters.length) {
-    // 열은 짝수 줄로 자르고(마지막 열만 모자랄 수 있다) 열마다 자기 줄 수로 칩 높이를 가운데에 맞춘다 — 줄 수가 짝수라 칩 높이의 직선은 노드 사이 빈틈을 지난다.
-    const per0 = Math.ceil(dbMasters.length / MT.DB_COLS), per = per0 + (per0 % 2);
+    // (v0.6.6, 사용자 요청) 위아래 DB_ROWS(6)줄로 서쪽으로 길게 뻗는다 — 열마다 6명(칩 높이를 가운데에 두고 위 3·아래 3)이라 칩 높이의 직선이 노드 사이 빈틈을 지난다. 마지막 열만 모자랄 수 있다(그 열의 줄 수로 칩 높이를 가운데에 맞춘다).
+    const per = MT.DB_ROWS, cols = Math.ceil(dbMasters.length / per);
     wrails = [];
-    for (let k = 0; k < MT.DB_COLS; k++) {
+    for (let k = 0; k < cols; k++) {
       const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = dbMasters.slice(k * per, (k + 1) * per);
       if (!part.length) break;
       const total = (part.length - 1) * MT.DB_STEP;
@@ -185,6 +185,7 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   labels.push({ id: "champs", key: "champs", align: "left", x: chip.cx + 16, y: chip.cy - half - MT.CHIP_GAP / 2 - MT.LABEL_H / 2, w: MT.LABEL_W, h: MT.LABEL_H });
   if (rail) labels.push({ id: "tours", key: "tours", align: "center", x: (chip.cx + half + rail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
   if (wrail) labels.push({ id: "db", key: "db", align: "center", x: (chip.cx - half + wrail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
+  if (south) labels.push({ id: "rank", key: "rank", align: "left", x: chip.cx + 16, y: chip.cy + half + MT.S_LEN / 2 - MT.LABEL_H / 2, w: MT.LABEL_W, h: MT.LABEL_H });
   if (south) for (const c of south.cols) labels.push({ id: "fide-" + c.key, key: "fide-" + c.key, align: "center", plaque: true, x: c.cx - MT.FIDE_W / 2, y: c.drop.y1 + (MT.S_DROP - 52) / 2, w: MT.FIDE_W, h: 52 });
   for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;

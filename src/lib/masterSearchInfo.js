@@ -4,7 +4,7 @@
 //  · FIDE: 스탠다드·래피드·블리츠 100위 안에 드는 부문만. 첫 부문에만 "FIDE"를 붙이고 나머지는 부문 이름만 쓴다.
 //  이름은 형식이 제각각("Carlsen, Magnus" · "Carlsen,M" · "Magnus Carlsen")이라 masterProfile.candidateKeys로 같은 사람을 찾는다.
 import FIDE from "../data/fideRankings.json";
-import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
+import { CHAMPIONS, TRANSFERS, SPLIT_ROWS } from "../data/worldChampions.js";
 import { layoutMasters } from "./masterTreeLayout.js";
 import { candidateKeys } from "./masterProfile.js";
 import { ordinalParam } from "./ordinal.js";
@@ -23,7 +23,7 @@ const table = () => {
   TABLE = new Map();
   const at = (name) => { const k = candidateKeys(name)[0]; if (!k) return null; let e = TABLE.get(k); if (!e) { e = { champs: [], challenger: false, ranks: {} }; TABLE.set(k, e); } return e; };
   for (const c of CHAMPIONS) { const e = at(c.name); if (e) e.champs.push(c); }
-  for (const n of layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING).nodes) if (n.kind === "sat") { const e = at(n.sat.opp); if (e) e.challenger = true; }
+  for (const n of layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null).nodes) if (n.kind === "sat") { const e = at(n.sat.opp); if (e) e.challenger = true; }
   for (const l of LISTS) for (const r of FIDE.lists[l] || []) { const e = at(r[2]); if (e && (e.ranks[l] == null || r[0] < e.ranks[l])) e.ranks[l] = r[0]; }
   return TABLE;
 };

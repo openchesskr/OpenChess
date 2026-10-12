@@ -865,7 +865,8 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     // 카드가 나타나게 한다 — 전에는 이동 애니메이션이 도는 동안에도 카드가 곧장 뜬 채로 화면을
     // 따라 미끄러지듯 이동해 산만했다. 이동 중엔 기존에 열려 있던 카드도 먼저 닫는다.
     if (openKey) onToggleOpen(openKey);
-    centerOn(it, SELECT_ZOOM, () => onToggleOpen(it.key));
+    // (v0.6.6, 사용자 요청) 이동이 끝나도 수 설명 카드는 띄우지 않는다 — 블록을 직접 눌러야 카드가 열린다.
+    centerOn(it, SELECT_ZOOM);
   };
   // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
   // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
