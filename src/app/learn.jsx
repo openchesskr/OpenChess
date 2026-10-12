@@ -2140,10 +2140,10 @@ function normalizePlayerKey(name) {
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
 // (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 직접 그린 왕관 아이콘.
-const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#3A2A18" } };
+const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#CDB98E" } };
 function SideSquare({ side }) {
   const c = MASTER_SIDE_COLOR[side];
-  return <span aria-label={side === "w" ? t("백") : t("흑")} style={{ display: "inline-block", flexShrink: 0, width: 11, height: 11, borderRadius: 3, background: c.bg, border: "1.5px solid " + c.bd, boxSizing: "border-box", alignSelf: "center" }} />;
+  return <span aria-label={side === "w" ? t("백") : t("흑")} style={{ display: "inline-block", flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: c.bg, border: "1.5px solid " + c.bd, boxSizing: "border-box", alignSelf: "center" }} />;
 }
 function CrownIcon({ size = 14 }) {
   return (
@@ -2674,10 +2674,14 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               <React.Fragment key={g.id}>
               <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <MasterPlayerLine side="w" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
-                  {/* 결과는 흑·백 가운데에 둔다(두 선수 사이의 승부라는 의미) */}
-                  <div style={{ textAlign: "center", margin: "1px 0", fontWeight: 800, fontSize: 12, fontFamily: SITE_FONT, whiteSpace: "nowrap", color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</div>
-                  <MasterPlayerLine side="b" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} />
+                  {/* 결과(1–0)는 예전처럼 오른쪽 끝에 두되, 세로로는 백 줄과 흑 줄 사이 가운데 */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <MasterPlayerLine side="w" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
+                      <MasterPlayerLine side="b" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} />
+                    </div>
+                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+                  </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
                 <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
