@@ -82,6 +82,34 @@
 
 ## 버전 기록
 
+### OpenChess v0.6.5 — 2026/10/12
+
+**기능**
+- 마스터 트리 대회·대국 데이터: `scripts/fetch-pgnmentor.mjs`로 PGN Mentor 이벤트 zip을 받아 `scripts/build-pgn-tournaments.mjs`(worker_threads 병렬, `lib/pgnParse.mjs`·`lib/placeKo.mjs`)로 대회 시리즈 223곳·대국 87,426판을 `src/data/tournaments/*.json`(대회별 지연 로드 청크)·`tournamentIndex.json`·`tournamentSearch.json`으로 가공. 대국 수순은 `lib/moveCodec.js`(합법 수 목록 정렬 번호 1바이트 + base64, 평문 대비 약 3배 작음)로 저장하고, 형식(리그·스위스·녹아웃·매치)·3·4위전·우승자를 자동 판정. `check-tournament-data`(prebuild)가 왕복 복원·용량·연결을 검사.
+- 대회 회차 화면(`components/tournamentView.jsx`): 순위·크로스테이블·녹아웃 대진표·대국 목록(라운드·결과·단계 필터). 마스터 프로필 249명(`build-master-profiles.mjs` → `masterProfiles.json` 지연 로드): 전적·백흑 성적·최고 레이팅과 추이·즐겨 두는 첫 수와 응수·ECO·자주 만난 상대·대표 대국. 이름은 영어 원문(`enName`).
+- 마스터 트리 검색: 대회 이름·개최지·선수(출전 대회)에 더해 챔피언·위성·FIDE·DB 선수 노드를 원문·영어·한국어로 찾음. 필터가 아니라 일치하지 않는 노드를 흐리게(opacity .3) 두고 일치 항목으로 이동(↑↓ 단계 이동). 대회 키워드 칩은 삭제하고 오프닝 트리와 같은 자리에 되돌리기 버튼(RotateCcw).
+- 사용자 입력 텍스트 자동 번역: `api/translate.js`(로그인 필수·사용자별 분당 40회·글마다 개별 Gemini 호출·`ignore-duplicates` 저장·원문에 없던 URL/@멘션이 든 번역 폐기) + `text_translations` 테이블(`supabase-setup.sql`), `lib/ugcText.js`·`ugcTranslate.js`. 수 설명·타인의 소개글만 대상(채팅 제외), 설정 언어 블록 토글.
+- 데스크톱 도킹 창: `components/DockWindows.jsx`(`useDockWindows`·`DockHost`·`fitDock`). 채팅(대화마다 창)·채팅 목록·검색·친구·타인 프로필을 배경을 막지 않는 창으로 열고, 접기·끌어 띄우기(float)·두 번 눌러 다시 도킹, 화면 폭 부족 시 오래된 창부터 접기, sessionStorage 복원. 900px 이상·마우스 기기에서만 켜지고 그 외는 기존 모달. 모달 3종·`UserProfilePage`에 `docked` 모드, `ChatWindow` 신설.
+- 리뷰 코치(MEC) 개선: `captureFact`(잡는 수의 결과 — 공짜 획득·순이득·대등 교환·되잡기)를 최우선으로 추가, 체크 수 문구, 좋은 수 + 걸린 기물은 `mineOk`로 모순 제거, 과보호는 상대가 실제 노리는 기물만(킹 이동 제외), 잠재 위협은 직접 겨눈 첫 기물만. MEC 문구 전부를 `t()`로 옮겨 5개 언어 번역, 영어·스페인어 문장 첫 글자 대문자화·키워드 대소문자 무시 검색.
+
+**성능**
+- 마스터 트리 드래그: 패닝을 캔버스 `transform` 직접 갱신(`paint`)으로 바꾸고 150ms 디바운스로만 React 상태 반영, 뷰포트 컬링(노드·연결선), 레이아웃 memo를 `[idx, openEd]`로 한정. 프레임당 587ms → 약 28ms, DOM 4만 → 6.8천 개, 드래그 중 React 렌더 0회. `check-masters-pan-perf`가 구조 유지를 검사.
+
+**UI**
+- 무승부 표기 ½ → 0.5(크로스테이블·대국 결과·리뷰·킹 칸 배지). 대국 목록·마스터 프로필·대표 대국 행의 "리뷰" 텍스트 버튼을 금색 돋보기(`GameViewButton`)와 연두 별(`BestMoveJumpButton`)로 교체.
+- `components/Dropdown.jsx`(언어 선택과 같은 사이트 자체 드롭다운, 키보드 조작·선택 항목 스크롤): 수 등급 이펙트·대회 연도·대국 필터(라운드·결과·단계)에 적용.
+- 설정 탭 하단: 문의·개발진 카드를 없애고 카드 없는 푸터(FAQ·이용약관·개인정보처리방침·문의하기 • Instagram·YouTube·Discord 아이콘 • ©)로 정리. 개발진은 별도 카드로 분리하고 개발자·공동 개발자 모드는 이 카드의 큰 토글(`DevBigToggle`)로 이동, 개발자 도구 카드는 편집 권한이 있을 때만 맨 아래. 문의하기는 팝업 없이 `mailto:`로 바로 이동.
+
+**버그 수정**
+- BUG-070·071: 영어 등 다른 언어 화면에 한국어 단위("1.2배")가 남고 고정 px 열 표가 깨지던 문제. `check-lang-leaks`(t() 밖 한글 기준선 래칫, 이번 버전에서 350 → 172건으로 감소)·고정 열 검사 추가.
+- BUG-075: 대국 선수 이름이 "M. Carlsen" 같은 이니셜로 줄던 회귀(철자 별칭 뒤 길이 판정 오류). BUG-076~081: 마스터 트리 렉, MEC 오탐·모순·다국어, 마스터 이름 검색 누락, 영어 "1.Nc3Analyzing" 붙어 쓰기. 한국어 조사 "f6로" → "f6으로".
+
+**보안**
+- BUG-072: `api/scan-board.js`에 호출자(IP)당 분당 12회 제한. BUG-073: 번역 저장소 교차 글 프롬프트 주입 차단(글별 개별 호출·덮어쓰기 금지·URL/@멘션 주입 번역 폐기). `check-ugc-translate`(prebuild)가 로그인·호출 제한·저장 규칙을 검사.
+
+**시스템**
+- 신규 prebuild 검사: `check-lang-leaks`, `check-ugc-translate`, `check-tournament-data`, `check-masters-pan-perf`, `check-mec-facts`(실제 대국 약 5,000수에 `mecFacts` 실행), `check-dock-windows`. `supabase-setup.sql`에 `text_translations` 추가(버전 종료 때 통합 파일 전송). `package.json` 0.6.5.
+
 ### OpenChess v0.6.4 — 2026/10/9
 
 **기능**
