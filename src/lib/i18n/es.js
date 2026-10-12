@@ -2280,6 +2280,9 @@ export default {
   "킹을 미리 안전지대로 옮기는 좋은 선택": "Llevar el rey a un lugar seguro con antelación es buena elección",
   "대회·개최지·마스터 이름 검색": "Buscar torneos, sedes, maestros",
   "조건에 맞는 결과 없음": "Sin resultados",
+  "비중": "Proporción",
+  "기보 불러오는 중…": "Cargando la partida…",
+  "기보를 불러오지 못함": "No se pudo cargar la partida",
   // (v0.6.6) 집중 분석 마스터 대국 요약·필터·이후 진행
   "마스터 DB 전체": "Base de maestros completa",
   "표시 중인 대국 기준": "Según las partidas mostradas",
