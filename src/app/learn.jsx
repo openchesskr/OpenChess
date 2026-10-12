@@ -2766,6 +2766,31 @@ function RecommendReasonEditor({ sentKey, bumpContent }) {
     </div>
   );
 }
+// (v0.6.6, 사용자 요청) 말풍선 본문은 고정 높이(3줄)로 두고, 넘치면 잘리는 경계에 "…"와 오른쪽 회색 "자세히 보기"를 띄운다. 눌러야만 아래로 늘어나고,
+// resetKey(포지션)가 바뀌면 다시 고정 크기로 접힌다(새로고침하면 당연히 접힌 상태).
+function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 56 }) {
+  const [open, setOpen] = useState(false), [over, setOver] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { setOpen(false); }, [resetKey]);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el || open) return undefined;
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(check); ro.observe(el);
+    return () => ro.disconnect();
+  }, [children, resetKey, open]);
+  return (
+    <div style={{ position: "relative", paddingRight: padRight }}>
+      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}>{children}</p>
+      {!open && over && (
+        <button onClick={() => setOpen(true)} className="press" style={{ position: "absolute", right: padRight, bottom: 0, height: lineH, paddingLeft: 22, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", color: T.ink, background: "linear-gradient(to right, rgba(247,240,222,0), " + T.paper + " 22px)" }}>
+          …<span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>
+        </button>
+      )}
+    </div>
+  );
+}
 function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
   const reason = branchFor(sentKey);
   const [editing, setEditing] = useState(false);
@@ -2825,7 +2850,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
   // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
   const [promoGridEl, setPromoGridEl] = useState(null);
-  const [lastMascot, setLastMascot] = useState(EXPLAIN[""]);
+  const [lastMascot, setLastMascot] = useState("");   // (v0.6.6) 내장 기본 문구 없음
   const [lastQ, setLastQ] = useState(null);
   // (v0.2.2 버그 수정) 다음 수 블록(assignTiers)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때
   // 보드 도착칸·현재 수 블록에 뜨는 아이콘이 서로 달랐다 — 후자는 아래 재평가 effect가 evalMoveKind
@@ -3626,18 +3651,18 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
-                        <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
+                        <ClampText resetKey={key}>{branch}</ClampText>
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
                         {rec ? (
-                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
+                          <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
                             {reason ? " · " + reason : null}
-                          </p>
+                          </ClampText>
                         ) : (
-                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
+                          <ClampText resetKey={key}>{lastMascot}</ClampText>
                         )}
                         {canEdit && <RecommendReasonEditor sentKey={key} bumpContent={bumpContent} />}
                       </>
@@ -3694,7 +3719,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                     )}
                   </div>
                 )}
-                {explainFor(sans) && <p style={{ color: T.inkSoft, fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>{explainFor(sans)}</p>}
+                {/* (v0.6.6, 사용자 요청) 내장 수 설명(explainFor)은 표시하지 않는다 — 해설은 유저가 직접 쓴 것만 */}
               </div>
               )}
             </>
