@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'learn' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor } from "../lib/lichessApi.js";
+import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
@@ -72,8 +72,16 @@ async function fetchAllMasterGames(sans, count = 15) {
     fetchDevMasterGames(sans).catch(() => []),
     loadMasterGameData(),
   ]);
+  // (v0.6.6) 정적 DB는 접두사 색인으로 이 포지션 이후의 모든 대국을 상한 없이 가져온다(staticMasterGamesFor). Lichess 대표 대국(최대 15판)·개발자 추가분은
+  // 정적 DB와 같은 대국(두 선수·연도·결과가 같음)일 때만 빼고 합친다 — 정적 DB 안의 대국끼리는 절대 합치지 않는다(같은 두 선수가 한 해에 여러 번 둘 수 있음).
+  const gameKey = (g) => normalizePlayerKey(g.white && g.white.name) + "|" + normalizePlayerKey(g.black && g.black.name) + "|" + (g.year || "") + "|" + (g.winner || "d");
   const staticGames = staticMasterGamesFor(sans, staticData);
-  return { games: [...dev, ...staticGames, ...lichessRes.games], stats: lichessRes.stats };
+  const inStatic = new Set(staticGames.map(gameKey));
+  const games = [...dev.filter((g) => !inStatic.has(gameKey(g))), ...staticGames, ...lichessRes.games.filter((g) => !inStatic.has(gameKey(g)))];
+  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
+  const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
+  const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
+  return { games, stats };
 }
 async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
   await sbInsert("master_games_dev", {
@@ -2275,7 +2283,9 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   const [expandedMasterId, setExpandedMasterId] = useState(null);
   const [contMap, setContMap] = useState({});      // 대국 id → 수순(SAN 배열) | "loading" | "error"
   useEffect(() => { setExpandedMasterId(null); }, [sans.join(","), san]);
-  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
+  const MASTER_CHUNK = 40;
+  const [masterVisible, setMasterVisible] = useState(MASTER_CHUNK);   // 한 번에 그리는 대국 수 — 아래로 스크롤하면 계속 이어서 불러온다(끝까지)
+  useEffect(() => { setMasterPage(0); setMasterVisible(MASTER_CHUNK); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
   const toggleMasterGame = async (id) => {
     if (expandedMasterId === id) { setExpandedMasterId(null); return; }
     setExpandedMasterId(id);
@@ -2334,16 +2344,23 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     // 연도별 추이 — 10년 단위, 3판 이상인 구간만(백 득점률 = (백승 + 무/2) / 판수)
     const dec = new Map();
     for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; x.s += masterResultOf(g) === "w" ? 1 : masterResultOf(g) === "d" ? 0.5 : 0; dec.set(k, x); }
-    const trend = [...dec.entries()].filter(([, x]) => x.n >= 3).sort((a, b2) => a[0] - b2[0]).map(([k, x]) => ({ k, n: x.n, pct: Math.round((100 * x.s) / x.n) }));
+    const trend = [...dec.entries()].filter(([, x]) => x.n >= 3).sort((a, b2) => a[0] - b2[0]).slice(-8).map(([k, x]) => ({ k, n: x.n, pct: Math.round((100 * x.s) / x.n) }));
     return { w, d, b, n, full, trend };
   }, [masterStats, masterFiltersOn, filteredMasterGames]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
     return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
   }, [masterPlayerNames, masterSearchQuery]);
-  const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
   // (v0.6.6, 사용자 요청) 판수 제한·페이지 넘김 없이 필터에 맞는 대국을 전부 한 목록으로 보여준다.
-  const masterPageItems = filteredMasterGames;
+  const masterPageItems = filteredMasterGames.slice(0, masterVisible);
+  const masterMoreRef = useRef(null);
+  useEffect(() => {
+    const el = masterMoreRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setMasterVisible((v) => v + MASTER_CHUNK * 2); }, { rootMargin: "600px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [masterVisible, filteredMasterGames.length]);
   const handleOpenGame = async (id, atPly) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
@@ -2593,7 +2610,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
       <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", filteredMasterGames.length)}</span>}
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", fmtFull(filteredMasterGames.length))}</span>}
             {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
             {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title={t("마스터 대국 추가")} aria-label={t("마스터 대국 추가")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
           </div>
@@ -2725,6 +2742,11 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               })()}
               </React.Fragment>
             ))}
+            {filteredMasterGames.length > masterVisible && (
+              <div ref={masterMoreRef} style={{ textAlign: "center", padding: "10px 0 2px" }}>
+                <button onClick={() => setMasterVisible((v) => v + MASTER_CHUNK * 5)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "5px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer" }}>{t("더 보기")} ({fmtFull(filteredMasterGames.length - masterVisible)})</button>
+              </div>
+            )}
             </>)}
         {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
         {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
