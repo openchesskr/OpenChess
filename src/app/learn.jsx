@@ -2680,7 +2680,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                       <MasterPlayerLine side="w" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
                       <MasterPlayerLine side="b" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} />
                     </div>
-                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
                   <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
