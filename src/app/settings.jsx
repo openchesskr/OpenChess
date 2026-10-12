@@ -99,9 +99,7 @@ async function puzzleListAllForDedup() {
   }
   return out;
 }
-// (기능) 문의/FAQ — 아직 등록된 FAQ는 없고(개발진이 추후 이 배열에 직접 채워 넣음), "문의하기"를
-// 누르면 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
-const FAQ_ITEMS = [];
+// (기능) 문의 — 푸터의 "문의하기"(v0.6.5부터 팝업 없이 바로)가 메일 작성 화면(받는사람 openchesskr@gmail.com, 제목·본문 템플릿 미리 채움)으로 이동한다.
 function openInquiryEmail(user) {
   const subject = t("[OpenChess 문의]");
   const body = [
@@ -122,36 +120,6 @@ function openInquiryEmail(user) {
   // 채워진 채로 열린다 — 특정 메일 서비스 로그인 여부에 의존하지 않는다.
   const url = "mailto:openchesskr@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
   openMailto(url);
-}
-function FaqAccordionItem({ q, a }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ borderTop: "1px solid #E4D5B6" }}>
-      <button onClick={() => setOpen((v) => !v)} className="press" style={{ width: "100%", textAlign: "left", padding: "10px 2px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{q}</span>
-        <ChevronDown size={14} style={{ color: T.inkSoft, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
-      </button>
-      {open && <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px", lineHeight: 1.5 }}>{a}</p>}
-    </div>
-  );
-}
-function InquiryModal({ onClose, user }) {
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 420, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
-        <div className="flex items-center gap-2" style={{ marginBottom: 4 }}><HelpCircle size={17} style={{ color: T.brass }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{t("문의 / FAQ")}</span></div>
-        <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 12px" }}>{t("자주 묻는 질문을 먼저 확인. 해결되지 않으면 문의하기 버튼으로 이메일 발송")}</p>
-        <div style={{ marginBottom: 14 }}>
-          {FAQ_ITEMS.length === 0
-            ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("등록된 FAQ 없음")}</p>
-            : FAQ_ITEMS.map((f, i) => <FaqAccordionItem key={i} q={f.q} a={f.a} />)}
-        </div>
-        <button onClick={() => openInquiryEmail(user)} className="press" style={{ width: "100%", padding: "11px 14px", borderRadius: 10, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>{tx("{0} 문의하기", <MessageCircle size={16} />)}</button>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, textAlign: "center" }}>{t("기본 메일 앱 작성 화면으로 이동 (openchesskr@gmail.com)")}</p>
-      </div>
-    </div>
-  );
 }
 // (기능) 개발자 모드 전용 — 티어/경험치 테스트 패널. 실제로 퍼즐을 몇 주씩 풀어 XP를 쌓지 않아도,
 // 임의 증감량을 즉시 적용하거나 특정 티어의 시작 지점(그 티어 5구간)으로 곧장 점프해 승급 연출·
@@ -724,7 +692,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
     });
     return () => { cancelled = true; };
   }, [contentVer]);
-  const [inquiryOpen, setInquiryOpen] = useState(false);
   // (v0.6.0, 스토어 심사 대비) 차단 목록 — 채팅·프로필에서 차단한 사용자를 한 곳에서 보고 해제한다.
   const [blockListOpen, setBlockListOpen] = useState(false);
   const [blockItems, setBlockItems] = useState([]);
@@ -1073,7 +1040,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             { k: "faq", label: "FAQ", href: "/faq" },
             { k: "terms", label: t("이용약관"), href: "/terms" },
             { k: "privacy", label: t("개인정보처리방침"), href: "/privacy" },
-            { k: "inquiry", label: t("문의하기"), onClick: () => setInquiryOpen(true) },
+            { k: "inquiry", label: t("문의하기"), onClick: () => openInquiryEmail(user) },
           ].map((l, i) => (
             <React.Fragment key={l.k}>
               {i > 0 && <span aria-hidden="true" style={{ color: "#B8A98A", margin: "0 9px", fontSize: 13 }}>•</span>}
@@ -1092,7 +1059,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <div style={{ marginTop: 16, fontSize: 12, color: T.inkSoft, fontWeight: 600, fontFamily: SITE_FONT }}>© {new Date().getFullYear()} OpenChess</div>
       </footer>
       </div>
-      {inquiryOpen && <InquiryModal onClose={() => setInquiryOpen(false)} user={user} />}
       <AnimatePresence>
         {blockListOpen && <BlockListSheet key="block-list" items={blockItems} loading={blockLoading} onUnblock={unblockFromList} onClose={() => setBlockListOpen(false)} />}
       </AnimatePresence>
