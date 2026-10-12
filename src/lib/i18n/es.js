@@ -2284,10 +2284,10 @@ export default {
   "기보 불러오는 중…": "Cargando la partida…",
   "기보를 불러오지 못함": "No se pudo cargar la partida",
   // (v0.6.6) 집중 분석 마스터 대국 요약·필터·이후 진행
-  "마스터 DB 전체": "Base de maestros completa",
+  "마스터 승률": "Victorias de maestros",
   "표시 중인 대국 기준": "Según las partidas mostradas",
-  "이후 많이 둔 수": "Jugadas siguientes más frecuentes",
-  "연도별 백 득점률": "Puntuación de blancas por década",
+  "채택률": "Frecuencia de uso",
+  "승점 획득 확률": "Probabilidad de puntuar",
   "선수·대회 이름으로 검색…": "Buscar por jugador o torneo…",
   "이후 진행": "Continuación",
   "이후 진행 불러오는 중…": "Cargando continuación…",

@@ -2315,12 +2315,12 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     if (!masterFiltersOn && lt > 0) { w = masterStats.white; d = masterStats.draws; b = masterStats.black; full = true; }
     else for (const g of filteredMasterGames) { const r = masterResultOf(g); if (r === "w") w++; else if (r === "b") b++; else d++; }
     const n = w + d + b;
-    // 연도별 추이 — 10년 단위, 3판 이상인 구간만(백 득점률 = (백승 + 무/2) / 판수)
+    // 연도별 추이 — 10년 단위, 3판 이상인 구간만. 승점 획득 확률 = (이 수를 둔 쪽의 승 + 무/2) / 판수 — 둔 수가 백의 수(ply 짝수)면 백 기준, 흑의 수면 흑 기준.
     const dec = new Map();
-    for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; x.s += masterResultOf(g) === "w" ? 1 : masterResultOf(g) === "d" ? 0.5 : 0; dec.set(k, x); }
+    for (const g of filteredMasterGames) { if (!g.year) continue; const k = Math.floor(g.year / 10) * 10; const x = dec.get(k) || { n: 0, s: 0 }; x.n++; const r = masterResultOf(g); x.s += r === "d" ? 0.5 : r === (ply % 2 === 0 ? "w" : "b") ? 1 : 0; dec.set(k, x); }
     const trend = [...dec.entries()].filter(([, x]) => x.n >= 3).sort((a, b2) => a[0] - b2[0]).slice(-8).map(([k, x]) => ({ k, n: x.n, pct: Math.round((100 * x.s) / x.n) }));
     return { w, d, b, n, full, trend };
-  }, [masterStats, masterFiltersOn, filteredMasterGames]);
+  }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
     return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
@@ -2594,12 +2594,12 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
         {masterSummary.n > 0 && (
           <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
             <div className="flex items-center justify-between" style={{ marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft }}>
-              <span>{masterSummary.full ? t("마스터 DB 전체") : t("표시 중인 대국 기준")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
+              <span>{masterSummary.full ? t("마스터 승률") : t("표시 중인 대국 기준")}</span><span style={{ fontFamily: SITE_FONT }}>{tx("{0}판", fmtFull(masterSummary.n))}</span>
             </div>
             <ResultBar w={masterSummary.w} d={masterSummary.d} b={masterSummary.b} h={14} labeled />
             {masterStats && masterStats.moves.length > 0 && !masterFiltersOn && (
               <div style={{ marginTop: 9 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("이후 많이 둔 수")}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("채택률")}</div>
                 {masterStats.moves.slice(0, 5).map((mv) => {
                   const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (masterSummary.n || 1));
                   return (
@@ -2614,7 +2614,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             )}
             {masterSummary.trend.length >= 2 && (
               <div style={{ marginTop: 9 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}>{t("연도별 백 득점률")}</div>
+                <div className="flex items-center" style={{ gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 }}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 46 }}>
                   {masterSummary.trend.map((x) => (
                     <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
