@@ -13,7 +13,7 @@ import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { fmtEvalCp, matePliesOf, ownPriorMoveWasSacrifice, gradeMoveKind, isSacrifice } from "../lib/moveQuality.js";
-import { KeywordScroll, KW } from "../components/keywordScroll.jsx";
+import { KeywordScroll, MarqueeText, KW } from "../components/keywordScroll.jsx";
 import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
@@ -796,12 +796,13 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
-              <div style={{ marginBottom: 6 }}><KeywordScroll kws={kws} /></div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              {/* (v0.6.6, 사용자 요청) 현재 수 블록과 높이·위치를 통일 — 키워드(최상단, 고정 높이) / 수 + 평가치 / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
+              <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={kws} /></div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply, startColor)}{m.disp || m.san}</span>
-                {m.name ? <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, wordBreak: "keep-all" }}>{m.name}</span> : m.isMain ? <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Main Line</span> : null}
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? t("이론") : "…")}</span>
               </div>
+              <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || (m.isMain ? "Main Line" : "")}</MarqueeText>
             </div>
             {!hideFocus && (
               <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
@@ -2791,7 +2792,7 @@ function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 56 })
       <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}>{children}</p>
       {!open && over && (
         <button onClick={() => setOpen(true)} className="press" style={{ position: "absolute", right: padRight, bottom: 0, height: lineH, paddingLeft: 22, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", color: T.ink, background: "linear-gradient(to right, rgba(247,240,222,0), " + T.paper + " 22px)" }}>
-          …<span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>
         </button>
       )}
     </div>
@@ -3680,22 +3681,23 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                     (버그) 제목 헤더(✨ 오프닝 이름)는 UI에서 삭제 — 상세 블록이 첫 요소가 되어 상단 구분선/여백 제거. */}
                 {lastSan && (
                   <div>
-                    <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
+                    {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 배치 — 키워드(최상단, 고정 높이) / 수 + 평가치 + 분석 버튼(우측 고정) / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
+                    <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}>
                       {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
-                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
-                      {/* (v0.6.6, 사용자 요청) 현재 수 오른쪽에 이 포지션의 실시간 평가치(평가치 바와 같은 값) */}
-                      {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ marginLeft: -5, fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 700, color: T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
-                      {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
-                      {/* (사용자 요청) 집중 분석은 표준 시작 위치의 오프닝 이론을 전제로 하므로 FEN 모드에서는 숨긴다. */}
-                      {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
+                          {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13.5, fontWeight: 700, color: T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
+                        </div>
+                        <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName || ""}</MarqueeText>
+                      </div>
+                      {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                     </div>
                     <div className="flex items-center flex-wrap" style={{ gap: 16, marginTop: 12 }}>
                       {curKind && <span style={{ fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</span>}
                       {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{tx("{0}회 진행", fmtFull(curGames))}</span>}
                     </div>
-                    {curKws.length > 0 && (
-                      <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
-                    )}
                     {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
                         (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
                         "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
