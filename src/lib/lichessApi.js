@@ -111,7 +111,7 @@ export function staticMasterGamesFor(sans, data) {
     const g = data.games[gi];
     const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
     const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
-    return { id: "extm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "" };   // event: 집중 분석 마스터 대국의 검색·표시
+    return { id: "extm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "", date: /^\d{4}\.\d\d\.\d\d$/.test(g.date || "") ? g.date : null };   // date(YYYY.MM.DD): 같은 해 안에서 일정순 정렬   // event: 집중 분석 마스터 대국의 검색·표시
   });
 }
 /** 이 포지션 이후 정적 DB 대국의 승·무·패와 많이 둔 다음 수(Lichess 통계를 못 받을 때의 대체이자 오프라인 통계). */

@@ -268,11 +268,11 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
     if (outerRef.current) outerRef.current.scrollLeft = 0;
     recompute();
     const inner = innerRef.current;
-    const iv = setInterval(recompute, 200);
-    if (!inner || typeof ResizeObserver === "undefined") return () => clearInterval(iv);
+    // (v0.6.6, 렉 완화) 200ms마다 scrollLeft·scrollWidth를 읽어 줄마다 강제 레이아웃을 일으키던 setInterval을 없앴다 — 크기 변화는 ResizeObserver, 스크롤은 onScroll이 알려 준다.
+    if (!inner || typeof ResizeObserver === "undefined") { const iv = setInterval(recompute, 600); return () => clearInterval(iv); }
     const ro = new ResizeObserver(recompute);
-    ro.observe(inner);
-    return () => { ro.disconnect(); clearInterval(iv); };
+    ro.observe(inner); if (outerRef.current) ro.observe(outerRef.current);
+    return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity]);
   const downRef = useRef(null);
