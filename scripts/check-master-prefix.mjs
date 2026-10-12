@@ -5,10 +5,14 @@
  *  ① 합성 데이터: 접두사 일치·토큰 경계(Qa1 vs Qa1b2)·체크 기호 무시·수순 끝 대국·빈 수순(전체)·없는 수순.
  *  ② 실제 DB(public/master-games.json): 무작위 수순들을 전수 비교(brute force)와 대조하고, 1.e4 이후 대국이 예전 상한(500)을 넘는지 확인한다.
  *  ③ 통계: staticMasterStatsFor의 승·무·패 합과 다음 수 합이 대국 수와 맞는다.
+ *  ④ 선수 풀네임: "Carlsen,M" → "Magnus Carlsen"(masterFullName.js).
  *  실행: node scripts/check-master-prefix.mjs */
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { build } from "esbuild";
 import { staticMasterGameIdxsFor, staticMasterStatsFor } from "../src/lib/lichessApi.js";
 const fails = [];
+const ROOT = new URL("../", import.meta.url).pathname;
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
 // ① 합성
 {
@@ -38,6 +42,13 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.pus
   if (e4 <= 500) fails.push("1.e4 이후 대국이 예전 상한(500) 이하(" + e4 + ") — 접두사 색인이 상한 없이 찾지 못함");
   const stt = staticMasterStatsFor(["e4"], data);
   eq(stt.white + stt.draws + stt.black, e4, "1.e4 통계 합 = 대국 수");
+}
+// ④ 선수 풀네임(src/lib/masterFullName.js) — DB의 "Carlsen,M"이 "Magnus Carlsen"으로 표시된다(JSON을 불러오므로 번들해서 실행).
+{
+  const dir = mkdtempSync(join(ROOT, "node_modules/.fullname-check-")), out = join(dir, "fn.mjs");
+  await build({ entryPoints: [join(ROOT, "src/lib/masterFullName.js")], bundle: true, platform: "node", format: "esm", outfile: out, logLevel: "error" });
+  const { fullPlayerName } = await import(out); rmSync(dir, { recursive: true, force: true });
+  eq(["Carlsen,M", "Nakamura,Hi", "Caruana,F", "Kasparov, Garry", "Smith,J"].map(fullPlayerName), ["Magnus Carlsen", "Hikaru Nakamura", "Fabiano Caruana", "Garry Kasparov", "J. Smith"], "선수 풀네임 표기");
 }
 if (fails.length) { console.error("✖ check-master-prefix 실패 (" + fails.length + "건):\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-master-prefix: 접두사 색인이 토큰 경계·체크 기호를 지키며 실제 DB 전수 비교와 일치하고, 1.e4도 상한 없이 찾는다");

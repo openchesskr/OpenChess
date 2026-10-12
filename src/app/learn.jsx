@@ -1,7 +1,8 @@
 // (v0.6.0, App.jsx 분할) 'learn' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
-import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { fullPlayerName } from "../lib/masterFullName.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
@@ -141,11 +142,6 @@ function explainFor(sans) {
   const n = snapNode(sans);
   if (n && n.opening) return t("{0} 정석 이론대로 전개되는 라인", (n.opening.name));
   return null;
-}
-function explainMove(sans, san) {
-  const mk = sans.join(" ") + "|" + san;
-  if (CONTENT.explains[mk]) return CONTENT.explains[mk];
-  return explainFor([...sans, san]) || explainFor(sans);
 }
 /* ============================================================ 퍼즐: 실수 응징 시퀀스 ============================================================ */
 /* key = "<경로 SAN 공백연결>|<실수 SAN>" ; line = 실수 이후 수순(첫 수가 응징하는 쪽) */
@@ -1490,14 +1486,12 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const isUnderpromo = /=/.test(san) && !/=Q/.test(san);
   const extraArrows = active && kind === "brilliant" && !isUnderpromo ? brilliantArrows(sans, san) : [];
   const mkKey = active ? sansKey + "|" + san : "";
-  const explain = active ? explainMove(sans, san) : null;
-  const [showExpl, setShowExpl] = useState(false);
   const [devEdit, setDevEdit] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [kwDraft, setKwDraft] = useState([]);
   const [addedTheory, setAddedTheory] = useState(false);
   // 집중분석 대상 수가 바뀌면(=예전엔 FocusMode가 다시 마운트되던 상황) 이전 수의 편집 UI 상태를 초기화한다.
-  useEffect(() => { if (!active) return; setShowExpl(false); setDevEdit(false); setNameDraft(""); setKwDraft([]); setAddedTheory(false); }, [active, sansKey, san]);
+  useEffect(() => { if (!active) return; setDevEdit(false); setNameDraft(""); setKwDraft([]); setAddedTheory(false); }, [active, sansKey, san]);
   const isPunishable = active && ["mistake", "blunder"].includes(kind);
   const curated = isPunishable ? punishFor(sans, san) : null;
   const stats = active && chesscom && chesscom.status === "ready" ? chesscom.analyze([...sans, san], { excludeBullet: true }) : null;
@@ -1519,7 +1513,6 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   };
   const toggleUnbook = async () => { const k = editKey + "|" + stripSuffix(san); if (CONTENT.unbook[k]) delete CONTENT.unbook[k]; else CONTENT.unbook[k] = true; await bumpContent(); };
   const toggleKw = (kw) => setKwDraft((d) => { if (d.includes(kw)) return d.filter((x) => x !== kw); const p = kwPartner(kw); return [...d.filter((x) => x !== p), kw]; });
-  const explainLong = !!explain && explain.length > 90;
   const [mistakes, setMistakes] = useState([]);
   const [analyzing, setAnalyzing] = useState(false);   // (UI8) 실수 분석 진행 표시
   useEffect(() => {
@@ -1626,9 +1619,8 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
-    active, sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
-    explainLong,
-    showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
+    active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
@@ -2016,27 +2008,14 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
 // 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
 // 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
 // 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
-function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl, noteCap, onJump }) {
+function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
-  const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // (사용자 요청) 수 설명 정렬 — 인기순(좋아요-싫어요 점수)/날짜순(오래된 순)/최신순. 기존 기본
   // 동작(오래된 순)을 그대로 유지하기 위해 기본값은 "date"로 둔다.
   const [noteSort, setNoteSort] = useState("date");
-  const scrollerRef = useRef(null);
-  const pauseUntilRef = useRef(0);
-  const scrollDebounceRef = useRef(null);
-  // (버그 수정, 사용자 제보) 정렬을 바꿔 카드 순서가 재배치되는 순간, 이 스크롤 컨테이너에서
-  // 브라우저가 자체적으로(scroll-snap 재계산 등 정확한 원인은 특정하지 못했지만 실기기·헤드리스
-  // 브라우저 모두에서 재현됨) 원치 않는 scroll 이벤트를 흘려보내는 경우가 있었다 — 그 이벤트가
-  // onManualScroll의 "사용자가 직접 스크롤했다"는 판단(120ms 디바운스 후 그 스크롤 위치로 idx를
-  // 되맞춤)을 건드려, 방금 0으로 되돌려 둔 idx를 다시 엉뚱한 값으로 덮어써 버렸다(카드 내용은
-  // 새 순서로 바뀌는데 캐러셀 위치만 어긋나 보이는 원인). moveKey·noteSort가 바뀐 직후 짧은
-  // 유예 시간 동안은 onManualScroll이 무엇을 보든 idx를 건드리지 않게 막아, 그 사이 어떤 스크롤
-  // 이벤트가 오더라도 우리가 이미 정한 idx(0)가 안전하게 유지되게 한다.
-  const suppressScrollSyncUntilRef = useRef(0);
   // (v0.4.0 기능) 이 설명이 달린 바로 그 위치까지의 전체 수순 — 본문에 언급된 SAN을 그 위치 기준으로
   // 합법성 검사하고, 링크 클릭 시 그 위치에서부터 집중분석으로 이동하기 위해 필요하다.
   const ownSans = useMemo(() => ownSansFromMoveKey(moveKey), [moveKey]);
@@ -2057,47 +2036,10 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     const moveKeyChanged = prevMoveKeyRef.current !== moveKey;
     prevMoveKeyRef.current = moveKey;
     if (moveKeyChanged) { setNotes(null); setDraft(""); setErr(""); }
-    setIdx(0);
-    // (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되면서 이 스크롤 컨테이너에
-    // 브라우저가 자체적으로 scroll 이벤트를 흘려보내는 경우가 있었다(scroll-snap 재계산 등) —
-    // 그게 onManualScroll의 120ms 디바운스를 건드려, 방금 위에서 0으로 되돌린 idx를 그 사이에
-    // 엉뚱한 값으로 다시 덮어써 버렸다(카드 내용은 새 순서로 바뀌었는데 캐러셀 인덱스만 어긋나
-    // 보이는 원인). 이 재정렬 시점에 걸려 있을 수 있는 그 디바운스 타이머를 확실히 지우고,
-    // suppressScrollSyncUntilRef로 짧은 유예 시간 동안 onManualScroll이 idx를 건드리지 못하게 막는다.
-    // (실측) 그 브라우저 자체 스크롤 이동은 이 효과가 도는 시점으로부터 대략 300~400ms 사이에
-    // 벌어진다 — idx는 지켰지만 실제 스크롤 위치가 여전히 어긋나 있을 수 있으므로, 그 구간을
-    // 지나 두 번(350ms·550ms) 강제로 맨 위(scrollTop 0)로 되돌려 최종 위치를 확정한다.
-    if (scrollDebounceRef.current) { clearTimeout(scrollDebounceRef.current); scrollDebounceRef.current = null; }
-    pauseUntilRef.current = Date.now() + 600;
-    suppressScrollSyncUntilRef.current = Date.now() + 600;
     load();
-    const t1 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 350);
-    const t2 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 550);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [moveKey, load]);
-  useEffect(() => {
-    if (!notes || notes.length < 2) return;
-    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
-    return () => clearInterval(iv);
-  }, [notes]);
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
-  }, [idx]);
-  const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  const onManualScroll = () => {
-    if (Date.now() < suppressScrollSyncUntilRef.current) return;
-    pauseUntilRef.current = Date.now() + 6000;
-    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
-    scrollDebounceRef.current = setTimeout(() => {
-      if (Date.now() < suppressScrollSyncUntilRef.current) return;
-      const el = scrollerRef.current;
-      if (!el || !el.clientHeight) return;
-      const i = Math.round(el.scrollTop / el.clientHeight);
-      setIdx((cur) => (i !== cur ? i : cur));
-    }, 120);
-  };
+  // (v0.6.6, 사용자 요청) 해설 카드는 자동으로 넘어가거나 스크롤로 움직이지 않는다 — 예전엔 5초마다 다음 설명으로 자동 이동하고 위·아래 버튼·스냅 스크롤이 있어,
+  // 한 화면에 다 보이는 설명도 잠깐씩 움직였다. 이제 설명은 그냥 세로로 쌓아 보여준다.
   // (v0.3.4 기능) 사용자 요청 — 개발자 계정은 한 수에 남길 수 있는 설명 개수가 무제한이고, 그랜드
   // 마스터 티어에 도달한 일반 계정은 2개까지(그 외는 기존과 같이 1개) 남길 수 있다. 실제 한도는
   // 서버(move_notes_cap, supabase-setup.sql 15번 섹션)가 최종 결정하므로, 여기서는 noteCap을
@@ -2130,13 +2072,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
-        {hasNotes && notes.length > 1 && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} aria-label={t("이전 설명")} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={13} /></button>
-            <button onClick={() => jump((idx + 1) % notes.length)} aria-label={t("다음 설명")} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={13} /></button>
-          </div>
-        )}
+        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{notes.length}</span>}</div>
       </div>
       {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
           때만 의미가 있으므로 그때만 보여준다. */}
@@ -2151,29 +2087,16 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("불러오는 중…")}</p>
       ) : hasNotes ? (
         <>
-          {/* (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되는데, 각 카드 키(n.id)는
-              그대로라 리액트가 기존 DOM 노드를 새로 만들지 않고 그 자리에서 순서만 바꾼다 — 이
-              스크롤 컨테이너는 scroll-snap-type이 걸려 있어, 자식이 재배치되는 순간 브라우저가
-              스냅 위치를 다시 계산하며 스크롤을 슬쩍 움직였다(idx는 이미 0으로 되돌려 뒀는데도
-              화면은 엉뚱한 카드에 멎어 있고, 그 스크롤이 onManualScroll을 "사용자가 직접
-              스크롤한 것"으로 오인시켜 idx 상태 자체까지 어긋나 보였다). key를 noteSort로 주면
-              정렬이 바뀔 때마다 이 컨테이너 자체를 통째로 새로 만들어, scrollTop이 항상
-              0에서 시작하는 새 DOM으로 시작하므로 위 문제가 애초에 생길 자리가 없다. */}
-          <div key={noteSort} ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
+          <div key={noteSort} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", maxHeight: 260, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
               <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
-                onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
+                onDeleted={(id) => setNotes((prev) => prev.filter((x) => x.id !== id))} />
             ))}
           </div>
-          {notes.length > 1 && (
-            <div className="flex items-center justify-center gap-1" style={{ marginTop: 6 }}>
-              {notes.map((n, i) => <button key={n.id} onClick={() => jump(i)} aria-label={t("{0}번째 설명", (i + 1))} className="press" style={{ width: i === idx ? 14 : 6, height: 6, borderRadius: 999, border: "none", background: i === idx ? T.brass : "#DCCBA8", cursor: "pointer", padding: 0, transition: "width .2s" }} />)}
-            </div>
-          )}
         </>
       ) : (
-        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? t("{0} 라인", (title)) : t("해설 없음"))}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{t("더보기")}</button>}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6 }}>{t("해설 없음")}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
@@ -2215,6 +2138,29 @@ function normalizePlayerKey(name) {
 // (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
 const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
+// (v0.6.6, 사용자 요청) 마스터 대국의 기보 — 한 줄(nowrap)로 두고 일일 퍼즐 팝업(puzzle.jsx PuzzlePgnBox)처럼 좌우로 끌어 스크롤한다. 집중 분석 중인 수부터 보이게 열고,
+// 수를 누르면 그 수까지 진행된 보드로 연다(드래그로 이동했으면 클릭 무시).
+function MasterPgnBox({ sans, focusPly, onPick }) {
+  const scrollRef = useRef(null), markRef = useRef(null), dragRef = useRef(null);
+  const deco = useMemo(() => decorateLine(sans || []), [(sans || []).join(" ")]);
+  useEffect(() => { const box = scrollRef.current, mk = markRef.current; if (box && mk) box.scrollLeft = Math.max(0, mk.offsetLeft - 6); }, [sans, focusPly]);
+  const onPointerDown = (e) => { dragRef.current = { x: e.clientX, left: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false }; if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } } };
+  const onPointerMove = (e) => { const d = dragRef.current; if (!d || !scrollRef.current) return; const dx = e.clientX - d.x; if (Math.abs(dx) > 3) d.moved = true; scrollRef.current.scrollLeft = d.left - dx; };
+  const end = () => { dragRef.current = null; };
+  const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } dragRef.current = null; };
+  return (
+    <div className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end} onClickCapture={onClickCapture} style={{ borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
+      <div ref={scrollRef} style={{ position: "relative", overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, fontFamily: SEQ_FONT, fontWeight: 600, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-y" }}>
+        {deco.map((san, i) => (
+          <span key={i} ref={i === focusPly ? markRef : undefined}>
+            {(i === 0 || plyIsWhite(i)) && <span style={{ color: T.inkSoft }}>{moveNumber(i)} </span>}
+            <span onClick={() => onPick(i + 1)} style={{ cursor: "pointer", color: i < focusPly ? T.inkSoft : T.ink, fontWeight: i === focusPly ? 900 : 600 }}>{san}</span>{" "}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 // 백·무·흑 비율 막대 — 백(밝은색)·무(회색)·흑(어두운색). labeled면 막대 안에 백분율을 적는다.
 function ResultBar({ w, d, b, h = 10, labeled }) {
   const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
@@ -2227,8 +2173,8 @@ function FocusPanel(props) {
 }
 function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
-    sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
-    explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
+    sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
     stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
@@ -2313,7 +2259,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
       if (g.white) consider(g.white.name);
       if (g.black) consider(g.black.name);
     }
-    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+    // (v0.6.6, 사용자 요청) 추천 목록·검색은 풀네임("Magnus Carlsen") 기준 — DB의 "Carlsen,M"도 같은 사람으로 찾는다.
+    return [...new Set([...byKey.values()].map((nm) => fullPlayerName(nm)))].sort((a, b) => a.localeCompare(b));
   }, [masterGames]);
   const masterSearchQuery = masterSearch.trim().toLowerCase();
   // 추천 목록에서 대표 이름 하나를 골라 클릭하면(예: "Carlsen, Magnus") 검색어와 표기가 다른
@@ -2326,6 +2273,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
       const wName = (g.white && g.white.name) || "";
       const bName = (g.black && g.black.name) || "";
       if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery) || (g.event || "").toLowerCase().includes(masterSearchQuery)) return true;
+      if (fullPlayerName(wName).toLowerCase().includes(masterSearchQuery) || fullPlayerName(bName).toLowerCase().includes(masterSearchQuery)) return true;
       return masterSearchKey && (normalizePlayerKey(wName) === masterSearchKey || normalizePlayerKey(bName) === masterSearchKey);
     });
     if (mResult !== "all") out = out.filter((g) => masterResultOf(g) === mResult);
@@ -2421,7 +2369,7 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
           {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
         </div>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} noteCap={noteCap} onJump={onJump} />
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
         </div>
       </div>
       {(canEdit || canAdd) && (
@@ -2638,8 +2586,8 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
                   return (
                     <button key={mv.san} onClick={() => onJump && onJump([...sans, san], mv.san)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" }}>
                       <span style={{ width: 64, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
-                      <span style={{ width: 34, flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{share}%</span>
-                      <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={8} /></span>
+                      <span title={t("비중")} style={{ width: 34, flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{share}%</span>
+                      <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled /></span>
                     </button>
                   );
                 })}
@@ -2705,18 +2653,16 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
             : (<>
             {masterPageItems.map((g) => (
               <React.Fragment key={g.id}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
+              <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
-                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
+                    <span>⬜ <b style={{ color: T.ink }}>{fullPlayerName(g.white && g.white.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
                     <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{g.event ? " · " + g.event : ""}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
+                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{fullPlayerName(g.black && g.black.name)}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{[g.year, g.event].filter(Boolean).join(", ")}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
                 </div>
-                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                  {/* (v0.6.6) 이 수 직후 진행 미리보기 펼치기 */}
-                  <button onClick={() => toggleMasterGame(g.id)} aria-expanded={expandedMasterId === g.id} aria-label={t("이후 진행")} title={t("이후 진행")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: expandedMasterId === g.id ? T.brass : "transparent", color: expandedMasterId === g.id ? "#241509" : T.brass, border: "1px solid " + T.brass, cursor: "pointer", fontSize: 13, fontWeight: 900 }}>{expandedMasterId === g.id ? "▴" : "▾"}</button>
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                   {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
                   <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
                   {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
@@ -2725,18 +2671,11 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
               </div>
               {expandedMasterId === g.id && (() => {
                 const gs = contMap[g.id];
-                const after = Array.isArray(gs) ? gs.slice(ply + 1, ply + 1 + 12) : [];
                 return (
-                  <div style={{ margin: "0 0 6px", padding: "7px 9px", borderRadius: 8, background: "rgba(0,0,0,.04)", fontFamily: SEQ_FONT, fontSize: 12, lineHeight: 1.9, color: T.ink }}>
-                    {gs === "loading" || gs == null ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.inkSoft }}>{t("이후 진행 불러오는 중…")}</span>
-                      : gs === "error" ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.blunder }}>{t("이후 진행을 불러오지 못함")}</span>
-                      : after.length === 0 ? <span style={{ fontFamily: SITE_FONT, fontSize: 11, color: T.inkSoft }}>{t("이 수에서 대국 종료")}</span>
-                      : <>
-                        {after.map((mv, i) => (
-                          <button key={i} onClick={() => handleOpenGame(g.id, ply + 2 + i)} title={t("이 수에서 열기")} className="press" style={{ background: "none", border: "none", padding: "0 2px", cursor: "pointer", fontFamily: SEQ_FONT, fontSize: 12, fontWeight: i === 0 ? 900 : 600, color: T.ink }}>{moveNumber(ply + 1 + i)}{mv}</button>
-                        ))}
-                        {gs.length > ply + 1 + 12 && <span style={{ color: T.inkSoft }}> …</span>}
-                      </>}
+                  <div style={{ margin: "0 0 6px" }}>
+                    {gs === "loading" || gs == null ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("기보 불러오는 중…")}</span>
+                      : gs === "error" ? <span style={{ fontSize: 11, color: T.blunder }}>{t("기보를 불러오지 못함")}</span>
+                      : <MasterPgnBox sans={gs} focusPly={ply + 1} onPick={(n) => handleOpenGame(g.id, n)} />}
                   </div>
                 );
               })()}
@@ -2755,17 +2694,6 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
         nextMovesPanel,
       ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
-      {showExpl && (
-        <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-              <div className="flex items-center gap-2"><BookOpen size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{tx("{0}{1} 해설", moveNumber(ply), san)}</span></div>
-              <button onClick={() => setShowExpl(false)} className="press" style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>✕</button>
-            </div>
-            <p style={{ fontSize: 13.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -3387,8 +3315,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     onOpenReview && onOpenReview({
       sans: gameSans,
-      white: { username: (g.white && g.white.name) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
-      black: { username: (g.black && g.black.name) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+      white: { username: (g.white && g.white.name) ? fullPlayerName(g.white.name) : null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
+      black: { username: (g.black && g.black.name) ? fullPlayerName(g.black.name) : null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
     });
   };
   // (19차 기능2) 내 chess.com 대국을 클릭 — 기보를 이미 갖고 있으므로(fetch 불필요) 그대로 보드에 로드.
