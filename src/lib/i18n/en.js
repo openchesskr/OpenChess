@@ -2314,6 +2314,8 @@ export default {
   "유저 통계": "User stats",
   "탐색": "Explore",
   "댓글": "Comments",
+  "{0}대 세계 챔피언": "{0} World Champion",
+  "{0}대 세계 챔피언({1}기)": "{0} World Champion (Reign {1})",
   "챔피언": "Champion",
   "챔피언 도전자": "Challenger",
   "일치하는 마스터·대회 없음": "No matching masters or tournaments",

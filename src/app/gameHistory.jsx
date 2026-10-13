@@ -379,7 +379,7 @@ export function profileGameRowToGame(row, ownerName) {
   const opp = isBot ? { username: t("봇"), rating: row.bot_elo } : { username: row.opp_name || "?", rating: side(mine === "w" ? "b" : "w") ? side(mine === "w" ? "b" : "w").before : null };
   return {
     id: row.kind + "-" + row.id, moves: sans, color: mine, result: row.result,
-    timeClass: chessTcCategory(row.time_control), endTime: Math.floor(new Date(row.ended_at).getTime() / 1000),
+    timeClass: chessTcCategory(row.time_control), timeControl: row.time_control || null, endTime: Math.floor(new Date(row.ended_at).getTime() / 1000),
     rating: mySide ? mySide.after : null, rated: !!row.rated,
     white: mine === "w" ? me : opp, black: mine === "w" ? opp : me,
     opening: sans.length ? openingNameOf(sans) : null,

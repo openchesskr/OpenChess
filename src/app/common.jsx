@@ -1075,7 +1075,7 @@ function ccGameFromApi(g, u, url) {
   // 대국이 리뷰 화면(오프닝 배너)에서만 다른 이름으로 보였다 — 저장 시점부터 openingNameOf로
   // 통일해, 이후 이 opening 필드를 쓰는 모든 화면(리뷰 오프닝 배너 등)이 같은 이름을 쓰게 한다.
   const ccMoves = parsePgnSans(g.pgn);
-  return { moves: ccMoves, color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: openingNameOf(ccMoves), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
+  return { moves: ccMoves, color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: openingNameOf(ccMoves), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, timeControl: g.time_control || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
     white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
     black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
     id: extractChesscomGameId(g.url), // (v0.3.4 기능) 게임 리뷰 고유 URL의 chess.com 식별자

@@ -14,6 +14,7 @@ import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weakness
 import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { rankMasterMatches } from "../lib/masterNameSearch.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { t } from "../lib/i18n.js";
 
@@ -191,7 +192,6 @@ function ReviewCards({ list, update, filter, setFilter }) {
 // 비교할 마스터를 이름으로 직접 검색해 고른다. 검색창은 퍼즐 탭의 "오프닝 · 생성자로 검색"과 같은 디자인(어두운 입력창 + 양피지색 드롭다운)이다.
 // 최고 레이팅 표기는 모든 언어에서 "Peak 2xxx"로 통일한다(번역하지 않는 고정 표기).
 const peakText = (elo) => (elo ? "Peak " + elo : "");
-const normName = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 function MasterStyle({ games }) {
   const [data, setData] = useState(null);
   const [pickedName, setPickedName] = useState(null);   // 사용자가 고른 마스터(null이면 가장 닮은 마스터)
@@ -205,17 +205,10 @@ function MasterStyle({ games }) {
   const row = picked ? data.masters.find((r) => r[0] === picked.name) : null;
   const rows = useMemo(() => (row ? compareCriteria(m.u, row[3]) : []), [row, m]);
   const byKey = useMemo(() => Object.fromEntries(rows.map((r) => [r.key, r])), [rows]);
-  // 검색: 영문 이름에서 "맨 앞 일치 → 단어 앞 일치 → 포함 일치" 순서(도감·퍼즐 검색과 같은 규칙), 최대 8명.
+  // 검색: 영문 이름에서 "맨 앞 일치 → 단어 앞 일치 → 포함 일치" 순서(도감·퍼즐 검색과 같은 규칙, src/lib/masterNameSearch.js). 개수 제한 없음(드롭다운 스크롤).
   const suggestions = useMemo(() => {
-    const q = normName(query).trim();
-    if (!q || !m || !m.ok) return [];
-    const scored = [];
-    for (const x of m.list) {
-      const nm = normName(masterName(x.name, "en")), raw = normName(x.name);
-      const rank = nm.startsWith(q) || raw.startsWith(q) ? 0 : nm.split(" ").some((w) => w.startsWith(q)) ? 1 : nm.includes(q) || raw.includes(q) ? 2 : -1;
-      if (rank >= 0) scored.push([rank, x]);
-    }
-    return scored.sort((a, b) => a[0] - b[0] || (b[1].elo || 0) - (a[1].elo || 0)).slice(0, 40).map((e) => e[1]);
+    if (!query.trim() || !m || !m.ok) return [];
+    return rankMasterMatches(m.list, query, (x) => masterName(x.name, "en"), (x) => x.name, (x) => x.elo);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
   if (!data) return <div style={card}><h3 style={h3}>{t("마스터 스타일")}</h3><p style={{ ...sub, margin: "6px 0 0" }}>{t("불러오는 중…")}</p></div>;
