@@ -140,7 +140,7 @@ function PuzzlePgnBox({ text, sans, startColor, onPick }) {
   );
 }
 const THEME_LABEL = { sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") };
-function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(" · "); }
+function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(", "); }
 // (기능) firstNamedOpening/lastNamedOpening은 각각 "가장 처음"/"가장 마지막" 이름 하나만 골라
 // 반환한다 — 퍼즐 탭에서 세부 갈래 이름(예: "Sicilian Defense: Najdorf Variation, English Attack")
 // 으로 검색해도 그 퍼즐이 실제로 걸리려면, 수순 위에서 만나는 "모든" 오프닝 이름(더 상위의 얕은
@@ -534,11 +534,11 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
 const LINE_TAG_LABEL = { best: t("최선의 응수"), eval2: t("차선의 응수"), adopt: t("실전에서 가장 많이 둔 응수"), eval3: t("세 번째로 좋은 응수") };
 /* ── (20차 기능1) 퍼즐 모식도 ──
    퍼즐의 분기 트리를 오프닝 모식도와 같은 가로(직선) 다이어그램으로 그린다.
-   · 선 두께 = 그 수의 실전 채택률(%) — 많이 두어질수록 굵다
-   · 각 노드 = 수 체계 아이콘 + SAN + 평가치 + 채택률 %
-   · 해결한 라인은 초록색 선으로 칠하고 리프에 체크 표시
-   · 통과 불가(유혹) 수는 점선의 막힌 가지(✕) — 유저 진영에서는 최선·우수한 수만 다음 단계로 진행
-   · 노드를 클릭하면 그 가지의 라인으로 이동해 처음부터 풀이를 시작한다. 캔버스는 드래그로 이동. */
+  , 선 두께 = 그 수의 실전 채택률(%) — 많이 두어질수록 굵다
+  , 각 노드 = 수 체계 아이콘 + SAN + 평가치 + 채택률 %
+  , 해결한 라인은 초록색 선으로 칠하고 리프에 체크 표시
+  , 통과 불가(유혹) 수는 점선의 막힌 가지(✕) — 유저 진영에서는 최선·우수한 수만 다음 단계로 진행
+  , 노드를 클릭하면 그 가지의 라인으로 이동해 처음부터 풀이를 시작한다. 캔버스는 드래그로 이동. */
 // (20차 기능1) 모식도는 "이미 실제로 두어진 수"만 보여준다 — 아직 시도하지 않은 정답·상대 응수를
 // 미리 노출하면 퍼즐의 본질(직접 찾아내기)이 사라지므로, 현재 시도 중인 경로(curKeys)와 과거에 이미
 // 해결한 라인의 전체 경로만 공개(revealed)하고 그 밖의 가지는 그리지 않는다.
@@ -1127,9 +1127,9 @@ function PuzzleClearBanner({ trigger }) {
   );
 }
 /* (20차 기능1) 퍼즐 풀이 — 고정된 단일 라인이 아니라 분기 트리를 탐색한다.
-   · 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
-   · 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
-   · 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
+  , 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
+  , 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
+  , 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
 function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onPuzzleRenamed, onOpenProfile, onOpenLearnFen }) {
   // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
   // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
@@ -1949,7 +1949,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
           없어져, 제목을 한 줄에 더 길게 보여줄 수 있다. */}
       <div className="flex items-start justify-between" style={{ marginBottom: 4, paddingRight: 40, gap: 8 }}>
         <div style={{ minWidth: 0, width: "100%" }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}> · {lineLabel}</span></div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 2 }}>{themeLabelsOf(puzzle)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>, {lineLabel}</span></div>
           {/* (사용자 요청) FEN 기반 퍼즐은 오프닝 트리에서 이름을 따올 수 없어 생성자가 직접 지은
               이름을 그대로 쓰는데, 생성자 본인 또는 개발자/공동개발자는 이름 오른쪽 펜 버튼으로
               나중에 고칠 수 있다(검열 기준은 학습 탭 "수 설명"과 동일). */}
@@ -1970,7 +1970,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
               {canRenamePuzzle && <button onClick={startEditName} aria-label={t("퍼즐 이름 수정")} title={t("퍼즐 이름 수정")} className="press" style={{ flexShrink: 0, padding: 0, background: "none", border: "none", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center" }}><Pencil size={13} /></button>}
             </div>
           )}
-          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? " · " + solveCountText(solveCount, friendSolverNames) : ""}</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 4 }}>#{puzzleNo(puzzle.id)}{solveCountText(solveCount, friendSolverNames) ? ", " + solveCountText(solveCount, friendSolverNames) : ""}</div>
           {/* (사용자 요청) 제작자 아이디는 눌러서 그 사람의 프로필로 이동할 수 있도록 버튼으로 바꾸고
               글자도 더 크게 키웠다(닫으면 history.back()으로 이 퍼즐 화면에 그대로 돌아온다 —
               UserProfilePage가 이 화면을 언마운트하지 않고 위에 겹쳐 뜨는 오버레이라 별도의 "돌아갈
@@ -2161,7 +2161,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 편집(1시간 주기)과 달리 언제든 바꿀 수 있다. */}
             {canManageVisibility && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0} · 공개 설정", canEdit ? t("개발자") : t("제작자"))}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0}, 공개 설정", canEdit ? t("개발자") : t("제작자"))}</div>
                 <div className="flex items-center gap-2">
                   {[[true, t("공개")], [false, t("비공개")]].map(([v, lb]) => (
                     <button key={String(v)} onClick={() => saveVisibility(v)} disabled={visBusy} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: publicInput === v ? T.brass : "transparent", color: publicInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: visBusy ? "default" : "pointer", opacity: visBusy ? 0.6 : 1 }}>{lb}</button>
@@ -2182,7 +2182,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 {isMyPuzzle && !canEdit && <div style={{ fontSize: 11, color: T.brass, fontWeight: 700, marginBottom: 8 }}>{t("내 퍼즐. 라인 조정·재생성은 1시간에 한 번 가능")}</div>}
                 {/* (신규) 퍼즐 종류 — 포지션 우위(cp 이득 기준)/기물 우위(기물 이득 즉시 종료, 수비자
                     제거 같은 전술용). 목표 cp는 포지션 우위일 때만 의미가 있으므로 그때만 보여준다. */}
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0} · 퍼즐 종류", canEdit ? t("개발자") : t("제작자"))}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0}, 퍼즐 종류", canEdit ? t("개발자") : t("제작자"))}</div>
                 <div className="flex items-center gap-2" style={{ flexWrap: "wrap", marginBottom: 10 }}>
                   {[["positional", t("포지션 우위")], ["material", t("기물 우위")]].map(([v, label]) => (
                     <button key={v} onClick={() => savePuzzleType(v)} className="press" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + T.brass, background: puzzleTypeInput === v ? T.brass : "transparent", color: puzzleTypeInput === v ? "#241509" : T.ink, fontWeight: 800, fontSize: 11, cursor: "pointer" }}>{label}</button>
@@ -2190,7 +2190,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 </div>
                 {puzzleTypeInput === "positional" && (
                   <>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0} · 기본 이점 기준 {1}", canEdit ? t("개발자") : t("제작자"), <span style={{ color: T.ink }}>{t("(자동 생성이 확실히 유리하다고 보는 평가치)")}</span>)}</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{tx("{0}, 기본 이점 기준 {1}", canEdit ? t("개발자") : t("제작자"), <span style={{ color: T.ink }}>{t("(자동 생성이 확실히 유리하다고 보는 평가치)")}</span>)}</div>
                     <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
                       <input type="number" step={10} value={targetInput} onChange={(e) => setTargetInput(parseInt(e.target.value, 10) || 0)} onBlur={() => saveDefaultTarget(targetInput)}
                         style={{ width: 72, padding: "5px 7px", borderRadius: 7, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 12 }} />
@@ -2212,7 +2212,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 편집권을 그 즉시 잃게 만든다. */}
             {canEdit && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #C9B58C" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{t("개발자 · 퍼즐 생성자")}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 5 }}>{t("개발자, 퍼즐 생성자")}</div>
                 <div style={{ fontSize: 11, color: T.ink, marginBottom: 6 }}>{tx("현재: {0}", creatorInfo && creatorInfo.username ? "@" + creatorInfo.username : t("없음"))}</div>
                 <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
                   <input value={reassignInput} onChange={(e) => setReassignInput(e.target.value)} placeholder={t("양도할 아이디")} style={{ flex: 1, minWidth: 120, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", fontSize: 11.5 }} />
@@ -2333,7 +2333,7 @@ function DailyStreakStrip({ streak }) {
   );
 }
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
-  const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(" · 오늘") : "");
+  const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(", 오늘") : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
   // (버그 보충) 모든 카드가 이제 항상 같은 폭(DAILY_CARD_W)이라 여백이 균등해진다 — "활성" 표시는
   // 더 이상 크기가 아니라 밝기·테두리·그림자 차이만으로 한다.
@@ -3274,7 +3274,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
         <div className="flex items-center gap-2">
           {/* (사용자 요청) 번호로 풀기 검색창·풀기 버튼·오프닝/생성자 검색창·필터 버튼 네 요소의
               높이를 36px로 통일한다. */}
-          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder={t("번호 또는 날짜로 풀기 (예: 123456 · 20260729)")} style={{ flex: 1, minWidth: 0, height: 36, boxSizing: "border-box", padding: "0 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
+          <input value={numInput} onChange={(e) => setNumInput(e.target.value.replace(/[^0-9]/g, ""))} onKeyDown={(e) => e.key === "Enter" && solveByInput()} onFocus={() => setNumFocus(true)} onBlur={() => setTimeout(() => setNumFocus(false), 150)} inputMode="numeric" placeholder={t("번호 또는 날짜로 풀기 (예: 123456, 20260729)")} style={{ flex: 1, minWidth: 0, height: 36, boxSizing: "border-box", padding: "0 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 13 }} />
           <button onClick={solveByInput} className="press" style={{ height: 36, boxSizing: "border-box", padding: "0 14px", borderRadius: 9, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{t("풀기")}</button>
         </div>
         {/* (기능) 입력 중인 번호로 시작하는 퍼즐을 추천 — 모바일은 입력창 바로 아래 작은 드롭다운
@@ -3340,7 +3340,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
               그렇게 생긴 오른쪽 여백에 깔때기(Filter) 아이콘 버튼 하나만 둔다. */}
           <div style={{ position: "relative", flex: "1 1 110px", minWidth: 100 }}>
             <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => setTimeout(() => setSearchFocus(false), 150)}
-              placeholder={t("오프닝 · 생성자로 검색")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+              placeholder={t("오프닝, 생성자로 검색")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
             {searchFocus && searchSuggestions.length > 0 && (
               <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
                 {searchSuggestions.map((it) => (
@@ -3374,11 +3374,11 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                     카드(진한 그러데이션 배경 + 브라스 테두리) 안에, 구획마다 작은 라벨 밑에
                     KW_SINGLES 스타일의 줄바꿈 칩 그룹을 둔다. */}
                 <div style={{ position: "fixed", left: sortMenuPos.left, top: sortMenuPos.top, bottom: sortMenuPos.bottom, width: 240, maxHeight: sortMenuPos.maxHeight, overflowY: "auto", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, boxShadow: "0 8px 20px -6px rgba(0,0,0,.5)", zIndex: 41, padding: 12 }}>
-                  <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5, marginBottom: 10 }}>{tx("{0} 정렬 · 필터", <Filter size={14} />)}</div>
+                  <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5, marginBottom: 10 }}>{tx("{0} 정렬, 필터", <Filter size={14} />)}</div>
                   {/* (사용자 요청) 맨 위에 전체/좋아요/리포스트 구획 추가. 아래 구획들과 마찬가지로
                       다중 선택 가능("전체"를 누르면 선택을 모두 해제) — "빠른 필터"만 예외로 단일 선택. */}
                   <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("전체 · 좋아요 · 리포스트")}</div>
+                    <div style={{ fontSize: 9.5, fontWeight: 800, color: "rgba(244,238,226,.55)", marginBottom: 5 }}>{t("전체, 좋아요, 리포스트")}</div>
                     <div className="flex flex-wrap gap-1">
                       {[["all", t("전체")], ["liked", t("좋아요")], ["reposted", t("리포스트")]].map(([k, lb]) => { const on = k === "all" ? selectedEngagement.length === 0 : selectedEngagement.includes(k); return (
                         <button key={k} onClick={() => toggleEngagement(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "5px 9px", borderRadius: 5, border: "1px solid " + (on ? T.brass : "rgba(255,255,255,.15)"), background: on ? "rgba(196,154,80,.28)" : "rgba(255,255,255,.06)", color: on ? T.brassHi : T.ivory, cursor: "pointer" }}>{lb}</button>

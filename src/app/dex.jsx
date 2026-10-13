@@ -10,6 +10,8 @@ import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";
 import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
+import { peekMasterNav } from "../lib/masterNav.js";
+import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
@@ -92,12 +94,12 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
-      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>{tx("채택률 {0} · {1}국", m.adopt != null ? m.adopt.toFixed(1) + "%" : "—", fmtFull(m.games))}</div>}
+      {m.games != null && <div style={{ fontSize: 10.5, color: isUnlocked ? T.inkSoft : T.ivory, fontFamily: SITE_FONT, marginTop: 4 }}>{tx("채택률 {0}, {1}국", m.adopt != null ? m.adopt.toFixed(1) + "%" : "—", fmtFull(m.games))}</div>}
       {isUnlocked && m.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={m.wdl} /></div>}
       {isUnlocked && cc && cc.total > 0 && (
         <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, fontFamily: SITE_FONT, color: T.inkSoft, background: "rgba(60,138,60,.12)", border: "1px solid rgba(60,138,60,.3)", borderRadius: 7, padding: "6px 10px", gap: 8, flexWrap: "wrap", letterSpacing: ".02em" }}>
           <span style={{ fontWeight: 800, color: "#2E6E2E" }}>{tx("내 승률 {0}", cc.winRate)}%</span>
-          <span><span style={{ color: T.best }}>{tx("{0}승", cc.w)}</span> {tx("{0}무 {1} · {2}판", cc.d, <span style={{ color: T.blunder }}>{tx("{0}패", cc.l)}</span>, fmtFull(cc.total))}</span>
+          <span><span style={{ color: T.best }}>{tx("{0}승", cc.w)}</span> {tx("{0}무 {1}, {2}판", cc.d, <span style={{ color: T.blunder }}>{tx("{0}패", cc.l)}</span>, fmtFull(cc.total))}</span>
         </div>
       )}
       {/* (사용자 요청) 개발자 모드 오프닝 트리 인라인 편집 — 별도 화면 대신 선택한 수의 이 카드
@@ -132,7 +134,7 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
   );
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + (isUnlocked ? "#CDB98E" : "#4A3826") }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자 · 이론 수 편집(저장 전까지 미반영)")}</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: isUnlocked ? T.inkSoft : T.ivory, marginBottom: 6 }}>{t("개발자, 이론 수 편집(저장 전까지 미반영)")}</div>
       {(editInfo.childAdds.length > 0 || editInfo.siblingAdds.length > 0) && (
         <div>
           {editInfo.childAdds.map((a) => chip("c" + a.san, t("+ {0} (자녀)", a.san), () => onUnstageAdd([...path, san], a.san)))}
@@ -179,7 +181,7 @@ function DexTreeEditSection({ path, san, isUnlocked, editInfo, onStageAdd, onUns
 // 수십 번) React가 노드 수천 개의 스타일 객체를 처음부터 다시 계산했다 — 이게 트리가 클 때 드래그가
 // 버벅이던 핵심 원인. 별도 memo 컴포넌트로 떼어내, items/edges(둘 다 pan/zoom과 무관하게 트리
 // 구조가 실제로 바뀔 때만 새로 생성됨) 참조가 그대로인 동안은 다시 그리지 않게 한다.
-const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet, electric, selectedTargetR }) {
+const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet, electric, selectedTargetR, intro }) {
   // (사용자 요청) 선택 경로가 중심에서부터 거리 비례로(0.3~1초) 서서히 파란색으로 흘러가도록 —
   // 목표 노드까지의 거리(selectedTargetR)를 속도로 나눠 총 애니메이션 길이를 정한다.
   const selDuration = selectedTargetR ? Math.min(1, Math.max(0.3, selectedTargetR / DEX_SELECT_FLOW_SPEED)) : 0;
@@ -193,11 +195,14 @@ const DexEdgesLayer = React.memo(function DexEdgesLayer({ edges, selectedKeySet,
     const eStroke = (isSel || surge) ? SCHEMATIC_ELECTRIC : c.unlocked ? (c.kind === "book" ? T.book : T.brass) : "#C9B58C";
     const selDelay = isSel && selectedTargetR ? (c.r / selectedTargetR) * selDuration : 0;
     const surgeDelay = surge ? c.r / DEX_ELECTRIC_FLOW_SPEED : 0;
+    // (v0.6.6) 시작 연출: 부모 블록이 나타날 즈음 칩에서 바깥으로 선이 그려진다(화면 밖은 건너뜀).
+    const id = intro && !isSel && !surge ? introDelay(p.r || 0, intro.reach) : null;
+    if (id != null) return <path key={p.key + "→" + c.key} className="dex-intro-line" pathLength={1} d={c.edgeD} fill="none" stroke={eStroke} strokeWidth={2} opacity={c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round" style={{ animationDelay: id + "s" }} />;
     return <path key={p.key + "→" + c.key} className={surge ? "dex-surge-line" : (isSel ? "dex-current-line" : undefined)} d={c.edgeD} fill="none" stroke={eStroke} strokeWidth={wStroke} opacity={(isSel || surge) ? 1 : c.unlocked ? 0.9 : 0.45} strokeLinecap="round" strokeLinejoin="round"
       style={(isSel || surge) ? { strokeDasharray: "7 5", transition: isSel ? "stroke .25s ease " + selDelay + "s, opacity .25s ease " + selDelay + "s" : undefined, animationDelay: surge ? surgeDelay + "s" : undefined } : undefined} />;
   });
 });
-const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect, electric, selectedTargetR }) {
+const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, selectedKeySet, onSelect, electric, selectedTargetR, intro }) {
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   const selDuration = selectedTargetR ? Math.min(1, Math.max(0.3, selectedTargetR / DEX_SELECT_FLOW_SPEED)) : 0;
   return items.map((it) => {
@@ -211,6 +216,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     const evTxt = it.evalCp != null ? fmtEvalCp(it.evalCp) : null;
     const selDelay = isSel && selectedTargetR ? (it.r / selectedTargetR) * selDuration : 0;
     const surgeDelay = electric ? (it.r || 0) / DEX_ELECTRIC_FLOW_SPEED : 0;
+    const introD = intro && !electric ? introDelay(it.r || 0, intro.reach) : null;   // (v0.6.6) 시작 연출: 칩에서 멀수록 늦게 나타난다
     // (v0.5.6, 사용자 요청) 내 chess.com 전적·승률 칩 — 이 수순까지 실제로 둔 내 대국이 있으면 블록 아래 가장자리에 걸쳐 "7승 2무 3패 · 58%"를
     // 보여준다(예전엔 3판 이상일 때 오른쪽 위에 승률 %만). 승률 색은 기존 등급 색(최선=초록, 부정확=노랑, 블런더=빨강)을 쓰고, 표본이 3판
     // 미만이면 0%/100%로 튀어 오해를 살 수 있어 색 없이(회색) 보여준다. 칩이 블록 밖으로 나오는 높이(DEX_LAYOUT.CHIP_BELOW)만큼은
@@ -218,7 +224,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     const showRec = it.myN >= 1 && it.myWr != null;
     const wrColor = it.myN < 3 ? "#8A7458" : it.myWr >= 60 ? T.best : it.myWr >= 40 ? T.inaccuracy : T.blunder;
     return (
-      <div key={it.key} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH }}>
+      <div key={it.key} className={introD == null ? undefined : "dex-intro-node"} style={{ position: "absolute", left: x, top: y, width: boxW, height: boxH, ...(introD == null ? null : { animationDelay: introD + "s" }) }}>
         <span style={{ position: "absolute", left: (boxW - w) / 2 - 6, top: (boxH - h) / 2 - 6, width: 17, height: 17, borderRadius: "50%", background: isOpen ? "#241509" : sub, color: isOpen ? T.brassHi : "#fff", border: "1.5px solid " + (it.unlocked ? "#fff" : "#8A7458"), display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,.4)", zIndex: (isOpen ? 40 : 1) + 1, pointerEvents: "none" }}>{badgeIcon(kind, 14)}</span>
         <button onClick={() => onSelect(it.key)} className={"press" + (electric ? " dex-surge-node" : "")} style={{ position: "absolute", left: (boxW - w) / 2, top: (boxH - h) / 2, width: w, height: h, borderRadius: 8, border: isSel ? "2px solid " + SCHEMATIC_ELECTRIC : (isBook && it.unlocked && !isOpen ? "2px" : "1.5px") + " solid " + (isOpen ? T.brass : it.unlocked ? (isBook ? T.book : "#CDB98E") : "#00000055"), background: isOpen ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : it.unlocked ? (isBook ? "linear-gradient(160deg,#F3E6CC,#E2C89A)" : "linear-gradient(160deg,#F8F1E1,#EEE1C4)") : "repeating-linear-gradient(45deg,#2A1B10,#2A1B10 6px,#33261A 6px,#33261A 12px)", boxShadow: isSel ? "0 0 9px 1px rgba(34,211,240,.65)" : isBook && it.unlocked && !isOpen ? "inset 0 0 0 1px rgba(138,90,43,.35)" : "none", color: isOpen ? "#241509" : it.unlocked ? (isBook ? T.book : T.ink) : "#8A7458", fontFamily: SITE_FONT, fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "2px 3px", zIndex: isOpen ? 40 : 1, boxSizing: "border-box", transition: isSel ? "border-color .25s ease " + selDelay + "s, box-shadow .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12 }}>
@@ -343,7 +349,11 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   const [pan, setPan] = useState({ x: 16, y: 16 });
   // (v0.0.6) 다들 첫 화면에서 곧장 75%로 축소해야 편하게 봤다는 피드백 — 그 배율을 새 기준(100%,
   // SCHEMATIC_ZOOM_LABEL_BASE)으로 재정의했으므로, 기본값도 그대로 그 값으로 시작한다.
-  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE);
+  // (v0.6.6, 사용자 요청) 시작 연출 — 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대한다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다(stopMotion).
+  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM);
+  const [introOn, setIntroOn] = useState(true);
+  const introTimerRef = useRef(null), introStartedRef = useRef(false);
+  const endIntro = () => { if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } introStartedRef.current = true; setIntroOn(false); };
   const dragRef = useRef(null);
   const boxRef = useRef(null);
   const userPannedRef = useRef(false);
@@ -353,7 +363,8 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 한 번에 계산된다. 이렇게 박스가 항상 뷰포트 안에 통째로 들어오면, 나침반 중심 칩을 "박스 자신의
   // 중심"에 맞추는 것만으로도 항상 뷰포트 정중앙에 오게 된다(visibleBoxCenter류의 별도 보정 불필요).
   // (v0.6.3) 높이 계산은 src/lib/dexPanel.js(오프닝·마스터 모식도 공용).
-  const panelH = useFitPanelHeight(boxRef, vertical);
+  const UNLOCK_BAR_H = rightSlot ? 40 : 0;   // (v0.6.6) 박스 아래 도감 해금률 줄 높이(여백 포함)
+  const panelH = useFitPanelHeight(boxRef, vertical, 640, UNLOCK_BAR_H);
   // (기능) 검색·클릭으로 오프닝을 선택하면 화면 중앙으로 이동시키고 살짝 확대해 강조하는데, 이후
   // 사용자가 직접 드래그·휠로 그 노드를 중앙에서 멀리 치워버리면(즉 더 이상 "선택 직후" 뷰가 아니게
   // 되면) 강조 확대만 100%로 되돌리고 색 강조는 그대로 유지한다. 팬/줌 핸들러(특히 한 번만 등록되는
@@ -402,6 +413,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 트리 구조가 자랄 때(로딩 중 계속 발생)마다 강제로 다시 계산해, 새로 나타난 노드가 지금 보이는
   // 범위 안에 있으면 곧바로 그려지게 한다.
   useEffect(() => { refreshCullWindow(true); }, [items, refreshCullWindow]);
+  // (v0.6.6) 시작 연출 때 트리가 깜빡이던 원인 — 그릴 범위가 아직 갱신 전의 팬·배율(ref)로 계산돼 엉뚱한 곳이 잡혔다가 150ms 뒤에야 고쳐졌다.
+  // 팬·배율·박스 높이가 확정(state 반영)되면 ref도 맞춘 뒤 곧바로 다시 계산한다.
+  useLayoutEffect(() => { panRef.current = pan; zoomRef.current = zoom; refreshCullWindow(true); }, [pan, zoom, panelH, refreshCullWindow]);
   // 그 사이(팬/줌/확대버튼/검색 이동 애니메이션 등 팬을 바꾸는 모든 경로)는 여기 한 곳에서 주기적으로
   // 드리프트만 저렴하게 확인한다 — 매 지점마다 일일이 훅을 걸 필요가 없다.
   useEffect(() => {
@@ -420,6 +434,46 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     setPan((p) => (Math.abs(p.x - next.x) < 0.5 && Math.abs(p.y - next.y) < 0.5 ? p : next));
   }, []);
   useLayoutEffect(() => { if (!userPannedRef.current) recenterHome(); }, [centerX, centerY, panelH, recenterHome]);
+  useEffect(() => {
+    if (!ready || introStartedRef.current) return undefined;
+    introStartedRef.current = true;
+    introTimerRef.current = setTimeout(() => {
+      introTimerRef.current = null;
+      const rect = viewRect(), z = SCHEMATIC_ZOOM_LABEL_BASE;
+      animateView({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z }, z, INTRO_ZOOM_MS, () => setIntroOn(false), introEase);
+    }, INTRO_HOLD_MS);
+    return undefined;
+  }, [ready]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); }, []);
+  // (v0.6.6, 사용자 요청) "처음으로" 버튼 — 50% 배율의 중앙 화면으로 돌아가 시작 연출을 다시 재생한다.
+  const replayIntro = () => {
+    const rect = viewRect(), z = SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM;
+    applyView({ x: rect.width / 2 - centerRef.current.x * z, y: rect.height / 2 - centerRef.current.y * z }, z); commitView();
+    setIntroOn(false);
+    requestAnimationFrame(() => {
+      setIntroOn(true);
+      introStartedRef.current = true;
+      introTimerRef.current = setTimeout(() => {
+        introTimerRef.current = null;
+        const r = viewRect(), bz = SCHEMATIC_ZOOM_LABEL_BASE;
+        animateView({ x: r.width / 2 - centerRef.current.x * bz, y: r.height / 2 - centerRef.current.y * bz }, bz, INTRO_ZOOM_MS, () => setIntroOn(false), introEase);
+      }, INTRO_HOLD_MS);
+    });
+  };
+  // (v0.6.6) 박스 크기가 바뀌면(전체 화면 전환 등) 보던 중심 지점을 그대로 유지한다 — 예전엔 팬이 그대로여서 중심이 좌상단으로 밀렸다.
+  useEffect(() => {
+    const el = boxRef.current; if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let last = null;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (last && (w !== last.w || h !== last.h) && !motionRafRef.current) {
+        const p = panRef.current; applyView({ x: p.x + (w - last.w) / 2, y: p.y + (h - last.h) / 2 }, zoomRef.current); commitSoon(60);
+      }
+      last = { w, h };
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onResize = () => { if (!userPannedRef.current) recenterHome(); };
     window.addEventListener("resize", onResize);
@@ -496,16 +550,17 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   };
   useEffect(() => () => { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); if (motionRafRef.current) cancelAnimationFrame(motionRafRef.current); }, []);
   const stopMotion = () => {
+    endIntro();
     if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; setFlightPath(null); }
     if (motionRafRef.current) { cancelAnimationFrame(motionRafRef.current); motionRafRef.current = null; commitView(); }
   };
   const viewRect = () => (boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, left: 0, top: 0 });
   const clampView = (p, z) => { const rect = viewRect(); return clampSchematicPan(p, z, rect.width, rect.height, boundsRef.current, boxW, boxH, SCHEMATIC_TOP_INSET); };
-  const animateView = (toPan, toZoom, ms, onDone) => {
+  const animateView = (toPan, toZoom, ms, onDone, ease) => {
     const fromPan = panRef.current, fromZoom = zoomRef.current, t0 = performance.now();
     if (motionRafRef.current) cancelAnimationFrame(motionRafRef.current);
     const step = (now) => {
-      const t = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - t, 3);
+      const t = Math.min(1, (now - t0) / ms), e = ease ? ease(t) : 1 - Math.pow(1 - t, 3);
       applyView({ x: fromPan.x + (toPan.x - fromPan.x) * e, y: fromPan.y + (toPan.y - fromPan.y) * e }, fromZoom + (toZoom - fromZoom) * e);
       if (t < 1) motionRafRef.current = requestAnimationFrame(step);
       else { motionRafRef.current = null; applyView(toPan, toZoom); commitView(); if (onDone) onDone(); }
@@ -810,7 +865,8 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     // 카드가 나타나게 한다 — 전에는 이동 애니메이션이 도는 동안에도 카드가 곧장 뜬 채로 화면을
     // 따라 미끄러지듯 이동해 산만했다. 이동 중엔 기존에 열려 있던 카드도 먼저 닫는다.
     if (openKey) onToggleOpen(openKey);
-    centerOn(it, SELECT_ZOOM, () => onToggleOpen(it.key));
+    // (v0.6.6, 사용자 요청) 이동이 끝나도 수 설명 카드는 띄우지 않는다 — 블록을 직접 눌러야 카드가 열린다.
+    centerOn(it, SELECT_ZOOM);
   };
   // (v0.0.6 성능) DexNodesLayer가 팬/드래그 중에는 다시 그려지지 않도록 memo화되어 있는데, 클릭
   // 콜백을 매 렌더 새로 만드는 인라인 화살표 함수로 넘기면 그 참조가 매번 바뀌어 memo가 무력화된다
@@ -867,6 +923,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 두고, 렌더링(DexNodesLayer/DexEdgesLayer/라벨)에 넘기는 값만 이걸로 바꾼다. 엣지는 두 끝
   // 중 하나라도 화면에 그려지는 노드면 남겨(잘린 선이라도 화면 안쪽 절반은 보이게) 부모가
   // 범위 밖으로 살짝 벗어나도 자식 쪽 연결선이 뚝 끊겨 보이지 않게 한다.
+  // (v0.6.6) 시작 연출에 쓰는 값 — 50% 배율에서 화면에 보이는 반지름(이보다 먼 요소는 연출 없이 그대로 둔다). 끝나면 null.
+  const introProp = useMemo(() => { if (!introOn) return null; const r = viewRect(); return { reach: introReach(r.width, r.height, SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM) }; }, [introOn, panelH]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const introAt = (x, y) => (introProp ? introDelay(Math.hypot(x - centerX, y - centerY), introProp.reach) : null);
   const { culledItems, culledEdges, culledGroups } = useMemo(() => {
     // (v0.5.6 성능) 처음 그릴 때는 아직 그릴 범위가 없어 예전엔 트리 전체(블록 3,300여 개 + 라벨 1,500개)를 한꺼번에 DOM으로 만들었다가
     // 다음 렌더에서 걸러냈다 — 도감 탭을 열 때마다 약 2초씩 멈춘 원인. 첫 렌더부터 "처음 보여줄 화면"(트리 중심 · 기본 배율 · 창 크기)
@@ -1046,10 +1105,10 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 그림자)로 맞춘다. 오른쪽 빈자리에는 CollectionTab이 넘겨주는 도감 해금률(rightSlot)을 배치해
   // "검색+새로고침(좌) / 해금률(우)"의 좌우 배치 줄이 되도록 한다. 팬/줌/검색 매칭 로직 자체는
   // 그대로— 위치와 스타일만 바뀐다.
-  const searchHeader = (
+  const searchHeader = (<>
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       {tabsSlot}
-      <div className="no-pan" style={{ position: "relative", zIndex: 70, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+      <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 4 }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("오프닝 이름으로 찾기")}
             style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
@@ -1060,10 +1119,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
             stopMotion();
             userPannedRef.current = false;
             selectionLockRef.current = false;
-            setZoom(SCHEMATIC_ZOOM_LABEL_BASE);
-            const rect = boxRef.current ? boxRef.current.getBoundingClientRect() : { width: 640, height: 640, top: 0, bottom: 640, left: 0, right: 640 };
-            const vc = { x: rect.width / 2, y: rect.height / 2 };
-            setPan({ x: vc.x - centerRef.current.x * SCHEMATIC_ZOOM_LABEL_BASE, y: vc.y - centerRef.current.y * SCHEMATIC_ZOOM_LABEL_BASE });
+            replayIntro();
           }} title={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <RotateCcw size={14} />
           </button>
@@ -1076,16 +1132,18 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
               ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 오프닝 없음")}</div>
               : matches.map((it) => (
                 <button key={it.key} onClick={() => selectNode(it)} className="press" style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 4 }}>{!it.unlocked && <Lock size={9} />}{it.name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    {/* (v0.6.6, 사용자 요청) 자물쇠 대신 어느 갈래(1수: e4·d4 …)인지 보여주는 칩 */}
+                    <span style={{ flexShrink: 0, fontFamily: SITE_FONT, fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>{it.path[0]}</span>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span></div>
                   <div style={{ fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</div>
                 </button>
               ))}
           </div>
         )}
       </div>
-      {rightSlot && <div style={{ flexShrink: 0 }}>{rightSlot}</div>}
     </div>
-  );
+  </>);
   return (
     <div>
     {searchHeader}
@@ -1096,17 +1154,17 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
       {!ready && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, color: T.inkSoft }}>{t("불러오는 중…")}</div>
       )}
-      <div className="flex no-pan" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden" }}>
+      <div className="flex no-pan" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, visibility: ready ? "visible" : "hidden", opacity: introOn || flightPath ? 0 : 1, pointerEvents: introOn || flightPath ? "none" : "auto", transition: "opacity .5s ease" }}>
         <button onClick={() => zoomBy(-SCHEMATIC_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_LABEL_BASE - zoomRef.current)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{schematicZoomLabel(zoom)}</button>
         <button onClick={() => zoomBy(SCHEMATIC_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
       </div>
-      <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
+      <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || !!flightPath} />
       <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + pan.x + "px," + pan.y + "px) scale(" + zoom + ")", transformOrigin: "0 0", visibility: ready ? "visible" : "hidden", willChange: "transform" }}>
         {/* (v0.3.2 개편) 칭호(이름)가 붙은 오프닝을 점선 테두리로 묶어 보여주던 것을 없애고, 이름
             라벨만 그 오프닝에 진입하는 첫 수(그룹 뿌리) 블록 바로 위쪽에 남겨 둔다. */}
         {culledGroups.map((g) => (
-          <div key={"grouplabel-" + g.key} style={{ position: "absolute", left: g.left, top: g.top, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3 }}>
+          <div key={"grouplabel-" + g.key} className={introAt(g.left, g.top) == null ? undefined : "dex-intro-fade"} style={{ position: "absolute", left: g.left, top: g.top, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3, ...(introAt(g.left, g.top) == null ? null : { animationDelay: introAt(g.left, g.top) + "s" }) }}>
             {/* (사용자 요청) 이름을 자르지 않고 풀네임을 그대로 다 보여준다 — maxWidth·ellipsis 제거. */}
             <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
               ✦ {g.name} ✦
@@ -1144,11 +1202,12 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
               const active = electric || isSelArm;
               const selDelay = isSelArm && selectedTargetR ? (ROOT_GAP / selectedTargetR) * selDuration : 0;
               const surgeDelay = electric ? ROOT_GAP / DEX_ELECTRIC_FLOW_SPEED : 0;
+              if (!active && introProp) return <line key={"chip-trace-" + dir} className="dex-intro-line" pathLength={1} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.brass} strokeWidth={2} opacity={0.5} strokeLinecap="round" style={{ animationDelay: "0s" }} />;
               return <line key={"chip-trace-" + dir} className={electric ? "dex-surge-line" : undefined} x1={x1} y1={y1} x2={x2} y2={y2} stroke={active ? SCHEMATIC_ELECTRIC : T.brass} strokeWidth={active ? 3 : 2} opacity={active ? 1 : 0.5} strokeLinecap="round"
                 style={active ? { strokeDasharray: "7 5", transition: isSelArm ? "stroke .25s ease " + selDelay + "s, opacity .25s ease " + selDelay + "s" : undefined, animationDelay: electric ? surgeDelay + "s" : undefined } : undefined} />;
             });
           })()}
-          <DexEdgesLayer edges={culledEdges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} />
+          <DexEdgesLayer edges={culledEdges} selectedKeySet={selectedKeySet} electric={electric} selectedTargetR={selectedTargetR} intro={introProp} />
           {/* (v0.5.6) 라벨은 항상 블록 위쪽 — 이웃 라벨에 밀려 한 줄 이상 위로 올라간 라벨은 자기 블록까지 가는 점선 지시선을 긋는다. */}
           {culledGroups.map((g) => (g.lifted ? (
             <line key={"leader-" + g.key} x1={Math.min(Math.max(g.ax, g.left + 12), g.left + g.w - 12)} y1={g.top + 20} x2={g.ax} y2={g.ay} stroke={T.brass} strokeWidth={1.2} strokeDasharray="2 3" opacity={0.7} />
@@ -1156,7 +1215,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         </svg>
         {/* (기능) 나침반 정중앙 회로 칩 장식 — 네 변에 짧은 "다리(핀)"를 달아 실제 회로 칩처럼
             보이게 하고, 가운데 CPU 아이콘으로 "이 트리 전체가 여기서 뻗어나간다"는 발신지 느낌을 준다. */}
-        <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
+        <div className={"no-pan" + (electric ? " dex-chip-surge" : introOn ? " dex-intro-node" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: centerX - CHIP_SIZE / 2, top: centerY - CHIP_SIZE / 2, width: CHIP_SIZE, height: CHIP_SIZE, cursor: "pointer", zIndex: 2 }}>
           <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
           {[0, 1, 2].map((i) => (
             <React.Fragment key={i}>
@@ -1170,7 +1229,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
             <Cpu size={26} strokeWidth={1.6} />
           </div>
         </div>
-        <DexNodesLayer items={culledItems} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} />
+        <DexNodesLayer items={culledItems} openKey={openKey} selectedKeySet={selectedKeySet} onSelect={onSelectNode} electric={electric} selectedTargetR={selectedTargetR} intro={introProp} />
       </div>
       {/* (버그 수정) 카드는 위 frozenCard(useMemo, dep=[openKey])가 "연 순간"에 딱 한 번 계산해 둔
           좌표를 그대로 쓴다 — 뷰포트 기준 고정 좌표(position:fixed)라는 점은 v0.3.2와 같지만, 그
@@ -1202,11 +1261,12 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         </div>
       )}
     </div>
+    {rightSlot && <div style={{ marginTop: 8, height: UNLOCK_BAR_H - 8, display: "flex", alignItems: "center" }}>{rightSlot}</div>}
     </div>
   );
 }
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState("openings"); // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
   // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로
@@ -1316,11 +1376,11 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
       <OpeningSchematic tabsSlot={inlineTabs ? tabPills(0) : undefined} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
-          <div style={{ textAlign: vertical ? "left" : "right" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
               {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ivory }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
             </div>
           </div>
         } />

@@ -97,39 +97,56 @@ export function KeywordScroll({ kws, chipStyle }) {
   const ref = useRef(null);
   const setRef = useRef(null);
   const [overflow, setOverflow] = useState(false);
+  const [period, setPeriod] = useState(0);   // 한 묶음 길이(px) — CSS 애니메이션이 이만큼 이동하면 제자리로 돌아온다
   const sig = kws.join(",");
   useLayoutEffect(() => {
     const el = ref.current, one = setRef.current;
     if (!el || !one) return;
-    const check = () => setOverflow(one.offsetWidth > el.clientWidth + 1);
+    const check = () => { const w = one.offsetWidth; setOverflow(w > el.clientWidth + 1); setPeriod(w + KW_GAP); };
     check();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
   }, [sig]);
-  useEffect(() => {
-    const el = ref.current, one = setRef.current;
-    if (!el || !one || !overflow) { if (el) el.scrollLeft = 0; return; }
-    const id = setInterval(() => {
-      const period = one.offsetWidth + KW_GAP;
-      if (period <= KW_GAP) return;
-      let next = el.scrollLeft + 0.6;
-      if (next >= period) next -= period;
-      el.scrollLeft = next;
-    }, 30);
-    return () => clearInterval(id);
-  }, [overflow, sig]);
   if (!kws.length) return null;
   const set = (key, extra) => (
     <div key={key} ref={key === "a" ? setRef : null} aria-hidden={extra ? "true" : undefined} style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, flexShrink: 0 }}>
       {kws.map((k) => <KeywordChip key={k} k={k} style={chipStyle} />)}
     </div>
   );
+  // (v0.6.6, 렉 완화) 예전엔 수 블록마다 30ms 간격 setInterval로 offsetWidth·scrollLeft를 읽고 써서(강제 레이아웃) 블록이 많을수록 메인 스레드를 계속 잡아먹었다 —
+  // 이제 CSS 애니메이션(kwMarquee, 컴포지터가 처리)으로 같은 속도(초당 20px)로 흘려보낸다. 자바스크립트는 크기가 바뀔 때만 한 번 잰다.
   return (
-    <div ref={ref} className="hide-scrollbar" style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, overflowX: "hidden" }}>
-      {set("a", false)}
-      {overflow && set("b", true)}
+    <div ref={ref} className="hide-scrollbar" style={{ overflow: "hidden" }}>
+      <div style={{ display: "flex", flexWrap: "nowrap", gap: KW_GAP, width: "max-content", willChange: overflow ? "transform" : undefined, ...(overflow && period > KW_GAP ? { "--kw-period": period + "px", animation: "kwMarquee " + (period / 20) + "s linear infinite" } : null) }}>
+        {set("a", false)}
+        {overflow && set("b", true)}
+      </div>
     </div>
   );
 }
+
+// (v0.6.6, 사용자 요청) 한 줄 고정 높이의 오프닝 이름 — 칸보다 길면 KeywordScroll과 같은 CSS 흐름(kwMarquee)으로 자동으로 흘러가며 전체 명칭을 보여준다. 짧으면 그대로 멈춰 있다.
+export function MarqueeText({ children, height = 18, style }) {
+  const ref = useRef(null), oneRef = useRef(null);
+  const [over, setOver] = useState(false), [period, setPeriod] = useState(0);
+  const sig = typeof children === "string" ? children : "";
+  useLayoutEffect(() => {
+    const el = ref.current, one = oneRef.current; if (!el || !one) return undefined;
+    const check = () => { const w = one.offsetWidth; setOver(w > el.clientWidth + 1); setPeriod(w + MARQUEE_GAP); };
+    check();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(check); ro.observe(el);
+    return () => ro.disconnect();
+  }, [sig]);
+  return (
+    <div ref={ref} style={{ overflow: "hidden", whiteSpace: "nowrap", height, lineHeight: height + "px", ...style }}>
+      <div style={{ display: "flex", gap: MARQUEE_GAP, width: "max-content", willChange: over ? "transform" : undefined, ...(over && period > MARQUEE_GAP ? { "--kw-period": period + "px", animation: "kwMarquee " + (period / 24) + "s linear infinite" } : null) }}>
+        <span ref={oneRef}>{children}</span>
+        {over && <span aria-hidden="true">{children}</span>}
+      </div>
+    </div>
+  );
+}
+const MARQUEE_GAP = 28;

@@ -37,8 +37,8 @@ if (!/<MinigameLeaderboard game=\{chessGame\}/.test(app)) fails.push("일반 대
   if (iMini < 0 || iChess < 0 || iMini > iChess) fails.push("/user 성취도에서 미니게임 카드가 일반 대국 카드보다 위에 있지 않음");
   const iHist = prof0.indexOf("<OpenChessGameHistory uid=");
   if (iHist < iChess) fails.push("일반 대국 카드 안에 OpenChessGameHistory가 없음");
-  if (!/create or replace function public\.profile_recent_games\(p_uid uuid, p_limit int default 100\)/.test(sql)) fails.push("profile_recent_games 함수가 없음");
-  if (!/grant execute on function public\.profile_recent_games\(uuid, int\) to anon, authenticated/.test(sql)) fails.push("profile_recent_games 실행 권한 grant가 없음");
+  if (!/create or replace function public\.profile_recent_games\(p_uid uuid, p_limit int default 100, p_offset int default 0\)/.test(sql)) fails.push("profile_recent_games 함수가 없음");
+  if (!/grant execute on function public\.profile_recent_games\(uuid, int, int\) to anon, authenticated/.test(sql)) fails.push("profile_recent_games 실행 권한 grant가 없음");
   const hist = readFileSync(new URL("../src/app/gameHistory.jsx", import.meta.url), "utf8");
   const prof = readFileSync(new URL("../src/app/profile.jsx", import.meta.url), "utf8");
   for (const c of ["RecentGamesList", "GameRecordSummary", "GameFilterPills"]) {

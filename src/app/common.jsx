@@ -244,12 +244,12 @@ export function snapNode(sans) { return SNAP.tree[sans.join(" ")] || null; }
 function overlayAt(sans) { return OVERLAY[sans.join(" ")] || null; }
 /* ── (20차 기능1) 퍼즐 트리 생성 ──
    기존의 고정 3라인(최선/차선/채택) 대신, 다양한 응수에 대한 대응력을 기르도록 "분기 트리"를 만든다.
-   · 상대 차례: 최선 응수에 더해 채택률·평가치 혼합 점수 상위 응수를 골라 최대 3갈래로 분기.
-   · 사용자 차례: 최선의 수와 우수한 대안 수(pass=true, 이 수로만 다음 단계 진행 가능)에 더해,
+  , 상대 차례: 최선 응수에 더해 채택률·평가치 혼합 점수 상위 응수를 골라 최대 3갈래로 분기.
+  , 사용자 차례: 최선의 수와 우수한 대안 수(pass=true, 이 수로만 다음 단계 진행 가능)에 더해,
      실전에서 자주 두어지지만 통과할 수 없는 유혹 수(pass=false)를 모식도 표시용으로 함께 담는다.
-   · 각 노드에 수 체계 등급(kind)·백 관점 평가치(ev)·채택률(adopt, %)을 기록해 풀이 화면의 모식도가
+  , 각 노드에 수 체계 등급(kind)·백 관점 평가치(ev)·채택률(adopt, %)을 기록해 풀이 화면의 모식도가
      엔진·네트워크 없이도 그대로 표기할 수 있게 한다.
-   · 라인 종료 규칙(예전 genAdvantageLine과 동일): 사용자 수 뒤 사용자 관점 평가가 target(cp) 이상이면 종료.
+  , 라인 종료 규칙(예전 genAdvantageLine과 동일): 사용자 수 뒤 사용자 관점 평가가 target(cp) 이상이면 종료.
      테마별 추가 조건 — requireMaterialRecovery(희생: 희생한 기물 점수를 실질적으로 회복해야 종료),
      requireCapture(응징: 실제로 기물을 잡아내는 수가 나와야 종료). 첫 수 이후의 전개하는 수/캐슬링이
      최선이 되면 그 앞에서 끊고, 라인은 항상 사용자 수로 끝맺는다.
@@ -639,19 +639,19 @@ async function fetchWiki(name) {
 }
 const BRANCH = {
   "": t("백의 첫 수. 게임 전체 성격(개방/폐쇄, 전술/전략)을 정하는 최상위 분기"),
-  "e4": t("흑의 선택지: 1...e5(오픈 게임) · c5(시칠리안) · e6(프렌치) · c6(카로칸)"),
-  "e4 e5 Nf3": t("흑 e5 방어: 2...Nc6(정통) · Nf6(페트로프) · d6(필리도르)"),
+  "e4": t("흑의 선택지: 1...e5(오픈 게임), c5(시칠리안), e6(프렌치), c6(카로칸)"),
+  "e4 e5 Nf3": t("흑 e5 방어: 2...Nc6(정통), Nf6(페트로프), d6(필리도르)"),
   "e4 e5 Nf3 Nc6": t("백의 공격 플랜: 3.Bb5(루이 로페즈, 구조적 압박) vs 3.Bc4(이탈리안, 빠른 f7 공략)"),
   "e4 e5 Nf3 Nc6 Bc4": t("이탈리안의 성격: 3...Bc5(지우코 피아노, 전략전) vs 3...Nf6(투 나이츠, 전술전)"),
   "e4 e5 Nf3 Nc6 Bc4 Nf6 Ng5": t("프라이드 리버: f7 위협에 4...d5만 사실상 유일한 정수"),
   "e4 e5 Nf3 Nc6 Bb5": t("루이 로페즈 핵심: 3...a6(모펀 메인) vs 3...Nf6(베를린 디펜스)"),
   "e4 c5": t("안티-시칠리안: 2.Nf3(오픈 시칠리안) vs 2.Nc3 / c3 / Bc4(폐쇄·알라핀 등)"),
-  "e4 c5 Nf3": t("오픈 시칠리안: 2...d6(나이도르프/드래곤) · Nc6(스벤니/클래식) · e6(타이마노프/카안)"),
-  "e4 e6 d4 d5": t("프렌치 구조: 3.Nc3 · Nd2(타라쉬) · e5(어드밴스) · exd5(익스체인지)로 폰 구조가 갈림"),
-  "e4 c6 d4 d5": t("카로칸 구조: 3.Nc3/Nd2(클래시컬) · e5(어드밴스) · exd5(익스체인지) · f3(핀란드)"),
+  "e4 c5 Nf3": t("오픈 시칠리안: 2...d6(나이도르프/드래곤), Nc6(스벤니/클래식), e6(타이마노프/카안)"),
+  "e4 e6 d4 d5": t("프렌치 구조: 3.Nc3, Nd2(타라쉬), e5(어드밴스), exd5(익스체인지)로 폰 구조가 갈림"),
+  "e4 c6 d4 d5": t("카로칸 구조: 3.Nc3/Nd2(클래시컬), e5(어드밴스), exd5(익스체인지), f3(핀란드)"),
   "d4": t("흑의 응수: 1...d5(정통 폐쇄) vs 1...Nf6(인디언, 초현대적 중앙 양보)"),
-  "d4 d5 c4": t("퀸스 갬빗: 2...e6(QGD) · c6(슬라브) · dxc4(QGA)"),
-  "d4 Nf6 c4": t("인디언 디펜스: 2...e6(님조/QID) · g6(KID/그륀펠트) · c5(베노니)"),
+  "d4 d5 c4": t("퀸스 갬빗: 2...e6(QGD), c6(슬라브), dxc4(QGA)"),
+  "d4 Nf6 c4": t("인디언 디펜스: 2...e6(님조/QID), g6(KID/그륀펠트), c5(베노니)"),
   "d4 Nf6 c4 e6 Nc3": t("3...Bb4(님조-인디언, 핀) vs 3...d5(QGD 전환)"),
   "d4 Nf6 c4 g6 Nc3": t("3...d5(그륀펠트, 중앙 반격) vs 3...Bg7→d6(킹스 인디언, 폐쇄 공격)"),
 };
@@ -1075,7 +1075,7 @@ function ccGameFromApi(g, u, url) {
   // 대국이 리뷰 화면(오프닝 배너)에서만 다른 이름으로 보였다 — 저장 시점부터 openingNameOf로
   // 통일해, 이후 이 opening 필드를 쓰는 모든 화면(리뷰 오프닝 배너 등)이 같은 이름을 쓰게 한다.
   const ccMoves = parsePgnSans(g.pgn);
-  return { moves: ccMoves, color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: openingNameOf(ccMoves), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
+  return { moves: ccMoves, color: userIsWhite ? "w" : "b", result, endTime: g.end_time || null, opening: openingNameOf(ccMoves), rating: (side && side.rating != null) ? side.rating : null, timeClass: g.time_class || null, timeControl: g.time_control || null, rules: g.rules || "chess", accuracy: acc != null ? acc : null,
     white: { username: (g.white && g.white.username) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
     black: { username: (g.black && g.black.username) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
     id: extractChesscomGameId(g.url), // (v0.3.4 기능) 게임 리뷰 고유 URL의 chess.com 식별자
@@ -3041,7 +3041,7 @@ export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", s
       <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "10px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
           <Mascot name={mascot} emotion={emotion} size={40} />
-          <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800 }}>{ply > 0 ? t("{0} 진행 · {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
+          <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800 }}>{ply > 0 ? t("{0} 진행, {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
         </div>
         <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.5 }}>{text}</p>
       </div>
@@ -3051,7 +3051,7 @@ export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", s
     <div className="flex items-start gap-2" style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "11px 13px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
       <Mascot name={mascot} emotion={emotion} size={88} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{ply > 0 ? t("{0} 진행 · {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
+        <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 3 }}>{ply > 0 ? t("{0} 진행, {1}", (moveNumber(ply - 1)), label) : t("{0} 코치", (label))}</div>
         <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.5 }}>{text}</p>
       </div>
     </div>
@@ -4558,7 +4558,7 @@ export function minigameBestFromServer(game, score, detail) {
 }
 export function minigameBestLabel(game, v) {
   if (v == null) return null;
-  if (game === "knight") return t("{0}회 도달 · {1}초", (v.reached), ((v.ms || 0) / 1000).toFixed(1));
+  if (game === "knight") return t("{0}회 도달, {1}초", (v.reached), ((v.ms || 0) / 1000).toFixed(1));
   if (game === "coord") return t("{0}점", (v)); // (v0.5.7) 맞힌 개수 × 난이도 배율
   if (game === "rush") return "★" + v;
   if (game === "attack") return t("{0}회 메이트", (v));
@@ -5418,11 +5418,11 @@ export const TITLE_TIERS = [ // 낮은→높은 / 등급↔수 체계
 ];
 export function titleId(famKey, rank) { return famKey + ":" + rank; }
 const TITLE_TIER_STYLE = {
-  C:  { bg: ["#8C9C1E", "#697610"], label: "#EAF0A2" },   // Beginner · olive
-  B:  { bg: ["#2F8B3D", "#1B6A2A"], label: "#BBEAB5" },   // Intermediate · green
-  A:  { bg: ["#12612C", "#0A3D1D"], label: "#73D073" },   // Advanced · dark green
-  S:  { bg: ["#1566BA", "#0B4184"], label: "#62B0F4" },   // Master · blue
-  SS: { bg: ["#1BBAA8", "#129A8C"], label: "#0B4F47" },   // GrandMaster · teal
+  C:  { bg: ["#8C9C1E", "#697610"], label: "#EAF0A2" },   // Beginner, olive
+  B:  { bg: ["#2F8B3D", "#1B6A2A"], label: "#BBEAB5" },   // Intermediate, green
+  A:  { bg: ["#12612C", "#0A3D1D"], label: "#73D073" },   // Advanced, dark green
+  S:  { bg: ["#1566BA", "#0B4184"], label: "#62B0F4" },   // Master, blue
+  SS: { bg: ["#1BBAA8", "#129A8C"], label: "#0B4F47" },   // GrandMaster, teal
 };
 function TitleSym({ q, size, color }) {
   if (q === "good") return <Check size={size} strokeWidth={3.4} color={color} />;
@@ -5441,7 +5441,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const [showCond, setShowCond] = useState(false);
   const condTimerRef = useRef(null);
   if (!fam || !tier) return null;
-  const progPrefix = (!earned && progress != null) ? (fmtFull(Math.min(progress, tier.min)) + "/" + fmtFull(tier.min) + " · ") : "";
+  const progPrefix = (!earned && progress != null) ? (fmtFull(Math.min(progress, tier.min)) + "/" + fmtFull(tier.min) + ", ") : "";
   const condText = t("{0}퍼즐 {1}개 해결 + chess.com {2}회 플레이 필요", (progPrefix), fmtFull(tier.min), fmtFull(tier.ccMin));
   const handleClick = () => {
     setShowCond(true);
@@ -6009,8 +6009,8 @@ export function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEq
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
         <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tx("{0} 티어 전용 · 코인으로 구매 불가", tierLabel.label)}</span>
-            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("무료 · 기본 제공")}</span>
+          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tx("{0} 티어 전용, 코인으로 구매 불가", tierLabel.label)}</span>
+            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("무료, 기본 제공")}</span>
               : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
         </div>
         {equipped ? (
@@ -6152,7 +6152,7 @@ export function inviteFailText(e, what) {
   if (/auth required/.test(m)) return t("로그인이 만료됨. 다시 로그인 후 신청");
   if (/cannot invite self/.test(m)) return t("나에게는 신청 불가");
   if (e && (e.code === "PGRST202" || e.code === "PGRST203" || e.code === "42883")) return t("{0} 신청 기능이 서버에 반영되지 않음. supabase-setup.sql 재실행 필요", (what));
-  return t("{0} 신청 실패. 잠시 후 다시 시도{1}", (what), e && (e.code || m) ? " (" + [e.status, e.code, m].filter(Boolean).join(" · ") + ")" : "");
+  return t("{0} 신청 실패. 잠시 후 다시 시도{1}", (what), e && (e.code || m) ? " (" + [e.status, e.code, m].filter(Boolean).join(", ") + ")" : "");
 }
 // (v0.1.0) 프로필의 "푼 퍼즐" — 내 프로필(설정 탭)/공개 프로필(유저 검색·친구) 공통으로 쓰는 목록
 // UI. renderCard(p, onClick)는 호출부가 좋아요·리포스트·공유 등 그 화면에 맞는 PuzzleCard 속성을

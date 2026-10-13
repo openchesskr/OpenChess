@@ -2,6 +2,7 @@
 // 입력 회차(ed)는 scripts/build-pgn-tournaments.mjs가 만든 형식이다:
 //  ed.pl = [[이름, 엘로, 타이틀, 점수×2, 본 경기 대국 수], …]  (점수 순)
 //  ed.g  = [[라운드, 보드(또는 매치 안의 국 번호), 백 선수 번호, 흑 선수 번호, 결과(2 백승·1 무·0 흑승·-1 모름), 수순 부호, ECO, 단계(생략=본 경기)], …]
+//  ed.partial = 1 이면 마스터 대국 DB에서 만든 일부 대국뿐인 회차(순위·점수는 참고용, 우승자 없음)
 //  ed.fmt = rr(라운드로빈) · swiss · ko(녹아웃) · match(두 사람의 매치) · list(라운드 정보 없음)
 export const RES_TXT = { 2: "1-0", 1: "0.5-0.5", 0: "0-1", "-1": "*" };   // ½ 기호는 쓰지 않는다(0.5 표기)
 export const fmtScore = (s2) => String(s2 / 2);   // 점수×2 → "8.5"·"10"
@@ -25,6 +26,12 @@ export function crosstable(ed) {
     cells[a][b].push({ t: wa, gi: i, c: "w" }); cells[b][a].push({ t: wb, gi: i, c: "b" });
   }
   return { rows, cells };
+}
+
+/** 크로스테이블 칸 하나(두 선수 사이 대국들)의 합계: { tot: 행 선수가 딴 점수, n: 대국 수, kind: "w"(우세)·"d"(동률)·"l"(열세) }. 칸 색은 첫 판이 아니라 합계로 정한다(더블 라운드로빈에서 "1 0.5"가 회색으로 보이던 문제, BUG-083). */
+export function pairTotal(cell) {
+  const n = cell.length, tot = cell.reduce((a, x) => a + (x.t === "1" ? 1 : x.t === "0.5" ? 0.5 : 0), 0);
+  return { tot, n, kind: tot * 2 > n ? "w" : tot * 2 < n ? "l" : "d" };
 }
 
 /** 녹아웃 대진표: 라운드별 매치(같은 두 선수의 모든 국). 라운드는 오름차순, 마지막이 결승. */
@@ -77,6 +84,7 @@ export const roundsOf = (ed) => [...new Set(ed.g.map((g) => g[0]).filter(Boolean
 
 /** 회차의 우승자: 녹아웃은 결승 승자, 그 밖은 최고 점수자(공동 4명 초과면 없음). { names: [이름], score(점수), tie: 공동 여부 } 또는 null. */
 export function winnerOf(ed) {
+  if (ed.partial) return null;   // DB 수록 대국만 있는 회차(scripts/build-db-tournaments.mjs)는 점수가 실제와 달라 우승자를 정하지 않는다
   if (ed.fmt === "ko") {
     const br = bracket(ed); const fin = br.length ? br[br.length - 1].matches.filter((m) => !m.bronze) : [];
     if (fin.length !== 1 || fin[0].win == null) return null;

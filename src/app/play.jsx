@@ -422,7 +422,7 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
             </div>
           </div>
-          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? " · " + tcCatLabel(timeControl.cat) : ""}</div>}
+          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</div>}
           {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
               "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
               리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
@@ -1203,7 +1203,7 @@ function PlayNormalButton({ onClick, ratings }) {
           {tx("{0}대국 시작", <Play size={14} fill="#241509" />)}</span>
         {game && (
           <span style={{ fontSize: "clamp(9px, 2.2cqw, 14px)", fontWeight: 700, color: "rgba(90,58,34,.6)", lineHeight: 1.3, maxWidth: "100%" }}>
-            {mgPlayerName(game.w)} – {mgPlayerName(game.b)}{game.y ? " · " + game.y : ""}
+            {mgPlayerName(game.w)} – {mgPlayerName(game.b)}{game.y ? ", " + game.y : ""}
           </span>
         )}
       </span>
@@ -2515,9 +2515,9 @@ const COORD_SOLO_MS = 30000;
 // (v0.5.7, 사용자 요청) 혼자 플레이 난이도 — 하는 지금 그대로(좌표 표시, 백 시점), 중은 보드 가장자리 좌표를 지우고, 상은 좌표를 지운 채
 // 흑 진영이 아래로 오게 뒤집는다. 맞힌 개수에 배율을 곱한 값이 최종 기록이다(하 ×1, 중 ×2 금색, 상 ×3 그랜드마스터 색).
 const COORD_SOLO_LEVELS = [
-  { key: "easy", label: t("하"), mult: 1, desc: t("좌표 표시 · 백 시점"), bg: "rgba(255,255,255,.7)", ink: T.ink, chip: "linear-gradient(180deg,#F4EBDA,#DCC9A4)" },
-  { key: "mid", label: t("중"), mult: 2, desc: t("좌표 없이 · 백 시점"), hideCoords: true, bg: "linear-gradient(135deg,#FFF3D1,#F3D98E 55%,#D9A94A)", ink: "#4A3208", chip: "linear-gradient(135deg,#FDDB82,#C49A50 60%,#8A6428)" },
-  { key: "hard", label: t("상"), mult: 3, desc: t("좌표 없이 · 흑 시점(보드 뒤집힘)"), hideCoords: true, flip: true, bg: "linear-gradient(135deg,rgba(185,131,255,.28),rgba(110,231,200,.26),rgba(255,143,209,.28))", ink: "#3B1F5E", chip: tierGradientCss("grandmaster") },
+  { key: "easy", label: t("하"), mult: 1, desc: t("좌표 표시, 백 시점"), bg: "rgba(255,255,255,.7)", ink: T.ink, chip: "linear-gradient(180deg,#F4EBDA,#DCC9A4)" },
+  { key: "mid", label: t("중"), mult: 2, desc: t("좌표 없이, 백 시점"), hideCoords: true, bg: "linear-gradient(135deg,#FFF3D1,#F3D98E 55%,#D9A94A)", ink: "#4A3208", chip: "linear-gradient(135deg,#FDDB82,#C49A50 60%,#8A6428)" },
+  { key: "hard", label: t("상"), mult: 3, desc: t("좌표 없이, 흑 시점(보드 뒤집힘)"), hideCoords: true, flip: true, bg: "linear-gradient(135deg,rgba(185,131,255,.28),rgba(110,231,200,.26),rgba(255,143,209,.28))", ink: "#3B1F5E", chip: tierGradientCss("grandmaster") },
 ];
 function coordSoloLevel(key) { return COORD_SOLO_LEVELS.find((l) => l.key === key) || COORD_SOLO_LEVELS[0]; }
 // 혼자 플레이하기 진입점 — 난이도를 고른 뒤 보드를 연다. 이 컴포넌트는 key 없이 그려져 "다시하기"(보드만 새로 마운트)에도 난이도가
@@ -2532,7 +2532,7 @@ function CoordSoloLevelPick({ onPick }) {
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "12px 4px" }}>
       <MgLobbyLabel>{t("난이도 선택")}</MgLobbyLabel>
-      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>{tx("30초 동안 맞힌 개수 × 난이도 배율 = 최종 기록{0}", best != null ? t(" · 최고 {0}점", best) : "")}</div>
+      <div style={{ fontSize: 11, color: "rgba(90,58,34,.72)", fontWeight: 700, marginTop: -4, marginBottom: 4, textAlign: "center" }}>{tx("30초 동안 맞힌 개수 × 난이도 배율 = 최종 기록{0}", best != null ? t(", 최고 {0}점", best) : "")}</div>
       {COORD_SOLO_LEVELS.map((l, i) => (
         <motion.button key={l.key} onClick={() => onPick(l.key)} className="press" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
           style={{ width: "100%", maxWidth: 420, display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + MG_LOBBY_LINE, background: l.bg, cursor: "pointer", textAlign: "left", boxShadow: "0 2px 8px -4px rgba(90,58,34,.35)" }}>
@@ -2584,7 +2584,7 @@ function CoordMultScore({ base, level }) {
           )}
         </AnimatePresence>
       </span>
-      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(90,58,34,.72)", minHeight: 15 }}>{phase >= 3 ? t("최종 기록 · {0}개 × {1} (난이도 {2})", base, level.mult, level.label) : ""}</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(90,58,34,.72)", minHeight: 15 }}>{phase >= 3 ? t("최종 기록, {0}개 × {1} (난이도 {2})", base, level.mult, level.label) : ""}</span>
     </span>
   );
 }
@@ -2694,11 +2694,11 @@ function KnightSoloBoard({ onExit, onStatusChange, onRematch }) {
     return <MinigameResult outcome={best.isNew ? "win" : "draw"} title={best.isNew ? t("신기록") : t("기록")} scoreText={t("{0} / {1} 도달", (reached.length), KNIGHT_BO_TOTAL)}
       rounds={rounds.map((r, i) => ({ result: r.winner === "w" ? "me" : "opp", label: "R" + (i + 1), detail: r.mine && r.mine.reached ? t("{0}수", (r.mine.moves)) : t("실패") }))}
       stats={knightResultStats(rounds.map((r) => r.mine))}
-      note={best.prev ? t("이전 최고 기록 {0}회 도달 · {1}초", best.prev.reached, (best.prev.ms / 1000).toFixed(1)) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
+      note={best.prev ? t("이전 최고 기록 {0}회 도달, {1}초", best.prev.reached, (best.prev.ms / 1000).toFixed(1)) : t("첫 기록")} onExit={onExit} onRematch={onRematch} />;
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={reached.length} oppLabel={null} center={t("{0} / {1} 라운드 · 혼자 플레이", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
+      <MinigameScoreHeader myScore={reached.length} oppLabel={null} center={t("{0} / {1} 라운드, 혼자 플레이", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={idx} round={round} onRoundDone={onRoundDone} solo /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -2708,11 +2708,11 @@ function CoordRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title={t("좌표 인지 게임")} gameType={COORD_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="coord_forfeit"
       rules={<>
-        <div>{tx("• 무작위 좌표가 뜨면 {0} 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리", <b style={{ color: T.ink }}>{t("상대보다 먼저")}</b>)}</div>
-        <div>{t("• 오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속")}</div>
-        <div>{tx("• 혼자 플레이는 {0}. 난이도 하(×1) · 중(좌표 없음, ×2) · 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율", <b style={{ color: T.ink }}>{t("30초 타임어택")}</b>)}</div>
+        <div>{tx("무작위 좌표가 뜨면 {0} 그 칸 클릭. 15라운드 동안 더 많이 맞힌 쪽 승리", <b style={{ color: T.ink }}>{t("상대보다 먼저")}</b>)}</div>
+        <div>{t("오답은 라운드가 끝나지 않음. 누군가 맞힐 때까지 계속")}</div>
+        <div>{tx("혼자 플레이는 {0}. 난이도 하(×1), 중(좌표 없음, ×2), 상(좌표 없음 + 흑 시점, ×3), 기록은 맞힌 개수 × 배율", <b style={{ color: T.ink }}>{t("30초 타임어택")}</b>)}</div>
       </>}
-      soloSub={loadMinigameBest("coord") == null ? t("30초 타임어택 · 난이도 3단계") : t("30초 · 난이도 3단계 · 최고 {0}점", loadMinigameBest("coord"))} botSub={t("15라운드")}
+      soloSub={loadMinigameBest("coord") == null ? t("30초 타임어택, 난이도 3단계") : t("30초, 난이도 3단계, 최고 {0}점", loadMinigameBest("coord"))} botSub={t("15라운드")}
       renderPvp={(p) => <CoordRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <CoordRaceBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <CoordSoloEntry runKey={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
@@ -2723,13 +2723,13 @@ function KnightRaceGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title={t("나이트 레이스")} gameType={KNIGHT_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="knight_forfeit"
       rules={<>
-        <div>{tx("• 나이트로 목표 칸(★) 도달. {0}로 도착한 쪽이 라운드 승리, 같으면 {1} 도착한 쪽. 둘 다 못 가면 {2}, 거리도 같으면 {3} 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승", <b style={{ color: T.ink }}>{t("더 적은 수")}</b>, <b style={{ color: T.ink }}>{t("더 빨리")}</b>, <b style={{ color: T.ink }}>{t("목표에 더 가까운 쪽")}</b>, <b style={{ color: T.ink }}>{t("시간을 덜 쓴 쪽")}</b>)}</div>
-        <div>{tx("• 1·2라운드는 방해 기물 없음. {0}, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘", <b style={{ color: T.ink }}>{t("3라운드부터 상대 기물 등장")}</b>)}</div>
-        <div>• {tx("{0}. 가장 어려운 라운드", <b style={{ color: T.ink }}>{t("7라운드에는 상대 퀸 등장")}</b>)}</div>
-        <div>• {tx("{0}. 잡힌 쪽은 라운드 종료", <b style={{ color: T.ink }}>{t("상대 나이트 칸으로 이동하면 상대 나이트를 잡음")}</b>)}</div>
-        <div>{tx("• 혼자 플레이는 7라운드를 모두 풀어 {0}으로 기록 도전", <b style={{ color: T.ink }}>{t("도달 횟수와 시간")}</b>)}</div>
+        <div>{tx("나이트로 목표 칸(★) 도달. {0}로 도착한 쪽이 라운드 승리, 같으면 {1} 도착한 쪽. 둘 다 못 가면 {2}, 거리도 같으면 {3} 승리. 제한시간은 10초에서 라운드마다 +2.5초, 7전 4선승", <b style={{ color: T.ink }}>{t("더 적은 수")}</b>, <b style={{ color: T.ink }}>{t("더 빨리")}</b>, <b style={{ color: T.ink }}>{t("목표에 더 가까운 쪽")}</b>, <b style={{ color: T.ink }}>{t("시간을 덜 쓴 쪽")}</b>)}</div>
+        <div>{tx("1·2라운드는 방해 기물 없음. {0}, 라운드마다 증가. 상대 기물 칸에 도달하면 그 기물을 잡음. 상대가 지배하는 칸에 들어가면 내 나이트가 잡혀 라운드 종료. 공격선은 실제 체스처럼 다른 기물에 막힘", <b style={{ color: T.ink }}>{t("3라운드부터 상대 기물 등장")}</b>)}</div>
+        <div>{tx("{0}. 가장 어려운 라운드", <b style={{ color: T.ink }}>{t("7라운드에는 상대 퀸 등장")}</b>)}</div>
+        <div>{tx("{0}. 잡힌 쪽은 라운드 종료", <b style={{ color: T.ink }}>{t("상대 나이트 칸으로 이동하면 상대 나이트를 잡음")}</b>)}</div>
+        <div>{tx("혼자 플레이는 7라운드를 모두 풀어 {0}으로 기록 도전", <b style={{ color: T.ink }}>{t("도달 횟수와 시간")}</b>)}</div>
       </>}
-      soloSub={best ? t("7라운드 · 최고 {0}회", best.reached) : t("7라운드 기록 도전")} botSub={t("7전 4선승")}
+      soloSub={best ? t("7라운드, 최고 {0}회", best.reached) : t("7라운드 기록 도전")} botSub={t("7전 4선승")}
       renderPvp={(p) => <KnightRaceBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <KnightRaceBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <KnightSoloBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
@@ -3105,7 +3105,7 @@ function KnightRaceRound({ game, myUid, roundIdx, round, onGameUpdate, revealed 
   const roundResult = round.winner && revealed ? (round.winner === myColor ? "me" : round.winner === "draw" ? "draw" : "opp") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0} · 상대 {1}", <b style={{ color: T.brassHi }}>{movesUsed}</b>, oppMovesUsed)}</MgInfoStrip>
+      <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0}, 상대 {1}", <b style={{ color: T.brassHi }}>{movesUsed}</b>, oppMovesUsed)}</MgInfoStrip>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
@@ -3291,7 +3291,7 @@ function KnightRaceBotRound({ round, onRoundDone, solo }) {
   const roundResult = winner && winner !== "pending" ? (winner === "w" ? "me" : winner === "b" ? "opp" : "draw") : null;
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0}", <b style={{ color: T.brassHi }}>{movesUsed}</b>)}{solo ? "" : t(" · 봇 {0}", botMovesUsed)}</MgInfoStrip>
+      <MgInfoStrip sec={Math.max(0, Math.ceil(timeLeftMs / 1000))} low={timePct < 0.25}>{tx("내 수 {0}", <b style={{ color: T.brassHi }}>{movesUsed}</b>)}{solo ? "" : t(", 봇 {0}", botMovesUsed)}</MgInfoStrip>
       <MinigameTimeBar pct={timePct} />
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={shakeControls} style={{ position: "relative" }}>
@@ -3353,7 +3353,7 @@ function KnightRaceBotBoard({ onExit, onStatusChange, onRematch }) {
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / {1} 라운드 · 4선승", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
+      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / {1} 라운드, 4선승", (Math.max(1, rounds.length)), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === "w" ? "me" : r.winner === "b" ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceBotRound key={roundIdx} round={round} onRoundDone={onRoundDone} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -3425,7 +3425,7 @@ function KnightRaceBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / {1} 라운드 · 4선승", (roundIdx + 1), KNIGHT_BO_TOTAL)} />
+      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / {1} 라운드, 4선승", (roundIdx + 1), KNIGHT_BO_TOTAL)} />
       <MinigameScorePips results={rounds.map((r) => r.winner === (isWhite ? "w" : "b") ? "me" : r.winner === (isWhite ? "b" : "w") ? "opp" : r.winner === "draw" ? "draw" : null)} total={KNIGHT_BO_TOTAL} />
       {round ? <KnightRaceRound key={roundIdx} game={game} myUid={myUid} roundIdx={roundIdx} round={round} onGameUpdate={setGame} revealed={revealed} /> : <div style={{ textAlign: "center", padding: "20px 0" }}><PendingDots size={12} /></div>}
     </div>
@@ -3658,10 +3658,10 @@ function RushToolbar({ p }) {
 function RushRules({ compact }) {
   return (
     <div style={{ textAlign: "left", fontSize: 11.5, lineHeight: 1.6, color: "rgba(90,58,34,.82)", padding: compact ? 0 : "10px 12px", borderRadius: 10, background: compact ? "transparent" : "rgba(255,255,255,.45)", border: compact ? "none" : "1px solid rgba(150,112,58,.33)" }}>
-      <div>• {tx("{0}을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트", <b style={{ color: MG_GOLD }}>{t("왕관 표시 룩")}</b>)}</div>
-      <div>{tx("• 다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 {0}으로 상대 기물 유인 가능", <b style={{ color: T.ink }}>{t("희생")}</b>)}</div>
-      <div>{tx("• 상대 기물은 정지 상태. {0}이 공격 범위에 들어오면 잡으러 옴", <b style={{ color: T.ink }}>{t("방금 움직인 내 기물")}</b>)}</div>
-      <div>{tx("• 주인공 룩이 {0}에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가", <b style={{ color: "#F4B2A6" }}>{t("상대 기물이 지배하는 칸")}</b>)}</div>
+      <div>{tx("{0}을 빼내 상대 백랭크(맨 윗줄)에서 킹 메이트", <b style={{ color: MG_GOLD }}>{t("왕관 표시 룩")}</b>)}</div>
+      <div>{tx("다른 기물은 실제 체스 규칙대로 이동. 길을 비켜 주거나 {0}으로 상대 기물 유인 가능", <b style={{ color: T.ink }}>{t("희생")}</b>)}</div>
+      <div>{tx("상대 기물은 정지 상태. {0}이 공격 범위에 들어오면 잡으러 옴", <b style={{ color: T.ink }}>{t("방금 움직인 내 기물")}</b>)}</div>
+      <div>{tx("주인공 룩이 {0}에 들어가면 즉시 잡혀 라운드 종료 (혼자 풀기는 실패, 다시 풀기). 적은 수로 풀수록 별 증가", <b style={{ color: "#F4B2A6" }}>{t("상대 기물이 지배하는 칸")}</b>)}</div>
     </div>
   );
 }
@@ -3677,8 +3677,8 @@ function RushSoloPlay({ level, onBack, onNext, progress, onRecord }) {
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8, flexShrink: 0 }}>
         <button onClick={onBack} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.85)", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}>{tx("{0}레벨 목록", <ChevronLeft size={14} />)}</button>
-        <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? t(" · 희생") : ""}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>{tx("수 {0} · 목표 {1}수{2}", <b style={{ color: T.ink }}>{p.moves}</b>, level.par, best ? t(" · 최고 {0}", best) : "")}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: diff.color }}>{diff.label} {level.id.slice(1)}{level.lure ? t(", 희생") : ""}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.85)" }}>{tx("수 {0}, 목표 {1}수{2}", <b style={{ color: T.ink }}>{p.moves}</b>, level.par, best ? t(", 최고 {0}", best) : "")}</span>
       </div>
       <div ref={boardFitRef} style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <motion.div animate={p.shakeControls} style={{ position: "relative" }}>
@@ -3768,7 +3768,7 @@ function RushRound({ level, startAt, timeLimitMs, opp, result, roundKey, onDone,
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <MgInfoStrip sec={Math.ceil(left / 1000)} low={left < timeLimitMs * 0.25}>
-        <span>{tx("{0} · 내 수 {1}", <b style={{ color: diff.color }}>{diff.label}</b>, <b style={{ color: T.brassHi }}>{p.moves}</b>)} ·</span>
+        <span>{tx("{0}, 내 수 {1}", <b style={{ color: diff.color }}>{diff.label}</b>, <b style={{ color: T.brassHi }}>{p.moves}</b>)} ·</span>
         {/* (v0.5.7) 상대 진행 — 상대 프로필 사진을 우상단에 단 파란 알약, 상대가 수를 둘 때마다 한 번 톡 튄다. */}
         <motion.span key={"om" + (opp.moves || 0) + (opp.done ? "d" : "")} initial={{ scale: 1.14 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}
           style={{ position: "relative", display: "inline-flex", alignItems: "center", padding: oppInfo ? "2px 20px 2px 8px" : "2px 8px", borderRadius: 999, background: "rgba(111,168,220,.2)", border: "1px solid rgba(111,168,220,.7)", color: "#CFE6FA" }}>
@@ -3879,7 +3879,7 @@ function RushBotBoard({ onExit, onStatusChange, onRematch }) {
   }
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / 3 라운드 · 2선승", (Math.max(1, rounds.length)))} />
+      <MinigameScoreHeader myScore={myWins} oppScore={botWins} oppLabel={t("봇")} center={t("{0} / 3 라운드, 2선승", (Math.max(1, rounds.length)))} />
       {round && <RushRound key={idx} level={round.level} startAt={round.startAt} timeLimitMs={RUSH_ROUND_MS} roundKey={idx} result={round.winner}
         opp={{ label: t("봇"), moves: round.bot ? round.bot.moves : round.botMoves, solved: round.bot && round.bot.solved, done: !!round.bot }} onDone={onDone} />}
     </div>
@@ -3938,7 +3938,7 @@ function RushPvpBoard({ game: initialGame, myUid, onExit, onStatusChange }) {
   const oppProg = round && round.progress && round.progress[opp];
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / 3 라운드 · 2선승", (idx + 1))} />
+      <MinigameScoreHeader myScore={myWins} oppScore={oppWins} oppLabel={t("상대")} center={t("{0} / 3 라운드, 2선승", (idx + 1))} />
       {round ? <RushPvpRoundWrap key={idx} round={round} idx={idx} gameId={game.id} onDone={onDone}
         result={round.winner ? (round.winner === me ? "me" : round.winner === opp ? "opp" : "draw") : null}
         opp={{ label: t("상대"), moves: oppRep ? oppRep.moves : (oppProg && oppProg.moves) || 0, solved: !!(oppRep && oppRep.solved), done: !!oppRep }} />
@@ -3968,7 +3968,7 @@ function RushHourGame({ myUid, onExit, onOpenProfile, initialGame }) {
   return (
     <MinigameHub title={t("백랭크 러시아워")} gameType={RUSH_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="rush_forfeit"
       rules={<RushRules compact />} soloScroll
-      soloSub={t("{0}레벨 · ★{1}", (RUSH_LEVELS.length), stars)} botSub={t("3라운드 2선승")}
+      soloSub={t("{0}레벨, ★{1}", (RUSH_LEVELS.length), stars)} botSub={t("3라운드 2선승")}
       renderPvp={(p) => <RushPvpBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
       renderBot={(p) => <RushBotBoard key={p.runKey} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />}
       renderSolo={(p) => <RushSoloHub key={p.runKey} />} />
@@ -4402,7 +4402,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
               <motion.div key={current.key} initial={{ y: -8, opacity: 0, scale: 0.9 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ type: "spring", stiffness: 420, damping: 24 }}
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
                 <AttackGradeBadge grade={current.g} />
-                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{tx("{0} 차례 · {1}수 안에 메이트", pos.fen.split(" ")[1] === "w" ? t("백") : t("흑"), pos.mateIn)}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{tx("{0} 차례, {1}수 안에 메이트", pos.fen.split(" ")[1] === "w" ? t("백") : t("흑"), pos.mateIn)}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
               </motion.div>
             )}
@@ -4664,7 +4664,7 @@ function AttackDevPanel({ pool, onChanged }) {
               {pool.dev.map((p) => (
                 <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
                   <AttackGradeBadge grade={attackGradeOfMate(p.mateIn)} />
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src} · {p.fen}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src}, {p.fen}</span>
                   <button onClick={() => remove(p)} className="press" aria-label={t("삭제")} style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
                 </div>
               ))}
@@ -4681,19 +4681,19 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
   return (
     <MinigameHub title={t("무한 체크메이트 게임")} gameType={ATTACK_GAME_TYPE} myUid={myUid} onExit={onExit} onOpenProfile={onOpenProfile} initialGame={initialGame} forfeitRpc="attack_forfeit"
       rules={<>
-        <div>• {tx("{0} 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리", <b style={{ color: T.ink }}>{t("3분")}</b>)}</div>
-        <div>{t("• 한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동")}</div>
-        <div>{tx("• 짧은 메이트일수록 좋은 등급. {0}이 좋은 등급을 받을 확률이 높음", <b style={{ color: T.ink }}>{t("퍼즐 레이팅이 낮은 쪽")}</b>)}</div>
-        <div>{t("• 동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리")}</div>
+        <div>{tx("{0} 동안 강제 체크메이트 포지션(공격 기회)이 계속 주어짐. 더 많이 성공시킨 쪽 승리", <b style={{ color: T.ink }}>{t("3분")}</b>)}</div>
+        <div>{t("한 수라도 틀리면 그 기회는 실패, 바로 다음 기회로 이동")}</div>
+        <div>{tx("짧은 메이트일수록 좋은 등급. {0}이 좋은 등급을 받을 확률이 높음", <b style={{ color: T.ink }}>{t("퍼즐 레이팅이 낮은 쪽")}</b>)}</div>
+        <div>{t("동점이면 긴 메이트(4수 이상 → 3수 → 2수 → 1수) 성공 수부터 비교, 그래도 같으면 레이팅이 높은 쪽 승리")}</div>
       </>}
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? " · " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? ", " + counts[i] : ""}</span>
           ))}
         </div>
       }
-      soloSub={loadMinigameBest("attack") == null ? t("3분 기록 도전") : t("3분 · 최고 {0}회", loadMinigameBest("attack"))} botSub={t("내 레이팅 {0}", myRating || 800)}
+      soloSub={loadMinigameBest("attack") == null ? t("3분 기록 도전") : t("3분, 최고 {0}회", loadMinigameBest("attack"))} botSub={t("내 레이팅 {0}", myRating || 800)}
       botOptions={ATTACK_BOTS.map((b) => ({ ...b, sub: t("레이팅 {0}", b.rating) }))}
       footer={canEditContent ? <AttackDevPanel pool={pool} onChanged={reloadPool} /> : null}
       renderPvp={(p) => <AttackPvpBoard key={p.runKey} game={p.game} myUid={myUid} onExit={p.onExit} onStatusChange={p.onStatusChange} />}
@@ -5375,7 +5375,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 있든 항상 뜨도록) — 이 페이지 안에서 별도로 그리지 않는다. */}
             {/* (v0.4.3 UI 개편) 사용자 요청(스케치 제공) — "봇/실시간" 탭과 "랜덤 매칭/친구와 플레이" 탭을
                 없애고, 타임 컨트롤을 4개 카테고리(불렛·블리츠·래피드·스탠다드) 3×4 그리드로 고른 뒤 곧장
-                "대국 상대 찾기"(랜덤 매칭) · "봇과 플레이하기" · "친구와 플레이하기" 세 가지 중 하나를
+                "대국 상대 찾기"(랜덤 매칭), "봇과 플레이하기", "친구와 플레이하기" 세 가지 중 하나를
                 누르는 한 화면으로 합쳤다. "봇과 플레이하기"만 진영·봇 등급을 더 골라야 해서 그때만
                 setupPhase가 "bot"으로 넘어간다. */}
             {setupPhase === "choose" ? (

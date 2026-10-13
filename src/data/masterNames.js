@@ -10,7 +10,8 @@ import { dbPlayerName } from "./playerNames.js";
 
 const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim();
 const splitName = (raw) => { const s = String(raw || "").replace(/\s+/g, " ").trim(), i = s.indexOf(","); return i >= 0 ? [s.slice(0, i).trim(), s.slice(i + 1).trim()] : (() => { const t = s.split(" "); return t.length > 1 ? [t[0], t.slice(1).join(" ")] : [s, ""]; })(); };
-const keyOf = (raw) => { const [sur, giv] = splitName(raw); return norm(sur) + "|" + norm(giv).slice(0, 1); };
+// (v0.6.6) 성의 공백·하이픈 차이를 없앤다 — DB "Vachier Lagrave, M"과 FIDE "Vachier-Lagrave, Maxime"가 같은 키가 되어 국적(FRA)을 찾는다.
+const keyOf = (raw) => { const [sur, giv] = splitName(raw); return norm(sur).replace(/ /g, "") + "|" + norm(giv).slice(0, 1); };
 const BY_KEY = (() => { const m = new Map(); for (const [name, v] of Object.entries(KO.names)) { const k = keyOf(name); if (!m.has(k)) m.set(k, v[0]); } return m; })();
 
 export function masterName(raw, lang) {

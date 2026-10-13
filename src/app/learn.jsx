@@ -1,7 +1,15 @@
 // (v0.6.0, App.jsx 분할) 'learn' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor } from "../lib/lichessApi.js";
-import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
+import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
+import { fullPlayerName } from "../lib/masterFullName.js";
+import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { rankMasterMatches } from "../lib/masterNameSearch.js";
+import { StatsViewToggle } from "../components/statsViewToggle.jsx";
+import { profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
+import { masterFlag } from "../data/masterNames.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
+import { tournamentOfEvent } from "../lib/eventLink.js";
 import { SB_ON, sbSelect, sbInsert, sbRpc, sbPatch, sbDelete } from "../lib/supabaseClient.js";
 import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgnGames, parsePgnGameForImport } from "../lib/pgn.js";
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
@@ -12,7 +20,7 @@ import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { fmtEvalCp, matePliesOf, ownPriorMoveWasSacrifice, gradeMoveKind, isSacrifice } from "../lib/moveQuality.js";
-import { KeywordScroll, KW } from "../components/keywordScroll.jsx";
+import { KeywordScroll, MarqueeText, KW } from "../components/keywordScroll.jsx";
 import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
@@ -33,9 +41,12 @@ async function lichessFetchText(url) {
 // 실제로 내려주는 최대치(15개)까지 가져와, 화면에서는 페이지를 넘기며(+ 정렬) 볼 수 있게 한다.
 async function fetchMasterTopGames(sans, count = 15) {
   const uci = sansToUci(sans).join(",");
-  const url = LICHESS_API + "?master=1&play=" + uci + "&moves=0&topGames=" + count;
+  // (v0.6.6) moves=12 — 같은 요청으로 이 포지션의 마스터 DB 전체 승·무·패와 많이 둔 다음 수 통계도 받는다(집중 분석 마스터 통계 요약).
+  const url = LICHESS_API + "?master=1&play=" + uci + "&moves=12&topGames=" + count;
   const j = await lichessFetchJson(url);
-  return (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year }));
+  const games = (j.topGames || []).map((g) => ({ id: g.id, winner: g.winner || null, white: g.white, black: g.black, year: g.year, date: /^\d{4}-\d\d$/.test(g.month || "") ? g.month.replace("-", ".") : null }));   // Lichess는 월(month)까지 준다
+  const stats = { white: j.white || 0, draws: j.draws || 0, black: j.black || 0, moves: (j.moves || []).map((m) => ({ san: m.san, white: m.white || 0, draws: m.draws || 0, black: m.black || 0, avg: m.averageRating || null })) };
+  return { games, stats };
 }
 // (v0.2.3 기능) 개발자가 수동으로 추가한 마스터 대국(master_games_dev) — Lichess 마스터 DB에 없는
 // 유명 대국을 보충한다. sans(그 대국의 전체 SAN 배열)가 지금 보고 있는 수순을 접두사로 포함하는
@@ -64,13 +75,22 @@ async function fetchDevMasterGames(sans) {
 // Lichess 마스터 DB + 개발자 추가분 + 외부 정적 데이터를 한 목록으로 합친다 —
 // 화면(FocusPanel)에서 출처를 구분하지 않는다.
 async function fetchAllMasterGames(sans, count = 15) {
-  const [lichess, dev, staticData] = await Promise.all([
-    fetchMasterTopGames(sans, count).catch(() => []),
+  const [lichessRes, dev, staticData] = await Promise.all([
+    fetchMasterTopGames(sans, count).catch(() => ({ games: [], stats: null })),
     fetchDevMasterGames(sans).catch(() => []),
     loadMasterGameData(),
   ]);
+  // (v0.6.6) 정적 DB는 접두사 색인으로 이 포지션 이후의 모든 대국을 상한 없이 가져온다(staticMasterGamesFor). Lichess 대표 대국(최대 15판)·개발자 추가분은
+  // 정적 DB와 같은 대국(두 선수·연도·결과가 같음)일 때만 빼고 합친다 — 정적 DB 안의 대국끼리는 절대 합치지 않는다(같은 두 선수가 한 해에 여러 번 둘 수 있음).
+  const gameKey = (g) => normalizePlayerKey(g.white && g.white.name) + "|" + normalizePlayerKey(g.black && g.black.name) + "|" + (g.year || "") + "|" + (g.winner || "d");
   const staticGames = staticMasterGamesFor(sans, staticData);
-  return [...dev, ...staticGames, ...lichess];
+  const inStatic = new Set(staticGames.map(gameKey));
+  // (v0.6.6, 사용자 요청) Lichess 대표 대국은 대회 정보가 없어 마스터 통계 목록에서 뺀다(통계 숫자만 Lichess 집계를 쓴다).
+  const games = staticGames;   // (v0.6.6, 사용자 요청) 개발자가 직접 추가한 대국도 대회 정보가 없어 마스터 통계에서 뺀다
+  // 통계: Lichess 마스터 DB 전체 집계가 있으면 그것(표본 최대), 없으면 정적 DB 전체에서 직접 센다(오프라인·Lichess 장애 때도 동작).
+  const ls = lichessRes.stats, lichessOk = ls && ls.white + ls.draws + ls.black > 0;
+  const stats = lichessOk ? ls : (staticData ? staticMasterStatsFor(sans, staticData) : null);
+  return { games, stats };
 }
 async function addDevMasterGame({ whiteName, whiteRating, blackName, blackRating, year, pgn, sans, result }) {
   await sbInsert("master_games_dev", {
@@ -130,11 +150,6 @@ function explainFor(sans) {
   const n = snapNode(sans);
   if (n && n.opening) return t("{0} 정석 이론대로 전개되는 라인", (n.opening.name));
   return null;
-}
-function explainMove(sans, san) {
-  const mk = sans.join(" ") + "|" + san;
-  if (CONTENT.explains[mk]) return CONTENT.explains[mk];
-  return explainFor([...sans, san]) || explainFor(sans);
 }
 /* ============================================================ 퍼즐: 실수 응징 시퀀스 ============================================================ */
 /* key = "<경로 SAN 공백연결>|<실수 SAN>" ; line = 실수 이후 수순(첫 수가 응징하는 쪽) */
@@ -789,12 +804,13 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
-              <div style={{ marginBottom: 6 }}><KeywordScroll kws={kws} /></div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              {/* (v0.6.6, 사용자 요청) 현재 수 블록과 높이·위치를 통일 — 키워드(최상단, 고정 높이) / 수 + 평가치 / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
+              {kws.length > 0 && <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={kws} /></div>}   {/* 키워드·이름이 없는 수는 그 줄을 빼 블록이 그만큼 낮아진다 */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply, startColor)}{m.disp || m.san}</span>
-                {m.name ? <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, wordBreak: "keep-all" }}>{m.name}</span> : m.isMain ? <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Main Line</span> : null}
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? t("이론") : "…")}</span>
               </div>
+              {(m.name || m.isMain) && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || "Main Line"}</MarqueeText>}
             </div>
             {!hideFocus && (
               <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
@@ -826,6 +842,15 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
 const Q_MASCOT = { brilliant: ["kokoa", "celebrate"], best: ["milku", "great"], excellent: ["milku", "wink"], good: ["milku", "great"], book: ["milku", "wink"], only: ["milku", "surprise"], pending: ["milku", "think"], inaccuracy: ["kokoa", "think"], miss: ["kokoa", "surprise"], mistake: ["kokoa", "surprise"], blunder: ["kokoa", "angry"] };
 function mascotForKind(kind) { return Q_MASCOT[kind] || ["milku", "great"]; }
 /* ============================================================ 병합 훅 (Lichess 우선 + 사용자 착수 블록 + 백관점 평가) ============================================================ */
+// (v0.6.6, 사용자 요청: 분석 탭에서 수를 둘 때 렉 완화) 엔진이 depth마다 보내는 평가·라인 갱신을 최대 ~8회/초로 묶는다 — 갱신 하나마다 분석 탭 전체(3,500줄 컴포넌트)가
+// 다시 그려져, 수를 둔 직후 엔진이 depth를 쏟아낼 때 입력이 끊겼다. 마지막 값은 반드시 반영(trailing)하고, cancel()로 대기 중인 갱신을 버릴 수 있다(확정 결과가 먼저 들어간 뒤 옛 값이 덮지 않게).
+function throttled(fn, ms) {
+  let last = 0, timer = null, pend, has = false;
+  const run = () => { timer = null; last = performance.now(); if (has) { has = false; const a = pend; pend = undefined; fn(a); } };
+  const f = (a) => { pend = a; has = true; const w = ms - (performance.now() - last); if (w <= 0) run(); else if (!timer) timer = setTimeout(run, w); };
+  f.cancel = () => { if (timer) clearTimeout(timer); timer = null; has = false; pend = undefined; };
+  return f;
+}
 function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortBy) {
   const node = snapNode(sans);
   const key = sans.join(" ");
@@ -900,6 +925,24 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   const [masterEmpty, setMasterEmpty] = useState(false); // 마스터 기보가 실제로 없는 경우(엔진 추천 허용)
   const extraKey = (extraSans || []).join(",");
   const isMaster = mode === "master";
+  // (v0.6.6, 사용자 요청) 엔진이 되살아났을 때(상태가 ready로 돌아옴)·라인 계산이 한참 멈춰 있을 때 이 포지션의 엔진 계산 캐시를 비우고 다시 시작한다.
+  //  안전장치 1) 엔진 워치독(shell.jsx useEngine)이 워커를 다시 띄우면 status가 바뀌므로, 비어 있는 채로 캐시된 옛 결과를 버리고 처음부터 다시 계산한다.
+  //  안전장치 2) 5초마다 점검 — 계산 중 표시(linesPending)가 15초 넘게 같은 depth에서 안 움직이면 캐시를 비우고(kick) 계산을 다시 건다.
+  const [kick, setKick] = useState(0);
+  useEffect(() => { posCacheRef.current = { key: null, multiPromise: null, live: new Map() }; }, [engine.status]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const watchRef = useRef({ pending: false, depth: null, since: Date.now(), ready: false });
+  watchRef.current.pending = linesPending; watchRef.current.ready = !!liveOn && engine.status === "ready";
+  useEffect(() => {
+    const w = watchRef.current;
+    if (w.depth !== curDepth || !linesPending) { w.depth = curDepth; w.since = Date.now(); }
+  }, [curDepth, linesPending, key]);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const w = watchRef.current;
+      if (w.ready && w.pending && Date.now() - w.since > 15000) { w.since = Date.now(); posCacheRef.current = { key: null, multiPromise: null, live: new Map() }; setKick((k) => k + 1); }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1084,7 +1127,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         try {
           return {
             ev: pv.mate != null ? { mate: pv.mate * baseWhite, win: (pv.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(pv.mate) } : { cp: pv.cp * baseWhite },
-            sans: pvUciToSans(sans, pv.pv, 15),
+            sans: pvUciToSans(sans, pv.pv, pv.depth || 0),   // (v0.6.6, 사용자 요청) 수순 길이 = 지금 도달한 depth(예전엔 15수 고정)
           };
         } catch { return null; }
       }).filter((l) => l && l.sans && l.sans.length)).slice(0, 3);
@@ -1109,6 +1152,10 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         if (Object.keys(evBy).length) setMoves((prev) => prev.map((m) => { const hit = evBy[stripSuffix(m.san)]; return hit ? { ...m, live: hit } : m; }));
       };
       const streamLines = (raw) => { if (livePoolRef.current.unmounted || posCacheRef.current.key !== key) return; const l = toLines3(raw); if (l.length) setEngineLines(l); applyDepthEvals(raw); };
+      if (!cache.thr) cache.thr = [];
+      const mkThr = (fn) => { const f = throttled(fn, 120); cache.thr.push(f); return f; };
+      const cancelThr = () => cache.thr.forEach((f) => f.cancel());
+      const thrP = mkThr(onEvalProgress), thrS = mkThr(streamLines);
       // (v0.2.4) depth 16→20, MultiPV 10→7 — movetime(700ms) 체감 속도는 그대로 유지한다.
       // (기능) 사용자 요청으로 MultiPV를 7→5로 더 낮춘다 — 순위가 늘어날수록 노드당 비용이 커져
       // 목표 depth에 도달하기 더 어려워지므로, 후보 수 보충(아래)에 필요한 최소치만 남긴다.
@@ -1119,10 +1166,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // depth보다 훨씬 큰 값(MAX_SEARCH_DEPTH)을 넘겨 사실상 "무제한"으로 취급한다 — 각 단계를 실제로
       // 멈추는 건 depth가 아니라 movetime(아래 세 단계의 시간 상한)이므로, 주어진 시간 안에서 depth가
       // 끝까지(더 이상 못 깊어질 때까지) 계속 늘어난다.
-      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, onEvalProgress, streamLines, "learn-lines");
+      if (!cache.multiPromise) cache.multiPromise = engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 700, thrP, thrS, "learn-lines");
       const pvsAll = await cache.multiPromise;
       if (cancelled) return;
       if (!pvsAll || !pvsAll.length) { setLinesPending(false); return; } // 엔진이 이 포지션을 평가하지 못했다 — "계산 중" 표시가 영영 안 꺼지지 않도록 여기서도 해제
+      cancelThr();   // 확정 결과가 먼저 들어간 뒤 대기 중이던 옛 스트리밍 값이 덮어쓰지 않게
       const p0 = pvsAll[0];
       setPosEval(p0 && (p0.mate != null || p0.cp != null) ? mkPosEval(p0) : null);
       // (v0.2.1 버그) 스트리밍뿐 아니라 최종 확정 결과도 dedupe해, 같은 첫 수가 겹치는 라인이 남지 않게 한다.
@@ -1142,8 +1190,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       // 남겨 심화 탐색이 한 포지션당 한 번만 시작되게 한다.
       if (cache.extraKey !== key) {
         cache.extraKey = key;
-        engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, onEvalProgress, streamLines, "learn-lines").then((deepPvs) => {
+        engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 5000, thrP, thrS, "learn-lines").then((deepPvs) => {
           if (posCacheRef.current.key !== key || !deepPvs || !deepPvs.length) return;
+          cancelThr();
           setPosEval(mkPosEval(deepPvs[0]));
           const deepLines = toLines3(deepPvs);
           setEngineLines(deepLines);
@@ -1158,8 +1207,9 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
           // extraKey와 별개인 thirdKey로 한 포지션당 정확히 한 번만 시작되게 가드한다.
           if (cache.thirdKey !== key) {
             cache.thirdKey = key;
-            engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 20000, onEvalProgress, streamLines, "learn-lines").then((deeperPvs) => {
+            engine.evaluateMulti(sansToFen(sans), MAX_SEARCH_DEPTH, 5, 20000, thrP, thrS, "learn-lines").then((deeperPvs) => {
               if (posCacheRef.current.key !== key || !deeperPvs || !deeperPvs.length) return;
+              cancelThr();
               setPosEval(mkPosEval(deeperPvs[0]));
               const deeperLines = toLines3(deeperPvs);
               setEngineLines(deeperLines);
@@ -1261,9 +1311,15 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
             // 캐시된 Promise를 만든 워커가 이미 terminate됐다면(다시는 bestmove가 안 옴) 그 낡은
             // Promise를 계속 기다리는 대신 버리고 지금 풀로 재요청해야, 이 수의 평가가 영영 안
             // 뜨는 채로 멈추지 않는다.
-            const cached = cache.live.get(san);
-            if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
-            const ev = await cache.live.get(san).promise;
+            // (v0.6.6 버그 수정) 수 블록의 아이콘·평가치가 가끔 영영 안 뜨던 문제 — 엔진이 시간 초과 등으로 null을 돌려주면 그 null Promise가 캐시에 남아 이후 재실행도
+            // 같은 null을 그대로 받아, 그 수는 평가를 다시 요청하지 못했다. 실패하면 캐시를 지우고 최대 3번까지 다시 요청한다.
+            let ev = null;
+            for (let attempt = 0; attempt < 3 && !ev && !cancelled; attempt++) {
+              const cached = cache.live.get(san);
+              if (!cached || cached.epoch !== epoch) cache.live.set(san, { epoch, promise: w.evaluate(sansToFen([...sans, san]), 15, onMoveProgress, 700) });
+              ev = await cache.live.get(san).promise;
+              if (!ev) cache.live.delete(san);
+            }
             if (cancelled || !ev) continue;
             setMoves((prev) => prev.map((x) => x.san === san ? { ...x, live: mkLive(ev) } : x));
           }
@@ -1272,7 +1328,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       }
     })();
     return () => { cancelled = true; };
-  }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty]);
+  }, [key, liveOn, engine.status, moves.length, isMaster, masterEmpty, kick]);
 
   const statMountedRef = useRef(true);
   useEffect(() => () => { statMountedRef.current = false; }, []);
@@ -1479,14 +1535,12 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const isUnderpromo = /=/.test(san) && !/=Q/.test(san);
   const extraArrows = active && kind === "brilliant" && !isUnderpromo ? brilliantArrows(sans, san) : [];
   const mkKey = active ? sansKey + "|" + san : "";
-  const explain = active ? explainMove(sans, san) : null;
-  const [showExpl, setShowExpl] = useState(false);
   const [devEdit, setDevEdit] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [kwDraft, setKwDraft] = useState([]);
   const [addedTheory, setAddedTheory] = useState(false);
   // 집중분석 대상 수가 바뀌면(=예전엔 FocusMode가 다시 마운트되던 상황) 이전 수의 편집 UI 상태를 초기화한다.
-  useEffect(() => { if (!active) return; setShowExpl(false); setDevEdit(false); setNameDraft(""); setKwDraft([]); setAddedTheory(false); }, [active, sansKey, san]);
+  useEffect(() => { if (!active) return; setDevEdit(false); setNameDraft(""); setKwDraft([]); setAddedTheory(false); }, [active, sansKey, san]);
   const isPunishable = active && ["mistake", "blunder"].includes(kind);
   const curated = isPunishable ? punishFor(sans, san) : null;
   const stats = active && chesscom && chesscom.status === "ready" ? chesscom.analyze([...sans, san], { excludeBullet: true }) : null;
@@ -1508,61 +1562,6 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   };
   const toggleUnbook = async () => { const k = editKey + "|" + stripSuffix(san); if (CONTENT.unbook[k]) delete CONTENT.unbook[k]; else CONTENT.unbook[k] = true; await bumpContent(); };
   const toggleKw = (kw) => setKwDraft((d) => { if (d.includes(kw)) return d.filter((x) => x !== kw); const p = kwPartner(kw); return [...d.filter((x) => x !== p), kw]; });
-  const explainLong = !!explain && explain.length > 90;
-  const [mistakes, setMistakes] = useState([]);
-  const [analyzing, setAnalyzing] = useState(false);   // (UI8) 실수 분석 진행 표시
-  useEffect(() => {
-    setMistakes([]); setAnalyzing(false);
-    if (!active || !engine || engine.status !== "ready" || !stats || !stats.lines || !stats.lines.length) return;
-    let cancelled = false;
-    setAnalyzing(true);
-    (async () => {
-      const base = [...sans, san];
-      // (사용자 요청) 로딩 속도 개선 — 후보 라인(stats.lines)들은 서로 앞부분(접두사)을 공유하는
-      // 경우가 많은데, 예전엔 라인마다 처음부터 다시 평가해 같은 포지션을 몇 번이고 중복 계산했다.
-      // 이번 분석 세션 동안 포지션(FEN) 기준으로 평가를 캐시해 재사용 — 같은 포지션은 딱 한 번만
-      // 엔진에 묻는다(Promise 자체를 캐시해, 아직 계산 중인 포지션도 중복 호출 없이 함께 기다린다).
-      const evalCache = new Map();
-      const evalPos = (sansUpTo) => {
-        const fen = sansToFen(sansUpTo);
-        let p = evalCache.get(fen);
-        if (!p) { p = engine.evaluate(fen, 20, undefined, 5000, "focus-mistakes"); evalCache.set(fen, p); }
-        return p;
-      };
-      const base0 = await evalPos(base);
-      // stats.lines는 이미 빈도(count) 내림차순 — 상위 5개를 이미 확보했는데 다음 라인의 빈도가
-      // 다섯 번째로 확보한 실수보다 낮거나 같다면, 그 이후 어떤 라인도 top-5를 밀어낼 수 없으므로
-      // 더 계산하지 않고 멈춘다(조기 종료로 불필요한 엔진 호출을 더 줄인다).
-      let collected = [];
-      for (const ln of stats.lines) {
-        if (cancelled) return;
-        if (collected.length >= 5 && ln.count <= collected[collected.length - 1].count) break;
-        const full = [...base, ...ln.seq];
-        let prev = base0;
-        for (let i = base.length; i < full.length; i++) {
-          if (cancelled) return;
-          const after = await evalPos(full.slice(0, i + 1));
-          if (!prev || !after) { prev = after; continue; }
-          const moverWhite = i % 2 === 0;
-          const isUser = (moverWhite && ln.color === "w") || (!moverWhite && ln.color === "b");
-          const pcp = prev.mate != null ? (prev.mate > 0 ? 1000 : -1000) : prev.cp;
-          const acp = after.mate != null ? (after.mate > 0 ? 1000 : -1000) : after.cp;
-          const drop = pcp + acp;   // prev=착수자 POV, after=상대 POV → 착수자 손실 = pcp-(-acp)
-          if (isUser && drop >= 100) {
-            collected.push({ seq: full.slice(base.length, i + 1), kind: drop >= 250 ? "blunder" : "inaccuracy", count: ln.count, color: ln.color });
-            collected.sort((a, b) => b.count - a.count);
-            if (collected.length > 5) collected = collected.slice(0, 5);
-            // (사용자 요청) 다 모아서 마지막에 한꺼번에 보여주지 않고, 계산이 끝나는 대로 하나씩 바로 표시한다.
-            if (!cancelled) setMistakes([...collected]);
-            break;
-          }
-          prev = after;
-        }
-      }
-      if (!cancelled) setAnalyzing(false);
-    })();
-    return () => { cancelled = true; setAnalyzing(false); };
-  }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
   // (v0.4.4 개편, 사용자 요청) "집중 분석에서 퍼즐을 만들 때도 바로 퍼즐 카드로 들어가지 말고 퍼즐
   // 마법사 화면으로 이동해야 한다" — 예전엔 여기서 곧장 엔진으로 트리를 만들어 조용히 저장하고
   // (auto:true), 다 되면 "퍼즐 풀기" 버튼이 바로 PuzzleSolver를 열었다. 이제 이 훅은 더 이상 엔진을
@@ -1599,6 +1598,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const isTheory = active && (m.book || addedTheory);
   // 이 수가 실제로 두어진 마스터 대국(대국자/레이팅/결과) — 목록에서 클릭하면 그 대국의 마지막 포지션을 연다.
   const [masterGames, setMasterGames] = useState([]);
+  const [masterStats, setMasterStats] = useState(null);   // (v0.6.6) Lichess 마스터 DB 전체 승·무·패 + 많이 둔 다음 수
   const [loadingMasterGames, setLoadingMasterGames] = useState(false);
   // (버그 수정) fetch가 실패해도(네트워크 오류 등) masterGames가 그냥 빈 배열([])로 남아, "결과가
   // 없다"는 메시지와 "요청이 실패했다"는 상황을 화면에서 구분할 수 없었다 — 별도 에러 상태를 둬서
@@ -1606,20 +1606,19 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const [masterGamesError, setMasterGamesError] = useState(false);
   const [masterRetry, setMasterRetry] = useState(0);
   useEffect(() => {
-    setMasterGames([]); setLoadingMasterGames(false); setMasterGamesError(false);
+    setMasterGames([]); setMasterStats(null); setLoadingMasterGames(false); setMasterGamesError(false);
     if (!active) return;
     let cancelled = false;
     setLoadingMasterGames(true);
-    fetchAllMasterGames([...sans, san]).then((gs) => { if (!cancelled) { setMasterGames(gs); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
+    fetchAllMasterGames([...sans, san]).then((res) => { if (!cancelled) { setMasterGames(res.games); setMasterStats(res.stats); setLoadingMasterGames(false); } }).catch(() => { if (!cancelled) { setLoadingMasterGames(false); setMasterGamesError(true); } });
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
-    active, sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
-    explainLong,
-    showExpl, setShowExpl, editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
-    openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
+    active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
+    openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
-    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
+    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
 }
 // (20차 UI2) 최선 수(연두색+별) 바로가기 버튼 — 누르면 그 대국을 즉시 분석 모드로 연다.
@@ -1736,7 +1735,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         {bulkGames.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>
             {tx("{0}개 대국 인식, {1}", bulkGames.length, <b style={{ color: T.best }}>{tx("{0}개 가져오기 가능", bulkOk.length)}</b>)}
-            {bulkSkipped > 0 && <span style={{ color: T.blunder }}> · {tx("{0}개는 대국자·수순·결과 확인 불가로 제외", bulkSkipped)}</span>}
+            {bulkSkipped > 0 && <span style={{ color: T.blunder }}>, {tx("{0}개는 대국자·수순·결과 확인 불가로 제외", bulkSkipped)}</span>}
           </div>
         )}
         {bulkErr && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{bulkErr}</p>}
@@ -1747,76 +1746,53 @@ function AddMasterGameModal({ onClose, onSaved }) {
     </div>
   );
 }
-// (v0.2.6 버그 수정) 미니보드 하단 콘텐츠(chess.com 통계+마스터 대국 / 다음 수 블록)를 좌우로
-// 드래그하거나 </> 버튼으로 넘기는 2페이지 구성 — 집중분석이 전체화면 오버레이라 다음 수 블록이
-// 화면 아래로 스크롤해도 보이지 않던 문제(특히 모바일)를 해결한다. 휠·트랙패드 스크롤에는 반응하지
-// 않고(overflow가 아니라 transform 기반 캐러셀이라 애초에 스크롤 이벤트를 받지 않음), 오직
-// 드래그와 화살표 버튼으로만 페이지가 넘어간다.
-function FocusBoxPager({ pages }) {
+// (v0.6.6, 사용자 요청) 집중 분석 하단 4페이지(유저 통계·마스터 통계·해설·탐색) — 좌우 스크롤(스냅)로 넘기거나 위의 버튼으로 이동한다.
+//  · 버튼은 화면 위쪽에 붙는(sticky) 줄이다. 누르면 그 페이지로 좌우 스크롤 애니메이션이 재생되고, 동시에 집중 분석 화면을 부드럽게 스크롤해 버튼 줄이 맨 위에 오고 그 페이지 정보가 바로 아래 화면을 채운다.
+//    이미 그 위치(맨 위에 붙은 상태)면 세로 이동은 없고 좌우 스크롤 애니메이션만 재생된다.
+//  · 페이지 높이가 제각각이라 지금 보이는 페이지의 높이로만 감싸는 칸 높이를 맞춘다(ResizeObserver) — 짧은 페이지 아래에 빈 공간이 남지 않게.
+function FocusPages({ labels, pages }) {
   const [idx, setIdx] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const [dragDx, setDragDx] = useState(0);
-  // (버그 수정) flex row(양옆으로 페이지를 늘어놓는 트랙)는 기본적으로 자기 자식 중 가장 키가 큰
-  // 페이지(보통 다음 수 블록 목록)에 맞춰 전체 높이가 정해진다 — 짧은 페이지(chess.com 통계 등)를
-  // 보고 있을 때도 항상 가장 긴 페이지 높이만큼 빈 공간이 아래에 크게 남았다. 각 페이지의 실제
-  // 콘텐츠 높이를 ResizeObserver로 재 두고, 지금 보이는 페이지의 높이로만 바깥 wrapper 높이를
-  // 맞춰(부드러운 트랜지션과 함께) 페이지를 넘길 때마다 자연스럽게 늘었다 줄었다 하게 한다.
   const [heights, setHeights] = useState([]);
-  const wrapRef = useRef(null);
-  const dragRef = useRef(null);
-  const pageRefs = useRef([]);
+  const sectionRef = useRef(null), trackRef = useRef(null), pageRefs = useRef([]), rafRef = useRef(null);
+  const [anchorTop, setAnchorTop] = useState(12);   // 탐색 페이지 첫 수 블록의 위쪽 높이 — 다른 페이지의 첫 블록도 같은 높이에서 시작한다
   const n = pages.length;
-  useEffect(() => { setIdx((i) => Math.min(i, n - 1)); }, [n]);
+  // 페이지가 짧아도 버튼 줄이 항상 화면 맨 위까지 올라올 수 있게 칸 높이를 화면 높이만큼은 확보한다.
+  const minPageH = (typeof window !== "undefined" ? window.innerHeight : 800) - 64;
   useLayoutEffect(() => {
-    const measure = () => setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+    const measure = () => {
+      setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+      const p0 = pageRefs.current[0], an = p0 && p0.querySelector("[data-fp-anchor]");
+      if (p0 && an) { const top = Math.round(an.getBoundingClientRect().top - p0.getBoundingClientRect().top); setAnchorTop((prev) => (prev === top ? prev : top)); }
+    };
     measure();
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
     pageRefs.current.forEach((el) => el && ro.observe(el));
     return () => ro.disconnect();
   }, [pages, n]);
-  if (n <= 1) return pages[0] || null;
-  const goTo = (i) => setIdx(Math.max(0, Math.min(n - 1, i)));
-  // (버그 수정) 정렬·검색·페이지 이동 버튼이 이 드래그 캐러셀 안에 있으면 눌러도 반응하지 않던
-  // 문제 — onPointerDown이 어디를 눌렀든 무조건 setPointerCapture를 걸어, 뒤이어 발생하는 클릭
-  // 이벤트의 타깃이 실제로 누른 버튼이 아니라 이 캡처한 바깥 div로 리다이렉트됐다. 버튼·링크·
-  // 입력창 등 상호작용 요소 위에서 시작한 포인터는 애초에 드래그로 잡지 않도록 건너뛴다.
-  const onPointerDown = (e) => {
-    if (e.target.closest && e.target.closest('button, a, input, select, textarea, [role="button"]')) return;
-    dragRef.current = { x: e.clientX };
-    setDragging(true);
-    if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } }
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+  const scrollParentOf = (el) => { for (let q = el && el.parentElement; q; q = q.parentElement) { const o = getComputedStyle(q).overflowY; if (o === "auto" || o === "scroll") return q; } return null; };
+  const goTo = (i) => {
+    setIdx(i);
+    const tr = trackRef.current; if (!tr) return;
+    tr.scrollTo({ left: i * tr.clientWidth, behavior: "smooth" });
+    const sec = sectionRef.current, sc = scrollParentOf(sec);
+    if (sc && sec) { const top = sc.scrollTop + (sec.getBoundingClientRect().top - sc.getBoundingClientRect().top); if (Math.abs(top - sc.scrollTop) > 1) sc.scrollTo({ top, behavior: "smooth" }); }
   };
-  const onPointerMove = (e) => {
-    if (!dragRef.current) return;
-    setDragDx(e.clientX - dragRef.current.x);
+  // 손가락·휠로 좌우 스크롤이 멈추면 가장 가까운 페이지를 현재 페이지로 맞춘다.
+  const onScroll = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => { const tr = trackRef.current; if (tr && tr.clientWidth) setIdx(Math.max(0, Math.min(n - 1, Math.round(tr.scrollLeft / tr.clientWidth)))); });
   };
-  const endDrag = () => {
-    if (dragRef.current) {
-      const w = (wrapRef.current && wrapRef.current.clientWidth) || 300;
-      const threshold = w * 0.16;
-      if (dragDx < -threshold && idx < n - 1) goTo(idx + 1);
-      else if (dragDx > threshold && idx > 0) goTo(idx - 1);
-    }
-    dragRef.current = null;
-    setDragging(false);
-    setDragDx(0);
-  };
-  const activeHeight = heights[idx];
   return (
-    <div>
-      <div ref={wrapRef} className="no-pan" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-        style={{ overflow: "hidden", touchAction: "pan-y", cursor: dragging ? "grabbing" : "grab", height: activeHeight != null ? activeHeight : "auto", transition: dragging ? "none" : "height .32s cubic-bezier(.22,.9,.32,1)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", transform: "translateX(calc(" + (-idx * 100) + "% + " + dragDx + "px))", transition: dragging ? "none" : "transform .32s " + "cubic-bezier(.22,.9,.32,1)" }}>
-          {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ width: "100%", flexShrink: 0, minWidth: 0 }}>{p}</div>)}
-        </div>
+    <div ref={sectionRef} style={{ marginTop: 12 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
+        {labels.map((lab, i) => (
+          <button key={i} onClick={() => goTo(i)} aria-pressed={idx === i} className="press" style={{ flex: 1, minWidth: 0, padding: "9px 4px", borderRadius: 10, border: "1px solid " + (idx === i ? T.brass : "#5A4630"), background: idx === i ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(0,0,0,.3)", color: idx === i ? "#241509" : T.ivory, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background .2s ease, color .2s ease" }}>{lab}</button>
+        ))}
       </div>
-      <div className="flex items-center justify-center" style={{ gap: 10, marginTop: 8 }}>
-        <button onClick={() => goTo(idx - 1)} disabled={idx === 0} aria-label={t("이전 페이지")} className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === 0 ? "#C9B58C" : T.inkSoft, cursor: idx === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronLeft size={15} /></button>
-        <div className="flex items-center" style={{ gap: 5 }}>
-          {pages.map((_, i) => <span key={i} style={{ width: i === idx ? 16 : 6, height: 5, borderRadius: 999, background: i === idx ? T.brass : "#DCCBA8", transition: "all .25s ease" }} />)}
-        </div>
-        <button onClick={() => goTo(idx + 1)} disabled={idx === n - 1} aria-label={t("다음 페이지")} className="press" style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.06)", color: idx === n - 1 ? "#C9B58C" : T.inkSoft, cursor: idx === n - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronRight size={15} /></button>
+      <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
+        {pages.map((p, i) => <div key={i} data-fp-page="" ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start", boxSizing: "border-box", paddingTop: i === 0 ? 12 : anchorTop }}>{p}</div>)}
       </div>
     </div>
   );
@@ -2004,27 +1980,14 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
 // 박스 자리에 그대로 병합한다. 설명이 하나도 없을 때만 기존 개발자 정적 해설(explain)을 그 자리에
 // 보여주는 폴백으로 남긴다. 가로 스와이프 대신 세로로 자동 스크롤되도록 축을 바꿨고(5초 간격),
 // 카드 좌상단에 "@아이디"를 보여준다. 손으로 위아래 스크롤하면 기존과 동일하게 6초간 자동 넘김을 쉰다.
-function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explainLong, title, setShowExpl, noteCap, onJump }) {
+function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump }) {
   const [notes, setNotes] = useState(null); // null=로딩 중
-  const [idx, setIdx] = useState(0);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // (사용자 요청) 수 설명 정렬 — 인기순(좋아요-싫어요 점수)/날짜순(오래된 순)/최신순. 기존 기본
   // 동작(오래된 순)을 그대로 유지하기 위해 기본값은 "date"로 둔다.
   const [noteSort, setNoteSort] = useState("date");
-  const scrollerRef = useRef(null);
-  const pauseUntilRef = useRef(0);
-  const scrollDebounceRef = useRef(null);
-  // (버그 수정, 사용자 제보) 정렬을 바꿔 카드 순서가 재배치되는 순간, 이 스크롤 컨테이너에서
-  // 브라우저가 자체적으로(scroll-snap 재계산 등 정확한 원인은 특정하지 못했지만 실기기·헤드리스
-  // 브라우저 모두에서 재현됨) 원치 않는 scroll 이벤트를 흘려보내는 경우가 있었다 — 그 이벤트가
-  // onManualScroll의 "사용자가 직접 스크롤했다"는 판단(120ms 디바운스 후 그 스크롤 위치로 idx를
-  // 되맞춤)을 건드려, 방금 0으로 되돌려 둔 idx를 다시 엉뚱한 값으로 덮어써 버렸다(카드 내용은
-  // 새 순서로 바뀌는데 캐러셀 위치만 어긋나 보이는 원인). moveKey·noteSort가 바뀐 직후 짧은
-  // 유예 시간 동안은 onManualScroll이 무엇을 보든 idx를 건드리지 않게 막아, 그 사이 어떤 스크롤
-  // 이벤트가 오더라도 우리가 이미 정한 idx(0)가 안전하게 유지되게 한다.
-  const suppressScrollSyncUntilRef = useRef(0);
   // (v0.4.0 기능) 이 설명이 달린 바로 그 위치까지의 전체 수순 — 본문에 언급된 SAN을 그 위치 기준으로
   // 합법성 검사하고, 링크 클릭 시 그 위치에서부터 집중분석으로 이동하기 위해 필요하다.
   const ownSans = useMemo(() => ownSansFromMoveKey(moveKey), [moveKey]);
@@ -2045,47 +2008,10 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
     const moveKeyChanged = prevMoveKeyRef.current !== moveKey;
     prevMoveKeyRef.current = moveKey;
     if (moveKeyChanged) { setNotes(null); setDraft(""); setErr(""); }
-    setIdx(0);
-    // (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되면서 이 스크롤 컨테이너에
-    // 브라우저가 자체적으로 scroll 이벤트를 흘려보내는 경우가 있었다(scroll-snap 재계산 등) —
-    // 그게 onManualScroll의 120ms 디바운스를 건드려, 방금 위에서 0으로 되돌린 idx를 그 사이에
-    // 엉뚱한 값으로 다시 덮어써 버렸다(카드 내용은 새 순서로 바뀌었는데 캐러셀 인덱스만 어긋나
-    // 보이는 원인). 이 재정렬 시점에 걸려 있을 수 있는 그 디바운스 타이머를 확실히 지우고,
-    // suppressScrollSyncUntilRef로 짧은 유예 시간 동안 onManualScroll이 idx를 건드리지 못하게 막는다.
-    // (실측) 그 브라우저 자체 스크롤 이동은 이 효과가 도는 시점으로부터 대략 300~400ms 사이에
-    // 벌어진다 — idx는 지켰지만 실제 스크롤 위치가 여전히 어긋나 있을 수 있으므로, 그 구간을
-    // 지나 두 번(350ms·550ms) 강제로 맨 위(scrollTop 0)로 되돌려 최종 위치를 확정한다.
-    if (scrollDebounceRef.current) { clearTimeout(scrollDebounceRef.current); scrollDebounceRef.current = null; }
-    pauseUntilRef.current = Date.now() + 600;
-    suppressScrollSyncUntilRef.current = Date.now() + 600;
     load();
-    const t1 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 350);
-    const t2 = setTimeout(() => { if (scrollerRef.current) scrollerRef.current.scrollTop = 0; }, 550);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [moveKey, load]);
-  useEffect(() => {
-    if (!notes || notes.length < 2) return;
-    const iv = setInterval(() => { if (Date.now() >= pauseUntilRef.current) setIdx((i) => (i + 1) % notes.length); }, 5000);
-    return () => clearInterval(iv);
-  }, [notes]);
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: idx * el.clientHeight, behavior: "smooth" });
-  }, [idx]);
-  const jump = (i) => { pauseUntilRef.current = Date.now() + 6000; setIdx(i); };
-  const onManualScroll = () => {
-    if (Date.now() < suppressScrollSyncUntilRef.current) return;
-    pauseUntilRef.current = Date.now() + 6000;
-    if (scrollDebounceRef.current) clearTimeout(scrollDebounceRef.current);
-    scrollDebounceRef.current = setTimeout(() => {
-      if (Date.now() < suppressScrollSyncUntilRef.current) return;
-      const el = scrollerRef.current;
-      if (!el || !el.clientHeight) return;
-      const i = Math.round(el.scrollTop / el.clientHeight);
-      setIdx((cur) => (i !== cur ? i : cur));
-    }, 120);
-  };
+  // (v0.6.6, 사용자 요청) 해설 카드는 자동으로 넘어가거나 스크롤로 움직이지 않는다 — 예전엔 5초마다 다음 설명으로 자동 이동하고 위·아래 버튼·스냅 스크롤이 있어,
+  // 한 화면에 다 보이는 설명도 잠깐씩 움직였다. 이제 설명은 그냥 세로로 쌓아 보여준다.
   // (v0.3.4 기능) 사용자 요청 — 개발자 계정은 한 수에 남길 수 있는 설명 개수가 무제한이고, 그랜드
   // 마스터 티어에 도달한 일반 계정은 2개까지(그 외는 기존과 같이 1개) 남길 수 있다. 실제 한도는
   // 서버(move_notes_cap, supabase-setup.sql 15번 섹션)가 최종 결정하므로, 여기서는 noteCap을
@@ -2118,13 +2044,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{idx + 1}/{notes.length}</span>}</div>
-        {hasNotes && notes.length > 1 && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => jump((idx - 1 + notes.length) % notes.length)} aria-label={t("이전 설명")} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={13} /></button>
-            <button onClick={() => jump((idx + 1) % notes.length)} aria-label={t("다음 설명")} className="press" style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={13} /></button>
-          </div>
-        )}
+        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{notes.length}</span>}</div>
       </div>
       {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
           때만 의미가 있으므로 그때만 보여준다. */}
@@ -2139,29 +2059,16 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, explain, explai
         <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("불러오는 중…")}</p>
       ) : hasNotes ? (
         <>
-          {/* (버그 수정, 사용자 제보) 정렬을 바꾸면 카드 순서가 재배치되는데, 각 카드 키(n.id)는
-              그대로라 리액트가 기존 DOM 노드를 새로 만들지 않고 그 자리에서 순서만 바꾼다 — 이
-              스크롤 컨테이너는 scroll-snap-type이 걸려 있어, 자식이 재배치되는 순간 브라우저가
-              스냅 위치를 다시 계산하며 스크롤을 슬쩍 움직였다(idx는 이미 0으로 되돌려 뒀는데도
-              화면은 엉뚱한 카드에 멎어 있고, 그 스크롤이 onManualScroll을 "사용자가 직접
-              스크롤한 것"으로 오인시켜 idx 상태 자체까지 어긋나 보였다). key를 noteSort로 주면
-              정렬이 바뀔 때마다 이 컨테이너 자체를 통째로 새로 만들어, scrollTop이 항상
-              0에서 시작하는 새 DOM으로 시작하므로 위 문제가 애초에 생길 자리가 없다. */}
-          <div key={noteSort} ref={scrollerRef} onScroll={onManualScroll} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", scrollSnapType: "y mandatory", maxHeight: 140, WebkitOverflowScrolling: "touch" }}>
+          <div key={noteSort} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", maxHeight: 260, WebkitOverflowScrolling: "touch" }}>
             {notes.map((n) => (
               <MoveNoteCard key={n.id} n={n} canModerate={canModerate} uid={uid} ownSans={ownSans} onJump={onJump} onVote={onVote}
                 onSaved={(id, body) => setNotes((prev) => prev.map((x) => (x.id === id ? { ...x, body } : x)))}
-                onDeleted={(id) => setNotes((prev) => { const next = prev.filter((x) => x.id !== id); setIdx((i) => Math.min(i, Math.max(0, next.length - 1))); return next; })} />
+                onDeleted={(id) => setNotes((prev) => prev.filter((x) => x.id !== id))} />
             ))}
           </div>
-          {notes.length > 1 && (
-            <div className="flex items-center justify-center gap-1" style={{ marginTop: 6 }}>
-              {notes.map((n, i) => <button key={n.id} onClick={() => jump(i)} aria-label={t("{0}번째 설명", (i + 1))} className="press" style={{ width: i === idx ? 14 : 6, height: 6, borderRadius: 999, border: "none", background: i === idx ? T.brass : "#DCCBA8", cursor: "pointer", padding: 0, transition: "width .2s" }} />)}
-            </div>
-          )}
         </>
       ) : (
-        <p style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>{explain ? (explainLong ? explain.slice(0, 88) + "… " : explain) : (title ? t("{0} 라인", (title)) : t("해설 없음"))}{explainLong && <button onClick={() => setShowExpl(true)} className="press" style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, background: "none", border: "none", cursor: "pointer", padding: 0 }}>{t("더보기")}</button>}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6 }}>{t("해설 없음")}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
@@ -2200,19 +2107,228 @@ function normalizePlayerKey(name) {
 // (v0.5.5 버그 수정) 예전엔 FocusPanel 본문 맨 앞에서 `if (!fa.active) return null`로 조기 반환한 뒤 수십 개의 훅을
 // 불러, 같은 인스턴스에서 active가 바뀌면 훅 개수가 달라져 React 오류가 날 수 있는 구조였다 — 조기 반환은
 // 얇은 껍데기에 두고 훅을 쓰는 본문은 FocusPanelBody로 분리한다.
+// (v0.6.6) 집중 분석 마스터 대국 필터·요약용 — 결과 코드(w 백승·d 무·b 흑승)와 두 선수 중 높은 레이팅.
+const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black" ? "b" : "d");
+// 정렬 키 — 날짜(YYYY.MM.DD 또는 YYYY.MM)가 있으면 연·월·일, 없으면 연도만(월·일 0).
+const masterDateKey = (g) => { const m = /^(\d{4})\.(\d\d)(?:\.(\d\d))?$/.exec(g.date || ""); return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+(m[3] || 0)) : (g.year || 0) * 10000; };
+const masterMinRating = (g) => Math.min((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
+const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
+// (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 직접 그린 왕관 아이콘.
+const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#CDB98E" } };
+function SideSquare({ side }) {
+  const c = MASTER_SIDE_COLOR[side];
+  return <span aria-label={side === "w" ? t("백") : t("흑")} style={{ display: "inline-block", flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: c.bg, border: "1.5px solid " + c.bd, boxSizing: "border-box", alignSelf: "center" }} />;
+}
+function CrownIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={t("승리")} style={{ flexShrink: 0, alignSelf: "center" }}>
+      <path d="M3 8.5 7.6 12 12 5l4.4 7L21 8.5 19 18H5z" fill="#E2B652" stroke="#8F6A22" strokeWidth="1.4" strokeLinejoin="round" />
+      <rect x="5" y="19.2" width="14" height="2.2" rx="1" fill="#B98A34" stroke="#8F6A22" strokeWidth="1" />
+      <circle cx="3" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="12" cy="4.6" r="1.7" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="21" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" />
+    </svg>
+  );
+}
+// 선수 한 줄 — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·왕관은 항상 보임).
+function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
+      <SideSquare side={side} />
+      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
+      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
+      {winner && <CrownIcon />}
+    </div>
+  );
+}
+// (v0.6.6, 사용자 요청) 마스터 대국의 기보 — 한 줄(nowrap)로 두고 일일 퍼즐 팝업(puzzle.jsx PuzzlePgnBox)처럼 좌우로 끌어 스크롤한다. 집중 분석 중인 수부터 보이게 열고,
+// 수를 누르면 그 수까지 진행된 보드로 연다(드래그로 이동했으면 클릭 무시).
+function MasterPgnBox({ sans, focusPly, onPick }) {
+  const scrollRef = useRef(null), markRef = useRef(null), dragRef = useRef(null);
+  const deco = useMemo(() => decorateLine(sans || []), [(sans || []).join(" ")]);
+  useEffect(() => { const box = scrollRef.current, mk = markRef.current; if (box && mk) box.scrollLeft = Math.max(0, mk.offsetLeft - 6); }, [sans, focusPly]);
+  // 터치는 브라우저 기본 가로 스크롤(touch-action: pan-x)에 맡기고, 마우스만 끌어서 스크롤한다.
+  const onPointerDown = (e) => { if (e.pointerType !== "mouse") return; dragRef.current = { x: e.clientX, left: scrollRef.current ? scrollRef.current.scrollLeft : 0, moved: false }; if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } } };
+  const onPointerMove = (e) => { const d = dragRef.current; if (!d || !scrollRef.current) return; const dx = e.clientX - d.x; if (Math.abs(dx) > 3) d.moved = true; scrollRef.current.scrollLeft = d.left - dx; };
+  const end = () => { dragRef.current = null; };
+  const onClickCapture = (e) => { if (dragRef.current && dragRef.current.moved) { e.preventDefault(); e.stopPropagation(); } dragRef.current = null; };
+  return (
+    <div className="no-pan" data-no-pager="1" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end} onClickCapture={onClickCapture} style={{ borderRadius: 8, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.03)", padding: "6px 10px", cursor: "grab" }}>
+      <div ref={scrollRef} style={{ position: "relative", overflowX: "auto", whiteSpace: "nowrap", fontSize: 12.5, fontFamily: SEQ_FONT, fontWeight: 600, WebkitOverflowScrolling: "touch", userSelect: "none", WebkitUserSelect: "none", touchAction: "pan-x pan-y" }}>
+        {deco.map((san, i) => (
+          <span key={i} ref={i === focusPly ? markRef : undefined}>
+            {(i === 0 || plyIsWhite(i)) && <span style={{ color: T.inkSoft }}>{moveNumber(i)} </span>}
+            <span onClick={() => onPick(i + 1)} style={{ cursor: "pointer", color: i < focusPly ? T.inkSoft : T.ink, fontWeight: i === focusPly ? 900 : 600 }}>{san}</span>{" "}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+// 백·무·흑 비율 막대 — 백(밝은색)·무(회색)·흑(어두운색). labeled면 막대 안에 백분율을 적는다.
+// mine: 내 통계처럼 한쪽 진영(내가 둔 쪽) 기준일 때 — w=승리(초록)·d=무승부·b=패배(빨강). 아니면 백·무·흑 비율.
+function ResultBar({ w, d, b, h = 10, labeled, mine }) {
+  const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
+  const seg = (pct, bg, fg) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
+  const [l1, l3] = mine ? [t("승리"), t("패배")] : [t("백"), t("흑")];
+  return <div role="img" aria-label={l1 + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + l3 + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{mine ? <>{seg(pw, T.best, "#fff")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, T.blunder, "#fff")}</> : <>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</>}</div>;
+}
+
+// (v0.6.6) 통계 요약(승률·채택률·승점 획득 확률) 공용 계산 — 마스터 통계와 내 통계가 같이 쓴다. list의 각 대국은 winner("white"|"black"|null)와 year를 가진다.
+//  승점 획득 확률 = (이 수를 둔 쪽의 승 + 무/2) / 판수 — 둔 수가 백의 수(ply 짝수)면 백 기준, 흑의 수면 흑 기준. 표본이 3판 미만이면 그 구간은 pct: null(막대만 비우고 칸·연도 표기는 유지).
+//  bucket: { keyOf(g) → 구간 키(숫자), step, label(k) }. 구간은 처음~마지막 유효 구간 사이를 빠짐없이 채우고 최대 8칸.
+const DECADE_BUCKET = { keyOf: (g) => Math.floor(g.year / 10) * 10, step: 10, label: (k) => k + "s" };
+function summarizeForStats(list, ply, bucket) {
+  let w = 0, d = 0, b = 0;
+  for (const g of list) { const r = masterResultOf(g); if (r === "w") w++; else if (r === "b") b++; else d++; }
+  const map = new Map();
+  for (const g of list) { if (!g.year) continue; const k = bucket.keyOf(g); const x = map.get(k) || { n: 0, s: 0 }; x.n++; const r = masterResultOf(g); x.s += r === "d" ? 0.5 : r === (ply % 2 === 0 ? "w" : "b") ? 1 : 0; map.set(k, x); }
+  const ok = [...map.entries()].filter(([, x]) => x.n >= 3).map(([k]) => k).sort((a, c) => a - c);
+  const trend = [];
+  if (ok.length) for (let k = ok[0]; k <= ok[ok.length - 1]; k += bucket.step) { const x = map.get(k); trend.push(x && x.n >= 3 ? { k, label: bucket.label(k), n: x.n, pct: Math.round((100 * x.s) / x.n) } : { k, label: bucket.label(k), n: x ? x.n : 0, pct: null }); }
+  trend.splice(0, Math.max(0, trend.length - 8));
+  return { w, d, b, n: w + d + b, trend };
+}
+// 통계 요약 카드 — 승률 바, 채택률(수 + 실제 판수(비중) + 승률 바), 승점 획득 확률 막대. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려진다.
+function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, mine, forceShow }) {
+  if (loading) {
+    const sk = (i, st) => <div key={i} className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />;
+    return (
+      <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+        {sk(0, { height: 10, width: "42%", marginBottom: 6 })}
+        {sk(1, { height: 14 })}
+        {sk(2, { height: 10, width: "24%", marginTop: 12, marginBottom: 6 })}
+        {[3, 4, 5, 6, 7].map((i) => sk(i, { height: 15, marginBottom: 6 }))}
+        {sk(8, { height: 10, width: "36%", marginTop: 10, marginBottom: 6 })}
+        {sk(9, { height: 70 })}
+      </div>
+    );
+  }
+  if (!forceShow && (!summary || summary.n <= 0)) return null;   // forceShow(내 통계): 표본이 없어도 모든 통계 요소를 그린다
+  const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
+  const trend = summary.trend, valid = trend.filter((x) => x.pct != null), pcts = valid.map((x) => x.pct);
+  // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
+  const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
+  return (
+    <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
+      <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
+      <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled mine={mine} /></div>
+      {((moves && moves.length > 0) || forceShow) && (
+        <div style={{ marginTop: 9 }}>
+          <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
+          {(!moves || moves.length === 0) && <div style={{ fontSize: 11, color: T.inkSoft, padding: "3px 0" }}>—</div>}
+          {moves.slice(0, 5).map((mv, ri) => {
+            const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (summary.n || 1));
+            return (
+              <button key={mv.san} onClick={() => onPickMove && onPickMove(mv.san)} {...ap(3 + ri, { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" })}>
+                <span style={{ width: 52, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
+                <span title={t("비중")} style={{ flexShrink: 0, minWidth: 74, fontSize: 11, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{fmtFull(tot)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>({share}%)</span></span>
+                <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled mine={mine} /></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {(valid.length >= 2 || forceShow) && (
+        <div style={{ marginTop: 9 }}>
+          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
+          <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "flex-start", gap: 4, height: AREA + 26 })}>
+            <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
+            {trend.map((x) => (
+              <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "0 0 calc((100% - 28px) / 8)", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+                {x.pct != null && <>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
+                  <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
+                </>}
+                <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12, whiteSpace: "nowrap", letterSpacing: "-.02em" }}>{x.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// 필터 칩 줄들 — rows: [[라벨, [[값, 표시], …], 현재값, 설정함수], …]. 마스터 통계·내 통계 공용.
+function StatsFilterRows({ rows }) {
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+      {rows.map(([label, opts, cur, set]) => (
+        <div key={label} className="flex items-center gap-2">
+          <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{label}</span>
+          <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, flexWrap: "wrap" }}>
+            {opts.map(([k, lab]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{lab}</button>)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+// chess.com·OpenChess 대국(내 통계)을 마스터 대국과 같은 모양(winner·year·date)으로 바꾼다 — 요약 계산과 목록이 같은 코드를 쓴다.
+const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
+const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
+const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => Math.floor(k / 12) + "." + String((k % 12) + 1).padStart(2, "0") };   // 2026.07
+// 시간 규정 표기 — "900+10"(chess.com)·"600-10"(OpenChess)을 "15+10"으로. 하루 단위("1/86400")는 "일일". 알 수 없으면 null.
+function fmtTimeControl(raw) {
+  const str = String(raw || "");
+  if (/^1\/\d+$/.test(str)) return t("일일");
+  const m = /^(\d+)[+-](\d+)$/.exec(str) || /^(\d+)$/.exec(str);
+  if (!m) return null;
+  const base = +m[1] / 60;
+  return (Number.isInteger(base) ? base : +base.toFixed(1)) + "+" + (m[2] || 0);
+}
+// 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
+function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
+  const won = g.result === "win", lost = g.result === "loss";
+  const dateTxt = g.endTime ? (() => { const d = new Date(g.endTime * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); })() : "";
+  const orig = g._orig || g;
+  const fmt = fmtTimeControl(g.timeControl), cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
+  const tcTxt = fmt ? fmt + (cls ? " (" + cls + ")" : "") : cls;   // 15+10 (래피드)
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            <MasterPlayerLine plain side="w" name={g.white && g.white.username} rating={g.white && g.white.rating} winner={g.winner === "white"} delta={g.color === "w" ? ratingChange : null} />
+            <MasterPlayerLine plain side="b" name={g.black && g.black.username} rating={g.black && g.black.rating} winner={g.winner === "black"} delta={g.color === "b" ? ratingChange : null} />
+          </div>
+          <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+        </div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+      </div>
+      <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+        <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+        <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(orig)} />
+      </div>
+    </div>
+  );
+}
 function FocusPanel(props) {
   if (!props.fa.active) return null;
   return <FocusPanelBody {...props} />;
 }
-function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
+function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
-    sans, san, m, ply, title, kind, evTxt, extraArrows, explain, mkKey,
-    explainLong, showExpl, setShowExpl, editKey, devEdit, setDevEdit,
+    sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
-    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
-    masterGames, loadingMasterGames, masterGamesError, onRetryMasterGames,
+    stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
+    masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
+  // (v0.6.6, 사용자 요청) 집중 분석 안에서 지나온 경로 기록 — 가장 멀리 본 수순을 기보로 남기고, 수를 눌러 그 시점으로 이동한다. 새 수를 열면 그 수순으로 이어지고(되돌아간 뒤 다른 수를 열면 그 갈래로 바뀐다), 이전 수순 안의 수로 가면 기록은 그대로다.
+  const curLine = [...sans, san], curKey = curLine.join(" ");
+  const [line, setLine] = useState(curLine);
+  useEffect(() => {
+    setLine((prev) => {
+      if (curLine.length <= prev.length && curLine.every((x, i) => prev[i] === x)) return prev;
+      return curLine;
+    });
+  }, [curKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const curIdx = curLine.length - 1;
+  const lineSafe = line.length > curIdx && curLine.every((x, i) => line[i] === x) ? line : curLine;
+  // 수 이름 — 이 수에 이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름
+  const dispName = useMemo(() => { if (title) return title; for (let k = curLine.length; k >= 1; k--) { const nd = snapNode(curLine.slice(0, k)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; } return null; }, [curKey, title]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const focusKws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+  const focusBoardPx = Math.max(200, Math.min(boardSize || 360, (typeof window !== "undefined" ? window.innerWidth : 400) - 32, 588));
   const [openingGameId, setOpeningGameId] = useState(null);
   const [gameOpenError, setGameOpenError] = useState(false);
   const [addGameOpen, setAddGameOpen] = useState(false);   // (v0.2.3 기능) 개발자 마스터 대국 추가 모달
@@ -2220,23 +2336,62 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // (버그 보충) 예전엔 최근 8판까지만 잘라 보여줬다 — 이제 전부 가져오고 화면에서 페이지를 넘겨 본다.
   // (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게, 이 수가 두어진 내 대국 목록도 시간
   // 규정·진영으로 나눠 볼 수 있게 한다.
+  // (v0.6.6, 사용자 요청) 내 통계 — chess.com / OpenChess 대국을 플랫폼 토글로 나눠 보고, 마스터 통계와 같은 요약·필터·대국 목록을 쓴다.
+  const [myView, setMyView] = useState(() => (chesscom && chesscom.status !== "idle" ? "cc" : "oc"));
+  const [ocGames, setOcGames] = useState(null);   // OpenChess 대국(실시간·봇) — 처음 토글할 때 한 번 불러온다
+  useEffect(() => {
+    if (myView !== "oc" || ocGames !== null) return undefined;
+    if (!SB_ON || !uid) { setOcGames([]); return undefined; }
+    let off = false;
+    fetchProfileGameRows(uid)
+      .then((r) => { if (!off) setOcGames((Array.isArray(r) ? r : []).filter((x) => Array.isArray(x.sans) && x.sans.length > 0).map((x) => profileGameRowToGame(x, username))); })
+      .catch(() => { if (!off) setOcGames([]); });
+    return () => { off = true; };
+  }, [myView, uid]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [myTimeFilter, setMyTimeFilter] = useState("all");
-  const [myColorFilter, setMyColorFilter] = useState("all");
-  // (사용자 요청) 오프닝 실수 수순을 누르면 곧장 분석 탭으로 이동하는 대신, 그 수순으로 실제 진행된
-  // 내 chess.com 대국을 바로 아래에 펼쳐 보여준다 — 펼쳐진 항목의 인덱스.
-  const [expandedMistakeIdx, setExpandedMistakeIdx] = useState(null);
-  useEffect(() => { setExpandedMistakeIdx(null); }, [sans.join(","), san]);
+  const [myResult, setMyResult] = useState("all");   // all | win | draw | loss
+  const [myRating, setMyRating] = useState(0);       // 두 선수 중 높은 쪽 레이팅 하한(0 = 전체)
+  const [myPeriod, setMyPeriod] = useState(0);       // 최근 N일 이내(0 = 전체)
+  const myLoading = myView === "cc" ? !!chesscom && chesscom.status === "loading" : ocGames === null;
+  const myPool = useMemo(() => (myView === "cc" ? (chesscom && chesscom.status === "ready" ? chesscom.games : []) : (ocGames || [])), [myView, chesscom && chesscom.games, chesscom && chesscom.status, ocGames]);
+  const myPath = [...sans, san];
+  // 이 수까지 진행된 내 대국(필터 전) — 필터는 이 위에서 걸린다. 마스터 통계 대국과 같은 모양으로 바꿔 둔다.
+  const myColor = ply % 2 === 0 ? "w" : "b";   // 이 수를 두는 쪽 — 내 통계는 내가 이 수를 둔 대국만(상대가 둔 대국은 제외)
+  const myBase = useMemo(() => myPool.filter((g) => g.color === myColor && g.moves.length >= myPath.length && myPath.every((s2, i) => g.moves[i] === s2)).map(adaptMyGame).sort((a, c) => (c.endTime || 0) - (a.endTime || 0)), [myPool, sans.join(","), san, myColor]);   // eslint-disable-line react-hooks/exhaustive-deps
   const myGames = useMemo(() => {
-    if (!chesscom || chesscom.status !== "ready") return [];
-    const path = [...sans, san];
-    let out = chesscom.games.filter((g) => g.moves.length >= path.length && path.every((s, i) => g.moves[i] === s));
-    if (myTimeFilter !== "all") out = out.filter((g) => g.timeClass === myTimeFilter);
-    if (myColorFilter !== "all") out = out.filter((g) => g.color === myColorFilter);
-    return out.sort((a, b) => (b.endTime || 0) - (a.endTime || 0));
-  }, [chesscom && chesscom.games, chesscom && chesscom.status, sans.join(","), san, myTimeFilter, myColorFilter]);
-  const MY_GAMES_PAGE_SIZE = 5;
+    const now = Math.floor(Date.now() / 1000);
+    return myBase.filter((g) => (myTimeFilter === "all" || g.timeClass === myTimeFilter) && (myResult === "all" || g.result === myResult)
+      && (!myRating || Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0) >= myRating) && (!myPeriod || (g.endTime || 0) >= now - myPeriod * 86400));
+  }, [myBase, myTimeFilter, myResult, myRating, myPeriod]);
+  const mySummary = useMemo(() => {
+    // 내 통계는 한쪽 진영(내가 둔 쪽) 기준이라 승·무·패를 그대로 센다(w=승리, d=무승부, b=패배).
+    const base = summarizeForStats(myGames, ply, MONTH_BUCKET);
+    let w = 0, d = 0, b = 0;
+    for (const g of myGames) { if (g.result === "win") w++; else if (g.result === "loss") b++; else d++; }
+    // 표본이 없어도 차트 틀은 보이게 — 달 라벨만 있는 빈 칸 8개(이번 달까지)
+    let trend = base.trend;
+    if (!trend.length) { const nowD = new Date(), nowK = nowD.getFullYear() * 12 + nowD.getMonth(); trend = Array.from({ length: 8 }, (_, i) => { const k = nowK - 7 + i; return { k, label: MONTH_BUCKET.label(k), n: 0, pct: null }; }); }
+    return { ...base, trend, w, d, b, n: w + d + b };
+  }, [myGames, ply]);
+  // 채택률 — 이 수 다음에 내가(또는 상대가) 둔 수별 판수와 백·무·흑 결과(필터 적용 후).
+  const myMoves = useMemo(() => {
+    const by = new Map();
+    for (const g of myGames) { const nx = g.moves[myPath.length]; if (!nx) continue; const x = by.get(nx) || { san: nx, white: 0, draws: 0, black: 0 }; if (g.result === "win") x.white++; else if (g.result === "loss") x.black++; else x.draws++; by.set(nx, x); }
+    return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
+  }, [myGames]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 유저 통계·마스터 통계의 첫 대국 줄이 같은 y좌표에서 시작하도록, 더 위에 있는 쪽 기준으로 아래쪽 페이지에 여백을 넣는다(매 렌더 뒤 한 번 재서 바뀐 만큼만 반영).
+  const spUser = useRef(null), spMaster = useRef(null), padsRef = useRef([0, 0]);
+  const [pads, setPads] = useState([0, 0]);
+  useLayoutEffect(() => {
+    const els = [spUser.current, spMaster.current];
+    if (!els[0] || !els[1]) return;
+    const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
+    const target = Math.max(nat[0], nat[1]), next = [Math.round(target - nat[0]), Math.round(target - nat[1])];
+    if (next[0] !== padsRef.current[0] || next[1] !== padsRef.current[1]) { padsRef.current = next; setPads(next); }
+  });
+  const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
-  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myTimeFilter, myColorFilter]);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myView, myTimeFilter, myResult, myRating, myPeriod]);
   const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
   const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
@@ -2248,17 +2403,33 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // 넘기면 나머지 매칭 대국을 계속 보여준다 — masterGames는 이미 fetchAllMasterGames가 전부
   // 불러와 둔 배열이라(build-master-games.mjs가 더 이상 노드당 상한을 두지 않음) 페이지를 넘길 때
   // 추가 네트워크 요청 없이 그대로 슬라이스만 바뀐다.
-  const MASTER_PAGE_SIZE = 20;
+  const MASTER_PAGE_SIZE = 10;   // (v0.6.6, 사용자 요청) 10판씩 페이지로 나눠 보여준다
   const [masterSort, setMasterSort] = useState("default"); // default(원래 채택률순) | recent(최신순) | rating(레이팅순)
   const [masterPage, setMasterPage] = useState(0);
   // (기능) 마스터 이름 검색 — 백/흑 어느 쪽이든 이름에 검색어가 포함된 대국만 남긴다.
   // 입력창에 포커스가 있는 동안엔 실시간으로 일치하는 선수 이름을 추천해 보여준다.
   const [masterSearch, setMasterSearch] = useState("");
   const [masterSearchFocused, setMasterSearchFocused] = useState(false);
-  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch]);
+  // (v0.6.6, 사용자 요청) 필터 강화 — 결과·레이팅·연도 칩. 이 수 직후 진행 미리보기(펼침)와 통계 요약도 이 목록을 따른다.
+  const [mResult, setMResult] = useState("all");   // all | w | d | b
+  const [mRating, setMRating] = useState(0);       // 두 선수 중 높은 쪽 레이팅 하한(0 = 전체)
+  const [mEra, setMEra] = useState(0);             // 이 연도 이후(0 = 전체)
+  const [expandedMasterId, setExpandedMasterId] = useState(null);
+  const [contMap, setContMap] = useState({});      // 대국 id → 수순(SAN 배열) | "loading" | "error"
+  useEffect(() => { setExpandedMasterId(null); }, [sans.join(","), san]);
+  useEffect(() => { setMasterPage(0); }, [sans.join(","), san, masterSort, masterSearch, mResult, mRating, mEra]);
+  const toggleMasterGame = async (id) => {
+    if (expandedMasterId === id) { setExpandedMasterId(null); return; }
+    setExpandedMasterId(id);
+    if (Array.isArray(contMap[id])) return;
+    setContMap((m) => ({ ...m, [id]: "loading" }));
+    try { const gs = await fetchAnyMasterGamePgn(id); setContMap((m) => ({ ...m, [id]: gs && gs.length ? gs : "error" })); } catch { setContMap((m) => ({ ...m, [id]: "error" })); }
+  };
   const sortedMasterGames = useMemo(() => {
-    if (masterSort === "recent") return [...masterGames].sort((a, b) => (b.year || 0) - (a.year || 0));
-    if (masterSort === "rating") return [...masterGames].sort((a, b) => Math.max((b.white && b.white.rating) || 0, (b.black && b.black.rating) || 0) - Math.max((a.white && a.white.rating) || 0, (a.black && a.black.rating) || 0));
+    // (v0.6.6, 사용자 요청) 최신순 — 같은 해 안에서도 날짜(월·일)까지 보고(대회 일정), 날짜가 같으면 레이팅이 높은 대국이 먼저.
+    if (masterSort === "recent") return [...masterGames].sort((a, b) => masterDateKey(b) - masterDateKey(a) || masterMaxRating(b) - masterMaxRating(a) || masterMinRating(b) - masterMinRating(a));
+    // 레이팅순 — 두 선수 중 높은 쪽 레이팅이 높은 순, 같으면 상대(낮은 쪽) 레이팅이 높은 순 — 가장 수준 높은 대국이 맨 위.
+    if (masterSort === "rating") return [...masterGames].sort((a, b) => masterMaxRating(b) - masterMaxRating(a) || masterMinRating(b) - masterMinRating(a) || masterDateKey(b) - masterDateKey(a));
     return masterGames;
   }, [masterGames, masterSort]);
   // 검색창 추천어(자동완성)용 — 지금까지 불러온 마스터 대국에 등장하는 선수 이름을 모으되,
@@ -2276,7 +2447,10 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
       if (g.white) consider(g.white.name);
       if (g.black) consider(g.black.name);
     }
-    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+    // 추천 목록은 선수마다 { raw: 대표 원본 표기("Carlsen,M"), full: 풀네임("Magnus Carlsen") } 하나 — 국적 깃발·정보 줄은 원본 표기로 찾고, 같은 풀네임은 한 번만 나온다.
+    const byFull = new Map();
+    for (const raw of byKey.values()) { const full = fullPlayerName(raw); const cur = byFull.get(full); if (!cur || raw.length > cur.raw.length) byFull.set(full, { raw, full }); }
+    return [...byFull.values()].sort((x, y) => x.full.localeCompare(y.full));
   }, [masterGames]);
   const masterSearchQuery = masterSearch.trim().toLowerCase();
   // 추천 목록에서 대표 이름 하나를 골라 클릭하면(예: "Carlsen, Magnus") 검색어와 표기가 다른
@@ -2284,24 +2458,48 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
   // (성 + 이름 이니셜 일치) 동일인으로 보고 함께 포함시킨다.
   const masterSearchKey = masterSearchQuery ? normalizePlayerKey(masterSearch) : "";
   const filteredMasterGames = useMemo(() => {
-    if (!masterSearchQuery) return sortedMasterGames;
-    return sortedMasterGames.filter((g) => {
+    let out = sortedMasterGames;
+    if (masterSearchQuery) out = out.filter((g) => {
       const wName = (g.white && g.white.name) || "";
       const bName = (g.black && g.black.name) || "";
-      if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery)) return true;
+      if (wName.toLowerCase().includes(masterSearchQuery) || bName.toLowerCase().includes(masterSearchQuery) || (g.event || "").toLowerCase().includes(masterSearchQuery)) return true;
+      if (fullPlayerName(wName).toLowerCase().includes(masterSearchQuery) || fullPlayerName(bName).toLowerCase().includes(masterSearchQuery)) return true;
       return masterSearchKey && (normalizePlayerKey(wName) === masterSearchKey || normalizePlayerKey(bName) === masterSearchKey);
     });
-  }, [sortedMasterGames, masterSearchQuery, masterSearchKey]);
+    if (mResult !== "all") out = out.filter((g) => masterResultOf(g) === mResult);
+    if (mRating) out = out.filter((g) => masterMaxRating(g) >= mRating);
+    // 연도: 1 = 2000년 이전(~2000), 2000/2010/2020 = 해당 연대(2000s 등)
+    if (mEra === 1) out = out.filter((g) => g.year && g.year < 2000);
+    else if (mEra) out = out.filter((g) => (g.year || 0) >= mEra && (g.year || 0) < mEra + 10);
+    return out;
+  }, [sortedMasterGames, masterSearchQuery, masterSearchKey, mResult, mRating, mEra]);
+  const masterFiltersOn = !!masterSearchQuery || mResult !== "all" || !!mRating || !!mEra;
+  // 통계 요약 — 필터가 없고 Lichess 마스터 DB 전체 집계가 있으면 그 값(표본이 가장 큼), 아니면 지금 표시 중인 대국 기준.
+  const masterSummary = useMemo(() => {
+    const lt = masterStats ? masterStats.white + masterStats.draws + masterStats.black : 0;
+    const base = summarizeForStats(filteredMasterGames, ply, DECADE_BUCKET);
+    if (!masterFiltersOn && lt > 0) return { ...base, w: masterStats.white, d: masterStats.draws, b: masterStats.black, n: lt, full: true };
+    return { ...base, full: false };
+  }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
+  // 채택률 — 필터가 없으면 Lichess 마스터 DB 전체 집계, 필터가 있으면 걸러진 대국의 다음 수로 직접 센다(표본이 있으면 필터를 걸어도 항상 보인다).
+  const masterMoves = useMemo(() => {
+    if (!masterFiltersOn && masterStats && masterStats.moves) return masterStats.moves;
+    const by = new Map();
+    for (const g of filteredMasterGames) { if (!g.nextSan) continue; const x = by.get(g.nextSan) || { san: g.nextSan, white: 0, draws: 0, black: 0 }; const r = masterResultOf(g); if (r === "w") x.white++; else if (r === "b") x.black++; else x.draws++; by.set(g.nextSan, x); }
+    return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
+  }, [masterFiltersOn, masterStats, filteredMasterGames]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
-    return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 8);
-  }, [masterPlayerNames, masterSearchQuery]);
+    // 학습 탭 마스터 스타일 비교 검색과 같은 규칙(src/lib/masterNameSearch.js) — 개수 제한 없음.
+    return rankMasterMatches(masterPlayerNames, masterSearch, (x) => x.full, (x) => x.raw);
+  }, [masterPlayerNames, masterSearchQuery, masterSearch]);
+  // (v0.6.6, 사용자 요청) 판수 제한·페이지 넘김 없이 필터에 맞는 대국을 전부 한 목록으로 보여준다.
   const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
   const masterPageItems = filteredMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
-  const handleOpenGame = async (id) => {
+  const handleOpenGame = async (id, atPly) => {
     if (!onOpenMasterGame || openingGameId) return;
     setOpeningGameId(id); setGameOpenError(false);
-    try { await onOpenMasterGame(id); } catch (e) { console.error("마스터 대국 열기 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
+    try { await onOpenMasterGame(id, atPly); } catch (e) { console.error("마스터 대국 열기 실패:", e); setGameOpenError(true); } finally { setOpeningGameId(null); }
   };
   // (v0.2.1 기능) chess.com 통계의 "보기"+초록 리뷰 버튼 쌍과 동일하게, 마스터 대국도 목록에서
   // 바로 /review로 진입할 수 있게 한다 — "보기"(handleOpenGame)와 별개 상태로 바쁨/에러를 추적한다.
@@ -2316,51 +2514,158 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
         <button onClick={onBack} className="press" title={t("집중 분석 종료")} style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
-        <div className="flex items-center gap-2">
+        {/* (v0.6.6, 사용자 요청) 분석 탭 메인의 기보를 가져와 집중 분석 안에서 지나온 경로를 기록하고, 수를 눌러 그 시점으로 자유롭게 이동한다. */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex" }}><SequenceBar sans={lineSafe.slice(0, curIdx + 1)} future={lineSafe.slice(curIdx + 1)} onJump={(k) => onJump && onJump(lineSafe.slice(0, k - 1), lineSafe[k - 1], { replace: true })} font={SITE_FONT} /></div>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
           {(canEdit || canAdd) && !isTheory && <button onClick={addAsTheory} className="press" title={t("이론 수로 추가")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: T.brassHi, fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 이론 수로 추가", <Book size={14} />)}</button>}
           {/* (18차 UX8) 이 수가 이론 수라면 개발자 모드에서 삭제(비이론화) 가능 — 추가 버튼과 동일 레이아웃 */}
           {canEdit && isTheory && <button onClick={toggleUnbook} className="press" title={t("이론 수에서 삭제")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 10, background: T.ebony2, color: "#F4A8A8", fontWeight: 800, fontSize: 12.5, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 이론 수에서 삭제", <Trash2 size={14} />)}</button>}
         </div>
       </div>
-      {/* 헤더: 아이콘 · 수/이름(크게) · 평가치·등급(수 이름 바로 옆) · 퍼즐 만들기 버튼(우측) */}
-      {/* (사용자 요청) 평가치·등급 텍스트를 우측 끝(별도 칼럼)이 아니라 수 이름 바로 옆으로 옮기고,
-          둘 다 같은 진한 색(QCOLOR를 검정과 섞어 더 짙게)·같은 폰트(사이트 기본 IBM Plex Sans KR,
-          예전엔 평가치만 monospace라 서로 다른 폰트로 보였다)로 통일했다. 그렇게 비게 된 우측 자리엔
-          위 툴바에 있던 "퍼즐 풀기" 버튼(생성 중이면 진행 게이지)을 옮겨 왔다. */}
+      {/* (v0.6.6, 사용자 요청) 헤더: 아이콘 · 수(크게) + 그 아래 수 이름(이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름) · 평가치·등급 · 퍼즐 만들기 버튼(우측) */}
       <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
         <CircleBadge kind={kind} big descOnClick />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
-          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
-            {title && <div style={{ fontSize: 16, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{title}</div>}
-            {/* (사용자 요청) 어두운 배경 위에서 색을 더 짙게(color-mix로 검정을 섞음) 했더니 오히려
-                더 안 보였다 — 반대로 배경과 대비가 가장 뚜렷한 크림색으로 통일한다. (재조정) T.ivoryHi
-                (#FAF2E2)는 흰색에 너무 가까워 보인다는 피드백으로, 더 진한 크림색인 T.ivory(#EBDDC4)로 낮춘다. */}
+          <div style={{ marginTop: 3, fontSize: 15, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{dispName || "\u00A0"}</div>
+          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 3 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? t("이론") : "—")}</div>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
+          {/* (v0.6.6, 사용자 요청) 수 키워드는 평가치 바로 아래, 평가치·수 이름과 같은 왼쪽 선에 둔다(누르면 설명 말풍선) */}
+          <div style={{ marginTop: 6, minHeight: 22 }}><KeywordScroll kws={focusKws} /></div>
         </div>
-        {/* (v0.4.4 개편, 사용자 요청) 예전엔 여기서 곧장 퍼즐을 만들어(auto:true) 준비되는 대로
-            "퍼즐 풀기"가 PuzzleSolver를 직접 열었다 — 이제는 항상 퍼즐 탭의 "퍼즐 만들기" 마법사로
-            이동한다. 같은 위치에 이미 누군가(나 자신 포함) 만든 퍼즐이 있으면 마법사가 곧장
-            "~님이 이미 이 퍼즐을 만들었어요!"와 "퍼즐 풀기"를 보여준다(퍼즐 탭에서 직접 만들 때와
-            완전히 같은 코드 경로). 로컬에 이미 있는 걸 알고 있으면 버튼 문구만 미리 맞춰 둔다. */}
         {wizardSeed && onOpenPuzzleWizard && (
           <button onClick={() => onOpenPuzzleWizard(wizardSeed)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}>
             <Pencil size={14} /> {existingPuzzle && existingPuzzle.tree ? t("퍼즐 풀기") : t("퍼즐 만들기")}
           </button>
         )}
       </div>
-      {/* 미니보드(좌) + 해설(우) */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flexShrink: 0 }}>
-          <AnimatedMove sans={sans} san={san} size={200} extraArrows={extraArrows} />
-          {/* (18차 UI5) 미니보드 하단 범례 텍스트 삭제 */}
+      {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
+      <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
+      <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
+        <div>{nextMovesPanel}</div>,
+        <>
+      {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
+      <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("내 통계")}</span>
+          <StatsViewToggle value={myView} onChange={setMyView} />
         </div>
-        <div style={{ flex: 1, minWidth: 180 }}>
-          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} explain={explain} explainLong={explainLong} title={title} setShowExpl={setShowExpl} noteCap={noteCap} onJump={onJump} />
-        </div>
+        {myView === "cc" && (!chesscom || chesscom.status === "idle") ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("설정에서 chess.com 계정을 연동하면 이 수의 내 대국과 통계 표시")}</p>
+          : myView === "cc" && chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
+            : (
+              <div>
+                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} mine forceShow />
+                {!myLoading && <StatsFilterRows rows={[
+                  [t("시간"), [["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]], myTimeFilter, setMyTimeFilter],
+                  [t("결과"), [["all", t("전체")], ["win", t("승리")], ["draw", t("무승부")], ["loss", t("패배")]], myResult, setMyResult],
+                  [t("레이팅"), [[0, t("전체")], [1000, "1000+"], [1500, "1500+"], [2000, "2000+"], [2500, "2500+"]], myRating, setMyRating],
+                  [t("기간"), [[0, t("전체")], [365, t("1년 이내")], [30, t("1달 이내")], [7, t("1주 이내")], [1, t("1일 이내")]], myPeriod, setMyPeriod],
+                ]} />}
+                <div style={{ height: 8 }} />
+                <div ref={spUser} data-fp-spacer="user" style={{ height: pads[0] }} />   {/* 마스터 통계의 첫 대국과 y좌표를 맞추는 여백 */}
+                {myLoading ? null
+                  : myBase.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("최근 대국 없음")}</p>
+                  : myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("조건에 맞는 결과 없음")}</p>
+                  : <>
+                    {myGamesPageItems.map((g) => <UserGameRow key={g.id || g.endTime + g.moves.length} g={g} ratingChange={myView === "cc" ? ratingChanges.get(g._orig) : g._delta} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />)}
+                    <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
+                  </>}
+              </div>
+            )}
       </div>
+        </>,
+        <>
+      {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
+      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>
+            {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
+            {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title={t("마스터 대국 추가")} aria-label={t("마스터 대국 추가")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
+          </div>
+          {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
+          {masterGames.length > 1 && (
+            <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
+              {[["default", t("기본")], ["recent", t("최신순")], ["rating", t("레이팅순")]].map(([k, label]) => (
+                <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 채택률(선택된 수), 승점 획득 확률. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려지고, 데이터가 오면 실제 요소가 위에서부터 하나씩 그려진다. */}
+        <StatsSummaryCard loading={loadingMasterGames} summary={masterSummary} title={t("마스터 승률")} moves={masterMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
+        {/* (v0.6.6, 사용자 요청) 필터 — 결과·레이팅·연도 */}
+        {masterGames.length > 1 && <StatsFilterRows rows={[
+          [t("결과"), [["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
+          [t("레이팅"), [[0, t("전체")], [2500, "2500+"], [2600, "2600+"], [2700, "2700+"], [2800, "2800+"]], mRating, setMRating],
+          [t("연도"), [[0, t("전체")], [1, "~2000"], [2000, "2000s"], [2010, "2010s"], [2020, "2020s"]], mEra, setMEra],
+        ]} />}
+        {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
+            포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
+        {masterGames.length > 1 && (
+          <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
+            <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
+              onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
+              placeholder={t("선수·대회 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
+            {masterSearchFocused && masterSuggestions.length > 0 && (
+              <div style={searchDropStyle}>
+                {masterSuggestions.map((x) => <SearchResultRow key={x.full} tag="master" tagLabel={t("마스터")} flag={masterFlag(x.raw)} title={x.full} sub={masterInfoLine(x.raw)} onClick={() => setMasterSearch(x.full)} />)}
+              </div>
+            )}
+          </div>
+        )}
+        <div ref={spMaster} data-fp-spacer="master" style={{ height: pads[1] }} />   {/* 유저 통계의 첫 대국과 y좌표를 맞추는 여백 */}
+        {loadingMasterGames ? null
+          : masterGamesError ? (
+            <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 로드 실패")}{" "}<button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
+          )
+          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("일치하는 마스터 대국 없음")}</p>
+          : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{tx("{0}\" 검색 결과 없음", masterSearch.trim())}</p>
+            : (<>
+            {masterPageItems.map((g) => (
+              <React.Fragment key={g.id}>
+              <div onClick={() => toggleMasterGame(g.id)} role="button" aria-expanded={expandedMasterId === g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", cursor: "pointer", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  {/* 결과(1–0)는 예전처럼 오른쪽 끝에 두되, 세로로는 백 줄과 흑 줄 사이 가운데 */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <MasterPlayerLine side="w" name={g.white && g.white.name} rating={g.white && g.white.rating} winner={g.winner === "white"} />
+                      <MasterPlayerLine side="b" name={g.black && g.black.name} rating={g.black && g.black.rating} winner={g.winner === "black"} />
+                    </div>
+                    <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.date || g.year}{g.event ? ", " : ""}{g.event ? (() => { const tg = tournamentOfEvent(g.event, g.year); return tg && onOpenTournament
+                      ? <a role="link" tabIndex={0} title={t("도감 마스터 트리에서 이 대회 보기")} onClick={(e) => { e.stopPropagation(); onOpenTournament(tg); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenTournament(tg); } }} style={{ color: "#2E9BD6", textDecoration: "underline", cursor: "pointer" }}>{g.event}</a>
+                      : g.event; })() : null}{openingGameId === g.id ? t(", 기보를 불러오는 중…") : reviewingGameId === g.id ? t(", 리뷰를 여는 중…") : ""}</div>
+                </div>
+                <div className="flex items-center gap-2" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                  {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
+                  <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
+                  {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
+                  {onOpenMasterGameReview && <BestMoveJumpButton onClick={() => handleReviewGame(g)} disabled={!!openingGameId || !!reviewingGameId} />}
+                </div>
+              </div>
+              {expandedMasterId === g.id && (() => {
+                const gs = contMap[g.id];
+                return (
+                  <div style={{ margin: "0 0 6px" }}>
+                    {gs === "loading" || gs == null ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("기보 불러오는 중…")}</span>
+                      : gs === "error" ? <span style={{ fontSize: 11, color: T.blunder }}>{t("기보를 불러오지 못함")}</span>
+                      : <MasterPgnBox sans={gs} focusPly={ply + 1} onPick={(n) => handleOpenGame(g.id, n)} />}
+                  </div>
+                );
+              })()}
+              </React.Fragment>
+            ))}
+            <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} jump={masterPageCount > 1000 ? 100 : masterPageCount > 100 ? 10 : 5} />
+            </>)}
+        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
+        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
+      </div>
+        </>,
+        <>
+        <div><MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} /></div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
@@ -2394,235 +2699,14 @@ function FocusPanelBody({ fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGa
       {/* 응징 시퀀스(퍼즐) */}
       {punish && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
-          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스 · 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
+          <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{tx("{0} 응징 시퀀스, 퍼즐로 저장됨", <Sparkles size={15} />)}</div>
           <p style={{ color: T.ivory, fontSize: 12.5, lineHeight: 1.55, marginBottom: 8 }}>{punish.why}</p>
           <ol style={{ margin: 0, paddingLeft: 18, color: T.ivory, fontSize: 12.5, lineHeight: 1.7 }}>{punish.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
         </div>
       )}
-      {/* (v0.2.6 버그 수정) 미니보드 하단 콘텐츠를 2페이지로 나눈다 — 1페이지: chess.com 통계+마스터
-          대국(기존과 동일), 2페이지: 다음 수 블록(nextMovesPanel, LearnTab에서 전달). 드래그 또는
-          </> 버튼으로만 넘긴다(휠·스크롤 무반응). */}
-      <FocusBoxPager pages={[
-        <>
-      {/* (버그) 내 chess.com 통계를 마스터 대국보다 위에 표시 — 최근 대국 목록 + 전적 요약 통합 블록 */}
-      <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
-        <div className="flex items-center gap-2" style={{ marginBottom: 8 }}><span className="flex items-center" style={{ gap: 6, fontSize: 14, fontWeight: 800, color: T.ink }}>{tx("{0} 통계", <ChesscomLogo height={19} />)}</span></div>
-        {/* (v0.2.6 기능) 프로필 카드의 chess.com 통계와 동일하게 시간 규정·진영 선택 박스를 추가 —
-            이 수가 두어진 내 대국 목록을 시간 규정/진영으로 좁혀 볼 수 있다. */}
-        {chesscom && chesscom.status === "ready" && (
-          <div className="flex items-center" style={{ gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]].map(([k, lab]) => (
-                <button key={k} onClick={() => setMyTimeFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myTimeFilter === k ? T.ebony2 : "transparent", color: myTimeFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-              ))}
-            </div>
-            <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
-              {[["all", t("전체")], ["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-                <button key={k} onClick={() => setMyColorFilter(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: myColorFilter === k ? T.ebony2 : "transparent", color: myColorFilter === k ? T.brassHi : T.inkSoft }}>{lab}</button>
-              ))}
-            </div>
-          </div>
-        )}
-        {!chesscom || chesscom.status === "idle" ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("설정에서 chess.com 계정을 연동하면 이 수의 내 대국과 통계 표시")}</p>
-          : chesscom.status === "loading" ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("기보를 불러오는 중…")}</p>
-            : chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
-              : (
-                <div>
-                  {/* 이 수가 두어진 내 최근 대국 — 없으면 "없다"고 표시 */}
-                  <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.brass }}>{t("이 수를 둔 내 최근 대국")}</span>{myGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", myGames.length)}</span>}</div>
-                  {myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 10px" }}>{t("최근 대국 없음")}</p>
-                    : <div style={{ marginBottom: 10 }}>{myGamesPageItems.map((g, i) => {
-                        const won = g.result === "win", lost = g.result === "loss";
-                        const rc = ratingChanges.get(g);
-                        // (v0.2.6 버그 수정) 프로필 카드의 "최근 대국" 목록과 UI를 통일 —
-                        // "⬜ 백"/"⬛ 흑" 텍스트 대신 진영 색 막대, 상대 닉네임·레이팅 표시를 그대로 반영.
-                        const oppSide = g.color === "w" ? g.black : g.white;
-                        return (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: i === 0 ? "none" : "1px solid #E4D5B6" }}>
-                            <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                                {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                                {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
-                              </div>
-                              {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                              {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                            </div>
-                            <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                              {/* (v0.2.6 버그 수정) 이 버튼만 28px로 옆의 리뷰 버튼(BestMoveJumpButton, 30px)과
-                                  크기가 미묘하게 달랐다 — 프로필 카드·마스터 대국 목록과 같은 30px로 통일. */}
-                              <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                              <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
-                    </div>}
-                  {/* 전적 요약 */}
-                  {!stats ? <p style={{ fontSize: 12, color: T.inkSoft, margin: 0, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>{t("이 수순의 대국 통계 없음")}</p>
-                    : (
-                  <div style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                    <div><b>{tx("{0} 게임", fmtFull(stats.total))}</b> · <span style={{ color: T.best }}>{tx("{0}승", stats.w)}</span> {tx("{0}무 {1} · 승률 {2}", stats.d, <span style={{ color: T.blunder }}>{tx("{0}패", stats.l)}</span>, <b>{stats.winRate}%</b>)}</div>
-                    {stats.top.length > 0 && (
-                      <div style={{ marginTop: 6 }}>
-                        <div style={{ fontWeight: 800, color: T.inkSoft, fontSize: 11.5, marginBottom: 2 }}>{t("자주 둔 다음 수")}</div>
-                        {/* (버그 수정) 그냥 텍스트라 눌러도 아무 반응이 없었다 — 오프닝 실수 목록과 동일하게
-                            onJump로 그 수의 집중분석 모드로 바로 이동할 수 있게 한다. */}
-                        {stats.top.map((t) => (
-                          <button key={t.san} onClick={() => onJump && onJump([...sans, san], t.san)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>{moveNumber(ply + 1)}{t.san}({tx("{0} 게임) • 총 {1}승 {2}무 {3}패 • 승률 {4}", t.n, t.w, t.d, t.l, t.wr)}%</button>
-                        ))}
-                      </div>
-                    )}
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>{t("오프닝 실수")}</div>
-                      {analyzing && mistakes.length === 0 ? (
-                        <div className="flex items-center gap-2" style={{ padding: "4px 0" }}>
-                          <Mascot name={ply % 2 === 0 ? "kokoa" : "milku"} emotion="think" size={62} />
-                          <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("내 대국 분석 중…")}</span>
-                        </div>
-                      ) : (!analyzing && mistakes.length === 0) ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? t("15수 이내 두드러진 실수 없음") : t("엔진 준비 후 분석")}</div>
-                        : mistakes.map((mt, idx) => {
-                          const seqStr = [san, ...mt.seq]; // 표기: 집중 분석 수부터
-                          // (사용자 요청) 이 실수 수순으로 실제로 진행된 내 chess.com 대국 — 클릭하면
-                          // 곧장 분석 탭으로 이동하는 대신, 프로필 카드와 같은 UI로 바로 아래에 펼쳐
-                          // 보여주고, 그 안의 검색·리뷰 버튼으로 각자 분석 탭/리뷰로 이동한다.
-                          const fullPrefix = [...sans, san, ...mt.seq];
-                          const isOpen = expandedMistakeIdx === idx;
-                          const mtGames = isOpen && chesscom && chesscom.status === "ready"
-                            ? chesscom.games.filter((g) => g.moves.length >= fullPrefix.length && fullPrefix.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s))).sort((a, b) => (b.endTime || 0) - (a.endTime || 0))
-                            : [];
-                          return (
-                            <div key={idx}>
-                              <button onClick={() => setExpandedMistakeIdx(isOpen ? null : idx)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
-                                {seqStr.map((mv, i) => {
-                                  const isMistake = i === seqStr.length - 1;
-                                  const moverWhite = (ply + i) % 2 === 0;
-                                  const isUserMove = (moverWhite && mt.color === "w") || (!moverWhite && mt.color === "b");
-                                  const num = moveNumber(ply + i);
-                                  const st = isMistake ? { fontWeight: 900, textDecoration: "underline", color: mt.kind === "blunder" ? T.blunder : T.inaccuracy }
-                                    : isUserMove ? { fontWeight: 800, color: T.ink } : { color: T.inkSoft, fontWeight: 500 };
-                                  return <span key={i} style={st}>{num}{mv} </span>;
-                                })}
-                                <span style={{ color: T.inkSoft }}>({tx("{0}회)", mt.count)}</span>
-                              </button>
-                              {isOpen && (
-                                <div style={{ margin: "2px 0 6px", padding: "4px 8px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>
-                                  {mtGames.length === 0 ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "4px 0" }}>{t("대국을 찾을 수 없음")}</div>
-                                    : mtGames.map((g, gi) => {
-                                      const won = g.result === "win", lost = g.result === "loss";
-                                      const rc = ratingChanges.get(g);
-                                      const oppSide = g.color === "w" ? g.black : g.white;
-                                      return (
-                                        <div key={gi} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", borderTop: gi === 0 ? "none" : "1px solid #E4D5B6" }}>
-                                          <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                                          <div style={{ minWidth: 0, flex: 1 }}>
-                                            <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                                              {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                              {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                                              {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
-                                            </div>
-                                            {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                                            {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                                          </div>
-                                          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                                            <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                                            <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                    )}
-                </div>
-                )}
-      </div>
-      {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
-      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-          <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>{masterGames.length > 0 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{tx("{0}판", filteredMasterGames.length)}</span>}
-            {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
-            {canAdd && <button onClick={() => setAddGameOpen(true)} className="press" title={t("마스터 대국 추가")} aria-label={t("마스터 대국 추가")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0 }}>+</button>}
-          </div>
-          {/* (버그 보충) 정렬 — 기본(채택률 순, API 원래 순서) / 최신순(연도) / 레이팅순(더 높은 쪽 레이팅) */}
-          {masterGames.length > 1 && (
-            <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
-              {[["default", t("기본")], ["recent", t("최신순")], ["rating", t("레이팅순")]].map(([k, label]) => (
-                <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* (기능) 마스터 이름 검색 — 백/흑 어느 쪽 이름에든 검색어가 포함된 대국만 남긴다.
-            포커스 중이고 입력이 있으면 일치하는 선수 이름을 실시간으로 추천해 보여준다. */}
-        {masterGames.length > 1 && (
-          <div style={{ position: "relative", marginTop: 10, marginBottom: 10 }}>
-            <input value={masterSearch} onChange={(e) => setMasterSearch(e.target.value)}
-              onFocus={() => setMasterSearchFocused(true)} onBlur={() => setMasterSearchFocused(false)}
-              placeholder={t("선수 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
-            {masterSearchFocused && masterSuggestions.length > 0 && (
-              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: T.paper, border: "1px solid #C9B58C", borderRadius: 8, boxShadow: "0 10px 24px -8px rgba(0,0,0,.35)", zIndex: 5, overflow: "hidden" }}>
-                {masterSuggestions.map((nm) => (
-                  // onMouseDown(포커스 잃기 전에 먼저 발생)으로 골라야, input의 onBlur가 먼저 실행돼
-                  // 추천 목록이 사라지면서 클릭이 무산되는 걸 막을 수 있다.
-                  <div key={nm} onMouseDown={(e) => { e.preventDefault(); setMasterSearch(nm); }} className="press" style={{ padding: "7px 10px", fontSize: 12, color: T.ink, cursor: "pointer" }}>{nm}</div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {loadingMasterGames ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 검색 중…")}</p>
-          : masterGamesError ? (
-            <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 로드 실패")}{" "}<button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
-          )
-          : masterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("일치하는 마스터 대국 없음")}</p>
-          : filteredMasterGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>"{tx("{0}\" 검색 결과 없음", masterSearch.trim())}</p>
-            : (<>
-            {masterPageItems.map((g) => (
-              <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", opacity: ((openingGameId && openingGameId !== g.id) || (reviewingGameId && reviewingGameId !== g.id)) ? 0.5 : 1 }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="flex items-center justify-between" style={{ fontSize: 12.5 }}>
-                    <span>⬜ <b style={{ color: T.ink }}>{(g.white && g.white.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.white && g.white.rating) ?? "—"}</span> {g.winner === "white" && <span title={t("승리")}>👑</span>}</span>
-                    <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
-                  </div>
-                  <div style={{ fontSize: 12.5, marginTop: 2 }}>⬛ <b style={{ color: T.ink }}>{(g.black && g.black.name) || "?"}</b> <span style={{ color: T.inkSoft, fontFamily: SITE_FONT }}>{(g.black && g.black.rating) ?? "—"}</span> {g.winner === "black" && <span title={t("승리")}>👑</span>}</div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.year || ""}{openingGameId === g.id ? t(" · 기보를 불러오는 중…") : reviewingGameId === g.id ? t(" · 리뷰를 여는 중…") : ""}</div>
-                </div>
-                <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                  {/* (18차 UX8) "보기" 버튼 — 전체 기보를 불러오되, 집중분석에서 보던 수부터 보드에 표기 */}
-                  <button onClick={() => handleOpenGame(g.id)} disabled={!!openingGameId || !!reviewingGameId} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: (openingGameId || reviewingGameId) ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                  {/* (v0.2.1 기능) chess.com 통계와 동일한 초록 리뷰 버튼 — 이 마스터 대국을 곧바로 /review로 연다. */}
-                  {onOpenMasterGameReview && <BestMoveJumpButton onClick={() => handleReviewGame(g)} disabled={!!openingGameId || !!reviewingGameId} />}
-                </div>
-              </div>
-            ))}
-            <ListPager page={masterPage} setPage={setMasterPage} pageCount={masterPageCount} />
-            </>)}
-        {gameOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("기보 로드 실패. 잠시 후 다시 시도")}</p>}
-        {reviewOpenError && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("리뷰 열기 실패. 잠시 후 다시 시도")}</p>}
-      </div>
         </>,
-        nextMovesPanel,
       ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
-      {showExpl && (
-        <div onClick={() => setShowExpl(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, width: "100%", maxHeight: "80vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-              <div className="flex items-center gap-2"><BookOpen size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{tx("{0}{1} 해설", moveNumber(ply), san)}</span></div>
-              <button onClick={() => setShowExpl(false)} className="press" style={{ fontSize: 13, fontWeight: 800, color: T.inkSoft, background: "none", border: "none", cursor: "pointer" }}>✕</button>
-            </div>
-            <p style={{ fontSize: 13.5, color: T.ink, fontWeight: 600, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{explain}</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2651,6 +2735,31 @@ function RecommendReasonEditor({ sentKey, bumpContent }) {
         <button onClick={save} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "4px 11px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
         <button onClick={() => setEditing(false)} className="press" style={{ fontSize: 11, padding: "4px 11px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("취소")}</button>
       </div>
+    </div>
+  );
+}
+// (v0.6.6, 사용자 요청) 말풍선 본문은 고정 높이(3줄)로 두고, 넘치면 잘리는 경계에 "…"와 오른쪽 회색 "자세히 보기"를 띄운다. 눌러야만 아래로 늘어나고,
+// resetKey(포지션)가 바뀌면 다시 고정 크기로 접힌다(새로고침하면 당연히 접힌 상태).
+function ClampText({ children, resetKey, lines = 3, lineH = 20, padRight = 40 }) {
+  const [open, setOpen] = useState(false), [over, setOver] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { setOpen(false); }, [resetKey]);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el || open) return undefined;
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(check); ro.observe(el);
+    return () => ro.disconnect();
+  }, [children, resetKey, open]);
+  return (
+    <div style={{ position: "relative", paddingRight: padRight }}>
+      <p ref={ref} style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: lineH + "px", margin: 0, ...(open ? null : { height: lines * lineH, overflow: "hidden" }) }}>{children}</p>
+      {!open && over && (
+        <button onClick={() => setOpen(true)} className="press" style={{ position: "absolute", right: padRight, bottom: 0, height: lineH, paddingLeft: 22, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", color: T.ink, background: "linear-gradient(to right, rgba(247,240,222,0), " + T.paper + " 22px)" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#9A8F7C" }}>{t("자세히 보기")}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -2685,7 +2794,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
+export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -2713,7 +2822,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   const [promoPrompt, setPromoPrompt] = useState(null);   // (기능5) 프로모션 선택 대기 {from,to}
   // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조.
   const [promoGridEl, setPromoGridEl] = useState(null);
-  const [lastMascot, setLastMascot] = useState(EXPLAIN[""]);
+  const [lastMascot, setLastMascot] = useState("");   // (v0.6.6) 내장 기본 문구 없음
   const [lastQ, setLastQ] = useState(null);
   // (v0.2.2 버그 수정) 다음 수 블록(assignTiers)에 표시된 수 체계 아이콘과, 그 수를 실제로 뒀을 때
   // 보드 도착칸·현재 수 블록에 뜨는 아이콘이 서로 달랐다 — 후자는 아래 재평가 effect가 evalMoveKind
@@ -2730,7 +2839,6 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
   // 현재 수 블록은 그 값을 그대로 재사용한다.
   const pinnedKwRef = useRef({});
-  const [showAllNb, setShowAllNb] = useState(false);   // (UX1) 비이론 수 더보기(전체)
   // (사용자 요청) FEN 모드 — 분석 탭 메인 보드에 FEN을 붙여넣으면 표준 시작 위치 대신 그 포지션(차례·
   // 캐슬링 권리·앙파상까지)에서부터 이어서 둘 수 있다. fenRoot가 있는 동안 sans는 "표준 시작 위치부터의
   // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
@@ -2819,7 +2927,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     const mkEv = (ev) => ev.mate != null
       ? { mate: ev.mate * baseWhite, win: (ev.mate > 0) === (baseWhite === 1) ? "w" : "b", plies: matePliesOf(ev.mate) }
       : { cp: ev.cp * baseWhite };
-    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, 15, fenRoot) }))).slice(0, 3);
+    const toLines = (raw) => dedupeEngineLines((raw || []).filter((pv) => pv && pv.pv && pv.pv.length).map((pv) => ({ ev: mkEv(pv), sans: pvUciToSans(sans, pv.pv, pv.depth || 0, fenRoot) }))).slice(0, 3);   // (v0.6.6) 길이 = 도달한 depth
     // 엔진 라인과 같은 raw MultiPV 결과에서 각 줄의 첫 수만 뽑아 "다음 수" 블록 형태(MoveTile이
     // 기대하는 필드)로 바꾼다 — book/adopt/games는 이 위치엔 존재하지 않는 데이터라 그대로 없앤다.
     const board = boardOfRoot(fenRoot, sans);
@@ -2917,7 +3025,6 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     window.scrollTo({ top: 0, behavior: "auto" });
     if (boardRef.current) boardRef.current.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [focus]);
-  useEffect(() => { setShowAllNb(false); }, [key]);   // (UX1) 위치가 바뀌면 더보기 접기
   // (기능2) 퍼즐 자동 생성은 사용자가 "분석" 버튼을 눌러 FocusMode에 실제로 진입했을 때만 일어난다.
   // 예전엔 이 트리 탐색 화면을 그냥 넘겨보기만 해도(분석 버튼을 누르지 않아도) moves 배열이
   // 갱신될 때마다 여기서도 똑같이 퍼즐을 만들었는데, 이때의 kind는 엔진이 아직 얕은 깊이로만
@@ -3198,6 +3305,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     const name = m.name || (snapNode([...sans, m.san]) || {}).opening?.name || m.san;
     const isNew = m.book ? unlockOpening(childKey, name) : false;   // (UX2) 비이론 수는 도감 해금/알림 없음
     setFocusStack([]); // 보드에서 새로 들어가는 진입이라, 되돌아갈 이전 집중 분석이 없다.
+    setSans([...sans, m.san]); setFuture([]); setSel(null); setLastQ(null);   // (v0.6.6) 집중 분석 중 보드 수순 = 보고 있는 수까지 — 탐색 페이지의 다음 수가 이 수의 다음 수로 나온다
     setFocus({ sans: [...sans], san: m.san, m, ply, isNew, name });
   };
   // (버그 수정) 집중분석 중 다른 수의 집중분석으로 이동(onJump)했다가 나가면, 보드가 원래 진입했던
@@ -3215,24 +3323,27 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     if (focus) { setSans([...focus.sans, focus.san]); setFuture([]); setSel(null); setLastQ(null); }
     setFocus(null);
   };
-  const enterFocusAt = (tSans, tSan) => {
+  const enterFocusAt = (tSans, tSan, opts) => {
     const node2 = snapNode([...tSans, tSan]);
     const name = (node2 && node2.opening) ? node2.opening.name : tSan;
     unlockOpening([...tSans, tSan].join(" "), name);
     const pnode = snapNode(tSans); const mm = pnode && pnode.moves.find((x) => stripSuffix(x.san) === stripSuffix(tSan));
     // 이미 집중 분석 중이었다면(다른 집중 분석에서 링크를 눌러 옮겨온 것) 그 집중 분석을 스택에
     // 쌓아 뒤로가기로 되돌아올 수 있게 한다. 집중 분석 밖(보드·PGN 등)에서의 진입이면 새 세션이다.
-    setFocusStack((s) => (focus ? [...s, focus] : []));
+    // (v0.6.6) 집중 분석 기보에서 수를 눌러 옮길 때(opts.replace)는 되돌아갈 스택을 쌓지 않는다 — 한 경로 안의 이동이다.
+    if (!(opts && opts.replace)) setFocusStack((s) => (focus ? [...s, focus] : []));
+    setSans([...tSans, tSan]); setFuture([]); setSel(null); setLastQ(null);
     setFocus({ sans: [...tSans], san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name });
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
   // 보드 상단 SequenceBar에 그 대국의 전체 기보가 표시되도록 sans를 그 대국의 전체 수순으로 교체한다.
-  const onOpenMasterGame = async (gameId) => {
+  const onOpenMasterGame = async (gameId, atPly) => {
     const gameSans = await fetchAnyMasterGamePgn(gameId);   // 실패하면 그대로 throw — 호출부(FocusPanel)에서 오류 메시지를 표시한다
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     // (18차 UX8) 전체 기보를 불러오되, 보드는 집중분석에서 보던 수까지만 진행된 상태로 열고
     // 이후 수들은 future로 보존 — 기보에는 전체 수순이 흐리게 표시되고 클릭/▶로 이어볼 수 있다.
-    const upto = focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
+    // (v0.6.6) atPly(그 대국에서 n번째 수까지)가 오면 거기까지 진행된 상태로 연다 — 이 수 직후 진행 미리보기에서 고른 수.
+    const upto = atPly != null ? Math.max(1, Math.min(atPly, gameSans.length)) : focus ? Math.min(focus.ply + 1, gameSans.length) : gameSans.length;
     setFocus(null); setFocusStack([]); setSans(gameSans.slice(0, upto)); setFuture(gameSans.slice(upto)); setSel(null); setLastQ(null);
   };
   // (v0.2.1 기능) 마스터 대국의 초록 리뷰 버튼 — "보기"(onOpenMasterGame)와 달리 분석 보드는 그대로
@@ -3243,8 +3354,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     if (!gameSans || !gameSans.length) throw new Error(t("빈 기보"));
     onOpenReview && onOpenReview({
       sans: gameSans,
-      white: { username: (g.white && g.white.name) || null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
-      black: { username: (g.black && g.black.name) || null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
+      white: { username: (g.white && g.white.name) ? fullPlayerName(g.white.name) : null, rating: (g.white && g.white.rating != null) ? g.white.rating : null },
+      black: { username: (g.black && g.black.name) ? fullPlayerName(g.black.name) : null, rating: (g.black && g.black.rating != null) ? g.black.rating : null },
     });
   };
   // (19차 기능2) 내 chess.com 대국을 클릭 — 기보를 이미 갖고 있으므로(fetch 불필요) 그대로 보드에 로드.
@@ -3265,7 +3376,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // sans=[]는 실제 표준 시작 위치와 구분되지 않아, 조회하면 이 위치와 무관한 이론 정보가 섞여 든다.
   const node = fenRoot ? null : snapNode(sans);
   const openingName = node && node.opening ? node.opening.name : null;
-  const stageTitle = fenRoot ? t("{0} {1} 차례", (moveNumber(ply, startColor)), color === "w" ? t("백") : t("흑")) : ply === 0 ? t("1수 · 백의 첫 수") : (openingName || t("{0} 차례", (moveNumber(ply))));
+  const stageTitle = fenRoot ? t("{0} {1} 차례", (moveNumber(ply, startColor)), color === "w" ? t("백") : t("흑")) : ply === 0 ? t("1수, 백의 첫 수") : (openingName || t("{0} 차례", (moveNumber(ply))));
 
   // (UI5) 헤더 블록에 현재 수(직전에 두어진 수) 정보 표기
   const lastSan = sans.length ? sans[sans.length - 1] : null;
@@ -3280,10 +3391,10 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   const curKws = pinnedKw || ((curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []));   // 비이론 수는 개발자 키워드만
-  const curGames = curMove && curMove.games != null ? curMove.games : null;
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
+  const curGames = curStat && curStat.games != null ? curStat.games : (curMove && curMove.games != null ? curMove.games : null);   // (v0.6.6) 기준 토글(전체/마스터)을 따르는 실제 조회값 우선
   // (사용자 요청) 이 fetch가 아직 끝나지 않은 동안 통계 블록 자체를 숨기는 대신 3-dot bounce
   // 인디케이터로 로딩 중임을 보여준다 — MoveTile의 statsLoading과 같은 목적.
   const [curStatLoading, setCurStatLoading] = useState(false);
@@ -3295,13 +3406,14 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
     // 들었다. fenRoot가 있으면 아예 조회하지 않는다.
     if (!lastSan || !liveOn || fenRoot) { setCurStatLoading(false); return; }
     setCurStatLoading(true);
-    fetchLichess(sans.slice(0, -1)).then((r) => {
+    // (v0.6.6 버그 수정) 위 기준 토글(전체/마스터)을 따른다 — 예전엔 항상 일반 통계만 조회해, 마스터로 바꿔도 현재 수 블록의 회수·채택률·승률이 그대로였다.
+    fetchLichess(sans.slice(0, -1), mode === "master").then((r) => {
       if (cc || !r) return;
       const mm = r.moves.find((x) => stripSuffix(x.san) === stripSuffix(lastSan));
       if (mm) setCurStat({ wdl: mm.wdl, adopt: mm.adopt, games: mm.games, posTotal: r.posTotal });
     }).catch(() => { }).finally(() => { if (!cc) setCurStatLoading(false); });
     return () => { cc = true; };
-  }, [key, liveOn, fenRoot]);
+  }, [key, liveOn, fenRoot, mode]);
   // (사용자 요청) v0.4.5/0.4.6에서 일반 수 블록(MoveTile)에만 적용됐던 리체스 통계 개선(0에서
   // 실제 값까지 세어 올라가는 애니메이션, 채택률 소수 둘째 자리 표기, 더 진한 강조색)을 이 "현재
   // 수 블록"에도 완전히 동일하게 적용한다.
@@ -3346,8 +3458,8 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
       ) : (() => {
         const bk = moves.filter((m) => m.book);
         const nb = moves.filter((m) => !m.book);
-        const shownNb = (showAllNb ? nb : nb.slice(0, 3));
-        const shown = [...bk, ...shownNb];
+        // (v0.6.6, 사용자 요청) 더보기·접기 없이 표시할 수 있는 수 블록을 항상 전부 보여준다.
+        const shown = [...bk, ...nb];
         return (
           <>
             {/* (v0.2.4 기능) 평가치가 스트리밍되며 순위가 바뀌면(tiled의 rank 정렬) key가 그대로라
@@ -3356,13 +3468,9 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
             {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
                 두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
-            {nb.length > 3 && (
-              <button onClick={() => setShowAllNb((v) => !v)} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 0", borderRadius: 10, border: "1px dashed " + T.brass, background: "transparent", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                <ChevronRight size={14} style={{ transform: showAllNb ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
-                {showAllNb ? t("접기") : t("더보기")}
-              </button>
-            )}
+            {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
+            <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
           </>
         );
       })()}
@@ -3467,14 +3575,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 경로에서 앙파상이 불가능해지는 버그가 있었다. 근본적으로 "모든 /play 대국은 공통된
                 표준 시작 위치로만" 진입하도록, 지금 보드가 표준 시작 위치 그대로가 아니면(fenRoot가
                 있거나 sans에 이미 둔 수가 있으면) 이 버튼 자체를 비활성화하고 항상 빈 sans만 넘긴다. */}
-            {onOpenPlay && !focus && (() => {
-              const atStart = !fenRoot && sans.length === 0;
-              return (
-                <button onClick={() => atStart && onOpenPlay({ sans: [] })} disabled={!atStart} className="press" title={atStart ? t("PLAY: 봇과 대국") : t("PLAY: 표준 시작 위치에서만 가능")} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 46, padding: "0 14px", borderRadius: 11, background: atStart ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : T.ebony2, color: atStart ? "#241509" : "rgba(244,238,226,.35)", fontWeight: 800, fontSize: 13, border: "1px solid #000", boxShadow: atStart ? "0 3px 0 #000" : "none", cursor: atStart ? "pointer" : "not-allowed", opacity: atStart ? 1 : 0.6, flexShrink: 0 }}>
-                  <Play size={15} color={atStart ? "#241509" : "rgba(244,238,226,.35)"} fill={atStart ? "#241509" : "rgba(244,238,226,.35)"} />PLAY
-                </button>
-              );
-            })()}
+            {/* (v0.6.6, 사용자 요청) PLAY 버튼 제거 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <NavBtn size={46} onClick={back} disabled={!sans.length || !!focus}><ChevronLeft size={19} /></NavBtn>
               <NavBtn size={46} onClick={fwd} disabled={!future.length || !!focus}><ChevronRight size={19} /></NavBtn>
@@ -3485,7 +3586,7 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
-              <FocusPanel fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
+              <FocusPanel boardSize={boardSize} onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
         )}
@@ -3508,22 +3609,22 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                 const reason = recommendReasonFor(key) || autoReason;
                 return (
                   <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "12px 14px", border: "1px solid #DCCBA8", marginBottom: 16, boxShadow: "0 3px 0 #D7C19A" }}>
-                    <div style={{ position: "absolute", top: 4, right: 12 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={52} /></div>
+                    <div style={{ position: "absolute", top: 0, right: 6 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={42} /></div>
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
-                        <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{branch}</p>
+                        <ClampText resetKey={key}>{branch}</ClampText>
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
                         {rec ? (
-                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>
+                          <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
-                            {reason ? " · " + reason : null}
-                          </p>
+                            {reason ? ", " + reason : null}
+                          </ClampText>
                         ) : (
-                          <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, lineHeight: 1.6, margin: 0, paddingRight: 56 }}>{lastMascot}</p>
+                          <ClampText resetKey={key}>{lastMascot}</ClampText>
                         )}
                         {canEdit && <RecommendReasonEditor sentKey={key} bumpContent={bumpContent} />}
                       </>
@@ -3538,49 +3639,53 @@ export function LearnTab({ engine, liveOn, onFocusActive, unlockOpening, chessco
                   둔 쪽은 그 반대다 — ply 짝수(다음이 백 차례)면 직전 수는 흑이 두었으므로 KOKOA, 그 반대는 MILKU. */}
               {/* (19차 선행) 아무 수도 두어지지 않은 시작 위치(ply 0)에서는 현재 수 블록을 아예 표시하지 않는다. */}
               {sans.length > 0 && (
-              <div style={{ position: "relative", background: T.paper, borderRadius: 12, padding: "16px 18px", border: "1px solid #DCCBA8", boxShadow: "0 3px 0 #D7C19A" }}>
-                {/* (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
+              <div style={{ position: "relative", minWidth: 0, borderRadius: 12, background: "linear-gradient(180deg," + T.ivoryHi + " 0%," + T.ivory + " 60%,#DFD0B2 100%)", borderLeft: "5px solid " + ((curKind && QCOLOR[curKind]) || T.brass), boxShadow: "0 4px 0 #B59A6E, 0 9px 16px -9px rgba(0,0,0,.55)", padding: "10px 12px" }}>
+                {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 바탕·좌측 색 테두리·여백. (18차 UI9) 마스코트는 위의 주요 분기점/수 추천 블록으로 이동. (19차 선행) 총 대국수 표기 제거.
                     (버그) 제목 헤더(✨ 오프닝 이름)는 UI에서 삭제 — 상세 블록이 첫 요소가 되어 상단 구분선/여백 제거. */}
                 {lastSan && (
                   <div>
-                    <div className="flex items-center flex-wrap" style={{ gap: 13 }}>
-                      {curKind && QCOLOR[curKind] && <CircleBadge kind={curKind} descOnClick />}
-                      <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, letterSpacing: ".02em" }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
-                      {curName && <span style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, wordBreak: "keep-all" }}>{curName}</span>}
-                      {/* (사용자 요청) 집중 분석은 표준 시작 위치의 오프닝 이론을 전제로 하므로 FEN 모드에서는 숨긴다. */}
-                      {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11, fontWeight: 800, border: "1px solid #000", cursor: "pointer" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
-                    </div>
-                    <div className="flex items-center flex-wrap" style={{ gap: 16, marginTop: 12 }}>
-                      {curKind && <span style={{ fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</span>}
-                      {curGames != null && <span style={{ fontSize: 11.5, color: T.inkSoft, fontFamily: SITE_FONT }}>{tx("{0}회 진행", fmtFull(curGames))}</span>}
-                    </div>
-                    {curKws.length > 0 && (
-                      <div style={{ marginTop: 10 }}><KeywordScroll kws={curKws} chipStyle={{ fontSize: 9.5, padding: "2px 7px" }} /></div>
-                    )}
-                    {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
-                        (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
-                        "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
-                        올라가는 애니메이션, 채택률은 소수 둘째 자리까지 진한 강조색으로 표기한다.
-                        fetch가 아직 안 끝났으면(curStatLoading) 블록을 숨기는 대신 3-dot bounce
-                        인디케이터를 보여준다. */}
-                    {(curStat || curStatLoading) && (
-                      <>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                          <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
-                            <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
+                    {/* (v0.6.6, 사용자 요청) 다음 수 블록(MoveTile)과 같은 배치 — 키워드(최상단, 고정 높이) / 수 + 평가치 + 분석 버튼(우측 고정) / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+                      {curKind && QCOLOR[curKind] && <span onClick={(e) => e.stopPropagation()}><CircleBadge kind={curKind} descOnClick /></span>}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            {curKws.length > 0 && <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} /></div>}
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
+                              <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
+                              {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color: (curKind && QCOLOR[curKind]) || T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
+                            </div>
+                            {curName && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName}</MarqueeText>}
                           </div>
-                          {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
-                          <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                            <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
-                            <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
-                          </span>
+                          {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                         </div>
-                        {curStat && curStat.wdl && <div style={{ marginTop: 8 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
-                      </>
-                    )}
+                          {curKind && <div style={{ marginTop: 7, fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</div>}
+                          {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
+                              (사용자 요청) MoveTile과 완전히 동일하게 — 게이지 바 폭을 다시 한번 줄여(20%)
+                              "a/b" 회수 표기와 채택률(%) 오른쪽 여백을 모두 확보하고, 회수는 0부터 세어
+                              올라가는 애니메이션, 채택률은 소수 둘째 자리까지 진한 강조색으로 표기한다.
+                              fetch가 아직 안 끝났으면(curStatLoading) 블록을 숨기는 대신 3-dot bounce
+                              인디케이터를 보여준다. */}
+                          {(curStat || curStatLoading) && (
+                            <>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+                                <div style={{ flex: "0 1 20%", minWidth: 0, height: 5, borderRadius: 3, background: "rgba(0,0,0,.12)", overflow: "hidden" }}>
+                                  <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
+                                </div>
+                                {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
+                                <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+                                  <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                                  <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                                </span>
+                              </div>
+                              {curStat && curStat.wdl && <div style={{ marginTop: 7 }}><WinBar wdl={curStat.wdl} height={6} /></div>}
+                            </>
+                          )}
+                      </div>
+                    </div>
                   </div>
                 )}
-                {explainFor(sans) && <p style={{ color: T.inkSoft, fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>{explainFor(sans)}</p>}
+                {/* (v0.6.6, 사용자 요청) 내장 수 설명(explainFor)은 표시하지 않는다 — 해설은 유저가 직접 쓴 것만 */}
               </div>
               )}
             </>

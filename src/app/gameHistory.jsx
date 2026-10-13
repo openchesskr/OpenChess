@@ -305,7 +305,7 @@ export function GameRecordSummary({ overall }) {
         <span style={{ fontSize: 12, fontFamily: SITE_FONT, color: T.inkSoft }}>{tx("{0}판", fmtFull(overall.total))}</span>
       </div>
       <div style={{ fontSize: 13, fontFamily: SITE_FONT, color: T.ink }}>
-        <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1} · 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
+        <span style={{ color: T.best, fontWeight: 800 }}>{tx("{0}승", overall.w)}</span> {tx("{0}무 {1}, 승률 {2}", overall.d, <span style={{ color: T.blunder, fontWeight: 800 }}>{tx("{0}패", overall.l)}</span>, <b>{overall.winRate}%</b>)}
       </div>
       <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginTop: 8, border: "1px solid rgba(0,0,0,.2)" }}>
         <div style={{ width: (100 * overall.w / overall.total) + "%", background: T.best }} />
@@ -379,12 +379,30 @@ export function profileGameRowToGame(row, ownerName) {
   const opp = isBot ? { username: t("봇"), rating: row.bot_elo } : { username: row.opp_name || "?", rating: side(mine === "w" ? "b" : "w") ? side(mine === "w" ? "b" : "w").before : null };
   return {
     id: row.kind + "-" + row.id, moves: sans, color: mine, result: row.result,
-    timeClass: chessTcCategory(row.time_control), endTime: Math.floor(new Date(row.ended_at).getTime() / 1000),
+    timeClass: chessTcCategory(row.time_control), timeControl: row.time_control || null, endTime: Math.floor(new Date(row.ended_at).getTime() / 1000),
     rating: mySide ? mySide.after : null, rated: !!row.rated,
     white: mine === "w" ? me : opp, black: mine === "w" ? opp : me,
     opening: sans.length ? openingNameOf(sans) : null,
     _delta: mySide ? mySide.after - mySide.before : null,
   };
+}
+
+// (v0.6.6) 이 사람의 끝난 일반 대국 전부(실시간 대국은 서버에 영구 저장) — 서버가 한 번에 주는 양(최대 500판)씩 끝까지 이어 읽는다. 아직 새 서버 함수(p_offset)가 반영 전이면 예전 방식(최근 100판)으로 한 번만 읽는다.
+export async function fetchProfileGameRows(uid) {
+  const PAGE = 500, out = [];
+  try {
+    for (let off = 0; off < 20000; off += PAGE) {
+      const r = await sbRpc("profile_recent_games", { p_uid: uid, p_limit: PAGE, p_offset: off });
+      const rows = Array.isArray(r) ? r : [];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+    }
+    return out;
+  } catch (e) {
+    if (out.length) return out;
+    const r = await sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 });   // 예전 서버 함수
+    return Array.isArray(r) ? r : [];
+  }
 }
 
 // 일반 대국 기록 — chess.com 대국 통계와 같은 구성(시간 규정·색 필터 → 전체 기간 전적 → 레이팅 그래프 → 최근 대국). uid: 프로필 주인. 기록이 없으면 안내 문구만.
@@ -396,7 +414,7 @@ export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnal
     if (!SB_ON || !uid) { setRows([]); return undefined; }
     let cancelled = false;
     setRows(null);
-    sbRpc("profile_recent_games", { p_uid: uid, p_limit: 100 })
+    fetchProfileGameRows(uid)
       .then((r) => { if (!cancelled) setRows(Array.isArray(r) ? r.filter((x) => Array.isArray(x.sans) && x.sans.length > 0) : []); })
       .catch(() => { if (!cancelled) setRows([]); });
     return () => { cancelled = true; };

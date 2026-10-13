@@ -7,12 +7,15 @@
  *  ④ 화면 계산(src/lib/tournamentView.js): 라운드로빈 크로스테이블의 칸 수 = 본 경기 대국 수 × 2, 녹아웃 대진표는 마지막 라운드가 결승이고 우승자가 나온다.
  *  ⑤ 마스터 프로필(masterProfiles.json): 전적 합 = 대국 수, 대표 대국 합법, 챔피언 이름으로 프로필이 찾아진다(masterProfile.js), 대회 출전 기록이 연결된다.
  *  ⑥ 연결·용량: 도감 마스터 화면이 회차 화면·프로필·검색을 쓰고, 데이터 용량이 상한(Vercel 배포 저장 용량 규칙)을 넘지 않는다.
+ *  ⑧ (v0.6.6, BUG-082·083) 연도 블록이 있는 대회는 모두 회차 화면 데이터가 있다(DB 수록뿐인 대회는 scripts/build-db-tournaments.mjs — 예전엔 출전자 이름 상자만 열려 "아무것도 안 뜬다"는 제보),
+ *     DB 수록 회차(partial)는 우승자를 정하지 않고, 크로스테이블 칸은 첫 판이 아니라 합계로 색을 정하며, 마스터 트리 시작 연출 계산(treeIntro.js)과 검색 드롭다운·연출 연결이 유지된다.
  *  실행: node scripts/check-tournament-data.mjs
  */
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { Chess } from "chess.js";
 import { encodeMoves, decodeMoves } from "../src/lib/moveCodec.js";
-import { standings, crosstable, bracket, winnerOf, mainGames, filterGames } from "../src/lib/tournamentView.js";
+import { standings, crosstable, bracket, winnerOf, mainGames, filterGames, pairTotal } from "../src/lib/tournamentView.js";
+import { INTRO_DRAW_S, introDelay, introEase, introReach } from "../src/lib/treeIntro.js";
 import { findProfile, playedTournaments, candidateKeys } from "../src/lib/masterProfile.js";
 import { enName } from "../src/data/playerNames.js";
 const { TOURNAMENTS } = await import("../src/data/chessTournaments.js");
@@ -118,6 +121,29 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
   // [성, 대표 이름 첫 글자] — 같은 성의 다른 선수(예: Anand, Nikhil)는 건드리지 않는다
   const STARS = [["Carlsen", "M"], ["Kasparov", "G"], ["Karpov", "A"], ["Anand", "V"], ["Kramnik", "V"], ["Aronian", "L"], ["Nakamura", "H"], ["Korchnoi", "V"], ["Spassky", "B"], ["Tal", "M"]];
   for (const [sur, ini] of STARS) { const names = [...full].filter((n) => n.startsWith(sur + ", " + ini)); const short = names.filter((n) => n.split(",")[1].trim().replace(/[.\s]/g, "").length <= 2); if (!names.length) fails.push(sur + ": 대회 데이터에 없음"); else if (short.length) fails.push(sur + ": 이니셜뿐인 표기가 남음(긴 표기와 합쳐지지 않음) — " + short.join(" | ")); }
+}
+
+// ⑧ (v0.6.6, BUG-082·083)
+{
+  // 대회 이름 색인(eventIndex.json) — 모든 회차의 이름이 색인에 있어야 집중 분석의 대회 이름 링크가 그 연도 블록으로 간다(build-event-index.mjs)
+  const evx = rj("src/data/eventIndex.json").events, nk = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  for (const [id, d] of data) for (const e of d.eds) for (const ev of [e.ev, ...(e.evs || [])]) { const k = nk(ev); if (k && !(evx[k] || []).some((x) => x[0] === id && x[1] === e.y)) { fails.push("eventIndex.json에 없음: " + id + "/" + e.y + " " + ev + " — node scripts/build-event-index.mjs"); break; } }
+  { const ln = readFileSync(url("src/app/learn.jsx"), "utf8"), ap = readFileSync(url("src/App.jsx"), "utf8"), dxx = readFileSync(url("src/app/dex.jsx"), "utf8"), dm2 = readFileSync(url("src/app/dexMasters.jsx"), "utf8");
+    if (!/tournamentOfEvent\(g\.event/.test(ln) || !/onOpenTournament\(tg\)/.test(ln)) fails.push("집중 분석 마스터 통계의 대회 이름 링크 연결 없음");
+    if (/lichessRes\.games/.test(ln.slice(ln.indexOf("const games = [...dev"), ln.indexOf("const games = [...dev") + 220))) fails.push("마스터 통계 목록에 Lichess 대국이 다시 섞임(대회 정보가 없어 뺀 것)");
+    if (!/setMasterNav\(target\)/.test(ap) || !/peekMasterNav\(\)/.test(dxx) || !/takeMasterNav\(\)/.test(dm2) || !/flyTo\(focusId\)/.test(dm2)) fails.push("대회 이름 → 마스터 트리 찾아가기·검색 이동 연결 없음"); }
+
+  for (const t of TOURNAMENTS) { const x = idx.byId[t.id]; if (x && x.editions.length && !ids.has(t.id)) fails.push(t.id + ": 연도 블록(" + x.editions.length + "개)이 있는데 회차 화면 데이터 파일이 없음 — node scripts/build-db-tournaments.mjs"); }
+  let partials = 0; for (const d of data.values()) for (const e of d.eds) if (e.partial) { partials++; if (winnerOf(e)) fails.push(d.id + "/" + e.k + ": DB 수록(partial) 회차에 우승자가 정해짐"); if (e.fmt !== "list") fails.push(d.id + "/" + e.k + ": DB 수록 회차의 형식은 list여야 함"); }
+  if (!partials) fails.push("DB 수록(partial) 회차가 하나도 없음 — build-db-tournaments를 다시 돌렸는지 확인");
+  const C = (...v) => v.map((t) => ({ t }));
+  eq([pairTotal(C("1", "0.5")), pairTotal(C("0.5", "1")), pairTotal(C("1", "0")), pairTotal(C("0", "0.5")), pairTotal(C("0.5")), pairTotal(C("1")), pairTotal(C("0.5", "0.5"))].map((x) => x.tot + x.kind), ["1.5w", "1.5w", "1d", "0.5l", "0.5d", "1w", "1d"], "크로스테이블 칸 합계·색(더블 라운드로빈에서 첫 판만 보고 색을 정하던 문제)");
+  const R = introReach(412, 600, 0.28), near = introDelay(100, R), far = introDelay(R * 0.9, R);
+  if (!(near >= 0 && far > near && far <= INTRO_DRAW_S) || introDelay(R * 1.2, R) !== null) fails.push("시작 연출 지연: 가까울수록 먼저, 화면 밖은 건너뜀");
+  if (introEase(0) !== 0 || introEase(1) !== 1 || !(introEase(0.25) < 0.25)) fails.push("시작 연출 확대 곡선");
+  const dm = readFileSync(url("src/app/dexMasters.jsx"), "utf8"), dx = readFileSync(url("src/app/dex.jsx"), "utf8");
+  for (const [re, m] of [[/from "\.\.\/lib\/treeIntro\.js"/, "마스터 트리 시작 연출"], [/matchSig/, "검색 결과 목록이 바뀔 때만 화면 이동(연도 블록을 펼칠 때 되돌아가지 않게)"], [/setDropOpen/, "검색 결과 드롭다운"], [/t\("일치하는 마스터·대회 없음"\)/, "검색 결과 없음 안내"]]) if (!re.test(dm)) fails.push("dexMasters.jsx에 " + m + " 연결이 없음");
+  if (!/from "\.\.\/lib\/treeIntro\.js"/.test(dx) || !/introProp/.test(dx)) fails.push("dex.jsx(오프닝 트리)에 시작 연출 연결이 없음");
 }
 
 if (fails.length) { console.error("✖ check-tournament-data 실패 (" + fails.length + "건):\n  " + fails.slice(0, 30).join("\n  ") + (fails.length > 30 ? "\n  … 외 " + (fails.length - 30) + "건" : "")); process.exit(1); }

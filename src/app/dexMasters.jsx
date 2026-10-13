@@ -3,7 +3,7 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, Search, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
+import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
@@ -15,13 +15,17 @@ import DBM from "../data/dbMasters.json";
 import { COUNTRY_KO, WINNERS, WINNER_KIND } from "../data/chessTournamentWinners.js";
 import { enName, playerName } from "../data/playerNames.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { candidateKeys } from "../lib/masterProfile.js";
+import { masterInfoLine, champNumText } from "../lib/masterSearchInfo.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { flagEmoji } from "../lib/flags.js";
 import { laurelBranch, leafPath } from "../lib/laurel.js";
-import { ordinalParam } from "../lib/ordinal.js";
-import { MT, championAt, clampMasterPan, layoutMasters, transferPath } from "../lib/masterTreeLayout.js";
+import { MT, championAt, clampMasterPan, flightPoints, layoutMasters, polyLength, polyPointAt, transferPath } from "../lib/masterTreeLayout.js";
+import { takeMasterNav } from "../lib/masterNav.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { DEX_ELECTRIC_FLOW_SPEED, DEX_SELECT_FLOW_SPEED, MASTER_ZOOM_LABEL_BASE, MASTER_ZOOM_STEP, SCHEMATIC_DRAG_MULT, SCHEMATIC_ELECTRIC, anchoredZoomPan, masterZoomLabel, snapMasterZoom } from "../lib/schematicGeometry.js";
 import { playSfx } from "../lib/prefs.js";
+import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import EditionView from "../components/tournamentView.jsx";
 import { GameViewButton, BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import MasterProfile from "../components/masterProfile.jsx";
@@ -29,11 +33,12 @@ import { hasTournamentData, loadTournamentSearch } from "../lib/tournamentData.j
 import { tournamentsOfPlayerQuery } from "../lib/masterProfile.js";
 import { decodeMoves } from "../lib/moveCodec.js";
 
-const CULL_MARGIN = 1.0, CULL_Q = 240;   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
-const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
+const CULL_MARGIN = 1.0, CULL_Q = 240;
+const cullK = (z) => (z < 0.5 * MASTER_ZOOM_LABEL_BASE ? 0.3 : 1);   // (v0.6.6) 낮은 배율에서는 화면 안에 노드가 수백 개라 여유 범위를 좁혀 그리는 노드 수를 줄인다   // 화면 밖 노드·선은 그리지 않는다 — 보이는 영역 둘레에 화면 한 개 분량의 여유를 두고 240px 격자로 맞춘다
+const BASE_LAYOUT = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null);   // 챔피언·도전자 노드만(상세 카드가 위성 노드를 찾는 용도)
 const norm = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9가-힣]/g, "");
 const TOUR_COLOR = { elite: "#B8862F", cycle: "#7B5EA7", team: "#3F7A3A", speed: "#D9822B", women: "#C0507A", historic: "#8A7A66", general: "#5F8A8B" };
-const LABEL_TEXT = () => ({ champs: t("역대 세계 챔피언"), tours: t("주요 대회"), db: t("마스터 대국 DB 선수"), "fide-standard": t("FIDE 스탠다드 랭킹"), "fide-rapid": t("FIDE 래피드 랭킹"), "fide-blitz": t("FIDE 블리츠 랭킹") });
+const LABEL_TEXT = () => ({ champs: t("역대 세계 챔피언"), tours: t("주요 대회"), db: t("주요 그랜드마스터"), rank: t("랭킹"), "fide-standard": t("FIDE 스탠다드 랭킹"), "fide-rapid": t("FIDE 래피드 랭킹"), "fide-blitz": t("FIDE 블리츠 랭킹") });
 const TOUR_LABEL = () => ({ elite: t("슈퍼 토너먼트"), cycle: t("세계선수권 사이클"), team: t("팀 대회"), speed: t("속기·프리스타일·온라인"), women: t("여자 대회"), historic: t("역사적 대회"), general: t("일반 대회") });
 const FREQ_LABEL = () => ({ annual: t("매년"), biennial: t("격년"), oneoff: t("일회성") });
 const tourPeriod = (r) => (r.to === r.from ? String(r.from) : r.from + "–" + (r.to == null ? "" : r.to));
@@ -44,10 +49,10 @@ const LANE_COLOR = { C: T.brass, L: "#5B8DB8", R: "#C0624F" };
 const personName = (p) => (p.name || p.opp);
 const TAG_LABEL = () => ({ PCA: "PCA", FIDE: "FIDE", CLASSIC: t("클래식") });
 // "6대 챔피언(1기)" · en "6th (Reign 1)" — 재위가 한 번뿐인 사람은 "(n기)"를 붙이지 않는다.
-const numText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
+const numText = champNumText;
 const reignText = (c) => c.from + "–" + (c.to == null ? "" : c.to);
 const KIND_LABEL = () => ({ tournament: t("토너먼트"), forfeit: t("몰수승"), split: t("분열"), unify: t("통합전"), knockout: t("녹아웃"), vacated: t("반납") });
-const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? " · " + k : "") + (tr.score ? " · " + tr.score : ""); };
+const edgeLabel = (tr) => { const k = KIND_LABEL()[tr.kind]; return tr.y + (k ? ", " + k : "") + (tr.score ? ", " + tr.score : ""); };
 
 /* 국적은 3글자 코드 대신 국기 이모지로 표기한다(코드는 마우스를 올렸을 때 툴팁으로만). */
 function CountryChip({ cc, size = 15 }) {
@@ -68,7 +73,7 @@ function CornerBadge({ children, bg = T.brass, big }) {
 /* 이름 왼쪽 국기 이모티콘(없으면 아무것도 안 그린다) */
 const Flag = ({ code, size = 16 }) => { const f = flagEmoji(code); return f ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{f}</span> : null; };
 const FlagE = ({ emoji, size = 16 }) => (emoji ? <span aria-hidden="true" style={{ fontSize: size, lineHeight: 1, marginRight: 5, flexShrink: 0 }}>{emoji}</span> : null);
-const fxClass = (fx) => (fx ? " dex-surge-node" : "");
+const fxClass = (fx) => (fx ? (fx.intro ? " dex-intro-node" : " dex-surge-node") : "");
 const fxDelay = (fx) => (fx ? { animationDelay: fx.delay + "s" } : null);
 
 /* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
@@ -90,7 +95,7 @@ function MasterDefs() {
   );
 }
 /* 챔피언 블록(시안 A) — 금속성 금색 프레임 안의 어두운 명판, 이름 양옆에 월계수. 현 챔피언은 ♛와 금빛 발광. 줄(PCA·클래식/FIDE)은 태그 칩 색으로 구분한다. */
-function ChampNode({ n, onPick, picked, fx, dim }) {
+const ChampNode = React.memo(function ChampNode({ n, onPick, picked, fx, dim }) {
   const c = n.champ, current = c.to == null;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "champ", id: c.id })} aria-label={personName(c) + " " + numText(c) + " " + reignText(c)}
@@ -111,10 +116,10 @@ function ChampNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 
 /* 오른쪽 대회 열의 대회 카드 — 왼쪽 띠 색이 종류(슈퍼 토너먼트·사이클·팀 …)다. */
-function TourNode({ n, onPick, picked, fx, dim }) {
+const TourNode = React.memo(function TourNode({ n, onPick, picked, fx, dim }) {
   const r = n.tour, color = TOUR_COLOR[r.type];
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "tour", id: r.id })} aria-label={personName(r) + " " + tourPeriod(r)}
@@ -123,20 +128,20 @@ function TourNode({ n, onPick, picked, fx, dim }) {
       <CornerBadge bg={color}><Trophy size={10} /></CornerBadge>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, background: color, borderRadius: "13px 0 0 13px" }} />
       <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{personName(r)}</div>
-      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)} · {tourPlace(r)}</div>
+      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tourPeriod(r)}, {tourPlace(r)}</div>
     </button>
   );
-}
+});
 
 /* ── 남쪽 FIDE 랭킹 블록(270×84) ──
-   왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리) · 윗줄 국기+이름 · 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅 · 맨 아래 연맹·출생 연도. */
+   왼쪽 랭킹 리본(1~3위는 금·은·동 메달 프레임, 10위까지는 따뜻한 금빛 테두리), 윗줄 국기+이름, 아랫줄 레이팅 막대(그 순위표 안에서의 상대 위치)와 레이팅, 맨 아래 연맹·출생 연도. */
 const FIDE_RANGE = Object.fromEntries(Object.entries(FIDE.lists).map(([k, l]) => [k, [l[l.length - 1][4], l[0][4]]]));
 const RANK_TIER = {
   1: { frame: "linear-gradient(135deg,#FBEAB0,#DDAE45 45%,#8F6A22)", ribbon: "linear-gradient(180deg,#F8E3A0,#CFA13E)", ink: "#2A1807", bg: "linear-gradient(160deg,#FFF8E0,#F6E6B4)", glow: "0 0 14px 2px rgba(236,203,134,.6)" },
   2: { frame: "linear-gradient(135deg,#F4F6F8,#B9C0C7 45%,#7C858E)", ribbon: "linear-gradient(180deg,#EDF0F3,#B4BBC3)", ink: "#27313A", bg: "linear-gradient(160deg,#FAFBFC,#E8ECEF)", glow: "0 0 12px 1px rgba(190,198,206,.7)" },
   3: { frame: "linear-gradient(135deg,#F0CDA6,#C0803F 45%,#7A4A1E)", ribbon: "linear-gradient(180deg,#EBC196,#BC7B3C)", ink: "#2F1805", bg: "linear-gradient(160deg,#FFF3E6,#F0D9BE)", glow: "0 0 12px 1px rgba(205,140,80,.55)" },
 };
-function FideNode({ n, onPick, picked, fx, dim }) {
+const FideNode = React.memo(function FideNode({ n, onPick, picked, fx, dim }) {
   const f = n.fide, medal = RANK_TIER[n.rank], top10 = n.rank <= 10;
   const [lo, hi] = FIDE_RANGE[n.list], pct = hi > lo ? 12 + 88 * (f.rating - lo) / (hi - lo) : 100;
   const frame = medal ? medal.frame : top10 ? "linear-gradient(135deg,#E8D3A0,#C49A50)" : NODE_EDGE;
@@ -165,11 +170,11 @@ function FideNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 /* ── 서쪽 마스터 대국 DB 선수 블록(270×78) ──
-   왼쪽 국기 판(국기가 없으면 사람 아이콘) · 이름 · 최고 엘로 알약(2800+ 금 · 2700+ 황동 · 그 외 베이지)과 DB 대국 수. */
+   왼쪽 국기 판(국기가 없으면 사람 아이콘), 이름, 최고 엘로 알약(2800+ 금, 2700+ 황동, 그 외 베이지)과 DB 대국 수. */
 const DB_ELO_RANGE = (() => { const e = DBM.masters.map((m) => m[2]).filter(Boolean); return [Math.min(...e), Math.max(...e)]; })();
-function DbMasterNode({ n, onPick, picked, fx, dim }) {
+const DbMasterNode = React.memo(function DbMasterNode({ n, onPick, picked, fx, dim }) {
   const m = n.dbm, flag = masterFlag(m.name), star = m.elo >= 2800;
   const eloTier = star ? { bg: "linear-gradient(180deg,#F6DE97,#C49A50)", ink: "#2A1807" } : m.elo >= 2700 ? { bg: "rgba(196,154,80,.32)", ink: "#7A5516" } : { bg: "rgba(90,58,20,.1)", ink: "#6B5230" };
   const pct = m.elo ? 10 + 90 * (m.elo - DB_ELO_RANGE[0]) / (DB_ELO_RANGE[1] - DB_ELO_RANGE[0]) : 0;
@@ -196,7 +201,7 @@ function DbMasterNode({ n, onPick, picked, fx, dim }) {
       </span>
     </button>
   );
-}
+});
 
 /* 연도 블록 아래 대진표 영역에 놓이는 그 연도 출전자(마스터 대국 DB). PGN의 라운드 정보가 들어오면 실제 대진표 노드로 바뀔 자리. */
 function PlayerNode({ n }) {
@@ -208,10 +213,10 @@ function PlayerNode({ n }) {
 }
 
 /* 대회 허브에서 오른쪽으로 한 줄로 이어지는 연도 블록 — 누르면 그 연도의 대진표 영역이 아래로 펼쳐지고(아래 대회들이 밀려난다), 다시 누르면 접힌다. */
-function EditionNode({ n, onToggle, fx, active, dim }) {
+const EditionNode = React.memo(function EditionNode({ n, onToggle, fx, active, dim }) {
   const color = TOUR_COLOR[n.tour.type], open = n.open || active;
   return (
-    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n.tourId + ":" + n.year)} aria-expanded={!!open} aria-label={personName(n.tour) + " " + n.year}
+    <button className={"press" + fxClass(fx)} onClick={() => onToggle(n)} aria-expanded={!!open} aria-label={personName(n.tour) + " " + n.year}
       style={{ ...fxDelay(fx), position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", cursor: "pointer", borderRadius: 14, zIndex: 2, fontFamily: SITE_FONT, color: open ? "#241509" : T.ink, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
         border: "2px solid " + (open ? T.brass : NODE_EDGE), background: open ? "linear-gradient(180deg," + T.brass + "," + T.book + ")" : NODE_PARCH, boxShadow: "0 2px 5px rgba(60,40,20,.16)", opacity: dim ? 0.3 : 1 }}>
       <CornerBadge bg={color}><CalendarDays size={10} /></CornerBadge>
@@ -219,20 +224,20 @@ function EditionNode({ n, onToggle, fx, active, dim }) {
       <span style={{ fontSize: 10, fontWeight: 800, opacity: .7 }}>{n.games ? t("{0}판", n.games) : ""}</span>
     </button>
   );
-}
+});
 
 /* 펼쳐진 연도의 대진표 영역 틀(제목 + 안내). 안의 노드는 PlayerNode. */
 function BracketPanel({ p }) {
   const color = TOUR_COLOR[p.tour.type];
   return (
     <div style={{ position: "absolute", left: p.x, top: p.y, width: p.w, height: p.h, boxSizing: "border-box", borderRadius: 14, border: "2px solid " + color + "88", background: "rgba(255,255,255,.55)", zIndex: 1, padding: "10px 14px", fontFamily: SITE_FONT, pointerEvents: "none" }}>
-      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{personName(p.tour)} {p.year} · {t("대진표")}</div>
+      <div style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{personName(p.tour)} {p.year}, {t("대진표")}</div>
       {p.empty && <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>{t("마스터 대국 DB에 이 연도 대국 없음")}</div>}
     </div>
   );
 }
 
-function SatNode({ n, onPick, picked, fx, dim }) {
+const SatNode = React.memo(function SatNode({ n, onPick, picked, fx, dim }) {
   const s = n.sat;
   return (
     <button className={"press" + fxClass(fx)} onClick={() => onPick({ type: "sat", id: n.id })} aria-label={personName(s) + " " + s.years.join(", ")}
@@ -241,19 +246,18 @@ function SatNode({ n, onPick, picked, fx, dim }) {
       <CornerBadge bg="#8A7458"><Swords size={10} /></CornerBadge>
       <div style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center" }}><Flag code={s.cc} size={13} />{personName(s)}</div>
       <div className="flex items-center justify-between gap-1" style={{ marginTop: 2 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(" · ")}</span>
-        <CountryChip cc={s.cc} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{s.years.join(", ")}</span>
       </div>
     </button>
   );
-}
+});
 
 function UpcomingNode({ n }) {
   const u = n.upcoming;
   return (
     <div style={{ position: "absolute", left: n.x, top: n.y, width: n.w, height: n.h, boxSizing: "border-box", padding: "5px 10px", borderRadius: 11, border: "2px dashed " + T.brass, background: "rgba(196,154,80,.1)", color: T.ink }}>
       <div className="flex items-center justify-between gap-1">
-        <span style={{ fontSize: 9.5, fontWeight: 900, color: T.brass, letterSpacing: ".04em" }}>{t("2026 타이틀전 · 예정")}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 900, color: T.brass, letterSpacing: ".04em" }}>{t("2026 타이틀전, 예정")}</span>
         <CountryChip cc={u.cc} />
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 800, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{personName(u)}</div>
@@ -284,7 +288,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
         {head(WINNER_KIND[r.id] === "titleChanges" ? t("챔피언이 바뀐 해") : t("역대 우승"))}
         <div style={{ maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
           {[...winners].reverse().map(([y, names]) => (
-            <div key={y} style={rowSty}>{y} · {names.map(winName).join(" · ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
+            <div key={y} style={rowSty}>{y}, {names.map(winName).join(", ")}{checks[y] === "ok" && <span title={t("마스터 대국 DB의 출전자와 일치")} style={{ marginLeft: 5, fontSize: 9.5, fontWeight: 900, color: T.best }}>✓</span>}</div>
           ))}
         </div>
         <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 3 }}>{t("✓ = 마스터 대국 DB 출전자와 대조 확인. 우승 기록은 검수 전 자료")}</div>
@@ -292,12 +296,12 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
       {head(info && info.pgn ? t("대회 자료") : t("마스터 대국 DB"))}
       {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
       {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
-        <div style={rowSty}>{t("대국 {0}판", info.games)} · {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
-        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(" · ")}</div>}
+        <div style={rowSty}>{t("대국 {0}판", info.games)}, {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
+        {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(", ")}</div>}
         {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
         {results.length > 0 && <>
           {head(info.pgn ? t("집계 결과") : t("DB 집계 결과"))}
-          {results.map((x) => <div key={x.y} style={rowSty}>{x.y} · {x.winners.map((n) => enName(n)).join(" · ")} ({fmtScore(x.score)}) · <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
+          {results.map((x) => <div key={x.y} style={rowSty}>{x.y}, {x.winners.map((n) => enName(n)).join(", ")} ({fmtScore(x.score)}), <span style={{ color: x.sure ? T.best : T.inkSoft, fontWeight: 800 }}>{x.sure ? t("확정") : t("참고") + " " + x.cov + "%"}</span></div>)}
           <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("확정 = 모든 대국이 DB에 있음. 참고 = 일부 대국 누락")}</div>
         </>}
         {info.top.length > 0 && <>
@@ -305,7 +309,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
               <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 7px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y} · {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""} · {g.r}
+                {g.y}, {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""}, {g.r}
               </div>
               <GameViewButton onClick={() => onOpenGame && onOpenGame(sansOf(g))} />
               <BestMoveJumpButton onClick={() => openReview(g)} />
@@ -323,18 +327,18 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
     const c = BY_ID.get(pick.id);
     title = personName(c); sub = ""; cc = c.cc; flag = flagEmoji(c.cc); profName = c.name;
     const ins = TRANSFERS.filter((x) => x.to === c.id && !x.loser && x.kind !== "vacated"), outs = TRANSFERS.filter((x) => x.from === c.id && x.kind !== "split");
-    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? " · " + TAG_LABEL()[c.tag] : "")] });
-    if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.from))) });
-    if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + " · " + personName(d) + " · " + d.score + (d.won ? " · " + t("등극") : d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : "")) });
-    if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + " · " + personName(BY_ID.get(x.to))) });
-    if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + " · " + personName(UPCOMING)] });
+    blocks.push({ head: t("재위"), lines: [(c.no ? numText(c) : t("FIDE 세계 챔피언(분열기)")), reignText(c) + (c.tag ? ", " + TAG_LABEL()[c.tag] : "")] });
+    if (ins.length) blocks.push({ head: t("타이틀 획득"), lines: ins.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.from))) });
+    if (c.defenses.length) blocks.push({ head: t("타이틀전 기록"), lines: c.defenses.map((d) => d.y + ", " + personName(d) + ", " + d.score + (d.won ? ", " + t("등극") : d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : "")) });
+    if (outs.length) blocks.push({ head: t("타이틀 상실"), lines: outs.map((x) => edgeLabel(x) + ", " + personName(BY_ID.get(x.to))) });
+    if (c.to == null) blocks.push({ head: t("다음 타이틀전"), lines: [UPCOMING.date + ", " + personName(UPCOMING)] });
   } else if (pick.type === "tour") {
     const r = TOURNAMENTS.find((x) => x.id === pick.id), at = championAt(CHAMPIONS, r.from);
     title = personName(r); sub = ""; cc = r.cc;
-    blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? " · " + FREQ_LABEL()[r.freq] : "")] });
+    blocks.push({ head: t("종류"), lines: [TOUR_LABEL()[r.type] + (r.freq ? ", " + FREQ_LABEL()[r.freq] : "")] });
     blocks.push({ head: t("기간"), lines: [tourPeriod(r)] });
     blocks.push({ head: t("개최지"), lines: [tourPlace(r)] });
-    blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? " · " + numText(at) : "") : t("공위기")] });
+    blocks.push({ head: t("개최 당시 세계 챔피언"), lines: [at ? personName(at) + (at.no ? ", " + numText(at) : "") : t("공위기")] });
   } else if (pick.type === "fide") {
     const [, list, rank] = pick.id.split(":"), f = FIDE.lists[list][+rank - 1], cat = { standard: t("스탠다드"), rapid: t("래피드"), blitz: t("블리츠") }[list];
     title = masterName(f[2], "en"); sub = ""; cc = f[3]; flag = flagEmoji(f[3]); profName = f[2];
@@ -350,7 +354,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
   } else {
     const n = BASE_LAYOUT.byNodeId.get(pick.id), s = n.sat, c = BY_ID.get(n.champId);
     title = personName(s); sub = ""; cc = s.cc; flag = flagEmoji(s.cc); profName = s.name;
-    blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + " · " + personName(c) + " · " + d.score + (d.draw ? " · " + t("무승부") : d.tourney ? " · " + t("토너먼트") : " · " + t("패"))) });
+    blocks.push({ head: t("세계선수권 도전 기록"), lines: s.matches.map((d) => d.y + ", " + personName(c) + ", " + d.score + (d.draw ? ", " + t("무승부") : d.tourney ? ", " + t("토너먼트") : ", " + t("패"))) });
   }
   return (
     <div className="no-pan" onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}
@@ -379,8 +383,9 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
 }
 
 /* 회로선 — 오프닝 트리의 선과 같은 규칙: 기본은 황동색 2px 둥근 끝, 전류 서지(electric)나 선택 경로(lit)면 하늘색 3px 점선이 흐른다. delay는 칩에서의 거리에 비례. */
-function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash }) {
+function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash, intro }) {
   const on = lit || surge;
+  if (intro != null && !on) return <path d={d} pathLength={1} fill="none" stroke={stroke} strokeWidth={2} opacity={opacity} strokeLinecap="round" strokeLinejoin="round" className="dex-intro-line" style={{ animationDelay: intro + "s" }} />;   // 시작 연출: 칩에서 바깥으로 선이 그려진다
   return <path d={d} fill="none" stroke={on ? SCHEMATIC_ELECTRIC : stroke} strokeWidth={on ? 3 : 2} opacity={on ? 1 : opacity} strokeLinecap="round" strokeLinejoin="round"
     className={surge ? "dex-surge-line" : lit ? "dex-current-line" : undefined}
     style={on ? { strokeDasharray: "7 5", transition: lit ? "stroke .25s ease " + delay + "s, opacity .25s ease " + delay + "s" : undefined, animationDelay: surge ? delay + "s" : undefined } : (dash ? { strokeDasharray: dash } : undefined)} />;
@@ -400,36 +405,45 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // 나머지는 흐리게 하며(dim), 맞는 대회로 화면을 옮긴다. 맞는 대회가 없으면 흐리게 하지 않고 안내만 띄운다.
   const LAYOUT = React.useMemo(() => {
     const ed = {}; if (idx) for (const [id, v] of Object.entries(idx.byId)) ed[id] = v.editions;
-    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING, TOURNAMENTS, ed, openEd, FIDE, DBM.masters);
+    return layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, ed, openEd, FIDE, DBM.masters);
   }, [idx, openEd]);
   // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
   //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
+  // (v0.6.6, 사용자 요청) 같은 사람은 한 번만 나온다(챔피언 > 챔피언 도전자 > FIDE 순위 > 대국 DB 선수 순으로 노드를 고른다). 이름 아래에는 조건에 맞는 정보만(챔피언 대수, 챔피언 도전자, FIDE 부문 순위) 쉼표로 이어 보인다(masterInfoLine).
   const masterKeys = React.useMemo(() => {
-    const out = [];
+    const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
     for (const n of LAYOUT.nodes) {
-      let names = null;
-      if (n.kind === "champ") names = [n.champ.name, n.champ.ko];
-      else if (n.kind === "sat") names = [n.sat.opp, n.sat.ko];
-      else if (n.kind === "fide") names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")];
-      else if (n.kind === "dbm") names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")];
-      if (names) out.push({ id: n.id, hay: names.filter(Boolean).map((x) => String(x).toLowerCase()), keys: names.filter(Boolean).map(norm) });
+      let names = null, title = "", flag = "", nm = "";
+      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
+      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
+      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
+      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
+      if (!names) continue;
+      const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
+      const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
+      if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
+      else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
     }
-    return out;
+    return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
   }, [LAYOUT]);
   const matches = React.useMemo(() => {
     const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
     if (!raw) return null;
     const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
-      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id }));
+      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
+    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
     return [...masters, ...tours];
   }, [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
   const matchTourIds = React.useMemo(() => (matches ? new Set(matches.filter((x) => x.tourId).map((x) => x.tourId)) : null), [matches]);
   const dimOn = !!matches && matches.length > 0;
   const [matchIdx, setMatchIdx] = useState(0);
-  useEffect(() => { setMatchIdx(0); if (matches && matches.length) setFocusId(matches[0].id); }, [matches]);
-  const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); setFocusId(matches[i].id); };
+  // (BUG-082) 결과 "목록"이 바뀔 때만 첫 결과로 옮긴다. 예전엔 matches 배열이 새로 만들어질 때마다(연도 블록을 펼쳐 배치가 바뀔 때도) 옮겨, 검색 중에 연도를 누르면 화면이 대회 카드로 되돌아가 펼친 대진표가 화면 밖에 남았다.
+  const matchSig = matches ? matches.map((x) => x.id).join("|") : "";
+  const [dropOpen, setDropOpen] = useState(false);
+  useEffect(() => { setMatchIdx(0); }, [matchSig]);   // (v0.6.6, 사용자 요청) 찾아가는 연출은 결과를 눌렀을 때(또는 Enter)만 재생한다.   // eslint-disable-line react-hooks/exhaustive-deps
+  const stepMatch = (d) => { if (!matches || !matches.length) return; const i = (matchIdx + d + matches.length) % matches.length; setMatchIdx(i); };
+  const pickMatch = (i) => { if (!matches || !matches[i]) return; endIntro(); setMatchIdx(i); setFocusId(matches[i].id); setDropOpen(false); };
   const layoutRef = useRef(LAYOUT); layoutRef.current = LAYOUT;
   const openTour = useCallback((id) => { setQ(""); setEdView(null); setPick({ type: "tour", id }); setFocusId("tour:" + id); }, []);
   const boxRef = useRef(null);
@@ -438,7 +452,10 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const baseZ = MASTER_ZOOM_LABEL_BASE;
   // (v0.6.5, 렉 수정) 시점(viewRef)이 항상 최신이다. 드래그·휠 중에는 캔버스 변환만 직접 바꾸고(paint) React는 다시 그리지 않는다 — 예전엔 포인터가 움직일 때마다
   // setState로 노드 2,600여 개·선 수천 개를 통째로 다시 그려 프레임당 0.6초가 걸렸다. 배율 표시와 "화면 밖 노드 제외" 범위(cull)는 필요할 때만 state로 반영한다.
-  const [view, setView] = useState({ x: 0, y: 0, z: baseZ });
+  // (v0.6.6, 사용자 요청) 시작 연출: 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대된다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다.
+  const [introOn, setIntroOn] = useState(true);
+  const [flying, setFlying] = useState(false);
+  const [view, setView] = useState({ x: 0, y: 0, z: baseZ * INTRO_FROM });
   const viewRef = useRef(view), canvasRef = useRef(null), commitTimerRef = useRef(null), cullRef = useRef(null);
   const [pick, setPick] = useState(null);
   // 오프닝 트리와 같은 "회로에 전류 흘리기" — 중심 칩을 누르면 모든 선·노드에 칩에서의 거리 비례 지연으로 전기 서지가 한 번 퍼진다.
@@ -462,25 +479,65 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const apply = useCallback((p, z) => {
     const v = { ...clamp(p, z), z }; viewRef.current = v; paint(v);
     // 지금 보이는 영역(+여유)이 그려 둔 범위를 벗어나려 하면 바로 다시 그리고, 그렇지 않으면 움직임이 멈춘 뒤(150ms)에 배율 표시만 갱신한다.
-    const r = rect(), c = cullRef.current, m = Math.max(r.width, r.height) / v.z * CULL_MARGIN * 0.5;
+    const r = rect(), c = cullRef.current, m = Math.max(r.width, r.height) / v.z * CULL_MARGIN * cullK(v.z) * 0.5;
     const out = !c || -v.x / v.z - m < c.x0 || (r.width - v.x) / v.z + m > c.x1 || -v.y / v.z - m < c.y0 || (r.height - v.y) / v.z + m > c.y1;
     if (out) { if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; } setView(v); }
     else { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); commitTimerRef.current = setTimeout(commit, 150); }   // 움직임이 멈춘 뒤에만(디바운스)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (commitTimerRef.current) clearTimeout(commitTimerRef.current); }, []);
   const zoomBy = useCallback((dz, ax, ay) => {
+    endIntro();
     const v = viewRef.current, r = rect(), nz = snapMasterZoom(v.z + dz); if (nz === v.z) return;
     const a = anchoredZoomPan(v, v.z, nz, ax != null ? ax : r.width / 2, ay != null ? ay : r.height / 2);
     apply(a, nz);
   }, [apply]);
-  const resetView = useCallback(() => { const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // (v0.6.6) 박스 크기가 바뀌면(전체 화면 전환 등) 보던 중심 지점을 유지한다.
+  useEffect(() => {
+    const el = boxRef.current; if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let last = null;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (last && (w !== last.w || h !== last.h) && !introRafRef.current && !flightRafRef.current) { const v = viewRef.current; apply({ x: v.x + (w - last.w) / 2, y: v.y + (h - last.h) / 2 }, v.z); }
+      last = { w, h };
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const introRafRef = useRef(null), introTimerRef = useRef(null);
+  // (v0.6.6, 사용자 요청) 찾아가기 연출 — 중심 회로 칩에서 회로선(꺾은선)을 따라 목표 노드까지 빠르게 이동하며 파란 선이 그려진다. 검색·대회 이름 링크가 함께 쓴다.
+  const flightRef = useRef(null), flightRafRef = useRef(null);
+  const cancelFlight = useCallback(() => { if (flightRafRef.current) { cancelAnimationFrame(flightRafRef.current); flightRafRef.current = null; } if (flightRef.current) flightRef.current.style.display = "none"; setFlying(false); }, []);
+  const endIntro = useCallback(() => { cancelFlight(); if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; } setIntroOn(false); }, [cancelFlight]);
+  const startIntro = useCallback(() => {
+    if (introTimerRef.current) clearTimeout(introTimerRef.current);
+    if (introRafRef.current) { cancelAnimationFrame(introRafRef.current); introRafRef.current = null; }
+    introTimerRef.current = setTimeout(() => {
+      introTimerRef.current = null;
+      const z0 = viewRef.current.z, t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / INTRO_ZOOM_MS), z = z0 + (baseZ - z0) * introEase(k), r = rect(), L = layoutRef.current;
+        apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z);
+        if (k < 1) introRafRef.current = requestAnimationFrame(step); else { introRafRef.current = null; setIntroOn(false); commit(); }
+      };
+      introRafRef.current = requestAnimationFrame(step);
+    }, INTRO_HOLD_MS);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { startIntro(); return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); }; }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // (v0.6.6) "처음으로" 버튼 — 시작 연출을 다시 재생한다(50% 배율로 돌아가 칩부터 다시 그려진 뒤 100%로 확대).
+  const replayIntro = useCallback(() => {
+    const z = baseZ * INTRO_FROM, r = rect(), L = layoutRef.current;
+    setIntroOn(false);
+    apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); commit();
+    requestAnimationFrame(() => { setIntroOn(true); startIntro(); });
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const resetView = useCallback(() => { endIntro(); const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); }, [apply]);
   useLayoutEffect(() => { toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
   useEffect(() => {
     const el = boxRef.current; if (!el) return undefined;
     const onWheel = (e) => {
-      e.preventDefault();
+      e.preventDefault(); endIntro();
       const v = viewRef.current;
       if (e.ctrlKey || e.metaKey) { const r = el.getBoundingClientRect(); zoomBy(e.deltaY < 0 ? MASTER_ZOOM_STEP : -MASTER_ZOOM_STEP, e.clientX - r.left, e.clientY - r.top); return; }
       apply({ x: v.x - e.deltaX, y: v.y - e.deltaY }, v.z);
@@ -499,6 +556,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   };
   const onPointerDown = (e) => {
     if (e.target.closest && e.target.closest(".no-pan")) return;
+    endIntro();
     pointersRef.current.set(e.pointerId, localPt(e));
     if (pointersRef.current.size === 2) { for (const id of pointersRef.current.keys()) { try { e.currentTarget.setPointerCapture(id); } catch { } } startPinch(); return; }
     if (pointersRef.current.size > 2) return;
@@ -531,23 +589,83 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     }
     dragRef.current = null;
   };
+  // 칩에서 nodeId까지 flightPoints(회로선)를 따라 카메라가 이동한다(길이에 비례해 0.75~1.7초). 끝나면 onDone. 사용자가 화면을 건드리면 endIntro가 중단시킨다.
+  const flyTo = useCallback((nodeId, onDone) => {
+    const L = layoutRef.current, pts = flightPoints(L, nodeId);
+    endIntro();
+    if (!pts) { if (onDone) onDone(); return; }
+    setFlying(true);
+    const total = polyLength(pts), z = baseZ, dur = Math.min(1700, Math.max(750, total / 3.2)), t0 = performance.now(), line = flightRef.current;
+    const prefix = (s2) => { const out = [pts[0]]; let acc = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (acc + d <= s2) { out.push(pts[i]); acc += d; } else { out.push(polyPointAt(pts, s2)); break; } } return out.map((q) => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" "); };
+    const r0 = rect(); apply({ x: r0.width / 2 - pts[0][0] * z, y: r0.height / 2 - pts[0][1] * z }, z);   // 칩이 화면 가운데에 오게 하고 출발
+    if (line) { line.style.display = "block"; line.setAttribute("points", pts[0][0] + "," + pts[0][1]); }
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), s2 = total * introEase(k), p2 = polyPointAt(pts, s2), r = rect();
+      apply({ x: r.width / 2 - p2[0] * z, y: r.height / 2 - p2[1] * z }, z);
+      if (line) line.setAttribute("points", prefix(s2));
+      if (k < 1) flightRafRef.current = requestAnimationFrame(step);
+      else { flightRafRef.current = null; setFlying(false); commit(); if (onDone) onDone(); setTimeout(() => { if (!flightRafRef.current && line) line.style.display = "none"; }, 900); }
+    };
+    flightRafRef.current = requestAnimationFrame(step);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 검색 결과를 고르거나(입력이 잠시 멈추면 첫 결과로) 하면 그 위치로 찾아간다 — 오프닝 트리 검색과 같은 연출.
   useEffect(() => {
-    if (!focusId) return;
-    const n = LAYOUT.byNodeId.get(focusId); if (!n) return;
-    const r = rect(), z = viewRef.current.z; apply({ x: r.width / 2 - (n.x + n.w / 2) * z, y: r.height / 2 - (n.y + n.h / 2) * z }, z); setFocusId(null);
+    if (!focusId) return undefined;
+    const n = LAYOUT.byNodeId.get(focusId); if (!n) return undefined;
+    const tm = setTimeout(() => { setFocusId(null); flyTo(focusId); }, 260);
+    return () => clearTimeout(tm);
   }, [focusId, LAYOUT]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 다른 탭(집중 분석의 대회 이름)에서 "이 대회로 찾아가기" 요청이 오면, 시작 연출이 끝난 뒤 그 연도 블록까지 이동하고 회차 화면을 연다.
+  const [navTarget] = useState(() => takeMasterNav());
+  const navFiredRef = useRef(false);
+  useEffect(() => {
+    if (!navTarget || navFiredRef.current || introOn) return;
+    const ed = LAYOUT.byNodeId.get("ed:" + navTarget.tourId + ":" + navTarget.year), hub = LAYOUT.byNodeId.get("tour:" + navTarget.tourId);
+    if (!(ed || hub) || (!ed && !idx)) return;   // 연도 블록은 색인(idx)이 올 때 생긴다 — 기다린다
+    navFiredRef.current = true;
+    flyTo(ed ? ed.id : hub.id, () => { if (ed && hasTournamentData(navTarget.tourId)) { setPick(null); setEdView({ id: navTarget.tourId, year: navTarget.year }); } else if (hub) setPick({ type: "tour", id: navTarget.tourId }); });
+  }, [introOn, LAYOUT, idx, navTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 연도 블록을 펼치면(대회 데이터가 없는 대회의 출전자 상자) 상자가 보이도록 화면을 그 블록 쪽으로 옮긴다 — 예전엔 상자가 화면 밖에 열려 "아무것도 안 뜨는" 것처럼 보였다(BUG-082).
+  useEffect(() => {
+    if (!openEd) return;
+    const en = LAYOUT.nodes.find((n) => n.kind === "edition" && n.open); if (!en) return;
+    endIntro(); const r = rect(), z = viewRef.current.z;
+    apply({ x: Math.min(r.width * 0.12, 20) - en.x * z, y: Math.min(r.height * 0.18, 90) - en.y * z }, z);
+  }, [openEd]);   // eslint-disable-line react-hooks/exhaustive-deps
   const { nodes, edges, width, height, chip, traces } = LAYOUT;
   // 지금 보이는 영역 둘레(여유 포함)에 걸친 노드·선만 그린다 — 전체는 논리적으로 모두 트리에 있고, 화면 밖은 움직여 오면 그려진다.
-  const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN;
+  const cr = rect(), vv = viewRef.current, mg = Math.max(cr.width, cr.height) / vv.z * CULL_MARGIN * cullK(vv.z);
   const cull = { x0: Math.floor((-vv.x / vv.z - mg) / CULL_Q) * CULL_Q, x1: Math.ceil(((cr.width - vv.x) / vv.z + mg) / CULL_Q) * CULL_Q, y0: Math.floor((-vv.y / vv.z - mg) / CULL_Q) * CULL_Q, y1: Math.ceil(((cr.height - vv.y) / vv.z + mg) / CULL_Q) * CULL_Q };
   cullRef.current = cull;
   const inC = (x, y, w, h) => x + w > cull.x0 && x < cull.x1 && y + h > cull.y0 && y < cull.y1;
   const shown = nodes.filter((n) => inC(n.x, n.y, n.w, n.h));
+  const editionToggle = useCallback((n) => { if (hasTournamentData(n.tourId)) { setPick(null); setEdView((v) => (v && v.id === n.tourId && v.year === n.year ? null : { id: n.tourId, year: n.year })); } else { const k = n.tourId + ":" + n.year; setOpenEd((v) => (v === k ? null : k)); } }, []);
   const champEdges = edges.filter((e) => e.kind === "transfer");
   const distC = (x, y) => Math.abs(x - chip.cx) + Math.abs(y - chip.cy);
   const surgeAt = (x, y) => (electric ? distC(x, y) / DEX_ELECTRIC_FLOW_SPEED : 0);
   const litDelay = (x, y) => Math.min(1, distC(x, y) / DEX_SELECT_FLOW_SPEED);
-  const fxOf = (n) => (electric ? { delay: surgeAt(n.x + n.w / 2, n.y + n.h / 2) } : null);
+  // 시작 연출(introOn): 칩에서 멀수록 늦게 나타난다. 50% 배율에서 화면에 보이는 범위(introReach) 밖은 연출 없이 그대로 둔다.
+  const reach = introOn ? introReach(cr.width, cr.height, baseZ * INTRO_FROM) : 0;
+  const introAt = (x, y) => (introOn ? introDelay(Math.hypot(x - chip.cx, y - chip.cy), reach) : null);
+  const fxOf = (n) => { if (electric) return { delay: surgeAt(n.x + n.w / 2, n.y + n.h / 2) }; const d = introAt(n.x + n.w / 2, n.y + n.h / 2); return d == null ? null : { delay: d, intro: true }; };
+  // (v0.6.6, 사용자 요청) 블록을 누르면 중심 회로 칩에서 그 블록까지 회로선을 따라 푸른 점선이 흘러가며 이어진다(오프닝 트리의 선택 경로와 같은 표현). 선택을 풀면 사라진다.
+  const trailRef = useRef(null), trailRafRef = useRef(null), trailIdRef = useRef(null);
+  const trailId = edView ? "ed:" + edView.id + ":" + edView.year : openEd ? "ed:" + openEd : pick ? (pick.type === "tour" ? "tour:" + pick.id : pick.id) : null;
+  useEffect(() => {
+    const line = trailRef.current; if (!line) return undefined;
+    if (trailRafRef.current) { cancelAnimationFrame(trailRafRef.current); trailRafRef.current = null; }
+    const pts = trailId ? flightPoints(LAYOUT, trailId) : null;
+    if (!pts) { line.style.display = "none"; trailIdRef.current = trailId; return undefined; }
+    const fmt = (arr) => arr.map((q) => q[0] + "," + q[1]).join(" ");
+    line.style.display = "block";
+    if (trailIdRef.current === trailId) { line.setAttribute("points", fmt(pts)); return undefined; }   // 같은 블록의 배치만 바뀐 경우(연도 블록을 펼침 등)는 다시 그리지 않는다
+    trailIdRef.current = trailId;
+    const total = polyLength(pts), t0 = performance.now(), dur = Math.min(900, Math.max(350, total / 4));
+    const prefix = (len) => { const out = [pts[0]]; let acc = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (acc + d <= len) { out.push(pts[i]); acc += d; } else { out.push(polyPointAt(pts, len)); break; } } return out; };
+    const step = (now) => { const k = Math.min(1, (now - t0) / dur); line.setAttribute("points", fmt(prefix(total * introEase(k)))); trailRafRef.current = k < 1 ? requestAnimationFrame(step) : null; };
+    trailRafRef.current = requestAnimationFrame(step);
+    return () => { if (trailRafRef.current) { cancelAnimationFrame(trailRafRef.current); trailRafRef.current = null; } };
+  }, [trailId, LAYOUT]);   // eslint-disable-line react-hooks/exhaustive-deps
   // 선택한 노드까지 칩에서 이어지는 회로선 — 챔피언·도전자는 남쪽 선과 타이틀 이동선, 대회는 동쪽 선과 세로선(rail).
   const lit = React.useMemo(() => {
     const keys = new Set(); let railTo = null, wrailTo = null, wrailCol = 0;
@@ -566,44 +684,48 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
     else if (pick.type === "dbm") { const n = LAYOUT.byNodeId.get(pick.id); if (n) { keys.add("W"); for (let k = 1; k <= n.col; k++) keys.add("wseg:" + k); keys.add("dl:" + n.index); wrailTo = n.y + n.h / 2; wrailCol = n.col; } }
     return { keys, railTo, wrailTo, wrailCol };
   }, [pick, LAYOUT]);
-  const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} {...extra} />;
+  const wire = (key, d, mx, my, extra) => <Wire key={key} d={d} lit={lit.keys.has(key)} surge={electric && !lit.keys.has(key)} delay={lit.keys.has(key) ? litDelay(mx, my) : surgeAt(mx, my)} intro={introAt(mx, my)} {...extra} />;
   return (
     <div>
-      {tabsSlot && <div style={{ marginBottom: 8 }}>{tabsSlot}</div>}
-      {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다). 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "nowrap" }}>
-        <div className="no-pan" style={{ display: "flex", gap: 4, flex: "0 1 260px", minWidth: 150, marginRight: "auto" }}><div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-          <Search size={14} aria-hidden="true" style={{ position: "absolute", left: 9, top: 9, color: T.inkSoft }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") stepMatch(e.shiftKey ? -1 : 1); }} placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")} style={{ width: "100%", height: 32, boxSizing: "border-box", padding: "0 9px 0 28px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontFamily: SITE_FONT }} />
-        </div>
-          {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
-          <button onClick={resetView} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-          {matches && matches.length > 0 && <>
-            <button onClick={() => stepMatch(-1)} aria-label={t("이전 결과")} title={t("이전 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronUp size={14} /></button>
-            <button onClick={() => stepMatch(1)} aria-label={t("다음 결과")} title={t("다음 결과")} className="press" style={{ width: 24, height: 24, borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ChevronDown size={14} /></button>
-          </>}
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap", fontFamily: SITE_FONT, minWidth: 44, textAlign: "right" }}>{matches ? (matches.length ? matchIdx + 1 : 0) + "/" + matches.length : TOURNAMENTS.length}</span>
+      {/* 대회·마스터 찾기 — 대회 이름·개최지·마스터 이름(챔피언·FIDE·대국 DB 선수, 한국어·영어)으로 검색한다(종류 거르기는 없앴다).
+          (v0.6.6, 사용자 요청) 검색창·되돌리기 버튼은 오프닝 트리(dex.jsx searchHeader)와 같은 모양, 결과 드롭다운은 퍼즐 탭 검색(puzzle.jsx searchSuggestions)과 같은 모양(종류 태그 + 이름)이다. 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
+      <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
+        {tabsSlot}
+        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input value={q} onChange={(e) => { setQ(e.target.value); setDropOpen(true); }} onFocus={() => setDropOpen(true)} onBlur={() => setTimeout(() => setDropOpen(false), 150)}
+              onKeyDown={(e) => { if (e.key === "Enter") { if (matches && matches.length) pickMatch(dropOpen ? matchIdx : (matchIdx + 1) % matches.length); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepMatch(e.key === "ArrowDown" ? 1 : -1); setDropOpen(true); } else if (e.key === "Escape") setDropOpen(false); }}
+              placeholder={t("대회·개최지·마스터 이름 검색")} aria-label={t("대회·개최지·마스터 이름 검색")}
+              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
+            {/* 오프닝 트리와 같은 자리·같은 모양의 되돌리기 버튼 — 확대·이동으로 흐트러진 화면을 중심 칩이 가운데 오는 처음 화면(기본 배율)으로 되돌린다. */}
+            <button onClick={replayIntro} title={t("화면 가운데로 되돌리기")} aria-label={t("화면 가운데로 되돌리기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} /></button>
+          </div>
+          {q.trim() && dropOpen && (
+            <div style={searchDropStyle}>
+              {!matches || matches.length === 0
+                ? <div style={{ padding: "8px 10px", fontSize: 11, color: T.inkSoft }}>{t("일치하는 마스터·대회 없음")}</div>
+                : matches.map((it, i) => <SearchResultRow key={it.id} tag={it.tag} tagLabel={it.tag === "tour" ? t("대회") : t("마스터")} flag={it.flag} title={it.title} sub={it.sub} active={i === matchIdx} onClick={() => pickMatch(i)} />)}
+            </div>
+          )}
         </div>
       </div>
       <div ref={boxRef} className={fsv.boxClass} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClickCapture={(e) => { if (movedRef.current) { e.stopPropagation(); e.preventDefault(); movedRef.current = false; } }}
         style={{ position: "relative", overflow: "hidden", overscrollBehavior: "contain", height: panelH, borderRadius: 12, border: "1px solid #DCCBA8", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: dragRef.current ? "grabbing" : "grab",
           background: "repeating-linear-gradient(45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(-45deg, rgba(196,154,80,.09) 0, rgba(196,154,80,.09) 1px, transparent 1px, transparent 26px), #FBF5E8" }}>
-        <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2 }}>
+        <div className="no-pan flex" style={{ position: "absolute", top: 6, right: 6, zIndex: 60, gap: 3, background: "rgba(255,255,255,.9)", borderRadius: 8, border: "1px solid #DCCBA8", padding: 2, opacity: introOn || flying ? 0 : 1, pointerEvents: introOn || flying ? "none" : "auto", transition: "opacity .5s ease" }}>
           <button onClick={() => zoomBy(-MASTER_ZOOM_STEP)} title={t("축소")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>－</button>
           <button onClick={() => zoomBy(baseZ - viewRef.current.z)} title={t("초기화")} style={{ padding: "0 6px", height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 800, cursor: "pointer", fontSize: 9.5, fontFamily: SITE_FONT }}>{masterZoomLabel(view.z)}</button>
           <button onClick={() => zoomBy(MASTER_ZOOM_STEP)} title={t("확대")} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 900, cursor: "pointer", fontSize: 14 }}>＋</button>
         </div>
-        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} />
+        <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || flying} />
         <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
           <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
             {traces.map((tr) => { const a0 = tr.pts[0], a1 = tr.pts[tr.pts.length - 1]; return wire(tr.dir, "M" + tr.pts.map((q) => q[0] + " " + q[1]).join(" L"), (a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2, { opacity: 0.5 }); })}
-            {LAYOUT.wrails && LAYOUT.wrails.map((w) => wire("wrail:" + w.col, "M" + w.x + " " + w.y1 + " V" + w.y2, w.x, chip.cy, { opacity: 0.9 }))}
-            {edges.filter((e) => e.kind === "wseg").map((e) => wire("wseg:" + e.col, "M" + e.x1 + " " + chip.cy + " H" + e.x2, (e.x1 + e.x2) / 2, chip.cy, { opacity: 0.9 }))}
+            {LAYOUT.wrails && LAYOUT.wrails.filter((w) => inC(w.x - 1, w.y1, 2, w.y2 - w.y1)).map((w) => wire("wrail:" + w.col, "M" + w.x + " " + w.y1 + " V" + w.y2, w.x, chip.cy, { opacity: 0.9 }))}
+            {edges.filter((e) => e.kind === "wseg" && inC(e.x2, chip.cy - 1, e.x1 - e.x2, 2)).map((e) => wire("wseg:" + e.col, "M" + e.x1 + " " + chip.cy + " H" + e.x2, (e.x1 + e.x2) / 2, chip.cy, { opacity: 0.9 }))}
             {LAYOUT.wrails && lit.wrailTo != null && <Wire key="wrailLit" d={"M" + LAYOUT.wrails[lit.wrailCol].x + " " + chip.cy + " V" + lit.wrailTo} lit delay={litDelay(LAYOUT.wrails[lit.wrailCol].x, lit.wrailTo)} />}
             {edges.filter((e) => e.kind === "dlink" && inC(e.a.x, e.a.y, e.a.w + 160, e.a.h)).map((e) => wire("dl:" + e.a.index, "M" + e.wx + " " + (e.a.y + e.a.h / 2) + " H" + (e.a.x + e.a.w), (e.wx + e.a.x + e.a.w) / 2, e.a.y + e.a.h / 2))}
             {LAYOUT.south && wire("bus", "M" + LAYOUT.south.bus.x1 + " " + LAYOUT.south.jy + " H" + LAYOUT.south.bus.x2, chip.cx, LAYOUT.south.jy, { opacity: 0.9 })}
@@ -614,6 +736,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
               const ax = e.side === "L" ? a.x : a.x + a.w, bx = e.side === "L" ? b.x + b.w : b.x;
               return wire("sat:" + b.id, elbowH(ax, ay, bx, by), (ax + bx) / 2, (ay + by) / 2);
             })}
+            <polyline ref={trailRef} points="" fill="none" stroke={SCHEMATIC_ELECTRIC} strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="7 5" className="dex-current-line" style={{ display: "none", pointerEvents: "none", filter: "drop-shadow(0 0 4px rgba(34,211,240,.7))" }} />
+            <polyline ref={flightRef} points="" fill="none" stroke={SCHEMATIC_ELECTRIC} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="9 6" className="dex-current-line" style={{ display: "none", filter: "drop-shadow(0 0 5px rgba(34,211,240,.8))" }} />
             {LAYOUT.rail && wire("rail", "M" + LAYOUT.rail.x + " " + LAYOUT.rail.y1 + " V" + LAYOUT.rail.y2, LAYOUT.rail.x, (LAYOUT.rail.y1 + LAYOUT.rail.y2) / 2, { opacity: 0.9 })}
             {LAYOUT.rail && lit.railTo != null && <Wire key="railLit" d={"M" + LAYOUT.rail.x + " " + LAYOUT.rail.mid + " V" + lit.railTo} lit delay={litDelay(LAYOUT.rail.x, lit.railTo)} />}
             {LAYOUT.rail && nodes.filter((n) => n.kind === "tour" && inC(LAYOUT.rail.x, n.y, n.x - LAYOUT.rail.x + n.w, n.h)).map((n) => wire("hl:" + n.id, "M" + LAYOUT.rail.x + " " + (n.y + n.h / 2) + " H" + n.x, (LAYOUT.rail.x + n.x) / 2, n.y + n.h / 2))}
@@ -626,26 +750,26 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             })}
           </svg>
           {champEdges.filter((e) => !e.t.loser && (e.t.score || e.t.kind !== "match")).map((e, i) => {
-            const p = transferPath(e.a, e.b);
-            return <span key={"l" + i} style={{ position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
+            const p = transferPath(e.a, e.b), pd = introAt(p.lx, p.ly);
+            return <span key={"l" + i} className={pd == null ? undefined : "dex-intro-fade"} style={{ ...(pd == null ? null : { animationDelay: pd + "s" }), position: "absolute", left: p.lx, top: p.ly, transform: "translate(-50%,-50%)", fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap", padding: "2px 8px", borderRadius: 999, background: "#fff", border: "1px solid #DCCBA8", color: T.ink, boxShadow: "0 1px 3px rgba(60,40,20,.15)" }}>{edgeLabel(e.t)}</span>;
           })}
-          {LAYOUT.labels.map((l) => (l.plaque ? (
+          {LAYOUT.labels.map((l) => { const ld = introAt(l.x + l.w / 2, l.y + l.h / 2), lc = ld == null ? undefined : "dex-intro-fade", lx = ld == null ? null : { animationDelay: ld + "s" }; return (l.plaque ? (
             /* FIDE 랭킹 갈래 머리판 — 챔피언 명판처럼 어두운 바탕에 금테·금색 글자 */
-            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
+            <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3, pointerEvents: "none", borderRadius: 14, border: "1.5px solid #6E4E18",
               background: "linear-gradient(135deg,#F7E3A1 0%,#E2B652 28%,#B98A34 52%,#E9C970 74%,#9C7228 100%)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(60,40,10,.38)" }}>
               <span aria-hidden="true" style={{ position: "absolute", inset: 4, borderRadius: 10, background: "linear-gradient(180deg,#3A2414,#1D1108)", boxShadow: "inset 0 0 0 1px rgba(236,203,134,.55)" }} />
               <span style={{ position: "relative", fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 17, letterSpacing: .6, color: "#FFF3D3", textShadow: "0 1px 0 #000, 0 0 8px rgba(236,203,134,.35)", whiteSpace: "nowrap" }}>{LABEL_TEXT()[l.key]}</span>
             </div>
           ) : (
-            <div key={"label-" + l.key} style={{ position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
+            <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
               <span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
                 ✦ {LABEL_TEXT()[l.key]} ✦
               </span>
             </div>
-          )))}
+          )); })}
           {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}
           {/* 중심 회로 칩 — 오프닝 트리와 같은 칩(네 변 핀 + CPU 아이콘). 누르면 회로 전체에 전류가 흐른다. */}
-          <div className={"no-pan" + (electric ? " dex-chip-surge" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: chip.cx - chip.size / 2, top: chip.cy - chip.size / 2, width: chip.size, height: chip.size, cursor: "pointer", zIndex: 2 }}>
+          <div className={"no-pan" + (electric ? " dex-chip-surge" : introOn ? " dex-intro-node" : "")} onPointerDown={(e) => e.stopPropagation()} onClick={triggerElectric} title={t("회로에 전류 흘리기")} style={{ position: "absolute", left: chip.cx - chip.size / 2, top: chip.cy - chip.size / 2, width: chip.size, height: chip.size, cursor: "pointer", zIndex: 2 }}>
             <div style={{ position: "absolute", inset: 0, borderRadius: 14, background: "linear-gradient(155deg,#3A2516,#1E130B)", border: "1.5px solid " + (electric ? SCHEMATIC_ELECTRIC : T.brass), boxShadow: "0 0 0 3px rgba(196,154,80,.16), 0 6px 16px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)" }} />
             {[0, 1, 2].map((i) => (
               <React.Fragment key={i}>
@@ -665,7 +789,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             : n.kind === "dbm" ? <DbMasterNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} />
             : n.kind === "player" ? <PlayerNode key={n.id} n={n} />
             : n.kind === "edition" ? <EditionNode key={n.id} n={n} fx={fxOf(n)} dim={dimOn && !matchTourIds.has(n.tourId)} active={!!edView && edView.id === n.tourId && edView.year === n.year}
-              onToggle={(k) => { if (hasTournamentData(n.tourId)) { setPick(null); setEdView((v) => (v && v.id === n.tourId && v.year === n.year ? null : { id: n.tourId, year: n.year })); } else setOpenEd((v) => (v === k ? null : k)); }} />
+              onToggle={editionToggle} />
             : n.kind === "sat" ? <SatNode key={n.id} n={n} onPick={setPick} picked={pick && pick.id === n.id} fx={fxOf(n)} dim={dimOn && !matchIds.has(n.id)} /> : <UpcomingNode key={n.id} n={n} />)}
         </div>
         {pick && !edView && <DetailCard pick={pick} onClose={() => setPick(null)} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenTour={openTour} />}

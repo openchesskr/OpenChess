@@ -71,17 +71,62 @@ export function loadMasterGameData() {
   }
   return masterGameLoadPromise;
 }
-// index는 build-master-games.mjs가 openings.json 트리 노드 키(수순을 공백으로 이은 문자열)로
-// 정확히 매칭해 둔 것이라, 여기서도 같은 방식(체크/메이트 기호 보존한 san 그대로)으로 조회한다.
+// (v0.6.6, 사용자 요청) 정적 마스터 대국 DB에서 "이 수순으로 시작하는 모든 대국"을 찾는 접두사 색인.
+// 예전엔 build-master-games.mjs가 openings.json 트리 노드(3,985곳)마다 미리 뽑아 둔 index를 썼다 — 트리 밖의 포지션은 대국이 있어도 못 찾았고,
+// 노드당 500판까지만 담겨 있었다(1.e4만 해도 실제로는 6만 판 가까이). 이제 모든 대국의 수순 문자열(체크·메이트 기호 제거)을 정렬해 두고
+// 이진 탐색으로 접두사가 같은 구간을 통째로 찾는다 — 어떤 포지션이든 DB에 있는 대국을 빠짐없이, 상한 없이 돌려준다.
+// 색인은 DB를 처음 조회할 때 한 번(약 0.5초) 만들어 메모리에 둔다.
+const _prefixIdx = new WeakMap();
+const _stripCk = (s) => String(s || "").replace(/[+#]/g, "");
+function masterPrefixIndex(data) {
+  let ix = _prefixIdx.get(data);
+  if (ix) return ix;
+  const games = data.games, n = games.length, norm = new Array(n);
+  for (let i = 0; i < n; i++) norm[i] = _stripCk(games[i].moves);
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => (norm[a] < norm[b] ? -1 : norm[a] > norm[b] ? 1 : 0));
+  ix = { norm, order };
+  _prefixIdx.set(data, ix);
+  return ix;
+}
+/** sans로 시작하는 모든 대국의 번호(data.games 인덱스). sans가 비면 전체. 토큰 경계를 지킨다("Qa1"이 "Qa1b2"로 시작하는 대국에 걸리지 않음). */
+export function staticMasterGameIdxsFor(sans, data) {
+  if (!data || !data.games) return [];
+  const { norm, order } = masterPrefixIndex(data);
+  const key = sans.map(_stripCk).join(" ");
+  if (!key) return order.slice();
+  let lo = 0, hi = order.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (norm[order[mid]] < key) lo = mid + 1; else hi = mid; }
+  const out = [];
+  for (let i = lo; i < order.length; i++) {
+    const s = norm[order[i]];
+    if (!s.startsWith(key)) break;
+    if (s.length === key.length || s.charCodeAt(key.length) === 32) out.push(order[i]);
+  }
+  return out;
+}
+const _resOf = (r) => (r === "1-0" ? "w" : r === "0-1" ? "b" : "d");
 export function staticMasterGamesFor(sans, data) {
   if (!data) return [];
-  const key = sans.join(" ");
-  const idxs = data.index[key];
-  if (!idxs || !idxs.length) return [];
-  return idxs.map((gi) => {
+  return staticMasterGameIdxsFor(sans, data).map((gi) => {
     const g = data.games[gi];
     const winner = g.result === "1-0" ? "white" : g.result === "0-1" ? "black" : null;
     const year = g.date ? parseInt(g.date.slice(0, 4), 10) : null;
-    return { id: "extm_" + gi, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null };
+    return { id: "extm_" + gi, nextSan: String(g.moves || "").split(" ")[sans.length] || null, winner, white: { name: g.white, rating: g.whiteElo }, black: { name: g.black, rating: g.blackElo }, year: (year && year > 1000 && year < 2100) ? year : null, event: g.event || "", date: /^\d{4}\.\d\d\.\d\d$/.test(g.date || "") ? g.date : null };   // date(YYYY.MM.DD): 같은 해 안에서 일정순 정렬   // event: 집중 분석 마스터 대국의 검색·표시
   });
+}
+/** 이 포지션 이후 정적 DB 대국의 승·무·패와 많이 둔 다음 수(Lichess 통계를 못 받을 때의 대체이자 오프라인 통계). */
+export function staticMasterStatsFor(sans, data) {
+  const idxs = staticMasterGameIdxsFor(sans, data), nxt = new Map();
+  let white = 0, draws = 0, black = 0;
+  for (const gi of idxs) {
+    const g = data.games[gi], r = _resOf(g.result);
+    if (r === "w") white++; else if (r === "b") black++; else draws++;
+    const mv = String(g.moves || "").split(" ")[sans.length];
+    if (!mv) continue;
+    const x = nxt.get(mv) || { san: mv, white: 0, draws: 0, black: 0, avg: null };
+    if (r === "w") x.white++; else if (r === "b") x.black++; else x.draws++;
+    nxt.set(mv, x);
+  }
+  const moves = [...nxt.values()].sort((a, b) => (b.white + b.draws + b.black) - (a.white + a.draws + a.black)).slice(0, 12);
+  return { white, draws, black, moves };
 }

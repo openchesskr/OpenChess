@@ -200,7 +200,7 @@ const FEATURES = [
   { Icon: Library, eyebrow: t("도감"), title: t("오프닝 나침반"), shot: "/about/screenshot-dex.webp", mascotChar: "milku", mascotExpr: "wink",
     desc: t("1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗는 오프닝 트리에서 각 수의 채택률·평가치·이름 확인. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 수집") },
   { Icon: Puzzle, eyebrow: t("퍼즐"), title: t("내 실수로 만든 퍼즐"), shot: "/about/screenshot-puzzle.webp", mascotChar: "kokoa", mascotExpr: "think",
-    desc: t("\"기물 희생하기\" · \"우위 점하기\" · \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능") },
+    desc: t("\"기물 희생하기\", \"우위 점하기\", \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능") },
   { Icon: Target, eyebrow: t("학습"), title: t("매일 조금씩"), shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
     desc: t("매일 갱신되는 일일 퀘스트와, 갈래를 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인 획득") },
   { Icon: Wrench, eyebrow: t("설정"), title: t("내게 맞게 조정하기"), shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
@@ -921,9 +921,39 @@ const CAT = {
 };
 const VERSION_HISTORY = [
   {
+    version: "0.6.6", date: "2026.10.13",
+    summary: t("집중 분석 개편, 마스터 통계, 내 통계, 마스터 트리 개선."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("집중 분석 4페이지, 마스터 통계, 내 통계, 마스터 트리 6줄 배치") },
+    sections: [
+      { cat: "feature", items: [
+        t("집중 분석 개편: 뒤로가기 줄에 기보를 두어 지나온 수를 눌러 이동, 수 이름 표시, 보드 확대, 보드 아래 수 키워드, 탐색·유저 통계·마스터 통계·해설 4페이지 좌우 스크롤."),
+        t("마스터 통계: 조건에 맞는 마스터 대국 전부 열람(10판씩 페이지). 승률·채택률·승점 획득 확률 요약, 결과·레이팅·연도 필터, 최신순·레이팅순 정렬, 선수·대회 검색."),
+        t("마스터 통계의 대회 이름을 누르면 마스터 트리의 해당 대회로 이동."),
+        t("내 통계: OpenChess·chess.com 대국을 토글로 나눠 보고, 내가 그 수를 둔 대국만 승률·채택률·승점 획득 확률·필터로 확인. OpenChess 대국은 100판 제한 없이 전부 반영."),
+        t("마스터 트리: 블록을 누르면 중심 회로에서 그 블록까지 푸른 점선이 이어짐. 시작 연출은 50% 배율에서 중심 칩부터 그려진 뒤 100%로 확대."),
+        t("마스터 트리 서쪽을 '주요 그랜드마스터'로 바꾸고 레이팅 높은 선수를 중심에 가깝게 6줄로 배치. 남쪽에 '랭킹' 표기, 북쪽 타이틀전 예정 블록 삭제."),
+        t("마스터 트리 검색 드롭다운을 오프닝 트리와 같은 디자인으로 통일. 마스터는 이름 아래에 챔피언 대수·챔피언 도전자·FIDE 순위를 표시하고, 결과를 눌렀을 때만 이동 연출 재생."),
+        t("FIDE 그랜드 스위스처럼 대진표가 비어 있던 대회도 마스터 대국 데이터로 회차별 대국 목록 열람."),
+        t("엔진 라인을 현재 도달한 깊이만큼 길게 표시. 엔진이 멈추면 5초 간격으로 점검해 자동 재시작."),
+      ] },
+      { cat: "ui", items: [
+        t("집중 분석의 오프닝 실수 분석 삭제. 학습 탭으로 옮겨 다시 만들 예정."),
+        t("분석 탭: 현재 수 블록에도 평가치·키워드 표시, 수 블록은 가능한 만큼 전부 표시, 긴 오프닝 이름은 자동으로 흘러감, 말풍선은 고정 크기에서 '자세히 보기'로 펼침."),
+        t("오프닝 트리 도감 해금률을 영역 아래로 이동. 도감 트리 연출 중 확대·전체 화면 버튼을 숨기고 페이드 인, 전체 화면 전환 시 중심 유지."),
+        t("사이트 전체의 구분 기호 '·'와 '•'를 쉼표로 통일."),
+      ] },
+      { cat: "perf", items: [
+        t("분석 탭 보드 조작 렉 완화. 마스터 트리 25% 배율 드래그가 프레임당 0.23초에서 0.02초로 단축."),
+      ] },
+      { cat: "fix", items: [
+        t("오프닝 트리 시작 연출 깜빡임, 내 통계에 상대가 둔 수의 대국이 섞이던 문제, 탐색 페이지 다음 수 오류, 일부 마스터 국적 깃발 누락 수정."),
+      ] },
+    ],
+  },
+  {
     version: "0.6.5", date: "2026.10.12",
-    summary: t("마스터 트리 대회·프로필 · 사용자 글 자동 번역 · 데스크톱 하단 창 · 리뷰 코치 개선."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("마스터 트리 대회 220곳 · 대국 8만 7천 판 · 데스크톱 하단 창") },
+    summary: t("마스터 트리 대회·프로필, 사용자 글 자동 번역, 데스크톱 하단 창, 리뷰 코치 개선."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("마스터 트리 대회 220곳, 대국 8만 7천 판, 데스크톱 하단 창") },
     sections: [
       { cat: "feature", items: [
         t("도감 마스터 트리에 대회 220여 곳과 대국 약 8만 7천 판 추가. 대회 회차별 순위·크로스테이블·녹아웃 대진표·대국 목록 열람."),
@@ -954,8 +984,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.6.4", date: "2026.10.9",
-    summary: t("성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 안드로이드 뒤로가기 · 계정 삭제 정리."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("성장 분석 · 하이라이트 카드 · 모식도 전체 화면 · 계정 삭제 안내") },
+    summary: t("성장 분석, 하이라이트 카드, 모식도 전체 화면, 안드로이드 뒤로가기, 계정 삭제 정리."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("성장 분석, 하이라이트 카드, 모식도 전체 화면, 계정 삭제 안내") },
     sections: [
       { cat: "feature", items: [
         t("학습 탭에 '성장 분석' 추가: 내 실수를 모아 보여 주는 약점 지도, 틀린 포지션을 간격을 두고 다시 푸는 복습 카드, 나와 닮은 마스터를 13가지 기준으로 비교하는 마스터 스타일. 마스터 이름을 검색해 원하는 마스터와도 비교."),
@@ -965,7 +995,7 @@ const VERSION_HISTORY = [
         t("계정 및 데이터 삭제 안내 페이지(/account-deletion) 추가. 탈퇴하면 진행 중이던 대국은 기권 처리되고 내가 만든 퍼즐도 함께 삭제."),
       ] },
       { cat: "ui", items: [
-        t("분석 탭 보드 위 버튼을 복사 · 편집 · 리뷰 순서로 정리하고 편집 버튼에 글자 추가. FEN/PGN 붙여넣기는 보드 편집 화면의 '불러오기'로 통합."),
+        t("분석 탭 보드 위 버튼을 복사, 편집, 리뷰 순서로 정리하고 편집 버튼에 글자 추가. FEN/PGN 붙여넣기는 보드 편집 화면의 '불러오기'로 통합."),
         t("보드 편집 화면을 새로 디자인: 보드 중심 배치, 도구·기물·차례·불러오기·FEN 카드."),
         t("도감 마스터 이름을 모든 언어에서 영어로 통일."),
       ] },
@@ -978,12 +1008,12 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.6.3", date: "2026.10.6",
-    summary: t("마스터 도감 · 수 등급 보드 효과 · 앱스토어 출시 준비 · 탁월한 수 판정 보정."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("마스터 도감 · FIDE 상위 100위 · 수 등급 효과 · 앱스토어 준비") },
+    summary: t("마스터 도감, 수 등급 보드 효과, 앱스토어 출시 준비, 탁월한 수 판정 보정."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("마스터 도감, FIDE 상위 100위, 수 등급 효과, 앱스토어 준비") },
     sections: [
       { cat: "feature", items: [
         t("앱스토어 출시 준비: 로그인을 시스템 브라우저로 처리하고 앱 링크로 돌아오도록 연결, 체스 엔진은 필요할 때 내려받도록 변경."),
-        t("모든 수의 등급(탁월·최선·실수 등)을 보드 위 효과로 표시. 설정에서 모두 · 탁월/유일만 · 끔 중에서 선택."),
+        t("모든 수의 등급(탁월·최선·실수 등)을 보드 위 효과로 표시. 설정에서 모두, 탁월/유일만, 끔 중에서 선택."),
         t("도감에 '마스터' 탭 추가: 세계 챔피언 계보와 대회(우승자·마스터 대국 DB 집계·대표 대국), 회로도 모양의 마스터 트리, FIDE 스탠다드·래피드·블리츠 상위 100위 랭킹, 대국 DB 최고 레이팅 상위 900명 마스터."),
         t("마스터 이름을 한글로 표기하고 국적을 국기 이모지로 표시. 최고 레이팅 알약 왼쪽에 MAX 표시."),
       ] },
@@ -1001,8 +1031,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.6.2", date: "2026.10.2",
-    summary: t("타임 컨트롤별 레이팅 · /user 성취도 정리 · FEN 모드 엔진 수정 · 희생 퍼즐 첫 수 보정 · 보드 편집 뒤집기."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("타임 컨트롤별 레이팅 · /user 성취도 · FEN 모드 엔진 · 희생 퍼즐") },
+    summary: t("타임 컨트롤별 레이팅, /user 성취도 정리, FEN 모드 엔진 수정, 희생 퍼즐 첫 수 보정, 보드 편집 뒤집기."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("타임 컨트롤별 레이팅, /user 성취도, FEN 모드 엔진, 희생 퍼즐") },
     sections: [
       { cat: "feature", items: [
         t("봇과 둔 대국도 내 일반 대국 기록에 저장. 기록에 기간별 레이팅 변동 그래프 추가."),
@@ -1027,8 +1057,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.6.1", date: "2026.10.1",
-    summary: t("일반 대국 랭킹 · 나이트 레이스 개선 · 무한 체크메이트 대폭 확장 · Lichess 통계 표시 수정."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("일반 대국 랭킹 · 나이트 레이스 최단 경로 화살표 · 체크메이트 포지션 수천 개 · 상대 진행 상황 표시") },
+    summary: t("일반 대국 랭킹, 나이트 레이스 개선, 무한 체크메이트 대폭 확장, Lichess 통계 표시 수정."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("일반 대국 랭킹, 나이트 레이스 최단 경로 화살표, 체크메이트 포지션 수천 개, 상대 진행 상황 표시") },
     sections: [
       { cat: "feature", items: [
         t("일반 대국 전적·레이팅·랭킹 추가. 랜덤 매칭 결과가 미니게임과 같은 형태의 랭킹에 반영."),
@@ -1058,8 +1088,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.6.0", date: "2026.10.1",
-    summary: t("다국어 지원 · 신고·차단 확대 · 개인정보처리방침·이용약관 · 분석 탭 개선 · 앱 출시 준비."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("5개 언어 선택 · 체스 용어 표준 번역 · 프로필 신고·차단 · 개인정보처리방침·이용약관 · 분석 탭 개선") },
+    summary: t("다국어 지원, 신고·차단 확대, 개인정보처리방침·이용약관, 분석 탭 개선, 앱 출시 준비."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("5개 언어 선택, 체스 용어 표준 번역, 프로필 신고·차단, 개인정보처리방침·이용약관, 분석 탭 개선") },
     sections: [
       { cat: "feature", items: [
         t("다국어 지원. 설정 탭에서 English·日本語·中文(简体)·Español·हिन्दी 선택."),
@@ -1092,8 +1122,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.9", date: "2026.9.30",
-    summary: t("도전장 전송 오류 수정 · 수 등급 판정 개선 · 사이트 문구 개조식 통일."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("도전장 전송 수정 · 탁월한 수·유일한 수 판정 · 이론 수 판정 · 문구 개조식 통일") },
+    summary: t("도전장 전송 오류 수정, 수 등급 판정 개선, 사이트 문구 개조식 통일."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("도전장 전송 수정, 탁월한 수·유일한 수 판정, 이론 수 판정, 문구 개조식 통일") },
     sections: [
       { cat: "ux", items: [
         t("사이트 전체 문구를 명사형·개조식으로 통일. 중요도가 낮은 안내 문구 삭제."),
@@ -1110,8 +1140,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.8", date: "2026.9.27",
-    summary: t("미니게임 재대국 · 상대 프로필 표시 · 7전 4선승 나이트 레이스."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 재대국 · 상대 프로필 표시 · 좌표 난이도 ×1·×2·×3 · 나이트 레이스 Bo7·거리 판정 연출") },
+    summary: t("미니게임 재대국, 상대 프로필 표시, 7전 4선승 나이트 레이스."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 재대국, 상대 프로필 표시, 좌표 난이도 ×1·×2·×3, 나이트 레이스 Bo7·거리 판정 연출") },
     sections: [
       { cat: "feature", items: [
         t("미니게임 대전 결과 화면에서 재대국 신청. 받은 사람은 화면 위 알림으로 수락·거절."),
@@ -1139,7 +1169,7 @@ const VERSION_HISTORY = [
   {
     version: "0.5.7", date: "2026.9.27",
     summary: t("채팅 메신저화: 답장·반응·검색, 보드 미리보기·수 투표·같이 보기, /play 미니게임 대결."),
-    highlight: { kind: "icon", Icon: Send, color: T.brassHi, label: t("채팅 답장·반응·검색 · 보드 미리보기·수 투표·같이 보기 · 명령어 자동완성 · /play 미니게임 · 빠른 첫 로딩") },
+    highlight: { kind: "icon", Icon: Send, color: T.brassHi, label: t("채팅 답장·반응·검색, 보드 미리보기·수 투표·같이 보기, 명령어 자동완성, /play 미니게임, 빠른 첫 로딩") },
     sections: [
       { cat: "feature", items: [
         t("채팅 메시지 꾹 누르기: 답장·이모지 반응·복사·신고. 위로 올려 이전 메시지 로딩, 대화 내 검색."),
@@ -1175,8 +1205,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.6", date: "2026.9.26",
-    summary: t("chess.com 대국 요약 알림 · 도감 오프닝 트리 개선."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("대국 요약 알림 · 새 도감 트리 · 전적 칩 · 대국 종료 이펙트 · 미니게임 드래그 무브") },
+    summary: t("chess.com 대국 요약 알림, 도감 오프닝 트리 개선."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("대국 요약 알림, 새 도감 트리, 전적 칩, 대국 종료 이펙트, 미니게임 드래그 무브") },
     sections: [
       { cat: "feature", items: [
         t("chess.com 대국 종료 시 요약 알림. 결과·상대·오프닝과 해당 오프닝 전적·승률 변화 표시, 검색·리뷰 버튼 제공. 미접속 중 둔 대국은 다음 접속 때 순서대로 표시."),
@@ -1209,8 +1239,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.5", date: "2026.9.25",
-    summary: t("플레이 탭 개편 · 수 등급 이펙트 · 상대 나이트 잡기."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 플레이 탭 · 수 등급 이펙트 · 상대 나이트 잡기 · 라운드별 제한시간 · 시각 효과·미니게임 설정") },
+    summary: t("플레이 탭 개편, 수 등급 이펙트, 상대 나이트 잡기."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 플레이 탭, 수 등급 이펙트, 상대 나이트 잡기, 라운드별 제한시간, 시각 효과·미니게임 설정") },
     sections: [
       { cat: "feature", items: [
         t("탁월한 수·유일한 수·최선의 수를 두면 칸이 등급 색으로 빛나고 이름표가 뜬 뒤 작은 배지로 축소. 분석·학습·퍼즐 탭, 게임 리뷰, 무한 체크메이트 게임에서 표시."),
@@ -1241,7 +1271,7 @@ const VERSION_HISTORY = [
   {
     version: "0.5.4", date: "2026.9.24",
     summary: t("미니게임 레이팅·전적·랭킹."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 레이팅 · 전체·친구 랭킹 · 로비 전적 바 · 결과 화면 레이팅 변화") },
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 레이팅, 전체·친구 랭킹, 로비 전적 바, 결과 화면 레이팅 변화") },
     sections: [
       { cat: "feature", items: [
         t("미니게임별 레이팅. 1200점 시작, 랜덤 매칭 승패로 변동, 처음 20판은 변동폭 확대."),
@@ -1270,8 +1300,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.3", date: "2026.9.24",
-    summary: t("신규 미니게임 러시아워·공격 모드 · 미니게임 연출 강화."),
-    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("새 미니게임 러시아워 · 새 미니게임 공격 모드 · 미니게임 카운트다운·효과음·진동·애니메이션 · 새 결과 화면") },
+    summary: t("신규 미니게임 러시아워·공격 모드, 미니게임 연출 강화."),
+    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("새 미니게임 러시아워, 새 미니게임 공격 모드, 미니게임 카운트다운·효과음·진동·애니메이션, 새 결과 화면") },
     sections: [
       { cat: "feature", items: [
         t("신규 미니게임 '러시아워'. 내 기물 사이에 갇힌 룩(왕관 표시)을 빼내 상대 백랭크에서 체크메이트. 다른 기물은 실제 규칙대로 이동, 상대 수비 기물은 방금 움직인 내 기물이 공격 범위에 들어오면 포획."),
@@ -1282,7 +1312,7 @@ const VERSION_HISTORY = [
         t("공격 기회 포지션 295개로 시작. 마스터 대국에서 추출해 엔진 검증. 개발자가 리체스 퍼즐·FEN으로 추가 가능."),
       ] },
       { cat: "ui", items: [
-        t("미니게임 4종 시작 화면 배치 통일. 규칙 안내 아래 '혼자 플레이하기 · 봇과 플레이하기 · 랜덤 매칭', 그 아래 '친구와 플레이하기' 목록."),
+        t("미니게임 4종 시작 화면 배치 통일. 규칙 안내 아래 '혼자 플레이하기, 봇과 플레이하기, 랜덤 매칭', 그 아래 '친구와 플레이하기' 목록."),
         t("미니게임 4종 라운드 시작 전 3·2·1 카운트다운. 실시간 대전은 동시 시작."),
         t("점수 상승 시 숫자가 튀는 점수판, 라운드 종료 결과 배너, 남은 시간이 적으면 빨갛게 깜빡이는 시간 막대 추가."),
         t("나이트 경주의 나이트와 러시아워 기물이 칸 사이를 미끄러지듯 이동."),
@@ -1300,8 +1330,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.2", date: "2026.9.22",
-    summary: t("캐슬링 권리 검증 수정 · 퍼즐 포지션 분류 개선 · 신규 기능 6종."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("캐슬링 권리 검증 누락 수정 · 퍼즐 국면 판정 개선 · 일일 퍼즐 스트릭·배지 · 적응형 퍼즐 난이도 · 오프닝 트리 내 승률 오버레이 · 프로필 약점 리포트 · 리뷰 공유 이미지 카드 · PvP 관전 모드") },
+    summary: t("캐슬링 권리 검증 수정, 퍼즐 포지션 분류 개선, 신규 기능 6종."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("캐슬링 권리 검증 누락 수정, 퍼즐 국면 판정 개선, 일일 퍼즐 스트릭·배지, 적응형 퍼즐 난이도, 오프닝 트리 내 승률 오버레이, 프로필 약점 리포트, 리뷰 공유 이미지 카드, PvP 관전 모드") },
     sections: [
       { cat: "security", items: [
         t("표준 시작 위치의 모든 대국·퍼즐에서 킹이 제자리를 벗어났다가 돌아오면 캐슬링이 재개되던 규칙 위반 수정. 실시간 대국에서 악용 가능했던 문제."),
@@ -1328,8 +1358,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.1", date: "2026.9.13",
-    summary: t("Stockfish 18 연결 실패 수정 · 서버 기준 시간 초과 판정 · 미니게임 전체 화면."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Stockfish 18 연결 실패 · 퍼즐 이름 되돌림 · 실시간 대국 시간 초과 좀비 대국 근본 수정 · FEN 모드 다음 수·수 체계 아이콘 정확도 개선 · 이미지 스캔 속도·진행률 개선 · 캐슬링 권리 자동 해제 · 승격 선택 창 색상·크기·위치 개선 · 미니게임 전체화면 레이아웃 재설계") },
+    summary: t("Stockfish 18 연결 실패 수정, 서버 기준 시간 초과 판정, 미니게임 전체 화면."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Stockfish 18 연결 실패, 퍼즐 이름 되돌림, 실시간 대국 시간 초과 좀비 대국 근본 수정, FEN 모드 다음 수·수 체계 아이콘 정확도 개선, 이미지 스캔 속도·진행률 개선, 캐슬링 권리 자동 해제, 승격 선택 창 색상·크기·위치 개선, 미니게임 전체화면 레이아웃 재설계") },
     sections: [
       { cat: "fix", items: [
         t("Stockfish 18 선택 시 항상 '연결 실패'로 멈추던 문제 수정. 신경망 파일을 사이트와 같은 곳에서 직접 받도록 변경, 설정 탭에 부팅 안내 추가."),
@@ -1359,8 +1389,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.5.0", date: "2026.9.12",
-    summary: t("상점 탭을 플레이 탭으로 개편 · 실시간 미니게임 2종."),
-    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("상점 탭 → 플레이 탭 개편 · 실시간 미니게임 '좌표 인지 게임'·'나이트 경주' · 채택률·모바일 엔진 라인 등 버그 수정") },
+    summary: t("상점 탭을 플레이 탭으로 개편, 실시간 미니게임 2종."),
+    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("상점 탭 → 플레이 탭 개편, 실시간 미니게임 '좌표 인지 게임'·'나이트 경주', 채택률·모바일 엔진 라인 등 버그 수정") },
     sections: [
       { cat: "feature", items: [
         t("상점 탭을 플레이 탭으로 변경. 분석 탭 PLAY 버튼과 같은 대국 설정 화면으로 진입, 아래로 내리면 기존 상점(보드·기물 스킨)."),
@@ -1391,8 +1421,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.9", date: "2026.9.9",
-    summary: t("일일 퍼즐 커뮤니티 자동 선정 · FEN 퍼즐 이름 · 분석 탭 보드 확대."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("일일 퍼즐 커뮤니티 자동 선정 · FEN 퍼즐 이름·표시 · 분석 탭 보드 확대·흔들림 고정") },
+    summary: t("일일 퍼즐 커뮤니티 자동 선정, FEN 퍼즐 이름, 분석 탭 보드 확대."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("일일 퍼즐 커뮤니티 자동 선정, FEN 퍼즐 이름·표시, 분석 탭 보드 확대·흔들림 고정") },
     sections: [
       { cat: "feature", items: [
         t("FEN 퍼즐 이름을 생성자·개발자가 직접 지정 가능. 수 설명과 같은 금칙어 검사 적용."),
@@ -1435,8 +1465,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.8", date: "2026.9.6",
-    summary: t("채팅 블라인드 대국 · FEN 모드 리뷰 복원 · 리뷰 카드 통일."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("채팅으로 블라인드 대국 · FEN 모드 리뷰 복원 · 리뷰 카드 통일") },
+    summary: t("채팅 블라인드 대국, FEN 모드 리뷰 복원, 리뷰 카드 통일."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("채팅으로 블라인드 대국, FEN 모드 리뷰 복원, 리뷰 카드 통일") },
     sections: [
       { cat: "feature", items: [
         t("채팅 블라인드 대국. '1.e4'처럼 수순 번호가 붙은 SAN을 보내면 시작, 차례에 맞는 합법 수만 인식. 체크메이트·무승부 자동 판정, /resign·/draw·/eval 지원."),
@@ -1454,8 +1484,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.7", date: "2026.9.5",
-    summary: t("실시간 대국 무승부·재대결 · 수 설명 좋아요/싫어요."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("실시간 대국 무승부·재대결 · 수 설명 좋아요/싫어요 · 여러 버그 수정") },
+    summary: t("실시간 대국 무승부·재대결, 수 설명 좋아요/싫어요."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("실시간 대국 무승부·재대결, 수 설명 좋아요/싫어요, 여러 버그 수정") },
     sections: [
       { cat: "feature", items: [
         t("실시간 대국 무승부 제안. 상대가 봇이 아닐 때 '다시 설정' 대신 무승부 제안 버튼 표시, 제안받은 쪽은 하단 수락/거절 알림."),
@@ -1480,8 +1510,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.6", date: "2026.9.4",
-    summary: t("/play 앙파상 버그 수정 · 표준 시작 위치 고정 · 친구 초대 링크 · 프로필 개편."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("/play 앙파상 버그 수정 · 친구 초대 링크·프로필·채팅 개선") },
+    summary: t("/play 앙파상 버그 수정, 표준 시작 위치 고정, 친구 초대 링크, 프로필 개편."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("/play 앙파상 버그 수정, 친구 초대 링크·프로필·채팅 개선") },
     sections: [
       { cat: "security", items: [
         t("/play는 항상 표준 시작 위치에서만 시작. 보드 편집이나 FEN/PGN 로드로 위치가 달라지면 PLAY 버튼 비활성화."),
@@ -1524,8 +1554,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.5", date: "2026.9.3",
-    summary: t("매칭 대기 화면 궤도 애니메이션 · 상대 찾기 즉시 패배 버그 수정."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brilliant, label: t("매칭 대기 화면 궤도 애니메이션 · 대국 상대 찾기 즉시 패배 버그 수정") },
+    summary: t("매칭 대기 화면 궤도 애니메이션, 상대 찾기 즉시 패배 버그 수정."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brilliant, label: t("매칭 대기 화면 궤도 애니메이션, 대국 상대 찾기 즉시 패배 버그 수정") },
     sections: [
       { cat: "feature", items: [
         t("매칭 대기 화면 궤도 애니메이션 개선. 반지름이 다른 궤도 위를 수 아이콘이 천체처럼 회전, 구성은 직전 대국 반영."),
@@ -1550,8 +1580,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.4", date: "2026.9.2",
-    summary: t("퍼즐 만들기 핵심 버그 수정 · 언더프로모션 · MID 친구 초대 링크 · 프로필 페이지."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐 만들기 핵심 버그 · 언더프로모션 · MID 친구 초대 링크 · 프로필 페이지") },
+    summary: t("퍼즐 만들기 핵심 버그 수정, 언더프로모션, MID 친구 초대 링크, 프로필 페이지."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐 만들기 핵심 버그, 언더프로모션, MID 친구 초대 링크, 프로필 페이지") },
     sections: [
       { cat: "feature", items: [
         t("집중 분석에서 실수·부정확한 수·탁월한 수의 '퍼즐 만들기' 클릭 시 퍼즐 카드로 바로 진입."),
@@ -1580,8 +1610,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.3", date: "2026.8.31",
-    summary: t("Apple·Facebook 로그인 · 계정 센터 · /play 재설계."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Apple/Facebook 로그인 · 계정 센터(MID) · /play 재설계") },
+    summary: t("Apple·Facebook 로그인, 계정 센터, /play 재설계."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Apple/Facebook 로그인, 계정 센터(MID), /play 재설계") },
     sections: [
       { cat: "feature", items: [
         t("Apple·Facebook 로그인."),
@@ -1611,8 +1641,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.2", date: "2026.8.30",
-    summary: t("/play 실시간 대국 · 접속 표시."),
-    highlight: { kind: "icon", Icon: Users, color: T.brassHi, label: t("/play 실시간 대국(랜덤 매칭·친구 초대) · 실시간 접속 표시") },
+    summary: t("/play 실시간 대국, 접속 표시."),
+    highlight: { kind: "icon", Icon: Users, color: T.brassHi, label: t("/play 실시간 대국(랜덤 매칭·친구 초대), 실시간 접속 표시") },
     sections: [
       { cat: "feature", items: [
         t("/play 실시간 대국. 랜덤 매칭 또는 친구 목록에서 선택."),
@@ -1638,8 +1668,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.1", date: "2026.8.28",
-    summary: t("About 페이지 리디자인 · 버전 표시 버그 수정 · FEN 퍼즐·리뷰 · 퍼즐 레이팅 · 퍼즐 탭 개편."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("/about 페이지 리디자인 · 버전 표시 버그 수정 · FEN 퍼즐·리뷰 동등화 · 퍼즐 레이팅 · 퍼즐 탭 개편") },
+    summary: t("About 페이지 리디자인, 버전 표시 버그 수정, FEN 퍼즐·리뷰, 퍼즐 레이팅, 퍼즐 탭 개편."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("/about 페이지 리디자인, 버전 표시 버그 수정, FEN 퍼즐·리뷰 동등화, 퍼즐 레이팅, 퍼즐 탭 개편") },
     sections: [
       { cat: "feature", items: [
         t("게임 리뷰·분석 탭에서 FEN(임의 포지션) 시작 시에도 최선·탁월·유일한 수 판정을 대국과 동일하게 적용."),
@@ -1683,8 +1713,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.4.0", date: "2026.8.28",
-    summary: t("탭 이름 변경 · 메인 퀘스트 레슨 시스템 개편."),
-    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("메인 퀘스트 전면 개편 · 레슨 시스템") },
+    summary: t("탭 이름 변경, 메인 퀘스트 레슨 시스템 개편."),
+    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("메인 퀘스트 전면 개편, 레슨 시스템") },
     sections: [
       { cat: "feature", items: [
         t("탭 이름 변경. 기존 '학습'은 '분석', 기존 '퀘스트'는 '학습'."),
@@ -1728,8 +1758,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.8", date: "2026.8.19",
-    summary: t("리뷰 진입 애니메이션 · 정확도 체계 개편."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("리뷰 진입 애니메이션 · 정확도 체계 전면 개편") },
+    summary: t("리뷰 진입 애니메이션, 정확도 체계 개편."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("리뷰 진입 애니메이션, 정확도 체계 전면 개편") },
     sections: [
       { cat: "feature", items: [
         t("게임 리뷰 진입 화면 개편. 일러스트가 순차 등장하고 수마다 등급 아이콘 표시."),
@@ -1782,8 +1812,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.6", date: "2026.8.18",
-    summary: t("기보 클릭 이동 · 라인·퍼즐 클리어 애니메이션."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("기보 클릭 이동 · 라인·퍼즐 클리어 애니메이션") },
+    summary: t("기보 클릭 이동, 라인·퍼즐 클리어 애니메이션."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("기보 클릭 이동, 라인·퍼즐 클리어 애니메이션") },
     sections: [
       { cat: "feature", items: [
         t("퍼즐 풀이 화면·일일 퍼즐 팝업·도감 오프닝 트리의 기보에서 수 클릭 시 해당 수순이 입력된 학습 탭으로 이동."),
@@ -1814,8 +1844,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.5", date: "2026.8.16",
-    summary: t("보드 편집기 · FEN 리뷰 자유 탐색."),
-    highlight: { kind: "icon", Icon: Pencil, color: T.brassHi, label: t("보드 편집기 · FEN 리뷰 자유 탐색") },
+    summary: t("보드 편집기, FEN 리뷰 자유 탐색."),
+    highlight: { kind: "icon", Icon: Pencil, color: T.brassHi, label: t("보드 편집기, FEN 리뷰 자유 탐색") },
     sections: [
       { cat: "feature", items: [
         t("학습 탭 체스보드 편집기(펜 아이콘). 팔레트에서 기물을 골라 배치·드래그."),
@@ -1843,8 +1873,8 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.4", date: "2026.8.13",
-    summary: t("게임 리뷰 공유 · 정확도 개선."),
-    highlight: { kind: "icon", Icon: Share2, color: T.brassHi, label: t("게임 리뷰 공유 · 정확도 개선") },
+    summary: t("게임 리뷰 공유, 정확도 개선."),
+    highlight: { kind: "icon", Icon: Share2, color: T.brassHi, label: t("게임 리뷰 공유, 정확도 개선") },
     sections: [
       { cat: "feature", items: [
         t("게임 리뷰 공유 버튼(모바일·데스크톱). 카카오톡·인스타그램 등 외부 앱 공유."),
@@ -1975,7 +2005,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.1", date: "2026.8.10",
-    summary: t("퍼즐 생성·검색 속도 개선 · 마스터 통계 검색."),
+    summary: t("퍼즐 생성·검색 속도 개선, 마스터 통계 검색."),
     highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("퍼즐 생성·검색 속도 대폭 개선") },
     sections: [
       { cat: "feature", items: [
@@ -2002,7 +2032,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.3.0", date: "2026.8.9",
-    summary: t("마스터 대국 데이터 확대 · 터치 드래그 · 수비자 제거 전술."),
+    summary: t("마스터 대국 데이터 확대, 터치 드래그, 수비자 제거 전술."),
     highlight: { kind: "icon", Icon: Crown, color: T.brassHi, label: t("마스터 대국 데이터 대거 추가") },
     sections: [
       { cat: "feature", items: [
@@ -2029,7 +2059,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.9", date: "2026.8.4",
-    summary: t("일일 퀘스트 클리어 팝업 · 리뷰 실시간 평가치."),
+    summary: t("일일 퀘스트 클리어 팝업, 리뷰 실시간 평가치."),
     highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("일일 퀘스트 클리어 팝업") },
     sections: [
       { cat: "feature", items: [
@@ -2115,7 +2145,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.6", date: "2026.7.28",
-    summary: t("게임 리뷰 페이지 복구 · 탁월한 수 판정 보완 · chess.com 통계 개선."),
+    summary: t("게임 리뷰 페이지 복구, 탁월한 수 판정 보완, chess.com 통계 개선."),
     highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("게임 리뷰 페이지 복구") },
     sections: [
       { cat: "fix", items: [
@@ -2167,7 +2197,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.4", date: "2026.7.24",
-    summary: t("리체스 퍼즐 DB 기반 일일 퍼즐 · 리뷰·학습 엔진 분리."),
+    summary: t("리체스 퍼즐 DB 기반 일일 퍼즐, 리뷰·학습 엔진 분리."),
     highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("리체스 퍼즐 DB 기반 오늘의 퍼즐") },
     sections: [
       { cat: "feature", items: [
@@ -2190,7 +2220,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.3", date: "2026.7.24",
-    summary: t("탁월한 수 판정 보완 · 긴 대국 속도 유지."),
+    summary: t("탁월한 수 판정 보완, 긴 대국 속도 유지."),
     highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("긴 대국에서도 항상 일정한 속도") },
     sections: [
       { cat: "fix", items: [
@@ -2249,7 +2279,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.1", date: "2026.7.23",
-    summary: t("리뷰 보드 자유 탐색 · 수 체계 아이콘 설명."),
+    summary: t("리뷰 보드 자유 탐색, 수 체계 아이콘 설명."),
     highlight: { kind: "icon", Icon: MousePointer, color: "#B98CFF", label: t("리뷰 보드 자유 탐색") },
     sections: [
       { cat: "feature", items: [
@@ -2275,7 +2305,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.2.0", date: "2026.7.22",
-    summary: t("신규 게임 리뷰 페이지 · 일일 퍼즐."),
+    summary: t("신규 게임 리뷰 페이지, 일일 퍼즐."),
     highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 게임 리뷰 페이지") },
     sections: [
       { cat: "feature", items: [
@@ -2305,7 +2335,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.5", date: "2026.7.18",
-    summary: t("그랜드마스터 배지 복구 · 애니메이션 · 채팅 입력 표시."),
+    summary: t("그랜드마스터 배지 복구, 애니메이션, 채팅 입력 표시."),
     highlight: { kind: "img", src: "/gm.png", label: t("그랜드마스터 배지 복구") },
     sections: [
       { cat: "ux", items: [
@@ -2337,7 +2367,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.4", date: "2026.7.18",
-    summary: t("소개 페이지 유명 오프닝 갤러리 · 그랜드마스터 카드."),
+    summary: t("소개 페이지 유명 오프닝 갤러리, 그랜드마스터 카드."),
     highlight: { kind: "img", src: "/gm-trophy-web.webp", label: t("그랜드마스터 카드 추가") },
     sections: [
       { cat: "feature", items: [
@@ -2362,7 +2392,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.3", date: "2026.7.17",
-    summary: t("엔진 상위 3줄 분석 · 티어 여정 지도 개편."),
+    summary: t("엔진 상위 3줄 분석, 티어 여정 지도 개편."),
     highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("엔진 상위 3줄 분석"), tilt: -3 },
     sections: [
       { cat: "feature", items: [
@@ -2389,7 +2419,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.2", date: "2026.7.16",
-    summary: t("퍼즐 오답 응징 수 시연 · /about 페이지."),
+    summary: t("퍼즐 오답 응징 수 시연, /about 페이지."),
     highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("오답 응징 수 시연"), tilt: 3 },
     sections: [
       { cat: "feature", items: [
@@ -2410,7 +2440,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.1", date: "2026.7.16",
-    summary: t("티어 UI 이미지 개편 · 버그 수정."),
+    summary: t("티어 UI 이미지 개편, 버그 수정."),
     highlight: { kind: "tierPromo" },
     sections: [
       { cat: "feature", items: [
@@ -2432,7 +2462,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.1.0", date: "2026.7.16",
-    summary: t("퍼즐 공유 · 리포스트 · 공개 프로필 기록."),
+    summary: t("퍼즐 공유, 리포스트, 공개 프로필 기록."),
     highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("퍼즐 공유하기"), tilt: -3 },
     sections: [
       { cat: "feature", items: [
@@ -2453,7 +2483,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.0.6", date: "2026.7.15",
-    summary: t("티어 시스템 · 도감 탭 성능·안정성 개선."),
+    summary: t("티어 시스템, 도감 탭 성능·안정성 개선."),
     highlight: { kind: "tierStrip" },
     sections: [
       { cat: "feature", items: [
@@ -2480,7 +2510,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.0.5", date: "2026.7.14",
-    summary: t("서버 보안 강화 · 실시간 알림·채팅."),
+    summary: t("서버 보안 강화, 실시간 알림·채팅."),
     highlight: { kind: "icon", Icon: Shield, color: "#D9736A", label: t("서버 보안 강화") },
     sections: [
       { cat: "security", items: [
@@ -2495,7 +2525,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.0.4", date: "2026.7.13",
-    summary: t("학습 탭 실시간 분석 · 게임 리뷰 속도 개선."),
+    summary: t("학습 탭 실시간 분석, 게임 리뷰 속도 개선."),
     highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("학습 탭 실시간 분석"), tilt: 3 },
     sections: [
       { cat: "perf", items: [
@@ -2540,7 +2570,7 @@ const VERSION_HISTORY = [
   },
   {
     version: "0.0.1", date: "2026.7.11",
-    summary: t("모바일 UI 정리 · 사용성 개선."),
+    summary: t("모바일 UI 정리, 사용성 개선."),
     highlight: { kind: "shot", src: "/about/screenshot-quest.webp", label: t("구석구석 다듬기"), tilt: 3 },
     sections: [
       { cat: "ui", items: [

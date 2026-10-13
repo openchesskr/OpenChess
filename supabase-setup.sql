@@ -3473,11 +3473,13 @@ grant execute on function public.bot_game_record(text[], text, text, int, text) 
 
 -- (v0.6.2) /user 프로필의 "일반 대국 기록" — 누구의 프로필이든(내 것·남의 것) 같은 함수로 읽는다. pvp_games·bot_games는 본인만 select할 수 있어 남의 기록은 직접 못 읽으므로,
 -- 끝난 일반 대국(실시간 pvp_games + 봇 bot_games)의 공개해도 되는 필드(수순·결과·시간 규정·레이팅 증감·상대 이름)만 돌려준다. 채팅·무승부 제안 등 다른 컬럼은 노출하지 않는다.
--- 상대 이름은 닉네임(없으면 아이디). 대국마다 p_uid 기준으로 색(color)과 결과(result)를 계산해 주고, 최근 p_limit판(최대 100)만.
-create or replace function public.profile_recent_games(p_uid uuid, p_limit int default 100)
+-- 상대 이름은 닉네임(없으면 아이디). 대국마다 p_uid 기준으로 색(color)과 결과(result)를 계산해 주고, p_offset부터 p_limit판(한 번에 최대 500).
+-- (v0.6.6) 실시간 대국은 서버에 영구 저장돼 있으므로 읽을 때 100판으로 자르지 않는다 — p_offset으로 한 번에 최대 500판씩 이어 읽는다(집중 분석 "내 통계"가 전부 모은다). 봇 대국은 저장 자체가 사람당 최근 100판(bot_game_record).
+drop function if exists public.profile_recent_games(uuid, int);
+create or replace function public.profile_recent_games(p_uid uuid, p_limit int default 100, p_offset int default 0)
 returns table (kind text, id bigint, color text, result text, sans jsonb, time_control text, rated boolean, rating_delta jsonb, bot_elo int, opp_name text, ended_at timestamptz)
 language sql stable security definer set search_path = public as $$
-  with lim as (select least(greatest(coalesce(p_limit, 100), 1), 100) as n),
+  with lim as (select least(greatest(coalesce(p_limit, 100), 1), 500) as n, greatest(coalesce(p_offset, 0), 0) as off),
   pvp as (
     select 'pvp'::text as kind, g.id, case when g.white_uid = p_uid then 'w' else 'b' end as color,
       case g.status when 'draw' then 'draw' when 'white_won' then (case when g.white_uid = p_uid then 'win' else 'loss' end)
@@ -3488,14 +3490,14 @@ language sql stable security definer set search_path = public as $$
     left join public.profiles pr on pr.id = case when g.white_uid = p_uid then g.black_uid else g.white_uid end
     where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw')
       and (g.white_uid = p_uid or g.black_uid = p_uid) and jsonb_array_length(g.sans) > 0
-    order by g.updated_at desc limit (select n from lim)
+    order by g.updated_at desc limit (select n + off from lim)
   ), bots as (
     select 'bot'::text, b.id, b.color, b.result, to_jsonb(b.sans), b.time_control, false, null::jsonb, b.bot_elo, null::text, b.created_at
-    from public.bot_games b where b.uid = p_uid order by b.created_at desc limit (select n from lim)
+    from public.bot_games b where b.uid = p_uid order by b.created_at desc limit (select n + off from lim)
   )
-  select * from (select * from pvp union all select * from bots) x order by x.ended_at desc limit (select n from lim);
+  select * from (select * from pvp union all select * from bots) x order by x.ended_at desc offset (select off from lim) limit (select n from lim);
 $$;
-grant execute on function public.profile_recent_games(uuid, int) to anon, authenticated;
+grant execute on function public.profile_recent_games(uuid, int, int) to anon, authenticated;
 
 -- ============================================================================
 -- N+4) 계정 센터 — Apple/Facebook OAuth 추가 + 계정 탈퇴

@@ -3,7 +3,7 @@
 //  · 챔피언 노드(CH_W×CH_H) 옆에 "탈락한 도전자" 위성 노드(SAT_W×SAT_H)를 둔다. 가운데 줄은 좌우로 번갈아, 왼쪽 줄은 바깥(왼쪽), 오른쪽 줄은 바깥(오른쪽)으로 쌓는다.
 //  · 같은 도전자가 한 챔피언에게 여러 번 졌으면(치고린 1889·1892) 위성 노드 하나에 해(years)를 모은다.
 //  · 반환 좌표는 모두 캔버스 좌상단 기준(PAD 여백 포함). nodes[].x·y는 노드 좌상단.
-export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 300, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 280, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 420, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14, CHIP: 60, CHIP_GAP: 260, W_COL_GAP: 300, S_LEN: 260, S_DROP: 150, FIDE_W: 292, FIDE_H: 84, FIDE_STEP: 98, FIDE_COL_DX: 420, DB_W: 292, DB_H: 78, DB_STEP: 90, DB_LINK: 50, DB_COLS: 3, DB_COL_GAP: 60 };
+export const MT = { TOUR_W: 300, TOUR_H: 120, TOUR_GAP: 28, TOUR_COL_GAP: 300, ED_W: 104, ED_H: 60, ED_GAP: 14, ED_START: 36, PANEL_GAP: 18, PANEL_PAD: 14, PANEL_HEAD: 34, PANEL_COLS: 4, PL_W: 150, PL_H: 34, PL_GAP: 10, PANEL_EMPTY_H: 64, CH_W: 280, CH_H: 88, SAT_W: 150, SAT_H: 46, SAT_STEP: 58, SAT_GAP: 30, ROW_GAP: 56, LANE_DX: 420, PAD: 70, TOP_PAD: 70, LABEL_W: 220, LABEL_H: 26, LABEL_GAP: 14, CHIP: 60, CHIP_GAP: 260, W_COL_GAP: 300, S_LEN: 260, S_DROP: 150, FIDE_W: 292, FIDE_H: 84, FIDE_STEP: 98, FIDE_COL_DX: 420, DB_W: 292, DB_H: 78, DB_STEP: 90, DB_LINK: 50, DB_ROWS: 6, DB_COL_GAP: 60 };
 
 export function satellitesOf(champ) {
   const byName = new Map(); const out = [];
@@ -136,20 +136,22 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
     for (const n of tourNodes) edges.push({ kind: "tour", from: n.id, to: n.id });
   }
   const half = chip.size / 2;
-  // 서쪽 — 마스터 대국 DB 선수(알파벳 순). 한 줄로 쭉 늘어놓으면 너무 길어 DB_COLS개의 세로 열로 나누고(앞 열이 칩에 가깝고 A→Z가 열을 따라 이어진다),
+  // 서쪽 — 주요 그랜드마스터(최고 엘로 높은 순, 앞 열이 칩에 가깝다). 한 줄로 쭉 늘어놓으면 너무 길어 DB_COLS개의 세로 열로 나누고(앞 열이 칩에 가깝고 A→Z가 열을 따라 이어진다),
   // 열마다 세로선(wrail)을 두며 칩 높이의 서쪽 선이 일직선으로 모든 세로선을 지난다. 열은 같은 길이(짝수 줄)라 이 직선은 노드를 가로지르지 않는다.
   let wrails = null;
   if (dbMasters && dbMasters.length) {
-    // 열은 짝수 줄로 자르고(마지막 열만 모자랄 수 있다) 열마다 자기 줄 수로 칩 높이를 가운데에 맞춘다 — 줄 수가 짝수라 칩 높이의 직선은 노드 사이 빈틈을 지난다.
-    const per0 = Math.ceil(dbMasters.length / MT.DB_COLS), per = per0 + (per0 % 2);
+    // (v0.6.6, 사용자 요청) 위아래 DB_ROWS(6)줄로 서쪽으로 길게 뻗는다 — 열마다 6명(칩 높이를 가운데에 두고 위 3·아래 3)이라 칩 높이의 직선이 노드 사이 빈틈을 지난다. 마지막 열만 모자랄 수 있다(그 열의 줄 수로 칩 높이를 가운데에 맞춘다).
+    // (v0.6.6, 사용자 요청) 레이팅이 높은(= 유명한) 마스터가 중심 회로에 가깝다 — 최고 엘로 내림차순(같으면 대국 수 많은 순, 그다음 원래 순서)으로 줄을 세운다. id·index는 원래 목록(dbMasters.json) 순번 그대로라 상세 카드가 같은 데이터를 찾는다.
+    const order = dbMasters.map((_, i) => i).sort((a, b) => (dbMasters[b][2] || 0) - (dbMasters[a][2] || 0) || (dbMasters[b][1] || 0) - (dbMasters[a][1] || 0) || a - b);
+    const per = MT.DB_ROWS, cols = Math.ceil(dbMasters.length / per);
     wrails = [];
-    for (let k = 0; k < MT.DB_COLS; k++) {
-      const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = dbMasters.slice(k * per, (k + 1) * per);
+    for (let k = 0; k < cols; k++) {
+      const wx = champLeft - MT.W_COL_GAP - k * (MT.DB_LINK + MT.DB_W + MT.DB_COL_GAP), part = order.slice(k * per, (k + 1) * per);
       if (!part.length) break;
       const total = (part.length - 1) * MT.DB_STEP;
-      part.forEach((m, j) => {
-        const cyy = chip.cy - total / 2 + j * MT.DB_STEP, i = k * per + j;
-        const n = { id: "dbm:" + i, kind: "dbm", dbm: { name: m[0], games: m[1], elo: m[2] }, index: i, col: k, x: wx - MT.DB_LINK - MT.DB_W, y: cyy - MT.DB_H / 2, w: MT.DB_W, h: MT.DB_H };
+      part.forEach((i, j) => {
+        const m = dbMasters[i], cyy = chip.cy - total / 2 + j * MT.DB_STEP;
+        const n = { id: "dbm:" + i, kind: "dbm", dbm: { name: m[0], games: m[1], elo: m[2] }, index: i, rank: k * per + j, col: k, x: wx - MT.DB_LINK - MT.DB_W, y: cyy - MT.DB_H / 2, w: MT.DB_W, h: MT.DB_H };
         nodes.push(n); edges.push({ kind: "dlink", from: n.id, to: n.id, wx });
       });
       wrails.push({ x: wx, y1: chip.cy - total / 2, y2: chip.cy - total / 2 + (part.length - 1) * MT.DB_STEP, col: k });
@@ -185,6 +187,7 @@ export function layoutMasters(champions, transfers, splitRows, upcoming, tournam
   labels.push({ id: "champs", key: "champs", align: "left", x: chip.cx + 16, y: chip.cy - half - MT.CHIP_GAP / 2 - MT.LABEL_H / 2, w: MT.LABEL_W, h: MT.LABEL_H });
   if (rail) labels.push({ id: "tours", key: "tours", align: "center", x: (chip.cx + half + rail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
   if (wrail) labels.push({ id: "db", key: "db", align: "center", x: (chip.cx - half + wrail.x) / 2 - MT.LABEL_W / 2, y: chip.cy - 8 - MT.LABEL_H, w: MT.LABEL_W, h: MT.LABEL_H });
+  if (south) labels.push({ id: "rank", key: "rank", align: "left", x: chip.cx + 16, y: chip.cy + half + MT.S_LEN / 2 - MT.LABEL_H / 2, w: MT.LABEL_W, h: MT.LABEL_H });
   if (south) for (const c of south.cols) labels.push({ id: "fide-" + c.key, key: "fide-" + c.key, align: "center", plaque: true, x: c.cx - MT.FIDE_W / 2, y: c.drop.y1 + (MT.S_DROP - 52) / 2, w: MT.FIDE_W, h: 52 });
   for (const l of labels) { minX = Math.min(minX, l.x); maxX = Math.max(maxX, l.x + l.w); minY = Math.min(minY, l.y); }
   const dx = MT.PAD - minX, dy = MT.TOP_PAD - minY;
@@ -215,4 +218,33 @@ export function clampMasterPan(pan, zoom, viewW, viewH, layout, margin = 20) {
   const cw = layout.width * zoom, ch = layout.height * zoom;
   const axis = (p, view, size, center) => (size + margin * 2 <= view ? (center ? (view - size) / 2 : margin) : Math.max(view - size - margin, Math.min(margin, p)));
   return { x: axis(pan.x, viewW, cw, true), y: axis(pan.y, viewH, ch, false) };
+}
+
+/* (v0.6.6, 사용자 요청) 중심 회로 칩에서 노드까지 회로선(칩 → 동·서·남·북 갈래 → 세로선 → 허브 → 연도 블록)을 따라가는 꺾은선 — 마스터 트리의 "찾아가기" 연출 경로.
+   L = layoutMasters 결과. 점은 캔버스 좌표 [x, y]이고 첫 점은 칩 중심, 마지막 점은 노드 중심이다. 모르는 노드는 칩 → 노드 직선. */
+export function flightPoints(L, nodeId) {
+  const n = L.byNodeId.get(nodeId); if (!n) return null;
+  const cx = (q) => q.x + q.w / 2, cy = (q) => q.y + q.h / 2, chip = [L.chip.cx, L.chip.cy], c = [cx(n), cy(n)];
+  const dedupe = (pts) => pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.5);
+  if ((n.kind === "edition" || n.kind === "tour" || n.kind === "player") && L.rail) {
+    const hub = L.byNodeId.get("tour:" + (n.tourId || (n.tour && n.tour.id)));
+    if (hub) {
+      const pts = [chip, [L.rail.x, chip[1]], [L.rail.x, cy(hub)], [hub.x, cy(hub)]];
+      if (n.kind !== "tour") { const ed = n.kind === "edition" ? n : L.byNodeId.get("ed:" + n.tourId + ":" + n.year) || n; pts.push([hub.x + hub.w, cy(hub)], [cx(ed), cy(ed)]); if (n.kind === "player") pts.push(c); }
+      else pts.push([cx(hub), cy(hub)]);
+      return dedupe(pts);
+    }
+  }
+  if (n.kind === "champ") return dedupe([chip, [chip[0], c[1]], c]);
+  if (n.kind === "sat") { const ch = L.byNodeId.get(n.champId); return ch ? dedupe([chip, [chip[0], cy(ch)], [cx(ch), cy(ch)], [c[0], cy(ch)], c]) : dedupe([chip, c]); }
+  if (n.kind === "fide" && L.south) { const col = L.south.cols.find((q) => q.key === n.list); if (col) return dedupe([chip, [chip[0], L.south.jy], [col.cx, L.south.jy], [col.cx, c[1]]]); }
+  if (n.kind === "dbm" && L.wrails && L.wrails[n.col]) { const wr = L.wrails[n.col]; return dedupe([chip, [wr.x, chip[1]], [wr.x, c[1]], c]); }
+  return dedupe([chip, c]);
+}
+export function polyLength(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return s; }
+/** 꺾은선 위 길이 s 지점의 [x, y]. */
+export function polyPointAt(pts, s) {
+  let rest = Math.max(0, s);
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (rest <= d || i === pts.length - 1) { const k = d ? Math.min(1, rest / d) : 1; return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k]; } rest -= d; }
+  return pts[pts.length - 1];
 }

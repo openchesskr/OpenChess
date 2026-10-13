@@ -13,6 +13,9 @@ import { loadGrowth, saveGrowth } from "../lib/growthStore.js";
 import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weaknessReport, dueCards, gradeCard, srsStats, isCardAnswer } from "../lib/weakness.js";
 import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { rankMasterMatches } from "../lib/masterNameSearch.js";
+import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { t } from "../lib/i18n.js";
 
 // 학습 탭의 다른 카드(일일 퀘스트 등)와 같은 종이 카드 톤.
@@ -86,7 +89,7 @@ function WeaknessMap({ list, onPractice }) {
           <div style={{ ...sub, fontWeight: 800, marginBottom: 6 }}>{t("실수가 난 칸")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", width: 168, maxWidth: "100%", border: "2px solid #B8955A" }} aria-label={t("실수한 수가 도착한 칸의 분포")}>
             {rep.heat.map((row, r) => row.map((n, f) => (
-              <div key={r + "-" + f} title={n ? "abcdefgh"[f] + (8 - r) + " · " + n : undefined} style={{ aspectRatio: "1", background: (r + f) % 2 === 0 ? "#E8D2A6" : "#7C4F2E", position: "relative" }}>
+              <div key={r + "-" + f} title={n ? "abcdefgh"[f] + (8 - r) + ", " + n : undefined} style={{ aspectRatio: "1", background: (r + f) % 2 === 0 ? "#E8D2A6" : "#7C4F2E", position: "relative" }}>
                 {n > 0 && <div style={{ position: "absolute", inset: 0, background: "rgba(200,69,59," + (0.25 + 0.7 * n / rep.heatMax).toFixed(2) + ")", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 800 }}>{n}</div>}
               </div>)))}
           </div>
@@ -151,7 +154,7 @@ function ReviewCards({ list, update, filter, setFilter }) {
           </div>
           <p style={{ ...sub, margin: "0 0 10px" }}>{t("내가 두었던 실수 포지션에서 엔진 최선수를 찾기. 맞히면 복습 간격이 늘어나고(1·3·7·14·30일), 틀리면 곧 다시 나옴")}</p>
           <button className="press" onClick={start} disabled={!dueN} style={{ ...btn(true), width: "100%", opacity: dueN ? 1 : .5, cursor: dueN ? "pointer" : "default" }}>{dueN ? t("{0}장 복습 시작", Math.min(dueN, 10)) : t("오늘 복습할 카드를 모두 마침")}</button>
-          <p style={{ ...sub, margin: "8px 0 0", textAlign: "center" }}>{t("전체 {0}장 · 익힌 카드 {1}장", stats.total, stats.mastered)}</p>
+          <p style={{ ...sub, margin: "8px 0 0", textAlign: "center" }}>{t("전체 {0}장, 익힌 카드 {1}장", stats.total, stats.mastered)}</p>
         </div>
       ) : !cur ? (
         <div style={{ textAlign: "center", padding: "10px 0" }}>
@@ -171,11 +174,11 @@ function ReviewCards({ list, update, filter, setFilter }) {
             <ChatMoveBoard Board={Board} root={root} sans={[]} size={w} flip={cur.color === "b"} interactive={!res} halo={halo} onMove={(san) => grade(isCardAnswer(cur, san), san)} />
           </div>
           {!res ? (
-            <div style={{ display: "flex", justifyContent: "center" }}><button className="press" onClick={() => grade(false, null)} style={btn(false)}>{t("모르겠음 · 정답 보기")}</button></div>
+            <div style={{ display: "flex", justifyContent: "center" }}><button className="press" onClick={() => grade(false, null)} style={btn(false)}>{t("모르겠음, 정답 보기")}</button></div>
           ) : (
             <div style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid " + (res.ok ? "rgba(63,122,58,.6)" : "rgba(200,69,59,.6)"), background: res.ok ? "rgba(63,122,58,.08)" : "rgba(200,69,59,.07)" }}>
               <p style={{ fontSize: 14, fontWeight: 800, margin: "0 0 3px", color: res.ok ? T.best : T.blunder, display: "flex", alignItems: "center", gap: 6 }}>{res.ok ? <Check size={16} /> : <Target size={16} />}{res.ok ? t("정답! 다음 복습은 {0}일 뒤", SRS_DAYS[(list.find((m) => m.id === cur.id) || cur).box] || 1) : t("아쉬워요. 정답은 {0}", cur.best)}</p>
-              <p style={{ ...sub, margin: "0 0 9px" }}>{t("실제 대국에서는 {0}을(를) 두었음", cur.san)} · {themeAdvice(cur.theme)}</p>
+              <p style={{ ...sub, margin: "0 0 9px" }}>{t("실제 대국에서는 {0}을(를) 두었음", cur.san)}, {themeAdvice(cur.theme)}</p>
               <button className="press" onClick={next} style={{ ...btn(true), width: "100%" }}>{t("다음 카드")}</button>
             </div>
           )}
@@ -189,7 +192,6 @@ function ReviewCards({ list, update, filter, setFilter }) {
 // 비교할 마스터를 이름으로 직접 검색해 고른다. 검색창은 퍼즐 탭의 "오프닝 · 생성자로 검색"과 같은 디자인(어두운 입력창 + 양피지색 드롭다운)이다.
 // 최고 레이팅 표기는 모든 언어에서 "Peak 2xxx"로 통일한다(번역하지 않는 고정 표기).
 const peakText = (elo) => (elo ? "Peak " + elo : "");
-const normName = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 function MasterStyle({ games }) {
   const [data, setData] = useState(null);
   const [pickedName, setPickedName] = useState(null);   // 사용자가 고른 마스터(null이면 가장 닮은 마스터)
@@ -203,17 +205,10 @@ function MasterStyle({ games }) {
   const row = picked ? data.masters.find((r) => r[0] === picked.name) : null;
   const rows = useMemo(() => (row ? compareCriteria(m.u, row[3]) : []), [row, m]);
   const byKey = useMemo(() => Object.fromEntries(rows.map((r) => [r.key, r])), [rows]);
-  // 검색: 영문 이름에서 "맨 앞 일치 → 단어 앞 일치 → 포함 일치" 순서(도감·퍼즐 검색과 같은 규칙), 최대 8명.
+  // 검색: 영문 이름에서 "맨 앞 일치 → 단어 앞 일치 → 포함 일치" 순서(도감·퍼즐 검색과 같은 규칙, src/lib/masterNameSearch.js). 개수 제한 없음(드롭다운 스크롤).
   const suggestions = useMemo(() => {
-    const q = normName(query).trim();
-    if (!q || !m || !m.ok) return [];
-    const scored = [];
-    for (const x of m.list) {
-      const nm = normName(masterName(x.name, "en")), raw = normName(x.name);
-      const rank = nm.startsWith(q) || raw.startsWith(q) ? 0 : nm.split(" ").some((w) => w.startsWith(q)) ? 1 : nm.includes(q) || raw.includes(q) ? 2 : -1;
-      if (rank >= 0) scored.push([rank, x]);
-    }
-    return scored.sort((a, b) => a[0] - b[0] || (b[1].elo || 0) - (a[1].elo || 0)).slice(0, 8).map((e) => e[1]);
+    if (!query.trim() || !m || !m.ok) return [];
+    return rankMasterMatches(m.list, query, (x) => masterName(x.name, "en"), (x) => x.name, (x) => x.elo);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
   if (!data) return <div style={card}><h3 style={h3}>{t("마스터 스타일")}</h3><p style={{ ...sub, margin: "6px 0 0" }}>{t("불러오는 중…")}</p></div>;
@@ -238,7 +233,7 @@ function MasterStyle({ games }) {
               <span style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
             </div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</div>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + " · " : ""}{t("{0}판 분석", x.games)}</div>
+            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + ", " : ""}{t("{0}판 분석", x.games)}</div>
           </button>
         ))}
       </div>
@@ -249,20 +244,15 @@ function MasterStyle({ games }) {
             onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) choose(suggestions[0]); }} aria-label={t("마스터 이름으로 검색")}
             placeholder={focus ? t("마스터 이름으로 검색") : masterName(picked.name, "en")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(36,21,9,.92)", color: T.ivoryHi, fontSize: 12, fontFamily: SITE_FONT }} />
           {focus && suggestions.length > 0 && (
-            <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 4, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 9, overflow: "hidden", zIndex: 20, boxShadow: "0 8px 20px -6px rgba(0,0,0,.4)", maxHeight: 220, overflowY: "auto" }}>
-              {suggestions.map((x) => (
-                <button key={x.name} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(x)} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 10px", background: "transparent", border: "none", borderBottom: "1px solid rgba(196,154,80,.25)", cursor: "pointer", fontSize: 12, color: T.ink, fontWeight: 600, fontFamily: SITE_FONT }}>
-                  <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</span>
-                  <span style={{ flexShrink: 0, marginLeft: "auto", textAlign: "right", fontSize: 11.5, fontWeight: 800, color: "#8A6A2F", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{peakText(x.elo)}</span>
-                </button>
-              ))}
+            <div style={{ ...searchDropStyle, zIndex: 20 }}>
+              {suggestions.map((x) => <SearchResultRow key={x.name} tag="master" tagLabel={t("마스터")} flag={masterFlag(x.name)} title={masterName(x.name, "en")} sub={masterInfoLine(x.name)} onClick={() => choose(x)} />)}
             </div>
           )}
         </div>
         <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("와(과) 기준별 비교")}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", margin: "6px 0 8px" }}>
-        <span style={sub}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)} · {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
+        <span style={sub}>{picked.elo ? peakText(picked.elo) + ", " : ""}{t("{0}판 분석", picked.games)}, {t("일치도 {0}%", Math.round(picked.sim * 100))}</span>
         <span style={{ ...sub, fontWeight: 800, color: T.ink }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</span>
       </div>
       {/* 표 전체가 한 격자다 — 숫자 3열은 내용 폭(auto)이라 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고, 열은 모든 줄에서 정렬된다.
