@@ -1561,60 +1561,6 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   };
   const toggleUnbook = async () => { const k = editKey + "|" + stripSuffix(san); if (CONTENT.unbook[k]) delete CONTENT.unbook[k]; else CONTENT.unbook[k] = true; await bumpContent(); };
   const toggleKw = (kw) => setKwDraft((d) => { if (d.includes(kw)) return d.filter((x) => x !== kw); const p = kwPartner(kw); return [...d.filter((x) => x !== p), kw]; });
-  const [mistakes, setMistakes] = useState([]);
-  const [analyzing, setAnalyzing] = useState(false);   // (UI8) 실수 분석 진행 표시
-  useEffect(() => {
-    setMistakes([]); setAnalyzing(false);
-    if (!active || !engine || engine.status !== "ready" || !stats || !stats.lines || !stats.lines.length) return;
-    let cancelled = false;
-    setAnalyzing(true);
-    (async () => {
-      const base = [...sans, san];
-      // (사용자 요청) 로딩 속도 개선 — 후보 라인(stats.lines)들은 서로 앞부분(접두사)을 공유하는
-      // 경우가 많은데, 예전엔 라인마다 처음부터 다시 평가해 같은 포지션을 몇 번이고 중복 계산했다.
-      // 이번 분석 세션 동안 포지션(FEN) 기준으로 평가를 캐시해 재사용 — 같은 포지션은 딱 한 번만
-      // 엔진에 묻는다(Promise 자체를 캐시해, 아직 계산 중인 포지션도 중복 호출 없이 함께 기다린다).
-      const evalCache = new Map();
-      const evalPos = (sansUpTo) => {
-        const fen = sansToFen(sansUpTo);
-        let p = evalCache.get(fen);
-        if (!p) { p = engine.evaluate(fen, 20, undefined, 5000, "focus-mistakes"); evalCache.set(fen, p); }
-        return p;
-      };
-      const base0 = await evalPos(base);
-      // stats.lines는 이미 빈도(count) 내림차순 — 상위 5개를 이미 확보했는데 다음 라인의 빈도가
-      // 다섯 번째로 확보한 실수보다 낮거나 같다면, 그 이후 어떤 라인도 top-5를 밀어낼 수 없으므로
-      // 더 계산하지 않고 멈춘다(조기 종료로 불필요한 엔진 호출을 더 줄인다).
-      let collected = [];
-      for (const ln of stats.lines) {
-        if (cancelled) return;
-        if (collected.length >= 5 && ln.count <= collected[collected.length - 1].count) break;
-        const full = [...base, ...ln.seq];
-        let prev = base0;
-        for (let i = base.length; i < full.length; i++) {
-          if (cancelled) return;
-          const after = await evalPos(full.slice(0, i + 1));
-          if (!prev || !after) { prev = after; continue; }
-          const moverWhite = i % 2 === 0;
-          const isUser = (moverWhite && ln.color === "w") || (!moverWhite && ln.color === "b");
-          const pcp = prev.mate != null ? (prev.mate > 0 ? 1000 : -1000) : prev.cp;
-          const acp = after.mate != null ? (after.mate > 0 ? 1000 : -1000) : after.cp;
-          const drop = pcp + acp;   // prev=착수자 POV, after=상대 POV → 착수자 손실 = pcp-(-acp)
-          if (isUser && drop >= 100) {
-            collected.push({ seq: full.slice(base.length, i + 1), kind: drop >= 250 ? "blunder" : "inaccuracy", count: ln.count, color: ln.color });
-            collected.sort((a, b) => b.count - a.count);
-            if (collected.length > 5) collected = collected.slice(0, 5);
-            // (사용자 요청) 다 모아서 마지막에 한꺼번에 보여주지 않고, 계산이 끝나는 대로 하나씩 바로 표시한다.
-            if (!cancelled) setMistakes([...collected]);
-            break;
-          }
-          prev = after;
-        }
-      }
-      if (!cancelled) setAnalyzing(false);
-    })();
-    return () => { cancelled = true; setAnalyzing(false); };
-  }, [active, sansKey, san, engine && engine.status, chesscom && chesscom.status, stats && stats.total]);
   // (v0.4.4 개편, 사용자 요청) "집중 분석에서 퍼즐을 만들 때도 바로 퍼즐 카드로 들어가지 말고 퍼즐
   // 마법사 화면으로 이동해야 한다" — 예전엔 여기서 곧장 엔진으로 트리를 만들어 조용히 저장하고
   // (auto:true), 다 되면 "퍼즐 풀기" 버튼이 바로 PuzzleSolver를 열었다. 이제 이 훅은 더 이상 엔진을
@@ -1669,7 +1615,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   return {
     active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
     editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
-    openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats, mistakes, analyzing,
+    openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
@@ -2212,10 +2158,12 @@ function MasterPgnBox({ sans, focusPly, onPick }) {
   );
 }
 // 백·무·흑 비율 막대 — 백(밝은색)·무(회색)·흑(어두운색). labeled면 막대 안에 백분율을 적는다.
-function ResultBar({ w, d, b, h = 10, labeled }) {
+// mine: 내 통계처럼 한쪽 진영(내가 둔 쪽) 기준일 때 — w=승리(초록)·d=무승부·b=패배(빨강). 아니면 백·무·흑 비율.
+function ResultBar({ w, d, b, h = 10, labeled, mine }) {
   const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
-  const seg = (pct, bg, fg, txt) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
-  return <div role="img" aria-label={t("백") + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + t("흑") + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</div>;
+  const seg = (pct, bg, fg) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
+  const [l1, l3] = mine ? [t("승리"), t("패배")] : [t("백"), t("흑")];
+  return <div role="img" aria-label={l1 + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + l3 + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{mine ? <>{seg(pw, T.best, "#fff")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, T.blunder, "#fff")}</> : <>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</>}</div>;
 }
 
 // (v0.6.6) 통계 요약(승률·채택률·승점 획득 확률) 공용 계산 — 마스터 통계와 내 통계가 같이 쓴다. list의 각 대국은 winner("white"|"black"|null)와 year를 가진다.
@@ -2234,7 +2182,7 @@ function summarizeForStats(list, ply, bucket) {
   return { w, d, b, n: w + d + b, trend };
 }
 // 통계 요약 카드 — 승률 바, 채택률(수 + 실제 판수(비중) + 승률 바), 승점 획득 확률 막대. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려진다.
-function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, sideOfMove }) {
+function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, mine }) {
   if (loading) {
     const sk = (i, st) => <div key={i} className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />;
     return (
@@ -2256,7 +2204,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, sid
   return (
     <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
       <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
-      <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled /></div>
+      <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled mine={mine} /></div>
       {moves && moves.length > 0 && (
         <div style={{ marginTop: 9 }}>
           <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
@@ -2266,7 +2214,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, sid
               <button key={mv.san} onClick={() => onPickMove && onPickMove(mv.san)} {...ap(3 + ri, { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "3px 0" })}>
                 <span style={{ width: 52, flexShrink: 0, fontFamily: SEQ_FONT, fontSize: 12, fontWeight: 800, color: T.ink }}>{moveNumber(ply + 1)}{mv.san}</span>
                 <span title={t("비중")} style={{ flexShrink: 0, minWidth: 74, fontSize: 11, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{fmtFull(tot)}<span style={{ color: T.inkSoft, fontWeight: 600 }}>({share}%)</span></span>
-                <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled /></span>
+                <span style={{ flex: 1, minWidth: 0 }}><ResultBar w={mv.white} d={mv.draws} b={mv.black} h={15} labeled mine={mine} /></span>
               </button>
             );
           })}
@@ -2274,16 +2222,16 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, sid
       )}
       {valid.length >= 2 && (
         <div style={{ marginTop: 9 }}>
-          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span><span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, fontFamily: SITE_FONT }}>{lo}–{hi}%</span></div>
-          <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", gap: 4, height: AREA + 26 })}>
+          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
+          <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "flex-start", gap: 4, height: AREA + 26 })}>
             <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
             {trend.map((x) => (
-              <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+              <div key={x.k} title={tx("{0}판", x.n)} style={{ flex: "0 0 calc((100% - 28px) / 8)", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
                 {x.pct != null && <>
                   <span style={{ fontSize: 9, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{x.pct}%</span>
                   <span style={{ width: "100%", height: 3 + ((x.pct - lo) / span) * (AREA - 3), borderRadius: 3, background: x.pct >= 50 ? "linear-gradient(180deg,#F2D77F,#B98A34)" : "linear-gradient(180deg,#8A7A66,#5A4A38)" }} />
                 </>}
-                <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12 }}>{x.label}</span>
+                <span style={{ fontSize: 8.5, color: T.inkSoft, fontFamily: SITE_FONT, height: 12, whiteSpace: "nowrap", letterSpacing: "-.02em" }}>{x.label}</span>
               </div>
             ))}
           </div>
@@ -2310,8 +2258,7 @@ function StatsFilterRows({ rows }) {
 // chess.com·OpenChess 대국(내 통계)을 마스터 대국과 같은 모양(winner·year·date)으로 바꾼다 — 요약 계산과 목록이 같은 코드를 쓴다.
 const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
 const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
-const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => String((k % 12) + 1).padStart(2, "0") };
-const YEAR_BUCKET = { keyOf: (g) => g.year, step: 1, label: (k) => "'" + String(k).slice(-2) };
+const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => Math.floor(k / 12) + "." + String((k % 12) + 1).padStart(2, "0") };   // 2026.07
 // 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
 function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
   const won = g.result === "win", lost = g.result === "loss";
@@ -2345,7 +2292,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
     editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
-    stats, mistakes, analyzing, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
+    stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
   const punish = curated;
@@ -2384,38 +2331,36 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     return () => { off = true; };
   }, [myView, uid]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [myTimeFilter, setMyTimeFilter] = useState("all");
-  const [myColorFilter, setMyColorFilter] = useState("all");
   const [myResult, setMyResult] = useState("all");   // all | win | draw | loss
   const [myRating, setMyRating] = useState(0);       // 두 선수 중 높은 쪽 레이팅 하한(0 = 전체)
   const [myPeriod, setMyPeriod] = useState(0);       // 최근 N일 이내(0 = 전체)
-  // (사용자 요청) 오프닝 실수 수순을 누르면 곧장 분석 탭으로 이동하는 대신, 그 수순으로 실제 진행된
-  // 내 chess.com 대국을 바로 아래에 펼쳐 보여준다 — 펼쳐진 항목의 인덱스.
-  const [expandedMistakeIdx, setExpandedMistakeIdx] = useState(null);
-  useEffect(() => { setExpandedMistakeIdx(null); }, [sans.join(","), san]);
   const myLoading = myView === "cc" ? !!chesscom && chesscom.status === "loading" : ocGames === null;
   const myPool = useMemo(() => (myView === "cc" ? (chesscom && chesscom.status === "ready" ? chesscom.games : []) : (ocGames || [])), [myView, chesscom && chesscom.games, chesscom && chesscom.status, ocGames]);
   const myPath = [...sans, san];
   // 이 수까지 진행된 내 대국(필터 전) — 필터는 이 위에서 걸린다. 마스터 통계 대국과 같은 모양으로 바꿔 둔다.
-  const myBase = useMemo(() => myPool.filter((g) => g.moves.length >= myPath.length && myPath.every((s2, i) => g.moves[i] === s2)).map(adaptMyGame).sort((a, c) => (c.endTime || 0) - (a.endTime || 0)), [myPool, sans.join(","), san]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const myColor = ply % 2 === 0 ? "w" : "b";   // 이 수를 두는 쪽 — 내 통계는 내가 이 수를 둔 대국만(상대가 둔 대국은 제외)
+  const myBase = useMemo(() => myPool.filter((g) => g.color === myColor && g.moves.length >= myPath.length && myPath.every((s2, i) => g.moves[i] === s2)).map(adaptMyGame).sort((a, c) => (c.endTime || 0) - (a.endTime || 0)), [myPool, sans.join(","), san, myColor]);   // eslint-disable-line react-hooks/exhaustive-deps
   const myGames = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
-    return myBase.filter((g) => (myTimeFilter === "all" || g.timeClass === myTimeFilter) && (myColorFilter === "all" || g.color === myColorFilter) && (myResult === "all" || g.result === myResult)
+    return myBase.filter((g) => (myTimeFilter === "all" || g.timeClass === myTimeFilter) && (myResult === "all" || g.result === myResult)
       && (!myRating || Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0) >= myRating) && (!myPeriod || (g.endTime || 0) >= now - myPeriod * 86400));
-  }, [myBase, myTimeFilter, myColorFilter, myResult, myRating, myPeriod]);
+  }, [myBase, myTimeFilter, myResult, myRating, myPeriod]);
   const mySummary = useMemo(() => {
-    const spanYears = new Set(myGames.map((g) => g.year).filter(Boolean)).size;
-    const base = summarizeForStats(myGames, ply, spanYears >= 2 ? YEAR_BUCKET : MONTH_BUCKET);
-    return base;
+    // 내 통계는 한쪽 진영(내가 둔 쪽) 기준이라 승·무·패를 그대로 센다(w=승리, d=무승부, b=패배).
+    const base = summarizeForStats(myGames, ply, MONTH_BUCKET);
+    let w = 0, d = 0, b = 0;
+    for (const g of myGames) { if (g.result === "win") w++; else if (g.result === "loss") b++; else d++; }
+    return { ...base, w, d, b, n: w + d + b };
   }, [myGames, ply]);
   // 채택률 — 이 수 다음에 내가(또는 상대가) 둔 수별 판수와 백·무·흑 결과(필터 적용 후).
   const myMoves = useMemo(() => {
     const by = new Map();
-    for (const g of myGames) { const nx = g.moves[myPath.length]; if (!nx) continue; const x = by.get(nx) || { san: nx, white: 0, draws: 0, black: 0 }; const r = masterResultOf(g); if (r === "w") x.white++; else if (r === "b") x.black++; else x.draws++; by.set(nx, x); }
+    for (const g of myGames) { const nx = g.moves[myPath.length]; if (!nx) continue; const x = by.get(nx) || { san: nx, white: 0, draws: 0, black: 0 }; if (g.result === "win") x.white++; else if (g.result === "loss") x.black++; else x.draws++; by.set(nx, x); }
     return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
   }, [myGames]);   // eslint-disable-line react-hooks/exhaustive-deps
   const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
-  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myView, myTimeFilter, myColorFilter, myResult, myRating, myPeriod]);
+  useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myView, myTimeFilter, myResult, myRating, myPeriod]);
   const myGamesPageCount = Math.max(1, Math.ceil(myGames.length / MY_GAMES_PAGE_SIZE));
   const myGamesPageItems = myGames.slice(myGamesPage * MY_GAMES_PAGE_SIZE, myGamesPage * MY_GAMES_PAGE_SIZE + MY_GAMES_PAGE_SIZE);
   // (버그 보충) 레이팅 증감치 — 같은 타임클래스(rapid/blitz/bullet 등)끼리 시간순으로 정렬해, 바로
@@ -2546,6 +2491,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
             <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? t("이론") : "—")}</div>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
+          {/* (v0.6.6, 사용자 요청) 수 키워드는 평가치 바로 아래, 평가치·수 이름과 같은 왼쪽 선에 둔다(누르면 설명 말풍선) */}
+          <div style={{ marginTop: 6, minHeight: 22 }}><KeywordScroll kws={focusKws} /></div>
         </div>
         {wizardSeed && onOpenPuzzleWizard && (
           <button onClick={() => onOpenPuzzleWizard(wizardSeed)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 15px", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, border: "none", cursor: "pointer", boxShadow: "0 3px 0 #7A5E22", flexShrink: 0 }}>
@@ -2553,9 +2500,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           </button>
         )}
       </div>
-      {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기, 그 아래에 수 키워드(누르면 설명 말풍선) */}
+      {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
-      <div style={{ marginTop: 10, minHeight: 22 }}><KeywordScroll kws={focusKws} /></div>
       <FocusPages labels={[t("유저 통계"), t("마스터 통계"), t("해설"), t("탐색")]} pages={[
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
@@ -2568,10 +2514,9 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           : myView === "cc" && chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
             : (
               <div>
-                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
+                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} mine />
                 {!myLoading && myBase.length > 0 && <StatsFilterRows rows={[
                   [t("시간"), [["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]], myTimeFilter, setMyTimeFilter],
-                  [t("진영"), [["all", t("전체")], ["w", t("백")], ["b", t("흑")]], myColorFilter, setMyColorFilter],
                   [t("결과"), [["all", t("전체")], ["win", t("승리")], ["draw", t("무승부")], ["loss", t("패배")]], myResult, setMyResult],
                   [t("레이팅"), [[0, t("전체")], [1000, "1000+"], [1500, "1500+"], [2000, "2000+"], [2500, "2500+"]], myRating, setMyRating],
                   [t("기간"), [[0, t("전체")], [365, t("1년 이내")], [30, t("1달 이내")], [7, t("1주 이내")], [1, t("1일 이내")]], myPeriod, setMyPeriod],
@@ -2584,74 +2529,6 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
                     {myGamesPageItems.map((g) => <UserGameRow key={g.id || g.endTime + g.moves.length} g={g} ratingChange={myView === "cc" ? ratingChanges.get(g._orig) : g._delta} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} />)}
                     <ListPager page={myGamesPage} setPage={setMyGamesPage} pageCount={myGamesPageCount} />
                   </>}
-                {myView === "cc" && chesscom.status === "ready" && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>{t("오프닝 실수")}</div>
-                      {analyzing && mistakes.length === 0 ? (
-                        <div className="flex items-center gap-2" style={{ padding: "4px 0" }}>
-                          <Mascot name={ply % 2 === 0 ? "kokoa" : "milku"} emotion="think" size={62} />
-                          <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("내 대국 분석 중…")}</span>
-                        </div>
-                      ) : (!analyzing && mistakes.length === 0) ? <div style={{ fontSize: 11.5, color: T.inkSoft }}>{engine && engine.status === "ready" ? t("15수 이내 두드러진 실수 없음") : t("엔진 준비 후 분석")}</div>
-                        : mistakes.map((mt, idx) => {
-                          const seqStr = [san, ...mt.seq]; // 표기: 집중 분석 수부터
-                          // (사용자 요청) 이 실수 수순으로 실제로 진행된 내 chess.com 대국 — 클릭하면
-                          // 곧장 분석 탭으로 이동하는 대신, 프로필 카드와 같은 UI로 바로 아래에 펼쳐
-                          // 보여주고, 그 안의 검색·리뷰 버튼으로 각자 분석 탭/리뷰로 이동한다.
-                          const fullPrefix = [...sans, san, ...mt.seq];
-                          const isOpen = expandedMistakeIdx === idx;
-                          const mtGames = isOpen && chesscom && chesscom.status === "ready"
-                            ? chesscom.games.filter((g) => g.moves.length >= fullPrefix.length && fullPrefix.every((s, i) => stripSuffix(g.moves[i]) === stripSuffix(s))).sort((a, b) => (b.endTime || 0) - (a.endTime || 0))
-                            : [];
-                          return (
-                            <div key={idx}>
-                              <button onClick={() => setExpandedMistakeIdx(isOpen ? null : idx)} className="press text-left" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
-                                {seqStr.map((mv, i) => {
-                                  const isMistake = i === seqStr.length - 1;
-                                  const moverWhite = (ply + i) % 2 === 0;
-                                  const isUserMove = (moverWhite && mt.color === "w") || (!moverWhite && mt.color === "b");
-                                  const num = moveNumber(ply + i);
-                                  const st = isMistake ? { fontWeight: 900, textDecoration: "underline", color: mt.kind === "blunder" ? T.blunder : T.inaccuracy }
-                                    : isUserMove ? { fontWeight: 800, color: T.ink } : { color: T.inkSoft, fontWeight: 500 };
-                                  return <span key={i} style={st}>{num}{mv} </span>;
-                                })}
-                                <span style={{ color: T.inkSoft }}>({tx("{0}회)", mt.count)}</span>
-                              </button>
-                              {isOpen && (
-                                <div style={{ margin: "2px 0 6px", padding: "4px 8px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>
-                                  {mtGames.length === 0 ? <div style={{ fontSize: 11, color: T.inkSoft, padding: "4px 0" }}>{t("대국을 찾을 수 없음")}</div>
-                                    : mtGames.map((g, gi) => {
-                                      const won = g.result === "win", lost = g.result === "loss";
-                                      const rc = ratingChanges.get(g);
-                                      const oppSide = g.color === "w" ? g.black : g.white;
-                                      return (
-                                        <div key={gi} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 2px", borderTop: gi === 0 ? "none" : "1px solid #E4D5B6" }}>
-                                          <span title={g.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 30, flexShrink: 0, borderRadius: 3, background: g.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (g.color === "w" ? "#D8C9A8" : "#000") }} />
-                                          <div style={{ minWidth: 0, flex: 1 }}>
-                                            <div style={{ fontSize: 12.5, color: T.ink }}><b style={{ color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{won ? t("승리") : lost ? t("패배") : t("무승부")}</b>
-                                              {!won && !lost && <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, color: T.inkSoft }}>({drawKindLabel(g.moves)})</span>}
-                                              {rc != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: rc > 0 ? T.best : rc < 0 ? T.blunder : T.inkSoft }}>({rc > 0 ? "+" + rc : rc})</span>}
-                                              {g.timeClass && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.endTime ? " (" + fmtGameDate(g.endTime) + ")" : ""}</span>}
-                                            </div>
-                                            {oppSide && oppSide.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2 }}>vs <b style={{ color: T.ink }}>{oppSide.username}</b>{oppSide.rating != null && <span style={{ fontFamily: SITE_FONT }}>({oppSide.rating})</span>}</div>}
-                                            {g.opening && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.opening}</div>}
-                                          </div>
-                                          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-                                            <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
-                                            <BestMoveJumpButton onClick={() => onOpenMyGameAnalyze && onOpenMyGameAnalyze(g)} />
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
       </div>
@@ -3385,6 +3262,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
     const name = m.name || (snapNode([...sans, m.san]) || {}).opening?.name || m.san;
     const isNew = m.book ? unlockOpening(childKey, name) : false;   // (UX2) 비이론 수는 도감 해금/알림 없음
     setFocusStack([]); // 보드에서 새로 들어가는 진입이라, 되돌아갈 이전 집중 분석이 없다.
+    setSans([...sans, m.san]); setFuture([]); setSel(null); setLastQ(null);   // (v0.6.6) 집중 분석 중 보드 수순 = 보고 있는 수까지 — 탐색 페이지의 다음 수가 이 수의 다음 수로 나온다
     setFocus({ sans: [...sans], san: m.san, m, ply, isNew, name });
   };
   // (버그 수정) 집중분석 중 다른 수의 집중분석으로 이동(onJump)했다가 나가면, 보드가 원래 진입했던
@@ -3411,6 +3289,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
     // 쌓아 뒤로가기로 되돌아올 수 있게 한다. 집중 분석 밖(보드·PGN 등)에서의 진입이면 새 세션이다.
     // (v0.6.6) 집중 분석 기보에서 수를 눌러 옮길 때(opts.replace)는 되돌아갈 스택을 쌓지 않는다 — 한 경로 안의 이동이다.
     if (!(opts && opts.replace)) setFocusStack((s) => (focus ? [...s, focus] : []));
+    setSans([...tSans, tSan]); setFuture([]); setSel(null); setLastQ(null);
     setFocus({ sans: [...tSans], san: tSan, m: mm || { san: tSan }, ply: tSans.length, isNew: false, name });
   };
   // (기능) 집중분석의 마스터 대국을 클릭 — 집중분석을 종료하고 그 대국의 마지막 포지션으로 보드를 옮긴 뒤,
@@ -3546,7 +3425,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
             {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
                 두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => enterFocus(m)} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
           </>
         );
       })()}
