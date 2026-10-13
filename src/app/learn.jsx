@@ -4,6 +4,7 @@ import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameDa
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
+import { rankMasterMatches } from "../lib/masterNameSearch.js";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
 import { masterFlag } from "../data/masterNames.js";
@@ -2123,12 +2124,12 @@ function CrownIcon({ size = 14 }) {
   );
 }
 // 선수 한 줄 — 글자 크기는 고정, 이름이 길어 한 줄에 안 들어가면 이름만 "…"로 줄인다(레이팅·왕관은 항상 보임).
-function MasterPlayerLine({ side, name, rating, winner, plain }) {
+function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
       <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
-      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}</span>
+      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
       {winner && <CrownIcon />}
     </div>
   );
@@ -2259,22 +2260,33 @@ function StatsFilterRows({ rows }) {
 const MY_RESULT_WINNER = (g) => (g.result === "win" ? (g.color === "w" ? "white" : "black") : g.result === "loss" ? (g.color === "w" ? "black" : "white") : null);
 const adaptMyGame = (g) => { const d = g.endTime ? new Date(g.endTime * 1000) : null; return { ...g, _orig: g, winner: MY_RESULT_WINNER(g), year: d ? d.getFullYear() : 0, _month: d ? d.getFullYear() * 12 + d.getMonth() : 0 }; };
 const MONTH_BUCKET = { keyOf: (g) => g._month, step: 1, label: (k) => Math.floor(k / 12) + "." + String((k % 12) + 1).padStart(2, "0") };   // 2026.07
+// 시간 규정 표기 — "900+10"(chess.com)·"600-10"(OpenChess)을 "15+10"으로. 하루 단위("1/86400")는 "일일". 알 수 없으면 null.
+function fmtTimeControl(raw) {
+  const str = String(raw || "");
+  if (/^1\/\d+$/.test(str)) return t("일일");
+  const m = /^(\d+)[+-](\d+)$/.exec(str) || /^(\d+)$/.exec(str);
+  if (!m) return null;
+  const base = +m[1] / 60;
+  return (Number.isInteger(base) ? base : +base.toFixed(1)) + "+" + (m[2] || 0);
+}
 // 내 대국 한 줄 — 마스터 통계 대국 줄과 같은 모양(백·흑 줄 + 오른쪽 결과, 아래 줄 날짜, 오른쪽 보기·리뷰 버튼). 결과 글자 색만 내 승패 기준이다.
 function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
   const won = g.result === "win", lost = g.result === "loss";
   const dateTxt = g.endTime ? (() => { const d = new Date(g.endTime * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); })() : "";
   const orig = g._orig || g;
+  const fmt = fmtTimeControl(g.timeControl), cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
+  const tcTxt = fmt ? fmt + (cls ? " (" + cls + ")" : "") : cls;   // 15+10 (래피드)
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6" }}>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-            <MasterPlayerLine plain side="w" name={g.white && g.white.username} rating={g.white && g.white.rating} winner={g.winner === "white"} />
-            <MasterPlayerLine plain side="b" name={g.black && g.black.username} rating={g.black && g.black.rating} winner={g.winner === "black"} />
+            <MasterPlayerLine plain side="w" name={g.white && g.white.username} rating={g.white && g.white.rating} winner={g.winner === "white"} delta={g.color === "w" ? ratingChange : null} />
+            <MasterPlayerLine plain side="b" name={g.black && g.black.username} rating={g.black && g.black.rating} winner={g.winner === "black"} delta={g.color === "b" ? ratingChange : null} />
           </div>
           <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
         </div>
-        <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{g.timeClass ? ", " + (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : ""}{ratingChange != null && <span style={{ fontWeight: 800, fontFamily: SITE_FONT, color: ratingChange > 0 ? T.best : ratingChange < 0 ? T.blunder : T.inkSoft }}>{", " + (ratingChange > 0 ? "+" + ratingChange : ratingChange)}</span>}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+        <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
       </div>
       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
         <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -2416,8 +2428,10 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       if (g.white) consider(g.white.name);
       if (g.black) consider(g.black.name);
     }
-    // (v0.6.6, 사용자 요청) 추천 목록·검색은 풀네임("Magnus Carlsen") 기준 — DB의 "Carlsen,M"도 같은 사람으로 찾는다.
-    return [...new Set([...byKey.values()].map((nm) => fullPlayerName(nm)))].sort((a, b) => a.localeCompare(b));
+    // 추천 목록은 선수마다 { raw: 대표 원본 표기("Carlsen,M"), full: 풀네임("Magnus Carlsen") } 하나 — 국적 깃발·정보 줄은 원본 표기로 찾고, 같은 풀네임은 한 번만 나온다.
+    const byFull = new Map();
+    for (const raw of byKey.values()) { const full = fullPlayerName(raw); const cur = byFull.get(full); if (!cur || raw.length > cur.raw.length) byFull.set(full, { raw, full }); }
+    return [...byFull.values()].sort((x, y) => x.full.localeCompare(y.full));
   }, [masterGames]);
   const masterSearchQuery = masterSearch.trim().toLowerCase();
   // 추천 목록에서 대표 이름 하나를 골라 클릭하면(예: "Carlsen, Magnus") 검색어와 표기가 다른
@@ -2450,8 +2464,9 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
-    return masterPlayerNames.filter((nm) => nm.toLowerCase().includes(masterSearchQuery)).slice(0, 40);
-  }, [masterPlayerNames, masterSearchQuery]);
+    // 학습 탭 마스터 스타일 비교 검색과 같은 규칙(src/lib/masterNameSearch.js) — 개수 제한 없음.
+    return rankMasterMatches(masterPlayerNames, masterSearch, (x) => x.full, (x) => x.raw);
+  }, [masterPlayerNames, masterSearchQuery, masterSearch]);
   // (v0.6.6, 사용자 요청) 판수 제한·페이지 넘김 없이 필터에 맞는 대국을 전부 한 목록으로 보여준다.
   const masterPageCount = Math.max(1, Math.ceil(filteredMasterGames.length / MASTER_PAGE_SIZE));
   const masterPageItems = filteredMasterGames.slice(masterPage * MASTER_PAGE_SIZE, masterPage * MASTER_PAGE_SIZE + MASTER_PAGE_SIZE);
@@ -2502,7 +2517,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
-      <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("댓글")]} pages={[
+      <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
         <div style={{ marginTop: 12 }}>{nextMovesPanel}</div>,
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
@@ -2568,7 +2583,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
               placeholder={t("선수·대회 이름으로 검색…")} style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12 }} />
             {masterSearchFocused && masterSuggestions.length > 0 && (
               <div style={searchDropStyle}>
-                {masterSuggestions.map((nm) => <SearchResultRow key={nm} tag="master" tagLabel={t("마스터")} flag={masterFlag(nm)} title={nm} sub={masterInfoLine(nm)} onClick={() => setMasterSearch(nm)} />)}
+                {masterSuggestions.map((x) => <SearchResultRow key={x.full} tag="master" tagLabel={t("마스터")} flag={masterFlag(x.raw)} title={x.full} sub={masterInfoLine(x.raw)} onClick={() => setMasterSearch(x.full)} />)}
               </div>
             )}
           </div>

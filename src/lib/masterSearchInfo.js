@@ -11,6 +11,8 @@ import { ordinalParam } from "./ordinal.js";
 import { t, lang } from "./i18n.js";
 
 export const champNumText = (c) => (!c.no ? "" : c.reign ? t("{0}대 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 챔피언", ordinalParam(c.no, lang)));
+// 검색 결과 정보 줄용 — 영어는 "16th World Champion"처럼 풀어서 쓴다(도감 카드의 champNumText는 짧은 표기 그대로).
+const champInfoText = (c) => (!c.no ? "" : c.reign ? t("{0}대 세계 챔피언({1}기)", ordinalParam(c.no, lang), c.reign) : t("{0}대 세계 챔피언", ordinalParam(c.no, lang)));
 const LISTS = ["standard", "rapid", "blitz"];
 // t() 키는 소스에서 글자 그대로 찾을 수 있어야 해서(check-i18n) 부문별로 따로 적는다.
 const RANK_TEXT = {
@@ -31,7 +33,7 @@ const table = () => {
 export function masterInfoParts(name) {
   const k = candidateKeys(name)[0], e = k && table().get(k), out = [];
   if (!e) return out;
-  const nums = [...new Set(e.champs.map(champNumText).filter(Boolean))];
+  const nums = [...new Set(e.champs.map(champInfoText).filter(Boolean))];
   if (nums.length) out.push(...nums); else if (e.challenger && !e.champs.length) out.push(t("챔피언 도전자"));
   const first = LISTS.find((l) => e.ranks[l] != null);
   for (const l of LISTS) if (e.ranks[l] != null) out.push(RANK_TEXT[l + (l === first ? "-first" : "")](e.ranks[l]));

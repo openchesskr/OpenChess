@@ -2314,6 +2314,8 @@ export default {
   "유저 통계": "Estadísticas de usuario",
   "탐색": "Explorar",
   "댓글": "Comentarios",
+  "{0}대 세계 챔피언": "{0} Campeón mundial",
+  "{0}대 세계 챔피언({1}기)": "{0} Campeón mundial (Reinado {1})",
   "챔피언": "Campeón",
   "챔피언 도전자": "Aspirante al título",
   "일치하는 마스터·대회 없음": "Sin maestros ni torneos coincidentes",
