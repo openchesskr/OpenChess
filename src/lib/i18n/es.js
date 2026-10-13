@@ -2313,6 +2313,7 @@ export default {
   "1일 이내": "Último día",
   "유저 통계": "Estadísticas de usuario",
   "탐색": "Explorar",
+  "댓글": "Comentarios",
   "챔피언": "Campeón",
   "챔피언 도전자": "Aspirante al título",
   "일치하는 마스터·대회 없음": "Sin maestros ni torneos coincidentes",
