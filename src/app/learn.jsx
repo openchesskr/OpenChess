@@ -2502,7 +2502,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
-      <FocusPages labels={[t("유저 통계"), t("마스터 통계"), t("해설"), t("탐색")]} pages={[
+      <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("댓글")]} pages={[
+        <div style={{ marginTop: 12 }}>{nextMovesPanel}</div>,
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
       <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
@@ -2661,7 +2662,6 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         </div>
       )}
         </>,
-        <div style={{ marginTop: 12 }}>{nextMovesPanel}</div>,
       ]} />
       {addGameOpen && <AddMasterGameModal onClose={() => setAddGameOpen(false)} onSaved={onRetryMasterGames} />}
     </div>

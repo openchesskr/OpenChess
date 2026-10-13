@@ -2313,6 +2313,7 @@ export default {
   "1일 이내": "Past day",
   "유저 통계": "User stats",
   "탐색": "Explore",
+  "댓글": "Comments",
   "챔피언": "Champion",
   "챔피언 도전자": "Challenger",
   "일치하는 마스터·대회 없음": "No matching masters or tournaments",
