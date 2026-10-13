@@ -805,12 +805,12 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
               {/* (v0.6.6, 사용자 요청) 현재 수 블록과 높이·위치를 통일 — 키워드(최상단, 고정 높이) / 수 + 평가치 / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
-              <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={kws} /></div>
+              {kws.length > 0 && <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={kws} /></div>}   {/* 키워드·이름이 없는 수는 그 줄을 빼 블록이 그만큼 낮아진다 */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply, startColor)}{m.disp || m.san}</span>
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? t("이론") : "…")}</span>
               </div>
-              <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || (m.isMain ? "Main Line" : "")}</MarqueeText>
+              {(m.name || m.isMain) && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || "Main Line"}</MarqueeText>}
             </div>
             {!hideFocus && (
               <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
@@ -1754,11 +1754,16 @@ function FocusPages({ labels, pages }) {
   const [idx, setIdx] = useState(0);
   const [heights, setHeights] = useState([]);
   const sectionRef = useRef(null), trackRef = useRef(null), pageRefs = useRef([]), rafRef = useRef(null);
+  const [anchorTop, setAnchorTop] = useState(12);   // 탐색 페이지 첫 수 블록의 위쪽 높이 — 다른 페이지의 첫 블록도 같은 높이에서 시작한다
   const n = pages.length;
   // 페이지가 짧아도 버튼 줄이 항상 화면 맨 위까지 올라올 수 있게 칸 높이를 화면 높이만큼은 확보한다.
   const minPageH = (typeof window !== "undefined" ? window.innerHeight : 800) - 64;
   useLayoutEffect(() => {
-    const measure = () => setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+    const measure = () => {
+      setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
+      const p0 = pageRefs.current[0], an = p0 && p0.querySelector("[data-fp-anchor]");
+      if (p0 && an) { const top = Math.round(an.getBoundingClientRect().top - p0.getBoundingClientRect().top); setAnchorTop((prev) => (prev === top ? prev : top)); }
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
@@ -1787,7 +1792,7 @@ function FocusPages({ labels, pages }) {
         ))}
       </div>
       <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
-        {pages.map((p, i) => <div key={i} ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start" }}>{p}</div>)}
+        {pages.map((p, i) => <div key={i} data-fp-page="" ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start", boxSizing: "border-box", paddingTop: i === 0 ? 12 : anchorTop }}>{p}</div>)}
       </div>
     </div>
   );
@@ -2183,7 +2188,7 @@ function summarizeForStats(list, ply, bucket) {
   return { w, d, b, n: w + d + b, trend };
 }
 // 통계 요약 카드 — 승률 바, 채택률(수 + 실제 판수(비중) + 승률 바), 승점 획득 확률 막대. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려진다.
-function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, mine }) {
+function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, mine, forceShow }) {
   if (loading) {
     const sk = (i, st) => <div key={i} className="mt-appear" style={{ animationDelay: i * 110 + "ms", borderRadius: 5, background: "rgba(0,0,0,.08)", ...st }} />;
     return (
@@ -2197,7 +2202,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
       </div>
     );
   }
-  if (!summary || summary.n <= 0) return null;
+  if (!forceShow && (!summary || summary.n <= 0)) return null;   // forceShow(내 통계): 표본이 없어도 모든 통계 요소를 그린다
   const ap = (i, st) => ({ className: "mt-appear", style: { animationDelay: i * 90 + "ms", ...st } });
   const trend = summary.trend, valid = trend.filter((x) => x.pct != null), pcts = valid.map((x) => x.pct);
   // 승점 획득 확률 막대는 값 범위(±3%p, 50% 포함)로 세로 축을 늘려 1%p 차이도 눈에 보이게 한다.
@@ -2206,9 +2211,10 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
     <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
       <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
       <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled mine={mine} /></div>
-      {moves && moves.length > 0 && (
+      {((moves && moves.length > 0) || forceShow) && (
         <div style={{ marginTop: 9 }}>
           <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
+          {(!moves || moves.length === 0) && <div style={{ fontSize: 11, color: T.inkSoft, padding: "3px 0" }}>—</div>}
           {moves.slice(0, 5).map((mv, ri) => {
             const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (summary.n || 1));
             return (
@@ -2221,7 +2227,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
           })}
         </div>
       )}
-      {valid.length >= 2 && (
+      {(valid.length >= 2 || forceShow) && (
         <div style={{ marginTop: 9 }}>
           <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
           <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "flex-start", gap: 4, height: AREA + 26 })}>
@@ -2362,7 +2368,10 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     const base = summarizeForStats(myGames, ply, MONTH_BUCKET);
     let w = 0, d = 0, b = 0;
     for (const g of myGames) { if (g.result === "win") w++; else if (g.result === "loss") b++; else d++; }
-    return { ...base, w, d, b, n: w + d + b };
+    // 표본이 없어도 차트 틀은 보이게 — 달 라벨만 있는 빈 칸 8개(이번 달까지)
+    let trend = base.trend;
+    if (!trend.length) { const nowD = new Date(), nowK = nowD.getFullYear() * 12 + nowD.getMonth(); trend = Array.from({ length: 8 }, (_, i) => { const k = nowK - 7 + i; return { k, label: MONTH_BUCKET.label(k), n: 0, pct: null }; }); }
+    return { ...base, trend, w, d, b, n: w + d + b };
   }, [myGames, ply]);
   // 채택률 — 이 수 다음에 내가(또는 상대가) 둔 수별 판수와 백·무·흑 결과(필터 적용 후).
   const myMoves = useMemo(() => {
@@ -2370,6 +2379,16 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     for (const g of myGames) { const nx = g.moves[myPath.length]; if (!nx) continue; const x = by.get(nx) || { san: nx, white: 0, draws: 0, black: 0 }; if (g.result === "win") x.white++; else if (g.result === "loss") x.black++; else x.draws++; by.set(nx, x); }
     return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
   }, [myGames]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 유저 통계·마스터 통계의 첫 대국 줄이 같은 y좌표에서 시작하도록, 더 위에 있는 쪽 기준으로 아래쪽 페이지에 여백을 넣는다(매 렌더 뒤 한 번 재서 바뀐 만큼만 반영).
+  const spUser = useRef(null), spMaster = useRef(null), padsRef = useRef([0, 0]);
+  const [pads, setPads] = useState([0, 0]);
+  useLayoutEffect(() => {
+    const els = [spUser.current, spMaster.current];
+    if (!els[0] || !els[1]) return;
+    const nat = els.map((el) => { const pg = el.closest("[data-fp-page]"); return pg ? el.getBoundingClientRect().top - pg.getBoundingClientRect().top : 0; });   // 여백 칸의 위쪽 = 여백을 넣기 전 대국 목록의 시작 높이
+    const target = Math.max(nat[0], nat[1]), next = [Math.round(target - nat[0]), Math.round(target - nat[1])];
+    if (next[0] !== padsRef.current[0] || next[1] !== padsRef.current[1]) { padsRef.current = next; setPads(next); }
+  });
   const MY_GAMES_PAGE_SIZE = 10;
   const [myGamesPage, setMyGamesPage] = useState(0);
   useEffect(() => { setMyGamesPage(0); }, [sans.join(","), san, myView, myTimeFilter, myResult, myRating, myPeriod]);
@@ -2462,6 +2481,13 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     if (!masterFiltersOn && lt > 0) return { ...base, w: masterStats.white, d: masterStats.draws, b: masterStats.black, n: lt, full: true };
     return { ...base, full: false };
   }, [masterStats, masterFiltersOn, filteredMasterGames, ply]);
+  // 채택률 — 필터가 없으면 Lichess 마스터 DB 전체 집계, 필터가 있으면 걸러진 대국의 다음 수로 직접 센다(표본이 있으면 필터를 걸어도 항상 보인다).
+  const masterMoves = useMemo(() => {
+    if (!masterFiltersOn && masterStats && masterStats.moves) return masterStats.moves;
+    const by = new Map();
+    for (const g of filteredMasterGames) { if (!g.nextSan) continue; const x = by.get(g.nextSan) || { san: g.nextSan, white: 0, draws: 0, black: 0 }; const r = masterResultOf(g); if (r === "w") x.white++; else if (r === "b") x.black++; else x.draws++; by.set(g.nextSan, x); }
+    return [...by.values()].sort((a, c) => (c.white + c.draws + c.black) - (a.white + a.draws + a.black));
+  }, [masterFiltersOn, masterStats, filteredMasterGames]);
   const masterSuggestions = useMemo(() => {
     if (!masterSearchQuery) return [];
     // 학습 탭 마스터 스타일 비교 검색과 같은 규칙(src/lib/masterNameSearch.js) — 개수 제한 없음.
@@ -2518,10 +2544,10 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
       <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
-        <div style={{ marginTop: 12 }}>{nextMovesPanel}</div>,
+        <div>{nextMovesPanel}</div>,
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
-      <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13, marginTop: 12 }}>
+      <div style={{ background: T.paper, border: "1px solid " + T.brass, borderRadius: 12, padding: 13 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8, gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("내 통계")}</span>
           <StatsViewToggle value={myView} onChange={setMyView} />
@@ -2530,14 +2556,15 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           : myView === "cc" && chesscom.status === "error" ? <p style={{ fontSize: 12, color: T.blunder }}>{t("기보 로드 실패. 계정 확인 필요")}</p>
             : (
               <div>
-                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} mine />
-                {!myLoading && myBase.length > 0 && <StatsFilterRows rows={[
+                <StatsSummaryCard loading={myLoading} summary={mySummary} title={t("내 승률")} moves={myMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} mine forceShow />
+                {!myLoading && <StatsFilterRows rows={[
                   [t("시간"), [["all", t("전체")], ["rapid", t("래피드")], ["blitz", t("블리츠")], ["bullet", t("불릿")]], myTimeFilter, setMyTimeFilter],
                   [t("결과"), [["all", t("전체")], ["win", t("승리")], ["draw", t("무승부")], ["loss", t("패배")]], myResult, setMyResult],
                   [t("레이팅"), [[0, t("전체")], [1000, "1000+"], [1500, "1500+"], [2000, "2000+"], [2500, "2500+"]], myRating, setMyRating],
                   [t("기간"), [[0, t("전체")], [365, t("1년 이내")], [30, t("1달 이내")], [7, t("1주 이내")], [1, t("1일 이내")]], myPeriod, setMyPeriod],
                 ]} />}
                 <div style={{ height: 8 }} />
+                <div ref={spUser} data-fp-spacer="user" style={{ height: pads[0] }} />   {/* 마스터 통계의 첫 대국과 y좌표를 맞추는 여백 */}
                 {myLoading ? null
                   : myBase.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("최근 대국 없음")}</p>
                   : myGames.length === 0 ? <p style={{ fontSize: 12, color: T.inkSoft }}>{t("조건에 맞는 결과 없음")}</p>
@@ -2551,7 +2578,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         </>,
         <>
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
-      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13, marginTop: 12 }}>
+      <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div className="flex items-center gap-2"><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("마스터 통계")}</span>
             {/* (v0.2.3 기능) 개발자 전용 — Lichess 마스터 DB에 없는 유명 대국을 직접 등록 */}
@@ -2567,7 +2594,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           )}
         </div>
         {/* (v0.6.6, 사용자 요청) 통계 요약 — 백·무·흑 비율, 채택률(선택된 수), 승점 획득 확률. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려지고, 데이터가 오면 실제 요소가 위에서부터 하나씩 그려진다. */}
-        <StatsSummaryCard loading={loadingMasterGames} summary={masterSummary} title={t("마스터 승률")} moves={masterStats && !masterFiltersOn ? masterStats.moves : null} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
+        <StatsSummaryCard loading={loadingMasterGames} summary={masterSummary} title={t("마스터 승률")} moves={masterMoves} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} ply={ply} />
         {/* (v0.6.6, 사용자 요청) 필터 — 결과·레이팅·연도 */}
         {masterGames.length > 1 && <StatsFilterRows rows={[
           [t("결과"), [["all", t("전체")], ["w", t("백 승")], ["d", t("무승부")], ["b", t("흑 승")]], mResult, setMResult],
@@ -2588,6 +2615,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
             )}
           </div>
         )}
+        <div ref={spMaster} data-fp-spacer="master" style={{ height: pads[1] }} />   {/* 유저 통계의 첫 대국과 y좌표를 맞추는 여백 */}
         {loadingMasterGames ? null
           : masterGamesError ? (
             <p style={{ fontSize: 12, color: T.inkSoft }}>{t("마스터 대국 로드 실패")}{" "}<button onClick={onRetryMasterGames} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
@@ -2637,7 +2665,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
         </>,
         <>
-        <div style={{ marginTop: 12 }}><MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} /></div>
+        <div><MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} /></div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
@@ -3440,6 +3468,8 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
             {/* (v0.5.1 기능) FEN 모드의 수 블록은 goFen(이론/퀘스트 추적 없이 그냥 그 수를 둠)으로
                 두고, 일일 퀘스트 배지와 "분석"(집중 분석 진입) 버튼은 전부 표준 시작 위치 데이터를
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
+            {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
+            <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
             {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
           </>
         );
@@ -3620,12 +3650,12 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} /></div>
+                            {curKws.length > 0 && <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={curKws} /></div>}
                             <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                               <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply - 1, startColor)}{lastSan}</span>
                               {posEval && (posEval.cp != null || posEval.mate != null) && <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color: (curKind && QCOLOR[curKind]) || T.inkSoft }}>{fmtEvalCp(posEval.cp, posEval.mate, posEval.plies)}</span>}
                             </div>
-                            <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName || ""}</MarqueeText>
+                            {curName && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName}</MarqueeText>}
                           </div>
                           {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                         </div>
