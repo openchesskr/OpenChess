@@ -146,7 +146,10 @@ if (full) {
   const sdv = (a) => { const mm = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - mm) ** 2, 0) / a.length); };
   curveSE = {};
   console.error("곡선 자체의 불확실성(부트스트랩 " + fits.length + "회, 정확도 → 레이팅의 ±1표준편차):");
-  for (const A of [70, 75, 80, 85, 88]) { const rr = fits.map((m) => invR(m, A)).filter((v) => v != null && isFinite(v)); curveSE[A] = Math.round(sdv(rr)); console.error(`  정확도 ${A}% → 레이팅 ${Math.round(invR(mS, A))} ± ${curveSE[A]}점`); }
+  // 점검 지점은 실측 구간(레이팅 3~97 분위수에 해당하는 지표 값)을 5등분한 값 — 지표가 바뀌어도 의미 있는 구간만 본다
+  const Rq = pts.map((p) => p.R).sort((u, v) => u - v), qf = (q) => Rq[Math.floor((Rq.length - 1) * q)];
+  const aLo = mS.c + mS.d * Math.exp(-qf(0.03) / mS.tau), aHi = mS.c + mS.d * Math.exp(-qf(0.97) / mS.tau);
+  for (let k = 0; k <= 4; k++) { const A = Math.round((aLo + ((aHi - aLo) * k) / 4) * 10) / 10; const rr = fits.map((m) => invR(m, A)).filter((v) => v != null && isFinite(v)); curveSE[A] = Math.round(sdv(rr)); console.error(`  지표 ${A} → 레이팅 ${Math.round(invR(mS, A))} ± ${curveSE[A]}점`); }
   console.error(`상관(스피어먼, 이동량 보정 후) ${rho.toFixed(3)} (95% ${rhoLo.toFixed(3)} ~ ${rhoHi.toFixed(3)}) · 곡선 주변 정확도 표준편차 ${sigma.toFixed(2)}%p`);
   console.error(`출처 이동량 δ(마스터 클래시컬 − chess.com 래피드, 같은 레이팅에서) = ${mS.delta.toFixed(2)}%p (95% ${deltaCI[0].toFixed(2)} ~ ${deltaCI[1].toFixed(2)})`);
   console.error(`적합: 정확도 f(R) = ${mS.c.toFixed(2)} − ${(-mS.d).toFixed(2)}·exp(−R/${Math.round(mS.tau)}) (래피드 척도; R→∞ 점근선 ${mS.c.toFixed(1)}%)`);
