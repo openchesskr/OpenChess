@@ -123,19 +123,25 @@ function spearman(P) {
   return sab / Math.sqrt(saa * sbb);
 }
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
-let rho = null, sigma = null, deltaCI = null;
+let rho = null, sigma = null, deltaCI = null, curveSE = null;
 if (full) {
   const adj = full.adj;
   rho = spearman(adj);
   // 대국 단위 부트스트랩(한 대국의 두 진영은 같은 포지션을 공유해 독립이 아니다): 상관의 95% 구간, 이동량 δ의 95% 구간
   const byGame = new Map(); for (const p of pts) { if (!byGame.has(p.game)) byGame.set(p.game, []); byGame.get(p.game).push(p); }
-  const games = [...byGame.values()], rand = rng(11), rs = [], ds = [];
-  for (let i = 0; i < BOOT; i++) { const sm = []; for (let k = 0; k < games.length; k++) sm.push(...games[Math.floor(rand() * games.length)]); const ft = fitSat(sm); if (!ft) continue; ds.push(ft.delta); rs.push(spearman(sm.map((p) => ({ ...p, A: p.A - (p.pool === "masters" ? ft.delta : 0) })))); }
+  const games = [...byGame.values()], rand = rng(11), rs = [], ds = [], fits = [];
+  for (let i = 0; i < BOOT; i++) { const sm = []; for (let k = 0; k < games.length; k++) sm.push(...games[Math.floor(rand() * games.length)]); const ft = fitSat(sm); if (!ft) continue; ds.push(ft.delta); fits.push(ft); rs.push(spearman(sm.map((p) => ({ ...p, A: p.A - (p.pool === "masters" ? ft.delta : 0) })))); }
   rs.sort((a, b) => a - b); ds.sort((a, b) => a - b);
   const rhoLo = rs[Math.floor(rs.length * 0.025)], rhoHi = rs[Math.floor(rs.length * 0.975)];
   deltaCI = [ds[Math.floor(ds.length * 0.025)], ds[Math.floor(ds.length * 0.975)]];
   sigma = Math.sqrt(full.sat.sse / pts.length);
   const mS = full.sat;
+  // 곡선 자체의 불확실성: 대국을 다시 뽑아 곡선을 새로 맞췄을 때 같은 정확도가 가리키는 레이팅이 얼마나 흔들리는가(= '한 판의 잡음'이 아니라 '매핑을 얼마나 아는가')
+  const invR = (m, A) => { const q = (m.c - A) / -m.d; return q > 0 ? -m.tau * Math.log(q) : null; };
+  const sdv = (a) => { const mm = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - mm) ** 2, 0) / a.length); };
+  curveSE = {};
+  console.error("곡선 자체의 불확실성(부트스트랩 " + fits.length + "회, 정확도 → 레이팅의 ±1표준편차):");
+  for (const A of [70, 75, 80, 85, 88]) { const rr = fits.map((m) => invR(m, A)).filter((v) => v != null && isFinite(v)); curveSE[A] = Math.round(sdv(rr)); console.error(`  정확도 ${A}% → 레이팅 ${Math.round(invR(mS, A))} ± ${curveSE[A]}점`); }
   console.error(`상관(스피어먼, 이동량 보정 후) ${rho.toFixed(3)} (95% ${rhoLo.toFixed(3)} ~ ${rhoHi.toFixed(3)}) · 곡선 주변 정확도 표준편차 ${sigma.toFixed(2)}%p`);
   console.error(`출처 이동량 δ(마스터 클래시컬 − chess.com 래피드, 같은 레이팅에서) = ${mS.delta.toFixed(2)}%p (95% ${deltaCI[0].toFixed(2)} ~ ${deltaCI[1].toFixed(2)})`);
   console.error(`적합: 정확도 f(R) = ${mS.c.toFixed(2)} − ${(-mS.d).toFixed(2)}·exp(−R/${Math.round(mS.tau)}) (래피드 척도; R→∞ 점근선 ${mS.c.toFixed(1)}%)`);
@@ -176,7 +182,7 @@ const ns = pts.map((q) => q.n).sort((u, v) => u - v);
 const out = {
   version: 2, fingerprint: accuracyFingerprint(), scale: "chesscom-rapid", refMoves: ns[Math.floor(ns.length / 2)],
   anchors, calibratedRange,
-  fit: { sides: pts.length, games: recs.length, rho: Math.round(rho * 1000) / 1000, sigma: round(sigma), model: { c: round(full.sat.c), d: round(full.sat.d), tau: Math.round(full.sat.tau), delta: round(full.sat.delta), deltaCI: deltaCI.map(round) }, offset: offsetInfo },
+  fit: { sides: pts.length, games: recs.length, rho: Math.round(rho * 1000) / 1000, sigma: round(sigma), curveSE, model: { c: round(full.sat.c), d: round(full.sat.d), tau: Math.round(full.sat.tau), delta: round(full.sat.delta), deltaCI: deltaCI.map(round) }, offset: offsetInfo },
   source: engines.join(", "),
 };
 function rAt(a) { for (let i = 1; i < anchors.length; i++) if (a <= anchors[i][0]) { const [x0, y0] = anchors[i - 1], [x1, y1] = anchors[i]; return y0 + ((y1 - y0) * (a - x0)) / (x1 - x0); } return anchors[anchors.length - 1][1]; }
