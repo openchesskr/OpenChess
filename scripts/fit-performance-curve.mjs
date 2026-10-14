@@ -7,7 +7,7 @@
  *  모든 판이 평균 근처로 몰린다 — 퍼포먼스 레이팅으로는 부적절하다.
  *
  *  척도: chess.com 래피드 레이팅. 낮은 레이팅대는 이 데이터뿐이고, 리뷰 화면에 표시되는 선수 급수도 chess.com 기준이라 서로 비교할 수 있다. 마스터 대국(FIDE)은
- *  타이틀 선수의 (FIDE, chess.com 래피드) 쌍을 직선으로 맞춘 오프셋(chesscom-fide-offset.json)으로 이 척도에 옮긴다.
+ *  FIDE 2300+ 타이틀 선수의 (래피드 − FIDE) 중앙값 상수 오프셋(chesscom-fide-offset.json)으로 이 척도에 옮긴다.
  *  보정 범위: 앵커가 놓인 정확도 구간[calibratedRange]만 실측이다. 그 밖은 (0, 하한)·(100, 상한)으로 이은 임시 꼬리이며 앱은 "보정 전 임시 수치"를 표시한다.
  *  기준 길이: 표본 진영들의 비이론 내 수 개수 중앙값을 refMoves로 담는다(앱은 이 길이의 대국에서 곡선 값이 그대로 나오도록 근거 수 가중치를 정규화한다).
  *
@@ -30,16 +30,17 @@ const env = (k, d) => (process.env[k] ? +process.env[k] : d);
 const MIN_EVIDENCE = env("MIN_EVIDENCE", 20), MIN_SIDES = env("MIN_SIDES", 300), MIN_BIN = env("MIN_BIN", 6), BIN = env("BIN", 100), BOOT = env("BOOT", 1000);
 if (!inputs.length) { console.error("입력 파일이 없음"); process.exit(1); }
 
-/* ── FIDE → chess.com 래피드 오프셋(타이틀 선수 쌍의 직선) ── */
+/* ── FIDE → chess.com 래피드 오프셋: FIDE 2300 이상 타이틀 선수 (래피드 − FIDE)의 중앙값 상수 ──
+   직선(rapid = α + β·FIDE)은 쓰지 않는다 — 양쪽 레이팅 모두 잡음이 있어 기울기가 눌리고(회귀 희석, 실측 β≈0.5) 마스터 구간이 압축된다.
+   마스터 표본은 2300 이상뿐이라 그 범위의 상수 차이면 충분하다. 개인별 차이의 표준편차(≈190점)가 커서 오프셋 자체도 ±30점쯤 불확실하다. */
 let toCc = (fide) => fide, offsetInfo = null;
 {
-  const usable = existsSync(offsetPath) ? JSON.parse(readFileSync(offsetPath, "utf8")).rows.filter((r) => r.fide >= 2000 && r.rapid > 0 && (r.rapidRd ?? 999) <= 90) : [];
+  const usable = existsSync(offsetPath) ? JSON.parse(readFileSync(offsetPath, "utf8")).rows.filter((r) => r.fide >= 2300 && r.rapid > 0 && (r.rapidRd ?? 999) <= 90) : [];
   if (usable.length >= 30) {
-    const n = usable.length, mx = usable.reduce((s, r) => s + r.fide, 0) / n, my = usable.reduce((s, r) => s + r.rapid, 0) / n;
-    let sxx = 0, sxy = 0; for (const r of usable) { sxx += (r.fide - mx) ** 2; sxy += (r.fide - mx) * (r.rapid - my); }
-    const beta = sxy / sxx, alpha = my - beta * mx;
-    toCc = (fide) => alpha + beta * fide;
-    offsetInfo = { n, alpha: Math.round(alpha * 10) / 10, beta: Math.round(beta * 1000) / 1000, at2500: Math.round(alpha + beta * 2500) };
+    const df = usable.map((r) => r.rapid - r.fide).sort((a, b) => a - b), n = df.length, mean = df.reduce((s, v) => s + v, 0) / n;
+    const sd = Math.sqrt(df.reduce((s, v) => s + (v - mean) ** 2, 0) / n), median = df[Math.floor(n / 2)];
+    toCc = (fide) => fide + median;
+    offsetInfo = { n, fideMin: 2300, median, mean: Math.round(mean), sd: Math.round(sd), se: Math.round(sd / Math.sqrt(n)) };
   }
 }
 
@@ -55,7 +56,7 @@ const engines = [...new Set(recs.map((r) => `${r.engine} depth ${r.depth} ${r.mo
 const fails = [];
 if (!offsetInfo && pts.some((p) => p.pool === "masters")) fails.push("마스터 표본이 있는데 chess.com↔FIDE 오프셋 데이터가 없음(node scripts/fetch-rated-games.mjs offset 먼저)");
 console.error(`입력 ${inputs.length}개 · 대국 ${recs.length}판 · 진영 ${pts.length}개(근거 수 ≥ ${MIN_EVIDENCE}; 마스터 ${pts.filter((p) => p.pool === "masters").length}, chess.com ${pts.filter((p) => p.pool === "chesscom").length}) · 엔진 ${engines.join(", ")}`);
-if (offsetInfo) console.error(`오프셋: chess.com 래피드 ≈ ${offsetInfo.alpha} + ${offsetInfo.beta}·FIDE (타이틀 선수 ${offsetInfo.n}명) → FIDE 2500 = chess.com ${offsetInfo.at2500}`);
+if (offsetInfo) console.error(`오프셋: chess.com 래피드 ≈ FIDE ${offsetInfo.median >= 0 ? "+" : "−"} ${Math.abs(offsetInfo.median)} (FIDE ${offsetInfo.fideMin}+ 타이틀 선수 ${offsetInfo.n}명, 평균 ${offsetInfo.mean} ± ${offsetInfo.se}, 개인별 표준편차 ${offsetInfo.sd})`);
 
 /* ── 포화형 최소제곱: y = c + d·exp(−R/τ), d<0. τ는 격자 탐색, c·d는 닫힌 해 ── */
 function fitSat(P) {
