@@ -5,7 +5,9 @@
  *  앱 코드를 esbuild로 번들해 그대로 실행하고(scripts/check-mec-facts.mjs와 같은 방식), 엔진은 Node UCI 어댑터(scripts/lib/nodeEngine.mjs)로 바꿔 끼운다 —
  *  수 등급·희생 확인·날카로움 보정·정확도 계산이 앱과 같은 코드 경로를 탄다.
  *
- *  사용법: node scripts/calibrate-performance.mjs [출력.ndjson=scripts/calibration/perf-calibration.ndjson]
+ *  입력 대국: 기본은 저장소의 마스터 대회 대국(FIDE 레이팅). SOURCE=경로 를 주면 scripts/fetch-rated-games.mjs가 받은 chess.com 대국 파일을 대신 쓴다
+ *  (낮은 레이팅대 — 마스터 표본은 2300 이상뿐이라). 두 출처는 레이팅 척도가 달라 출력 파일을 따로 두고(pool 필드로 구분), fit 단계에서 척도 차이를 맞춘다.
+ *  사용법: [SOURCE=chesscom-games.ndjson] node scripts/calibrate-performance.mjs [출력.ndjson=scripts/calibration/perf-calibration.ndjson]
  *  재실행하면 이미 분석한 대국은 건너뛴다(이어서 하기). 오래 걸리므로 백그라운드로 돌리고 중간에 끊어도 된다.
  *  옵션(환경변수):
  *    GAMES=300        이번 실행에서 새로 분석할 대국 수 상한
@@ -30,6 +32,7 @@ const env = (k, d) => (process.env[k] != null && process.env[k] !== "" ? +proces
 const GAMES = env("GAMES", 300), MINUTES = env("MINUTES", 0), CONC = env("CONCURRENCY", 4), DEPTH = env("DEPTH", 20), MOVETIME = env("MOVETIME", 1500);
 const MIN_ELO = env("MIN_ELO", 2300), MIN_PLIES = env("MIN_PLIES", 40), SEED = env("SEED", 1);
 const ENGINE = process.env.ENGINE || "lite-single";
+const SOURCE = process.env.SOURCE || "";
 const bin = join(ROOT, "node_modules/stockfish18/bin/stockfish-18-" + ENGINE + ".js");
 if (!existsSync(bin)) { console.error("엔진 파일이 없음: " + bin); process.exit(1); }
 
@@ -44,17 +47,25 @@ rmSync(dir, { recursive: true, force: true });
 // ── 표본 추출(층화) ──
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 const pool = new Map();    // 평균 레이팅 구간 → 후보
-const tdir = join(ROOT, "src/data/tournaments");
-for (const f of readdirSync(tdir)) {
-  if (!f.endsWith(".json")) continue;
-  const t = JSON.parse(readFileSync(join(tdir, f), "utf8"));
-  for (const ed of t.eds || []) for (const g of ed.g || []) {
-    const w = ed.pl[g[2]], b = ed.pl[g[3]];
-    if (!w || !b || typeof g[5] !== "string" || atob(g[5]).length < MIN_PLIES) continue;   // 부호는 한 수 = 1바이트(base64라 글자 수와 다르다)
-    if (!(w[1] >= MIN_ELO && b[1] >= MIN_ELO)) continue;
-    const band = Math.floor((w[1] + b[1]) / 2 / 50) * 50;
-    if (!pool.has(band)) pool.set(band, []);
-    pool.get(band).push({ id: t.id + "|" + ed.k + "|" + g[0] + "|" + g[1] + "|" + g[2] + "|" + g[3], code: g[5], wElo: w[1], bElo: b[1], wName: w[0], bName: b[0] });
+const addCand = (band, c) => { if (!pool.has(band)) pool.set(band, []); pool.get(band).push(c); };
+if (SOURCE) {
+  // chess.com 등 수집 파일: { id, sans[], wElo, bElo, wName, bName, tc, timeClass, pool } — 100점 구간. MIN_ELO는 적용하지 않는다.
+  for (const line of readFileSync(SOURCE, "utf8").split("\n")) {
+    if (!line.trim()) continue; let g; try { g = JSON.parse(line); } catch { continue; }
+    if (!Array.isArray(g.sans) || g.sans.length < MIN_PLIES || !(g.wElo > 0 && g.bElo > 0)) continue;
+    addCand(Math.floor((g.wElo + g.bElo) / 2 / 100) * 100, { id: g.id, sans: g.sans, wElo: g.wElo, bElo: g.bElo, wName: g.wName, bName: g.bName, pool: g.pool || "source", tc: g.tc, timeClass: g.timeClass });
+  }
+} else {
+  const tdir = join(ROOT, "src/data/tournaments");
+  for (const f of readdirSync(tdir)) {
+    if (!f.endsWith(".json")) continue;
+    const t = JSON.parse(readFileSync(join(tdir, f), "utf8"));
+    for (const ed of t.eds || []) for (const g of ed.g || []) {
+      const w = ed.pl[g[2]], b = ed.pl[g[3]];
+      if (!w || !b || typeof g[5] !== "string" || atob(g[5]).length < MIN_PLIES) continue;   // 부호는 한 수 = 1바이트(base64라 글자 수와 다르다)
+      if (!(w[1] >= MIN_ELO && b[1] >= MIN_ELO)) continue;
+      addCand(Math.floor((w[1] + b[1]) / 2 / 50) * 50, { id: t.id + "|" + ed.k + "|" + g[0] + "|" + g[1] + "|" + g[2] + "|" + g[3], code: g[5], wElo: w[1], bElo: b[1], wName: w[0], bName: b[0], pool: "masters" });
+    }
   }
 }
 const rand = rng(SEED);
@@ -66,7 +77,7 @@ for (let round = 0; ; round++) { let any = false; for (const b of bands) { const
 const done = new Set();
 if (existsSync(outPath)) for (const line of readFileSync(outPath, "utf8").split("\n")) { if (!line.trim()) continue; try { done.add(JSON.parse(line).id); } catch { /* 깨진 줄 */ } }
 const todo = order.filter((g) => !done.has(g.id));
-console.error(`후보 ${order.length}판(레이팅 구간 ${bands.length}개: ${bands[0]}~${bands[bands.length - 1]}) · 이미 분석 ${done.size}판 · 이번 실행 최대 ${Math.min(GAMES, todo.length)}판 · 동시 ${CONC} · depth ${DEPTH} · ${MOVETIME}ms · ${ENGINE}`);
+console.error(`후보 ${order.length}판(${SOURCE ? "수집 파일" : "마스터"} · 레이팅 구간 ${bands.length}개: ${bands[0]}~${bands[bands.length - 1]}) · 이미 분석 ${done.size}판 · 이번 실행 최대 ${Math.min(GAMES, todo.length)}판 · 동시 ${CONC} · depth ${DEPTH} · ${MOVETIME}ms · ${ENGINE}`);
 
 // ── 분석 ──
 const t0 = Date.now(); let started = 0, finished = 0, next = 0;
@@ -77,14 +88,14 @@ async function worker(slot) {
     for (;;) {
       if (started >= GAMES || timeUp() || next >= todo.length) return;
       const g = todo[next++]; started++;
-      const sans = decodeMoves(g.code);
+      const sans = g.sans || decodeMoves(g.code);
       if (sans.length < MIN_PLIES) continue;
       const g0 = Date.now();
       eng.newGame();
       let res;
       try { res = await analyzeGame(sans, eng, DEPTH, null, MOVETIME); } catch (e) { console.error("분석 실패 " + g.id + ": " + e.message); continue; }
       const side = (white) => ({ elo: white ? g.wElo : g.bElo, acc: white ? res.whiteAcc : res.blackAcc, counts: countSideMoves(res.moves.filter((m) => m.white === white)) });
-      const rec = { id: g.id, plies: sans.length, w: side(true), b: side(false), depth: DEPTH, movetime: MOVETIME, engine: ENGINE, sec: Math.round((Date.now() - g0) / 1000) };
+      const rec = { id: g.id, plies: sans.length, w: side(true), b: side(false), pool: g.pool, ...(g.timeClass ? { timeClass: g.timeClass, tc: g.tc } : {}), depth: DEPTH, movetime: MOVETIME, engine: ENGINE, sec: Math.round((Date.now() - g0) / 1000) };
       appendFileSync(outPath, JSON.stringify(rec) + "\n");
       finished++;
       const el = (Date.now() - t0) / 60000;
