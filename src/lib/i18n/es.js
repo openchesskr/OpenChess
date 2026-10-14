@@ -2361,4 +2361,10 @@ export default {
   "보드 사진 인식 호출 횟수 제한. 번역 저장소가 다른 글로 오염되지 않도록 차단.": "Se limita la frecuencia del reconocimiento de fotos de tablero. Las traducciones compartidas quedan protegidas frente a manipulación con otros textos.",
   "마스터 트리 대회·프로필, 사용자 글 자동 번역, 데스크톱 하단 창, 리뷰 코치 개선.": "Torneos y perfiles en el árbol de maestros, traducción automática de textos, ventanas acopladas en escritorio, mejor entrenador de revisión.",
   "마스터 트리 대회 220곳, 대국 8만 7천 판, 데스크톱 하단 창": "220 torneos, 87.000 partidas, ventanas acopladas en escritorio",
+  "퍼포먼스 레이팅": "Rating de rendimiento",
+  "내역 보기": "Ver desglose",
+  "내역 접기": "Ocultar desglose",
+  "정확도 기반": "Basado en la precisión",
+  "탁월·유일": "Brillante · Única",
+  "보정 전 임시 수치": "Valor provisional previo a la calibración",
 };

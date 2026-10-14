@@ -2,6 +2,10 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
 import { seeSquare, canCaptureSquareLegally, VAL, hangingLossSq, lva, newCumulativeAccuracy, matePliesOf, ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
+import { PERF, performanceRating, countSideMoves, bookNodesOfLine, openingTermFromLine } from "../lib/performanceRating.js";
+import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
+import { ecoHash } from "../lib/ecoHash.js";
+import OPENING_STRENGTH from "../data/openingStrength.json";
 import React, { useRef, useState, useEffect, useLayoutEffect, useMemo, useContext, useCallback } from "react";
 import { T, DRAG_SCROLL_MULT, BOARD_SKINS, boardSquareBg } from "../lib/theme.js";
 import { QCOLOR, ANALYSIS_KIND_ROWS } from "../lib/moveKinds.js";
@@ -450,6 +454,19 @@ function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
   }
   return newCumulativeAccuracy(losses, sharps, losses.length, sharpOn, kinds);
 }
+// (v0.6.7) 요약 화면의 퍼포먼스 레이팅 — 상대 레이팅과 무관하게 수의 질만으로 진영별 계산(src/lib/performanceRating.js).
+// 입력 정확도는 화면에 보이는 값(acc)을 그대로 쓴다. 이론 수가 없으면(FEN 시작 대국 등) 오프닝 항은 0이다.
+function reviewPerformance(moves, acc, white) {
+  const counts = countSideMoves(moves.filter((m) => m.white === white));
+  let opening = 0;
+  if (counts.book > 0) {
+    try {
+      const nodes = bookNodesOfLine(moves.map((m) => m.san), sansToFen, bookPositionKey, ecoHash, isEcoBookPosition);
+      opening = openingTermFromLine(nodes, white ? "w" : "b", OPENING_STRENGTH);
+    } catch { opening = 0; }
+  }
+  return performanceRating({ acc, counts, opening });
+}
 // (v0.2.1 → v0.3.9 사용자 요청으로 임계값·반영 규칙 재설계) 단계 아이콘의 등급을 그 단계·진영의
 // 정확도로 정한다 — 100 이상은 최선의 수, 90~100은 우수한 수, 80~90은 좋은 수, 60~80은 부정확,
 // 50~60은 실수, 50 미만은 블런더. highlightKind(reviewPhaseHighlight의 결과)가 그 단계에 실제로
@@ -477,6 +494,38 @@ function ReviewAccuracyPill({ label, value, hi, layoutId }) {
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
     </motion.div>
+  );
+}
+// (v0.6.7) 퍼포먼스 레이팅 칸 — 정확성 칸 바로 아래. 값이 없으면(근거 수 0) "—".
+function ReviewPerfPill({ label, perf }) {
+  return (
+    <div style={{ flex: 1, textAlign: "center" }}>
+      <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "7px 6px", background: RV.panel, color: RV.text }}>{perf ? perf.rating : "—"}</div>
+    </div>
+  );
+}
+// 항별 내역 표 — 수 등급 표(ReviewKindTable)와 같은 좌·중앙 라벨·우 배치.
+function ReviewPerfBreakdown({ w, b }) {
+  const signed = (v) => (v >= 0 ? "+" : "−") + Math.abs(Math.round(v));
+  const rows = [
+    [t("정확도 기반"), (p) => (p ? String(Math.round(p.base)) : "—")],
+    [t("이론"), (p) => (p ? signed(p.theory) : "—")],
+    [t("탁월·유일"), (p) => (p ? signed(p.quality) : "—")],
+    [t("블런더"), (p) => (p ? signed(-p.blunder) : "—")],
+    [t("오프닝"), (p) => (p ? signed(p.opening) : "—")],
+  ];
+  const cell = { width: 52, textAlign: "center", fontSize: 14, fontWeight: 800, fontFamily: SITE_FONT, color: RV.text };
+  return (
+    <div style={{ borderTop: "1px solid " + RV.border, marginBottom: 8 }}>
+      {rows.map(([label, f]) => (
+        <div key={label} className="flex items-center" style={{ padding: "7px 2px", borderBottom: "1px solid " + RV.border }}>
+          <span style={cell}>{f(w)}</span>
+          <span style={{ flex: 1, textAlign: "center", fontSize: 12.5, fontWeight: 700, color: RV.text }}>{label}</span>
+          <span style={cell}>{f(b)}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 // (기능) 요약 화면의 수 체계별 개수 표 — ANALYSIS_KIND_ROWS·QCOLOR·CircleBadge를 그대로 재사용해
@@ -536,16 +585,19 @@ function PhaseAccBubble({ text }) {
 }
 // (기능) 요약 화면 — chess.com 모바일 앱의 "Game Review" 진입 화면과 동일한 순서(코치 인사말 →
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
-// (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
-// 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
+// (설계) chess.com의 "Game Rating"은 사용자 레이팅에 정확도 가중 증분을 더하는 방식이라 쓰지 않는다. v0.6.7부터 정확성 아래에 상대·본인 레이팅과 무관하게
+// 수의 질만으로 매기는 자체 퍼포먼스 레이팅을 둔다(reviewPerformance, src/lib/performanceRating.js).
 function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
+  const [perfOpen, setPerfOpen] = useState(false);
   // (v0.3.9 기능) 사용자 요청 — 설정 탭의 "포지션 변동성 보정" 토글이 꺼져 있으면, 분석 시점에 저장해 둔
   // result.whiteAcc/blackAcc(항상 보정 켜짐으로 계산됨)를 그대로 쓰지 않고 원본 손실(lossWinPct)·
   // 날카로움(sharp)에서 그 자리에서 다시 계산한다 — 재분석(엔진 재호출) 없이도 토글이 즉시 반영되고,
   // 아래 단계별 정확도(phases)와 항상 같은 계산 경로를 타서 서로 어긋나지 않는다.
   const fullWhiteAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn), [result.moves, sharpOn]);
   const fullBlackAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn), [result.moves, sharpOn]);
+  const perfW = useMemo(() => reviewPerformance(result.moves, fullWhiteAcc, true), [result.moves, fullWhiteAcc]);
+  const perfB = useMemo(() => reviewPerformance(result.moves, fullBlackAcc, false), [result.moves, fullBlackAcc]);
   const hasEndgame = endStart < result.moves.length;
   const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
   const phaseRanges = [
@@ -589,10 +641,19 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
           {blackInfo.rating != null && <div style={{ fontSize: 10.5, color: RV.soft, fontFamily: SITE_FONT }}>{blackInfo.rating}</div>}
         </div>
       </div>
-      <div className="flex items-stretch" style={{ gap: 10, marginBottom: 16 }}>
+      <div className="flex items-stretch" style={{ gap: 10, marginBottom: 12 }}>
         <ReviewAccuracyPill label={t("정확성")} value={fullWhiteAcc} hi={(fullWhiteAcc || 0) >= (fullBlackAcc || 0)} layoutId="review-acc-w" />
         <ReviewAccuracyPill label={t("정확성")} value={fullBlackAcc} hi={(fullBlackAcc || 0) > (fullWhiteAcc || 0)} layoutId="review-acc-b" />
       </div>
+      <div className="flex items-stretch" style={{ gap: 10, marginBottom: 6 }}>
+        <ReviewPerfPill label={t("퍼포먼스 레이팅")} perf={perfW} />
+        <ReviewPerfPill label={t("퍼포먼스 레이팅")} perf={perfB} />
+      </div>
+      <div style={{ textAlign: "center", marginBottom: perfOpen ? 8 : 16 }}>
+        <button onClick={() => setPerfOpen((v) => !v)} className="press" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: RV.soft, padding: "4px 8px" }}>{perfOpen ? t("내역 접기") : t("내역 보기")}</button>
+        {!PERF.CALIBRATED && <div style={{ fontSize: 10.5, color: RV.soft, marginTop: 2 }}>{t("보정 전 임시 수치")}</div>}
+      </div>
+      {perfOpen && <ReviewPerfBreakdown w={perfW} b={perfB} />}
       <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />
       {/* (v0.2.1) 세 단계(오프닝/미들게임/엔드게임)를 모두 보여준다 — 그 단계에 수가 없으면(예: 엔드게임 미도달)
           아이콘만 감춘다. 아이콘을 누르면 좌측 단계명은 그대로 두고, 그 단계·진영의 부분 정확도를 말풍선으로 띄운다. */}

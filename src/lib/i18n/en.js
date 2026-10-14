@@ -2361,4 +2361,10 @@ export default {
   "보드 사진 인식 호출 횟수 제한. 번역 저장소가 다른 글로 오염되지 않도록 차단.": "Rate limit added for board-photo recognition. Shared translations are now protected from being tampered with by other texts.",
   "마스터 트리 대회·프로필, 사용자 글 자동 번역, 데스크톱 하단 창, 리뷰 코치 개선.": "Masters tree tournaments and profiles, auto-translated user text, desktop docked windows, better review coach.",
   "마스터 트리 대회 220곳, 대국 8만 7천 판, 데스크톱 하단 창": "220 tournaments, 87,000 games, desktop docked windows",
+  "퍼포먼스 레이팅": "Performance rating",
+  "내역 보기": "Show breakdown",
+  "내역 접기": "Hide breakdown",
+  "정확도 기반": "Accuracy-based",
+  "탁월·유일": "Brilliant · Only",
+  "보정 전 임시 수치": "Provisional value before calibration",
 };
