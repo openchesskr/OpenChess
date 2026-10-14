@@ -6,9 +6,12 @@
  *   ④ 오프닝 항은 ±OPENING_MAX 안, 총점은 [FLOOR, CAP] 안.
  *   ⑤ 근거 수가 0이면 점수를 만들지 않는다(null).
  *   ⑥ 오프닝 데이터: 이론 연속 구간 계산이 실제 ECO 목록에서 동작하고, openingStrength.json 형식이 맞다.
+ *   ⑦ 곡선 파일(performanceCurve.json): 보정된 곡선도 ①②를 지키고, 기준 길이(refMoves)에서 곡선 값이 그대로 나오고, 정확도가 실측 구간 밖이면 provisional이며,
+ *      보정 당시의 정확도 계산 지문이 지금과 같다(정확도 계산이 바뀌었는데 곡선을 안 맞추면 빌드 실패).
  */
 import { readFileSync } from "node:fs";
-import { PERF, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine } from "../src/lib/performanceRating.js";
+import { PERF, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
+import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
 import { sansToFen } from "../src/lib/chessRules.js";
 import { bookPositionKey, ecoHash } from "../src/lib/ecoHash.js";
 
@@ -79,6 +82,32 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
   ok(file && typeof file.entries === "object" && file.entries !== null, "openingStrength.json 형식 오류(entries 없음)");
   for (const [k, v] of Object.entries(file.entries)) { if (!/^[wb]:[0-9a-z]+$/.test(k) || !Array.isArray(v) || v.length !== 2 || !(v[0] > 0) || !(v[1] > 0)) { fails.push(`openingStrength.json 항목 형식 오류: ${k}`); break; } }
   if (Object.keys(file.entries).length) ok(file.globalMean > 0, "openingStrength.json에 항목이 있는데 globalMean이 없음");
+}
+
+// ⑦ 곡선 파일
+{
+  const rpc = (curve, acc, c) => performanceRating({ acc, counts: { evidence: 30, book: 0, brilliant: 0, only: 0, blunder: 0, ...c } }, PERF, curve);
+  const synth = { anchors: [[0, 100], [87, 2300], [93, 2850], [100, 3400]], refMoves: 30, calibratedRange: [87, 93] };
+  ok(isCurveCalibrated(synth) && !isCurveCalibrated({ anchors: null }) && !isCurveCalibrated(null), "isCurveCalibrated 판정 오류");
+  ok(rpc(null, 90).provisional === true && rpc({ anchors: null }, 90).provisional === true, "곡선이 없는데 provisional이 아님");
+  ok(rpc(synth, 90).provisional === false && rpc(synth, 80).provisional === true && rpc(synth, 97).provisional === true, "실측 구간 안/밖 provisional 판정 오류");
+  ok(Math.abs(rpc(synth, 90).base - ratingFromAccuracy(90, synth.anchors)) < 1e-9, "기준 길이(refMoves)에서 곡선 값이 그대로 나오지 않음");
+  for (let a = 0; a < 100; a += 1) ok(rpc(synth, a + 1).rating >= rpc(synth, a).rating, `곡선 사용 시 정확도 ${a}→${a + 1}에서 점수가 줄어듦`);
+  for (const a of [20, 70, 90, 98]) for (let n = 1; n < 100; n++) {
+    const lo = performanceRating({ acc: a, counts: { evidence: n, book: 0, brilliant: 0, only: 0, blunder: 0 } }, PERF, synth), hi = performanceRating({ acc: a, counts: { evidence: n + 1, book: 0, brilliant: 0, only: 0, blunder: 0 } }, PERF, synth);
+    ok(hi.rating >= lo.rating, `곡선 사용 시 정확도 ${a}에서 n ${n}→${n + 1}에 점수가 줄어듦`);
+  }
+  const file = JSON.parse(readFileSync(new URL("../src/data/performanceCurve.json", import.meta.url), "utf8"));
+  if (isCurveCalibrated(file)) {
+    const A = file.anchors;
+    ok(A[0][0] === 0 && A[A.length - 1][0] === 100, "곡선 파일 앵커가 정확도 0~100을 덮지 않음");
+    for (let i = 1; i < A.length; i++) ok(A[i][0] > A[i - 1][0] && A[i][1] > A[i - 1][1], `곡선 파일 앵커 ${i}번째가 증가하지 않음`);
+    ok(A.every(([, y]) => y >= PERF.FLOOR && y <= PERF.CAP), "곡선 파일 앵커가 [FLOOR, CAP] 밖");
+    ok(Array.isArray(file.calibratedRange) && file.calibratedRange[0] >= 0 && file.calibratedRange[1] <= 100 && file.calibratedRange[0] < file.calibratedRange[1], "곡선 파일 calibratedRange 오류");
+    ok(file.refMoves > 0, "곡선 파일에 refMoves가 없음");
+    const fp = accuracyFingerprint();
+    ok(file.fingerprint === fp, `정확도 계산이 곡선 보정 이후 바뀜(곡선 ${file.fingerprint} ≠ 현재 ${fp}) — scripts/calibrate-performance.mjs → fit-performance-curve.mjs로 곡선을 다시 맞출 것`);
+  } else ok(file && file.anchors === null, "performanceCurve.json 형식 오류(보정 전이면 anchors는 null)");
 }
 
 if (fails.length) { console.error("퍼포먼스 레이팅 검사 실패:\n- " + fails.join("\n- ")); process.exit(1); }

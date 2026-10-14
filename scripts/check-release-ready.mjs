@@ -12,10 +12,10 @@ try {
 try {
   for (const a of JSON.parse(rd("public/.well-known/assetlinks.json"))) for (const f of a.target.sha256_cert_fingerprints || []) if (!/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/i.test(f)) fails.push("assetlinks 지문이 SHA-256 형식(AA:BB:… 32바이트)이 아님: " + f);
 } catch (e) { fails.push("assetlinks 읽기 실패: " + e.message); }
-// (v0.6.7) 퍼포먼스 레이팅 곡선이 보정 전 임시값이면 출시 불가 — src/lib/performanceRating.js PERF.CALIBRATED
+// (v0.6.7) 퍼포먼스 레이팅 곡선이 보정 전이면 출시 불가 — src/data/performanceCurve.json (scripts/calibrate-performance.mjs → fit-performance-curve.mjs)
 try {
-  const { PERF } = await import("../src/lib/performanceRating.js");
-  if (!PERF.CALIBRATED) fails.push("퍼포먼스 레이팅이 보정 전 임시값이다(PERF.CALIBRATED=false) — 레이팅이 알려진 대국으로 R(A) 곡선·가감 상한을 보정한 뒤 true로 바꿀 것");
-} catch (e) { fails.push("performanceRating 읽기 실패: " + e.message); }
+  const curve = JSON.parse(rd("src/data/performanceCurve.json"));
+  if (!Array.isArray(curve.anchors) || curve.anchors.length < 2) fails.push("퍼포먼스 레이팅 곡선이 보정 전이다(src/data/performanceCurve.json anchors=null) — 마스터 대국 분석(calibrate-performance) 후 fit-performance-curve로 곡선을 만들 것");
+} catch (e) { fails.push("performanceCurve.json 읽기 실패: " + e.message); }
 if (fails.length) { console.error("✖ check-release-ready 실패(출시 전 처리 필요):\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-release-ready: 앱 링크 파일이 실제 값으로 채워져 있다");

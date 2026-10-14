@@ -5,14 +5,16 @@
 //   · n  평가가 끝난 비이론 내 수 개수. 많을수록 "그 정확도를 더 오래 유지했다"는 증거가 늘어 기본값이 R(A)에 가까워진다.
 //   · 이론·탁월·유일은 실력으로 본다(사용자 결정) — 암기한 이론도, 찾기 어려운 수도 점수에 들어간다. 포화 곡선은 점수 폭주를 막는 안전장치일 뿐이다.
 //   · 모든 항이 상한으로 묶여 있어 보정된 기본값(R(A))이 합산을 압도한다.
-// ⚠ PERF의 숫자는 전부 임시값이다. R(A) 곡선(RA_ANCHORS)은 레이팅이 알려진 대국의 분석 결과로 보정해야 하며(scripts/ 로컬 보정 예정), 가감 상한도
-//   실제 대국에 돌려 보며 조정한다. 값을 바꾸면 scripts/check-performance-rating.mjs의 불변식이 그대로 통과해야 한다.
+// ⚠ PERF의 숫자는 임시값이다. R(A) 곡선은 scripts/calibrate-performance.mjs(마스터 대국을 앱의 채점 코드로 분석) → scripts/fit-performance-curve.mjs가 만드는
+//   src/data/performanceCurve.json 으로 보정한다. 곡선 파일이 없으면 아래 RA_ANCHORS(임시)를 쓰고 결과의 provisional이 true다. 곡선은 마스터 레이팅(2300~2850)에 해당하는
+//   정확도 구간(calibratedRange)만 실측이고, 그 밖의 정확도는 provisional이다. 가감 상한(THEORY_MAX 등)은 보정 대상이 아니라 설계값이며 실제 대국에 돌려 보며 조정한다.
+//   값을 바꾸면 scripts/check-performance-rating.mjs의 불변식이 그대로 통과해야 한다.
 
 export const PERF = {
-  CALIBRATED: false,     // R(A) 곡선·가감 상한을 실제 대국으로 보정했는가. false면 리뷰 화면이 "보정 전 임시 수치"를 표시하고 check:release가 실패한다
   FLOOR: 100,            // 모델 최저 레이팅(임시) — 정확도 0%에 가까운 판의 하한
   CAP: 3500,             // 모델 최고 레이팅(임시)
   EVIDENCE_K: 10,        // w(n) = n / (n + K). n=10이면 0.5, 40이면 0.8
+  REF_MOVES: 30,         // R(A)가 맞춰진 기준 대국 길이(비이론 내 수). 곡선 파일의 refMoves가 있으면 그 값을 쓴다. base = FLOOR + (R(A) − FLOOR) · w(n) / w(REF)
   THEORY_MAX: 60,        // 이론 항 상한. T = MAX · (1 − e^(−t/TAU)), t = 이론 수 개수
   THEORY_TAU: 8,
   QUALITY_MAX: 120,      // 탁월·유일 항 상한. Q = MAX · (1 − e^(−s/SCALE)), s = 탁월·유일 가중 개수
@@ -26,19 +28,21 @@ export const PERF = {
   OPENING_SCALE: 60,     // 평균 레이팅 차이(점)를 tanh로 눌러 ±OPENING_MAX로 매핑하는 폭
 };
 
-// 정확도 A(0~100) → 충분히 긴 대국에서의 레이팅. 단조 증가 구간선형 곡선(임시 — 보정 필요).
+// 정확도 A(0~100) → 기준 길이 대국에서의 레이팅. 단조 증가 구간선형 곡선. 아래는 곡선 파일이 없을 때 쓰는 임시값(근거 없음)이다.
 export const RA_ANCHORS = [[0, 100], [40, 600], [60, 1100], [75, 1700], [85, 2200], [92, 2700], [97, 3100], [100, 3400]];
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-export function ratingFromAccuracy(acc) {
+export function ratingFromAccuracy(acc, anchors = RA_ANCHORS) {
   const a = clamp(+acc || 0, 0, 100);
-  for (let i = 1; i < RA_ANCHORS.length; i++) {
-    const [x1, y1] = RA_ANCHORS[i];
-    if (a <= x1) { const [x0, y0] = RA_ANCHORS[i - 1]; return y0 + ((y1 - y0) * (a - x0)) / (x1 - x0); }
+  for (let i = 1; i < anchors.length; i++) {
+    const [x1, y1] = anchors[i];
+    if (a <= x1) { const [x0, y0] = anchors[i - 1]; return y0 + ((y1 - y0) * (a - x0)) / (x1 - x0); }
   }
-  return RA_ANCHORS[RA_ANCHORS.length - 1][1];
+  return anchors[anchors.length - 1][1];
 }
+// 곡선 파일(src/data/performanceCurve.json)이 실제로 보정된 값인지 — 보정 전에는 anchors가 null이다.
+export const isCurveCalibrated = (curve) => !!(curve && Array.isArray(curve.anchors) && curve.anchors.length >= 2);
 
 // 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { kind, lossWinPct })에서 항별 입력 개수를 센다.
 // 평가가 안 끝난 수(lossWinPct == null, kind가 book이 아닌 경우)는 증거로 세지 않는다.
@@ -67,11 +71,17 @@ export function openingTerm(entry, globalMean, p = PERF) {
 }
 
 /* 퍼포먼스 레이팅 계산. 입력: { acc, counts(countSideMoves 결과), opening }  — opening은 이미 계산된 오프닝 항(없으면 0).
-   반환: null(근거 수 0 또는 정확도 없음) | { rating, base, theory, quality, blunder, opening, n }. 모든 항은 화면에 내역으로 보여줄 수 있게 따로 돌려준다. */
-export function performanceRating({ acc, counts, opening = 0 }, p = PERF) {
+   curve: 곡선 파일 내용(없거나 보정 전이면 임시 앵커). provisional = 곡선이 보정 전이거나 정확도가 실측 구간(calibratedRange) 밖.
+   반환: null(근거 수 0 또는 정확도 없음) | { rating, base, theory, quality, blunder, opening, n, provisional }. 모든 항은 화면에 내역으로 보여줄 수 있게 따로 돌려준다. */
+export function performanceRating({ acc, counts, opening = 0 }, p = PERF, curve = null) {
   if (acc == null || !counts || counts.evidence <= 0) return null;
-  const w = counts.evidence / (counts.evidence + p.EVIDENCE_K);
-  const base = p.FLOOR + (ratingFromAccuracy(acc) - p.FLOOR) * w;
+  const cal = isCurveCalibrated(curve);
+  const anchors = cal ? curve.anchors : RA_ANCHORS;
+  const ref = cal && curve.refMoves > 0 ? curve.refMoves : p.REF_MOVES;
+  const w = counts.evidence / (counts.evidence + p.EVIDENCE_K), wRef = ref / (ref + p.EVIDENCE_K);
+  const range = cal && Array.isArray(curve.calibratedRange) ? curve.calibratedRange : null;
+  const provisional = !cal || (range ? acc < range[0] || acc > range[1] : true);
+  const base = p.FLOOR + (ratingFromAccuracy(acc, anchors) - p.FLOOR) * (w / wRef);
   const theory = p.THEORY_MAX * (1 - Math.exp(-counts.book / p.THEORY_TAU));
   const s = p.W_BRILLIANT * counts.brilliant + p.W_ONLY * counts.only;
   const quality = p.QUALITY_MAX * (1 - Math.exp(-s / p.QUALITY_SCALE));
@@ -79,7 +89,7 @@ export function performanceRating({ acc, counts, opening = 0 }, p = PERF) {
   const blunder = p.BLUNDER_UNIT * (b + (p.BLUNDER_GROWTH * b * (b - 1)) / 2);
   const o = clamp(opening, -p.OPENING_MAX, p.OPENING_MAX);
   const rating = clamp(base + theory + quality - blunder + o, p.FLOOR, p.CAP);
-  return { rating: Math.round(rating), base, theory, quality, blunder, opening: o, n: counts.evidence };
+  return { rating: Math.round(rating), base, theory, quality, blunder, opening: o, n: counts.evidence, provisional };
 }
 
 /* ── 오프닝 강도 데이터(src/data/openingStrength.json) ──

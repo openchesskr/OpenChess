@@ -2,7 +2,8 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
 import { seeSquare, canCaptureSquareLegally, VAL, hangingLossSq, lva, newCumulativeAccuracy, matePliesOf, ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
-import { PERF, performanceRating, countSideMoves, bookNodesOfLine, openingTermFromLine } from "../lib/performanceRating.js";
+import { performanceRating, countSideMoves, bookNodesOfLine, openingTermFromLine, PERF } from "../lib/performanceRating.js";
+import PERF_CURVE from "../data/performanceCurve.json";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { ecoHash } from "../lib/ecoHash.js";
 import OPENING_STRENGTH from "../data/openingStrength.json";
@@ -465,7 +466,7 @@ function reviewPerformance(moves, acc, white) {
       opening = openingTermFromLine(nodes, white ? "w" : "b", OPENING_STRENGTH);
     } catch { opening = 0; }
   }
-  return performanceRating({ acc, counts, opening });
+  return performanceRating({ acc, counts, opening }, PERF, PERF_CURVE);
 }
 // (v0.2.1 → v0.3.9 사용자 요청으로 임계값·반영 규칙 재설계) 단계 아이콘의 등급을 그 단계·진영의
 // 정확도로 정한다 — 100 이상은 최선의 수, 90~100은 우수한 수, 80~90은 좋은 수, 60~80은 부정확,
@@ -651,7 +652,7 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
       </div>
       <div style={{ textAlign: "center", marginBottom: perfOpen ? 8 : 16 }}>
         <button onClick={() => setPerfOpen((v) => !v)} className="press" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, color: RV.soft, padding: "4px 8px" }}>{perfOpen ? t("내역 접기") : t("내역 보기")}</button>
-        {!PERF.CALIBRATED && <div style={{ fontSize: 10.5, color: RV.soft, marginTop: 2 }}>{t("보정 전 임시 수치")}</div>}
+        {((perfW && perfW.provisional) || (perfB && perfB.provisional)) && <div style={{ fontSize: 10.5, color: RV.soft, marginTop: 2 }}>{t("보정 전 임시 수치")}</div>}
       </div>
       {perfOpen && <ReviewPerfBreakdown w={perfW} b={perfB} />}
       <ReviewKindTable moves={result.moves} showAll onPick={onPickMove} />

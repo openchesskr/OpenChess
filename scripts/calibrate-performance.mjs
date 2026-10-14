@@ -5,7 +5,7 @@
  *  앱 코드를 esbuild로 번들해 그대로 실행하고(scripts/check-mec-facts.mjs와 같은 방식), 엔진은 Node UCI 어댑터(scripts/lib/nodeEngine.mjs)로 바꿔 끼운다 —
  *  수 등급·희생 확인·날카로움 보정·정확도 계산이 앱과 같은 코드 경로를 탄다.
  *
- *  사용법: node scripts/calibrate-performance.mjs [출력.ndjson=perf-calibration.ndjson]
+ *  사용법: node scripts/calibrate-performance.mjs [출력.ndjson=scripts/calibration/perf-calibration.ndjson]
  *  재실행하면 이미 분석한 대국은 건너뛴다(이어서 하기). 오래 걸리므로 백그라운드로 돌리고 중간에 끊어도 된다.
  *  옵션(환경변수):
  *    GAMES=300        이번 실행에서 새로 분석할 대국 수 상한
@@ -25,7 +25,7 @@ import { countSideMoves } from "../src/lib/performanceRating.js";
 import { createNodeEngine } from "./lib/nodeEngine.mjs";
 
 const ROOT = new URL("../", import.meta.url).pathname;
-const outPath = process.argv[2] || join(ROOT, "perf-calibration.ndjson");
+const outPath = process.argv[2] || join(ROOT, "scripts/calibration/perf-calibration.ndjson");
 const env = (k, d) => (process.env[k] != null && process.env[k] !== "" ? +process.env[k] : d);
 const GAMES = env("GAMES", 300), MINUTES = env("MINUTES", 0), CONC = env("CONCURRENCY", 4), DEPTH = env("DEPTH", 20), MOVETIME = env("MOVETIME", 1500);
 const MIN_ELO = env("MIN_ELO", 2300), MIN_PLIES = env("MIN_PLIES", 40), SEED = env("SEED", 1);
