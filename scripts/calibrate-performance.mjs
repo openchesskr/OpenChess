@@ -7,6 +7,7 @@
  *
  *  입력 대국: 기본은 저장소의 마스터 대회 대국(FIDE 레이팅). SOURCE=경로 를 주면 scripts/fetch-rated-games.mjs가 받은 chess.com 대국 파일을 대신 쓴다
  *  (낮은 레이팅대 — 마스터 표본은 2300 이상뿐이라). 두 출처는 레이팅 척도가 달라 출력 파일을 따로 두고(pool 필드로 구분), fit 단계에서 척도 차이를 맞춘다.
+ *  출력 한 줄(v2): { id, plies, w:{elo,acc,counts,moves:[[등급,수 정확도,승률 손실,날카로움]…]}, b:{…}, pool, … } — 수별 기록(moves)으로 정확도 집계 방식을 바꿔 가며 비교할 수 있다.
  *  사용법: [SOURCE=chesscom-games.ndjson] node scripts/calibrate-performance.mjs [출력.ndjson=scripts/calibration/perf-calibration.ndjson]
  *  재실행하면 이미 분석한 대국은 건너뛴다(이어서 하기). 오래 걸리므로 백그라운드로 돌리고 중간에 끊어도 된다.
  *  옵션(환경변수):
@@ -94,7 +95,9 @@ async function worker(slot) {
       eng.newGame();
       let res;
       try { res = await analyzeGame(sans, eng, DEPTH, null, MOVETIME); } catch (e) { console.error("분석 실패 " + g.id + ": " + e.message); continue; }
-      const side = (white) => ({ elo: white ? g.wElo : g.bElo, acc: white ? res.whiteAcc : res.blackAcc, counts: countSideMoves(res.moves.filter((m) => m.white === white)) });
+      // v2: 수별 기록도 함께 저장한다 — [등급, 수의 정확도, 승률 손실(감점 배율 적용 후), 날카로움]. 정확도를 다른 방식으로 모아 보는 분석(블런더에 덜 민감한 지표 등)을 재분석 없이 할 수 있다.
+      const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+      const side = (white) => { const ms = res.moves.filter((m) => m.white === white); return { elo: white ? g.wElo : g.bElo, acc: white ? res.whiteAcc : res.blackAcc, counts: countSideMoves(ms), moves: ms.map((m) => [m.kind, r1(m.acc), r1(m.lossWinPct), r1(m.sharp)]) }; };
       const rec = { id: g.id, plies: sans.length, w: side(true), b: side(false), pool: g.pool, ...(g.timeClass ? { timeClass: g.timeClass, tc: g.tc } : {}), depth: DEPTH, movetime: MOVETIME, engine: ENGINE, sec: Math.round((Date.now() - g0) / 1000) };
       appendFileSync(outPath, JSON.stringify(rec) + "\n");
       finished++;
