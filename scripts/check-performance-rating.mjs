@@ -10,7 +10,7 @@
  *      보정 당시의 정확도 계산 지문이 지금과 같다(정확도 계산이 바뀌었는데 곡선을 안 맞추면 빌드 실패).
  */
 import { readFileSync } from "node:fs";
-import { PERF, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
+import { PERF, robustAccuracy, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
 import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
 import { sansToFen } from "../src/lib/chessRules.js";
 import { bookPositionKey, ecoHash } from "../src/lib/ecoHash.js";
@@ -84,6 +84,18 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
   if (Object.keys(file.entries).length) ok(file.globalMean > 0, "openingStrength.json에 항목이 있는데 globalMean이 없음");
 }
 
+// robustAccuracy: 수별 정확도가 오르면 오르고, 블런더 한 수의 영향은 화면 정확도(조화·하한 22)보다 작거나 같다
+{
+  const clean = Array(34).fill(["best", 100]);
+  ok(robustAccuracy(clean) === 100 && robustAccuracy([]) === null && robustAccuracy([["pending", null]]) === null, "robustAccuracy 기본값 오류");
+  for (const [fl, pw] of [[22, -1], [40, -1], [50, 0], [60, 1]]) {
+    let prev = -1; for (let a = 0; a <= 100; a += 5) { const v = robustAccuracy([...clean, ["blunder", a]], fl, pw); ok(v >= prev, `robustAccuracy가 수 정확도 ${a}에서 줄어듦(하한 ${fl}, 지수 ${pw})`); prev = v; }
+    ok(robustAccuracy([...clean, ["blunder", 5]], fl, pw) >= robustAccuracy([...clean, ["blunder", 5]], 22, -1), `하한 ${fl}·지수 ${pw}가 화면 정확도(조화·22)보다 블런더에 더 민감함`);
+    ok(robustAccuracy([...clean, ["blunder", 5]], fl, pw) <= 100, "robustAccuracy가 100을 넘음");
+  }
+  ok(robustAccuracy([{ acc: 90 }, { acc: 80 }, { acc: null }]) === robustAccuracy([["x", 90], ["y", 80]]), "수 객체와 수별 기록 형식의 결과가 다름");
+}
+
 // ⑦ 곡선 파일
 {
   const rpc = (curve, acc, c) => performanceRating({ acc, counts: { evidence: 30, book: 0, brilliant: 0, only: 0, blunder: 0, ...c } }, PERF, curve);
@@ -105,6 +117,7 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
     ok(A.every(([, y]) => y >= PERF.FLOOR && y <= PERF.CAP), "곡선 파일 앵커가 [FLOOR, CAP] 밖");
     ok(Array.isArray(file.calibratedRange) && file.calibratedRange[0] >= 0 && file.calibratedRange[1] <= 100 && file.calibratedRange[0] < file.calibratedRange[1], "곡선 파일 calibratedRange 오류");
     ok(file.refMoves > 0, "곡선 파일에 refMoves가 없음");
+    ok(file.statistic && file.statistic.floor === PERF.SOFT_FLOOR && file.statistic.power === PERF.SOFT_POWER, `곡선은 정확도 지표(하한 ${file.statistic && file.statistic.floor}, 지수 ${file.statistic && file.statistic.power})로 보정됐는데 지금 PERF는 (하한 ${PERF.SOFT_FLOOR}, 지수 ${PERF.SOFT_POWER}) — 지표를 바꿨으면 곡선을 다시 맞출 것`);
     const fp = accuracyFingerprint();
     ok(file.fingerprint === fp, `정확도 계산이 곡선 보정 이후 바뀜(곡선 ${file.fingerprint} ≠ 현재 ${fp}) — scripts/calibrate-performance.mjs → fit-performance-curve.mjs로 곡선을 다시 맞출 것`);
   } else ok(file && file.anchors === null, "performanceCurve.json 형식 오류(보정 전이면 anchors는 null)");

@@ -13,18 +13,19 @@
  *  기준 길이: 표본 진영들의 비이론 내 수 개수 중앙값을 refMoves로 담는다(앱은 이 길이의 대국에서 곡선 값이 그대로 나오도록 근거 수 가중치를 정규화한다).
  *
  *  사용법: node scripts/fit-performance-curve.mjs [--dry] [입력.ndjson ...]
- *          (입력 생략 시 scripts/calibration/perf-calibration.ndjson(마스터) + perf-calibration-chesscom.ndjson. pool 필드가 chesscom이면 그 척도, 없으면 마스터(FIDE))
+ *          (입력 생략 시 scripts/calibration/perf-calibration-v2.ndjson(마스터) + perf-calibration-chesscom-v2.ndjson. pool 필드가 chesscom이면 그 척도, 없으면 마스터(FIDE).
+ *           수별 기록(moves)이 있는 v2 파일만 쓴다 — 퍼포먼스 레이팅 입력 S = robustAccuracy(moves, PERF.SOFT_FLOOR, PERF.SOFT_POWER))
  *          --dry: 파일을 쓰지 않고 보고만
  *  옵션(환경변수): MIN_EVIDENCE=20 · MIN_SIDES=300 · MIN_BIN=6(구간당 진영 수 하한) · BIN=100 · BOOT=1000 · OFFSET=오프셋 파일 · OUT=출력 경로
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
-import { PERF } from "../src/lib/performanceRating.js";
+import { PERF, robustAccuracy } from "../src/lib/performanceRating.js";
 
 const here = (p) => new URL(p, import.meta.url).pathname;
 const dry = process.argv.includes("--dry");
 let inputs = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-if (!inputs.length) inputs = [here("./calibration/perf-calibration.ndjson"), here("./calibration/perf-calibration-chesscom.ndjson")].filter(existsSync);
+if (!inputs.length) inputs = [here("./calibration/perf-calibration-v2.ndjson"), here("./calibration/perf-calibration-chesscom-v2.ndjson")].filter(existsSync);
 const outPath = process.env.OUT || here("../src/data/performanceCurve.json");
 const offsetPath = process.env.OFFSET || here("./calibration/chesscom-fide-offset.json");
 const env = (k, d) => (process.env[k] ? +process.env[k] : d);
@@ -47,12 +48,16 @@ let toCc = (fide) => fide, offsetInfo = null;
 
 /* ── 데이터 ── */
 const recs = inputs.flatMap((f) => readFileSync(f, "utf8").split("\n").filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean));
-const pts = [];
+const pts = []; let noMoves = 0;
 for (const r of recs) for (const s of [r.w, r.b]) {
-  if (s.acc == null || !(s.elo > 0) || s.counts.evidence < MIN_EVIDENCE) continue;
+  if (!(s.elo > 0) || s.counts.evidence < MIN_EVIDENCE) continue;
+  if (!s.moves) { noMoves++; continue; }
+  const S = robustAccuracy(s.moves);   // 퍼포먼스 레이팅 전용 정확도(PERF.SOFT_FLOOR·SOFT_POWER)
+  if (S == null) continue;
   const cc = r.pool === "chesscom";
-  pts.push({ R: cc ? s.elo : toCc(s.elo), A: s.acc, n: s.counts.evidence, pool: cc ? "chesscom" : "masters", game: r.id });
+  pts.push({ R: cc ? s.elo : toCc(s.elo), A: S, n: s.counts.evidence, pool: cc ? "chesscom" : "masters", game: r.id });
 }
+if (noMoves) console.error(`※ 수별 기록(moves)이 없는 진영 ${noMoves}개는 제외(v1 파일). v2 분석 결과만 사용`);
 const engines = [...new Set(recs.map((r) => `${r.engine} depth ${r.depth} ${r.movetime}ms`))];
 const fails = [];
 if (!offsetInfo && pts.some((p) => p.pool === "masters")) fails.push("마스터 표본이 있는데 chess.com↔FIDE 오프셋 데이터가 없음(node scripts/fetch-rated-games.mjs offset 먼저)");
@@ -180,7 +185,7 @@ for (let i = 1; i < anchors.length; i++) if (!(anchors[i][0] > anchors[i - 1][0]
 for (const [, y] of anchors) if (y < PERF.FLOOR || y > PERF.CAP) { console.error("✖ 앵커가 [FLOOR, CAP] 밖: " + y); process.exit(1); }
 const ns = pts.map((q) => q.n).sort((u, v) => u - v);
 const out = {
-  version: 2, fingerprint: accuracyFingerprint(), scale: "chesscom-rapid", refMoves: ns[Math.floor(ns.length / 2)],
+  version: 3, fingerprint: accuracyFingerprint(), statistic: { floor: PERF.SOFT_FLOOR, power: PERF.SOFT_POWER }, scale: "chesscom-rapid", refMoves: ns[Math.floor(ns.length / 2)],
   anchors, calibratedRange,
   fit: { sides: pts.length, games: recs.length, rho: Math.round(rho * 1000) / 1000, sigma: round(sigma), curveSE, model: { c: round(full.sat.c), d: round(full.sat.d), tau: Math.round(full.sat.tau), delta: round(full.sat.delta), deltaCI: deltaCI.map(round) }, offset: offsetInfo },
   source: engines.join(", "),

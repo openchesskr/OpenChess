@@ -1,7 +1,9 @@
 // (v0.6.7) 퍼포먼스 레이팅 — 상대 레이팅과 무관하게, 보드 위에서 두어진 수의 절대적인 질만으로 매기는 점수.
 // FIDE의 Rp(상대 평균 + 득점률 표)와 달리 내 레이팅·상대 레이팅이 입력에 없다. 구조:
 //   Rp = 기본(A, n) + 이론(T) + 탁월·유일(Q) − 블런더(B) + 오프닝(O)   → [FLOOR, CAP]
-//   · A  화면에 보이는 최종 누적 정확도(moveQuality.js newCumulativeAccuracy 결과). 화면의 정확도와 순서가 어긋나지 않게 이 값을 그대로 입력으로 쓴다.
+//   · A  퍼포먼스 레이팅 전용 정확도 S(robustAccuracy) — 화면에 보이는 정확도(newCumulativeAccuracy)와 같은 수별 정확도를 쓰되, 블런더 한 수가 점수를 지나치게 끌어내리지
+//        않도록 하한(SOFT_FLOOR)과 거듭제곱 평균(SOFT_POWER)을 완화했다. 화면 정확도는 조화평균에 하한 22라 블런더 1개가 ≈7.6%p(곡선상 ≈970점)를 깎는다.
+//        S는 그 수별 값의 단조 함수라 정확도가 오른 수는 S도 올리지만, 수가 다른 두 판의 순서는 화면 정확도와 드물게 다를 수 있다(블런더 한 번 vs 잔실수 여러 번).
 //   · n  평가가 끝난 비이론 내 수 개수. 많을수록 "그 정확도를 더 오래 유지했다"는 증거가 늘어 기본값이 R(A)에 가까워진다.
 //   · 이론·탁월·유일은 실력으로 본다(사용자 결정) — 암기한 이론도, 찾기 어려운 수도 점수에 들어간다. 포화 곡선은 점수 폭주를 막는 안전장치일 뿐이다.
 //   · 모든 항이 상한으로 묶여 있어 보정된 기본값(R(A))이 합산을 압도한다.
@@ -13,6 +15,8 @@
 export const PERF = {
   FLOOR: 100,            // 모델 최저 레이팅(임시) — 정확도 0%에 가까운 판의 하한
   CAP: 3500,             // 모델 최고 레이팅(임시)
+  SOFT_FLOOR: 22,        // S의 수별 정확도 하한. 조화평균에서 한 수가 기여할 수 있는 몫의 하한 — 클수록 블런더 한 수의 영향이 작다(화면 정확도는 22)
+  SOFT_POWER: -1,        // S의 거듭제곱 평균 지수: −1 조화평균, 0 기하평균, 1 산술평균. 클수록 블런더에 둔감하다(화면 정확도는 −1)
   EVIDENCE_K: 10,        // w(n) = n / (n + K). n=10이면 0.5, 40이면 0.8
   REF_MOVES: 30,         // R(A)가 맞춰진 기준 대국 길이(비이론 내 수). 곡선 파일의 refMoves가 있으면 그 값을 쓴다. base = FLOOR + (R(A) − FLOOR) · w(n) / w(REF)
   THEORY_MAX: 60,        // 이론 항 상한. T = MAX · (1 − e^(−t/TAU)), t = 이론 수 개수
@@ -43,6 +47,22 @@ export function ratingFromAccuracy(acc, anchors = RA_ANCHORS) {
 }
 // 곡선 파일(src/data/performanceCurve.json)이 실제로 보정된 값인지 — 보정 전에는 anchors가 null이다.
 export const isCurveCalibrated = (curve) => !!(curve && Array.isArray(curve.anchors) && curve.anchors.length >= 2);
+
+// 퍼포먼스 레이팅 전용 정확도 S — 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { acc })의 수별 정확도를 하한(floor)·거듭제곱 평균(power)으로 모은다.
+// acc가 null인 수(평가가 끝나지 않은 수)는 뺀다. 이론 수는 acc 100으로 들어가 화면 정확도와 같은 방식으로 섞인다. 반환 null = 평가된 수 없음.
+export function robustAccuracy(sideMoves, floor = PERF.SOFT_FLOOR, power = PERF.SOFT_POWER) {
+  let n = 0, sum = 0;
+  for (const m of sideMoves || []) {
+    const a = Array.isArray(m) ? m[1] : m && m.acc;       // 수별 기록 [등급, 정확도, …]도, analyzeGame의 수 객체도 받는다
+    if (a == null) continue;
+    const v = Math.max(floor, a);
+    sum += power === 0 ? Math.log(v) : Math.pow(v, power); n++;
+  }
+  if (!n) return null;
+  const mean = sum / n;
+  const s = power === 0 ? Math.exp(mean) : Math.pow(mean, 1 / power);
+  return Math.round(clamp(s, 0, 100) * 10) / 10;
+}
 
 // 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { kind, lossWinPct })에서 항별 입력 개수를 센다.
 // 평가가 안 끝난 수(lossWinPct == null, kind가 book이 아닌 경우)는 증거로 세지 않는다.

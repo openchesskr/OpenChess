@@ -2,7 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
 import { seeSquare, canCaptureSquareLegally, VAL, hangingLossSq, lva, newCumulativeAccuracy, matePliesOf, ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
-import { performanceRating, countSideMoves, bookNodesOfLine, openingTermFromLine, PERF } from "../lib/performanceRating.js";
+import { performanceRating, robustAccuracy, countSideMoves, bookNodesOfLine, openingTermFromLine, PERF } from "../lib/performanceRating.js";
 import PERF_CURVE from "../data/performanceCurve.json";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { ecoHash } from "../lib/ecoHash.js";
@@ -457,8 +457,10 @@ function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
 }
 // (v0.6.7) 요약 화면의 퍼포먼스 레이팅 — 상대 레이팅과 무관하게 수의 질만으로 진영별 계산(src/lib/performanceRating.js).
 // 입력 정확도는 화면에 보이는 값(acc)을 그대로 쓴다. 이론 수가 없으면(FEN 시작 대국 등) 오프닝 항은 0이다.
-function reviewPerformance(moves, acc, white) {
-  const counts = countSideMoves(moves.filter((m) => m.white === white));
+function reviewPerformance(moves, white) {
+  const side = moves.filter((m) => m.white === white);
+  const acc = robustAccuracy(side);   // 퍼포먼스 레이팅 전용 정확도(블런더 한 수의 영향을 완화) — 화면에 보이는 정확성과는 집계 방식만 다르다
+  const counts = countSideMoves(side);
   let opening = 0;
   if (counts.book > 0) {
     try {
@@ -597,8 +599,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   // 아래 단계별 정확도(phases)와 항상 같은 계산 경로를 타서 서로 어긋나지 않는다.
   const fullWhiteAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn), [result.moves, sharpOn]);
   const fullBlackAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn), [result.moves, sharpOn]);
-  const perfW = useMemo(() => reviewPerformance(result.moves, fullWhiteAcc, true), [result.moves, fullWhiteAcc]);
-  const perfB = useMemo(() => reviewPerformance(result.moves, fullBlackAcc, false), [result.moves, fullBlackAcc]);
+  const perfW = useMemo(() => reviewPerformance(result.moves, true), [result.moves]);
+  const perfB = useMemo(() => reviewPerformance(result.moves, false), [result.moves]);
   const hasEndgame = endStart < result.moves.length;
   const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
   const phaseRanges = [
