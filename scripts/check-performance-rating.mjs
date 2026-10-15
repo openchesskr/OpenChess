@@ -10,7 +10,7 @@
  *      보정 당시의 정확도 계산 지문이 지금과 같다(정확도 계산이 바뀌었는데 곡선을 안 맞추면 빌드 실패).
  */
 import { readFileSync } from "node:fs";
-import { PERF, robustAccuracy, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
+import { PERF, timeProfile, robustAccuracy, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
 import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
 import { sansToFen } from "../src/lib/chessRules.js";
 import { bookPositionKey, ecoHash } from "../src/lib/ecoHash.js";
@@ -94,6 +94,24 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
     ok(robustAccuracy([...clean, ["blunder", 5]], fl, pw) <= 100, "robustAccuracy가 100을 넘음");
   }
   ok(robustAccuracy([{ acc: 90 }, { acc: 80 }, { acc: null }]) === robustAccuracy([["x", 90], ["y", 80]]), "수 객체와 수별 기록 형식의 결과가 다름");
+}
+
+// 시간 규정 보정: 클래시컬은 지표에서 δ를 빼 점수가 낮아지고, 래피드는 그대로, 자료 없는 시간 규정은 임시 표시
+{
+  const curve = { anchors: [[0, 100], [84, 664], [92.75, 2700], [100, 3500]], refMoves: 36, calibratedRange: [84, 92.75], fit: { model: { delta: 2.7 } } };
+  const mk = (extra) => performanceRating({ acc: 91, counts: { evidence: 36, book: 0, brilliant: 0, only: 0, blunder: 0 }, ...extra }, PERF, curve);
+  const rapid = timeProfile({ timeClass: "rapid" }, curve), std = timeProfile({ timeClass: "standard" }, curve), bl = timeProfile({ timeClass: "blitz" }, curve);
+  ok(rapid.shift === 0 && !rapid.provisional, "래피드는 보정 없이 확정이어야 함");
+  ok(std.shift === 2.7 && !std.provisional, "스탠다드는 δ만큼 보정");
+  ok(bl.shift === 0 && bl.provisional === true && timeProfile({ timeClass: "daily" }, curve).provisional === true, "블리츠·일일은 provisional");
+  ok(timeProfile({ white: { rating: 2750 }, black: { rating: 2700 } }, curve).shift === 2.7, "시간 규정 없는 마스터 대국(양쪽 2300+)은 클래시컬로 봐야 함");
+  ok(timeProfile({ white: { rating: 1500 }, black: { rating: 1500 } }, curve).provisional === true && timeProfile(null, curve).provisional === true, "시간 규정·레이팅 불명은 provisional");
+  ok(timeProfile({ timeClass: "standard" }, null).shift === 0, "곡선이 없으면 시간 규정 보정도 없음");
+  const base = mk({}), cl = mk({ timeShift: 2.7 });
+  ok(cl.rating < base.rating && cl.time < 0 && base.time === 0, "클래시컬 보정이 점수를 낮추지 않음");
+  ok(Math.abs(cl.base + cl.time - (mk({ timeShift: 2.7 }).base + mk({ timeShift: 2.7 }).time)) < 1e-9 && Math.abs((cl.base + cl.time) - base.base) > 100, "시간 규정 보정 크기가 비정상");
+  ok(mk({ forceProvisional: true }).provisional === true, "forceProvisional이 무시됨");
+  for (let sh = 0; sh < 6; sh += 0.5) ok(mk({ timeShift: sh + 0.5 }).rating <= mk({ timeShift: sh }).rating, `보정량 ${sh}→${sh + 0.5}에서 점수가 올라감`);
 }
 
 // ⑦ 곡선 파일

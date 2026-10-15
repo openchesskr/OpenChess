@@ -2,7 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
 import { seeSquare, canCaptureSquareLegally, VAL, hangingLossSq, lva, newCumulativeAccuracy, matePliesOf, ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
-import { performanceRating, robustAccuracy, countSideMoves, bookNodesOfLine, openingTermFromLine, PERF } from "../lib/performanceRating.js";
+import { performanceRating, robustAccuracy, countSideMoves, bookNodesOfLine, openingTermFromLine, timeProfile, PERF } from "../lib/performanceRating.js";
 import PERF_CURVE from "../data/performanceCurve.json";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { ecoHash } from "../lib/ecoHash.js";
@@ -457,7 +457,7 @@ function reviewPhaseAccuracy(moves, fromPly, toPly, white, sharpOn = true) {
 }
 // (v0.6.7) 요약 화면의 퍼포먼스 레이팅 — 상대 레이팅과 무관하게 수의 질만으로 진영별 계산(src/lib/performanceRating.js).
 // 입력 정확도는 화면에 보이는 값(acc)을 그대로 쓴다. 이론 수가 없으면(FEN 시작 대국 등) 오프닝 항은 0이다.
-function reviewPerformance(moves, white) {
+function reviewPerformance(moves, white, game) {
   const side = moves.filter((m) => m.white === white);
   const acc = robustAccuracy(side);   // 퍼포먼스 레이팅 전용 정확도(블런더 한 수의 영향을 완화) — 화면에 보이는 정확성과는 집계 방식만 다르다
   const counts = countSideMoves(side);
@@ -468,7 +468,8 @@ function reviewPerformance(moves, white) {
       opening = openingTermFromLine(nodes, white ? "w" : "b", OPENING_STRENGTH);
     } catch { opening = 0; }
   }
-  return performanceRating({ acc, counts, opening }, PERF, PERF_CURVE);
+  const tp = timeProfile(game, PERF_CURVE);   // 시간 규정 보정(클래시컬이면 지표에서 δ를 뺌) · 보정 자료가 없는 시간 규정이면 임시 표시
+  return performanceRating({ acc, counts, opening, timeShift: tp.shift, forceProvisional: tp.provisional }, PERF, PERF_CURVE);
 }
 // (v0.2.1 → v0.3.9 사용자 요청으로 임계값·반영 규칙 재설계) 단계 아이콘의 등급을 그 단계·진영의
 // 정확도로 정한다 — 100 이상은 최선의 수, 90~100은 우수한 수, 80~90은 좋은 수, 60~80은 부정확,
@@ -513,6 +514,7 @@ function ReviewPerfBreakdown({ w, b }) {
   const signed = (v) => (v >= 0 ? "+" : "−") + Math.abs(Math.round(v));
   const rows = [
     [t("정확도 기반"), (p) => (p ? String(Math.round(p.base)) : "—")],
+    ...((w && w.time < -0.5) || (b && b.time < -0.5) ? [[t("시간 규정 보정"), (p) => (p ? signed(p.time) : "—")]] : []),
     [t("이론"), (p) => (p ? signed(p.theory) : "—")],
     [t("탁월·유일"), (p) => (p ? signed(p.quality) : "—")],
     [t("블런더"), (p) => (p ? signed(-p.blunder) : "—")],
@@ -599,8 +601,8 @@ function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   // 아래 단계별 정확도(phases)와 항상 같은 계산 경로를 타서 서로 어긋나지 않는다.
   const fullWhiteAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, true, sharpOn), [result.moves, sharpOn]);
   const fullBlackAcc = useMemo(() => reviewPhaseAccuracy(result.moves, 0, result.moves.length - 1, false, sharpOn), [result.moves, sharpOn]);
-  const perfW = useMemo(() => reviewPerformance(result.moves, true), [result.moves]);
-  const perfB = useMemo(() => reviewPerformance(result.moves, false), [result.moves]);
+  const perfW = useMemo(() => reviewPerformance(result.moves, true, game), [result.moves, game]);
+  const perfB = useMemo(() => reviewPerformance(result.moves, false, game), [result.moves, game]);
   const hasEndgame = endStart < result.moves.length;
   const midTo = hasEndgame ? endStart - 1 : result.moves.length - 1;
   const phaseRanges = [

@@ -2367,4 +2367,5 @@ export default {
   "정확도 기반": "Accuracy-based",
   "탁월·유일": "Brilliant · Only",
   "보정 전 임시 수치": "Provisional value before calibration",
+  "시간 규정 보정": "Time control adjustment",
 };

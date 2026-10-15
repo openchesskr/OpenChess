@@ -90,26 +90,45 @@ export function openingTerm(entry, globalMean, p = PERF) {
   return p.OPENING_MAX * Math.tanh((shrunk - globalMean) / p.OPENING_SCALE);
 }
 
-/* 퍼포먼스 레이팅 계산. 입력: { acc, counts(countSideMoves 결과), opening }  — opening은 이미 계산된 오프닝 항(없으면 0).
+// 시간 규정 보정. 곡선은 chess.com 래피드 대국(주로 10분)으로 맞췄고, 마스터 클래시컬 대국은 같은 레이팅에서 지표가 δ(곡선 파일 fit.model.delta)만큼 높게 나온다.
+//  · 래피드: 보정 없음 · 스탠다드(30분 이상): 클래시컬로 보고 지표에서 δ를 뺀다
+//  · 블리츠·불릿·일일: 보정 자료가 없어 provisional  · 시간 규정을 모르면: 양쪽 2300+ 레이팅(마스터 대회 대국)만 클래시컬로 보고, 그 외는 provisional
+// 마스터 대회 중에는 래피드·블리츠 대회도 있어 클래시컬로 잘못 볼 수 있다(대회 표본의 대부분은 클래시컬).
+export function timeProfile(game, curve) {
+  const delta = curve && curve.fit && curve.fit.model && curve.fit.model.delta;
+  const d = delta > 0 ? delta : 0;
+  const tc = game && game.timeClass;
+  if (tc === "rapid") return { shift: 0, provisional: false };
+  if (tc === "standard") return { shift: d, provisional: d === 0 };
+  if (tc) return { shift: 0, provisional: true };
+  const wr = game && game.white && game.white.rating, br = game && game.black && game.black.rating;
+  if (d > 0 && wr >= 2300 && br >= 2300) return { shift: d, provisional: false };
+  return { shift: 0, provisional: true };
+}
+
+/* 퍼포먼스 레이팅 계산. 입력: { acc, counts(countSideMoves 결과), opening, timeShift, forceProvisional }  — opening은 이미 계산된 오프닝 항(없으면 0),
+   timeShift는 timeProfile의 shift(지표에서 빼는 값), forceProvisional은 timeProfile의 provisional.
    curve: 곡선 파일 내용(없거나 보정 전이면 임시 앵커). provisional = 곡선이 보정 전이거나 정확도가 실측 구간(calibratedRange) 밖.
-   반환: null(근거 수 0 또는 정확도 없음) | { rating, base, theory, quality, blunder, opening, n, provisional }. 모든 항은 화면에 내역으로 보여줄 수 있게 따로 돌려준다. */
-export function performanceRating({ acc, counts, opening = 0 }, p = PERF, curve = null) {
+   반환: null(근거 수 0 또는 정확도 없음) | { rating, base, time, theory, quality, blunder, opening, n, provisional }. 모든 항은 화면에 내역으로 보여줄 수 있게 따로 돌려준다. */
+export function performanceRating({ acc, counts, opening = 0, timeShift = 0, forceProvisional = false }, p = PERF, curve = null) {
   if (acc == null || !counts || counts.evidence <= 0) return null;
   const cal = isCurveCalibrated(curve);
   const anchors = cal ? curve.anchors : RA_ANCHORS;
   const ref = cal && curve.refMoves > 0 ? curve.refMoves : p.REF_MOVES;
   const w = counts.evidence / (counts.evidence + p.EVIDENCE_K), wRef = ref / (ref + p.EVIDENCE_K);
   const range = cal && Array.isArray(curve.calibratedRange) ? curve.calibratedRange : null;
-  const provisional = !cal || (range ? acc < range[0] || acc > range[1] : true);
-  const base = p.FLOOR + (ratingFromAccuracy(acc, anchors) - p.FLOOR) * (w / wRef);
+  const accAdj = acc - (timeShift > 0 ? timeShift : 0);     // 시간 규정 보정 후 지표
+  const provisional = forceProvisional || !cal || (range ? accAdj < range[0] || accAdj > range[1] : true);
+  const baseAt = (a) => p.FLOOR + (ratingFromAccuracy(a, anchors) - p.FLOOR) * (w / wRef);
+  const base = baseAt(acc), time = baseAt(accAdj) - base;   // time ≤ 0: 시간 규정 보정이 깎은 양(내역 표의 별도 행)
   const theory = p.THEORY_MAX * (1 - Math.exp(-counts.book / p.THEORY_TAU));
   const s = p.W_BRILLIANT * counts.brilliant + p.W_ONLY * counts.only;
   const quality = p.QUALITY_MAX * (1 - Math.exp(-s / p.QUALITY_SCALE));
   const b = counts.blunder;
   const blunder = p.BLUNDER_UNIT * (b + (p.BLUNDER_GROWTH * b * (b - 1)) / 2);
   const o = clamp(opening, -p.OPENING_MAX, p.OPENING_MAX);
-  const rating = clamp(base + theory + quality - blunder + o, p.FLOOR, p.CAP);
-  return { rating: Math.round(rating), base, theory, quality, blunder, opening: o, n: counts.evidence, provisional };
+  const rating = clamp(base + time + theory + quality - blunder + o, p.FLOOR, p.CAP);
+  return { rating: Math.round(rating), base, time, theory, quality, blunder, opening: o, n: counts.evidence, provisional };
 }
 
 /* ── 오프닝 강도 데이터(src/data/openingStrength.json) ──

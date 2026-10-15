@@ -2367,4 +2367,5 @@ export default {
   "정확도 기반": "Basado en la precisión",
   "탁월·유일": "Brillante · Única",
   "보정 전 임시 수치": "Valor provisional previo a la calibración",
+  "시간 규정 보정": "Ajuste por ritmo de juego",
 };
