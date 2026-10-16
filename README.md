@@ -86,7 +86,7 @@
 
 **기능**
 - 프로필 "최근 10판 퍼포먼스 레이팅"(`app/recentPerf.jsx`, `lib/recentPerformance.js`): OpenChess·chess.com 모두 `GameRecordSummary`의 `footer`로 전체 기간 전적 박스 하단에 표시. 분석이 저장된 대국만 최신순으로 10판 모음(10판씩 조회, 최대 40판 후보). 분석된 대국이 3판 미만이면 안내만 표시, 시간 규정이 섞이거나 보정 구간 밖이면 "보정 전 임시 수치" 표기. 한 판 값은 오차가 ±1000점 안팎이라 표시하지 않고 합산 값만 보여줌(연구: 오차가 판 수의 제곱근에 반비례, 10판 약 ±300, 100판 약 ±110).
-- 계산식(`lib/performanceRating.js`): 상대·본인 레이팅과 무관하게 수의 질만 사용. 기본(수 질 점수 S, 근거 수 n) + 이론 + 탁월·유일 - 블런더 + 오프닝, [100, 3500]으로 제한. S = 평가된 비이론 수의 등급별 손실(`TIER_LOSS`)을 `TIER_CAP`(150)으로 잘라 평균 낸 값을 0~100으로 뒤집은 것(`tierScore`). 여러 판은 모든 수를 합쳐 S를 구하고 나머지 항은 판마다 계산해 평균(`pooledPerformance`, 12수 미만 판 제외). 마스터 클래시컬 대국은 지표가 높게 나오는 차이(δ)를 시간 규정 보정으로 반영.
+- 계산식(`lib/performanceRating.js`): 상대·본인 레이팅과 무관하게 수의 질만 사용. 기본(수 질 점수 S, 근거 수 n) + 이론 + 탁월·유일 - 블런더 + 오프닝, [100, 3500]으로 제한. S = 평가된 비이론 수의 등급별 손실(`TIER_LOSS`)을 `TIER_CAP`(150)으로 잘라 평균 낸 값을 0~100으로 뒤집은 것(`tierScore`). 여러 판은 모든 수를 합쳐 S를 구하고 나머지 항은 판마다 계산해 평균(`pooledPerformance`, 10수 미만 판 제외). 마스터 클래시컬 대국은 지표가 높게 나오는 차이(δ)를 시간 규정 보정으로 반영.
 - 곡선 보정(`data/performanceCurve.json`): chess.com 래피드 레이팅 척도. 마스터 대국(FIDE 2300+, 오프셋 -34)과 chess.com 대국 777판(진영 1,432개, 엔진 depth 20)으로 포화형 곡선을 맞춤. 정확도 계산 코드 지문과 지표 종류를 파일에 담아 `check-performance-rating`이 어긋나면 빌드를 막음. 오프닝 항은 마스터 대국에서 뽑은 `data/openingStrength.json`(4,429 포지션).
 - 보정 도구 `scripts/`: `calibrate-performance.mjs`(앱 채점 코드를 Node 엔진 어댑터로 실행), `fetch-rated-games.mjs`, `fit-performance-curve.mjs`, `compare-accuracy-statistics.mjs`, `analyze-multigame.mjs`(다판 합산 오차 연구), `build-opening-strength.mjs`. 데이터는 `scripts/calibration/`.
 - OpenChess 대국 분석 저장: 리뷰가 끝나면 `game_analysis_put` RPC로 올림. 서버가 기보로 내가 참가한 같은 대국을 찾아 묶고, 올린 사람별로 저장(`game_analyses`, 키 kind+game_id+uid). 프로필은 주인이 올린 분석만 읽음.
