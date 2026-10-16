@@ -15,6 +15,7 @@ const W_FULL = 340, W_MIN = 210, GAP = 10, EDGE = 16, TITLE_H = 40, BODY_H = 460
 export const canDock = () => typeof window !== "undefined" && window.innerWidth >= DOCK_MIN_VIEWPORT && !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
 const loadWins = () => { try { const v = JSON.parse(window.sessionStorage.getItem(KEY) || "[]"); return Array.isArray(v) ? v.filter((w) => w && w.id && w.type) : []; } catch { return []; } };
 const saveWins = (w) => { try { window.sessionStorage.setItem(KEY, JSON.stringify(w)); } catch { /* 저장 불가 환경 — 새로고침 복원만 포기 */ } };
+const TRANS = "height .18s ease, right .18s ease";
 const heightOf = (w, vh) => (w.min ? TITLE_H : Math.min(BODY_H + TITLE_H, vh - 24));
 const clampPos = (p, w, vh, vwid) => ({ x: Math.max(0, Math.min(p.x, vwid - W_FULL)), y: Math.max(0, Math.min(p.y, vh - heightOf(w, vh))) });
 
@@ -70,16 +71,25 @@ function Frame({ win, title, children, dock, right }) {
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
     if (!d.moved && Math.hypot(dx, dy) < 6) return;
     d.moved = true;
-    dock.setFloat(win.id, clampPos({ x: d.ox + dx, y: d.oy + dy }, win, vh, vwid));
+    // (v0.6.8) 끄는 동안은 React 상태를 거치지 않고 창 요소의 위치만 직접 바꾼다. 매 포인터 이벤트마다 앱 전체를 다시 그리던 때는 내용물이 창 틀보다 늦게 따라와 어긋나 보였다. 놓을 때 한 번만 상태에 저장한다.
+    d.pos = clampPos({ x: d.ox + dx, y: d.oy + dy }, win, vh, vwid);
+    const el = ref.current; if (!el) return;
+    el.style.transition = "none"; el.style.right = "auto"; el.style.bottom = "auto";
+    el.style.left = d.pos.x + "px"; el.style.top = d.pos.y + "px";
   };
-  const onUp = () => { const d = drag.current; drag.current = null; if (d && !d.moved) dock.toggleMin(win.id); };
+  const onUp = () => {
+    const d = drag.current; drag.current = null; if (!d) return;
+    if (!d.moved) { dock.toggleMin(win.id); return; }
+    if (ref.current) ref.current.style.transition = TRANS;
+    if (d.pos) dock.setFloat(win.id, d.pos);
+  };
   const h = heightOf(win, vh);
   const pos = floating ? { left: win.float.x, top: win.float.y } : { right, bottom: 0 };
   return (
     <section ref={ref} role="dialog" aria-label={title} onPointerDown={() => dock.focus(win.id)}
-      style={{ position: "fixed", ...pos, zIndex: floating ? Math.min(79, Z0 + 1 + (win.z % 18)) : Z0, transition: "height .18s ease, right .18s ease", width: win.min && !floating ? W_MIN : W_FULL, height: h, display: "flex", flexDirection: "column",
+      style={{ position: "fixed", ...pos, zIndex: floating ? Math.min(79, Z0 + 1 + (win.z % 18)) : Z0, transition: TRANS, width: win.min && !floating ? W_MIN : W_FULL, height: h, display: "flex", flexDirection: "column",
         background: T.paper, border: "1px solid #5A4630", borderBottom: floating ? "1px solid #5A4630" : "none", borderRadius: floating ? 12 : "12px 12px 0 0", overflow: "hidden", boxShadow: "0 10px 34px -8px rgba(0,0,0,.55)" }}>
-      <div onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; }} onDoubleClick={(e) => { if (!e.target.closest("[data-nodrag]")) dock.redock(win.id); }}
+      <div onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={(e) => { if (!e.target.closest("[data-nodrag]")) dock.redock(win.id); }}
         title={floating ? t("두 번 누르면 아래에 다시 붙음") : undefined}
         style={{ height: TITLE_H, flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "0 6px 0 12px", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, cursor: "grab", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
