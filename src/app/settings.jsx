@@ -655,14 +655,32 @@ function UgcTranslateToggle() {
   );
 }
 
-// (v0.6.5) 개발진 블록 안의 큰 온·오프 토글 — 라벨은 작게, 토글은 손가락으로 누르기 쉽게 크게.
-function DevBigToggle({ label, on, onToggle }) {
+// (v0.6.7) 개발자 도구 카드의 모드 켜기/끄기 줄 — 다른 설정 토글과 같은 크기(46×26)·같은 색을 쓴다.
+function DevModeRow({ label, hint, on, onToggle }) {
   return (
-    <div className="flex items-center justify-between" style={{ padding: "4px 0" }}>
-      <span className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}><Crown size={14} style={{ color: T.brass }} />{label}</span>
-      <button onClick={onToggle} role="switch" aria-checked={!!on} aria-label={label} className="press" style={{ width: 76, height: 40, borderRadius: 20, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0, transition: "background .15s" }}>
-        <span style={{ position: "absolute", top: 4, left: on ? 40 : 4, width: 32, height: 32, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,.3)", transition: "left .15s" }} />
+    <div className="flex items-center justify-between" style={{ gap: 12, padding: "6px 0" }}>
+      <div style={{ minWidth: 0 }}>
+        <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}><Crown size={14} style={{ color: T.brass, flexShrink: 0 }} />{label}</div>
+        {hint && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
+      </div>
+      <button onClick={onToggle} role="switch" aria-checked={!!on} aria-label={label} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+    </div>
+  );
+}
+// (v0.6.7) 개발자 도구 카드 안의 기능별 묶음 — 제목 줄을 눌러 접고 펼친다. 안의 패널들은 자기 소제목을 그대로 쓴다.
+function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div style={{ marginTop: 10, borderRadius: 12, border: "1px solid #E4D5B6", background: "rgba(255,255,255,.45)", overflow: "hidden" }}>
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="press flex items-center" style={{ width: "100%", gap: 8, padding: "11px 12px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+        <Icon size={15} style={{ color: T.brass, flexShrink: 0 }} />
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span>
+          {desc && <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 1 }}>{desc}</span>}
+        </span>
+        <ChevronDown size={16} style={{ color: T.inkSoft, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
       </button>
+      {open && <div style={{ padding: "4px 12px 14px", borderTop: "1px solid #E4D5B6" }}>{children}</div>}
     </div>
   );
 }
@@ -984,15 +1002,9 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           </div>
         </div>
       )}
-      {/* (v0.6.5, 사용자 요청) 개발진은 푸터에서 떼어 별도 블록으로 — 개발자·공동 개발자는 이 블록 안의 큰 토글로 개발자 모드를 켜고 끈다. */}
+      {/* (v0.6.5, 사용자 요청) 개발진은 푸터에서 떼어 별도 블록으로 — (v0.6.7) 개발자 모드 토글은 맨 아래 "개발자 도구" 카드로 옮겼다. */}
           <div style={card}>
             {cardTitle(Users, t("개발진"))}
-            {(isDev || isCodev) && (
-              <div style={{ margin: "2px 0 12px", padding: "12px 14px", borderRadius: 12, background: "rgba(196,154,80,.1)", border: "1px solid #E4D5B6" }}>
-                {isDev && <DevBigToggle label={t("개발자 모드")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
-                {isCodev && <DevBigToggle label={t("공동 개발자 모드")} on={codevOn} onToggle={() => setCodevOn((v) => !v)} />}
-              </div>
-            )}
 
           <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
             {/* (사용자 요청) 개발자 이름 왼쪽의 왕관 아이콘을 없앤다. (사용자 요청) 이름을 누르면 그
@@ -1067,38 +1079,43 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           순서를 맞춰(권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 관리) 카드 하나로 모았다. 스크롤을 내려야
           보이는 "2번째 페이지"처럼 맨 아래에 두고, 개발자/공동 개발자 모드를 막 켠 순간에는
           devToolsRef로 이 블록까지 자동 스크롤한다(위 devToolsRef 선언부 참고). */}
-      {canEdit && (
+      {(isDev || isCodev) && (
         <div ref={devToolsRef} style={{ ...card, marginTop: 28, border: "1.5px solid " + T.brass, background: "linear-gradient(180deg,#FBF4E2,#F2E8D5)" }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
+          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>
-
-          {canManageCodev && (
+          {isDev && <DevModeRow label={t("개발자 모드")} hint={t("켜면 아래 도구와 편집 기능이 열림")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
+          {isCodev && <DevModeRow label={t("공동 개발자 모드")} hint={t("임명 권한을 제외한 모든 기능 사용 가능")} on={codevOn} onToggle={() => setCodevOn((v) => !v)} />}
+          {canEdit && (
             <>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("공동 개발자 지정")}</div>
-              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder={t("아이디 (영문+숫자)")} style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{codevBusy ? t("확인 중…") : t("추가")}</button></div>
-              {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
-              <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>{tx("공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가", <b>{t("추가")}</b>)}</p>
-              <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+              {/* (v0.6.7, 사용자 요청) 흩어져 있던 도구를 기능별 네 묶음으로: 계정·권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 → (개발자만) 신고. 스크롤이 길어지지 않게 접고 펼친다. */}
+              {canManageCodev && (
+                <DevGroup icon={Users} title={t("계정·권한")} desc={t("공동 개발자 지정")}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, margin: "8px 0" }}>{t("공동 개발자 지정")}</div>
+                  <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder={t("아이디 (영문+숫자)")} style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{codevBusy ? t("확인 중…") : t("추가")}</button></div>
+                  {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
+                  <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>{tx("공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가", <b>{t("추가")}</b>)}</p>
+                </DevGroup>
+              )}
+              <DevGroup icon={SlidersHorizontal} title={t("재화·티어 테스트")} desc={t("OC 코인·경험치·티어를 바로 바꿔 연출 확인")}>
+                <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} card={{}} />
+              </DevGroup>
+              <DevGroup icon={Puzzle} title={t("퍼즐 콘텐츠")} desc={t("일일 퍼즐·일괄 재생성·검사")}>
+                <DailyPuzzleDevPanel card={{}} />
+                <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+                <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
+                <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
+                <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
+              </DevGroup>
+              {/* (v0.6.1, 사용자 요청) 신고 열람 — 대화 내용이 들어 있어 개발자 계정(공동 개발자 제외)만 */}
+              {canManageCodev && (
+                <DevGroup icon={MessageCircle} title={t("신고")} desc={t("접수된 신고 열람·처리")}>
+                  <ReportsDevPanel />
+                </DevGroup>
+              )}
             </>
           )}
-
-          {/* (기능) 티어/경험치 승급 연출·색상·토스트를 실제로 몇 주씩 퍼즐을 풀지 않고도 바로
-              확인할 수 있도록, 누적 경험치를 자유롭게 더하거나 특정 티어로 곧장 점프한다. */}
-          <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} card={{}} />
-          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
-          <DailyPuzzleDevPanel card={{}} />
-          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
-          <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
-          <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
-          <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
-          {/* (v0.6.1, 사용자 요청) 신고 열람 — 대화 내용이 들어 있어 개발자 계정(공동 개발자 제외)만 */}
-          {canManageCodev && (<>
-            <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
-            <ReportsDevPanel />
-          </>)}
         </div>
       )}
 
