@@ -1793,14 +1793,17 @@ function FocusPages({ labels, pages, wide }) {
     rafRef.current = requestAnimationFrame(() => { const tr = trackRef.current; if (tr && tr.clientWidth) setIdx(Math.max(0, Math.min(n - 1, Math.round(tr.scrollLeft / tr.clientWidth)))); });
   };
   return (
-    <div ref={sectionRef} style={{ marginTop: wide ? 0 : 12 }}>
-      <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
+    <div ref={sectionRef} style={wide ? { height: "100%", display: "flex", flexDirection: "column", minHeight: 0 } : { marginTop: 12 }}>
+      {/* (v0.6.8) 2단에서는 이 열 안쪽만 스크롤되므로 버튼 줄은 고정 배경 없이 위에 둔다(배경 사각형이 화면 배경과 어긋나 보이던 문제). */}
+      <div style={wide ? { flexShrink: 0, display: "flex", gap: 6, padding: "0 0 10px" } : { position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
         {labels.map((lab, i) => (
           <button key={i} onClick={() => goTo(i)} aria-pressed={idx === i} className="press" style={{ flex: 1, minWidth: 0, padding: "9px 4px", borderRadius: 10, border: "1px solid " + (idx === i ? T.brass : "#5A4630"), background: idx === i ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(0,0,0,.3)", color: idx === i ? "#241509" : T.ivory, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background .2s ease, color .2s ease" }}>{lab}</button>
         ))}
       </div>
+      <div style={wide ? { flex: 1, minHeight: 0, overflowY: "auto", scrollbarWidth: "thin", paddingBottom: 24 } : undefined}>
       <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
         {pages.map((p, i) => <div key={i} data-fp-page="" ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start", boxSizing: "border-box", paddingTop: i === 0 ? 12 : anchorTop }}>{p}</div>)}
+      </div>
       </div>
     </div>
   );
@@ -2520,8 +2523,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰 열기 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
   };
   return (
-    <div style={wide ? { display: "grid", gridTemplateColumns: "minmax(0," + Math.max(focusBoardPx, 420) + "px) minmax(0,1fr)", gap: 28, alignItems: "start" } : undefined}>
-      <div style={wide ? { position: "sticky", top: 0 } : undefined}>
+    <div style={wide ? { display: "grid", gridTemplateColumns: "minmax(0," + Math.max(focusBoardPx, 420) + "px) minmax(0,1fr)", gap: 28, alignItems: "stretch", height: "calc(100vh - 78px)" } : undefined}>
+      <div style={wide ? { overflowY: "auto", minHeight: 0, scrollbarWidth: "none" } : undefined}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
         <button onClick={onBack} className="press" title={t("집중 분석 종료")} style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
         {/* (v0.6.6, 사용자 요청) 분석 탭 메인의 기보를 가져와 집중 분석 안에서 지나온 경로를 기록하고, 수를 눌러 그 시점으로 자유롭게 이동한다. */}
