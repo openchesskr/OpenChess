@@ -434,7 +434,7 @@ export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnal
         <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
         <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
       </div>
-      {overall ? <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="oc" />} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
+      {overall ? <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="oc" ownerUid={uid} />} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
       <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={false} />
       <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={timeFilter + "|" + colorFilter}
         onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />

@@ -1,5 +1,5 @@
 // (v0.6.7) 프로필 "최근 N판 퍼포먼스 레이팅" — 전적 박스(GameRecordSummary) 하단에 들어가는 줄.
-// 분석이 저장된 대국만 쓴다: chess.com 대국은 reviewed_games.analysis, OpenChess 대국(실시간·봇)은 game_analyses(리뷰할 때 서버에 올라간다). 분석이 없는 대국은 건너뛴다.
+// 분석이 저장된 대국만 쓴다: chess.com 대국은 reviewed_games.analysis, OpenChess 대국(실시간·봇)은 game_analyses(리뷰할 때 서버에 올라간다 — 프로필 주인이 올린 분석만 읽는다). 분석이 없는 대국은 건너뛴다.
 // 한 판의 값은 오차가 ±1000점 안팎이라 보여주지 않고, 분석된 최근 N판의 수를 합쳐서 계산한다(src/lib/recentPerformance.js).
 import React, { useEffect, useMemo, useState } from "react";
 import { T } from "../lib/theme.js";
@@ -14,34 +14,34 @@ const memo = new Map();                   // "cc:<id>" | "oc:<kind>-<id>" → �
 
 const okAnalysis = (a) => a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && Array.isArray(a.result.moves) ? a.result.moves : null;
 
-async function fetchChunk(source, chunk) {
-  const need = chunk.filter((g) => !memo.has(keyOf(source, g)));
+async function fetchChunk(source, chunk, ownerUid) {
+  const need = chunk.filter((g) => !memo.has(keyOf(source, g, ownerUid)));
   if (need.length && SB_ON) {
     try {
       if (source === "cc") {
         const rows = await sbSelect("reviewed_games?cc_id=in.(" + need.map((g) => g.id).join(",") + ")&select=cc_id,analysis");
         const by = new Map((rows || []).map((r) => [String(r.cc_id), okAnalysis(r.analysis)]));
-        for (const g of need) memo.set(keyOf(source, g), by.get(String(g.id)) || null);
+        for (const g of need) memo.set(keyOf(source, g, ownerUid), by.get(String(g.id)) || null);
       } else {
         const by = new Map();
         for (const kind of ["pvp", "bot"]) {
           const ids = need.filter((g) => String(g.id).startsWith(kind + "-")).map((g) => String(g.id).slice(kind.length + 1)).filter((x) => /^\d+$/.test(x));
           if (!ids.length) continue;
-          const rows = await sbSelect("game_analyses?kind=eq." + kind + "&game_id=in.(" + ids.join(",") + ")&select=game_id,analysis");
+          const rows = await sbSelect("game_analyses?kind=eq." + kind + "&uid=eq." + encodeURIComponent(ownerUid) + "&game_id=in.(" + ids.join(",") + ")&select=game_id,analysis");
           for (const r of rows || []) by.set(kind + "-" + r.game_id, okAnalysis(r.analysis));
         }
-        for (const g of need) memo.set(keyOf(source, g), by.get(String(g.id)) || null);
+        for (const g of need) memo.set(keyOf(source, g, ownerUid), by.get(String(g.id)) || null);
       }
     } catch { return null; }   // 조회 실패는 기억하지 않는다(다음에 다시 시도)
   }
-  return chunk.map((g) => ({ game: g, moves: memo.get(keyOf(source, g)) || null }));
+  return chunk.map((g) => ({ game: g, moves: memo.get(keyOf(source, g, ownerUid)) || null }));
 }
-const keyOf = (source, g) => source + ":" + g.id;
+const keyOf = (source, g, ownerUid) => source + ":" + (ownerUid || "") + ":" + g.id;
 
 // games: 지금 화면의 대국 목록(필터 적용됨). source: "cc"(chess.com) | "oc"(OpenChess). 반환: { status: "loading" | "done", items: 최신순 [{ game, moves }] (분석 있는 대국만, 최대 N판) }
-function useAnalyzedRecent(games, source) {
+function useAnalyzedRecent(games, source, ownerUid) {
   const cand = useMemo(() => [...(games || [])].filter((g) => g && g.id != null && Array.isArray(g.moves) && g.moves.length >= 8).sort((a, b) => (b.endTime || 0) - (a.endTime || 0)).slice(0, MAX_CANDIDATES), [games]);
-  const sig = source + "|" + cand.map((g) => g.id).join(",");
+  const sig = source + "|" + (ownerUid || "") + "|" + cand.map((g) => g.id).join(",");
   const [state, setState] = useState({ sig: "", status: "loading", items: [] });
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +49,7 @@ function useAnalyzedRecent(games, source) {
     (async () => {
       const items = [];
       for (let i = 0; i < cand.length && items.length < RECENT_PERF_N; i += CHUNK) {
-        const got = await fetchChunk(source, cand.slice(i, i + CHUNK));
+        const got = await fetchChunk(source, cand.slice(i, i + CHUNK), ownerUid);
         if (cancelled) return;
         if (!got) break;
         for (const x of got) if (x.moves && x.moves.length === x.game.moves.length) items.push(x);   // 기보와 수 개수가 다른 분석은 버린다
@@ -61,8 +61,8 @@ function useAnalyzedRecent(games, source) {
   return state.sig === sig ? state : { sig, status: "loading", items: [] };
 }
 
-export function RecentPerformanceRow({ games, source }) {
-  const { status, items } = useAnalyzedRecent(games, source);
+export function RecentPerformanceRow({ games, source, ownerUid }) {
+  const { status, items } = useAnalyzedRecent(games, source, ownerUid);
   const perf = useMemo(() => (status === "done" ? recentPerformance(items) : null), [status, items]);
   const label = tx("최근 {0}판 퍼포먼스 레이팅", RECENT_PERF_N);
   return (

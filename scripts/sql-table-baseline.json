@@ -7,7 +7,7 @@
   "chat_poll_votes":["message_id","uid","san","created_at"],
   "chat_reactions":["message_id","uid","emoji","created_at"],
   "daily_puzzle_cache":["date","data","created_at"],
-  "game_analyses":["kind","game_id","analysis","updated_at"],
+  "game_analyses":["kind","game_id","uid","analysis","updated_at"],
   "daily_puzzle_picks":["date","puzzle_no","score","picked_at"],
   "daily_puzzle_themes":["id","starts_on","opening_tag","label","created_by","created_at"],
   "daily_puzzles_dev":["date","pgn","sans","puzzle_ply","opening","created_by","created_at"],
