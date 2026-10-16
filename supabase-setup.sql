@@ -3883,6 +3883,58 @@ alter table public.text_translations enable row level security;
 revoke all on public.text_translations from anon, authenticated;
 
 -- ============================================================================
+-- N+8) game_analyses, OpenChess 대국(실시간·봇)의 리뷰 분석 저장 (v0.6.7, 프로필 "최근 N판 퍼포먼스 레이팅")
+-- ============================================================================
+-- 프로필의 퍼포먼스 레이팅은 대국마다 엔진 분석이 필요하다. chess.com 대국은 reviewed_games.analysis에 이미 쌓이지만 OpenChess 대국(pvp_games·bot_games)은 분석이 기기에만 남았다.
+-- 대국을 리뷰할 때 분석 결과를 함께 올려 두면 프로필(누가 보든)이 그 분석을 읽어 쓴다. 대국 식별자는 (kind, game_id), kind 'pvp' = pvp_games.id, 'bot' = bot_games.id.
+-- 쓰기는 RPC로만: 기보(sans)로 "내가 참가한 가장 최근의 같은 기보 대국"을 서버가 찾아 그 대국에 묶는다(클라이언트가 대국 번호를 말하지 않는다 → 남의 대국에 분석을 붙일 수 없다).
+-- 분석은 올린 사람(uid)별로 따로 두고, 같은 사람이 올릴 때는 비어 있거나 더 새 버전(v)이거나 같은 버전에서 더 깊은(d) 분석일 때만 바뀐다(reviewed_analysis_put과 같은 규칙). d는 현실적인 깊이(60 이하)만 받는다. 분석 내용 자체는 서버가 검증할 수 없다 ,
+-- 참가자가 자기 대국에 조작한 분석을 올리면 자기 퍼포먼스 레이팅이 바뀔 수 있다(이득이 걸린 카운터가 아니라 표시용 수치라 허용).
+create table if not exists public.game_analyses (
+  kind text not null check (kind in ('pvp', 'bot')),
+  game_id bigint not null,
+  uid uuid not null references auth.users(id) on delete cascade,   -- 올린 사람, 프로필은 그 프로필 주인이 올린 분석만 읽는다(상대가 올린 값으로 덮어쓸 수 없다)
+  analysis jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (kind, game_id, uid)
+);
+alter table public.game_analyses enable row level security;
+drop policy if exists "game analyses read" on public.game_analyses;
+create policy "game analyses read" on public.game_analyses for select using (true);
+revoke insert, update, delete on public.game_analyses from anon, authenticated;
+grant select on public.game_analyses to anon, authenticated;
+create or replace function public.game_analysis_put(p_sans jsonb, p_analysis jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := auth.uid(); v_kind text; v_id bigint; v_n int; v_old jsonb;
+  v_new_v int := (p_analysis ->> 'v')::int; v_new_d int := coalesce((p_analysis ->> 'd')::int, 0);
+begin
+  if v_me is null or p_sans is null or p_analysis is null or v_new_v is null then return false; end if;
+  if jsonb_typeof(p_sans) is distinct from 'array' or jsonb_array_length(p_sans) = 0 or jsonb_array_length(p_sans) > 600 then return false; end if;
+  if jsonb_typeof(p_analysis #> '{result,moves}') is distinct from 'array' then return false; end if;
+  if pg_column_size(p_analysis) > 1000000 or v_new_d not between 0 and 60 then return false; end if;
+  v_n := jsonb_array_length(p_analysis #> '{result,moves}');
+  if v_n <> jsonb_array_length(p_sans) then return false; end if;   -- 기보와 수 개수가 다른 분석은 받지 않는다
+  select 'pvp', g.id into v_kind, v_id from public.pvp_games g
+   where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw') and g.sans = p_sans and (g.white_uid = v_me or g.black_uid = v_me)
+   order by g.updated_at desc limit 1;
+  if v_id is null then
+    select 'bot', b.id into v_kind, v_id from public.bot_games b where b.uid = v_me and to_jsonb(b.sans) = p_sans order by b.created_at desc limit 1;
+  end if;
+  if v_id is null then return false; end if;   -- 내 OpenChess 대국이 아니다(PGN 붙여넣기·남의 대국 등)
+  select analysis into v_old from public.game_analyses where kind = v_kind and game_id = v_id and uid = v_me for update;
+  if found and v_old is not null and not (
+    v_new_v > coalesce((v_old ->> 'v')::int, 0)
+    or (v_new_v = coalesce((v_old ->> 'v')::int, 0) and v_new_d > coalesce((v_old ->> 'd')::int, 0))
+  ) then return false; end if;
+  insert into public.game_analyses(kind, game_id, uid, analysis) values (v_kind, v_id, v_me, p_analysis)
+  on conflict (kind, game_id, uid) do update set analysis = excluded.analysis, updated_at = now();
+  return true;
+end; $$;
+revoke all on function public.game_analysis_put(jsonb, jsonb) from public;
+grant execute on function public.game_analysis_put(jsonb, jsonb) to authenticated;
+
+-- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:
 --   1) Supabase 대시보드 → Database → Extensions 에서 "pg_cron"을 먼저 켠다(SQL로는 보통 켤 수
 --      없다 — shared_preload_libraries 설정이 필요해 인스턴스 차원에서 대시보드로만 켤 수 있음).

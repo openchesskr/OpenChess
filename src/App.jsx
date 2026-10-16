@@ -30,6 +30,7 @@ import { QuestTab } from "./app/quest.jsx";
 import { t, tx } from "./lib/i18n.js";
 export default function App() {
   const narrowHeader = useNarrow(480);
+  const tinyHeader = useNarrow(345);   // 320px대 폰, 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");
@@ -1558,7 +1559,7 @@ export default function App() {
           티어 배지·검색/친구/채팅 묶음·알림·계정(또는 로그인) 메뉴까지 네 덩어리를 한 줄에 두고,
           space-between으로 중앙 공백을 그룹 사이 여백으로 흡수한다. 모바일에서는 아이디 텍스트를
           숨기고 아바타로, 요소 크기를 한 단계씩 줄여 폭이 좁아도 항상 한 줄을 유지한다. */}
-      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: narrowHeader ? 6 : 14 }}>
+      <div className="flex items-center justify-between" style={{ maxWidth: 1080, margin: "0 auto", padding: tinyHeader ? "8px 8px" : narrowHeader ? "8px 12px" : "10px 20px", flexWrap: "nowrap", columnGap: tinyHeader ? 3 : narrowHeader ? 6 : 14 }}>
         {/* (버그 수정) 로고 PNG 원본에 상하 약 25%씩 투명 여백이 박혀 있어, height를 크게 잡아도
             실제 보이는 그림은 절반 정도뿐이었다(헤더가 불필요하게 커 보이는 주된 원인). 이미지 자체를
             그 여백 없이 다시 잘라냈으므로, 이제 height 값이 곧 실제 로고 크기와 거의 같다 — 헤더를
@@ -1570,11 +1571,11 @@ export default function App() {
             바짝 붙였다. 눌러서 소개 페이지(/about)로 바로 이동할 수 있는 링크로 바꿨다. */}
         <div className="flex flex-col items-end" style={{ flexShrink: 0, gap: 0 }}>
           <a href={isNativeApp() ? "/" : "https://openchess.kr"} style={{ display: "block" }}>
-            <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: "pointer" }} />
+            <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: tinyHeader ? 24 : narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: "pointer" }} />
           </a>
-          <a href="/about" style={{ fontSize: 7.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
+          <a href="/about" style={{ fontSize: 8.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
-        <div className="flex items-center" style={{ gap: narrowHeader ? 6 : 12, minWidth: 0 }}>
+        <div className="flex items-center" style={{ gap: tinyHeader ? 3 : narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
               (v0.0.6 개편) 누르면 여정 지도(TierJourneyMap)가 열린다. */}
           <TierBadge totalXp={totalXp} compact={narrowHeader} onClick={() => { setTierMapOpen(true); pushScreen("tiermap"); }} />

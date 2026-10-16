@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
+import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
@@ -505,9 +506,9 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, textAlign: "right", flexShrink: 0 }}>
             {prof ? (
               <>
-                <div>{tx("래피드 : {0}", prof.rapid ?? "—")}</div>
-                <div>{tx("블리츠 : {0}", prof.blitz ?? "—")}</div>
-                <div>{tx("불릿 : {0}", prof.bullet ?? "—")}</div>
+                <div>{tx("래피드 : {0}", prof.rapid ?? "-")}</div>
+                <div>{tx("블리츠 : {0}", prof.blitz ?? "-")}</div>
+                <div>{tx("불릿 : {0}", prof.bullet ?? "-")}</div>
               </>
             ) : t("레이팅 불러오는 중…")}
           </div>
@@ -529,7 +530,7 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       </div>
       {/* 전적 */}
       {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
-      {!recentOnly && overall && <GameRecordSummary overall={overall} />}
+      {!recentOnly && overall && <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="cc" />} />}
       {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}

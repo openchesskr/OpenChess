@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
+import { AppErrorBoundary, reloadOnceForChunkError } from "./components/appErrorBoundary.jsx";
 
 // (v0.1.2 기능) /about은 App(엔진 워커·Supabase 클라이언트 등 무거운 초기화를 포함)을 아예 거치지
 // 않는 별도의 가벼운 소개 페이지로 분리한다 — vercel.json의 SPA rewrite 덕분에 /about으로 직접
@@ -16,6 +17,11 @@ const FaqPage = lazy(() => import("./FaqPage.jsx"));
 const LegalPage = lazy(() => import("./LegalPage.jsx"));
 
 const path = window.location.pathname.replace(/\/$/, "") || "/";
+// 배포 직후 예전 파일을 찾지 못해 동적 import가 실패하면 Vite가 이 이벤트를 보낸다. 한 번만 새로고침해서 새 파일로 바꾼다.
+window.addEventListener("vite:preloadError", (e) => { if (reloadOnceForChunkError(e && e.payload)) e.preventDefault(); });
+window.addEventListener("unhandledrejection", (e) => { reloadOnceForChunkError(e && e.reason); });
 createRoot(document.getElementById("root")).render(
-  path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" || path === "/account-deletion" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />
+  <AppErrorBoundary>
+    {path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" || path === "/account-deletion" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />}
+  </AppErrorBoundary>
 );

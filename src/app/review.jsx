@@ -475,7 +475,7 @@ function ReviewAccuracyPill({ label, value, hi, layoutId }) {
   return (
     <motion.div layoutId={layoutId} style={{ flex: 1, textAlign: "center" }}>
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "-"}</div>
     </motion.div>
   );
 }
@@ -536,8 +536,8 @@ function PhaseAccBubble({ text }) {
 }
 // (기능) 요약 화면 — chess.com 모바일 앱의 "Game Review" 진입 화면과 동일한 순서(코치 인사말 →
 // 평가 그래프 → 플레이어·정확성 → 등급별 개수 → 단계별 하이라이트 → 리뷰 시작)로 구성한다.
-// (설계) chess.com의 "Game Rating"(대국 퍼포먼스 레이팅 추정치)은 별도의 통계적 산출 방식이 필요해
-// 이 배치에서 근거 없는 숫자를 지어내기보다 생략한다 — 나머지 항목은 전부 analyzeGame의 실제 결과다.
+// (설계) chess.com의 "Game Rating"은 사용자 레이팅에 정확도 가중 증분을 더하는 방식이라 쓰지 않는다. 퍼포먼스 레이팅은 한 판으로는 오차가 너무 커서 이 화면이 아니라
+// 프로필의 "최근 N판"으로 보여준다(src/lib/recentPerformance.js).
 function ReviewSummary({ game, result, onStart, onPickMove, narrow, sharpOn }) {
   const { openEnd, endStart } = useMemo(() => reviewGamePhases(result.moves), [result.moves]);
   // (v0.3.9 기능) 사용자 요청 — 설정 탭의 "포지션 변동성 보정" 토글이 꺼져 있으면, 분석 시점에 저장해 둔
@@ -872,6 +872,12 @@ async function reviewedAnalysisShare(ccId, result, depth) {
   const analysis = { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result };
   try { await sbRpc("reviewed_analysis_put", { p_cc_id: Number(ccId), p_analysis: analysis }); }
   catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis }); } catch { } }
+}
+// (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다, 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
+// 내 OpenChess 대국이 아니면(PGN 붙여넣기·남의 대국) 아무 일도 하지 않는다. 실패는 조용히 무시.
+async function ocAnalysisShare(sans, result, depth) {
+  if (!SB_ON || !Array.isArray(sans) || !sans.length || !result) return;
+  try { await sbRpc("game_analysis_put", { p_sans: sans, p_analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
 }
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
@@ -1666,7 +1672,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
       const expectedLen = sans ? sans.length : null;
       const local = loadCachedReviewResult(resultCacheKey, expectedLen, reviewDepth);
       if (local) {
-        if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); }
+        if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); if (!game.id && !fenRoot) ocAnalysisShare(sans, local, reviewDepth); }
         return;
       }
       if (game.id) {
@@ -1695,6 +1701,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
           setResult(r); setGradedCount(sans.length); setResultDone(true);
           saveCachedReviewResult(resultCacheKey, r, reviewDepth);
           if (game.id) reviewedAnalysisShare(game.id, r, reviewDepth);
+          else if (!fenRoot) ocAnalysisShare(sans, r, reviewDepth);
         }
       } catch { if (!cancelled) setErr(true); }
     })();

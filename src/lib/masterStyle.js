@@ -110,7 +110,7 @@ export const criterionLabel = (key) => ({
 export const criterionGroupLabel = (id) => ({ open: t("오프닝 선택"), mid: t("중반 성향"), game: t("대국 흐름") }[id] || id);
 /* 값 표기: 비율은 %, 대국 길이는 평균 수(한 수 = 백·흑 한 쌍; 특징값은 최대 120 plies = 60수 기준으로 0~1). */
 export function formatCriterion(key, v) {
-  if (v == null) return "—";
+  if (v == null) return "-";
   if (key === "length") return t("약 {0}수", Math.round(v * 60));
   return Math.round(v * 100) + "%";
 }
@@ -134,7 +134,7 @@ export function criterionDiff(key, a, b) {
 }
 /* 차이 표기: share는 "±N%p", 배수는 "N.N배". 단위도 언어마다 다르므로 t()를 거친다(예전엔 "배"가 영어 화면에도 그대로 나왔다 — BUG-070). */
 export function formatDiff(key, diff) {
-  if (diff == null) return "—";
+  if (diff == null) return "-";
   return (CRITERION_KIND[key] || "share") === "share" ? t("±{0}%p", Math.round(diff * 100)) : t("{0}배", (Math.round(diff * 10) / 10).toFixed(1));
 }
 /* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, diff, level}] (STYLE_KEYS 순서). */

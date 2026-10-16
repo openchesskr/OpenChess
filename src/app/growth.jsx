@@ -169,7 +169,7 @@ function ReviewCards({ list, update, filter, setFilter }) {
             <span style={{ ...sub, fontWeight: 700 }}>{t("남은 카드 {0}장", queue.length)}</span>
             <span style={chip(true)}>{themeLabel(cur.theme)}</span>
           </div>
-          <p style={{ fontSize: 13, fontWeight: 700, color: T.ink, margin: "0 0 8px" }}>{cur.color === "w" ? t("백 차례 — 최선수를 찾기") : t("흑 차례 — 최선수를 찾기")}</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: T.ink, margin: "0 0 8px" }}>{cur.color === "w" ? t("백 차례, 최선수를 찾기") : t("흑 차례, 최선수를 찾기")}</p>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
             <ChatMoveBoard Board={Board} root={root} sans={[]} size={w} flip={cur.color === "b"} interactive={!res} halo={halo} onMove={(san) => grade(isCardAnswer(cur, san), san)} />
           </div>
