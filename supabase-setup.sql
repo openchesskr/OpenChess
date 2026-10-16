@@ -3883,17 +3883,17 @@ alter table public.text_translations enable row level security;
 revoke all on public.text_translations from anon, authenticated;
 
 -- ============================================================================
--- N+8) game_analyses — OpenChess 대국(실시간·봇)의 리뷰 분석 저장 (v0.6.7, 프로필 "최근 N판 퍼포먼스 레이팅")
+-- N+8) game_analyses, OpenChess 대국(실시간·봇)의 리뷰 분석 저장 (v0.6.7, 프로필 "최근 N판 퍼포먼스 레이팅")
 -- ============================================================================
 -- 프로필의 퍼포먼스 레이팅은 대국마다 엔진 분석이 필요하다. chess.com 대국은 reviewed_games.analysis에 이미 쌓이지만 OpenChess 대국(pvp_games·bot_games)은 분석이 기기에만 남았다.
--- 대국을 리뷰할 때 분석 결과를 함께 올려 두면 프로필(누가 보든)이 그 분석을 읽어 쓴다. 대국 식별자는 (kind, game_id) — kind 'pvp' = pvp_games.id, 'bot' = bot_games.id.
+-- 대국을 리뷰할 때 분석 결과를 함께 올려 두면 프로필(누가 보든)이 그 분석을 읽어 쓴다. 대국 식별자는 (kind, game_id), kind 'pvp' = pvp_games.id, 'bot' = bot_games.id.
 -- 쓰기는 RPC로만: 기보(sans)로 "내가 참가한 가장 최근의 같은 기보 대국"을 서버가 찾아 그 대국에 묶는다(클라이언트가 대국 번호를 말하지 않는다 → 남의 대국에 분석을 붙일 수 없다).
--- 분석은 올린 사람(uid)별로 따로 두고, 같은 사람이 올릴 때는 비어 있거나 더 새 버전(v)이거나 같은 버전에서 더 깊은(d) 분석일 때만 바뀐다(reviewed_analysis_put과 같은 규칙). d는 현실적인 깊이(60 이하)만 받는다. 분석 내용 자체는 서버가 검증할 수 없다 —
+-- 분석은 올린 사람(uid)별로 따로 두고, 같은 사람이 올릴 때는 비어 있거나 더 새 버전(v)이거나 같은 버전에서 더 깊은(d) 분석일 때만 바뀐다(reviewed_analysis_put과 같은 규칙). d는 현실적인 깊이(60 이하)만 받는다. 분석 내용 자체는 서버가 검증할 수 없다 ,
 -- 참가자가 자기 대국에 조작한 분석을 올리면 자기 퍼포먼스 레이팅이 바뀔 수 있다(이득이 걸린 카운터가 아니라 표시용 수치라 허용).
 create table if not exists public.game_analyses (
   kind text not null check (kind in ('pvp', 'bot')),
   game_id bigint not null,
-  uid uuid not null references auth.users(id) on delete cascade,   -- 올린 사람 — 프로필은 그 프로필 주인이 올린 분석만 읽는다(상대가 올린 값으로 덮어쓸 수 없다)
+  uid uuid not null references auth.users(id) on delete cascade,   -- 올린 사람, 프로필은 그 프로필 주인이 올린 분석만 읽는다(상대가 올린 값으로 덮어쓸 수 없다)
   analysis jsonb not null,
   updated_at timestamptz not null default now(),
   primary key (kind, game_id, uid)

@@ -1,24 +1,22 @@
-// (v0.6.7) 퍼포먼스 레이팅 — 상대 레이팅과 무관하게, 보드 위에서 두어진 수의 절대적인 질만으로 매기는 점수.
-// FIDE의 Rp(상대 평균 + 득점률 표)와 달리 내 레이팅·상대 레이팅이 입력에 없다. 구조:
-//   Rp = 기본(A, n) + 이론(T) + 탁월·유일(Q) − 블런더(B) + 오프닝(O)   → [FLOOR, CAP]
-//   · A  퍼포먼스 레이팅 전용 정확도 S(robustAccuracy) — 화면에 보이는 정확도(newCumulativeAccuracy)와 같은 수별 정확도를 쓰되, 블런더 한 수가 점수를 지나치게 끌어내리지
-//        않도록 하한(SOFT_FLOOR)과 거듭제곱 평균(SOFT_POWER)을 완화했다. 화면 정확도는 조화평균에 하한 22라 블런더 1개가 ≈7.6%p(곡선상 ≈970점)를 깎는다.
-//        S는 그 수별 값의 단조 함수라 정확도가 오른 수는 S도 올리지만, 수가 다른 두 판의 순서는 화면 정확도와 드물게 다를 수 있다(블런더 한 번 vs 잔실수 여러 번).
-//   · n  평가가 끝난 비이론 내 수 개수. 많을수록 "그 정확도를 더 오래 유지했다"는 증거가 늘어 기본값이 R(A)에 가까워진다.
-//   · 이론·탁월·유일은 실력으로 본다(사용자 결정) — 암기한 이론도, 찾기 어려운 수도 점수에 들어간다. 포화 곡선은 점수 폭주를 막는 안전장치일 뿐이다.
-//   · 모든 항이 상한으로 묶여 있어 보정된 기본값(R(A))이 합산을 압도한다.
-// ⚠ PERF의 숫자는 임시값이다. R(A) 곡선은 scripts/calibrate-performance.mjs(마스터 대국을 앱의 채점 코드로 분석) → scripts/fit-performance-curve.mjs가 만드는
-//   src/data/performanceCurve.json 으로 보정한다. 곡선 파일이 없으면 아래 RA_ANCHORS(임시)를 쓰고 결과의 provisional이 true다. 곡선은 마스터 레이팅(2300~2850)에 해당하는
-//   정확도 구간(calibratedRange)만 실측이고, 그 밖의 정확도는 provisional이다. 가감 상한(THEORY_MAX 등)은 보정 대상이 아니라 설계값이며 실제 대국에 돌려 보며 조정한다.
-//   값을 바꾸면 scripts/check-performance-rating.mjs의 불변식이 그대로 통과해야 한다.
+// (v0.6.7) 퍼포먼스 레이팅. 상대 레이팅이랑 상관없이 보드 위에서 둔 수의 질만 보고 매기는 점수.
+// FIDE Rp처럼 상대 평균 레이팅이나 득점률은 쓰지 않고, 내 레이팅도 입력에 없다.
+//   레이팅 = 기본(S, n) + 이론(T) + 탁월·유일(Q) - 블런더(B) + 오프닝(O), 결과는 [FLOOR, CAP] 안으로 자른다.
+//   · S는 수 질 점수(tierScore). 수 등급별 손실을 TIER_CAP으로 잘라 평균 낸 값이라 블런더 한 수가 점수를 너무 깎지 않는다.
+//   · n은 평가가 끝난 비이론 수 개수. 많을수록 같은 점수를 오래 유지한 거라 기본값이 곡선 값에 가까워진다.
+//   · 이론, 탁월, 유일한 수도 실력으로 본다(사용자 결정). 외운 이론도, 찾기 어려운 수도 점수에 들어간다.
+//   · 모든 가감 항에 상한이 있어서 곡선으로 보정한 기본값이 합계의 대부분을 차지한다.
+// 곡선(S → 레이팅)은 scripts/calibrate-performance.mjs로 마스터·chess.com 대국을 분석하고
+// scripts/fit-performance-curve.mjs로 맞춘 src/data/performanceCurve.json을 쓴다. 곡선이 없으면 아래 RA_ANCHORS(임시값)를 쓰고 결과가 provisional이 된다.
+// 곡선으로 실측한 점수 구간(calibratedRange) 밖도 provisional이다. 가감 상한(THEORY_MAX 등)은 보정 대상이 아니라 설계값이다.
+// 값을 바꾸면 scripts/check-performance-rating.mjs 검사를 그대로 통과해야 한다.
 
 export const PERF = {
-  FLOOR: 100,            // 모델 최저 레이팅(임시) — 정확도 0%에 가까운 판의 하한
+  FLOOR: 100,            // 모델 최저 레이팅(임시값). 점수가 0에 가까운 판의 하한
   CAP: 3500,             // 모델 최고 레이팅(임시)
-  SOFT_FLOOR: 40,        // S의 수별 정확도 하한 — 클수록 블런더 한 수의 영향이 작다(화면 정확도는 22). 수별 재분석 데이터로 정한 값(블런더 1개 비용 ≈820 → ≈520점, 예측 오차 거의 동일)
-  SOFT_POWER: 1,         // S의 거듭제곱 평균 지수: −1 조화평균, 0 기하평균, 1 산술평균. 클수록 블런더에 둔감하다(화면 정확도는 −1)
-  TIER_CAP: 150,         // 수 질 점수(tierScore)에서 한 수가 깎을 수 있는 최대치(등급별 손실 가중치의 상한) — 블런더 한 수의 영향을 제한한다
-  POOL_MIN_EVIDENCE: 10, // 여러 판을 합칠 때 이보다 짧은 판(평가된 비이론 내 수가 이보다 적음)은 뺀다 — 너무 짧아 질을 가릴 수 없다
+  SOFT_FLOOR: 40,        // (예전 지표 robustAccuracy용) 수별 정확도 하한. 지금 퍼포먼스 레이팅은 TIER_CAP 지표를 쓴다
+  SOFT_POWER: 1,         // (예전 지표용) 거듭제곱 평균 지수. -1 조화평균, 0 기하평균, 1 산술평균
+  TIER_CAP: 150,         // tierScore에서 한 수가 깎을 수 있는 최대치. 블런더 한 수의 영향을 줄인다
+  POOL_MIN_EVIDENCE: 10, // 여러 판을 합칠 때 평가된 비이론 수가 이보다 적은 판은 뺀다. 너무 짧아서 질을 가릴 수 없다
   EVIDENCE_K: 10,        // w(n) = n / (n + K). n=10이면 0.5, 40이면 0.8
   REF_MOVES: 30,         // R(A)가 맞춰진 기준 대국 길이(비이론 내 수). 곡선 파일의 refMoves가 있으면 그 값을 쓴다. base = FLOOR + (R(A) − FLOOR) · w(n) / w(REF)
   THEORY_MAX: 60,        // 이론 항 상한. T = MAX · (1 − e^(−t/TAU)), t = 이론 수 개수
@@ -47,10 +45,10 @@ export function ratingFromAccuracy(acc, anchors = RA_ANCHORS) {
   }
   return anchors[anchors.length - 1][1];
 }
-// 곡선 파일(src/data/performanceCurve.json)이 실제로 보정된 값인지 — 보정 전에는 anchors가 null이다.
+// 곡선 파일(src/data/performanceCurve.json)이 실제로 보정된 값인지. 보정 전에는 anchors가 null이다.
 export const isCurveCalibrated = (curve) => !!(curve && Array.isArray(curve.anchors) && curve.anchors.length >= 2);
 
-// 퍼포먼스 레이팅 전용 정확도 S — 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { acc })의 수별 정확도를 하한(floor)·거듭제곱 평균(power)으로 모은다.
+// 예전 지표. 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { acc })에서 수별 정확도를 하한(floor)과 거듭제곱 평균(power)으로 모은다.
 // acc가 null인 수(평가가 끝나지 않은 수)는 뺀다. 이론 수는 acc 100으로 들어가 화면 정확도와 같은 방식으로 섞인다. 반환 null = 평가된 수 없음.
 export function robustAccuracy(sideMoves, floor = PERF.SOFT_FLOOR, power = PERF.SOFT_POWER) {
   let n = 0, sum = 0;
@@ -66,10 +64,10 @@ export function robustAccuracy(sideMoves, floor = PERF.SOFT_FLOOR, power = PERF.
   return Math.round(clamp(s, 0, 100) * 10) / 10;
 }
 
-// 수 질 점수 S(0~100, 클수록 좋음) — 퍼포먼스 레이팅의 입력 지표. 평가된 비이론 수마다 등급별 손실 가중치(TIER_LOSS, 최선·유일·탁월 0 … 블런더 320)를
+// 수 질 점수 S(0~100, 클수록 좋음). 퍼포먼스 레이팅의 입력 지표. 평가된 비이론 수마다 등급별 손실 가중치(TIER_LOSS, 최선·유일·탁월 0 ... 블런더 320)를
 // 구해 TIER_CAP(150)으로 자른 평균을 100 − 평균 · 100 / TIER_CAP 으로 뒤집는다. 자르기 때문에 블런더 한 수가 점수를 끌어내리는 폭이 제한된다.
 // 연구 결과(마스터 + chess.com 래피드, 다판 합산): 같은 판 수에서 화면 정확도식·산술평균보다 레이팅 환산 오차가 작고, 판을 합칠수록 오차가 판 수의 제곱근에 비례해 줄어든다.
-// 입력: 진영 하나의 수 목록 — analyzeGame의 수 객체({ kind, lossWinPct })도, 수별 기록 [등급, 정확도, 손실승률, 날카로움]도 받는다. 이론 수·평가 안 끝난 수(손실 null)는 뺀다. 반환 null = 평가된 수 없음.
+// 입력은 진영 하나의 수 목록. analyzeGame의 수 객체({ kind, lossWinPct })도, 수별 기록 [등급, 정확도, 손실승률, 날카로움]도 받는다. 이론 수와 평가 안 끝난 수(손실 null)는 뺀다. 평가된 수가 없으면 null.
 export const TIER_LOSS = { best: 0, only: 0, brilliant: 0, excellent: 22, good: 52, inaccuracy: 85, mistake: 150, blunder: 320, miss: 120 };
 export function tierScore(sideMoves, cap = PERF.TIER_CAP) {
   let n = 0, sum = 0;
@@ -125,7 +123,7 @@ export function timeProfile(game, curve) {
   return { shift: 0, provisional: true };
 }
 
-/* 퍼포먼스 레이팅 계산. 입력: { acc, counts(countSideMoves 결과), opening, timeShift, forceProvisional }  — opening은 이미 계산된 오프닝 항(없으면 0),
+/* 퍼포먼스 레이팅 계산. 입력: { acc(수 질 점수 S), counts(countSideMoves 결과), opening, timeShift, forceProvisional }. opening은 이미 계산된 오프닝 항(없으면 0),
    timeShift는 timeProfile의 shift(지표에서 빼는 값), forceProvisional은 timeProfile의 provisional.
    curve: 곡선 파일 내용(없거나 보정 전이면 임시 앵커). provisional = 곡선이 보정 전이거나 정확도가 실측 구간(calibratedRange) 밖.
    반환: null(근거 수 0 또는 정확도 없음) | { rating, base, time, theory, quality, blunder, opening, n, provisional }. 모든 항은 화면에 내역으로 보여줄 수 있게 따로 돌려준다. */
@@ -153,7 +151,7 @@ export function performanceRating({ acc, counts, opening = 0, timeShift = 0, for
 /* ── 오프닝 강도 데이터(src/data/openingStrength.json) ──
    형식: { globalMean, entries: { "w:<해시>": [표본 수, 평균 레이팅], "b:<해시>": [...] } }. 해시는 이론 포지션 키(ecoHash(bookPositionKey(fen))).
    scripts/build-opening-strength.mjs가 마스터 대국을 훑어 만든다. 파일이 비어 있으면 오프닝 항은 0이다. */
-// 한 대국의 수순에서 "이론 포지션을 지나는 수" 목록 — [{ ply, key }]. key = 그 수를 둔 직후 포지션의 해시. isBookKey(bookPositionKey 문자열)로 이론 여부를 판정한다.
+// 한 대국의 수순에서 "이론 포지션을 지나는 수" 목록 [{ ply, key }]. key = 그 수를 둔 직후 포지션의 해시. isBookKey(bookPositionKey 문자열)로 이론 여부를 판정한다.
 export function bookNodesOfLine(sans, sansToFen, bookPositionKey, ecoHash, isBookKey) {
   const out = [];
   for (let i = 0; i < sans.length; i++) {
@@ -163,7 +161,7 @@ export function bookNodesOfLine(sans, sansToFen, bookPositionKey, ecoHash, isBoo
   }
   return out;
 }
-// 이 대국에서 side("w"|"b")의 오프닝 항 — 이론을 벗어나기 직전, 가장 깊은 이론 포지션의 통계를 쓴다.
+// 이 대국에서 side("w"|"b")의 오프닝 항. 이론에서 벗어나기 직전 가장 깊은 이론 포지션의 통계를 쓴다.
 export function openingTermFromLine(nodes, side, strength, p = PERF) {
   if (!nodes || !nodes.length || !strength || !strength.entries) return 0;
   const last = nodes[nodes.length - 1];
@@ -171,7 +169,7 @@ export function openingTermFromLine(nodes, side, strength, p = PERF) {
 }
 
 /* 여러 판 합산 퍼포먼스 레이팅(프로필 "최근 N판"). games: [{ moves(내 진영의 수 목록), opening, timeShift, forceProvisional }].
-   점수 S는 모든 판의 수를 한꺼번에 모아 계산하고(판별 점수의 평균과 사실상 같은 오차), 판 길이·이론·탁월·블런더·오프닝 항은 판마다 계산해 평균 낸다 —
+   점수 S는 모든 판의 수를 한꺼번에 모아 계산하고(판별 점수의 평균과 거의 같은 오차), 판 길이·이론·탁월·블런더·오프닝 항은 판마다 계산해서 평균 낸다.
    합친 수 개수 전체를 "한 판의 길이"로 세면 길이 보너스가 부풀기 때문이다. 너무 짧은 판(POOL_MIN_EVIDENCE 미만)은 뺀다.
    반환: null(쓸 수 있는 판 없음) | { rating, base, time, theory, quality, blunder, opening, n(판 평균 근거 수), games(반영한 판 수), provisional }. */
 export function pooledPerformance(games, p = PERF, curve = null) {

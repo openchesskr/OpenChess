@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /** (v0.6.7) 퍼포먼스 레이팅 곡선 R(A) 맞추기. scripts/calibrate-performance.mjs가 쌓은 NDJSON(진영별 레이팅·정확도·수 구성)으로 src/data/performanceCurve.json 을 만든다.
  *
- *  방법: "레이팅이 R인 선수의 기대 정확도 f(R)"를 먼저 구하고(포화형 함수 f(R)=c−b·e^(−R/τ)를 최소제곱으로 맞춘다 — 정확도는 레이팅이 오를수록 포화하고,
+ *  방법: "레이팅이 R인 선수의 기대 정확도 f(R)"를 먼저 구하고(포화형 함수 f(R)=c−b·e^(−R/τ)를 최소제곱으로 맞춘다, 정확도는 레이팅이 오를수록 포화하고,
  *  구성상 단조라 곡선이 들쭉날쭉하지 않다), 그 역함수로 정확도 → 레이팅을 얻는다. 구간별 평균과 어긋나면(모양이 포화형이 아니면) 곡선을 쓰지 않는다. 득점률에서 레이팅 차이를 읽는 FIDE 표와
  *  같은 논리다("이 정확도는 어느 레이팅 선수가 평균적으로 내는 값인가"). 반대로 레이팅을 정확도에 회귀하면(R = c + d·A) 판마다 정확도가 흔들리는 탓에 기울기가 눌려
- *  모든 판이 평균 근처로 몰린다 — 퍼포먼스 레이팅으로는 부적절하다.
+ *  모든 판이 평균 근처로 몰린다, 퍼포먼스 레이팅으로는 부적절하다.
  *
  *  출처 이동량: 마스터(클래시컬)와 chess.com(래피드)은 같은 레이팅에서도 정확도가 체계적으로 다르다. 곡선과 함께 이동량 δ를 추정해 마스터를 래피드 척도로 옮긴다.
  *  척도: chess.com 래피드 레이팅. 낮은 레이팅대는 이 데이터뿐이고, 리뷰 화면에 표시되는 선수 급수도 chess.com 기준이라 서로 비교할 수 있다. 마스터 대국(FIDE)은
@@ -14,7 +14,7 @@
  *
  *  사용법: node scripts/fit-performance-curve.mjs [--dry] [입력.ndjson ...]
  *          (입력 생략 시 scripts/calibration/perf-calibration-v2.ndjson(마스터) + perf-calibration-chesscom-v2.ndjson. pool 필드가 chesscom이면 그 척도, 없으면 마스터(FIDE).
- *           수별 기록(moves)이 있는 v2 파일만 쓴다 — 퍼포먼스 레이팅 입력 S = tierScore(moves))
+ *           수별 기록(moves)이 있는 v2 파일만 쓴다, 퍼포먼스 레이팅 입력 S = tierScore(moves))
  *          --dry: 파일을 쓰지 않고 보고만
  *  옵션(환경변수): MIN_EVIDENCE=20 · MIN_SIDES=300 · MIN_BIN=6(구간당 진영 수 하한) · BIN=100 · BOOT=1000 · OFFSET=오프셋 파일 · OUT=출력 경로
  */
@@ -33,7 +33,7 @@ const MIN_EVIDENCE = env("MIN_EVIDENCE", 20), MIN_SIDES = env("MIN_SIDES", 300),
 if (!inputs.length) { console.error("입력 파일이 없음"); process.exit(1); }
 
 /* ── FIDE → chess.com 래피드 오프셋: FIDE 2300 이상 타이틀 선수 (래피드 − FIDE)의 중앙값 상수 ──
-   직선(rapid = α + β·FIDE)은 쓰지 않는다 — 양쪽 레이팅 모두 잡음이 있어 기울기가 눌리고(회귀 희석, 실측 β≈0.5) 마스터 구간이 압축된다.
+   직선(rapid = α + β·FIDE)은 쓰지 않는다, 양쪽 레이팅 모두 잡음이 있어 기울기가 눌리고(회귀 희석, 실측 β≈0.5) 마스터 구간이 압축된다.
    마스터 표본은 2300 이상뿐이라 그 범위의 상수 차이면 충분하다. 개인별 차이의 표준편차(≈190점)가 커서 오프셋 자체도 ±30점쯤 불확실하다. */
 let toCc = (fide) => fide, offsetInfo = null;
 {
@@ -146,7 +146,7 @@ if (full) {
   const sdv = (a) => { const mm = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - mm) ** 2, 0) / a.length); };
   curveSE = {};
   console.error("곡선 자체의 불확실성(부트스트랩 " + fits.length + "회, 정확도 → 레이팅의 ±1표준편차):");
-  // 점검 지점은 실측 구간(레이팅 3~97 분위수에 해당하는 지표 값)을 5등분한 값 — 지표가 바뀌어도 의미 있는 구간만 본다
+  // 점검 지점은 실측 구간(레이팅 3~97 분위수에 해당하는 지표 값)을 5등분한 값, 지표가 바뀌어도 의미 있는 구간만 본다
   const Rq = pts.map((p) => p.R).sort((u, v) => u - v), qf = (q) => Rq[Math.floor((Rq.length - 1) * q)];
   const aLo = mS.c + mS.d * Math.exp(-qf(0.03) / mS.tau), aHi = mS.c + mS.d * Math.exp(-qf(0.97) / mS.tau);
   for (let k = 0; k <= 4; k++) { const A = Math.round((aLo + ((aHi - aLo) * k) / 4) * 10) / 10; const rr = fits.map((m) => invR(m, A)).filter((v) => v != null && isFinite(v)); curveSE[A] = Math.round(sdv(rr)); console.error(`  지표 ${A} → 레이팅 ${Math.round(invR(mS, A))} ± ${curveSE[A]}점`); }
@@ -158,18 +158,18 @@ if (full) {
   for (const b of full.bins) {
     const lo = Math.floor(b.R / BIN) * BIN, inB = (p) => Math.floor(p.R / BIN) * BIN === lo;
     const m = pts.filter((p) => inB(p) && p.pool === "masters"), c = pts.filter((p) => inB(p) && p.pool === "chesscom");
-    const mean = (a) => (a.length ? (a.reduce((s, p) => s + p.A, 0) / a.length).toFixed(1) + `(${a.length})` : "—");
+    const mean = (a) => (a.length ? (a.reduce((s, p) => s + p.A, 0) / a.length).toFixed(1) + `(${a.length})` : "-");
     console.error(`${String(lo).padStart(5)}~${lo + BIN - 1} │ ${String(b.w).padStart(4)} │ ${b.A.toFixed(1).padStart(6)}  │ ${satF0(b.R).toFixed(1).padStart(5)}  │ ${m.length && c.length ? mean(m) + " / " + mean(c) : ""}`);
   }
   // 구간 평균이 적합값에서 벗어난 정도를 "순수 잡음일 때 기대되는 크기"와 비교한다(구간 평균의 표준오차 = σ/√n).
   const sw = full.bins.reduce((s, b) => s + b.w, 0), binRmse = Math.sqrt(full.bins.reduce((s, b) => s + b.w * (b.A - satF0(b.R)) ** 2, 0) / sw);
   const expRmse = sigma * Math.sqrt(full.bins.length / sw);
-  console.error(`구간 평균과 적합값의 가중 RMSE ${binRmse.toFixed(2)}%p (순수 잡음이면 약 ${expRmse.toFixed(2)}%p — 비율 ${(binRmse / expRmse).toFixed(2)})`);
+  console.error(`구간 평균과 적합값의 가중 RMSE ${binRmse.toFixed(2)}%p (순수 잡음이면 약 ${expRmse.toFixed(2)}%p, 비율 ${(binRmse / expRmse).toFixed(2)})`);
   for (const R of [600, 1000, 1400, 1800, 2200, 2600]) { const slope = (satF0(R + 50) - satF0(R - 50)) / 100; console.error(`  레이팅 ${R}: 100점당 정확도 ${(slope * 100).toFixed(2)}%p → 한 판 정확도의 ±1표준편차(${sigma.toFixed(1)}%p)는 약 ±${(sigma / slope).toFixed(0)}점`); }
   if (full.sat.d >= 0) fails.push("포화형 적합이 증가형이 아님(d ≥ 0)");
-  if (binRmse / expRmse > 1.5) fails.push(`구간 평균이 순수 잡음보다 훨씬 크게 적합값에서 벗어남(비율 ${(binRmse / expRmse).toFixed(2)} > 1.5) — 모델이 데이터 모양과 맞지 않음`);
+  if (binRmse / expRmse > 1.5) fails.push(`구간 평균이 순수 잡음보다 훨씬 크게 적합값에서 벗어남(비율 ${(binRmse / expRmse).toFixed(2)} > 1.5), 모델이 데이터 모양과 맞지 않음`);
   if (pts.length < MIN_SIDES) fails.push(`표본이 적음: 진영 ${pts.length}개 (MIN_SIDES=${MIN_SIDES})`);
-  if (!(rhoLo > 0.2)) fails.push(`상관의 95% 하한이 ${rhoLo.toFixed(3)} — 레이팅과 정확도의 관계를 확신하기엔 약함(0.2 초과 필요). 표본을 더 쌓을 것`);
+  if (!(rhoLo > 0.2)) fails.push(`상관의 95% 하한이 ${rhoLo.toFixed(3)}, 레이팅과 정확도의 관계를 확신하기엔 약함(0.2 초과 필요). 표본을 더 쌓을 것`);
 }
 if (fails.length) { console.error("✖ 곡선을 쓰지 않음:\n  - " + fails.join("\n  - ")); if (!dry) process.exit(1); }
 if (dry) process.exit(fails.length ? 1 : 0);

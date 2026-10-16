@@ -96,12 +96,12 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
   eq([lv("w_flank", 0.01, 0), lv("b_c5", 0.12, 0), lv("b_nf6", 0.91, 0.92), lv("b_d5", 0.06, 0)], ["same", "close", "same", "same"], "0%에 가까운 값끼리·1%p 차이는 거의 같음, 12%p는 비슷함");
   eq([lv("length", 25 / 60, 40 / 60), lv("length", 40 / 60, 42 / 60), lv("checkRate", 0.05, 0.10), lv("checkRate", 0.005, 0.015)], ["far", "same", "far", "same"], "대국 25수 대 40수는 다름, 40수 대 42수는 거의 같음, 체크 5% 대 10%(2배)는 다름, 둘 다 2% 미만은 거의 같음");
   eq(S.criterionDiff("w_e4", null, 0.5), { diff: null, level: "na" }, "한쪽 값이 없으면 비교 불가");
-  eq([S.formatDiff("w_e4", 0.44), S.formatDiff("checkRate", 1.286), S.formatDiff("length", 1.6), S.formatDiff("w_e4", null)], ["±44%p", "1.3배", "1.6배", "—"], "차이 표기");
+  eq([S.formatDiff("w_e4", 0.44), S.formatDiff("checkRate", 1.286), S.formatDiff("length", 1.6), S.formatDiff("w_e4", null)], ["±44%p", "1.3배", "1.6배", "-"], "차이 표기");
   ok(S.STYLE_KEYS.every((k) => S.CRITERION_KIND[k]), "모든 기준에 판정 방식(share·intensity·length)이 있다");
   const rowsSame = S.compareCriteria(twin[3], twin[3]);
   ok(rowsSame.length === 13 && rowsSame.every((r) => r.level === "same" || r.level === "na"), "같은 벡터는 모든 기준이 거의 같음");
   ok(S.STYLE_KEYS.every((k) => S.criterionLabel(k) && S.criterionLabel(k) !== k), "모든 기준에 이름이 있다");
-  eq([S.formatCriterion("w_e4", 0.456), S.formatCriterion("length", 0.7), S.formatCriterion("drawRate", null)], ["46%", "약 42수", "—"], "값 표기(비율·평균 수·없음)");
+  eq([S.formatCriterion("w_e4", 0.456), S.formatCriterion("length", 0.7), S.formatCriterion("drawRate", null)], ["46%", "약 42수", "-"], "값 표기(비율·평균 수·없음)");
 }
 // ── ⑥ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");

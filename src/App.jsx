@@ -30,7 +30,7 @@ import { QuestTab } from "./app/quest.jsx";
 import { t, tx } from "./lib/i18n.js";
 export default function App() {
   const narrowHeader = useNarrow(480);
-  const tinyHeader = useNarrow(345);   // 320px대 폰 — 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
+  const tinyHeader = useNarrow(345);   // 320px대 폰, 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
   // (16차) 주소창의 서브패스(/learn, /book, /puzzle, /setting)로 직접 들어온 경우 그 탭을 우선한다.
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   const [tab, setTab] = useState(() => urlTabRef.current || "learn");

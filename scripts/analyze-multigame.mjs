@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** (v0.6.7) 여러 판을 합친 퍼포먼스 레이팅의 환산 오차 연구. 한 선수의 판이 많은 표본(chesscom-games-study.ndjson → calibrate-performance 분석 → perf-calibration-study-v2.ndjson)으로:
- *   ① 오차를 "같은 선수의 판마다 달라지는 부분(선수 내)"과 "선수마다 일정하게 다른 부분(선수 간 — 판을 아무리 합쳐도 안 줄어드는 바닥)"으로 나눈다(대국 단위가 아니라 선수 단위 부트스트랩 신뢰구간 포함).
- *   ② 선수당 k판을 무작위로 뽑아 합쳤을 때의 실제 오차(레이팅 환산 RMSE)를 k별로 잰다 — 합산 방식 두 가지: 판별 지표의 평균 / 수를 합쳐서 한 번에 계산.
+ *   ① 오차를 "같은 선수의 판마다 달라지는 부분(선수 내)"과 "선수마다 일정하게 다른 부분(선수 간, 판을 아무리 합쳐도 안 줄어드는 바닥)"으로 나눈다(대국 단위가 아니라 선수 단위 부트스트랩 신뢰구간 포함).
+ *   ② 선수당 k판을 무작위로 뽑아 합쳤을 때의 실제 오차(레이팅 환산 RMSE)를 k별로 잰다, 합산 방식 두 가지: 판별 지표의 평균 / 수를 합쳐서 한 번에 계산.
  *  환산은 본 보정 표본(chess.com v2)에서 구한 지표-레이팅 기울기로 한다(연구 표본만으로는 기울기가 불안정하다). 연구 표본에 들어 있는 대국이 본 표본과 겹치면 연구 쪽에서 뺀다.
  *  사용법: node scripts/analyze-multigame.mjs [연구 분석.ndjson=scripts/calibration/perf-calibration-study-v2.ndjson]   옵션: MIN_GAMES=8(선수당 최소 판 수) · DRAWS=200 · GAMES_FILE=연구 대국 파일(선수 이름 매핑)
  */
@@ -44,7 +44,7 @@ for (const r of rd(studyPath)) {
 }
 const players = Object.entries(by).filter(([, a]) => a.length >= MIN_GAMES);
 console.log(`연구 표본: 선수 ${Object.keys(by).length}명 중 ${MIN_GAMES}판 이상 ${players.length}명 (판 수 평균 ${players.length ? mean(players.map(([, a]) => a.length)).toFixed(1) : 0}) · 본 표본 기울기용 진영 ${mainSides.length}개`);
-if (players.length < 12) { console.error(`※ 선수가 ${players.length}명뿐이라 선수 간 차이를 추정할 수 없음 — 분석이 더 쌓인 뒤 다시 실행`); process.exit(2); }
+if (players.length < 12) { console.error(`※ 선수가 ${players.length}명뿐이라 선수 간 차이를 추정할 수 없음, 분석이 더 쌓인 뒤 다시 실행`); process.exit(2); }
 
 function decompose(P, f, slope) {   // P: [[sides…], …]
   const E = P.map((a) => a.map((s) => (f(s.moves) - slope.ic - slope.sl * s.elo) / slope.sl));

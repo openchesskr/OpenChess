@@ -506,9 +506,9 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, textAlign: "right", flexShrink: 0 }}>
             {prof ? (
               <>
-                <div>{tx("래피드 : {0}", prof.rapid ?? "—")}</div>
-                <div>{tx("블리츠 : {0}", prof.blitz ?? "—")}</div>
-                <div>{tx("불릿 : {0}", prof.bullet ?? "—")}</div>
+                <div>{tx("래피드 : {0}", prof.rapid ?? "-")}</div>
+                <div>{tx("블리츠 : {0}", prof.blitz ?? "-")}</div>
+                <div>{tx("불릿 : {0}", prof.bullet ?? "-")}</div>
               </>
             ) : t("레이팅 불러오는 중…")}
           </div>

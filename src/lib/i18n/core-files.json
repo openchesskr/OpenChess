@@ -11,6 +11,7 @@
   "app/settings.jsx",
   "app/shell.jsx",
   "app/social.jsx",
+  "components/appErrorBoundary.jsx",
   "components/badges.jsx",
   "components/chatPlus.jsx",
   "components/engineLines.jsx",

@@ -475,7 +475,7 @@ function ReviewAccuracyPill({ label, value, hi, layoutId }) {
   return (
     <motion.div layoutId={layoutId} style={{ flex: 1, textAlign: "center" }}>
       <div style={{ fontSize: 11, color: RV.soft, fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "—"}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: SITE_FONT, borderRadius: 9, padding: "8px 6px", background: hi ? T.brassHi : RV.panel, color: hi ? "#241509" : RV.text }}>{value != null ? value.toFixed(1) : "-"}</div>
     </motion.div>
   );
 }
@@ -873,7 +873,7 @@ async function reviewedAnalysisShare(ccId, result, depth) {
   try { await sbRpc("reviewed_analysis_put", { p_cc_id: Number(ccId), p_analysis: analysis }); }
   catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis }); } catch { } }
 }
-// (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다 — 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
+// (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다, 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
 // 내 OpenChess 대국이 아니면(PGN 붙여넣기·남의 대국) 아무 일도 하지 않는다. 실패는 조용히 무시.
 async function ocAnalysisShare(sans, result, depth) {
   if (!SB_ON || !Array.isArray(sans) || !sans.length || !result) return;

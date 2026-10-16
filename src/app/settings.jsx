@@ -655,7 +655,7 @@ function UgcTranslateToggle() {
   );
 }
 
-// (v0.6.7) 개발자 도구 카드의 모드 켜기/끄기 줄 — 다른 설정 토글과 같은 크기(46×26)·같은 색을 쓴다.
+// (v0.6.7) 개발자 도구 카드의 모드 켜기/끄기 줄, 다른 설정 토글과 같은 크기(46×26)·같은 색을 쓴다.
 function DevModeRow({ label, hint, on, onToggle }) {
   return (
     <div className="flex items-center justify-between" style={{ gap: 12, padding: "6px 0" }}>
@@ -667,7 +667,7 @@ function DevModeRow({ label, hint, on, onToggle }) {
     </div>
   );
 }
-// (v0.6.7) 개발자 도구 카드 안의 기능별 묶음 — 제목 줄을 눌러 접고 펼친다. 안의 패널들은 자기 소제목을 그대로 쓴다.
+// (v0.6.7) 개발자 도구 카드 안의 기능별 묶음, 제목 줄을 눌러 접고 펼친다. 안의 패널들은 자기 소제목을 그대로 쓴다.
 function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
   const [open, setOpen] = useState(!!defaultOpen);
   return (
@@ -1002,7 +1002,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           </div>
         </div>
       )}
-      {/* (v0.6.5, 사용자 요청) 개발진은 푸터에서 떼어 별도 블록으로 — (v0.6.7) 개발자 모드 토글은 맨 아래 "개발자 도구" 카드로 옮겼다. */}
+      {/* (v0.6.5, 사용자 요청) 개발진은 푸터에서 떼어 별도 블록으로, (v0.6.7) 개발자 모드 토글은 맨 아래 "개발자 도구" 카드로 옮겼다. */}
           <div style={card}>
             {cardTitle(Users, t("개발진"))}
 
@@ -1085,8 +1085,8 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          {isDev && <DevModeRow label={t("개발자 모드")} hint={t("켜면 아래 도구와 편집 기능이 열림")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
-          {isCodev && <DevModeRow label={t("공동 개발자 모드")} hint={t("임명 권한을 제외한 모든 기능 사용 가능")} on={codevOn} onToggle={() => setCodevOn((v) => !v)} />}
+          {isDev && <DevModeRow label={t("개발자 모드")} hint={t("켜면 아래 도구와 편집 기능을 쓸 수 있어요")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
+          {isCodev && <DevModeRow label={t("공동 개발자 모드")} hint={t("임명 권한만 빼고 모두 사용 가능")} on={codevOn} onToggle={() => setCodevOn((v) => !v)} />}
           {canEdit && (
             <>
               {/* (v0.6.7, 사용자 요청) 흩어져 있던 도구를 기능별 네 묶음으로: 계정·권한 → 재화·티어 테스트 → 퍼즐 콘텐츠 → (개발자만) 신고. 스크롤이 길어지지 않게 접고 펼친다. */}
@@ -1098,19 +1098,19 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                   <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>{tx("공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가", <b>{t("추가")}</b>)}</p>
                 </DevGroup>
               )}
-              <DevGroup icon={SlidersHorizontal} title={t("재화·티어 테스트")} desc={t("OC 코인·경험치·티어를 바로 바꿔 연출 확인")}>
+              <DevGroup icon={SlidersHorizontal} title={t("재화·티어 테스트")} desc={t("OC 코인, 경험치, 티어를 바꿔서 연출 확인")}>
                 <DevResourcePanel totalXp={totalXp} setTotalXp={setTotalXp} ocCoins={ocCoins} setOcCoins={setOcCoins} card={{}} />
               </DevGroup>
-              <DevGroup icon={Puzzle} title={t("퍼즐 콘텐츠")} desc={t("일일 퍼즐·일괄 재생성·검사")}>
+              <DevGroup icon={Puzzle} title={t("퍼즐 콘텐츠")} desc={t("일일 퍼즐, 일괄 재생성, 검사")}>
                 <DailyPuzzleDevPanel card={{}} />
                 <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
                 <PuzzleBatchRegenPanel engine={engine} bumpContent={bumpContent} card={{}} />
                 <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />
                 <PuzzleControlCenterPanel engine={engine} bumpContent={bumpContent} card={{}} />
               </DevGroup>
-              {/* (v0.6.1, 사용자 요청) 신고 열람 — 대화 내용이 들어 있어 개발자 계정(공동 개발자 제외)만 */}
+              {/* (v0.6.1, 사용자 요청) 신고 열람, 대화 내용이 들어 있어 개발자 계정(공동 개발자 제외)만 */}
               {canManageCodev && (
-                <DevGroup icon={MessageCircle} title={t("신고")} desc={t("접수된 신고 열람·처리")}>
+                <DevGroup icon={MessageCircle} title={t("신고")} desc={t("들어온 신고 보기, 처리")}>
                   <ReportsDevPanel />
                 </DevGroup>
               )}
@@ -1227,7 +1227,7 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>MID</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? t("불러오는 중…") : (mid || "—")}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? t("불러오는 중…") : (mid || "-")}</div>
           </div>
           {!!mid && (
             <button onClick={copyMid} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>

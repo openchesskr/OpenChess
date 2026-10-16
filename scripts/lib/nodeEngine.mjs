@@ -1,4 +1,4 @@
-// (v0.6.7) Node용 UCI 엔진 어댑터 — 앱의 분석 워커(src/app/common.jsx bootAnalysisWorker)와 같은 evaluateMulti 의미를 따른다.
+// (v0.6.7) Node용 UCI 엔진 어댑터, 앱의 분석 워커(src/app/common.jsx bootAnalysisWorker)와 같은 evaluateMulti 의미를 따른다.
 // analyzeGame은 분석 풀이 비어 있으면 engine.evaluateMulti 하나로 폴백하므로(profile "node", urls []), 이 어댑터를 engine으로 넘기면
 // 브라우저 없이도 앱의 실제 채점 코드(수 등급·정확도·희생 확인)를 그대로 돌릴 수 있다. 퍼포먼스 레이팅 보정(scripts/calibrate-performance.mjs)이 쓴다.
 //
@@ -6,7 +6,7 @@
 //  · "go depth D" 만 보낸다(movetime을 go에 넣지 않는다). movetime(mt)이 지나면 요청한 MultiPV 순위가 전부 나왔을 때 stop을 보낸다(150ms 간격 재확인).
 //  · 하드 워치독: mt + hardBuffer(기본 4000ms) 안에 끝나지 않으면 지금까지의 줄로 확정하고 stop.
 //  · 요청은 한 줄로 직렬 처리한다(analyzeGame의 희생 확인 평가가 같은 엔진에 동시에 들어온다).
-//  · 결과 줄: { uci, pv, depth, cp, mate } — MultiPV 순위 오름차순.
+//  · 결과 줄: { uci, pv, depth, cp, mate }, MultiPV 순위 오름차순.
 import { spawn } from "node:child_process";
 
 export function createNodeEngine({ bin, hashMB = 32, threads = 1 }) {

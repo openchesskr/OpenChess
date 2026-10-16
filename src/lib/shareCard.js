@@ -199,7 +199,7 @@ export function drawReviewShareCardSync(ctx, W, H, data, assets) {
     ctx.textAlign = "center";
     if (rating != null) { ctx.font = "600 14px " + SITE_FONT; ctx.fillStyle = CREAM_SOFT; ctx.fillText(t("레이팅 {0}", rating), bcx, boxY + 144); }
     ctx.fillStyle = T.brassHi; ctx.font = "800 44px " + SITE_FONT;
-    ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "—", bcx, boxY + 192);
+    ctx.fillText(acc != null ? acc.toFixed(1) + "%" : "-", bcx, boxY + 192);
     // 그 진영의 수 등급 분포 막대(표와 같은 순서·색).
     const barW = boxW - 72, barX = bcx - barW / 2, barY = boxY + 206, barH = 8;
     const mine = moves.filter((m) => m.white === isWhite && m.kind && QCOLOR[m.kind]);

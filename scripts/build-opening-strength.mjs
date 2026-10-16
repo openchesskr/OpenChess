@@ -2,14 +2,14 @@
 /** (v0.6.7) 오프닝 강도 데이터 → src/data/openingStrength.json
  *  퍼포먼스 레이팅의 오프닝 항(src/lib/performanceRating.js openingTerm)이 쓰는 표를 만든다. 각 대국이 이론(ECO 목록) 안에서 지나간 모든 포지션마다
  *  "그 포지션을 거친 대국에서 백/흑 선수의 평균 레이팅"을 쌓는다. 대국 출처는 둘 중 하나(섞으면 같은 대국이 두 번 세어진다):
- *   · 인자 없음(기본): 저장소의 src/data/tournaments/*.json — 대회 대국의 수순과 대회 당시 선수 레이팅(pl[i][1])을 쓴다. 외부 접속이 필요 없다.
+ *   · 인자 없음(기본): 저장소의 src/data/tournaments/*.json, 대회 대국의 수순과 대회 당시 선수 레이팅(pl[i][1])을 쓴다. 외부 접속이 필요 없다.
  *   · 첫 인자가 NDJSON 경로: fetch-external-games.mjs가 만든 파일(대국 한 줄씩: whiteElo/blackElo/moves)을 스트리밍으로 읽는다.
  *  키는 "w:<해시>"·"b:<해시>"(해시 = ecoHash(bookPositionKey(fen)), 앱의 이론 판정과 같은 규칙). 값은 [표본 수, 평균 레이팅].
  *  한두 판짜리 포지션은 우연이므로 MIN_N 미만은 버린다(앱도 표본이 적으면 전체 평균 쪽으로 당긴다).
  *  이 샌드박스는 외부 대국 DB 접속이 막혀 있어 사용자가 로컬 PC에서 실행해야 한다.
  *
  *  사용법: node scripts/build-opening-strength.mjs [external-games.ndjson] [출력.json=src/data/openingStrength.json]
- *  옵션(환경변수): MIN_ELO=2300 (이 미만 레이팅의 선수는 집계에서 제외) · MIN_N=20 · MAX_PLY=32 (이론은 이 수까지만 본다 — 수순 복원이 대국 처리 시간의 대부분이라 길수록 느리다)
+ *  옵션(환경변수): MIN_ELO=2300 (이 미만 레이팅의 선수는 집계에서 제외) · MIN_N=20 · MAX_PLY=32 (이론은 이 수까지만 본다, 수순 복원이 대국 처리 시간의 대부분이라 길수록 느리다)
  */
 import { createReadStream, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";

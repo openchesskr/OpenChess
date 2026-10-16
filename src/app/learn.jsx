@@ -825,10 +825,10 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
             </div>
             {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬 — 게임 수 텍스트가 길어져도
                 justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. 통계가 아직 도착
-                전(statsLoading)이면 "—" 대신 3-dot bounce 인디케이터로 로딩 중임을 보여준다. */}
+                전(statsLoading)이면 "-" 대신 3-dot bounce 인디케이터로 로딩 중임을 보여준다. */}
             <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-              <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : statsLoading ? <PendingDots size={10} /> : "—"}</span>
-              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : statsLoading ? <PendingDots size={10} /> : "—"}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : statsLoading ? <PendingDots size={10} /> : "-"}</span>
+              <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : statsLoading ? <PendingDots size={10} /> : "-"}</span>
             </span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
@@ -955,7 +955,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     };
     setMoves(withExtra(base.map((m) => ({ ...m })))); setPosGames(node ? node.posGames : null); setPosEval(null); setEngineNote(""); setMasterEmpty(false);
     // (사용자 요청) 리체스 통계(회수/채택률) fetch가 실제로 도착하기 전까지는 각 수 블록·현재 수
-    // 블록이 이 플래그를 보고 "—" 대신 3-dot bounce 인디케이터를 보여준다.
+    // 블록이 이 플래그를 보고 "-" 대신 3-dot bounce 인디케이터를 보여준다.
     setStatsLoading(liveOn);
     if (!liveOn) return;
     // (사용자 요청, 성능) 일반·마스터 통계를 둘 다 기다렸다가 한꺼번에 반영하던 것을, 먼저 도착한 쪽부터
@@ -1412,7 +1412,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
   useEffect(() => { statPumpRef.current(); }, [statOrder, key, liveOn, posGames, statsLoading]);
   // (v0.6.1 버그 수정) 포지션 전체 표본(posGames)이 보충 조회보다 늦게 도착하면 이미 회수가 채워진 수의 채택률이
   // 영영 null로 남았다 — posGames가 정해지면 채택률이 비어 있는 수를 다시 계산한다. 끝내 전체 표본을 못 얻으면
-  // (조회 실패) 수별 회수의 합을 대신 써서 "—"가 남지 않게 한다.
+  // (조회 실패) 수별 회수의 합을 대신 써서 "-"가 남지 않게 한다.
   useEffect(() => {
     if (!liveOn || statsLoading) return;
     setMoves((prev) => {
@@ -2134,7 +2134,7 @@ function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
       <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
-      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "—"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
+      <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "-"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
       {winner && <CrownIcon />}
     </div>
   );
@@ -2214,7 +2214,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
       {((moves && moves.length > 0) || forceShow) && (
         <div style={{ marginTop: 9 }}>
           <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
-          {(!moves || moves.length === 0) && <div style={{ fontSize: 11, color: T.inkSoft, padding: "3px 0" }}>—</div>}
+          {(!moves || moves.length === 0) && <div style={{ fontSize: 11, color: T.inkSoft, padding: "3px 0" }}>-</div>}
           {moves.slice(0, 5).map((mv, ri) => {
             const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (summary.n || 1));
             return (
@@ -2529,7 +2529,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           <div style={{ fontFamily: SEQ_FONT, fontSize: 30, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.05, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>{moveNumber(ply)}{m.san}</div>
           <div style={{ marginTop: 3, fontSize: 15, color: T.brassHi, fontWeight: 800, lineHeight: 1.25 }}>{dispName || "\u00A0"}</div>
           <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 3 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? t("이론") : "—")}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ivory }}>{evTxt || (kind === "book" ? t("이론") : "-")}</div>
             <div style={{ fontSize: 12, fontWeight: 800, color: T.ivory }}>{QLABEL[kind]}</div>
           </div>
           {/* (v0.6.6, 사용자 요청) 수 키워드는 평가치 바로 아래, 평가치·수 이름과 같은 왼쪽 선에 둔다(누르면 설명 말풍선) */}
@@ -3674,8 +3674,8 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                                 </div>
                                 {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
                                 <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                                  <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
-                                  <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "—"}</span>
+                                  <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "-"}</span>
+                                  <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "-"}</span>
                                 </span>
                               </div>
                               {curStat && curStat.wdl && <div style={{ marginTop: 7 }}><WinBar wdl={curStat.wdl} height={6} /></div>}

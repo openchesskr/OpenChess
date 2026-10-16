@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** (v0.6.7) 퍼포먼스 레이팅 보정용 — chess.com 공개 API에서 레이팅대별 대국 수집. 로그인·계정 연동은 필요 없다(공개 API, 아이디만으로 대국과 대국 당시 레이팅이 나온다).
+/** (v0.6.7) 퍼포먼스 레이팅 보정용, chess.com 공개 API에서 레이팅대별 대국 수집. 로그인·계정 연동은 필요 없다(공개 API, 아이디만으로 대국과 대국 당시 레이팅이 나온다).
  *  마스터 대회 표본(FIDE 2300~2850)만으로는 일반 사용자의 정확도 구간을 실측할 수 없어서, 낮은 레이팅대를 이 수집으로 채운다.
  *
  *  실행(샌드박스에서는 Node fetch가 프록시를 쓰도록 NODE_USE_ENV_PROXY=1이 필요하다):
@@ -8,9 +8,9 @@
  *    NODE_USE_ENV_PROXY=1 node scripts/fetch-rated-games.mjs offset [출력.json=scripts/calibration/chesscom-fide-offset.json]
  *      FIDE 레이팅이 공개된 타이틀 선수들의 chess.com 급수(래피드·블리츠)와 FIDE를 짝지어 두 척도의 차이를 잰다.
  *
- *  출력 대국 한 줄: { id, sans[], wElo, bElo, wName, bName, tc, timeClass, pool:"chesscom" } — scripts/calibrate-performance.mjs의 SOURCE로 읽는다.
+ *  출력 대국 한 줄: { id, sans[], wElo, bElo, wName, bName, tc, timeClass, pool:"chesscom" }, scripts/calibrate-performance.mjs의 SOURCE로 읽는다.
  *  옵션(환경변수): TIME_CLASS=rapid · BAND=100 · MIN_BAND=500 · MAX_BAND=2400 · PLAYERS_PER_BAND=8 · GAMES_PER_PLAYER=4 · MIN_PLIES=40 · COUNTRIES=KR,US,IN,RU,DE,BR,GB,FR,ES,PL,TR,EG
- *            MIN_RECORD=150(선수의 해당 시간 규정 누적 판 수 하한) · MAX_RD=90(레이팅 편차 상한 — 급수가 안정된 선수만) · SEED=1 · DELAY_MS=300
+ *            MIN_RECORD=150(선수의 해당 시간 규정 누적 판 수 하한) · MAX_RD=90(레이팅 편차 상한, 급수가 안정된 선수만) · SEED=1 · DELAY_MS=300
  *  예의: 요청을 직렬로, 요청 사이 DELAY_MS 간격으로 보내고 429/5xx는 물러났다 재시도한다.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
@@ -90,7 +90,7 @@ for (let i = 0, probes = 0; needed().length && probes < MAX_PROBES; i++) {
   let any = false;
   for (const l of lists) { if (i < l.length) { any = true; probes++; await tryPlayer(l[i]); if (!needed().length) break; } }
   if (!any) break;
-  if (i % 100 === 99) console.error(`  선수 탐색 ${probes}명째 — 남은 구간: ${needed().map((b) => b + ":" + (PPB - chosen.get(b).length)).join(" ")}`);
+  if (i % 100 === 99) console.error(`  선수 탐색 ${probes}명째, 남은 구간: ${needed().map((b) => b + ":" + (PPB - chosen.get(b).length)).join(" ")}`);
 }
 if (needed().length) {   // 부족한 높은 구간은 타이틀 선수로 보충
   const hi = needed().filter((b) => b >= 1800);

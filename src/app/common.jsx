@@ -1915,7 +1915,7 @@ export function deriveKeywords(m) {
   if (!ks.length) ks.push("NORMAL");
   return ks.slice(0, 3);
 }
-export function fmtFull(n) { return n == null ? "—" : Number(n).toLocaleString("en-US"); }
+export function fmtFull(n) { return n == null ? "-" : Number(n).toLocaleString("en-US"); }
 export function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
   if (m.live) return (m.live.mate != null ? (mateWhiteWins(m.live.mate, m.live.win) ? 1e5 : -1e5) : m.live.cp) * sgn;

@@ -2,23 +2,23 @@
 /** (v0.6.7) 퍼포먼스 레이팅 보정용 분석 하네스.
  *  저장소의 마스터 대회 대국(src/data/tournaments, 대회 당시 선수 레이팅 포함)을 앱의 실제 채점 코드(src/app/common.jsx analyzeGame)로 분석해
  *  진영별 { 레이팅, 정확도, 수 구성 }을 NDJSON으로 쌓는다. scripts/fit-performance-curve.mjs가 이 파일로 R(A) 곡선을 맞춘다.
- *  앱 코드를 esbuild로 번들해 그대로 실행하고(scripts/check-mec-facts.mjs와 같은 방식), 엔진은 Node UCI 어댑터(scripts/lib/nodeEngine.mjs)로 바꿔 끼운다 —
+ *  앱 코드를 esbuild로 번들해 그대로 실행하고(scripts/check-mec-facts.mjs와 같은 방식), 엔진은 Node UCI 어댑터(scripts/lib/nodeEngine.mjs)로 바꿔 끼운다.
  *  수 등급·희생 확인·날카로움 보정·정확도 계산이 앱과 같은 코드 경로를 탄다.
  *
  *  입력 대국: 기본은 저장소의 마스터 대회 대국(FIDE 레이팅). SOURCE=경로 를 주면 scripts/fetch-rated-games.mjs가 받은 chess.com 대국 파일을 대신 쓴다
- *  (낮은 레이팅대 — 마스터 표본은 2300 이상뿐이라). 두 출처는 레이팅 척도가 달라 출력 파일을 따로 두고(pool 필드로 구분), fit 단계에서 척도 차이를 맞춘다.
- *  출력 한 줄(v2): { id, plies, w:{elo,acc,counts,moves:[[등급,수 정확도,승률 손실,날카로움]…]}, b:{…}, pool, … } — 수별 기록(moves)으로 정확도 집계 방식을 바꿔 가며 비교할 수 있다.
+ *  (낮은 레이팅대, 마스터 표본은 2300 이상뿐이라). 두 출처는 레이팅 척도가 달라 출력 파일을 따로 두고(pool 필드로 구분), fit 단계에서 척도 차이를 맞춘다.
+ *  출력 한 줄(v2): { id, plies, w:{elo,acc,counts,moves:[[등급,수 정확도,승률 손실,날카로움]…]}, b:{…}, pool, … }, 수별 기록(moves)으로 정확도 집계 방식을 바꿔 가며 비교할 수 있다.
  *  사용법: [SOURCE=chesscom-games.ndjson] node scripts/calibrate-performance.mjs [출력.ndjson=scripts/calibration/perf-calibration.ndjson]
  *  재실행하면 이미 분석한 대국은 건너뛴다(이어서 하기). 오래 걸리므로 백그라운드로 돌리고 중간에 끊어도 된다.
  *  옵션(환경변수):
  *    GAMES=300        이번 실행에서 새로 분석할 대국 수 상한
  *    MINUTES=0        이 시간(분)이 지나면 새 대국을 더 시작하지 않는다(0 = 제한 없음)
- *    CONCURRENCY=4    동시에 분석할 대국 수(엔진 프로세스 수) — 코어 수에 맞춘다
+ *    CONCURRENCY=4    동시에 분석할 대국 수(엔진 프로세스 수), 코어 수에 맞춘다
  *    DEPTH=20         앱 리뷰와 같은 목표 depth(REVIEW_DEPTH)  ·  MOVETIME=1500  앱 리뷰와 같은 포지션당 시간(REVIEW_MOVETIME_MS)
  *    ENGINE=lite-single  node_modules/stockfish18/bin/stockfish-18-<ENGINE>.js (lite-single | single)
  *    MIN_ELO=2300     두 선수 모두 이 이상인 대국만  ·  MIN_PLIES=40  이보다 짧은 대국은 제외(정확도가 너무 불안정)
  *    SEED=1           표본 추출 시드(같은 시드면 같은 순서)
- *  표본: 평균 레이팅 구간(50점)마다 같은 수를 뽑는 층화 추출 — 레이팅이 높은 쪽으로 쏠린 원본 분포 때문에 곡선이 한쪽으로 기울지 않게 한다.
+ *  표본: 평균 레이팅 구간(50점)마다 같은 수를 뽑는 층화 추출, 레이팅이 높은 쪽으로 쏠린 원본 분포 때문에 곡선이 한쪽으로 기울지 않게 한다.
  */
 import { build } from "esbuild";
 import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync, appendFileSync } from "node:fs";
@@ -50,7 +50,7 @@ function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>
 const pool = new Map();    // 평균 레이팅 구간 → 후보
 const addCand = (band, c) => { if (!pool.has(band)) pool.set(band, []); pool.get(band).push(c); };
 if (SOURCE) {
-  // chess.com 등 수집 파일: { id, sans[], wElo, bElo, wName, bName, tc, timeClass, pool } — 100점 구간. MIN_ELO는 적용하지 않는다.
+  // chess.com 등 수집 파일: { id, sans[], wElo, bElo, wName, bName, tc, timeClass, pool }, 100점 구간. MIN_ELO는 적용하지 않는다.
   for (const line of readFileSync(SOURCE, "utf8").split("\n")) {
     if (!line.trim()) continue; let g; try { g = JSON.parse(line); } catch { continue; }
     if (!Array.isArray(g.sans) || g.sans.length < MIN_PLIES || !(g.wElo > 0 && g.bElo > 0)) continue;
@@ -72,7 +72,7 @@ if (SOURCE) {
 const rand = rng(SEED);
 for (const arr of pool.values()) for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
 const bands = [...pool.keys()].sort((a, b) => a - b);
-const order = [];   // 구간을 번갈아 하나씩 — 어디서 끊어도 층화가 유지된다
+const order = [];   // 구간을 번갈아 하나씩, 어디서 끊어도 층화가 유지된다
 for (let round = 0; ; round++) { let any = false; for (const b of bands) { const a = pool.get(b); if (round < a.length) { order.push(a[round]); any = true; } } if (!any) break; }
 
 const done = new Set();
@@ -95,14 +95,14 @@ async function worker(slot) {
       eng.newGame();
       let res;
       try { res = await analyzeGame(sans, eng, DEPTH, null, MOVETIME); } catch (e) { console.error("분석 실패 " + g.id + ": " + e.message); continue; }
-      // v2: 수별 기록도 함께 저장한다 — [등급, 수의 정확도, 승률 손실(감점 배율 적용 후), 날카로움]. 정확도를 다른 방식으로 모아 보는 분석(블런더에 덜 민감한 지표 등)을 재분석 없이 할 수 있다.
+      // v2: 수별 기록도 함께 저장한다, [등급, 수의 정확도, 승률 손실(감점 배율 적용 후), 날카로움]. 정확도를 다른 방식으로 모아 보는 분석(블런더에 덜 민감한 지표 등)을 재분석 없이 할 수 있다.
       const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
       const side = (white) => { const ms = res.moves.filter((m) => m.white === white); return { elo: white ? g.wElo : g.bElo, acc: white ? res.whiteAcc : res.blackAcc, counts: countSideMoves(ms), moves: ms.map((m) => [m.kind, r1(m.acc), r1(m.lossWinPct), r1(m.sharp)]) }; };
       const rec = { id: g.id, plies: sans.length, w: side(true), b: side(false), pool: g.pool, ...(g.timeClass ? { timeClass: g.timeClass, tc: g.tc } : {}), depth: DEPTH, movetime: MOVETIME, engine: ENGINE, sec: Math.round((Date.now() - g0) / 1000) };
       appendFileSync(outPath, JSON.stringify(rec) + "\n");
       finished++;
       const el = (Date.now() - t0) / 60000;
-      console.error(`[${slot}] ${finished}판 완료 (${rec.sec}s) ${g.wName} ${rec.w.elo} ${rec.w.acc} · ${g.bName} ${rec.b.elo} ${rec.b.acc} — 경과 ${el.toFixed(1)}분, 분당 ${(finished / el).toFixed(2)}판`);
+      console.error(`[${slot}] ${finished}판 완료 (${rec.sec}s) ${g.wName} ${rec.w.elo} ${rec.w.acc} · ${g.bName} ${rec.b.elo} ${rec.b.acc}, 경과 ${el.toFixed(1)}분, 분당 ${(finished / el).toFixed(2)}판`);
     }
   } finally { eng.close(); }
 }

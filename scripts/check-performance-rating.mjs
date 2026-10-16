@@ -164,9 +164,9 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
     ok(A.every(([, y]) => y >= PERF.FLOOR && y <= PERF.CAP), "곡선 파일 앵커가 [FLOOR, CAP] 밖");
     ok(Array.isArray(file.calibratedRange) && file.calibratedRange[0] >= 0 && file.calibratedRange[1] <= 100 && file.calibratedRange[0] < file.calibratedRange[1], "곡선 파일 calibratedRange 오류");
     ok(file.refMoves > 0, "곡선 파일에 refMoves가 없음");
-    ok(file.statistic && file.statistic.kind === "tier" && file.statistic.cap === PERF.TIER_CAP && JSON.stringify(file.statistic.loss) === JSON.stringify(TIER_LOSS), `곡선은 수 질 점수(${JSON.stringify(file.statistic)})로 보정됐는데 현재 코드는 tier·상한 ${PERF.TIER_CAP}·손실 가중치가 다름 — 지표를 바꿨으면 곡선을 다시 맞출 것`);
+    ok(file.statistic && file.statistic.kind === "tier" && file.statistic.cap === PERF.TIER_CAP && JSON.stringify(file.statistic.loss) === JSON.stringify(TIER_LOSS), `곡선은 수 질 점수(${JSON.stringify(file.statistic)})로 보정됐는데 현재 코드는 tier·상한 ${PERF.TIER_CAP}·손실 가중치가 다름, 지표를 바꿨으면 곡선을 다시 맞출 것`);
     const fp = accuracyFingerprint();
-    ok(file.fingerprint === fp, `정확도 계산이 곡선 보정 이후 바뀜(곡선 ${file.fingerprint} ≠ 현재 ${fp}) — scripts/calibrate-performance.mjs → fit-performance-curve.mjs로 곡선을 다시 맞출 것`);
+    ok(file.fingerprint === fp, `정확도 계산이 곡선 보정 이후 바뀜(곡선 ${file.fingerprint} ≠ 현재 ${fp}), scripts/calibrate-performance.mjs → fit-performance-curve.mjs로 곡선을 다시 맞출 것`);
   } else ok(file && file.anchors === null, "performanceCurve.json 형식 오류(보정 전이면 anchors는 null)");
 }
 

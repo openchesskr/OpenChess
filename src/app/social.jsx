@@ -447,7 +447,7 @@ export function ProfileWindow({ onClose, profile, setProfile, user, myUid, curre
             </div>
             <div className="flex gap-2" style={{ marginBottom: 14 }}>
               {[[t("래피드"), pending.rapid], [t("블리츠"), pending.blitz], [t("불릿"), pending.bullet]].map(([lb, v]) => (
-                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{v != null ? v : "—"}</div></div>
+                <div key={lb} style={{ flex: 1, textAlign: "center", background: "rgba(0,0,0,.05)", borderRadius: 9, padding: "8px 4px" }}><div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{lb}</div><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{v != null ? v : "-"}</div></div>
               ))}
             </div>
             <p style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 14 }}>{t("이 계정이 맞나요?")}</p>
