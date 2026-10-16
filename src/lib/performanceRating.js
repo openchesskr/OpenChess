@@ -17,6 +17,8 @@ export const PERF = {
   CAP: 3500,             // 모델 최고 레이팅(임시)
   SOFT_FLOOR: 40,        // S의 수별 정확도 하한 — 클수록 블런더 한 수의 영향이 작다(화면 정확도는 22). 수별 재분석 데이터로 정한 값(블런더 1개 비용 ≈820 → ≈520점, 예측 오차 거의 동일)
   SOFT_POWER: 1,         // S의 거듭제곱 평균 지수: −1 조화평균, 0 기하평균, 1 산술평균. 클수록 블런더에 둔감하다(화면 정확도는 −1)
+  TIER_CAP: 150,         // 수 질 점수(tierScore)에서 한 수가 깎을 수 있는 최대치(등급별 손실 가중치의 상한) — 블런더 한 수의 영향을 제한한다
+  POOL_MIN_EVIDENCE: 10, // 여러 판을 합칠 때 이보다 짧은 판(평가된 비이론 내 수가 이보다 적음)은 뺀다 — 너무 짧아 질을 가릴 수 없다
   EVIDENCE_K: 10,        // w(n) = n / (n + K). n=10이면 0.5, 40이면 0.8
   REF_MOVES: 30,         // R(A)가 맞춰진 기준 대국 길이(비이론 내 수). 곡선 파일의 refMoves가 있으면 그 값을 쓴다. base = FLOOR + (R(A) − FLOOR) · w(n) / w(REF)
   THEORY_MAX: 60,        // 이론 항 상한. T = MAX · (1 − e^(−t/TAU)), t = 이론 수 개수
@@ -62,6 +64,23 @@ export function robustAccuracy(sideMoves, floor = PERF.SOFT_FLOOR, power = PERF.
   const mean = sum / n;
   const s = power === 0 ? Math.exp(mean) : Math.pow(mean, 1 / power);
   return Math.round(clamp(s, 0, 100) * 10) / 10;
+}
+
+// 수 질 점수 S(0~100, 클수록 좋음) — 퍼포먼스 레이팅의 입력 지표. 평가된 비이론 수마다 등급별 손실 가중치(TIER_LOSS, 최선·유일·탁월 0 … 블런더 320)를
+// 구해 TIER_CAP(150)으로 자른 평균을 100 − 평균 · 100 / TIER_CAP 으로 뒤집는다. 자르기 때문에 블런더 한 수가 점수를 끌어내리는 폭이 제한된다.
+// 연구 결과(마스터 + chess.com 래피드, 다판 합산): 같은 판 수에서 화면 정확도식·산술평균보다 레이팅 환산 오차가 작고, 판을 합칠수록 오차가 판 수의 제곱근에 비례해 줄어든다.
+// 입력: 진영 하나의 수 목록 — analyzeGame의 수 객체({ kind, lossWinPct })도, 수별 기록 [등급, 정확도, 손실승률, 날카로움]도 받는다. 이론 수·평가 안 끝난 수(손실 null)는 뺀다. 반환 null = 평가된 수 없음.
+export const TIER_LOSS = { best: 0, only: 0, brilliant: 0, excellent: 22, good: 52, inaccuracy: 85, mistake: 150, blunder: 320, miss: 120 };
+export function tierScore(sideMoves, cap = PERF.TIER_CAP) {
+  let n = 0, sum = 0;
+  for (const m of sideMoves || []) {
+    if (!m) continue;
+    const kind = Array.isArray(m) ? m[0] : m.kind, loss = Array.isArray(m) ? m[2] : m.lossWinPct;
+    if (kind === "book" || loss == null) continue;
+    sum += Math.min(cap, TIER_LOSS[kind] ?? 50); n++;
+  }
+  if (!n) return null;
+  return Math.round(clamp(100 - (sum / n) * (100 / cap), 0, 100) * 10) / 10;
 }
 
 // 진영 하나의 수 목록(analyzeGame의 moves 중 그 진영 것: { kind, lossWinPct })에서 항별 입력 개수를 센다.
@@ -149,4 +168,18 @@ export function openingTermFromLine(nodes, side, strength, p = PERF) {
   if (!nodes || !nodes.length || !strength || !strength.entries) return 0;
   const last = nodes[nodes.length - 1];
   return openingTerm(strength.entries[side + ":" + last.key], strength.globalMean, p);
+}
+
+/* 여러 판 합산 퍼포먼스 레이팅(프로필 "최근 N판"). games: [{ moves(내 진영의 수 목록), opening, timeShift, forceProvisional }].
+   점수 S는 모든 판의 수를 한꺼번에 모아 계산하고(판별 점수의 평균과 사실상 같은 오차), 판 길이·이론·탁월·블런더·오프닝 항은 판마다 계산해 평균 낸다 —
+   합친 수 개수 전체를 "한 판의 길이"로 세면 길이 보너스가 부풀기 때문이다. 너무 짧은 판(POOL_MIN_EVIDENCE 미만)은 뺀다.
+   반환: null(쓸 수 있는 판 없음) | { rating, base, time, theory, quality, blunder, opening, n(판 평균 근거 수), games(반영한 판 수), provisional }. */
+export function pooledPerformance(games, p = PERF, curve = null) {
+  const use = (games || []).map((g) => ({ ...g, counts: countSideMoves(g.moves) })).filter((g) => g.counts.evidence >= p.POOL_MIN_EVIDENCE);
+  if (!use.length) return null;
+  const S = tierScore(use.flatMap((g) => g.moves), p.TIER_CAP);
+  if (S == null) return null;
+  const rs = use.map((g) => performanceRating({ acc: S, counts: g.counts, opening: g.opening || 0, timeShift: g.timeShift || 0, forceProvisional: !!g.forceProvisional }, p, curve));
+  const avg = (k) => rs.reduce((a, r) => a + r[k], 0) / rs.length;
+  return { rating: Math.round(avg("rating")), base: avg("base"), time: avg("time"), theory: avg("theory"), quality: avg("quality"), blunder: avg("blunder"), opening: avg("opening"), n: avg("n"), games: use.length, score: S, provisional: rs.some((r) => r.provisional) };
 }

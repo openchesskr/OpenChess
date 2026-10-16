@@ -10,7 +10,7 @@
  *      보정 당시의 정확도 계산 지문이 지금과 같다(정확도 계산이 바뀌었는데 곡선을 안 맞추면 빌드 실패).
  */
 import { readFileSync } from "node:fs";
-import { PERF, timeProfile, robustAccuracy, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
+import { PERF, timeProfile, robustAccuracy, tierScore, TIER_LOSS, pooledPerformance, RA_ANCHORS, ratingFromAccuracy, performanceRating, countSideMoves, openingTerm, bookNodesOfLine, openingTermFromLine, isCurveCalibrated } from "../src/lib/performanceRating.js";
 import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
 import { sansToFen } from "../src/lib/chessRules.js";
 import { bookPositionKey, ecoHash } from "../src/lib/ecoHash.js";
@@ -96,6 +96,35 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
   ok(robustAccuracy([{ acc: 90 }, { acc: 80 }, { acc: null }]) === robustAccuracy([["x", 90], ["y", 80]]), "수 객체와 수별 기록 형식의 결과가 다름");
 }
 
+// tierScore(수 질 점수)·pooledPerformance(여러 판 합산)
+{
+  const mv = (kind, loss = 5) => ({ kind, lossWinPct: loss });
+  const clean = Array.from({ length: 30 }, () => mv("best", 0));
+  ok(tierScore(clean) === 100 && tierScore([]) === null && tierScore([mv("book", null), mv("best", null)]) === null, "tierScore 기본값 오류");
+  ok(tierScore([[ "best", 100, 0, 0 ], [ "good", 90, 5, 0 ]]) === tierScore([mv("best", 0), mv("good", 5)]), "tierScore가 수 객체/수별 기록 형식에서 다른 값");
+  // 등급이 나빠질수록 점수가 내려가고, 블런더의 손실은 상한(TIER_CAP)에서 멈춘다
+  const order = ["best", "excellent", "good", "inaccuracy", "mistake"];
+  for (let i = 1; i < order.length; i++) ok(tierScore([...clean, mv(order[i])]) < tierScore([...clean, mv(order[i - 1])]), `tierScore: ${order[i - 1]} → ${order[i]}에서 점수가 내려가지 않음`);
+  ok(tierScore([...clean, mv("blunder")]) === tierScore([...clean, mv("mistake")]) && Math.min(PERF.TIER_CAP, TIER_LOSS.blunder) === PERF.TIER_CAP, "블런더 한 수의 손실이 상한에서 멈추지 않음");
+  ok(tierScore([...clean, mv("blunder")]) > robustAccuracy([...clean.map((m) => ["best", 100, 0, 0]), ["blunder", 5, 90, 0]], 22, -1) - 1000 && tierScore([...clean, mv("blunder")]) <= 100, "tierScore 범위 오류");
+  ok(tierScore([...clean, mv("book", null), mv("blunder", null)]) === 100, "이론 수·평가 안 된 수가 점수에 들어감");
+  ok(tierScore([mv("zzz")]) === tierScore([mv("good")]) || tierScore([mv("zzz")]) != null, "알 수 없는 등급 처리 오류");
+
+  const curve = { anchors: [[0, 100], [68, 400], [76, 1600], [84, 2700], [100, 3500]], refMoves: 34, calibratedRange: [68, 84] };
+  const game = (kinds, extra = {}) => ({ moves: kinds.map((k) => mv(k)), ...extra });
+  const g30 = (k) => game([...Array(30 - 2).fill("best"), k, "good"]);
+  ok(pooledPerformance([], PERF, curve) === null && pooledPerformance([game(["best", "good"])], PERF, curve) === null, "쓸 수 있는 판이 없는데 null이 아님");
+  const one = pooledPerformance([g30("good")], PERF, curve), same = pooledPerformance([g30("good"), g30("good"), g30("good")], PERF, curve);
+  ok(one && same && same.games === 3 && Math.abs(one.rating - same.rating) <= 1, "같은 판을 여러 번 합쳐도 점수가 같아야 함(판 길이 보너스가 부풀면 안 됨)");
+  ok(pooledPerformance([g30("good"), g30("blunder")], PERF, curve).rating < one.rating, "블런더 판이 섞였는데 점수가 안 내려감");
+  ok(pooledPerformance([g30("good"), g30("blunder")], PERF, curve).rating > pooledPerformance([g30("blunder")], PERF, curve).rating, "좋은 판이 섞였는데 점수가 안 올라감");
+  ok(pooledPerformance([g30("good"), game([...Array(5).fill("best"), "good"])], PERF, curve).games === 1, "너무 짧은 판이 합산에 들어감");
+  ok(pooledPerformance([g30("good"), g30("good", { forceProvisional: true })], PERF, curve).provisional === true, "임시 표시 판이 섞이면 임시여야 함");
+  const mid = (extra) => game([...Array(10).fill("good"), ...Array(10).fill("inaccuracy"), ...Array(8).fill("excellent"), "mistake", "good"], extra);
+  ok(pooledPerformance([mid({ timeShift: 3 })], PERF, curve).rating < pooledPerformance([mid()], PERF, curve).rating, "시간 규정 보정이 합산에서 사라짐");
+  for (let n = 1; n < 12; n++) { const gs = Array.from({ length: n }, () => g30("good")); ok(pooledPerformance(gs, PERF, curve).rating >= PERF.FLOOR && pooledPerformance(gs, PERF, curve).rating <= PERF.CAP, "합산 점수가 [FLOOR, CAP] 밖"); }
+}
+
 // 시간 규정 보정: 클래시컬은 지표에서 δ를 빼 점수가 낮아지고, 래피드는 그대로, 자료 없는 시간 규정은 임시 표시
 {
   const curve = { anchors: [[0, 100], [84, 664], [92.75, 2700], [100, 3500]], refMoves: 36, calibratedRange: [84, 92.75], fit: { model: { delta: 2.7 } } };
@@ -135,7 +164,7 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
     ok(A.every(([, y]) => y >= PERF.FLOOR && y <= PERF.CAP), "곡선 파일 앵커가 [FLOOR, CAP] 밖");
     ok(Array.isArray(file.calibratedRange) && file.calibratedRange[0] >= 0 && file.calibratedRange[1] <= 100 && file.calibratedRange[0] < file.calibratedRange[1], "곡선 파일 calibratedRange 오류");
     ok(file.refMoves > 0, "곡선 파일에 refMoves가 없음");
-    ok(file.statistic && file.statistic.floor === PERF.SOFT_FLOOR && file.statistic.power === PERF.SOFT_POWER, `곡선은 정확도 지표(하한 ${file.statistic && file.statistic.floor}, 지수 ${file.statistic && file.statistic.power})로 보정됐는데 지금 PERF는 (하한 ${PERF.SOFT_FLOOR}, 지수 ${PERF.SOFT_POWER}) — 지표를 바꿨으면 곡선을 다시 맞출 것`);
+    ok(file.statistic && file.statistic.kind === "tier" && file.statistic.cap === PERF.TIER_CAP && JSON.stringify(file.statistic.loss) === JSON.stringify(TIER_LOSS), `곡선은 수 질 점수(${JSON.stringify(file.statistic)})로 보정됐는데 현재 코드는 tier·상한 ${PERF.TIER_CAP}·손실 가중치가 다름 — 지표를 바꿨으면 곡선을 다시 맞출 것`);
     const fp = accuracyFingerprint();
     ok(file.fingerprint === fp, `정확도 계산이 곡선 보정 이후 바뀜(곡선 ${file.fingerprint} ≠ 현재 ${fp}) — scripts/calibrate-performance.mjs → fit-performance-curve.mjs로 곡선을 다시 맞출 것`);
   } else ok(file && file.anchors === null, "performanceCurve.json 형식 오류(보정 전이면 anchors는 null)");

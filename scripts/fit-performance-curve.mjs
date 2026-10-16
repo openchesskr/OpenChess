@@ -14,13 +14,13 @@
  *
  *  사용법: node scripts/fit-performance-curve.mjs [--dry] [입력.ndjson ...]
  *          (입력 생략 시 scripts/calibration/perf-calibration-v2.ndjson(마스터) + perf-calibration-chesscom-v2.ndjson. pool 필드가 chesscom이면 그 척도, 없으면 마스터(FIDE).
- *           수별 기록(moves)이 있는 v2 파일만 쓴다 — 퍼포먼스 레이팅 입력 S = robustAccuracy(moves, PERF.SOFT_FLOOR, PERF.SOFT_POWER))
+ *           수별 기록(moves)이 있는 v2 파일만 쓴다 — 퍼포먼스 레이팅 입력 S = tierScore(moves))
  *          --dry: 파일을 쓰지 않고 보고만
  *  옵션(환경변수): MIN_EVIDENCE=20 · MIN_SIDES=300 · MIN_BIN=6(구간당 진영 수 하한) · BIN=100 · BOOT=1000 · OFFSET=오프셋 파일 · OUT=출력 경로
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { accuracyFingerprint } from "./lib/accuracyFingerprint.mjs";
-import { PERF, robustAccuracy } from "../src/lib/performanceRating.js";
+import { PERF, tierScore, TIER_LOSS } from "../src/lib/performanceRating.js";
 
 const here = (p) => new URL(p, import.meta.url).pathname;
 const dry = process.argv.includes("--dry");
@@ -52,7 +52,7 @@ const pts = []; let noMoves = 0;
 for (const r of recs) for (const s of [r.w, r.b]) {
   if (!(s.elo > 0) || s.counts.evidence < MIN_EVIDENCE) continue;
   if (!s.moves) { noMoves++; continue; }
-  const S = robustAccuracy(s.moves);   // 퍼포먼스 레이팅 전용 정확도(PERF.SOFT_FLOOR·SOFT_POWER)
+  const S = tierScore(s.moves);   // 퍼포먼스 레이팅 입력 지표: 수 질 점수(등급별 손실을 PERF.TIER_CAP으로 자른 평균을 0~100으로 뒤집은 값)
   if (S == null) continue;
   const cc = r.pool === "chesscom";
   pts.push({ R: cc ? s.elo : toCc(s.elo), A: S, n: s.counts.evidence, pool: cc ? "chesscom" : "masters", game: r.id });
@@ -188,7 +188,7 @@ for (let i = 1; i < anchors.length; i++) if (!(anchors[i][0] > anchors[i - 1][0]
 for (const [, y] of anchors) if (y < PERF.FLOOR || y > PERF.CAP) { console.error("✖ 앵커가 [FLOOR, CAP] 밖: " + y); process.exit(1); }
 const ns = pts.map((q) => q.n).sort((u, v) => u - v);
 const out = {
-  version: 3, fingerprint: accuracyFingerprint(), statistic: { floor: PERF.SOFT_FLOOR, power: PERF.SOFT_POWER }, scale: "chesscom-rapid", refMoves: ns[Math.floor(ns.length / 2)],
+  version: 3, fingerprint: accuracyFingerprint(), statistic: { kind: "tier", cap: PERF.TIER_CAP, loss: TIER_LOSS }, scale: "chesscom-rapid", refMoves: ns[Math.floor(ns.length / 2)],
   anchors, calibratedRange,
   fit: { sides: pts.length, games: recs.length, rho: Math.round(rho * 1000) / 1000, sigma: round(sigma), curveSE, model: { c: round(full.sat.c), d: round(full.sat.d), tau: Math.round(full.sat.tau), delta: round(full.sat.delta), deltaCI: deltaCI.map(round) }, offset: offsetInfo },
   source: engines.join(", "),

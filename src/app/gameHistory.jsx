@@ -7,6 +7,7 @@ import { chessTcCategory } from "../lib/chessRating.js";
 import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
 import { TIME_CLASS_LABEL, fmtFull, openingNameOf } from "./common.jsx";
+import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { t, tx } from "../lib/i18n.js";
 
 // (v0.6.2) chess.com 대국 통계(AccountChessStats)의 필터·전적·"최근 대국" UI를 공용으로 뺀 것 — chess.com 통계와 OpenChess 일반 대국 기록이 같은 컴포넌트를 쓴다.
@@ -297,7 +298,7 @@ export function summarizeGames(games) {
 }
 
 // "전체 기간 전적" 박스 — 승·무·패 글자와 비율 막대
-export function GameRecordSummary({ overall }) {
+export function GameRecordSummary({ overall, footer }) {
   return (
     <div style={{ background: "rgba(0,0,0,.04)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
@@ -312,6 +313,7 @@ export function GameRecordSummary({ overall }) {
         <div style={{ width: (100 * overall.d / overall.total) + "%", background: "#9C8A6A" }} />
         <div style={{ width: (100 * overall.l / overall.total) + "%", background: T.blunder }} />
       </div>
+      {footer}
     </div>
   );
 }
@@ -432,7 +434,7 @@ export function OpenChessGameHistory({ uid, username, onOpenGame, onOpenGameAnal
         <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
         <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
       </div>
-      {overall ? <GameRecordSummary overall={overall} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
+      {overall ? <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="oc" />} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
       <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={false} />
       <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={timeFilter + "|" + colorFilter}
         onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
