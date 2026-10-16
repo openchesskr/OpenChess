@@ -74,7 +74,7 @@ export function RecentPerformanceRow({ games, source, ownerUid }) {
       <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3, lineHeight: 1.5 }}>
         {status === "loading" ? t("분석 기록을 불러오는 중…")
           : perf ? <>{tx("분석된 최근 {0}판 기준", perf.games)}{perf.provisional ? " · " + t("보정 전 임시 수치") : ""}</>
-          : tx("리뷰한 대국이 {0}판 이상 되면 표시돼요 (지금 {1}판)", RECENT_PERF_MIN_GAMES, items.length)}
+          : tx("리뷰한 대국이 {0}판 이상 쌓이면 표시 (현재 {1}판)", RECENT_PERF_MIN_GAMES, items.length)}
       </div>
     </div>
   );

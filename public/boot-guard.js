@@ -5,7 +5,7 @@
   function show(msg) {
     var boot = document.getElementById("boot");
     if (!boot) return;   // 앱이 이미 그려졌다
-    boot.innerHTML = '<div style="max-width:320px;text-align:center;padding:0 24px"><div style="font-size:17px;font-weight:800;margin-bottom:8px">' + (ko ? "화면을 불러오지 못했어요" : "Couldn't load the page") + '</div><div style="font-size:13px;line-height:1.6;opacity:.8;margin-bottom:16px">' + msg + '</div><button id="boot-retry" style="padding:11px 26px;border-radius:10px;border:none;background:#D4AF55;color:#241509;font-weight:800;font-size:14px">' + (ko ? "새로고침" : "Reload") + '</button></div>';
+    boot.innerHTML = '<div style="max-width:320px;text-align:center;padding:0 24px"><div style="font-size:17px;font-weight:800;margin-bottom:8px">' + (ko ? "화면 불러오기 실패" : "Couldn't load the page") + '</div><div style="font-size:13px;line-height:1.6;opacity:.8;margin-bottom:16px">' + msg + '</div><button id="boot-retry" style="padding:11px 26px;border-radius:10px;border:none;background:#D4AF55;color:#241509;font-weight:800;font-size:14px">' + (ko ? "새로고침" : "Reload") + '</button></div>';
     var b = document.getElementById("boot-retry"); if (b) b.onclick = function () { location.reload(); };
   }
   function fail() {
@@ -16,11 +16,11 @@
       location.reload();
       return;
     }
-    show(ko ? "네트워크가 불안정하거나 사이트가 업데이트됐을 수 있어요. 새로고침해 주세요." : "Your connection may be unstable or the site was just updated. Please reload.");
+    show(ko ? "네트워크가 불안정하거나 사이트가 업데이트됐을 수 있음. 새로고침 필요." : "Your connection may be unstable or the site was just updated. Please reload.");
   }
   window.addEventListener("error", function (e) {
     var t = e && e.target;
     if (t && t.tagName === "SCRIPT" && document.getElementById("boot")) fail();   // 모듈 스크립트 자체를 못 받음
   }, true);
-  setTimeout(function () { if (document.getElementById("boot")) show(ko ? "불러오는 데 오래 걸리고 있어요. 새로고침해 보세요." : "This is taking a while. Try reloading."); }, 15000);
+  setTimeout(function () { if (document.getElementById("boot")) show(ko ? "불러오는 시간이 오래 걸리는 중. 새로고침 필요." : "This is taking a while. Try reloading."); }, 15000);
 })();

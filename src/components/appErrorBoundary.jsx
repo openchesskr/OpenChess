@@ -33,8 +33,8 @@ export class AppErrorBoundary extends React.Component {
     return (
       <div style={box}>
         <div style={{ maxWidth: 360, textAlign: "center" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{t("화면을 불러오지 못했어요")}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.8, marginBottom: 18 }}>{t("잠깐 문제가 생겼어요. 새로고침하면 대부분 해결돼요.")}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>{t("화면 불러오기 실패")}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.8, marginBottom: 18 }}>{t("일시적인 문제 발생. 새로고침하면 대부분 해결.")}</div>
           <button onClick={() => window.location.reload()} style={{ padding: "11px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg,#D4AF55,#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>{t("새로고침")}</button>
           <div style={{ marginTop: 16 }}>
             <button onClick={() => this.setState({ open: !open })} style={{ background: "none", border: "none", color: "#EBDDC4", opacity: 0.6, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>{t("오류 내용 보기")}</button>

@@ -1085,7 +1085,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          {isDev && <DevModeRow label={t("개발자 모드")} hint={t("켜면 아래 도구와 편집 기능을 쓸 수 있어요")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
+          {isDev && <DevModeRow label={t("개발자 모드")} hint={t("켜면 아래 도구와 편집 기능 사용 가능")} on={devOn} onToggle={() => setDevOn((v) => !v)} />}
           {isCodev && <DevModeRow label={t("공동 개발자 모드")} hint={t("임명 권한만 빼고 모두 사용 가능")} on={codevOn} onToggle={() => setCodevOn((v) => !v)} />}
           {canEdit && (
             <>

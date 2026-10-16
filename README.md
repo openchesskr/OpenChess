@@ -82,6 +82,34 @@
 
 ## 버전 기록
 
+### OpenChess v0.6.7 - 2026/10/16
+
+**기능**
+- 프로필 "최근 10판 퍼포먼스 레이팅"(`app/recentPerf.jsx`, `lib/recentPerformance.js`): OpenChess·chess.com 모두 `GameRecordSummary`의 `footer`로 전체 기간 전적 박스 하단에 표시. 분석이 저장된 대국만 최신순으로 10판 모음(10판씩 조회, 최대 40판 후보). 분석된 대국이 3판 미만이면 안내만 표시, 시간 규정이 섞이거나 보정 구간 밖이면 "보정 전 임시 수치" 표기. 한 판 값은 오차가 ±1000점 안팎이라 표시하지 않고 합산 값만 보여줌(연구: 오차가 판 수의 제곱근에 반비례, 10판 약 ±300, 100판 약 ±110).
+- 계산식(`lib/performanceRating.js`): 상대·본인 레이팅과 무관하게 수의 질만 사용. 기본(수 질 점수 S, 근거 수 n) + 이론 + 탁월·유일 - 블런더 + 오프닝, [100, 3500]으로 제한. S = 평가된 비이론 수의 등급별 손실(`TIER_LOSS`)을 `TIER_CAP`(150)으로 잘라 평균 낸 값을 0~100으로 뒤집은 것(`tierScore`). 여러 판은 모든 수를 합쳐 S를 구하고 나머지 항은 판마다 계산해 평균(`pooledPerformance`, 12수 미만 판 제외). 마스터 클래시컬 대국은 지표가 높게 나오는 차이(δ)를 시간 규정 보정으로 반영.
+- 곡선 보정(`data/performanceCurve.json`): chess.com 래피드 레이팅 척도. 마스터 대국(FIDE 2300+, 오프셋 -34)과 chess.com 대국 777판(진영 1,432개, 엔진 depth 20)으로 포화형 곡선을 맞춤. 정확도 계산 코드 지문과 지표 종류를 파일에 담아 `check-performance-rating`이 어긋나면 빌드를 막음. 오프닝 항은 마스터 대국에서 뽑은 `data/openingStrength.json`(4,429 포지션).
+- 보정 도구 `scripts/`: `calibrate-performance.mjs`(앱 채점 코드를 Node 엔진 어댑터로 실행), `fetch-rated-games.mjs`, `fit-performance-curve.mjs`, `compare-accuracy-statistics.mjs`, `analyze-multigame.mjs`(다판 합산 오차 연구), `build-opening-strength.mjs`. 데이터는 `scripts/calibration/`.
+- OpenChess 대국 분석 저장: 리뷰가 끝나면 `game_analysis_put` RPC로 올림. 서버가 기보로 내가 참가한 같은 대국을 찾아 묶고, 올린 사람별로 저장(`game_analyses`, 키 kind+game_id+uid). 프로필은 주인이 올린 분석만 읽음.
+- 리뷰 요약 화면의 퍼포먼스 레이팅(한 판 값) 삭제.
+
+**보안**
+- `game_analyses`: 기본키에 uid를 넣어 상대가 올린 분석이 참가자의 값을 덮어쓰지 못하게 함(배포 전 보안 검토 지적). 깊이 d는 0~60만 허용, 크기 1MB 제한, 수 개수가 기보와 다르면 거부. 참가자가 자기 대국에 조작한 분석을 올리는 것은 서버가 검증할 수 없어 표시용 수치로 허용(BUG-096).
+
+**UI**
+- 설정의 개발자 도구를 카드 하나로 통합: 개발자·공동 개발자 모드 토글을 이 카드로 옮기고 표준 크기(46×26)로 변경, 도구는 계정·권한 / 재화·티어 테스트 / 퍼즐 콘텐츠 / 신고 4개 접이식 묶음(`DevGroup`).
+- 320px 폭 헤더(`tinyHeader`), 터치 기기 헤더 버튼 터치 범위 확대(`pointer: coarse`), 버전 글자 8.5px, 분석 탭 엔진 수순 오른쪽 페이드, "불렛"을 "불릿"으로 통일, 값이 없을 때 "—"를 "-"로 변경.
+
+**성능**
+- 첫 화면 전 어두운 시작 화면(`index.html`의 `#boot`)으로 번들 로딩 중 흰 화면 제거.
+
+**버그 수정**
+- BUG-103(P1): 접속 시 흰 화면. 앱 전체 `AppErrorBoundary`, `vite:preloadError`·청크 로드 실패 시 60초 내 한 번 자동 새로고침, `public/boot-guard.js`(스크립트 로드 실패·15초 지연 시 안내와 새로고침). 안전장치 `check-boot-guard`.
+- BUG-093~102: 지표 선정 오류 정정, 다판 분석 도구 가드, 분석 깊이 혼합(기록), 분석 덮어쓰기 방지, 개발자 도구 `}` 글자·버튼 밀림, 불릿 표기, 320px 헤더, 터치 범위, 엔진 수순 잘림.
+
+**시스템**
+- `supabase-setup.sql`: `game_analyses` 표, `game_analysis_put` RPC(올린 사람별 저장). `sql-table-baseline.json`에 표 등록.
+- 신규 prebuild 검사: `check-performance-rating`(단조성·합산·곡선 파일·지표 일치), `check-boot-guard`. `check-release-ready`는 곡선이 보정 전이면 실패. i18n 5개 언어 번역 추가.
+
 ### OpenChess v0.6.6 — 2026/10/13
 
 **기능**
