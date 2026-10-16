@@ -96,3 +96,9 @@ html:not([lang="ko"]) button, html:not([lang="ko"]) input, html:not([lang="ko"])
   transition: none !important;
   animation: none !important;
 }
+
+/* 터치 화면에서 헤더의 작은 아이콘 버튼(27px)·버전 링크의 눌리는 범위를 눈에 보이는 크기는 그대로 두고 44px 안팎으로 넓힌다. */
+@media (pointer: coarse) {
+  header button, header a[href="/about"] { position: relative; }
+  header button::after, header a[href="/about"]::after { content: ""; position: absolute; inset: -9px -3px; }
+}

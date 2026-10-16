@@ -1073,12 +1073,12 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <Crown size={16} style={{ color: T.brass }} />
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("개발자 도구")}</div>
           </div>
-          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>}
+          <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 14 }}>{isCodev && codevOn && !(isDev && devOn) ? t("공동 개발자 모드는 임명 권한을 제외한 모든 기능 사용 가능") : t("개발자 전용 도구")}</p>
 
           {canManageCodev && (
             <>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>{t("공동 개발자 지정")}</div>
-              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder={t("아이디 (영문+숫자)")} style={{ flex: 1, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer" }}>{codevBusy ? t("확인 중…") : t("추가")}</button></div>
+              <div className="flex gap-2"><input value={codevId} onChange={(e) => { setCodevId(e.target.value); setCodevErr(""); }} placeholder={t("아이디 (영문+숫자)")} style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink }} /><button onClick={addCodev} disabled={codevBusy} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{codevBusy ? t("확인 중…") : t("추가")}</button></div>
               {codevErr && <p style={{ fontSize: 11, color: T.blunder, marginTop: 6 }}>{codevErr}</p>}
               <p style={{ fontSize: 11, color: T.inkSoft, marginTop: 6 }}>{tx("공동 개발자는 트리·분기점·해설 {0}만 가능. 수정·삭제 불가", <b>{t("추가")}</b>)}</p>
               <div style={{ height: 1, background: "#E4D5B6", margin: "16px 0" }} />

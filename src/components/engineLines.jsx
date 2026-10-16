@@ -288,7 +288,7 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
       style={{ height: large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small, boxSizing: "border-box", display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small={!large} font={font} />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"
-        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: font || SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default" }}>
+        style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: large ? 13 : 10, color: T.ivory, fontFamily: font || SEQ_FONT, WebkitOverflowScrolling: "touch", cursor: onPlayFirst ? "pointer" : "default", WebkitMaskImage: "linear-gradient(to right, #000 calc(100% - 16px), transparent)", maskImage: "linear-gradient(to right, #000 calc(100% - 16px), transparent)" }}>
         <span ref={innerRef} style={{ display: "inline-block" }}>
           <TypedMoveLine startPly={startPly} sans={l.sans} posKeyBase={posKeyBase} startColor={startColor} />
         </span>
