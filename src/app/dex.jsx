@@ -4,7 +4,7 @@ import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRule
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
 import { T, BOARD_SKINS, PIECE_SKINS } from "../lib/theme.js";
-import { Lock, Check, X, RotateCcw, ChevronRight, Cpu, Save } from "lucide-react";
+import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";
@@ -12,6 +12,7 @@ import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELE
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
+import { DexHub } from "../components/dexHub.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -1267,7 +1268,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   );
 }
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
     setDexView(k);
@@ -1319,8 +1320,19 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
   // (v0.6.3) 탭 알약 — 데스크톱의 오프닝·마스터 모식도는 검색·안내 줄과 같은 한 줄에 넣어(inlineTabs) 모식도 높이를 늘린다. 모바일·칭호·스킨은 예전처럼 위에 따로 둔다.
+  // (v0.6.8) 도감 첫 화면 카드: 오프닝은 해금률, 업적은 획득 수, 스킨은 보유 수를 달성률 게이지로 보여준다. 마스터는 수치 없이 입구만.
+  const totalTitles = TITLE_SERIES.reduce((a, x) => a + x.mins.length, 0);
+  const totalSkins = Object.keys(BOARD_SKINS).length + Object.keys(PIECE_SKINS).length;
+  const ownedSkinN = Math.min(totalSkins, (ownedSkins ? ownedSkins.size : 0) + 2);   // 기본 보드·기물 스킨 포함
+  const hubItems = [
+    { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : 0, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : "0%" },
+    { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: "" },
+    { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
+    { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
+  ];
   const tabPills = (mb) => (
     <div className="flex items-center gap-2" style={{ marginBottom: mb, flexShrink: 0 }}>
+      <button onClick={() => selectDexView("hub")} aria-label={t("컬렉션")} title={t("컬렉션")} className="press" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ChevronLeft size={18} /></button>
       {[["openings", t("오프닝")], ["masters", t("마스터")], ["titles", t("업적")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
           <button key={k} onClick={() => selectDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
         ); })}
@@ -1330,8 +1342,10 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation).
   return (
     <div style={{ isolation: "isolate" }}>
-      {!inlineTabs && tabPills(14)}
-      {dexView === "masters" ? (
+      {!inlineTabs && dexView !== "hub" && tabPills(14)}
+      {dexView === "hub" ? (
+        <DexHub items={hubItems} achievedCount={earned.size} onOpen={selectDexView} />
+      ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={inlineTabs ? tabPills(0) : undefined} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (
         <div>

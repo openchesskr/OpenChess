@@ -28,6 +28,7 @@ import { PuzzleTab } from "./app/puzzle.jsx";
 import { QuestTab } from "./app/quest.jsx";
 
 import { t, tx } from "./lib/i18n.js";
+import { DEX_HUB_PATH } from "./lib/dexRoutes.js";
 export default function App() {
   const narrowHeader = useNarrow(480);
   const tinyHeader = useNarrow(345);   // 320px대 폰, 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
@@ -1090,12 +1091,12 @@ export default function App() {
       if (cur.includes(name)) window.history.back();
     } catch { }
   }, []);
-  const switchTab = (k) => {
+  const switchTab = (k, pathOverride) => {
     if (k === "dex") { setNewUnlocks(0); setNewTitles(0); }
     setNavNonce((n) => n + 1);
     setTab(k);
     urlTabRef.current = k;
-    try { const p = TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
+    try { const p = pathOverride || TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
@@ -1832,7 +1833,7 @@ export default function App() {
           /* (버그·모바일) 6개 탭을 균등 분배 — 고정폭+큰 gap이면 좁은 화면에서 버튼이 찌그러져 라벨이 세로로 깨졌다. */
           <div className="flex" style={{ margin: "0 auto", height: "100%", maxWidth: 560, padding: "0 4px" }}>
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; return (
-              <button key={key} onClick={() => switchTab(key)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <button key={key} onClick={() => switchTab(key, key === "dex" ? DEX_HUB_PATH : undefined)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <span style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass }} />}
                 <span style={{ position: "relative" }}>{key === "quest" ? <MaterialIcon name={questIconName} size={20} /> : key === "puzzle" ? <MaterialIcon name="extension" size={20} /> : key === "learn" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>

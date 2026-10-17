@@ -2422,4 +2422,6 @@ export default {
   "업적": "Logros",
   "업적 달성": "Logro desbloqueado",
   "퍼즐 {0}개 + chess.com {1}회": "{0} {0|puzle|puzles} + {1} {1|partida|partidas} en chess.com",
+  "업적 {0}개 달성": "{0} {0|logro desbloqueado|logros desbloqueados}",
+  "컬렉션": "Colección",
 };
