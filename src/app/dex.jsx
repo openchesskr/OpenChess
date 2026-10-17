@@ -20,7 +20,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, SeriesGlyph, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, SeriesGlyph, seriesLabelText, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1302,7 +1302,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
       {narrow && (
         <div ref={chipsRef} className="hide-scrollbar" style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", margin: "0 -2px 12px", padding: "2px 2px 6px", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
           {TITLE_CATEGORIES.map((cat) => {
-            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || x.label.toLowerCase().includes(ql)));
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || (seriesLabelText(x).toLowerCase().includes(ql) || x.label.toLowerCase().includes(ql))));
             if (!list.length) return null;
             return (
               <React.Fragment key={cat.key}>
@@ -1313,7 +1313,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
                     <button key={x.key} data-ach={x.key} onClick={() => setSel(x.key)} className="press" aria-pressed={on}
                       style={{ position: "relative", flexShrink: 0, scrollSnapAlign: "center", display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 6px 7px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg,rgba(196,154,80,.4),rgba(196,154,80,.15))" : "rgba(255,255,255,.04)", color: on ? T.ivoryHi : T.ivory, cursor: "pointer", whiteSpace: "nowrap" }}>
                       <SeriesGlyph series={x} size={24} />
-                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>{x.label}</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>{seriesLabelText(x)}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
                       {freshOf(x) && <span aria-hidden="true" style={{ position: "absolute", top: 0, right: 2, width: 7, height: 7, borderRadius: 999, background: "#E8453C", boxShadow: "0 0 0 1.5px #1B0F08" }} />}
                     </button>
@@ -1327,7 +1327,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
         {!narrow && <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
           {TITLE_CATEGORIES.map((cat) => {
-            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || x.label.toLowerCase().includes(ql)));
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || (seriesLabelText(x).toLowerCase().includes(ql) || x.label.toLowerCase().includes(ql))));
             if (!list.length) return null;
             return (
               <div key={cat.key} style={{ marginBottom: 12 }}>
@@ -1339,7 +1339,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
                       style={{ position: "relative", display: "flex", alignItems: "center", gap: narrow ? 6 : 9, width: "100%", textAlign: "left", padding: narrow ? "6px 6px" : "7px 9px", marginBottom: 3, borderRadius: 8, border: "1px solid " + (on ? T.brass : "transparent"), borderLeft: "3px solid " + (on ? T.brassHi : "transparent"), background: on ? "linear-gradient(90deg,rgba(196,154,80,.3),rgba(196,154,80,.08))" : "rgba(255,255,255,.03)", cursor: "pointer", color: T.ivory }}>
                       <SeriesGlyph series={x} size={narrow ? 26 : 32} />
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{x.label}</span>
+                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{seriesLabelText(x)}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                           <span style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><span style={{ display: "block", width: (100 * n) / x.mins.length + "%", height: "100%", background: "linear-gradient(90deg,#A8842F,#F3DFAE)" }} /></span>
                           <span style={{ fontSize: 9.5, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
@@ -1355,7 +1355,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
         </aside>}
         <section style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, margin: "2px 4px 8px" }}>
-            <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{cur.label}</span>
+            <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{seriesLabelText(cur)}</span>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{earnedOf(cur)}/{cur.mins.length}</span>
           </div>
           <div className="flex flex-col" style={{ gap: 0 }}>

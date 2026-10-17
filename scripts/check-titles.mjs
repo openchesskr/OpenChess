@@ -31,6 +31,8 @@ const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)]
 for (const k of used) if (!appSrc.includes("@keyframes " + k + "{")) fail("키프레임 " + k + "이 App.jsx 스타일에 없음");
 // 오프닝 5단계 이름(초급·중급·상급·마스터·그랜드마스터)은 titleNameText가 t()로 번역한다 — 빠지면 영어가 아닌 언어에서 한글이 그대로 보인다
 for (const nm of ["초급", "중급", "상급", "마스터", "그랜드마스터"]) if (!common.includes('t("' + nm + '")')) fail("titleNameText에 t(\"" + nm + "\")가 없음");
+// 오프닝 밖 계열의 이름·칭호 이름(한국어 원문)은 common.jsx 번역 표에 t("원문")으로 모두 있어야 한다 — 빠지면 다른 언어에서 한글이 그대로 보인다
+for (const s of TITLE_SERIES) { if (s.cat === "opening") continue; for (const k of [s.label, ...s.names]) if (!common.includes('t("' + k + '")')) fail("번역 표에 t(\"" + k + "\")가 없음(" + s.key + ")"); }
 // ③ 판정
 const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");
@@ -47,7 +49,7 @@ const few = achievableTitles(computeTitleMetrics({ solved: 1 }));
 if (few.has("collect:1")) fail("칭호 1개로 칭호 수집이 열림");
 const sane = sanitizeTitleSet(["italian:C", "solve:2", "nope:1", "solve:9", "solve:x", null]);
 if (sane.size !== 1 || !sane.has("solve:2")) fail("옛 형식·없는 id가 걸러지지 않음: " + [...sane]);
-if (titleDef("solve:3").name !== "Problem Solver") fail("titleDef 이름");
+if (titleDef("solve:3").name !== "문제 해결사") fail("titleDef 이름");
 // ④ chess.com 집계
 const mv = (n, last) => Array.from({ length: n }, (_, i) => (i === n - 1 && last ? last : "e4"));
 const G = (o) => ({ moves: mv(40), color: "w", result: "win", rating: 1500, endTime: 1000, white: { rating: 1500 }, black: { rating: 1500 }, opening: "A", ...o });

@@ -5445,9 +5445,146 @@ export function SeriesGlyph({ series, size = 30 }) {
     </span>
   );
 }
-// 칭호 이름 표시: 오프닝 계열은 기존 5단계 이름(초급·중급·상급·마스터·그랜드마스터)을 언어에 맞춰 번역하고, 나머지는 영어 고정 이름을 쓴다.
+// 칭호 글자 표시: 오프닝 이름(Italian Game 등)은 영어 그대로 두고, 그 밖의 계열 이름·칭호 이름은 모두 선택한 언어로 보여 준다.
+//  데이터(lib/titles.js)에는 한국어 원문을 키로 두고 여기서 t()로 옮긴다. 오프닝 계열의 5단계 이름(초급~그랜드마스터)도 같은 방식.
+//  번역 표는 언어가 바뀌면 페이지를 다시 불러오므로(setLang) 처음 쓸 때 한 번만 만든다. 새 칭호 글자를 더하면 아래 표에도 t("원문")을 추가할 것(check-titles가 확인).
+let _titleTextMap = null;
+const titleTextMap = () => _titleTextMap || (_titleTextMap = {
+  "퍼즐": t("퍼즐"),
+  "연속 풀이": t("연속 풀이"),
+  "오프닝 도감": t("오프닝 도감"),
+  "커뮤니티": t("커뮤니티"),
+  "친구": t("친구"),
+  "보물창고": t("보물창고"),
+  "티어": t("티어"),
+  "퍼즐 레이팅": t("퍼즐 레이팅"),
+  "플레이한 대국": t("플레이한 대국"),
+  "승리": t("승리"),
+  "최고 레이팅": t("최고 레이팅"),
+  "연승": t("연승"),
+  "체크메이트": t("체크메이트"),
+  "전격전": t("전격전"),
+  "지구력": t("지구력"),
+  "백의 길": t("백의 길"),
+  "흑의 길": t("흑의 길"),
+  "거인 사냥꾼": t("거인 사냥꾼"),
+  "평화주의자": t("평화주의자"),
+  "올빼미": t("올빼미"),
+  "탐험가": t("탐험가"),
+  "외길 인생": t("외길 인생"),
+  "나이트의 해": t("나이트의 해"),
+  "완벽주의자": t("완벽주의자"),
+  "퍼즐 신동": t("퍼즐 신동"),
+  "수집가": t("수집가"),
+  "첫걸음": t("첫걸음"),
+  "전술가": t("전술가"),
+  "문제 해결사": t("문제 해결사"),
+  "퍼즐 달인": t("퍼즐 달인"),
+  "퍼즐 전설": t("퍼즐 전설"),
+  "몸풀기": t("몸풀기"),
+  "주간 단골": t("주간 단골"),
+  "2주 연속": t("2주 연속"),
+  "한 달의 습관": t("한 달의 습관"),
+  "끊기지 않는 불꽃": t("끊기지 않는 불꽃"),
+  "책장 넘기기": t("책장 넘기기"),
+  "책벌레": t("책벌레"),
+  "기록 보관자": t("기록 보관자"),
+  "학자": t("학자"),
+  "대사서": t("대사서"),
+  "새내기": t("새내기"),
+  "응원단": t("응원단"),
+  "치어리더": t("치어리더"),
+  "후원자": t("후원자"),
+  "홍보대사": t("홍보대사"),
+  "단짝": t("단짝"),
+  "삼총사": t("삼총사"),
+  "한 팀": t("한 팀"),
+  "모임": t("모임"),
+  "인싸": t("인싸"),
+  "푼돈": t("푼돈"),
+  "저축가": t("저축가"),
+  "은행가": t("은행가"),
+  "거물": t("거물"),
+  "용의 보물": t("용의 보물"),
+  "브론즈 등반가": t("브론즈 등반가"),
+  "실버 등반가": t("실버 등반가"),
+  "골드 등반가": t("골드 등반가"),
+  "다이아몬드 등반가": t("다이아몬드 등반가"),
+  "그랜드마스터 승천자": t("그랜드마스터 승천자"),
+  "떠오르는 별": t("떠오르는 별"),
+  "날카로운 눈": t("날카로운 눈"),
+  "예리한 감각": t("예리한 감각"),
+  "엘리트": t("엘리트"),
+  "신동": t("신동"),
+  "신참": t("신참"),
+  "단골": t("단골"),
+  "베테랑": t("베테랑"),
+  "노력파": t("노력파"),
+  "마라토너": t("마라토너"),
+  "첫 승리": t("첫 승리"),
+  "승자": t("승자"),
+  "정복자": t("정복자"),
+  "군벌": t("군벌"),
+  "멈출 수 없는": t("멈출 수 없는"),
+  "등반가": t("등반가"),
+  "도전자": t("도전자"),
+  "챌린저": t("챌린저"),
+  "전문가": t("전문가"),
+  "마스터 클래스": t("마스터 클래스"),
+  "상승세": t("상승세"),
+  "불타는 중": t("불타는 중"),
+  "폭주": t("폭주"),
+  "저거너트": t("저거너트"),
+  "무적": t("무적"),
+  "마무리 전문가": t("마무리 전문가"),
+  "클로저": t("클로저"),
+  "집행자": t("집행자"),
+  "암살자": t("암살자"),
+  "저승사자": t("저승사자"),
+  "기습": t("기습"),
+  "날쌘 손": t("날쌘 손"),
+  "번개": t("번개"),
+  "폭풍": t("폭풍"),
+  "빛의 속도": t("빛의 속도"),
+  "긴 승부": t("긴 승부"),
+  "인내심": t("인내심"),
+  "강철 의지": t("강철 의지"),
+  "마라톤": t("마라톤"),
+  "불멸의 대국": t("불멸의 대국"),
+  "선공": t("선공"),
+  "주도권": t("주도권"),
+  "템포": t("템포"),
+  "지배": t("지배"),
+  "새벽빛": t("새벽빛"),
+  "맞받아치기": t("맞받아치기"),
+  "수비수": t("수비수"),
+  "기다리는 사냥꾼": t("기다리는 사냥꾼"),
+  "밤의 군림": t("밤의 군림"),
+  "일식": t("일식"),
+  "약자": t("약자"),
+  "이변": t("이변"),
+  "거인 킬러": t("거인 킬러"),
+  "용 사냥꾼": t("용 사냥꾼"),
+  "다윗": t("다윗"),
+  "휴전": t("휴전"),
+  "외교관": t("외교관"),
+  "협상가": t("협상가"),
+  "스테일메이트 현자": t("스테일메이트 현자"),
+  "평정심": t("평정심"),
+  "자정 너머": t("자정 너머"),
+  "개척자": t("개척자"),
+  "한 우물": t("한 우물"),
+  "멈추지 않는 습관": t("멈추지 않는 습관"),
+  "무결점": t("무결점"),
+  "인간을 넘어서": t("인간을 넘어서"),
+  "큐레이터": t("큐레이터"),
+  "감정가": t("감정가"),
+  "완성주의자": t("완성주의자"),
+  "명예의 전당": t("명예의 전당"),
+});
+export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
 export function titleNameText(def) {
-  if (def.series.cat !== "opening") return def.name;
+  if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
   return [t("초급"), t("중급"), t("상급"), t("마스터"), t("그랜드마스터")][def.tier - 1];
 }
 // 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
@@ -5481,6 +5618,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
     return () => { io.disconnect(); clearTimeout(t1); };
   }, [fresh, id]);
   if (!def) return null;
+  const labelText = seriesLabelText(def.series);
   const showPeek = () => { setPeek(true); clearTimeout(peekT.current); peekT.current = setTimeout(() => setPeek(false), 3200); };
   const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
   const onMove = (e) => {
@@ -5523,7 +5661,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
     <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease" }}>
-      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={def.label + " " + titleNameText(def)}
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + titleNameText(def)}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
           {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
@@ -5552,7 +5690,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
           <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingRight: compact ? 50 : 76, opacity: showProg ? 0.12 : 1, transition: "opacity .22s ease" }}>
-            <span title={def.label} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, def.label.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{def.label}</span>
+            <span title={labelText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, labelText.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{labelText}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
               <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
             </span>
