@@ -111,7 +111,7 @@ function Sheet({ title, onClose, children, width = 360 }) {
         onClick={stop} style={{ width: "100%", maxWidth: width, maxHeight: "90vh", overflowY: "auto", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 16, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "#0001", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
         {children}
       </motion.div>

@@ -5,6 +5,7 @@ import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken,
 import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
 import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
+import { DEX_VIEW_PATH, DEX_PATHS } from "../lib/dexRoutes.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
 import { T, MOTION_EASE, tierPieceSrc } from "../lib/theme.js";
 import { Sparkles, ChevronRight, Bell, Play, Search, Check, X, Target, Star, Crown, Library, Settings, Users, Info, ChevronDown, EyeOff, Eye } from "lucide-react";
@@ -12,7 +13,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, titleId, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -581,14 +582,14 @@ export function useDailyPuzzle(engine, dateStr) {
   }, [t, engine && engine.status]);
   return (resolved && resolved.date === t) ? resolved.puzzle : null;
 }
-export const ALL_TITLE_IDS = TITLE_OPENINGS.flatMap((f) => TITLE_TIERS.map((t) => titleId(f.key, t.rank)));
-function titleLabel(id) { const [k, r] = id.split(":"); const fam = TITLE_OPENINGS.find((f) => f.key === k); const t = TITLE_TIERS.find((x) => x.rank === r); return fam && t ? fam.label + " " + t.suffix : ""; }
+export const ALL_TITLE_IDS = _ALL_TITLE_IDS;
+const titleLabel = (id) => { const d = titleDef(id); return d ? seriesLabelText(d.series) + " " + titleNameText(d) : ""; };
 function puzzleFamilyKey(p) {
   if (!p) return null;
   const names = []; const path = [...(p.setupSans || []), ...(p.mistakeSan ? [p.mistakeSan] : [])];
   for (let i = 1; i <= path.length; i++) { const nd = snapNode(path.slice(0, i)); if (nd && nd.opening && nd.opening.name) names.push(nd.opening.name); }
   if (p.opening) names.push(p.opening);
-  for (const fam of TITLE_OPENINGS) { if (names.some((n) => fam.rx.test(n))) return fam.key; }
+  for (const fam of OPENING_FAMILIES) { if (names.some((n) => fam.rx.test(n))) return fam.key; }
   return null;
 }
 export function familyCounts(puzzles, solved) {
@@ -602,14 +603,8 @@ export function familyCounts(puzzles, solved) {
 // 빠지기도 했다. 사이트 전체와 같은 기준(openingNameOf)으로 통일한다.
 export function ccFamilyCounts(games) {
   const c = {}; if (!games) return c;
-  for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of TITLE_OPENINGS) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
+  for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of OPENING_FAMILIES) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
   return c;
-}
-// (19차 기능6) 칭호 획득 = 퍼즐 해결 수(counts) ‘그리고’ chess.com 오프닝 플레이 수(ccCounts)를 모두 만족.
-export function achievableTitles(counts, ccCounts) {
-  const out = new Set(); const cc = ccCounts || {};
-  for (const fam of TITLE_OPENINGS) { const n = counts[fam.key] || 0; const m = cc[fam.key] || 0; for (const t of TITLE_TIERS) if (n >= t.min && m >= t.ccMin) out.add(titleId(fam.key, t.rank)); }
-  return out;
 }
 // (기능1) 별 3개(라인) 아이콘 — 해결한 라인 수만큼 채워서 표시
 // (v0.0.6 개편) 헤더에 상시 표기되는 티어 배지 — 현재 티어와 다음 티어까지 남은 경험치를 진행바 +
@@ -655,7 +650,7 @@ export function AnnouncementModal({ onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{t("업데이트 소식")}</span>
@@ -740,7 +735,7 @@ export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, on
         {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
         <div style={{ position: "absolute", top: narrow ? -38 : -54, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={narrow ? 62 : 96} /></div>
         <div style={{ position: "relative", background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)", padding: narrow ? "20px 18px 16px" : "40px 36px 32px" }}>
-          <button onClick={close} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 7, border: "none", background: "#0002", color: T.ink, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>✕</button>
+          <button onClick={close} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
           {narrow ? (
             /* 모바일 — 보드를 상단에 별도의 큰 정사각형 구획으로 두고, 그 아래로 텍스트·버튼이 이어진다. */
             <>
@@ -910,7 +905,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
           <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="kokoa" emotion="celebrate" size={68} />
           </div>
@@ -952,56 +947,6 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           )}
           {/* (디자인) 확인 버튼에 gm-board-shine(다른 화면의 금속 광택 스윕과 동일한 클래스)을 얹어, 다른
               "특별한" 화면들과 같은 시각 언어로 은은한 하이라이트가 주기적으로 스쳐 지나가게 한다. */}
-          <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
-            <span className="gm-board-shine" style={{ borderRadius: 11 }} />
-            {tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-// (v0.2.9 기능) 사용자 요청 — 칭호 획득도 일일 퀘스트 클리어·티어 승급과 같은 "보상 화면" 팝업으로.
-// 예전에는 상단에 잠깐 떴다 6초 뒤 자동으로 사라지는 작은 토스트뿐이었다 — 같은 시각 언어(금빛 원판
-// 마스코트·햇살·컨페티·반짝임, DailyQuestClearedModal과 동일한 구성 요소를 그대로 재사용)로 확대하고,
-// 자동/배경 클릭으로 닫히지 않고 X·확인 버튼을 눌러야만 닫히도록 다른 두 팝업과 동작을 통일한다.
-export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
-  const [famKey, rank] = id.split(":");
-  const fam = TITLE_OPENINGS.find((f) => f.key === famKey);
-  const tier = TITLE_TIERS.find((t) => t.rank === rank);
-  if (!fam || !tier) return null;
-  const equipped = currentTitle === id;
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
-        transition={{ type: "spring", stiffness: 340, damping: 24 }}
-        style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
-        <div style={{ position: "relative", padding: "30px 20px 24px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
-          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 220, height: 220, marginTop: -6, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, rgba(243,223,174,.35) 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.7, animationName: "questRaySpin", animationDuration: "16s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
-          {QUEST_CLEAR_CONFETTI.map((c, i) => (
-            <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.6s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-          ))}
-          {QUEST_CLEAR_SPARKLES.map((p, i) => (
-            <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-          ))}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
-          <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
-            <Mascot name="milku" emotion="wink" size={68} />
-          </div>
-        </div>
-        <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
-          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
-            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("새 칭호 획득")}</span>
-            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
-          </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{tx("{0} 오프닝을 충분히 연습해서{1}새 칭호 획득", fam.label, <br />)}</p>
-          <div style={{ padding: "0 6px", marginBottom: 10 }}>
-            <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
-          </div>
-          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? t("현재 장착 중인 칭호") : t("칭호를 눌러 바로 장착")}</p>
           <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
             <span className="gm-board-shine" style={{ borderRadius: 11 }} />
             {tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
@@ -1176,8 +1121,8 @@ export const TABS = [{ key: "learn", label: t("분석"), Icon: null }, { key: "s
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
 // (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
 // 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
-export const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
-const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
+export const TAB_PATH = { learn: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "learn", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
 export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 // (UX7) 로컬 캐시를 계정(uid) 단위로 분리 — 이걸 안 하면 같은 기기에서 다른 계정으로 로그인할 때
 // 퍼즐·프로필·칭호·chess.com 연동 등이 이전 계정 것을 그대로 물려받는 사고가 남(실제로 있었음).
@@ -1637,7 +1582,7 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
           돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
       <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
             위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
             기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
@@ -1871,7 +1816,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
     <motion.div
       onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
     >
       <motion.div
         onClick={(e) => e.stopPropagation()}
@@ -1880,12 +1825,12 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
         style={{ position: "relative", width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}
       >
         {/* (UI6) 창 닫기 버튼은 항상 블록 우상단 고정 */}
-        <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         {/* (디자인) 로그인/회원가입 창의 마스코트 캐릭터 대신 OpenChess 로고를 표시 — 학습·퍼즐 탭
             바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, marginTop: 4 }}>
-          {/* (버그 수정) 로고 이미지의 투명 여백을 잘라낸 뒤로는 height 값이 곧 실제 크기이므로 줄인다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 30, width: "auto" }} />
+        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, marginTop: 4 }}>
+          {/* (v0.6.8) 로고를 가운데가 아니라 왼쪽 위에 두고 조금 키웠다(30→40). 이미지의 투명 여백은 이미 잘려 있어 height가 곧 실제 크기. */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>

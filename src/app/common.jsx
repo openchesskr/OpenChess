@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
@@ -20,7 +20,9 @@ import { mateWhiteWins, SITE_FONT, EvalBar, SEQ_FONT } from "../components/engin
 import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2 } from "lucide-react";
+import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles } from "lucide-react";
+import { TITLE_OPENINGS, titleDef, seriesAccent, openingSide } from "../lib/titles.js";
+import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
 import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZOOM_LABEL_BASE } from "../lib/schematicGeometry.js";
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
@@ -5392,116 +5394,344 @@ export function openingNameOf(moves) {
   for (let i = 1; i <= lim; i++) { const n = effectiveOpeningNameAt(moves.slice(0, i)); if (n) name = n; }
   return name;
 }
-// (기능4) 칭호 시스템 — 6개 오프닝 하위 퍼즐 해결 횟수 → 등급 칭호(영구). UX-8: 등급↔수 체계 디자인 대응.
-export const TITLE_OPENINGS = [
-  { key: "italian", label: "Italian Game", rx: /italian/i },
-  { key: "ruylopez", label: "Ruy Lopez", rx: /ruy ?lopez|spanish/i },
-  { key: "scotch", label: "Scotch Game", rx: /scotch/i },
-  { key: "sicilian", label: "Sicilian Defense", rx: /sicilian/i },
-  { key: "carokann", label: "Caro-Kann Defense", rx: /caro.?kann/i },
-  { key: "french", label: "French Defense", rx: /french/i },
-  { key: "vienna", label: "Vienna Game", rx: /vienna/i },
-  { key: "kingsgambit", label: "King's Gambit", rx: /king.?s gambit/i },
-  { key: "benoni", label: "Benoni Defense", rx: /benoni/i },
-  { key: "catalan", label: "Catalan Opening", rx: /catalan/i },
-  { key: "grunfeld", label: "Grünfeld Defense", rx: /gr(u|ü)nfeld/i },
-  { key: "london", label: "London System", rx: /london/i },
-  { key: "queensgambit", label: "Queen's Gambit", rx: /queen.?s gambit/i },
-];
-export const TITLE_TIERS = [ // 낮은→높은 / 등급↔수 체계
-  // (19차 기능6) 조건 개편: 퍼즐 해결(min)‘그리고’ chess.com 해당 오프닝 플레이 횟수(ccMin)를 모두 충족해야 획득.
-  { rank: "C", min: 1, ccMin: 5, suffix: "Beginner", q: "good" },
-  { rank: "B", min: 5, ccMin: 10, suffix: "Intermediate", q: "excellent" },
-  { rank: "A", min: 10, ccMin: 50, suffix: "Advanced", q: "best" },
-  { rank: "S", min: 50, ccMin: 100, suffix: "Master", q: "only" },
-  { rank: "SS", min: 100, ccMin: 1000, suffix: "GrandMaster", q: "brilliant" },
-];
-export function titleId(famKey, rank) { return famKey + ":" + rank; }
-const TITLE_TIER_STYLE = {
-  C:  { bg: ["#8C9C1E", "#697610"], label: "#EAF0A2" },   // Beginner, olive
-  B:  { bg: ["#2F8B3D", "#1B6A2A"], label: "#BBEAB5" },   // Intermediate, green
-  A:  { bg: ["#12612C", "#0A3D1D"], label: "#73D073" },   // Advanced, dark green
-  S:  { bg: ["#1566BA", "#0B4184"], label: "#62B0F4" },   // Master, blue
-  SS: { bg: ["#1BBAA8", "#129A8C"], label: "#0B4F47" },   // GrandMaster, teal
-};
-function TitleSym({ q, size, color }) {
-  if (q === "good") return <Check size={size} strokeWidth={3.4} color={color} />;
-  if (q === "excellent") return <ThumbsUp size={size} strokeWidth={2.4} color={color} fill={color} />;
-  if (q === "best") return <Star size={size} strokeWidth={2} color={color} fill={color} />;
-  if (q === "only") return <span style={{ fontSize: size, fontWeight: 900, lineHeight: 1, color }}>!</span>;
-  return <span style={{ fontSize: size * 0.82, fontWeight: 900, lineHeight: 1, letterSpacing: -1, color }}>!!</span>;
+// (v0.6.8) 칭호 시스템 개편 — 정의·판정은 src/lib/titles.js(순수 모듈), 여기는 배너 디자인과 조건 문구만 맡는다.
+//  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
+//  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계(1~5)가 오를수록 금이 밝아지고, 계열마다 아이콘이 다르다.
+export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
+const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star };
+// 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
+function titleCondText(def) {
+  const s = def.series, n = fmtFull(def.min);
+  const pre = "";
+  switch (s.metric) {
+    case "opening": return t("{0}퍼즐 {1}개 해결 + chess.com {2}회 플레이 필요", "", n, fmtFull(def.ccMin));
+    case "solved": return pre + t("퍼즐 {0}개 해결", n);
+    case "dailyBest": return pre + t("일일 퍼즐 {0}일 연속 해결", n);
+    case "unlocked": return pre + t("오프닝 도감 {0}개 해금", n);
+    case "community": return pre + t("퍼즐 좋아요·리포스트 {0}회", n);
+    case "friends": return pre + t("친구 {0}명", n);
+    case "coins": return pre + t("OC 코인 {0}개 보유", n);
+    case "tierIndex": return t("{0} 티어 달성", TIERS[def.min] ? TIERS[def.min].label : "");
+    case "puzzleRating": return pre + t("퍼즐 레이팅 {0} 달성", n);
+    case "ccPlayed": return pre + t("chess.com 대국 {0}판 플레이", n);
+    case "ccWins": return pre + t("chess.com 승리 {0}회", n);
+    case "ccBestRating": return pre + t("chess.com 최고 레이팅 {0} 달성", n);
+    case "ccWinStreak": return pre + t("chess.com {0}연승", n);
+    case "ccMates": return pre + t("체크메이트로 {0}회 승리", n);
+    case "ccQuickWins": return pre + t("30수 이내 승리 {0}회", n);
+    case "ccLongWins": return pre + t("60수 이상 장기전 승리 {0}회", n);
+    case "ccWhiteWins": return pre + t("백으로 {0}회 승리", n);
+    case "ccBlackWins": return pre + t("흑으로 {0}회 승리", n);
+    case "ccGiantWins": return pre + t("레이팅 100 이상 높은 상대에게 {0}회 승리", n);
+    case "ccDraws": return pre + t("무승부 {0}회", n);
+    case "ccNight": return pre + t("새벽(0~5시) 대국 {0}판", n);
+    case "ccOpenings": return pre + t("서로 다른 오프닝 {0}가지 플레이", n);
+    case "ccTopOpening": return pre + t("한 오프닝으로 {0}판 플레이", n);
+    case "titlesEarned": return pre + t("칭호 {0}개 획득", n);
+    default: return "";
+  }
 }
-// (v0.5.7 성능) 칭호 배지 이미지 — 예전엔 7개 오프닝 35장을 base64 data URI(약 38만 자)로 이 줄에 박아 넣어, 설정 탭 칭호 목록을
-// 열지 않아도 메인 번들과 함께 매번 받았다. 나머지 오프닝처럼 public/titles/ 파일로 빼 칭호를 그릴 때만 받는다.
-const TITLE_IMG = {"italian":["/titles/italian_0.webp","/titles/italian_1.webp","/titles/italian_2.webp","/titles/italian_3.webp","/titles/italian_4.webp"],"ruylopez":["/titles/ruylopez_0.webp","/titles/ruylopez_1.webp","/titles/ruylopez_2.webp","/titles/ruylopez_3.webp","/titles/ruylopez_4.webp"],"scotch":["/titles/scotch_0.webp","/titles/scotch_1.webp","/titles/scotch_2.webp","/titles/scotch_3.webp","/titles/scotch_4.webp"],"carokann":["/titles/carokann_0.webp","/titles/carokann_1.webp","/titles/carokann_2.webp","/titles/carokann_3.webp","/titles/carokann_4.webp"],"french":["/titles/french_0.webp","/titles/french_1.webp","/titles/french_2.webp","/titles/french_3.webp","/titles/french_4.webp"],"vienna":["/titles/vienna_0.webp","/titles/vienna_1.webp","/titles/vienna_2.webp","/titles/vienna_3.webp","/titles/vienna_4.webp"],"kingsgambit":["/titles/kingsgambit_0.webp","/titles/kingsgambit_1.webp","/titles/kingsgambit_2.webp","/titles/kingsgambit_3.webp","/titles/kingsgambit_4.webp"],"sicilian":["/titles/sicilian_0.png","/titles/sicilian_1.png","/titles/sicilian_2.png","/titles/sicilian_3.png","/titles/sicilian_4.png"],"benoni":["/titles/benoni_0.png","/titles/benoni_1.png","/titles/benoni_2.png","/titles/benoni_3.png","/titles/benoni_4.png"],"catalan":["/titles/catalan_0.png","/titles/catalan_1.png","/titles/catalan_2.png","/titles/catalan_3.png","/titles/catalan_4.png"],"grunfeld":["/titles/grunfeld_0.png","/titles/grunfeld_1.png","/titles/grunfeld_2.png","/titles/grunfeld_3.png","/titles/grunfeld_4.png"],"london":["/titles/london_0.png","/titles/london_1.png","/titles/london_2.png","/titles/london_3.png","/titles/london_4.png"],"queensgambit":["/titles/queensgambit_0.png","/titles/queensgambit_1.png","/titles/queensgambit_2.png","/titles/queensgambit_3.png","/titles/queensgambit_4.png"]};
-export function TitleBadge({ id, earned = true, equipped = false, progress = null, onEquip, compact = false, locked = false }) {
-  const [famKey, rank] = id.split(":");
-  const fam = TITLE_OPENINGS.find((f) => f.key === famKey); const tier = TITLE_TIERS.find((t) => t.rank === rank);
-  // (20차 UX2) 획득 조건을 상시 텍스트로 깔아두는 대신, 클릭할 때만 잠깐 떴다 사라지는 애니메이션으로 보여준다.
-  const [showCond, setShowCond] = useState(false);
-  const condTimerRef = useRef(null);
-  if (!fam || !tier) return null;
-  const progPrefix = (!earned && progress != null) ? (fmtFull(Math.min(progress, tier.min)) + "/" + fmtFull(tier.min) + ", ") : "";
-  const condText = t("{0}퍼즐 {1}개 해결 + chess.com {2}회 플레이 필요", (progPrefix), fmtFull(tier.min), fmtFull(tier.ccMin));
-  const handleClick = () => {
-    setShowCond(true);
-    if (condTimerRef.current) clearTimeout(condTimerRef.current);
-    condTimerRef.current = setTimeout(() => setShowCond(false), 2200);
-    if (earned && onEquip) onEquip(id);
-  };
-  const condOverlay = showCond && (
-    <div style={{ position: "absolute", inset: 0, zIndex: 20, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(20,12,6,.9)", borderRadius: 6, padding: 6, animation: "condPop 2.2s ease", pointerEvents: "none" }}>
-      <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, color: "#fff", textAlign: "center", lineHeight: 1.35 }}>{condText}</span>
-    </div>
-  );
-  const _ti = TITLE_TIERS.indexOf(tier);
-  const _img = TITLE_IMG[famKey] && TITLE_IMG[famKey][_ti];
-  // (UI9) 3단계 표기: 해금됨(정상) / 바로 다음 단계(회색+진행도) / 그 이후(잠금 아이콘, 정보 숨김)
-  if (_img) {
-    return (
-      <div onClick={handleClick} className="press"
-        style={{ position: "relative", width: "100%", borderRadius: 6, cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "0 0 0 2.5px rgba(255,255,255,.95)" : "none" }}>
-        <img src={_img} alt={fam.label + " " + tier.suffix} draggable={false} style={{ display: "block", width: "100%", height: "auto" }} />
-        {equipped && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
-        {locked && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.25)", borderRadius: 6 }}><Lock size={20} style={{ color: "#fff" }} /></div>}
-        {condOverlay}
-      </div>
-    );
-  }
-  const st = TITLE_TIER_STYLE[rank] || TITLE_TIER_STYLE.C; const tierIdx = TITLE_TIERS.indexOf(tier);
-  const H = compact ? 54 : 66; const VB_W = 360; const deco = "#FFFFFF";
-  // 우측 기하학 패턴 — 등급이 높을수록 촘촘 (결정적 생성)
-  const shapes = []; let seed = (tierIdx + 1) * 9973;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  const N = 4 + tierIdx * 4;
-  for (let i = 0; i < N; i++) {
-    const x = 150 + rnd() * 195, y = 8 + rnd() * (H - 16), sz = 4 + rnd() * 9, op = 0.4 + rnd() * 0.5, t = rnd();
-    if (t < 0.55) shapes.push(<rect key={i} x={x} y={y} width={sz} height={sz} transform={`rotate(45 ${x + sz / 2} ${y + sz / 2})`} fill={rnd() > 0.55 ? deco : "none"} stroke={deco} strokeWidth="1.4" opacity={op} />);
-    else shapes.push(<line key={i} x1={x} y1={y + sz} x2={x + sz * 1.8} y2={y - sz * 0.8} stroke={deco} strokeWidth="2.4" opacity={op} strokeLinecap="round" />);
-  }
-  if (tierIdx >= 3) shapes.push(<rect key="big" x={262} y={H / 2 - 15} width={30} height={30} transform={`rotate(45 277 ${H / 2})`} fill={deco} opacity={tierIdx === 4 ? 0.6 : 0.4} />);
-  // 좌측 점 격자
-  const dots = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) dots.push(<circle key={"d" + r + c} cx={10 + c * 7} cy={8 + r * 7} r="1.5" fill={deco} opacity="0.85" />);
-  // 좌측 하단 삼각형
-  const tris = []; for (let i = 0; i < 6; i++) { const tx = 8 + (i % 3) * 9, ty = H - 22 + Math.floor(i / 3) * 9; tris.push(<path key={"t" + i} d={`M${tx} ${ty + 6} L${tx + 4} ${ty} L${tx + 8} ${ty + 6} Z`} fill={deco} opacity="0.8" />); }
-  const clip = "polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px))";
+// 계열 하나를 나타내는 작은 마름모 엠블럼(업적 왼쪽 목록용): 오프닝은 국기·이니셜, 나머지는 계열 아이콘.
+export function SeriesGlyph({ series, size = 30 }) {
+  const rid = useId().replace(/[^a-zA-Z0-9]/g, ""), Icon = TITLE_ICONS[series.icon] || Star, isOp = series.cat === "opening";
   return (
-    <div onClick={handleClick} className="press"
-      style={{ position: "relative", height: H, width: "100%", clipPath: clip, background: "linear-gradient(120deg," + st.bg[0] + "," + st.bg[1] + ")", cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "inset 0 0 0 2.5px rgba(255,255,255,.95)" : "inset 0 1px 0 rgba(255,255,255,.18)", display: "flex", alignItems: "center" }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{dots}{tris}{shapes}</svg>
-      {/* 좌측 다이아몬드 + 기호 */}
-      <div style={{ position: "relative", flexShrink: 0, width: H, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: H * 0.6, height: H * 0.6, transform: "rotate(45deg)", border: "2.4px solid " + deco, borderRadius: 4 }} />
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: deco }}>{locked ? <Lock size={compact ? 16 : 20} color={deco} /> : <TitleSym q={tier.q} size={compact ? 16 : 20} color={deco} />}</div>
+    <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }}>
+        <defs><linearGradient id={"sg" + rid} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F3DFAE" /><stop offset="1" stopColor="#C49A50" /></linearGradient></defs>
+        <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
+        {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
+      </svg>
+      {!isOp && <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />}
+    </span>
+  );
+}
+// 칭호 글자 표시: 오프닝 이름(Italian Game 등)은 영어 그대로 두고, 그 밖의 계열 이름·칭호 이름은 모두 선택한 언어로 보여 준다.
+//  데이터(lib/titles.js)에는 한국어 원문을 키로 두고 여기서 t()로 옮긴다. 오프닝 계열의 5단계 이름(초급~그랜드마스터)도 같은 방식.
+//  번역 표는 언어가 바뀌면 페이지를 다시 불러오므로(setLang) 처음 쓸 때 한 번만 만든다. 새 칭호 글자를 더하면 아래 표에도 t("원문")을 추가할 것(check-titles가 확인).
+let _titleTextMap = null;
+const titleTextMap = () => _titleTextMap || (_titleTextMap = {
+  "퍼즐": t("퍼즐"),
+  "연속 풀이": t("연속 풀이"),
+  "오프닝 도감": t("오프닝 도감"),
+  "커뮤니티": t("커뮤니티"),
+  "친구": t("친구"),
+  "보물창고": t("보물창고"),
+  "티어": t("티어"),
+  "퍼즐 레이팅": t("퍼즐 레이팅"),
+  "플레이한 대국": t("플레이한 대국"),
+  "승리": t("승리"),
+  "최고 레이팅": t("최고 레이팅"),
+  "연승": t("연승"),
+  "체크메이트": t("체크메이트"),
+  "전격전": t("전격전"),
+  "지구력": t("지구력"),
+  "백의 길": t("백의 길"),
+  "흑의 길": t("흑의 길"),
+  "거인 사냥꾼": t("거인 사냥꾼"),
+  "평화주의자": t("평화주의자"),
+  "올빼미": t("올빼미"),
+  "탐험가": t("탐험가"),
+  "외길 인생": t("외길 인생"),
+  "나이트의 해": t("나이트의 해"),
+  "완벽주의자": t("완벽주의자"),
+  "퍼즐 신동": t("퍼즐 신동"),
+  "수집가": t("수집가"),
+  "첫걸음": t("첫걸음"),
+  "전술가": t("전술가"),
+  "문제 해결사": t("문제 해결사"),
+  "퍼즐 달인": t("퍼즐 달인"),
+  "퍼즐 전설": t("퍼즐 전설"),
+  "몸풀기": t("몸풀기"),
+  "주간 단골": t("주간 단골"),
+  "2주 연속": t("2주 연속"),
+  "한 달의 습관": t("한 달의 습관"),
+  "끊기지 않는 불꽃": t("끊기지 않는 불꽃"),
+  "책장 넘기기": t("책장 넘기기"),
+  "책벌레": t("책벌레"),
+  "기록 보관자": t("기록 보관자"),
+  "학자": t("학자"),
+  "대사서": t("대사서"),
+  "새내기": t("새내기"),
+  "응원단": t("응원단"),
+  "치어리더": t("치어리더"),
+  "후원자": t("후원자"),
+  "홍보대사": t("홍보대사"),
+  "단짝": t("단짝"),
+  "삼총사": t("삼총사"),
+  "한 팀": t("한 팀"),
+  "모임": t("모임"),
+  "인싸": t("인싸"),
+  "푼돈": t("푼돈"),
+  "저축가": t("저축가"),
+  "은행가": t("은행가"),
+  "거물": t("거물"),
+  "용의 보물": t("용의 보물"),
+  "브론즈 등반가": t("브론즈 등반가"),
+  "실버 등반가": t("실버 등반가"),
+  "골드 등반가": t("골드 등반가"),
+  "다이아몬드 등반가": t("다이아몬드 등반가"),
+  "그랜드마스터 승천자": t("그랜드마스터 승천자"),
+  "떠오르는 별": t("떠오르는 별"),
+  "날카로운 눈": t("날카로운 눈"),
+  "예리한 감각": t("예리한 감각"),
+  "엘리트": t("엘리트"),
+  "신동": t("신동"),
+  "신참": t("신참"),
+  "단골": t("단골"),
+  "베테랑": t("베테랑"),
+  "노력파": t("노력파"),
+  "마라토너": t("마라토너"),
+  "첫 승리": t("첫 승리"),
+  "승자": t("승자"),
+  "정복자": t("정복자"),
+  "군벌": t("군벌"),
+  "멈출 수 없는": t("멈출 수 없는"),
+  "등반가": t("등반가"),
+  "도전자": t("도전자"),
+  "챌린저": t("챌린저"),
+  "전문가": t("전문가"),
+  "마스터 클래스": t("마스터 클래스"),
+  "상승세": t("상승세"),
+  "불타는 중": t("불타는 중"),
+  "폭주": t("폭주"),
+  "저거너트": t("저거너트"),
+  "무적": t("무적"),
+  "마무리 전문가": t("마무리 전문가"),
+  "클로저": t("클로저"),
+  "집행자": t("집행자"),
+  "암살자": t("암살자"),
+  "저승사자": t("저승사자"),
+  "기습": t("기습"),
+  "날쌘 손": t("날쌘 손"),
+  "번개": t("번개"),
+  "폭풍": t("폭풍"),
+  "빛의 속도": t("빛의 속도"),
+  "긴 승부": t("긴 승부"),
+  "인내심": t("인내심"),
+  "강철 의지": t("강철 의지"),
+  "마라톤": t("마라톤"),
+  "불멸의 대국": t("불멸의 대국"),
+  "선공": t("선공"),
+  "주도권": t("주도권"),
+  "템포": t("템포"),
+  "지배": t("지배"),
+  "새벽빛": t("새벽빛"),
+  "맞받아치기": t("맞받아치기"),
+  "수비수": t("수비수"),
+  "기다리는 사냥꾼": t("기다리는 사냥꾼"),
+  "밤의 군림": t("밤의 군림"),
+  "일식": t("일식"),
+  "약자": t("약자"),
+  "이변": t("이변"),
+  "거인 킬러": t("거인 킬러"),
+  "용 사냥꾼": t("용 사냥꾼"),
+  "다윗": t("다윗"),
+  "휴전": t("휴전"),
+  "외교관": t("외교관"),
+  "협상가": t("협상가"),
+  "스테일메이트 현자": t("스테일메이트 현자"),
+  "평정심": t("평정심"),
+  "자정 너머": t("자정 너머"),
+  "개척자": t("개척자"),
+  "한 우물": t("한 우물"),
+  "멈추지 않는 습관": t("멈추지 않는 습관"),
+  "무결점": t("무결점"),
+  "인간을 넘어서": t("인간을 넘어서"),
+  "큐레이터": t("큐레이터"),
+  "감정가": t("감정가"),
+  "완성주의자": t("완성주의자"),
+  "명예의 전당": t("명예의 전당"),
+});
+export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
+export function titleNameText(def) {
+  if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
+  return [t("초급"), t("중급"), t("상급"), t("마스터"), t("그랜드마스터")][def.tier - 1];
+}
+// 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
+const TITLE_BORDER_W = [1, 1.5, 2, 2.5, 3];
+const TITLE_PIECE = ["P", "N", "B", "R", "Q"];   // 단계가 오를수록 큰 기물이 중심부 바탕에 흐리게 깔린다(희귀는 킹)
+function titleShape(shapeTier, c) {
+  const p = (x) => `${x}px`, e = (x) => `calc(100% - ${x}px)`;
+  if (shapeTier === 2) return `polygon(0 0, ${e(c)} 0, 100% ${p(c)}, 100% 100%, ${p(c)} 100%, 0 ${e(c)})`;
+  return `polygon(${p(c)} 0, ${e(c)} 0, 100% ${p(c)}, 100% ${e(c)}, ${e(c)} 100%, ${p(c)} 100%, 0 ${e(c)}, 0 ${p(c)})`;
+}
+const TITLE_SHAPE_CUT = [0, 5, 11, 12];
+const fmtCompactN = (n) => (n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : fmtFull(n));
+export function TitleBadge({ id, earned = true, equipped = false, progress = null, progress2 = null, onEquip, compact = false, locked = false, fresh = false, onSeen }) {
+  const def = titleDef(id);
+  // 해금 진척도: 안 얻은 칭호는 항상(좌하단 조건 + 우측 게이지), 얻은 칭호는 꾹 누르거나 왼쪽으로 밀면 잠깐 보인다.
+  const [peek, setPeek] = useState(false);
+  const [pressing, setPressing] = useState(false);   // 누르는 동안 배너와 윤곽선 장식이 함께 살짝 작아진다
+  const peekT = useRef(null), lpT = useRef(null), press = useRef(null), longRef = useRef(false), rootRef = useRef(null);
+  // 새로 얻은 칭호(fresh)는 처음엔 꺼진 모습이다가, 화면에 60% 이상 보이면 켜지며 업적 달성 연출이 한 번 재생된다.
+  const [lit, setLit] = useState(!fresh);
+  const onSeenRef = useRef(onSeen); onSeenRef.current = onSeen;
+  useEffect(() => () => { clearTimeout(peekT.current); clearTimeout(lpT.current); }, []);
+  useEffect(() => {
+    if (!fresh) { setLit(true); return undefined; }
+    setLit(false);
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") { setLit(true); if (onSeenRef.current) onSeenRef.current(id); return undefined; }
+    let t1, t2;
+    const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting && x.intersectionRatio >= 0.6)) { io.disconnect(); t1 = setTimeout(() => setLit(true), 250); t2 = setTimeout(() => { if (onSeenRef.current) onSeenRef.current(id); }, 2800); } }, { threshold: [0.6] });
+    io.observe(el);
+    return () => { io.disconnect(); clearTimeout(t1); };
+  }, [fresh, id]);
+  if (!def) return null;
+  const labelText = seriesLabelText(def.series);
+  const showPeek = () => { setPeek(true); clearTimeout(peekT.current); peekT.current = setTimeout(() => setPeek(false), 3200); };
+  const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
+  const onMove = (e) => {
+    const s = press.current; if (!s || !earned) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (Math.hypot(dx, dy) > 10) clearTimeout(lpT.current);
+    if (dx < -28 && Math.abs(dy) < 24) { clearTimeout(lpT.current); press.current = null; longRef.current = true; showPeek(); }
+  };
+  const onUp = () => { setPressing(false); clearTimeout(lpT.current); press.current = null; };
+  const handleClick = () => { if (longRef.current) { longRef.current = false; return; } if (earned && lit && onEquip) onEquip(id); };
+  const lookEarned = earned && lit;
+  // (v0.6.8 디자인) 어두운 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계가 오를수록 금이 밝아지고 윤곽선이 두껍고 복잡해지며, 5단계는 엠블럼이 금으로 꽉 차고 중심부 기물이 움직인다.
+  const tierIdx = def.tier - 1, many = def.series.mins.length > 1, rare = def.rare;
+  const decoTier = rare ? 5 : def.tier;   // 바깥 장식·중심부 연출 단계
+  const shapeTier = Math.min(3, decoTier);
+  const GOLD = [["#9A7A3A", "#6E5424"], ["#C09A4C", "#8A6C2F"], ["#DDB968", "#A8842F"], ["#F3DFAE", "#C49A50"], ["#FFF3C9", "#E8BE55"]][rare ? 4 : tierIdx];
+  const g0 = GOLD[0], g1 = GOLD[1];
+  const accent = seriesAccent(def.series.key), mixHex = (a, b, k) => { const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return "#" + pa.map((v, i) => Math.round(v * k + pb[i] * (1 - k)).toString(16).padStart(2, "0")).join(""); };
+  const bgA = mixHex(accent, "#140B05", rare ? 0.62 : 0.5), bgB = "#140B05";   // 계열 포인트 색이 왼쪽에서 은은하게 번져 어두운 바탕으로 사라진다
+  const isOpening = def.series.cat === "opening";
+  const H = compact ? 64 : 78, ISZ = compact ? 16 : 20;
+  const bw = TITLE_BORDER_W[decoTier - 1] + (equipped ? 1 : 0), cut = TITLE_SHAPE_CUT[shapeTier] || 4;
+  const uid = "tb" + id.replace(/[^a-z0-9]/gi, "_") + (compact ? "c" : "n");
+  const Icon = TITLE_ICONS[def.series.icon] || Star;
+  const filled = tierIdx >= 3 || rare;   // 4·5단계와 희귀는 엠블럼 안쪽을 금으로 채운다
+  // 해금 진척도
+  const nowV = progress == null ? 0 : progress;
+  const ratio = lookEarned ? 1 : isOpening ? Math.min(1, nowV / def.min, (progress2 == null ? 0 : progress2) / def.ccMin) : Math.min(1, nowV / def.min);
+  const gaugeLabel = isOpening ? Math.floor(ratio * 100) + "%" : (def.series.metric === "tierIndex" ? "" : fmtCompactN(Math.min(nowV, def.min)) + "/" + fmtCompactN(def.min));
+  const condShort = isOpening ? t("퍼즐 {0}개 + chess.com {1}회", fmtFull(def.min), fmtFull(def.ccMin)) : titleCondText(def);
+  const showProg = !lookEarned || peek;
+  // 오른쪽 기하 장식: 기울어진 평행사변형(빗금) 묶음 — 단계 수만큼, 그리고 은은한 동심원
+  const bars = []; const nb = rare ? 5 : def.tier;
+  for (let i = 0; i < nb; i++) { const x = 118 - i * 15; bars.push(<path key={"b" + i} d={`M${x} ${H} L${x + 22} 0 L${x + 28} 0 L${x + 6} ${H} Z`} fill={`url(#${uid}g)`} opacity={0.14 + i * 0.07} />); }
+  const lattice = [];
+  [16, 28, 40, 52].forEach((r, i) => lattice.push(<circle key={"c" + i} cx="146" cy={H / 2} r={r} fill="none" stroke={g0} strokeWidth="1" opacity={0.3 - i * 0.05} />));
+  const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? `url(#${uid}g)` : "none"} stroke={g0} strokeWidth="1" opacity={i <= tierIdx ? 1 : 0.4} />); }
+  const pieceSz = Math.round(H * 0.95);
+  const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
+  const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
+  return (
+    <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease" }}>
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + titleNameText(def)}
+        style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
+        <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
+          {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
+          <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "conic-gradient(rgba(255,240,200,.05) 25%, transparent 0 50%, rgba(255,240,200,.05) 0 75%, transparent 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none" }} />
+          {decoTier === 5 && lookEarned && [0, 1].map((k) => (
+            <div key={k} aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: k ? "conic-gradient(rgba(255,205,100,.34) 25%, transparent 0 50%, rgba(255,205,100,.34) 0 75%, transparent 0)" : "conic-gradient(transparent 25%, rgba(255,205,100,.34) 0 50%, transparent 0 75%, rgba(255,205,100,.34) 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none", opacity: 0, animation: `titleBoardGlow 3.6s ease-in-out ${k * 1.8}s infinite` }} />
+          ))}
+          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 112 : 128, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
+            <PieceGlyph type={decoTier === 5 ? "Q" : TITLE_PIECE[tierIdx]} color={pieceColor} size={pieceSz} pieceSkin="classic" />
+          </div>
+          <svg width="150" height={H} viewBox={`0 0 150 ${H}`} style={{ position: "absolute", right: 0, top: 0, pointerEvents: "none" }} aria-hidden="true">
+            <defs><linearGradient id={uid + "g"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={GOLD[0]} /><stop offset="1" stopColor={GOLD[1]} /></linearGradient></defs>
+            {lattice}{bars}{pips}
+          </svg>
+          {/* 왼쪽 엠블럼: 금 마름모 테두리 + 오프닝 국기·이니셜 / 계열 아이콘 */}
+          <div style={{ position: "relative", flexShrink: 0, width: H, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width={H} height={H} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
+              <defs><linearGradient id={uid + "e"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={GOLD[0]} /><stop offset="1" stopColor={GOLD[1]} /></linearGradient></defs>
+              <path d="M50 8 L92 50 L50 92 L8 50 Z" fill={isOpening || filled ? `url(#${uid}e)` : "rgba(0,0,0,.35)"} stroke={`url(#${uid}e)`} strokeWidth="3.4" />
+              {isOpening ? <OpeningEmblem seriesKey={def.series.key} clipId={uid + "k"} textFill={tierIdx < 2 ? "#E6C77A" : "#F6E3A6"} />
+                : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
+              {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
+            </svg>
+            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+            {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
+          </div>
+          {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingRight: compact ? 50 : 76, opacity: showProg ? 0.12 : 1, transition: "opacity .22s ease" }}>
+            <span title={labelText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, labelText.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{labelText}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
+            </span>
+          </div>
+          {/* 해금 조건 + 진척도 게이지: 기존 요소의 위치는 그대로 두고, 엠블럼 오른쪽 전체에 검은 반투명 판을 덮은 뒤 그 위에 조건(왼쪽)과 게이지(오른쪽)만 띄운다.
+              안 얻은 칭호는 항상, 얻은 칭호는 꾹 누르거나 왼쪽으로 밀 때 잠깐. */}
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: H, right: 0, zIndex: 6, display: "flex", alignItems: "center", gap: 8, padding: compact ? "0 12px 0 8px" : "0 16px 0 10px", boxSizing: "border-box", background: "rgba(0,0,0,.7)", opacity: showProg ? 1 : 0, transition: "opacity .22s ease", pointerEvents: "none" }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: compact ? 10 : 11.5, fontWeight: 800, lineHeight: 1.3, color: "#F3E2B4", textShadow: "0 1px 2px rgba(0,0,0,.8)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{condShort}</span>
+            <span style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+              {gaugeLabel && <span style={{ fontSize: compact ? 9 : 10, fontWeight: 800, color: g0, fontVariantNumeric: "tabular-nums" }}>{gaugeLabel}</span>}
+              <span style={{ position: "relative", width: compact ? 58 : 80, height: 6, borderRadius: 3, background: "rgba(255,255,255,.14)", boxShadow: `inset 0 0 0 1px ${g1}99`, overflow: "hidden" }}>
+                <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(ratio > 0 ? 6 : 0, ratio * 100) + "%", borderRadius: 3, background: `linear-gradient(90deg,${g1},${g0})`, transition: "width .5s ease" }} />
+              </span>
+            </span>
+          </div>
+          {decoTier === 5 && lookEarned && !rare && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
+          {equipped && <span style={{ position: "absolute", right: 12, bottom: 4, fontSize: 9, fontWeight: 900, letterSpacing: ".06em", color: "#2B1A0B", background: `linear-gradient(180deg,${GOLD[0]},${GOLD[1]})`, borderRadius: 4, padding: "1px 6px", pointerEvents: "none", opacity: showProg ? 0 : 1 }}>{t("장착됨")}</span>}
+          {/* 업적 달성 연출: 금빛 섬광 + "업적 달성" 문구(한 번) */}
+          {fresh && lit && (<>
+            <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 120% at 30% 50%, rgba(255,240,190,.9), rgba(255,215,110,.35) 55%, transparent 80%)", animation: "titleUnlockFlash 1.4s ease-out forwards", pointerEvents: "none" }} />
+            <span style={{ position: "absolute", left: "50%", top: "50%", marginLeft: -52, marginTop: -11, width: 104, height: 22, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, background: "linear-gradient(180deg,#FFF3C9,#E3B84A)", color: "#3A2208", fontSize: 11, fontWeight: 900, letterSpacing: ".04em", boxShadow: "0 2px 10px rgba(0,0,0,.5)", animation: "titleUnlockText 2.1s ease-out forwards", pointerEvents: "none", opacity: 0 }}><Trophy size={12} strokeWidth={2.6} />{t("업적 달성")}</span>
+          </>)}
+        </div>
       </div>
-      {/* 오프닝 | 등급 */}
-      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: compact ? 8 : 11, minWidth: 0, flex: 1, paddingRight: 12 }}>
-        <span style={{ fontSize: compact ? 14 : 18, fontWeight: 900, fontStyle: "italic", letterSpacing: "0.5px", color: "#fff", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.25)" }}>{fam.label}</span>
-        <span style={{ width: 2, height: compact ? 18 : 24, background: "rgba(255,255,255,.55)", flexShrink: 0 }} />
-        <span style={{ fontSize: compact ? 10.5 : 12.5, fontWeight: 900, letterSpacing: "1px", color: st.label, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{tier.suffix}</span>
-      </div>
-      {equipped && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.28)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
-      {condOverlay}
+      {decoTier >= 4 && (
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : 0.5 }}>
+          {/* 양옆 끝 마름모 */}
+          {[0, 1].map((r) => <span key={"f" + r} style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: 0, width: decoTier === 5 ? 9 : 7, height: decoTier === 5 ? 9 : 7, marginTop: decoTier === 5 ? -4.5 : -3.5, transform: "rotate(45deg)", background: `linear-gradient(135deg,${g0},${g1})`, boxShadow: "0 0 0 1px rgba(20,11,5,.6)" }} />)}
+          {decoTier === 5 && (<>
+            {/* 위쪽 가운데 왕관 + 아래쪽 가운데 마름모 */}
+            <svg width="34" height="9" viewBox="0 0 34 9" style={{ position: "absolute", top: -1, left: "50%", marginLeft: -17 }}><path d="M1 8 L5 2 L11 6 L17 0 L23 6 L29 2 L33 8 Z" fill={`url(#${uid}g)`} stroke="rgba(20,11,5,.55)" strokeWidth=".8" /></svg>
+            <span style={{ position: "absolute", bottom: 0, left: "50%", marginLeft: -3, width: 6, height: 6, transform: "rotate(45deg)", background: g0 }} />
+          </>)}
+        </div>
+      )}
+      {fresh && lit && (
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+          <span style={{ position: "absolute", inset: -2, borderRadius: 8, animation: "titleUnlockRing 1.3s ease-out forwards" }} />
+          {sparks.map(([dx, dy], i) => <Sparkles key={i} size={11 + (i % 3) * 3} style={{ position: "absolute", left: 18 + i * 14 + "%", top: "50%", color: "#FFE9A8", "--dx": dx + "px", "--dy": dy + "px", animation: `titleSpark ${0.9 + (i % 3) * 0.2}s ease-out ${i * 0.07}s forwards`, opacity: 0 }} />)}
+        </div>
+      )}
     </div>
   );
 }

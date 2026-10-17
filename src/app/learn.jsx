@@ -1750,14 +1750,22 @@ function AddMasterGameModal({ onClose, onSaved }) {
 //  · 버튼은 화면 위쪽에 붙는(sticky) 줄이다. 누르면 그 페이지로 좌우 스크롤 애니메이션이 재생되고, 동시에 집중 분석 화면을 부드럽게 스크롤해 버튼 줄이 맨 위에 오고 그 페이지 정보가 바로 아래 화면을 채운다.
 //    이미 그 위치(맨 위에 붙은 상태)면 세로 이동은 없고 좌우 스크롤 애니메이션만 재생된다.
 //  · 페이지 높이가 제각각이라 지금 보이는 페이지의 높이로만 감싸는 칸 높이를 맞춘다(ResizeObserver) — 짧은 페이지 아래에 빈 공간이 남지 않게.
-function FocusPages({ labels, pages }) {
+// (v0.6.8, 사용자 요청) 데스크톱 넓은 화면(1000px 이상 + 마우스)에서는 집중 분석을 2단으로 나눈다: 왼쪽 = 보드·헤더, 오른쪽 = 버튼 4개와 그 아래 내용.
+const FOCUS_WIDE_MIN = 1000;
+const isFocusWide = () => typeof window !== "undefined" && window.innerWidth >= FOCUS_WIDE_MIN && !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+function useFocusWide() {
+  const [wide, setWide] = useState(isFocusWide);
+  useEffect(() => { const on = () => setWide(isFocusWide()); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
+  return wide;
+}
+function FocusPages({ labels, pages, wide }) {
   const [idx, setIdx] = useState(0);
   const [heights, setHeights] = useState([]);
   const sectionRef = useRef(null), trackRef = useRef(null), pageRefs = useRef([]), rafRef = useRef(null);
   const [anchorTop, setAnchorTop] = useState(12);   // 탐색 페이지 첫 수 블록의 위쪽 높이 — 다른 페이지의 첫 블록도 같은 높이에서 시작한다
   const n = pages.length;
   // 페이지가 짧아도 버튼 줄이 항상 화면 맨 위까지 올라올 수 있게 칸 높이를 화면 높이만큼은 확보한다.
-  const minPageH = (typeof window !== "undefined" ? window.innerHeight : 800) - 64;
+  const minPageH = wide ? 0 : (typeof window !== "undefined" ? window.innerHeight : 800) - 64;
   useLayoutEffect(() => {
     const measure = () => {
       setHeights(pageRefs.current.map((el) => (el ? el.offsetHeight : 0)));
@@ -1776,7 +1784,7 @@ function FocusPages({ labels, pages }) {
     setIdx(i);
     const tr = trackRef.current; if (!tr) return;
     tr.scrollTo({ left: i * tr.clientWidth, behavior: "smooth" });
-    const sec = sectionRef.current, sc = scrollParentOf(sec);
+    const sec = sectionRef.current, sc = wide ? null : scrollParentOf(sec);   // 2단에서는 버튼 줄이 이미 위에 있어 세로 이동 없음
     if (sc && sec) { const top = sc.scrollTop + (sec.getBoundingClientRect().top - sc.getBoundingClientRect().top); if (Math.abs(top - sc.scrollTop) > 1) sc.scrollTo({ top, behavior: "smooth" }); }
   };
   // 손가락·휠로 좌우 스크롤이 멈추면 가장 가까운 페이지를 현재 페이지로 맞춘다.
@@ -1785,14 +1793,17 @@ function FocusPages({ labels, pages }) {
     rafRef.current = requestAnimationFrame(() => { const tr = trackRef.current; if (tr && tr.clientWidth) setIdx(Math.max(0, Math.min(n - 1, Math.round(tr.scrollLeft / tr.clientWidth)))); });
   };
   return (
-    <div ref={sectionRef} style={{ marginTop: 12 }}>
-      <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
+    <div ref={sectionRef} style={wide ? { height: "100%", display: "flex", flexDirection: "column", minHeight: 0 } : { marginTop: 12 }}>
+      {/* (v0.6.8) 2단에서는 이 열 안쪽만 스크롤되므로 버튼 줄은 고정 배경 없이 위에 둔다(배경 사각형이 화면 배경과 어긋나 보이던 문제). */}
+      <div style={wide ? { flexShrink: 0, display: "flex", gap: 6, padding: "0 0 10px" } : { position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 6, padding: "8px 0", background: "linear-gradient(180deg,#1C1108 70%,rgba(28,17,8,0))" }}>
         {labels.map((lab, i) => (
           <button key={i} onClick={() => goTo(i)} aria-pressed={idx === i} className="press" style={{ flex: 1, minWidth: 0, padding: "9px 4px", borderRadius: 10, border: "1px solid " + (idx === i ? T.brass : "#5A4630"), background: idx === i ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(0,0,0,.3)", color: idx === i ? "#241509" : T.ivory, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background .2s ease, color .2s ease" }}>{lab}</button>
         ))}
       </div>
+      <div style={wide ? { flex: 1, minHeight: 0, overflowY: "auto", scrollbarWidth: "thin", paddingBottom: 24 } : undefined}>
       <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
         {pages.map((p, i) => <div key={i} data-fp-page="" ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start", boxSizing: "border-box", paddingTop: i === 0 ? 12 : anchorTop }}>{p}</div>)}
+      </div>
       </div>
     </div>
   );
@@ -2328,6 +2339,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   // 수 이름 — 이 수에 이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름
   const dispName = useMemo(() => { if (title) return title; for (let k = curLine.length; k >= 1; k--) { const nd = snapNode(curLine.slice(0, k)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; } return null; }, [curKey, title]);   // eslint-disable-line react-hooks/exhaustive-deps
   const focusKws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+  const wide = useFocusWide();
   const focusBoardPx = Math.max(200, Math.min(boardSize || 360, (typeof window !== "undefined" ? window.innerWidth : 400) - 32, 588));
   const [openingGameId, setOpeningGameId] = useState(null);
   const [gameOpenError, setGameOpenError] = useState(false);
@@ -2511,7 +2523,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
     try { await onOpenMasterGameReview(g); } catch (e) { console.error("마스터 대국 리뷰 열기 실패:", e); setReviewOpenError(true); } finally { setReviewingGameId(null); }
   };
   return (
-    <div>
+    <div style={wide ? { display: "grid", gridTemplateColumns: "minmax(0," + Math.max(focusBoardPx, 420) + "px) minmax(0,1fr)", gap: 28, alignItems: "stretch", height: "calc(100vh - 78px)" } : undefined}>
+      <div style={wide ? { overflowY: "auto", minHeight: 0, scrollbarWidth: "none" } : undefined}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
         <button onClick={onBack} className="press" title={t("집중 분석 종료")} style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
         {/* (v0.6.6, 사용자 요청) 분석 탭 메인의 기보를 가져와 집중 분석 안에서 지나온 경로를 기록하고, 수를 눌러 그 시점으로 자유롭게 이동한다. */}
@@ -2543,7 +2556,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
-      <FocusPages labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
+      </div>
+      <FocusPages wide={wide} labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
         <div>{nextMovesPanel}</div>,
         <>
       {/* (v0.6.6, 사용자 요청) 내 통계 — 우상단 토글로 chess.com / OpenChess 대국을 나눠 보고, 마스터 통계와 같은 요약(승률·채택률·승점 획득 확률)·필터·대국 목록 디자인을 쓴다. */}
@@ -3421,6 +3435,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
   const curPosTotalDisp = useCountUp(curStat ? curStat.posTotal : null, 500);
   const curAdoptDisp = useCountUp(curStat ? curStat.adopt : null, 900, 2);
 
+  const focusWide = useFocusWide();
   const fa = useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpContent, puzzles, contentVer });
 
   // (v0.2.6 버그 수정) 예전엔 이 "다음 수" 블록 목록(전체/마스터·채택률순/평가치순 선택 포함)이 항상
@@ -3585,7 +3600,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
         {/* (18차 UX8) 집중분석은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
           <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
-            <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px 60px" }}>
+            <div style={{ maxWidth: focusWide ? 1180 : 620, margin: "0 auto", padding: "18px 16px 60px" }}>
               <FocusPanel boardSize={boardSize} onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
           </div>
