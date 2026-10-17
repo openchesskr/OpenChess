@@ -1111,7 +1111,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   const searchHeader = (<>
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       {tabsSlot}
-      <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+      <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 0" : "0 1 260px", minWidth: vertical ? 120 : 150, marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 4 }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("오프닝 이름으로 찾기")}
             style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
@@ -1271,7 +1271,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
 // (v0.6.8) 업적 화면 — 원신 업적 메뉴처럼 왼쪽에 갈래(칭호 계열) 목록, 오른쪽에 고른 계열의 5단계 배너.
 //  왼쪽 목록은 4개 묶음(오프닝 숙련·활동·대국/레이팅·희귀) 제목 아래 계열을 세로로 나열하고, 계열마다 엠블럼·이름·획득 수 게이지·새 칭호 점을 보여준다. 위의 검색창으로 계열 이름을 거른다.
 //  좁은 화면에서는 왼쪽 목록을 좁은 띠로 줄인다.
-function AchievementsPane({ earned, seenTitles, onSeeTitle, currentTitle, onEquipTitle, titleMetrics }) {
+function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitle, onEquipTitle, titleMetrics }) {
   const narrow = useNarrow(640);
   const [sel, setSel] = useState(TITLE_SERIES[0].key);
   const [q, setQ] = useState("");
@@ -1282,17 +1282,50 @@ function AchievementsPane({ earned, seenTitles, onSeeTitle, currentTitle, onEqui
   const freshOf = (s) => s.mins.some((_, i) => earned.has(s.key + ":" + (i + 1)) && !seen.has(s.key + ":" + (i + 1)));
   const cur = TITLE_SERIES.find((x) => x.key === sel) || TITLE_SERIES[0];
   const nextIdx = cur.mins.findIndex((_, i) => !earned.has(cur.key + ":" + (i + 1)));
-  const asideW = narrow ? 100 : 228;
+  const asideW = 228;
+  const chipsRef = useRef(null);
+  useEffect(() => {   // 선택한 칩이 가로 띠 가운데로 오도록 스크롤
+    if (!narrow || !chipsRef.current) return;
+    const el = chipsRef.current.querySelector(`[data-ach="${sel}"]`);
+    if (el) chipsRef.current.scrollTo({ left: el.offsetLeft - chipsRef.current.clientWidth / 2 + el.offsetWidth / 2, behavior: "smooth" });
+  }, [sel, narrow]);
   const curN = seriesProgress(cur, titleMetrics || {}, earned.size);
   const curCc = cur.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[cur.key] || 0) : null;
   return (
     <div>
-      <div style={{ position: "relative", margin: "0 0 10px" }}>
+      <div style={{ position: "relative", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
+        {backBtn}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("업적 검색")} aria-label={t("업적 검색")}
-          style={{ width: "100%", boxSizing: "border-box", padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12.5 }} />
+          style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12.5 }} />
       </div>
-      <div style={{ display: "flex", gap: narrow ? 8 : 16, alignItems: "flex-start" }}>
-        <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
+      {/* 좁은 화면: 갈래 목록을 위쪽 가로 띠로 올려 좌우로 민다(선택한 칩이 가운데로 오도록 따라간다). 배너는 화면 폭을 다 쓴다. */}
+      {narrow && (
+        <div ref={chipsRef} className="hide-scrollbar" style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", margin: "0 -2px 12px", padding: "2px 2px 6px", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
+          {TITLE_CATEGORIES.map((cat) => {
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || x.label.toLowerCase().includes(ql)));
+            if (!list.length) return null;
+            return (
+              <React.Fragment key={cat.key}>
+                <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 900, color: T.brassHi, padding: "0 4px 0 8px", whiteSpace: "nowrap", borderLeft: "2px solid rgba(196,154,80,.55)" }}>{catOf[cat.key]}</span>
+                {list.map((x) => {
+                  const on = x.key === cur.key, n = earnedOf(x);
+                  return (
+                    <button key={x.key} data-ach={x.key} onClick={() => setSel(x.key)} className="press" aria-pressed={on}
+                      style={{ position: "relative", flexShrink: 0, scrollSnapAlign: "center", display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 6px 7px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg,rgba(196,154,80,.4),rgba(196,154,80,.15))" : "rgba(255,255,255,.04)", color: on ? T.ivoryHi : T.ivory, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      <SeriesGlyph series={x} size={24} />
+                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>{x.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
+                      {freshOf(x) && <span aria-hidden="true" style={{ position: "absolute", top: 0, right: 2, width: 7, height: 7, borderRadius: 999, background: "#E8453C", boxShadow: "0 0 0 1.5px #1B0F08" }} />}
+                    </button>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        {!narrow && <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
           {TITLE_CATEGORIES.map((cat) => {
             const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || x.label.toLowerCase().includes(ql)));
             if (!list.length) return null;
@@ -1319,7 +1352,7 @@ function AchievementsPane({ earned, seenTitles, onSeeTitle, currentTitle, onEqui
               </div>
             );
           })}
-        </aside>
+        </aside>}
         <section style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, margin: "2px 4px 8px" }}>
             <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{cur.label}</span>
@@ -1388,8 +1421,6 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   }, []);
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
-  // (v0.6.3) 탭 알약 — 데스크톱의 오프닝·마스터 모식도는 검색·안내 줄과 같은 한 줄에 넣어(inlineTabs) 모식도 높이를 늘린다. 모바일·칭호·스킨은 예전처럼 위에 따로 둔다.
-  // (v0.6.8) 도감 첫 화면 카드: 오프닝은 해금률, 업적은 획득 수, 스킨은 보유 수를 달성률 게이지로 보여준다. 마스터는 수치 없이 입구만.
   const totalTitles = TITLE_SERIES.reduce((a, x) => a + x.mins.length, 0);
   const totalSkins = Object.keys(BOARD_SKINS).length + Object.keys(PIECE_SKINS).length;
   const ownedSkinN = Math.min(totalSkins, (ownedSkins ? ownedSkins.size : 0) + 2);   // 기본 보드·기물 스킨 포함
@@ -1399,25 +1430,20 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
     { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
   ];
-  const tabPills = (mb) => (
-    <div className="flex items-center gap-2" style={{ marginBottom: mb, flexShrink: 0 }}>
-      <button onClick={() => selectDexView("hub")} aria-label={t("컬렉션")} title={t("컬렉션")} className="press" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ChevronLeft size={18} /></button>
-      {[["openings", t("오프닝")], ["masters", t("마스터")], ["titles", t("업적")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
-          <button key={k} onClick={() => selectDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
-        ); })}
-    </div>
+  // (v0.6.8) 위쪽 테마 알약 버튼(오프닝·마스터·업적·스킨)은 없앴다 — 테마는 첫 화면 카드에서 고른다. ‹ 버튼은 각 페이지 검색창 왼쪽에 놓여 첫 화면으로 돌아간다.
+  const backBtn = (
+    <button onClick={() => selectDexView("hub")} aria-label={t("컬렉션")} title={t("컬렉션")} className="press" style={{ width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ChevronLeft size={17} /></button>
   );
-  const inlineTabs = !vertical && (dexView === "openings" || dexView === "masters");
   // (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation).
   return (
     <div style={{ isolation: "isolate" }}>
-      {!inlineTabs && dexView !== "hub" && tabPills(14)}
-      {dexView === "hub" ? (
+            {dexView === "hub" ? (
         <DexHub items={hubItems} achievedCount={earned.size} onOpen={selectDexView} />
       ) : dexView === "masters" ? (
-        <MastersSchematic vertical={vertical} tabsSlot={inlineTabs ? tabPills(0) : undefined} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (
         <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>{backBtn}<span style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi }}>{t("스킨")}</span></div>
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
@@ -1433,13 +1459,13 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           </div>
         </div>
       ) : dexView === "titles" ? (
-        <AchievementsPane titleMetrics={titleMetrics} earned={earned} seenTitles={seenTitles} onSeeTitle={onSeeTitle} currentTitle={currentTitle} onEquipTitle={onEquipTitle} />
+        <AchievementsPane backBtn={backBtn} titleMetrics={titleMetrics} earned={earned} seenTitles={seenTitles} onSeeTitle={onSeeTitle} currentTitle={currentTitle} onEquipTitle={onEquipTitle} />
       ) : (<>
       {/* (사용자 요청) "검색+새로고침" 헤더 줄과 같은 자리에 도감 해금률을 우측 배치하고(좌:검색,
           우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한
           브라스/금색 강조 숫자로 보이도록 스타일을 키운다. 실제 렌더 위치는 OpeningSchematic이
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
-      <OpeningSchematic tabsSlot={inlineTabs ? tabPills(0) : undefined} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
+      <OpeningSchematic tabsSlot={backBtn} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>

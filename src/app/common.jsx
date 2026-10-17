@@ -5464,6 +5464,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const def = titleDef(id);
   // 해금 진척도: 안 얻은 칭호는 항상(좌하단 조건 + 우측 게이지), 얻은 칭호는 꾹 누르거나 왼쪽으로 밀면 잠깐 보인다.
   const [peek, setPeek] = useState(false);
+  const [pressing, setPressing] = useState(false);   // 누르는 동안 배너와 윤곽선 장식이 함께 살짝 작아진다
   const peekT = useRef(null), lpT = useRef(null), press = useRef(null), longRef = useRef(false), rootRef = useRef(null);
   // 새로 얻은 칭호(fresh)는 처음엔 꺼진 모습이다가, 화면에 60% 이상 보이면 켜지며 업적 달성 연출이 한 번 재생된다.
   const [lit, setLit] = useState(!fresh);
@@ -5481,14 +5482,14 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   }, [fresh, id]);
   if (!def) return null;
   const showPeek = () => { setPeek(true); clearTimeout(peekT.current); peekT.current = setTimeout(() => setPeek(false), 3200); };
-  const onDown = (e) => { press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
+  const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
   const onMove = (e) => {
     const s = press.current; if (!s || !earned) return;
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.hypot(dx, dy) > 10) clearTimeout(lpT.current);
     if (dx < -28 && Math.abs(dy) < 24) { clearTimeout(lpT.current); press.current = null; longRef.current = true; showPeek(); }
   };
-  const onUp = () => { clearTimeout(lpT.current); press.current = null; };
+  const onUp = () => { setPressing(false); clearTimeout(lpT.current); press.current = null; };
   const handleClick = () => { if (longRef.current) { longRef.current = false; return; } if (earned && lit && onEquip) onEquip(id); };
   const lookEarned = earned && lit;
   // (v0.6.8 디자인) 어두운 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계가 오를수록 금이 밝아지고 윤곽선이 두껍고 복잡해지며, 5단계는 엠블럼이 금으로 꽉 차고 중심부 기물이 움직인다.
@@ -5521,8 +5522,8 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
-    <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px" }}>
-      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} className="press" role="button" aria-label={def.label + " " + titleNameText(def)}
+    <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease" }}>
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={def.label + " " + titleNameText(def)}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
           {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
@@ -5530,7 +5531,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
           {decoTier === 5 && lookEarned && [0, 1].map((k) => (
             <div key={k} aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: k ? "conic-gradient(rgba(255,205,100,.34) 25%, transparent 0 50%, rgba(255,205,100,.34) 0 75%, transparent 0)" : "conic-gradient(transparent 25%, rgba(255,205,100,.34) 0 50%, transparent 0 75%, rgba(255,205,100,.34) 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none", opacity: 0, animation: `titleBoardGlow 3.6s ease-in-out ${k * 1.8}s infinite` }} />
           ))}
-          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 56 : 68, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
+          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 112 : 128, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
             <PieceGlyph type={decoTier === 5 ? "Q" : TITLE_PIECE[tierIdx]} color={pieceColor} size={pieceSz} pieceSkin="classic" />
           </div>
           <svg width="150" height={H} viewBox={`0 0 150 ${H}`} style={{ position: "absolute", right: 0, top: 0, pointerEvents: "none" }} aria-hidden="true">
@@ -5550,18 +5551,21 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: showProg ? "flex-start" : "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingTop: showProg ? (compact ? 9 : 11) : 0, paddingRight: compact ? 50 : 76, transition: "padding .2s ease" }}>
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingRight: compact ? 50 : 76, opacity: showProg ? 0.12 : 1, transition: "opacity .22s ease" }}>
             <span title={def.label} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, def.label.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{def.label}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
               <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
             </span>
           </div>
-          {/* 좌하단 해금 조건 + 우측 진척도 게이지(안 얻은 칭호는 항상, 얻은 칭호는 꾹 누르거나 왼쪽으로 밀 때) */}
-          <div style={{ position: "absolute", left: H + 2, right: compact ? 12 : 16, bottom: compact ? 7 : 9, display: "flex", alignItems: "center", gap: 8, opacity: showProg ? 1 : 0, transform: showProg ? "none" : "translateX(14px)", transition: "opacity .22s ease, transform .22s ease", pointerEvents: "none" }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: compact ? 9 : 10.5, fontWeight: 700, color: "#E3CFA0", opacity: 0.92, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 1px rgba(0,0,0,.7)" }}>{condShort}</span>
-            {gaugeLabel && <span style={{ fontSize: compact ? 8.5 : 9.5, fontWeight: 800, color: g0, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{gaugeLabel}</span>}
-            <span style={{ position: "relative", flexShrink: 0, width: compact ? 58 : 76, height: 6, borderRadius: 3, background: "rgba(255,255,255,.12)", boxShadow: `inset 0 0 0 1px ${g1}88`, overflow: "hidden" }}>
-              <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(ratio > 0 ? 6 : 0, ratio * 100) + "%", borderRadius: 3, background: `linear-gradient(90deg,${g1},${g0})`, transition: "width .5s ease" }} />
+          {/* 해금 조건 + 진척도 게이지: 기존 요소의 위치는 그대로 두고, 엠블럼 오른쪽 전체에 검은 반투명 판을 덮은 뒤 그 위에 조건(왼쪽)과 게이지(오른쪽)만 띄운다.
+              안 얻은 칭호는 항상, 얻은 칭호는 꾹 누르거나 왼쪽으로 밀 때 잠깐. */}
+          <div style={{ position: "absolute", top: 0, bottom: 0, left: H, right: 0, zIndex: 6, display: "flex", alignItems: "center", gap: 8, padding: compact ? "0 12px 0 8px" : "0 16px 0 10px", boxSizing: "border-box", background: "rgba(0,0,0,.7)", opacity: showProg ? 1 : 0, transition: "opacity .22s ease", pointerEvents: "none" }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: compact ? 10 : 11.5, fontWeight: 800, lineHeight: 1.3, color: "#F3E2B4", textShadow: "0 1px 2px rgba(0,0,0,.8)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{condShort}</span>
+            <span style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+              {gaugeLabel && <span style={{ fontSize: compact ? 9 : 10, fontWeight: 800, color: g0, fontVariantNumeric: "tabular-nums" }}>{gaugeLabel}</span>}
+              <span style={{ position: "relative", width: compact ? 58 : 80, height: 6, borderRadius: 3, background: "rgba(255,255,255,.14)", boxShadow: `inset 0 0 0 1px ${g1}99`, overflow: "hidden" }}>
+                <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(ratio > 0 ? 6 : 0, ratio * 100) + "%", borderRadius: 3, background: `linear-gradient(90deg,${g1},${g0})`, transition: "width .5s ease" }} />
+              </span>
             </span>
           </div>
           {decoTier === 5 && lookEarned && !rare && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
@@ -5575,10 +5579,6 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
       </div>
       {decoTier >= 4 && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : 0.5 }}>
-          {/* 모서리 쇠장식(ㄱ자 네 개) */}
-          {[[0, 0, "borderTop", "borderLeft"], [0, 1, "borderTop", "borderRight"], [1, 0, "borderBottom", "borderLeft"], [1, 1, "borderBottom", "borderRight"]].map(([b, r, v, h], i) => (
-            <span key={i} style={{ position: "absolute", [b ? "bottom" : "top"]: 1, [r ? "right" : "left"]: 2, width: decoTier === 5 ? 13 : 10, height: decoTier === 5 ? 13 : 10, [v]: `${decoTier === 5 ? 2 : 1.5}px solid ${g0}`, [h]: `${decoTier === 5 ? 2 : 1.5}px solid ${g0}` }} />
-          ))}
           {/* 양옆 끝 마름모 */}
           {[0, 1].map((r) => <span key={"f" + r} style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: 0, width: decoTier === 5 ? 9 : 7, height: decoTier === 5 ? 9 : 7, marginTop: decoTier === 5 ? -4.5 : -3.5, transform: "rotate(45deg)", background: `linear-gradient(135deg,${g0},${g1})`, boxShadow: "0 0 0 1px rgba(20,11,5,.6)" }} />)}
           {decoTier === 5 && (<>

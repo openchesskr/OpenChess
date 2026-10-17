@@ -691,7 +691,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
           (v0.6.6, 사용자 요청) 검색창·되돌리기 버튼은 오프닝 트리(dex.jsx searchHeader)와 같은 모양, 결과 드롭다운은 퍼즐 탭 검색(puzzle.jsx searchSuggestions)과 같은 모양(종류 태그 + 이름)이다. 한 줄 고정 높이(패널 높이 계산이 이 줄 아래부터 시작). */}
       <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
         {tabsSlot}
-        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 100%" : "0 1 260px", minWidth: 150, marginRight: "auto" }}>
+        <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 0" : "0 1 260px", minWidth: vertical ? 120 : 150, marginRight: "auto" }}>
           <div style={{ display: "flex", gap: 4 }}>
             <input value={q} onChange={(e) => { setQ(e.target.value); setDropOpen(true); }} onFocus={() => setDropOpen(true)} onBlur={() => setTimeout(() => setDropOpen(false), 150)}
               onKeyDown={(e) => { if (e.key === "Enter") { if (matches && matches.length) pickMatch(dropOpen ? matchIdx : (matchIdx + 1) % matches.length); } else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepMatch(e.key === "ArrowDown" ? 1 : -1); setDropOpen(true); } else if (e.key === "Escape") setDropOpen(false); }}
