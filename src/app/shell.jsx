@@ -955,55 +955,6 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
     </motion.div>
   );
 }
-// (v0.2.9 기능) 사용자 요청 — 칭호 획득도 일일 퀘스트 클리어·티어 승급과 같은 "보상 화면" 팝업으로.
-// 예전에는 상단에 잠깐 떴다 6초 뒤 자동으로 사라지는 작은 토스트뿐이었다 — 같은 시각 언어(금빛 원판
-// 마스코트·햇살·컨페티·반짝임, DailyQuestClearedModal과 동일한 구성 요소를 그대로 재사용)로 확대하고,
-// 자동/배경 클릭으로 닫히지 않고 X·확인 버튼을 눌러야만 닫히도록 다른 두 팝업과 동작을 통일한다.
-export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
-  const def = titleDef(id);
-  if (!def) return null;
-  const fam = def.series.cat === "opening" ? def.series : null;
-  const equipped = currentTitle === id;
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 97, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.92, y: 6 }}
-        transition={{ type: "spring", stiffness: 340, damping: 24 }}
-        style={{ position: "relative", width: "100%", maxWidth: 340, margin: "auto", borderRadius: 20, overflow: "hidden", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(196,154,80,.3)" }}>
-        <div style={{ position: "relative", padding: "30px 20px 24px", background: "radial-gradient(120% 140% at 50% -10%,#3A2610 0%,#1B0F07 70%)", display: "flex", justifyContent: "center", overflow: "hidden" }}>
-          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 220, height: 220, marginTop: -6, transform: "translate(-50%,-50%)", background: "repeating-conic-gradient(from 0deg, rgba(243,223,174,.35) 0deg 7deg, transparent 7deg 22deg)", borderRadius: "50%", opacity: 0.7, animationName: "questRaySpin", animationDuration: "16s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
-          {QUEST_CLEAR_CONFETTI.map((c, i) => (
-            <span key={"c" + i} aria-hidden="true" style={{ position: "absolute", left: c.left, top: -6, width: 6, height: 10, background: c.color, borderRadius: 1, transform: "rotate(" + c.rot + "deg)", animationName: "questConfettiFall", animationDuration: "1.6s", animationTimingFunction: "ease-in", animationDelay: c.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-          ))}
-          {QUEST_CLEAR_SPARKLES.map((p, i) => (
-            <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-          ))}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-          <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
-            <Mascot name="milku" emotion="wink" size={68} />
-          </div>
-        </div>
-        <div style={{ background: T.paper, padding: "18px 18px 20px", textAlign: "center" }}>
-          <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
-            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("새 칭호 획득")}</span>
-            <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
-          </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam ? tx("{0} 오프닝을 충분히 연습해서{1}새 칭호 획득", fam.label, <br />) : tx("조건을 달성해서{0}새 칭호 획득", <br />)}</p>
-          <div style={{ padding: "0 6px", marginBottom: 10 }}>
-            <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
-          </div>
-          <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "0 0 16px" }}>{equipped ? t("현재 장착 중인 칭호") : t("칭호를 눌러 바로 장착")}</p>
-          <button onClick={onClose} className="press" style={{ position: "relative", overflow: "hidden", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>
-            <span className="gm-board-shine" style={{ borderRadius: 11 }} />
-            {tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
 // (v0.5.6 기능, 사용자 요청) chess.com 대국 요약 알림 — 도감 잠금 해제 토스트가 있던 자리·크기(상단 가운데,
 // 최대 360px)에, chess.com 대국이 한 판 끝날 때마다 뜬다. 접속하지 않은 사이 끝난 대국들은 다음 접속 때
 // 오래된 것부터 한 장씩 이어서 뜬다(App의 ccQueue). 프로필 "최근 대국" 행과 같은 정보(결과·레이팅 증감·

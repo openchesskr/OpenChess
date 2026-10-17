@@ -14,7 +14,7 @@ import { SITE_FONT } from "./components/engineLines.jsx";
 import { Search, Users, MessageCircle, Star, Send, Check } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, EngineContext, MaterialIcon, MinigamePrefsContext, PuzzleShareSheet, VisualPrefsContext, achievableTitles, ccTitleStats, computeTitleMetrics, sanitizeTitleSet, titleDef, validTitleId, chatConvPrefsFetch, chatFetchAll, chatMarkRead, computeDexLayout, friendAccept, friendEdges, friendRemove, getAnalysisPool, invalidateBookIndex, loadContent, mainQuestOverallProgress, moveFxModeFromSaved, notifyCreate, puzzleDeleteRemote, puzzleFetch, puzzleNo, puzzleShare, puzzleTreeOf, resolveReviewIdentifier, reviewGameIdentifier, reviewGameKey, reviewStorageKey, reviewedGameFetch, reviewedGameShare, setSacConfirmEvaluator, snapNode, solvedLineTagsOf, starsOf, themesOf, todayStr, treeLinesOf, useChessCom, useNarrow, useRealtimeTable, userProfile, usersProfiles } from "./app/common.jsx";
-import { ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, TitleEarnedModal, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleShareReward, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto } from "./app/shell.jsx";
+import { ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleShareReward, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
 import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
 import { ChatsModal, ChatWindow, FriendsModal, ProfileWindow, UserProfilePage, UserSearchModal } from "./app/social.jsx";
@@ -112,7 +112,6 @@ export default function App() {
   const [earnedTitles, setEarnedTitles] = useState(new Set());     // (기능4) 획득 칭호(영구)
   const [currentTitle, setCurrentTitle] = useState(null);         // 장착 칭호
   const [seenTitles, setSeenTitles] = useState(new Set());           // (v0.6.8) 도감 업적 화면에서 이미 확인한(달성 연출을 본) 칭호
-  const [titleEarnedPopup, setTitleEarnedPopup] = useState(null); // (v0.2.9 기능) 새 칭호 획득 팝업(id) — X/확인으로만 닫힘
   // (20차 기능4) 보드 스킨·기물 스킨은 독립적으로 구매·장착한다 — ownedSkins는 "board:ocean" 같은
   // "종류:id" 키 집합(영구), boardSkin/pieceSkin은 지금 장착 중인 스킨 id(기본 "classic").
   const [ownedSkins, setOwnedSkins] = useState(new Set());
@@ -642,10 +641,9 @@ export default function App() {
     if (!newly.length) return;
     setEarnedTitles((prev) => { const n = new Set(prev); newly.forEach((id) => n.add(id)); return n; });
     setNewTitles((n) => n + newly.length); // (버그) 새 칭호 획득 → 도감 탭 빨간 배지
-    // 한꺼번에 여럿 얻으면 가장 높은 단계(같으면 희귀 계열) 하나만 팝업·알림으로 알린다.
+    // 한꺼번에 여럿 얻으면 가장 높은 단계(같으면 희귀 계열) 하나만 알림으로 남긴다(획득 팝업은 v0.6.8에서 없앴다 — 도감 업적 화면에서 처음 볼 때 달성 연출이 나온다).
     const rank = (id) => { const d = titleDef(id); return d ? d.tier * 2 + (d.rare ? 1 : 0) : 0; };
     const top = newly.slice().sort((a, b) => rank(b) - rank(a))[0];
-    setTitleEarnedPopup(top); // (v0.2.9 기능) 작은 토스트 대신 X/확인으로만 닫히는 축하 팝업
     if (uid) notifyCreate(uid, "title_earned", { titleId: top }); // (17차) 알림 기록에도 남긴다(팝업은 닫으면 사라지므로)
   }, [titleMetrics, loaded]);
   const equipTitle = useCallback((id) => { setCurrentTitle(id); }, []);
@@ -1639,7 +1637,6 @@ export default function App() {
           같은 팝업이 그대로 다시 뜬다. */}
       {puzzleNoticeOpen && todayPuzzle && <DailyPuzzleNoticeModal puzzle={todayPuzzle} solveCount={Math.max((solveCounts && solveCounts[puzzleNo(todayPuzzle.id)]) || 0, solved.has(todayPuzzle.id) ? 1 : 0)} onOpen={() => { openDailyPuzzle(); closePuzzleNotice(false); }} onClose={(hideToday) => closePuzzleNotice(hideToday)} onOpenLearn={(sans) => onOpenLearnFocus(sans, "dailypuzzle")} />}
       <AnimatePresence>{questClearOpen && <DailyQuestClearedModal key="questClearModal" dailyQuest={dailyQuest} chesscom={chesscom} onOpenGameAnalyze={onOpenGameAnalyze} onClose={() => setQuestClearOpen(false)} />}</AnimatePresence>
-      <AnimatePresence>{titleEarnedPopup && <TitleEarnedModal key="titleEarnedModal" id={titleEarnedPopup} currentTitle={currentTitle} onEquip={equipTitle} onClose={() => setTitleEarnedPopup(null)} />}</AnimatePresence>
       {authNotice && <div onClick={() => setAuthNotice("")} style={{ position: "fixed", left: "50%", bottom: 90, transform: "translateX(-50%)", zIndex: 95, maxWidth: 340, width: "calc(100% - 32px)", background: "#241509", color: "#F2E8D5", border: "1px solid #C49A50", borderRadius: 12, padding: "12px 14px", fontSize: 13, lineHeight: 1.5, boxShadow: "0 12px 30px -8px rgba(0,0,0,.6)", cursor: "pointer" }}>{authNotice} <span style={{ opacity: .7, fontSize: 11 }}>{t("(탭하여 닫기)")}</span></div>}
       {needUser && <UsernameSetupModal account={needUser} onDone={(acc) => { setNeedUser(null); if (acc) onAuth(acc); }} onCancel={async () => { try { await authLogout(); } catch { } setNeedUser(null); setUser(null); setUid(null); }} />}
       {/* (v0.6.5) 데스크톱 도킹 창 — 채팅은 대화마다 창이 따로 열리고, 검색·친구·채팅 목록은 하나씩. 배경 화면은 그대로 쓸 수 있다. */}
