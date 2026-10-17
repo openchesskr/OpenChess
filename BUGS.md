@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-105 | P2 | 도감 탭에서 로그인 팝업을 열면 "로그인" 제목 위로 오프닝 검색창·새로고침 버튼이 겹쳐 보임(사용자 화면 녹화) | 수정 완료(v0.6.8) · `check-modal-layers` | 2026-10-18 |
 | BUG-104 | P1 | 사이트를 열면 "화면 불러오기 실패"가 계속 뜸 — 칭호 개편 때 import에서 `achievableTitles`가 빠져 앱이 켜지자마자 오류 | 수정 완료(v0.6.8) · `check-undefined-refs` | 2026-10-17 |
 | BUG-084 | P3 | 마스터 트리 검색 결과 드롭다운 첫 줄이 전체 화면 버튼에 가려짐 | 수정 완료(v0.6.6) | 2026-10-12 |
 | BUG-085 | P3 | check-schematic-fs가 SchematicFsButton의 추가 속성(hidden)을 인식하지 못함 | 수정 완료(v0.6.6) | 2026-10-12 |
@@ -1087,3 +1088,13 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **수정 내용**: import 복구
 - **재발 방지 안전장치**: `scripts/check-undefined-refs.mjs`(prebuild·`npm run check:undefined-refs`)가 src 전체를 babel로 읽어 선언·import되지 않은 이름을 찾아 빌드를 막음(import를 일부러 지워 실패하는 것 확인). 앞으로 같은 종류의 누락은 빌드에서 걸림
 - **검증**: 수정 전 headless Chromium으로 접속해 `ReferenceError: achievableTitles is not defined`와 오류 화면 재현 → 수정 후 오류 없이 앱이 뜨는 것 확인, `npm run build` 통과
+
+### BUG-105 · [P2] 도감 탭에서 로그인 팝업을 열면 검색창이 팝업 위에 겹쳐 보임
+- **상태**: 수정 완료(v0.6.8, 사용자 화면 녹화)
+- **발견일**: 2026-10-18
+- **위치**: `src/app/shell.jsx`(AuthModal), `src/app/social.jsx`(ProfileWindow), `src/app/dex.jsx`
+- **증상**: 모바일 도감 탭에서 로그인을 누르면 팝업 "로그인" 제목 줄 위로 "오프닝 이름으로 찾기" 입력창과 새로고침 버튼이 겹쳐 그려짐
+- **근본 원인**: 도감 검색창 줄(드롭다운이 캔버스 위에 뜨도록 z-index 80)과 로그인 팝업 바깥 층(z-index 80)이 같은 값이었고, 도감 쪽이 나중에 그려져 팝업 위로 올라옴. 프로필 창도 같은 80
+- **수정 내용**: 로그인·프로필 창 z-index를 95로 올리고, 도감 최상위를 `isolation: isolate`로 감싸 안쪽 z-index가 밖으로 새지 않게 함. 로그인 팝업의 닫기 버튼도 공통 불투명 스타일로 통일
+- **재발 방지 안전장치**: `scripts/check-modal-layers.mjs`(prebuild)가 도감 isolation과 로그인·프로필 창 z-index(90 이상)를 확인
+- **검증**: 390px 모바일 화면에서 도감 탭 → 로그인으로 재현(수정 전 녹화와 같은 겹침) 후 수정 뒤 팝업이 깨끗이 보이는 것 확인, `npm run build` 통과

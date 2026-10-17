@@ -1864,7 +1864,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
     <motion.div
       onClick={onClose}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
     >
       <motion.div
         onClick={(e) => e.stopPropagation()}
@@ -1873,7 +1873,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
         style={{ position: "relative", width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}
       >
         {/* (UI6) 창 닫기 버튼은 항상 블록 우상단 고정 */}
-        <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         {/* (디자인) 로그인/회원가입 창의 마스코트 캐릭터 대신 OpenChess 로고를 표시 — 학습·퍼즐 탭
             바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, marginTop: 4 }}>
