@@ -1315,8 +1315,8 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
     </div>
   );
   const inlineTabs = !vertical && (dexView === "openings" || dexView === "masters");
+  // (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation).
   return (
-    {/* (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation). */}
     <div style={{ isolation: "isolate" }}>
       {!inlineTabs && tabPills(14)}
       {dexView === "masters" ? (
