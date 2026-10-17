@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
-import { t, tx } from "../lib/i18n.js";
+import { t } from "../lib/i18n.js";
 
 function HubCard({ item, onOpen }) {
   const [hot, setHot] = useState(false);
@@ -31,12 +31,11 @@ function HubCard({ item, onOpen }) {
 }
 
 /** items: [{ key, label, Icon, percent(0~100|null), detail }] */
-export function DexHub({ items, achievedCount, onOpen }) {
+export function DexHub({ items, onOpen }) {
   return (
     <div style={{ maxWidth: 760, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, margin: "4px 2px 14px" }}>
+      <div style={{ margin: "4px 2px 14px" }}>
         <span style={{ fontFamily: SITE_FONT, fontSize: 20, fontWeight: 900, color: T.ivoryHi }}>{t("컬렉션")}</span>
-        <span style={{ fontFamily: SITE_FONT, fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>{tx("업적 {0}개 달성", achievedCount)}</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: 12 }}>
         {items.map((it) => <HubCard key={it.key} item={it} onOpen={onOpen} />)}

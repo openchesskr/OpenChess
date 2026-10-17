@@ -1438,7 +1438,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   return (
     <div style={{ isolation: "isolate" }}>
             {dexView === "hub" ? (
-        <DexHub items={hubItems} achievedCount={earned.size} onOpen={selectDexView} />
+        <DexHub items={hubItems} onOpen={selectDexView} />
       ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (

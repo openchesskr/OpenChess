@@ -1828,9 +1828,9 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
         <button onClick={onClose} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         {/* (디자인) 로그인/회원가입 창의 마스코트 캐릭터 대신 OpenChess 로고를 표시 — 학습·퍼즐 탭
             바깥에서는 마스코트를 쓰지 않는다는 원칙에 맞춘다. */}
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14, marginTop: 4 }}>
-          {/* (버그 수정) 로고 이미지의 투명 여백을 잘라낸 뒤로는 height 값이 곧 실제 크기이므로 줄인다. */}
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 30, width: "auto" }} />
+        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, marginTop: 4 }}>
+          {/* (v0.6.8) 로고를 가운데가 아니라 왼쪽 위에 두고 조금 키웠다(30→40). 이미지의 투명 여백은 이미 잘려 있어 height가 곧 실제 크기. */}
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 40, width: "auto" }} />
         </div>
         <div style={{ marginBottom: 14, paddingRight: 30 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>
