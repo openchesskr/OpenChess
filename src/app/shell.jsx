@@ -655,7 +655,7 @@ export function AnnouncementModal({ onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer" }}>✕</button>
+        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
           <Sparkles size={17} style={{ color: T.brass, flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{t("업데이트 소식")}</span>
@@ -910,7 +910,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
           <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="kokoa" emotion="celebrate" size={68} />
           </div>
@@ -984,7 +984,7 @@ export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
           {QUEST_CLEAR_SPARKLES.map((p, i) => (
             <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: "#F3DFAE", animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
           ))}
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "rgba(0,0,0,.4)", color: "#F2E8D5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
           <div style={{ position: "relative", zIndex: 1, width: 82, height: 82, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)", border: "1px solid #6E5424", animationName: "questGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
             <Mascot name="milku" emotion="wink" size={68} />
           </div>
@@ -1637,7 +1637,7 @@ export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision
           돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
       <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
         style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 26, height: 26, borderRadius: 8, border: "none", background: "#0002", color: T.ink, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
             위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
             기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
