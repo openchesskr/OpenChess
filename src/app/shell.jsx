@@ -5,6 +5,7 @@ import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken,
 import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
 import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
+import { DEX_VIEW_PATH, DEX_PATHS } from "../lib/dexRoutes.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
 import { T, MOTION_EASE, tierPieceSrc } from "../lib/theme.js";
 import { Sparkles, ChevronRight, Bell, Play, Search, Check, X, Target, Star, Crown, Library, Settings, Users, Info, ChevronDown, EyeOff, Eye } from "lucide-react";
@@ -1169,8 +1170,8 @@ export const TABS = [{ key: "learn", label: t("분석"), Icon: null }, { key: "s
 // 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
 // (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
 // 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
-export const TAB_PATH = { learn: "/analysis", dex: "/book", puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
-const PATH_TAB = { "/analysis": "learn", "/book": "dex", "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
+export const TAB_PATH = { learn: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "learn", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
 export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 // (UX7) 로컬 캐시를 계정(uid) 단위로 분리 — 이걸 안 하면 같은 기기에서 다른 계정으로 로그인할 때
 // 퍼즐·프로필·칭호·chess.com 연동 등이 이전 계정 것을 그대로 물려받는 사고가 남(실제로 있었음).

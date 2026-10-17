@@ -25,6 +25,10 @@ for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes
 const emb = fs.readFileSync(new URL("../src/components/titleEmblems.jsx", import.meta.url), "utf8");
 for (const f of TITLE_OPENINGS) if (!new RegExp("^  " + f.key + ": (\\{|mono\\()", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
 for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key)) || seriesAccent(s.key) === "#7A5A34" && s.key !== "dex") fail(s.key + ": 포인트 색(ACCENT)이 없음");
+// 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
+const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));
+for (const k of used) if (!appSrc.includes("@keyframes " + k + "{")) fail("키프레임 " + k + "이 App.jsx 스타일에 없음");
 // ③ 판정
 const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");

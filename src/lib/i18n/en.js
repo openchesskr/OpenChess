@@ -2419,4 +2419,7 @@ export default {
   "대국·레이팅": "Games & rating",
   "희귀": "Rare",
   "조건을 달성해서{0}새 칭호 획득": "You met the requirement{0}and earned a new title",
+  "업적": "Achievements",
+  "업적 달성": "Achievement unlocked",
+  "퍼즐 {0}개 + chess.com {1}회": "{0} {0|puzzle|puzzles} + {1} chess.com {1|game|games}",
 };

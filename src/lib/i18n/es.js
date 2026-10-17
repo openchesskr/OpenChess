@@ -2419,4 +2419,7 @@ export default {
   "대국·레이팅": "Partidas y rating",
   "희귀": "Raros",
   "조건을 달성해서{0}새 칭호 획득": "Cumpliste el requisito{0}y conseguiste un nuevo título",
+  "업적": "Logros",
+  "업적 달성": "Logro desbloqueado",
+  "퍼즐 {0}개 + chess.com {1}회": "{0} {0|puzle|puzles} + {1} {1|partida|partidas} en chess.com",
 };

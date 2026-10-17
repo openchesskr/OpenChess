@@ -11,6 +11,7 @@ import { KeywordChip } from "../components/keywordScroll.jsx";
 import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
+import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -1265,8 +1266,19 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
+  const selectDexView = useCallback((k) => {
+    setDexView(k);
+    try { const p = DEX_VIEW_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
+  }, []);
+  useEffect(() => {
+    try { const p = DEX_VIEW_PATH[dexView]; if (p && dexViewFromPath(window.location.pathname) !== dexView) window.history.replaceState(window.history.state, "", p); } catch { }   // 마스터 링크 등으로 시작했을 때 주소를 맞춘다
+    const onPop = () => { const v = dexViewFromPath(window.location.pathname); if (v) setDexView(v); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
   // (2차 개편) 도감 오프닝 — 클릭으로 펼치던 방식을 버리고 최소 3수+채택률 20% 이상 라인까지 자동으로
@@ -1309,8 +1321,8 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (v0.6.3) 탭 알약 — 데스크톱의 오프닝·마스터 모식도는 검색·안내 줄과 같은 한 줄에 넣어(inlineTabs) 모식도 높이를 늘린다. 모바일·칭호·스킨은 예전처럼 위에 따로 둔다.
   const tabPills = (mb) => (
     <div className="flex items-center gap-2" style={{ marginBottom: mb, flexShrink: 0 }}>
-      {[["openings", t("오프닝")], ["masters", t("마스터")], ["titles", t("칭호")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
-          <button key={k} onClick={() => setDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
+      {[["openings", t("오프닝")], ["masters", t("마스터")], ["titles", t("업적")], ["skins", t("스킨")]].map(([k, lb]) => { const on = dexView === k; return (
+          <button key={k} onClick={() => selectDexView(k)} className="press" style={{ fontSize: 13, fontWeight: 800, padding: "7px 16px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: on ? "#241509" : T.brassHi, cursor: "pointer" }}>{lb}</button>
         ); })}
     </div>
   );
@@ -1356,7 +1368,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
                       {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
                       <div className="flex flex-col" style={{ gap: 6 }}>
                         {s.mins.map((_, i) => { const id = s.key + ":" + (i + 1); return (
-                          <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} onEquip={onEquipTitle} />
+                          <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} progress2={s.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[s.key] || 0) : null} fresh={earned.has(id) && !(seenTitles || earned).has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
                         ); })}
                       </div>
                     </div>
