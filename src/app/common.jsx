@@ -21,7 +21,7 @@ import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx"
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles } from "lucide-react";
-import { TITLE_OPENINGS, titleDef, seriesAccent } from "../lib/titles.js";
+import { TITLE_OPENINGS, titleDef, seriesAccent, openingSide } from "../lib/titles.js";
 import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
 import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZOOM_LABEL_BASE } from "../lib/schematicGeometry.js";
@@ -5397,7 +5397,7 @@ export function openingNameOf(moves) {
 // (v0.6.8) 칭호 시스템 개편 — 정의·판정은 src/lib/titles.js(순수 모듈), 여기는 배너 디자인과 조건 문구만 맡는다.
 //  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
 //  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계(1~5)가 오를수록 금이 밝아지고, 계열마다 아이콘이 다르다.
-export { TITLE_OPENINGS, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
+export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
 const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star };
 // 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
 function titleCondText(def) {
@@ -5431,18 +5431,15 @@ function titleCondText(def) {
     default: return "";
   }
 }
-// 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3단계는 네 모서리를 크게 깎은 팔각, 4단계는 양끝이 뾰족한 육각, 5단계는 성곽처럼 계단진 모서리 + 위쪽 가운데 V자 홈(왕관·룩 느낌).
+// 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
 const TITLE_BORDER_W = [1, 1.5, 2, 2.5, 3];
 const TITLE_PIECE = ["P", "N", "B", "R", "Q"];   // 단계가 오를수록 큰 기물이 중심부 바탕에 흐리게 깔린다(희귀는 킹)
 function titleShape(shapeTier, c) {
   const p = (x) => `${x}px`, e = (x) => `calc(100% - ${x}px)`;
-  if (shapeTier === 1) return `polygon(${p(c)} 0, ${e(c)} 0, 100% ${p(c)}, 100% ${e(c)}, ${e(c)} 100%, ${p(c)} 100%, 0 ${e(c)}, 0 ${p(c)})`;
   if (shapeTier === 2) return `polygon(0 0, ${e(c)} 0, 100% ${p(c)}, 100% 100%, ${p(c)} 100%, 0 ${e(c)})`;
-  if (shapeTier === 3) return `polygon(${p(c)} 0, ${e(c)} 0, 100% ${p(c)}, 100% ${e(c)}, ${e(c)} 100%, ${p(c)} 100%, 0 ${e(c)}, 0 ${p(c)})`;
-  if (shapeTier === 4) return `polygon(${p(c)} 0, ${e(c)} 0, 100% 50%, ${e(c)} 100%, ${p(c)} 100%, 0 50%)`;
-  return `polygon(0 ${p(c)}, ${p(c)} ${p(c)}, ${p(c)} 0, calc(50% - ${c + 4}px) 0, 50% ${p(c - 2)}, calc(50% + ${c + 4}px) 0, ${e(c)} 0, ${e(c)} ${p(c)}, 100% ${p(c)}, 100% ${e(c)}, ${e(c)} ${e(c)}, ${e(c)} 100%, ${p(c)} 100%, ${p(c)} ${e(c)}, 0 ${e(c)})`;
+  return `polygon(${p(c)} 0, ${e(c)} 0, 100% ${p(c)}, 100% ${e(c)}, ${e(c)} 100%, ${p(c)} 100%, 0 ${e(c)}, 0 ${p(c)})`;
 }
-const TITLE_SHAPE_CUT = [0, 5, 11, 12, 17, 8];
+const TITLE_SHAPE_CUT = [0, 5, 11, 12];
 const fmtCompactN = (n) => (n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : fmtFull(n));
 export function TitleBadge({ id, earned = true, equipped = false, progress = null, progress2 = null, onEquip, compact = false, locked = false, fresh = false, onSeen }) {
   const def = titleDef(id);
@@ -5477,14 +5474,15 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const lookEarned = earned && lit;
   // (v0.6.8 디자인) 어두운 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계가 오를수록 금이 밝아지고 윤곽선이 두껍고 복잡해지며, 5단계는 엠블럼이 금으로 꽉 차고 중심부 기물이 움직인다.
   const tierIdx = def.tier - 1, many = def.series.mins.length > 1, rare = def.rare;
-  const shapeTier = rare ? 5 : def.tier;
+  const decoTier = rare ? 5 : def.tier;   // 바깥 장식·중심부 연출 단계
+  const shapeTier = Math.min(3, decoTier);
   const GOLD = [["#9A7A3A", "#6E5424"], ["#C09A4C", "#8A6C2F"], ["#DDB968", "#A8842F"], ["#F3DFAE", "#C49A50"], ["#FFF3C9", "#E8BE55"]][rare ? 4 : tierIdx];
   const g0 = GOLD[0], g1 = GOLD[1];
   const accent = seriesAccent(def.series.key), mixHex = (a, b, k) => { const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return "#" + pa.map((v, i) => Math.round(v * k + pb[i] * (1 - k)).toString(16).padStart(2, "0")).join(""); };
   const bgA = mixHex(accent, "#140B05", rare ? 0.62 : 0.5), bgB = "#140B05";   // 계열 포인트 색이 왼쪽에서 은은하게 번져 어두운 바탕으로 사라진다
   const isOpening = def.series.cat === "opening";
   const H = compact ? 64 : 78, ISZ = compact ? 16 : 20;
-  const bw = TITLE_BORDER_W[shapeTier - 1] + (equipped ? 1 : 0), cut = TITLE_SHAPE_CUT[shapeTier];
+  const bw = TITLE_BORDER_W[decoTier - 1] + (equipped ? 1 : 0), cut = TITLE_SHAPE_CUT[shapeTier] || 4;
   const uid = "tb" + id.replace(/[^a-z0-9]/gi, "_") + (compact ? "c" : "n");
   const Icon = TITLE_ICONS[def.series.icon] || Star;
   const filled = tierIdx >= 3 || rare;   // 4·5단계와 희귀는 엠블럼 안쪽을 금으로 채운다
@@ -5501,16 +5499,20 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   [16, 28, 40, 52].forEach((r, i) => lattice.push(<circle key={"c" + i} cx="146" cy={H / 2} r={r} fill="none" stroke={g0} strokeWidth="1" opacity={0.3 - i * 0.05} />));
   const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? `url(#${uid}g)` : "none"} stroke={g0} strokeWidth="1" opacity={i <= tierIdx ? 1 : 0.4} />); }
   const pieceSz = Math.round(H * 0.95);
+  const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
-    <div ref={rootRef} style={{ position: "relative", width: "100%" }}>
+    <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px" }}>
       <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} className="press" role="button" aria-label={def.label + " " + def.name}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
-          {/* 중심부 체스판 무늬(은은하게) + 단계별 기물 실루엣. 5단계는 기물이 칸을 따라 미끄러지듯 움직인다. */}
+          {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
           <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "conic-gradient(rgba(255,240,200,.05) 25%, transparent 0 50%, rgba(255,240,200,.05) 0 75%, transparent 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none" }} />
-          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 62 : 74, bottom: -2, opacity: shapeTier === 5 ? 0.2 : 0.13, filter: "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none", animation: shapeTier === 5 && lookEarned ? "titlePieceGlide 5.5s ease-in-out infinite" : undefined }}>
-            <PieceGlyph type={rare ? "K" : TITLE_PIECE[tierIdx]} color="w" size={pieceSz} pieceSkin="classic" />
+          {decoTier === 5 && lookEarned && [0, 1].map((k) => (
+            <div key={k} aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: k ? "conic-gradient(rgba(255,205,100,.34) 25%, transparent 0 50%, rgba(255,205,100,.34) 0 75%, transparent 0)" : "conic-gradient(transparent 25%, rgba(255,205,100,.34) 0 50%, transparent 0 75%, rgba(255,205,100,.34) 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none", opacity: 0, animation: `titleBoardGlow 3.6s ease-in-out ${k * 1.8}s infinite` }} />
+          ))}
+          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 56 : 68, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
+            <PieceGlyph type={decoTier === 5 ? "Q" : TITLE_PIECE[tierIdx]} color={pieceColor} size={pieceSz} pieceSkin="classic" />
           </div>
           <svg width="150" height={H} viewBox={`0 0 150 ${H}`} style={{ position: "absolute", right: 0, top: 0, pointerEvents: "none" }} aria-hidden="true">
             <defs><linearGradient id={uid + "g"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={GOLD[0]} /><stop offset="1" stopColor={GOLD[1]} /></linearGradient></defs>
@@ -5525,7 +5527,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
                 : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
               {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
             </svg>
-            {!isOpening && <div style={{ position: "relative", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
@@ -5544,7 +5546,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
               <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(ratio > 0 ? 6 : 0, ratio * 100) + "%", borderRadius: 3, background: `linear-gradient(90deg,${g1},${g0})`, transition: "width .5s ease" }} />
             </span>
           </div>
-          {shapeTier === 5 && lookEarned && !rare && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
+          {decoTier === 5 && lookEarned && !rare && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
           {equipped && <span style={{ position: "absolute", right: 12, bottom: 4, fontSize: 9, fontWeight: 900, letterSpacing: ".06em", color: "#2B1A0B", background: `linear-gradient(180deg,${GOLD[0]},${GOLD[1]})`, borderRadius: 4, padding: "1px 6px", pointerEvents: "none", opacity: showProg ? 0 : 1 }}>{t("장착됨")}</span>}
           {/* 업적 달성 연출: 금빛 섬광 + "업적 달성" 문구(한 번) */}
           {fresh && lit && (<>
@@ -5553,6 +5555,21 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
           </>)}
         </div>
       </div>
+      {decoTier >= 4 && (
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : 0.5 }}>
+          {/* 모서리 쇠장식(ㄱ자 네 개) */}
+          {[[0, 0, "borderTop", "borderLeft"], [0, 1, "borderTop", "borderRight"], [1, 0, "borderBottom", "borderLeft"], [1, 1, "borderBottom", "borderRight"]].map(([b, r, v, h], i) => (
+            <span key={i} style={{ position: "absolute", [b ? "bottom" : "top"]: 1, [r ? "right" : "left"]: 2, width: decoTier === 5 ? 13 : 10, height: decoTier === 5 ? 13 : 10, [v]: `${decoTier === 5 ? 2 : 1.5}px solid ${g0}`, [h]: `${decoTier === 5 ? 2 : 1.5}px solid ${g0}` }} />
+          ))}
+          {/* 양옆 끝 마름모 */}
+          {[0, 1].map((r) => <span key={"f" + r} style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: 0, width: decoTier === 5 ? 9 : 7, height: decoTier === 5 ? 9 : 7, marginTop: decoTier === 5 ? -4.5 : -3.5, transform: "rotate(45deg)", background: `linear-gradient(135deg,${g0},${g1})`, boxShadow: "0 0 0 1px rgba(20,11,5,.6)" }} />)}
+          {decoTier === 5 && (<>
+            {/* 위쪽 가운데 왕관 + 아래쪽 가운데 마름모 */}
+            <svg width="34" height="9" viewBox="0 0 34 9" style={{ position: "absolute", top: -1, left: "50%", marginLeft: -17 }}><path d="M1 8 L5 2 L11 6 L17 0 L23 6 L29 2 L33 8 Z" fill={`url(#${uid}g)`} stroke="rgba(20,11,5,.55)" strokeWidth=".8" /></svg>
+            <span style={{ position: "absolute", bottom: 0, left: "50%", marginLeft: -3, width: 6, height: 6, transform: "rotate(45deg)", background: g0 }} />
+          </>)}
+        </div>
+      )}
       {fresh && lit && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
           <span style={{ position: "absolute", inset: -2, borderRadius: 8, animation: "titleUnlockRing 1.3s ease-out forwards" }} />

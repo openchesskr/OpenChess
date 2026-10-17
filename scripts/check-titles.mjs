@@ -6,7 +6,7 @@
  *   ④ chess.com 집계(ccTitleStats)가 연승·메이트·빠른 승리·장기전·강자 격파를 정확히 센다
  */
 import fs from "node:fs";
-import { TITLE_SERIES, TITLE_OPENINGS, ALL_TITLE_IDS, seriesAccent, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
+import { TITLE_SERIES, TITLE_OPENINGS, OPENING_FAMILIES, ALL_TITLE_IDS, seriesAccent, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
 const fails = []; const fail = (m) => fails.push(m);
 const keys = new Set();
 for (const s of TITLE_SERIES) {
@@ -23,7 +23,7 @@ for (const s of TITLE_SERIES) if (!new RegExp("\\b" + s.icon + "\\b").test(iconB
 for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes('case "' + m + '":')) fail("지표 " + m + "의 조건 문구(titleCondText)가 없음");
 // 오프닝마다 엠블럼(국기·이니셜)이 있어야 하고, 모든 계열에 포인트 색이 있어야 한다
 const emb = fs.readFileSync(new URL("../src/components/titleEmblems.jsx", import.meta.url), "utf8");
-for (const f of TITLE_OPENINGS) if (!new RegExp("^  " + f.key + ": (\\{|mono\\()", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
+for (const f of OPENING_FAMILIES) if (!new RegExp("^  " + f.key + ": (\\{|mono\\()", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
 for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key)) || seriesAccent(s.key) === "#7A5A34" && s.key !== "dex") fail(s.key + ": 포인트 색(ACCENT)이 없음");
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
@@ -34,7 +34,7 @@ const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");
 const big = computeTitleMetrics({ solved: 1e6, puzzleRating: 3500, tierIndex: 6, dailyBest: 1e4, unlocked: 1e5, community: 1e5, friends: 1e4, coins: 1e7,
   cc: { ccPlayed: 1e5, ccWins: 1e5, ccDraws: 1e5, ccWhiteWins: 1e5, ccBlackWins: 1e5, ccBestRating: 3500, ccWinStreak: 1e3, ccMates: 1e5, ccQuickWins: 1e5, ccLongWins: 1e5, ccGiantWins: 1e5, ccNight: 1e5, ccOpenings: 1e4, ccTopOpening: 1e5 },
-  openingSolved: Object.fromEntries(TITLE_OPENINGS.map((f) => [f.key, 1e5])), openingCc: Object.fromEntries(TITLE_OPENINGS.map((f) => [f.key, 1e6])) });
+  openingSolved: Object.fromEntries(OPENING_FAMILIES.map((f) => [f.key, 1e5])), openingCc: Object.fromEntries(OPENING_FAMILIES.map((f) => [f.key, 1e6])) });
 const all = achievableTitles(big);
 for (const id of ALL_TITLE_IDS) if (!all.has(id)) fail("충분한 지표인데 열리지 않는 칭호: " + id);
 // 오프닝은 두 지표를 모두 요구

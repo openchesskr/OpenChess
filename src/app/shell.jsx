@@ -13,7 +13,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleLabel as _titleLabel, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleLabel as _titleLabel, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -589,7 +589,7 @@ function puzzleFamilyKey(p) {
   const names = []; const path = [...(p.setupSans || []), ...(p.mistakeSan ? [p.mistakeSan] : [])];
   for (let i = 1; i <= path.length; i++) { const nd = snapNode(path.slice(0, i)); if (nd && nd.opening && nd.opening.name) names.push(nd.opening.name); }
   if (p.opening) names.push(p.opening);
-  for (const fam of TITLE_OPENINGS) { if (names.some((n) => fam.rx.test(n))) return fam.key; }
+  for (const fam of OPENING_FAMILIES) { if (names.some((n) => fam.rx.test(n))) return fam.key; }
   return null;
 }
 export function familyCounts(puzzles, solved) {
@@ -603,7 +603,7 @@ export function familyCounts(puzzles, solved) {
 // 빠지기도 했다. 사이트 전체와 같은 기준(openingNameOf)으로 통일한다.
 export function ccFamilyCounts(games) {
   const c = {}; if (!games) return c;
-  for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of TITLE_OPENINGS) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
+  for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of OPENING_FAMILIES) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
   return c;
 }
 // (기능1) 별 3개(라인) 아이콘 — 해결한 라인 수만큼 채워서 표시
@@ -962,7 +962,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
 export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
   const def = titleDef(id);
   if (!def) return null;
-  const fam = def.series.cat === "opening" ? TITLE_OPENINGS.find((f) => f.key === def.series.key) : null;
+  const fam = def.series.cat === "opening" ? def.series : null;
   const equipped = currentTitle === id;
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}

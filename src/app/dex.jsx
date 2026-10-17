@@ -1366,7 +1366,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
                       {/* (v0.6.8) 오프닝 칸은 위에 오프닝 이름만 둔다(퍼즐·chess.com 수치 줄과 사용 안내 문구는 삭제 — 조건은 배너를 눌렀을 때 뜬다). */}
                       {s.cat === "opening" && <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{s.label}</div>}
                       {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
-                      <div className="flex flex-col" style={{ gap: 6 }}>
+                      <div className="flex flex-col" style={{ gap: 0 }}>
                         {s.mins.map((_, i) => { const id = s.key + ":" + (i + 1); return (
                           <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} progress2={s.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[s.key] || 0) : null} fresh={earned.has(id) && !(seenTitles || earned).has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
                         ); })}

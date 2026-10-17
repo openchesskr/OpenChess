@@ -21,6 +21,28 @@ export const TITLE_OPENINGS = [
   { key: "queensgambit", label: "Queen's Gambit", rx: /queen.?s gambit/i },
 ];
 
+// 칭호 전용으로 늘린 오프닝. 도감 트리 라벨(위 TITLE_OPENINGS)에는 영향을 주지 않는다. 집계는 먼저 맞는 오프닝 하나에만 센다 — Evans는 Italian 변형 이름 안에 있어 맨 앞에 둔다.
+const EXTRA_BEFORE = [{ key: "evans", label: "Evans Gambit", rx: /evans/i }];
+const EXTRA_AFTER = [
+  { key: "english", label: "English Opening", rx: /english/i },
+  { key: "reti", label: "Réti Opening", rx: /r[eé]ti/i },
+  { key: "danish", label: "Danish Gambit", rx: /danish/i },
+  { key: "pirc", label: "Pirc Defense", rx: /pirc|modern defen[cs]e/i },
+  { key: "alekhine", label: "Alekhine's Defense", rx: /alekhine/i },
+  { key: "scandinavian", label: "Scandinavian Defense", rx: /scandinavian|center counter/i },
+  { key: "dutch", label: "Dutch Defense", rx: /dutch/i },
+  { key: "slav", label: "Slav Defense", rx: /\bslav\b/i },
+  { key: "kingsindian", label: "King's Indian Defense", rx: /king.?s indian/i },
+  { key: "nimzo", label: "Nimzo-Indian Defense", rx: /nimzo/i },
+  { key: "queensindian", label: "Queen's Indian Defense", rx: /queen.?s indian/i },
+  { key: "philidor", label: "Philidor Defense", rx: /philidor/i },
+  { key: "petrov", label: "Petrov's Defense", rx: /petrov|petroff|russian game/i },
+];
+export const OPENING_FAMILIES = [...EXTRA_BEFORE, ...TITLE_OPENINGS, ...EXTRA_AFTER];
+// 오프닝을 두는 진영: 엠블럼 뒤 기물 색(백이 두는 오프닝은 흰 기물, 흑의 방어는 검은 기물)
+const BLACK_SIDE = new Set(["sicilian", "carokann", "french", "benoni", "grunfeld", "pirc", "alekhine", "scandinavian", "dutch", "slav", "kingsindian", "nimzo", "queensindian", "philidor", "petrov"]);
+export const openingSide = (key) => (BLACK_SIDE.has(key) ? "b" : "w");
+
 export const TITLE_CATEGORIES = [
   { key: "opening", label: "오프닝 숙련" },
   { key: "activity", label: "활동" },
@@ -36,7 +58,7 @@ const OPENING_NAMES = ["Initiate", "Adept", "Specialist", "Master", "Legend"];
 // icon은 common.jsx의 TITLE_ICONS가 lucide 아이콘으로 바꾼다(여기는 이름만).
 const S = (key, cat, label, icon, metric, mins, names) => ({ key, cat, label, icon, metric, mins, names });
 export const TITLE_SERIES = [
-  ...TITLE_OPENINGS.map((f) => ({ key: f.key, cat: "opening", label: f.label, icon: "Compass", metric: "opening", mins: OPENING_MINS, ccMins: OPENING_CC_MINS, names: OPENING_NAMES })),
+  ...OPENING_FAMILIES.map((f) => ({ key: f.key, cat: "opening", label: f.label, icon: "Compass", metric: "opening", mins: OPENING_MINS, ccMins: OPENING_CC_MINS, names: OPENING_NAMES })),
   // 활동
   S("solve", "activity", "Puzzles", "Puzzle", "solved", [1, 10, 50, 200, 1000], ["First Step", "Tactician", "Problem Solver", "Puzzle Master", "Puzzle Legend"]),
   S("daily", "activity", "Daily Streak", "Flame", "dailyBest", [3, 7, 14, 30, 100], ["Warming Up", "Weekly Regular", "Fortnight", "Monthly Habit", "Unbroken"]),
@@ -65,11 +87,11 @@ export const TITLE_SERIES = [
   S("r_year", "rare", "Year of the Knight", "Flame", "dailyBest", [365], ["Unstoppable Habit"]),
   S("r_perfect", "rare", "Perfectionist", "Gem", "solved", [3000], ["Flawless"]),
   S("r_prodigy", "rare", "Puzzle Prodigy", "Star", "puzzleRating", [3000], ["Beyond Human"]),
-  S("collect", "rare", "Collector", "Library", "titlesEarned", [10, 30, 60, 100, 150], ["Collector", "Curator", "Connoisseur", "Completionist", "Hall of Fame"]),
+  S("collect", "rare", "Collector", "Library", "titlesEarned", [15, 40, 90, 150, 220], ["Collector", "Curator", "Connoisseur", "Completionist", "Hall of Fame"]),
 ];
 
 // 계열별 포인트 색(배너 바탕에 은은하게 섞임). 오프닝은 상징하는 국기·인물 색, 나머지는 계열 성격에 맞춘 색.
-const ACCENT = { italian: "#1E7A44", ruylopez: "#A8202A", scotch: "#1F5FA8", sicilian: "#C8761A", carokann: "#3A3A58", french: "#2A4F9A", vienna: "#B02A36", kingsgambit: "#8A2A3A", benoni: "#2A6A86", catalan: "#B8921A", grunfeld: "#2A7A52", london: "#B02A36", queensgambit: "#7A3E8A",
+const ACCENT = { italian: "#1E7A44", ruylopez: "#A8202A", scotch: "#1F5FA8", sicilian: "#C8761A", carokann: "#3A3A58", french: "#2A4F9A", vienna: "#B02A36", kingsgambit: "#8A2A3A", benoni: "#2A6A86", catalan: "#B8921A", grunfeld: "#2A7A52", london: "#B02A36", queensgambit: "#7A3E8A", evans: "#2E7A4A", english: "#2A3F7A", reti: "#2A5FA0", danish: "#B02A36", pirc: "#6A3A8A", alekhine: "#2A4A7A", scandinavian: "#2A5FA0", dutch: "#C0561F", slav: "#2A4F9A", kingsindian: "#C8761A", nimzo: "#2A6A86", queensindian: "#2A6A6A", philidor: "#4A4A6A", petrov: "#8A2A3A",
   solve: "#2E6B8A", daily: "#B8501F", dex: "#7A5A34", community: "#A33A5E", friends: "#3E7A4C", coins: "#A5821E", tier: "#5B3E8A", prating: "#2A7A7A", ccplayed: "#7A2E2E", ccwins: "#8A6B1F", ccrating: "#2E5E8A", ccstreak: "#C0561F", ccmate: "#6E1F40", ccquick: "#2A6E8A", ccmarathon: "#4A4A70", ccwhite: "#8A8672", ccblack: "#2A2A38", ccgiant: "#5E7A2E", ccdraw: "#4A6E6A",
   r_night: "#3A2E7A", r_explorer: "#2A6A5A", r_onetrick: "#7A2A2A", r_year: "#B8501F", r_perfect: "#2A7A8A", r_prodigy: "#6A2A7A", collect: "#5B3E8A" };
 export const seriesAccent = (key) => ACCENT[key] || "#7A5A34";
