@@ -288,7 +288,7 @@ for (const side of [1, -1]) {
 
 // ④ 연결
 const dex = readFileSync("src/app/dex.jsx", "utf8"), mast = readFileSync("src/app/dexMasters.jsx", "utf8");
-if (!/\["masters", t\("마스터"\)\]/.test(dex) || !/<MastersSchematic /.test(dex)) fails.push("도감에 마스터 탭·MastersSchematic 연결이 없음");
+if (!/key: "masters", label: t\("마스터"\)/.test(dex) || !/<MastersSchematic /.test(dex)) fails.push("도감에 마스터 탭·MastersSchematic 연결이 없음");
 if (!/useFitPanelHeight\(boxRef, vertical[,)]/.test(dex) || !/useFitPanelHeight\(boxRef, vertical\)/.test(mast)) fails.push("오프닝·마스터 모식도가 같은 높이 계산(useFitPanelHeight)을 쓰지 않음");
 const { SCHEMATIC_DRAG_MULT } = await import("../src/lib/schematicGeometry.js");
 eq(SCHEMATIC_DRAG_MULT, 1, "드래그 감도 기준값");
@@ -301,7 +301,7 @@ if (!/pinchRef/.test(mast) || !/setPointerCapture/.test(mast)) fails.push("마�
 if (!/snapMasterZoom/.test(mast) || /snapSchematicZoom|SCHEMATIC_ZOOM_STEP/.test(mast)) fails.push("마스터 모식도가 마스터 전용 배율(MASTER_ZOOM_*)이 아니라 오프닝 배율을 씀");
 if (/위에서 아래로 시간순/.test(mast) || /const hint\b/.test(mast)) fails.push("마스터 모식도 위쪽 안내 문구가 다시 생김(열 이름 라벨로 대체)");
 if (!/역대 세계 챔피언/.test(mast) || !/주요 대회/.test(mast)) fails.push("열 이름 라벨 문구(역대 세계 챔피언·주요 대회) 없음");
-if (!/inlineTabs/.test(dex)) fails.push("데스크톱 탭 알약이 검색 줄에 합쳐지지 않음(모식도 높이 확보)");
+if ((dex.match(/tabsSlot=\{backBtn\}/g) || []).length < 2) fails.push("‹ 버튼이 오프닝·마스터 검색 줄(tabsSlot)에 들어가지 않음(v0.6.8부터 상단 테마 알약 대신 검색창 왼쪽에 둔다)");
 // (v0.6.4) 마스터 이름은 언어와 상관없이 영어로만 표기한다 — 언어별 이름 함수에 lang을 넘기면 실패.
 if (/(masterName|dbPlayerName|playerName)\([^()]*,\s*lang\)/.test(mast) || /lang === "ko" && (p|c|r|s)\.ko/.test(mast)) fails.push("마스터 이름이 언어별로 표기됨(영어 공통 표기여야 함: \"en\"을 넘길 것)");
 // ⑤ (v0.6.6) 찾아가기 연출 경로(flightPoints) — 칩 중심에서 시작해 노드 중심에서 끝나고, 모든 마디가 가로·세로 직선(회로선을 따라감)이다.
