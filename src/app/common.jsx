@@ -21,7 +21,8 @@ import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx"
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem } from "lucide-react";
-import { TITLE_OPENINGS, titleDef } from "../lib/titles.js";
+import { TITLE_OPENINGS, titleDef, seriesAccent } from "../lib/titles.js";
+import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
 import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZOOM_LABEL_BASE } from "../lib/schematicGeometry.js";
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
@@ -5453,7 +5454,9 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const tierIdx = def.tier - 1, many = def.series.mins.length > 1, rare = def.rare;
   const GOLD = [["#9A7A3A", "#6E5424"], ["#C09A4C", "#8A6C2F"], ["#DDB968", "#A8842F"], ["#F3DFAE", "#C49A50"], ["#FFF3C9", "#E8BE55"]][rare ? 4 : tierIdx];
   const g0 = GOLD[0], g1 = GOLD[1];
-  const bgA = rare ? "#541616" : "#2E1B10", bgB = rare ? "#1C0709" : "#140B05";
+  const accent = seriesAccent(def.series.key), mixHex = (a, b, k) => { const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16)); return "#" + pa.map((v, i) => Math.round(v * k + pb[i] * (1 - k)).toString(16).padStart(2, "0")).join(""); };
+  const bgA = mixHex(accent, "#140B05", rare ? 0.62 : 0.5), bgB = "#140B05";   // 계열 포인트 색이 왼쪽에서 은은하게 번져 어두운 바탕으로 사라진다
+  const isOpening = def.series.cat === "opening";
   const H = compact ? 54 : 66, ISZ = compact ? 16 : 20, CUT = 11;
   const clipPx = (c) => `polygon(0 0, calc(100% - ${c}px) 0, 100% ${c}px, 100% 100%, ${c}px 100%, 0 calc(100% - ${c}px))`;
   const uid = "tb" + id.replace(/[^a-z0-9]/gi, "_") + (compact ? "c" : "n");
@@ -5477,16 +5480,21 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
         <div style={{ position: "relative", flexShrink: 0, width: H, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <svg width={H} height={H} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
             <defs><linearGradient id={uid + "e"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={GOLD[0]} /><stop offset="1" stopColor={GOLD[1]} /></linearGradient></defs>
-            <path d="M50 8 L92 50 L50 92 L8 50 Z" fill={filled ? `url(#${uid}e)` : "rgba(0,0,0,.35)"} stroke={`url(#${uid}e)`} strokeWidth="3.4" />
-            <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />
+            <path d="M50 8 L92 50 L50 92 L8 50 Z" fill={isOpening ? `url(#${uid}e)` : filled ? `url(#${uid}e)` : "rgba(0,0,0,.35)"} stroke={`url(#${uid}e)`} strokeWidth="3.4" />
+            {isOpening ? <OpeningEmblem seriesKey={def.series.key} clipId={uid + "k"} textFill={tierIdx < 2 ? "#E6C77A" : "#F6E3A6"} />
+              : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
+            {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
           </svg>
-          <div style={{ position: "relative", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>
+          {!isOpening && <div style={{ position: "relative", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+          {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
         </div>
-        {/* 이름: 계열(크게, 이탤릭) / 금색 빗금 구분선 / 칭호 이름(작게, 자간) */}
-        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: compact ? 8 : 11, minWidth: 0, flex: 1, paddingRight: 10 }}>
-          <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 12.5 : 16, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{def.label}</span>
-          <span aria-hidden="true" style={{ width: 4, height: compact ? 17 : 22, flexShrink: 0, background: `linear-gradient(180deg,${GOLD[0]},${GOLD[1]})`, transform: "skewX(-24deg)" }} />
-          <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 9.5 : 11.5, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{def.name}</span>
+        {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 두 줄로 쌓아 긴 이름도 잘리지 않고, 정말 긴 이름은 글자 크기를 줄인다. */}
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, paddingRight: compact ? 50 : 62 }}>
+          <span title={def.label} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, def.label.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{def.label}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ width: compact ? 14 : 18, height: 3, flexShrink: 0, background: `linear-gradient(90deg,${GOLD[0]},${GOLD[1]})`, transform: "skewX(-30deg)" }} />
+            <span title={def.name} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{def.name}</span>
+          </span>
         </div>
         {tierIdx === 4 && !rare && earned && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
         {equipped && <span style={{ position: "absolute", right: 14, top: 4, fontSize: 9, fontWeight: 900, letterSpacing: ".06em", color: "#2B1A0B", background: `linear-gradient(180deg,${GOLD[0]},${GOLD[1]})`, borderRadius: 4, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}

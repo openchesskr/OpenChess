@@ -6,7 +6,7 @@
  *   ④ chess.com 집계(ccTitleStats)가 연승·메이트·빠른 승리·장기전·강자 격파를 정확히 센다
  */
 import fs from "node:fs";
-import { TITLE_SERIES, TITLE_OPENINGS, ALL_TITLE_IDS, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
+import { TITLE_SERIES, TITLE_OPENINGS, ALL_TITLE_IDS, seriesAccent, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
 const fails = []; const fail = (m) => fails.push(m);
 const keys = new Set();
 for (const s of TITLE_SERIES) {
@@ -21,6 +21,10 @@ const common = fs.readFileSync(new URL("../src/app/common.jsx", import.meta.url)
 const iconBlock = (common.match(/const TITLE_ICONS = \{([^}]*)\}/) || [])[1] || "";
 for (const s of TITLE_SERIES) if (!new RegExp("\\b" + s.icon + "\\b").test(iconBlock)) fail(s.key + ": 아이콘 " + s.icon + "이 TITLE_ICONS에 없음");
 for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes('case "' + m + '":')) fail("지표 " + m + "의 조건 문구(titleCondText)가 없음");
+// 오프닝마다 엠블럼(국기·이니셜)이 있어야 하고, 모든 계열에 포인트 색이 있어야 한다
+const emb = fs.readFileSync(new URL("../src/components/titleEmblems.jsx", import.meta.url), "utf8");
+for (const f of TITLE_OPENINGS) if (!new RegExp("^  " + f.key + ": (\\{|mono\\()", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
+for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key)) || seriesAccent(s.key) === "#7A5A34" && s.key !== "dex") fail(s.key + ": 포인트 색(ACCENT)이 없음");
 // ③ 판정
 const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");

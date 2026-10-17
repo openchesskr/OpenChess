@@ -68,6 +68,11 @@ export const TITLE_SERIES = [
   S("collect", "rare", "Collector", "Library", "titlesEarned", [10, 30, 60, 100, 150], ["Collector", "Curator", "Connoisseur", "Completionist", "Hall of Fame"]),
 ];
 
+// 계열별 포인트 색(배너 바탕에 은은하게 섞임). 오프닝은 상징하는 국기·인물 색, 나머지는 계열 성격에 맞춘 색.
+const ACCENT = { italian: "#1E7A44", ruylopez: "#A8202A", scotch: "#1F5FA8", sicilian: "#C8761A", carokann: "#3A3A58", french: "#2A4F9A", vienna: "#B02A36", kingsgambit: "#8A2A3A", benoni: "#2A6A86", catalan: "#B8921A", grunfeld: "#2A7A52", london: "#B02A36", queensgambit: "#7A3E8A",
+  solve: "#2E6B8A", daily: "#B8501F", dex: "#7A5A34", community: "#A33A5E", friends: "#3E7A4C", coins: "#A5821E", tier: "#5B3E8A", prating: "#2A7A7A", ccplayed: "#7A2E2E", ccwins: "#8A6B1F", ccrating: "#2E5E8A", ccstreak: "#C0561F", ccmate: "#6E1F40", ccquick: "#2A6E8A", ccmarathon: "#4A4A70", ccwhite: "#8A8672", ccblack: "#2A2A38", ccgiant: "#5E7A2E", ccdraw: "#4A6E6A",
+  r_night: "#3A2E7A", r_explorer: "#2A6A5A", r_onetrick: "#7A2A2A", r_year: "#B8501F", r_perfect: "#2A7A8A", r_prodigy: "#6A2A7A", collect: "#5B3E8A" };
+export const seriesAccent = (key) => ACCENT[key] || "#7A5A34";
 export const TITLE_TIER_COUNT = 5;
 export const titleId = (seriesKey, tier) => seriesKey + ":" + tier;
 const SERIES_BY_KEY = new Map(TITLE_SERIES.map((s) => [s.key, s]));
