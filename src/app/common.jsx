@@ -20,7 +20,8 @@ import { mateWhiteWins, SITE_FONT, EvalBar, SEQ_FONT } from "../components/engin
 import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2 } from "lucide-react";
+import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem } from "lucide-react";
+import { TITLE_OPENINGS, titleDef } from "../lib/titles.js";
 import { createPortal } from "react-dom";
 import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZOOM_LABEL_BASE } from "../lib/schematicGeometry.js";
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
@@ -5392,57 +5393,58 @@ export function openingNameOf(moves) {
   for (let i = 1; i <= lim; i++) { const n = effectiveOpeningNameAt(moves.slice(0, i)); if (n) name = n; }
   return name;
 }
-// (기능4) 칭호 시스템 — 6개 오프닝 하위 퍼즐 해결 횟수 → 등급 칭호(영구). UX-8: 등급↔수 체계 디자인 대응.
-export const TITLE_OPENINGS = [
-  { key: "italian", label: "Italian Game", rx: /italian/i },
-  { key: "ruylopez", label: "Ruy Lopez", rx: /ruy ?lopez|spanish/i },
-  { key: "scotch", label: "Scotch Game", rx: /scotch/i },
-  { key: "sicilian", label: "Sicilian Defense", rx: /sicilian/i },
-  { key: "carokann", label: "Caro-Kann Defense", rx: /caro.?kann/i },
-  { key: "french", label: "French Defense", rx: /french/i },
-  { key: "vienna", label: "Vienna Game", rx: /vienna/i },
-  { key: "kingsgambit", label: "King's Gambit", rx: /king.?s gambit/i },
-  { key: "benoni", label: "Benoni Defense", rx: /benoni/i },
-  { key: "catalan", label: "Catalan Opening", rx: /catalan/i },
-  { key: "grunfeld", label: "Grünfeld Defense", rx: /gr(u|ü)nfeld/i },
-  { key: "london", label: "London System", rx: /london/i },
-  { key: "queensgambit", label: "Queen's Gambit", rx: /queen.?s gambit/i },
+// (v0.6.8) 칭호 시스템 개편 — 정의·판정은 src/lib/titles.js(순수 모듈), 여기는 배너 디자인과 조건 문구만 맡는다.
+//  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
+//  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 단계(1~5)마다 색, 계열마다 아이콘, 높은 단계일수록 촘촘한 기하 무늬.
+export { TITLE_OPENINGS, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
+const TITLE_TIER_STYLE = [
+  { bg: ["#7A8794", "#56626E"], label: "#E3EAF0", deco: "#FFFFFF" },   // 1단계 강철
+  { bg: ["#2F8B3D", "#1B6A2A"], label: "#BBEAB5", deco: "#FFFFFF" },   // 2단계 초록
+  { bg: ["#1566BA", "#0B4184"], label: "#A8D2FB", deco: "#FFFFFF" },   // 3단계 파랑
+  { bg: ["#7A3FC0", "#4F2285"], label: "#DDC4FF", deco: "#FFFFFF" },   // 4단계 보라
+  { bg: ["#E3A92B", "#B5731A"], label: "#4A2A05", deco: "#FFF7DC" },   // 5단계 금
 ];
-export const TITLE_TIERS = [ // 낮은→높은 / 등급↔수 체계
-  // (19차 기능6) 조건 개편: 퍼즐 해결(min)‘그리고’ chess.com 해당 오프닝 플레이 횟수(ccMin)를 모두 충족해야 획득.
-  { rank: "C", min: 1, ccMin: 5, suffix: "Beginner", q: "good" },
-  { rank: "B", min: 5, ccMin: 10, suffix: "Intermediate", q: "excellent" },
-  { rank: "A", min: 10, ccMin: 50, suffix: "Advanced", q: "best" },
-  { rank: "S", min: 50, ccMin: 100, suffix: "Master", q: "only" },
-  { rank: "SS", min: 100, ccMin: 1000, suffix: "GrandMaster", q: "brilliant" },
-];
-export function titleId(famKey, rank) { return famKey + ":" + rank; }
-const TITLE_TIER_STYLE = {
-  C:  { bg: ["#8C9C1E", "#697610"], label: "#EAF0A2" },   // Beginner, olive
-  B:  { bg: ["#2F8B3D", "#1B6A2A"], label: "#BBEAB5" },   // Intermediate, green
-  A:  { bg: ["#12612C", "#0A3D1D"], label: "#73D073" },   // Advanced, dark green
-  S:  { bg: ["#1566BA", "#0B4184"], label: "#62B0F4" },   // Master, blue
-  SS: { bg: ["#1BBAA8", "#129A8C"], label: "#0B4F47" },   // GrandMaster, teal
-};
-function TitleSym({ q, size, color }) {
-  if (q === "good") return <Check size={size} strokeWidth={3.4} color={color} />;
-  if (q === "excellent") return <ThumbsUp size={size} strokeWidth={2.4} color={color} fill={color} />;
-  if (q === "best") return <Star size={size} strokeWidth={2} color={color} fill={color} />;
-  if (q === "only") return <span style={{ fontSize: size, fontWeight: 900, lineHeight: 1, color }}>!</span>;
-  return <span style={{ fontSize: size * 0.82, fontWeight: 900, lineHeight: 1, letterSpacing: -1, color }}>!!</span>;
+const TITLE_RARE_STYLE = { bg: ["#B8322A", "#4F0F18"], label: "#FFD9A0", deco: "#FFE3A8" };
+const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star };
+// 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
+function titleCondText(def, progress) {
+  const s = def.series, n = fmtFull(def.min);
+  const pre = progress != null ? fmtFull(Math.min(progress, def.min)) + "/" + n + ", " : "";
+  switch (s.metric) {
+    case "opening": return t("{0}퍼즐 {1}개 해결 + chess.com {2}회 플레이 필요", (progress != null ? fmtFull(Math.min(progress, def.min)) + "/" + n + ", " : ""), n, fmtFull(def.ccMin));
+    case "solved": return pre + t("퍼즐 {0}개 해결", n);
+    case "dailyBest": return pre + t("일일 퍼즐 {0}일 연속 해결", n);
+    case "unlocked": return pre + t("오프닝 도감 {0}개 해금", n);
+    case "community": return pre + t("퍼즐 좋아요·리포스트 {0}회", n);
+    case "friends": return pre + t("친구 {0}명", n);
+    case "coins": return pre + t("OC 코인 {0}개 보유", n);
+    case "tierIndex": return t("{0} 티어 달성", TIERS[def.min] ? TIERS[def.min].label : "");
+    case "puzzleRating": return pre + t("퍼즐 레이팅 {0} 달성", n);
+    case "ccPlayed": return pre + t("chess.com 대국 {0}판 플레이", n);
+    case "ccWins": return pre + t("chess.com 승리 {0}회", n);
+    case "ccBestRating": return pre + t("chess.com 최고 레이팅 {0} 달성", n);
+    case "ccWinStreak": return pre + t("chess.com {0}연승", n);
+    case "ccMates": return pre + t("체크메이트로 {0}회 승리", n);
+    case "ccQuickWins": return pre + t("30수 이내 승리 {0}회", n);
+    case "ccLongWins": return pre + t("60수 이상 장기전 승리 {0}회", n);
+    case "ccWhiteWins": return pre + t("백으로 {0}회 승리", n);
+    case "ccBlackWins": return pre + t("흑으로 {0}회 승리", n);
+    case "ccGiantWins": return pre + t("레이팅 100 이상 높은 상대에게 {0}회 승리", n);
+    case "ccDraws": return pre + t("무승부 {0}회", n);
+    case "ccNight": return pre + t("새벽(0~5시) 대국 {0}판", n);
+    case "ccOpenings": return pre + t("서로 다른 오프닝 {0}가지 플레이", n);
+    case "ccTopOpening": return pre + t("한 오프닝으로 {0}판 플레이", n);
+    case "titlesEarned": return pre + t("칭호 {0}개 획득", n);
+    default: return "";
+  }
 }
-// (v0.5.7 성능) 칭호 배지 이미지 — 예전엔 7개 오프닝 35장을 base64 data URI(약 38만 자)로 이 줄에 박아 넣어, 설정 탭 칭호 목록을
-// 열지 않아도 메인 번들과 함께 매번 받았다. 나머지 오프닝처럼 public/titles/ 파일로 빼 칭호를 그릴 때만 받는다.
-const TITLE_IMG = {"italian":["/titles/italian_0.webp","/titles/italian_1.webp","/titles/italian_2.webp","/titles/italian_3.webp","/titles/italian_4.webp"],"ruylopez":["/titles/ruylopez_0.webp","/titles/ruylopez_1.webp","/titles/ruylopez_2.webp","/titles/ruylopez_3.webp","/titles/ruylopez_4.webp"],"scotch":["/titles/scotch_0.webp","/titles/scotch_1.webp","/titles/scotch_2.webp","/titles/scotch_3.webp","/titles/scotch_4.webp"],"carokann":["/titles/carokann_0.webp","/titles/carokann_1.webp","/titles/carokann_2.webp","/titles/carokann_3.webp","/titles/carokann_4.webp"],"french":["/titles/french_0.webp","/titles/french_1.webp","/titles/french_2.webp","/titles/french_3.webp","/titles/french_4.webp"],"vienna":["/titles/vienna_0.webp","/titles/vienna_1.webp","/titles/vienna_2.webp","/titles/vienna_3.webp","/titles/vienna_4.webp"],"kingsgambit":["/titles/kingsgambit_0.webp","/titles/kingsgambit_1.webp","/titles/kingsgambit_2.webp","/titles/kingsgambit_3.webp","/titles/kingsgambit_4.webp"],"sicilian":["/titles/sicilian_0.png","/titles/sicilian_1.png","/titles/sicilian_2.png","/titles/sicilian_3.png","/titles/sicilian_4.png"],"benoni":["/titles/benoni_0.png","/titles/benoni_1.png","/titles/benoni_2.png","/titles/benoni_3.png","/titles/benoni_4.png"],"catalan":["/titles/catalan_0.png","/titles/catalan_1.png","/titles/catalan_2.png","/titles/catalan_3.png","/titles/catalan_4.png"],"grunfeld":["/titles/grunfeld_0.png","/titles/grunfeld_1.png","/titles/grunfeld_2.png","/titles/grunfeld_3.png","/titles/grunfeld_4.png"],"london":["/titles/london_0.png","/titles/london_1.png","/titles/london_2.png","/titles/london_3.png","/titles/london_4.png"],"queensgambit":["/titles/queensgambit_0.png","/titles/queensgambit_1.png","/titles/queensgambit_2.png","/titles/queensgambit_3.png","/titles/queensgambit_4.png"]};
 export function TitleBadge({ id, earned = true, equipped = false, progress = null, onEquip, compact = false, locked = false }) {
-  const [famKey, rank] = id.split(":");
-  const fam = TITLE_OPENINGS.find((f) => f.key === famKey); const tier = TITLE_TIERS.find((t) => t.rank === rank);
+  const def = titleDef(id);
   // (20차 UX2) 획득 조건을 상시 텍스트로 깔아두는 대신, 클릭할 때만 잠깐 떴다 사라지는 애니메이션으로 보여준다.
   const [showCond, setShowCond] = useState(false);
   const condTimerRef = useRef(null);
-  if (!fam || !tier) return null;
-  const progPrefix = (!earned && progress != null) ? (fmtFull(Math.min(progress, tier.min)) + "/" + fmtFull(tier.min) + ", ") : "";
-  const condText = t("{0}퍼즐 {1}개 해결 + chess.com {2}회 플레이 필요", (progPrefix), fmtFull(tier.min), fmtFull(tier.ccMin));
+  if (!def) return null;
+  const condText = titleCondText(def, earned ? null : progress);
   const handleClick = () => {
     setShowCond(true);
     if (condTimerRef.current) clearTimeout(condTimerRef.current);
@@ -5454,53 +5456,43 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
       <span style={{ fontSize: compact ? 9.5 : 11, fontWeight: 800, color: "#fff", textAlign: "center", lineHeight: 1.35 }}>{condText}</span>
     </div>
   );
-  const _ti = TITLE_TIERS.indexOf(tier);
-  const _img = TITLE_IMG[famKey] && TITLE_IMG[famKey][_ti];
   // (UI9) 3단계 표기: 해금됨(정상) / 바로 다음 단계(회색+진행도) / 그 이후(잠금 아이콘, 정보 숨김)
-  if (_img) {
-    return (
-      <div onClick={handleClick} className="press"
-        style={{ position: "relative", width: "100%", borderRadius: 6, cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "0 0 0 2.5px rgba(255,255,255,.95)" : "none" }}>
-        <img src={_img} alt={fam.label + " " + tier.suffix} draggable={false} style={{ display: "block", width: "100%", height: "auto" }} />
-        {equipped && <span style={{ position: "absolute", right: 10, bottom: 6, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
-        {locked && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.25)", borderRadius: 6 }}><Lock size={20} style={{ color: "#fff" }} /></div>}
-        {condOverlay}
-      </div>
-    );
-  }
-  const st = TITLE_TIER_STYLE[rank] || TITLE_TIER_STYLE.C; const tierIdx = TITLE_TIERS.indexOf(tier);
-  const H = compact ? 54 : 66; const VB_W = 360; const deco = "#FFFFFF";
-  // 우측 기하학 패턴 — 등급이 높을수록 촘촘 (결정적 생성)
-  const shapes = []; let seed = (tierIdx + 1) * 9973;
+  const st = def.rare ? TITLE_RARE_STYLE : TITLE_TIER_STYLE[def.tier - 1];
+  const tierIdx = def.tier - 1, deco = st.deco, Icon = TITLE_ICONS[def.series.icon] || Star;
+  const H = compact ? 54 : 66; const VB_W = 360;
+  // 우측 기하학 패턴 — 단계가 높을수록 촘촘(계열·단계로 정해지는 결정적 생성이라 매번 같은 모양)
+  const shapes = []; let seed = (tierIdx + 1) * 9973 + (def.series.key.length * 131) + (def.series.key.charCodeAt(0) * 17);
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  const N = 4 + tierIdx * 4;
+  const N = def.rare ? 18 : 4 + tierIdx * 4;
   for (let i = 0; i < N; i++) {
-    const x = 150 + rnd() * 195, y = 8 + rnd() * (H - 16), sz = 4 + rnd() * 9, op = 0.4 + rnd() * 0.5, t = rnd();
-    if (t < 0.55) shapes.push(<rect key={i} x={x} y={y} width={sz} height={sz} transform={`rotate(45 ${x + sz / 2} ${y + sz / 2})`} fill={rnd() > 0.55 ? deco : "none"} stroke={deco} strokeWidth="1.4" opacity={op} />);
+    const x = 150 + rnd() * 195, y = 8 + rnd() * (H - 16), sz = 4 + rnd() * 9, op = 0.4 + rnd() * 0.5, tt = rnd();
+    if (tt < 0.55) shapes.push(<rect key={i} x={x} y={y} width={sz} height={sz} transform={`rotate(45 ${x + sz / 2} ${y + sz / 2})`} fill={rnd() > 0.55 ? deco : "none"} stroke={deco} strokeWidth="1.4" opacity={op} />);
     else shapes.push(<line key={i} x1={x} y1={y + sz} x2={x + sz * 1.8} y2={y - sz * 0.8} stroke={deco} strokeWidth="2.4" opacity={op} strokeLinecap="round" />);
   }
-  if (tierIdx >= 3) shapes.push(<rect key="big" x={262} y={H / 2 - 15} width={30} height={30} transform={`rotate(45 277 ${H / 2})`} fill={deco} opacity={tierIdx === 4 ? 0.6 : 0.4} />);
-  // 좌측 점 격자
+  if (tierIdx >= 3 || def.rare) shapes.push(<rect key="big" x={262} y={H / 2 - 15} width={30} height={30} transform={`rotate(45 277 ${H / 2})`} fill={deco} opacity={tierIdx === 4 || def.rare ? 0.6 : 0.4} />);
+  // 단계 표시 — 오른쪽 아래 작은 마름모 5칸 중 이 단계까지 채움(희귀는 별 하나)
+  const pips = []; if (!def.rare && def.series.mins.length > 1) for (let i = 0; i < def.series.mins.length; i++) { const px = 300 + i * 11, py = H - 11; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? deco : "none"} stroke={deco} strokeWidth="1" opacity={i <= tierIdx ? 0.95 : 0.5} />); }
+  // 좌측 점 격자 · 좌측 하단 삼각형
   const dots = []; for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) dots.push(<circle key={"d" + r + c} cx={10 + c * 7} cy={8 + r * 7} r="1.5" fill={deco} opacity="0.85" />);
-  // 좌측 하단 삼각형
-  const tris = []; for (let i = 0; i < 6; i++) { const tx = 8 + (i % 3) * 9, ty = H - 22 + Math.floor(i / 3) * 9; tris.push(<path key={"t" + i} d={`M${tx} ${ty + 6} L${tx + 4} ${ty} L${tx + 8} ${ty + 6} Z`} fill={deco} opacity="0.8" />); }
+  const tris = []; for (let i = 0; i < 6; i++) { const tx0 = 8 + (i % 3) * 9, ty = H - 22 + Math.floor(i / 3) * 9; tris.push(<path key={"t" + i} d={`M${tx0} ${ty + 6} L${tx0 + 4} ${ty} L${tx0 + 8} ${ty + 6} Z`} fill={deco} opacity="0.8" />); }
   const clip = "polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px))";
+  const isc = compact ? 17 : 21;
   return (
-    <div onClick={handleClick} className="press"
-      style={{ position: "relative", height: H, width: "100%", clipPath: clip, background: "linear-gradient(120deg," + st.bg[0] + "," + st.bg[1] + ")", cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "inset 0 0 0 2.5px rgba(255,255,255,.95)" : "inset 0 1px 0 rgba(255,255,255,.18)", display: "flex", alignItems: "center" }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{dots}{tris}{shapes}</svg>
-      {/* 좌측 다이아몬드 + 기호 */}
+    <div onClick={handleClick} className="press" aria-label={def.label + " " + def.name}
+      style={{ position: "relative", height: H, width: "100%", clipPath: clip, background: "linear-gradient(120deg," + st.bg[0] + "," + st.bg[1] + ")", cursor: "pointer", filter: earned ? "none" : "grayscale(1)", opacity: earned ? 1 : (locked ? 0.35 : 0.5), boxShadow: equipped ? "inset 0 0 0 2.5px rgba(255,255,255,.95)" : "inset 0 0 0 1px rgba(255,255,255,.12)", display: "flex", alignItems: "center", overflow: "hidden" }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{dots}{tris}{shapes}{pips}</svg>
+      {/* 좌측 다이아몬드 + 계열 아이콘 */}
       <div style={{ position: "relative", flexShrink: 0, width: H, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ width: H * 0.6, height: H * 0.6, transform: "rotate(45deg)", border: "2.4px solid " + deco, borderRadius: 4 }} />
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: deco }}>{locked ? <Lock size={compact ? 16 : 20} color={deco} /> : <TitleSym q={tier.q} size={compact ? 16 : 20} color={deco} />}</div>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: deco }}>{locked ? <Lock size={isc} color={deco} /> : <Icon size={isc} color={deco} strokeWidth={2.4} />}</div>
       </div>
-      {/* 오프닝 | 등급 */}
+      {/* 계열 이름 | 칭호 이름 */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: compact ? 8 : 11, minWidth: 0, flex: 1, paddingRight: 12 }}>
-        <span style={{ fontSize: compact ? 14 : 18, fontWeight: 900, fontStyle: "italic", letterSpacing: "0.5px", color: "#fff", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.25)" }}>{fam.label}</span>
+        <span style={{ fontSize: compact ? 13 : 17, fontWeight: 900, fontStyle: "italic", letterSpacing: "0.5px", color: "#fff", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, textShadow: "0 1px 2px rgba(0,0,0,.25)" }}>{def.label}</span>
         <span style={{ width: 2, height: compact ? 18 : 24, background: "rgba(255,255,255,.55)", flexShrink: 0 }} />
-        <span style={{ fontSize: compact ? 10.5 : 12.5, fontWeight: 900, letterSpacing: "1px", color: st.label, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{tier.suffix}</span>
+        <span style={{ fontSize: compact ? 9.5 : 11.5, fontWeight: 900, letterSpacing: "0.8px", color: st.label, textTransform: "uppercase", whiteSpace: "nowrap", flexShrink: 0 }}>{def.name}</span>
       </div>
-      {equipped && <span style={{ position: "absolute", right: 14, bottom: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.28)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
+      {equipped && <span style={{ position: "absolute", right: 14, top: 5, fontSize: 9.5, fontWeight: 900, letterSpacing: ".05em", color: "#fff", background: "rgba(0,0,0,.35)", borderRadius: 5, padding: "1px 6px", pointerEvents: "none" }}>{t("장착됨")}</span>}
       {condOverlay}
     </div>
   );

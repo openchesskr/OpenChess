@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+/** (v0.6.8) 칭호 정의·판정 검사 — src/lib/titles.js.
+ *   ① 계열 키·칭호 id가 겹치지 않고, 기준값이 단계마다 커지며, 이름 수 = 기준값 수 = 5 이하
+ *   ② 모든 계열의 아이콘이 common.jsx TITLE_ICONS에 있고, 모든 지표가 titleCondText에 조건 문구를 가짐(화면에서 조건이 빈칸이 되지 않게)
+ *   ③ 지표가 전부 0이면 칭호 0개, 전부 충분하면 모든 칭호, 옛 형식 id("italian:C")는 걸러진다
+ *   ④ chess.com 집계(ccTitleStats)가 연승·메이트·빠른 승리·장기전·강자 격파를 정확히 센다
+ */
+import fs from "node:fs";
+import { TITLE_SERIES, TITLE_OPENINGS, ALL_TITLE_IDS, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
+const fails = []; const fail = (m) => fails.push(m);
+const keys = new Set();
+for (const s of TITLE_SERIES) {
+  if (keys.has(s.key)) fail("계열 키 중복: " + s.key); keys.add(s.key);
+  if (s.mins.length < 1 || s.mins.length > 5) fail(s.key + ": 단계는 1~5개");
+  if (s.names.length !== s.mins.length) fail(s.key + ": 이름 수와 기준값 수가 다름");
+  for (let i = 1; i < s.mins.length; i++) if (!(s.mins[i] > s.mins[i - 1])) fail(s.key + ": 기준값이 커지지 않음");
+  if (s.metric === "opening") { if (!s.ccMins || s.ccMins.length !== s.mins.length) fail(s.key + ": ccMins 필요"); else for (let i = 1; i < s.ccMins.length; i++) if (!(s.ccMins[i] > s.ccMins[i - 1])) fail(s.key + ": ccMins가 커지지 않음"); }
+}
+if (new Set(ALL_TITLE_IDS).size !== ALL_TITLE_IDS.length) fail("칭호 id 중복");
+const common = fs.readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8");
+const iconBlock = (common.match(/const TITLE_ICONS = \{([^}]*)\}/) || [])[1] || "";
+for (const s of TITLE_SERIES) if (!new RegExp("\\b" + s.icon + "\\b").test(iconBlock)) fail(s.key + ": 아이콘 " + s.icon + "이 TITLE_ICONS에 없음");
+for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes('case "' + m + '":')) fail("지표 " + m + "의 조건 문구(titleCondText)가 없음");
+// ③ 판정
+const zero = computeTitleMetrics({});
+if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");
+const big = computeTitleMetrics({ solved: 1e6, puzzleRating: 3500, tierIndex: 6, dailyBest: 1e4, unlocked: 1e5, community: 1e5, friends: 1e4, coins: 1e7,
+  cc: { ccPlayed: 1e5, ccWins: 1e5, ccDraws: 1e5, ccWhiteWins: 1e5, ccBlackWins: 1e5, ccBestRating: 3500, ccWinStreak: 1e3, ccMates: 1e5, ccQuickWins: 1e5, ccLongWins: 1e5, ccGiantWins: 1e5, ccNight: 1e5, ccOpenings: 1e4, ccTopOpening: 1e5 },
+  openingSolved: Object.fromEntries(TITLE_OPENINGS.map((f) => [f.key, 1e5])), openingCc: Object.fromEntries(TITLE_OPENINGS.map((f) => [f.key, 1e6])) });
+const all = achievableTitles(big);
+for (const id of ALL_TITLE_IDS) if (!all.has(id)) fail("충분한 지표인데 열리지 않는 칭호: " + id);
+// 오프닝은 두 지표를 모두 요구
+const half = achievableTitles(computeTitleMetrics({ openingSolved: { italian: 500 }, openingCc: { italian: 0 } }));
+if (half.has("italian:1")) fail("오프닝 칭호가 chess.com 플레이 없이 열림");
+// 칭호 수집은 나머지 칭호 수로 판정
+const few = achievableTitles(computeTitleMetrics({ solved: 1 }));
+if (few.has("collect:1")) fail("칭호 1개로 칭호 수집이 열림");
+const sane = sanitizeTitleSet(["italian:C", "solve:2", "nope:1", "solve:9", "solve:x", null]);
+if (sane.size !== 1 || !sane.has("solve:2")) fail("옛 형식·없는 id가 걸러지지 않음: " + [...sane]);
+if (titleDef("solve:3").name !== "Problem Solver") fail("titleDef 이름");
+// ④ chess.com 집계
+const mv = (n, last) => Array.from({ length: n }, (_, i) => (i === n - 1 && last ? last : "e4"));
+const G = (o) => ({ moves: mv(40), color: "w", result: "win", rating: 1500, endTime: 1000, white: { rating: 1500 }, black: { rating: 1500 }, opening: "A", ...o });
+const st = ccTitleStats([
+  G({ endTime: 1, moves: mv(30, "Qh7#") }),                   // 메이트·빠른 승리(60플라이 이하)
+  G({ endTime: 2, moves: mv(130), color: "b", black: { rating: 1500 }, white: { rating: 1650 } }), // 장기전·흑 승·강자 격파
+  G({ endTime: 3 }),                                         // 연승 3
+  G({ endTime: 4, result: "loss" }),                         // 연승 끊김
+  G({ endTime: 5, result: "draw", opening: "B" }),
+  G({ endTime: 6, rating: 1720 }),
+]);
+const exp = { ccPlayed: 6, ccWins: 4, ccDraws: 1, ccWhiteWins: 3, ccBlackWins: 1, ccBestRating: 1720, ccWinStreak: 3, ccMates: 1, ccQuickWins: 3, ccLongWins: 1, ccGiantWins: 1, ccOpenings: 2, ccTopOpening: 5 };
+for (const [k, v] of Object.entries(exp)) if (st[k] !== v) fail("ccTitleStats." + k + " = " + st[k] + " (기대 " + v + ")");
+if (ccTitleStats([]).ccPlayed !== 0 || ccTitleStats(null).ccWins !== 0) fail("빈 목록 집계");
+if (fails.length) { console.error("check-titles 실패 (" + fails.length + "건):\n  " + fails.join("\n  ")); process.exit(1); }
+console.log("✔ check-titles: 계열 " + TITLE_SERIES.length + "개 · 칭호 " + ALL_TITLE_IDS.length + "개, 조건 문구·아이콘·판정·chess.com 집계 정상");

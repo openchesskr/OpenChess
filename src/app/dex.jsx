@@ -17,7 +17,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1265,7 +1265,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleCounts, ccTitleCounts, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : "openings"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   const ccReady = chesscom && chesscom.status === "ready";
   const earned = earnedTitles || new Set();
@@ -1342,32 +1342,41 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
               애니메이션으로 잠깐 떴다 사라진다(TitleBadge 내부). 여기는 그 상호작용을 안내하는 짧은 힌트만. */}
           <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>{t("칭호를 클릭하면 획득 조건 표시. 획득한 칭호는 클릭해 장착")}</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
-          {/* (17차) 칭호 이미지가 오프닝당 세로로 이어지는 5단계 배너로 디자인되어 있어,
-              오프닝을 가로로 나열하고 각 오프닝 내부에서는 등급을 위→아래로 쌓는다.
-              모바일 한 행 2개, 데스크탑 한 행 4개 오프닝. */}
-          <div className="grid grid-cols-2 lg:grid-cols-4" style={{ gap: 14 }}>
-            {TITLE_OPENINGS.map((fam) => {
-              const n = (titleCounts && titleCounts[fam.key]) || 0;
-              const ccN = (ccTitleCounts && ccTitleCounts[fam.key]) || 0;
-              return (
-                <div key={fam.key}>
-                  <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{fam.label}</span>
-                  </div>
-                  {/* (19차 기능6) 퍼즐 해결 수 + chess.com 플레이 수를 함께 표기 */}
-                  <div className="flex items-center gap-2" style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
-                    <span>{tx("퍼즐 {0}", fmtFull(n))}</span><span style={{ opacity: .5 }}>·</span><span>{tx("체스컴 {0}", fmtFull(ccN))}</span>
-                  </div>
-                  {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
-                  <div className="flex flex-col" style={{ gap: 6 }}>
-                    {(() => { const nextIdx = TITLE_TIERS.findIndex((t) => !earned.has(titleId(fam.key, t.rank))); return TITLE_TIERS.map((t, i) => { const id = titleId(fam.key, t.rank); return (
-                      <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} onEquip={onEquipTitle} />
-                    ); }); })()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* (v0.6.8) 칭호를 갈래(오프닝 숙련·활동·대국/레이팅·희귀)별로 묶고, 계열 하나가 한 칸: 단계 1→5 배너를 위→아래로 쌓는다.
+              모바일 한 행 2개, 데스크탑 한 행 4개. 진행 값(퍼즐 해결·chess.com 수 등)은 계열 이름 아래 한 줄로 보여준다. */}
+          {TITLE_CATEGORIES.map((cat) => (
+            <div key={cat.key} style={{ marginBottom: 26 }}>
+              <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, margin: "0 0 10px", letterSpacing: ".01em" }}>{({ opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") })[cat.key]}</div>
+              <div className="grid grid-cols-2 lg:grid-cols-4" style={{ gap: 14 }}>
+                {TITLE_SERIES.filter((s) => s.cat === cat.key).map((s) => {
+                  const n = seriesProgress(s, titleMetrics || {}, earned.size);
+                  const ccN = s.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[s.key] || 0) : null;
+                  const nextIdx = s.mins.findIndex((_, i) => !earned.has(s.key + ":" + (i + 1)));
+                  return (
+                    <div key={s.key}>
+                      {s.cat === "opening" ? (<>
+                        <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{s.label}</span>
+                        </div>
+                        {/* (19차 기능6) 퍼즐 해결 수 + chess.com 플레이 수를 함께 표기 */}
+                        <div className="flex items-center gap-2" style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+                          <span>{tx("퍼즐 {0}", fmtFull(n))}</span><span style={{ opacity: .5 }}>·</span><span>{tx("체스컴 {0}", fmtFull(ccN))}</span>
+                        </div>
+                      </>) : (
+                        <div style={{ marginBottom: 8, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, minHeight: 14 }}>{s.metric === "tierIndex" ? "" : fmtFull(n)}</div>
+                      )}
+                      {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
+                      <div className="flex flex-col" style={{ gap: 6 }}>
+                        {s.mins.map((_, i) => { const id = s.key + ":" + (i + 1); return (
+                          <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} onEquip={onEquipTitle} />
+                        ); })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       ) : (<>
       {/* (사용자 요청) "검색+새로고침" 헤더 줄과 같은 자리에 도감 해금률을 우측 배치하고(좌:검색,

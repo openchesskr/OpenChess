@@ -12,7 +12,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, TITLE_TIERS, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, titleId, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, TITLE_OPENINGS, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleLabel as _titleLabel, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -581,8 +581,8 @@ export function useDailyPuzzle(engine, dateStr) {
   }, [t, engine && engine.status]);
   return (resolved && resolved.date === t) ? resolved.puzzle : null;
 }
-export const ALL_TITLE_IDS = TITLE_OPENINGS.flatMap((f) => TITLE_TIERS.map((t) => titleId(f.key, t.rank)));
-function titleLabel(id) { const [k, r] = id.split(":"); const fam = TITLE_OPENINGS.find((f) => f.key === k); const t = TITLE_TIERS.find((x) => x.rank === r); return fam && t ? fam.label + " " + t.suffix : ""; }
+export const ALL_TITLE_IDS = _ALL_TITLE_IDS;
+const titleLabel = _titleLabel;
 function puzzleFamilyKey(p) {
   if (!p) return null;
   const names = []; const path = [...(p.setupSans || []), ...(p.mistakeSan ? [p.mistakeSan] : [])];
@@ -604,12 +604,6 @@ export function ccFamilyCounts(games) {
   const c = {}; if (!games) return c;
   for (const g of games) { const nm = openingNameOf(g.moves); if (!nm) continue; for (const fam of TITLE_OPENINGS) { if (fam.rx.test(nm)) { c[fam.key] = (c[fam.key] || 0) + 1; break; } } }
   return c;
-}
-// (19차 기능6) 칭호 획득 = 퍼즐 해결 수(counts) ‘그리고’ chess.com 오프닝 플레이 수(ccCounts)를 모두 만족.
-export function achievableTitles(counts, ccCounts) {
-  const out = new Set(); const cc = ccCounts || {};
-  for (const fam of TITLE_OPENINGS) { const n = counts[fam.key] || 0; const m = cc[fam.key] || 0; for (const t of TITLE_TIERS) if (n >= t.min && m >= t.ccMin) out.add(titleId(fam.key, t.rank)); }
-  return out;
 }
 // (기능1) 별 3개(라인) 아이콘 — 해결한 라인 수만큼 채워서 표시
 // (v0.0.6 개편) 헤더에 상시 표기되는 티어 배지 — 현재 티어와 다음 티어까지 남은 경험치를 진행바 +
@@ -965,10 +959,9 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
 // 마스코트·햇살·컨페티·반짝임, DailyQuestClearedModal과 동일한 구성 요소를 그대로 재사용)로 확대하고,
 // 자동/배경 클릭으로 닫히지 않고 X·확인 버튼을 눌러야만 닫히도록 다른 두 팝업과 동작을 통일한다.
 export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
-  const [famKey, rank] = id.split(":");
-  const fam = TITLE_OPENINGS.find((f) => f.key === famKey);
-  const tier = TITLE_TIERS.find((t) => t.rank === rank);
-  if (!fam || !tier) return null;
+  const def = titleDef(id);
+  if (!def) return null;
+  const fam = def.series.cat === "opening" ? TITLE_OPENINGS.find((f) => f.key === def.series.key) : null;
   const equipped = currentTitle === id;
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
@@ -997,7 +990,7 @@ export function TitleEarnedModal({ id, currentTitle, onEquip, onClose }) {
             <Crown size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>
-          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{tx("{0} 오프닝을 충분히 연습해서{1}새 칭호 획득", fam.label, <br />)}</p>
+          <p style={{ fontSize: 12, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>{fam ? tx("{0} 오프닝을 충분히 연습해서{1}새 칭호 획득", fam.label, <br />) : tx("조건을 달성해서{0}새 칭호 획득", <br />)}</p>
           <div style={{ padding: "0 6px", marginBottom: 10 }}>
             <TitleBadge id={id} earned equipped={equipped} onEquip={onEquip} />
           </div>
