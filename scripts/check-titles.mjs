@@ -29,6 +29,8 @@ for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key))
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));
 for (const k of used) if (!appSrc.includes("@keyframes " + k + "{")) fail("키프레임 " + k + "이 App.jsx 스타일에 없음");
+// 오프닝 5단계 이름(초급·중급·상급·마스터·그랜드마스터)은 titleNameText가 t()로 번역한다 — 빠지면 영어가 아닌 언어에서 한글이 그대로 보인다
+for (const nm of ["초급", "중급", "상급", "마스터", "그랜드마스터"]) if (!common.includes('t("' + nm + '")')) fail("titleNameText에 t(\"" + nm + "\")가 없음");
 // ③ 판정
 const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");

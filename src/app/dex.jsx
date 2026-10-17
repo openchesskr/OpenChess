@@ -12,6 +12,7 @@ import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELE
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
+import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
@@ -19,7 +20,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, SeriesGlyph, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1267,6 +1268,74 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
     </div>
   );
 }
+// (v0.6.8) 업적 화면 — 원신 업적 메뉴처럼 왼쪽에 갈래(칭호 계열) 목록, 오른쪽에 고른 계열의 5단계 배너.
+//  왼쪽 목록은 4개 묶음(오프닝 숙련·활동·대국/레이팅·희귀) 제목 아래 계열을 세로로 나열하고, 계열마다 엠블럼·이름·획득 수 게이지·새 칭호 점을 보여준다. 위의 검색창으로 계열 이름을 거른다.
+//  좁은 화면에서는 왼쪽 목록을 좁은 띠로 줄인다.
+function AchievementsPane({ earned, seenTitles, onSeeTitle, currentTitle, onEquipTitle, titleMetrics }) {
+  const narrow = useNarrow(640);
+  const [sel, setSel] = useState(TITLE_SERIES[0].key);
+  const [q, setQ] = useState("");
+  const ql = q.trim().toLowerCase();
+  const seen = seenTitles || earned;
+  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") };
+  const earnedOf = (s) => s.mins.filter((_, i) => earned.has(s.key + ":" + (i + 1))).length;
+  const freshOf = (s) => s.mins.some((_, i) => earned.has(s.key + ":" + (i + 1)) && !seen.has(s.key + ":" + (i + 1)));
+  const cur = TITLE_SERIES.find((x) => x.key === sel) || TITLE_SERIES[0];
+  const nextIdx = cur.mins.findIndex((_, i) => !earned.has(cur.key + ":" + (i + 1)));
+  const asideW = narrow ? 100 : 228;
+  const curN = seriesProgress(cur, titleMetrics || {}, earned.size);
+  const curCc = cur.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[cur.key] || 0) : null;
+  return (
+    <div>
+      <div style={{ position: "relative", margin: "0 0 10px" }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("업적 검색")} aria-label={t("업적 검색")}
+          style={{ width: "100%", boxSizing: "border-box", padding: "8px 11px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12.5 }} />
+      </div>
+      <div style={{ display: "flex", gap: narrow ? 8 : 16, alignItems: "flex-start" }}>
+        <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
+          {TITLE_CATEGORIES.map((cat) => {
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || x.label.toLowerCase().includes(ql)));
+            if (!list.length) return null;
+            return (
+              <div key={cat.key} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".04em", color: T.brassHi, margin: "2px 4px 5px" }}>{catOf[cat.key]}</div>
+                {list.map((x) => {
+                  const on = x.key === cur.key, n = earnedOf(x);
+                  return (
+                    <button key={x.key} onClick={() => setSel(x.key)} className="press" aria-pressed={on}
+                      style={{ position: "relative", display: "flex", alignItems: "center", gap: narrow ? 6 : 9, width: "100%", textAlign: "left", padding: narrow ? "6px 6px" : "7px 9px", marginBottom: 3, borderRadius: 8, border: "1px solid " + (on ? T.brass : "transparent"), borderLeft: "3px solid " + (on ? T.brassHi : "transparent"), background: on ? "linear-gradient(90deg,rgba(196,154,80,.3),rgba(196,154,80,.08))" : "rgba(255,255,255,.03)", cursor: "pointer", color: T.ivory }}>
+                      <SeriesGlyph series={x} size={narrow ? 26 : 32} />
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{x.label}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
+                          <span style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><span style={{ display: "block", width: (100 * n) / x.mins.length + "%", height: "100%", background: "linear-gradient(90deg,#A8842F,#F3DFAE)" }} /></span>
+                          <span style={{ fontSize: 9.5, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
+                        </span>
+                      </span>
+                      {freshOf(x) && <span aria-hidden="true" style={{ position: "absolute", top: 4, right: 5, width: 7, height: 7, borderRadius: 999, background: "#E8453C", boxShadow: "0 0 0 1.5px #1B0F08" }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </aside>
+        <section style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, margin: "2px 4px 8px" }}>
+            <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{cur.label}</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{earnedOf(cur)}/{cur.mins.length}</span>
+          </div>
+          <div className="flex flex-col" style={{ gap: 0 }}>
+            {cur.mins.map((_, i) => { const id = cur.key + ":" + (i + 1); return (
+              <TitleBadge key={id} id={id} compact={narrow} earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id}
+                progress={curN} progress2={curCc} fresh={earned.has(id) && !seen.has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
+            ); })}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
@@ -1364,34 +1433,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           </div>
         </div>
       ) : dexView === "titles" ? (
-        <div>
-          {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
-          {/* (v0.6.8) 칭호를 갈래(오프닝 숙련·활동·대국/레이팅·희귀)별로 묶고, 계열 하나가 한 칸: 단계 1→5 배너를 위→아래로 쌓는다.
-              배너가 글자에 충분히 넓도록 모바일 한 행 1개, 태블릿 2개, 넓은 화면 3개. 진행 값(퍼즐 해결·chess.com 수 등)은 계열 이름 아래 한 줄로 보여준다. */}
-          {TITLE_CATEGORIES.map((cat) => (
-            <div key={cat.key} style={{ marginBottom: 26 }}>
-              <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, margin: "0 0 10px", letterSpacing: ".01em" }}>{({ opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") })[cat.key]}</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3" style={{ gap: 14 }}>
-                {TITLE_SERIES.filter((s) => s.cat === cat.key).map((s) => {
-                  const n = seriesProgress(s, titleMetrics || {}, earned.size);
-                  const nextIdx = s.mins.findIndex((_, i) => !earned.has(s.key + ":" + (i + 1)));
-                  return (
-                    <div key={s.key}>
-                      {/* (v0.6.8) 오프닝 칸은 위에 오프닝 이름만 둔다(퍼즐·chess.com 수치 줄과 사용 안내 문구는 삭제 — 조건은 배너를 눌렀을 때 뜬다). */}
-                      {s.cat === "opening" && <div style={{ marginBottom: 8, fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{s.label}</div>}
-                      {/* (UI9) 해금된 단계는 정상 표시, 바로 다음 미해금 단계는 회색+진행도, 그 이후는 잠금 아이콘 */}
-                      <div className="flex flex-col" style={{ gap: 0 }}>
-                        {s.mins.map((_, i) => { const id = s.key + ":" + (i + 1); return (
-                          <TitleBadge key={id} id={id} compact earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id} progress={n} progress2={s.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[s.key] || 0) : null} fresh={earned.has(id) && !(seenTitles || earned).has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
-                        ); })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <AchievementsPane titleMetrics={titleMetrics} earned={earned} seenTitles={seenTitles} onSeeTitle={onSeeTitle} currentTitle={currentTitle} onEquipTitle={onEquipTitle} />
       ) : (<>
       {/* (사용자 요청) "검색+새로고침" 헤더 줄과 같은 자리에 도감 해금률을 우측 배치하고(좌:검색,
           우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한

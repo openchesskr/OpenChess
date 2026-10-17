@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
@@ -5431,6 +5431,25 @@ function titleCondText(def) {
     default: return "";
   }
 }
+// 계열 하나를 나타내는 작은 마름모 엠블럼(업적 왼쪽 목록용): 오프닝은 국기·이니셜, 나머지는 계열 아이콘.
+export function SeriesGlyph({ series, size = 30 }) {
+  const rid = useId().replace(/[^a-zA-Z0-9]/g, ""), Icon = TITLE_ICONS[series.icon] || Star, isOp = series.cat === "opening";
+  return (
+    <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }}>
+        <defs><linearGradient id={"sg" + rid} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F3DFAE" /><stop offset="1" stopColor="#C49A50" /></linearGradient></defs>
+        <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
+        {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
+      </svg>
+      {!isOp && <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />}
+    </span>
+  );
+}
+// 칭호 이름 표시: 오프닝 계열은 기존 5단계 이름(초급·중급·상급·마스터·그랜드마스터)을 언어에 맞춰 번역하고, 나머지는 영어 고정 이름을 쓴다.
+export function titleNameText(def) {
+  if (def.series.cat !== "opening") return def.name;
+  return [t("초급"), t("중급"), t("상급"), t("마스터"), t("그랜드마스터")][def.tier - 1];
+}
 // 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
 const TITLE_BORDER_W = [1, 1.5, 2, 2.5, 3];
 const TITLE_PIECE = ["P", "N", "B", "R", "Q"];   // 단계가 오를수록 큰 기물이 중심부 바탕에 흐리게 깔린다(희귀는 킹)
@@ -5503,7 +5522,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
     <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px" }}>
-      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} className="press" role="button" aria-label={def.label + " " + def.name}
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} className="press" role="button" aria-label={def.label + " " + titleNameText(def)}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
           {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
@@ -5531,11 +5550,10 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: showProg ? "flex-start" : "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingTop: showProg ? (compact ? 9 : 11) : 0, paddingRight: compact ? 64 : 76, transition: "padding .2s ease" }}>
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: showProg ? "flex-start" : "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingTop: showProg ? (compact ? 9 : 11) : 0, paddingRight: compact ? 50 : 76, transition: "padding .2s ease" }}>
             <span title={def.label} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, def.label.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{def.label}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <span aria-hidden="true" style={{ width: compact ? 14 : 18, height: 3, flexShrink: 0, background: `linear-gradient(90deg,${GOLD[0]},${GOLD[1]})`, transform: "skewX(-30deg)" }} />
-              <span title={def.name} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{def.name}</span>
+              <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
             </span>
           </div>
           {/* 좌하단 해금 조건 + 우측 진척도 게이지(안 얻은 칭호는 항상, 얻은 칭호는 꾹 누르거나 왼쪽으로 밀 때) */}

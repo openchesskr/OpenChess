@@ -2424,4 +2424,8 @@ export default {
   "퍼즐 {0}개 + chess.com {1}회": "{0} {0|puzzle|puzzles} + {1} chess.com {1|game|games}",
   "업적 {0}개 달성": "{0} {0|achievement|achievements} unlocked",
   "컬렉션": "Collection",
+  "초급": "Beginner",
+  "중급": "Intermediate",
+  "상급": "Advanced",
+  "업적 검색": "Search achievements",
 };

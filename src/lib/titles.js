@@ -38,7 +38,8 @@ const EXTRA_AFTER = [
   { key: "philidor", label: "Philidor Defense", rx: /philidor/i },
   { key: "petrov", label: "Petrov's Defense", rx: /petrov|petroff|russian game/i },
 ];
-export const OPENING_FAMILIES = [...EXTRA_BEFORE, ...TITLE_OPENINGS, ...EXTRA_AFTER];
+export const OPENING_FAMILIES = [...EXTRA_BEFORE, ...TITLE_OPENINGS, ...EXTRA_AFTER];   // 집계 순서(먼저 맞는 오프닝에 센다)
+const OPENING_DISPLAY = [...TITLE_OPENINGS, ...EXTRA_BEFORE, ...EXTRA_AFTER];          // 화면 표시 순서
 // 오프닝을 두는 진영: 엠블럼 뒤 기물 색(백이 두는 오프닝은 흰 기물, 흑의 방어는 검은 기물)
 const BLACK_SIDE = new Set(["sicilian", "carokann", "french", "benoni", "grunfeld", "pirc", "alekhine", "scandinavian", "dutch", "slav", "kingsindian", "nimzo", "queensindian", "philidor", "petrov"]);
 export const openingSide = (key) => (BLACK_SIDE.has(key) ? "b" : "w");
@@ -53,12 +54,12 @@ export const TITLE_CATEGORIES = [
 // 오프닝 계열 공통 기준: 퍼즐 해결 수(mins) + chess.com 해당 오프닝 플레이 수(ccMins)를 모두 채워야 한다.
 const OPENING_MINS = [3, 10, 25, 60, 120];
 const OPENING_CC_MINS = [10, 30, 100, 300, 1000];
-const OPENING_NAMES = ["Initiate", "Adept", "Specialist", "Master", "Legend"];
+const OPENING_NAMES = ["초급", "중급", "상급", "마스터", "그랜드마스터"];   // 기존 5단계(Beginner·Intermediate·Advanced·Master·GrandMaster). 화면에서는 common.jsx titleNameText가 언어별로 번역한다
 
 // icon은 common.jsx의 TITLE_ICONS가 lucide 아이콘으로 바꾼다(여기는 이름만).
 const S = (key, cat, label, icon, metric, mins, names) => ({ key, cat, label, icon, metric, mins, names });
 export const TITLE_SERIES = [
-  ...OPENING_FAMILIES.map((f) => ({ key: f.key, cat: "opening", label: f.label, icon: "Compass", metric: "opening", mins: OPENING_MINS, ccMins: OPENING_CC_MINS, names: OPENING_NAMES })),
+  ...OPENING_DISPLAY.map((f) => ({ key: f.key, cat: "opening", label: f.label, icon: "Compass", metric: "opening", mins: OPENING_MINS, ccMins: OPENING_CC_MINS, names: OPENING_NAMES })),
   // 활동
   S("solve", "activity", "Puzzles", "Puzzle", "solved", [1, 10, 50, 200, 1000], ["First Step", "Tactician", "Problem Solver", "Puzzle Master", "Puzzle Legend"]),
   S("daily", "activity", "Daily Streak", "Flame", "dailyBest", [3, 7, 14, 30, 100], ["Warming Up", "Weekly Regular", "Fortnight", "Monthly Habit", "Unbroken"]),
