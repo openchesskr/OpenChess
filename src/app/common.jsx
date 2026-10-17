@@ -5465,7 +5465,10 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   // 오른쪽 기하 장식: 기울어진 평행사변형(빗금) 묶음 — 단계 수만큼, 그리고 은은한 마름모 격자
   const bars = []; const nb = rare ? 5 : def.tier;
   for (let i = 0; i < nb; i++) { const x = 118 - i * 15; bars.push(<path key={"b" + i} d={`M${x} ${H} L${x + 22} 0 L${x + 28} 0 L${x + 6} ${H} Z`} fill={`url(#${uid}g)`} opacity={0.14 + i * 0.07} />); }
-  const lattice = []; for (let i = 0; i < 4; i++) { const cx = 28 + i * 26, cy = H / 2 + (i % 2 ? 9 : -9); lattice.push(<rect key={"l" + i} x={cx - 5} y={cy - 5} width="10" height="10" transform={`rotate(45 ${cx} ${cy})`} fill="none" stroke={g0} strokeWidth="1" opacity={0.22 + i * 0.05} />); }
+  // 배경 장식: 오른쪽 가장자리를 중심으로 번지는 동심원 + 체스판 무늬 네모 조각(마름모 격자 대신)
+  const lattice = [];
+  [16, 28, 40, 52].forEach((r, i) => lattice.push(<circle key={"c" + i} cx="146" cy={H / 2} r={r} fill="none" stroke={g0} strokeWidth="1" opacity={0.3 - i * 0.05} />));
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) if ((r + c) % 2 === 0) lattice.push(<rect key={"k" + r + c} x={20 + c * 9} y={6 + r * 9} width="9" height="9" fill={g0} opacity="0.09" />);
   const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = H - 13; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? `url(#${uid}g)` : "none"} stroke={g0} strokeWidth="1" opacity={i <= tierIdx ? 1 : 0.4} />); }
   return (
     <div onClick={handleClick} className="press" role="button" aria-label={def.label + " " + def.name}

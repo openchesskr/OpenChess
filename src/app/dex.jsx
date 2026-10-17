@@ -1344,11 +1344,11 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 14px" }}>{t("칭호를 클릭하면 획득 조건 표시. 획득한 칭호는 클릭해 장착")}</p>
           {/* (18차 UI5) "현재 칭호" 블록 삭제 — 장착 상태는 목록의 "장착됨" 배지로만 표시 */}
           {/* (v0.6.8) 칭호를 갈래(오프닝 숙련·활동·대국/레이팅·희귀)별로 묶고, 계열 하나가 한 칸: 단계 1→5 배너를 위→아래로 쌓는다.
-              모바일 한 행 2개, 데스크탑 한 행 4개. 진행 값(퍼즐 해결·chess.com 수 등)은 계열 이름 아래 한 줄로 보여준다. */}
+              배너가 글자에 충분히 넓도록 모바일 한 행 1개, 태블릿 2개, 넓은 화면 3개. 진행 값(퍼즐 해결·chess.com 수 등)은 계열 이름 아래 한 줄로 보여준다. */}
           {TITLE_CATEGORIES.map((cat) => (
             <div key={cat.key} style={{ marginBottom: 26 }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, margin: "0 0 10px", letterSpacing: ".01em" }}>{({ opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") })[cat.key]}</div>
-              <div className="grid grid-cols-2 lg:grid-cols-4" style={{ gap: 14 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3" style={{ gap: 14 }}>
                 {TITLE_SERIES.filter((s) => s.cat === cat.key).map((s) => {
                   const n = seriesProgress(s, titleMetrics || {}, earned.size);
                   const ccN = s.metric === "opening" ? (((titleMetrics || {}).openingCc || {})[s.key] || 0) : null;

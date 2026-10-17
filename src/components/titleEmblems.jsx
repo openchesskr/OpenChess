@@ -13,7 +13,7 @@ const MONO_FILL = { fontFamily: "'Merriweather', serif", fontStyle: "italic", fo
 // 국기: 이탈리아·스페인·스코틀랜드·시칠리아·프랑스·오스트리아·카탈루냐·잉글랜드
 export const OPENING_EMBLEMS = {
   italian: { flag: <>{stripesV(["#009246", "#F1F2F1", "#CE2B37"])}</> },
-  ruylopez: { flag: <>{stripesH(["#AA151B", "#F1BF00", "#AA151B"], [25, 50, 25])}</> },
+  ruylopez: { flag: <>{stripesH(["#AA151B", "#F1BF00", "#AA151B"], [36, 28, 36])}</> },
   scotch: { flag: <><rect width="100" height="100" fill="#0065BD" /><path d="M0 0L100 100M100 0L0 100" stroke="#fff" strokeWidth="15" /></> },
   sicilian: { flag: <><rect width="100" height="100" fill="#F2C200" /><path d="M0 0H100L0 100Z" fill="#D8202A" /><circle cx="50" cy="50" r="9" fill="#F4E3C0" /><g stroke="#7A1A1A" strokeWidth="4.5" strokeLinecap="round" fill="none"><path d="M50 50 L50 30" /><path d="M50 50 L67 60" /><path d="M50 50 L33 60" /></g></> },
   french: { flag: <>{stripesV(["#0055A4", "#F4F4F4", "#EF4135"])}</> },
