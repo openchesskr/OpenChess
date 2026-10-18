@@ -6,7 +6,6 @@ import {
   tierPieceSrc, TIER_IMG_NATIVE_H, TIER_DECAGON_PATH,
 } from "../lib/theme.js";
 import { TIER_COLORS } from "../lib/tierSystem.js";
-import { DesignedPiece, DESIGN_FACTOR } from "./designedPieces.jsx";
 
 /* 장착된 스킨을 Context로 흘려보내 Board·PieceGlyph 어디서든(프롭 안 넘겨도) 자동 적용되게 한다 —
    보드가 학습 탭·퍼즐 풀이·미니 프리뷰 등 수십 곳에서 쓰이므로 매 호출부마다 prop을 꽂는 대신
@@ -30,16 +29,6 @@ export function PieceGlyph({ type, color, size, style, draggable = false, onDrag
   // (버그) useId는 스킨(이미지/SVG)에 따라 조건부로 호출하면 안 된다 — 기물 스킨을 갈아 끼우면
   // 같은 컴포넌트 인스턴스가 두 분기 사이를 오가며 훅 호출 개수가 달라져 React 규칙을 어기게 된다.
   const rawId = useId();
-  if (sk.design) {
-    // (v0.6.9) 세트 스킨 기물 — SVG로 직접 그린 실루엣. 받침 폭·높이는 기존 SVG·이미지 기물과 같은 규칙.
-    const w = size * PIECE_BASE_RATIO * (100 / 56);
-    return (
-      <div draggable={draggable} onDragStart={onDragStart}
-        style={{ display: "block", flexShrink: 0, width: w, height: w * DESIGN_FACTOR[type] * 0.56, filter: sk.noShadow ? "none" : pieceShadow(light), ...dragStyle, ...style }}>
-        <DesignedPiece design={sk.design} type={type} color={color} w={w} />
-      </div>
-    );
-  }
   if (sk.image) {
     // (2차 개편) 이미지 세트를 스킨별로 분리 — 기본(classic)과 바다(ocean)가 서로 다른 이미지·받침 폭을 쓴다.
     const imgSet = PIECE_IMG_SETS[skinId] || PIECE_IMG_SETS.classic;
