@@ -5,11 +5,12 @@
 //  · 세트 스킨은 뽑기로만 얻는다(상점 직접 구매 없음) — theme.js의 gacha: true. 새 세트를 더하면 GACHA_POOL에도 같은 id를 추가한다(check-gacha가 확인).
 export const GACHA_PRICE = { 1: 500, 5: 2400 };
 export const GACHA_DUP_REFUND = 150;
+// 등급 이름은 언어와 상관없이 영어로 표시한다(번역하지 않음).
 export const GACHA_RARITY = {
-  common: { label: "일반", color: "#8FA3B5" },
-  rare: { label: "희귀", color: "#4A90D9" },
-  epic: { label: "영웅", color: "#A857E0" },
-  legend: { label: "전설", color: "#F2B33D" },
+  common: { label: "Common", color: "#8FA3B5" },
+  rare: { label: "Rare", color: "#4A90D9" },
+  epic: { label: "Epic", color: "#A857E0" },
+  legend: { label: "Legendary", color: "#F2B33D" },
 };
 export const GACHA_POOL = [
   { id: "coral", weight: 28, rarity: "common" },

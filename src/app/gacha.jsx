@@ -6,6 +6,7 @@ import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/th
 import { PieceGlyph } from "../components/pieces.jsx";
 import { CoinIcon } from "./common.jsx";
 import { GACHA_PRICE, GACHA_POOL, GACHA_RARITY, GACHA_TOTAL_WEIGHT } from "../lib/gacha.js";
+import { RarityTag } from "./skinbook.jsx";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 
@@ -90,20 +91,19 @@ function LightBurst({ level = 1 }) {
   );
 }
 
-/** 뽑은 기물 카드 — 등급색 테두리 안에 기물 하나. */
+/** 뽑은 기물 카드 — 어두운 유리 카드, 등급색 조명과 테두리. */
 function ResultCard({ r, show }) {
   const rar = GACHA_RARITY[r.rarity];
+  const glow = r.rarity === "legend" ? 30 : r.rarity === "epic" ? 22 : r.rarity === "rare" ? 14 : 6;
   return (
     <motion.div initial={{ rotateY: 90, opacity: 0, scale: 0.8 }} animate={show ? { rotateY: 0, opacity: 1, scale: 1 } : { rotateY: 90, opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 160, damping: 15 }}
-      style={{ width: 118, padding: "14px 8px 10px", borderRadius: 14, background: "linear-gradient(180deg,#F4E8CE,#E6D3AA)", border: "2px solid " + rar.color, boxShadow: "0 0 0 2px rgba(0,0,0,.35), 0 0 " + (r.rarity === "legend" ? 26 : r.rarity === "epic" ? 18 : 10) + "px " + rar.color + "AA", textAlign: "center", position: "relative" }}>
-      <span style={{ position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)", fontSize: 10, fontWeight: 900, color: "#fff", background: rar.color, borderRadius: 999, padding: "2px 10px", boxShadow: "0 1px 3px rgba(0,0,0,.4)" }}>{t(rar.label)}</span>
-      <div style={{ width: 84, height: 84, margin: "6px auto 0", borderRadius: "50%", border: "3px solid " + rar.color, background: "radial-gradient(circle at 50% 35%, #5A4630, #2A1B10)", display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden" }}>
-        <PieceGlyph type={r.piece} color="w" size={76} pieceSkin={r.id} />
-      </div>
-      <div style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, marginTop: 8, lineHeight: 1.2 }}>{PIECE_NAME[r.piece]()}</div>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{setLabel(r.id)}</div>
-      <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: r.isNew ? "#2F7A3A" : "#8A5A0C", background: r.isNew ? "rgba(63,122,58,.14)" : "rgba(196,154,80,.2)", borderRadius: 8, padding: "3px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-        {r.isNew ? t("신규 획득") : <><span>{t("중복")}</span><CoinIcon size={14} /><span>+{r.refund}</span></>}
+      style={{ width: 112, padding: "12px 8px 10px", borderRadius: 16, background: "radial-gradient(90% 60% at 50% 0%, " + rar.color + "55, rgba(14,9,5,.96) 70%)", border: "1px solid " + rar.color, boxShadow: "0 0 " + glow + "px " + rar.color + "99", textAlign: "center" }}>
+      <div style={{ display: "flex", justifyContent: "center" }}><RarityTag rarity={r.rarity} size={9} /></div>
+      <div style={{ height: 78, marginTop: 8, display: "flex", alignItems: "flex-end", justifyContent: "center" }}><PieceGlyph type={r.piece} color="w" size={72} pieceSkin={r.id} /></div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: T.ivoryHi, marginTop: 8, lineHeight: 1.2, fontFamily: SITE_FONT }}>{PIECE_NAME[r.piece]()}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 600, color: "#A8946F", marginTop: 1 }}>{setLabel(r.id)}</div>
+      <div style={{ marginTop: 8, fontSize: 11, fontWeight: 800, color: r.isNew ? "#7FD08A" : T.brassHi, background: r.isNew ? "rgba(127,208,138,.14)" : "rgba(236,203,134,.12)", borderRadius: 8, padding: "3px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+        {r.isNew ? t("신규 획득") : <><span>{t("중복")}</span><CoinIcon size={13} /><span>+{r.refund}</span></>}
       </div>
     </motion.div>
   );
@@ -195,43 +195,45 @@ export function GachaSection({ coins, onPull }) {
     const cost = GACHA_PRICE[count], can = !busy && (coins || 0) >= cost;
     return (
       <button onClick={() => pull(count)} disabled={!can} className="press" aria-label={label + " " + cost}
-        style={{ flex: 1, minWidth: 0, padding: "10px 8px", borderRadius: 12, border: can ? "none" : "1px solid #5A4630", background: can ? "linear-gradient(180deg,#FFE493,#E0A020 55%,#B07410)" : "rgba(0,0,0,.28)", color: can ? "#241509" : "#8A7458", cursor: can ? "pointer" : "not-allowed", fontFamily: SITE_FONT, boxShadow: can ? "0 3px 0 #7A4C08, 0 6px 14px -4px rgba(0,0,0,.55)" : "none" }}>
+        style={{ flex: 1, minWidth: 0, padding: "11px 8px", borderRadius: 13, border: can ? "none" : "1px solid #5A4630", background: can ? "linear-gradient(180deg,#F3D58B,#D9A93F)" : "rgba(0,0,0,.3)", color: can ? "#241509" : "#7A6848", cursor: can ? "pointer" : "not-allowed", fontFamily: SITE_FONT, boxShadow: can ? "0 4px 14px -4px rgba(217,169,63,.55)" : "none" }}>
         <div style={{ fontSize: 14, fontWeight: 900 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 13, fontWeight: 800, marginTop: 2 }}><CoinIcon size={18} />{cost.toLocaleString()}</div>
       </button>
     );
   };
   return (
-    <section aria-label={t("스킨 뽑기")} style={{ marginBottom: 20, padding: "16px 14px 14px", borderRadius: 16, border: "1px solid rgba(196,154,80,.45)", background: "radial-gradient(120% 90% at 50% 0%, rgba(196,154,80,.22), rgba(0,0,0,.2) 62%), linear-gradient(180deg,#2A1A0E,#170D06)", boxShadow: "inset 0 1px 0 rgba(255,230,160,.18)" }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 4, gap: 8 }}>
-        <span style={{ fontSize: 15, fontWeight: 900, color: T.brassHi, fontFamily: SITE_FONT }}>{t("스킨 뽑기")}</span>
-        <span className="flex items-center gap-1" title={t("보유 중인 OC 나이트 코인")} style={{ background: "rgba(0,0,0,.35)", border: "1px solid " + T.brass, borderRadius: 999, padding: "3px 10px 3px 5px" }}>
+    <section aria-label={t("스킨 뽑기")} style={{ marginBottom: 18, borderRadius: 18, border: "1px solid rgba(236,203,134,.22)", background: "radial-gradient(80% 60% at 50% 38%, rgba(236,203,134,.17), transparent 70%), linear-gradient(180deg,#22160C,#120A05)", overflow: "hidden" }}>
+      <div className="flex items-center justify-between" style={{ padding: "12px 14px 0", gap: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, letterSpacing: 0.2 }}>{t("스킨 뽑기")}</span>
+        <span className="flex items-center gap-1" title={t("보유 중인 OC 나이트 코인")} style={{ background: "rgba(0,0,0,.4)", border: "1px solid rgba(236,203,134,.3)", borderRadius: 999, padding: "3px 11px 3px 5px" }}>
           <CoinIcon size={20} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{(coins || 0).toLocaleString()}</span>
         </span>
       </div>
-      <div style={{ padding: "6px 8px 4px", maxWidth: 290, margin: "0 auto", aspectRatio: "240 / 224" }}>
+      <div style={{ padding: "2px 24px 0", maxWidth: 300, margin: "0 auto", aspectRatio: "240 / 224", boxSizing: "content-box" }}>
         {!stage && <motion.div layoutId="gacha-chest" transition={{ type: "spring", stiffness: 110, damping: 20 }}><GachaChest phase="idle" /></motion.div>}
       </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 10, padding: "6px 14px 12px" }}>
         {btn(1, t("1회 뽑기"))}
         {btn(5, t("5회 뽑기"))}
       </div>
-      <button onClick={() => setRates((v) => !v)} className="press" aria-expanded={rates} style={{ marginTop: 10, background: "none", border: "none", color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", padding: 0, textDecoration: "underline" }}>{t("뽑기 확률")}</button>
-      <AnimatePresence initial={false}>
-        {rates && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,.3)" }}>
-              {GACHA_POOL.map((p) => { const rar = GACHA_RARITY[p.rarity]; return (
-                <div key={p.id} className="flex items-center" style={{ gap: 8, padding: "4px 0", fontSize: 12, color: T.ivory }}>
-                  <span style={{ fontSize: 10, fontWeight: 900, color: "#fff", background: rar.color, borderRadius: 999, padding: "1px 8px", flexShrink: 0 }}>{t(rar.label)}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{setLabel(p.id)}</span>
-                  <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{((p.weight / GACHA_TOTAL_WEIGHT) * 100).toFixed(0)}%</span>
-                </div>
-              ); })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div style={{ padding: "0 14px 12px" }}>
+        <button onClick={() => setRates((v) => !v)} className="press" aria-expanded={rates} style={{ background: "none", border: "none", color: "#A8946F", fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}>{t("뽑기 확률")}</button>
+        <AnimatePresence initial={false}>
+          {rates && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+              <div style={{ marginTop: 8, padding: "6px 12px", borderRadius: 12, background: "rgba(0,0,0,.35)", border: "1px solid rgba(255,255,255,.06)" }}>
+                {GACHA_POOL.map((p) => (
+                  <div key={p.id} className="flex items-center" style={{ gap: 8, padding: "5px 0", fontSize: 12, color: T.ivory }}>
+                    <RarityTag rarity={p.rarity} size={9} />
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{setLabel(p.id)}</span>
+                    <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{((p.weight / GACHA_TOTAL_WEIGHT) * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
       <AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>
     </section>
   );
