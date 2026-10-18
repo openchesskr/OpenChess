@@ -213,7 +213,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
-function EquippedTitleFit({ id, indent = 0, maxScale = 0.85 }) {
+function EquippedTitleFit({ id, indent = 0, maxScale = 0.85, onClick }) {
   const BASE_W = 260, BASE_H = 74;
   const ref = useRef(null);
   const [w, setW] = useState(0);
@@ -228,7 +228,7 @@ function EquippedTitleFit({ id, indent = 0, maxScale = 0.85 }) {
   const k = w ? Math.min(maxScale, w / BASE_W) : 0;
   return (
     <div ref={ref} style={{ marginLeft: indent, minWidth: 0, height: k ? Math.round(BASE_H * k) : BASE_H * 0.5 }}>
-      {k > 0 && <div style={{ width: BASE_W, transform: `scale(${k})`, transformOrigin: "left top", pointerEvents: "none" }}><TitleBadge id={id} compact earned noPeek /></div>}
+      {k > 0 && <div onClick={onClick} style={{ width: BASE_W, transform: `scale(${k})`, transformOrigin: "left top", cursor: onClick ? "pointer" : "default" }}><TitleBadge id={id} compact earned noPeek /></div>}
     </div>
   );
 }
@@ -614,7 +614,7 @@ function renderMentionText(body) {
 // 통합했다. MID 초대 링크(계정 센터에서 복사)로 들어오면 자동으로 친구 요청까지 보낸다(autoInvite).
 // 데스크톱처럼 폭이 넉넉하면 신원/친구 요청을 왼쪽 고정 열에, 통계·활동을 오른쪽 넓은 열에 나란히
 // 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
-export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
   const [pubUsername, setPubUsername] = useState(null);
@@ -776,8 +776,8 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              {/* (v0.6.9, 사용자 요청) 장착 칭호: 크기를 줄이고 이름(사진 64px + 간격 12px 오른쪽)과 왼쪽을 맞춘다. */}
-              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} indent={76} maxScale={0.7} /></div>}
+              {/* (v0.6.9, 사용자 요청) 장착 칭호: 프로필 사진과 왼쪽을 맞추고, 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
+              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} maxScale={0.6} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
               {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}

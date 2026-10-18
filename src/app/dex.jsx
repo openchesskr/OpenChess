@@ -11,6 +11,7 @@ import { KeywordChip } from "../components/keywordScroll.jsx";
 import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
+import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
@@ -20,7 +21,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1273,7 +1274,21 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
 //  좁은 화면에서는 왼쪽 목록을 좁은 띠로 줄인다.
 function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitle, onEquipTitle, titleMetrics }) {
   const narrow = useNarrow(640);
-  const [sel, setSel] = useState(TITLE_SERIES[0].key);
+  // (v0.6.9) 프로필의 장착 칭호를 눌러 들어오면(titleNav) 그 칭호의 계열을 고르고, 배너 위치로 스크롤한 뒤 잠시 흔들어 보여 준다.
+  const [nav] = useState(() => peekTitleNav());
+  const [sel, setSel] = useState(() => { const d = nav ? titleDef(nav) : null; return d ? d.series.key : TITLE_SERIES[0].key; });
+  const [spot, setSpot] = useState(null);
+  useEffect(() => {
+    if (!nav) return undefined;
+    takeTitleNav();
+    const t1 = setTimeout(() => {
+      const el = document.querySelector(`[data-title-id="${nav}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSpot(nav);
+    }, 450);
+    const t2 = setTimeout(() => setSpot(null), 4600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
   const seen = seenTitles || earned;
@@ -1361,7 +1376,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
           <div className="flex flex-col" style={{ gap: 0 }}>
             {cur.mins.map((_, i) => { const id = cur.key + ":" + (i + 1); return (
               <TitleBadge key={id} id={id} compact={narrow} earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id}
-                progress={curN} progress2={curCc} fresh={earned.has(id) && !seen.has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
+                progress={curN} progress2={curCc} spot={spot === id} fresh={earned.has(id) && !seen.has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
             ); })}
           </div>
         </section>
@@ -1370,7 +1385,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
   );
 }
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
     setDexView(k);

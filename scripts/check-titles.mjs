@@ -39,6 +39,12 @@ if (!/<FriendMenu /.test(socialSrc)) fail("친구 목록 줄에 점 3개 메뉴(
 if (!/const viewProfileUid = \(uid\) => openProfile\(/.test(socialSrc) || /setSel\(/.test(socialSrc)) fail("친구 박스 클릭이 /user 페이지로 연결되지 않음(친구 창 안 프로필 화면이 남아 있음)");
 if (!/\{pub && statsViewToggle\(statsView, setStatsView, 1\.1\)\}/.test(socialSrc)) fail("/user 페이지 헤더 우상단에 플랫폼 분리 토글이 없음");
 if (/@\{\(pub && pub\.displayId\) \|\| pubUsername\}\{roleIcon/.test(socialSrc)) fail("/user 페이지 아이디 옆에 왕관·개발자 표시가 남아 있음");
+// (v0.6.9) 프로필의 장착 칭호를 누르면 도감 업적 화면으로 가서 그 칭호를 흔든다(titleNav → dex.jsx → TitleBadge spot)
+const titleNavSrc = fs.readFileSync(new URL("../src/lib/titleNav.js", import.meta.url), "utf8");
+if (!/export const takeTitleNav/.test(titleNavSrc) || !/setTitleNav\(id\); switchTab\("dex"/.test(appSrc0())) fail("칭호 이동 요청(titleNav)이 App과 연결되지 않음");
+if (!/spot=\{spot === id\}/.test(dexSrc) || !/data-title-id=\{id\}/.test(common)) fail("업적 화면이 칭호를 흔들어 보여 주지 않음(spot)");
+if (!/onClick=\{onOpenTitle \? \(\) => onOpenTitle\(pub\.title\)/.test(socialSrc)) fail("/user 페이지의 장착 칭호를 눌러도 도감으로 이동하지 않음");
+function appSrc0() { return fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"); }
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));
@@ -63,7 +69,7 @@ const few = achievableTitles(computeTitleMetrics({ solved: 1 }));
 if (few.has("collect:1")) fail("칭호 1개로 칭호 수집이 열림");
 const sane = sanitizeTitleSet(["italian:C", "solve:2", "nope:1", "solve:9", "solve:x", null]);
 if (sane.size !== 1 || !sane.has("solve:2")) fail("옛 형식·없는 id가 걸러지지 않음: " + [...sane]);
-if (titleDef("solve:3").name !== "트러블슈터") fail("titleDef 이름");
+if (titleDef("solve:3").name !== "문제 해결사") fail("titleDef 이름");
 // ④ chess.com 집계
 const mv = (n, last) => Array.from({ length: n }, (_, i) => (i === n - 1 && last ? last : "e4"));
 const G = (o) => ({ moves: mv(40), color: "w", result: "win", rating: 1500, endTime: 1000, white: { rating: 1500 }, black: { rating: 1500 }, opening: "A", ...o });
