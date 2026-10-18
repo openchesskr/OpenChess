@@ -453,7 +453,8 @@ def decor_coral(sk, key, color, ink, ext, comps):
 
 
 CONST = {
-    "K": ([(0.12, 0.08), (0.42, 0.18), (0.30, 0.52), (0.5, 0.5), (0.7, 0.48), (0.52, 0.85), (0.88, 0.92), (0.8, 0.22)], [(0, 1), (1, 3), (3, 2), (2, 0), (3, 4), (4, 5), (4, 7), (5, 6)]),           # 오리온
+    "K": ([(0.38, 0.40), (0.62, 0.38), (0.66, 0.62), (0.36, 0.64), (0.22, 0.26), (0.08, 0.12), (0.78, 0.24), (0.92, 0.10), (0.50, 0.14), (0.10, 0.52), (0.90, 0.50), (0.20, 0.82), (0.50, 0.90), (0.80, 0.84), (0.06, 0.90)],
+          [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (4, 5), (1, 6), (6, 7), (0, 8), (8, 1), (3, 9), (2, 10), (3, 11), (11, 14), (2, 13), (13, 12), (3, 12), (9, 14), (11, 12), (4, 9), (6, 10)]),   # 헤르쿨레스: 영역 전체에 퍼진 촘촘한 별자리
     "Q": ([(0.06, 0.25), (0.28, 0.75), (0.5, 0.35), (0.72, 0.8), (0.94, 0.3)], [(0, 1), (1, 2), (2, 3), (3, 4)]),                                                                   # 카시오페이아 W
     "R": ([(0.05, 0.3), (0.28, 0.4), (0.5, 0.5), (0.7, 0.55), (0.78, 0.9), (0.98, 0.75), (0.95, 0.3)], [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 3)]),                       # 북두칠성
     "B": ([(0.5, 0.05), (0.5, 0.45), (0.5, 0.95), (0.12, 0.38), (0.88, 0.38), (0.3, 0.7)], [(0, 1), (1, 2), (3, 1), (1, 4), (1, 5)]),                                                   # 백조자리(십자)
@@ -485,11 +486,15 @@ def decor_stars(sk, key, color, ink, ext, comps):
     w = color == "w"; rng = np.random.default_rng(55 + ord(key) * 17)
     line = rgba("#3B2F9A", 225) if w else rgba("#FFF0C4", 215); node = rgba("#2A1F7E") if w else rgba("#FFF6D8"); gold = rgba("#B88620") if w else rgba("#FFD97A")
     head, jewels = head_and_jewels(comps, key)
-    ys = sk.top + (sk.bottom - sk.top) * (0.20 if key != "P" else 0.47); yb = sk.base_top - 3 * S
+    ys = sk.top + (sk.bottom - sk.top) * (0.31 if key == "K" else 0.20 if key != "P" else 0.47); yb = sk.base_top - 3 * S
     pts, edges = CONST[key]
     ya, yz = ys + 2 * S, yb - 3 * S; ym = (ya + yz) / 2
     ax, bx = ext.span(ym); span_w = (min(ext.span(y)[1] for y in (ya, ym, yz)) - max(ext.span(y)[0] for y in (ya, ym, yz))) * 0.78
     cx0 = (ax + bx) / 2.0; P = [(cx0 + (px - 0.5) * span_w, ya + py * (yz - ya)) for px, py in pts]
+    if key == "K":   # 킹은 행마다 실루엣 폭에 맞춰 영역 전체를 채운다 + 배경 잔별
+        P = [(ext.at(ya + py * (yz - ya), 0.08 + 0.84 * px), ya + py * (yz - ya)) for px, py in pts]
+        for _ in range(16):
+            yy_ = rng.uniform(ya, yz); star4(ink, ext.at(yy_, rng.uniform(0.07, 0.93)), yy_, rng.uniform(0.9, 1.6) * S, node, 0.3)
     for a_, b_ in edges: ink.line([P[a_], P[b_]], line, 1.2)
     for i, (x, y) in enumerate(P): star4(ink, x, y, (2.2 + (i % 3) * 1.1) * S, node, 0.3); ink.ellipse(x, y, 0.5 * S, 0.5 * S, fill=rgba("#FFFFFF") if not w else rgba("#FFFFFF", 200))
     ex, ey, er = emblem_pos(sk, key, ext, head); r = er * (0.7 if head is not None else 0.85)
