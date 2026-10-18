@@ -891,7 +891,7 @@ export default {
   "별자리": "Constelaciones",
   "진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이": "Brillo nacarado y azul verdoso abisal, crestas de concha, ramas de coral y collares de perlas",
   "황동과 흑철 판금, 리벳 이음매와 톱니바퀴, 구리 배관과 압력계": "Chapa de latón y hierro ennegrecido con costuras remachadas, engranajes, tuberías de cobre y manómetro",
-  "달무리 오팔과 밤하늘 성운, 별자리 선과 초승달, 궤도 고리": "Ópalo de halo lunar y nebulosa nocturna con líneas de constelación, luna creciente y anillos orbitales",
+  "크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성": "Una superficie lunar con cráteres y un cielo nocturno con nebulosas, con líneas de constelaciones reales, luna creciente y estrella fugaz",
   "아르데코": "Art Déco",
   "크리스털 주얼": "Joya de Cristal",
   "샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침": "Esmalte champán y laca negra con un rayo dorado y base escalonada",

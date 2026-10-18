@@ -891,7 +891,7 @@ export default {
   "별자리": "Constellations",
   "진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이": "Mother-of-pearl sheen and deep-sea teal, shell ridges, coral branches and pearl strands",
   "황동과 흑철 판금, 리벳 이음매와 톱니바퀴, 구리 배관과 압력계": "Brass and blackened-iron plating with riveted seams, gears, copper pipes and a pressure gauge",
-  "달무리 오팔과 밤하늘 성운, 별자리 선과 초승달, 궤도 고리": "Halo-moon opal and a night-sky nebula with constellation lines, a crescent moon and orbit rings",
+  "크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성": "A cratered moon surface and a nebula-streaked night sky with real constellation lines, a crescent moon and a shooting star",
   "아르데코": "Art Deco",
   "크리스털 주얼": "Crystal Jewel",
   "샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침": "Champagne enamel and jet-black lacquer with a golden sunburst and stepped base",
