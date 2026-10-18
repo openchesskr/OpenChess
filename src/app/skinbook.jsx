@@ -16,9 +16,15 @@ export const BOOK_PIECES = [
 ];
 // 기본 세트(항상 보유) + 뽑기 세트들 — 도감에 나오는 순서
 export function bookSets() {
-  return [{ id: "classic", label: t("기본"), rarity: "common" }, ...SKIN_SETS.map((s) => ({ ...s, rarity: (GACHA_POOL.find((p) => p.id === s.id) || {}).rarity || "common" }))];
+  return [
+    { id: "classic", label: t("기본"), rarity: "common" },
+    ...SKIN_SETS.map((s) => ({ ...s, rarity: (GACHA_POOL.find((p) => p.id === s.id) || {}).rarity || "common" })),
+    // 그랜드마스터 티어에 도달하면 자동 해금되는 전용 세트(뽑기 풀 밖)
+    { id: "grandmaster", label: t("그랜드마스터"), desc: t("오로라 크리스탈과 대리석, 그랜드마스터 전용 세트"), rarity: "legend", lockedLabel: t("그랜드마스터 달성 시 해금") },
+  ];
 }
-const has = (owned, id) => id === "classic" || ownsSet(owned || new Set(), id);
+const has = (owned, id) => id === "classic" || ownsSet(owned || new Set(), id) || (id === "grandmaster" && !!owned && owned.has("board:grandmaster") && owned.has("piece:grandmaster"));
+export const ownedSetCount = (owned) => bookSets().filter((s) => has(owned, s.id)).length;
 
 // 둥근 도감 칸 — 보유하면 기물, 미보유면 실루엣. 테두리 색은 세트 등급.
 function Slot({ set, type, color = "w", size = 46, owned, equipped, onClick, label }) {
@@ -45,10 +51,10 @@ function RarityChip({ rarity }) {
   const rar = GACHA_RARITY[rarity] || GACHA_RARITY.common;
   return <span style={{ fontSize: 10, fontWeight: 900, color: "#fff", background: rar.color, borderRadius: 999, padding: "1px 9px", letterSpacing: .3 }}>{t(rar.label)}</span>;
 }
-function EquipBtn({ owned, equipped, onClick }) {
+function EquipBtn({ owned, equipped, onClick, lockedLabel }) {
   const base = { fontSize: 12, fontWeight: 900, padding: "9px 12px", borderRadius: 10, minWidth: 96, fontFamily: SITE_FONT };
   if (equipped) return <button disabled className="press" style={{ ...base, border: "1px solid #3a2a12", background: "#2A1B10", color: "#F2D58A", cursor: "default", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><Check size={14} />{t("장착중")}</button>;
-  if (!owned) return <button disabled className="press" style={{ ...base, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{t("뽑기로 획득")}</button>;
+  if (!owned) return <button disabled className="press" style={{ ...base, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{lockedLabel || t("뽑기로 획득")}</button>;
   return <button onClick={onClick} className="press" style={{ ...base, border: "1px solid #B8860B", background: "linear-gradient(180deg,#FFE27A,#E8A91C)", color: "#241509", cursor: "pointer", boxShadow: "0 2px 0 #9A6A0A" }}>{t("세트 장착하기")}</button>;
 }
 
@@ -69,7 +75,7 @@ function SetEquipView({ owned, boardSkin, pieceSkin, onEquipSet }) {
                 {BOOK_PIECES.map((p) => <Slot key={p.type} set={set} type={p.type} size={42} owned={o} label={p.label()} />)}
                 <BoardSlot set={set} size={42} owned={o} />
               </div>
-              <EquipBtn owned={o} equipped={eq} onClick={() => onEquipSet(set.id)} />
+              <EquipBtn owned={o} equipped={eq} lockedLabel={set.lockedLabel} onClick={() => onEquipSet(set.id)} />
             </div>
           </div>
         );
@@ -134,7 +140,7 @@ function SetDexView({ owned, boardSkin, pieceSkin, onEquipSet }) {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {SKIN_SETS.map((set) => <SkinSetCard key={set.id} set={set} ownedSkins={owned} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSet} />)}
+        {sets.slice(1).map((set) => <SkinSetCard key={set.id} set={set} ownedSkins={owned} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSet} />)}
       </div>
     </div>
   );

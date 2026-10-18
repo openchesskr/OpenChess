@@ -6254,7 +6254,7 @@ export function SkinSetCard({ set, ownedSkins, boardSkin, pieceSkin, onEquipSet 
   const bsk = BOARD_SKINS[set.id], psk = PIECE_SKINS[set.id];
   const ownsAll = owned.has("board:" + set.id) && owned.has("piece:" + set.id);
   const equipped = boardSkin === set.id && pieceSkin === set.id;
-  const rarity = GACHA_RARITY[(GACHA_POOL.find((p) => p.id === set.id) || {}).rarity] || GACHA_RARITY.common;
+  const rarity = GACHA_RARITY[set.rarity || (GACHA_POOL.find((p) => p.id === set.id) || {}).rarity] || GACHA_RARITY.common;
   return (
     <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8", opacity: ownsAll ? 1 : 0.92 }}>
       <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }}>
@@ -6276,53 +6276,9 @@ export function SkinSetCard({ set, ownedSkins, boardSkin, pieceSkin, onEquipSet 
           ) : ownsAll ? (
             <button onClick={() => onEquipSet(set.id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("세트 장착")}</button>
           ) : (
-            <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{t("뽑기로 획득")}</button>
+            <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{set.lockedLabel || t("뽑기로 획득")}</button>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-export function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
-  const isFree = sk.price === 0 && !sk.gacha;
-  const tierLabel = sk.tierLocked && TIERS.find((t) => t.key === sk.tierLocked);
-  // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
-  // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
-  // (버그 수정) 실제 대국판은 크기와 무관하게 borderRadius:4를 쓰는데, 여기만 8을 써 64px 미리보기에서
-  // 상대적으로 훨씬 크게 둥글어 보여 모서리 칸이 격자에서 어긋난 것처럼 보였다 — 통일한다.
-  const preview = kind === "board" ? (
-    <div style={{ width: 64, height: 64, borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", flexShrink: 0, ...BOARD_GLOSS }}>
-      {Array.from({ length: 64 }).map((_, i) => { const r = Math.floor(i / 8), c = i % 8; const light = (r + c) % 2 === 0; return <div key={i} style={boardSquareBg(sk, light, r, c)} />; })}
-    </div>
-  ) : (
-    // (디자인) 기물 스킨 미리보기 — 여러 기물을 어두운 배경에 늘어놓던 것 대신, 흰 배경에 흑 나이트
-    // 하나만 크게 보여준다(스킨 특유의 디테일이 잘 드러남).
-    <div className="flex items-center justify-center" style={{ width: 64, height: 64, borderRadius: 8, background: "#fff", flexShrink: 0 }}>
-      <PieceGlyph type="N" color="b" size={44} pieceSkin={id} />
-    </div>
-  );
-  return (
-    <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
-      {preview}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
-        <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {sk.gacha ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{t("상자 뽑기 전용")}</span>
-            : sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tx("{0} 티어 전용, 코인으로 구매 불가", tierLabel.label)}</span>
-            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("무료, 기본 제공")}</span>
-              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
-        </div>
-        {equipped ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>{t("✓ 장착됨")}</button>
-        ) : owned || isFree ? (
-          <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("장착하기")}</button>
-        ) : sk.gacha ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{t("뽑기로 획득")}</button>
-        ) : sk.tierLocked ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tx("{0} 티어 필요", tierLabel.label)}</button>
-        ) : (
-          <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? t("코인 부족") : t("구매하기")}</button>
-        )}
       </div>
     </div>
   );

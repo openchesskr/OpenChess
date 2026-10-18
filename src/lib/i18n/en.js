@@ -22,7 +22,6 @@ export default {
   "마스터": "Master",
   "그랜드마스터": "Grandmaster",
   "기본": "Default",
-  "푸른 바다": "Blue sea",
   "스테일메이트": "Stalemate",
   "3회 동형 반복": "Threefold repetition",
   "합의 무승부": "Draw by agreement",
@@ -2637,4 +2636,6 @@ export default {
   "세트 장착하기": "Equip set",
   "장착중": "Equipped",
   "세트 수집 현황": "Set collection",
+  "그랜드마스터 달성 시 해금": "Unlock at Grandmaster",
+  "오로라 크리스탈과 대리석, 그랜드마스터 전용 세트": "Aurora crystal and marble, the Grandmaster-only set",
 };

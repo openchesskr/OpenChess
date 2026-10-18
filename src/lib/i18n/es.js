@@ -22,7 +22,6 @@ export default {
   "마스터": "Maestro",
   "그랜드마스터": "Gran Maestro",
   "기본": "Predeterminado",
-  "푸른 바다": "Mar azul",
   "스테일메이트": "Rey ahogado",
   "3회 동형 반복": "Triple repetición",
   "합의 무승부": "Tablas por acuerdo",
@@ -2637,4 +2636,6 @@ export default {
   "세트 장착하기": "Equipar conjunto",
   "장착중": "Equipado",
   "세트 수집 현황": "Colección de conjuntos",
+  "그랜드마스터 달성 시 해금": "Se desbloquea al llegar a Gran Maestro",
+  "오로라 크리스탈과 대리석, 그랜드마스터 전용 세트": "Cristal aurora y mármol, el conjunto exclusivo de Gran Maestro",
 };

@@ -43,7 +43,8 @@ eq([...setIds].sort(), G.GACHA_POOL.map((p) => p.id).sort(), "뽑기 풀과 스�
 for (const id of setIds) if (!new RegExp("^  " + id + ": \\{ label: t\\(\"[^\"]+\"\\), gacha: true, set: \"" + id + "\"", "mg").test(theme)) fails.push("세트 " + id + "의 보드·기물 스킨이 gacha: true가 아님");
 // ⑤ 연결
 ok(/gachaPull\(count, ownedSkins, ocCoins\)/.test(app) && /setOcCoins\(r\.coins\)/.test(app) && /setOwnedSkins\(r\.owned\)/.test(app), "App의 뽑기가 gachaPull 결과를 코인·보유 목록에 반영하지 않음");
-ok(/if \(sk\.gacha\) return false;/.test(app), "직접 구매(buySkin)가 뽑기 전용 스킨을 거절하지 않음");
+ok(!/buySkin|SkinShopCard/.test(app + dex), "개별 스킨 구매·장착 UI가 남아 있음(스킨은 세트 단위로만 장착)");
+ok(!/^  ocean: \{/m.test(theme), "삭제한 푸른 바다 스킨이 theme에 남아 있음");
 ok(/<GachaSection /.test(dex) && dex.indexOf("<GachaSection ") < dex.indexOf("<SkinBook "), "도감 스킨 페이지 맨 위에 뽑기 상자가 없음");
 ok(!/SkinShopCard|StoreTab|storeProps/.test(play), "플레이 탭에 스킨 상점 UI가 남아 있음");
 if (fails.length) { console.error("✖ check-gacha 실패:\n  " + fails.join("\n  ")); process.exit(1); }

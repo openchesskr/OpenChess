@@ -650,19 +650,7 @@ export default function App() {
   }, [titleMetrics, loaded]);
   const equipTitle = useCallback((id) => { setCurrentTitle(id); }, []);
   const markTitleSeen = useCallback((id) => { setSeenTitles((prev) => (prev.has(id) ? prev : new Set(prev).add(id))); }, []);
-  // (20차 기능4) 스킨 구매·장착 — 보드 스킨과 기물 스킨은 독립적으로 사고팔고 섞어서 장착할 수 있다.
-  const buySkin = useCallback((kind, id) => {
-    const registry = kind === "board" ? BOARD_SKINS : PIECE_SKINS;
-    const sk = registry[id]; if (!sk) return false;
-    if (sk.gacha) return false;   // (v0.6.9) 세트 스킨은 뽑기로만 얻는다
-    const key = kind + ":" + id;
-    if (ownedSkins.has(key)) return true;
-    if (ocCoins < sk.price) return false;
-    setOcCoins((c) => c - sk.price);
-    setOwnedSkins((prev) => new Set(prev).add(key));
-    return true;
-  }, [ocCoins, ownedSkins]);
-  const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
+  // (v0.6.9) 스킨은 세트 단위 — 뽑기로 얻고 도감에서 세트로 장착한다(개별 구매·장착 없음).
   // (v0.6.9) 스킨 뽑기 — 코인 계산·확률·중복 환급은 lib/gacha.js(순수 함수, check-gacha가 검사)가 하고, 여기서는 그 결과를 코인·보유 목록에 반영한다.
   const pullGacha = useCallback((count) => {
     const r = gachaPull(count, ownedSkins, ocCoins);
@@ -671,7 +659,9 @@ export default function App() {
     return r;
   }, [ocCoins, ownedSkins]);
   const equipSkinSet = useCallback((setId) => { setBoardSkin(setId); setPieceSkin(setId); }, []);
-  const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
+  // 없어진 스킨(예: 삭제된 푸른 바다)이 저장돼 있으면 기본으로 취급한다.
+  const boardSkinOk = BOARD_SKINS[boardSkin] ? boardSkin : "classic", pieceSkinOk = PIECE_SKINS[pieceSkin] ? pieceSkin : "classic";
+  const skinValue = useMemo(() => ({ boardSkin: boardSkinOk, pieceSkin: pieceSkinOk }), [boardSkinOk, pieceSkinOk]);
 
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가
@@ -1812,7 +1802,7 @@ export default function App() {
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} onPullGacha={pullGacha} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkinOk} pieceSkin={pieceSkinOk} onPullGacha={pullGacha} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
         {/* (사용자 요청) 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동하면 이 화면은 닫히지만

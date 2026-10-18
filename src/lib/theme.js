@@ -89,17 +89,6 @@ export const PIECE_IMG_SETS = {
       K: { w: { src: "/White King.png", w: 106, h: 116 }, b: { src: "/Black King.png", w: 106, h: 116 } },
     },
   },
-  ocean: {
-    basePx: 190,
-    images: {
-      P: { w: { src: "/pieces/ocean/white-pawn.png", w: 190, h: 219 }, b: { src: "/pieces/ocean/black-pawn.png", w: 192, h: 219 } },
-      N: { w: { src: "/pieces/ocean/white-knight.png", w: 189, h: 255 }, b: { src: "/pieces/ocean/black-knight.png", w: 196, h: 242 } },
-      B: { w: { src: "/pieces/ocean/white-bishop.png", w: 189, h: 251 }, b: { src: "/pieces/ocean/black-bishop.png", w: 193, h: 251 } },
-      R: { w: { src: "/pieces/ocean/white-rook.png", w: 190, h: 234 }, b: { src: "/pieces/ocean/black-rook.png", w: 194, h: 233 } },
-      Q: { w: { src: "/pieces/ocean/white-queen.png", w: 283, h: 272 }, b: { src: "/pieces/ocean/black-queen.png", w: 284, h: 277 } },
-      K: { w: { src: "/pieces/ocean/white-king.png", w: 248, h: 281 }, b: { src: "/pieces/ocean/black-king.png", w: 254, h: 282 } },
-    },
-  },
   // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 전용 기물 — 오로라 크리스탈+대리석 세트.
   // 원본(1920px 정사각 캔버스, 여백 포함)을 알파 바운딩 박스로 잘라내고 WebP로 압축해 옮겨 적었다.
   // (참고) 킹·퀸 원본 이미지는 받침·몸통 없이 왕관만 있는 상태로 받았다 — 다른 기물과 스타일이
@@ -128,7 +117,6 @@ export const BOARD_SKINS = {
   classic: { label: t("기본"), price: 0, light: T.boardLight, dark: T.boardDark },
   // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
   // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
-  ocean: { label: t("푸른 바다"), price: 500, image: "/boards/ocean-board.jpg" },
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
@@ -184,7 +172,6 @@ export const PIECE_SKINS = {
   classic: { label: t("기본"), price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
   // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
   // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
-  ocean: { label: t("푸른 바다"), price: 500, image: true },
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
