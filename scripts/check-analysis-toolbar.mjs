@@ -19,6 +19,7 @@ if (!/const loadImport = /.test(ed) || !/pushSnap\(\{ board: p\.board, turn: p\.
 if (!/onLoadPgn=\{\(moves\) => \{ onLoadPgn\(moves\); setEditorOpen\(false\); \}\}/.test(learn)) fails.push("편집 화면의 PGN 불러오기가 분석 탭 기보로 연결되지 않음");
 // ③
 const hdr = social.match(/flexWrap: "wrap", gap: "8px 10px" \}\}>[\s\S]{0,900}?flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"/g) || [];
-if (hdr.length < 2) fails.push("프로필 카드 헤더 2곳(내 프로필·유저 검색 모달)이 줄바꿈·말줄임 규칙을 따르지 않음: " + hdr.length);
+// (v0.6.9) 친구 창 프로필은 @아이디를 창 헤더로 옮기고 이 줄에는 칭호·토글만 두므로 내 프로필 헤더 1곳만 검사한다.
+if (hdr.length < 1) fails.push("프로필 카드 헤더(내 프로필)가 줄바꿈·말줄임 규칙을 따르지 않음: " + hdr.length);
 if (fails.length) { console.error("✖ check-analysis-toolbar 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-analysis-toolbar: 복사·편집·리뷰 순서와 편집 화면 불러오기 통합, 프로필 헤더 줄바꿈 규칙이 유지된다");

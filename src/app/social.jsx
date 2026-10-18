@@ -3087,13 +3087,14 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
             {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
               {sel ? <button onClick={() => { setReqNotice(""); setSel(null); }} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? t("프로필") : t("친구")}</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? <>@{((sel.pub || {}).displayId || sel.username)}{roleIcon(sel.username)}</> : t("친구")}</span>
             </span>
             {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
                 우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
               {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
               {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label={t("친구 삭제")} title={t("친구 삭제")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
+              {sel && relOf(sel.uid) === "friend" && <button onClick={() => startChat({ uid: sel.uid, username: (sel.pub || {}).displayId || sel.username, photo: (sel.pub || {}).photo || null })} disabled={!!pending[sel.uid]} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>}
               {!docked && <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>}
             </span>
           </div>
@@ -3123,12 +3124,10 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
             <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
               {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
                   이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
-              <div className="flex items-center justify-between" style={{ marginBottom: 12, flexWrap: "wrap", gap: "8px 10px" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: SITE_FONT, flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>@{(p.displayId || sel.username)}{roleIcon(sel.username)}</span>
-                <div className="flex items-center justify-between gap-2" style={{ flex: "1 1 270px", minWidth: 0 }}>
-                  {statsViewToggle(statsView, setStatsView)}
-                  {rel === "friend" && <button onClick={() => startChat({ uid: sel.uid, username: p.displayId || sel.username, photo: p.photo || null })} disabled={busyId} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: busyId ? "default" : "pointer", opacity: busyId ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={14} /></button>}
-                </div>
+              {/* (v0.6.9, 사용자 요청) 내 프로필처럼 토글을 오른쪽에 두고, 왼쪽 여백에 그 사람이 장착한 칭호를 보여 준다. @아이디는 헤더로, 채팅 버튼은 헤더(삭제·X 사이)로 옮겼다. */}
+              <div className="flex items-center justify-between" style={{ marginBottom: 12, gap: 8 }}>
+                {p.title && titleDef(p.title) ? <EquippedTitleFit id={p.title} /> : <span />}
+                {statsViewToggle(statsView, setStatsView)}
               </div>
               {statsView === "cc" && p.chesscom ? (
                 <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={p.chesscom} />

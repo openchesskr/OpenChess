@@ -45,7 +45,7 @@ for (const s of TITLE_SERIES) { if (s.cat === "opening") continue; for (const k 
 const zero = computeTitleMetrics({});
 if (achievableTitles(zero).size !== 0) fail("지표가 모두 0인데 칭호가 열림");
 const big = computeTitleMetrics({ solved: 1e6, puzzleRating: 3500, tierIndex: 6, dailyBest: 1e4, unlocked: 1e5, community: 1e5, friends: 1e4, coins: 1e7,
-  cc: { ccPlayed: 1e5, ccWins: 1e5, ccDraws: 1e5, ccWhiteWins: 1e5, ccBlackWins: 1e5, ccBestRating: 3500, ccWinStreak: 1e3, ccMates: 1e5, ccQuickWins: 1e5, ccLongWins: 1e5, ccGiantWins: 1e5, ccNight: 1e5, ccOpenings: 1e4, ccTopOpening: 1e5 },
+  cc: { ccPlayed: 1e5, ccWins: 1e5, ccDraws: 1e5, ccWhiteWins: 1e5, ccBlackWins: 1e5, ccBestRating: 3500, ccWinStreak: 1e3, ccMates: 1e5, ccQuickWins: 1e5, ccLongWins: 1e5, ccGiantWins: 1e5, ccNight: 1e5, ccOpenings: 1e4, ccTopOpening: 1e5, ccBlitzWins: 1e5, ccRapidWins: 1e5, ccPromos: 1e5 },
   openingSolved: Object.fromEntries(OPENING_FAMILIES.map((f) => [f.key, 1e5])), openingCc: Object.fromEntries(OPENING_FAMILIES.map((f) => [f.key, 1e6])) });
 const all = achievableTitles(big);
 for (const id of ALL_TITLE_IDS) if (!all.has(id)) fail("충분한 지표인데 열리지 않는 칭호: " + id);
@@ -57,7 +57,7 @@ const few = achievableTitles(computeTitleMetrics({ solved: 1 }));
 if (few.has("collect:1")) fail("칭호 1개로 칭호 수집이 열림");
 const sane = sanitizeTitleSet(["italian:C", "solve:2", "nope:1", "solve:9", "solve:x", null]);
 if (sane.size !== 1 || !sane.has("solve:2")) fail("옛 형식·없는 id가 걸러지지 않음: " + [...sane]);
-if (titleDef("solve:3").name !== "문제 해결사") fail("titleDef 이름");
+if (titleDef("solve:3").name !== "트러블슈터") fail("titleDef 이름");
 // ④ chess.com 집계
 const mv = (n, last) => Array.from({ length: n }, (_, i) => (i === n - 1 && last ? last : "e4"));
 const G = (o) => ({ moves: mv(40), color: "w", result: "win", rating: 1500, endTime: 1000, white: { rating: 1500 }, black: { rating: 1500 }, opening: "A", ...o });
@@ -71,6 +71,13 @@ const st = ccTitleStats([
 ]);
 const exp = { ccPlayed: 6, ccWins: 4, ccDraws: 1, ccWhiteWins: 3, ccBlackWins: 1, ccBestRating: 1720, ccWinStreak: 3, ccMates: 1, ccQuickWins: 3, ccLongWins: 1, ccGiantWins: 1, ccOpenings: 2, ccTopOpening: 5 };
 for (const [k, v] of Object.entries(exp)) if (st[k] !== v) fail("ccTitleStats." + k + " = " + st[k] + " (기대 " + v + ")");
+// (v0.6.9) 블리츠·래피드 승리, 내가 승격한 대국(상대의 승격은 세지 않음)
+const st2 = ccTitleStats([
+  G({ endTime: 1, timeClass: "blitz" }), G({ endTime: 2, timeClass: "blitz", result: "loss" }), G({ endTime: 3, timeClass: "rapid" }), G({ endTime: 4, timeClass: "bullet" }),
+  G({ endTime: 5, moves: ["e4", "e5", "a4", "d5", "a5", "d4", "a6", "d3", "axb7", "dxc2", "bxa8=Q"] }),   // 백 승격(내가 백) → 1
+  G({ endTime: 6, color: "b", moves: ["e4", "e5", "a4", "d5", "a5", "d4", "a6", "d3", "axb7", "dxc2", "bxa8=Q"] }),   // 백의 승격만 있고 나는 흑이라 같은 수열의 흑 승격은 없음 → 0
+]);
+for (const [k, v] of Object.entries({ ccBlitzWins: 1, ccRapidWins: 1, ccPromos: 1 })) if (st2[k] !== v) fail("ccTitleStats." + k + " = " + st2[k] + " (기대 " + v + ")");
 if (ccTitleStats([]).ccPlayed !== 0 || ccTitleStats(null).ccWins !== 0) fail("빈 목록 집계");
 if (fails.length) { console.error("check-titles 실패 (" + fails.length + "건):\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-titles: 계열 " + TITLE_SERIES.length + "개 · 칭호 " + ALL_TITLE_IDS.length + "개, 조건 문구·아이콘·판정·chess.com 집계 정상");
