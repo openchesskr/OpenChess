@@ -12,6 +12,7 @@ import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELE
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
 import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
+import { GachaSection } from "./gacha.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
@@ -1384,7 +1385,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, onBuySkinSet, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
@@ -1459,11 +1460,13 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
       ) : dexView === "skins" ? (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>{backBtn}<span style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi }}>{t("스킨")}</span></div>
+          {/* (v0.6.9, 사용자 요청) 스킨 뽑기 상자 — 스킨 페이지 맨 위. 스킨 세트는 여기서 뽑아서만 얻는다. */}
+          <GachaSection coins={coins || 0} onPull={onPullGacha} />
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("스킨 세트")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {SKIN_SETS.map((set, i) => (
-              <FadeIn key={set.id} index={i}><SkinSetCard set={set} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} coins={coins || 0} onBuySet={onBuySkinSet} onEquipSet={onEquipSkinSet} /></FadeIn>
+              <FadeIn key={set.id} index={i}><SkinSetCard set={set} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSkinSet} /></FadeIn>
             ))}
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>

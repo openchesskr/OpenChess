@@ -134,23 +134,23 @@ export const BOARD_SKINS = {
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
   // (v0.6.9) 세트 스킨의 보드 — 기본 보드처럼 두 색 칸을 쓰되 색감·옅은 질감·칸 테두리만 세트에 맞춘다(texture). light·dark는 질감을 못 쓰는 곳(좌표 글자색 계산 등)의 대표색이다.
   //  칸마다 무늬 위치를 조금씩 어긋나게(seed) 해서 같은 무늬가 바둑판처럼 반복돼 보이지 않게 한다.
-  deco: { label: t("아르데코"), price: 700, set: "deco", light: "#E9DCC0", dark: "#1F1C24",
+  deco: { label: t("아르데코"), gacha: true, set: "deco", light: "#E9DCC0", dark: "#1F1C24",
     texture: (light) => (light
       ? { backgroundImage: "linear-gradient(135deg, #F0E5CC, #E3D3B0)", boxShadow: "inset 0 0 0 1px rgba(168,122,34,.28)" }
       : { backgroundImage: "linear-gradient(135deg, #2A2630, #17141B)", boxShadow: "inset 0 0 0 1px rgba(214,172,72,.38)" }) },
-  coral: { label: t("산호와 진주"), price: 800, set: "coral", light: "#E9DEDF", dark: "#2E6A78",
+  coral: { label: t("산호와 진주"), gacha: true, set: "coral", light: "#E9DEDF", dark: "#2E6A78",
     texture: (light) => (light
       ? { backgroundImage: "radial-gradient(circle at 28% 22%, rgba(255,255,255,.95), transparent 58%), linear-gradient(135deg, #F0E6E6, #E0D2D6)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.5)" }
       : { backgroundImage: "radial-gradient(circle at 70% 72%, rgba(120,225,225,.18), transparent 56%), linear-gradient(135deg, #357684, #265E6C)", boxShadow: "inset 0 0 0 1px rgba(120,225,225,.18)" }) },
-  forest: { label: t("단풍 숲"), price: 800, set: "forest", light: "#EDE4D0", dark: "#4A2E1C",
+  forest: { label: t("단풍 숲"), gacha: true, set: "forest", light: "#EDE4D0", dark: "#4A2E1C",
     texture: (light, r, c) => { const k = (r * 9 + c * 5) % 17; return light
       ? { backgroundImage: "repeating-linear-gradient(" + (4 + k) + "deg, rgba(120,90,50,.07) 0 1px, transparent 1px 7px), linear-gradient(135deg, #F2EADA, #E3D7BF)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.25)" }
       : { backgroundImage: "repeating-linear-gradient(" + (-4 - k) + "deg, rgba(255,170,70,.07) 0 1px, transparent 1px 6px), linear-gradient(135deg, #573621, #3E2515)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.32)" }; } },
-  stars: { label: t("별자리"), price: 1000, set: "stars", light: "#D6DAEF", dark: "#1B1E48",
+  stars: { label: t("별자리"), gacha: true, set: "stars", light: "#D6DAEF", dark: "#1B1E48",
     texture: (light, r, c) => { const sd = (r * 7 + c * 13) % 9, pos = (i) => ((sd * 11 + i * 29) % 80 + 10) + "% " + ((sd * 17 + i * 41) % 80 + 10) + "%"; const dot = (i, a) => "radial-gradient(circle at " + pos(i) + ", rgba(255," + (light ? "255,255" : "240,200") + "," + a + ") 0 .9px, transparent 1.6px)"; return light
       ? { backgroundImage: dot(1, ".95") + "," + dot(2, ".8") + ", linear-gradient(135deg, #DDE0F3, #C9CEE8)", boxShadow: "inset 0 0 0 1px rgba(120,110,200,.18)" }
       : { backgroundImage: dot(1, ".9") + "," + dot(2, ".7") + "," + dot(3, ".55") + ", linear-gradient(135deg, #22265A, #131638)", boxShadow: "inset 0 0 0 1px rgba(255,217,122,.16)" }; } },
-  crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", light: "#DDEBFA", dark: "#456AB4",
+  crystal: { label: t("크리스털 주얼"), gacha: true, set: "crystal", light: "#DDEBFA", dark: "#456AB4",
     texture: (light) => (light
       ? { backgroundImage: "linear-gradient(135deg, #EAF4FF 50%, #D3E5F8 50%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.55)" }
       : { backgroundImage: "linear-gradient(135deg, #5479C4 50%, #3F62AD 50%)", boxShadow: "inset 0 0 0 1px rgba(190,215,255,.3)" }) },
@@ -189,28 +189,22 @@ export const PIECE_SKINS = {
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
   // (v0.6.9) 세트 스킨의 기물 — 기본 기물의 바깥 실루엣만 바탕으로 쓰고(기본의 금색 분할선·삼각형은 쓰지 않는다), 받침·꼭대기 외형과 몸통 안쪽 설계·재질을 세트마다 새로 만든 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
-  deco: { label: t("아르데코"), price: 700, set: "deco", image: true },
-  coral: { label: t("산호와 진주"), price: 800, set: "coral", image: true },
-  forest: { label: t("단풍 숲"), price: 800, set: "forest", image: true },
-  stars: { label: t("별자리"), price: 1000, set: "stars", image: true },
-  crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", image: true },
+  deco: { label: t("아르데코"), gacha: true, set: "deco", image: true },
+  coral: { label: t("산호와 진주"), gacha: true, set: "coral", image: true },
+  forest: { label: t("단풍 숲"), gacha: true, set: "forest", image: true },
+  stars: { label: t("별자리"), gacha: true, set: "stars", image: true },
+  crystal: { label: t("크리스털 주얼"), gacha: true, set: "crystal", image: true },
 };
-// (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트 — 같이 사면 개별 합계보다 싸다(price). 일부만 갖고 있으면 남은 것의 개별 가격 합계로 산다.
+// (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트. 세트 스킨은 코인으로 바로 살 수 없고 도감 스킨 페이지의 상자 뽑기(lib/gacha.js)로만 얻는다(gacha: true).
 export const SKIN_SETS = [
-  { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침"), price: 1200 },
-  { id: "coral", label: t("산호와 진주"), desc: t("진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이"), price: 1400 },
-  { id: "forest", label: t("단풍 숲"), desc: t("자작나무와 호두나무 결, 단풍잎 인레이와 나이테 머리, 도토리와 이끼 낀 받침"), price: 1400 },
-  { id: "stars", label: t("별자리"), desc: t("크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성"), price: 1700 },
-  { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛"), price: 1700 },
+  { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침") },
+  { id: "coral", label: t("산호와 진주"), desc: t("진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이") },
+  { id: "forest", label: t("단풍 숲"), desc: t("자작나무와 호두나무 결, 단풍잎 인레이와 나이테 머리, 도토리와 이끼 낀 받침") },
+  { id: "stars", label: t("별자리"), desc: t("크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성") },
+  { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛") },
 ];
 
 
-/** 세트를 지금 사는 데 드는 코인 — 보드·기물을 둘 다 안 가졌으면 세트 가격, 하나만 가졌으면 나머지 하나의 개별 가격, 둘 다 가졌으면 0. */
-export function skinSetPrice(set, owned) {
-  const need = [["board", BOARD_SKINS[set.id]], ["piece", PIECE_SKINS[set.id]]].filter(([k]) => !owned.has(k + ":" + set.id));
-  if (need.length === 2) return set.price;
-  return need.reduce((a, [, sk]) => a + sk.price, 0);
-}
 export function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미

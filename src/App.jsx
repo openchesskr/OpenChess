@@ -8,7 +8,8 @@ import { closeExternalBrowser, decideBackAction, exitApp, installNativeLinkGuard
 import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref } from "./lib/prefs.js";
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
-import { BOARD_SKINS, PIECE_SKINS, SKIN_SETS, skinSetPrice, T, MOTION_EASE } from "./lib/theme.js";
+import { BOARD_SKINS, PIECE_SKINS, T, MOTION_EASE } from "./lib/theme.js";
+import { gachaPull } from "./lib/gacha.js";
 import { isPuzzleSequenceValid, puzzleEloUpdate } from "./lib/puzzleRating.js";
 import { SkinContext } from "./components/pieces.jsx";
 import { SITE_FONT } from "./components/engineLines.jsx";
@@ -653,6 +654,7 @@ export default function App() {
   const buySkin = useCallback((kind, id) => {
     const registry = kind === "board" ? BOARD_SKINS : PIECE_SKINS;
     const sk = registry[id]; if (!sk) return false;
+    if (sk.gacha) return false;   // (v0.6.9) 세트 스킨은 뽑기로만 얻는다
     const key = kind + ":" + id;
     if (ownedSkins.has(key)) return true;
     if (ocCoins < sk.price) return false;
@@ -661,14 +663,12 @@ export default function App() {
     return true;
   }, [ocCoins, ownedSkins]);
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
-  // (v0.6.9) 세트 구매·장착 — 보드와 기물을 한 번에. 코인은 한 번만 차감한다(skinSetPrice).
-  const buySkinSet = useCallback((setId) => {
-    const set = SKIN_SETS.find((x) => x.id === setId); if (!set) return false;
-    const price = skinSetPrice(set, ownedSkins);
-    if (ocCoins < price) return false;
-    if (price > 0) setOcCoins((c) => c - price);
-    setOwnedSkins((prev) => new Set(prev).add("board:" + setId).add("piece:" + setId));
-    return true;
+  // (v0.6.9) 스킨 뽑기 — 코인 계산·확률·중복 환급은 lib/gacha.js(순수 함수, check-gacha가 검사)가 하고, 여기서는 그 결과를 코인·보유 목록에 반영한다.
+  const pullGacha = useCallback((count) => {
+    const r = gachaPull(count, ownedSkins, ocCoins);
+    if (!r.ok) return r;
+    setOcCoins(r.coins); setOwnedSkins(r.owned);
+    return r;
   }, [ocCoins, ownedSkins]);
   const equipSkinSet = useCallback((setId) => { setBoardSkin(setId); setPieceSkin(setId); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
@@ -1359,13 +1359,10 @@ export default function App() {
     setPlayGame(null);
     try { if (window.location.pathname.startsWith("/play")) window.history.back(); } catch { }
   }, []);
-  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 처음 전환될 때 분석 탭의 PLAY 버튼과
-  // 완전히 같은 진입 경로(openPlay)로 대국 설정 화면을 연다. seed에 withStore를 실어 보내
-  // PlayPage가 그 화면 밑에 기존 상점 UI를 이어 붙이게 한다(분석 탭 등 다른 진입 경로는 이 플래그가
-  // 없어 지금까지와 완전히 동일하게 동작한다). playGame이 이미 있으면(진행 중인 대국을 두고 다른
-  // 탭에 갔다가 돌아온 경우, 또는 도전장 수락처럼 openPlay가 직접 이 탭으로 이미 옮겨 둔 경우)
-  // 새로 열지 않고 그대로 이어간다 — 그래야 진행 중이던 대국이 탭을 오가도 사라지지 않는다.
-  useLayoutEffect(() => { if (tab === "store" && !playGame) openPlay({ sans: [], fenRoot: null, withStore: true }); }, [tab, playGame, openPlay]);
+  // (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 탭으로 처음 전환될 때 분석 탭의 PLAY 버튼과 완전히 같은 진입 경로(openPlay)로 대국 설정 화면을 연다.
+  // (v0.6.9) 예전에는 그 화면 밑에 스킨 상점을 이어 붙였지만, 스킨 구매·장착·뽑기는 도감 탭 스킨 페이지로 일원화하고 플레이 탭의 스킨 UI는 모두 지웠다.
+  // playGame이 이미 있으면(진행 중인 대국을 두고 다른 탭에 갔다가 돌아온 경우, 또는 도전장 수락처럼 openPlay가 직접 이 탭으로 이미 옮겨 둔 경우) 건너뛴다.
+  useLayoutEffect(() => { if (tab === "store" && !playGame) openPlay({ sans: [], fenRoot: null }); }, [tab, playGame, openPlay]);
   // (사용자 요청) /play에서 봇이 아닌 실시간 상대와 결과 없이 대국이 진행 중인지 — PlayPage가 렌더마다
   // 최신값을 알려준다(popstate 핸들러가 컴포넌트 밖에서도 읽어야 해서 상태 대신 ref로 둔다).
   const pvpPlayActiveRef = useRef(false);
@@ -1815,7 +1812,7 @@ export default function App() {
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} onBuySkinSet={buySkinSet} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} onPullGacha={pullGacha} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
         {/* (사용자 요청) 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동하면 이 화면은 닫히지만
@@ -1832,7 +1829,7 @@ export default function App() {
             않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
         {playGame && (
           <div style={tab === "store" ? undefined : { display: "none" }}>
-            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} storeProps={playGame.withStore ? { coins: ocCoins, ownedSkins, boardSkin, pieceSkin, onBuySkin: buySkin, onEquipSkin: equipSkin } : null} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
+            <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
           </div>
         )}
         {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
