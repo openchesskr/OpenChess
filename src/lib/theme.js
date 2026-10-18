@@ -138,16 +138,16 @@ export const BOARD_SKINS = {
     texture: (light) => (light
       ? { backgroundImage: "linear-gradient(135deg, #F0E5CC, #E3D3B0)", boxShadow: "inset 0 0 0 1px rgba(168,122,34,.28)" }
       : { backgroundImage: "linear-gradient(135deg, #2A2630, #17141B)", boxShadow: "inset 0 0 0 1px rgba(214,172,72,.38)" }) },
-  gothic: { label: t("고딕 성당"), price: 700, set: "gothic", light: "#C9C3B4", dark: "#353A44",
-    texture: (light, r, c) => { const k = (r * 11 + c * 17) % 23; return { backgroundImage: "repeating-linear-gradient(" + (30 + k) + "deg, rgba(0,0,0,.035) 0 1px, transparent 1px 6px), linear-gradient(135deg," + (light ? "#D2CCBD,#BFB9A9" : "#3D424D,#2C313A") + ")" }; } },
-  dancheong: { label: t("단청"), price: 800, set: "dancheong", light: "#EFE5CC", dark: "#2A3550",
+  coral: { label: t("산호와 진주"), price: 800, set: "coral", light: "#E9DEDF", dark: "#2E6A78",
     texture: (light) => (light
-      ? { backgroundImage: "linear-gradient(135deg, #F4ECD7, #E8DCBE)", boxShadow: "inset 0 0 0 1px rgba(194,59,43,.22)" }
-      : { backgroundImage: "linear-gradient(135deg, #313E5E, #222C45)", boxShadow: "inset 0 0 0 1px rgba(227,181,58,.3)" }) },
-  celadon: { label: t("청자 상감"), price: 800, set: "celadon", light: "#DCE9DF", dark: "#5E8576",
-    texture: (light) => (light
-      ? { backgroundImage: "radial-gradient(circle at 28% 24%, rgba(255,255,255,.85), transparent 58%), linear-gradient(135deg, #E3EFE6, #CFE0D4)" }
-      : { backgroundImage: "radial-gradient(circle at 72% 72%, rgba(255,255,255,.14), transparent 55%), linear-gradient(135deg, #688F80, #527A6B)" }) },
+      ? { backgroundImage: "radial-gradient(circle at 28% 22%, rgba(255,255,255,.95), transparent 58%), linear-gradient(135deg, #F0E6E6, #E0D2D6)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.5)" }
+      : { backgroundImage: "radial-gradient(circle at 70% 72%, rgba(120,225,225,.18), transparent 56%), linear-gradient(135deg, #357684, #265E6C)", boxShadow: "inset 0 0 0 1px rgba(120,225,225,.18)" }) },
+  steam: { label: t("스팀 기관"), price: 800, set: "steam", light: "#D8B676", dark: "#4A3A2E",
+    texture: (light) => { const rv = (c) => "radial-gradient(circle at " + c + ", rgba(255,244,212," + (light ? ".75" : ".38") + ") 0 1.6px, rgba(0,0,0,.35) 1.7px 2.4px, transparent 2.6px)"; return { backgroundImage: [rv("12% 12%"), rv("88% 12%"), rv("12% 88%"), rv("88% 88%"), "repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,.05) 1px 3px)", "linear-gradient(135deg," + (light ? "#E0C184,#CCA862" : "#54433A,#3E3026") + ")"].join(","), boxShadow: "inset 0 0 0 1px rgba(0,0,0,.28)" }; } },
+  stars: { label: t("별자리"), price: 1000, set: "stars", light: "#D6DAEF", dark: "#1B1E48",
+    texture: (light, r, c) => { const sd = (r * 7 + c * 13) % 9, pos = (i) => ((sd * 11 + i * 29) % 80 + 10) + "% " + ((sd * 17 + i * 41) % 80 + 10) + "%"; const dot = (i, a) => "radial-gradient(circle at " + pos(i) + ", rgba(255," + (light ? "255,255" : "240,200") + "," + a + ") 0 .9px, transparent 1.6px)"; return light
+      ? { backgroundImage: dot(1, ".95") + "," + dot(2, ".8") + ", linear-gradient(135deg, #DDE0F3, #C9CEE8)", boxShadow: "inset 0 0 0 1px rgba(120,110,200,.18)" }
+      : { backgroundImage: dot(1, ".9") + "," + dot(2, ".7") + "," + dot(3, ".55") + ", linear-gradient(135deg, #22265A, #131638)", boxShadow: "inset 0 0 0 1px rgba(255,217,122,.16)" }; } },
   crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", light: "#DDEBFA", dark: "#456AB4",
     texture: (light) => (light
       ? { backgroundImage: "linear-gradient(135deg, #EAF4FF 50%, #D3E5F8 50%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.55)" }
@@ -171,7 +171,7 @@ export function boardSquareBg(sk, light, r, c) {
 //  캔버스 크기는 기본 크기 표 × 3, 받침 폭 기준(basePx)은 기본(80) × 3 × 0.94라서 화면에서 받침이 기본 기물과 같은 폭으로 나온다. 같은 값을 scripts/build-skin-pieces.py(S·K)가 쓴다.
 export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0.94;
 const SET_PIECE_NAMES = { P: "pawn", N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" };
-for (const id of ["deco", "gothic", "dancheong", "celadon", "crystal"]) {
+for (const id of ["deco", "coral", "steam", "stars", "crystal"]) {
   const base = PIECE_IMG_SETS.classic, k = SKIN_PIECE_SCALE;
   PIECE_IMG_SETS[id] = { basePx: Math.round(base.basePx * k * SKIN_PIECE_FIT), images: Object.fromEntries(Object.entries(base.images).map(([key, v]) => [key, {
     w: { src: "/pieces/" + id + "/white-" + SET_PIECE_NAMES[key] + ".webp", w: v.w.w * k, h: v.w.h * k },
@@ -188,17 +188,17 @@ export const PIECE_SKINS = {
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
   // (v0.6.9) 세트 스킨의 기물 — 기본 기물의 바깥 실루엣만 바탕으로 쓰고(기본의 금색 분할선·삼각형은 쓰지 않는다), 받침·꼭대기 외형과 몸통 안쪽 설계·재질을 세트마다 새로 만든 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
   deco: { label: t("아르데코"), price: 700, set: "deco", image: true },
-  gothic: { label: t("고딕 성당"), price: 700, set: "gothic", image: true },
-  dancheong: { label: t("단청"), price: 800, set: "dancheong", image: true },
-  celadon: { label: t("청자 상감"), price: 800, set: "celadon", image: true },
+  coral: { label: t("산호와 진주"), price: 800, set: "coral", image: true },
+  steam: { label: t("스팀 기관"), price: 800, set: "steam", image: true },
+  stars: { label: t("별자리"), price: 1000, set: "stars", image: true },
   crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", image: true },
 };
 // (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트 — 같이 사면 개별 합계보다 싸다(price). 일부만 갖고 있으면 남은 것의 개별 가격 합계로 산다.
 export const SKIN_SETS = [
   { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침"), price: 1200 },
-  { id: "gothic", label: t("고딕 성당"), desc: t("석회암과 슬레이트 질감, 첨두아치 창과 아케이드 받침"), price: 1200 },
-  { id: "dancheong", label: t("단청"), desc: t("한지 질감과 오방색 마름모 띠, 연꽃잎과 태극 문양"), price: 1400 },
-  { id: "celadon", label: t("청자 상감"), desc: t("청자 유약과 균열, 국화 상감과 여의두 띠"), price: 1400 },
+  { id: "coral", label: t("산호와 진주"), desc: t("진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이"), price: 1400 },
+  { id: "steam", label: t("스팀 기관"), desc: t("황동과 흑철 판금, 리벳 이음매와 톱니바퀴, 구리 배관과 압력계"), price: 1400 },
+  { id: "stars", label: t("별자리"), desc: t("달무리 오팔과 밤하늘 성운, 별자리 선과 초승달, 궤도 고리"), price: 1700 },
   { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛"), price: 1700 },
 ];
 

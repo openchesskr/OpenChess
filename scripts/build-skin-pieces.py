@@ -3,10 +3,10 @@
 
 기본 기물에서는 바깥 실루엣(알파)만 쓴다 — 기본 스킨의 금색 분할선·삼각형 포인트는 만든 사람의 디자인 요소라 이 세트들에서는 쓰지 않는다.
 세트마다 몸통 안쪽을 전부 새로 설계한다.
-  · 아르데코: 세로 홈(fluting)과 금 인레이 띠·마름모, 머리 동심원 선버스트
-  · 고딕 성당: 석재 쌓기(ashlar), 첨두아치 창, 장미창, 기둥, 아케이드 받침
-  · 단청: 층층 오방색 띠, 연꽃잎, 마름모 띠, 태극
-  · 청자 상감: 덩굴 문양, 국화 메달리온, 여의두 구름 띠
+  · 아르데코: 세로 홈(fluting)과 금 인레이 띠·마름모·부채꼴, 머리 동심원 선버스트, 금 핀스트라이프
+  · 산호와 진주: 진주 자개 몸통에 조개 능선(부채꼴), 산호 가지, 진주 목걸이와 진주 머리, 물거품 받침
+  · 스팀 기관: 연마 황동·흑철 판금, 리벳 이음매, 톱니바퀴 한 쌍(폰은 압력계), 구리 배관, 육각 볼트 받침, 굴뚝
+  · 별자리: 달무리 오팔·밤하늘 성운 몸통에 별자리 선, 초승달, 궤도 고리, 별 띠, 번지는 별빛(glow)
   · 크리스털 주얼: 실루엣 안을 새로 삼각분할한 보석 절단면(면마다 빛깔·반짝임)
   · 외형: 받침 모양(모따기·계단·피너클·처마·둥근 모서리), 꼭대기 장식(스파이어·첨탑·보주·꼭지·결정)을 실루엣에 조금씩 더한다.
 출력은 기본의 S(=3)배 해상도 캔버스에 기물을 K(=0.94)배로 줄여 아래 가운데에 붙인 이미지다(꼭대기·옆 장식 여백). theme.js의 SKIN_PIECE_SCALE·basePx와 같은 값을 쓴다.
@@ -136,8 +136,12 @@ class Ink:
         self.d.arc([(cx - r) * OS, (cy - r) * OS, (cx + r) * OS, (cy + r) * OS], a0, a1, fill=fill, width=max(1, int(round(w * OS))))
     def rect(self, x0, y0, x1, y1, fill=None, outline=None, w=1.0): self.d.rectangle([x0 * OS, y0 * OS, x1 * OS, y1 * OS], fill=fill, outline=outline, width=max(1, int(round(w * OS))))
 
-    def result(self):
-        im = self.im.filter(ImageFilter.GaussianBlur(0.4 * OS / 2)).resize((self.W, self.H), Image.LANCZOS)
+    def result(self, glow=0.0):
+        im = self.im
+        if glow:   # 번지는 빛: 흐린 복사본을 아래에 깐다
+            g = im.filter(ImageFilter.GaussianBlur(glow * OS)); g.putalpha(g.split()[3].point(lambda v: min(255, int(v * 1.9))))
+            im = Image.alpha_composite(g, im)
+        im = im.filter(ImageFilter.GaussianBlur(0.4 * OS / 2)).resize((self.W, self.H), Image.LANCZOS)
         return np.asarray(im, np.float32)   # (H, W, 4)
 
 
@@ -166,48 +170,6 @@ def shape_deco(sk, key, alpha):
     return reshape_alpha(alpha, f)
 
 
-def shape_gothic(sk, key, alpha):
-    """고딕: 받침 양끝 피너클(작은 뾰족탑) + 꼭대기 첨탑."""
-    bt, x0, x1, cx = sk.base_top, sk.base_x0, sk.base_x1, sk.cx
-    def f(d, q):
-        for sx, ex in ((x0 + 1.2 * S, 1), (x1 - 1.2 * S, -1)):
-            d.polygon([((sx - 1.3 * S) * q, (bt + 1) * q), ((sx + 1.3 * S) * q, (bt + 1) * q), (sx * q, (bt - 7.5 * S) * q)], fill=255)
-        if key in ("P", "B"):
-            top = sk.top
-            d.polygon([((cx - 1.2 * S) * q, (top + 1.5) * q), ((cx + 1.2 * S) * q, (top + 1.5) * q), (cx * q, (top - 8 * S) * q)], fill=255)
-            for k in (-1, 1): d.ellipse([(cx + k * 1.7 * S - 0.7 * S) * q, (top - 1.4 * S) * q, (cx + k * 1.7 * S + 0.7 * S) * q, (top + 0.4 * S) * q], fill=255)   # 크로켓
-    return reshape_alpha(alpha, f)
-
-
-def shape_dancheong(sk, key, alpha):
-    """단청: 받침 양끝이 처마처럼 살짝 들리고, 꼭대기에 보주(구슬)."""
-    bt, bo, x0, x1, cx = sk.base_top, sk.bottom, sk.base_x0, sk.base_x1, sk.cx
-    def f(d, q):
-        for sx, ex in ((x0, -1), (x1, 1)):
-            d.polygon([(sx * q, (bt + 1) * q), ((sx + ex * 3.0 * S) * q, (bt - 2.2 * S) * q), ((sx + ex * 0.4 * S) * q, (bt + 3.5 * S) * q)], fill=255)   # 처마 끝
-        if key in ("P", "B"):
-            top = sk.top
-            d.rectangle([(cx - 0.9 * S) * q, (top - 2.2 * S) * q, (cx + 0.9 * S) * q, (top + 1) * q], fill=255)
-            d.ellipse([(cx - 2.3 * S) * q, (top - 6.2 * S) * q, (cx + 2.3 * S) * q, (top - 1.6 * S) * q], fill=255)
-    return reshape_alpha(alpha, f)
-
-
-def shape_celadon(sk, key, alpha):
-    """청자: 받침 모서리를 둥글리고, 몸통 아래를 살짝 불룩하게."""
-    bt, bo, x0, x1, cx = sk.base_top, sk.bottom, sk.base_x0, sk.base_x1, sk.cx
-    def f(d, q):
-        r = 5.0 * S / 1.5
-        for sx, ex in ((x0, 1), (x1, -1)):
-            for cy_, ey in ((bo, -1), (bt, 1)):
-                d.rectangle([min(sx, sx + ex * r) * q, min(cy_, cy_ + ey * r) * q, max(sx, sx + ex * r) * q, max(cy_, cy_ + ey * r) * q], fill=0)
-                cxr = sx + ex * r; cyr = cy_ + ey * r
-                d.pieslice([(cxr - r) * q, (cyr - r) * q, (cxr + r) * q, (cyr + r) * q], 0, 360, fill=255)
-        if key in ("P", "B"):
-            top = sk.top
-            d.ellipse([(cx - 1.8 * S) * q, (top - 3.4 * S) * q, (cx + 1.8 * S) * q, (top + 0.2 * S) * q], fill=255)   # 작은 꼭지
-    return reshape_alpha(alpha, f)
-
-
 def shape_crystal(sk, key, alpha):
     """크리스털: 꼭대기에 뾰족한 결정 하나."""
     cx = sk.cx
@@ -226,33 +188,6 @@ def tex_deco(shape, color, seed):
         return np.stack([m * 1.0, m * 0.985, m * 0.95], -1)
     m = 1 + 0.03 * (n - 0.5) * 2 + 0.05 * (soft - 0.5) * 2   # 칠흑 옻칠
     return np.stack([m, m, m * 1.04], -1)
-
-
-def tex_stone(shape, color, seed):
-    h, w = shape; gr = fbm(shape, 2.4, seed, 2); cl = fbm(shape, 22, seed + 2, 4)
-    if color == "w":   # 석회암
-        m = 1 + 0.07 * (gr - 0.5) * 2 + 0.10 * (cl - 0.5) * 2
-        return np.stack([m * 1.0, m * 0.99, m * 0.95], -1)
-    m = 1 + 0.08 * (gr - 0.5) * 2 + 0.14 * (cl - 0.5) * 2   # 슬레이트
-    return np.stack([m * 0.97, m * 1.0, m * 1.06], -1)
-
-
-def tex_hanji(shape, color, seed):
-    fib = fbm(shape, 1.6, seed, 2, (1.0, 5.0)) ; fib2 = fbm(shape, 1.6, seed + 4, 2, (5.0, 1.0)); soft = fbm(shape, 26, seed + 7, 3)
-    if color == "w":   # 한지
-        m = 1 + 0.045 * (fib - 0.5) * 2 + 0.04 * (fib2 - 0.5) * 2 + 0.03 * (soft - 0.5) * 2
-        return np.stack([m, m * 0.985, m * 0.94], -1)
-    m = 1 + 0.06 * (fib - 0.5) * 2 + 0.06 * (soft - 0.5) * 2   # 먹 옻칠
-    return np.stack([m * 0.98, m, m * 1.07], -1)
-
-
-def tex_celadon(shape, color, seed):
-    h, w = shape; rng = np.random.default_rng(seed); n = 10 if color == "w" else 14
-    pts = np.stack([rng.random(n) * h, rng.random(n) * w], 1); yy, xx = np.mgrid[0:h, 0:w]
-    d = np.stack([np.hypot(yy - p[0], xx - p[1]) for p in pts], 0); srt = np.sort(d, 0)
-    crack = np.clip(1 - (srt[1] - srt[0]) / (1.4 * S), 0, 1) ** 1.6; gl = fbm(shape, 34, seed + 1, 3)
-    m = 1 - 0.05 * crack + 0.07 * (gl - 0.5) * 2 if color == "w" else 1 + 0.12 * crack + 0.10 * (gl - 0.5) * 2
-    return np.stack([m * 0.99, m * 1.01, m * 1.0], -1)
 
 
 def tex_none(shape, color, seed):
@@ -379,89 +314,6 @@ def decor_deco(sk, key, color, ink, ext, comps):
     for k in range(n): ink.ellipse(x0 + (k + 0.5) * (x1 - x0) / n, (bt + mid) / 2 + 0.2 * S, 0.9, 0.9, fill=gold)
 
 
-def decor_gothic(sk, key, color, ink, ext, comps):
-    groove = rgba("#2B2A28" if color == "w" else "#050506", 215); hi = rgba("#FFFFFF", 80) if color == "w" else rgba("#8F96A4", 110)
-    glass = rgba("#1D2D55") if color == "w" else rgba("#F0A83A"); glass2 = rgba("#4A68AE") if color == "w" else rgba("#FFE29A")
-    head, jewels = head_and_jewels(comps, key)
-    ys = sk.top + (sk.bottom - sk.top) * ZONE[key]; yb = sk.base_top - 1.5 * S
-    ch, cw = 6.5 * S, 13 * S; j = 0; y = ys                                       # 석재 쌓기
-    while y < yb:
-        a, b = ext.span(y + 1); ink.line([(a, y), (b, y)], groove, 0.9)
-        x = a + (0 if j % 2 == 0 else cw / 2)
-        while x < b: ink.line([(x, y), (x, min(y + ch, yb))], groove, 0.8); x += cw
-        y += ch; j += 1
-    for f in (0.08, 0.92):                                                          # 벽기둥(콜로네트)
-        ink.line([(ext.at(y_, f), y_) for y_ in np.arange(ys, yb, 2.0)], hi, 1.4)
-    ym = (ys + yb) / 2; a, b = ext.span(ym); aw = max(3.0 * S, min((b - a) * 0.17, 7 * S)); hh = (yb - ys) * 0.78
-    cxw = ext.at(ym, 0.5)
-    lancet(ink, cxw, yb - 0.8 * S, aw + 1.2 * S, hh + 1.6 * S, fill=rgba("#000000", 70), outline=hi, w=0.8)
-    lancet(ink, cxw, yb - 0.8 * S, aw, hh, fill=glass, outline=groove, w=1.1)
-    lancet(ink, cxw, yb - 1.4 * S, aw * 0.6, hh * 0.82, fill=glass2)
-    ink.line([(cxw, yb - 0.8 * S), (cxw, yb - hh * 0.6)], groove, 0.9); ink.line([(cxw - aw, yb - hh * 0.32), (cxw + aw, yb - hh * 0.32)], groove, 0.7)
-    ex, ey, er = emblem_pos(sk, key, ext, head)                                     # 장미창
-    if key != "Q" or True:
-        ink.ellipse(ex, ey, er * 0.78, er * 0.78, fill=glass, outline=groove, w=1.3)
-        for k in range(8):
-            a2 = math.radians(k * 45); ink.line([(ex, ey), (ex + math.cos(a2) * er * 0.78, ey + math.sin(a2) * er * 0.78)], groove, 0.9)
-            ink.ellipse(ex + math.cos(a2 + 0.39) * er * 0.5, ey + math.sin(a2 + 0.39) * er * 0.5, er * 0.15, er * 0.15, fill=glass2)
-        ink.ellipse(ex, ey, er * 0.2, er * 0.2, fill=glass2, outline=groove, w=0.8); ink.ellipse(ex, ey, er * 0.95, er * 0.95, outline=hi, w=0.8)
-    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2); n = max(4, int(round((x1 - x0) / (9 * S)))); step = (x1 - x0) / n   # 아케이드 받침
-    for k in range(n):
-        lancet(ink, x0 + (k + 0.5) * step, bo - 1.2 * S, step * 0.32, (bo - bt) * 0.62, fill=groove if color == "b" else rgba("#4A4844", 205))
-    ink.line([(x0 + 1, bt + 0.8 * S), (x1 - 1, bt + 0.8 * S)], hi, 0.9)
-
-
-def decor_dancheong(sk, key, color, ink, ext, comps):
-    RED, BLUE, GRN, YEL, WHT = rgba("#C23B2B"), rgba("#1F5FA8"), rgba("#2E8B57"), rgba("#E3B53A"), rgba("#F6EFE0"); OUT = rgba("#F5EBD4" if color == "b" else "#4A2E1C", 230)
-    head, jewels = head_and_jewels(comps, key)
-    ys = sk.top + (sk.bottom - sk.top) * ZONE[key]; yb = sk.base_top - 6 * S
-    n = 5; cols = [BLUE, RED, YEL, GRN, WHT]
-    for i in range(n):                                                               # 층층 오방색 띠
-        y = ys + (yb - ys) * (i + 0.5) / n
-        a, b = ext.span(y); hh = 1.5 * S
-        ink.poly([(a, y - hh), (b, y - hh), (b, y + hh), (a, y + hh)], fill=cols[i], outline=OUT, w=0.8)
-        ink.line([(a, y), (b, y)], OUT, 0.5) if False else None
-    ex, ey, er = emblem_pos(sk, key, ext, head)
-    taegeuk(ink, ex, ey, er * (0.78 if head is not None else 1.0), RED, BLUE, OUT)
-    if head is not None:                                                             # 머리 둘레 구슬 띠
-        for k in range(14):
-            a = math.radians(k * 360 / 14); ink.ellipse(ex + math.cos(a) * er * 0.92, ey + math.sin(a) * er * 0.92, 1.5, 1.5, fill=cols[k % 4])
-    for j in jewels: r = (j["x1"] - j["x0"]) / 2.0; ink.ellipse(j["cx"], j["cy"], r * 0.6, r * 0.6, fill=RED, outline=OUT, w=0.9); ink.ellipse(j["cx"], j["cy"], r * 0.25, r * 0.25, fill=YEL)
-    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2); cy = (bt + bo) / 2 + 0.3 * S      # 받침: 마름모 띠
-    n = max(4, int(round((x1 - x0) / (8 * S)))); step = (x1 - x0) / n
-    for k in range(n):
-        xc = x0 + (k + 0.5) * step; hw = step * 0.5; hh = (bo - bt) * 0.36
-        ink.poly([(xc - hw, cy), (xc, cy - hh), (xc + hw, cy), (xc, cy + hh)], fill=cols[k % 4], outline=OUT, w=0.8)
-    ink.line([(x0 + 1, bt + 1.0 * S), (x1 - 1, bt + 1.0 * S)], OUT, 0.9); ink.line([(x0 + 1, bo - 1.0 * S), (x1 - 1, bo - 1.0 * S)], OUT, 0.9)
-    a, b = ext.span(bt - 3 * S); n2 = max(3, int(round((b - a) / (7.5 * S)))); st2 = (b - a) / n2; yb2 = bt - 0.4  # 연꽃잎 띠
-    for k in range(n2):
-        xc = a + (k + 0.5) * st2; r = st2 * 0.5
-        ink.poly([(xc - r, yb2), (xc - r * 0.6, yb2 - r * 1.1), (xc, yb2 - r * 1.55), (xc + r * 0.6, yb2 - r * 1.1), (xc + r, yb2)], fill=(RED if k % 2 == 0 else YEL), outline=OUT, w=0.7)
-
-
-def decor_celadon(sk, key, color, ink, ext, comps):
-    inl = rgba("#2F5B49", 240) if color == "w" else rgba("#E9F2EC", 240); inl2 = rgba("#4C8068", 205) if color == "w" else rgba("#BFD6CB", 195)
-    head, jewels = head_and_jewels(comps, key)
-    ys = sk.top + (sk.bottom - sk.top) * ZONE[key]; yb = sk.base_top - 3 * S
-    for f0, sgn in ((0.20, 1), (0.80, -1)):                                          # 좌우 덩굴
-        pts = [(ext.at(y, f0 + sgn * 0.05 * math.sin((y - ys) / (5.5 * S))), y) for y in np.arange(ys, yb, 1.5)]
-        ink.line(pts, inl, 1.3)
-        for k, y in enumerate(np.arange(ys + 3 * S, yb - 2 * S, 5.5 * S * math.pi / 2)):
-            x = ext.at(y, f0 + sgn * 0.05 * math.sin((y - ys) / (5.5 * S))); d = 1 if k % 2 == 0 else -1
-            ink.poly([(x, y), (x + d * 3.2 * S, y - 1.6 * S), (x + d * 4.6 * S, y + 0.3 * S), (x + d * 2.4 * S, y + 1.5 * S)], fill=inl2, outline=inl, w=0.8)
-    ex, ey, er = emblem_pos(sk, key, ext, head)
-    chrysanthemum(ink, ex, ey, er * (0.82 if head is not None else 0.95), inl2, inl)
-    for j in jewels: r = (j["x1"] - j["x0"]) / 2.0; ink.ellipse(j["cx"], j["cy"], r * 0.55, r * 0.55, fill=inl2, outline=inl, w=0.9)
-    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2); n = max(4, int(round((x1 - x0) / (9 * S)))); step = (x1 - x0) / n; yb3 = bo - 1.6 * S   # 여의두 구름 띠
-    for k in range(n):
-        xc = x0 + (k + 0.5) * step; rr = step * 0.42
-        ink.arc(xc, yb3, rr, 180, 360, inl, 1.1); ink.arc(xc - rr * 0.62, yb3, rr * 0.42, 180, 360, inl2, 0.9); ink.arc(xc + rr * 0.62, yb3, rr * 0.42, 180, 360, inl2, 0.9)
-    ink.line([(x0 + 1, bt + 1.0 * S), (x1 - 1, bt + 1.0 * S)], inl, 1.0)
-    if key in COLLAR:
-        cy = sk.top + (sk.bottom - sk.top) * COLLAR[key]; a, b = ext.span(cy)
-        ink.line([(a + 1, cy - 0.8 * S), (b - 1, cy - 0.8 * S)], inl, 1.0); ink.line([(a + 1, cy + 1.2 * S), (b - 1, cy + 1.2 * S)], inl2, 0.9)
-
-
 def decor_none(sk, key, color, ink, ext, comps):
     return
 
@@ -498,11 +350,217 @@ def crystal_layer(alpha, key, color, seed, ramp_stops):
     return col, edge_i
 
 
+
+# ───────────────────────── 새 테마 도구 ─────────────────────────
+def star4(ink, cx, cy, r, fill, inner=0.26):
+    pts = []
+    for i in range(8):
+        a = math.pi / 4 * i - math.pi / 2; rr = r if i % 2 == 0 else r * inner
+        pts.append((cx + math.cos(a) * rr, cy + math.sin(a) * rr))
+    ink.poly(pts, fill=fill)
+
+
+def lerp_hex(a, b, t):
+    ca, cb = hexc(a), hexc(b); c = ca * (1 - t) + cb * t; return "#%02X%02X%02X" % tuple(int(v) for v in c)
+
+
+def pearl(ink, cx, cy, r, white):
+    lo, hi = ("#C9BFC8", "#FBF6F3") if white else ("#43606E", "#C7DAE4")
+    for i in range(9):
+        t = i / 8.0; rr = r * (1 - 0.8 * t); off = -0.26 * r * t
+        ink.ellipse(cx + off, cy + off, rr, rr, fill=rgba(lerp_hex(lo, hi, t)))
+    ink.ellipse(cx - 0.34 * r, cy - 0.38 * r, r * 0.2, r * 0.14, fill=rgba("#FFFFFF", 235))
+
+
+def coral_branch(ink, x, y, ang, ln, depth, rng, cols, w):
+    x2, y2 = x + math.cos(ang) * ln, y + math.sin(ang) * ln
+    c = cols[min(len(cols) - 1, 3 - depth)]
+    ink.line([(x, y), (x2, y2)], c, w); ink.ellipse(x2, y2, w * 0.5, w * 0.5, fill=c)
+    if depth > 0:
+        for da in (-0.62, 0.52):
+            coral_branch(ink, x2, y2, ang + da + (rng.random() - 0.5) * 0.35, ln * 0.7, depth - 1, rng, cols, max(1.0, w * 0.72))
+
+
+def gear(ink, cx, cy, r, teeth, fill, line, rot=0.0):
+    n = teeth * 4; pts = []
+    for i in range(n):
+        a = rot + 2 * math.pi * i / n; rr = r if i % 4 in (0, 1) else r * 0.8
+        pts.append((cx + math.cos(a) * rr, cy + math.sin(a) * rr))
+    ink.poly(pts, fill=fill, outline=line, w=1.2)
+    ink.ellipse(cx, cy, r * 0.6, r * 0.6, outline=line, w=1.0)
+    for k in range(6):
+        a = rot + k * math.pi / 3; ink.line([(cx + math.cos(a) * r * 0.2, cy + math.sin(a) * r * 0.2), (cx + math.cos(a) * r * 0.6, cy + math.sin(a) * r * 0.6)], line, 1.6)
+    ink.ellipse(cx, cy, r * 0.2, r * 0.2, fill=line)
+
+
+def rivet(ink, x, y, r, white):
+    ink.ellipse(x + 0.25 * r, y + 0.3 * r, r, r, fill=rgba("#000000", 70))
+    ink.ellipse(x, y, r, r, fill=rgba("#C79A46" if white else "#6E7886"), outline=rgba("#6B4C18" if white else "#14161A"), w=0.6)
+    ink.ellipse(x - 0.3 * r, y - 0.32 * r, r * 0.34, r * 0.34, fill=rgba("#FFF4D4", 220))
+
+
+def gauge(ink, cx, cy, r, white):
+    for i, c in enumerate(("#7A5418", "#C99A45", "#F0D58C", "#B58A3A")):
+        ink.ellipse(cx, cy, r * (1 - 0.06 * i), r * (1 - 0.06 * i), fill=rgba(c))
+    ink.ellipse(cx, cy, r * 0.72, r * 0.72, fill=rgba("#F6EEDA"), outline=rgba("#4A3510"), w=1.0)
+    for k in range(9):
+        a = math.radians(210 - k * 30); ink.line([(cx + math.cos(a) * r * 0.5, cy - math.sin(a) * r * 0.5), (cx + math.cos(a) * r * 0.64, cy - math.sin(a) * r * 0.64)], rgba("#3A2A10"), 1.0)
+    a = math.radians(70); ink.line([(cx, cy), (cx + math.cos(a) * r * 0.52, cy - math.sin(a) * r * 0.52)], rgba("#C0392B"), 1.6)
+    ink.ellipse(cx, cy, r * 0.09, r * 0.09, fill=rgba("#3A2A10"))
+    ink.ellipse(cx - r * 0.22, cy - r * 0.3, r * 0.3, r * 0.14, fill=rgba("#FFFFFF", 90))
+
+
+# 새 세트 외형 변형 — 산호: 받침 위 물거품 가장자리 + 꼭대기 진주 / 스팀: 볼트 머리 + 굴뚝 / 별자리: 꼭대기 별
+def shape_coral(sk, key, alpha):
+    bt, x0, x1, cx = sk.base_top, sk.base_x0, sk.base_x1, sk.cx
+    def f(d, q):
+        x = x0 + 2.4 * S
+        while x < x1 - 1.5 * S:
+            d.ellipse([(x - 2.6 * S) * q, (bt - 2.0 * S) * q, (x + 2.6 * S) * q, (bt + 2.0 * S) * q], fill=255); x += 5.2 * S
+        if key == "B": d.ellipse([(cx - 2.5 * S) * q, (sk.top - 4.6 * S) * q, (cx + 2.5 * S) * q, (sk.top + 0.2 * S) * q], fill=255)
+    return reshape_alpha(alpha, f)
+
+
+def shape_steam(sk, key, alpha):
+    bt, x0, x1, cx = sk.base_top, sk.base_x0, sk.base_x1, sk.cx
+    def f(d, q):
+        for sx in (x0 + 3.2 * S, x1 - 3.2 * S): d.ellipse([(sx - 2.4 * S) * q, (bt - 3.2 * S) * q, (sx + 2.4 * S) * q, (bt + 1.2 * S) * q], fill=255)
+        if key in ("P", "B"):
+            top = sk.top
+            d.rectangle([(cx - 1.3 * S) * q, (top - 4.2 * S) * q, (cx + 1.3 * S) * q, (top + 1) * q], fill=255)
+            d.rectangle([(cx - 2.8 * S) * q, (top - 6.0 * S) * q, (cx + 2.8 * S) * q, (top - 3.8 * S) * q], fill=255)
+    return reshape_alpha(alpha, f)
+
+
+def shape_stars(sk, key, alpha):
+    cx = sk.cx
+    def f(d, q):
+        if key in ("P", "B", "K"):
+            top = sk.top - (4.0 * S if key != "K" else 5.8 * S); r = 4.8 * S; pts = []
+            for i in range(8):
+                a = math.pi / 4 * i - math.pi / 2; rr = r if i % 2 == 0 else r * 0.3
+                pts.append(((cx + math.cos(a) * rr) * q, (top + math.sin(a) * rr) * q))
+            d.polygon(pts, fill=255)
+    return reshape_alpha(alpha, f)
+
+
+# 새 세트 몸통 색(질감 포함 전체 색 장)
+def body_coral(shape, color, seed, sk):
+    H, W = shape; n = fbm(shape, 38, seed, 3); yy = np.arange(H, dtype=np.float32)[:, None]
+    if color == "w":   # 진주 자개: 분홍·청록·라벤더 무지갯빛 번짐
+        col = ramp(n, ["#FBF1EA", "#F4CFDB", "#C9E9EE", "#DAD0F4", "#FBF1EA"])
+        return col * (1 + 0.03 * np.sin(yy / (5 * S) + n * 4))[..., None]
+    col = ramp(n, ["#06151F", "#0D3345", "#15586C", "#0A2A3A"])   # 심해 청흑색
+    return col
+
+
+def body_steam(shape, color, seed, sk):
+    brush = fbm(shape, 2.0, seed, 2, (0.2, 4.0)); wide = fbm(shape, 24, seed + 4, 3)
+    if color == "w": col = ramp(wide, ["#B98A3E", "#D9AE5E", "#F0CF86", "#CFA352"])   # 연마 황동
+    else: col = ramp(wide, ["#262A30", "#383E46", "#454C56", "#2E3238"])               # 흑철
+    return col * (1 + 0.09 * (brush - 0.5) * 2)[..., None]
+
+
+def body_stars(shape, color, seed, sk):
+    H, W = shape; n = fbm(shape, 46, seed, 4); rng = np.random.default_rng(seed + 9)
+    col = ramp(n, ["#EEF1FC", "#D6DCF6", "#E7D8F2", "#CCE0F8"]) if color == "w" else ramp(n ** 1.35, ["#050718", "#0E1236", "#27195F", "#4A2A84"])
+    dust = np.zeros(shape, np.float32); m = sk.alpha > 0.5; ys, xs = np.nonzero(m)
+    cnt = int(len(ys) / (22.0 * S * S / 9)); idx = rng.integers(0, len(ys), cnt)
+    dust[ys[idx], xs[idx]] = rng.random(cnt) ** 3
+    dust = ndi.gaussian_filter(dust, 0.7) * (22 if color == "b" else 7)
+    if color == "w": return col - dust[..., None] * np.array([1.0, 0.8, 0.5], np.float32)
+    return col + dust[..., None] * np.array([1.0, 0.95, 0.8], np.float32) * 10
+
+
+# 새 세트 장식
+def decor_coral(sk, key, color, ink, ext, comps):
+    w = color == "w"; rng = np.random.default_rng(31 + ord(key) * 7 + (3 if w else 0))
+    dark = rgba("#8E6A7C", 62) if w else rgba("#01070B", 110); hi = rgba("#FFFFFF", 150) if w else rgba("#4FE3E0", 50)
+    head, jewels = head_and_jewels(comps, key)
+    y0 = sk.top + (sk.bottom - sk.top) * (0.30 if key != "P" else 0.40); F = (sk.cx, sk.base_top + 1.0 * S)
+    R = sk.bottom - y0 + 12 * S
+    for ang in np.arange(-86.0, 86.1, 5.6):                                        # 조개 능선(부채꼴)
+        a = math.radians(ang - 90); a2 = math.radians(ang - 90 + 1.9)
+        ink.line([(F[0] + math.cos(a) * 3 * S, F[1] + math.sin(a) * 3 * S), (F[0] + math.cos(a) * R, F[1] + math.sin(a) * R)], dark, 1.3)
+        ink.line([(F[0] + math.cos(a2) * 3 * S, F[1] + math.sin(a2) * 3 * S), (F[0] + math.cos(a2) * R, F[1] + math.sin(a2) * R)], hi, 0.9)
+    cols = ["#F2A38F", "#EA8571", "#DF6B5A", "#CF5649"] if w else ["#7FFFE8", "#3FE0D0", "#22B8C8", "#FF5FD2"]
+    a, b = ext.span(sk.base_top - 2 * S)                                           # 좌우 산호 가지
+    coral_branch(ink, a + 6 * S, sk.base_top - 1 * S, -1.25, 13 * S, 3, rng, [rgba(c) for c in cols], 4.2)
+    coral_branch(ink, b - 6 * S, sk.base_top - 1 * S, -1.89, 13 * S, 3, rng, [rgba(c) for c in cols], 4.2)
+    for key_y, rr in (((sk.base_top - 3.4 * S), 1.9 * S), ((sk.top + (sk.bottom - sk.top) * COLLAR[key]) if key in COLLAR else None, 2.0 * S)):   # 진주 목걸이
+        if key_y is None: continue
+        aa, bb = ext.span(key_y); n = max(3, int((bb - aa) / (rr * 2.3)))
+        for k in range(n): pearl(ink, aa + (k + 0.5) * (bb - aa) / n, key_y + 0.5 * math.sin(k) , rr, w)
+    if head is not None: pearl(ink, head["cx"], head["cy"], (head["x1"] - head["x0"]) / 2.0 * 0.97, w)
+    for j in jewels: pearl(ink, j["cx"], j["cy"], (j["x1"] - j["x0"]) / 2.0 * 0.95, w)
+    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2)             # 받침: 물결 띠
+    pts = [(x, (bt + bo) / 2 + math.sin((x - x0) / (3.4 * S)) * 1.6 * S) for x in np.arange(x0 + 2, x1 - 2, 1.5)]
+    ink.line(pts, rgba("#7FB7C4") if w else rgba("#3FE0D0"), 1.4)
+
+
+def decor_steam(sk, key, color, ink, ext, comps):
+    w = color == "w"
+    seam_d = rgba("#5A3F14", 235) if w else rgba("#08090B", 240); seam_h = rgba("#FFF2C8", 150) if w else rgba("#8A929E", 150)
+    brass = "#D9AE5E" if w else "#B9873A"
+    head, jewels = head_and_jewels(comps, key)
+    ys = sk.top + (sk.bottom - sk.top) * ZONE[key]; yb = sk.base_top - 1.5 * S
+    rows = np.arange(ys, yb, 2.0)
+    xl = max(ext.span(y)[0] for y in rows) + 5.0 * S; xr = min(ext.span(y)[1] for y in rows) - 5.0 * S      # 구리 배관: 두 줄, 몸통 안쪽에 곧게
+    for xp, off in ((xl, -0.9 * S), (xr, 0.9 * S)):
+        ink.line([(xp, ys), (xp, yb)], rgba("#5E2F12"), 5.4); ink.line([(xp, ys), (xp, yb)], rgba("#B8672F"), 3.8)
+        ink.line([(xp + off * 0.5, ys), (xp + off * 0.5, yb)], rgba("#F0A872", 210), 1.0)
+        for y in np.arange(ys + 5 * S, yb, 15 * S):
+            ink.line([(xp - 3.6 * S, y), (xp + 3.6 * S, y)], rgba(brass), 3.0); ink.line([(xp - 3.6 * S, y - 1.2), (xp + 3.6 * S, y - 1.2)], rgba("#FFF2C8", 210), 0.9)
+    y = ys + 4 * S                                                                # 판금 이음매 + 리벳
+    while y < yb - 3 * S:
+        a, b = ext.span(y); ink.line([(a, y), (b, y)], seam_d, 1.8); ink.line([(a, y + 1.5), (b, y + 1.5)], seam_h, 1.0)
+        for x in np.arange(xl + 6 * S, xr - 5 * S, 7 * S): rivet(ink, x, y - 2.0 * S, 0.95 * S, w)
+        y += 14 * S
+    ex, ey, er = emblem_pos(sk, key, ext, head)
+    if head is not None: gauge(ink, ex, ey, er * 0.96, w)
+    else:                                                                        # 톱니바퀴 한 쌍
+        er = er * 1.35
+        gear(ink, ex - er * 0.35, ey, er * 1.0, 10, rgba("#C79A46") if w else rgba("#5C6672"), rgba("#4A3510") if w else rgba("#0E1013"), 0.1)
+        gear(ink, ex + er * 0.98, ey + er * 0.62, er * 0.62, 8, rgba("#E3B85E") if w else rgba("#7B8694"), rgba("#4A3510") if w else rgba("#0E1013"), 0.3)
+    for j in jewels:
+        rr = (j["x1"] - j["x0"]) / 2.0; rivet(ink, j["cx"], j["cy"], rr * 0.9, w)
+    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2)             # 받침: 육각 볼트 줄
+    ink.line([(x0 + 1, bt + 1.2 * S), (x1 - 1, bt + 1.2 * S)], seam_d, 1.4); ink.line([(x0 + 1, bo - 1.2 * S), (x1 - 1, bo - 1.2 * S)], seam_d, 1.4)
+    for x in np.arange(x0 + 5 * S, x1 - 4 * S, 7.5 * S):
+        ink.poly([(x + math.cos(math.radians(60 * k)) * 2.1 * S, (bt + bo) / 2 + math.sin(math.radians(60 * k)) * 2.1 * S) for k in range(6)], fill=rgba("#C79A46" if w else "#6E7886"), outline=seam_d, w=0.9)
+
+
+def decor_stars(sk, key, color, ink, ext, comps):
+    w = color == "w"; rng = np.random.default_rng(101 + ord(key) * 13 + (5 if w else 0))
+    line = rgba("#5B4BC4", 215) if w else rgba("#FFEFC0", 205); node = rgba("#3B2F9A") if w else rgba("#FFF3CE"); gold = rgba("#C99A2E") if w else rgba("#FFD97A")
+    head, jewels = head_and_jewels(comps, key)
+    ys = sk.top + (sk.bottom - sk.top) * (0.22 if key != "P" else 0.44); yb = sk.base_top - 2 * S
+    pts = []; tries = 0
+    while len(pts) < 8 and tries < 400:
+        tries += 1; y = rng.uniform(ys, yb); x = ext.at(y, rng.uniform(0.14, 0.86))
+        if all(math.hypot(x - px, y - py) > 8.5 * S for px, py in pts): pts.append((x, y))
+    pts.sort(key=lambda p: (round(p[1] / (9 * S)), p[0]))
+    for i in range(len(pts) - 1): ink.line([pts[i], pts[i + 1]], line, 1.0)
+    for i, j_ in ((0, 3), (2, 5)):
+        if j_ < len(pts): ink.line([pts[i], pts[j_]], line, 0.8)
+    for (x, y) in pts: star4(ink, x, y, (1.5 + rng.random() * 2.6) * S, node, 0.28)
+    ex, ey, er = emblem_pos(sk, key, ext, head); r = er * (0.74 if head is not None else 0.95)                           # 초승달
+    ink.ellipse(ex, ey, r, r, fill=gold); ink.d.ellipse([(ex + 0.42 * r - 0.86 * r) * OS, (ey - 0.1 * r - 0.86 * r) * OS, (ex + 0.42 * r + 0.86 * r) * OS, (ey - 0.1 * r + 0.86 * r) * OS], fill=(0, 0, 0, 0))
+    star4(ink, ex + 0.55 * r, ey - 0.35 * r, 0.32 * r, gold, 0.3)
+    ym = ys + (yb - ys) * 0.55; a, b = ext.span(ym); rx = (b - a) / 2.0 * 0.93; cxo = (a + b) / 2.0   # 궤도 고리 + 행성
+    ink.d.ellipse([(cxo - rx) * OS, (ym - rx * 0.17) * OS, (cxo + rx) * OS, (ym + rx * 0.17) * OS], outline=gold[:3] + (170,), width=int(1.0 * OS))
+    ang = math.radians(28); ink.ellipse(cxo + math.cos(ang) * rx, ym + math.sin(ang) * rx * 0.17, 1.9 * S, 1.9 * S, fill=gold)
+    for jw in jewels: star4(ink, jw["cx"], jw["cy"], (jw["x1"] - jw["x0"]) / 2.0 * 1.1, gold, 0.36)
+    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2); ink.line([(x0 + 1, bt + 1.2 * S), (x1 - 1, bt + 1.2 * S)], gold[:3] + (200,), 1.0)   # 받침 별 띠
+    n = max(4, int((x1 - x0) / (7 * S)))
+    for k in range(n): star4(ink, x0 + (k + 0.5) * (x1 - x0) / n, (bt + bo) / 2 + 0.5 * S, 1.7 * S, gold, 0.35)
+
+
 SETS = {
     "deco": {"body": {"w": "#EFE3C8", "b": "#17151B"}, "tex": tex_deco, "shape": shape_deco, "decor": decor_deco, "vol": 0.10, "inset": {"w": "#B4862A", "b": "#E8C766"}, "outline": {"w": "#7A5A18", "b": "#D4AC48"}},
-    "gothic": {"body": {"w": "#CFC9BA", "b": "#2C3039"}, "tex": tex_stone, "shape": shape_gothic, "decor": decor_gothic, "vol": 0.13, "outline": {"w": "#3E3A33", "b": "#0A0B0E"}},
-    "dancheong": {"body": {"w": "#F1E8D2", "b": "#1D2230"}, "tex": tex_hanji, "shape": shape_dancheong, "decor": decor_dancheong, "vol": 0.09, "outline": {"w": "#5A3A20", "b": "#E3B53A"}},
-    "celadon": {"body": {"w": "#CFE2D6", "b": "#2E4A40"}, "tex": tex_celadon, "shape": shape_celadon, "decor": decor_celadon, "vol": 0.12, "inset": {"w": "#4C8068", "b": "#BFD6CB"}, "outline": {"w": "#2F5B49", "b": "#CFE3D8"}},
+    "coral": {"body_fn": body_coral, "shape": shape_coral, "decor": decor_coral, "vol": 0.16, "glow": {"w": 0, "b": 2.4}, "outline": {"w": "#8A6A86", "b": "#02070B"}, "inset": {"w": "#FFFFFF", "b": "#2FA8B8"}},
+    "steam": {"body_fn": body_steam, "shape": shape_steam, "decor": decor_steam, "vol": 0.24, "glow": {"w": 0, "b": 0}, "outline": {"w": "#4A3510", "b": "#08090B"}, "inset": {"w": "#FFF0C2", "b": "#7B8694"}},
+    "stars": {"body_fn": body_stars, "shape": shape_stars, "decor": decor_stars, "vol": 0.12, "glow": {"w": 1.8, "b": 3.0}, "outline": {"w": "#4A3D9A", "b": "#C99A2E"}, "inset": {"w": "#8E80E0", "b": "#FFD97A"}},
     "crystal": {"body": {"w": "#CFE6FA", "b": "#7C1A38"}, "tex": tex_none, "shape": shape_crystal, "decor": decor_none, "vol": 0.0, "crystal": True,
                 "facetramp": {"w": ["#F6FBFF", "#BFE0FA", "#7FB4F0", "#4A7FD6"], "b": ["#FFB0C0", "#E8456A", "#B01E48", "#5C0E28"]}, "outline": {"w": "#3F6FC4", "b": "#4A0A20"}},
 }
@@ -515,14 +573,15 @@ def render(color, key, st):
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     seed = (ord(NAMES[key][0]) * 31 + (7 if color == "b" else 3)) * 13
     ext = Ext(alpha, sk.cx); comps = components(alpha)
-    base = hexc(st["body"][color])
+    base = hexc(st["body"][color]) if st.get("body") else None
     if st.get("crystal"):
         col, edge_i = crystal_layer(alpha, key, color, seed, st["facetramp"][color])
         out = col * (1 + 0.06 * (0.5 - yy / H))[..., None]
         out = out * (1 - 0.35 * edge_i[..., None]) + 255 * 0.35 * edge_i[..., None]
     else:
-        out = base[None, None, :] * volume(alpha, ext, st["vol"])[..., None] * st["tex"]((H, W), color, seed)
-        ink = Ink(W, H); st["decor"](sk, key, color, ink, ext, comps); ov = ink.result()
+        if st.get("body_fn"): out = st["body_fn"]((H, W), color, seed, sk) * volume(alpha, ext, st["vol"])[..., None]
+        else: out = base[None, None, :] * volume(alpha, ext, st["vol"])[..., None] * st["tex"]((H, W), color, seed)
+        ink = Ink(W, H); st["decor"](sk, key, color, ink, ext, comps); ov = ink.result((st.get("glow") or {}).get(color, 0))
         oa = (ov[..., 3] / 255.0)[..., None]
         out = out * (1 - oa) + ov[..., :3] * oa
     m = alpha > 0.5
