@@ -13,6 +13,7 @@ import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
 import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
 import { GachaSection } from "./gacha.jsx";
+import { SkinBook } from "./skinbook.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
@@ -1463,12 +1464,8 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           {/* (v0.6.9, 사용자 요청) 스킨 뽑기 상자 — 스킨 페이지 맨 위. 스킨 세트는 여기서 뽑아서만 얻는다. */}
           <GachaSection coins={coins || 0} onPull={onPullGacha} />
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("스킨 세트")}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-            {SKIN_SETS.map((set, i) => (
-              <FadeIn key={set.id} index={i}><SkinSetCard set={set} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSkinSet} /></FadeIn>
-            ))}
-          </div>
+          {/* (v0.6.9) 쿠키런식 스킨 도감 — 세트 장착 / 기물 도감 / 세트 도감. 세트의 여섯 기물이 한 칸씩 대응한다. */}
+          <SkinBook ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSkinSet} />
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {Object.entries(BOARD_SKINS).map(([id, sk], i) => (

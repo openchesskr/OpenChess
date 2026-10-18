@@ -2630,4 +2630,11 @@ export default {
   "도감 탭에서 로그인·프로필 팝업이 검색창에 가려지던 문제 수정.": "Corregido que la barra de búsqueda tapara las ventanas de inicio de sesión y perfil en la pestaña Colección.",
   "칭호 전면 개편, 업적 화면, 도감 테마 카드, 집중 분석 2단 배치.": "Títulos rediseñados como logros, portada de colección con tarjetas y análisis enfocado en dos columnas.",
   "칭호 241개, 업적 화면, 도감 테마 카드": "241 títulos, pantalla de logros, tarjetas de temas",
+  "기물 도감": "Libro de piezas",
+  "세트 도감": "Libro de conjuntos",
+  "{0} 스킨": "Skins de {0}",
+  "수집 {0}/{1}": "Reunidos {0}/{1}",
+  "세트 장착하기": "Equipar conjunto",
+  "장착중": "Equipado",
+  "세트 수집 현황": "Colección de conjuntos",
 };

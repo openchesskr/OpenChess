@@ -2630,4 +2630,11 @@ export default {
   "도감 탭에서 로그인·프로필 팝업이 검색창에 가려지던 문제 수정.": "Fixed the login and profile popups being covered by the search bar on the Collection tab.",
   "칭호 전면 개편, 업적 화면, 도감 테마 카드, 집중 분석 2단 배치.": "Titles reworked into Achievements, theme card Collection home, and a two-column Focused Analysis.",
   "칭호 241개, 업적 화면, 도감 테마 카드": "241 titles, Achievements screen, Collection theme cards",
+  "기물 도감": "Piece book",
+  "세트 도감": "Set book",
+  "{0} 스킨": "{0} skins",
+  "수집 {0}/{1}": "Collected {0}/{1}",
+  "세트 장착하기": "Equip set",
+  "장착중": "Equipped",
+  "세트 수집 현황": "Set collection",
 };

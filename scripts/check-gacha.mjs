@@ -44,7 +44,7 @@ for (const id of setIds) if (!new RegExp("^  " + id + ": \\{ label: t\\(\"[^\"]+
 // ⑤ 연결
 ok(/gachaPull\(count, ownedSkins, ocCoins\)/.test(app) && /setOcCoins\(r\.coins\)/.test(app) && /setOwnedSkins\(r\.owned\)/.test(app), "App의 뽑기가 gachaPull 결과를 코인·보유 목록에 반영하지 않음");
 ok(/if \(sk\.gacha\) return false;/.test(app), "직접 구매(buySkin)가 뽑기 전용 스킨을 거절하지 않음");
-ok(/<GachaSection /.test(dex) && dex.indexOf("<GachaSection ") < dex.indexOf("SKIN_SETS.map"), "도감 스킨 페이지 맨 위에 뽑기 상자가 없음");
+ok(/<GachaSection /.test(dex) && dex.indexOf("<GachaSection ") < dex.indexOf("<SkinBook "), "도감 스킨 페이지 맨 위에 뽑기 상자가 없음");
 ok(!/SkinShopCard|StoreTab|storeProps/.test(play), "플레이 탭에 스킨 상점 UI가 남아 있음");
 if (fails.length) { console.error("✖ check-gacha 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-gacha: 가격(500/2400)·코인 계산·중복 환급·확률 시뮬레이션·뽑기 전용 스킨·도감 연결이 유지된다");

@@ -42,7 +42,7 @@ for (const s of sets) {
 }
 ok(/export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0\.94;/.test(theme) && /^S = 3 /m.test(gen) && /^K = 0\.94 /m.test(gen), "theme.js의 SKIN_PIECE_SCALE·FIT과 생성기의 S·K가 다름");
 ok(/if \(sk\.texture\) return sk\.texture\(light, r, c\);/.test(theme), "boardSquareBg가 texture를 쓰지 않음");
-ok(/<SkinSetCard /.test(dex) && /SKIN_SETS\.map/.test(dex), "상점 화면에 스킨 세트 카드가 없음");
+ok(/<SkinBook /.test(dex) && /<SkinSetCard /.test(read("src/app/skinbook.jsx")), "스킨 페이지에 스킨 도감(SkinBook)·세트 카드가 없음");
 ok(/const equipSkinSet = useCallback\(\(setId\) => \{ setBoardSkin\(setId\); setPieceSkin\(setId\)/.test(app), "세트 장착이 보드·기물을 함께 바꾸지 않음");
 ok(/export function SkinSetCard/.test(common), "SkinSetCard 없음");
 if (fails.length) { console.error("✖ check-skins 실패:\n  " + fails.join("\n  ")); process.exit(1); }
