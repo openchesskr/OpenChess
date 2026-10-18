@@ -142,10 +142,10 @@ export const BOARD_SKINS = {
     texture: (light) => (light
       ? { backgroundImage: "radial-gradient(circle at 28% 22%, rgba(255,255,255,.95), transparent 58%), linear-gradient(135deg, #F0E6E6, #E0D2D6)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.5)" }
       : { backgroundImage: "radial-gradient(circle at 70% 72%, rgba(120,225,225,.18), transparent 56%), linear-gradient(135deg, #357684, #265E6C)", boxShadow: "inset 0 0 0 1px rgba(120,225,225,.18)" }) },
-  dragon: { label: t("비취 용"), price: 900, set: "dragon", light: "#D4EAD9", dark: "#17382E",
-    texture: (light) => { const sc = (a) => "radial-gradient(circle at 50% 100%, transparent 56%, rgba(" + a + ") 58% 63%, transparent 65%)"; return light
-      ? { backgroundImage: sc("40,120,86,.20") + ", linear-gradient(135deg, #DDEFE1, #C6E0CE)", backgroundSize: "9px 6px, 100% 100%", boxShadow: "inset 0 0 0 1px rgba(227,181,58,.30)" }
-      : { backgroundImage: sc("227,181,58,.16") + ", linear-gradient(135deg, #1E4538, #11291F)", backgroundSize: "9px 6px, 100% 100%", boxShadow: "inset 0 0 0 1px rgba(227,181,58,.30)" }; } },
+  forest: { label: t("단풍 숲"), price: 800, set: "forest", light: "#EDE4D0", dark: "#4A2E1C",
+    texture: (light, r, c) => { const k = (r * 9 + c * 5) % 17; return light
+      ? { backgroundImage: "repeating-linear-gradient(" + (4 + k) + "deg, rgba(120,90,50,.07) 0 1px, transparent 1px 7px), linear-gradient(135deg, #F2EADA, #E3D7BF)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.25)" }
+      : { backgroundImage: "repeating-linear-gradient(" + (-4 - k) + "deg, rgba(255,170,70,.07) 0 1px, transparent 1px 6px), linear-gradient(135deg, #573621, #3E2515)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.32)" }; } },
   stars: { label: t("별자리"), price: 1000, set: "stars", light: "#D6DAEF", dark: "#1B1E48",
     texture: (light, r, c) => { const sd = (r * 7 + c * 13) % 9, pos = (i) => ((sd * 11 + i * 29) % 80 + 10) + "% " + ((sd * 17 + i * 41) % 80 + 10) + "%"; const dot = (i, a) => "radial-gradient(circle at " + pos(i) + ", rgba(255," + (light ? "255,255" : "240,200") + "," + a + ") 0 .9px, transparent 1.6px)"; return light
       ? { backgroundImage: dot(1, ".95") + "," + dot(2, ".8") + ", linear-gradient(135deg, #DDE0F3, #C9CEE8)", boxShadow: "inset 0 0 0 1px rgba(120,110,200,.18)" }
@@ -173,7 +173,7 @@ export function boardSquareBg(sk, light, r, c) {
 //  캔버스 크기는 기본 크기 표 × 3, 받침 폭 기준(basePx)은 기본(80) × 3 × 0.94라서 화면에서 받침이 기본 기물과 같은 폭으로 나온다. 같은 값을 scripts/build-skin-pieces.py(S·K)가 쓴다.
 export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0.94;
 const SET_PIECE_NAMES = { P: "pawn", N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" };
-for (const id of ["deco", "coral", "dragon", "stars", "crystal"]) {
+for (const id of ["deco", "coral", "forest", "stars", "crystal"]) {
   const base = PIECE_IMG_SETS.classic, k = SKIN_PIECE_SCALE;
   PIECE_IMG_SETS[id] = { basePx: Math.round(base.basePx * k * SKIN_PIECE_FIT), images: Object.fromEntries(Object.entries(base.images).map(([key, v]) => [key, {
     w: { src: "/pieces/" + id + "/white-" + SET_PIECE_NAMES[key] + ".webp", w: v.w.w * k, h: v.w.h * k },
@@ -191,7 +191,7 @@ export const PIECE_SKINS = {
   // (v0.6.9) 세트 스킨의 기물 — 기본 기물의 바깥 실루엣만 바탕으로 쓰고(기본의 금색 분할선·삼각형은 쓰지 않는다), 받침·꼭대기 외형과 몸통 안쪽 설계·재질을 세트마다 새로 만든 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
   deco: { label: t("아르데코"), price: 700, set: "deco", image: true },
   coral: { label: t("산호와 진주"), price: 800, set: "coral", image: true },
-  dragon: { label: t("비취 용"), price: 900, set: "dragon", image: true },
+  forest: { label: t("단풍 숲"), price: 800, set: "forest", image: true },
   stars: { label: t("별자리"), price: 1000, set: "stars", image: true },
   crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", image: true },
 };
@@ -199,7 +199,7 @@ export const PIECE_SKINS = {
 export const SKIN_SETS = [
   { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침"), price: 1200 },
   { id: "coral", label: t("산호와 진주"), desc: t("진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이"), price: 1400 },
-  { id: "dragon", label: t("비취 용"), desc: t("투명한 비취와 흑요석 몸통, 겹친 용 비늘과 여의주, 금 구름 문양과 파도 받침"), price: 1500 },
+  { id: "forest", label: t("단풍 숲"), desc: t("자작나무와 호두나무 결, 단풍잎 인레이와 나이테 머리, 도토리와 이끼 낀 받침"), price: 1400 },
   { id: "stars", label: t("별자리"), desc: t("크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성"), price: 1700 },
   { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛"), price: 1700 },
 ];

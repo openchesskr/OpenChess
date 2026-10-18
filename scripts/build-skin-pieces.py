@@ -5,7 +5,7 @@
 세트마다 몸통 안쪽을 전부 새로 설계한다.
   · 아르데코: 세로 홈(fluting)과 금 인레이 띠·마름모·부채꼴, 머리 동심원 선버스트, 금 핀스트라이프
   · 산호와 진주: 진주 자개 몸통에 조개 능선(부채꼴), 산호 가지, 진주 목걸이와 진주 머리, 물거품 받침
-  · 비취 용: 비취(백)·흑요석(흑) 몸통 전체를 덮는 겹친 용 비늘, 여의주 머리, 금 구름 메달리온, 청해파 받침, 뿔과 지느러미
+  · 단풍 숲: 자작나무(백)·호두나무(흑) 몸통에 실루엣을 따라 흐르는 나뭇결, 폰 머리는 나이테 단면, 단풍잎 인레이와 도토리, 이끼 낀 나무껍질 받침, 뿌리와 어린 가지
   · 별자리: 달무리 오팔·밤하늘 성운 몸통에 별자리 선, 초승달, 궤도 고리, 별 띠, 번지는 별빛(glow)
   · 크리스털 주얼: 실루엣 안을 새로 삼각분할한 보석 절단면(면마다 빛깔·반짝임)
   · 외형: 받침 모양(모따기·계단·피너클·처마·둥근 모서리), 꼭대기 장식(스파이어·첨탑·보주·꼭지·결정)을 실루엣에 조금씩 더한다.
@@ -511,97 +511,106 @@ def decor_stars(sk, key, color, ink, ext, comps):
         else: star4(ink, xk, (bt + bo) / 2, 1.9 * S, gold, 0.34)
 
 
-# ───────────────────────── 비취 용 ─────────────────────────
-def shape_dragon(sk, key, alpha):
-    """비취 용: 받침 양끝의 위로 휜 지느러미, 폰·비숍 꼭대기에 용의 뿔 한 쌍."""
+# ───────────────────────── 단풍 숲 ─────────────────────────
+def leaf_pts(cx, cy, r, rot=0.0):
+    """단풍잎(5갈래) 외곽 — 위쪽 큰 갈래, 양옆 큰 갈래, 아래 작은 갈래 둘, 가장자리 톱니."""
+    tips = ((-90, 1.0, 17), (-90 - 60, 0.95, 18), (-90 + 60, 0.95, 18), (-90 - 130, 0.64, 16), (-90 + 130, 0.64, 16))
+    pts = []
+    for k in range(0, 360, 3):
+        a = k - 180.0; rr = 0.46
+        for c, h, wd in tips:
+            d = ((a - c + 180) % 360) - 180; rr = max(rr, 0.46 + (h - 0.46) * math.exp(-(d / wd) ** 2))
+        rr *= 1 + 0.07 * math.sin(math.radians(k) * 21)
+        t = math.radians(a) + rot; pts.append((cx + math.cos(t) * r * rr, cy + math.sin(t) * r * rr))
+    return pts
+
+
+def maple(ink, cx, cy, r, fill, line, rot=0.0, vein=None):
+    ink.poly(leaf_pts(cx, cy, r, rot), fill=fill, outline=line, w=1.0)
+    v = vein or line
+    for c in (-90, -148, -32, -218, 38):
+        t = math.radians(c) + rot; ink.line([(cx, cy), (cx + math.cos(t) * r * 0.78, cy + math.sin(t) * r * 0.78)], v, 0.8)
+    t = math.radians(90) + rot; ink.line([(cx, cy), (cx + math.cos(t) * r * 0.62, cy + math.sin(t) * r * 0.62)], line, 1.3)
+
+
+def acorn(ink, cx, cy, r):
+    ink.ellipse(cx, cy + 0.18 * r, r * 0.78, r * 0.95, fill=rgba("#B8742E"), outline=rgba("#5A3410"), w=0.9)
+    ink.ellipse(cx - 0.22 * r, cy + 0.05 * r, r * 0.22, r * 0.4, fill=rgba("#E9A55A", 200))
+    ink.poly([(cx - 0.95 * r, cy - 0.12 * r), (cx - 0.7 * r, cy - 0.78 * r), (cx + 0.7 * r, cy - 0.78 * r), (cx + 0.95 * r, cy - 0.12 * r)], fill=rgba("#6B4423"), outline=rgba("#3A2210"), w=0.9)
+    for k in range(-2, 3): ink.line([(cx + k * 0.3 * r, cy - 0.76 * r), (cx + k * 0.36 * r, cy - 0.16 * r)], rgba("#3A2210", 200), 0.6)
+    ink.line([(cx, cy - 0.78 * r), (cx + 0.05 * r, cy - 1.15 * r)], rgba("#3A2210"), 1.2)
+
+
+def shape_forest(sk, key, alpha):
+    """단풍 숲: 받침 양끝으로 뻗는 뿌리, 폰·비숍 꼭대기에 잎 두 장 달린 어린 가지."""
     bt, bo, x0, x1, cx = sk.base_top, sk.bottom, sk.base_x0, sk.base_x1, sk.cx
     def f(d, q):
-        for sx, ex in ((x0, -1), (x1, 1)):   # 받침 양끝: 위로 휜 지느러미(곡선 두 단)
-            d.polygon([(sx * q, (bt + 1.5 * S) * q), ((sx + ex * 3.0 * S) * q, (bt - 2.0 * S) * q), ((sx + ex * 6.4 * S) * q, (bt - 7.0 * S) * q),
-                       ((sx + ex * 5.2 * S) * q, (bt - 2.4 * S) * q), ((sx + ex * 2.4 * S) * q, (bt + 1.5 * S) * q)], fill=255)
-        if key in ("P", "B"):               # 꼭대기: 굵고 휜 뿔 한 쌍
+        for sx, ex in ((x0, -1), (x1, 1)):   # 뿌리: 받침 양끝에서 바깥으로 펼쳐지는 완만한 뿌리
+            d.polygon([(sx * q, (bt + 1.0 * S) * q), ((sx + ex * 0.6 * S) * q, (bt - 2.4 * S) * q), ((sx + ex * 3.2 * S) * q, (bt - 3.6 * S) * q), ((sx + ex * 6.0 * S) * q, (bt - 1.8 * S) * q),
+                       ((sx + ex * 5.0 * S) * q, (bt + 1.6 * S) * q)], fill=255)
+        if key in ("P", "B"):               # 꼭대기: 잎 두 장 달린 어린 가지
             top = sk.top
-            for ex in (-1, 1):
-                pts = [((cx + ex * 1.6 * S) * q, (top + 2.5 * S) * q), ((cx + ex * 3.0 * S) * q, (top - 1.2 * S) * q), ((cx + ex * 5.6 * S) * q, (top - 4.2 * S) * q), ((cx + ex * 8.2 * S) * q, (top - 6.4 * S) * q),
-                       ((cx + ex * 7.0 * S) * q, (top - 3.0 * S) * q), ((cx + ex * 5.2 * S) * q, (top - 0.2 * S) * q), ((cx + ex * 4.6 * S) * q, (top + 2.5 * S) * q)]
-                d.polygon(pts, fill=255)
+            d.polygon([((cx - 0.8 * S) * q, (top + 1.5 * S) * q), ((cx + 0.8 * S) * q, (top + 1.5 * S) * q), ((cx + 0.9 * S) * q, (top - 3.6 * S) * q), ((cx - 0.9 * S) * q, (top - 3.6 * S) * q)], fill=255)
+            d.polygon([(x * q, y * q) for x, y in leaf_pts(cx + 3.0 * S, top - 3.6 * S, 3.7 * S, 0.5)], fill=255)
+            d.polygon([(x * q, y * q) for x, y in leaf_pts(cx - 2.9 * S, top - 3.4 * S, 3.5 * S, -0.5)], fill=255)
     return reshape_alpha(alpha, f)
 
 
-def body_dragon(shape, color, seed, sk, alpha, ext):
+def body_forest(shape, color, seed, sk, alpha, ext):
     m = alpha > 0.5; dist = ndi.distance_transform_edt(m).astype(np.float32)
-    n = fbm(shape, 34, seed, 4); n2 = fbm(shape, 70, seed + 3, 3); depth = np.clip(dist / (11 * S), 0, 1)
-    H, W = shape; yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    if color == "w":   # 비취: 가장자리는 투명하게 밝고, 안쪽은 깊은 초록. 구름 같은 흰 결.
-        col = ramp(np.clip(0.30 + 0.55 * depth + (n - 0.5) * 0.45, 0, 1), ["#E4F6E8", "#B9E2C6", "#8FCBA4", "#6DB88A"])
-        veins = np.exp(-((np.sin((xx * 0.5 + yy * 0.8) / S * 0.35 + n2 * 6) ) / 0.18) ** 2) * 0.10
-        return col * (1 - veins[..., None] * 0.6) + veins[..., None] * 255 * 0.25
-    col = ramp(np.clip(0.2 + 0.4 * depth + (n - 0.5) * 0.35, 0, 1), ["#050304", "#140B0C", "#2A1013", "#43161C"])   # 흑요석에 비치는 붉은 속빛
-    return col
+    warp = fbm(shape, 30, seed, 3); n = fbm(shape, 40, seed + 2, 3)
+    ring = 0.5 + 0.5 * np.cos(2 * math.pi * (dist / (5.0 * S) + warp * 0.9))        # 실루엣을 따라 흐르는 나뭇결(등고선)
+    if color == "w":   # 자작나무
+        col = ramp(n, ["#F5EEDF", "#E8DDC8", "#F9F3E6", "#E2D6BE"])
+        return col * (1 - 0.075 * (ring ** 4))[..., None]
+    col = ramp(n, ["#190E09", "#2A180D", "#3C2313", "#241309"])                      # 호두나무
+    vein = np.clip(1 - np.abs(np.sin(dist / (7 * S) * math.pi + warp * 5)) * 5.5, 0, 1) ** 2
+    return col * (1 + 0.12 * (ring - 0.5))[..., None] + vein[..., None] * np.array([210, 120, 40], np.float32) * 0.22
 
 
-def scale(ink, x, y, r, pal, tint):
-    rim, mid, hi, ridge = pal
-    ink.ellipse(x + 0.2 * r, y + 0.3 * r, r, r, fill=rgba("#000000", 70))
-    ink.ellipse(x, y, r, r, fill=rgba(lerp_hex(rim, mid, 0.0)), outline=None)
-    ink.ellipse(x - 0.04 * r, y - 0.05 * r, r * 0.9, r * 0.9, fill=rgba(lerp_hex(mid, hi, tint * 0.4)))
-    ink.ellipse(x - 0.14 * r, y - 0.2 * r, r * 0.55, r * 0.5, fill=rgba(lerp_hex(mid, hi, 0.55 + tint * 0.35), 210))
-    ink.arc(x, y, r * 0.66, 205, 335, rgba(ridge, 235), 1.0)
-    ink.arc(x, y, r * 0.96, 0, 360, rgba(rim, 230), 1.0)
-
-
-def cloud(ink, cx, cy, r, fill, line):
-    """여의두 구름 문양: 세 개의 둥근 엽 + 소용돌이."""
-    for dx, dy, rr in ((-0.62, 0.12, 0.5), (0.62, 0.12, 0.5), (0.0, -0.18, 0.62)):
-        ink.ellipse(cx + dx * r, cy + dy * r, rr * r, rr * r, fill=fill, outline=line, w=0.9)
-    ink.rect(cx - 1.1 * r, cy + 0.12 * r, cx + 1.1 * r, cy + 0.5 * r, fill=fill)
-    ink.line([(cx - 1.1 * r, cy + 0.5 * r), (cx + 1.1 * r, cy + 0.5 * r)], line, 0.9)
-    ink.arc(cx, cy - 0.05 * r, 0.3 * r, 20, 330, line, 1.0); ink.arc(cx - 0.62 * r, cy + 0.12 * r, 0.2 * r, 30, 330, line, 0.9); ink.arc(cx + 0.62 * r, cy + 0.12 * r, 0.2 * r, 30, 330, line, 0.9)
-
-
-def decor_dragon(sk, key, color, ink, ext, comps):
-    w = color == "w"
-    pal = ("#2C7552", "#6FBF8F", "#E3F7E8", "#F0D58C") if w else ("#050304", "#2E161B", "#A23F4A", "#F06464")
-    gold = rgba("#E3B53A"); goldd = rgba("#7A5414"); goldl = rgba("#FFF0B8")
-    rng = np.random.default_rng(71 + ord(key) * 11 + (2 if w else 0))
+def decor_forest(sk, key, color, ink, ext, comps):
+    w = color == "w"; rng = np.random.default_rng(91 + ord(key) * 19 + (4 if w else 0))
     head, jewels = head_and_jewels(comps, key)
-    r = 5.0 * S; dy = r * 0.74; dx = r * 1.78
-    y_top = sk.top + 2 * S; y_bot = sk.base_top - 1.0 * S                                  # 겹친 비늘: 아래 줄부터 그려 위 줄이 덮는다
-    rows = int((y_bot - y_top) / dy) + 2
-    for j in range(rows):
-        y = y_bot - j * dy
-        if y < y_top - r: break
-        a, b = ext.span(min(max(y, y_top + 1), y_bot))
-        x = a - dx * (0.5 if j % 2 else 0.0)
-        while x < b + r:
-            if a - r * 0.6 <= x <= b + r * 0.6: scale(ink, x, y, r, pal, rng.random() * 0.8)
-            x += dx
-    ex, ey, er = emblem_pos(sk, key, ext, head)                                          # 구름 메달리온(폰은 여의주)
-    if head is not None:
+    leafc = [("#C8412B", "#7A1F12"), ("#E27D2D", "#8A4210"), ("#D9A441", "#7A5414")] if w else [("#E8A33D", "#FFE29A"), ("#C0452E", "#F0A090"), ("#D9892E", "#FFD08A")]
+    ys = sk.top + (sk.bottom - sk.top) * (ZONE[key] - 0.05); yb = sk.base_top - 3 * S
+    if w:                                                                            # 자작나무 껍질의 어두운 가로 줄눈
+        for _ in range(26):
+            y = rng.uniform(ys - 6 * S, yb); a, b = ext.span(y); x = rng.uniform(a + 3 * S, b - 3 * S); L = rng.uniform(2.4, 5.5) * S
+            ink.line([(x - L / 2, y), (x + L / 2, y + rng.uniform(-0.5, 0.5))], rgba("#4A3828", int(rng.uniform(110, 190))), rng.uniform(0.9, 1.7))
+    ex, ey, er = emblem_pos(sk, key, ext, head)
+    if head is not None:                                                             # 폰 머리: 나이테 단면
         hr = (head["x1"] - head["x0"]) / 2.0
-        for i in range(10):
-            t = i / 9.0; rr = hr * (1 - 0.82 * t); off = -0.24 * hr * t
-            ink.ellipse(head["cx"] + off, head["cy"] + off, rr, rr, fill=rgba(lerp_hex("#3FA874" if w else "#6A1218", "#F4FFF4" if w else "#FF8A80", t)))
-        for k in range(3): ink.arc(head["cx"], head["cy"], hr * (0.5 + 0.17 * k), 200 + 40 * k, 330 + 20 * k, gold, 1.5)
-        ink.ellipse(head["cx"] - 0.36 * hr, head["cy"] - 0.4 * hr, hr * 0.2, hr * 0.14, fill=rgba("#FFFFFF", 235))
-        ink.ellipse(head["cx"], head["cy"], hr * 0.99, hr * 0.99, outline=gold, w=1.5)
-    else:
-        cloud(ink, ex, ey, er * 1.4, gold, goldd); ink.ellipse(ex, ey - 0.2 * er, er * 0.24, er * 0.24, fill=goldl)
-    for j_ in jewels: ink.ellipse(j_["cx"], j_["cy"], (j_["x1"] - j_["x0"]) / 2.0, (j_["x1"] - j_["x0"]) / 2.0, fill=gold, outline=goldd, w=1.1); ink.ellipse(j_["cx"] - 1.2, j_["cy"] - 1.4, 1.6, 1.6, fill=goldl)
-    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2)                       # 받침: 청해파(파도 문양) + 금 테두리
-    ink.rect(x0 + 0.6, bt + 0.4 * S, x1 - 0.6, bo - 0.4 * S, fill=rgba("#16513A") if w else rgba("#14090A"))
-    rr = 4.2 * S; n = int((x1 - x0) / (rr * 1.5)) + 2
-    for row, yb in enumerate((bo - 1.0 * S, (bt + bo) / 2 + 1.0 * S)):
-        for k in range(n):
-            xc = x0 + rr * 0.2 + k * rr * 1.5 + (rr * 0.75 if row else 0)
-            for q in (1.0, 0.72, 0.44): ink.arc(xc, yb, rr * q, 180, 360, gold if q == 1.0 else rgba("#F7DC8A", 210), 0.9)
-    ink.line([(x0 + 1, bt + 0.6 * S), (x1 - 1, bt + 0.6 * S)], gold, 1.6); ink.line([(x0 + 1, bo - 0.5 * S), (x1 - 1, bo - 0.5 * S)], gold, 1.4)
+        ink.ellipse(head["cx"], head["cy"], hr, hr, fill=rgba("#C9A06A" if w else "#8A5A2B"))
+        for i in range(1, 9):
+            ink.ellipse(head["cx"] + 0.1 * i, head["cy"] - 0.1 * i, hr * (1 - i * 0.105), hr * (1 - i * 0.105), fill=rgba("#E4C48E" if (i % 2 == 0) == w else "#A47440" if w else "#C58A4A", 255), outline=rgba("#6B4423" if w else "#3A2210", 200), w=0.8)
+        ink.line([(head["cx"], head["cy"]), (head["cx"] + hr * 0.95, head["cy"] - hr * 0.2)], rgba("#3A2210", 210), 1.1)    # 갈라진 금
+        ink.ellipse(head["cx"], head["cy"], hr * 0.07, hr * 0.07, fill=rgba("#3A2210"))
+        ink.ellipse(head["cx"], head["cy"], hr * 0.99, hr * 0.99, outline=rgba("#5A3410"), w=1.4)
+    else:                                                                            # 큰 단풍잎 인레이 + 떨어지는 작은 잎들
+        f0, l0 = leafc[0]; maple(ink, ex, ey, er * 2.0, rgba(f0), rgba(l0), rot=0.0, vein=rgba(l0, 200))
+        for i, (px, py, rr, rot) in enumerate(((0.34, -0.25, 0.55, 0.9), (-0.38, 0.48, 0.5, -0.6), (0.3, 0.82, 0.42, 0.3))):
+            fc, lc = leafc[(i + 1) % 3]; ya = ey + py * (yb - ys) * 0.6
+            a, b = ext.span(ya); xa = ex + px * (b - a) * 0.5
+            maple(ink, xa, ya, er * rr * 1.7, rgba(fc, 235), rgba(lc), rot=rot)
+    for j in jewels: acorn(ink, j["cx"], j["cy"], (j["x1"] - j["x0"]) / 2.0 * 0.95)
+    bt, bo = sk.base_top, sk.bottom; x0, x1 = ext.span((bt + bo) / 2)                  # 받침: 나무껍질 + 이끼
+    ink.rect(x0 + 0.6, bt + 0.5 * S, x1 - 0.6, bo - 0.4 * S, fill=rgba("#8E7556" if w else "#1E120A"))
+    x = x0 + 1.5 * S
+    while x < x1 - 1:
+        yb2 = bo - 0.4 * S - rng.uniform(0, 1.4) * S; ink.line([(x, bt + 0.7 * S + rng.uniform(0, 2) * S), (x + rng.uniform(-0.8, 0.8) * S, yb2)], rgba("#3A2412" if w else "#5C3A1E", 230), rng.uniform(0.9, 1.8)); x += rng.uniform(2.0, 3.6) * S
+    ink.line([(x0 + 1, bt + 0.5 * S), (x1 - 1, bt + 0.5 * S)], rgba("#4A3010"), 1.4)
+    for _ in range(9):                                                               # 이끼 얼룩(받침 위쪽 가장자리)
+        mx = rng.uniform(x0 + 2 * S, x1 - 2 * S); my = bt + rng.uniform(0.0, 2.2) * S; mr = rng.uniform(1.6, 3.2) * S
+        ink.ellipse(mx, my, mr, mr * 0.7, fill=rgba("#4F7A38", 235)); ink.ellipse(mx - 0.2 * mr, my - 0.25 * mr, mr * 0.6, mr * 0.4, fill=rgba("#86B05A", 220))
+    for k in range(6):                                                               # 이끼 위 작은 버섯(흑) / 풀(백)
+        mx = x0 + (k + 0.5) * (x1 - x0) / 6 + rng.uniform(-1, 1) * S
+        if k % 2 == 0: ink.ellipse(mx, bt - 0.3 * S, 1.3 * S, 0.9 * S, fill=rgba("#C2402B" if w else "#E8A33D")); ink.ellipse(mx - 0.4 * S, bt - 0.5 * S, 0.3 * S, 0.3 * S, fill=rgba("#FFFFFF", 230))
 
 
 SETS = {
     "deco": {"body": {"w": "#EFE3C8", "b": "#17151B"}, "tex": tex_deco, "shape": shape_deco, "decor": decor_deco, "vol": 0.10, "inset": {"w": "#B4862A", "b": "#E8C766"}, "outline": {"w": "#7A5A18", "b": "#D4AC48"}},
     "coral": {"body_fn": body_coral, "shape": shape_coral, "decor": decor_coral, "vol": 0.16, "glow": {"w": 0, "b": 2.4}, "outline": {"w": "#8A6A86", "b": "#02070B"}, "inset": {"w": "#FFFFFF", "b": "#2FA8B8"}},
-    "dragon": {"body_fn": body_dragon, "shape": shape_dragon, "decor": decor_dragon, "vol": 0.18, "glow": {"w": 0, "b": 1.6}, "outline": {"w": "#14513A", "b": "#050304"}, "inset": {"w": "#F0D58C", "b": "#D94B4B"}},
+    "forest": {"body_fn": body_forest, "shape": shape_forest, "decor": decor_forest, "vol": 0.16, "glow": {"w": 0, "b": 0}, "outline": {"w": "#5A4630", "b": "#050301"}, "inset": {"w": "#C9A06A", "b": "#B87A2E"}},
     "stars": {"body_fn": body_stars, "shape": shape_stars, "decor": decor_stars, "vol": 0.10, "glow": {"w": 1.8, "b": 3.0}, "outline": {"w": "#4A3D9A", "b": "#C99A2E"}, "inset": {"w": "#8E80E0", "b": "#FFD97A"}},
     "crystal": {"body": {"w": "#CFE6FA", "b": "#7C1A38"}, "tex": tex_none, "shape": shape_crystal, "decor": decor_none, "vol": 0.0, "crystal": True,
                 "facetramp": {"w": ["#F6FBFF", "#BFE0FA", "#7FB4F0", "#4A7FD6"], "b": ["#FFB0C0", "#E8456A", "#B01E48", "#5C0E28"]}, "outline": {"w": "#3F6FC4", "b": "#4A0A20"}},
@@ -614,7 +623,7 @@ def render(color, key, st):
     alpha = np.clip(st["shape"](sk, key, sk.alpha), 0, 1)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     seed = (ord(NAMES[key][0]) * 31 + (7 if color == "b" else 3)) * 13
-    ext = Ext(alpha, sk.cx); comps = components(alpha)
+    ext = Ext(alpha, sk.cx); comps = [c for c in components(alpha) if c["cy"] < sk.base_top - 3 * S]   # 받침 쪽 작은 조각(뿌리 등)은 보석으로 보지 않는다
     if key == "P": comps.insert(0, synth_head(alpha))
     base = hexc(st["body"][color]) if st.get("body") else None
     if st.get("crystal"):
