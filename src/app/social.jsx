@@ -6,7 +6,7 @@ import { sanSrc, stripSuffix, startBoard, boardFromSans, sansToFen, MAX_SEARCH_D
 import { T, MOTION_EASE } from "../lib/theme.js";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle } from "lucide-react";
+import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User } from "lucide-react";
 import { chesscomChangeDaysLeft } from "../lib/chesscom.js";
 import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
@@ -213,7 +213,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
-function EquippedTitleFit({ id }) {
+function EquippedTitleFit({ id, indent = 0, maxScale = 0.85 }) {
   const BASE_W = 260, BASE_H = 74;
   const ref = useRef(null);
   const [w, setW] = useState(0);
@@ -225,9 +225,9 @@ function EquippedTitleFit({ id }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const k = w ? Math.min(0.85, w / BASE_W) : 0;
+  const k = w ? Math.min(maxScale, w / BASE_W) : 0;
   return (
-    <div ref={ref} style={{ flex: 1, minWidth: 0, height: k ? Math.round(BASE_H * k) : BASE_H * 0.5 }}>
+    <div ref={ref} style={{ marginLeft: indent, minWidth: 0, height: k ? Math.round(BASE_H * k) : BASE_H * 0.5 }}>
       {k > 0 && <div style={{ width: BASE_W, transform: `scale(${k})`, transformOrigin: "left top", pointerEvents: "none" }}><TitleBadge id={id} compact earned noPeek /></div>}
     </div>
   );
@@ -751,14 +751,18 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5 }}>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5, gap: 8 }}>
+        <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
           {!docked && <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>}
           {/* (v0.6.1, 사용자 요청) "프로필" 글자 자리에 @아이디 — 카드 안의 @아이디 줄은 없앴다. */}
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{pub || pubUsername ? <>@{(pub && pub.displayId) || pubUsername}{roleIcon(pubUsername)}</> : t("프로필")}</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub || pubUsername ? <>@{(pub && pub.displayId) || pubUsername}</> : t("프로필")}</span>
         </div>
         {/* (v0.6.1) 우상단 X 버튼은 없애고 그 자리를 점 3개 메뉴(신고·차단)로 — 내 프로필이면 자리만 비운다. */}
-        {me && pubUid && !isSelf ? <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} /> : <span style={{ width: 30 }} />}
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          {/* (v0.6.9, 사용자 요청) 플랫폼 분리 토글은 헤더 우상단으로. */}
+          {pub && statsViewToggle(statsView, setStatsView, 1.1)}
+          {me && pubUid && !isSelf ? <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} /> : <span style={{ width: 30 }} />}
+        </div>
       </div>
       <div style={{ maxWidth: docked ? "none" : wide ? 920 : 480, margin: "0 auto", padding: docked ? "14px 14px 40px" : wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
@@ -772,11 +776,8 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              <div className="flex items-center justify-between" style={{ marginBottom: 12, gap: 8 }}>
-                {pub.title && titleDef(pub.title) ? <EquippedTitleFit id={pub.title} /> : <span />}
-                {/* (사용자 요청, 재조정) /user 페이지 전용 토글 크기 — 이전 1.75배와 0.5배의 중간값. */}
-                {statsViewToggle(statsView, setStatsView, 1.1)}
-              </div>
+              {/* (v0.6.9, 사용자 요청) 장착 칭호: 크기를 줄이고 이름(사진 64px + 간격 12px 오른쪽)과 왼쪽을 맞춘다. */}
+              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} indent={76} maxScale={0.7} /></div>}
               {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}
@@ -2581,6 +2582,26 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked 
     </div>
   );
 }
+// (v0.6.9, 사용자 요청) 친구 목록 줄 맨 오른쪽의 세로 점 3개 메뉴 — 프로필 보기·친구 삭제 같은 부가 기능. 목록이 스크롤 영역이라 메뉴는 fixed로 띄운다.
+function FriendMenu({ onProfile, onRemove, disabled }) {
+  const [pos, setPos] = useState(null);
+  const item = { display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "7px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", whiteSpace: "nowrap" };
+  return (
+    <>
+      <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) }); }} disabled={disabled} aria-label={t("더보기")} aria-expanded={!!pos} title={t("더보기")} className="press"
+        style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MoreVertical size={16} /></button>
+      {pos && (
+        <>
+          <span onClick={() => setPos(null)} style={{ position: "fixed", inset: 0, zIndex: 200 }} />
+          <div role="menu" style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 201, width: 150, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)" }}>
+            <button onClick={() => { setPos(null); onProfile(); }} className="press" style={item}><User size={14} />{t("프로필 보기")}</button>
+            <button onClick={() => { setPos(null); onRemove(); }} className="press" style={{ ...item, color: "#F4A0A0" }}><Trash2 size={14} />{t("친구 삭제")}</button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
 function FriendRow({ id, pub, right, onClick, lastSeenMs }) {
   const p = pub || {};
   const isGM = tierFromXp(p.xp || 0).tier.key === "grandmaster";
@@ -2936,20 +2957,12 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
   const [edges, setEdges] = useState([]);
   const [profiles, setProfiles] = useState({}); // uid -> { username, pub }
   const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState(null); // 프로필 보기: { uid, username, pub }
   const [pending, setPending] = useState({}); // uid -> true
   const [reqNotice, setReqNotice] = useState(""); // (BUG-043) 친구 요청이 서버에서 거절됐을 때(차단 관계 등) 안내 문구
   const [chatWith, setChatWith] = useState(null); // (17차) 채팅 상대: { uid, username }
   const startChat = (c) => { if (docked && onOpenChat) onOpenChat(c); else setChatWith(c); };   // 도킹 창 모드에서는 대화마다 별도 창
   // (버그 수정) 친구 삭제 버튼을 누르면 곧장 삭제되던 것 — 확인 다이얼로그를 띄운 뒤 확정해야 지워지게 한다.
-  const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: sel과 같은 { uid, username, pub }
-  // (사용자 요청, v0.3.9) 통계 분리 토글 — 카드 우상단(아이디 라벨과 같은 줄)에 두므로 이 모달이
-  // statsView를 들고 있다가 헤더 줄에서 그리고, 아래 내용 패널(ProfileStatsPanel)에는 값만 넘긴다.
-  // 새 프로필을 열 때마다(viewProfileUid) "oc"로 되돌린다.
-  const [statsView, setStatsView] = useState("oc");
-  // (신규 기능) MyProfileCard와 동일하게, chess.com 통계 보기를 고르면 카드 상단 신원 표시도
-  // chess.com 것으로 바꿔 보여준다.
-  const [ccHeaderProf, setCcHeaderProf] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null); // 삭제 확인 대상: { uid, username, pub }
   // (v0.3.3 UI) 채팅·프로필·검색 창(v0.3.2)과 마찬가지로, 모바일에서는 이 친구 창도 카드가 아니라
   // 전체 화면으로 띄운다.
   const narrow = useNarrow(640);
@@ -3031,17 +3044,11 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
   // "거절" 버튼에서만 이 함수를 쓴다.
   const doReject = (uid) => guard(uid, async () => { await friendRemove(uid); await notifyResolveFriendRequest(meId, uid, "rejected"); })();
 
-  const viewProfileUid = (uid) => { const pr = profiles[uid] || {}; setStatsView("oc"); setCcHeaderProf(null); setSel({ uid, username: pr.username || uid, pub: pr.pub || {} }); };
+  // (v0.6.9, 사용자 요청) 친구·요청·검색 결과를 누르면 이 창 안의 별도 프로필 화면 대신 /user/<MID> 프로필 페이지로 이동한다.
+  const openProfile = (username) => { if (username && onOpenUserProfile) onOpenUserProfile(username); };
+  const viewProfileUid = (uid) => openProfile(uname(uid));
   // (신규 기능) 사용자 요청 — 친구 목록·요청 목록에 표시할 실시간 접속 여부를 한 번에 불러온다.
   const presenceMap = usePresenceMap([...friends, ...incoming, ...outgoing]);
-  const selPresence = usePresenceMap(sel ? [sel.uid] : []);
-  useEffect(() => {
-    let cancelled = false;
-    const ccUsername = sel && sel.pub && sel.pub.chesscom;
-    if (!ccUsername) { setCcHeaderProf(null); return; }
-    fetchChesscomProfile(ccUsername).then((p) => { if (!cancelled) setCcHeaderProf(p); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [sel && sel.pub && sel.pub.chesscom]);
 
   // 검색(추가) 탭
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
@@ -3082,21 +3089,13 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
     <>
     <div onClick={docked ? undefined : onClose} style={docked ? dockedOuter : { position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 82, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 440, height: narrow ? "100%" : undefined, display: narrow ? "flex" : undefined, flexDirection: narrow ? "column" : undefined, background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
-        {!chatWith && (!docked || sel) && (
+        {!chatWith && !docked && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
-            {/* (19차 UX3) 프로필 서브뷰 뒤로가기(←)는 좌상단, 닫기(X)는 우상단으로 분리 */}
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 800, color: T.ink, minWidth: 0 }}>
-              {sel ? <button onClick={() => { setReqNotice(""); setSel(null); }} aria-label={t("뒤로")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ArrowLeft size={15} /></button> : <Users size={17} />}
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel ? <>@{((sel.pub || {}).displayId || sel.username)}{roleIcon(sel.username)}</> : t("친구")}</span>
+              <Users size={17} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t("친구")}</span>
             </span>
-            {/* (버그 수정) 친구 삭제는 목록 줄마다 노출하지 않고, 그 사람 프로필을 클릭해 들어갔을 때만
-                우상단(닫기 버튼 옆)에 아이콘으로 노출한다. */}
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {/* (버그 수정) 눌러 곧장 지워지지 않도록, 이 버튼은 삭제를 확정하지 않고 확인 다이얼로그만 연다. */}
-              {sel && relOf(sel.uid) === "friend" && <button onClick={() => setConfirmRemove(sel)} disabled={!!pending[sel.uid]} aria-label={t("친구 삭제")} title={t("친구 삭제")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: "transparent", color: T.blunder, border: "1px solid " + T.blunder, cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} /></button>}
-              {sel && relOf(sel.uid) === "friend" && <button onClick={() => startChat({ uid: sel.uid, username: (sel.pub || {}).displayId || sel.username, photo: (sel.pub || {}).photo || null })} disabled={!!pending[sel.uid]} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: pending[sel.uid] ? "default" : "pointer", opacity: pending[sel.uid] ? 0.55 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>}
-              {!docked && <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>}
-            </span>
+            <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
           </div>
         )}
 
@@ -3105,52 +3104,7 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
             <ChatPanel onOpenBoardFen={onOpenBoardFen} onOpenBoardSans={onOpenBoardSans} myUid={meId} myUsername={me} otherUid={chatWith.uid} otherUsername={chatWith.username} otherPhoto={chatWith.photo} onBack={() => setChatWith(null)} onOpenSharedPuzzle={onOpenSharedPuzzle} onOpenSharedReview={onOpenSharedReview} onOpenSharedReviewOnBoard={onOpenSharedReviewOnBoard} onAcceptPvpInvite={onAcceptPvpInvite} onOpenUserProfile={onOpenUserProfile} fillNarrow={narrow} myLegacies={myLegacies} myIsGM={myIsGM} myChesscomGames={myChesscomGames} engine={engine}
               mySolved={mySolved} myLineSolves={myLineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           </div>
-        ) : sel ? (() => {
-          const p = sel.pub || {}; const rel = relOf(sel.uid); const busyId = !!pending[sel.uid];
-          // (v0.2.2 UI#6#1) 채팅 버튼은 아래 actions가 아니라 닉네임/아이디와 같은 줄 우측(헤더)에 둔다.
-          const hasActions = rel === "sent" || rel === "incoming" || rel === "none";
-          const actions = hasActions ? (
-            <>
-              {rel === "sent" && statusChip(t("요청 보냄"), <Clock size={12} />)}
-              {rel === "incoming" && <>{btn(t("수락"), () => doAccept(sel.uid), "gold", busyId)}{btn(t("거절"), () => doReject(sel.uid), "ghost", busyId)}</>}
-              {rel === "none" && btn(t("친구 요청"), () => doRequestByName(sel.username, sel.uid), "gold", busyId)}
-              {rel === "none" && reqNotice && <span role="status" style={{ fontSize: 11.5, fontWeight: 700, color: T.blunder }}>{reqNotice}</span>}
-            </>
-          ) : null;
-          return (
-            // (버그 수정) 이 서브뷰만 높이 제한 없이 카드가 뷰포트 밖으로 그냥 넘쳐, 스크롤해도 카드 뒤
-            // 배경(탭 콘텐츠)이 대신 스크롤됐다 — UserSearchModal의 프로필 서브뷰와 동일하게 자체
-            // 최대 높이 + 세로 스크롤을 준다.
-            <div style={{ padding: 18, maxHeight: narrow ? undefined : "60vh", flex: narrow ? "1 1 auto" : undefined, minHeight: narrow ? 0 : undefined, overflowY: "auto" }}>
-              {/* (사용자 요청, v0.3.9) MyProfileCard와 같은 헤더 구성 — "@아이디" 라벨을 상단에 두고,
-                  이름·소개 사이에 따로 있던 @아이디 줄은 없앤다. */}
-              {/* (v0.6.9, 사용자 요청) 내 프로필처럼 토글을 오른쪽에 두고, 왼쪽 여백에 그 사람이 장착한 칭호를 보여 준다. @아이디는 헤더로, 채팅 버튼은 헤더(삭제·X 사이)로 옮겼다. */}
-              <div className="flex items-center justify-between" style={{ marginBottom: 12, gap: 8 }}>
-                {p.title && titleDef(p.title) ? <EquippedTitleFit id={p.title} /> : <span />}
-                {statsViewToggle(statsView, setStatsView)}
-              </div>
-              {statsView === "cc" && p.chesscom ? (
-                <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={p.chesscom} />
-              ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-                    {p.photo ? <img src={p.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(tierFromXp(p.xp || 0).tier.key === "grandmaster") || {}) }} />
-                      : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>{(p.nickname || sel.username || "?")[0].toUpperCase()}</span>}
-                    <OnlineDot lastSeenMs={selPresence[sel.uid]} overlay size={13} />
-                  </span>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{p.nickname || (p.displayId || sel.username)}</div>
-                    {p.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><UgcText text={p.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /></div>}
-                    {presenceLabel(selPresence[sel.uid]) && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 3 }}>OpenChess {presenceLabel(selPresence[sel.uid])}</div>}
-                  </div>
-                </div>
-              )}
-              {/* (버그 수정) 채팅/친구 요청·수락·거절 버튼을 카드 맨 아래 대신 티어와 메인 퀘스트
-                  진척도 사이(actions prop)에 둔다. */}
-              <ProfileStatsPanel pub={p} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} actions={actions} ownerUid={sel.uid} viewerUid={meId} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
-            </div>
-          );
-        })() : (
+        ) : (
           <>
             <div style={{ display: "flex", gap: 4, padding: "10px 12px 0", flexShrink: 0 }}>
               {tabBtn("friends", t("친구"))}
@@ -3169,6 +3123,7 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
                           {/* (기능7, 사용자 요청) 친구가 지금 실시간 대국 중이면 참가하지 않고 구경만 할 수 있는 관전 버튼. */}
                           {friendActiveGames[u] != null && <button onClick={() => setSpectateGameId(friendActiveGames[u])} aria-label={t("관전")} title={t("관전")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Eye size={14} /></button>}
                           <button onClick={() => startChat({ uid: u, username: ((profiles[u] || {}).pub || {}).displayId || uname(u), photo: ((profiles[u] || {}).pub || {}).photo || null })} aria-label={t("채팅")} title={t("채팅")} className="press" style={{ width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><MessageCircle size={14} /></button>
+                        <FriendMenu disabled={!!pending[u]} onProfile={() => viewProfileUid(u)} onRemove={() => setConfirmRemove({ uid: u, username: uname(u), pub: (profiles[u] || {}).pub })} />
                         </>} /></FadeIn>
                       ))}</AnimatePresence></div>
                 ) : tab === "requests" ? (
@@ -3204,7 +3159,7 @@ export function FriendsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoa
                               : rel === "sent" ? statusChip(t("요청됨"), <Clock size={12} />)
                                 : rel === "incoming" ? btn(t("수락"), () => doAccept(uid), "gold", busyId)
                                   : btn(t("요청"), () => doRequestByName(r.username, uid), "gold", busyId);
-                            return <FadeIn key={uid} index={i}><FriendRow id={r.username} pub={r.pub} onClick={() => { setProfiles((prev) => ({ ...prev, [uid]: { username: r.username, pub: r.pub || {} } })); setSel({ uid, username: r.username, pub: r.pub || {} }); }} right={right} /></FadeIn>;
+                            return <FadeIn key={uid} index={i}><FriendRow id={r.username} pub={r.pub} onClick={() => openProfile(r.username)} right={right} /></FadeIn>;
                           })}</div>}
                   </div>
                 )}

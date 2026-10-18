@@ -33,6 +33,12 @@ if (!/hiddenLock/.test(common) || !/t\("히든 칭호"\)/.test(common)) fail("�
 const dexSrc = fs.readFileSync(new URL("../src/app/dex.jsx", import.meta.url), "utf8");
 if (!/seriesDisplayLabel\(cur, earnedOf\(cur\)\)/.test(dexSrc) || !/masked=\{x\.cat === "rare" && !n\}/.test(dexSrc)) fail("업적 화면이 못 얻은 히든 칭호 계열의 이름·아이콘을 \"???\"로 가리지 않음");
 if (!/const nameText = hiddenLock \? "\?\?\?"/.test(common)) fail("칭호 배너가 못 얻은 히든 칭호의 이름을 \"???\"로 가리지 않음");
+// (v0.6.9) 친구 창·/user 페이지 연결: 친구 줄 점 3개 메뉴, 프로필은 /user 페이지로, 토글은 /user 헤더, 아이디 옆 왕관·개발자 표시 없음
+const socialSrc = fs.readFileSync(new URL("../src/app/social.jsx", import.meta.url), "utf8");
+if (!/<FriendMenu /.test(socialSrc)) fail("친구 목록 줄에 점 3개 메뉴(FriendMenu)가 없음");
+if (!/const viewProfileUid = \(uid\) => openProfile\(/.test(socialSrc) || /setSel\(/.test(socialSrc)) fail("친구 박스 클릭이 /user 페이지로 연결되지 않음(친구 창 안 프로필 화면이 남아 있음)");
+if (!/\{pub && statsViewToggle\(statsView, setStatsView, 1\.1\)\}/.test(socialSrc)) fail("/user 페이지 헤더 우상단에 플랫폼 분리 토글이 없음");
+if (/@\{\(pub && pub\.displayId\) \|\| pubUsername\}\{roleIcon/.test(socialSrc)) fail("/user 페이지 아이디 옆에 왕관·개발자 표시가 남아 있음");
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));
