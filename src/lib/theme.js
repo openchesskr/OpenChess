@@ -132,22 +132,26 @@ export const BOARD_SKINS = {
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
-  // (v0.6.9) 세트 스킨의 보드 — 기본 보드처럼 두 색 칸을 쓰되 색감과 아주 옅은 질감만 바꾼다(texture). light·dark는 질감을 못 쓰는 곳(좌표 글자색 계산 등)의 대표색이다.
+  // (v0.6.9) 세트 스킨의 보드 — 기본 보드처럼 두 색 칸을 쓰되 색감·옅은 질감·칸 테두리만 세트에 맞춘다(texture). light·dark는 질감을 못 쓰는 곳(좌표 글자색 계산 등)의 대표색이다.
   //  칸마다 무늬 위치를 조금씩 어긋나게(seed) 해서 같은 무늬가 바둑판처럼 반복돼 보이지 않게 한다.
-  ivory: { label: t("상아와 흑단"), price: 400, set: "ivory", light: "#E9DDC2", dark: "#6A5040",
-    texture: (light, r, c) => { const k = (r * 13 + c * 7) % 19; return { backgroundImage: "repeating-linear-gradient(90deg, rgba(60,35,15," + (light ? ".05" : ".14") + ") 0 1px, transparent 1px 5px), linear-gradient(135deg," + (light ? "#EFE4CB,#E2D3B2" : "#745846,#5E4535") + ")", backgroundPosition: k + "px 0, 0 0" }; } },
-  marble: { label: t("대리석과 청동"), price: 600, set: "marble", light: "#E4E3DC", dark: "#55645D",
-    texture: (light, r, c) => { const x = (r * 37 + c * 53) % 100, y = (r * 61 + c * 29) % 100; return { backgroundImage: "linear-gradient(115deg, transparent 42%, rgba(" + (light ? "90,100,110,.14" : "255,255,255,.12") + ") 43%, transparent 45%), linear-gradient(135deg," + (light ? "#EBEAE4,#DAD9D1" : "#5E6E66,#4C5A53") + ")", backgroundSize: "180% 180%, 100% 100%", backgroundPosition: x + "% " + y + "%, 0 0" }; } },
-  porcelain: { label: t("백자와 청자"), price: 600, set: "porcelain", light: "#EFF1EC", dark: "#7C9A8C",
+  deco: { label: t("아르데코"), price: 700, set: "deco", light: "#E9DCC0", dark: "#1F1C24",
     texture: (light) => (light
-      ? { backgroundImage: "radial-gradient(circle at 30% 25%, rgba(255,255,255,.9), transparent 60%), linear-gradient(135deg, #F3F4F0, #E3E7E1)" }
-      : { backgroundImage: "radial-gradient(circle at 70% 70%, rgba(255,255,255,.14), transparent 55%), linear-gradient(135deg, #86A394, #6F8D7F)" }) },
-  silver: { label: t("은과 사파이어"), price: 800, set: "silver", light: "#CDD3DC", dark: "#475266",
-    texture: (light) => ({ backgroundImage: "repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 1px, rgba(0,0,0,.04) 1px 3px), linear-gradient(135deg," + (light ? "#D6DBE3,#C3CAD5" : "#516078,#3E4A5E") + ")" }) },
-  rose: { label: t("로즈 골드와 와인"), price: 1000, set: "rose", light: "#E8CFC7", dark: "#6B2B38",
+      ? { backgroundImage: "linear-gradient(135deg, #F0E5CC, #E3D3B0)", boxShadow: "inset 0 0 0 1px rgba(168,122,34,.28)" }
+      : { backgroundImage: "linear-gradient(135deg, #2A2630, #17141B)", boxShadow: "inset 0 0 0 1px rgba(214,172,72,.38)" }) },
+  gothic: { label: t("고딕 성당"), price: 700, set: "gothic", light: "#C9C3B4", dark: "#353A44",
+    texture: (light, r, c) => { const k = (r * 11 + c * 17) % 23; return { backgroundImage: "repeating-linear-gradient(" + (30 + k) + "deg, rgba(0,0,0,.035) 0 1px, transparent 1px 6px), linear-gradient(135deg," + (light ? "#D2CCBD,#BFB9A9" : "#3D424D,#2C313A") + ")" }; } },
+  dancheong: { label: t("단청"), price: 800, set: "dancheong", light: "#EFE5CC", dark: "#2A3550",
     texture: (light) => (light
-      ? { backgroundImage: "linear-gradient(135deg, #EFD8D1, #E0C2B9)" }
-      : { backgroundImage: "linear-gradient(135deg, #74303E, #5C2230)" }) },
+      ? { backgroundImage: "linear-gradient(135deg, #F4ECD7, #E8DCBE)", boxShadow: "inset 0 0 0 1px rgba(194,59,43,.22)" }
+      : { backgroundImage: "linear-gradient(135deg, #313E5E, #222C45)", boxShadow: "inset 0 0 0 1px rgba(227,181,58,.3)" }) },
+  celadon: { label: t("청자 상감"), price: 800, set: "celadon", light: "#DCE9DF", dark: "#5E8576",
+    texture: (light) => (light
+      ? { backgroundImage: "radial-gradient(circle at 28% 24%, rgba(255,255,255,.85), transparent 58%), linear-gradient(135deg, #E3EFE6, #CFE0D4)" }
+      : { backgroundImage: "radial-gradient(circle at 72% 72%, rgba(255,255,255,.14), transparent 55%), linear-gradient(135deg, #688F80, #527A6B)" }) },
+  crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", light: "#DDEBFA", dark: "#456AB4",
+    texture: (light) => (light
+      ? { backgroundImage: "linear-gradient(135deg, #EAF4FF 50%, #D3E5F8 50%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.55)" }
+      : { backgroundImage: "linear-gradient(135deg, #5479C4 50%, #3F62AD 50%)", boxShadow: "inset 0 0 0 1px rgba(190,215,255,.3)" }) },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -163,13 +167,15 @@ export function boardSquareBg(sk, light, r, c) {
   if (sk.texture) return sk.texture(light, r, c);
   return { background: light ? sk.light : sk.dark };
 }
-// (v0.6.9) 세트 스킨 기물 이미지 — 기본 이미지와 같은 칸 배치(가로·세로 비율)를 2배 해상도로 만든 것이라 크기 표만 2배로 늘려 쓴다.
+// (v0.6.9) 세트 스킨 기물 이미지 — 기본 이미지의 SKIN_PIECE_SCALE(3)배 해상도 캔버스에 기물을 SKIN_PIECE_FIT(0.94)배로 줄여 아래 가운데에 붙인 것(위·옆 장식 여백).
+//  캔버스 크기는 기본 크기 표 × 3, 받침 폭 기준(basePx)은 기본(80) × 3 × 0.94라서 화면에서 받침이 기본 기물과 같은 폭으로 나온다. 같은 값을 scripts/build-skin-pieces.py(S·K)가 쓴다.
+export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0.94;
 const SET_PIECE_NAMES = { P: "pawn", N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" };
-for (const id of ["ivory", "marble", "porcelain", "silver", "rose"]) {
-  const base = PIECE_IMG_SETS.classic;
-  PIECE_IMG_SETS[id] = { basePx: base.basePx * 2, images: Object.fromEntries(Object.entries(base.images).map(([k, v]) => [k, {
-    w: { src: "/pieces/" + id + "/white-" + SET_PIECE_NAMES[k] + ".webp", w: v.w.w * 2, h: v.w.h * 2 },
-    b: { src: "/pieces/" + id + "/black-" + SET_PIECE_NAMES[k] + ".webp", w: v.b.w * 2, h: v.b.h * 2 },
+for (const id of ["deco", "gothic", "dancheong", "celadon", "crystal"]) {
+  const base = PIECE_IMG_SETS.classic, k = SKIN_PIECE_SCALE;
+  PIECE_IMG_SETS[id] = { basePx: Math.round(base.basePx * k * SKIN_PIECE_FIT), images: Object.fromEntries(Object.entries(base.images).map(([key, v]) => [key, {
+    w: { src: "/pieces/" + id + "/white-" + SET_PIECE_NAMES[key] + ".webp", w: v.w.w * k, h: v.w.h * k },
+    b: { src: "/pieces/" + id + "/black-" + SET_PIECE_NAMES[key] + ".webp", w: v.b.w * k, h: v.b.h * k },
   }])) };
 }
 export const PIECE_SKINS = {
@@ -180,21 +186,22 @@ export const PIECE_SKINS = {
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
-  // (v0.6.9) 세트 스킨의 기물 — 기본 기물 이미지에서 실루엣·분할선은 그대로 두고 재질·색감·장식만 바꾼 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
-  ivory: { label: t("상아와 흑단"), price: 400, set: "ivory", image: true },
-  marble: { label: t("대리석과 청동"), price: 600, set: "marble", image: true },
-  porcelain: { label: t("백자와 청자"), price: 600, set: "porcelain", image: true },
-  silver: { label: t("은과 사파이어"), price: 800, set: "silver", image: true },
-  rose: { label: t("로즈 골드와 와인"), price: 1000, set: "rose", image: true },
+  // (v0.6.9) 세트 스킨의 기물 — 기본 기물 이미지의 로우폴리 뼈대 위에 외형(받침·꼭대기)과 장식 문양, 재질을 바꾼 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
+  deco: { label: t("아르데코"), price: 700, set: "deco", image: true },
+  gothic: { label: t("고딕 성당"), price: 700, set: "gothic", image: true },
+  dancheong: { label: t("단청"), price: 800, set: "dancheong", image: true },
+  celadon: { label: t("청자 상감"), price: 800, set: "celadon", image: true },
+  crystal: { label: t("크리스털 주얼"), price: 1000, set: "crystal", image: true },
 };
 // (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트 — 같이 사면 개별 합계보다 싸다(price). 일부만 갖고 있으면 남은 것의 개별 가격 합계로 산다.
 export const SKIN_SETS = [
-  { id: "ivory", label: t("상아와 흑단"), desc: t("상아 결과 흑단 줄무늬, 황동 분할선"), price: 700 },
-  { id: "marble", label: t("대리석과 청동"), desc: t("백색·녹흑색 대리석 무늬, 청동과 녹청 분할선"), price: 1000 },
-  { id: "porcelain", label: t("백자와 청자"), desc: t("백자 균열과 청자 빛, 코발트 분할선"), price: 1000 },
-  { id: "silver", label: t("은과 사파이어"), desc: t("헤어라인 은·건메탈 질감, 사파이어 포인트"), price: 1400 },
-  { id: "rose", label: t("로즈 골드와 와인"), desc: t("진주빛과 와인 벨벳, 로즈 골드 분할선"), price: 1700 },
+  { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침"), price: 1200 },
+  { id: "gothic", label: t("고딕 성당"), desc: t("석회암과 슬레이트 질감, 첨두아치 창과 아케이드 받침"), price: 1200 },
+  { id: "dancheong", label: t("단청"), desc: t("한지 질감과 오방색 마름모 띠, 연꽃잎과 태극 문양"), price: 1400 },
+  { id: "celadon", label: t("청자 상감"), desc: t("청자 유약과 균열, 국화 상감과 여의두 띠"), price: 1400 },
+  { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛"), price: 1700 },
 ];
+
 
 /** 세트를 지금 사는 데 드는 코인 — 보드·기물을 둘 다 안 가졌으면 세트 가격, 하나만 가졌으면 나머지 하나의 개별 가격, 둘 다 가졌으면 0. */
 export function skinSetPrice(set, owned) {
