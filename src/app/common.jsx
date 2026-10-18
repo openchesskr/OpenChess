@@ -6,7 +6,7 @@ import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
-import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
+import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
@@ -20,7 +20,7 @@ import { mateWhiteWins, SITE_FONT, EvalBar, SEQ_FONT } from "../components/engin
 import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles } from "lucide-react";
+import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles, Timer, Clock, ChevronsUp } from "lucide-react";
 import { TITLE_OPENINGS, titleDef, seriesAccent, openingSide } from "../lib/titles.js";
 import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
@@ -5398,7 +5398,7 @@ export function openingNameOf(moves) {
 //  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
 //  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계(1~5)가 오를수록 금이 밝아지고, 계열마다 아이콘이 다르다.
 export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
-const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star };
+const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star, Timer, Clock, ChevronsUp };
 // 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
 function titleCondText(def) {
   const s = def.series, n = fmtFull(def.min);
@@ -5427,12 +5427,15 @@ function titleCondText(def) {
     case "ccNight": return pre + t("새벽(0~5시) 대국 {0}판", n);
     case "ccOpenings": return pre + t("서로 다른 오프닝 {0}가지 플레이", n);
     case "ccTopOpening": return pre + t("한 오프닝으로 {0}판 플레이", n);
+    case "ccBlitzWins": return pre + t("chess.com 블리츠 승리 {0}회", n);
+    case "ccRapidWins": return pre + t("chess.com 래피드 승리 {0}회", n);
+    case "ccPromos": return pre + t("폰 승격 대국 {0}판", n);
     case "titlesEarned": return pre + t("칭호 {0}개 획득", n);
     default: return "";
   }
 }
 // 계열 하나를 나타내는 작은 마름모 엠블럼(업적 왼쪽 목록용): 오프닝은 국기·이니셜, 나머지는 계열 아이콘.
-export function SeriesGlyph({ series, size = 30 }) {
+export function SeriesGlyph({ series, size = 30, masked = false }) {
   const rid = useId().replace(/[^a-zA-Z0-9]/g, ""), Icon = TITLE_ICONS[series.icon] || Star, isOp = series.cat === "opening";
   return (
     <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
@@ -5441,7 +5444,7 @@ export function SeriesGlyph({ series, size = 30 }) {
         <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
         {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
       </svg>
-      {!isOp && <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />}
+      {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />)}
     </span>
   );
 }
@@ -5450,17 +5453,17 @@ export function SeriesGlyph({ series, size = 30 }) {
 //  번역 표는 언어가 바뀌면 페이지를 다시 불러오므로(setLang) 처음 쓸 때 한 번만 만든다. 새 칭호 글자를 더하면 아래 표에도 t("원문")을 추가할 것(check-titles가 확인).
 let _titleTextMap = null;
 const titleTextMap = () => _titleTextMap || (_titleTextMap = {
-  "퍼즐": t("퍼즐"),
-  "연속 풀이": t("연속 풀이"),
-  "오프닝 도감": t("오프닝 도감"),
+  "퍼즐 솔버": t("퍼즐 솔버"),
+  "데일리 스트릭": t("데일리 스트릭"),
+  "오프닝 라이브러리": t("오프닝 라이브러리"),
   "커뮤니티": t("커뮤니티"),
-  "친구": t("친구"),
+  "소셜 서클": t("소셜 서클"),
   "보물창고": t("보물창고"),
   "티어": t("티어"),
   "퍼즐 레이팅": t("퍼즐 레이팅"),
-  "플레이한 대국": t("플레이한 대국"),
+  "플레이 로그": t("플레이 로그"),
   "승리": t("승리"),
-  "최고 레이팅": t("최고 레이팅"),
+  "피크 레이팅": t("피크 레이팅"),
   "연승": t("연승"),
   "체크메이트": t("체크메이트"),
   "전격전": t("전격전"),
@@ -5468,43 +5471,43 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "백의 길": t("백의 길"),
   "흑의 길": t("흑의 길"),
   "거인 사냥꾼": t("거인 사냥꾼"),
-  "평화주의자": t("평화주의자"),
+  "피스메이커": t("피스메이커"),
   "올빼미": t("올빼미"),
   "탐험가": t("탐험가"),
   "외길 인생": t("외길 인생"),
   "나이트의 해": t("나이트의 해"),
   "완벽주의자": t("완벽주의자"),
   "퍼즐 신동": t("퍼즐 신동"),
-  "수집가": t("수집가"),
-  "첫걸음": t("첫걸음"),
+  "컬렉터": t("컬렉터"),
+  "루키": t("루키"),
   "전술가": t("전술가"),
   "문제 해결사": t("문제 해결사"),
   "퍼즐 달인": t("퍼즐 달인"),
   "퍼즐 전설": t("퍼즐 전설"),
-  "몸풀기": t("몸풀기"),
+  "워밍업": t("워밍업"),
   "주간 단골": t("주간 단골"),
   "2주 연속": t("2주 연속"),
-  "한 달의 습관": t("한 달의 습관"),
-  "끊기지 않는 불꽃": t("끊기지 않는 불꽃"),
+  "먼슬리 루틴": t("먼슬리 루틴"),
+  "이터널 플레임": t("이터널 플레임"),
   "책장 넘기기": t("책장 넘기기"),
   "책벌레": t("책벌레"),
-  "기록 보관자": t("기록 보관자"),
+  "아키비스트": t("아키비스트"),
   "학자": t("학자"),
   "대사서": t("대사서"),
-  "새내기": t("새내기"),
-  "응원단": t("응원단"),
+  "뉴페이스": t("뉴페이스"),
+  "서포터즈": t("서포터즈"),
   "치어리더": t("치어리더"),
   "후원자": t("후원자"),
-  "홍보대사": t("홍보대사"),
-  "단짝": t("단짝"),
-  "삼총사": t("삼총사"),
-  "한 팀": t("한 팀"),
+  "앰배서더": t("앰배서더"),
+  "버디": t("버디"),
+  "트리오": t("트리오"),
+  "스쿼드": t("스쿼드"),
   "모임": t("모임"),
-  "인싸": t("인싸"),
+  "인플루언서": t("인플루언서"),
   "푼돈": t("푼돈"),
   "저축가": t("저축가"),
-  "은행가": t("은행가"),
-  "거물": t("거물"),
+  "뱅커": t("뱅커"),
+  "타이쿤": t("타이쿤"),
   "용의 보물": t("용의 보물"),
   "브론즈 등반가": t("브론즈 등반가"),
   "실버 등반가": t("실버 등반가"),
@@ -5521,7 +5524,7 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "베테랑": t("베테랑"),
   "노력파": t("노력파"),
   "마라토너": t("마라토너"),
-  "첫 승리": t("첫 승리"),
+  "퍼스트 블러드": t("퍼스트 블러드"),
   "승자": t("승자"),
   "정복자": t("정복자"),
   "군벌": t("군벌"),
@@ -5531,12 +5534,12 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "챌린저": t("챌린저"),
   "전문가": t("전문가"),
   "마스터 클래스": t("마스터 클래스"),
-  "상승세": t("상승세"),
+  "모멘텀": t("모멘텀"),
   "불타는 중": t("불타는 중"),
   "폭주": t("폭주"),
   "저거너트": t("저거너트"),
   "무적": t("무적"),
-  "마무리 전문가": t("마무리 전문가"),
+  "피니셔": t("피니셔"),
   "클로저": t("클로저"),
   "집행자": t("집행자"),
   "암살자": t("암살자"),
@@ -5551,8 +5554,8 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "강철 의지": t("강철 의지"),
   "마라톤": t("마라톤"),
   "불멸의 대국": t("불멸의 대국"),
-  "선공": t("선공"),
-  "주도권": t("주도권"),
+  "퍼스트 무버": t("퍼스트 무버"),
+  "이니셔티브": t("이니셔티브"),
   "템포": t("템포"),
   "지배": t("지배"),
   "새벽빛": t("새벽빛"),
@@ -5560,10 +5563,10 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "수비수": t("수비수"),
   "기다리는 사냥꾼": t("기다리는 사냥꾼"),
   "밤의 군림": t("밤의 군림"),
-  "일식": t("일식"),
-  "약자": t("약자"),
-  "이변": t("이변"),
-  "거인 킬러": t("거인 킬러"),
+  "이클립스": t("이클립스"),
+  "언더독": t("언더독"),
+  "업셋": t("업셋"),
+  "자이언트 킬러": t("자이언트 킬러"),
   "용 사냥꾼": t("용 사냥꾼"),
   "다윗": t("다윗"),
   "휴전": t("휴전"),
@@ -5581,7 +5584,31 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "감정가": t("감정가"),
   "완성주의자": t("완성주의자"),
   "명예의 전당": t("명예의 전당"),
+  "블리츠 러시": t("블리츠 러시"),
+  "퀵 스타트": t("퀵 스타트"),
+  "스피드스터": t("스피드스터"),
+  "플래시": t("플래시"),
+  "타임 브레이커": t("타임 브레이커"),
+  "블리츠 킹": t("블리츠 킹"),
+  "래피드 클래식": t("래피드 클래식"),
+  "페이스 메이커": t("페이스 메이커"),
+  "메트로놈": t("메트로놈"),
+  "클래식 장인": t("클래식 장인"),
+  "래피드 거장": t("래피드 거장"),
+  "래피드 황제": t("래피드 황제"),
+  "프로모션 마스터": t("프로모션 마스터"),
+  "폰 러너": t("폰 러너"),
+  "라이징 폰": t("라이징 폰"),
+  "퀸 메이커": t("퀸 메이커"),
+  "사령관": t("사령관"),
+  "폰 스톰": t("폰 스톰"),
+  "무패 가도": t("무패 가도"),
+  "무패": t("무패"),
+  "정점": t("정점"),
+  "정상": t("정상"),
 });
+// 히든 칭호 계열은 하나도 못 얻었으면 이름을 "???"로 가린다(earnedCount = 그 계열에서 얻은 칭호 수).
+export function seriesDisplayLabel(series, earnedCount) { return series.cat === "rare" && !earnedCount ? "???" : seriesLabelText(series); }
 export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
 export function titleNameText(def) {
   if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
@@ -5597,7 +5624,7 @@ function titleShape(shapeTier, c) {
 }
 const TITLE_SHAPE_CUT = [0, 5, 11, 12];
 const fmtCompactN = (n) => (n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : fmtFull(n));
-export function TitleBadge({ id, earned = true, equipped = false, progress = null, progress2 = null, onEquip, compact = false, locked = false, fresh = false, onSeen }) {
+export function TitleBadge({ id, earned = true, equipped = false, progress = null, progress2 = null, onEquip, compact = false, locked = false, fresh = false, onSeen, noPeek = false, spot = false }) {
   const def = titleDef(id);
   // 해금 진척도: 안 얻은 칭호는 항상(좌하단 조건 + 우측 게이지), 얻은 칭호는 꾹 누르거나 왼쪽으로 밀면 잠깐 보인다.
   const [peek, setPeek] = useState(false);
@@ -5618,11 +5645,14 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
     return () => { io.disconnect(); clearTimeout(t1); };
   }, [fresh, id]);
   if (!def) return null;
-  const labelText = seriesLabelText(def.series);
+  // (v0.6.9) 히든 칭호(희귀 갈래)는 얻기 전까지 이름·아이콘도 "???"로 가린다.
+  const hiddenLock = def.series.cat === "rare" && !(earned && lit);
+  const labelText = hiddenLock ? "???" : seriesLabelText(def.series);
+  const nameText = hiddenLock ? "???" : titleNameText(def);
   const showPeek = () => { setPeek(true); clearTimeout(peekT.current); peekT.current = setTimeout(() => setPeek(false), 3200); };
-  const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
+  const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned && !noPeek) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
   const onMove = (e) => {
-    const s = press.current; if (!s || !earned) return;
+    const s = press.current; if (!s || !earned || noPeek) return;
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.hypot(dx, dy) > 10) clearTimeout(lpT.current);
     if (dx < -28 && Math.abs(dy) < 24) { clearTimeout(lpT.current); press.current = null; longRef.current = true; showPeek(); }
@@ -5648,7 +5678,8 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const nowV = progress == null ? 0 : progress;
   const ratio = lookEarned ? 1 : isOpening ? Math.min(1, nowV / def.min, (progress2 == null ? 0 : progress2) / def.ccMin) : Math.min(1, nowV / def.min);
   const gaugeLabel = isOpening ? Math.floor(ratio * 100) + "%" : (def.series.metric === "tierIndex" ? "" : fmtCompactN(Math.min(nowV, def.min)) + "/" + fmtCompactN(def.min));
-  const condShort = isOpening ? t("퍼즐 {0}개 + chess.com {1}회", fmtFull(def.min), fmtFull(def.ccMin)) : titleCondText(def);
+  // (v0.6.9) 히든 칭호(희귀 갈래)는 얻기 전까지 해금 조건과 게이지를 숨기고 "히든 칭호"라고만 표시한다.
+  const condShort = hiddenLock ? t("히든 칭호") : isOpening ? t("퍼즐 {0}개 + chess.com {1}회", fmtFull(def.min), fmtFull(def.ccMin)) : titleCondText(def);
   const showProg = !lookEarned || peek;
   // 오른쪽 기하 장식: 기울어진 평행사변형(빗금) 묶음 — 단계 수만큼, 그리고 은은한 동심원
   const bars = []; const nb = rare ? 5 : def.tier;
@@ -5660,8 +5691,9 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
-    <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease" }}>
-      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + titleNameText(def)}
+    <div ref={rootRef} data-title-id={id} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease", ...(spot ? { animation: "titleFindShake .6s ease-in-out 5" } : null) }}>
+      {spot && <span aria-hidden="true" style={{ position: "absolute", inset: 2, borderRadius: 8, pointerEvents: "none", zIndex: 8, animation: "titleUnlockRing 1.3s ease-out 3" }} />}
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + nameText}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
           {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
@@ -5669,7 +5701,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
           {decoTier === 5 && lookEarned && [0, 1].map((k) => (
             <div key={k} aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: k ? "conic-gradient(rgba(255,205,100,.34) 25%, transparent 0 50%, rgba(255,205,100,.34) 0 75%, transparent 0)" : "conic-gradient(transparent 25%, rgba(255,205,100,.34) 0 50%, transparent 0 75%, rgba(255,205,100,.34) 0)", backgroundSize: "30px 30px", WebkitMaskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 18%, #000 55%, transparent 100%)", pointerEvents: "none", opacity: 0, animation: `titleBoardGlow 3.6s ease-in-out ${k * 1.8}s infinite` }} />
           ))}
-          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 112 : 128, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
+          <div aria-hidden="true" style={{ position: "absolute", right: compact ? 82 : 98, bottom: -2, width: pieceSz, display: "flex", justifyContent: "center", opacity: pieceColor === "b" ? 0.5 : (decoTier === 5 ? 0.2 : 0.13), ...(decoTier === 5 && lookEarned ? { animation: `titleQueenGlow 3.6s ease-in-out infinite` } : null), filter: pieceColor === "b" ? "sepia(.5) brightness(.85) drop-shadow(0 0 2px rgba(255,225,140,.6))" : "sepia(1) saturate(1.8) brightness(1.15)", pointerEvents: "none" }}>
             <PieceGlyph type={decoTier === 5 ? "Q" : TITLE_PIECE[tierIdx]} color={pieceColor} size={pieceSz} pieceSkin="classic" />
           </div>
           <svg width="150" height={H} viewBox={`0 0 150 ${H}`} style={{ position: "absolute", right: 0, top: 0, pointerEvents: "none" }} aria-hidden="true">
@@ -5685,26 +5717,26 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
                 : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
               {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
             </svg>
-            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : hiddenLock ? <span style={{ fontSize: ISZ + 2, fontWeight: 900, lineHeight: 1, fontFamily: SEQ_FONT }}>?</span> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
           <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingRight: compact ? 50 : 76, opacity: showProg ? 0.12 : 1, transition: "opacity .22s ease" }}>
             <span title={labelText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, labelText.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{labelText}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
+              <span title={nameText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{nameText}</span>
             </span>
           </div>
           {/* 해금 조건 + 진척도 게이지: 기존 요소의 위치는 그대로 두고, 엠블럼 오른쪽 전체에 검은 반투명 판을 덮은 뒤 그 위에 조건(왼쪽)과 게이지(오른쪽)만 띄운다.
               안 얻은 칭호는 항상, 얻은 칭호는 꾹 누르거나 왼쪽으로 밀 때 잠깐. */}
           <div style={{ position: "absolute", top: 0, bottom: 0, left: H, right: 0, zIndex: 6, display: "flex", alignItems: "center", gap: 8, padding: compact ? "0 12px 0 8px" : "0 16px 0 10px", boxSizing: "border-box", background: "rgba(0,0,0,.7)", opacity: showProg ? 1 : 0, transition: "opacity .22s ease", pointerEvents: "none" }}>
             <span style={{ flex: 1, minWidth: 0, fontSize: compact ? 10 : 11.5, fontWeight: 800, lineHeight: 1.3, color: "#F3E2B4", textShadow: "0 1px 2px rgba(0,0,0,.8)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{condShort}</span>
-            <span style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            {!hiddenLock && <span style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
               {gaugeLabel && <span style={{ fontSize: compact ? 9 : 10, fontWeight: 800, color: g0, fontVariantNumeric: "tabular-nums" }}>{gaugeLabel}</span>}
               <span style={{ position: "relative", width: compact ? 58 : 80, height: 6, borderRadius: 3, background: "rgba(255,255,255,.14)", boxShadow: `inset 0 0 0 1px ${g1}99`, overflow: "hidden" }}>
                 <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.max(ratio > 0 ? 6 : 0, ratio * 100) + "%", borderRadius: 3, background: `linear-gradient(90deg,${g1},${g0})`, transition: "width .5s ease" }} />
               </span>
-            </span>
+            </span>}
           </div>
           {decoTier === 5 && lookEarned && !rare && <span className="gm-board-shine" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />}
           {equipped && <span style={{ position: "absolute", right: 12, bottom: 4, fontSize: 9, fontWeight: 900, letterSpacing: ".06em", color: "#2B1A0B", background: `linear-gradient(180deg,${GOLD[0]},${GOLD[1]})`, borderRadius: 4, padding: "1px 6px", pointerEvents: "none", opacity: showProg ? 0 : 1 }}>{t("장착됨")}</span>}
@@ -6215,47 +6247,7 @@ export function ChesscomLogo({ height = 14, dark }) {
 // (19차 UI5) 상점 탭 — 보유 코인 표기 + 아이템(체스보드/기물 스킨)은 추후 추가 예정.
 /* (20차 기능4) 스킨 상점 카드 — 보드/기물 공용. 미리보기(작은 체크보드 4칸 또는 기물 2개) + 가격/보유/
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
-export function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
-  const isFree = sk.price === 0;
-  const tierLabel = sk.tierLocked && TIERS.find((t) => t.key === sk.tierLocked);
-  // (디자인) 보드 스킨 미리보기 — 기본(단색) 스킨은 4x4 견본 대신, 이미지 스킨과 동일하게 실제
-  // 보드처럼 보이는 8x8 격자로 표시한다(boardSquareBg로 이미지 스킨은 이어붙인 텍스처가 그대로 나옴).
-  // (버그 수정) 실제 대국판은 크기와 무관하게 borderRadius:4를 쓰는데, 여기만 8을 써 64px 미리보기에서
-  // 상대적으로 훨씬 크게 둥글어 보여 모서리 칸이 격자에서 어긋난 것처럼 보였다 — 통일한다.
-  const preview = kind === "board" ? (
-    <div style={{ width: 64, height: 64, borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", flexShrink: 0, ...BOARD_GLOSS }}>
-      {Array.from({ length: 64 }).map((_, i) => { const r = Math.floor(i / 8), c = i % 8; const light = (r + c) % 2 === 0; return <div key={i} style={boardSquareBg(sk, light, r, c)} />; })}
-    </div>
-  ) : (
-    // (디자인) 기물 스킨 미리보기 — 여러 기물을 어두운 배경에 늘어놓던 것 대신, 흰 배경에 흑 나이트
-    // 하나만 크게 보여준다(스킨 특유의 디테일이 잘 드러남).
-    <div className="flex items-center justify-center" style={{ width: 64, height: 64, borderRadius: 8, background: "#fff", flexShrink: 0 }}>
-      <PieceGlyph type="N" color="b" size={44} pieceSkin={id} />
-    </div>
-  );
-  return (
-    <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
-      {preview}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{sk.label}</div>
-        <div className="flex items-center gap-1" style={{ marginTop: 2, marginBottom: 8 }}>
-          {sk.tierLocked ? <span style={{ fontSize: 11, color: T.brass, fontWeight: 700 }}>{tx("{0} 티어 전용, 코인으로 구매 불가", tierLabel.label)}</span>
-            : isFree ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("무료, 기본 제공")}</span>
-              : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {sk.price}</span>}
-        </div>
-        {equipped ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>{t("✓ 장착됨")}</button>
-        ) : owned || isFree ? (
-          <button onClick={() => onEquip(kind, id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("장착하기")}</button>
-        ) : sk.tierLocked ? (
-          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{tx("{0} 티어 필요", tierLabel.label)}</button>
-        ) : (
-          <button onClick={() => onBuy(kind, id)} disabled={coins < sk.price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < sk.price ? "#8A7458" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", cursor: coins < sk.price ? "not-allowed" : "pointer" }}>{coins < sk.price ? t("코인 부족") : t("구매하기")}</button>
-        )}
-      </div>
-    </div>
-  );
-}
+// (v0.6.9) 보드 스킨 + 기물 스킨 세트 카드 — 한 번에 사고 한 번에 장착한다. 미리보기는 보드 위에 흰 나이트·검은 퀸.
 /* ============================================================ 계정 (회원가입/로그인) ============================================================ */
 export const ALNUM = /^[A-Za-z0-9]+$/;
 export async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }

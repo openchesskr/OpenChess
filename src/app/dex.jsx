@@ -3,7 +3,7 @@
 import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRules.js";
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
-import { T, BOARD_SKINS, PIECE_SKINS } from "../lib/theme.js";
+import { T, BOARD_SKINS, PIECE_SKINS, SKIN_SETS } from "../lib/theme.js";
 import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -11,6 +11,9 @@ import { KeywordChip } from "../components/keywordScroll.jsx";
 import { SCHEMATIC_DRAG_MULT, DEX_SELECT_FLOW_SPEED, SCHEMATIC_ELECTRIC, DEX_ELECTRIC_FLOW_SPEED, SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, schematicCoord, SCHEMATIC_ZOOM_LABEL_BASE, snapSchematicZoom, clampSchematicPan, anchoredZoomPan, SCHEMATIC_TOP_INSET, SCHEMATIC_ZOOM_STEP, schematicZoomLabel, DIR_OF_ROOT } from "../lib/schematicGeometry.js";
 import { badgeIcon } from "../components/badges.jsx";
 import { peekMasterNav } from "../lib/masterNav.js";
+import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
+import { GachaSection } from "./gacha.jsx";
+import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
@@ -20,7 +23,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, SeriesGlyph, seriesLabelText, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1273,11 +1276,25 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
 //  좁은 화면에서는 왼쪽 목록을 좁은 띠로 줄인다.
 function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitle, onEquipTitle, titleMetrics }) {
   const narrow = useNarrow(640);
-  const [sel, setSel] = useState(TITLE_SERIES[0].key);
+  // (v0.6.9) 프로필의 장착 칭호를 눌러 들어오면(titleNav) 그 칭호의 계열을 고르고, 배너 위치로 스크롤한 뒤 잠시 흔들어 보여 준다.
+  const [nav] = useState(() => peekTitleNav());
+  const [sel, setSel] = useState(() => { const d = nav ? titleDef(nav) : null; return d ? d.series.key : TITLE_SERIES[0].key; });
+  const [spot, setSpot] = useState(null);
+  useEffect(() => {
+    if (!nav) return undefined;
+    takeTitleNav();
+    const t1 = setTimeout(() => {
+      const el = document.querySelector(`[data-title-id="${nav}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSpot(nav);
+    }, 450);
+    const t2 = setTimeout(() => setSpot(null), 4600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
   const seen = seenTitles || earned;
-  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") };
+  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("히든 칭호") };
   const earnedOf = (s) => s.mins.filter((_, i) => earned.has(s.key + ":" + (i + 1))).length;
   const freshOf = (s) => s.mins.some((_, i) => earned.has(s.key + ":" + (i + 1)) && !seen.has(s.key + ":" + (i + 1)));
   const cur = TITLE_SERIES.find((x) => x.key === sel) || TITLE_SERIES[0];
@@ -1302,7 +1319,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
       {narrow && (
         <div ref={chipsRef} className="hide-scrollbar" style={{ display: "flex", alignItems: "center", gap: 6, overflowX: "auto", margin: "0 -2px 12px", padding: "2px 2px 6px", scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
           {TITLE_CATEGORIES.map((cat) => {
-            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || (seriesLabelText(x).toLowerCase().includes(ql) || x.label.toLowerCase().includes(ql))));
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || seriesDisplayLabel(x, earnedOf(x)).toLowerCase().includes(ql) || (!(x.cat === "rare" && !earnedOf(x)) && x.label.toLowerCase().includes(ql))));
             if (!list.length) return null;
             return (
               <React.Fragment key={cat.key}>
@@ -1312,8 +1329,8 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
                   return (
                     <button key={x.key} data-ach={x.key} onClick={() => setSel(x.key)} className="press" aria-pressed={on}
                       style={{ position: "relative", flexShrink: 0, scrollSnapAlign: "center", display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 6px 7px", borderRadius: 999, border: "1px solid " + (on ? T.brass : "#5A4630"), background: on ? "linear-gradient(180deg,rgba(196,154,80,.4),rgba(196,154,80,.15))" : "rgba(255,255,255,.04)", color: on ? T.ivoryHi : T.ivory, cursor: "pointer", whiteSpace: "nowrap" }}>
-                      <SeriesGlyph series={x} size={24} />
-                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>{seriesLabelText(x)}</span>
+                      <SeriesGlyph series={x} size={24} masked={x.cat === "rare" && !n} />
+                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>{seriesDisplayLabel(x, n)}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
                       {freshOf(x) && <span aria-hidden="true" style={{ position: "absolute", top: 0, right: 2, width: 7, height: 7, borderRadius: 999, background: "#E8453C", boxShadow: "0 0 0 1.5px #1B0F08" }} />}
                     </button>
@@ -1327,7 +1344,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
         {!narrow && <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
           {TITLE_CATEGORIES.map((cat) => {
-            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || (seriesLabelText(x).toLowerCase().includes(ql) || x.label.toLowerCase().includes(ql))));
+            const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || seriesDisplayLabel(x, earnedOf(x)).toLowerCase().includes(ql) || (!(x.cat === "rare" && !earnedOf(x)) && x.label.toLowerCase().includes(ql))));
             if (!list.length) return null;
             return (
               <div key={cat.key} style={{ marginBottom: 12 }}>
@@ -1337,9 +1354,9 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
                   return (
                     <button key={x.key} onClick={() => setSel(x.key)} className="press" aria-pressed={on}
                       style={{ position: "relative", display: "flex", alignItems: "center", gap: narrow ? 6 : 9, width: "100%", textAlign: "left", padding: narrow ? "6px 6px" : "7px 9px", marginBottom: 3, borderRadius: 8, border: "1px solid " + (on ? T.brass : "transparent"), borderLeft: "3px solid " + (on ? T.brassHi : "transparent"), background: on ? "linear-gradient(90deg,rgba(196,154,80,.3),rgba(196,154,80,.08))" : "rgba(255,255,255,.03)", cursor: "pointer", color: T.ivory }}>
-                      <SeriesGlyph series={x} size={narrow ? 26 : 32} />
+                      <SeriesGlyph series={x} size={narrow ? 26 : 32} masked={x.cat === "rare" && !n} />
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{seriesLabelText(x)}</span>
+                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{seriesDisplayLabel(x, n)}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                           <span style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><span style={{ display: "block", width: (100 * n) / x.mins.length + "%", height: "100%", background: "linear-gradient(90deg,#A8842F,#F3DFAE)" }} /></span>
                           <span style={{ fontSize: 9.5, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
@@ -1355,13 +1372,13 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
         </aside>}
         <section style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, margin: "2px 4px 8px" }}>
-            <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{seriesLabelText(cur)}</span>
+            <span style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 15 : 19, color: T.ivoryHi, textTransform: "uppercase", letterSpacing: ".02em" }}>{seriesDisplayLabel(cur, earnedOf(cur))}</span>
             <span style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{earnedOf(cur)}/{cur.mins.length}</span>
           </div>
           <div className="flex flex-col" style={{ gap: 0 }}>
             {cur.mins.map((_, i) => { const id = cur.key + ":" + (i + 1); return (
               <TitleBadge key={id} id={id} compact={narrow} earned={earned.has(id)} locked={nextIdx !== -1 && i > nextIdx} equipped={currentTitle === id}
-                progress={curN} progress2={curCc} fresh={earned.has(id) && !seen.has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
+                progress={curN} progress2={curCc} spot={spot === id} fresh={earned.has(id) && !seen.has(id)} onSeen={onSeeTitle} onEquip={onEquipTitle} />
             ); })}
           </div>
         </section>
@@ -1369,8 +1386,8 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
     setDexView(k);
@@ -1422,8 +1439,8 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
   const [unlockStats, setUnlockStats] = useState(null);
   const totalTitles = TITLE_SERIES.reduce((a, x) => a + x.mins.length, 0);
-  const totalSkins = Object.keys(BOARD_SKINS).length + Object.keys(PIECE_SKINS).length;
-  const ownedSkinN = Math.min(totalSkins, (ownedSkins ? ownedSkins.size : 0) + 2);   // 기본 보드·기물 스킨 포함
+  const totalSkins = bookSets().length;   // (v0.6.9) 스킨은 세트 단위로 센다(기본 세트 포함)
+  const ownedSkinN = ownedSetCount(ownedSkins);
   const hubItems = [
     { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : 0, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : "0%" },
     { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: "" },
@@ -1444,19 +1461,10 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
       ) : dexView === "skins" ? (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>{backBtn}<span style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi }}>{t("스킨")}</span></div>
-          <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-            {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
-              <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={(ownedSkins || new Set()).has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
-            ))}
-          </div>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("기물 스킨")}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
-              <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={(ownedSkins || new Set()).has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
-            ))}
-          </div>
+          {/* (v0.6.9, 사용자 요청) 스킨 뽑기 상자 — 스킨 페이지 맨 위. 스킨 세트는 여기서 뽑아서만 얻는다. */}
+          <GachaSection coins={coins || 0} onPull={onPullGacha} />
+          {/* (v0.6.9) 쿠키런식 스킨 도감 — 세트 장착 / 기물 도감 / 세트 도감. 세트의 여섯 기물이 한 칸씩 대응한다. */}
+          <SkinBook ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSkinSet} />
         </div>
       ) : dexView === "titles" ? (
         <AchievementsPane backBtn={backBtn} titleMetrics={titleMetrics} earned={earned} seenTitles={seenTitles} onSeeTitle={onSeeTitle} currentTitle={currentTitle} onEquipTitle={onEquipTitle} />

@@ -5,7 +5,7 @@ import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
 import { loadLastGameQuality, playSfx, saveLastGameQuality, playMoveSfx } from "../lib/prefs.js";
-import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS, PIECE_SKINS } from "../lib/theme.js";
+import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
@@ -24,7 +24,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, CoinIcon, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, FadeIn, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, SkinShopCard, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
+import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -4701,7 +4701,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, storeProps, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
+export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -4771,7 +4771,6 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   const [viewPly, setViewPly] = useState(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const narrow = useNarrow(720);
-  const narrowForShop = useNarrow(1040);
   const boardSize = narrow ? Math.min(380, (typeof window !== "undefined" ? window.innerWidth : 380) - 32) : 420;
 
   // (신규 기능) 실시간 대국 매칭 — 대기열에 합류해 상대를 기다린다. 이미 나를 기다리던 상대가 있으면
@@ -5336,15 +5335,12 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   const hubMaxW = narrow ? PLAY_HUB_MAX_W : PLAY_HUB_MAX_W_DESKTOP;
-  // (v0.5.7, 사용자 요청 "데스크톱 레이아웃 비효율") 넓은 화면에선 상점을 대국·미니게임 버튼 아래(스크롤 한참 아래)가 아니라
-  // 오른쪽 열에 나란히 둔다 — 예전엔 520px 한 줄 아래로 스킨 카드 6장이 이어져 양옆이 비고 상점은 스크롤해야만 보였다.
-  const sideShop = !!storeProps && step === "setup" && !narrowForShop;
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   return (
     // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
     // 일반 대국 부분만 460px로 가운데에 둔다.
-    <div style={sideShop ? { maxWidth: PLAY_HUB_MAX_W_DESKTOP + 28 + 420, margin: "0 auto", display: "grid", gridTemplateColumns: PLAY_HUB_MAX_W_DESKTOP + "px minmax(0,1fr)", columnGap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
+    <div style={{ maxWidth: 880, margin: "0 auto" }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
@@ -5609,46 +5605,6 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
           </motion.div>
         )}
       </AnimatePresence>
-      {/* (v0.5.0 개편, 사용자 요청) 상점 탭 → 플레이 탭 — 이 화면 밑에 기존 상점 UI를 그대로 이어
-          붙인다(<main> 안의 이 페이지 자신을 아래로 스크롤하면 보인다). 분석 탭 PLAY 버튼 등
-          storeProps 없이 여는 다른 진입 경로는 아무 것도 렌더링하지 않아 지금까지와 완전히
-          동일하다. */}
-      {storeProps && (
-        <div style={sideShop
-          ? { gridColumn: 2, gridRow: 1, minWidth: 0, padding: "18px 18px 20px", borderRadius: 16, border: "1px solid rgba(196,154,80,.25)", background: "rgba(0,0,0,.14)", position: "sticky", top: 12 }
-          : { maxWidth: 460, margin: "0 auto", padding: "0 16px 60px", borderTop: "1px solid rgba(196,154,80,.25)", marginTop: 8, paddingTop: 22 }}>
-          <StoreTab {...storeProps} />
-        </div>
-      )}
-    </div>
-  );
-}
-function StoreTab({ coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin }) {
-  return (
-    <div>
-      {/* (디자인) 코인 보유 UI를 화면을 가로지르는 큰 배너 대신, 제목 옆 우상단의 작은 칩으로 축소. */}
-      <div className="flex items-center justify-between" style={{ marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 상점 아이콘과 중복돼 제거. */}
-        <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("상점")}</h2></div>
-        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-          <div className="flex items-center gap-1" title={t("보유 중인 OC 나이트 코인")} style={{ background: "linear-gradient(135deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 999, padding: "5px 11px 5px 6px" }}>
-            <CoinIcon size={26} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{fmtFull(coins || 0)}</span>
-          </div>
-        </div>
-      </div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-        {Object.entries(BOARD_SKINS).map(([id, sk], i) => (
-          <FadeIn key={id} index={i}><SkinShopCard kind="board" id={id} sk={sk} owned={ownedSkins.has("board:" + id)} equipped={boardSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
-        ))}
-      </div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("기물 스킨")}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {Object.entries(PIECE_SKINS).map(([id, sk], i) => (
-          <FadeIn key={id} index={i}><SkinShopCard kind="piece" id={id} sk={sk} owned={ownedSkins.has("piece:" + id)} equipped={pieceSkin === id} coins={coins || 0} onBuy={onBuySkin} onEquip={onEquipSkin} /></FadeIn>
-        ))}
-      </div>
     </div>
   );
 }

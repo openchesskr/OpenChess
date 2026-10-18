@@ -48,11 +48,11 @@ export const TITLE_CATEGORIES = [
   { key: "opening", label: "오프닝 숙련" },
   { key: "activity", label: "활동" },
   { key: "game", label: "대국·레이팅" },
-  { key: "rare", label: "희귀" },
+  { key: "rare", label: "히든 칭호" },
 ];
 
 // 오프닝 계열 공통 기준: 퍼즐 해결 수(mins) + chess.com 해당 오프닝 플레이 수(ccMins)를 모두 채워야 한다.
-const OPENING_MINS = [3, 10, 25, 60, 120];
+const OPENING_MINS = [1, 2, 4, 8, 15];   // (v0.6.9) 퍼즐 해결 수 대폭 완화(기존 3·10·25·60·120)
 const OPENING_CC_MINS = [10, 30, 100, 300, 1000];
 const OPENING_NAMES = ["초급", "중급", "상급", "마스터", "그랜드마스터"];   // 기존 5단계(Beginner·Intermediate·Advanced·Master·GrandMaster). 화면에서는 common.jsx titleNameText가 언어별로 번역한다
 
@@ -61,39 +61,44 @@ const S = (key, cat, label, icon, metric, mins, names) => ({ key, cat, label, ic
 export const TITLE_SERIES = [
   ...OPENING_DISPLAY.map((f) => ({ key: f.key, cat: "opening", label: f.label, icon: "Compass", metric: "opening", mins: OPENING_MINS, ccMins: OPENING_CC_MINS, names: OPENING_NAMES })),
   // 활동
-  S("solve", "activity", "퍼즐", "Puzzle", "solved", [1, 10, 50, 200, 1000], ["첫걸음", "전술가", "문제 해결사", "퍼즐 달인", "퍼즐 전설"]),
-  S("daily", "activity", "연속 풀이", "Flame", "dailyBest", [3, 7, 14, 30, 100], ["몸풀기", "주간 단골", "2주 연속", "한 달의 습관", "끊기지 않는 불꽃"]),
-  S("dex", "activity", "오프닝 도감", "BookOpen", "unlocked", [10, 50, 200, 500, 1500], ["책장 넘기기", "책벌레", "기록 보관자", "학자", "대사서"]),
-  S("community", "activity", "커뮤니티", "Heart", "community", [1, 10, 50, 200, 1000], ["새내기", "응원단", "치어리더", "후원자", "홍보대사"]),
-  S("friends", "activity", "친구", "Users", "friends", [1, 3, 10, 25, 50], ["단짝", "삼총사", "한 팀", "모임", "인싸"]),
-  S("coins", "activity", "보물창고", "Coins", "coins", [100, 500, 2000, 5000, 20000], ["푼돈", "저축가", "은행가", "거물", "용의 보물"]),
+  S("solve", "activity", "퍼즐 솔버", "Puzzle", "solved", [1, 10, 50, 200, 1000], ["루키", "전술가", "문제 해결사", "퍼즐 달인", "퍼즐 전설"]),
+  S("daily", "activity", "데일리 스트릭", "Flame", "dailyBest", [3, 7, 14, 30, 100], ["워밍업", "주간 단골", "2주 연속", "먼슬리 루틴", "이터널 플레임"]),
+  S("dex", "activity", "오프닝 라이브러리", "BookOpen", "unlocked", [10, 50, 200, 500, 1500], ["책장 넘기기", "책벌레", "아키비스트", "학자", "대사서"]),
+  S("community", "activity", "커뮤니티", "Heart", "community", [1, 10, 50, 200, 1000], ["뉴페이스", "서포터즈", "치어리더", "후원자", "앰배서더"]),
+  S("friends", "activity", "소셜 서클", "Users", "friends", [1, 3, 10, 25, 50], ["버디", "트리오", "스쿼드", "모임", "인플루언서"]),
+  S("coins", "activity", "보물창고", "Coins", "coins", [100, 500, 2000, 5000, 20000], ["푼돈", "저축가", "뱅커", "타이쿤", "용의 보물"]),
   // 대국·레이팅
   S("tier", "game", "티어", "Trophy", "tierIndex", [1, 2, 3, 4, 6], ["브론즈 등반가", "실버 등반가", "골드 등반가", "다이아몬드 등반가", "그랜드마스터 승천자"]),
   S("prating", "game", "퍼즐 레이팅", "Target", "puzzleRating", [1000, 1400, 1800, 2200, 2600], ["떠오르는 별", "날카로운 눈", "예리한 감각", "엘리트", "신동"]),
-  S("ccplayed", "game", "플레이한 대국", "Swords", "ccPlayed", [10, 50, 200, 1000, 5000], ["신참", "단골", "베테랑", "노력파", "마라토너"]),
-  S("ccwins", "game", "승리", "Medal", "ccWins", [5, 25, 100, 500, 2000], ["첫 승리", "승자", "정복자", "군벌", "멈출 수 없는"]),
-  S("ccrating", "game", "최고 레이팅", "TrendingUp", "ccBestRating", [800, 1200, 1600, 2000, 2400], ["등반가", "도전자", "챌린저", "전문가", "마스터 클래스"]),
-  S("ccstreak", "game", "연승", "Zap", "ccWinStreak", [3, 5, 8, 12, 20], ["상승세", "불타는 중", "폭주", "저거너트", "무적"]),
-  S("ccmate", "game", "체크메이트", "Crown", "ccMates", [1, 10, 50, 200, 1000], ["마무리 전문가", "클로저", "집행자", "암살자", "저승사자"]),
+  S("ccplayed", "game", "플레이 로그", "Swords", "ccPlayed", [10, 50, 200, 1000, 5000], ["신참", "단골", "베테랑", "노력파", "마라토너"]),
+  S("ccwins", "game", "승리", "Medal", "ccWins", [5, 25, 100, 500, 2000], ["퍼스트 블러드", "승자", "정복자", "군벌", "멈출 수 없는"]),
+  S("ccrating", "game", "피크 레이팅", "TrendingUp", "ccBestRating", [800, 1200, 1600, 2000, 2400], ["등반가", "도전자", "챌린저", "전문가", "마스터 클래스"]),
+  S("ccstreak", "game", "연승", "Zap", "ccWinStreak", [3, 5, 8, 12, 20], ["모멘텀", "불타는 중", "폭주", "저거너트", "무적"]),
+  S("ccmate", "game", "체크메이트", "Crown", "ccMates", [1, 10, 50, 200, 1000], ["피니셔", "클로저", "집행자", "암살자", "저승사자"]),
   S("ccquick", "game", "전격전", "Rocket", "ccQuickWins", [1, 5, 20, 50, 200], ["기습", "날쌘 손", "번개", "폭풍", "빛의 속도"]),
   S("ccmarathon", "game", "지구력", "Hourglass", "ccLongWins", [1, 5, 20, 50, 150], ["긴 승부", "인내심", "강철 의지", "마라톤", "불멸의 대국"]),
-  S("ccwhite", "game", "백의 길", "Sun", "ccWhiteWins", [10, 50, 200, 500, 2000], ["선공", "주도권", "템포", "지배", "새벽빛"]),
-  S("ccblack", "game", "흑의 길", "Moon", "ccBlackWins", [10, 50, 200, 500, 2000], ["맞받아치기", "수비수", "기다리는 사냥꾼", "밤의 군림", "일식"]),
-  S("ccgiant", "game", "거인 사냥꾼", "Sword", "ccGiantWins", [1, 5, 20, 50, 150], ["약자", "이변", "거인 킬러", "용 사냥꾼", "다윗"]),
-  S("ccdraw", "game", "평화주의자", "Handshake", "ccDraws", [1, 10, 40, 100, 300], ["휴전", "외교관", "협상가", "스테일메이트 현자", "평정심"]),
-  // 희귀(한 단계짜리 한정·업적 칭호 + 칭호 수집)
+  S("ccwhite", "game", "백의 길", "Sun", "ccWhiteWins", [10, 50, 200, 500, 2000], ["퍼스트 무버", "이니셔티브", "템포", "지배", "새벽빛"]),
+  S("ccblack", "game", "흑의 길", "Moon", "ccBlackWins", [10, 50, 200, 500, 2000], ["맞받아치기", "수비수", "기다리는 사냥꾼", "밤의 군림", "이클립스"]),
+  S("ccgiant", "game", "거인 사냥꾼", "Sword", "ccGiantWins", [1, 5, 20, 50, 150], ["언더독", "업셋", "자이언트 킬러", "용 사냥꾼", "다윗"]),
+  S("ccdraw", "game", "피스메이커", "Handshake", "ccDraws", [1, 10, 40, 100, 300], ["휴전", "외교관", "협상가", "스테일메이트 현자", "평정심"]),
+  S("ccblitz", "game", "블리츠 러시", "Timer", "ccBlitzWins", [10, 50, 200, 800, 3000], ["퀵 스타트", "스피드스터", "플래시", "타임 브레이커", "블리츠 킹"]),
+  S("ccrapid", "game", "래피드 클래식", "Clock", "ccRapidWins", [5, 25, 100, 400, 1500], ["페이스 메이커", "메트로놈", "클래식 장인", "래피드 거장", "래피드 황제"]),
+  S("ccpromo", "game", "프로모션 마스터", "ChevronsUp", "ccPromos", [1, 5, 20, 60, 200], ["폰 러너", "라이징 폰", "퀸 메이커", "사령관", "폰 스톰"]),
+  // 히든(= 옛 "희귀", 한 단계짜리 한정·업적 칭호 + 칭호 수집). 안 얻은 동안은 해금 조건을 화면에 보이지 않는다(내부 키는 rare 그대로).
   S("r_night", "rare", "올빼미", "MoonStar", "ccNight", [30], ["자정 너머"]),
   S("r_explorer", "rare", "탐험가", "Compass", "ccOpenings", [50], ["개척자"]),
   S("r_onetrick", "rare", "외길 인생", "Target", "ccTopOpening", [150], ["한 우물"]),
   S("r_year", "rare", "나이트의 해", "Flame", "dailyBest", [365], ["멈추지 않는 습관"]),
   S("r_perfect", "rare", "완벽주의자", "Gem", "solved", [3000], ["무결점"]),
   S("r_prodigy", "rare", "퍼즐 신동", "Star", "puzzleRating", [3000], ["인간을 넘어서"]),
-  S("collect", "rare", "수집가", "Library", "titlesEarned", [15, 40, 90, 150, 220], ["수집가", "큐레이터", "감정가", "완성주의자", "명예의 전당"]),
+  S("r_streak", "rare", "무패 가도", "Flame", "ccWinStreak", [30], ["무패"]),
+  S("r_peak", "rare", "정점", "Crown", "ccBestRating", [2600], ["정상"]),
+  S("collect", "rare", "컬렉터", "Library", "titlesEarned", [15, 40, 90, 150, 220], ["컬렉터", "큐레이터", "감정가", "완성주의자", "명예의 전당"]),
 ];
 
 // 계열별 포인트 색(배너 바탕에 은은하게 섞임). 오프닝은 상징하는 국기·인물 색, 나머지는 계열 성격에 맞춘 색.
 const ACCENT = { italian: "#1E7A44", ruylopez: "#A8202A", scotch: "#1F5FA8", sicilian: "#C8761A", carokann: "#3A3A58", french: "#2A4F9A", vienna: "#B02A36", kingsgambit: "#8A2A3A", benoni: "#2A6A86", catalan: "#B8921A", grunfeld: "#2A7A52", london: "#B02A36", queensgambit: "#7A3E8A", evans: "#2E7A4A", english: "#2A3F7A", reti: "#2A5FA0", danish: "#B02A36", pirc: "#6A3A8A", alekhine: "#2A4A7A", scandinavian: "#2A5FA0", dutch: "#C0561F", slav: "#2A4F9A", kingsindian: "#C8761A", nimzo: "#2A6A86", queensindian: "#2A6A6A", philidor: "#4A4A6A", petrov: "#8A2A3A",
-  solve: "#2E6B8A", daily: "#B8501F", dex: "#7A5A34", community: "#A33A5E", friends: "#3E7A4C", coins: "#A5821E", tier: "#5B3E8A", prating: "#2A7A7A", ccplayed: "#7A2E2E", ccwins: "#8A6B1F", ccrating: "#2E5E8A", ccstreak: "#C0561F", ccmate: "#6E1F40", ccquick: "#2A6E8A", ccmarathon: "#4A4A70", ccwhite: "#8A8672", ccblack: "#2A2A38", ccgiant: "#5E7A2E", ccdraw: "#4A6E6A",
+  solve: "#2E6B8A", daily: "#B8501F", dex: "#7A5A34", community: "#A33A5E", friends: "#3E7A4C", coins: "#A5821E", tier: "#5B3E8A", prating: "#2A7A7A", ccplayed: "#7A2E2E", ccwins: "#8A6B1F", ccrating: "#2E5E8A", ccstreak: "#C0561F", ccmate: "#6E1F40", ccquick: "#2A6E8A", ccmarathon: "#4A4A70", ccwhite: "#8A8672", ccblack: "#2A2A38", ccgiant: "#5E7A2E", ccdraw: "#4A6E6A", ccblitz: "#C0561F", ccrapid: "#2E6E8E", ccpromo: "#7A4A9A", r_streak: "#B8501F", r_peak: "#8A6B1F",
   r_night: "#3A2E7A", r_explorer: "#2A6A5A", r_onetrick: "#7A2A2A", r_year: "#B8501F", r_perfect: "#2A7A8A", r_prodigy: "#6A2A7A", collect: "#5B3E8A" };
 export const seriesAccent = (key) => ACCENT[key] || "#7A5A34";
 export const TITLE_TIER_COUNT = 5;
@@ -117,7 +122,7 @@ export function titleLabel(id) { const d = titleDef(id); return d ? d.label + " 
 // ── 지표 계산 ──
 /** chess.com 대국 목록 → 칭호용 집계. 대국 수천 건도 한 번 훑는다. g: { moves, color, result, rating, endTime, white, black, opening }. */
 export function ccTitleStats(games) {
-  const o = { ccPlayed: 0, ccWins: 0, ccDraws: 0, ccWhiteWins: 0, ccBlackWins: 0, ccBestRating: 0, ccWinStreak: 0, ccMates: 0, ccQuickWins: 0, ccLongWins: 0, ccGiantWins: 0, ccNight: 0, ccOpenings: 0, ccTopOpening: 0 };
+  const o = { ccPlayed: 0, ccWins: 0, ccDraws: 0, ccWhiteWins: 0, ccBlackWins: 0, ccBestRating: 0, ccWinStreak: 0, ccMates: 0, ccQuickWins: 0, ccLongWins: 0, ccGiantWins: 0, ccNight: 0, ccOpenings: 0, ccTopOpening: 0, ccBlitzWins: 0, ccRapidWins: 0, ccPromos: 0 };
   if (!games || !games.length) return o;
   const byTime = games.slice().sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
   const opens = new Map(); let run = 0;
@@ -126,9 +131,10 @@ export function ccTitleStats(games) {
     if (g.rating != null && g.rating > o.ccBestRating) o.ccBestRating = g.rating;
     const mv = g.moves || [];
     if (g.opening) opens.set(g.opening, (opens.get(g.opening) || 0) + 1);
+    { const me = g.color === "w" ? 0 : 1; if (mv.some((x, i) => i % 2 === me && x.includes("="))) o.ccPromos++; }   // 내가 승격한 대국
     if (g.endTime) { const h = new Date(g.endTime * 1000).getHours(); if (h < 5) o.ccNight++; }
     if (g.result === "win") {
-      o.ccWins++; run++; if (run > o.ccWinStreak) o.ccWinStreak = run;
+      o.ccWins++; run++; if (g.timeClass === "blitz") o.ccBlitzWins++; else if (g.timeClass === "rapid") o.ccRapidWins++; if (run > o.ccWinStreak) o.ccWinStreak = run;
       if (g.color === "w") o.ccWhiteWins++; else o.ccBlackWins++;
       const last = mv[mv.length - 1]; if (last && last.endsWith("#")) o.ccMates++;
       if (mv.length <= 60) o.ccQuickWins++;

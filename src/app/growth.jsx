@@ -5,10 +5,12 @@ import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { Chess } from "chess.js";
 import { Target, Check, Sparkles, RotateCcw } from "lucide-react";
 import { T } from "../lib/theme.js";
-import { SITE_FONT } from "../components/engineLines.jsx";
+import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { ChatMoveBoard } from "../components/chatPlus.jsx";
-import { Board } from "./common.jsx";
-import { parseFenFull } from "../lib/chessRules.js";
+import { Board, getAnalysisPool } from "./common.jsx";
+import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
+import { parseFenFull, sansToFen, moveNumber } from "../lib/chessRules.js";
+import { OM, eligibleGames, findOpeningMistakes, gamesOfLine } from "../lib/openingMistakes.js";
 import { loadGrowth, saveGrowth } from "../lib/growthStore.js";
 import { PHASES, THEMES, SRS_DAYS, phaseLabel, themeLabel, themeAdvice, weaknessReport, dueCards, gradeCard, srsStats, isCardAnswer } from "../lib/weakness.js";
 import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
@@ -16,7 +18,7 @@ import { masterName, masterFlag } from "../data/masterNames.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
-import { t } from "../lib/i18n.js";
+import { t, tx } from "../lib/i18n.js";
 
 // 학습 탭의 다른 카드(일일 퀘스트 등)와 같은 종이 카드 톤.
 const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 14, marginBottom: 12 };
@@ -286,8 +288,106 @@ function MasterStyle({ games }) {
   );
 }
 
+
+/* ── 오프닝 실수 (v0.6.9, 집중 분석에서 이전) ──
+   내 chess.com 대국에서 반복해 둔 수순 중 평가가 크게 떨어지는 수를 색별로 찾는다. 로직은 lib/openingMistakes.js.
+   엔진은 분석 풀의 마지막 워커(실시간 분석 큐와 분리)를 쓰고, 결과는 대국 수가 같은 동안 메모리에 캐시한다. */
+const omCache = new Map();
+const fmtDate = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
+function OpeningMistakes({ uid, games, engine, onOpenReview, hasChesscom }) {
+  const elig = useMemo(() => eligibleGames(games), [games]);
+  const counts = useMemo(() => ({ w: elig.filter((g) => g.color === "w").length, b: elig.filter((g) => g.color === "b").length }), [elig]);
+  const sig = (uid || "") + "|" + elig.length + "|" + ((elig[0] && elig[0].endTime) || 0) + "|" + (engine ? engine.profile : "");
+  const [res, setRes] = useState({ w: { status: "idle", lines: [] }, b: { status: "idle", lines: [] } });
+  const [nonce, setNonce] = useState(0);
+  const [open, setOpen] = useState(null);   // "w:0" 같은 색:순번
+  const ready = !!engine && engine.status === "ready";
+  useEffect(() => {
+    if (!ready || !elig.length) return;
+    let cancelled = false;
+    const put = (c, v) => setRes((r) => ({ ...r, [c]: v }));
+    (async () => {
+      const pool = await getAnalysisPool(engine.profile, engine.urls).catch(() => null);
+      const worker = (pool && pool.length ? pool[pool.length - 1] : null) || engine;
+      const evalPos = (sans) => worker.evaluate(sansToFen(sans), 16, undefined, 3000);
+      for (const c of ["w", "b"]) {
+        if (cancelled) return;
+        const ck = sig + "|" + c;
+        if (omCache.has(ck)) { put(c, { status: "done", lines: omCache.get(ck) }); continue; }
+        if (counts[c] < OM.MIN_GAMES) { put(c, { status: "few", lines: [] }); continue; }
+        put(c, { status: "running", lines: [] });
+        const out = await findOpeningMistakes({ games: elig, color: c, evalPos, isCancelled: () => cancelled, onUpdate: (lines) => { if (!cancelled) put(c, { status: "running", lines }); } });
+        if (cancelled || out.cancelled) return;
+        omCache.set(ck, out.lines);
+        put(c, { status: "done", lines: out.lines });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, sig, nonce]);
+  const reanalyze = () => { for (const c of ["w", "b"]) omCache.delete(sig + "|" + c); setOpen(null); setNonce((n) => n + 1); };
+  const running = res.w.status === "running" || res.b.status === "running";
+  const Section = ({ c }) => {
+    const r = res[c];
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontWeight: 800, color: T.mistake, fontSize: 11.5, marginBottom: 4 }}>{c === "w" ? t("백") : t("흑")}</div>
+        {r.lines.length === 0 && (
+          <div style={sub}>
+            {r.status === "few" ? tx("대국 수 부족. 최소 {0}판 필요", OM.MIN_GAMES)
+              : r.status === "running" ? t("내 대국 분석 중…")
+              : r.status === "done" ? t("15수 이내 두드러진 실수 없음") : t("엔진 준비 후 분석")}
+          </div>
+        )}
+        {r.lines.map((mt, idx) => {
+          const key = c + ":" + idx, isOpen = open === key;
+          const list = isOpen ? gamesOfLine(games, mt.seq, c).slice(0, 8) : [];
+          return (
+            <div key={key}>
+              <button onClick={() => setOpen(isOpen ? null : key)} className="press" style={{ display: "block", width: "100%", textAlign: "left", fontFamily: SEQ_FONT, fontSize: 12, color: T.ink, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "3px 0", lineHeight: 1.6, whiteSpace: "normal" }}>
+                {mt.seq.map((mv, i) => {
+                  const last = i === mt.seq.length - 1, mine = (i % 2 === 0) === (c === "w");
+                  const st = last ? { fontWeight: 900, textDecoration: "underline", color: mt.kind === "blunder" ? T.blunder : T.inaccuracy } : mine ? { fontWeight: 800, color: T.ink } : { color: T.inkSoft, fontWeight: 500 };
+                  return <span key={i} style={st}>{moveNumber(i)}{mv} </span>;
+                })}
+                <span style={{ color: T.inkSoft }}>({tx("{0}회)", mt.count)}</span>
+              </button>
+              {isOpen && (
+                <div style={{ margin: "2px 0 6px", padding: "4px 8px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>
+                  {list.length === 0 ? <div style={{ ...sub, padding: "4px 0" }}>{t("대국을 찾을 수 없음")}</div> : list.map((g, gi) => {
+                    const won = g.result === "win", lost = g.result === "loss";
+                    const foe = (c === "w" ? g.black : g.white) || {};
+                    return (
+                      <div key={g.id || gi} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: gi ? "1px solid #E4D5B6" : "none" }}>
+                        <span style={{ fontSize: 11, color: T.inkSoft, flexShrink: 0 }}>{fmtDate(g.endTime)}</span>
+                        <span style={{ fontSize: 11.5, color: T.ink, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{foe.username || ""}</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: won ? T.best : lost ? T.blunder : T.inkSoft, flexShrink: 0 }}>{won ? "1" : lost ? "0" : "½"}</span>
+                        <BestMoveJumpButton size={26} onClick={() => onOpenReview && onOpenReview({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, white: g.white, black: g.black, id: g.id })} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+  return (
+    <div style={card}>
+      <div className="flex items-center gap-2"><h3 style={{ ...h3, flex: 1 }}>{t("오프닝 실수")}</h3>
+        {ready && elig.length > 0 && !running && <button onClick={reanalyze} className="press" style={chip(false)}>{t("다시 분석")}</button>}
+      </div>
+      <p style={{ ...sub, margin: "6px 0 0" }}>{t("내 chess.com 대국에서 반복한 수순 중 평가가 크게 떨어지는 수를 엔진으로 찾음")}</p>
+      {!hasChesscom ? <p style={{ ...sub, margin: "8px 0 0" }}>{t("chess.com 계정 연결 후 이용 가능")}</p>
+        : !elig.length ? <p style={{ ...sub, margin: "8px 0 0" }}>{t("최근 대국 없음")}</p>
+        : <><Section c="w" /><Section c="b" /></>}
+    </div>
+  );
+}
+
 /* 학습 탭에 들어가는 성장 분석 전체 — 별도 버튼 없이 세 영역을 한 번에 펼쳐 보인다. */
-export function GrowthPanel({ uid, games }) {
+export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom }) {
   const [data, update] = useGrowth(uid);
   const [filter, setFilter] = useState("all");
   const st = useMemo(() => srsStats(data.mistakes), [data]);
@@ -302,6 +402,7 @@ export function GrowthPanel({ uid, games }) {
       </div>
       <WeaknessMap list={data.mistakes} onPractice={(th) => setFilter(th)} />
       <ReviewCards list={data.mistakes} update={update} filter={filter} setFilter={setFilter} />
+      <OpeningMistakes uid={uid} games={games} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} />
       <MasterStyle games={games} />
     </section>
   );

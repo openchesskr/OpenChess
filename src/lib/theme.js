@@ -89,17 +89,6 @@ export const PIECE_IMG_SETS = {
       K: { w: { src: "/White King.png", w: 106, h: 116 }, b: { src: "/Black King.png", w: 106, h: 116 } },
     },
   },
-  ocean: {
-    basePx: 190,
-    images: {
-      P: { w: { src: "/pieces/ocean/white-pawn.png", w: 190, h: 219 }, b: { src: "/pieces/ocean/black-pawn.png", w: 192, h: 219 } },
-      N: { w: { src: "/pieces/ocean/white-knight.png", w: 189, h: 255 }, b: { src: "/pieces/ocean/black-knight.png", w: 196, h: 242 } },
-      B: { w: { src: "/pieces/ocean/white-bishop.png", w: 189, h: 251 }, b: { src: "/pieces/ocean/black-bishop.png", w: 193, h: 251 } },
-      R: { w: { src: "/pieces/ocean/white-rook.png", w: 190, h: 234 }, b: { src: "/pieces/ocean/black-rook.png", w: 194, h: 233 } },
-      Q: { w: { src: "/pieces/ocean/white-queen.png", w: 283, h: 272 }, b: { src: "/pieces/ocean/black-queen.png", w: 284, h: 277 } },
-      K: { w: { src: "/pieces/ocean/white-king.png", w: 248, h: 281 }, b: { src: "/pieces/ocean/black-king.png", w: 254, h: 282 } },
-    },
-  },
   // (about 페이지 그랜드마스터 카드 연동) 그랜드마스터 전용 기물 — 오로라 크리스탈+대리석 세트.
   // 원본(1920px 정사각 캔버스, 여백 포함)을 알파 바운딩 박스로 잘라내고 WebP로 압축해 옮겨 적었다.
   // (참고) 킹·퀸 원본 이미지는 받침·몸통 없이 왕관만 있는 상태로 받았다 — 다른 기물과 스타일이
@@ -128,10 +117,31 @@ export const BOARD_SKINS = {
   classic: { label: t("기본"), price: 0, light: T.boardLight, dark: T.boardDark },
   // (2\uCC28 \uAC1C\uD3B8) \uC0AC\uC6A9\uC790\uAC00 \uC9C1\uC811 \uB9CC\uB4E0 \uBC14\uB2E4 \uD14C\uB9C8 \uCE74\uD3B8(\uBAA8\uB798\uBE5B/\uBB3C\uACB0\u00B7\uBAA8\uB798) \uC774\uBBF8\uC9C0\uB85C \uAD50\uCCB4 \u2014
   // \uCE78\uB9C8\uB2E4 \uC804\uCCB4 8x8 \uC774\uBBF8\uC9C0\uC5D0\uC11C \uC790\uAE30 \uC704\uCE58\uC758 \uC870\uAC01\uB9CC background-position\uC73C\uB85C \uC798\uB77C \uBCF4\uC5EC\uC900\uB2E4(boardSquareBg).
-  ocean: { label: t("푸른 바다"), price: 500, image: "/boards/ocean-board.jpg" },
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
+  // (v0.6.9) 세트 스킨의 보드 — 기본 보드처럼 두 색 칸을 쓰되 색감·옅은 질감·칸 테두리만 세트에 맞춘다(texture). light·dark는 질감을 못 쓰는 곳(좌표 글자색 계산 등)의 대표색이다.
+  //  칸마다 무늬 위치를 조금씩 어긋나게(seed) 해서 같은 무늬가 바둑판처럼 반복돼 보이지 않게 한다.
+  deco: { label: t("아르데코"), gacha: true, set: "deco", light: "#E9DCC0", dark: "#1F1C24",
+    texture: (light) => (light
+      ? { backgroundImage: "linear-gradient(135deg, #F0E5CC, #E3D3B0)", boxShadow: "inset 0 0 0 1px rgba(168,122,34,.28)" }
+      : { backgroundImage: "linear-gradient(135deg, #2A2630, #17141B)", boxShadow: "inset 0 0 0 1px rgba(214,172,72,.38)" }) },
+  coral: { label: t("산호와 진주"), gacha: true, set: "coral", light: "#E9DEDF", dark: "#2E6A78",
+    texture: (light) => (light
+      ? { backgroundImage: "radial-gradient(circle at 28% 22%, rgba(255,255,255,.95), transparent 58%), linear-gradient(135deg, #F0E6E6, #E0D2D6)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.5)" }
+      : { backgroundImage: "radial-gradient(circle at 70% 72%, rgba(120,225,225,.18), transparent 56%), linear-gradient(135deg, #357684, #265E6C)", boxShadow: "inset 0 0 0 1px rgba(120,225,225,.18)" }) },
+  forest: { label: t("단풍 숲"), gacha: true, set: "forest", light: "#EDE4D0", dark: "#4A2E1C",
+    texture: (light, r, c) => { const k = (r * 9 + c * 5) % 17; return light
+      ? { backgroundImage: "repeating-linear-gradient(" + (4 + k) + "deg, rgba(120,90,50,.07) 0 1px, transparent 1px 7px), linear-gradient(135deg, #F2EADA, #E3D7BF)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.25)" }
+      : { backgroundImage: "repeating-linear-gradient(" + (-4 - k) + "deg, rgba(255,170,70,.07) 0 1px, transparent 1px 6px), linear-gradient(135deg, #573621, #3E2515)", boxShadow: "inset 0 0 0 1px rgba(184,122,46,.32)" }; } },
+  stars: { label: t("별자리"), gacha: true, set: "stars", light: "#D6DAEF", dark: "#1B1E48",
+    texture: (light, r, c) => { const sd = (r * 7 + c * 13) % 9, pos = (i) => ((sd * 11 + i * 29) % 80 + 10) + "% " + ((sd * 17 + i * 41) % 80 + 10) + "%"; const dot = (i, a) => "radial-gradient(circle at " + pos(i) + ", rgba(255," + (light ? "255,255" : "240,200") + "," + a + ") 0 .9px, transparent 1.6px)"; return light
+      ? { backgroundImage: dot(1, ".95") + "," + dot(2, ".8") + ", linear-gradient(135deg, #DDE0F3, #C9CEE8)", boxShadow: "inset 0 0 0 1px rgba(120,110,200,.18)" }
+      : { backgroundImage: dot(1, ".9") + "," + dot(2, ".7") + "," + dot(3, ".55") + ", linear-gradient(135deg, #22265A, #131638)", boxShadow: "inset 0 0 0 1px rgba(255,217,122,.16)" }; } },
+  crystal: { label: t("크리스털 주얼"), gacha: true, set: "crystal", light: "#DDEBFA", dark: "#456AB4",
+    texture: (light) => (light
+      ? { backgroundImage: "linear-gradient(135deg, #EAF4FF 50%, #D3E5F8 50%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.55)" }
+      : { backgroundImage: "linear-gradient(135deg, #5479C4 50%, #3F62AD 50%)", boxShadow: "inset 0 0 0 1px rgba(190,215,255,.3)" }) },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -144,17 +154,44 @@ export function boardSquareBg(sk, light, r, c) {
     const cc = ((c % 8) + 8) % 8, rr = ((r % 8) + 8) % 8;
     return { backgroundImage: "url(" + sk.image + ")", backgroundSize: "800% 800%", backgroundPosition: (cc / 7 * 100) + "% " + (rr / 7 * 100) + "%" };
   }
+  if (sk.texture) return sk.texture(light, r, c);
   return { background: light ? sk.light : sk.dark };
+}
+// (v0.6.9) 세트 스킨 기물 이미지 — 기본 이미지의 SKIN_PIECE_SCALE(3)배 해상도 캔버스에 실루엣을 SKIN_PIECE_FIT(0.94)배로 줄여 아래 가운데에 붙인 것(위·옆 장식 여백).
+//  캔버스 크기는 기본 크기 표 × 3, 받침 폭 기준(basePx)은 기본(80) × 3 × 0.94라서 화면에서 받침이 기본 기물과 같은 폭으로 나온다. 같은 값을 scripts/build-skin-pieces.py(S·K)가 쓴다.
+export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0.94;
+const SET_PIECE_NAMES = { P: "pawn", N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" };
+for (const id of ["deco", "coral", "forest", "stars", "crystal"]) {
+  const base = PIECE_IMG_SETS.classic, k = SKIN_PIECE_SCALE;
+  PIECE_IMG_SETS[id] = { basePx: Math.round(base.basePx * k * SKIN_PIECE_FIT), images: Object.fromEntries(Object.entries(base.images).map(([key, v]) => [key, {
+    w: { src: "/pieces/" + id + "/white-" + SET_PIECE_NAMES[key] + ".webp", w: v.w.w * k, h: v.w.h * k },
+    b: { src: "/pieces/" + id + "/black-" + SET_PIECE_NAMES[key] + ".webp", w: v.b.w * k, h: v.b.h * k },
+  }])) };
 }
 export const PIECE_SKINS = {
   classic: { label: t("기본"), price: 0, image: true, light: T.ivoryHi, dark: "#0E0907", stroke: "#6B4F22", accent: T.brass, accentOpacity: 0.92, glossy: false },
   // (2\uCC28 \uAC1C\uD3B8) \uBC14\uB2E4 \uAE30\uBB3C\uB3C4 \uC0AC\uC6A9\uC790\uAC00 \uB9CC\uB4E0 \uC774\uBBF8\uC9C0 \uC138\uD2B8(public/pieces/ocean)\uB85C \uAD50\uCCB4 \u2014 classic\uACFC \uB3D9\uC77C\uD558\uAC8C
   // image:true\uB85C PieceGlyph\uC758 \uC774\uBBF8\uC9C0 \uB80C\uB354\uB9C1 \uACBD\uB85C\uB97C \uD0C0\uB418, PIECE_IMG_SETS.ocean\uC758 \uC790\uAE30 \uC774\uBBF8\uC9C0\uB97C \uC4F4\uB2E4.
-  ocean: { label: t("푸른 바다"), price: 500, image: true },
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
+  // (v0.6.9) 세트 스킨의 기물 — 기본 기물의 바깥 실루엣만 바탕으로 쓰고(기본의 금색 분할선·삼각형은 쓰지 않는다), 받침·꼭대기 외형과 몸통 안쪽 설계·재질을 세트마다 새로 만든 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
+  deco: { label: t("아르데코"), gacha: true, set: "deco", image: true },
+  coral: { label: t("산호와 진주"), gacha: true, set: "coral", image: true },
+  forest: { label: t("단풍 숲"), gacha: true, set: "forest", image: true },
+  stars: { label: t("별자리"), gacha: true, set: "stars", image: true },
+  crystal: { label: t("크리스털 주얼"), gacha: true, set: "crystal", image: true },
 };
+// (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트. 세트 스킨은 코인으로 바로 살 수 없고 도감 스킨 페이지의 상자 뽑기(lib/gacha.js)로만 얻는다(gacha: true).
+export const SKIN_SETS = [
+  { id: "deco", label: t("아르데코"), desc: t("샴페인 에나멜과 칠흑 옻칠, 금빛 선버스트와 계단식 받침") },
+  { id: "coral", label: t("산호와 진주"), desc: t("진주 자개빛과 심해 청흑색, 조개 능선과 산호 가지, 진주 목걸이") },
+  { id: "forest", label: t("단풍 숲"), desc: t("자작나무와 호두나무 결, 단풍잎 인레이와 나이테 머리, 도토리와 이끼 낀 받침") },
+  { id: "stars", label: t("별자리"), desc: t("크레이터 있는 달 표면과 성운 흐르는 밤하늘, 실제 별자리 선과 초승달, 유성") },
+  { id: "crystal", label: t("크리스털 주얼"), desc: t("면마다 빛깔이 다른 보석 결정과 별빛") },
+];
+
+
 export function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미
