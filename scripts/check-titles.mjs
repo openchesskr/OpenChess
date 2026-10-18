@@ -30,6 +30,9 @@ for (const f of OPENING_FAMILIES) if (/indian/i.test(f.label) && !new RegExp("^ 
 for (const s of TITLE_SERIES) if (s.cat === "opening" && s.mins[4] > 20) fail(s.key + ": 오프닝 칭호 퍼즐 기준(5단계 " + s.mins[4] + ")이 너무 높음(20 이하)");
 if (!TITLE_CATEGORIES.some((c) => c.key === "rare" && c.label === "히든 칭호")) fail("희귀 갈래의 이름이 \"히든 칭호\"가 아님");
 if (!/hiddenLock/.test(common) || !/t\("히든 칭호"\)/.test(common)) fail("히든 칭호가 해금 조건 대신 \"히든 칭호\"만 표시하지 않음(common.jsx hiddenLock)");
+const dexSrc = fs.readFileSync(new URL("../src/app/dex.jsx", import.meta.url), "utf8");
+if (!/seriesDisplayLabel\(cur, earnedOf\(cur\)\)/.test(dexSrc) || !/masked=\{x\.cat === "rare" && !n\}/.test(dexSrc)) fail("업적 화면이 못 얻은 히든 칭호 계열의 이름·아이콘을 \"???\"로 가리지 않음");
+if (!/const nameText = hiddenLock \? "\?\?\?"/.test(common)) fail("칭호 배너가 못 얻은 히든 칭호의 이름을 \"???\"로 가리지 않음");
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));

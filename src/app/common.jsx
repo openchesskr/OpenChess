@@ -5432,7 +5432,7 @@ function titleCondText(def) {
   }
 }
 // 계열 하나를 나타내는 작은 마름모 엠블럼(업적 왼쪽 목록용): 오프닝은 국기·이니셜, 나머지는 계열 아이콘.
-export function SeriesGlyph({ series, size = 30 }) {
+export function SeriesGlyph({ series, size = 30, masked = false }) {
   const rid = useId().replace(/[^a-zA-Z0-9]/g, ""), Icon = TITLE_ICONS[series.icon] || Star, isOp = series.cat === "opening";
   return (
     <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
@@ -5441,7 +5441,7 @@ export function SeriesGlyph({ series, size = 30 }) {
         <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
         {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
       </svg>
-      {!isOp && <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />}
+      {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />)}
     </span>
   );
 }
@@ -5582,6 +5582,8 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
   "완성주의자": t("완성주의자"),
   "명예의 전당": t("명예의 전당"),
 });
+// 히든 칭호 계열은 하나도 못 얻었으면 이름을 "???"로 가린다(earnedCount = 그 계열에서 얻은 칭호 수).
+export function seriesDisplayLabel(series, earnedCount) { return series.cat === "rare" && !earnedCount ? "???" : seriesLabelText(series); }
 export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
 export function titleNameText(def) {
   if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
@@ -5618,7 +5620,10 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
     return () => { io.disconnect(); clearTimeout(t1); };
   }, [fresh, id]);
   if (!def) return null;
-  const labelText = seriesLabelText(def.series);
+  // (v0.6.9) 히든 칭호(희귀 갈래)는 얻기 전까지 이름·아이콘도 "???"로 가린다.
+  const hiddenLock = def.series.cat === "rare" && !(earned && lit);
+  const labelText = hiddenLock ? "???" : seriesLabelText(def.series);
+  const nameText = hiddenLock ? "???" : titleNameText(def);
   const showPeek = () => { setPeek(true); clearTimeout(peekT.current); peekT.current = setTimeout(() => setPeek(false), 3200); };
   const onDown = (e) => { setPressing(true); press.current = { x: e.clientX, y: e.clientY }; longRef.current = false; clearTimeout(lpT.current); if (earned && !noPeek) lpT.current = setTimeout(() => { longRef.current = true; showPeek(); }, 450); };
   const onMove = (e) => {
@@ -5649,7 +5654,6 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const ratio = lookEarned ? 1 : isOpening ? Math.min(1, nowV / def.min, (progress2 == null ? 0 : progress2) / def.ccMin) : Math.min(1, nowV / def.min);
   const gaugeLabel = isOpening ? Math.floor(ratio * 100) + "%" : (def.series.metric === "tierIndex" ? "" : fmtCompactN(Math.min(nowV, def.min)) + "/" + fmtCompactN(def.min));
   // (v0.6.9) 히든 칭호(희귀 갈래)는 얻기 전까지 해금 조건과 게이지를 숨기고 "히든 칭호"라고만 표시한다.
-  const hiddenLock = def.series.cat === "rare" && !lookEarned;
   const condShort = hiddenLock ? t("히든 칭호") : isOpening ? t("퍼즐 {0}개 + chess.com {1}회", fmtFull(def.min), fmtFull(def.ccMin)) : titleCondText(def);
   const showProg = !lookEarned || peek;
   // 오른쪽 기하 장식: 기울어진 평행사변형(빗금) 묶음 — 단계 수만큼, 그리고 은은한 동심원
@@ -5663,7 +5667,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
   return (
     <div ref={rootRef} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease" }}>
-      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + titleNameText(def)}
+      <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + nameText}
         style={{ position: "relative", height: H, width: "100%", cursor: "pointer", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", clipPath: titleShape(shapeTier, cut), background: `linear-gradient(115deg,${g0},${g1} 55%,${g0})`, filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : (locked ? 0.4 : 0.6), transition: "filter .7s ease, opacity .7s ease", animation: fresh && lit ? "titleUnlockPop .9s ease-out" : undefined }}>
         <div style={{ position: "absolute", inset: bw, clipPath: titleShape(shapeTier, Math.max(1, cut - bw * 0.8)), background: `linear-gradient(110deg,${bgA},${bgB} 72%)`, overflow: "hidden", display: "flex", alignItems: "center" }}>
           {/* 중심부 체스판 무늬(은은하게) + 진영 색 기물 실루엣. 5단계는 체스판 칸이 금색으로 번갈아 빛난다. */}
@@ -5687,14 +5691,14 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
                 : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
               {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
             </svg>
-            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : hiddenLock ? <span style={{ fontSize: ISZ + 2, fontWeight: 900, lineHeight: 1, fontFamily: SEQ_FONT }}>?</span> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
           <div style={{ position: "relative", display: "flex", flexDirection: "column", justifyContent: "center", gap: compact ? 2 : 3, minWidth: 0, flex: 1, height: "100%", boxSizing: "border-box", paddingRight: compact ? 50 : 76, opacity: showProg ? 0.12 : 1, transition: "opacity .22s ease" }}>
             <span title={labelText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: (compact ? 13.5 : 17) - Math.max(0, labelText.length - 13) * (compact ? 0.32 : 0.4), lineHeight: 1.12, letterSpacing: ".02em", color: T.ivoryHi, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>{labelText}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <span title={titleNameText(def)} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{titleNameText(def)}</span>
+              <span title={nameText} style={{ fontFamily: SEQ_FONT, fontStyle: "italic", fontWeight: 700, fontSize: compact ? 10 : 12, letterSpacing: ".08em", color: tierIdx < 2 && !rare ? "#D0AC5E" : GOLD[0], textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{nameText}</span>
             </span>
           </div>
           {/* 해금 조건 + 진척도 게이지: 기존 요소의 위치는 그대로 두고, 엠블럼 오른쪽 전체에 검은 반투명 판을 덮은 뒤 그 위에 조건(왼쪽)과 게이지(오른쪽)만 띄운다.
