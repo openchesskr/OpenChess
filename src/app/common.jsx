@@ -6,7 +6,6 @@ import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
-import { GACHA_RARITY, GACHA_POOL } from "../lib/gacha.js";
 import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
@@ -6249,40 +6248,6 @@ export function ChesscomLogo({ height = 14, dark }) {
 /* (20차 기능4) 스킨 상점 카드 — 보드/기물 공용. 미리보기(작은 체크보드 4칸 또는 기물 2개) + 가격/보유/
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
 // (v0.6.9) 보드 스킨 + 기물 스킨 세트 카드 — 한 번에 사고 한 번에 장착한다. 미리보기는 보드 위에 흰 나이트·검은 퀸.
-export function SkinSetCard({ set, ownedSkins, boardSkin, pieceSkin, onEquipSet }) {
-  const owned = ownedSkins || new Set();
-  const bsk = BOARD_SKINS[set.id], psk = PIECE_SKINS[set.id];
-  const ownsAll = owned.has("board:" + set.id) && owned.has("piece:" + set.id);
-  const equipped = boardSkin === set.id && pieceSkin === set.id;
-  const rarity = GACHA_RARITY[set.rarity || (GACHA_POOL.find((p) => p.id === set.id) || {}).rarity] || GACHA_RARITY.common;
-  return (
-    <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8", opacity: ownsAll ? 1 : 0.92 }}>
-      <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }}>
-        <div style={{ width: 96, height: 96, borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", filter: ownsAll ? "none" : "grayscale(.55) brightness(.9)", ...BOARD_GLOSS }}>
-          {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; return <div key={i} style={boardSquareBg(bsk, (r + c) % 2 === 0, r, c)} />; })}
-        </div>
-        <div style={{ position: "absolute", left: 2, bottom: 26, width: 48, display: "flex", justifyContent: "center", filter: ownsAll ? "none" : "grayscale(.55) brightness(.9)" }}><PieceGlyph type="N" color="w" size={44} pieceSkin={set.id} /></div>
-        <div style={{ position: "absolute", right: 2, bottom: 2, width: 48, display: "flex", justifyContent: "center", filter: ownsAll ? "none" : "grayscale(.55) brightness(.9)" }}><PieceGlyph type="Q" color="b" size={44} pieceSkin={set.id} /></div>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{set.label}</span>
-          <span style={{ fontSize: 10, fontWeight: 900, color: "#fff", background: rarity.color, borderRadius: 999, padding: "1px 8px" }}>{t(rarity.label)}</span>
-        </div>
-        <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{set.desc}</div>
-        <div style={{ marginTop: 8 }}>
-          {equipped ? (
-            <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>{t("✓ 장착됨")}</button>
-          ) : ownsAll ? (
-            <button onClick={() => onEquipSet(set.id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("세트 장착")}</button>
-          ) : (
-            <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: "#8A7458", color: "#241509", cursor: "not-allowed" }}>{set.lockedLabel || t("뽑기로 획득")}</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 /* ============================================================ 계정 (회원가입/로그인) ============================================================ */
 export const ALNUM = /^[A-Za-z0-9]+$/;
 export async function userProfile(username) { if (!SB_ON || !username) return null; try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username.toLowerCase()) + "&select=id,username,pub,mid&limit=1"); return rows && rows[0] ? rows[0] : null; } catch { return null; } }

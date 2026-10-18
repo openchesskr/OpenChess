@@ -5,8 +5,7 @@ import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
-import { SkinSetCard } from "./common.jsx";
-import { GACHA_POOL, GACHA_RARITY, ownsSet } from "../lib/gacha.js";
+import { GACHA_POOL, GACHA_RARITY, ownsPiece, ownsBoard, ownedPieceTypes } from "../lib/gacha.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, tx } from "../lib/i18n.js";
 
@@ -20,11 +19,11 @@ export function bookSets() {
     { id: "classic", label: t("기본"), rarity: "common" },
     ...SKIN_SETS.map((s) => ({ ...s, rarity: (GACHA_POOL.find((p) => p.id === s.id) || {}).rarity || "common" })),
     // 그랜드마스터 티어에 도달하면 자동 해금되는 전용 세트(뽑기 풀 밖)
-    { id: "grandmaster", label: t("그랜드마스터"), desc: t("오로라 크리스탈과 대리석, 그랜드마스터 전용 세트"), rarity: "legend", lockedLabel: t("그랜드마스터 달성 시 해금") },
+    { id: "grandmaster", label: t("그랜드마스터"), rarity: "legend", lockedLabel: t("그랜드마스터 달성 시 해금") },
   ];
 }
-const has = (owned, id) => id === "classic" || ownsSet(owned || new Set(), id) || (id === "grandmaster" && !!owned && owned.has("board:grandmaster") && owned.has("piece:grandmaster"));
-export const ownedSetCount = (owned) => bookSets().filter((s) => has(owned, s.id)).length;
+const none = new Set();
+export const ownedSetCount = (owned) => bookSets().filter((s) => ownedPieceTypes(owned || none, s.id).length > 0).length;
 
 // 둥근 도감 칸 — 보유하면 기물, 미보유면 실루엣. 테두리 색은 세트 등급.
 function Slot({ set, type, color = "w", size = 46, owned, equipped, onClick, label }) {
@@ -63,7 +62,7 @@ function SetEquipView({ owned, boardSkin, pieceSkin, onEquipSet }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {bookSets().slice().reverse().map((set) => {
-        const o = has(owned, set.id), eq = boardSkin === set.id && pieceSkin === set.id;
+        const types = ownedPieceTypes(owned, set.id), o = types.length > 0, eq = pieceSkin === set.id;
         return (
           <div key={set.id} style={{ padding: "10px 10px 12px", borderRadius: 12, background: "linear-gradient(180deg,#E9D3A2,#D9BE86)", border: "2px solid " + (eq ? "#B8860B" : "#B79A62"), boxShadow: "inset 0 1px 0 rgba(255,255,255,.4)" }}>
             <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
@@ -72,8 +71,8 @@ function SetEquipView({ owned, boardSkin, pieceSkin, onEquipSet }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", rowGap: 10 }}>
               <div style={{ display: "flex", gap: 5, flex: "1 1 auto", flexWrap: "wrap" }}>
-                {BOOK_PIECES.map((p) => <Slot key={p.type} set={set} type={p.type} size={42} owned={o} label={p.label()} />)}
-                <BoardSlot set={set} size={42} owned={o} />
+                {BOOK_PIECES.map((p) => <Slot key={p.type} set={set} type={p.type} size={42} owned={types.includes(p.type)} label={p.label()} />)}
+                <BoardSlot set={set} size={42} owned={ownsBoard(owned, set.id)} />
               </div>
               <EquipBtn owned={o} equipped={eq} lockedLabel={set.lockedLabel} onClick={() => onEquipSet(set.id)} />
             </div>
@@ -88,7 +87,7 @@ function SetEquipView({ owned, boardSkin, pieceSkin, onEquipSet }) {
 function PieceBookView({ owned, boardSkin, pieceSkin, onEquipSet }) {
   const [pi, setPi] = useState(0);
   const sets = bookSets(), p = BOOK_PIECES[pi];
-  const got = sets.filter((s) => has(owned, s.id)).length;
+  const got = sets.filter((s) => ownsPiece(owned, s.id, p.type)).length;
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto" }}>
@@ -101,7 +100,7 @@ function PieceBookView({ owned, boardSkin, pieceSkin, onEquipSet }) {
         <div style={{ margin: "0 auto 14px", maxWidth: 240, textAlign: "center", fontSize: 14, fontWeight: 900, color: "#3A2412", background: "linear-gradient(180deg,#F2C25A,#D9962A)", border: "2px solid #8A5A12", borderRadius: 6, padding: "5px 10px", fontFamily: SITE_FONT }}>{tx("{0} 스킨", p.label())}</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, justifyItems: "center" }}>
           {sets.map((set) => {
-            const o = has(owned, set.id), eq = pieceSkin === set.id;
+            const o = ownsPiece(owned, set.id, p.type), eq = pieceSkin === set.id && o;
             return (
               <div key={set.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" }}>
                 <Slot set={set} type={p.type} size={64} owned={o} equipped={eq} label={set.label} onClick={o ? () => onEquipSet(set.id) : undefined} />
@@ -119,28 +118,33 @@ function PieceBookView({ owned, boardSkin, pieceSkin, onEquipSet }) {
   );
 }
 
-// ③ 세트 도감 — 전체 수집 현황 + 등급별 진행 + 세트 상세 카드
+// ③ 세트 도감 — 세트별 기물 수집 수와 보드 해금 현황
 function SetDexView({ owned, boardSkin, pieceSkin, onEquipSet }) {
   const sets = bookSets();
-  const got = sets.filter((s) => has(owned, s.id)).length;
-  const rows = Object.entries(GACHA_RARITY).map(([key, rar]) => {
-    const all = sets.filter((s) => s.rarity === key);
-    return { key, rar, all: all.length, got: all.filter((s) => has(owned, s.id)).length };
-  }).filter((r) => r.all > 0);
+  const full = sets.filter((s) => ownsBoard(owned, s.id)).length;
   return (
     <div>
       <div style={{ padding: 12, borderRadius: 12, background: "rgba(0,0,0,.28)", border: "1px solid #5A4630", marginBottom: 10 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 900, color: T.brassHi }}>{t("세트 수집 현황")}</span>
-          <span style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi }}>{got}/{sets.length}</span>
+          <span style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi }}>{full}/{sets.length}</span>
         </div>
-        <div style={{ height: 8, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden", marginBottom: 10 }}><div style={{ width: (100 * got / sets.length) + "%", height: "100%", background: "linear-gradient(90deg,#E8A91C,#FFE27A)" }} /></div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {rows.map((r) => <span key={r.key} style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: r.rar.color, borderRadius: 999, padding: "2px 10px" }}>{t(r.rar.label)} {r.got}/{r.all}</span>)}
-        </div>
+        <div style={{ height: 8, borderRadius: 999, background: "rgba(0,0,0,.4)", overflow: "hidden" }}><div style={{ width: (100 * full / sets.length) + "%", height: "100%", background: "linear-gradient(90deg,#E8A91C,#FFE27A)" }} /></div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {sets.slice(1).map((set) => <SkinSetCard key={set.id} set={set} ownedSkins={owned} boardSkin={boardSkin} pieceSkin={pieceSkin} onEquipSet={onEquipSet} />)}
+        {sets.slice(1).map((set) => {
+          const n = ownedPieceTypes(owned, set.id).length, board = ownsBoard(owned, set.id);
+          return (
+            <div key={set.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 10, borderRadius: 12, background: "linear-gradient(180deg,#E9D3A2,#D9BE86)", border: "2px solid #B79A62" }}>
+              <BoardSlot set={set} size={52} owned={board} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="flex items-center gap-2" style={{ marginBottom: 6 }}><RarityChip rarity={set.rarity} /><span style={{ fontSize: 13, fontWeight: 900, color: "#3A2412", fontFamily: SITE_FONT }}>{set.label}</span></div>
+                <div style={{ height: 7, borderRadius: 999, background: "rgba(58,36,18,.25)", overflow: "hidden" }}><div style={{ width: (100 * n / 6) + "%", height: "100%", background: board ? "linear-gradient(90deg,#E8A91C,#FFE27A)" : "#8A6A3A" }} /></div>
+              </div>
+              <span style={{ fontSize: 12.5, fontWeight: 900, color: "#3A2412", flexShrink: 0 }}>{n}/6</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

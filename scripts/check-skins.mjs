@@ -42,8 +42,7 @@ for (const s of sets) {
 }
 ok(/export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0\.94;/.test(theme) && /^S = 3 /m.test(gen) && /^K = 0\.94 /m.test(gen), "theme.js의 SKIN_PIECE_SCALE·FIT과 생성기의 S·K가 다름");
 ok(/if \(sk\.texture\) return sk\.texture\(light, r, c\);/.test(theme), "boardSquareBg가 texture를 쓰지 않음");
-ok(/<SkinBook /.test(dex) && /<SkinSetCard /.test(read("src/app/skinbook.jsx")), "스킨 페이지에 스킨 도감(SkinBook)·세트 카드가 없음");
-ok(/const equipSkinSet = useCallback\(\(setId\) => \{ setBoardSkin\(setId\); setPieceSkin\(setId\)/.test(app), "세트 장착이 보드·기물을 함께 바꾸지 않음");
-ok(/export function SkinSetCard/.test(common), "SkinSetCard 없음");
+ok(/<SkinBook /.test(dex) && /export function SkinBook/.test(read("src/app/skinbook.jsx")), "스킨 페이지에 스킨 도감(SkinBook)이 없음");
+ok(/const equipSkinSet = useCallback\(\(setId\) => \{ setPieceSkin\(setId\); setBoardSkin\(ownsBoard\(ownedSkins, setId\) \? setId : "classic"\)/.test(app), "세트 장착이 기물을 바꾸고 보드는 해금된 세트일 때만 따라오게 하지 않음");
 if (fails.length) { console.error("✖ check-skins 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-skins: 세트 " + sets.length + "개 · 기물 이미지 " + sets.length * 12 + "장(기본의 3배 크기)·가격·보드 질감·상점 연결이 유지된다");

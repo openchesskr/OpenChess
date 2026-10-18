@@ -5,11 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { CoinIcon } from "./common.jsx";
-import { GACHA_PRICE, GACHA_POOL, GACHA_RARITY, GACHA_TOTAL_WEIGHT, GACHA_DUP_REFUND } from "../lib/gacha.js";
+import { GACHA_PRICE, GACHA_POOL, GACHA_RARITY, GACHA_TOTAL_WEIGHT } from "../lib/gacha.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { t, tx } from "../lib/i18n.js";
+import { t } from "../lib/i18n.js";
 
 const GOLD = ["#FFE493", "#E8AE2A", "#B07410"];
+const PIECE_NAME = { P: () => t("폰"), N: () => t("나이트"), B: () => t("비숍"), R: () => t("룩"), Q: () => t("퀸"), K: () => t("킹") };
+const setLabel = (id) => (id === "grandmaster" ? t("그랜드마스터") : (SKIN_SETS.find((x) => x.id === id) || {}).label || id);
 
 /** 상자 그림. phase: "idle"(가만히) | "shake"(흔들림) | "open"(뚜껑이 열리며 빛이 새어 나옴). */
 export function GachaChest({ phase = "idle" }) {
@@ -30,7 +32,6 @@ export function GachaChest({ phase = "idle" }) {
       {/* 열릴 때 새어 나오는 빛 */}
       <motion.g initial={false} animate={{ opacity: open ? 1 : 0, scale: open ? 1 : 0.6 }} transition={{ duration: 0.5 }} style={{ transformOrigin: "120px 96px" }}>
         <circle cx="120" cy="92" r="96" fill={`url(#${uid}r)`} />
-        {[-62, -38, -16, 0, 16, 38, 62].map((a) => <polygon key={a} points="120,96 112,-70 128,-70" fill="#FFE8A0" opacity=".55" transform={`rotate(${a} 120 96)`} />)}
       </motion.g>
       {/* 몸통 */}
       <rect x="22" y="98" width="196" height="94" rx="6" fill={blk} />
@@ -76,28 +77,31 @@ export function GachaChest({ phase = "idle" }) {
   );
 }
 
-/** 결과 카드에 쓰는 세트 미리보기(보드 4×4 + 흰 나이트·검은 퀸). */
-function SetPreview({ id, size = 84 }) {
-  const bsk = BOARD_SKINS[id], p = size * 0.5;
+/** 뽑기 연출의 빛 — 틈 없이 이어지는 방사형 빛줄기(밝은 줄과 덜 밝은 줄이 번갈아 가며 한 번도 투명해지지 않는다). */
+function LightBurst({ level = 1 }) {
+  const mask = "radial-gradient(circle at 50% 50%, #000 0%, #000 22%, rgba(0,0,0,.55) 48%, transparent 72%)";
   return (
-    <div style={{ position: "relative", width: size, height: size }}>
-      <div style={{ width: size, height: size, borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", ...BOARD_GLOSS }}>
-        {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; return <div key={i} style={boardSquareBg(bsk, (r + c) % 2 === 0, r, c)} />; })}
-      </div>
-      <div style={{ position: "absolute", left: 1, bottom: size * 0.26, width: p, display: "flex", justifyContent: "center" }}><PieceGlyph type="N" color="w" size={p * 0.9} pieceSkin={id} /></div>
-      <div style={{ position: "absolute", right: 1, bottom: 1, width: p, display: "flex", justifyContent: "center" }}><PieceGlyph type="Q" color="b" size={p * 0.9} pieceSkin={id} /></div>
-    </div>
+    <motion.div aria-hidden initial={false} animate={{ opacity: level, scale: level ? 1 : 0.3 }} transition={{ duration: 0.7, ease: "easeOut" }}
+      style={{ position: "absolute", left: "50%", top: "46%", width: "190vmax", height: "190vmax", marginLeft: "-95vmax", marginTop: "-95vmax", pointerEvents: "none" }}>
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 26, repeat: Infinity, ease: "linear" }}
+        style={{ position: "absolute", inset: 0, background: "repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,232,150,.85) 0deg 7.5deg, rgba(255,196,80,.34) 7.5deg 15deg)", WebkitMaskImage: mask, maskImage: mask }} />
+      <div style={{ position: "absolute", inset: "38%", borderRadius: "50%", background: "radial-gradient(circle, rgba(255,250,220,.95), rgba(255,214,110,.5) 45%, transparent 72%)" }} />
+    </motion.div>
   );
 }
 
-function ResultCard({ r, index, show }) {
-  const rar = GACHA_RARITY[r.rarity], set = SKIN_SETS.find((s) => s.id === r.id);
+/** 뽑은 기물 카드 — 등급색 테두리 안에 기물 하나. */
+function ResultCard({ r, show }) {
+  const rar = GACHA_RARITY[r.rarity];
   return (
     <motion.div initial={{ rotateY: 90, opacity: 0, scale: 0.8 }} animate={show ? { rotateY: 0, opacity: 1, scale: 1 } : { rotateY: 90, opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 160, damping: 15 }}
-      style={{ width: 138, padding: "12px 10px 10px", borderRadius: 14, background: "linear-gradient(180deg,#F4E8CE,#E6D3AA)", border: "2px solid " + rar.color, boxShadow: "0 0 0 2px rgba(0,0,0,.35), 0 0 " + (r.rarity === "legend" ? 26 : r.rarity === "epic" ? 18 : 10) + "px " + rar.color + "AA", textAlign: "center", position: "relative" }}>
+      style={{ width: 118, padding: "14px 8px 10px", borderRadius: 14, background: "linear-gradient(180deg,#F4E8CE,#E6D3AA)", border: "2px solid " + rar.color, boxShadow: "0 0 0 2px rgba(0,0,0,.35), 0 0 " + (r.rarity === "legend" ? 26 : r.rarity === "epic" ? 18 : 10) + "px " + rar.color + "AA", textAlign: "center", position: "relative" }}>
       <span style={{ position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)", fontSize: 10, fontWeight: 900, color: "#fff", background: rar.color, borderRadius: 999, padding: "2px 10px", boxShadow: "0 1px 3px rgba(0,0,0,.4)" }}>{t(rar.label)}</span>
-      <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}><SetPreview id={r.id} /></div>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginTop: 8, lineHeight: 1.25 }}>{set ? set.label : r.id}</div>
+      <div style={{ width: 84, height: 84, margin: "6px auto 0", borderRadius: "50%", border: "3px solid " + rar.color, background: "radial-gradient(circle at 50% 35%, #5A4630, #2A1B10)", display: "flex", alignItems: "flex-end", justifyContent: "center", overflow: "hidden" }}>
+        <PieceGlyph type={r.piece} color="w" size={76} pieceSkin={r.id} />
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, marginTop: 8, lineHeight: 1.2 }}>{PIECE_NAME[r.piece]()}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>{setLabel(r.id)}</div>
       <div style={{ marginTop: 6, fontSize: 11, fontWeight: 800, color: r.isNew ? "#2F7A3A" : "#8A5A0C", background: r.isNew ? "rgba(63,122,58,.14)" : "rgba(196,154,80,.2)", borderRadius: 8, padding: "3px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
         {r.isNew ? t("신규 획득") : <><span>{t("중복")}</span><CoinIcon size={14} /><span>+{r.refund}</span></>}
       </div>
@@ -105,58 +109,95 @@ function ResultCard({ r, index, show }) {
   );
 }
 
-function GachaResultModal({ result, onClose }) {
-  const n = result.results.length;
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    if (shown >= n) return undefined;
-    const id = setTimeout(() => setShown((x) => x + 1), shown === 0 ? 350 : 520);
-    return () => clearTimeout(id);
-  }, [shown, n]);
-  const done = shown >= n;
-  const newN = result.results.filter((x) => x.isNew).length;
+/** 세트의 기물 6종을 모두 모아 보드가 해금될 때의 연출 — 칸이 하나씩 차오르고 금빛이 한 번 훑고 지나간다. */
+export function BoardUnlockScene({ id, onDone }) {
+  const bsk = BOARD_SKINS[id], rar = GACHA_RARITY[(GACHA_POOL.find((p) => p.id === id) || {}).rarity] || GACHA_RARITY.legend;
+  const [done, setDone] = useState(false);
+  useEffect(() => { const k = setTimeout(() => setDone(true), 1700); return () => clearTimeout(k); }, []);
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(8,5,2,.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
-      <div style={{ maxWidth: 560, width: "100%", textAlign: "center", padding: "20px 0" }}>
-        <div style={{ fontSize: 20, fontWeight: 900, color: T.brassHi, fontFamily: SITE_FONT, marginBottom: 18, textShadow: "0 0 18px rgba(255,200,80,.5)" }}>{t("뽑기 결과")}</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", perspective: 900 }}>
-          {result.results.map((r, i) => <ResultCard key={i} r={r} index={i} show={i < shown} />)}
-        </div>
-        <div style={{ marginTop: 22, minHeight: 22, fontSize: 12.5, fontWeight: 700, color: T.ivory }}>
-          {done && <>{tx("신규 {0}종", newN)}{result.refund > 0 && <> · {tx("중복 환급 +{0}코인", result.refund)}</>}</>}
-        </div>
-        <div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "center" }}>
-          {!done && <button onClick={() => setShown(n)} className="press" style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("건너뛰기")}</button>}
-          {done && <button onClick={onClose} className="press" style={{ padding: "10px 34px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14, cursor: "pointer" }}>{t("확인")}</button>}
-        </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22 }}>
+      <LightBurst level={0.5} />
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} style={{ position: "relative", fontSize: 20, fontWeight: 900, color: T.brassHi, fontFamily: SITE_FONT, textShadow: "0 0 18px rgba(255,200,80,.7)" }}>{t("보드 해금")}</motion.div>
+      <div style={{ position: "relative", width: "min(76vw, 320px)", aspectRatio: "1", borderRadius: 6, overflow: "hidden", boxShadow: "0 0 0 3px " + rar.color + ", 0 0 40px " + rar.color + "AA", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", ...BOARD_GLOSS }}>
+        {Array.from({ length: 64 }).map((_, i) => {
+          const r = Math.floor(i / 8), c = i % 8;
+          return <motion.div key={i} initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.35 + (r + c) * 0.055, type: "spring", stiffness: 260, damping: 18 }} style={boardSquareBg(bsk, (r + c) % 2 === 0, r, c)} />;
+        })}
+        <motion.div initial={{ x: "-120%" }} animate={{ x: "120%" }} transition={{ delay: 1.0, duration: 0.9, ease: "easeInOut" }}
+          style={{ position: "absolute", inset: 0, background: "linear-gradient(105deg, transparent 35%, rgba(255,246,200,.85) 50%, transparent 65%)", pointerEvents: "none" }} />
       </div>
-    </div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} style={{ position: "relative", fontSize: 15, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT }}>{setLabel(id)}</motion.div>
+      <button onClick={onDone} disabled={!done} className="press" style={{ position: "relative", padding: "10px 34px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14, cursor: done ? "pointer" : "default", opacity: done ? 1 : 0, transition: "opacity .3s" }}>{t("확인")}</button>
+    </motion.div>
   );
 }
 
-/** 도감 스킨 페이지 맨 위의 뽑기 구역. onPull(1|5) → { ok, results, refund, … }(App의 pullGacha). */
+/** 뽑기 연출 무대 — 주변이 어두워지며 상자가 화면 한가운데로 오고, 흔들린 뒤 열리며 빛이 터지고, 뽑은 기물 카드(그리고 보드 해금)가 이어진다. */
+function GachaStage({ stage, onClose }) {
+  const { r, phase } = stage;
+  const n = r.results.length;
+  const [shown, setShown] = useState(0);
+  const [bi, setBi] = useState(-1);          // 보드 해금 연출 순번(-1 = 아직 카드 단계)
+  const showCards = phase === "cards";
+  useEffect(() => {
+    if (!showCards || bi >= 0 || shown >= n) return undefined;
+    const id = setTimeout(() => setShown((x) => x + 1), shown === 0 ? 300 : 480);
+    return () => clearTimeout(id);
+  }, [showCards, shown, n, bi]);
+  const cardsDone = shown >= n;
+  const next = () => { if (r.boardUnlocked.length && bi + 1 < r.boardUnlocked.length) setBi(bi + 1); else onClose(); };
+  const chestPhase = phase === "shake" ? "shake" : phase === "open" ? "open" : phase === "cards" ? "open" : "idle";
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
+      style={{ position: "fixed", inset: 0, zIndex: 400, background: "radial-gradient(120% 90% at 50% 45%, rgba(30,18,8,.96), rgba(4,2,1,.99))", overflow: "hidden" }}>
+      {bi < 0 && <LightBurst level={phase === "open" ? 1 : phase === "cards" ? 0.3 : 0} />}
+      <AnimatePresence>
+        {bi < 0 && !showCards && (
+          <motion.div key="chest" exit={{ opacity: 0, scale: 1.15 }} transition={{ duration: 0.4 }} style={{ position: "absolute", left: "50%", top: "46%", width: "min(78vw, 330px)", transform: "translate(-50%,-50%)" }}>
+            <motion.div layoutId="gacha-chest" transition={{ type: "spring", stiffness: 110, damping: 20 }}><GachaChest phase={chestPhase} /></motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {showCards && bi < 0 && (
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 560, width: "100%", textAlign: "center", padding: "20px 0" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", perspective: 900 }}>
+              {r.results.map((x, i) => <ResultCard key={i} r={x} show={i < shown} />)}
+            </div>
+            <div style={{ marginTop: 26, display: "flex", gap: 10, justifyContent: "center" }}>
+              {!cardsDone && <button onClick={() => setShown(n)} className="press" style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("건너뛰기")}</button>}
+              {cardsDone && <button onClick={next} className="press" style={{ padding: "10px 34px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14, cursor: "pointer" }}>{t("확인")}</button>}
+            </div>
+          </div>
+        </div>
+      )}
+      {bi >= 0 && <BoardUnlockScene key={r.boardUnlocked[bi]} id={r.boardUnlocked[bi]} onDone={next} />}
+    </motion.div>
+  );
+}
+
+/** 도감 스킨 페이지 맨 위의 뽑기 구역. onPull(1|5) → { ok, results, boardUnlocked, … }(App의 pullGacha). */
 export function GachaSection({ coins, onPull }) {
-  const [phase, setPhase] = useState("idle");
-  const [result, setResult] = useState(null);
+  const [stage, setStage] = useState(null);
   const [rates, setRates] = useState(false);
   const timers = useRef([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
-  const busy = phase !== "idle";
+  const busy = !!stage;
   const pull = (count) => {
     if (busy || !onPull || (coins || 0) < GACHA_PRICE[count]) return;
     const r = onPull(count);
     if (!r || !r.ok) return;
-    setPhase("shake");
-    timers.current.push(setTimeout(() => setPhase("open"), 750), setTimeout(() => { setResult(r); }, 1650), setTimeout(() => setPhase("idle"), 1900));
+    setStage({ r, phase: "enter" });
+    const go = (ms, phase) => timers.current.push(setTimeout(() => setStage((s) => (s ? { ...s, phase } : s)), ms));
+    go(900, "shake"); go(1700, "open"); go(2700, "cards");
   };
-  const btn = (count, label, sub) => {
+  const btn = (count, label) => {
     const cost = GACHA_PRICE[count], can = !busy && (coins || 0) >= cost;
     return (
       <button onClick={() => pull(count)} disabled={!can} className="press" aria-label={label + " " + cost}
         style={{ flex: 1, minWidth: 0, padding: "10px 8px", borderRadius: 12, border: can ? "none" : "1px solid #5A4630", background: can ? "linear-gradient(180deg,#FFE493,#E0A020 55%,#B07410)" : "rgba(0,0,0,.28)", color: can ? "#241509" : "#8A7458", cursor: can ? "pointer" : "not-allowed", fontFamily: SITE_FONT, boxShadow: can ? "0 3px 0 #7A4C08, 0 6px 14px -4px rgba(0,0,0,.55)" : "none" }}>
         <div style={{ fontSize: 14, fontWeight: 900 }}>{label}</div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 13, fontWeight: 800, marginTop: 2 }}><CoinIcon size={18} />{cost.toLocaleString()}</div>
-        {sub && <div style={{ fontSize: 10, fontWeight: 700, marginTop: 1, opacity: 0.85 }}>{sub}</div>}
       </button>
     );
   };
@@ -168,30 +209,30 @@ export function GachaSection({ coins, onPull }) {
           <CoinIcon size={20} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{(coins || 0).toLocaleString()}</span>
         </span>
       </div>
-      <p style={{ fontSize: 11.5, color: T.ivory, opacity: 0.85, margin: "0 0 6px", lineHeight: 1.5 }}>{t("상자를 열어 스킨 세트 획득. 보드와 기물이 한 벌로 나옴")}</p>
-      <div style={{ padding: "6px 8px 4px" }}><GachaChest phase={phase} /></div>
+      <div style={{ padding: "6px 8px 4px", maxWidth: 290, margin: "0 auto", aspectRatio: "240 / 224" }}>
+        {!stage && <motion.div layoutId="gacha-chest" transition={{ type: "spring", stiffness: 110, damping: 20 }}><GachaChest phase="idle" /></motion.div>}
+      </div>
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-        {btn(1, t("1회 뽑기"), null)}
-        {btn(5, t("5회 뽑기"), tx("{0}코인 절약", GACHA_PRICE[1] * 5 - GACHA_PRICE[5]))}
+        {btn(1, t("1회 뽑기"))}
+        {btn(5, t("5회 뽑기"))}
       </div>
       <button onClick={() => setRates((v) => !v)} className="press" aria-expanded={rates} style={{ marginTop: 10, background: "none", border: "none", color: T.brassHi, fontSize: 11.5, fontWeight: 800, cursor: "pointer", padding: 0, textDecoration: "underline" }}>{t("뽑기 확률")}</button>
       <AnimatePresence initial={false}>
         {rates && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
             <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,.3)" }}>
-              {GACHA_POOL.map((p) => { const set = SKIN_SETS.find((s) => s.id === p.id), rar = GACHA_RARITY[p.rarity]; return (
+              {GACHA_POOL.map((p) => { const rar = GACHA_RARITY[p.rarity]; return (
                 <div key={p.id} className="flex items-center" style={{ gap: 8, padding: "4px 0", fontSize: 12, color: T.ivory }}>
                   <span style={{ fontSize: 10, fontWeight: 900, color: "#fff", background: rar.color, borderRadius: 999, padding: "1px 8px", flexShrink: 0 }}>{t(rar.label)}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{set ? set.label : p.id}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{setLabel(p.id)}</span>
                   <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{((p.weight / GACHA_TOTAL_WEIGHT) * 100).toFixed(0)}%</span>
                 </div>
               ); })}
-              <div style={{ fontSize: 11, color: T.ivory, opacity: 0.75, marginTop: 6, lineHeight: 1.5 }}>{tx("이미 가진 세트가 나오면 {0}코인 환급", GACHA_DUP_REFUND)}</div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      {result && <GachaResultModal result={result} onClose={() => setResult(null)} />}
+      <AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>
     </section>
   );
 }

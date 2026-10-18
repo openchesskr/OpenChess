@@ -9,7 +9,7 @@ import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, lo
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import { BOARD_SKINS, PIECE_SKINS, T, MOTION_EASE } from "./lib/theme.js";
-import { gachaPull } from "./lib/gacha.js";
+import { gachaPull, ownedPieceTypes, ownsBoard } from "./lib/gacha.js";
 import { isPuzzleSequenceValid, puzzleEloUpdate } from "./lib/puzzleRating.js";
 import { SkinContext } from "./components/pieces.jsx";
 import { SITE_FONT } from "./components/engineLines.jsx";
@@ -658,10 +658,12 @@ export default function App() {
     setOcCoins(r.coins); setOwnedSkins(r.owned);
     return r;
   }, [ocCoins, ownedSkins]);
-  const equipSkinSet = useCallback((setId) => { setBoardSkin(setId); setPieceSkin(setId); }, []);
+  // 세트 장착 — 기물은 가진 것만 그 세트 모양이 되고(나머지는 기본), 보드는 기물 6종을 모두 모아 해금한 세트일 때만 따라온다.
+  const equipSkinSet = useCallback((setId) => { setPieceSkin(setId); setBoardSkin(ownsBoard(ownedSkins, setId) ? setId : "classic"); }, [ownedSkins]);
   // 없어진 스킨(예: 삭제된 푸른 바다)이 저장돼 있으면 기본으로 취급한다.
-  const boardSkinOk = BOARD_SKINS[boardSkin] ? boardSkin : "classic", pieceSkinOk = PIECE_SKINS[pieceSkin] ? pieceSkin : "classic";
-  const skinValue = useMemo(() => ({ boardSkin: boardSkinOk, pieceSkin: pieceSkinOk }), [boardSkinOk, pieceSkinOk]);
+  const boardSkinOk = BOARD_SKINS[boardSkin] && ownsBoard(ownedSkins, boardSkin) ? boardSkin : "classic", pieceSkinOk = PIECE_SKINS[pieceSkin] ? pieceSkin : "classic";
+  const pieceTypesOk = useMemo(() => ownedPieceTypes(ownedSkins, pieceSkinOk).join(""), [ownedSkins, pieceSkinOk]);   // 장착한 세트에서 가진 기물 종류(없는 종류는 기본 모양)
+  const skinValue = useMemo(() => ({ boardSkin: boardSkinOk, pieceSkin: pieceSkinOk, pieceTypes: pieceTypesOk }), [boardSkinOk, pieceSkinOk, pieceTypesOk]);
 
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
   // pr.boardSkin·pr.pieceSkin을 복원하지 않았다 — 스킨을 구매(서버엔 정상 저장됨)한 뒤 로그아웃했다가

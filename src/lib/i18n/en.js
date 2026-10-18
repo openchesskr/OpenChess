@@ -2638,4 +2638,5 @@ export default {
   "세트 수집 현황": "Set collection",
   "그랜드마스터 달성 시 해금": "Unlock at Grandmaster",
   "오로라 크리스탈과 대리석, 그랜드마스터 전용 세트": "Aurora crystal and marble, the Grandmaster-only set",
+  "보드 해금": "Board unlocked",
 };

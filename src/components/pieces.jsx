@@ -10,7 +10,7 @@ import { TIER_COLORS } from "../lib/tierSystem.js";
 /* 장착된 스킨을 Context로 흘려보내 Board·PieceGlyph 어디서든(프롭 안 넘겨도) 자동 적용되게 한다 —
    보드가 학습 탭·퍼즐 풀이·미니 프리뷰 등 수십 곳에서 쓰이므로 매 호출부마다 prop을 꽂는 대신
    최상위 App에서 한 번만 Provider로 감싼다. */
-export const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic" });
+export const SkinContext = createContext({ boardSkin: "classic", pieceSkin: "classic", pieceTypes: "PNBRQK" });
 
 export function PieceGlyph({ type, color, size, style, draggable = false, onDragStart, pieceSkin }) {
   // (버그 수정) 진짜 인터랙티브 보드가 아닌 곳(애니메이션 시연, 캡처 기물 목록, 프로모션 후보,
@@ -23,7 +23,8 @@ export function PieceGlyph({ type, color, size, style, draggable = false, onDrag
     ? { userSelect: "none", WebkitUserSelect: "none" }
     : { WebkitUserDrag: "none", userSelect: "none", WebkitUserSelect: "none" };
   const ctx = useContext(SkinContext);
-  const skinId = pieceSkin || ctx.pieceSkin;
+  // 장착한 세트에서 아직 못 얻은 기물은 기본 모양(pieceSkin을 직접 넘긴 미리보기는 그대로 그 스킨).
+  const skinId = pieceSkin || (ctx.pieceTypes == null || ctx.pieceTypes.includes(type) ? ctx.pieceSkin : "classic");
   const sk = PIECE_SKINS[skinId] || PIECE_SKINS.classic;
   const light = color === "w";
   // (버그) useId는 스킨(이미지/SVG)에 따라 조건부로 호출하면 안 된다 — 기물 스킨을 갈아 끼우면
