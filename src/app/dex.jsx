@@ -3,7 +3,7 @@
 import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRules.js";
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
-import { T, BOARD_SKINS, PIECE_SKINS } from "../lib/theme.js";
+import { T, BOARD_SKINS, PIECE_SKINS, SKIN_SETS } from "../lib/theme.js";
 import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -21,7 +21,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, SkinShopCard, SkinSetCard, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -1384,7 +1384,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onBuySkin, onEquipSkin, onBuySkinSet, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
@@ -1460,6 +1460,12 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>{backBtn}<span style={{ fontSize: 15, fontWeight: 900, color: T.ivoryHi }}>{t("스킨")}</span></div>
           <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 14px", lineHeight: 1.6 }}>{t("보드 스킨·기물 스킨 모음. 기본 스킨은 바로 장착, 상점에서 구매한 스킨도 여기서 장착·구매 가능. 미보유 스킨은 미리보기")}</p>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("스킨 세트")}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+            {SKIN_SETS.map((set, i) => (
+              <FadeIn key={set.id} index={i}><SkinSetCard set={set} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} coins={coins || 0} onBuySet={onBuySkinSet} onEquipSet={onEquipSkinSet} /></FadeIn>
+            ))}
+          </div>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, marginBottom: 8 }}>{t("체스보드 스킨")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
             {Object.entries(BOARD_SKINS).map(([id, sk], i) => (

@@ -132,6 +132,28 @@ export const BOARD_SKINS = {
   // (about \uD398\uC774\uC9C0 \uADF8\uB79C\uB4DC\uB9C8\uC2A4\uD130 \uCE74\uB4DC \uC5F0\uB3D9) \uCF54\uC778\uC73C\uB85C \uC0B4 \uC218 \uC5C6\uACE0 tierLocked \uD2F0\uC5B4\uC5D0 \uB3C4\uB2EC\uD574\uC57C\uB9CC
   // \uC790\uB3D9 \uD574\uAE08\uB418\uB294 \uC804\uC6A9 \uC2A4\uD0A8 \u2014 App\uC758 useEffect(totalXp \uAE30\uC900)\uAC00 ownedSkins\uC5D0 \uC9C1\uC811 \uCD94\uAC00\uD558\uBBC0\uB85C price\uB294 \uC4F0\uC774\uC9C0 \uC54A\uB294\uB2E4.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: "/boards/grandmaster-board.jpg" },
+  // (v0.6.9) 세트 스킨의 보드 — 이미지 파일 없이 CSS 그라디언트로 칸마다 질감을 그린다(texture). light·dark는 질감을 못 쓰는 곳(좌표 글자색 계산 등)의 대표색이다.
+  //  칸마다 grain 위치를 조금씩 어긋나게(seed) 해서 같은 무늬가 바둑판처럼 반복돼 보이지 않게 한다.
+  walnut: { label: t("월넛 & 메이플"), price: 400, set: "walnut", light: "#E6C994", dark: "#8A5A2C",
+    texture: (light, r, c) => { const k = (r * 13 + c * 7) % 23; return light
+      ? { backgroundImage: "repeating-linear-gradient(90deg, rgba(110,70,25,.07) 0 2px, transparent 2px 6px), linear-gradient(135deg, #F0D9AE, #DDBB82)", backgroundPosition: k + "px 0, 0 0" }
+      : { backgroundImage: "repeating-linear-gradient(90deg, rgba(35,16,4,.2) 0 2px, transparent 2px 7px), linear-gradient(135deg, #9C6A3A, #774920)", backgroundPosition: k + "px 0, 0 0" }; } },
+  marble: { label: t("대리석 궁전"), price: 600, set: "marble", light: "#E9ECF0", dark: "#4A4F58",
+    texture: (light, r, c) => { const x = (r * 37 + c * 53) % 100, y = (r * 61 + c * 29) % 100; return light
+      ? { backgroundImage: "linear-gradient(115deg, transparent 40%, rgba(110,122,142,.2) 41%, transparent 43.5%), linear-gradient(62deg, transparent 63%, rgba(110,122,142,.13) 64%, transparent 66%), linear-gradient(135deg, #F6F7F9, #DADFE6)", backgroundSize: "170% 170%, 170% 170%, 100% 100%", backgroundPosition: x + "% " + y + "%, " + y + "% " + x + "%, 0 0" }
+      : { backgroundImage: "linear-gradient(115deg, transparent 40%, rgba(255,255,255,.16) 41%, transparent 43%), linear-gradient(62deg, transparent 63%, rgba(255,255,255,.1) 64%, transparent 66%), linear-gradient(135deg, #565B65, #2A2E35)", backgroundSize: "170% 170%, 170% 170%, 100% 100%", backgroundPosition: y + "% " + x + "%, " + x + "% " + y + "%, 0 0" }; } },
+  neon: { label: t("네온 사이버"), price: 800, set: "neon", light: "#14213F", dark: "#070C1A",
+    texture: (light) => (light
+      ? { background: "linear-gradient(135deg, #15244A, #0C1632)", boxShadow: "inset 0 0 0 1px rgba(53,242,255,.2)" }
+      : { background: "linear-gradient(135deg, #0A1022, #050913)", boxShadow: "inset 0 0 0 1px rgba(255,79,216,.14)" }) },
+  aurum: { label: t("황금과 흑요석"), price: 1000, set: "aurum", light: "#E8C874", dark: "#1B1820",
+    texture: (light) => (light
+      ? { background: "linear-gradient(135deg, #F7E4A6, #D3AB58)" }
+      : { background: "linear-gradient(135deg, #2A2631, #0C0A10)" }) },
+  frost: { label: t("프로스트 크리스탈"), price: 600, set: "frost", light: "#E3F1FA", dark: "#7FA9CC",
+    texture: (light) => (light
+      ? { backgroundImage: "radial-gradient(circle at 30% 25%, rgba(255,255,255,.95), transparent 55%), linear-gradient(135deg, #EBF7FE, #C9E4F4)" }
+      : { backgroundImage: "radial-gradient(circle at 72% 72%, rgba(255,255,255,.28), transparent 52%), linear-gradient(135deg, #8AB5D7, #628EB5)" }) },
 };
 // (2\uCC28 \uAC1C\uD3B8) \uC774\uBBF8\uC9C0 \uAE30\uBC18 \uBCF4\uB4DC \uC2A4\uD0A8\uC740 8x8 \uD1B5\uC9F8 \uC774\uBBF8\uC9C0\uB97C \uCE78 \uD06C\uAE30\uC758 8\uBC30\uB85C \uAE54\uACE0(background-size),
 // \uD589/\uC5F4\uC5D0 \uB9DE\uCDB0 \uC74C\uC218\uB85C \uBC00\uC5B4(background-position) \uAC01 \uCE78\uC774 \uC804\uCCB4 \uC774\uBBF8\uC9C0\uC758 \uC790\uAE30 \uC870\uAC01\uB9CC \uBCF4\uC774\uAC8C \uD55C\uB2E4.
@@ -144,6 +166,7 @@ export function boardSquareBg(sk, light, r, c) {
     const cc = ((c % 8) + 8) % 8, rr = ((r % 8) + 8) % 8;
     return { backgroundImage: "url(" + sk.image + ")", backgroundSize: "800% 800%", backgroundPosition: (cc / 7 * 100) + "% " + (rr / 7 * 100) + "%" };
   }
+  if (sk.texture) return sk.texture(light, r, c);
   return { background: light ? sk.light : sk.dark };
 }
 export const PIECE_SKINS = {
@@ -154,7 +177,27 @@ export const PIECE_SKINS = {
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
+  // (v0.6.9) 세트 스킨의 기물 — 이미지 파일 없이 SVG로 그린다(design = components/designedPieces.jsx의 재질 키).
+  walnut: { label: t("월넛 & 메이플"), price: 400, set: "walnut", design: "wood" },
+  marble: { label: t("대리석 궁전"), price: 600, set: "marble", design: "marble" },
+  neon: { label: t("네온 사이버"), price: 800, set: "neon", design: "neon", noShadow: true },
+  aurum: { label: t("황금과 흑요석"), price: 1000, set: "aurum", design: "aurum" },
+  frost: { label: t("프로스트 크리스탈"), price: 600, set: "frost", design: "frost" },
 };
+// (v0.6.9) 보드 스킨 + 기물 스킨을 한 벌로 묶은 세트 — 같이 사면 개별 합계보다 싸다(price). 일부만 갖고 있으면 남은 것의 개별 가격 합계로 산다.
+export const SKIN_SETS = [
+  { id: "walnut", label: t("월넛 & 메이플"), desc: t("따뜻한 원목 결의 클래식 세트"), price: 700 },
+  { id: "marble", label: t("대리석 궁전"), desc: t("흰 대리석과 검은 대리석의 우아한 세트"), price: 1000 },
+  { id: "neon", label: t("네온 사이버"), desc: t("어둠 속에서 빛나는 청록·분홍 네온 세트"), price: 1400 },
+  { id: "aurum", label: t("황금과 흑요석"), desc: t("금빛 칸과 흑요석 칸, 금테를 두른 세트"), price: 1700 },
+  { id: "frost", label: t("프로스트 크리스탈"), desc: t("서리 낀 얼음 결정 느낌의 세트"), price: 1000 },
+];
+/** 세트를 지금 사는 데 드는 코인 — 보드·기물을 둘 다 안 가졌으면 세트 가격, 하나만 가졌으면 나머지 하나의 개별 가격, 둘 다 가졌으면 0. */
+export function skinSetPrice(set, owned) {
+  const need = [["board", BOARD_SKINS[set.id]], ["piece", PIECE_SKINS[set.id]]].filter(([k]) => !owned.has(k + ":" + set.id));
+  if (need.length === 2) return set.price;
+  return need.reduce((a, [, sk]) => a + sk.price, 0);
+}
 export function pieceShadow(light) { return light ? "drop-shadow(0 1px 1px rgba(0,0,0,.55))" : "drop-shadow(0 2px 2px rgba(0,0,0,.5))"; }
 // (기능) 티어별로 디자이너가 직접 제작한 로우폴리 기물 이미지(public에 업로드된 실제 아트) —
 // 아이언 폰부터 그랜드마스터(왕관에 "GM"이 새겨진 홀로그램 킹)까지, 기물 종류와 등급 색이 이미

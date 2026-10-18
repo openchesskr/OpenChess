@@ -6,7 +6,7 @@ import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
-import { MOTION_EASE, FILES, BOARD_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
+import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareBg, skinSetPrice, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
@@ -6247,6 +6247,42 @@ export function ChesscomLogo({ height = 14, dark }) {
 // (19차 UI5) 상점 탭 — 보유 코인 표기 + 아이템(체스보드/기물 스킨)은 추후 추가 예정.
 /* (20차 기능4) 스킨 상점 카드 — 보드/기물 공용. 미리보기(작은 체크보드 4칸 또는 기물 2개) + 가격/보유/
    장착 상태에 따라 버튼이 "구매"→"장착"→"장착됨"으로 바뀐다. */
+// (v0.6.9) 보드 스킨 + 기물 스킨 세트 카드 — 한 번에 사고 한 번에 장착한다. 미리보기는 보드 위에 흰 나이트·검은 퀸.
+export function SkinSetCard({ set, ownedSkins, boardSkin, pieceSkin, coins, onBuySet, onEquipSet }) {
+  const owned = ownedSkins || new Set();
+  const bsk = BOARD_SKINS[set.id], psk = PIECE_SKINS[set.id];
+  const ownsAll = owned.has("board:" + set.id) && owned.has("piece:" + set.id);
+  const equipped = boardSkin === set.id && pieceSkin === set.id;
+  const price = skinSetPrice(set, owned);
+  const sum = bsk.price + psk.price;
+  return (
+    <div style={{ display: "flex", gap: 12, padding: 12, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
+      <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }}>
+        <div style={{ width: 96, height: 96, borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gridTemplateRows: "repeat(4,1fr)", ...BOARD_GLOSS }}>
+          {Array.from({ length: 16 }).map((_, i) => { const r = Math.floor(i / 4), c = i % 4; return <div key={i} style={boardSquareBg(bsk, (r + c) % 2 === 0, r, c)} />; })}
+        </div>
+        <div style={{ position: "absolute", left: 2, bottom: 26, width: 48, display: "flex", justifyContent: "center" }}><PieceGlyph type="N" color="w" size={44} pieceSkin={set.id} /></div>
+        <div style={{ position: "absolute", right: 2, bottom: 2, width: 48, display: "flex", justifyContent: "center" }}><PieceGlyph type="Q" color="b" size={44} pieceSkin={set.id} /></div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{set.label}</div>
+        <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{set.desc}</div>
+        <div className="flex items-center gap-2" style={{ marginTop: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          {ownsAll ? <span style={{ fontSize: 11, color: T.inkSoft }}>{t("보드·기물 모두 보유")}</span>
+            : <><span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: T.brass }}><CoinIcon size={17} /> {price}</span>
+              {price === set.price && <span style={{ fontSize: 10.5, color: T.inkSoft, textDecoration: "line-through" }}>{sum}</span>}</>}
+        </div>
+        {equipped ? (
+          <button disabled className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.best, background: "rgba(63,122,58,.12)", color: T.best, cursor: "default" }}>{t("✓ 장착됨")}</button>
+        ) : ownsAll ? (
+          <button onClick={() => onEquipSet(set.id)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("세트 장착")}</button>
+        ) : (
+          <button onClick={() => onBuySet(set.id)} disabled={coins < price} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "6px 12px", borderRadius: 8, border: "none", background: coins < price ? "#8A7458" : "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", cursor: coins < price ? "not-allowed" : "pointer" }}>{coins < price ? t("코인 부족") : t("세트 구매")}</button>
+        )}
+      </div>
+    </div>
+  );
+}
 export function SkinShopCard({ kind, id, sk, owned, equipped, coins, onBuy, onEquip }) {
   const isFree = sk.price === 0;
   const tierLabel = sk.tierLocked && TIERS.find((t) => t.key === sk.tierLocked);

@@ -8,7 +8,7 @@ import { closeExternalBrowser, decideBackAction, exitApp, installNativeLinkGuard
 import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref } from "./lib/prefs.js";
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
-import { BOARD_SKINS, PIECE_SKINS, T, MOTION_EASE } from "./lib/theme.js";
+import { BOARD_SKINS, PIECE_SKINS, SKIN_SETS, skinSetPrice, T, MOTION_EASE } from "./lib/theme.js";
 import { isPuzzleSequenceValid, puzzleEloUpdate } from "./lib/puzzleRating.js";
 import { SkinContext } from "./components/pieces.jsx";
 import { SITE_FONT } from "./components/engineLines.jsx";
@@ -661,6 +661,16 @@ export default function App() {
     return true;
   }, [ocCoins, ownedSkins]);
   const equipSkin = useCallback((kind, id) => { (kind === "board" ? setBoardSkin : setPieceSkin)(id); }, []);
+  // (v0.6.9) 세트 구매·장착 — 보드와 기물을 한 번에. 코인은 한 번만 차감한다(skinSetPrice).
+  const buySkinSet = useCallback((setId) => {
+    const set = SKIN_SETS.find((x) => x.id === setId); if (!set) return false;
+    const price = skinSetPrice(set, ownedSkins);
+    if (ocCoins < price) return false;
+    if (price > 0) setOcCoins((c) => c - price);
+    setOwnedSkins((prev) => new Set(prev).add("board:" + setId).add("piece:" + setId));
+    return true;
+  }, [ocCoins, ownedSkins]);
+  const equipSkinSet = useCallback((setId) => { setBoardSkin(setId); setPieceSkin(setId); }, []);
   const skinValue = useMemo(() => ({ boardSkin, pieceSkin }), [boardSkin, pieceSkin]);
 
   // (버그 수정) 초기 세션 복구(위 useEffect)와 달리 로그인 시 호출되는 이 콜백은 pr.ownedSkins·
@@ -1805,7 +1815,7 @@ export default function App() {
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkin} pieceSkin={pieceSkin} onBuySkin={buySkin} onEquipSkin={equipSkin} onBuySkinSet={buySkinSet} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenLearn={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
         {/* (사용자 요청) 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동하면 이 화면은 닫히지만
