@@ -167,7 +167,7 @@ export function boardSquareBg(sk, light, r, c) {
   if (sk.texture) return sk.texture(light, r, c);
   return { background: light ? sk.light : sk.dark };
 }
-// (v0.6.9) 세트 스킨 기물 이미지 — 기본 이미지의 SKIN_PIECE_SCALE(3)배 해상도 캔버스에 기물을 SKIN_PIECE_FIT(0.94)배로 줄여 아래 가운데에 붙인 것(위·옆 장식 여백).
+// (v0.6.9) 세트 스킨 기물 이미지 — 기본 이미지의 SKIN_PIECE_SCALE(3)배 해상도 캔버스에 실루엣을 SKIN_PIECE_FIT(0.94)배로 줄여 아래 가운데에 붙인 것(위·옆 장식 여백).
 //  캔버스 크기는 기본 크기 표 × 3, 받침 폭 기준(basePx)은 기본(80) × 3 × 0.94라서 화면에서 받침이 기본 기물과 같은 폭으로 나온다. 같은 값을 scripts/build-skin-pieces.py(S·K)가 쓴다.
 export const SKIN_PIECE_SCALE = 3, SKIN_PIECE_FIT = 0.94;
 const SET_PIECE_NAMES = { P: "pawn", N: "knight", B: "bishop", R: "rook", Q: "queen", K: "king" };
@@ -186,7 +186,7 @@ export const PIECE_SKINS = {
   // (about 페이지 그랜드마스터 카드 연동) 코인으로 살 수 없고 그랜드마스터 티어에 도달해야만
   // 자동 해금되는 전용 기물 — 위 BOARD_SKINS.grandmaster와 같은 원리(tierLocked)로 동작한다.
   grandmaster: { label: t("그랜드마스터"), tierLocked: "grandmaster", image: true },
-  // (v0.6.9) 세트 스킨의 기물 — 기본 기물 이미지의 로우폴리 뼈대 위에 외형(받침·꼭대기)과 장식 문양, 재질을 바꾼 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
+  // (v0.6.9) 세트 스킨의 기물 — 기본 기물의 바깥 실루엣만 바탕으로 쓰고(기본의 금색 분할선·삼각형은 쓰지 않는다), 받침·꼭대기 외형과 몸통 안쪽 설계·재질을 세트마다 새로 만든 이미지(scripts/build-skin-pieces.py가 public/pieces/<id>/에 만든다).
   deco: { label: t("아르데코"), price: 700, set: "deco", image: true },
   gothic: { label: t("고딕 성당"), price: 700, set: "gothic", image: true },
   dancheong: { label: t("단청"), price: 800, set: "dancheong", image: true },
