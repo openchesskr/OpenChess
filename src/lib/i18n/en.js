@@ -2421,7 +2421,7 @@ export default {
   "오프닝 숙련": "Opening mastery",
   "활동": "Activity",
   "대국·레이팅": "Games & rating",
-  "희귀": "Rare",
+  "히든 칭호": "Hidden title",
   "조건을 달성해서{0}새 칭호 획득": "You met the requirement{0}and earned a new title",
   "업적": "Achievements",
   "업적 달성": "Achievement unlocked",

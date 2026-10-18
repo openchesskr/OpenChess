@@ -6,7 +6,7 @@
  *   ④ chess.com 집계(ccTitleStats)가 연승·메이트·빠른 승리·장기전·강자 격파를 정확히 센다
  */
 import fs from "node:fs";
-import { TITLE_SERIES, TITLE_OPENINGS, OPENING_FAMILIES, ALL_TITLE_IDS, seriesAccent, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
+import { TITLE_CATEGORIES, TITLE_SERIES, TITLE_OPENINGS, OPENING_FAMILIES, ALL_TITLE_IDS, seriesAccent, titleDef, sanitizeTitleSet, achievableTitles, computeTitleMetrics, ccTitleStats } from "../src/lib/titles.js";
 const fails = []; const fail = (m) => fails.push(m);
 const keys = new Set();
 for (const s of TITLE_SERIES) {
@@ -23,8 +23,13 @@ for (const s of TITLE_SERIES) if (!new RegExp("\\b" + s.icon + "\\b").test(iconB
 for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes('case "' + m + '":')) fail("지표 " + m + "의 조건 문구(titleCondText)가 없음");
 // 오프닝마다 엠블럼(국기·이니셜)이 있어야 하고, 모든 계열에 포인트 색이 있어야 한다
 const emb = fs.readFileSync(new URL("../src/components/titleEmblems.jsx", import.meta.url), "utf8");
-for (const f of OPENING_FAMILIES) if (!new RegExp("^  " + f.key + ": (\\{|mono\\()", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
+for (const f of OPENING_FAMILIES) if (!new RegExp("^  " + f.key + ": (\\{|mono\\(|INDIA,)", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
 for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key)) || seriesAccent(s.key) === "#7A5A34" && s.key !== "dex") fail(s.key + ": 포인트 색(ACCENT)이 없음");
+// (v0.6.9) 인디언 디펜스 계열 엠블럼은 모두 인도 국기(INDIA), 오프닝 칭호의 퍼즐 기준은 낮게 유지, 희귀 갈래의 이름은 "히든 칭호"
+for (const f of OPENING_FAMILIES) if (/indian/i.test(f.label) && !new RegExp("^  " + f.key + ": INDIA,", "m").test(emb)) fail(f.label + " 엠블럼이 인도 국기(INDIA)가 아님");
+for (const s of TITLE_SERIES) if (s.cat === "opening" && s.mins[4] > 20) fail(s.key + ": 오프닝 칭호 퍼즐 기준(5단계 " + s.mins[4] + ")이 너무 높음(20 이하)");
+if (!TITLE_CATEGORIES.some((c) => c.key === "rare" && c.label === "히든 칭호")) fail("희귀 갈래의 이름이 \"히든 칭호\"가 아님");
+if (!/hiddenLock/.test(common) || !/t\("히든 칭호"\)/.test(common)) fail("히든 칭호가 해금 조건 대신 \"히든 칭호\"만 표시하지 않음(common.jsx hiddenLock)");
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const used = new Set([...common.matchAll(/animation: [^"`]*?(title[A-Za-z]+)/g)].map((m) => m[1]));

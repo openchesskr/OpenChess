@@ -48,11 +48,11 @@ export const TITLE_CATEGORIES = [
   { key: "opening", label: "오프닝 숙련" },
   { key: "activity", label: "활동" },
   { key: "game", label: "대국·레이팅" },
-  { key: "rare", label: "희귀" },
+  { key: "rare", label: "히든 칭호" },
 ];
 
 // 오프닝 계열 공통 기준: 퍼즐 해결 수(mins) + chess.com 해당 오프닝 플레이 수(ccMins)를 모두 채워야 한다.
-const OPENING_MINS = [3, 10, 25, 60, 120];
+const OPENING_MINS = [1, 2, 4, 8, 15];   // (v0.6.9) 퍼즐 해결 수 대폭 완화(기존 3·10·25·60·120)
 const OPENING_CC_MINS = [10, 30, 100, 300, 1000];
 const OPENING_NAMES = ["초급", "중급", "상급", "마스터", "그랜드마스터"];   // 기존 5단계(Beginner·Intermediate·Advanced·Master·GrandMaster). 화면에서는 common.jsx titleNameText가 언어별로 번역한다
 
@@ -81,7 +81,7 @@ export const TITLE_SERIES = [
   S("ccblack", "game", "흑의 길", "Moon", "ccBlackWins", [10, 50, 200, 500, 2000], ["맞받아치기", "수비수", "기다리는 사냥꾼", "밤의 군림", "일식"]),
   S("ccgiant", "game", "거인 사냥꾼", "Sword", "ccGiantWins", [1, 5, 20, 50, 150], ["약자", "이변", "거인 킬러", "용 사냥꾼", "다윗"]),
   S("ccdraw", "game", "평화주의자", "Handshake", "ccDraws", [1, 10, 40, 100, 300], ["휴전", "외교관", "협상가", "스테일메이트 현자", "평정심"]),
-  // 희귀(한 단계짜리 한정·업적 칭호 + 칭호 수집)
+  // 히든(= 옛 "희귀", 한 단계짜리 한정·업적 칭호 + 칭호 수집). 안 얻은 동안은 해금 조건을 화면에 보이지 않는다(내부 키는 rare 그대로).
   S("r_night", "rare", "올빼미", "MoonStar", "ccNight", [30], ["자정 너머"]),
   S("r_explorer", "rare", "탐험가", "Compass", "ccOpenings", [50], ["개척자"]),
   S("r_onetrick", "rare", "외길 인생", "Target", "ccTopOpening", [150], ["한 우물"]),

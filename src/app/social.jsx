@@ -18,7 +18,7 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { Board, CONTENT, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, CONTENT, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -211,6 +211,27 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 }
 // (18차 UI10) 설정 탭의 "내 프로필" 블록 — 유저 검색의 프로필 상세 UI와 동일한 구성으로 내 정보를 보여주고,
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
+// (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
+// 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
+function EquippedTitleFit({ id }) {
+  const BASE_W = 260, BASE_H = 74;
+  const ref = useRef(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return undefined;
+    setW(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const k = w ? Math.min(0.85, w / BASE_W) : 0;
+  return (
+    <div ref={ref} style={{ flex: 1, minWidth: 0, height: k ? Math.round(BASE_H * k) : BASE_H * 0.5 }}>
+      {k > 0 && <div style={{ width: BASE_W, transform: `scale(${k})`, transformOrigin: "left top", pointerEvents: "none" }}><TitleBadge id={id} compact earned noPeek /></div>}
+    </div>
+  );
+}
 // (사용자 요청) 통계 분리 토글 — 처음엔 카드 최상단에 큰 세그먼트 바로 뒀는데, 그만큼 세로 공간을
 // 먼저 차지해 아이디·이름이 아래로 밀렸다. 아이디 라벨과 같은 줄, 그 줄 오른쪽 여백(우상단)에 들어갈
 // 만큼 작은 아이콘 두 개로 줄여 그 자리로 옮긴다. MyProfileCard(내 프로필 카드)와 친구·검색 프로필
@@ -751,7 +772,8 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              <div className="flex items-center justify-end" style={{ marginBottom: 12 }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 12, gap: 8 }}>
+                {pub.title && titleDef(pub.title) ? <EquippedTitleFit id={pub.title} /> : <span />}
                 {/* (사용자 요청, 재조정) /user 페이지 전용 토글 크기 — 이전 1.75배와 0.5배의 중간값. */}
                 {statsViewToggle(statsView, setStatsView, 1.1)}
               </div>

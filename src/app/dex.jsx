@@ -1277,7 +1277,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
   const seen = seenTitles || earned;
-  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("희귀") };
+  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("히든 칭호") };
   const earnedOf = (s) => s.mins.filter((_, i) => earned.has(s.key + ":" + (i + 1))).length;
   const freshOf = (s) => s.mins.some((_, i) => earned.has(s.key + ":" + (i + 1)) && !seen.has(s.key + ":" + (i + 1)));
   const cur = TITLE_SERIES.find((x) => x.key === sel) || TITLE_SERIES[0];

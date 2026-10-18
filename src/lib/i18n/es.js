@@ -2421,7 +2421,7 @@ export default {
   "오프닝 숙련": "Dominio de aperturas",
   "활동": "Actividad",
   "대국·레이팅": "Partidas y rating",
-  "희귀": "Raros",
+  "히든 칭호": "Título oculto",
   "조건을 달성해서{0}새 칭호 획득": "Cumpliste el requisito{0}y conseguiste un nuevo título",
   "업적": "Logros",
   "업적 달성": "Logro desbloqueado",
