@@ -1234,17 +1234,27 @@ drop policy if exists "daily puzzle cache insert" on public.daily_puzzle_cache;
 create policy "daily puzzle cache read"   on public.daily_puzzle_cache for select using (true);
 -- (v0.7.0 보안 BUG-111) 예전에는 비로그인 누구나 아무 날짜(PK)에 아무 내용이나 먼저 넣을 수 있어 미래 날짜 일일 퍼즐을 오염시킬 수 있었다. 직접 쓰기를 막고
 -- RPC로만: 로그인 필요, 오늘 기준 -8일~+1일 날짜만, 크기 상한, 사용자당 시간당 20건, 이미 있는 날짜는 그대로 둔다(선착순).
--- 남는 한계: 오늘 날짜를 가장 먼저 올리는 로그인 사용자가 내용을 정한다(서버가 엔진 없이 검증할 수 없음 — BUGS.md BUG-111).
+-- 남는 한계: 올라오는 내용의 id만 서버가 고른 퍼즐과 대조한다(그 id에 맞춘 가짜 라인은 서버가 엔진 없이 판별할 수 없음 — BUGS.md BUG-111).
 revoke insert, update, delete on public.daily_puzzle_cache from anon, authenticated;
 grant select on public.daily_puzzle_cache to anon, authenticated;
 drop function if exists public.daily_puzzle_cache_put(date, jsonb) cascade;
 create or replace function public.daily_puzzle_cache_put(p_date date, p_data jsonb)
 returns void language plpgsql security definer set search_path = public as $$
+declare v_pick bigint; v_dev boolean;
 begin
   if auth.uid() is null then raise exception 'auth required'; end if;
   if p_date is null or p_date < current_date - 8 or p_date > current_date + 1 then raise exception 'date out of range'; end if;
   if p_data is null or jsonb_typeof(p_data) <> 'object' or length(p_data::text) > 300000 then raise exception 'invalid data'; end if;
   if public.puzzle_no_of(p_data ->> 'id') is null then raise exception 'invalid puzzle id'; end if;
+  -- 그날의 퍼즐은 서버가 정한다: 커뮤니티 선정(daily_puzzle_picks)이 있으면 내용의 id가 그 퍼즐과 같아야 하고,
+  -- 개발자가 직접 등록한 날짜(daily_puzzles_dev)는 개발자/공동개발자만 캐시할 수 있다. 둘 다 없는 날짜는 받지 않는다(클라이언트가 직접 계산해 쓴다).
+  select puzzle_no into v_pick from public.daily_puzzle_picks where date = p_date;
+  v_dev := exists (select 1 from public.daily_puzzles_dev where date = p_date);
+  if v_dev then
+    if not public.am_content_editor() then raise exception 'not authorized'; end if;
+  elsif v_pick is null or public.puzzle_no_of(p_data ->> 'id') is distinct from v_pick then
+    raise exception 'does not match the day puzzle';
+  end if;
   if public.rate_limit_hit('dpc:' || auth.uid(), 20, 3600) then raise exception 'rate limited'; end if;
   insert into public.daily_puzzle_cache(date, data) values (p_date, p_data) on conflict (date) do nothing;
 end; $$;
@@ -1638,17 +1648,20 @@ begin
   if pg_column_size(p_analysis) > 1000000 then return false; end if;
   v_n := jsonb_array_length(p_analysis #> '{result,moves}');
   select * into v_row from public.reviewed_games where cc_id = p_cc_id for update;
-  if found then
-    v_len := jsonb_array_length(coalesce(v_row.data -> 'moves', v_row.data -> 'sans', '[]'::jsonb));
-    if v_len > 0 and v_len <> v_n then return false; end if;  -- 기보와 수 개수가 다른 분석은 받지 않는다
-    if v_row.analysis is not null and not (
-      v_new_v > coalesce((v_row.analysis ->> 'v')::int, 0)
-      or (v_new_v = coalesce((v_row.analysis ->> 'v')::int, 0) and v_new_d > coalesce((v_row.analysis ->> 'd')::int, 0))
-    ) then return false; end if;
-    update public.reviewed_games set analysis = p_analysis where cc_id = p_cc_id;
-  else
-    insert into public.reviewed_games(cc_id, analysis) values (p_cc_id, p_analysis);
-  end if;
+  -- (v0.7.0 보안 BUG-115) 서버가 검증해 저장한 기보가 있는 대국에만 분석을 붙인다(기보 없는 번호에 분석만 먼저 올려 선점하는 것 방지).
+  v_len := jsonb_array_length(coalesce(v_row.data -> 'moves', v_row.data -> 'sans', '[]'::jsonb));
+  if not found or v_len = 0 or v_len <> v_n then return false; end if;
+  -- 분석의 각 수(SAN)가 저장된 기보의 같은 순번 수와 같아야 한다(+ # ! ? 표기는 무시) — 다른 대국의 분석을 붙일 수 없다.
+  if exists (
+    select 1 from jsonb_array_elements(p_analysis #> '{result,moves}') with ordinality a(m, i)
+    join jsonb_array_elements(coalesce(v_row.data -> 'moves', v_row.data -> 'sans')) with ordinality g(m, i) on g.i = a.i
+    where regexp_replace(a.m ->> 'san', '[+#!?]', '', 'g') is distinct from regexp_replace(g.m #>> '{}', '[+#!?]', '', 'g')
+  ) then return false; end if;
+  if v_row.analysis is not null and not (
+    v_new_v > coalesce((v_row.analysis ->> 'v')::int, 0)
+    or (v_new_v = coalesce((v_row.analysis ->> 'v')::int, 0) and v_new_d > coalesce((v_row.analysis ->> 'd')::int, 0))
+  ) then return false; end if;
+  update public.reviewed_games set analysis = p_analysis where cc_id = p_cc_id;
   return true;
 end; $$;
 revoke all on function public.reviewed_analysis_put(bigint, jsonb) from public;

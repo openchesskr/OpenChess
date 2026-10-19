@@ -10,12 +10,23 @@ export default [
       const n = sb.admin(`select count(*) from public.daily_puzzle_cache`).out;
       return { breached: n !== "0", evidence: n !== "0" ? `캐시에 ${n}행이 들어감` : `직접 삽입·비로그인·범위 밖 날짜·id 없는 내용 모두 거부(${direct.err.split("\n")[0].slice(0, 40)} / ${farFuture.err.split("\n")[0].slice(0, 40)})` };
     } },
-  { id: "BUG-111b", kind: "hold", title: "정상 경로 유지: 로그인 사용자의 오늘 일일 퍼즐 캐시 저장 · 이미 있는 날짜는 그대로",
+  { id: "BUG-111b", kind: "attack", title: "일일 캐시: 서버가 고른 퍼즐(daily_puzzle_picks)과 다른 id · 선정 없는 날짜 · 개발자 등록 날짜를 일반 계정이 캐시",
     async run({ sb, U }) {
+      sb.admin(`insert into public.daily_puzzle_picks(date,puzzle_no) values (current_date, 111111)`);
+      sb.admin(`insert into public.daily_puzzles_dev(date,pgn,sans,puzzle_ply) values (current_date - 1, '1. e4', '["e4"]', 0)`);
+      const other = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(222222)}","fake":true}'::jsonb);`);   // 선정과 다른 퍼즐
+      const noPick = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date - 2, '{"id":"${idForNo(111111)}"}'::jsonb);`);        // 선정 없는 날짜
+      const devDay = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date - 1, '{"id":"${idForNo(111111)}"}'::jsonb);`);       // 개발자 등록 날짜
+      const n = sb.admin(`select count(*) from public.daily_puzzle_cache`).out;
+      return { breached: n !== "0", evidence: n !== "0" ? `캐시에 ${n}행이 들어감` : `선정과 다른 id(${other.err.split("\n")[0].slice(0, 45)}) · 선정 없는 날짜 · 개발자 날짜 모두 거부` };
+    } },
+  { id: "BUG-111c", kind: "hold", title: "정상 경로 유지: 서버가 고른 오늘 퍼즐은 로그인 사용자가 캐시할 수 있고, 이미 있는 날짜는 그대로",
+    async run({ sb, U }) {
+      sb.admin(`insert into public.daily_puzzle_picks(date,puzzle_no) values (current_date, 111111)`);
       const a = sb.as("authenticated", U.bob, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(111111)}","v":1}'::jsonb);`);
-      const b = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(222222)}","v":2}'::jsonb);`);
+      const b = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(111111)}","v":2}'::jsonb);`);
       const v = sb.admin(`select data->>'v' from public.daily_puzzle_cache where date=current_date`).out;
-      return { breached: !(a.ok && b.ok && v === "1"), evidence: `저장 ${a.ok ? "성공" : "실패: " + a.err}, 두 번째(다른 내용)는 무시되어 v=${v}` };
+      return { breached: !(a.ok && b.ok && v === "1"), evidence: `저장 ${a.ok ? "성공" : "실패: " + a.err}, 두 번째는 무시되어 v=${v}` };
     } },
   { id: "BUG-112a", kind: "attack", title: "puzzle_solve 반복 호출로 풀이 수(인기 랭킹) 부풀리기 — 비로그인 50회 / 로그인 50회",
     async run({ sb, U }) {
@@ -72,6 +83,18 @@ export default [
       const d = sb.as("authenticated", U.mallory, `insert into public.reviewed_games(cc_id,data) values (123456789, ${fake});`);
       const n = sb.admin(`select count(*) from public.reviewed_games`).out;
       return { breached: n !== "0", evidence: n !== "0" ? "가짜 기보가 공유 리뷰 캐시에 저장됨" : `RPC·직접 삽입 모두 거부(${a.err.split("\n")[0].slice(0, 50)})` };
+    } },
+  { id: "BUG-115c", kind: "attack", title: "분석 선점: 저장된 기보가 없는 대국에 분석 먼저 저장 · 다른 대국의 분석(SAN 불일치) 붙이기 · 정상 분석은 저장",
+    async run({ sb }) {
+      const an = (sans) => `'{"v":1,"d":20,"result":{"moves":[${sans.map((x, i) => `{"ply":${i},"san":"${x}"}`).join(",")}]}}'::jsonb`;
+      const noGame = sb.as("service_role", null, `select public.reviewed_analysis_put(777, ${an(["e4", "e5"])});`).out;
+      sb.as("service_role", null, `select public.reviewed_game_put(777, '{"moves":["e4","e5"]}'::jsonb);`);
+      const wrong = sb.as("service_role", null, `select public.reviewed_analysis_put(777, ${an(["d4", "d5"])});`).out;
+      const wrongLen = sb.as("service_role", null, `select public.reviewed_analysis_put(777, ${an(["e4"])});`).out;
+      const good = sb.as("service_role", null, `select public.reviewed_analysis_put(777, ${an(["e4", "e5+"])});`).out;
+      const stored = sb.admin(`select (analysis is not null)::text from public.reviewed_games where cc_id=777`).out;
+      const orphan = sb.admin(`select count(*) from public.reviewed_games where cc_id=777 and data is null`).out;
+      return { breached: noGame !== "f" || wrong !== "f" || wrongLen !== "f" || good !== "t" || stored !== "true" || orphan !== "0", evidence: `기보 없는 대국 ${noGame} · 다른 대국 분석 ${wrong} · 수 개수 불일치 ${wrongLen} · 정상 분석 ${good}(표기 +/# 무시) · 기보 없는 분석 행 ${orphan}개` };
     } },
   { id: "BUG-117", kind: "attack", title: "account_providers를 브라우저(anon·로그인)가 직접 호출해 이메일 가입 여부·방식 열거",
     async run({ sb, U }) {

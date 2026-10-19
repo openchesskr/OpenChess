@@ -47,7 +47,8 @@ export default async function handler(req, res) {
     }
     if (r.status === 429) { res.status(429).json({ error: "rate_limited" }); return; }
     const out = { error: "invalid" };
-    if (known) {
+    // 소셜 가입 힌트는 /api/auth-providers와 같은 호출 제한(prov:ip·prov:id)을 함께 쓴다 — 로그인 실패 응답으로 가입 방식을 대량 조회하지 못하게.
+    if (known && !(await rateLimited(env, [["prov:ip:" + ip, 10, WINDOW]])) && !(await rateLimited(env, [["prov:id:" + email, 5, WINDOW]]))) {
       try {
         const p = await fetch(env.url + "/rest/v1/rpc/account_providers", {
           method: "POST", headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" }, body: JSON.stringify({ p_email: email }),

@@ -79,6 +79,12 @@ if (block) {
   const lastDef = Math.max(...[...sql.matchAll(/create (?:or replace )?function\s+public\.\w+/gi)].map((m) => m.index));
   if (block.index < lastDef) problems.push("함수 권한 확정 블록이 마지막 함수 정의보다 앞에 있다 — 뒤에 정의된 함수가 기본 권한을 갖게 된다");
 }
+// 8) 서버(api/review-put.js)의 분석 버전은 클라이언트 REVIEW_RESULT_CACHE_VERSION과 같아야 한다 — 어긋나면 모든 분석 공유가 조용히 거부된다.
+{
+  const v1 = /export const ANALYSIS_VERSION = (\d+)/.exec(readFileSync(new URL("../api/review-put.js", import.meta.url), "utf8"));
+  const v2 = /export const REVIEW_RESULT_CACHE_VERSION = (\d+)/.exec(readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8"));
+  if (!v1 || !v2 || v1[1] !== v2[1]) problems.push("api/review-put.js ANALYSIS_VERSION(" + (v1 && v1[1]) + ")과 REVIEW_RESULT_CACHE_VERSION(" + (v2 && v2[1]) + ")이 다르다");
+}
 // API: 로그인 응답에 이메일을 싣지 않는다
 const loginApi = readFileSync(new URL("../api/auth-login.js", import.meta.url), "utf8");
 if (/json\(\s*\{[^}]*email/.test(loginApi.replace(/\/\/.*$/gm, ""))) problems.push("api/auth-login.js: 응답에 email을 싣는 것으로 보인다(BUG-107)");

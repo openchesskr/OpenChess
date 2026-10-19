@@ -200,16 +200,25 @@ export const authAttacks = [
         return new Response("{}", { status: 404 });
       };
       const post = (data, token = "t", kind = "game") => ({ method: "POST", headers: { authorization: token ? "Bearer " + token : "", "x-vercel-forwarded-for": "1.1.1.1" }, body: { kind, cc_id: 123456789, data } });
-      const r = { anon: mkRes(), illegal: mkRes(), afterMate: mkRes(), good: mkRes(), huge: mkRes() };
+      const r = { anon: mkRes(), illegal: mkRes(), afterMate: mkRes(), good: mkRes(), huge: mkRes(), badVer: mkRes(), badDepth: mkRes(), badMove: mkRes(), okAnalysis: mkRes(), idMismatch: mkRes() };
+      const an = (over = {}) => ({ v: 1, d: 20, result: { moves: [{ ply: 0, san: "e4", white: true, kind: "book", acc: 100, lossWinPct: 0, sharp: 0, best: null, beforeCp: 20 }] }, ...over });
       await withFetch(impl, async () => {
         await handler(post({ moves: ["e4", "e5"] }, ""), r.anon);
         await handler(post({ moves: ["e4", "Ke3"] }), r.illegal);
         await handler(post({ moves: ["f3", "e5", "g4", "Qh4#", "a3"] }), r.afterMate);
         await handler(post({ moves: ["e4", "e5", "Nf3", "Nc6"] }), r.good);
         await handler(post({ moves: ["e4"], pad: "x".repeat(250000) }), r.huge);
+        await handler(post({ moves: ["e4", "e5"], id: 999, evil: "<script>", white: { username: "a", rating: 1500, extra: "x" } }), r.idMismatch);   // 내용 속 id가 대국 번호와 다름
+        await handler(post(an({ v: 99 }), "t", "analysis"), r.badVer);
+        await handler(post(an({ d: 9999 }), "t", "analysis"), r.badDepth);
+        await handler(post(an({ result: { moves: [{ ply: 0, san: "e4", white: true, kind: "<img>", acc: "NaN" }] } }), "t", "analysis"), r.badMove);
+        await handler(post(an(), "t", "analysis"), r.okAnalysis);
       });
-      const bad = r.anon.code !== 401 || r.illegal.code !== 400 || r.afterMate.code !== 400 || r.good.code !== 200 || r.huge.code !== 413 || stored.length !== 1;
-      return { breached: bad, evidence: `비로그인 ${r.anon.code} · 없는 수 ${r.illegal.code} · 메이트 뒤 수 ${r.afterMate.code} · 정상 ${r.good.code}(저장 ${stored.length}건) · 대용량 ${r.huge.code}` };
+      const g = stored.find((x) => x.p_data);
+      const extraKept = g && (g.p_data.evil !== undefined || (g.p_data.white && g.p_data.white.extra !== undefined));
+      const bad = r.anon.code !== 401 || r.illegal.code !== 400 || r.afterMate.code !== 400 || r.good.code !== 200 || r.huge.code !== 413 || r.idMismatch.code !== 400
+        || r.badVer.code !== 400 || r.badDepth.code !== 400 || r.badMove.code !== 400 || r.okAnalysis.code !== 200 || stored.length !== 2 || extraKept;
+      return { breached: bad, evidence: `비로그인 ${r.anon.code} · 없는 수 ${r.illegal.code} · 메이트 뒤 수 ${r.afterMate.code} · 정상 기보 ${r.good.code} · 대용량 ${r.huge.code} · 번호-id 불일치 ${r.idMismatch.code} · 분석: 잘못된 버전 ${r.badVer.code}·깊이 ${r.badDepth.code}·수 형식 ${r.badMove.code}·정상 ${r.okAnalysis.code} (저장 ${stored.length}건, 허용 밖 필드 ${extraKept ? "남음" : "제거됨"})` };
     } },
   { id: "BUG-117b", kind: "attack", title: "/api/auth-providers: 같은 IP에서 이메일 가입 여부 대량 조회 열거",
     async run() {
@@ -217,6 +226,17 @@ export const authAttacks = [
       let ok = 0, blocked = 0;
       await withFetch(m.impl, async () => { for (let i = 0; i < 30; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "9.1.1.1" }, body: { email: "user" + i + "@example.com" } }, r); r.code === 429 ? blocked++ : ok++; } });
       return { breached: ok > 10, evidence: `30건 중 응답 ${ok}건(상한 10/10분) · 차단 ${blocked}건` };
+    } },
+  { id: "BUG-117c", kind: "attack", title: "로그인 실패 응답의 소셜 가입 힌트로 가입 방식 대량 조회: 같은 이메일 · 같은 IP의 서로 다른 이메일",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
+      const impl = async (u, o) => (String(u).includes("/rpc/account_providers") ? new Response(JSON.stringify(["google"]), { status: 200 }) : m.impl(u, o));
+      let sameEmailHints = 0, sameIpHints = 0;
+      await withFetch(impl, async () => {
+        for (let i = 0; i < 12; i++) { const r = mkRes(); await handler(loginReq("someone@example.com", "x" + i, "20.0.0." + i), r); if (r.body && r.body.providers) sameEmailHints++; }
+        for (let i = 0; i < 25; i++) { const r = mkRes(); await handler(loginReq("user" + i + "@example.com", "x", "21.0.0.1"), r); if (r.body && r.body.providers) sameIpHints++; }
+      });
+      return { breached: sameEmailHints > 5 || sameIpHints > 10, evidence: `같은 이메일 12회 중 힌트 ${sameEmailHints}(상한 5/10분) · 같은 IP 이메일 25개 중 힌트 ${sameIpHints}(상한 10/10분)` };
     } },
 ];
 
