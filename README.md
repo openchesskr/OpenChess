@@ -33,7 +33,7 @@
     성능
     1. 알림·친구요청 배지·채팅창·안읽은 채팅 배지 폴링을 Supabase Realtime 구독으로 전환할 것 — 소켓이 조용히 끊기는 경우를 대비해 느슨한 안전망 폴링만 남길 것.
     ```
-- **사이트 문구는 명사형·개조식으로 쓴다(v0.5.9).** 화면 문구·FAQ·공지·업데이트 내역 모두 "도전장 수락 시 바로 대전 시작."처럼 짧은 명사형·개조식 종결로 적고, " — "·"~요"체·감탄·장식 문구·마스코트 대사는 쓰지 않는다. 구분이 필요하면 ":"·"."·"·"를 쓴다. 새 문구도 이 규칙을 따른다.
+- **사이트 문구는 명사형·개조식으로 쓴다(v0.5.9, 단 `/about` 소개·버전 기록 페이지의 새 문구는 사용자 요청으로 존댓말 합니다체).** 화면 문구·FAQ·공지·업데이트 내역 모두 "도전장 수락 시 바로 대전 시작."처럼 짧은 명사형·개조식 종결로 적고, " — "·"~요"체·감탄·장식 문구·마스코트 대사는 쓰지 않는다. 구분이 필요하면 ":"·"."·"·"를 쓴다. 새 문구도 이 규칙을 따른다.
 - **용어: "국면"이 아니라 "포지션"을 쓴다.** 웹사이트에서 사용자에게 보이는 텍스트(테마 설명, 힌트 문구 등)에는 체스 위치를 가리킬 때 "국면" 대신 "포지션"이라는 용어를 쓴다. 새로 추가하는 화면 텍스트도 이 규칙을 따른다.
 - **SQL은 MIGRATION_vX.Y.Z.sql 같은 증분 파일을 만들지 않는다.** DB에 반영해야 할 SQL 변경이 있는 세션은, `supabase-setup.sql`(항상 처음부터 다시 실행해도 안전한, 지금까지의 모든 스키마·함수·정책을 담은 통합 파일)을 그 변경까지 반영해 최신 상태로 갱신해 두고, 사용자가 "버전 종료"를 입력했을 때 그 `supabase-setup.sql` 전체를 SendUserFile로 사용자에게 첨부한다("버전 종료 프로토콜" 1단계 — 그 외의 상황에서는 임의로 보내지 않는다) — 사용자는 그 파일 전체를 Supabase SQL Editor에 그대로 붙여넣고 실행하면 된다. 이번 버전에서 바뀐 부분만 따로 떼어 별도 파일로 만들지 않는다(과거 `MIGRATION_v0.4.x.sql` 파일들은 이 규칙 도입 이전 방식이었다 — 새로 만들지 않는다).
 - **`public/`에 새 이미지·오디오를 커밋하기 전에 옛날 파일을 지웠는지 확인한다(Vercel Deployment Storage 대응).** Vercel의 "Deployment Storage"는 최신 배포 하나의 용량이 아니라 지금까지 보관된 모든 배포(프리뷰 포함)의 빌드 결과물 총합이다 — `public/`에 안 쓰는 파일이 하나 쌓일 때마다 그 무게가 배포 횟수만큼 곱해져 누적된다(v0.5.2에서 실제로 이 이유로 무료 한도를 13배 초과한 적이 있음 — 원본 png를 `-web.webp`로 교체하고 원본을 안 지웠거나, 폐기한 기능의 썸네일이 그대로 남아 있는 식). 이미지를 webp 등으로 교체하거나 기능을 없앨 때는 그 자리에서 옛 파일도 `git rm`으로 함께 지운다. `npm run check:assets`(`scripts/check-unused-public-assets.mjs`)로 `public/` 안에서 `src/` 어디에도 파일명이 등장하지 않는 파일을 미리 찾아볼 수 있다 — 다만 동적으로 조합되는 경로는 놓칠 수 있으므로 삭제 전 항상 직접 grep으로 한 번 더 확인한다. `public/engine`(빌드마다 재생성되는 엔진 파일)은 이미 알려진 별도 문제라 이 스크립트 대상에서 제외돼 있다 — 그 용량은 파일 개수가 아니라 애초에 서빙해야 하는 엔진 자체의 크기 문제라(README v0.5.1 이전 기록 참고, Vercel Blob·GitHub Release 외부 저장소 시도 둘 다 실패해 같은 출처 서빙으로 되돌림) 해결책이 다르다.
@@ -81,6 +81,39 @@
 5. 0.9.0: 앱 틀(Capacitor 등), 푸시 알림, 진동, 뒤로가기 버튼 연결
 
 ## 버전 기록
+
+### OpenChess v0.7.0 - 2026/10/19
+
+테마: 보안 대개편. 현재 보안 수준을 영역별로 진단하고, 실제 Postgres 샌드박스에서 모의 공격 84건을 만들어 뚫리는 곳을 하나씩 찾아 막았다. 상세 원인·수정은 `BUGS.md`(BUG-107~127), 경제 서버화 설계는 `SECURITY_PLAN_BUG-113.md`. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(구버전 화면은 새로고침 안내).
+
+**보안**
+- 모의 공격 하네스 `scripts/attack/`(`npm run attack`): 일회용 Postgres 16에 `supabase-setup.sql`을 올려 anon·authenticated 역할로 공격을 재현한다(DB 계층 `db-*.mjs`, 서버리스 API 계층 `api.mjs`는 fetch 모킹, CSP는 `csp/`의 Playwright 프로브). 초기에 16건이 뚫렸고 최종 84건 모두 막힘.
+- 함수 권한 기본 차단: Supabase 기본 권한이 모든 함수를 anon·authenticated에 열어 두는 구조라, `supabase-setup.sql` 끝의 `do $acl$` 블록이 `public` 함수 전체를 회수한 뒤 허용 목록(v_anon/v_auth)만 다시 연다. service_role 전용: `email_for_username`·`reviewed_*_put`·`account_providers`·`bot_game_record_verified`·`puzzle_share_put_verified`. 컬럼 기본값(`gen_mid`)·RLS 정책에서 호출되는 함수는 호출자 권한으로 실행돼 허용 목록에 필요(BUG-120·126). 편집자 판정은 `am_content_editor()`로 분리.
+- DB 호출 제한: `rate_limits` + `rate_limit_hit(key, limit, window, cost)`(고정 창, cost 0 = 조회, 음수 = 환불). 예외를 던지면 카운터 증가가 롤백되므로 거절은 예외가 아닌 반환값으로 처리.
+- 서버리스 API 관문 신설: `api/auth-login.js`·`auth-recover.js`·`auth-providers.js`(아이디 → 이메일 조회 클라이언트 노출 제거, BUG-107), `review-put.js`·`bot-game.js`·`puzzle-share.js`(chess.js로 수순 합법성 재검증 후 service_role RPC로 저장), `csp-report.js`. `lichess.js`는 파라미터 허용 목록·IP 90/min·퍼즐 경로 편집자 전용, `scan-board.js`·`translate.js`는 키를 헤더로 이동.
+- RLS·정책: `puzzles` 직접 쓰기 회수(좋아요·반복공유 RPC는 `auth.uid()` 사용), 채팅 insert 정책에 `share_reward is null and pvp_invite_id is null`, 진행 중 대국 관전은 참가자·수락된 친구만, `minigame_leaderboard`는 레이팅만·`minigame_stats`는 컬럼 단위 select(`minigame_my_best()`로 본인 기록), `_profiles_pub_guard` 트리거(공개 xp는 원장에서 강제, 레이팅·풀이 수 클램프, 사진은 data:image 200,000자 이하, 닉네임 60·소개 600자, username·id 불변).
+- 응답 헤더: `vercel.json`에 CSP 강제 적용(`script-src 'self' 'wasm-unsafe-eval'`과 경로를 제한한 jsdelivr stockfish, `object-src 'none'`, `frame-ancestors 'none'`, `report-uri /api/csp-report`)과 HSTS. 실제 Chromium으로 확인해 Stockfish WASM에 `'wasm-unsafe-eval'`이 필요함을 확인. `style-src 'unsafe-inline'`은 유지.
+- 예방 검사(prebuild 추가): `check-sql-function-acl.mjs`·`check-economy-constants.mjs`(`lib/gacha.js`·티어 상수와 SQL 일치)·`check-security-headers.mjs`, 기존 `check-sql-grants`·`check-gacha`·`check-chess-rating`·`check-account-deletion`·`check-sql-table-columns`(기준선 `scripts/sql-table-baseline.json`) 갱신.
+
+**기능**
+- 경험치·코인·보유 스킨 서버 보증(BUG-113): `economy`·`economy_ledger`·`economy_claims`·`economy_anomalies` 표와 `_economy_apply`·`_economy_ensure`(기존 `user_progress` 값을 상한 안에서 한 번 기준선으로 이월, 이상치는 `economy_anomalies`에 기록) 기반 RPC. 퍼즐 라인 풀이(서버가 트리에서 라인 수를 세고 하루 150라인·12초에 3개 상한), 일일 퀘스트·메인 레슨 코인(`economy_claim_chapter`, 서버가 아는 챕터만), 티어 승급 코인(새 티어 번호×50), 알림·공유 보상(금액을 서버가 결정), 개발자 패널 지급을 모두 서버 계산으로 이전. `user_progress`에서 경제 필드를 떼어 내는 `_user_progress_strip_economy` 트리거. 리더보드·`move_notes_cap`은 원장 값을 사용.
+- 스킨 뽑기 서버 추첨(`gacha_pull`): 가격·가중치·환급·보드 해금을 서버가 처리하고 클라이언트는 결과를 받아 연출(`pullGacha` 비동기, 처리 중 중복 누름 방지).
+- 봇 대국 전적·퍼즐 공유·복기 저장은 서버가 chess.js로 검증한 뒤 기록. `daily_puzzle_cache_put`은 서버가 정한 선정(`daily_puzzle_picks`)과 일치할 때만.
+- 게스트는 로컬 진행도·보상 없음(로그인 시 로컬 진행도는 이월하지 않음).
+
+**UI**
+- 스킨 뽑기 연출: body 포탈 + `100dvh` 전체 화면으로 하단 바(z-index 40, 별도 쌓임 맥락) 위에 표시, 우상단 건너뛰기 버튼(상자 연출 중에는 카드 전체 공개 단계로, 카드 공개 후에는 닫기), 결과 영역을 `margin:auto` 스크롤 영역으로 바꿔 카드가 많아도 위·아래가 잘리지 않게 함(BUG-127).
+- `/about` 전면 재설계: 소개(실제 앱 스크린샷 17장 `public/about/v2/`, 폰 액자, 탭 바 모양 챕터 내비, 탭 6개를 챕터로 상세 소개, 눌러 볼 수 있는 퀘스트·티어·평가 바·퍼즐 데모)와 버전 기록(통계, 분류 필터·검색, 최신 버전 대형 카드, 시리즈별 타임라인) 2페이지. 정확도 체계·chess.com 통계 구간은 삭제. 이 페이지의 문구는 사용자 요청으로 존댓말(합니다체)을 쓴다(아래 사이트 문구 규칙의 예외).
+
+**UX**
+- 솔로 미니게임 최고 기록 순위 탭 삭제, 프로필 사진 외부 URL 입력 삭제(업로드만), 공개 프로필 사진은 data:image만 허용.
+
+**버그 수정**
+- BUG-107·110·113·118~127(BUGS.md 참고). 이번 세션에서 모의 공격 중 발견한 청구 우회: 알려지지 않은 챕터 이름이 `least()`의 NULL 무시로 1000코인으로 계산되던 문제, 채팅 `share_reward` 직접 삽입 우회, 검증기와 클라이언트의 시작 위치 계산 불일치(`api/puzzle-share.js`) 포함.
+
+**시스템**
+- 배포 후 확인: `/api/csp-report` 로그(로그인·Supabase 흐름은 프로브가 다루지 않음), `economy_anomalies` 검토. 남는 한계: chess.com 퀘스트·레슨 정답은 서버가 검증할 수 없음, 자동화된 경험치 농사는 하루 약 3,000XP로 상한, 합법적이지만 품질이 나쁜 퍼즐 라인은 엔진 없이 판별 불가.
+- `package.json` 0.7.0, 새 문구 5개 언어 번역(`/about`·공지).
 
 ### OpenChess v0.6.9 - 2026/10/18
 
