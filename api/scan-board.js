@@ -18,6 +18,8 @@
 // 코드가 미리 알 방법이 없다. 하나를 고정해 두는 대신, 아래 두 후보를 순서대로 시도해 실제로 API가
 // 받아주는(모델 자체가 없다는 오류가 아닌) 첫 번째 모델을 쓴다 — 3.6이 이 시점에 아직 없거나 지역
 // 제한에 걸려도 2.5로, 반대로 2.5가 나중에 완전히 폐기돼도 3.6으로 자동으로 넘어간다.
+import { clientIp, supabaseEnv, rateLimited, authUser } from "./_lib/server.js";
+
 const GEMINI_MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-2.5-flash"];
 // 서버리스 함수 인스턴스가 요청 사이에 재사용되는 동안(Vercel 웜 스타트)은 한 번 통한 모델을 기억해
 // 매 요청마다 후보를 처음부터 다시 순회하지 않는다 — 콜드 스타트되면 다시 null로 시작.
@@ -148,10 +150,11 @@ const RESPONSE_SCHEMA = {
 
 async function callGeminiWithModel(model, apiKey, safeMediaType, image) {
   const geminiRes = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey,
+    "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // (v0.7.0 보안) API 키를 URL 쿼리가 아니라 헤더로 보낸다 — 주소는 로그·오류 메시지에 남기 쉽다.
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [
           {
@@ -229,24 +232,33 @@ async function callGeminiResilient(apiKey, safeMediaType, image) {
 // (v0.6.5, BUG-072) 이 함수는 로그인 없이도 쓸 수 있어(비로그인 사용자의 보드 스캔을 막지 않기 위해) 누구나 반복 호출로 공유 Gemini 무료 쿼터를 소진시킬 수 있었다.
 // 쿼터는 번역(api/translate.js) 등 다른 기능도 같이 쓴다. 호출자(IP)당 분당 호출 수를 제한한다 — 서버리스 인스턴스 안에서의 최선 노력이라 완전한 차단은 아니다
 // (로그인 필수화·엣지 제한은 제품 결정이 필요해 BUGS.md에 남김). 한 번의 스캔이 Gemini를 최대 3번 부르므로 한도는 넉넉하게 둔다.
-const SCAN_RATE_PER_MIN = 12;
-const scanHits = new Map(); // ip -> [시각…]
-function scanRateLimited(ip) {
-  const now = Date.now(), arr = (scanHits.get(ip) || []).filter((t) => now - t < 60000);
-  arr.push(now); scanHits.set(ip, arr);
-  if (scanHits.size > 2000) for (const [k, v] of scanHits) if (!v.some((t) => now - t < 60000)) scanHits.delete(k);
-  return arr.length > SCAN_RATE_PER_MIN;
+// (v0.7.0 보안, BUG-116·072) 호출 제한 — DB 카운터(서버리스 인스턴스가 여럿이어도 함께 센다, 실패하면 인스턴스 메모리로 대신한다).
+//  · 비로그인: IP당 10분에 6회·하루 20회 / 로그인: 사용자당 10분에 30회·하루 200회 / 전체: 하루 3000회(공유 Gemini 쿼터 보호).
+//  · 한 번의 스캔이 Gemini를 최대 3번 부르므로 위 숫자는 '스캔 요청' 기준이다.
+//  · 이미지는 base64 5.5MB 이하만 받는다.
+const MAX_IMAGE_B64 = 5_500_000;
+async function scanLimited(env, req) {
+  const user = await authUser(env, req);
+  const ip = clientIp(req);
+  const who = user
+    ? [["scan:u:" + user.id, 30, 600], ["scan:ud:" + user.id, 200, 86400]]
+    : [["scan:ip:" + ip, 6, 600], ["scan:ipd:" + ip, 20, 86400]];
+  if (await rateLimited(env, who)) return "user";
+  if (await rateLimited(env, [["scan:global", 3000, 86400]])) return "global";
+  return null;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 지원합니다." }); return; }
-  const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "?").split(",")[0].trim() || "?";
-  if (scanRateLimited(ip)) { res.status(429).json({ error: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요." }); return; }
+  const limited = await scanLimited(supabaseEnv(), req);
+  if (limited === "user") { res.status(429).json({ error: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요." }); return; }
+  if (limited === "global") { res.status(503).json({ error: "오늘 이미지 인식 사용량이 한도에 도달했어요. 내일 다시 시도해 주세요." }); return; }
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) { res.status(500).json({ error: "서버에 GEMINI_API_KEY가 설정되어 있지 않아요." }); return; }
 
   const { image, mediaType } = req.body || {};
   if (!image || typeof image !== "string") { res.status(400).json({ error: "image(base64) 값이 필요해요." }); return; }
+  if (image.length > MAX_IMAGE_B64) { res.status(413).json({ error: "이미지가 너무 커요." }); return; }
   const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
   const safeMediaType = allowedTypes.includes(mediaType) ? mediaType : "image/jpeg";
 

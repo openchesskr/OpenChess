@@ -7,7 +7,7 @@ import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFro
 import { canWebShare, copyText, shareTargets, webShare } from "../lib/share.js";
 import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
-import { sbClient, SB_ON, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
+import { sbClient, SB_ON, SB_TOKEN, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
 import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
@@ -219,6 +219,7 @@ export async function scanImageFile(file, onProgress) {
     let simTimer = null;
     xhr.open("POST", apiUrl("/api/scan-board"));
     xhr.setRequestHeader("content-type", "application/json");
+    if (SB_TOKEN) xhr.setRequestHeader("Authorization", "Bearer " + SB_TOKEN);   // (v0.7.0 BUG-116) 로그인하면 더 넉넉한 호출 한도
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
       report(14 + (e.loaded / e.total) * 36); // 업로드 구간: 14~50% (실측)
@@ -4401,10 +4402,15 @@ export async function resolveReviewIdentifier(raw) {
 // 무시) 업로드하고, 딥링크로 들어온 방문자는 여기서 조회한다.
 export async function reviewedGameShare(ccId, game) {
   if (!SB_ON || !ccId) return;
-  // (v0.5.7 BUG-023) 표에 직접 쓰지 않고 reviewed_game_put RPC로 — 이미 올라온 기보는 덮어쓸 수 없다. SQL을 아직 다시 실행하지
-  // 않은 프로젝트(RPC 없음)에선 예전 방식으로 대신한다.
-  try { await sbRpc("reviewed_game_put", { p_cc_id: Number(ccId), p_data: game }); }
-  catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), data: game }); } catch { } }
+  // (v0.7.0 보안 BUG-115) 공유 리뷰 캐시는 로그인한 사용자만, 서버(/api/review-put)가 기보가 합법인지 확인한 뒤에만 저장한다. 이미 올라온 기보는 덮어쓸 수 없다.
+  await reviewPut("game", ccId, game);
+}
+// 리뷰 공유 저장 공통 호출 — 실패해도 조용히 무시(공유 캐시는 없어도 리뷰는 된다).
+export async function reviewPut(kind, ccId, payload) {
+  if (!SB_ON || !SB_TOKEN) return;
+  try {
+    await fetch(apiUrl("/api/review-put"), { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ kind, cc_id: Number(ccId), data: payload }) });
+  } catch { /* 무시 */ }
 }
 export async function reviewedGameFetch(ccId) {
   if (!SB_ON || !ccId) return null;
@@ -5350,7 +5356,8 @@ async function fetchDailyPuzzleCache(dateStr) {
 }
 async function saveDailyPuzzleCache(dateStr, pz) {
   if (!SB_ON || !pz) return;
-  try { await sbInsert("daily_puzzle_cache", { date: dateStr, data: pz }); } catch { /* 이미 누군가 먼저 올려 둔 경우(PK 충돌) 등은 무해하게 무시 */ }
+  // (v0.7.0 보안 BUG-111) 표에 직접 쓰지 않고 RPC로 — 로그인 필요, 오늘 전후 날짜만, 이미 있는 날짜는 덮어쓰지 않는다(실패는 무해하게 무시).
+  try { await sbRpc("daily_puzzle_cache_put", { p_date: dateStr, p_data: pz }); } catch { }
 }
 // (v0.2.7) resolveDailyPuzzle(과 위 서버 캐시 조회)은 비동기인 데다 이제 캐러셀에서 여러 날짜를
 // 동시에 다뤄야 하므로, 날짜별 결과를 모듈 캐시에 담아 재사용한다(같은 날짜를 다시 열어도 서버

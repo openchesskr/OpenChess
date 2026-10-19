@@ -1188,7 +1188,12 @@ async function authLogin(loginOrEmail, password) {
 /* 이메일이 어떤 제공자(이메일/구글)로 가입돼 있는지 조회 → 같은 메일 다른 방식 가입 시 안내용 */
 async function accountProviders(email) {
   if (!SB_ON || !email || !email.includes("@")) return [];
-  try { const r = await sbRpc("account_providers", { p_email: email.trim().toLowerCase() }); return Array.isArray(r) ? r : []; } catch { return []; }
+  // (v0.7.0 보안 BUG-117) 브라우저가 DB 함수를 직접 부르지 않고 서버 API를 거친다 — IP·대상별 호출 제한이 걸려 대량 열거가 안 된다.
+  try {
+    const res = await fetch(apiUrl("/api/auth-providers"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email.trim().toLowerCase() }) });
+    const j = await res.json().catch(() => ({}));
+    return res.ok && Array.isArray(j.providers) ? j.providers : [];
+  } catch { return []; }
 }
 /* 구글 콜백 오류(예: 이미 다른 방식으로 가입된 이메일과 충돌) 파싱 */
 // (버그 수정) URLSearchParams는 application/x-www-form-urlencoded 규칙으로 파싱되므로 .get()이
@@ -1800,7 +1805,7 @@ export function AuthModal({ onClose, onAuth, initialMode }) {
         if (!r || !r.ok) {
           if (r && r.error === "offline") { setErr(t("서버 연결 필요")); setBusy(false); return; }
           if (r && r.error === "rate_limited") { setErr(t("시도가 너무 많음. 잠시 후 다시 시도")); setBusy(false); return; }
-          const provs = (r && r.providers) || (isEmail ? await accountProviders(em) : null);
+          const provs = (r && r.providers) || null;   // (v0.7.0) 서버가 로그인 실패 응답에 소셜 가입 힌트를 실어 준다
           if (provs) {
             const other = ["google", "apple", "facebook"].find((p) => provs.indexOf(p) >= 0 && provs.indexOf("email") < 0);
             if (other) { const lb = OAUTH_PROVIDER_LABELS[other]; setHintProvider(other); setErr(t("이 계정은 {0}로 가입됨. 아래 ‘{1}로 계속하기’로 로그인", lb, lb)); setBusy(false); return; }

@@ -51,6 +51,7 @@ else {
       if (!allowed.has(n)) problems.push(f + ": 브라우저가 부르는 `" + n + "`가 함수 권한 허용 목록에 없다(운영에서 permission denied)");
     }
     if (/sbRpc\(\s*["'`]email_for_username/.test(text)) problems.push(f + ": 브라우저에서 email_for_username 호출 금지(BUG-107) — /api/auth-login 사용");
+    if (/sb(Insert|Upsert|Patch)\(\s*["'`](daily_puzzle_cache|reviewed_games)["'`]/.test(text)) problems.push(f + ": daily_puzzle_cache·reviewed_games 직접 쓰기 금지(BUG-111·115) — daily_puzzle_cache_put RPC·/api/review-put 사용");
     if (/sbUpsert\(\s*["'`]puzzles["'`]|sbInsert\(\s*["'`]puzzles["'`]|sbPatch\(\s*["'`]puzzles["'`]/.test(text)) problems.push(f + ": puzzles 직접 쓰기 금지(BUG-110) — puzzle_share_put RPC 사용");
   }
 }

@@ -506,15 +506,39 @@ alter table public.puzzle_solve_events enable row level security;
 drop policy if exists "solve events read"   on public.puzzle_solve_events;
 drop policy if exists "solve events insert" on public.puzzle_solve_events;
 create policy "solve events read"   on public.puzzle_solve_events for select using (true);
-create policy "solve events insert" on public.puzzle_solve_events for insert with check (uid is null or uid = auth.uid());
-grant select, insert on public.puzzle_solve_events to anon, authenticated;
+-- (v0.7.0 보안 BUG-112) 비로그인(uid 없음) 기록은 막았다 — 무제한 삽입으로 DB를 채울 수 있었다. 로그인 사용자는 본인 uid로만, 분당 60건까지.
+create policy "solve events insert" on public.puzzle_solve_events for insert with check (uid is not null and uid = auth.uid());
+revoke insert on public.puzzle_solve_events from anon;
+grant select on public.puzzle_solve_events to anon;
+grant select, insert on public.puzzle_solve_events to authenticated;
+create or replace function public._throttle_insert()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.rate_limit_hit('ins:' || tg_table_name || ':' || new.uid, 60, 60) then raise exception 'rate limited'; end if;
+  return new;
+end; $$;
+drop trigger if exists puzzle_solve_events_throttle on public.puzzle_solve_events;
+create trigger puzzle_solve_events_throttle before insert on public.puzzle_solve_events for each row execute function public._throttle_insert();
 
 -- 퍼즐 해결 시 solves 카운터를 원자적으로 1 증가(행이 없으면 새로 만들며 1로 시작)
 drop function if exists public.puzzle_solve(bigint) cascade;
+-- (v0.7.0 보안 BUG-112) 예전에는 비로그인도 무제한 호출해 풀이 수(인기 랭킹)를 부풀릴 수 있었다. 이제 같은 사람이 같은 퍼즐을 한 시간에 한 번만 센다
+-- (로그인: 사용자+퍼즐당 1회/시간·사용자당 200회/시간, 비로그인: 퍼즐당 전체 3회/시간). 한도를 넘은 호출은 오류 없이 현재 값만 돌려준다.
 create or replace function public.puzzle_solve(p_no bigint)
 returns bigint language plpgsql security definer set search_path = public as $$
-declare v_solves bigint;
+declare v_solves bigint; v_uid uuid := auth.uid(); v_over boolean;
 begin
+  if p_no is null or p_no <= 0 then raise exception 'invalid puzzle'; end if;
+  if v_uid is null then
+    v_over := public.rate_limit_hit('solve:anon:' || p_no, 3, 3600);
+  else
+    v_over := public.rate_limit_hit('solve:' || v_uid || ':' || p_no, 1, 3600);
+    v_over := public.rate_limit_hit('solve:u:' || v_uid, 200, 3600) or v_over;
+  end if;
+  if v_over then
+    select solves into v_solves from public.puzzles where no = p_no;
+    return coalesce(v_solves, 0);
+  end if;
   insert into public.puzzles(no, data, solves) values (p_no, '{}'::jsonb, 1)
   on conflict (no) do update set solves = public.puzzles.solves + 1
   returning solves into v_solves;
@@ -1208,8 +1232,23 @@ alter table public.daily_puzzle_cache enable row level security;
 drop policy if exists "daily puzzle cache read"   on public.daily_puzzle_cache;
 drop policy if exists "daily puzzle cache insert" on public.daily_puzzle_cache;
 create policy "daily puzzle cache read"   on public.daily_puzzle_cache for select using (true);
-create policy "daily puzzle cache insert" on public.daily_puzzle_cache for insert with check (true);
-grant select, insert on public.daily_puzzle_cache to anon, authenticated;
+-- (v0.7.0 보안 BUG-111) 예전에는 비로그인 누구나 아무 날짜(PK)에 아무 내용이나 먼저 넣을 수 있어 미래 날짜 일일 퍼즐을 오염시킬 수 있었다. 직접 쓰기를 막고
+-- RPC로만: 로그인 필요, 오늘 기준 -8일~+1일 날짜만, 크기 상한, 사용자당 시간당 20건, 이미 있는 날짜는 그대로 둔다(선착순).
+-- 남는 한계: 오늘 날짜를 가장 먼저 올리는 로그인 사용자가 내용을 정한다(서버가 엔진 없이 검증할 수 없음 — BUGS.md BUG-111).
+revoke insert, update, delete on public.daily_puzzle_cache from anon, authenticated;
+grant select on public.daily_puzzle_cache to anon, authenticated;
+drop function if exists public.daily_puzzle_cache_put(date, jsonb) cascade;
+create or replace function public.daily_puzzle_cache_put(p_date date, p_data jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'auth required'; end if;
+  if p_date is null or p_date < current_date - 8 or p_date > current_date + 1 then raise exception 'date out of range'; end if;
+  if p_data is null or jsonb_typeof(p_data) <> 'object' or length(p_data::text) > 300000 then raise exception 'invalid data'; end if;
+  if public.puzzle_no_of(p_data ->> 'id') is null then raise exception 'invalid puzzle id'; end if;
+  if public.rate_limit_hit('dpc:' || auth.uid(), 20, 3600) then raise exception 'rate limited'; end if;
+  insert into public.daily_puzzle_cache(date, data) values (p_date, p_data) on conflict (date) do nothing;
+end; $$;
+grant execute on function public.daily_puzzle_cache_put(date, jsonb) to authenticated;
 
 -- ============================================================================
 -- 18) puzzle_line_solve_times — 퍼즐 레이팅용 라인별 실제 풀이 시간 기록 (v0.3.4)
@@ -1232,8 +1271,13 @@ alter table public.puzzle_line_solve_times enable row level security;
 drop policy if exists "line solve times read"   on public.puzzle_line_solve_times;
 drop policy if exists "line solve times insert" on public.puzzle_line_solve_times;
 create policy "line solve times read"   on public.puzzle_line_solve_times for select using (true);
-create policy "line solve times insert" on public.puzzle_line_solve_times for insert with check (uid is null or uid = auth.uid());
-grant select, insert on public.puzzle_line_solve_times to anon, authenticated;
+-- (v0.7.0 보안 BUG-112) 위와 같은 이유로 로그인 필요·분당 60건, 풀이 시간(ms)은 0.2초~1시간 범위만(터무니없는 값으로 퍼즐 레이팅을 흔들 수 없게).
+create policy "line solve times insert" on public.puzzle_line_solve_times for insert with check (uid is not null and uid = auth.uid() and ms between 200 and 3600000);
+revoke insert on public.puzzle_line_solve_times from anon;
+grant select on public.puzzle_line_solve_times to anon;
+grant select, insert on public.puzzle_line_solve_times to authenticated;
+drop trigger if exists puzzle_line_solve_times_throttle on public.puzzle_line_solve_times;
+create trigger puzzle_line_solve_times_throttle before insert on public.puzzle_line_solve_times for each row execute function public._throttle_insert();
 
 -- 이상치를 제외한 평균 풀이 시간(ms)과 표본 수를 반환한다. 표본이 20개 이상 모이면 상하위 10%
 -- (percentile_cont 0.1/0.9 경계 밖)를 잘라낸 절사평균(trimmed mean)을 쓰고, 그보다 적으면 자를
@@ -2141,6 +2185,8 @@ begin
   if length(p_data::text) > 300000 then raise exception 'data too large'; end if;
   if public.puzzle_no_of(p_data ->> 'id') is distinct from p_no then raise exception 'puzzle number does not match id'; end if;
   if auth.uid() is null then p_public := true; end if;   -- 비로그인은 비공개로 올릴 수 없다(비공개 지정으로 남의 번호를 숨겨 선점하는 것 방지)
+  -- (v0.7.0 BUG-112) 올리기 속도 제한: 로그인 사용자당 분당 30회, 비로그인은 전체 합쳐 분당 30회.
+  if public.rate_limit_hit(case when auth.uid() is null then 'share:anon' else 'share:' || auth.uid() end, 30, 60) then raise exception 'rate limited'; end if;
   select data into v_old from public.puzzles where no = p_no for update;
   v_exists := found;
   if not v_exists then
@@ -4048,17 +4094,17 @@ do $acl$
 declare
   r record;
   v_anon text[] := array[
-    'account_providers', 'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
+    'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
     'puzzle_popularity_all', 'puzzle_rank', 'puzzle_share_put', 'puzzle_solve',
-    'reviewed_analysis_put', 'reviewed_game_put', 'search_puzzles_prefix', 'username_available'
+    'search_puzzles_prefix', 'username_available'
   ];
   v_auth text[] := array[
     'attack_finish', 'attack_forfeit', 'attack_next', 'attack_progress',
     'attack_report', 'attack_start', 'bot_game_record', 'chat_blocked_between',
     'chat_clear_conversation', 'chat_edit_message', 'chat_rooms', 'claim_username',
     'coord_click', 'coord_finish', 'coord_forfeit', 'coord_reveal_next',
-    'daily_puzzle_pick_run', 'delete_own_account', 'friend_accept', 'friend_remove',
+    'daily_puzzle_cache_put', 'daily_puzzle_pick_run', 'delete_own_account', 'friend_accept', 'friend_remove',
     'friend_request', 'friend_request_by_mid', 'friend_suggestions', 'game_analysis_put',
     'knight_forfeit', 'knight_move_ping', 'knight_report',
     'knight_resolve_round', 'knight_start_round', 'legacy_like_toggle', 'minigame_submit_best',

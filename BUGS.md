@@ -13,14 +13,14 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 | BUG-119 | P3 | 진행 중인 대국이 비로그인에게도 전부 공개(관전 기능) — 대국자 uid·수순·시간이 노출되고 대국 상대 정보 수집 가능 | 설계 결정 필요(관전 기능 유지 시 최소 공개로 축소) | 2026-10-19 |
 | BUG-121 | P2 | `puzzle_share_put`: 실제 퍼즐 id에 가짜 내용을 먼저 올려 선점(first-writer)하는 것은 서버가 엔진 없이 판별할 수 없음(임의 번호 선점·비공개 선점은 차단) | 일부 수정(v0.7.0) · 근본 대책은 결정 필요 | 2026-10-19 |
 | BUG-120 | P1 | (개발 중 발견·수정, 배포 전) 함수 권한을 조였더니 비로그인 방문자의 퍼즐 조회가 'permission denied for function is_content_editor'로 깨짐 — RLS 정책은 호출자 권한으로 함수를 실행 | 수정 완료(v0.7.0, 배포 전) · `check-sql-function-acl` 7번·하네스 R1~R3 | 2026-10-19 |
-| BUG-118 | P3 | 프로필 사진 외부 URL(`img src`)로 보는 사람 IP 추적 가능 / Gemini 키가 URL 쿼리에 실림 / `is_content_editor`·`_is_dev_account`가 anon에게 개발자 여부 노출 | 부분 수정(v0.7.0) · 편집자 조회는 막음 | 2026-10-18 |
-| BUG-117 | P2 | `account_providers(email)` anon 호출로 가입 여부·가입 방식 조회(이메일 열거), 로그인 시도 제한은 Supabase 기본값에 의존 | 발견(보안 점검) · 미수정 | 2026-10-18 |
-| BUG-116 | P2 | `/api/lichess` 프록시가 인증·호출 제한 없이 서버의 LICHESS_TOKEN으로 외부 호출(쿼리 파라미터 전달) / `/api/scan-board` 제한이 인스턴스 메모리 한정(BUG-072 후속) | 발견(보안 점검) · 미수정 | 2026-10-18 |
-| BUG-115 | P2 | `reviewed_game_put`이 anon에게 열려 있고 선착순 저장 — 아직 리뷰되지 않은 chess.com 대국 번호에 가짜 기보를 선점해 공유 리뷰 링크에 노출 가능(BUG-023 보완) | 발견(보안 점검) · 미수정 | 2026-10-18 |
+| BUG-118 | P3 | 프로필 사진 외부 URL(`img src`)로 보는 사람 IP 추적 가능 / Gemini 키가 URL 쿼리에 실림(v0.7.0에서 헤더로 이동·해결) / `is_content_editor`·`_is_dev_account`가 anon에게 개발자 여부 노출 | 부분 수정(v0.7.0) · 편집자 조회는 막음 | 2026-10-18 |
+| BUG-117 | P2 | `account_providers(email)` anon 호출로 가입 여부·가입 방식 조회(이메일 열거), 로그인 시도 제한은 Supabase 기본값에 의존 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
+| BUG-116 | P2 | `/api/lichess` 프록시가 인증·호출 제한 없이 서버의 LICHESS_TOKEN으로 외부 호출(쿼리 파라미터 전달) / `/api/scan-board` 제한이 인스턴스 메모리 한정(BUG-072 후속) | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
+| BUG-115 | P2 | `reviewed_game_put`이 anon에게 열려 있고 선착순 저장 — 아직 리뷰되지 않은 chess.com 대국 번호에 가짜 기보를 선점해 공유 리뷰 링크에 노출 가능(BUG-023 보완) | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
 | BUG-114 | P2 | CSP가 Report-Only이고 `style-src 'unsafe-inline'`, 세션 토큰은 localStorage — XSS가 한 번 생기면 계정 탈취로 직결(현재 `dangerouslySetInnerHTML`·`eval` 사용은 0건) | 발견(보안 점검) · 미수정 | 2026-10-18 |
 | BUG-113 | P2 | 경험치·코인·칭호·스킨 보유가 전부 클라이언트 신고값(`user_progress`·`profiles.pub`)이라 개발자 도구로 위조 가능 — 리더보드(`pub.xp`)·뽑기 경제 무의미화 | 발견(보안 점검) · 기존에 알려진 설계 한계 · 미수정 | 2026-10-18 |
-| BUG-112 | P2 | `puzzle_solve`·`puzzle_share_inc`·`puzzle_solve_events`·`puzzle_line_solve_times` 등 카운터·로그가 인증·중복 방지·호출 제한 없이 열려 있어 인기 랭킹·퍼즐 레이팅 조작과 DB 용량 소진 가능 | 발견(보안 점검) · 미수정 | 2026-10-18 |
-| BUG-111 | P2 | `daily_puzzle_cache` insert가 `with check(true)`(anon 포함) — 날짜(PK) 선점으로 미래 일일 퍼즐 내용 오염 | 발견(보안 점검) · 미수정 | 2026-10-18 |
+| BUG-112 | P2 | `puzzle_solve`·`puzzle_share_inc`·`puzzle_solve_events`·`puzzle_line_solve_times` 등 카운터·로그가 인증·중복 방지·호출 제한 없이 열려 있어 인기 랭킹·퍼즐 레이팅 조작과 DB 용량 소진 가능 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
+| BUG-111 | P2 | `daily_puzzle_cache` insert가 `with check(true)`(anon 포함) — 날짜(PK) 선점으로 미래 일일 퍼즐 내용 오염 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
 | BUG-110 | P1 | `puzzles.data` update가 anon에게까지 열려 있어(`using(true)` + 컬럼 grant) 누구나 어떤 퍼즐의 내용이든 덮어쓸 수 있음 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
 | BUG-109 | P1 | `puzzle_like_toggle`·`puzzle_repost_toggle`이 행위자 uid를 인자(`p_uid`)로 받는 SECURITY DEFINER — 남의 명의로 좋아요/리포스트 조작·집계 위조 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
 | BUG-108 | P1 | `pvp_finish_verified`가 service_role 전용이라고 주석에 쓰였으나 `revoke … from public`이 없어 일반 로그인 사용자도 호출 가능한 것으로 보임 → 임의 대국 결과 확정 | 수정 완료(v0.7.0) · SQL 재실행 필요 · `npm run attack` | 2026-10-18 |
@@ -156,34 +156,39 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
 
 ### BUG-117 · [P2] `account_providers(email)` anon 호출로 가입 여부·가입 방식 조회(이메일 열거), 로그인 시도 제한은 Supabase 
-- **상태**: 발견(미수정) · 모의 공격으로 재현됨
+- **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요 · 모의 공격으로 막힘 확인
 - **발견일**: 2026-10-18 (v0.7.0 보안 강화 사전 점검, 코드 정적 분석)
 - **위치**: 보안 점검 표의 제목 참고
 - **증상**: 표의 제목 참고(상세 재현은 모의 공격 단계에서 보강)
 - **재현**: `npm run attack -- --only BUG-117` (2026-10-19, 샌드박스 PostgreSQL에서 공격 성공 확인)
 - **근본 원인**: 점검 중 코드 읽기로 확인
-- **수정 내용**: (예정)
-- **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
+- **수정 내용**: `account_providers`를 service_role 전용으로 회수하고 `/api/auth-providers`(IP당 10회/10분·이메일당 5회/10분)로 대체. 로그인 실패 응답에는 서버가 소셜 가입 힌트를 실어 보낸다(이메일 로그인 포함).
+- **재발 방지 안전장치**: 하네스 BUG-117(브라우저 직접 호출 거부)·117b(대량 조회 차단).
+- **남는 한계**: 안내 기능을 유지하는 이상 느린 속도의 가입 여부 조회는 가능하다(Supabase 가입 응답도 같은 정보를 준다).
+- **검증**: 수정 전 `npm run attack`에서 뚫림 → 수정 후 막힘, 정상 기능 회귀(R1~R3·정상 경로 항목) 통과, `npm run build` 통과.
 
 ### BUG-116 · [P2] `/api/lichess` 프록시가 인증·호출 제한 없이 서버의 LICHESS_TOKEN으로 외부 호출(쿼리 파라미터 전달) / `/api/sc
-- **상태**: 발견(미수정) · 모의 공격으로 재현됨
+- **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요 · 모의 공격으로 막힘 확인
 - **발견일**: 2026-10-18 (v0.7.0 보안 강화 사전 점검, 코드 정적 분석)
 - **위치**: 보안 점검 표의 제목 참고
 - **증상**: 표의 제목 참고(상세 재현은 모의 공격 단계에서 보강)
 - **재현**: `npm run attack -- --only BUG-116` (2026-10-19, 샌드박스 PostgreSQL에서 공격 성공 확인)
 - **근본 원인**: 점검 중 코드 읽기로 확인
-- **수정 내용**: (예정)
-- **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
+- **수정 내용**: `/api/lichess`: 허용 목록 파라미터만 중계·IP당 분당 90회(DB 카운터)·퍼즐 경로는 개발자 로그인 확인·pgn id 형식 검증·오류 메시지 일반화. `/api/scan-board`: 비로그인 IP당 6회/10분·20회/일, 로그인 사용자 30회/10분·200회/일, 전체 3000회/일(초과 시 503), 이미지 5.5MB 상한, `x-forwarded-for` 대신 Vercel 헤더 사용, Gemini 키를 URL이 아니라 헤더로 전송(BUG-118 일부). 클라이언트가 로그인 토큰을 실어 보냄.
+- **재발 방지 안전장치**: 공용 `api/_lib/server.js`(DB 호출 제한, 실패 시 메모리 폴백). 하네스 BUG-116a·116b(과호출·파라미터 주입·권한·키 노출·대용량).
+- **검증**: 수정 전 `npm run attack`에서 뚫림 → 수정 후 막힘, 정상 기능 회귀(R1~R3·정상 경로 항목) 통과, `npm run build` 통과.
 
 ### BUG-115 · [P2] `reviewed_game_put`이 anon에게 열려 있고 선착순 저장
-- **상태**: 발견(미수정) · 모의 공격으로 재현됨
+- **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요 · 모의 공격으로 막힘 확인
 - **발견일**: 2026-10-18 (v0.7.0 보안 강화 사전 점검, 코드 정적 분석)
 - **위치**: 보안 점검 표의 제목 참고
 - **증상**: 표의 제목 참고(상세 재현은 모의 공격 단계에서 보강)
 - **재현**: `npm run attack -- --only BUG-115` (2026-10-19, 샌드박스 PostgreSQL에서 공격 성공 확인)
 - **근본 원인**: 점검 중 코드 읽기로 확인
-- **수정 내용**: (예정)
-- **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
+- **수정 내용**: `reviewed_game_put`·`reviewed_analysis_put`을 service_role 전용으로 회수하고 새 `/api/review-put`로만 저장: 로그인 필수·사용자당 40회/10분·기보를 chess.js로 처음부터 재생해 모든 수가 합법일 때만·크기 상한. 클라이언트의 직접 upsert 폴백 삭제.
+- **재발 방지 안전장치**: `check-sql-function-acl`(reviewed_games 직접 쓰기 금지·허용 목록에서 제외). 하네스 BUG-115(RPC·직접 삽입 거부)·115b(API: 비로그인 401, 없는 수·메이트 뒤 수 400, 정상 저장).
+- **남는 한계**: 합법적인 가짜 대국은 chess.com 원본과 대조하지 않는 한 판별할 수 없다(원본 대조는 외부 API 의존이라 보류). 게스트는 공유 리뷰 캐시에 올릴 수 없다(리뷰 자체는 그대로 된다).
+- **검증**: 수정 전 `npm run attack`에서 뚫림 → 수정 후 막힘, 정상 기능 회귀(R1~R3·정상 경로 항목) 통과, `npm run build` 통과.
 
 ### BUG-114 · [P2] CSP가 Report-Only이고 `style-src 'unsafe-inline'`, 세션 토큰은 localStorage
 - **상태**: 발견(미수정)
@@ -205,24 +210,27 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
 
 ### BUG-112 · [P2] `puzzle_solve`·`puzzle_share_inc`·`puzzle_solve_events`·`puzzle_line_solve_times
-- **상태**: 발견(미수정) · 모의 공격으로 재현됨
+- **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요 · 모의 공격으로 막힘 확인
 - **발견일**: 2026-10-18 (v0.7.0 보안 강화 사전 점검, 코드 정적 분석)
 - **위치**: 보안 점검 표의 제목 참고
 - **증상**: 표의 제목 참고(상세 재현은 모의 공격 단계에서 보강)
 - **재현**: `npm run attack -- --only BUG-112` (2026-10-19, 샌드박스 PostgreSQL에서 공격 성공 확인)
 - **근본 원인**: 점검 중 코드 읽기로 확인
-- **수정 내용**: (예정)
-- **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
+- **수정 내용**: `puzzle_solve`: 같은 사람이 같은 퍼즐을 시간당 1회만 센다(로그인 사용자 200회/시간, 비로그인은 퍼즐당 전체 3회/시간). `puzzle_solve_events`·`puzzle_line_solve_times`: 비로그인 삽입 금지·본인 uid만·분당 60건 트리거 제한·풀이 시간 0.2초~1시간. `puzzle_share_put`: 분당 30회(비로그인은 전체 합산). 공용 `rate_limit_hit`을 DB 안에서도 재사용.
+- **재발 방지 안전장치**: 하네스 BUG-112a·b·c·d(공격 3종 + 정상 경로 유지), 일상 동작 회귀 R1~R3.
+- **검증**: 수정 전 `npm run attack`에서 뚫림 → 수정 후 막힘, 정상 기능 회귀(R1~R3·정상 경로 항목) 통과, `npm run build` 통과.
 
 ### BUG-111 · [P2] `daily_puzzle_cache` insert가 `with check(true)`(anon 포함)
-- **상태**: 발견(미수정) · 모의 공격으로 재현됨
+- **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요 · 모의 공격으로 막힘 확인
 - **발견일**: 2026-10-18 (v0.7.0 보안 강화 사전 점검, 코드 정적 분석)
 - **위치**: 보안 점검 표의 제목 참고
 - **증상**: 표의 제목 참고(상세 재현은 모의 공격 단계에서 보강)
 - **재현**: `npm run attack -- --only BUG-111` (2026-10-19, 샌드박스 PostgreSQL에서 공격 성공 확인)
 - **근본 원인**: 점검 중 코드 읽기로 확인
-- **수정 내용**: (예정)
-- **재발 방지 안전장치**: (예정 — SQL 권한·정책 정적 검사 스크립트를 prebuild에 추가)
+- **수정 내용**: 직접 쓰기를 닫고 `daily_puzzle_cache_put` RPC로만 저장: 로그인 필요·오늘 기준 -8~+1일 날짜만·크기 300KB·유효한 퍼즐 id 필수·사용자당 20건/시간·이미 있는 날짜는 그대로(선착순). 클라이언트(`saveDailyPuzzleCache`)를 RPC로 교체.
+- **재발 방지 안전장치**: `check-sql-grants`(공개 쓰기 허용 목록이 비었음)·`check-sql-function-acl`(클라이언트 직접 쓰기 금지). 하네스 BUG-111·111b.
+- **남는 한계**: 오늘 날짜를 가장 먼저 올리는 로그인 사용자가 내용을 정한다(서버가 엔진 없이 검증 불가). 서버가 직접 고르는 `daily_puzzle_picks` 체계로 통합하는 것이 근본 대책.
+- **검증**: 수정 전 `npm run attack`에서 뚫림 → 수정 후 막힘, 정상 기능 회귀(R1~R3·정상 경로 항목) 통과, `npm run build` 통과.
 
 ### BUG-110 · [P1] `puzzles.data` update가 anon에게까지 열려 있어(`using(true)` + 컬럼 grant) 누구나 어떤 퍼즐의 내용이든 
 - **상태**: 수정 완료(v0.7.0) · SQL 재실행 필요

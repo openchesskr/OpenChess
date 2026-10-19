@@ -1,30 +1,55 @@
+import { idForNo } from "../ids.mjs";
 // P2 모의 공격 — breached=true면 공격 성공(취약).
 export default [
-  { id: "BUG-111", kind: "attack", title: "anon이 일일 퍼즐 캐시 미래 날짜를 선점해 내용 오염",
-    async run({ sb }) {
-      sb.as("anon", null, `insert into public.daily_puzzle_cache(date,data) values (current_date + 40, '{"fake":"puzzle"}');`);
-      const n = sb.admin(`select count(*) from public.daily_puzzle_cache where date = current_date + 40`).out;
-      return { breached: n === "1", evidence: n === "1" ? "anon이 40일 뒤 일일 퍼즐을 임의 내용으로 심음" : "삽입 거부" };
+  { id: "BUG-111", kind: "attack", title: "anon·일반 계정이 일일 퍼즐 캐시에 미래/임의 날짜를 선점해 내용 오염",
+    async run({ sb, U }) {
+      const direct = sb.as("anon", null, `insert into public.daily_puzzle_cache(date,data) values (current_date + 40, '{"fake":"puzzle"}');`);
+      const viaRpcAnon = sb.as("anon", null, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(111111)}"}'::jsonb);`);
+      const farFuture = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date + 40, '{"id":"${idForNo(111111)}"}'::jsonb);`);
+      const badId = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date, '{"fake":"no id"}'::jsonb);`);
+      const n = sb.admin(`select count(*) from public.daily_puzzle_cache`).out;
+      return { breached: n !== "0", evidence: n !== "0" ? `캐시에 ${n}행이 들어감` : `직접 삽입·비로그인·범위 밖 날짜·id 없는 내용 모두 거부(${direct.err.split("\n")[0].slice(0, 40)} / ${farFuture.err.split("\n")[0].slice(0, 40)})` };
     } },
-  { id: "BUG-112a", kind: "attack", title: "anon이 puzzle_solve를 반복 호출해 풀이 수(인기 랭킹) 부풀리기",
-    async run({ sb }) {
-      const call = "select public.puzzle_solve(111111);\n".repeat(50);
-      sb.as("anon", null, call);
-      const n = Number(sb.admin(`select solves from public.puzzles where no=111111`).out);
-      return { breached: n >= 50, evidence: `비로그인 50회 호출 후 solves=${n}` };
+  { id: "BUG-111b", kind: "hold", title: "정상 경로 유지: 로그인 사용자의 오늘 일일 퍼즐 캐시 저장 · 이미 있는 날짜는 그대로",
+    async run({ sb, U }) {
+      const a = sb.as("authenticated", U.bob, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(111111)}","v":1}'::jsonb);`);
+      const b = sb.as("authenticated", U.mallory, `select public.daily_puzzle_cache_put(current_date, '{"id":"${idForNo(222222)}","v":2}'::jsonb);`);
+      const v = sb.admin(`select data->>'v' from public.daily_puzzle_cache where date=current_date`).out;
+      return { breached: !(a.ok && b.ok && v === "1"), evidence: `저장 ${a.ok ? "성공" : "실패: " + a.err}, 두 번째(다른 내용)는 무시되어 v=${v}` };
     } },
-  { id: "BUG-112b", kind: "attack", title: "anon이 풀이 기록(puzzle_solve_events)에 uid 없는 행 대량 삽입",
-    async run({ sb }) {
-      sb.as("anon", null, `insert into public.puzzle_solve_events(no,uid) select 111111, null from generate_series(1,2000);`);
-      const n = Number(sb.admin(`select count(*) from public.puzzle_solve_events`).out);
-      return { breached: n >= 2000, evidence: `익명이 한 번에 ${n}행 삽입(제한 없음)` };
+  { id: "BUG-112a", kind: "attack", title: "puzzle_solve 반복 호출로 풀이 수(인기 랭킹) 부풀리기 — 비로그인 50회 / 로그인 50회",
+    async run({ sb, U }) {
+      sb.as("anon", null, "select public.puzzle_solve(111111);\n".repeat(50));
+      const anonN = Number(sb.admin(`select solves from public.puzzles where no=111111`).out);
+      sb.as("authenticated", U.mallory, "select public.puzzle_solve(111111);\n".repeat(50));
+      const total = Number(sb.admin(`select solves from public.puzzles where no=111111`).out);
+      return { breached: anonN > 3 || total - anonN > 1, evidence: `비로그인 50회 → +${anonN}(상한 3/시간) · 로그인 50회 → +${total - anonN}(상한 1/시간)` };
     } },
-  { id: "BUG-112c", kind: "attack", title: "anon이 퍼즐 테이블에 거대한 data(수 MB)를 가진 퍼즐 대량 삽입",
+  { id: "BUG-112b", kind: "attack", title: "풀이 기록 테이블 도배: 비로그인 삽입 · 로그인 계정의 대량 삽입 · 터무니없는 풀이 시간",
+    async run({ sb, U }) {
+      const anon = sb.as("anon", null, `insert into public.puzzle_solve_events(no,uid) values (111111, null);`);
+      const anonLine = sb.as("anon", null, `insert into public.puzzle_line_solve_times(no,tag,uid,ms) values (111111,'x',null,5000);`);
+      const flood = sb.as("authenticated", U.mallory, `insert into public.puzzle_solve_events(no,uid) select 111111, '${U.mallory}' from generate_series(1,200);`);
+      const spoofed = sb.as("authenticated", U.mallory, `insert into public.puzzle_solve_events(no,uid) values (111111, '${U.victim}');`);
+      const absurd = sb.as("authenticated", U.mallory, `insert into public.puzzle_line_solve_times(no,tag,uid,ms) values (111111,'x','${U.mallory}',1);`);
+      const n = Number(sb.admin(`select count(*) from public.puzzle_solve_events`).out), m = Number(sb.admin(`select count(*) from public.puzzle_line_solve_times`).out);
+      return { breached: n > 0 || m > 0, evidence: n || m ? `기록 ${n}+${m}행이 들어감` : "비로그인 삽입·한 번에 200행·남의 uid·0.001초 풀이 시간 모두 거부" };
+    } },
+  { id: "BUG-112d", kind: "hold", title: "정상 경로 유지: 로그인 사용자의 풀이 기록·라인 풀이 시간 저장, 분당 한도 안의 연속 삽입",
+    async run({ sb, U }) {
+      const a = sb.as("authenticated", U.bob, `insert into public.puzzle_solve_events(no,uid) values (111111,'${U.bob}');`);
+      const b = sb.as("authenticated", U.bob, `insert into public.puzzle_line_solve_times(no,tag,uid,ms) values (111111,'punish','${U.bob}',8000);`);
+      const c = sb.as("authenticated", U.bob, `select public.puzzle_solve(111111);`);
+      return { breached: !(a.ok && b.ok && c.ok), evidence: `풀이 기록 ${a.ok}, 라인 시간 ${b.ok}, 풀이 수 ${c.ok ? c.out : c.err}` };
+    } },
+  { id: "BUG-112c", kind: "attack", title: "puzzle_share_put 도배: 비로그인이 새 퍼즐을 연속 100개 올리기",
     async run({ sb }) {
-      sb.as("anon", null, `insert into public.puzzles(no,data) select 900000+g, jsonb_build_object('junk', (select string_agg(md5(i::text || g::text), '') from generate_series(1,16000) i)) from generate_series(1,5) g;`);
-      const sz = sb.admin(`select coalesce(pg_size_pretty(sum(length(data::text))),'0') from public.puzzles where no>900000`).out;
-      const n = sb.admin(`select count(*) from public.puzzles where no>900000`).out;
-      return { breached: Number(n) > 0, evidence: Number(n) > 0 ? `익명이 퍼즐 ${n}개(약 ${sz}) 삽입 — 크기·개수 제한 없음` : "REST 직접 삽입 거부(퍼즐 공유는 puzzle_share_put 경유, 크기 상한 있음)" };
+      let ok = 0;
+      const sql = Array.from({ length: 100 }, (_, i) => `select public.puzzle_share_put(${900000 + i}, '{"id":"${idForNo(900000 + i)}"}'::jsonb);`).join("\n");
+      // 한 호출씩 실행해 실패(속도 제한)를 센다 — 한 트랜잭션에 넣으면 첫 오류에서 전부 되돌려진다.
+      for (const q of sql.split("\n")) if (sb.as("anon", null, q).ok) ok++;
+      const n = sb.admin(`select count(*) from public.puzzles where no>=900000`).out;
+      return { breached: Number(n) > 30, evidence: `비로그인 100회 시도 → ${n}개 저장(상한 분당 30)` };
     } },
   { id: "BUG-113", kind: "attack", title: "일반 계정이 자기 프로필 pub.xp를 조작해 리더보드 1위 차지",
     async run({ sb, U }) {
@@ -38,17 +63,22 @@ export default [
       const c = sb.admin(`select progress->>'coins' from public.user_progress where id='${U.mallory}'`).out;
       return { breached: c === "999999999", evidence: `서버가 코인 ${c}를 그대로 저장함 (뽑기 비용을 서버가 확인하지 않음)` };
     } },
-  { id: "BUG-115", kind: "attack", title: "anon이 아직 리뷰되지 않은 chess.com 대국 번호에 가짜 기보를 선점",
-    async run({ sb }) {
-      const r = sb.as("anon", null, `select public.reviewed_game_put(123456789, '{"moves":["e4","e5","Qh5","Nc6","Bc4","Nf6","Qxf7#"],"fake":true}'::jsonb);`);
-      const n = sb.admin(`select count(*) from public.reviewed_games where cc_id=123456789 and data->>'fake'='true'`).out;
-      return { breached: n === "1", evidence: n === "1" ? "가짜 기보가 공유 리뷰 캐시에 저장됨(실제 chess.com 기보와 대조 없음)" : `거부 (${r.out || r.err})` };
+  { id: "BUG-115", kind: "attack", title: "리뷰 캐시 선점: anon·일반 계정이 RPC로 아직 리뷰되지 않은 chess.com 대국 번호에 가짜 기보를 직접 저장",
+    async run({ sb, U }) {
+      const fake = `'{"moves":["e4","e5","Qh5","Nc6","Bc4","Nf6","Qxf7#"],"fake":true}'::jsonb`;
+      const a = sb.as("anon", null, `select public.reviewed_game_put(123456789, ${fake});`);
+      const b = sb.as("authenticated", U.mallory, `select public.reviewed_game_put(123456789, ${fake});`);
+      const c = sb.as("authenticated", U.mallory, `select public.reviewed_analysis_put(123456789, '{"v":1,"d":10,"result":{"moves":[1]}}'::jsonb);`);
+      const d = sb.as("authenticated", U.mallory, `insert into public.reviewed_games(cc_id,data) values (123456789, ${fake});`);
+      const n = sb.admin(`select count(*) from public.reviewed_games`).out;
+      return { breached: n !== "0", evidence: n !== "0" ? "가짜 기보가 공유 리뷰 캐시에 저장됨" : `RPC·직접 삽입 모두 거부(${a.err.split("\n")[0].slice(0, 50)})` };
     } },
-  { id: "BUG-117", kind: "attack", title: "anon이 account_providers로 이메일 가입 여부·방식 열거",
-    async run({ sb }) {
-      const a = sb.as("anon", null, `select public.account_providers('victim@example.com');`).out;
-      const b = sb.as("anon", null, `select public.account_providers('nobody@example.com');`).out;
-      return { breached: a !== b, evidence: `가입자: ${a} / 비가입자: ${b} → ${a !== b ? "응답이 달라 가입 여부가 드러남" : "구분 불가"}` };
+  { id: "BUG-117", kind: "attack", title: "account_providers를 브라우저(anon·로그인)가 직접 호출해 이메일 가입 여부·방식 열거",
+    async run({ sb, U }) {
+      const a = sb.as("anon", null, `select public.account_providers('victim@example.com');`);
+      const b = sb.as("authenticated", U.mallory, `select public.account_providers('victim@example.com');`);
+      const svc = sb.as("service_role", null, `select public.account_providers('victim@example.com');`);
+      return { breached: a.ok || b.ok || svc.out !== "{email}", evidence: a.ok || b.ok ? "브라우저가 직접 조회함: " + a.out : `브라우저 역할 거부 · 서버(service_role)는 정상(${svc.out}) — 조회는 호출 제한이 걸린 /api/auth-providers 경유` };
     } },
   { id: "BUG-118", kind: "attack", title: "anon이 개발자 계정 여부·콘텐츠 편집자 여부 조회",
     async run({ sb, U }) {

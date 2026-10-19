@@ -4595,7 +4595,8 @@ function attackValidateLine(fen, moveTokens) {
   return { moves: ucis, mateIn: (ucis.length + 1) / 2 };
 }
 async function fetchLichessMatePuzzle(mateIn) {
-  const r = await fetch(LICHESS_API + "?puzzle=next&angle=mateIn" + mateIn);
+  // (v0.7.0 BUG-116) 개발자 도구 — 서버가 개발자 로그인을 확인한다.
+  const r = await fetch(LICHESS_API + "?puzzle=next&angle=mateIn" + mateIn, { headers: SB_TOKEN ? { Authorization: "Bearer " + SB_TOKEN } : {} });
   if (!r.ok) throw new Error("lichess " + r.status);
   const data = await r.json();
   const sans = String(data.game.pgn || "").trim().split(/\s+/);

@@ -31,6 +31,7 @@ export async function rateLimited(env, rules) {
   for (const [key, limit, windowSec, cost = 1] of rules) {
     let hit;
     try {
+      if (!env) throw new Error("no db");   // 환경변수가 없으면 인스턴스 메모리 카운터만 쓴다
       const r = await fetch(env.url + "/rest/v1/rpc/rate_limit_hit", {
         method: "POST",
         headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" },
@@ -56,4 +57,27 @@ export async function emailForUsername(env, username) {
     const v = await r.json();
     return typeof v === "string" ? v : "";
   } catch { return ""; }
+}
+
+/** Authorization: Bearer 토큰이 유효하면 { id } (Supabase Auth에 위임해 확인), 아니면 null. */
+export async function authUser(env, req) {
+  const h = (req.headers && req.headers.authorization) || "";
+  const token = h.startsWith("Bearer ") ? h.slice(7) : "";
+  if (!token || !env) return null;
+  try {
+    const r = await fetch(env.url + "/auth/v1/user", { headers: { apikey: env.anon, Authorization: "Bearer " + token } });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && u.id ? { id: u.id } : null;
+  } catch { return null; }
+}
+
+/** 개발자/공동개발자 여부(서버 안에서만 확인 — 브라우저에는 이 정보를 묻는 함수가 열려 있지 않다). */
+export async function isEditor(env, uid) {
+  try {
+    const r = await fetch(env.url + "/rest/v1/rpc/is_content_editor", {
+      method: "POST", headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" }, body: JSON.stringify({ p_uid: uid }),
+    });
+    return r.ok && (await r.json()) === true;
+  } catch { return false; }
 }

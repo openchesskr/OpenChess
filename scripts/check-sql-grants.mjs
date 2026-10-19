@@ -33,7 +33,8 @@ for (const [t, v] of Object.entries(state)) {
 // 누구나 쓰는 정책 — 허용 목록: puzzles(update — data만 컬럼 grant로 열림, 크라우드소싱 퍼즐 보정),
 // daily_puzzle_cache(insert — 날짜별 캐시, 서버가 같은 날짜를 한 번만 받음).
 // (v0.7.0 BUG-110) puzzles는 더는 직접 쓰기를 열지 않는다(puzzle_share_put RPC로만 쓴다) — 허용 목록에서 뺐다.
-const OPEN_WRITE_OK = new Set(["daily_puzzle_cache"]);
+// (v0.7.0 BUG-111) daily_puzzle_cache도 직접 쓰기를 닫았다(daily_puzzle_cache_put RPC) — 허용 목록이 비었다.
+const OPEN_WRITE_OK = new Set([]);
 for (const s of stmts) {
   const m = /^create policy "[^"]+" on public\.(\w+) for (insert|update|all)\b(.*)$/i.exec(s);
   if (!m) continue;

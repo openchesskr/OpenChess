@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     }
     if (r.status === 429) { res.status(429).json({ error: "rate_limited" }); return; }
     const out = { error: "invalid" };
-    if (known && who.includes("@") === false) {
+    if (known) {
       try {
         const p = await fetch(env.url + "/rest/v1/rpc/account_providers", {
           method: "POST", headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" }, body: JSON.stringify({ p_email: email }),

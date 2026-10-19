@@ -59,8 +59,8 @@ function buildPrompt(target, list) {
 }
 
 async function geminiOnce(model, apiKey, prompt) {
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA } }),
   });
   const data = await r.json();

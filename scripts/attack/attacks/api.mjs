@@ -7,24 +7,53 @@ const mkRes = () => { const r = { code: 200, headers: {}, body: null, status(c) 
 async function withFetch(impl, fn) { const real = globalThis.fetch; globalThis.fetch = impl; try { return await fn(); } finally { globalThis.fetch = real; } }
 
 const base = [
-  { id: "BUG-116a", kind: "attack", title: "로그인 없이 /api/lichess 호출 → 서버의 LICHESS_TOKEN으로 외부 요청이 나감",
+  { id: "BUG-116a", kind: "attack", title: "/api/lichess 남용: 익명이 같은 IP에서 150회 호출 · 허용 목록 밖 파라미터 · 개발자 전용 퍼즐 경로 · 토큰 노출",
     async run() {
-      process.env.LICHESS_TOKEN = "SECRET_SERVER_TOKEN";
+      Object.assign(process.env, { LICHESS_TOKEN: "SECRET_SERVER_TOKEN", VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });
       const { default: handler } = await load("lichess.js");
-      const sent = [];
-      await withFetch(async (url, opt) => { sent.push({ url: String(url), auth: opt && opt.headers && opt.headers.Authorization }); return new Response("{}", { status: 200 }); },
-        async () => { for (let i = 0; i < 30; i++) await handler({ query: { master: "1", fen: "x" + i }, headers: {} }, mkRes()); });
-      const withTok = sent.filter((s) => s.auth === "Bearer SECRET_SERVER_TOKEN").length;
-      return { breached: withTok >= 30, evidence: `익명 30회 요청 → 서버 토큰을 실어 외부 호출 ${withTok}회 (인증·호출 제한 없음)` };
+      const counts = new Map(); const upstream = [];
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + (body.p_cost === undefined ? 1 : body.p_cost); counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+        if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "plain-user" }), { status: 200 });
+        if (u.includes("/rpc/is_content_editor")) return new Response("false", { status: 200 });
+        upstream.push({ url: u, auth: opt && opt.headers && opt.headers.Authorization });
+        return new Response("{}", { status: 200 });
+      };
+      let passed = 0, blocked = 0; const evil = mkRes(), puz = mkRes(), puzUser = mkRes();
+      await withFetch(impl, async () => {
+        for (let i = 0; i < 150; i++) { const r = mkRes(); await handler({ query: { master: "1", fen: "x" + i }, headers: { "x-vercel-forwarded-for": "1.2.3.4" } }, r); r.code === 429 ? blocked++ : passed++; }
+        await handler({ query: { master: "1", fen: "ok", evil: "1", token: "steal", "x[]": "y" }, headers: { "x-vercel-forwarded-for": "5.6.7.8" } }, evil);
+        await handler({ query: { puzzle: "next", angle: "mateIn2" }, headers: { "x-vercel-forwarded-for": "5.6.7.9" } }, puz);
+        await handler({ query: { puzzle: "next" }, headers: { "x-vercel-forwarded-for": "5.6.7.10", authorization: "Bearer t" } }, puzUser);
+      });
+      const lastExplorer = upstream.filter((x) => x.url.includes("explorer")).pop();
+      const leaksParam = !lastExplorer || /evil|steal/.test(lastExplorer.url);
+      const bodyLeak = JSON.stringify([evil.body, puz.body]).includes("SECRET");
+      const puzzleCalls = upstream.filter((x) => x.url.includes("/api/puzzle")).length;
+      const bad = passed > 90 || leaksParam || puz.code !== 401 || puzUser.code !== 403 || puzzleCalls > 0 || bodyLeak;
+      return { breached: bad, evidence: `150회 중 통과 ${passed}·차단 ${blocked}(상한 90/분) · 밖 파라미터 ${leaksParam ? "전달됨" : "버려짐"} · 퍼즐 경로: 비로그인 ${puz.code}, 일반 로그인 ${puzUser.code}, 외부 호출 ${puzzleCalls}회` };
     } },
-  { id: "BUG-116b", kind: "attack", title: "로그인 없이 /api/scan-board 반복 호출(서로 다른 X-Forwarded-For) → Gemini 쿼터 소모",
+  { id: "BUG-116b", kind: "attack", title: "/api/scan-board 남용: 익명이 같은 IP에서 40회 · 초대형 이미지 · 로그인 사용자는 정상 한도",
     async run() {
-      process.env.GEMINI_API_KEY = "gk";
+      Object.assign(process.env, { GEMINI_API_KEY: "gk", VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });
       const { default: handler } = await load("scan-board.js");
-      let gemini = 0;
-      await withFetch(async () => { gemini++; return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ kind: "none", confidence: "low" }) }] }, finishReason: "STOP" }] }), { status: 200 }); },
-        async () => { for (let i = 0; i < 40; i++) await handler({ method: "POST", headers: { "x-forwarded-for": "10.0.0." + i }, body: { image: "AAAA", mediaType: "image/png" } }, mkRes()); });
-      return { breached: gemini >= 40, evidence: `익명 요청 40건 → Gemini 호출 ${gemini}회 (로그인 불필요, IP 헤더만 바꾸면 호출 제한 회피 — Vercel이 XFF를 덮어쓰는 운영 환경에선 완화됨)` };
+      const counts = new Map(); let gemini = 0, keyInUrl = false;
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body && !u.includes("generativelanguage") ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + (body.p_cost === undefined ? 1 : body.p_cost); counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+        if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "plain-user" }), { status: 200 });
+        gemini++; if (u.includes("key=")) keyInUrl = true;
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ kind: "none", confidence: "low" }) }] }, finishReason: "STOP" }] }), { status: 200 });
+      };
+      let anonPassed = 0, userBlocked = 0; const big = mkRes();
+      await withFetch(impl, async () => {
+        for (let i = 0; i < 40; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "7.7.7.7", "x-forwarded-for": "10.0.0." + i }, body: { image: "AAAA", mediaType: "image/png" } }, r); if (r.code !== 429) anonPassed++; }
+        for (let i = 0; i < 20; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "7.7.7.7", authorization: "Bearer t" }, body: { image: "AAAA", mediaType: "image/png" } }, r); if (r.code === 429) userBlocked++; }
+        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "8.8.8.8" }, body: { image: "A".repeat(6_000_000), mediaType: "image/png" } }, big);
+      });
+      const bad = anonPassed > 6 || userBlocked > 0 || big.code !== 413 || keyInUrl;
+      return { breached: bad, evidence: `익명 40회 중 통과 ${anonPassed}(상한 6/10분, 헤더 위조 무시) · 로그인 20회 중 차단 ${userBlocked} · 초대형 이미지 ${big.code} · API 키가 URL에 ${keyInUrl ? "있음" : "없음"}` };
     } },
   { id: "A1", kind: "hold", title: "/api/translate: 토큰 없이 호출",
     async run() {
@@ -159,6 +188,35 @@ export const authAttacks = [
       });
       // 공격자의 첫 요청이 그 창의 1통을 가져가므로 주인은 다음 창(최대 10분 뒤)에 받는다 — 시간당 총량 한도와 달리 대기가 10분으로 한정된다. 연타가 추가로 소모하지 않으면 메일은 정확히 1통.
       return { breached: m_recover.n !== 1, evidence: `공격자 20건 + 주인 1건 → 메일 ${m_recover.n}통 (창당 1통. 주인은 최대 10분 뒤 다음 창에서 받음)` };
+    } },
+  { id: "BUG-115b", kind: "attack", title: "/api/review-put: 비로그인 · 불법 기보(체크메이트 뒤 수 두기·없는 수) · 정상 기보는 저장",
+    async run() {
+      authEnv(); const { default: handler } = await load("review-put.js"); const stored = [];
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) return new Response("false", { status: 200 });
+        if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "u1" }), { status: 200 });
+        if (u.includes("/rpc/reviewed_")) { stored.push(body); return new Response("true", { status: 200 }); }
+        return new Response("{}", { status: 404 });
+      };
+      const post = (data, token = "t", kind = "game") => ({ method: "POST", headers: { authorization: token ? "Bearer " + token : "", "x-vercel-forwarded-for": "1.1.1.1" }, body: { kind, cc_id: 123456789, data } });
+      const r = { anon: mkRes(), illegal: mkRes(), afterMate: mkRes(), good: mkRes(), huge: mkRes() };
+      await withFetch(impl, async () => {
+        await handler(post({ moves: ["e4", "e5"] }, ""), r.anon);
+        await handler(post({ moves: ["e4", "Ke3"] }), r.illegal);
+        await handler(post({ moves: ["f3", "e5", "g4", "Qh4#", "a3"] }), r.afterMate);
+        await handler(post({ moves: ["e4", "e5", "Nf3", "Nc6"] }), r.good);
+        await handler(post({ moves: ["e4"], pad: "x".repeat(250000) }), r.huge);
+      });
+      const bad = r.anon.code !== 401 || r.illegal.code !== 400 || r.afterMate.code !== 400 || r.good.code !== 200 || r.huge.code !== 413 || stored.length !== 1;
+      return { breached: bad, evidence: `비로그인 ${r.anon.code} · 없는 수 ${r.illegal.code} · 메이트 뒤 수 ${r.afterMate.code} · 정상 ${r.good.code}(저장 ${stored.length}건) · 대용량 ${r.huge.code}` };
+    } },
+  { id: "BUG-117b", kind: "attack", title: "/api/auth-providers: 같은 IP에서 이메일 가입 여부 대량 조회 열거",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-providers.js"); const m = authMock();
+      let ok = 0, blocked = 0;
+      await withFetch(m.impl, async () => { for (let i = 0; i < 30; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "9.1.1.1" }, body: { email: "user" + i + "@example.com" } }, r); r.code === 429 ? blocked++ : ok++; } });
+      return { breached: ok > 10, evidence: `30건 중 응답 ${ok}건(상한 10/10분) · 차단 ${blocked}건` };
     } },
 ];
 
