@@ -1,3 +1,4 @@
+import { idForNo } from "../ids.mjs";
 // P1 모의 공격 — 각 항목은 breached=true면 "공격 성공(취약)". 수정 뒤에는 전부 false(막힘)여야 한다.
 export default [
   { id: "BUG-107", kind: "attack", title: "비로그인(anon)으로 아이디 → 이메일 수집",
@@ -60,24 +61,36 @@ export default [
     } },
   { id: "BUG-110b", kind: "attack", title: "일반 계정이 puzzle_share_put으로 기존 퍼즐 본문 교체·생성자 탈취 시도",
     async run({ sb, U }) {
-      sb.as("authenticated", U.mallory, `select public.puzzle_share_put(111111, '{"pwned":true,"themes":["punish"],"creator_uid":"${U.mallory}"}'::jsonb);`);
+      sb.as("authenticated", U.mallory, `select public.puzzle_share_put(111111, '{"id":"${idForNo(111111)}","pwned":true,"themes":["punish"],"creator_uid":"${U.mallory}"}'::jsonb);`);
       const d = sb.admin(`select data::text || ' / creator=' || coalesce(creator_uid::text,'') from public.puzzles where no=111111`).out;
       return { breached: /pwned/.test(d) || d.includes(U.mallory), evidence: /pwned/.test(d) ? "본문이 바뀜: " + d : "본문·생성자 그대로: " + d };
     } },
   { id: "BUG-110c", kind: "attack", title: "puzzle_share_put으로 임의 테마 문자열·거대한 data 주입",
     async run({ sb }) {
-      sb.as("anon", null, `select public.puzzle_share_put(111111, '{"themes":["<script>alert(1)</script>","punish"]}'::jsonb);`);
-      const big = sb.as("anon", null, `select public.puzzle_share_put(222222, jsonb_build_object('junk', (select string_agg(md5(i::text), '') from generate_series(1,12000) i)));`);
+      sb.as("anon", null, `select public.puzzle_share_put(111111, '{"id":"${idForNo(111111)}","themes":["<script>alert(1)</script>","punish"]}'::jsonb);`);
+      const big = sb.as("anon", null, `select public.puzzle_share_put(222222, jsonb_build_object('id','${idForNo(222222)}','junk', (select string_agg(md5(i::text), '') from generate_series(1,12000) i)));`);
       const d = sb.admin(`select data::text from public.puzzles where no=111111`).out;
       const n = sb.admin(`select count(*) from public.puzzles where no=222222`).out;
       return { breached: /script/.test(d) || n !== "0", evidence: `테마 주입 ${/script/.test(d) ? "성공" : "차단"} · 대용량(약 380KB) 저장 ${n !== "0" ? "성공" : "거부(" + big.err.split("\n")[0] + ")"}` };
     } },
   { id: "BUG-110d", kind: "hold", title: "정상 경로 유지: 비로그인·일반 계정이 새 퍼즐 공유 + 테마 합치기가 되는지",
     async run({ sb, U }) {
-      const a = sb.as("anon", null, `select public.puzzle_share_put(333333, '{"id":"x","themes":["punish"]}'::jsonb);`);
-      const b = sb.as("authenticated", U.mallory, `select public.puzzle_share_put(333333, '{"themes":["sacrifice"]}'::jsonb);`);
+      const a = sb.as("anon", null, `select public.puzzle_share_put(333333, '{"id":"${idForNo(333333)}","themes":["punish"]}'::jsonb);`);
+      const b = sb.as("authenticated", U.mallory, `select public.puzzle_share_put(333333, '{"id":"${idForNo(333333)}","themes":["sacrifice"]}'::jsonb);`);
       const d = sb.admin(`select data->'themes' from public.puzzles where no=333333`).out;
       const ok = a.ok && b.ok && /punish/.test(d) && /sacrifice/.test(d);
       return { breached: !ok, evidence: ok ? "새 퍼즐 공유와 테마 합치기 정상: " + d : `정상 동작 실패(anon:${a.ok} auth:${b.ok} themes:${d})` };
+    } },
+  { id: "BUG-121a", kind: "attack", title: "puzzle_share_put으로 id와 맞지 않는 임의 번호를 가짜 내용으로 선점(first-writer squatting)",
+    async run({ sb }) {
+      const r = sb.as("anon", null, `select public.puzzle_share_put(444444, '{"id":"not-the-matching-id","fake":true}'::jsonb);`);
+      const n = sb.admin(`select count(*) from public.puzzles where no=444444`).out;
+      return { breached: n !== "0", evidence: n !== "0" ? "임의 번호 444444가 가짜 내용으로 선점됨" : "거부: " + r.err.split("\n")[0] };
+    } },
+  { id: "BUG-121b", kind: "attack", title: "비로그인이 p_public=false로 비공개 퍼즐을 올려 번호를 숨긴 채 선점",
+    async run({ sb }) {
+      sb.as("anon", null, `select public.puzzle_share_put(555555, '{"id":"${idForNo(555555)}"}'::jsonb, false);`);
+      const v = sb.admin(`select is_public from public.puzzles where no=555555`).out;
+      return { breached: v === "f", evidence: v === "f" ? "비공개로 저장됨" : "공개로 저장됨(비로그인의 비공개 지정은 무시)" };
     } },
 ];

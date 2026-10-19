@@ -70,7 +70,7 @@ function authMock() {
   const impl = async (url, opt) => {
     const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
     calls.push(u);
-    if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + 1; counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+    if (u.includes("/rpc/rate_limit_hit")) { const cost = body.p_cost === undefined ? 1 : body.p_cost; const n = (counts.get(body.p_key) || 0) + cost; counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
     if (u.includes("/rpc/email_for_username")) return new Response(JSON.stringify(body.p_username === "victim" ? "victim@example.com" : null), { status: 200 });
     if (u.includes("/rpc/account_providers")) return new Response(JSON.stringify(["email"]), { status: 200 });
     if (u.includes("/auth/v1/token")) return body.email === "victim@example.com" && body.password === "right-password"
@@ -103,15 +103,25 @@ export const authAttacks = [
       await withFetch(m.impl, () => handler(loginReq("victim", "right-password", "3.3.3.3"), res));
       return { breached: !(res.code === 200 && res.body && res.body.access_token === "AT"), evidence: `응답 ${res.code}` };
     } },
-  { id: "BUG-107e", kind: "attack", title: "/api/auth-login: 같은 IP에서 비밀번호 무차별 대입(25회) · 한 계정 집중 공격(15회, IP 바꿔가며)",
+  { id: "BUG-107e", kind: "attack", title: "/api/auth-login: 같은 IP에서 무차별 대입(25회) · 한 계정 집중 공격(IP를 바꿔가며 실패 40회)",
     async run() {
       authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
       let ipBlocked = 0, idBlocked = 0, passed = 0;
       await withFetch(m.impl, async () => {
         for (let i = 0; i < 25; i++) { const r = mkRes(); await handler(loginReq("user" + i, "guess" + i, "9.9.9.9"), r); if (r.code === 429) ipBlocked++; }
-        for (let i = 0; i < 15; i++) { const r = mkRes(); await handler(loginReq("victim", "guess" + i, "8.8.8." + i), r); if (r.code === 429) idBlocked++; else if (r.code === 200) passed++; }
+        for (let i = 0; i < 40; i++) { const r = mkRes(); await handler(loginReq("victim", "guess" + i, "8.8.8." + i), r); if (r.code === 429) idBlocked++; else if (r.code === 200) passed++; }
       });
-      return { breached: ipBlocked < 5 || idBlocked < 5 || passed > 0, evidence: `IP 한도 초과로 차단 ${ipBlocked}/25 · 계정 한도 초과로 차단 ${idBlocked}/15` };
+      return { breached: ipBlocked < 5 || idBlocked < 5 || passed > 0, evidence: `IP 한도 초과로 차단 ${ipBlocked}/25 · 분산 공격(실패 30회 초과)으로 차단 ${idBlocked}/40` };
+    } },
+  { id: "BUG-107g", kind: "attack", title: "계정 잠금 공격: 공격자가 victim에게 틀린 시도를 쏟아부어도 주인이 다른 IP에서 정상 로그인되는지",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
+      const res = mkRes();
+      await withFetch(m.impl, async () => {
+        for (let i = 0; i < 30; i++) await handler(loginReq("victim", "guess" + i, "6.6.6.6"), mkRes());   // 공격자 한 IP에서 연타
+        await handler(loginReq("victim", "right-password", "7.7.7.7"), res);                           // 주인은 다른 곳에서 로그인
+      });
+      return { breached: res.code !== 200, evidence: `공격 중 주인의 정상 로그인 응답 ${res.code}` };
     } },
   { id: "BUG-107f", kind: "attack", title: "/api/auth-recover: 존재하는 아이디와 없는 아이디의 응답 차이 · 이메일 노출",
     async run() {

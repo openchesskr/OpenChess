@@ -11,6 +11,8 @@ import dbP2 from "./attacks/db-p2.mjs";
 import dbHolds from "./attacks/db-holds.mjs";
 import apiAttacks from "./attacks/api.mjs";
 import regress from "./attacks/db-regress.mjs";
+import { idForNo } from "./ids.mjs";
+const PID = idForNo(111111);
 
 const args = process.argv.slice(2);
 const only = (args.includes("--only") ? args[args.indexOf("--only") + 1] : "").split(",").filter(Boolean);
@@ -31,7 +33,7 @@ try {
     insert into auth.identities(user_id,provider) values ('${U.victim}','email'),('${U.bob}','google');
     insert into public.friend_edges(from_uid,to_uid,status) values ('${U.victim}','${U.bob}','accepted');
     insert into public.chat_messages(from_uid,to_uid,body) values ('${U.victim}','${U.bob}','안녕 밥');
-    insert into public.puzzles(no,data,creator_uid,creator_username) values (111111,'{"orig":true}','${U.victim}','victim');
+    insert into public.puzzles(no,data,creator_uid,creator_username) values (111111,'{"orig":true,"id":"${PID}"}','${U.victim}','victim');
     insert into public.pvp_games(white_uid,black_uid,sans,status,time_control,game_type) values ('${U.mallory}','${U.victim}','[]','active','600-0','chess');
     insert into public.pvp_games(white_uid,black_uid,sans,status,time_control,game_type) values ('${U.victim}','${U.bob}','[]','active','600-0','chess');
     insert into public.user_progress(id,progress) values ('${U.victim}','{"coins":777}');
@@ -42,7 +44,7 @@ try {
   // 공격마다 깨끗한 상태에서 시작하도록, 공격이 바꿀 수 있는 고정 데이터를 되돌린다(앞 공격의 흔적이 뒤 공격 판정을 오염시키지 않게).
   const reset = () => sb.admin(`
     update public.pvp_games set status='active', sans='[]'::jsonb, result_reason=null;
-    update public.puzzles set data='{"orig":true}'::jsonb, solves=0, likes=0, reposts=0, shares=0 where no=111111;
+    update public.puzzles set data='{"orig":true,"id":"${PID}"}'::jsonb, solves=0, likes=0, reposts=0, shares=0 where no=111111;
     delete from public.puzzles where no<>111111;
     delete from public.puzzle_likes; delete from public.puzzle_reposts; delete from public.puzzle_solve_events;
     delete from public.daily_puzzle_cache; delete from public.reviewed_games;

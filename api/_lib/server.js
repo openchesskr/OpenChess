@@ -18,26 +18,27 @@ export function supabaseEnv() {
 }
 
 const mem = new Map(); // key -> { start, n }
-function memHit(key, limit, windowSec) {
+function memHit(key, limit, windowSec, cost = 1) {
   const now = Date.now(), e = mem.get(key);
-  if (!e || now - e.start >= windowSec * 1000) { mem.set(key, { start: now, n: 1 }); if (mem.size > 5000) for (const [k, v] of mem) if (now - v.start > 3600e3) mem.delete(k); return false; }
-  e.n++; return e.n > limit;
+  if (cost === 0) return !!e && now - e.start < windowSec * 1000 && e.n > limit;
+  if (!e || now - e.start >= windowSec * 1000) { mem.set(key, { start: now, n: cost }); if (mem.size > 5000) for (const [k, v] of mem) if (now - v.start > 3600e3) mem.delete(k); return false; }
+  e.n += cost; return e.n > limit;
 }
 
-/** rules: [[key, limit, windowSeconds], …] — 하나라도 초과하면 true. */
+/** rules: [[key, limit, windowSeconds, cost?], …] — 하나라도 초과하면 true. cost 0은 세지 않고 초과 여부만 본다. */
 export async function rateLimited(env, rules) {
   let limited = false;
-  for (const [key, limit, windowSec] of rules) {
+  for (const [key, limit, windowSec, cost = 1] of rules) {
     let hit;
     try {
       const r = await fetch(env.url + "/rest/v1/rpc/rate_limit_hit", {
         method: "POST",
         headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" },
-        body: JSON.stringify({ p_key: key, p_limit: limit, p_window_seconds: windowSec }),
+        body: JSON.stringify({ p_key: key, p_limit: limit, p_window_seconds: windowSec, p_cost: cost }),
       });
       if (!r.ok) throw new Error("rpc " + r.status);
       hit = (await r.json()) === true;
-    } catch { hit = memHit(key, limit, windowSec); }
+    } catch { hit = memHit(key, limit, windowSec, cost); }
     if (hit) limited = true;
   }
   return limited;

@@ -2117,6 +2117,20 @@ grant execute on function public.puzzle_set_visibility(bigint, boolean) to authe
 --  · 없는 퍼즐(또는 카운터만 먼저 생긴 data={} 빈 행): 누구나(게스트 포함) 올릴 수 있다. 크기 상한 있음.
 --  · 이미 내용이 있는 퍼즐: 개발자/공동개발자만 data 전체를 바꿀 수 있고, 그 외에는 themes 배열에 허용된 테마를 합치는 것만 된다
 --    (퍼즐 본문·생성자·카운터는 건드릴 수 없다). 라인 편집은 puzzle_creator_save가 따로 맡는다.
+-- 퍼즐 번호 = 퍼즐 id의 FNV-1a 32비트 해시 % 900000 + 100000 (src/app/common.jsx puzzleNo와 같은 식, id는 ASCII). 번호와 id가 안 맞는 올리기를 거부해
+-- 아무 번호나 임의 내용으로 선점하는 것을 막는다(실제 id에 가짜 내용을 올리는 것까지는 서버가 엔진 없이 판별할 수 없다 — BUGS.md BUG-121).
+create or replace function public.puzzle_no_of(p_id text)
+returns bigint language plpgsql immutable set search_path = public as $$
+declare h bigint := 2166136261; i int;
+begin
+  if p_id is null or p_id = '' or p_id ~ '[^\x01-\x7f]' then return null; end if;
+  for i in 1..length(p_id) loop
+    h := ((h # ascii(substr(p_id, i, 1))) * 16777619) % 4294967296;
+  end loop;
+  return h % 900000 + 100000;
+end; $$;
+revoke all on function public.puzzle_no_of(text) from public;
+grant execute on function public.puzzle_no_of(text) to anon, authenticated, service_role;
 drop function if exists public.puzzle_share_put(bigint, jsonb, boolean) cascade;
 create or replace function public.puzzle_share_put(p_no bigint, p_data jsonb, p_public boolean default true)
 returns void language plpgsql security definer set search_path = public as $$
@@ -2125,6 +2139,8 @@ begin
   if p_no is null or p_no <= 0 then raise exception 'invalid puzzle'; end if;
   if p_data is null or jsonb_typeof(p_data) <> 'object' then raise exception 'invalid data'; end if;
   if length(p_data::text) > 300000 then raise exception 'data too large'; end if;
+  if public.puzzle_no_of(p_data ->> 'id') is distinct from p_no then raise exception 'puzzle number does not match id'; end if;
+  if auth.uid() is null then p_public := true; end if;   -- 비로그인은 비공개로 올릴 수 없다(비공개 지정으로 남의 번호를 숨겨 선점하는 것 방지)
   select data into v_old from public.puzzles where no = p_no for update;
   v_exists := found;
   if not v_exists then
@@ -2157,20 +2173,27 @@ create table if not exists public.rate_limits (
 alter table public.rate_limits enable row level security;
 revoke all on public.rate_limits from public, anon, authenticated;
 drop function if exists public.rate_limit_hit(text, int, int) cascade;
-create or replace function public.rate_limit_hit(p_key text, p_limit int, p_window_seconds int)
+drop function if exists public.rate_limit_hit(text, int, int, int) cascade;
+-- p_cost = 이번 호출이 더하는 횟수(기본 1). 0이면 세지 않고 지금까지 초과했는지만 본다(실패한 시도만 세는 키에 쓴다).
+create or replace function public.rate_limit_hit(p_key text, p_limit int, p_window_seconds int, p_cost int default 1)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare v_start timestamptz; v_n int;
 begin
   if p_key is null or length(p_key) > 200 or p_limit < 1 or p_window_seconds < 1 or p_window_seconds > 86400 then raise exception 'invalid args'; end if;
   v_start := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
-  insert into public.rate_limits(key, window_start, n) values (p_key, v_start, 1)
-  on conflict (key, window_start) do update set n = public.rate_limits.n + 1
+  if p_cost < 0 or p_cost > 10 then raise exception 'invalid args'; end if;
+  if p_cost = 0 then
+    select n into v_n from public.rate_limits where key = p_key and window_start = v_start;
+    return coalesce(v_n, 0) > p_limit;
+  end if;
+  insert into public.rate_limits(key, window_start, n) values (p_key, v_start, p_cost)
+  on conflict (key, window_start) do update set n = public.rate_limits.n + p_cost
   returning n into v_n;
   if random() < 0.02 then delete from public.rate_limits where window_start < now() - interval '2 days'; end if;
   return v_n > p_limit;
 end; $$;
-revoke all on function public.rate_limit_hit(text, int, int) from public, anon, authenticated;
-grant execute on function public.rate_limit_hit(text, int, int) to service_role;
+revoke all on function public.rate_limit_hit(text, int, int, int) from public, anon, authenticated;
+grant execute on function public.rate_limit_hit(text, int, int, int) to service_role;
 
 -- ============================================================================
 -- N+3) pvp_invites — /play "친구와 플레이" 초대(신청/수락/거절)
