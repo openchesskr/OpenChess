@@ -4,6 +4,7 @@ import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
   Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy,
+  Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History,
 } from "lucide-react";
 
 import { t, tx } from "./lib/i18n.js";
@@ -731,176 +732,245 @@ function KineticTagline() {
     </div>
   );
 }
-function IntroPage() {
+// ============================================================ 소개 페이지 (v0.7.0 개편) ============================================================
+// 챕터 머리말 — 큰 번호 워터마크 + 가는 금선으로 "책의 장" 같은 리듬을 만든다.
+function Chapter({ no, eyebrow, title, desc, id }) {
+  return (
+    <Reveal>
+      <header id={id} style={{ position: "relative", textAlign: "center", margin: "0 auto 34px", maxWidth: 560, scrollMarginTop: 80 }}>
+        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -34, transform: "translateX(-50%)", fontSize: 108, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", userSelect: "none", pointerEvents: "none" }}>{no}</span>
+        <div style={{ position: "relative" }}>
+          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 10 }}>
+            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".18em" }}>{eyebrow}</span>
+            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
+          </div>
+          <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px", letterSpacing: "-.01em", lineHeight: 1.25 }}>{title}</h2>
+          {desc && <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{desc}</p>}
+        </div>
+      </header>
+    </Reveal>
+  );
+}
+const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27,16,9,.5))", border: "1px solid rgba(196,154,80,.2)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px -24px rgba(0,0,0,.7)", backdropFilter: "blur(6px)" };
+
+// 이번 버전(최신)의 핵심 — 벤토 그리드.
+const NEW_CARDS = [
+  { Icon: ShieldCheck, color: "#8FB55E", wide: true, tag: t("공정한 랭킹"), title: t("경험치와 코인은 서버가 보증"), desc: t("퍼즐 풀이 경험치, 퀘스트 코인, 티어 승급 코인, 보유 스킨을 모두 서버가 규칙을 확인하고 계산해 저장. 개발자 도구로 값을 바꿔도 반영되지 않아 리더보드가 정직해졌어요.") },
+  { Icon: Gem, color: T.brassHi, tag: t("스킨 뽑기"), title: t("추첨도 서버가"), desc: t("상자 추첨, 가격, 중복 환급, 보드 해금까지 서버가 처리해 모두에게 같은 확률.") },
+  { Icon: Scale, color: "#6FA8DC", tag: t("서버 검증"), title: t("체스 규칙으로 다시 확인"), desc: t("봇 대국 결과·퍼즐 공유·복기 저장은 서버가 체스 규칙으로 한 번 더 검증한 뒤 기록.") },
+  { Icon: Lock, color: "#D9736A", wide: true, tag: t("안전한 접속"), title: t("기본 차단, 필요한 것만 허용"), desc: t("모든 데이터베이스 함수를 기본 차단으로 잠그고 필요한 것만 열었어요. 로그인·복구·번역 같은 요청에는 횟수 제한, 브라우저에는 엄격한 보안 정책(CSP)과 HSTS를 적용했고, 모의 공격 84건을 매 빌드마다 점검해요.") },
+];
+function NewCard({ c, i }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
+      whileHover={{ y: -4, transition: { duration: 0.2 } }}
+      style={{ ...GLASS, gridColumn: c.wide ? "span 2" : "span 1", borderRadius: 20, padding: "22px 22px 24px", position: "relative", overflow: "hidden", minWidth: 0 }} className="about-bento">
+      <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 130, height: 130, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
+      <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
+        <span style={{ width: 38, height: 38, borderRadius: 12, background: c.color + "22", border: "1px solid " + c.color + "88", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={19} color={c.color} /></span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".1em" }}>{c.tag}</span>
+      </div>
+      <h3 style={{ fontSize: 18, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{c.title}</h3>
+      <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{c.desc}</p>
+    </motion.div>
+  );
+}
+function WhatsNew({ version }) {
+  return (
+    <section id="new" style={{ scrollMarginTop: 80 }}>
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전의 핵심: 믿을 수 있는 OpenChess")} desc={t("보이지 않는 곳을 단단하게 다졌어요. 내가 쌓은 경험치와 코인이 정직하게 지켜지는 서비스로.")} />
+      <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
+        {NEW_CARDS.map((c, i) => <NewCard key={c.title} c={c} i={i} />)}
+      </div>
+    </section>
+  );
+}
+
+// 스킨 컬렉션 — 실제 스킨 세트의 기물 이미지를 보여준다.
+const SKIN_SHOWCASE = [
+  { id: "deco", label: t("아르데코") }, { id: "coral", label: t("산호와 진주") }, { id: "forest", label: t("단풍 숲") },
+  { id: "stars", label: t("별자리") }, { id: "crystal", label: t("크리스털 주얼") },
+];
+function SkinShowcase() {
+  return (
+    <section>
+      <Chapter no="03" eyebrow={t("수집")} title={t("뽑고, 모으고, 보드를 해금")}
+        desc={t("도감 스킨 페이지의 상자에서 1회 500코인, 5회 2400코인으로 기물을 뽑아요. 이미 가진 기물이면 150코인이 돌아오고, 한 세트의 기물 6종을 모두 모으면 그 세트의 보드가 열려요.")} />
+      <div className="flex flex-wrap justify-center" style={{ gap: 14 }}>
+        {SKIN_SHOWCASE.map((k, i) => (
+          <motion.div key={k.id} initial={{ opacity: 0, y: 24, rotate: i % 2 ? 2 : -2 }} whileInView={{ opacity: 1, y: 0, rotate: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
+            whileHover={{ y: -6, transition: { duration: 0.2 } }}
+            style={{ ...GLASS, flex: "1 1 160px", maxWidth: 190, borderRadius: 18, padding: "16px 12px 14px", textAlign: "center" }}>
+            <div className="flex items-end justify-center" style={{ height: 76, marginBottom: 10 }}>
+              {["white-pawn", "black-knight", "white-queen"].map((f, j) => (
+                <img key={f} src={"/pieces/" + k.id + "/" + f + ".webp"} alt="" loading="lazy" style={{ height: j === 2 ? 74 : 60, width: "auto", marginLeft: j ? -10 : 0, filter: "drop-shadow(0 6px 8px rgba(0,0,0,.5))" }} />
+              ))}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{k.label}</div>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// 믿음 섹션 — 서버가 지키는 약속 4가지.
+const TRUST_ITEMS = [
+  { Icon: Server, title: t("값은 서버에만"), desc: t("경험치·코인·스킨은 서버의 원장에만 기록돼요. 화면은 읽기만 해요.") },
+  { Icon: Eye, title: t("대국 관전은 안전하게"), desc: t("진행 중인 대국은 참가자와 친구만 볼 수 있어요.") },
+  { Icon: BookOpen, title: t("퍼즐은 합법 수만"), desc: t("공유되는 퍼즐은 서버가 모든 수를 체스 규칙으로 확인해요.") },
+  { Icon: Lock, title: t("입력은 조심스럽게"), desc: t("프로필 사진은 업로드만 허용하고, 로그인 시도에는 횟수 제한을 둬요.") },
+];
+function TrustSection() {
+  return (
+    <section>
+      <Chapter no="05" eyebrow={t("신뢰")} title={t("서버가 지키는 네 가지 약속")} desc={t("재미있게 겨루려면 공정해야 하니까요.")} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+        {TRUST_ITEMS.map((x, i) => (
+          <motion.div key={x.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.45, delay: i * 0.07 }}
+            style={{ ...GLASS, borderRadius: 18, padding: "20px 18px" }}>
+            <span style={{ width: 36, height: 36, borderRadius: 11, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}><x.Icon size={17} color={T.brassHi} /></span>
+            <div style={{ fontSize: 14.5, fontWeight: 900, color: T.ivoryHi, marginBottom: 6 }}>{x.title}</div>
+            <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.75, margin: 0 }}>{x.desc}</p>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IntroPage({ version, onOpenHistory }) {
   return (
     <div>
-      {/* (about 페이지 기능) ilust-1을 화면 맨 위 전체 폭 배너로 옮겼다 — 히어로보다 먼저 보이는
-          첫 인상이 되도록. 배경 이미지답게 등장은 한 번만 페이드인하고, 그 안에서는 천천히
-          확대·이동하는 카메라 무브(켄 번즈)를 무한 반복해 계속 움직이는 느낌을 준다(티어 여정
-          지도 배경과 같은 연출). 하단 그러데이션으로 페이지 배경과 자연스럽게 이어붙인다. */}
-      <div style={{ position: "relative", width: "100%", overflow: "hidden", maxHeight: 340 }}>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7 }}>
-          <motion.img src="/ilust-1-web.webp" alt={t("MILKU와 KOKOA의 대국")} loading="lazy"
-            animate={{ scale: [1, 1.08, 1], x: ["0%", "-2%", "0%"] }}
-            transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-            style={{ width: "100%", display: "block", objectFit: "cover", maxHeight: 340 }} />
-        </motion.div>
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 55%, #1B1009 100%)", pointerEvents: "none" }} />
+      {/* 히어로 — 전체 폭 일러스트 위에 유리 카드로 핵심 문구를 얹는다. */}
+      <div style={{ position: "relative", width: "100%", overflow: "hidden", minHeight: 460 }}>
+        <motion.img src="/ilust-1-web.webp" alt={t("MILKU와 KOKOA의 대국")}
+          initial={{ opacity: 0 }} animate={{ opacity: 0.55, scale: [1, 1.08, 1], x: ["0%", "-2%", "0%"] }}
+          transition={{ opacity: { duration: 0.8 }, scale: { duration: 18, repeat: Infinity, ease: "easeInOut" }, x: { duration: 18, repeat: Infinity, ease: "easeInOut" } }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(80% 70% at 30% 40%, rgba(27,16,9,.25), rgba(27,16,9,.85) 75%), linear-gradient(180deg, rgba(27,16,9,.2) 40%, #1B1009 100%)" }} />
+        <div style={{ position: "relative", maxWidth: 1000, margin: "0 auto", padding: "64px 20px 72px" }}>
+          <div className="flex items-center flex-wrap" style={{ gap: 40 }}>
+            <div style={{ flex: "1 1 360px", minWidth: 280 }}>
+              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(236,203,134,.4)", background: "rgba(27,16,9,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 20 }}>
+                <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>v{version}</span>
+                {t("새 소식 보기")} <ArrowRight size={13} />
+              </button></Reveal>
+              <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(34px, 6vw, 54px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.16, margin: "0 0 18px", letterSpacing: "-.02em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
+              <Reveal delay={0.1}><p style={{ fontSize: 14.5, color: T.ivory, opacity: 0.82, lineHeight: 1.8, margin: "0 0 28px", maxWidth: 460 }}>{t("엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템")}</p></Reveal>
+              <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10 }}>
+                <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 14px 30px -10px rgba(236,203,134,.45)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+                <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", padding: "14px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 13.5, textDecoration: "none" }}>{t("기능 둘러보기")}</a>
+              </div></Reveal>
+            </div>
+            <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
+              <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 10px rgba(236,203,134,.08), 0 0 0 22px rgba(236,203,134,.04)", ...GOLD_DISC }}>
+                <div style={{ filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }}><Mascot char="milku" expr="great" size={190} /></div>
+              </motion.div>
+              <div style={{ position: "absolute", bottom: -16, left: -30, zIndex: 2 }}>
+                <DecoBoard {...DECO_A} size={100} tilt={-11} />
+              </div>
+            </motion.div>
+          </div>
+        </div>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 20px 72px" }}>
-      <KineticTagline />
-      <section className="flex items-center flex-wrap" style={{
-        gap: 36, marginBottom: 8, padding: "32px 32px 30px", borderRadius: 28,
-        background: "linear-gradient(160deg, rgba(46,27,16,.6), rgba(27,16,9,.15))",
-        border: "1px solid rgba(196,154,80,.22)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)",
-      }}>
-        <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-          <Reveal><div className="flex items-center gap-2" style={{ marginBottom: 14 }}>
-            <Sparkles size={14} color={T.brass} />
-            <span style={{ fontSize: 12, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{t("무료 체스 오프닝 학습·연습 애플리케이션")}</span>
-          </div></Reveal>
-          <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(32px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.22, margin: "0 0 16px", letterSpacing: "-.01em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ color: T.brassHi }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
-          <Reveal delay={0.1}><p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", maxWidth: 440 }}>{t("엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템")}</p></Reveal>
-          <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 26 }}>
-            <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}
-            </a>
-            <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "13px 20px", borderRadius: 999, border: "1px solid rgba(196,154,80,.4)", color: T.ivory, fontWeight: 700, fontSize: 13, textDecoration: "none" }}>{t("기능 둘러보기")}</a>
-          </div></Reveal>
-          <Reveal delay={0.2}><nav className="flex items-center flex-wrap" style={{ gap: 8 }}>
-            {[["#features", t("학습·도감·퍼즐")], ["#tiers", t("티어")], ["#accuracy", t("정확도 체계")]].map(([href, label]) => (
-              <a key={href} href={href} style={{
-                fontSize: 11.5, fontWeight: 700, color: T.brass, letterSpacing: ".02em", textDecoration: "none",
-                padding: "6px 12px", borderRadius: 999, border: "1px solid rgba(196,154,80,.28)",
-                background: "rgba(196,154,80,.06)", transition: "background .15s, color .15s",
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.16)"; e.currentTarget.style.color = T.brassHi; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(196,154,80,.06)"; e.currentTarget.style.color = T.brass; }}
-              >{label}</a>
-            ))}
-          </nav></Reveal>
-        </div>
-        <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
-          style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
-          <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-            style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}>
-            <div style={{ filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }}><Mascot char="milku" expr="great" size={190} /></div>
-          </motion.div>
-          {/* (v0.1.3 기능) 체스 웹사이트답게 히어로 한쪽에도 작은 데코 보드를 겹쳐 둔다 */}
-          <div style={{ position: "absolute", bottom: -16, left: -30, zIndex: 2 }}>
-            <DecoBoard {...DECO_A} size={100} tilt={-11} />
-          </div>
-        </motion.div>
-      </section>
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "8px 20px 72px" }}>
+        <KineticTagline />
 
-      <SectionDivider />
-
-      <section style={{ maxWidth: 640, margin: "0 auto 8px" }}>
-        <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("수를 두는 데서 끝나지 않고 그 수가 왜 좋았는지·나빴는지까지 확인. 아래에서 기능별로 소개")}</SpeechBubble>
-      </section>
-
-      <SectionDivider />
-
-      <section id="features" className="flex flex-col" style={{ gap: 52, scrollMarginTop: 24 }}>
-        {FEATURES.map((f, i) => (
-          <React.Fragment key={f.title}>
-            <FeatureRow {...f} reverse={i % 2 === 1} />
-            {/* (v0.1.3 기능) 기능 소개 사이사이에 실제 기물로 시연하는 데코 보드를 끼워 넣는다 */}
-            {i === 1 && (
-              <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
-                <DecoBoard {...DECO_B} tilt={-6} />
-                <DecoBoard {...DECO_C} tilt={6} delay={0.12} />
-              </div>
-            )}
-            {i === 3 && (
-              <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
-                <DecoBoard {...DECO_D} tilt={5} />
-              </div>
-            )}
-          </React.Fragment>
-        ))}
-      </section>
-
-      <SectionDivider />
-
-      <FamousOpeningsSection />
-
-      <SectionDivider />
-
-      <StatsRow />
-
-      <SectionDivider />
-
-      <ChessComSection />
-
-      <SectionDivider />
-
-      <AccuracySystemSection />
-
-      <SectionDivider />
-
-      <section id="tiers" style={{ scrollMarginTop: 24 }}>
-        <Reveal>
-          <div className="flex items-center gap-2" style={{ marginBottom: 6, justifyContent: "center" }}>
-            <Crown size={16} color={T.brassHi} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{t("티어")}</span>
-          </div>
-          <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>{t("아이언부터 그랜드마스터까지")}</h3>
-          <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 24px", textAlign: "center", maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>{t("7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승")}</p>
-        </Reveal>
-        <TierStrip />
-      </section>
-
-      <div style={{ marginTop: 44 }}>
-        <GrandmasterCard />
-      </div>
-
-      <SectionDivider />
-
-      {/* (about 페이지 기능) 두 코치의 "vs" 배너 — 티어(경쟁) 이야기에서 다음의 우정·커뮤니티
-          이야기로 넘어가는 길목에 배치해, "라이벌이자 함께 크는 사이"라는 관계를 자연스럽게 이어준다. */}
-      <Reveal>
-        <div style={{ maxWidth: 360, margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
-          <FloatImg src="/ilust-4-web.webp" alt="MILKU vs KOKOA" />
-        </div>
-      </Reveal>
-
-      <SectionDivider />
-
-      <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "0 auto" }}>
-        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-          <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가하고 채팅하며 프로필에서 서로의 풀이 수·칭호 확인. 퍼즐을 공유하면 친구가 풀었을 때 경험치를 일부 획득")}</SpeechBubble>
-        </div>
-        <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-          style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
-          <FloatImg src="/ilust-2-web.webp" alt={t("MILKU와 KOKOA의 악수")} delay={0.4} />
-        </motion.div>
-      </section>
-
-      <Reveal>
-        <div style={{ maxWidth: 280, margin: "40px auto 0", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
-          <FloatImg src="/ilust-3-web.webp" alt={t("마주 앉아 대국을 두는 MILKU와 KOKOA")} delay={0.8} />
-        </div>
-      </Reveal>
-
-      <Reveal delay={0.05}>
-        <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 64, padding: "36px 28px", borderRadius: 18, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
-          <div style={{ flex: "1 1 260px", minWidth: 220 }}>
-            <h3 style={{ fontSize: 20, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>{t("지금 시작")}</h3>
-            <p style={{ fontSize: 13, color: T.inkSoft, margin: 0 }}>{t("가입 없이 게스트로 둘러보기 가능")}</p>
-          </div>
-          <div className="flex items-center" style={{ gap: 18 }}>
-            <Mascot char="kokoa" expr="celebrate" size={64} />
-            <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 24px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 14, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}
-            </a>
-          </div>
+        <section style={{ maxWidth: 640, margin: "36px auto 64px" }}>
+          <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("수를 두는 데서 끝나지 않고 그 수가 왜 좋았는지·나빴는지까지 확인. 아래에서 기능별로 소개")}</SpeechBubble>
         </section>
-      </Reveal>
 
-      <div className="flex items-center justify-center" style={{ marginTop: 40 }}>
-        <DecoBoard {...DECO_E} size={124} tilt={0} />
-      </div>
-      <div style={{ textAlign: "center", padding: "28px 0 8px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
+        <WhatsNew version={version} />
+
+        <SectionDivider />
+
+        <Chapter no="01" eyebrow={t("배움")} title={t("실전에서 배우는 체스")} desc={t("엔진 분석, 오프닝 도감, 맞춤 퍼즐, 매일의 퀘스트까지 한 곳에서.")} id="features" />
+        <section className="flex flex-col" style={{ gap: 56 }}>
+          {FEATURES.map((f, i) => (
+            <React.Fragment key={f.title}>
+              <FeatureRow {...f} reverse={i % 2 === 1} />
+              {i === 1 && (
+                <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
+                  <DecoBoard {...DECO_B} tilt={-6} />
+                  <DecoBoard {...DECO_C} tilt={6} delay={0.12} />
+                </div>
+              )}
+              {i === 3 && (
+                <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
+                  <DecoBoard {...DECO_D} tilt={5} />
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </section>
+
+        <SectionDivider />
+        <FamousOpeningsSection />
+        <SectionDivider />
+        <StatsRow />
+        <SectionDivider />
+
+        <Chapter no="02" eyebrow={t("분석")} title={t("내 대국을 숫자로 읽기")} desc={t("chess.com 연동과 독자적인 정확도 체계로 내 수의 질을 측정해요.")} id="accuracy" />
+        <ChessComSection />
+        <SectionDivider />
+        <AccuracySystemSection />
+
+        <SectionDivider />
+
+        <SkinShowcase />
+
+        <div style={{ marginTop: 64 }} id="tiers">
+          <Chapter no="04" eyebrow={t("성장")} title={t("아이언부터 그랜드마스터까지")} desc={t("7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승")} />
+          <TierStrip />
+          <div style={{ marginTop: 44 }}><GrandmasterCard /></div>
+        </div>
+
+        <SectionDivider />
+
+        <Reveal>
+          <div style={{ maxWidth: 360, margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+            <FloatImg src="/ilust-4-web.webp" alt="MILKU vs KOKOA" />
+          </div>
+        </Reveal>
+
+        <SectionDivider />
+
+        <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "0 auto" }}>
+          <div style={{ flex: "1 1 300px", minWidth: 260 }}>
+            <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가하고 채팅하며 프로필에서 서로의 풀이 수·칭호 확인. 퍼즐을 공유하면 친구가 풀었을 때 경험치를 일부 획득")}</SpeechBubble>
+          </div>
+          <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+            style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+            <FloatImg src="/ilust-2-web.webp" alt={t("MILKU와 KOKOA의 악수")} delay={0.4} />
+          </motion.div>
+        </section>
+
+        <SectionDivider />
+
+        <TrustSection />
+
+        <Reveal delay={0.05}>
+          <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 26, background: "radial-gradient(90% 120% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
+            <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+              <h3 style={{ fontSize: 24, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>{t("지금 시작")}</h3>
+              <p style={{ fontSize: 13.5, color: T.inkSoft, margin: 0 }}>{t("가입 없이 게스트로 둘러보기 가능")}</p>
+            </div>
+            <div className="flex items-center" style={{ gap: 18 }}>
+              <Mascot char="kokoa" expr="celebrate" size={72} />
+              <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+            </div>
+          </section>
+        </Reveal>
+
+        <div className="flex items-center justify-center" style={{ marginTop: 40 }}>
+          <DecoBoard {...DECO_E} size={124} tilt={0} />
+        </div>
+        <div style={{ textAlign: "center", padding: "28px 0 8px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
       </div>
     </div>
   );
@@ -920,6 +990,41 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.7.0", date: "2026.10.19",
+    summary: t("보안 대개편. 경험치·코인·스킨을 서버가 보증하고, 뽑기 연출을 다듬음."),
+    highlight: { kind: "icon", Icon: ShieldCheck, color: "#8FB55E", label: t("서버가 보증하는 공정한 랭킹") },
+    sections: [
+      { cat: "feature", items: [
+        t("경험치·코인·보유 스킨을 서버가 계산해 저장. 개발자 도구로 값을 바꿔도 반영되지 않음."),
+        t("스킨 뽑기 추첨, 가격, 중복 환급, 보드 해금을 서버가 처리."),
+        t("퍼즐 라인 풀이 경험치, 일일 퀘스트·메인 레슨 코인, 티어 승급 코인을 서버가 정답과 규칙을 확인한 뒤 지급."),
+        t("봇 대국 결과, 퍼즐 공유, 복기 저장을 서버가 체스 규칙으로 다시 검증한 뒤 기록."),
+        t("리더보드는 서버가 보증한 경험치만 사용."),
+      ] },
+      { cat: "ui", items: [
+        t("뽑기 연출이 전체 화면으로 재생되고 하단 바가 연출을 가리지 않음."),
+        t("뽑기 연출 우상단에 건너뛰기 버튼 추가."),
+        t("/about 페이지를 소개와 버전 기록 2페이지로 개편. 버전 기록은 한 페이지에서 아래로 내려갈수록 이전 버전."),
+      ] },
+      { cat: "ux", items: [
+        t("로그인하지 않은 게스트는 둘러보기만 가능하고 경험치·코인 보상은 없음."),
+        t("혼자 하는 미니게임의 최고 기록 순위 탭 삭제."),
+        t("프로필 사진은 업로드만 가능. 외부 주소 입력 삭제."),
+      ] },
+      { cat: "fix", items: [
+        t("뽑기 결과 화면에서 카드가 많을 때 확인 버튼이 화면 밖으로 잘리던 문제 수정."),
+      ] },
+      { cat: "security", items: [
+        t("모든 데이터베이스 함수를 기본 차단으로 잠그고 필요한 것만 허용."),
+        t("로그인·계정 복구·번역·보드 스캔 등 주요 요청에 횟수 제한 적용."),
+        t("엄격한 콘텐츠 보안 정책(CSP)과 HSTS 적용."),
+        t("진행 중인 대국 관전을 참가자와 친구로 제한."),
+        t("미니게임 점수, 채팅 공유 보상, 프로필 정보 위조 차단."),
+        t("모의 공격 84건을 매 빌드마다 점검."),
+      ] },
+    ],
+  },
   {
     version: "0.6.9", date: "2026.10.18",
     summary: t("스킨 뽑기, 기물 수집, 보드 해금, 스킨 도감 개편."),
@@ -2772,99 +2877,135 @@ function VersionHighlight({ h }) {
   return null;
 }
 
-// (v0.1.3 기능) "텍스트만 있는 것 같다 — 좌우로 역동적으로 배치해 달라"는 요청 — 항목마다 좌/우
-// 번갈아 여백을 주고 반대 방향에서 슬라이드해 들어오게 해, 한 줄로 죽 늘어선 목록이 아니라
-// 지그재그로 읽히도록 바꾼다(once:false라 스크롤에서 벗어났다 다시 들어올 때마다 다시 슬라이드).
-function ItemRow({ text, color, delay, index }) {
-  const fromRight = index % 2 === 1;
-  return (
-    <motion.div initial={{ opacity: 0, x: fromRight ? 28 : -28 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.45, delay, ease: [0.22, 0.9, 0.32, 1] }}
-      className="flex items-start gap-2" style={{ padding: "9px 12px", borderRadius: 10, background: "rgba(0,0,0,.18)", border: "1px solid #4A3521", marginBottom: 6, flexDirection: fromRight ? "row-reverse" : "row", marginLeft: fromRight ? 22 : 0, marginRight: fromRight ? 0 : 22 }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
-      <p style={{ margin: 0, fontSize: 12.5, color: T.ivory, lineHeight: 1.65, textAlign: fromRight ? "right" : "left" }}>{text}</p>
-    </motion.div>
-  );
-}
-
-// (v0.1.3 기능) "체스보드와 기물 이미지도 막 사용해 달라"는 요청 — 카테고리 헤더 뒤에 그 카테고리와
-// 어울리는 기물(CAT_PIECE)을 옅게 워터마크처럼 깔아 둔다. 카테고리마다 좌/우를 번갈아 카드 자체도
-// 살짝 지그재그로 등장하게 한다.
-function CategoryGroup({ cat, items, index }) {
+// ============================================================ 버전 기록 페이지 (v0.7.0 개편) ============================================================
+// 한 페이지에 최신 버전부터 아래로 내려갈수록 이전 버전. 최신 3개는 펼쳐 두고, 나머지는 눌러서 펼친다.
+const OPEN_BY_DEFAULT = 3;
+function CatCard({ cat, items }) {
   const c = CAT[cat];
-  const onRight = index % 2 === 1;
-  const pieceSrc = DECO_PIECE_SRC[CAT_PIECE[cat] || "wQ"];
   return (
-    <motion.div initial={{ opacity: 0, x: onRight ? 20 : -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
-      style={{ marginBottom: 24, position: "relative", overflow: "hidden", borderRadius: 14, padding: 2 }}>
-      <img src={pieceSrc} alt="" aria-hidden="true" style={{ position: "absolute", [onRight ? "right" : "left"]: -22, top: -14, width: 100, opacity: 0.07, pointerEvents: "none", filter: "grayscale(1) brightness(3)" }} />
-      <div className="flex items-center gap-2" style={{ marginBottom: 8, position: "relative" }}>
+    <div style={{ borderRadius: 14, padding: "14px 16px 12px", background: "rgba(0,0,0,.2)", border: "1px solid #4A3521", borderLeft: "3px solid " + c.color, minWidth: 0 }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
         <span style={{ width: 22, height: 22, borderRadius: 7, background: c.color + "26", border: "1px solid " + c.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><c.Icon size={12} color={c.color} /></span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
+        <span style={{ fontSize: 10.5, color: T.inkSoft, marginLeft: "auto" }}>{items.length}</span>
       </div>
-      <div style={{ position: "relative" }}>
-        {items.map((t, i) => <ItemRow key={i} text={t} color={c.color} delay={i * 0.04} index={i} />)}
-      </div>
-    </motion.div>
+      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+        {items.map((x, i) => (
+          <li key={i} className="flex items-start" style={{ gap: 8, padding: "5px 0", fontSize: 12.5, color: T.ivory, lineHeight: 1.7 }}>
+            <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: "50%", background: c.color, flexShrink: 0, marginTop: 8, opacity: 0.85 }} />
+            <span style={{ minWidth: 0 }}>{x}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
-
-// 버전 기록 한 페이지 — 공지 모달과 같은 소재를 쓰지만(App.jsx CHANGELOG와는 별도로 이 파일 안에
-// VERSION_HISTORY로 옮겨 적음), 카테고리별로 나누고 조금 더 풀어 쓴 문장으로 자세히 보여준다.
-// (v0.1.2 기능) 마스코트가 이번 버전을 직접 소개하는 말풍선(도입부)과 소감을 남기는 말풍선(마무리)
-// 사이에, 대표 기능을 이미지·애니메이션으로 보여주는 하이라이트를 넣어 참고 이미지의 "삽화+대사"
-// 구성을 재현한다.
-function VersionPage({ v, isLatest, idx = 0 }) {
-  // (v0.1.3 기능) 버전마다 데코 보드를 하나씩 순서대로 돌려 써서(체스보드를 "막" 쓰되 매번 같은
-  // 장면이 반복되지 않도록) 버전 헤더 옆에 작은 장식으로 붙인다.
-  const deco = DECO_LIST[idx % DECO_LIST.length];
+function VersionEntry({ v, i, open, onToggle }) {
+  const isLatest = i === 0;
+  const total = v.sections.reduce((n, s) => n + s.items.length, 0);
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "56px 20px 96px" }}>
-      <div className="flex items-start justify-between flex-wrap" style={{ gap: 14, marginBottom: 24 }}>
-        <Reveal>
-          <div>
-            <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-              <motion.span initial={{ scale: 0.6, rotate: -6 }} whileInView={{ scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
-                style={{ display: "inline-block", fontSize: 24, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</motion.span>
-              {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", borderRadius: 999, padding: "2px 9px" }}>{t("최신")}</span>}
+    <motion.article id={"v" + v.version.replace(/\./g, "-")} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.45, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ position: "relative", paddingLeft: 34, marginBottom: 18, scrollMarginTop: 120 }}>
+      {/* 타임라인 점 */}
+      <span aria-hidden="true" style={{ position: "absolute", left: 4, top: 22, width: 13, height: 13, borderRadius: "50%", background: isLatest ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "#2E1B10", border: "2px solid " + (isLatest ? T.brassHi : T.brass), boxShadow: isLatest ? "0 0 0 5px rgba(236,203,134,.15), 0 0 16px rgba(236,203,134,.5)" : "none" }} />
+      <div style={{ ...GLASS, borderRadius: 20, overflow: "hidden", ...(isLatest ? { border: "1px solid rgba(236,203,134,.5)" } : null) }}>
+        <button onClick={onToggle} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer", padding: "18px 20px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="flex items-center flex-wrap" style={{ gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+              {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "2px 9px" }}>{t("최신")}</span>}
               <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
             </div>
-            <p style={{ margin: 0, fontSize: 14, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.5, maxWidth: 420 }}>{v.summary}</p>
+            <p style={{ margin: 0, fontSize: 13.5, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.55 }}>{v.summary}</p>
+            {!open && (
+              <div className="flex items-center flex-wrap" style={{ gap: 6, marginTop: 10 }}>
+                {v.sections.map((s) => { const c = CAT[s.cat]; return (
+                  <span key={s.cat} className="flex items-center" style={{ gap: 5, fontSize: 10.5, fontWeight: 800, color: c.color, border: "1px solid " + c.color + "66", background: c.color + "14", borderRadius: 999, padding: "2px 9px" }}><c.Icon size={10} />{c.label} {s.items.length}</span>
+                ); })}
+              </div>
+            )}
           </div>
-        </Reveal>
-        <div style={{ flexShrink: 0 }}><DecoBoard {...deco} size={90} tilt={idx % 2 === 0 ? -9 : 9} caption={null} /></div>
+          <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", border: "1px solid rgba(196,154,80,.45)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.brassHi, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}><ChevronDown size={16} /></span>
+        </button>
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div key="body" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: [0.22, 0.9, 0.32, 1] }} style={{ overflow: "hidden" }}>
+              <div style={{ padding: "0 20px 22px" }}>
+                <div style={{ height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.4), transparent)", marginBottom: 16 }} />
+                {v.mascot && <div style={{ marginBottom: 12 }}><SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble></div>}
+                <VersionHighlight h={v.highlight} />
+                <div className="about-hist-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 12 }}>
+                  {v.sections.map((s) => <CatCard key={s.cat} cat={s.cat} items={s.items} />)}
+                </div>
+                {v.mascot && <div style={{ marginTop: 18 }}><SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble></div>}
+                <div style={{ marginTop: 12, fontSize: 10.5, color: T.inkSoft, textAlign: "right" }}>{tx("{0}개 변경", total)}</div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.article>
+  );
+}
+function HistoryPage({ scrollEl }) {
+  const [openSet, setOpenSet] = useState(() => new Set(VERSION_HISTORY.slice(0, OPEN_BY_DEFAULT).map((v) => v.version)));
+  const allOpen = openSet.size === VERSION_HISTORY.length;
+  const toggle = (ver) => setOpenSet((s) => { const n = new Set(s); n.has(ver) ? n.delete(ver) : n.add(ver); return n; });
+  const jump = (ver) => {
+    setOpenSet((s) => new Set(s).add(ver));
+    setTimeout(() => { const el = document.getElementById("v" + ver.replace(/\./g, "-")); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
+  };
+  return (
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "52px 20px 96px" }}>
+      <Reveal>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 12 }}>
+            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
+            <History size={14} color={T.brass} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".18em" }}>CHANGELOG</span>
+            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
+          </div>
+          <h2 style={{ fontSize: "clamp(26px, 4.5vw, 36px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px", letterSpacing: "-.01em" }}>{t("버전 기록")}</h2>
+          <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("OpenChess가 걸어온 길. 총 {0}개 버전, 아래로 내려갈수록 이전 버전이에요.", VERSION_HISTORY.length)}</p>
+        </div>
+      </Reveal>
+
+      {/* 버전 바로가기 — 가로로 스크롤되는 칩 줄(상단에 붙어 따라다님) */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -20px 22px", padding: "10px 20px", background: "linear-gradient(180deg, rgba(27,16,9,.96), rgba(27,16,9,.82))", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(196,154,80,.15)" }}>
+        <div className="flex items-center" style={{ gap: 8 }}>
+          <div className="no-swipe" style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2, scrollbarWidth: "none" }}>
+            {VERSION_HISTORY.map((v) => (
+              <button key={v.version} onClick={() => jump(v.version)} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, border: "1px solid rgba(196,154,80,.35)", background: "rgba(196,154,80,.07)", borderRadius: 999, padding: "4px 11px", cursor: "pointer" }}>{v.version}</button>
+            ))}
+          </div>
+          <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(VERSION_HISTORY.map((v) => v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "6px 13px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
+        </div>
       </div>
 
-      {v.mascot && (
-        <div style={{ marginBottom: 8 }}>
-          <SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble>
-        </div>
-      )}
-
-      <VersionHighlight h={v.highlight} />
-
-      {v.sections.map((s, i) => <CategoryGroup key={s.cat} cat={s.cat} items={s.items} index={i} />)}
-
-      {v.mascot && (
-        <div style={{ marginTop: 28 }}>
-          <SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble>
-        </div>
-      )}
+      <div style={{ position: "relative" }}>
+        <div aria-hidden="true" style={{ position: "absolute", left: 10, top: 28, bottom: 28, width: 2, background: "linear-gradient(180deg, " + T.brassHi + ", rgba(196,154,80,.35) 12%, rgba(196,154,80,.12))", borderRadius: 2 }} />
+        {VERSION_HISTORY.map((v, i) => <VersionEntry key={v.version} v={v} i={i} open={openSet.has(v.version)} onToggle={() => toggle(v.version)} />)}
+      </div>
+      <div style={{ textAlign: "center", padding: "28px 0 8px" }}>
+        <DecoBoard {...DECO_F} size={110} caption={null} />
+        <div style={{ marginTop: 14 }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
+      </div>
     </div>
   );
 }
 
-// ============================================================ 페이저 ============================================================
-// (v0.1.2 기능) 퍼즐 풀이 화면(보드↔모식도)과 동일한 드래그 페이지 넘김 패턴 — 손가락/마우스로
-// 옆 페이지를 살짝 당기면 미리 보이다가, 임계값을 넘기면 넘어가고 아니면 되돌아온다. 1페이지는
-// 소개, 2페이지부터는 최신 버전순 업데이트 기록.
-const PAGES_META = [{ key: "intro", label: t("소개") }, ...VERSION_HISTORY.map((v) => ({ key: v.version, label: "v" + v.version }))];
+// ============================================================ 페이저 (2페이지) ============================================================
+// 소개 ↔ 버전 기록. 손가락/마우스로 옆 페이지를 당겨 넘길 수 있고, 헤더 아래의 탭으로도 전환한다.
+// 각 페이지는 독립된 세로 스크롤 영역이라 페이지마다 실제 내용 길이와 무관하게 딱 맞는다.
+const PAGES_META = [{ key: "intro", label: t("사이트 소개"), Icon: Compass }, { key: "history", label: t("버전 기록"), Icon: History }];
+const LATEST_VERSION = VERSION_HISTORY[0].version;
 
 export default function AboutPage() {
-  // 공지 모달의 "자세히 보기"에서 ?page=2로 들어오면(2페이지 = 최신 버전) 그 페이지부터 보여준다.
+  // 공지 모달의 "자세히 보기"(?page=2)나 #history로 들어오면 버전 기록 페이지부터 보여준다.
   const initialPage = useMemo(() => {
     try {
-      const p = parseInt(new URLSearchParams(window.location.search).get("page"), 10);
-      if (p >= 1 && p <= PAGES_META.length) return p - 1;
+      const q = new URLSearchParams(window.location.search).get("page");
+      if (q === "2" || window.location.hash === "#history") return 1;
     } catch { }
     return 0;
   }, []);
@@ -2874,7 +3015,11 @@ export default function AboutPage() {
   const [dragPx, setDragPx] = useState(0);
   const dragging = !!dragRef.current;
   const total = PAGES_META.length;
-  const goTo = (n) => setPage(Math.max(0, Math.min(total - 1, n)));
+  const goTo = (n) => {
+    const np = Math.max(0, Math.min(total - 1, n));
+    setPage(np);
+    try { window.history.replaceState(null, "", np === 1 ? "/about?page=2" : "/about"); } catch { }
+  };
   const onPointerDown = (e) => {
     if (e.target.closest && e.target.closest("a, button, .no-swipe")) return;
     dragRef.current = { x: e.clientX, w: pagerRef.current ? pagerRef.current.clientWidth : 380 };
@@ -2885,54 +3030,44 @@ export default function AboutPage() {
     const st = dragRef.current; dragRef.current = null;
     if (!st) { setDragPx(0); return; }
     const threshold = st.w * 0.16;
-    if (dragPx <= -threshold && page < total - 1) setPage((p) => p + 1);
-    else if (dragPx >= threshold && page > 0) setPage((p) => p - 1);
+    if (dragPx <= -threshold && page < total - 1) goTo(page + 1);
+    else if (dragPx >= threshold && page > 0) goTo(page - 1);
     setDragPx(0);
   };
-  // 페이지를 넘길 때마다 새 페이지는 항상 맨 위부터 보이도록(각 페이지가 독립 스크롤 영역이라
-  // window가 아니라 그 페이지 자신을 스크롤 위치로 되돌린다).
+  // 페이지를 넘길 때마다 새 페이지는 항상 맨 위부터 보이도록.
   const pageElRefs = useRef([]);
   useEffect(() => { const el = pageElRefs.current[page]; if (el) el.scrollTo({ top: 0, behavior: "auto" }); }, [page]);
 
   return (
-    // (v0.1.2 버그 수정) 페이지마다 실제 내용 길이가 크게 다른데(1페이지 소개는 길고, 짧은 버전
-    // 기록은 훨씬 짧음) flex row에 폭만 나눠 넣으면 기본 정렬(stretch)로 모든 페이지가 가장 긴
-    // 페이지(1페이지) 높이에 맞춰 늘어나, 짧은 페이지 아래로 거대한 빈 공간이 남았다 — 페이저
-    // 영역 자체를 뷰포트 나머지 높이로 고정하고, 각 페이지가 그 안에서 독립적으로 세로 스크롤되게
-    // 해 페이지마다 실제 내용 길이와 무관하게 항상 딱 맞게 보이도록 한다.
-    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
+    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
+      <style>{"@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}}"}</style>
       <Backdrop />
-      <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid #000", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
-        <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "14px 20px" }}>
-          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 34, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
+      <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
+        <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
+          <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
-          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}
-          </a>
+          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>
+        {/* 탭 — 현재 페이지 아래에 금색 밑줄이 미끄러져 이동 */}
+        <nav role="tablist" className="flex items-center justify-center" style={{ gap: 6, padding: "0 20px 10px" }}>
+          {PAGES_META.map((m, i) => {
+            const on = page === i;
+            return (
+              <button key={m.key} role="tab" aria-selected={on} onClick={() => goTo(i)} className="press"
+                style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: on ? "#241509" : T.brassHi, background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "rgba(196,154,80,.08)", boxShadow: on ? "0 4px 14px -4px rgba(236,203,134,.55)" : "inset 0 0 0 1px rgba(196,154,80,.3)", transition: "background .2s, color .2s" }}>
+                <m.Icon size={14} />{m.label}
+                {i === 1 && <span style={{ fontSize: 10, fontFamily: "ui-monospace,monospace", opacity: 0.85 }}>v{LATEST_VERSION}</span>}
+              </button>
+            );
+          })}
+        </nav>
       </header>
-
-      {/* (about 페이지 기능) 상단의 "< 소개 · 1/13 >" 안내 바 대신, 화면 좌우 중단에 떠 있는
-          화살표 버튼으로 페이지를 넘긴다 — 콘텐츠를 가리지 않게 뷰포트 기준으로 고정하고, 페이지
-          안쪽 스크롤과 무관하게 항상 세로 중앙에 머문다. 스와이프는 그대로 동일하게 동작한다. */}
-      <button onClick={() => goTo(page - 1)} disabled={page === 0} className="press" aria-label={t("이전 페이지")}
-        style={{ position: "fixed", left: 14, top: "50%", transform: "translateY(-50%)", zIndex: 20, width: 42, height: 42, borderRadius: "50%", border: "1px solid " + T.brass, background: "rgba(27,16,9,.85)", backdropFilter: "blur(6px)", color: page === 0 ? T.inkSoft : T.brassHi, opacity: page === 0 ? 0.35 : 1, cursor: page === 0 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,.4)" }}>
-        <ChevronLeft size={20} />
-      </button>
-      <button onClick={() => goTo(page + 1)} disabled={page === total - 1} className="press" aria-label={t("다음 페이지")}
-        style={{ position: "fixed", right: 14, top: "50%", transform: "translateY(-50%)", zIndex: 20, width: 42, height: 42, borderRadius: "50%", border: "1px solid " + T.brass, background: "rgba(27,16,9,.85)", backdropFilter: "blur(6px)", color: page === total - 1 ? T.inkSoft : T.brassHi, opacity: page === total - 1 ? 0.35 : 1, cursor: page === total - 1 ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,.4)" }}>
-        <ChevronRight size={20} />
-      </button>
 
       <div ref={pagerRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: total * 100 + "%", height: "100%", transform: "translateX(calc(" + (-page * 100) / total + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .38s cubic-bezier(.22,.9,.32,1)" }}>
-          <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><IntroPage /></div>
-          {VERSION_HISTORY.map((v, i) => (
-            <div key={v.version} ref={(el) => (pageElRefs.current[i + 1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-              <VersionPage v={v} isLatest={i === 0} idx={i} />
-              {i === VERSION_HISTORY.length - 1 && <div style={{ textAlign: "center", padding: "8px 0 24px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>}
-            </div>
-          ))}
+          <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><IntroPage version={LATEST_VERSION} onOpenHistory={() => goTo(1)} /></div>
+          <div ref={(el) => (pageElRefs.current[1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><HistoryPage /></div>
         </div>
       </div>
     </div>
