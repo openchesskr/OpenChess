@@ -33,6 +33,13 @@ else {
   const stars = /export function starsOf[\s\S]*?\n\}/.exec(rd("src/app/common.jsx"));
   if (!stars || !/solvedCount >= totalLines\) return 3/.test(stars[0]) || !/solvedCount \* 2 >= totalLines\) return 2/.test(stars[0])) problems.push("starsOf 규칙이 바뀌었다 — 서버의 별 계산(economy_line_solved)과 맞출 것");
   if (!/when v_existing >= v_total then 3 when v_existing \* 2 >= v_total then 2 else 1/.test(sql)) problems.push("서버 별 계산이 클라이언트 starsOf와 다르다");
+  // 챕터 보상: 서버가 아는 기본 챕터 목록(seedChapters)이 클라이언트 seedLessons의 키·보상과 같아야 한다 — 모르는 챕터는 서버가 거부한다.
+  {
+    const src = rd("src/app/common.jsx"); const a = src.indexOf("function seedLessons()"); const body = src.slice(a, src.indexOf("\n}\n", a));
+    const parts = body.split(/\n  L\.(\w+) = \{/); const seed = {};
+    for (let i = 1; i < parts.length; i += 2) { const r = /\breward:\s*(\d+)/.exec(parts[i + 1]); seed[parts[i]] = r ? Number(r[1]) : 100; }
+    eq(P.seedChapters, seed, "기본 레슨 챕터 목록·보상(seedChapters)");
+  }
   eq(P.questCoins, { puzzle: 10, dailypuzzle: 10, cc_0: 10, cc_1: 10, cc_2: 10 }, "퀘스트 보상 코인(화면 문구 기준)");
 }
 // 클라이언트는 서버 응답으로만 XP·코인·스킨을 바꾼다.

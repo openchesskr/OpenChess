@@ -4160,6 +4160,7 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 50},
+    "seedChapters": {"l_intro": 40, "l_e4": 60, "l_e4_e5": 60, "l_e4_e5_open": 70, "l_e4_c5": 60, "l_e4_e6": 60, "l_e4_c6": 60, "l_d4": 60, "l_d4_d5": 60, "l_d4_nf6": 60},
     "chapterDefaultCoins": 100,
     "chapterMaxCoins": 1000,
     "devBonusCoins": 10000
@@ -4344,20 +4345,29 @@ begin
   return public._economy_apply(v_uid, v_xp, v_coins, 'quest', v_ref) || jsonb_build_object('duplicate', false, 'gainCoins', v_coins, 'gainXp', v_xp);
 end; $$;
 
--- 메인 퀘스트(레슨) 챕터 보상: 챕터당 1회, 금액은 서버의 공유 콘텐츠(app_content)에 개발자가 정해 둔 값(없으면 100, 최대 1000). 문항을 맞혔는지는 서버가 확인할 수 없다(챕터 수만큼으로 한정).
+-- 메인 퀘스트(레슨) 챕터 보상: 챕터당 1회. 서버가 아는 챕터만 지급한다 — 공유 콘텐츠(app_content)에 레슨이 있으면 그 목록(금액은 챕터의 reward, 없으면 100, 상한 1000),
+-- 레슨이 하나도 없으면 클라이언트가 코드의 기본 레슨을 쓰므로(seedLessons) 서버도 같은 기본 목록(economy_params의 seedChapters)을 쓴다. 모르는 챕터 이름은 거부한다
+-- (이름을 마음대로 지어 코인을 만들 수 없게). 문항을 맞혔는지는 서버가 확인할 수 없다(챕터 수만큼으로 한정). 시간당 30회 제한.
 create or replace function public.economy_claim_chapter(p_key text)
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_uid uuid := auth.uid(); v_amount bigint; v_ins int; v_cur public.economy;
+declare v_uid uuid := auth.uid(); v_amount bigint; v_ins int; v_cur public.economy; v_lessons jsonb; v_ch jsonb;
 begin
   if v_uid is null then raise exception 'auth required'; end if;
   if p_key is null or p_key !~ '^[A-Za-z0-9_-]{1,40}$' then raise exception 'invalid chapter'; end if;
+  -- 호출 횟수는 거부되는 요청도 센다: 예외를 던지면 그 트랜잭션의 카운터 증가까지 취소되므로, 모르는 챕터는 예외 대신 error 값을 돌려준다.
+  if public.rate_limit_hit('chapter:' || v_uid, 30, 3600) then return jsonb_build_object('error', 'rate limited'); end if;
+  select value -> 'lessons' into v_lessons from public.app_content where key = 'global';
+  if jsonb_typeof(v_lessons) = 'object' and v_lessons <> '{}'::jsonb then
+    v_ch := v_lessons -> p_key;
+    if v_ch is null or jsonb_typeof(v_ch) <> 'object' then return jsonb_build_object('error', 'unknown chapter'); end if;
+    v_amount := case when jsonb_typeof(v_ch -> 'reward') = 'number' and (v_ch ->> 'reward')::numeric > 0
+                     then least((v_ch ->> 'reward')::numeric, (public.economy_params() ->> 'chapterMaxCoins')::numeric)::bigint
+                     else (public.economy_params() ->> 'chapterDefaultCoins')::bigint end;
+  else
+    v_amount := (public.economy_params() -> 'seedChapters' ->> p_key)::bigint;
+    if v_amount is null then return jsonb_build_object('error', 'unknown chapter'); end if;
+  end if;
   perform public._economy_ensure(v_uid);
-  -- 주의: PostgreSQL의 least()는 NULL을 무시한다 — 값이 없으면 기본값, 있으면 상한으로 자르도록 case로 나눈다.
-  select (case when jsonb_typeof(value -> 'lessons' -> p_key -> 'reward') = 'number'
-               then least((value -> 'lessons' -> p_key ->> 'reward')::numeric, (public.economy_params() ->> 'chapterMaxCoins')::numeric)
-               else (public.economy_params() ->> 'chapterDefaultCoins')::numeric end)::bigint
-    into v_amount from public.app_content where key = 'global';
-  v_amount := greatest(0, coalesce(v_amount, (public.economy_params() ->> 'chapterDefaultCoins')::bigint));
   insert into public.economy_claims(uid, kind, ref) values (v_uid, 'chapter', p_key) on conflict do nothing;
   get diagnostics v_ins = row_count;
   if v_ins = 0 then

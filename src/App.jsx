@@ -1032,7 +1032,7 @@ export default function App() {
     if (!uid || claimed[chKey] || questInflightRef.current.has(key)) return;
     questInflightRef.current.add(key);
     economyClaimChapter(chKey).then((e) => {
-      if (!e) return;
+      if (!e || e.error) return;   // 서버가 모르는 챕터이거나 제한에 걸리면 지급·표시 없음
       applyEconomyRef.current(e);
       setMainQuest((mq) => ({ ...mq, claimed: { ...((mq && mq.claimed) || {}), [chKey]: true } }));
       if (!e.duplicate) {
