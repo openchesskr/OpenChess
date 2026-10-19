@@ -74,6 +74,11 @@ if (anon) {
     for (const f of s.matchAll(/public\.(\w+)\s*\(/g)) if (defs.has(f[1]) && !anon.includes(f[1])) problems.push("정책(" + m[1] + ")이 anon에게 막힌 함수 `" + f[1] + "`를 부른다 — 비로그인 조회가 'permission denied'로 깨진다");
   }
 }
+// 9) 채팅 삽입 정책은 시스템 전용 컬럼(share_reward·pvp_invite_id)을 비워야 한다 — RPC의 상한·제한을 직접 삽입으로 우회하지 못하게(BUG-122).
+{
+  const pol = sql.split(";").map((x) => x.replace(/\s+/g, " ").trim()).find((x) => /^create policy "chat insert own" on public\.chat_messages/i.test(x));
+  if (!pol || !/share_reward is null/i.test(pol) || !/pvp_invite_id is null/i.test(pol)) problems.push('"chat insert own" 정책이 share_reward·pvp_invite_id를 막지 않는다(RPC 우회 — BUG-122)');
+}
 // 블록 위치: 마지막 함수 정의보다 뒤
 if (block) {
   const lastDef = Math.max(...[...sql.matchAll(/create (?:or replace )?function\s+public\.\w+/gi)].map((m) => m.index));

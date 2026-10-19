@@ -106,6 +106,13 @@ export default [
       // 임시 상한(BUG-113 계획 2단계 전까지): 건당 10 이하·같은 공유 메시지당 하루 30회 → 최대 300. 이를 넘으면 뚫린 것.
       return { breached: total > 300 || maxOne > 10, evidence: `bob이 60번 호출 → victim이 받은 보상 XP 합계 ${total}(상한 300), 한 건 최대 ${maxOne}(상한 10). 원래는 6만 XP였음` };
     } },
+  { id: "BUG-122c", kind: "attack", title: "RPC 우회: 친구가 채팅 테이블에 share_reward(시스템 전용 컬럼)를 직접 넣어 상한 없는 보상 메시지 생성",
+    async run({ sb, U }) {
+      const r = sb.as("authenticated", U.bob, `insert into public.chat_messages(from_uid,to_uid,share_reward) values ('${U.bob}','${U.victim}','{"amount":1000000,"no":111111}'::jsonb);`);
+      const n = sb.admin(`select coalesce(sum((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out;
+      const plain = sb.as("authenticated", U.bob, `insert into public.chat_messages(from_uid,to_uid,body) values ('${U.bob}','${U.victim}','일반 메시지는 정상');`);
+      return { breached: Number(n) > 0 || !plain.ok, evidence: Number(n) > 0 ? `친구가 직접 넣은 보상 ${n} XP가 저장됨` : `share_reward 직접 삽입 거부(${r.err.split("\n")[0].slice(0, 60)}) · 일반 메시지 전송은 ${plain.ok ? "정상" : "실패!"}` };
+    } },
   { id: "BUG-122b", kind: "hold", title: "정상 경로 유지: 공유받은 퍼즐을 풀면 공유한 친구에게 보상 메시지가 간다(소액)",
     async run({ sb, U }) {
       const mid = sb.admin(`insert into public.chat_messages(from_uid,to_uid,puzzle_no) values ('${U.victim}','${U.bob}',111111) returning id`).out.split("\n")[0];

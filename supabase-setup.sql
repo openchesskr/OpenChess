@@ -369,6 +369,9 @@ create policy "chat insert own" on public.chat_messages for insert with check (
   )
   -- (v0.5.7) 둘 중 한쪽이라도 상대를 차단했으면 보낼 수 없다.
   and not public.chat_blocked_between(auth.uid(), chat_messages.to_uid)
+  -- (v0.7.0 보안 BUG-122) 시스템 전용 컬럼은 클라이언트가 직접 넣지 못한다: share_reward(공유 보상 — puzzle_share_reward RPC만 만든다)와
+  -- pvp_invite_id(대국 신청 카드 — pvp_invite_friend RPC만 만든다). 직접 넣으면 RPC의 금액 상한·호출 제한을 우회해 상대 XP를 마음대로 만들 수 있었다(100만 XP 재현).
+  and share_reward is null and pvp_invite_id is null
 );
 create policy "chat update own" on public.chat_messages for update using (auth.uid() = to_uid) with check (auth.uid() = to_uid);
 -- (v0.1.4 기능) 채팅 메시지 삭제 — puzzle_likes/puzzle_reposts와 동일한 패턴으로, 보낸 사람만
