@@ -168,6 +168,7 @@ export default {
   "이미 가입된 이메일. 로그인 필요": "Este correo ya está registrado. Inicia sesión",
   "확인 메일 발송. 인증 후 로그인": "Correo de confirmación enviado. Verifica y luego inicia sesión",
   "서버 연결 필요": "Se necesita conexión con el servidor",
+  "시도가 너무 많음. 잠시 후 다시 시도": "Demasiados intentos. Inténtalo más tarde",
   "가입 처리 중 오류 발생": "Se produjo un error durante el registro",
   "이 계정은 {0}로 가입됨. 아래 ‘{1}로 계속하기’로 로그인": "Esta cuenta se creó con {0}. Usa «Continuar con {1}» más abajo para iniciar sesión",
   "아이디/이메일 또는 비밀번호가 올바르지 않음": "Usuario/correo o contraseña incorrectos",

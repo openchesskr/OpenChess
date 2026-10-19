@@ -6,7 +6,7 @@ const load = (f) => import(pathToFileURL(resolve("api", f)).href + "?t=" + Math.
 const mkRes = () => { const r = { code: 200, headers: {}, body: null, status(c) { r.code = c; return r; }, setHeader(k, v) { r.headers[k.toLowerCase()] = v; }, json(b) { r.body = b; return r; }, send(b) { r.body = b; return r; } }; return r; };
 async function withFetch(impl, fn) { const real = globalThis.fetch; globalThis.fetch = impl; try { return await fn(); } finally { globalThis.fetch = real; } }
 
-export default [
+const base = [
   { id: "BUG-116a", kind: "attack", title: "로그인 없이 /api/lichess 호출 → 서버의 LICHESS_TOKEN으로 외부 요청이 나감",
     async run() {
       process.env.LICHESS_TOKEN = "SECRET_SERVER_TOKEN";
@@ -64,3 +64,66 @@ export default [
       return { breached: res.code !== 403, evidence: "응답 코드 " + res.code };
     } },
 ];
+// ---- BUG-107 수정 검증: /api/auth-login · /api/auth-recover ----
+function authMock() {
+  const counts = new Map(); const calls = [];
+  const impl = async (url, opt) => {
+    const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+    calls.push(u);
+    if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + 1; counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+    if (u.includes("/rpc/email_for_username")) return new Response(JSON.stringify(body.p_username === "victim" ? "victim@example.com" : null), { status: 200 });
+    if (u.includes("/rpc/account_providers")) return new Response(JSON.stringify(["email"]), { status: 200 });
+    if (u.includes("/auth/v1/token")) return body.email === "victim@example.com" && body.password === "right-password"
+      ? new Response(JSON.stringify({ access_token: "AT", refresh_token: "RT", user: { id: "u-victim" } }), { status: 200 })
+      : new Response(JSON.stringify({ error_code: "invalid_credentials" }), { status: 400 });
+    if (u.includes("/auth/v1/recover")) return new Response("{}", { status: 200 });
+    return new Response("{}", { status: 404 });
+  };
+  return { impl, calls };
+}
+const authEnv = () => Object.assign(process.env, { VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });
+const loginReq = (login, password, ip = "1.1.1.1") => ({ method: "POST", headers: { "x-vercel-forwarded-for": ip }, body: { login, password } });
+
+export const authAttacks = [
+  { id: "BUG-107c", kind: "attack", title: "/api/auth-login: 실패 응답에서 이메일 주소가 새는가 · 없는 아이디와 틀린 비밀번호가 구분되는가",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
+      const known = mkRes(), unknown = mkRes();
+      await withFetch(m.impl, async () => {
+        await handler(loginReq("victim", "wrong", "2.2.2.2"), known);
+        await handler(loginReq("no-such-user", "wrong", "2.2.2.3"), unknown);
+      });
+      const leak = JSON.stringify(known.body).includes("@") || JSON.stringify(unknown.body).includes("@");
+      const same = known.code === unknown.code && JSON.stringify(known.body) === JSON.stringify(unknown.body);
+      return { breached: leak || !same, evidence: `이메일 노출 ${leak ? "있음" : "없음"} · 존재하는 아이디 ${known.code} ${JSON.stringify(known.body)} / 없는 아이디 ${unknown.code} ${JSON.stringify(unknown.body)}` };
+    } },
+  { id: "BUG-107d", kind: "hold", title: "/api/auth-login: 아이디로 정상 로그인되고 세션만 돌려주는지",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock(); const res = mkRes();
+      await withFetch(m.impl, () => handler(loginReq("victim", "right-password", "3.3.3.3"), res));
+      return { breached: !(res.code === 200 && res.body && res.body.access_token === "AT"), evidence: `응답 ${res.code}` };
+    } },
+  { id: "BUG-107e", kind: "attack", title: "/api/auth-login: 같은 IP에서 비밀번호 무차별 대입(25회) · 한 계정 집중 공격(15회, IP 바꿔가며)",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
+      let ipBlocked = 0, idBlocked = 0, passed = 0;
+      await withFetch(m.impl, async () => {
+        for (let i = 0; i < 25; i++) { const r = mkRes(); await handler(loginReq("user" + i, "guess" + i, "9.9.9.9"), r); if (r.code === 429) ipBlocked++; }
+        for (let i = 0; i < 15; i++) { const r = mkRes(); await handler(loginReq("victim", "guess" + i, "8.8.8." + i), r); if (r.code === 429) idBlocked++; else if (r.code === 200) passed++; }
+      });
+      return { breached: ipBlocked < 5 || idBlocked < 5 || passed > 0, evidence: `IP 한도 초과로 차단 ${ipBlocked}/25 · 계정 한도 초과로 차단 ${idBlocked}/15` };
+    } },
+  { id: "BUG-107f", kind: "attack", title: "/api/auth-recover: 존재하는 아이디와 없는 아이디의 응답 차이 · 이메일 노출",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-recover.js"); const m = authMock();
+      const a = mkRes(), b = mkRes();
+      await withFetch(m.impl, async () => {
+        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "4.4.4.4" }, body: { login: "victim" } }, a);
+        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "4.4.4.5" }, body: { login: "ghost" } }, b);
+      });
+      const same = a.code === b.code && JSON.stringify(a.body) === JSON.stringify(b.body);
+      return { breached: !same || JSON.stringify(a.body).includes("@"), evidence: `known ${a.code} ${JSON.stringify(a.body)} / unknown ${b.code} ${JSON.stringify(b.body)}` };
+    } },
+];
+
+export default [...base, ...authAttacks];

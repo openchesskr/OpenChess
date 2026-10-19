@@ -5076,7 +5076,8 @@ export async function puzzleShare(p) {
     // 비공개를 골랐을 때만 싣는다(진짜 새 insert에는 컬럼 단위 제약이 없다). 기존 퍼즐의 공개
     // 여부를 나중에 바꾸는 건 puzzleSetVisibility(생성자 권한 박스)로만 한다.
     if (!server && p.public === false) row.is_public = false;
-    await sbUpsert("puzzles", row);
+    // (v0.7.0 보안 BUG-110) puzzles 테이블 직접 쓰기는 막혔다 — 서버 RPC가 새 퍼즐 올리기와 테마 합치기만 허용한다.
+    await sbRpc("puzzle_share_put", { p_no: no, p_data: merged, p_public: row.is_public !== false });
     // (v0.3.4 기능) 사용자 요청 — 이 퍼즐(no)에 아직 생성자가 기록되지 않았다면(creator_uid is
     // null) 지금 이 공유를 실행한 로그인 유저를 생성자로 선점한다. puzzle_claim_creator는 이미
     // 생성자가 있으면 조용히 아무 일도 하지 않으므로(멱등), 같은 퍼즐을 나중에 또 만난 다른

@@ -87,7 +87,11 @@ begin
   where p.username = lower(p_username);
   return v_email;
 end; $$;
-grant execute on function public.email_for_username(text) to anon, authenticated;
+-- (v0.7.0 보안 BUG-107, P1) 예전에는 anon에게 열려 있어 아이디만 알면(리더보드·프로필에 공개) 누구나 이메일 주소를 받아 갈 수 있었다.
+-- 이제 서버 전용: 아이디 로그인·비밀번호 재설정은 /api/auth-login·/api/auth-recover가 service_role로 이 함수를 불러 서버 안에서만 쓰고,
+-- 브라우저에는 이메일이 내려가지 않는다.
+revoke all on function public.email_for_username(text) from public, anon, authenticated;
+grant execute on function public.email_for_username(text) to service_role;
 
 -- 이메일이 어떤 방식(email/google)으로 가입돼 있는지 — 같은 메일로 다른 방식 재가입 시 안내용
 drop function if exists public.account_providers(text) cascade;
@@ -164,14 +168,24 @@ returns boolean language sql stable security definer set search_path = public as
     )
   );
 $$;
-grant execute on function public.is_content_editor(uuid) to anon, authenticated;
+-- (v0.7.0 BUG-118) 임의의 uid가 편집자인지 묻는 이 함수는 브라우저에 열지 않는다(누가 관리자인지 알아낼 수 있었다). 서버 안(SECURITY DEFINER 함수·service_role)에서만 쓴다.
+revoke all on function public.is_content_editor(uuid) from public, anon, authenticated;
+grant execute on function public.is_content_editor(uuid) to service_role;
+-- RLS 정책은 호출한 사용자 권한으로 함수를 실행하므로(비로그인 방문자의 퍼즐 읽기 정책도 포함), 정책에는 '호출자 본인이 편집자인가'만 답하는 이 함수를 쓴다.
+drop function if exists public.am_content_editor() cascade;
+create or replace function public.am_content_editor()
+returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.is_content_editor(auth.uid());
+$$;
+revoke all on function public.am_content_editor() from public;
+grant execute on function public.am_content_editor() to anon, authenticated, service_role;
 
 drop policy if exists "content read"   on public.app_content;
 drop policy if exists "content insert" on public.app_content;
 drop policy if exists "content update" on public.app_content;
 create policy "content read"                    on public.app_content for select using (true);
-create policy "content insert (dev/codev only)" on public.app_content for insert with check (public.is_content_editor(auth.uid()));
-create policy "content update (dev/codev only)" on public.app_content for update using (true) with check (public.is_content_editor(auth.uid()));
+create policy "content insert (dev/codev only)" on public.app_content for insert with check (public.am_content_editor());
+create policy "content update (dev/codev only)" on public.app_content for update using (true) with check (public.am_content_editor());
 grant select on public.app_content to anon, authenticated;
 grant insert, update on public.app_content to authenticated;
 
@@ -447,9 +461,9 @@ create policy "puzzles read"   on public.puzzles for select using (true);
 -- (v0.0.5 보안) insert는 새 퍼즐 공유 목적이므로 여전히 열어두되, solves/likes를 0이 아닌 값으로
 -- 미리 심어 랭킹·좋아요 집계를 조작하는 걸 막는다(정상 카운트는 puzzle_solve/puzzle_like_toggle
 -- RPC가 SECURITY DEFINER로 올린다).
-create policy "puzzles insert" on public.puzzles for insert with check (coalesce(solves, 0) = 0 and coalesce(likes, 0) = 0);
-create policy "puzzles update" on public.puzzles for update using (true) with check (true);
-grant select, insert on public.puzzles to anon, authenticated;
+-- (v0.7.0 보안 BUG-110, P1) 예전에는 누구나 insert하고 data를 update할 수 있어(anon 포함) 남의 퍼즐 내용을 덮어쓸 수 있었다.
+-- 이제 REST 직접 쓰기는 모두 막고, 새 퍼즐 공유·테마 병합은 puzzle_share_put RPC(아래 N+2 절)로만 한다.
+grant select on public.puzzles to anon, authenticated;
 -- (v0.0.5 보안) 기존에는 update가 테이블 전체(위 RLS와 함께 사실상 using(true)/with check(true))에
 -- 열려 있어, 로그인 없이도 REST를 직접 호출해 임의 퍼즐의 solves/likes 카운터를 덮어쓸 수 있었다.
 -- 컬럼 단위 권한으로 좁혀 REST를 통한 직접 update는 data(퍼즐 내용 보정)만 가능하게 하고, solves/
@@ -460,8 +474,7 @@ grant select, insert on public.puzzles to anon, authenticated;
 -- 건드릴 수 없다.
 -- (v0.5.7 방어) 컬럼 단위 grant는 테이블 전체 update 권한이 이미 있으면(Supabase 기본 권한 등) 아무 제한도 못 한다 — 먼저 전체
 -- update를 거둬 이 제한이 프로젝트 기본 설정과 무관하게 항상 먹게 한다(scripts/check-sql-grants.mjs).
-revoke update on public.puzzles from anon, authenticated;
-grant update (data) on public.puzzles to anon, authenticated;
+revoke insert, update, delete on public.puzzles from anon, authenticated;
 
 -- 퍼즐별 해결자 uid 기록 — "친구 OO 외 N명이 풀었습니다!" 표기용(1인 1행). 본인 명의로만 기록 가능.
 create table if not exists public.puzzle_solvers (
@@ -550,11 +563,14 @@ grant insert, delete on public.puzzle_likes to authenticated;
 -- 좋아요 토글 — 이미 눌렀으면 취소(행 삭제 + likes-1), 아니면 등록(행 추가 + likes+1).
 -- 반환값으로 이 호출 후의 상태(liked)와 갱신된 전체 좋아요 수(likes)를 함께 돌려줘, 클라이언트가
 -- 별도 조회 없이 그 자리에서 화면(하트 채움/카운트)을 갱신할 수 있게 한다.
+-- (v0.7.0 보안 BUG-109, P1) 행위자(p_uid)를 인자로 받던 옛 시그니처는 남의 uid로 좋아요를 위조할 수 있었다 — 지우고, auth.uid()만 쓰는 새 시그니처로 대체.
 drop function if exists public.puzzle_like_toggle(bigint, uuid) cascade;
-create or replace function public.puzzle_like_toggle(p_no bigint, p_uid uuid)
+drop function if exists public.puzzle_like_toggle(bigint) cascade;
+create or replace function public.puzzle_like_toggle(p_no bigint)
 returns table(liked boolean, likes bigint) language plpgsql security definer set search_path = public as $$
-declare v_likes bigint; v_liked boolean;
+declare v_likes bigint; v_liked boolean; p_uid uuid := auth.uid();
 begin
+  if p_uid is null then raise exception 'auth required'; end if;
   if exists (select 1 from public.puzzle_likes where no = p_no and uid = p_uid) then
     delete from public.puzzle_likes where no = p_no and uid = p_uid;
     -- (v0.1.1 버그 수정) 아래 우변의 likes를 테이블 한정 없이 그냥 쓰면, 이 함수의 반환값
@@ -572,7 +588,7 @@ begin
   end if;
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
-grant execute on function public.puzzle_like_toggle(bigint, uuid) to authenticated;
+grant execute on function public.puzzle_like_toggle(bigint) to authenticated;
 
 -- ============================================================================
 -- 7-1) puzzle_reposts / 공유·리포스트 카운터 / 공유 보상 (v0.1.0) — 소셜 기능 확장.
@@ -616,11 +632,14 @@ end; $$;
 grant execute on function public.puzzle_share_inc(bigint) to authenticated;
 
 -- 리포스트 토글 — puzzle_like_toggle과 동일한 패턴(이미 리포스트했으면 취소, 아니면 등록).
+-- (v0.7.0 보안 BUG-109) puzzle_like_toggle과 같은 이유로 p_uid 인자를 없앴다.
 drop function if exists public.puzzle_repost_toggle(bigint, uuid) cascade;
-create or replace function public.puzzle_repost_toggle(p_no bigint, p_uid uuid)
+drop function if exists public.puzzle_repost_toggle(bigint) cascade;
+create or replace function public.puzzle_repost_toggle(p_no bigint)
 returns table(reposted boolean, reposts bigint) language plpgsql security definer set search_path = public as $$
-declare v_reposts bigint; v_reposted boolean;
+declare v_reposts bigint; v_reposted boolean; p_uid uuid := auth.uid();
 begin
+  if p_uid is null then raise exception 'auth required'; end if;
   if exists (select 1 from public.puzzle_reposts where no = p_no and uid = p_uid) then
     delete from public.puzzle_reposts where no = p_no and uid = p_uid;
     -- (v0.1.1 버그 수정) puzzle_like_toggle과 동일한 원인의 버그 — 아래 우변의 reposts가 이 함수의
@@ -637,7 +656,7 @@ begin
   end if;
   return query select v_reposted, coalesce(v_reposts, 0);
 end; $$;
-grant execute on function public.puzzle_repost_toggle(bigint, uuid) to authenticated;
+grant execute on function public.puzzle_repost_toggle(bigint) to authenticated;
 
 -- 공유 보상 — 퍼즐 공유 메시지(chat_messages.puzzle_no)를 타고 들어온 수신자가 그 퍼즐의 라인을 풀 때마다
 -- 호출된다. p_share_msg_id로 "실제로 나에게(to_uid=나) 온 퍼즐 공유 메시지"인지 검증해, 임의 메시지
@@ -849,8 +868,8 @@ drop policy if exists "master games dev delete" on public.master_games_dev;
 -- 읽기는 누구나(로그인 없이도 마스터 대국 목록을 보므로), 쓰기·삭제는 개발자/공동개발자만
 -- (app_content와 동일한 is_content_editor 헬퍼 재사용).
 create policy "master games dev read"   on public.master_games_dev for select using (true);
-create policy "master games dev insert" on public.master_games_dev for insert with check (public.is_content_editor(auth.uid()));
-create policy "master games dev delete" on public.master_games_dev for delete using (public.is_content_editor(auth.uid()));
+create policy "master games dev insert" on public.master_games_dev for insert with check (public.am_content_editor());
+create policy "master games dev delete" on public.master_games_dev for delete using (public.am_content_editor());
 grant select on public.master_games_dev to anon, authenticated;
 grant insert, delete on public.master_games_dev to authenticated;
 
@@ -874,8 +893,8 @@ drop policy if exists "daily puzzle themes read"   on public.daily_puzzle_themes
 drop policy if exists "daily puzzle themes insert" on public.daily_puzzle_themes;
 drop policy if exists "daily puzzle themes delete" on public.daily_puzzle_themes;
 create policy "daily puzzle themes read"   on public.daily_puzzle_themes for select using (true);
-create policy "daily puzzle themes insert" on public.daily_puzzle_themes for insert with check (public.is_content_editor(auth.uid()));
-create policy "daily puzzle themes delete" on public.daily_puzzle_themes for delete using (public.is_content_editor(auth.uid()));
+create policy "daily puzzle themes insert" on public.daily_puzzle_themes for insert with check (public.am_content_editor());
+create policy "daily puzzle themes delete" on public.daily_puzzle_themes for delete using (public.am_content_editor());
 grant select on public.daily_puzzle_themes to anon, authenticated;
 grant insert, delete on public.daily_puzzle_themes to authenticated;
 
@@ -902,9 +921,9 @@ drop policy if exists "daily puzzles dev insert" on public.daily_puzzles_dev;
 drop policy if exists "daily puzzles dev update" on public.daily_puzzles_dev;
 drop policy if exists "daily puzzles dev delete" on public.daily_puzzles_dev;
 create policy "daily puzzles dev read"   on public.daily_puzzles_dev for select using (true);
-create policy "daily puzzles dev insert" on public.daily_puzzles_dev for insert with check (public.is_content_editor(auth.uid()));
-create policy "daily puzzles dev update" on public.daily_puzzles_dev for update using (public.is_content_editor(auth.uid())) with check (public.is_content_editor(auth.uid()));
-create policy "daily puzzles dev delete" on public.daily_puzzles_dev for delete using (public.is_content_editor(auth.uid()));
+create policy "daily puzzles dev insert" on public.daily_puzzles_dev for insert with check (public.am_content_editor());
+create policy "daily puzzles dev update" on public.daily_puzzles_dev for update using (public.am_content_editor()) with check (public.am_content_editor());
+create policy "daily puzzles dev delete" on public.daily_puzzles_dev for delete using (public.am_content_editor());
 grant select on public.daily_puzzles_dev to anon, authenticated;
 grant insert, update, delete on public.daily_puzzles_dev to authenticated;
 
@@ -1006,8 +1025,8 @@ drop policy if exists "move notes delete" on public.move_notes;
 -- master_games_dev와 동일한 is_content_editor 재사용, 모든 글) 둘 중 하나만 만족하면 된다.
 create policy "move notes read"   on public.move_notes for select using (true);
 create policy "move notes insert" on public.move_notes for insert with check (auth.uid() = uid);
-create policy "move notes update" on public.move_notes for update using (auth.uid() = uid or public.is_content_editor(auth.uid())) with check (auth.uid() = uid or public.is_content_editor(auth.uid()));
-create policy "move notes delete" on public.move_notes for delete using (auth.uid() = uid or public.is_content_editor(auth.uid()));
+create policy "move notes update" on public.move_notes for update using (auth.uid() = uid or public.am_content_editor()) with check (auth.uid() = uid or public.am_content_editor());
+create policy "move notes delete" on public.move_notes for delete using (auth.uid() = uid or public.am_content_editor());
 grant select on public.move_notes to anon, authenticated;
 grant insert on public.move_notes to authenticated;
 grant update, delete on public.move_notes to authenticated;
@@ -2074,7 +2093,7 @@ grant execute on function public.pvp_finish_verified(bigint, text) to service_ro
 alter table public.puzzles add column if not exists is_public boolean not null default true;
 drop policy if exists "puzzles read" on public.puzzles;
 create policy "puzzles read" on public.puzzles for select using (
-  is_public or auth.uid() = creator_uid or public.is_content_editor(auth.uid())
+  is_public or auth.uid() = creator_uid or public.am_content_editor()
 );
 
 -- 생성자 본인(또는 개발자/공동개발자)만 공개 여부를 바꿀 수 있다 — puzzle_creator_save와 달리
@@ -2093,6 +2112,65 @@ begin
   update public.puzzles set is_public = p_public where no = p_no;
 end; $$;
 grant execute on function public.puzzle_set_visibility(bigint, boolean) to authenticated;
+
+-- (v0.7.0 보안 BUG-110, P1) 퍼즐 공유(첫 발견자가 서버에 올리기·다른 사람이 테마 태그 합치기)의 유일한 쓰기 경로.
+--  · 없는 퍼즐(또는 카운터만 먼저 생긴 data={} 빈 행): 누구나(게스트 포함) 올릴 수 있다. 크기 상한 있음.
+--  · 이미 내용이 있는 퍼즐: 개발자/공동개발자만 data 전체를 바꿀 수 있고, 그 외에는 themes 배열에 허용된 테마를 합치는 것만 된다
+--    (퍼즐 본문·생성자·카운터는 건드릴 수 없다). 라인 편집은 puzzle_creator_save가 따로 맡는다.
+drop function if exists public.puzzle_share_put(bigint, jsonb, boolean) cascade;
+create or replace function public.puzzle_share_put(p_no bigint, p_data jsonb, p_public boolean default true)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_old jsonb; v_exists boolean; v_themes jsonb;
+begin
+  if p_no is null or p_no <= 0 then raise exception 'invalid puzzle'; end if;
+  if p_data is null or jsonb_typeof(p_data) <> 'object' then raise exception 'invalid data'; end if;
+  if length(p_data::text) > 300000 then raise exception 'data too large'; end if;
+  select data into v_old from public.puzzles where no = p_no for update;
+  v_exists := found;
+  if not v_exists then
+    insert into public.puzzles(no, data, is_public) values (p_no, p_data, coalesce(p_public, true)) on conflict (no) do nothing;
+    return;
+  end if;
+  if v_old is null or v_old = '{}'::jsonb then
+    update public.puzzles set data = p_data where no = p_no;
+  elsif auth.uid() is not null and public.is_content_editor(auth.uid()) then
+    update public.puzzles set data = p_data where no = p_no;
+  else
+    select coalesce(jsonb_agg(distinct t), '[]'::jsonb) into v_themes from (
+      select jsonb_array_elements_text(coalesce(v_old -> 'themes', '[]'::jsonb) || coalesce(p_data -> 'themes', '[]'::jsonb)) as t
+    ) x where t in ('punish', 'advantage', 'sacrifice');
+    if jsonb_array_length(v_themes) > 0 then
+      update public.puzzles set data = data || jsonb_build_object('themes', v_themes) where no = p_no;
+    end if;
+  end if;
+end; $$;
+grant execute on function public.puzzle_share_put(bigint, jsonb, boolean) to anon, authenticated;
+
+-- (v0.7.0 보안) 서버리스 함수들이 인스턴스와 상관없이 공유하는 호출 제한 — 고정 창 카운터. service_role 전용.
+-- 반환값 true = 제한 초과. 키는 호출하는 서버 코드가 정한다(예: login:ip:<주소>).
+create table if not exists public.rate_limits (
+  key text not null,
+  window_start timestamptz not null,
+  n int not null default 0,
+  primary key (key, window_start)
+);
+alter table public.rate_limits enable row level security;
+revoke all on public.rate_limits from public, anon, authenticated;
+drop function if exists public.rate_limit_hit(text, int, int) cascade;
+create or replace function public.rate_limit_hit(p_key text, p_limit int, p_window_seconds int)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_start timestamptz; v_n int;
+begin
+  if p_key is null or length(p_key) > 200 or p_limit < 1 or p_window_seconds < 1 or p_window_seconds > 86400 then raise exception 'invalid args'; end if;
+  v_start := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+  insert into public.rate_limits(key, window_start, n) values (p_key, v_start, 1)
+  on conflict (key, window_start) do update set n = public.rate_limits.n + 1
+  returning n into v_n;
+  if random() < 0.02 then delete from public.rate_limits where window_start < now() - interval '2 days'; end if;
+  return v_n > p_limit;
+end; $$;
+revoke all on function public.rate_limit_hit(text, int, int) from public, anon, authenticated;
+grant execute on function public.rate_limit_hit(text, int, int) to service_role;
 
 -- ============================================================================
 -- N+3) pvp_invites — /play "친구와 플레이" 초대(신청/수락/거절)
@@ -3098,8 +3176,8 @@ drop policy if exists "attack positions read"   on public.attack_positions;
 drop policy if exists "attack positions insert" on public.attack_positions;
 drop policy if exists "attack positions delete" on public.attack_positions;
 create policy "attack positions read"   on public.attack_positions for select using (true);
-create policy "attack positions insert" on public.attack_positions for insert with check (public.is_content_editor(auth.uid()));
-create policy "attack positions delete" on public.attack_positions for delete using (public.is_content_editor(auth.uid()));
+create policy "attack positions insert" on public.attack_positions for insert with check (public.am_content_editor());
+create policy "attack positions delete" on public.attack_positions for delete using (public.am_content_editor());
 
 create or replace function public._attack_grade(p_my int, p_opp int)
 returns text language plpgsql as $$
@@ -3933,6 +4011,62 @@ begin
 end; $$;
 revoke all on function public.game_analysis_put(jsonb, jsonb) from public;
 grant execute on function public.game_analysis_put(jsonb, jsonb) to authenticated;
+
+-- ============================================================================
+-- 함수 실행 권한 최종 확정 (v0.7.0 보안, BUG-108·118) — 기본 차단 + 허용 목록
+-- ============================================================================
+-- PostgreSQL은 새 함수에 PUBLIC 실행 권한을 기본으로 주고 Supabase도 anon/authenticated에 기본 부여한다. 그래서 위에서 'service_role에만 준다'고
+-- 적은 함수도 revoke를 빼먹으면 일반 로그인 사용자가 /rest/v1/rpc/…로 직접 부를 수 있었다(pvp_finish_verified로 대국 결과 위조 — BUG-108).
+-- 이 블록이 이 파일의 모든 public 함수(확장 제공 함수 제외)의 권한을 한 번에 정한다: PUBLIC은 항상 회수, anon·authenticated는 아래 허용 목록에
+-- 있는 함수만 실행 가능, service_role은 전부 실행 가능. 목록에 없는 함수(내부 보조 함수·서버 전용 함수)는 브라우저에서 호출할 수 없다.
+-- 브라우저가 부르는 새 RPC를 추가하면 여기에도 함께 올려야 하고(scripts/check-sql-function-acl.mjs가 빠진 것을 잡는다), 서버 전용 함수는 올리지 않는다.
+do $acl$
+declare
+  r record;
+  v_anon text[] := array[
+    'account_providers', 'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
+    'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
+    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_share_put', 'puzzle_solve',
+    'reviewed_analysis_put', 'reviewed_game_put', 'search_puzzles_prefix', 'username_available'
+  ];
+  v_auth text[] := array[
+    'attack_finish', 'attack_forfeit', 'attack_next', 'attack_progress',
+    'attack_report', 'attack_start', 'bot_game_record', 'chat_blocked_between',
+    'chat_clear_conversation', 'chat_edit_message', 'chat_rooms', 'claim_username',
+    'coord_click', 'coord_finish', 'coord_forfeit', 'coord_reveal_next',
+    'daily_puzzle_pick_run', 'delete_own_account', 'friend_accept', 'friend_remove',
+    'friend_request', 'friend_request_by_mid', 'friend_suggestions', 'game_analysis_put',
+    'knight_forfeit', 'knight_move_ping', 'knight_report',
+    'knight_resolve_round', 'knight_start_round', 'legacy_like_toggle', 'minigame_submit_best',
+    'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
+    'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
+    'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc', 'puzzle_share_reward',
+    'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
+    'pvp_finish', 'pvp_invite_cancel', 'pvp_invite_friend', 'pvp_invite_respond',
+    'pvp_move', 'pvp_queue_join', 'pvp_queue_leave', 'pvp_rematch_decline',
+    'pvp_rematch_offer', 'report_set_status', 'reports_for_dev', 'rush_forfeit',
+    'rush_ping', 'rush_report', 'rush_resolve_round', 'rush_start_round',
+    'touch_presence', 'user_report'
+  ];
+begin
+  for r in
+    select p.oid::regprocedure as sig, p.proname
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prokind = 'f'
+      and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+  loop
+    execute format('revoke all on function %s from public', r.sig);
+    if r.proname = any(v_anon) then
+      execute format('grant execute on function %s to anon, authenticated, service_role', r.sig);
+    elsif r.proname = any(v_auth) then
+      execute format('revoke all on function %s from anon', r.sig);
+      execute format('grant execute on function %s to authenticated, service_role', r.sig);
+    else
+      execute format('revoke all on function %s from anon, authenticated', r.sig);
+      execute format('grant execute on function %s to service_role', r.sig);
+    end if;
+  end loop;
+end $acl$;
 
 -- ============================================================================
 -- pg_cron 스케줄 등록 — 반드시 아래 순서를 지킬 것:

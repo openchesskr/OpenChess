@@ -10,10 +10,11 @@ import dbP1 from "./attacks/db-p1.mjs";
 import dbP2 from "./attacks/db-p2.mjs";
 import dbHolds from "./attacks/db-holds.mjs";
 import apiAttacks from "./attacks/api.mjs";
+import regress from "./attacks/db-regress.mjs";
 
 const args = process.argv.slice(2);
 const only = (args.includes("--only") ? args[args.indexOf("--only") + 1] : "").split(",").filter(Boolean);
-const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds];
+const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds, ...regress];
 if (args.includes("--list")) { for (const a of ALL) console.log(a.id.padEnd(9), a.kind.padEnd(7), a.title); process.exit(0); }
 
 export const U = { victim: "11111111-1111-1111-1111-111111111111", mallory: "22222222-2222-2222-2222-222222222222", bob: "33333333-3333-3333-3333-333333333333", dev: "44444444-4444-4444-4444-444444444444" };

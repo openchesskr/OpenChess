@@ -70,9 +70,9 @@ export class Sandbox {
     return this;
   }
   /** role(anon|authenticated|service_role)·uid 신분으로 sql 실행. 한 트랜잭션, 오류 시 {ok:false}. */
-  as(role, uid, sql) {
+  as(role, uid, sql, { rollback = false } = {}) {
     const claims = JSON.stringify(uid ? { sub: uid, role } : { role });
-    const r = this.psql(`begin;\nset local role ${role};\nselect set_config('request.jwt.claims', '${claims}', true);\n${sql}\ncommit;`);
+    const r = this.psql(`begin;\nset local role ${role};\nselect set_config('request.jwt.claims', '${claims}', true);\n${sql}\n${rollback ? "rollback;" : "commit;"}`);
     r.out = r.out.split("\n").slice(1).join("\n");   // 첫 줄은 set_config의 출력
     return r;
   }

@@ -24,7 +24,7 @@ export default [
       sb.as("anon", null, `insert into public.puzzles(no,data) select 900000+g, jsonb_build_object('junk', (select string_agg(md5(i::text || g::text), '') from generate_series(1,16000) i)) from generate_series(1,5) g;`);
       const sz = sb.admin(`select coalesce(pg_size_pretty(sum(length(data::text))),'0') from public.puzzles where no>900000`).out;
       const n = sb.admin(`select count(*) from public.puzzles where no>900000`).out;
-      return { breached: Number(n) > 0, evidence: `익명이 퍼즐 ${n}개(약 ${sz}) 삽입 — 크기·개수 제한 없음` };
+      return { breached: Number(n) > 0, evidence: Number(n) > 0 ? `익명이 퍼즐 ${n}개(약 ${sz}) 삽입 — 크기·개수 제한 없음` : "REST 직접 삽입 거부(퍼즐 공유는 puzzle_share_put 경유, 크기 상한 있음)" };
     } },
   { id: "BUG-113", kind: "attack", title: "일반 계정이 자기 프로필 pub.xp를 조작해 리더보드 1위 차지",
     async run({ sb, U }) {
@@ -55,6 +55,6 @@ export default [
       const a = sb.as("anon", null, `select public.is_content_editor('${U.dev}');`).out;
       const b = sb.as("anon", null, `select public._is_dev_account('${U.dev}');`);
       const leaked = a === "t" || b.out === "t";
-      return { breached: leaked, evidence: `is_content_editor=${a}, _is_dev_account=${b.ok ? b.out : "거부"} — 누가 관리자인지 외부에 노출` };
+      return { breached: leaked, evidence: leaked ? `is_content_editor=${a}, _is_dev_account=${b.ok ? b.out : "거부"} — 누가 관리자인지 외부에 노출` : "anon은 두 함수 모두 실행 불가" };
     } },
 ];
