@@ -17,15 +17,14 @@ export function puzzleNoOf(id) {
 
 const MAX_DEPTH = 60, MAX_NODES = 3000;
 function rootPosition(d) {
+  // 클라이언트(genPuzzleTree)와 동일: setupSans가 비어 있을 때만 fen을 시작 위치로 쓰고, 그 뒤에 setupSans·mistakeSan을 순서대로 둔다.
+  if (d.fen != null && typeof d.fen !== "string") return null;
+  if (d.mistakeSan != null && typeof d.mistakeSan !== "string") return null;
+  if (d.setupSans != null && (!Array.isArray(d.setupSans) || d.setupSans.length > 120)) return null;
+  const setup = [...(d.setupSans || []), d.mistakeSan].filter(Boolean);
   const c = new Chess();
-  if (typeof d.fen === "string" && d.fen) {
-    try { c.load(d.fen); } catch { return null; }
-    if (Array.isArray(d.setupSans) && d.setupSans.length) return null;   // FEN 퍼즐은 시작 수순이 없다
-  } else {
-    if (d.setupSans != null && (!Array.isArray(d.setupSans) || d.setupSans.length > 120)) return null;
-    for (const san of d.setupSans || []) { if (typeof san !== "string" || san.length > 12) return null; try { c.move(san); } catch { return null; } }
-    if (d.mistakeSan != null) { if (typeof d.mistakeSan !== "string" || d.mistakeSan.length > 12) return null; try { c.move(d.mistakeSan); } catch { return null; } }
-  }
+  if (!(d.setupSans && d.setupSans.length) && d.fen) { try { c.load(d.fen); } catch { return null; } }
+  for (const san of setup) { if (typeof san !== "string" || san.length > 12) return null; try { c.move(san); } catch { return null; } }
   return c;
 }
 function treeLegal(root, tree) {
