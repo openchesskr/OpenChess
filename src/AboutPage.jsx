@@ -166,48 +166,6 @@ function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
   );
 }
 
-// 기능 소개 한 줄(실제 화면 스크린샷 ↔ 텍스트, 좌우 번갈아 배치) — 참고 이미지의 "대사+삽화" 레이아웃을
-// 그대로 빌리되, 삽화 자리를 실제 서비스 스크린샷(PhoneFrame)으로 채우고, 마스코트는 그 모서리에
-// 작은 스티커처럼 겹쳐 붙여 캐릭터성도 함께 남긴다.
-function FeatureRow({ Icon, eyebrow, title, desc, quote, shot, mascotChar, mascotExpr, reverse, ccBadge }) {
-  return (
-    <div className="flex items-center flex-wrap" style={{ gap: 32, flexDirection: reverse ? "row-reverse" : "row" }}>
-      <div style={{ flex: "0 0 auto", width: 180, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
-        <PhoneFrame src={shot} alt={title} tilt={reverse ? 4 : -4} />
-        <motion.div initial={{ opacity: 0, scale: 0.4, rotate: reverse ? -16 : 16 }} whileInView={{ opacity: 1, scale: 1, rotate: reverse ? -9 : 9 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.5, delay: 0.18, ease: [0.22, 0.9, 0.32, 1] }}
-          style={{ position: "absolute", width: 58, height: 58, bottom: -12, [reverse ? "left" : "right"]: -16, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.55))", zIndex: 3 }}>
-          <Mascot char={mascotChar} expr={mascotExpr} size={58} />
-        </motion.div>
-      </div>
-      <Reveal delay={0.1}>
-        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-            <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={15} color={T.brassHi} /></span>
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{eyebrow}</span>
-            {ccBadge && <span title={t("chess.com 연동")} style={{ fontSize: 10, fontWeight: 900, color: T.brass, border: "1px solid " + T.brass, borderRadius: 5, padding: "1px 5px", marginLeft: 2 }}>chess.com</span>}
-          </div>
-          <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{title}</h3>
-          <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 12px" }}>{desc}</p>
-          {quote && <p style={{ fontSize: 12.5, color: T.brassHi, fontWeight: 700, fontStyle: "italic", margin: 0, opacity: .9 }}>&ldquo;{quote}&rdquo;</p>}
-        </div>
-      </Reveal>
-    </div>
-  );
-}
-
-const FEATURES = [
-  { Icon: GraduationCap, eyebrow: t("분석"), title: t("엔진과 함께 배우기"), shot: "/about/screenshot-study.webp", mascotChar: "milku", mascotExpr: "think", ccBadge: true,
-    desc: t("Stockfish 엔진의 실시간 분석과 함께 수를 두며 학습. chess.com 계정을 연동하면 실제 대국을 불러와 어디서 무엇을 놓쳤는지 확인") },
-  { Icon: Library, eyebrow: t("도감"), title: t("오프닝 나침반"), shot: "/about/screenshot-dex.webp", mascotChar: "milku", mascotExpr: "wink",
-    desc: t("1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗는 오프닝 트리에서 각 수의 채택률·평가치·이름 확인. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 수집") },
-  { Icon: Puzzle, eyebrow: t("퍼즐"), title: t("내 실수로 만든 퍼즐"), shot: "/about/screenshot-puzzle.webp", mascotChar: "kokoa", mascotExpr: "think",
-    desc: t("\"기물 희생하기\", \"우위 점하기\", \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능") },
-  { Icon: Target, eyebrow: t("학습"), title: t("매일 조금씩"), shot: "/about/screenshot-quest.webp", mascotChar: "kokoa", mascotExpr: "celebrate",
-    desc: t("매일 갱신되는 일일 퀘스트와, 갈래를 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인 획득") },
-  { Icon: Wrench, eyebrow: t("설정"), title: t("내게 맞게 조정하기"), shot: "/about/screenshot-settings.webp", mascotChar: "milku", mascotExpr: "wink",
-    desc: t("가볍고 빠른 Stockfish 18 Lite와 더 강력한 Stockfish 17.1·18 중 기기에 맞는 분석 엔진 선택. 로그인하면 진도가 계정에 저장되어 어느 기기에서든 이어서 사용") },
-];
-
 // (v0.1.3 기능) "체스 웹사이트니까 사이사이에 체스보드를 많이 넣어달라"는 요청 — 실제 기물 이미지
 // (App.jsx PieceGlyph와 같은 자산)로 8x8 보드를 그리고, 지정된 한 수를 무한 반복 슬라이드로
 // 시연하는 장식용 미니 보드. 스크롤로 들어올 때마다 살짝 튀어오르며 등장하고(Reveal과 같은 방식,
@@ -450,238 +408,6 @@ function GrandmasterCard() {
   );
 }
 
-// (v0.1.3 기능) 참고 영상의 "24/7 · 30%+ · <60 sec" 같은 스크롤 카운트업 통계 블록을 OpenChess
-// 수치로 재현한다 — 화면에 들어올 때마다(once:false와 같은 취지) 0부터 다시 세어 올라가도록,
-// framer-motion의 onViewportEnter/Leave로 직접 카운팅 애니메이션을 구동한다(whileInView는 style
-// 값 보간만 하므로 "숫자 세기"에는 안 맞아 별도 rAF 루프를 쓴다).
-function CountStat({ value, suffix = "", label }) {
-  const [n, setN] = useState(0);
-  const rafRef = useRef(null);
-  const runCount = () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    const start = performance.now(), dur = 1100;
-    const step = (t) => {
-      const p = Math.min(1, (t - start) / dur);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setN(Math.round(value * eased));
-      if (p < 1) rafRef.current = requestAnimationFrame(step);
-    };
-    rafRef.current = requestAnimationFrame(step);
-  };
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
-  return (
-    <motion.div onViewportEnter={runCount} onViewportLeave={() => setN(0)} viewport={{ once: false, amount: 0.7 }}
-      className="flex flex-col items-center" style={{ gap: 4, flex: "1 1 110px", minWidth: 110 }}>
-      <span style={{ fontSize: 30, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{n}{suffix}</span>
-      <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, textAlign: "center" }}>{label}</span>
-    </motion.div>
-  );
-}
-function StatsRow() {
-  return (
-    <Reveal>
-      <div className="flex flex-wrap items-center justify-center" style={{ gap: 8, padding: "26px 20px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}>
-        <CountStat value={7} label={t("티어 단계")} />
-        <CountStat value={4} label={t("오프닝 갈래")} />
-        <CountStat value={3} label={t("퍼즐 테마")} />
-        <CountStat value={100} suffix="%" label={t("무료로 시작")} />
-      </div>
-    </Reveal>
-  );
-}
-
-// (v0.1.4 기능) "chess.com 연계 통계·분석 기능도 소개해 달라"는 요청 — 실제로 분석 탭·도감 탭·설정
-// 탭에 이미 있는 chess.com 연동 기능(대국 자동 동기화·게임 리뷰 정확도·레이팅 변화·오프닝별 승률)을
-// 별도 섹션으로 모아 chess.com 아이콘과 함께 소개한다.
-function CCStatTile({ label, sub, delay }) {
-  return (
-    <motion.div initial={{ opacity: 0, y: 16, scale: 0.9 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.45, delay, ease: [0.22, 0.9, 0.32, 1] }}
-      whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      className="flex flex-col items-center" style={{ gap: 8, flex: "1 1 140px", minWidth: 140, padding: "18px 14px", borderRadius: 14, background: "rgba(0,0,0,.22)", border: "1px solid #4A3521" }}>
-      <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi, textAlign: "center" }}>{label}</span>
-      <span style={{ fontSize: 11, color: T.inkSoft, textAlign: "center", lineHeight: 1.55 }}>{sub}</span>
-    </motion.div>
-  );
-}
-const CC_TILES = [
-  { label: t("대국 자동 동기화"), sub: t("chess.com 계정만 연결하면 실제 대국이 그대로 반영") },
-  { label: t("게임 리뷰 정확도"), sub: t("chess.com과 같은 방식의 정확도(%)로 채점") },
-  { label: t("레이팅 변화 그래프"), sub: t("래피드·블리츠·불릿별 대국마다 오르내린 레이팅 표시") },
-  { label: t("오프닝별 승률 통계"), sub: t("도감의 각 수마다 이 오프닝을 실전에서 얼마나, 어떻게 뒀는지 표시") },
-];
-function ChessComSection() {
-  return (
-    <section>
-      <Reveal>
-        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{t("CHESS.COM 연동")}</span>
-        </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>{t("실제로 둔 대국까지 분석")}</h3>
-        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>{t("설정 탭에서 chess.com 아이디만 연결하면 실전에서 둔 수만큼 도감이 해금되고 정확도·레이팅 변화 확인 가능")}</p>
-      </Reveal>
-      <div className="flex flex-wrap items-stretch justify-center" style={{ gap: 12 }}>
-        {CC_TILES.map((t, i) => <CCStatTile key={t.label} {...t} delay={i * 0.08} />)}
-      </div>
-    </section>
-  );
-}
-
-// ============================================================ 정확도 체계 ============================================================
-// (v0.3.9 기능, 사용자 요청) "이번 세션에서 만든 정확도 체계를 /about 첫 페이지에 내 사고 과정을 그대로
-// 시각화해서 보여줘, 구체적인 계산 수식과 그래프를 적극 활용해서". 실제 App.jsx의 독립 정확도 체계
-// (winPctFromCp·newAccuracyFromAvgLoss·newCumulativeAccuracy·sharpLossMultiplier)를 그 설계 과정
-// 그대로 4단계로 재구성해 보여준다 — 이 페이지는 App.jsx와 별개 번들이라(파일 상단 T 팔레트 주석
-// 참고) 공식을 import하지 않고 그대로 복사해 둔다. App.jsx 쪽 공식이 바뀌면(계수 조정 등) 이 사본도
-// 함께 맞춰야 소개 페이지가 실제 동작과 어긋나지 않는다.
-const AS_DECAY = 0.055;
-const AS_SHARP_REF_MEAN = 8, AS_SHARP_REF_SD = 8;
-const AS_SHARP_LO = 0.85, AS_SHARP_HI = 1.15;
-// (사용자 재피드백, v0.3.9) App.jsx의 NEW_ACC_HARMONIC_FLOOR와 값을 맞춘다 — 조화평균에서 한 수가
-// 기여할 수 있는 몫의 하한(극단적 블런더 한 수가 나머지 좋은 수들을 압도하지 못하게 막는다).
-const AS_HARMONIC_FLOOR = 22;
-function asWinPct(cp) { const c = Math.max(-1200, Math.min(1200, cp)); return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * c)) - 1); }
-function asNormalCdf(z) {
-  const t = 1 / (1 + 0.2316419 * Math.abs(z));
-  const d = 0.3989423 * Math.exp(-z * z / 2);
-  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-  return z >= 0 ? 1 - p : p;
-}
-function asSharpMult(sharp) { return AS_SHARP_LO + (AS_SHARP_HI - AS_SHARP_LO) * asNormalCdf((sharp - AS_SHARP_REF_MEAN) / AS_SHARP_REF_SD); }
-function asAccFromLoss(loss) { return Math.max(0, Math.min(100, 103.1668 * Math.exp(-AS_DECAY * Math.max(0, loss)) - 3.1669)); }
-const AS_WINPCT_PTS = Array.from({ length: 49 }, (_, i) => { const cp = -1200 + i * 50; return [cp, asWinPct(cp)]; });
-const AS_DECAY_PTS = Array.from({ length: 41 }, (_, i) => [i, asAccFromLoss(i)]);
-const AS_SHARP_PTS = Array.from({ length: 26 }, (_, i) => [i, asSharpMult(i)]);
-// 손 계산으로 재현 가능한 작은 예시 하나로 "손실을 먼저 평균 낸 뒤 변환" vs "각 수를 먼저 변환한 뒤
-// 평균" 두 방식의 결과 차이를 보여준다 — 무난한 수 9개(손실 0)와 블런더 1개(손실 25%p)로 이뤄진
-// 10수짜리 가상의 대국.
-const AS_JENSEN_NAIVE = Math.round(asAccFromLoss(25 / 10) * 10) / 10;
-const AS_JENSEN_CORRECT = Math.round((10 / (9 / 100 + 1 / Math.max(AS_HARMONIC_FLOOR, asAccFromLoss(25)))) * 10) / 10;
-// 그래프 하나를 그리는 범용 SVG 라인 차트 — 격자·축 눈금·강조 점(marker)까지 갖춰, 이 섹션의 세
-// 곡선(승률% 변환, 손실→정확도 감쇠, 날카로움 배율)을 모두 이 컴포넌트 하나로 그린다.
-function AsLineChart({ points, xDomain, yDomain, xTicks, yTicks, markers = [], color = T.brassHi }) {
-  const w = 300, h = 168, padL = 30, padR = 14, padT = 16, padB = 24;
-  const [x0, x1] = xDomain, [y0, y1] = yDomain;
-  const sx = (x) => padL + ((x - x0) / (x1 - x0)) * (w - padL - padR);
-  const sy = (y) => (h - padB) - ((y - y0) / (y1 - y0)) * (h - padT - padB);
-  const d = points.map((p, i) => (i === 0 ? "M" : "L") + sx(p[0]).toFixed(2) + "," + sy(p[1]).toFixed(2)).join(" ");
-  return (
-    <svg viewBox={"0 0 " + w + " " + h} style={{ width: "100%", maxWidth: 320, display: "block" }}>
-      {yTicks.map((ty) => (
-        <g key={"y" + ty}>
-          <line x1={padL} x2={w - padR} y1={sy(ty)} y2={sy(ty)} stroke="rgba(184,167,140,.16)" strokeWidth={1} />
-          <text x={padL - 6} y={sy(ty) + 3} textAnchor="end" fontSize="8.5" fill={T.inkSoft}>{ty}</text>
-        </g>
-      ))}
-      {xTicks.map((tx) => (
-        <text key={"x" + tx} x={sx(tx)} y={h - 8} textAnchor="middle" fontSize="8.5" fill={T.inkSoft}>{tx}</text>
-      ))}
-      <line x1={padL} x2={padL} y1={padT} y2={h - padB} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
-      <line x1={padL} x2={w - padR} y1={h - padB} y2={h - padB} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
-      <path d={d} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-      {markers.map((m, i) => (
-        <g key={i}>
-          <circle cx={sx(m[0])} cy={sy(m[1])} r={3.2} fill={T.ivoryHi} stroke={color} strokeWidth={1.6} />
-          <text x={sx(m[0])} y={sy(m[1]) - 8} textAnchor="middle" fontSize="8.5" fontWeight="800" fill={T.ivoryHi}>{m[2]}</text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-// "손실을 먼저 평균 낸 뒤 변환" vs "각 수를 먼저 변환한 뒤 평균"을 나란한 막대 두 개로 비교.
-function AsJensenBars() {
-  const w = 240, h = 168, base = h - 26;
-  const scaleY = (v) => base - (v / 100) * (base - 18);
-  const bars = [
-    { v: AS_JENSEN_NAIVE, label: t("손실 먼저 평균"), sub: t("(예전 방식)"), color: T.brass },
-    { v: AS_JENSEN_CORRECT, label: t("정확도 먼저 평균"), sub: t("(현재 방식)"), color: "#8FB55E" },
-  ];
-  return (
-    <svg viewBox={"0 0 " + w + " " + h} style={{ width: "100%", maxWidth: 260, display: "block" }}>
-      <line x1={16} x2={w - 16} y1={base} y2={base} stroke="rgba(184,167,140,.35)" strokeWidth={1} />
-      {bars.map((b, i) => {
-        const bw = 64, x = 30 + i * 110;
-        return (
-          <g key={i}>
-            <rect x={x} y={scaleY(b.v)} width={bw} height={base - scaleY(b.v)} rx={7} fill={b.color} opacity={0.88} />
-            <text x={x + bw / 2} y={scaleY(b.v) - 9} textAnchor="middle" fontSize="14" fontWeight="900" fill={T.ivoryHi}>{b.v.toFixed(1)}</text>
-            <text x={x + bw / 2} y={h - 10} textAnchor="middle" fontSize="9" fontWeight="800" fill={T.inkSoft}>{b.label}</text>
-            <text x={x + bw / 2} y={h - 1} textAnchor="middle" fontSize="8" fill={T.inkSoft} opacity={0.8}>{b.sub}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-// 공식을 그대로 보여주는 모노스페이스 코드 박스 — 이 섹션 전용.
-function AsFormula({ children }) {
-  return <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11.5, color: T.brassHi, background: "rgba(0,0,0,.28)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 8, padding: "8px 12px", margin: "10px 0", overflowX: "auto", whiteSpace: "nowrap" }}>{children}</div>;
-}
-// 단계 하나(번호 배지 + 제목 + 설명 + 공식 + 그래프)를 좌우로 배치하는 카드. FeatureRow와 같은 구조를
-// 재사용하되, 스크린샷 대신 직접 그린 SVG 그래프를 얹는다.
-function AsStep({ n, title, children, formula, chart, reverse }) {
-  return (
-    <div className="flex items-center flex-wrap" style={{ gap: 28, flexDirection: reverse ? "row-reverse" : "row" }}>
-      <Reveal delay={0.05}>
-        <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-            <span style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(180deg," + T.brass + ",#8A6C2F)", color: "#241509", fontWeight: 900, fontSize: 12.5, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
-            <h4 style={{ fontSize: 16, fontWeight: 900, color: T.ivoryHi, margin: 0 }}>{title}</h4>
-          </div>
-          <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.75 }}>{children}</div>
-          {formula}
-        </div>
-      </Reveal>
-      <div style={{ flex: "0 0 auto", width: 280, maxWidth: "100%", margin: "0 auto" }}>
-        <Reveal delay={0.15}>
-          <div style={{ background: "rgba(0,0,0,.22)", border: "1px solid rgba(196,154,80,.25)", borderRadius: 14, padding: "14px 10px 8px" }}>
-            {chart}
-          </div>
-        </Reveal>
-      </div>
-    </div>
-  );
-}
-function AccuracySystemSection() {
-  return (
-    <section id="accuracy" style={{ scrollMarginTop: 24 }}>
-      <Reveal>
-        <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
-          <Zap size={16} color={T.brassHi} />
-          <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".08em" }}>{t("정확도 체계")}</span>
-        </div>
-        <h3 style={{ fontSize: 21, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", textAlign: "center" }}>{t("정확도 계산 방식")}</h3>
-        <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 22px", textAlign: "center", maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>{t("실수 횟수만 세지 않음. 게임 리뷰를 설계하며 거친 네 단계를 수식과 그래프로 소개")}</p>
-      </Reveal>
-
-      <section style={{ maxWidth: 620, margin: "0 auto 28px" }}>
-        <SpeechBubble mascot={{ char: "kokoa", expr: "think" }} name="KOKOA 코치">{t("정확도 % 하나 뒤에 이런 계산이 있음")}</SpeechBubble>
-      </section>
-
-      <div className="flex flex-col" style={{ gap: 40 }}>
-        <AsStep n={1} title={t("① 평가치(cp)를 승률로 변환")}
-          formula={<AsFormula>win%(cp) = 50 + 50 × (2 / (1 + e^(&#8722;0.00368×cp)) &#8722; 1)</AsFormula>}
-          chart={<AsLineChart points={AS_WINPCT_PTS} xDomain={[-1200, 1200]} yDomain={[0, 100]} xTicks={[-1200, 0, 1200]} yTicks={[0, 50, 100]} markers={[[0, 50, "0 → 50%"], [300, asWinPct(300), "+300 → " + asWinPct(300).toFixed(0) + "%"]]} />}>{tx("엔진 평가치(centipawn)는 그대로 쓰면 불공평함. 이미 +500으로 크게 앞설 때 100점을 잃는 것과 0점 근처에서 100점을 잃는 것은 승부에 미치는 영향이 다름. 그래서 cp를 이 포지션에서 이길 확률(win%)로 변환. 로지스틱 곡선이라 0 근처에서는 가파르고 승부가 기운 구간에서는 완만함 {0}로 정의", <b>{t("손실은 그 수 전후로 win%가 얼마나 떨어졌는지")}</b>)}</AsStep>
-
-        <AsStep n={2} title={t("② 손실이 클수록 정확도는 더 가파르게 하락")} reverse
-          formula={<AsFormula>{t("정확도 = 103.17 × e^(−0.055 × 손실) − 3.17")}</AsFormula>}
-          chart={<AsLineChart points={AS_DECAY_PTS} xDomain={[0, 40]} yDomain={[0, 100]} xTicks={[0, 20, 40]} yTicks={[0, 50, 100]} markers={[[0, 100, "0 → 100"], [25, asAccFromLoss(25), "25 → " + asAccFromLoss(25).toFixed(1)]]} color="#8FB55E" />}>{tx("이 승률% 손실을 지수 감쇠(exponential decay) 곡선에 넣어 수 하나의 정확도로 변환. 손실이 0에 가까우면 정확도는 100 근처, 손실이 커질수록 완만하지 않고 {0} 하락. 작은 실수는 관대하게, 큰 블런더는 냉정하게 반영", <b>{t("점점 더 가파르게")}</b>)}</AsStep>
-
-        <AsStep n={3} title={t("③ 계산 순서를 잘못 잡았던 부분")}
-          formula={<AsFormula>❌ acc(mean(loss))  vs.  ✅ mean(acc(loss))</AsFormula>}
-          chart={<AsJensenBars />}>{tx("처음엔 손실을 먼저 평균 낸 뒤 그 평균 하나만 정확도로 변환. 감쇠 곡선이 아래로 볼록(convex)해서, {0}에 따라 이 순서는 각 수를 먼저 변환해 평균 내는 것보다 항상 같거나 높게 나옴. 무난한 수가 많을수록 블런더 한 번의 타격이 옅게 희석됨. 왼쪽 예시(무난한 수 9개 + 블런더 1개인 가상의 10수)에서 예전 방식은 {1}이 나오지만, chess.com처럼 각 수의 정확도를 먼저 구하고 {2}으로 모으면 {3}으로 평균 내면 블런더 하나가 체감되는 만큼 반영됨", <b>{t("옌센 부등식(Jensen's inequality)")}</b>, <b>{tx("{0}점", AS_JENSEN_NAIVE.toFixed(1))}</b>, <b>{t("조화평균(harmonic mean)")}</b>, <b>{tx("{0}점", AS_JENSEN_CORRECT.toFixed(1))}</b>)}</AsStep>
-
-        <AsStep n={4} title={t("④ 포지션에 따라 같은 실수의 무게가 다름")} reverse
-          formula={<AsFormula>{t("배율 = 0.85 + 0.3 × Φ((날카로움 − 8) / 8)")}</AsFormula>}
-          chart={<AsLineChart points={AS_SHARP_PTS} xDomain={[0, 25]} yDomain={[0.8, 1.2]} xTicks={[0, 8, 25]} yTicks={[0.85, 1, 1.15]} markers={[[8, 1, "8 → ×1.0"], [20, asSharpMult(20), "20 → ×" + asSharpMult(20).toFixed(2)]]} color="#E0B53A" />}>{tx("정답이 하나뿐인 날카로운 포지션(엔진 후보 1·2·3위 평가가 크게 벌어짐)의 실수는 엄격하게, 후보가 비슷한 무난한 포지션의 실수는 관대하게 반영. 후보 평가의 표준편차(Φ는 정규분포 누적분포함수)를 0.85~1.15배 배율로 매핑해 손실에 곱함. 마지막으로 이 값을 진영별로 처음부터 지금까지 {0}내면, 게임이 길어질수록 수 하나의 영향이 옅어지면서도 블런더는 뚜렷하게 드러나는 최종 정확도가 나옴", <b>{t("조화평균")}</b>)}</AsStep>
-      </div>
-
-      <section style={{ maxWidth: 620, margin: "28px auto 0" }}>
-        <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("이 네 단계와 포지션 변동성 보정은 설정 탭의 리뷰 설정 카드에서 켜고 끌 수 있음")}</SpeechBubble>
-      </section>
-    </section>
-  );
-}
-
 // 페이지1 — 소개(히어로+기능+티어+CTA). 기존에 만들어 둔 내용을 그대로 페이저의 첫 페이지로 옮겼다.
 // (about 페이지 기능) ilust-2·3·4처럼 액자에 담긴 일러스트는 등장(Reveal/motion) 애니메이션에
 // 더해, 계속 은은하게 위아래로 떠 있는 연출(DecoBoard·PhoneFrame과 같은 방식)을 얹어 정지된
@@ -732,7 +458,7 @@ function KineticTagline() {
     </div>
   );
 }
-// ============================================================ 소개 페이지 (v0.7.0 개편) ============================================================
+// ============================================================ 소개 페이지 (v0.7.0 개편: 탭별 챕터) ============================================================
 // 챕터 머리말 — 큰 번호 워터마크 + 가는 금선으로 "책의 장" 같은 리듬을 만든다.
 function Chapter({ no, eyebrow, title, desc, id }) {
   return (
@@ -754,12 +480,14 @@ function Chapter({ no, eyebrow, title, desc, id }) {
 }
 const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27,16,9,.5))", border: "1px solid rgba(196,154,80,.2)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px -24px rgba(0,0,0,.7)", backdropFilter: "blur(6px)" };
 
+
+
 // 이번 버전(최신)의 핵심 — 벤토 그리드.
 const NEW_CARDS = [
-  { Icon: ShieldCheck, color: "#8FB55E", wide: true, tag: t("공정한 랭킹"), title: t("경험치와 코인은 서버가 보증"), desc: t("퍼즐 풀이 경험치, 퀘스트 코인, 티어 승급 코인, 보유 스킨을 모두 서버가 규칙을 확인하고 계산해 저장. 개발자 도구로 값을 바꿔도 반영되지 않아 리더보드가 정직해졌어요.") },
-  { Icon: Gem, color: T.brassHi, tag: t("스킨 뽑기"), title: t("추첨도 서버가"), desc: t("상자 추첨, 가격, 중복 환급, 보드 해금까지 서버가 처리해 모두에게 같은 확률.") },
-  { Icon: Scale, color: "#6FA8DC", tag: t("서버 검증"), title: t("체스 규칙으로 다시 확인"), desc: t("봇 대국 결과·퍼즐 공유·복기 저장은 서버가 체스 규칙으로 한 번 더 검증한 뒤 기록.") },
-  { Icon: Lock, color: "#D9736A", wide: true, tag: t("안전한 접속"), title: t("기본 차단, 필요한 것만 허용"), desc: t("모든 데이터베이스 함수를 기본 차단으로 잠그고 필요한 것만 열었어요. 로그인·복구·번역 같은 요청에는 횟수 제한, 브라우저에는 엄격한 보안 정책(CSP)과 HSTS를 적용했고, 모의 공격 84건을 매 빌드마다 점검해요.") },
+  { Icon: ShieldCheck, color: "#8FB55E", wide: true, tag: t("공정한 랭킹"), title: t("경험치와 코인은 서버가 계산한다"), desc: t("퍼즐 풀이 경험치, 퀘스트 코인, 티어 승급 코인, 가진 스킨을 전부 서버가 규칙을 확인하고 저장한다. 개발자 도구로 값을 고쳐도 반영되지 않는다. 리더보드에는 서버가 확인한 값만 올라간다.") },
+  { Icon: Gem, color: T.brassHi, tag: t("스킨 뽑기"), title: t("추첨도 서버에서 한다"), desc: t("상자 추첨, 가격, 중복 환급, 보드 해금까지 서버가 처리한다. 누구에게나 확률은 같다.") },
+  { Icon: Scale, color: "#6FA8DC", tag: t("서버 검증"), title: t("체스 규칙으로 한 번 더 확인한다"), desc: t("봇 대국 결과, 공유한 퍼즐, 저장한 복기를 기록하기 전에 서버가 체스 규칙으로 다시 검증한다.") },
+  { Icon: Lock, color: "#D9736A", wide: true, tag: t("접속 보안"), title: t("기본은 막고 필요한 것만 연다"), desc: t("데이터베이스 함수는 전부 기본 차단으로 잠그고 필요한 것만 열었다. 로그인, 계정 복구, 번역 같은 요청에는 횟수 제한을 걸었고, 브라우저에는 엄격한 보안 정책(CSP)과 HSTS를 적용했다. 모의 공격 84건은 빌드할 때마다 돌린다.") },
 ];
 function NewCard({ c, i }) {
   return (
@@ -779,7 +507,7 @@ function NewCard({ c, i }) {
 function WhatsNew({ version }) {
   return (
     <section id="new" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전의 핵심: 믿을 수 있는 OpenChess")} desc={t("보이지 않는 곳을 단단하게 다졌어요. 내가 쌓은 경험치와 코인이 정직하게 지켜지는 서비스로.")} />
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 보안이다")} desc={t("눈에 띄는 기능은 거의 없다. 대신 경험치와 코인을 조작할 수 있던 구멍을 전부 찾아서 막았다.")} />
       <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
         {NEW_CARDS.map((c, i) => <NewCard key={c.title} c={c} i={i} />)}
       </div>
@@ -792,56 +520,22 @@ const SKIN_SHOWCASE = [
   { id: "deco", label: t("아르데코") }, { id: "coral", label: t("산호와 진주") }, { id: "forest", label: t("단풍 숲") },
   { id: "stars", label: t("별자리") }, { id: "crystal", label: t("크리스털 주얼") },
 ];
-function SkinShowcase() {
+function SkinSets() {
   return (
-    <section>
-      <Chapter no="04" eyebrow={t("수집")} title={t("뽑고, 모으고, 보드를 해금")}
-        desc={t("도감 스킨 페이지의 상자에서 1회 500코인, 5회 2400코인으로 기물을 뽑아요. 이미 가진 기물이면 150코인이 돌아오고, 한 세트의 기물 6종을 모두 모으면 그 세트의 보드가 열려요.")} />
-      <div className="flex items-center justify-center flex-wrap" style={{ gap: "10px 34px", marginBottom: 40 }}>
-        <Phone src={SHOT("dex-skin")} alt={t("스킨 뽑기")} width={236} tilt={-3} />
-        <Phone src={SHOT("dex-pieces")} alt={t("기물 도감")} width={236} tilt={2} style={{ marginTop: 40 }} />
-        <Phone src={SHOT("dex-sets")} alt={t("세트 도감")} width={236} tilt={-1} />
-      </div>
-      <div className="flex flex-wrap justify-center" style={{ gap: 14 }}>
-        {SKIN_SHOWCASE.map((k, i) => (
-          <motion.div key={k.id} initial={{ opacity: 0, y: 24, rotate: i % 2 ? 2 : -2 }} whileInView={{ opacity: 1, y: 0, rotate: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
-            whileHover={{ y: -6, transition: { duration: 0.2 } }}
-            style={{ ...GLASS, flex: "1 1 160px", maxWidth: 190, borderRadius: 18, padding: "16px 12px 14px", textAlign: "center" }}>
-            <div className="flex items-end justify-center" style={{ height: 76, marginBottom: 10 }}>
-              {["white-pawn", "black-knight", "white-queen"].map((f, j) => (
-                <img key={f} src={"/pieces/" + k.id + "/" + f + ".webp"} alt="" loading="lazy" style={{ height: j === 2 ? 74 : 60, width: "auto", marginLeft: j ? -10 : 0, filter: "drop-shadow(0 6px 8px rgba(0,0,0,.5))" }} />
-              ))}
-            </div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{k.label}</div>
-          </motion.div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// 믿음 섹션 — 서버가 지키는 약속 4가지.
-const TRUST_ITEMS = [
-  { Icon: Server, title: t("값은 서버에만"), desc: t("경험치·코인·스킨은 서버의 원장에만 기록돼요. 화면은 읽기만 해요.") },
-  { Icon: Eye, title: t("대국 관전은 안전하게"), desc: t("진행 중인 대국은 참가자와 친구만 볼 수 있어요.") },
-  { Icon: BookOpen, title: t("퍼즐은 합법 수만"), desc: t("공유되는 퍼즐은 서버가 모든 수를 체스 규칙으로 확인해요.") },
-  { Icon: Lock, title: t("입력은 조심스럽게"), desc: t("프로필 사진은 업로드만 허용하고, 로그인 시도에는 횟수 제한을 둬요.") },
-];
-function TrustSection() {
-  return (
-    <section>
-      <Chapter no="05" eyebrow={t("신뢰")} title={t("서버가 지키는 네 가지 약속")} desc={t("재미있게 겨루려면 공정해야 하니까요.")} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-        {TRUST_ITEMS.map((x, i) => (
-          <motion.div key={x.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.45, delay: i * 0.07 }}
-            style={{ ...GLASS, borderRadius: 18, padding: "20px 18px" }}>
-            <span style={{ width: 36, height: 36, borderRadius: 11, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}><x.Icon size={17} color={T.brassHi} /></span>
-            <div style={{ fontSize: 14.5, fontWeight: 900, color: T.ivoryHi, marginBottom: 6 }}>{x.title}</div>
-            <p style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.75, margin: 0 }}>{x.desc}</p>
-          </motion.div>
-        ))}
-      </div>
-    </section>
+    <div className="flex flex-wrap justify-center" style={{ gap: 14 }}>
+      {SKIN_SHOWCASE.map((k, i) => (
+        <motion.div key={k.id} initial={{ opacity: 0, y: 24, rotate: i % 2 ? 2 : -2 }} whileInView={{ opacity: 1, y: 0, rotate: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
+          whileHover={{ y: -6, transition: { duration: 0.2 } }}
+          style={{ ...GLASS, flex: "1 1 160px", maxWidth: 190, borderRadius: 18, padding: "16px 12px 14px", textAlign: "center" }}>
+          <div className="flex items-end justify-center" style={{ height: 76, marginBottom: 10 }}>
+            {["white-pawn", "black-knight", "white-queen"].map((f, j) => (
+              <img key={f} src={"/pieces/" + k.id + "/" + f + ".webp"} alt="" loading="lazy" style={{ height: j === 2 ? 74 : 60, width: "auto", marginLeft: j ? -10 : 0, filter: "drop-shadow(0 6px 8px rgba(0,0,0,.5))" }} />
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ivoryHi }}>{k.label}</div>
+        </motion.div>
+      ))}
+    </div>
   );
 }
 
@@ -942,26 +636,6 @@ function ShotStrip() {
 
 // ---------- 앱 둘러보기(탭) ----------
 // 실제 앱 하단 바와 같은 6개 탭. 탭을 누르면 그 화면의 실제 스크린샷과 설명이 바뀐다.
-const TOUR = [
-  { id: "study", Icon: BarChart3, label: t("분석"), shots: ["study-board", "study-moves"], title: t("두는 즉시 엔진이 평가"),
-    desc: t("수를 둘 때마다 Stockfish가 평가치를 계산하고, 이론 수는 오프닝 이름과 함께 알려줘요. chess.com 대국을 불러오면 놓친 수까지 짚어 줘요."),
-    points: [t("실시간 평가 바"), t("이론 수와 오프닝 이름"), t("수 추천과 분석 버튼")], ui: "eval" },
-  { id: "play", Icon: Play, label: t("플레이"), shots: ["play"], title: t("대국도 연습도 한 곳에서"),
-    desc: t("일반 대국부터 좌표 인지, 나이트 레이스, 무한 체크메이트, 백랭크 러시아워까지 다섯 가지 모드를 육각형 메뉴에서 바로 시작해요."),
-    points: [t("일반 대국"), t("좌표 인지 게임"), t("나이트 레이스"), t("무한 체크메이트 게임"), t("백랭크 러시아워")] },
-  { id: "puzzle", Icon: Puzzle, label: t("퍼즐"), shots: [], title: t("내 실수로 만든 퍼즐"),
-    desc: t("\"기물 희생하기\", \"우위 점하기\", \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능"),
-    points: [t("기물 희생하기"), t("우위 점하기"), t("실수 응징하기")], ui: "puzzle" },
-  { id: "learn", Icon: ClipboardList, label: t("학습"), shots: ["learn", "learn-2"], title: t("매일 조금씩"),
-    desc: t("매일 갱신되는 일일 퀘스트와 레슨 로드맵, 내 약점을 보여주는 성장 분석. 완료하면 OC 나이트 코인을 받아요."),
-    points: [t("일일 퀘스트"), t("성장 분석과 약점 지도"), t("레슨 로드맵")] },
-  { id: "dex", Icon: Library, label: t("도감"), shots: ["dex-tree", "dex-ach", "dex-home"], title: t("오프닝 나침반"),
-    desc: t("1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗는 오프닝 트리에서 각 수의 채택률·평가치·이름 확인. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 수집"),
-    points: [t("오프닝 트리"), t("마스터 대국"), t("업적과 칭호"), t("스킨 도감")] },
-  { id: "settings", Icon: Wrench, label: t("설정"), shots: ["settings"], title: t("내게 맞게 조정하기"),
-    desc: t("분석 엔진은 Stockfish 18·18 Lite·17.1 중에서 고르고, 6개 언어와 자동 번역을 지원해요. 로그인하면 진도가 계정에 저장되어 어느 기기에서든 이어서 사용"),
-    points: [t("엔진 선택"), t("6개 언어"), t("계정 동기화")] },
-];
 function EvalDemo() {
   const [n, setN] = useState(0);
   const evs = [[0.32, "e4", "Book"], [1.8, "Nf5", "Brilliant"], [0.4, "Qd2", "Good"], [-1.1, "h4", "Mistake"], [-4.6, "Qxb7", "Blunder"]];
@@ -977,7 +651,7 @@ function EvalDemo() {
       <div className="flex items-center" style={{ gap: 10, marginTop: 12 }}>
         <AnimatePresence mode="wait"><motion.img key={cls} src={MOVE_IMG(cls)} alt="" initial={{ scale: 0.3, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 16 }} style={{ width: 30, height: 30 }} /></AnimatePresence>
         <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{n + 1}. {mv}</span>
-        <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("수를 둘 때마다 평가가 바뀌어요")}</span>
+        <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("수를 둘 때마다 평가가 바뀐다")}</span>
       </div>
     </div>
   );
@@ -1009,80 +683,10 @@ function PuzzleDemo() {
           )}
         </AnimatePresence>
       </div>
-      <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 700, textAlign: "center", opacity: 0.75 }}>{t("라인을 모두 풀면 경험치를 받아요")}</div>
+      <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 700, textAlign: "center", opacity: 0.75 }}>{t("라인을 끝까지 풀면 경험치가 들어온다")}</div>
     </div>
   );
 }
-function TourSection() {
-  const [tab, setTab] = useState(0);
-  const [shot, setShot] = useState(0);
-  const cur = TOUR[tab];
-  useEffect(() => { setShot(0); }, [tab]);
-  useEffect(() => {
-    if (cur.shots.length < 2) return undefined;
-    const id = setInterval(() => setShot((v) => (v + 1) % cur.shots.length), 3600);
-    return () => clearInterval(id);
-  }, [tab, cur.shots.length]);
-  return (
-    <section id="features" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="01" eyebrow={t("앱 둘러보기")} title={t("여섯 개의 탭, 하나의 학습 루프")} desc={t("아래 탭을 눌러 실제 화면을 구경해 보세요. 앱 하단 바와 똑같이 생겼어요.")} />
-      {/* 실제 앱 하단 바를 그대로 닮은 탭 */}
-      <div className="no-swipe" style={{ margin: "0 auto 30px", maxWidth: 560, borderRadius: 18, background: "linear-gradient(180deg,#2E1B10,#160C06)", border: "1px solid #000", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)", display: "flex", padding: "6px 4px" }}>
-        {TOUR.map((x, i) => {
-          const on = i === tab;
-          return (
-            <button key={x.id} onClick={() => setTab(i)} className="press" aria-label={x.label} style={{ position: "relative", flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", padding: "12px 2px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit" }}>
-              {on && <motion.span layoutId="tourbar" style={{ position: "absolute", top: 0, left: "22%", right: "22%", height: 3, borderRadius: 2, background: T.brass }} />}
-              <x.Icon size={22} />
-              <span style={{ fontSize: 11.5, fontWeight: 800 }}>{x.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center flex-wrap justify-center" style={{ gap: 44, minHeight: 560 }}>
-        <div style={{ flex: "0 0 auto", width: 280, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
-          {cur.ui === "puzzle" ? (
-            <AnimatePresence mode="wait"><motion.div key="pz" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ width: 300, maxWidth: "100%", marginLeft: -10 }}><PuzzleDemo /></motion.div></AnimatePresence>
-          ) : (
-            <>
-              <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 320, height: 320, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.2), transparent 68%)" }} />
-              <div style={{ position: "relative" }}>
-                <Phone width={260} tilt={-2}>
-                  <AnimatePresence mode="popLayout">
-                    <motion.img key={cur.id + cur.shots[shot]} src={SHOT(cur.shots[shot])} alt={cur.label} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
-                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                  </AnimatePresence>
-                </Phone>
-              </div>
-              {cur.shots.length > 1 && (
-                <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 14 }}>
-                  {cur.shots.map((s, k) => <button key={s} onClick={() => setShot(k)} aria-label={String(k + 1)} style={{ width: k === shot ? 24 : 8, height: 8, borderRadius: 4, border: "none", cursor: "pointer", background: k === shot ? T.brassHi : "rgba(196,154,80,.35)", transition: "all .3s", padding: 0 }} />)}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        <AnimatePresence mode="wait">
-          <motion.div key={cur.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.35 }} style={{ flex: "1 1 320px", minWidth: 260, maxWidth: 440 }}>
-            <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
-              <span style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><cur.Icon size={17} color={T.brassHi} /></span>
-              <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".16em" }}>{String(tab + 1).padStart(2, "0")} / {cur.label}</span>
-            </div>
-            <h3 style={{ fontSize: "clamp(24px,3.6vw,30px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 12px", lineHeight: 1.25 }}>{cur.title}</h3>
-            <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.85, margin: "0 0 18px" }}>{cur.desc}</p>
-            <div className="flex flex-wrap" style={{ gap: 8 }}>
-              {cur.points.map((p) => <span key={p} className="flex items-center" style={{ gap: 6, fontSize: 12, fontWeight: 700, color: T.ivory, border: "1px solid rgba(196,154,80,.3)", background: "rgba(196,154,80,.07)", borderRadius: 999, padding: "5px 12px" }}><Check size={12} color={T.brassHi} />{p}</span>)}
-            </div>
-            {cur.ui === "eval" && <EvalDemo />}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </section>
-  );
-}
-
-// ---------- 실제 UI 부품 (눌러 보세요) ----------
 const QUESTS = [
   { k: "q1", label: t("새 퍼즐 2회 풀기"), sub: "0/2" }, { k: "q2", label: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 '일일 퍼즐' 풀기") },
   { k: "q3", label: t("chess.com에서 게임 3회 승리"), sub: t("설정에서 chess.com 계정 연동 필요") },
@@ -1094,7 +698,7 @@ function QuestDemo() {
     <div style={{ borderRadius: 16, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 900 }}>{t("일일 퀘스트")}</span>
-        <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료해 보세요")}</span>
+        <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료 처리해 볼 수 있다")}</span>
       </div>
       {QUESTS.map((q) => {
         const on = !!done[q.k];
@@ -1142,49 +746,113 @@ const RARITIES = [["COMMON", "#9DB28A"], ["RARE", "#6FA8DC"], ["EPIC", "#B98CFF"
 function KitCell({ children, delay = 0 }) {
   return <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.5, delay, ease: [0.22, 0.9, 0.32, 1] }} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>{children}</motion.div>;
 }
-function UiKitSection() {
+
+function MoveGrid() {
   const MOVES = [["Brilliant", t("탁월한 수")], ["Great", t("유일한 수")], ["Best", t("최선의 수")], ["Excellent", t("우수한 수")], ["Good", t("좋은 수")], ["Book", t("이론")], ["Inaccuarcy", t("부정확")], ["Mistake", t("실수")], ["Miss", t("놓친 수")], ["Blunder", t("블런더")]];
   return (
-    <section>
-      <Chapter no="02" eyebrow={t("UI 미리 써보기")} title={t("실제 화면의 부품, 그대로")} desc={t("앱에서 쓰는 퀘스트 카드, 티어 배지, 수 등급 아이콘을 그대로 가져왔어요. 직접 눌러 보세요.")} />
-      <div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16 }}>
-        <KitCell><QuestDemo /></KitCell>
-        <KitCell delay={0.08}><XpDemo /></KitCell>
-        <KitCell delay={0.12}>
-          <div style={{ ...GLASS, borderRadius: 16, padding: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("수 등급")}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
-              {MOVES.map(([k, l], i) => (
-                <motion.div key={k} whileHover={{ y: -4, scale: 1.08 }} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.04, type: "spring", stiffness: 300, damping: 18 }} style={{ textAlign: "center" }}>
-                  <img src={MOVE_IMG(k)} alt="" style={{ width: "62%", maxWidth: 38, aspectRatio: "1/1" }} />
-                  <div style={{ fontSize: 9.5, fontWeight: 800, color: T.inkSoft, marginTop: 4, lineHeight: 1.3 }}>{l}</div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </KitCell>
-        <KitCell delay={0.16}>
-          <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("스킨 등급")}</div>
-            <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
-              {RARITIES.map(([r, c]) => <motion.span key={r} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
-            </div>
-            <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
-              <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
-              <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900, color: T.ivoryHi }}>{t("1회 뽑기")}</div><div style={{ fontSize: 11, color: T.inkSoft }}>{t("중복이면 150코인 환급")}</div></div>
-              <span style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>500</span>
-            </div>
-          </div>
-        </KitCell>
+    <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
+      <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("수 등급")}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
+        {MOVES.map(([k, l], i) => (
+          <motion.div key={k} whileHover={{ y: -4, scale: 1.08 }} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.04, type: "spring", stiffness: 300, damping: 18 }} style={{ textAlign: "center" }}>
+            <img src={MOVE_IMG(k)} alt="" style={{ width: "62%", maxWidth: 38, aspectRatio: "1/1" }} />
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.inkSoft, marginTop: 4, lineHeight: 1.3 }}>{l}</div>
+          </motion.div>
+        ))}
       </div>
+    </div>
+  );
+}
+function RarityDemo() {
+  return (
+    <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
+      <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("스킨 등급")}</div>
+      <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
+        {RARITIES.map(([r, c]) => <motion.span key={r} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
+      </div>
+      <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
+        <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
+        <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900, color: T.ivoryHi }}>{t("1회 뽑기")}</div><div style={{ fontSize: 11, color: T.inkSoft }}>{t("중복이면 150코인 환급")}</div></div>
+        <span style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>500</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------- 탭 챕터 ----------
+// 하단 바와 같은 6개 탭을 챕터 하나씩으로 풀어서 소개한다. 위쪽의 탭 바를 누르면 해당 챕터로 이동한다.
+const TAB_META = [
+  { id: "study", Icon: BarChart3, label: t("분석") }, { id: "play", Icon: Play, label: t("플레이") }, { id: "puzzle", Icon: Puzzle, label: t("퍼즐") },
+  { id: "learn", Icon: ClipboardList, label: t("학습") }, { id: "dex", Icon: Library, label: t("도감") }, { id: "settings", Icon: Wrench, label: t("설정") },
+];
+function ChapterNav({ scrollRef }) {
+  const [cur, setCur] = useState(-1);
+  useEffect(() => {
+    const root = scrollRef.current; if (!root) return undefined;
+    const onScroll = () => {
+      let at = -1;
+      TAB_META.forEach((m, i) => { const el = document.getElementById("ch-" + m.id); if (el && el.getBoundingClientRect().top < window.innerHeight * 0.45) at = i; });
+      setCur(at);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+    return () => root.removeEventListener("scroll", onScroll);
+  }, [scrollRef]);
+  const go = (id) => { const el = document.getElementById("ch-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  return (
+    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 520, borderRadius: 18, background: "rgba(22,12,6,.88)", backdropFilter: "blur(10px)", border: "1px solid rgba(196,154,80,.3)", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8)", display: "flex", padding: "4px" }}>
+      {TAB_META.map((m, i) => {
+        const on = i === cur;
+        return (
+          <button key={m.id} onClick={() => go(m.id)} className="press" aria-label={m.label} style={{ position: "relative", flex: 1, minWidth: 0, background: on ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderRadius: 14, cursor: "pointer", padding: "9px 2px 7px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit", transition: "background .2s, color .2s" }}>
+            <m.Icon size={19} />
+            <span style={{ fontSize: 10.5, fontWeight: 800 }}>{m.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+function PhoneFan({ shots }) {
+  const w = shots.length === 1 ? 250 : shots.length === 2 ? 206 : 178;
+  return (
+    <div className="flex items-start justify-center flex-wrap" style={{ gap: "18px " + (shots.length === 3 ? 14 : 22) + "px", flex: "0 1 auto" }}>
+      {shots.map((x, i) => (
+        <motion.figure key={x.n} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.55, delay: i * 0.1, ease: [0.22, 0.9, 0.32, 1] }}
+          style={{ margin: 0, marginTop: i % 2 ? 36 : 0, width: w, maxWidth: "100%", textAlign: "center" }}>
+          <Phone src={SHOT(x.n)} alt={x.cap} width={w} tilt={i % 2 ? 2 : -2} />
+          <figcaption style={{ marginTop: 12, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, lineHeight: 1.5 }}>{x.cap}</figcaption>
+        </motion.figure>
+      ))}
+    </div>
+  );
+}
+function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extra, flip }) {
+  return (
+    <section id={"ch-" + id} style={{ scrollMarginTop: 84, marginBottom: 96 }}>
+      <Chapter no={no} eyebrow={label} title={title} desc={lead} />
+      <div className="flex items-start flex-wrap justify-center" style={{ gap: 44, flexDirection: flip ? "row-reverse" : "row" }}>
+        {shots.length > 0 && <PhoneFan shots={shots} />}
+        <div style={{ flex: "1 1 340px", minWidth: 280, maxWidth: shots.length ? 460 : 720, margin: shots.length ? 0 : "0 auto" }}>
+          {blocks.map((b, i) => (
+            <motion.div key={b[0]} initial={{ opacity: 0, x: flip ? -22 : 22 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.35 }} transition={{ duration: 0.45, delay: i * 0.05, ease: [0.22, 0.9, 0.32, 1] }}
+              className="flex items-start" style={{ gap: 14, padding: "16px 0", borderTop: i ? "1px solid rgba(196,154,80,.16)" : "none" }}>
+              <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 10, background: "rgba(196,154,80,.13)", border: "1px solid rgba(196,154,80,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{String(i + 1).padStart(2, "0")}</span>
+              <div style={{ minWidth: 0 }}>
+                <h4 style={{ margin: "0 0 5px", fontSize: 16, fontWeight: 900, color: T.ivoryHi }}>{b[0]}</h4>
+                <p style={{ margin: 0, fontSize: 13.5, color: T.inkSoft, lineHeight: 1.85 }}>{b[1]}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+      {extra && <div style={{ marginTop: 44 }}>{extra}</div>}
     </section>
   );
 }
 
-function IntroPage({ version, onOpenHistory }) {
+function IntroPage({ version, onOpenHistory, scrollRef }) {
   return (
     <div>
-      {/* 히어로 — 체스판 격자 배경 위에 큰 제목과 실제 앱 화면 폰 */}
       <div style={{ position: "relative", width: "100%", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "repeating-conic-gradient(rgba(196,154,80,.055) 0% 25%, transparent 0% 50%)", backgroundSize: "72px 72px", maskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)", WebkitMaskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)" }} />
         <motion.img src="/ilust-1-web.webp" alt="" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 0.13, scale: [1, 1.06, 1] }} transition={{ opacity: { duration: 1 }, scale: { duration: 20, repeat: Infinity, ease: "easeInOut" } }}
@@ -1197,16 +865,15 @@ function IntroPage({ version, onOpenHistory }) {
                 {t("새 소식 보기")} <ArrowRight size={13} />
               </button></Reveal>
               <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
-              <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.82, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템")}</p></Reveal>
+              <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("오프닝을 외우는 대신 직접 두면서 익히고, 내가 틀린 수는 퍼즐로 다시 푸는 체스 학습 사이트다. 가입하지 않아도 쓸 수 있고 전부 무료다.")}</p></Reveal>
               <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
                 <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
-                <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
+                <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
               </div></Reveal>
               <Reveal delay={0.2}><div className="flex items-center flex-wrap" style={{ gap: 22 }}>
-                {[[7, t("티어 단계")], [4, t("오프닝 갈래")], [6, t("앱 탭")]].map(([n, l]) => (
+                {[["7", t("티어 단계")], ["4", t("오프닝 갈래")], ["6", t("앱 탭")], ["100%", t("무료로 시작")]].map(([n, l]) => (
                   <div key={l}><div style={{ fontSize: 26, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div><div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginTop: 4 }}>{l}</div></div>
                 ))}
-                <div><div style={{ fontSize: 26, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>100%</div><div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginTop: 4 }}>{t("무료로 시작")}</div></div>
               </div></Reveal>
             </div>
             <div style={{ flex: "1 1 340px", minWidth: 300 }}><HeroPhones /></div>
@@ -1218,34 +885,98 @@ function IntroPage({ version, onOpenHistory }) {
         <ShotStrip />
 
         <section style={{ maxWidth: 640, margin: "20px auto 72px" }}>
-          <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("수를 두는 데서 끝나지 않고 그 수가 왜 좋았는지·나빴는지까지 확인. 아래에서 기능별로 소개")}</SpeechBubble>
+          <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("그냥 두기만 해서는 실력이 늘지 않는다. 그 수가 왜 좋았고 왜 나빴는지까지 같이 봐야 한다. 앱의 탭 여섯 개를 차례로 소개한다.")}</SpeechBubble>
         </section>
 
         <WhatsNew version={version} />
 
-        <SectionDivider />
-        <TourSection />
+        <div style={{ height: 72 }} />
+        <ChapterNav scrollRef={scrollRef} />
+        <div style={{ height: 40 }} />
 
-        <SectionDivider />
-        <FamousOpeningsSection />
+        <TabChapter id="study" no="01" Icon={BarChart3} label={t("분석")} title={t("두는 즉시 평가가 나온다")}
+          lead={t("분석 탭이 사이트의 기본 화면이다. 보드에서 수를 두면 엔진이 바로 평가를 계산한다.")}
+          shots={[{ n: "study-board", cap: t("수를 두면 평가 바가 움직인다") }, { n: "study-moves", cap: t("추천 수와 오프닝 이름") }, { n: "study-3", cap: t("평가치순으로 정렬된 수 목록") }]}
+          blocks={[
+            [t("평가 바"), t("보드 위의 막대가 지금 누가 얼마나 유리한지 보여준다. 수를 둘 때마다 숫자가 바뀐다. 엔진은 Stockfish 18이고, 기기가 느리면 설정에서 Lite로 바꾼다.")],
+            [t("이론 수와 오프닝 이름"), t("둔 수가 이론이면 오프닝 이름이 같이 뜬다. 1.e4 다음에는 King's Pawn Game이 나오는 식이다. 이론에서 벗어난 시점도 바로 보인다.")],
+            [t("수 추천과 수 등급"), t("다음에 둘 만한 수를 목록으로 보여주고, 둔 수에는 탁월한 수부터 블런더까지 등급이 붙는다. 아이콘은 직접 그렸다.")],
+            [t("chess.com 연동"), t("설정에서 chess.com 아이디를 연결하면 실제로 둔 대국을 불러온다. 어디서 수가 무너졌는지 그 대국으로 바로 확인할 수 있다.")],
+          ]}
+          extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
+            <KitCell><div style={{ ...GLASS, borderRadius: 16, padding: "16px 16px 18px", flex: 1 }}><div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi }}>{t("평가 바 미리보기")}</div><EvalDemo /></div></KitCell>
+            <KitCell delay={0.08}><MoveGrid /></KitCell>
+          </div>} />
 
-        <SectionDivider />
-        <UiKitSection />
+        <TabChapter id="play" no="02" Icon={Play} label={t("플레이")} title={t("대국도 연습도 여기서 한다")} flip
+          lead={t("플레이 탭은 육각형 메뉴 하나로 되어 있다. 다섯 가지를 바로 시작할 수 있다.")}
+          shots={[{ n: "play", cap: t("육각형 메뉴에서 모드를 고른다") }, { n: "play-game", cap: t("일반 대국은 시간 제한부터 정한다") }]}
+          blocks={[
+            [t("일반 대국"), t("시간 제한을 불릿, 블리츠, 래피드, 스탠더드 중에서 고른다. 로그인하면 레이팅이 쌓이고, 봇이나 친구와도 둘 수 있다.")],
+            [t("좌표 인지 게임"), t("칸 이름을 보고 그 칸을 빨리 누르는 게임이다. 좌표가 눈에 익어야 기보를 읽는 속도가 오른다.")],
+            [t("나이트 레이스"), t("나이트를 최소한의 이동으로 목표 칸까지 보낸다. 나이트 움직임에 감을 잡으려고 넣었다.")],
+            [t("무한 체크메이트 게임"), t("체크메이트 문제가 끝없이 이어진다. 한 수 앞을 보는 습관을 들이는 용도다.")],
+            [t("백랭크 러시아워"), t("백랭크 메이트를 노리는 짧은 문제를 빠르게 이어서 푼다.")],
+          ]} />
 
-        <SectionDivider />
-        <Chapter no="03" eyebrow={t("분석")} title={t("내 대국을 숫자로 읽기")} desc={t("chess.com 연동과 독자적인 정확도 체계로 내 수의 질을 측정해요.")} id="accuracy" />
-        <ChessComSection />
-        <SectionDivider />
-        <AccuracySystemSection />
+        <TabChapter id="puzzle" no="03" Icon={Puzzle} label={t("퍼즐")} title={t("내가 틀린 수가 퍼즐이 된다")}
+          lead={t("퍼즐 탭에는 매일 하나씩 나오는 일일 퍼즐, 번호로 찾는 퍼즐, 내가 만드는 퍼즐이 있다.")}
+          blocks={[
+            [t("세 가지 테마"), t("기물 희생하기, 우위 점하기, 실수 응징하기. 실전에서 나온 실수에서 자동으로 만들어진다.")],
+            [t("라인 단위로 푼다"), t("정답 한 수만 맞히는 방식이 아니다. 이어지는 라인을 끝까지 풀어야 경험치가 들어온다.")],
+            [t("번호로 공유한다"), t("퍼즐마다 번호가 있어서 번호나 날짜로 바로 찾을 수 있다. 친구에게 보내면 친구가 푼 만큼 경험치를 일부 받는다.")],
+            [t("직접 만든다"), t("로그인하면 퍼즐을 직접 만들어서 공개하거나 비공개로 둘 수 있다.")],
+          ]}
+          extra={<PuzzleDemo />} />
 
-        <SectionDivider />
-        <SkinShowcase />
+        <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 만든다")} flip
+          lead={t("학습 탭은 오늘 할 일을 모아 둔 곳이다.")}
+          shots={[{ n: "learn", cap: t("일일 퀘스트와 성장 분석") }, { n: "learn-2", cap: t("약점 지도와 복습 카드") }, { n: "learn-3", cap: t("레슨 로드맵") }]}
+          blocks={[
+            [t("일일 퀘스트"), t("매일 갱신된다. 퍼즐 풀기, 일일 퍼즐 풀기, chess.com 대국 같은 항목을 끝내면 코인을 받고, 전부 끝내면 보너스 코인이 나온다.")],
+            [t("성장 분석"), t("분석한 실수의 수, 오늘 복습한 수, 익힌 카드의 수를 보여준다. 얼마나 쌓였는지 한눈에 본다.")],
+            [t("약점 지도와 복습 카드"), t("게임 리뷰를 열면 내가 둔 실수, 블런더, 놓친 수가 자동으로 쌓이고 약점 지도가 그려진다. 같은 실수는 복습 카드가 되어 다시 나온다.")],
+            [t("오프닝 실수와 레슨"), t("chess.com 대국에서 반복한 오프닝 실수를 찾아 준다. 레슨은 갈래를 따라 순서대로 열리고, 오프닝 원칙부터 시작한다.")],
+          ]}
+          extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
+            <KitCell><QuestDemo /></KitCell>
+            <KitCell delay={0.08}><XpDemo /></KitCell>
+          </div>} />
 
-        <div style={{ marginTop: 72 }} id="tiers">
-          <Chapter no="05" eyebrow={t("성장")} title={t("아이언부터 그랜드마스터까지")} desc={t("7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승")} />
-          <TierStrip />
-          <div style={{ marginTop: 44 }}><GrandmasterCard /></div>
-        </div>
+        <TabChapter id="dex" no="05" Icon={Library} label={t("도감")} title={t("모으고 키우는 곳이다")}
+          lead={t("도감 탭에는 오프닝, 마스터, 업적, 스킨이 들어 있다.")}
+          shots={[{ n: "dex-tree", cap: t("오프닝 트리") }, { n: "dex-ach", cap: t("업적과 칭호") }, { n: "dex-skin", cap: t("스킨 뽑기 상자") }]}
+          blocks={[
+            [t("오프닝 트리"), t("1.e4, 1.d4, 1.c4, 1.Nf3 네 갈래로 뻗는 트리다. 각 수의 채택률, 평가, 이름을 볼 수 있고, 실전에서 둔 만큼 해금된다.")],
+            [t("마스터"), t("마스터들의 대국을 모아 두었다. 이름으로 찾을 수 있다.")],
+            [t("업적과 칭호"), t("칭호는 258개다. 이탈리안 게임, 루이 로페즈처럼 오프닝마다 단계가 있고, 못 얻은 칭호는 조건과 진행도가 보인다. 히든 칭호는 얻기 전까지 ???로 나온다.")],
+            [t("스킨 뽑기"), t("상자에서 1회 500코인, 5회 2,400코인으로 기물을 뽑는다. 이미 가진 기물이 나오면 150코인이 돌아오고, 한 세트의 6종을 다 모으면 그 세트의 보드가 열린다. 추첨은 서버가 한다.")],
+            [t("티어"), t("퍼즐을 풀어 쌓은 경험치로 아이언부터 그랜드마스터까지 일곱 단계를 오른다.")],
+          ]}
+          extra={<div>
+            <div className="flex items-center justify-center flex-wrap" style={{ gap: 20, marginBottom: 44 }}>
+              <Phone src={SHOT("dex-pieces")} alt={t("기물 도감")} width={200} tilt={-2} />
+              <Phone src={SHOT("dex-sets")} alt={t("세트 도감")} width={200} tilt={2} style={{ marginTop: 30 }} />
+              <Phone src={SHOT("dex-home")} alt={t("도감 첫 화면")} width={200} tilt={-1} />
+            </div>
+            <SkinSets />
+            <div className="flex justify-center" style={{ marginTop: 22 }}><div style={{ maxWidth: 420, width: "100%" }}><RarityDemo /></div></div>
+            <div style={{ height: 70 }} />
+            <FamousOpeningsSection />
+            <div style={{ height: 70 }} />
+            <div id="tiers"><TierStrip /></div>
+            <div style={{ marginTop: 44 }}><GrandmasterCard /></div>
+          </div>} />
+
+        <TabChapter id="settings" no="06" Icon={Wrench} label={t("설정")} title={t("내 환경에 맞춘다")} flip
+          lead={t("설정 탭에서 바꿀 수 있는 것들이다.")}
+          shots={[{ n: "settings", cap: t("언어와 분석 엔진") }, { n: "settings-2", cap: t("리뷰 속도와 시각 효과") }, { n: "settings-3", cap: t("소리와 계정 정보") }]}
+          blocks={[
+            [t("계정과 언어"), t("로그인하면 진도가 계정에 저장되어 다른 기기에서도 이어서 할 수 있다. 한국어를 포함해 6개 언어를 지원하고, 다른 언어로 쓴 글은 자동으로 번역된다.")],
+            [t("분석 엔진"), t("Stockfish 18, 18 Lite, 17.1 중에서 고른다. 기기가 느리면 Lite가 낫다. 리뷰 속도도 더 빠르게와 더 정확하게 중에서 정한다.")],
+            [t("시각 효과와 소리"), t("수 등급 이펙트, 퍼즐 클리어 애니메이션, 배경음악, 효과음을 각각 켜고 끈다.")],
+            [t("chess.com 연동"), t("아이디를 연결하면 대국이 동기화되고, 퀘스트와 칭호 조건에도 반영된다.")],
+          ]} />
 
         <SectionDivider />
 
@@ -1255,11 +986,9 @@ function IntroPage({ version, onOpenHistory }) {
           </div>
         </Reveal>
 
-        <SectionDivider />
-
-        <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "0 auto" }}>
+        <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "56px auto 0" }}>
           <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-            <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가하고 채팅하며 프로필에서 서로의 풀이 수·칭호 확인. 퍼즐을 공유하면 친구가 풀었을 때 경험치를 일부 획득")}</SpeechBubble>
+            <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가해서 채팅하고, 프로필에서 서로의 풀이 수와 칭호를 볼 수 있다. 퍼즐을 공유하면 친구가 푼 만큼 경험치도 일부 받는다.")}</SpeechBubble>
           </div>
           <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
             style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
@@ -1267,15 +996,11 @@ function IntroPage({ version, onOpenHistory }) {
           </motion.div>
         </section>
 
-        <SectionDivider />
-
-        <TrustSection />
-
         <Reveal delay={0.05}>
           <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 26, background: "radial-gradient(90% 120% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
             <div style={{ flex: "1 1 260px", minWidth: 220 }}>
               <h3 style={{ fontSize: 24, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>{t("지금 시작")}</h3>
-              <p style={{ fontSize: 13.5, color: T.inkSoft, margin: 0 }}>{t("가입 없이 게스트로 둘러보기 가능")}</p>
+              <p style={{ fontSize: 13.5, color: T.inkSoft, margin: 0 }}>{t("가입하지 않고 게스트로도 둘러볼 수 있다.")}</p>
             </div>
             <div className="flex items-center" style={{ gap: 18 }}>
               <Mascot char="kokoa" expr="celebrate" size={72} />
@@ -1309,36 +1034,36 @@ const CAT = {
 const VERSION_HISTORY = [
   {
     version: "0.7.0", date: "2026.10.19",
-    summary: t("보안 대개편. 경험치·코인·스킨을 서버가 보증하고, 뽑기 연출을 다듬음."),
-    highlight: { kind: "icon", Icon: ShieldCheck, color: "#8FB55E", label: t("서버가 보증하는 공정한 랭킹") },
+    summary: t("보안을 전면적으로 손봤다. 경험치, 코인, 스킨을 서버가 보증하고 뽑기 연출도 다듬었다."),
+    highlight: { kind: "icon", Icon: ShieldCheck, color: "#8FB55E", label: t("경험치와 코인은 서버가 계산한다") },
     sections: [
       { cat: "feature", items: [
-        t("경험치·코인·보유 스킨을 서버가 계산해 저장. 개발자 도구로 값을 바꿔도 반영되지 않음."),
-        t("스킨 뽑기 추첨, 가격, 중복 환급, 보드 해금을 서버가 처리."),
-        t("퍼즐 라인 풀이 경험치, 일일 퀘스트·메인 레슨 코인, 티어 승급 코인을 서버가 정답과 규칙을 확인한 뒤 지급."),
-        t("봇 대국 결과, 퍼즐 공유, 복기 저장을 서버가 체스 규칙으로 다시 검증한 뒤 기록."),
-        t("리더보드는 서버가 보증한 경험치만 사용."),
+        t("경험치, 코인, 가진 스킨을 서버가 계산해서 저장한다. 개발자 도구로 값을 고쳐도 반영되지 않는다."),
+        t("스킨 뽑기의 추첨, 가격, 중복 환급, 보드 해금을 서버가 처리한다."),
+        t("퍼즐 라인 경험치, 일일 퀘스트와 레슨 코인, 티어 승급 코인은 서버가 정답과 규칙을 확인한 뒤에 지급한다."),
+        t("봇 대국 결과, 퍼즐 공유, 복기 저장은 서버가 체스 규칙으로 다시 검증한 뒤에 기록한다."),
+        t("리더보드에는 서버가 확인한 경험치만 올라간다."),
       ] },
       { cat: "ui", items: [
-        t("뽑기 연출이 전체 화면으로 재생되고 하단 바가 연출을 가리지 않음."),
-        t("뽑기 연출 우상단에 건너뛰기 버튼 추가."),
-        t("/about 페이지를 소개와 버전 기록 2페이지로 개편. 버전 기록은 한 페이지에서 아래로 내려갈수록 이전 버전."),
+        t("뽑기 연출을 전체 화면으로 재생한다. 하단 바가 연출을 가리지 않는다."),
+        t("뽑기 연출의 오른쪽 위에 건너뛰기 버튼을 달았다."),
+        t("/about 페이지를 소개와 버전 기록 두 페이지로 다시 만들었다. 소개는 앱의 탭 여섯 개를 챕터로 나눠 설명하고, 버전 기록은 한 페이지에서 아래로 내려갈수록 오래된 버전이 나온다."),
       ] },
       { cat: "ux", items: [
-        t("로그인하지 않은 게스트는 둘러보기만 가능하고 경험치·코인 보상은 없음."),
-        t("혼자 하는 미니게임의 최고 기록 순위 탭 삭제."),
-        t("프로필 사진은 업로드만 가능. 외부 주소 입력 삭제."),
+        t("로그인하지 않은 게스트는 둘러보기만 할 수 있다. 경험치와 코인 보상은 받지 못한다."),
+        t("혼자 하는 미니게임의 최고 기록 순위 탭을 없앴다."),
+        t("프로필 사진은 업로드로만 바꿀 수 있다. 외부 주소를 입력하는 칸은 없앴다."),
       ] },
       { cat: "fix", items: [
-        t("뽑기 결과 화면에서 카드가 많을 때 확인 버튼이 화면 밖으로 잘리던 문제 수정."),
+        t("뽑기 결과에서 카드가 많으면 확인 버튼이 화면 밖으로 잘리던 문제를 고쳤다."),
       ] },
       { cat: "security", items: [
-        t("모든 데이터베이스 함수를 기본 차단으로 잠그고 필요한 것만 허용."),
-        t("로그인·계정 복구·번역·보드 스캔 등 주요 요청에 횟수 제한 적용."),
-        t("엄격한 콘텐츠 보안 정책(CSP)과 HSTS 적용."),
-        t("진행 중인 대국 관전을 참가자와 친구로 제한."),
-        t("미니게임 점수, 채팅 공유 보상, 프로필 정보 위조 차단."),
-        t("모의 공격 84건을 매 빌드마다 점검."),
+        t("데이터베이스 함수를 전부 기본 차단으로 잠그고 필요한 것만 열었다."),
+        t("로그인, 계정 복구, 번역, 보드 스캔 같은 주요 요청에 횟수 제한을 걸었다."),
+        t("엄격한 콘텐츠 보안 정책(CSP)과 HSTS를 적용했다."),
+        t("진행 중인 대국은 참가자와 친구만 볼 수 있게 했다."),
+        t("미니게임 점수, 채팅 공유 보상, 프로필 정보를 위조하는 방법을 막았다."),
+        t("모의 공격 84건을 빌드할 때마다 돌린다."),
       ] },
     ],
   },
@@ -3283,7 +3008,7 @@ function HistoryPage({ scrollEl }) {
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
           </div>
           <h2 style={{ fontSize: "clamp(26px, 4.5vw, 36px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px", letterSpacing: "-.01em" }}>{t("버전 기록")}</h2>
-          <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("OpenChess가 걸어온 길. 총 {0}개 버전, 아래로 내려갈수록 이전 버전이에요.", VERSION_HISTORY.length)}</p>
+          <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("지금까지 낸 버전은 {0}개다. 아래로 내려갈수록 오래된 버전이다.", VERSION_HISTORY.length)}</p>
         </div>
       </Reveal>
 
@@ -3353,6 +3078,7 @@ export default function AboutPage() {
   };
   // 페이지를 넘길 때마다 새 페이지는 항상 맨 위부터 보이도록.
   const pageElRefs = useRef([]);
+  const introScrollRef = useRef(null);
   useEffect(() => { const el = pageElRefs.current[page]; if (el) el.scrollTo({ top: 0, behavior: "auto" }); }, [page]);
 
   return (
@@ -3383,7 +3109,7 @@ export default function AboutPage() {
       <div ref={pagerRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: total * 100 + "%", height: "100%", transform: "translateX(calc(" + (-page * 100) / total + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .38s cubic-bezier(.22,.9,.32,1)" }}>
-          <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}><IntroPage version={LATEST_VERSION} onOpenHistory={() => goTo(1)} /></div>
+          <div ref={(el) => { pageElRefs.current[0] = el; introScrollRef.current = el; }} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}><IntroPage version={LATEST_VERSION} onOpenHistory={() => goTo(1)} scrollRef={introScrollRef} /></div>
           <div ref={(el) => (pageElRefs.current[1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}><HistoryPage /></div>
         </div>
       </div>
