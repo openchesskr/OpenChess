@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { motion, AnimatePresence, useInView } from "framer-motion";
+import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
   GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
   Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
   Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy,
-  Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History,
+  Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check,
 } from "lucide-react";
 
 import { t, tx } from "./lib/i18n.js";
@@ -795,8 +795,13 @@ const SKIN_SHOWCASE = [
 function SkinShowcase() {
   return (
     <section>
-      <Chapter no="03" eyebrow={t("수집")} title={t("뽑고, 모으고, 보드를 해금")}
+      <Chapter no="04" eyebrow={t("수집")} title={t("뽑고, 모으고, 보드를 해금")}
         desc={t("도감 스킨 페이지의 상자에서 1회 500코인, 5회 2400코인으로 기물을 뽑아요. 이미 가진 기물이면 150코인이 돌아오고, 한 세트의 기물 6종을 모두 모으면 그 세트의 보드가 열려요.")} />
+      <div className="flex items-center justify-center flex-wrap" style={{ gap: "10px 34px", marginBottom: 40 }}>
+        <Phone src={SHOT("dex-skin")} alt={t("스킨 뽑기")} width={236} tilt={-3} />
+        <Phone src={SHOT("dex-pieces")} alt={t("기물 도감")} width={236} tilt={2} style={{ marginTop: 40 }} />
+        <Phone src={SHOT("dex-sets")} alt={t("세트 도감")} width={236} tilt={-1} />
+      </div>
       <div className="flex flex-wrap justify-center" style={{ gap: 14 }}>
         {SKIN_SHOWCASE.map((k, i) => (
           <motion.div key={k.id} initial={{ opacity: 0, y: 24, rotate: i % 2 ? 2 : -2 }} whileInView={{ opacity: 1, y: 0, rotate: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
@@ -840,92 +845,404 @@ function TrustSection() {
   );
 }
 
+// ---------- 폰 액자 · 실제 앱 화면 ----------
+// 실제 사이트(게스트 모드)에서 찍은 스크린샷을 폰 액자에 담는다. 마우스를 올리면 살짝 기울어지는 3D 틸트.
+const SHOT = (n) => "/about/v2/" + n + ".webp";
+function Phone({ src, alt, width = 240, tilt = 0, style, children }) {
+  const mx = useMotionValue(0), my = useMotionValue(0);
+  const rx = useSpring(useTransform(my, [-0.5, 0.5], [7, -7]), { stiffness: 140, damping: 16 });
+  const ry = useSpring(useTransform(mx, [-0.5, 0.5], [-9, 9]), { stiffness: 140, damping: 16 });
+  const onMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); mx.set((e.clientX - r.left) / r.width - 0.5); my.set((e.clientY - r.top) / r.height - 0.5); };
+  const onLeave = () => { mx.set(0); my.set(0); };
+  return (
+    <div style={{ perspective: 900, width, maxWidth: "100%", ...style }}>
+      <motion.div onMouseMove={onMove} onMouseLeave={onLeave} style={{ rotateX: rx, rotateY: ry, rotateZ: tilt, transformStyle: "preserve-3d" }}>
+        <div style={{ position: "relative", borderRadius: width * 0.15, padding: Math.max(5, width * 0.03), background: "linear-gradient(160deg,#5A3E27,#1F130B 55%,#3A2516)", border: "1px solid rgba(236,203,134,.55)", boxShadow: "0 30px 60px -22px rgba(0,0,0,.85), 0 0 0 1px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.25)" }}>
+          <div style={{ position: "relative", borderRadius: width * 0.12, overflow: "hidden", aspectRatio: "540 / 1088", background: "#1B1009" }}>
+            {src && <img src={src} alt={alt || ""} loading="lazy" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+            {children}
+            <span aria-hidden="true" style={{ position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)", width: "26%", height: 5, borderRadius: 3, background: "rgba(0,0,0,.65)" }} />
+            <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(115deg, rgba(255,255,255,.1), transparent 38%)", pointerEvents: "none" }} />
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+// 폰 옆에 떠 있는 작은 칩(실제 UI 부품을 축소 재현)
+function FloatChip({ children, x, y, delay = 0, rot = 0, z = 3 }) {
+  return (
+    <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 + delay, duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ position: "absolute", ...x, ...y, zIndex: z }}>
+      <motion.div animate={{ y: [0, -9, 0] }} transition={{ duration: 3.4 + delay * 2, repeat: Infinity, ease: "easeInOut", delay }}
+        style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid rgba(236,203,134,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
+        {children}
+      </motion.div>
+    </motion.div>
+  );
+}
+const MOVE_IMG = (k) => encodeURI("/Move Classifications_" + k + ".png");
+const HERO_SHOTS = [
+  { n: "study-board", label: t("분석") }, { n: "dex-tree", label: t("도감") }, { n: "dex-skin", label: t("스킨 뽑기") }, { n: "play", label: t("플레이") }, { n: "learn", label: t("학습") },
+];
+function HeroPhones() {
+  const [i, setI] = useState(0);
+  useEffect(() => { const id = setInterval(() => setI((v) => (v + 1) % HERO_SHOTS.length), 3200); return () => clearInterval(id); }, []);
+  const cur = HERO_SHOTS[i], nxt = HERO_SHOTS[(i + 1) % HERO_SHOTS.length];
+  return (
+    <div style={{ position: "relative", width: 330, maxWidth: "100%", height: 560, margin: "0 auto" }}>
+      <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "52%", width: 360, height: 360, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28), transparent 68%)", filter: "blur(10px)" }} />
+      <div style={{ position: "absolute", right: -26, top: 54, opacity: 0.55, filter: "blur(.4px)" }}>
+        <AnimatePresence mode="wait"><motion.div key={nxt.n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}><Phone src={SHOT(nxt.n)} width={170} tilt={9} /></motion.div></AnimatePresence>
+      </div>
+      <div style={{ position: "absolute", left: 14, top: 0 }}>
+        <Phone width={250} tilt={-3}>
+          <AnimatePresence mode="popLayout">
+            <motion.img key={cur.n} src={SHOT(cur.n)} alt={cur.label} initial={{ x: 60, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -60, opacity: 0 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          </AnimatePresence>
+        </Phone>
+      </div>
+      <div className="flex items-center justify-center" style={{ position: "absolute", left: 14, width: 250, bottom: 0, gap: 6 }}>
+        {HERO_SHOTS.map((h, k) => <span key={h.n} style={{ width: k === i ? 22 : 6, height: 6, borderRadius: 3, background: k === i ? T.brassHi : "rgba(196,154,80,.35)", transition: "all .3s" }} />)}
+      </div>
+      <FloatChip x={{ left: -8 }} y={{ top: 70 }} delay={0.1} rot={-4}>
+        <img src={MOVE_IMG("Brilliant")} alt="" style={{ width: 24, height: 24 }} /><span style={{ fontSize: 12, fontWeight: 800, color: "#7FD6D2" }}>{t("탁월한 수")}</span><span style={{ fontSize: 12, fontWeight: 900, color: T.ivoryHi, fontFamily: "ui-monospace,monospace" }}>+1.8</span>
+      </FloatChip>
+      <FloatChip x={{ right: -4 }} y={{ top: 8 }} delay={0.3} rot={5}>
+        <img src="/oc-coin.png" alt="" style={{ width: 22, height: 22 }} /><span style={{ fontSize: 13, fontWeight: 900, color: T.brassHi }}>+10</span>
+      </FloatChip>
+      <FloatChip x={{ left: -12 }} y={{ bottom: 120 }} delay={0.5} rot={3}>
+        <TierBadgeShape size={30}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+        <div><div style={{ fontSize: 11, fontWeight: 800, color: T.ivoryHi }}>{t("아이언")} 5</div><div style={{ width: 70, height: 4, borderRadius: 2, background: "rgba(255,255,255,.15)", marginTop: 3 }}><div style={{ width: "62%", height: "100%", borderRadius: 2, background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")" }} /></div></div>
+      </FloatChip>
+      <FloatChip x={{ right: -6 }} y={{ bottom: 60 }} delay={0.7} rot={-5}>
+        <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: ".08em", color: "#F0B93A", border: "1px solid #F0B93A", borderRadius: 6, padding: "2px 6px" }}>LEGENDARY</span>
+      </FloatChip>
+    </div>
+  );
+}
+
+// 스크린샷 띠(천천히 흘러가는 갤러리)
+function ShotStrip() {
+  const names = ["study-board", "dex-tree", "play", "dex-skin", "learn", "dex-ach", "study-moves", "dex-pieces", "settings", "learn-2", "dex-home", "dex-sets"];
+  const row = [...names, ...names];
+  return (
+    <div style={{ position: "relative", overflow: "hidden", margin: "0 -20px", padding: "26px 0 34px", maskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)" }}>
+      <div className="about-strip" style={{ display: "flex", gap: 18, width: "max-content" }}>
+        {row.map((n, i) => (
+          <div key={i} style={{ flex: "0 0 auto", transform: "rotate(" + (i % 2 ? 2.2 : -2.2) + "deg) translateY(" + (i % 2 ? 10 : -6) + "px)" }}>
+            <Phone src={SHOT(n)} width={132} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- 앱 둘러보기(탭) ----------
+// 실제 앱 하단 바와 같은 6개 탭. 탭을 누르면 그 화면의 실제 스크린샷과 설명이 바뀐다.
+const TOUR = [
+  { id: "study", Icon: BarChart3, label: t("분석"), shots: ["study-board", "study-moves"], title: t("두는 즉시 엔진이 평가"),
+    desc: t("수를 둘 때마다 Stockfish가 평가치를 계산하고, 이론 수는 오프닝 이름과 함께 알려줘요. chess.com 대국을 불러오면 놓친 수까지 짚어 줘요."),
+    points: [t("실시간 평가 바"), t("이론 수와 오프닝 이름"), t("수 추천과 분석 버튼")], ui: "eval" },
+  { id: "play", Icon: Play, label: t("플레이"), shots: ["play"], title: t("대국도 연습도 한 곳에서"),
+    desc: t("일반 대국부터 좌표 인지, 나이트 레이스, 무한 체크메이트, 백랭크 러시아워까지 다섯 가지 모드를 육각형 메뉴에서 바로 시작해요."),
+    points: [t("일반 대국"), t("좌표 인지 게임"), t("나이트 레이스"), t("무한 체크메이트 게임"), t("백랭크 러시아워")] },
+  { id: "puzzle", Icon: Puzzle, label: t("퍼즐"), shots: [], title: t("내 실수로 만든 퍼즐"),
+    desc: t("\"기물 희생하기\", \"우위 점하기\", \"실수 응징하기\" 세 테마. 실전에서 나온 실수로 자동 생성되는 맞춤 전술 퍼즐. 친구에게 공유 가능"),
+    points: [t("기물 희생하기"), t("우위 점하기"), t("실수 응징하기")], ui: "puzzle" },
+  { id: "learn", Icon: ClipboardList, label: t("학습"), shots: ["learn", "learn-2"], title: t("매일 조금씩"),
+    desc: t("매일 갱신되는 일일 퀘스트와 레슨 로드맵, 내 약점을 보여주는 성장 분석. 완료하면 OC 나이트 코인을 받아요."),
+    points: [t("일일 퀘스트"), t("성장 분석과 약점 지도"), t("레슨 로드맵")] },
+  { id: "dex", Icon: Library, label: t("도감"), shots: ["dex-tree", "dex-ach", "dex-home"], title: t("오프닝 나침반"),
+    desc: t("1.e4·1.d4·1.c4·1.Nf3 네 방향으로 뻗는 오프닝 트리에서 각 수의 채택률·평가치·이름 확인. 이탈리안 게임, 루이 로페즈 같은 대표 오프닝은 별도 칭호로 수집"),
+    points: [t("오프닝 트리"), t("마스터 대국"), t("업적과 칭호"), t("스킨 도감")] },
+  { id: "settings", Icon: Wrench, label: t("설정"), shots: ["settings"], title: t("내게 맞게 조정하기"),
+    desc: t("분석 엔진은 Stockfish 18·18 Lite·17.1 중에서 고르고, 6개 언어와 자동 번역을 지원해요. 로그인하면 진도가 계정에 저장되어 어느 기기에서든 이어서 사용"),
+    points: [t("엔진 선택"), t("6개 언어"), t("계정 동기화")] },
+];
+function EvalDemo() {
+  const [n, setN] = useState(0);
+  const evs = [[0.32, "e4", "Book"], [1.8, "Nf5", "Brilliant"], [0.4, "Qd2", "Good"], [-1.1, "h4", "Mistake"], [-4.6, "Qxb7", "Blunder"]];
+  useEffect(() => { const id = setInterval(() => setN((v) => (v + 1) % evs.length), 1800); return () => clearInterval(id); }, []);
+  const [ev, mv, cls] = evs[n];
+  const pct = Math.max(4, Math.min(96, 50 + ev * 9));
+  return (
+    <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521" }}>
+      <div style={{ position: "relative", height: 24, borderRadius: 6, background: "#101010", overflow: "hidden", border: "1px solid #000" }}>
+        <motion.div animate={{ width: pct + "%" }} transition={{ type: "spring", stiffness: 120, damping: 18 }} style={{ position: "absolute", left: 0, top: 0, bottom: 0, background: "#fff" }} />
+        <span style={{ position: "absolute", left: 8, top: 3, fontSize: 12, fontWeight: 900, color: "#111", fontFamily: "ui-monospace,monospace", mixBlendMode: "normal" }}>{(ev > 0 ? "+" : "") + ev.toFixed(2)}</span>
+      </div>
+      <div className="flex items-center" style={{ gap: 10, marginTop: 12 }}>
+        <AnimatePresence mode="wait"><motion.img key={cls} src={MOVE_IMG(cls)} alt="" initial={{ scale: 0.3, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 16 }} style={{ width: 30, height: 30 }} /></AnimatePresence>
+        <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{n + 1}. {mv}</span>
+        <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("수를 둘 때마다 평가가 바뀌어요")}</span>
+      </div>
+    </div>
+  );
+}
+function PuzzleDemo() {
+  const [step, setStep] = useState(0);   // 0 대기 · 1 정답
+  useEffect(() => { const id = setInterval(() => setStep((v) => (v + 1) % 2), 2600); return () => clearInterval(id); }, []);
+  const themes = [[t("기물 희생하기"), "#D9736A"], [t("우위 점하기"), "#6FA8DC"], [t("실수 응징하기"), "#8FB55E"]];
+  return (
+    <div style={{ borderRadius: 18, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+        <div className="flex items-center" style={{ gap: 8 }}>
+          <TierBadgeShape size={34}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+          <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(90,58,34,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#C49A50" }} /></div></div>
+        </div>
+        <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 999, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
+      </div>
+      <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+        {themes.map(([l, c], i) => <span key={l} style={{ fontSize: 11, fontWeight: 800, color: i === 2 ? "#fff" : "#3A2516", background: i === 2 ? c : "rgba(58,37,22,.08)", border: "1px solid " + c, borderRadius: 999, padding: "3px 10px" }}>{l}</span>)}
+      </div>
+      <div className="flex justify-center" style={{ position: "relative" }}>
+        <DecoBoard {...DECO_B} size={200} caption={null} />
+        <AnimatePresence>
+          {step === 1 && (
+            <motion.div initial={{ opacity: 0, y: 14, scale: 0.7 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
+              style={{ position: "absolute", right: 4, top: -6, display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(180deg,#8FB55E,#5F8A3A)", color: "#fff", borderRadius: 12, padding: "6px 12px", fontSize: 13, fontWeight: 900, boxShadow: "0 8px 18px -6px rgba(0,0,0,.5)" }}>
+              <Check size={15} />{t("정답!")} <span style={{ fontFamily: "ui-monospace,monospace" }}>+18 XP</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 700, textAlign: "center", opacity: 0.75 }}>{t("라인을 모두 풀면 경험치를 받아요")}</div>
+    </div>
+  );
+}
+function TourSection() {
+  const [tab, setTab] = useState(0);
+  const [shot, setShot] = useState(0);
+  const cur = TOUR[tab];
+  useEffect(() => { setShot(0); }, [tab]);
+  useEffect(() => {
+    if (cur.shots.length < 2) return undefined;
+    const id = setInterval(() => setShot((v) => (v + 1) % cur.shots.length), 3600);
+    return () => clearInterval(id);
+  }, [tab, cur.shots.length]);
+  return (
+    <section id="features" style={{ scrollMarginTop: 80 }}>
+      <Chapter no="01" eyebrow={t("앱 둘러보기")} title={t("여섯 개의 탭, 하나의 학습 루프")} desc={t("아래 탭을 눌러 실제 화면을 구경해 보세요. 앱 하단 바와 똑같이 생겼어요.")} />
+      {/* 실제 앱 하단 바를 그대로 닮은 탭 */}
+      <div className="no-swipe" style={{ margin: "0 auto 30px", maxWidth: 560, borderRadius: 18, background: "linear-gradient(180deg,#2E1B10,#160C06)", border: "1px solid #000", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)", display: "flex", padding: "6px 4px" }}>
+        {TOUR.map((x, i) => {
+          const on = i === tab;
+          return (
+            <button key={x.id} onClick={() => setTab(i)} className="press" aria-label={x.label} style={{ position: "relative", flex: 1, minWidth: 0, background: "transparent", border: "none", cursor: "pointer", padding: "12px 2px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit" }}>
+              {on && <motion.span layoutId="tourbar" style={{ position: "absolute", top: 0, left: "22%", right: "22%", height: 3, borderRadius: 2, background: T.brass }} />}
+              <x.Icon size={22} />
+              <span style={{ fontSize: 11.5, fontWeight: 800 }}>{x.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center flex-wrap justify-center" style={{ gap: 44, minHeight: 560 }}>
+        <div style={{ flex: "0 0 auto", width: 280, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
+          {cur.ui === "puzzle" ? (
+            <AnimatePresence mode="wait"><motion.div key="pz" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ width: 300, maxWidth: "100%", marginLeft: -10 }}><PuzzleDemo /></motion.div></AnimatePresence>
+          ) : (
+            <>
+              <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 320, height: 320, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.2), transparent 68%)" }} />
+              <div style={{ position: "relative" }}>
+                <Phone width={260} tilt={-2}>
+                  <AnimatePresence mode="popLayout">
+                    <motion.img key={cur.id + cur.shots[shot]} src={SHOT(cur.shots[shot])} alt={cur.label} initial={{ opacity: 0, scale: 1.04 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                  </AnimatePresence>
+                </Phone>
+              </div>
+              {cur.shots.length > 1 && (
+                <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 14 }}>
+                  {cur.shots.map((s, k) => <button key={s} onClick={() => setShot(k)} aria-label={String(k + 1)} style={{ width: k === shot ? 24 : 8, height: 8, borderRadius: 4, border: "none", cursor: "pointer", background: k === shot ? T.brassHi : "rgba(196,154,80,.35)", transition: "all .3s", padding: 0 }} />)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.div key={cur.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.35 }} style={{ flex: "1 1 320px", minWidth: 260, maxWidth: 440 }}>
+            <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+              <span style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(196,154,80,.15)", border: "1px solid " + T.brass, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><cur.Icon size={17} color={T.brassHi} /></span>
+              <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".16em" }}>{String(tab + 1).padStart(2, "0")} / {cur.label}</span>
+            </div>
+            <h3 style={{ fontSize: "clamp(24px,3.6vw,30px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 12px", lineHeight: 1.25 }}>{cur.title}</h3>
+            <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.85, margin: "0 0 18px" }}>{cur.desc}</p>
+            <div className="flex flex-wrap" style={{ gap: 8 }}>
+              {cur.points.map((p) => <span key={p} className="flex items-center" style={{ gap: 6, fontSize: 12, fontWeight: 700, color: T.ivory, border: "1px solid rgba(196,154,80,.3)", background: "rgba(196,154,80,.07)", borderRadius: 999, padding: "5px 12px" }}><Check size={12} color={T.brassHi} />{p}</span>)}
+            </div>
+            {cur.ui === "eval" && <EvalDemo />}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </section>
+  );
+}
+
+// ---------- 실제 UI 부품 (눌러 보세요) ----------
+const QUESTS = [
+  { k: "q1", label: t("새 퍼즐 2회 풀기"), sub: "0/2" }, { k: "q2", label: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 '일일 퍼즐' 풀기") },
+  { k: "q3", label: t("chess.com에서 게임 3회 승리"), sub: t("설정에서 chess.com 계정 연동 필요") },
+];
+function QuestDemo() {
+  const [done, setDone] = useState({});
+  const n = Object.keys(done).filter((k) => done[k]).length;
+  return (
+    <div style={{ borderRadius: 16, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 900 }}>{t("일일 퀘스트")}</span>
+        <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료해 보세요")}</span>
+      </div>
+      {QUESTS.map((q) => {
+        const on = !!done[q.k];
+        return (
+          <button key={q.k} onClick={() => setDone((d) => ({ ...d, [q.k]: !d[q.k] }))} className="press no-swipe" style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 6, borderRadius: 12, border: "1px solid rgba(90,58,34,.25)", background: on ? "rgba(143,181,94,.22)" : "rgba(255,255,255,.4)", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid " + (on ? "#5F8A3A" : "rgba(90,58,34,.4)"), background: on ? "#5F8A3A" : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Check size={13} color="#fff" />}</span>
+            <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 12.5, fontWeight: 800, textDecoration: on ? "line-through" : "none", opacity: on ? 0.6 : 1 }}>{q.label}</span><span style={{ display: "block", fontSize: 10.5, opacity: 0.6 }}>{q.sub}</span></span>
+            <span className="flex items-center" style={{ gap: 3, fontSize: 12, fontWeight: 900 }}>+10<img src="/oc-coin.png" alt="" style={{ width: 15, height: 15 }} /></span>
+          </button>
+        );
+      })}
+      <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 12, border: "1px solid " + (n === QUESTS.length ? "#C49A50" : "rgba(90,58,34,.3)"), background: n === QUESTS.length ? "rgba(196,154,80,.25)" : "rgba(255,255,255,.3)" }}>
+        <motion.img animate={n === QUESTS.length ? { rotate: [0, -12, 12, 0], scale: [1, 1.2, 1] } : {}} src="/oc-coin.png" alt="" style={{ width: 30, height: 30 }} />
+        <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900 }}>{t("모든 퀘스트 완료 보상")}</div><div style={{ fontSize: 10.5, opacity: 0.65 }}>{tx("OC 나이트 코인 {0}개, {1}/{2} 완료", 50, n, QUESTS.length)}</div></div>
+      </div>
+    </div>
+  );
+}
+const TIER_DEMO = [
+  { img: "/iron-pawn.png", name: t("아이언"), max: 500 }, { img: "/bronze-knight.png", name: t("브론즈"), max: 2000 }, { img: "/silver-bishop.png", name: t("실버"), max: 10000 }, { img: "/gold-rook.png", name: t("골드"), max: 50000 },
+];
+function XpDemo() {
+  const [xp, setXp] = useState(180);
+  const [ti, setTi] = useState(0);
+  const cur = TIER_DEMO[ti];
+  const solve = () => setXp((v) => { const nv = v + 90; if (nv >= cur.max) { setTi((x) => (x + 1) % TIER_DEMO.length); return 0; } return nv; });
+  return (
+    <div style={{ borderRadius: 16, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
+      <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("경험치와 티어")}</div>
+      <div className="flex items-center" style={{ gap: 14, flex: 1 }}>
+        <AnimatePresence mode="popLayout"><motion.div key={ti} initial={{ scale: 0.4, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 260, damping: 15 }}>
+          <TierBadgeShape size={72}><img src={cur.img} alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
+        </motion.div></AnimatePresence>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{cur.name}</div>
+          <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,.12)", margin: "7px 0 5px", overflow: "hidden" }}><motion.div animate={{ width: Math.min(100, xp / cur.max * 100) + "%" }} transition={{ type: "spring", stiffness: 120, damping: 18 }} style={{ height: "100%", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")" }} /></div>
+          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{xp.toLocaleString()} / {cur.max.toLocaleString()} XP</div>
+        </div>
+      </div>
+      <button onClick={solve} className="press no-swipe" style={{ marginTop: 12, padding: "10px 0", borderRadius: 11, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: 13, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 0 #7A5E22" }}>{t("퍼즐 풀기")} +90 XP</button>
+    </div>
+  );
+}
+const RARITIES = [["COMMON", "#9DB28A"], ["RARE", "#6FA8DC"], ["EPIC", "#B98CFF"], ["LEGENDARY", "#F0B93A"]];
+function KitCell({ children, delay = 0 }) {
+  return <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.5, delay, ease: [0.22, 0.9, 0.32, 1] }} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>{children}</motion.div>;
+}
+function UiKitSection() {
+  const MOVES = [["Brilliant", t("탁월한 수")], ["Great", t("유일한 수")], ["Best", t("최선의 수")], ["Excellent", t("우수한 수")], ["Good", t("좋은 수")], ["Book", t("이론")], ["Inaccuarcy", t("부정확")], ["Mistake", t("실수")], ["Miss", t("놓친 수")], ["Blunder", t("블런더")]];
+  return (
+    <section>
+      <Chapter no="02" eyebrow={t("UI 미리 써보기")} title={t("실제 화면의 부품, 그대로")} desc={t("앱에서 쓰는 퀘스트 카드, 티어 배지, 수 등급 아이콘을 그대로 가져왔어요. 직접 눌러 보세요.")} />
+      <div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16 }}>
+        <KitCell><QuestDemo /></KitCell>
+        <KitCell delay={0.08}><XpDemo /></KitCell>
+        <KitCell delay={0.12}>
+          <div style={{ ...GLASS, borderRadius: 16, padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("수 등급")}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
+              {MOVES.map(([k, l], i) => (
+                <motion.div key={k} whileHover={{ y: -4, scale: 1.08 }} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.04, type: "spring", stiffness: 300, damping: 18 }} style={{ textAlign: "center" }}>
+                  <img src={MOVE_IMG(k)} alt="" style={{ width: "62%", maxWidth: 38, aspectRatio: "1/1" }} />
+                  <div style={{ fontSize: 9.5, fontWeight: 800, color: T.inkSoft, marginTop: 4, lineHeight: 1.3 }}>{l}</div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </KitCell>
+        <KitCell delay={0.16}>
+          <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("스킨 등급")}</div>
+            <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
+              {RARITIES.map(([r, c]) => <motion.span key={r} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
+            </div>
+            <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
+              <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
+              <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900, color: T.ivoryHi }}>{t("1회 뽑기")}</div><div style={{ fontSize: 11, color: T.inkSoft }}>{t("중복이면 150코인 환급")}</div></div>
+              <span style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>500</span>
+            </div>
+          </div>
+        </KitCell>
+      </div>
+    </section>
+  );
+}
+
 function IntroPage({ version, onOpenHistory }) {
   return (
     <div>
-      {/* 히어로 — 전체 폭 일러스트 위에 유리 카드로 핵심 문구를 얹는다. */}
-      <div style={{ position: "relative", width: "100%", overflow: "hidden", minHeight: 460 }}>
-        <motion.img src="/ilust-1-web.webp" alt={t("MILKU와 KOKOA의 대국")}
-          initial={{ opacity: 0 }} animate={{ opacity: 0.55, scale: [1, 1.08, 1], x: ["0%", "-2%", "0%"] }}
-          transition={{ opacity: { duration: 0.8 }, scale: { duration: 18, repeat: Infinity, ease: "easeInOut" }, x: { duration: 18, repeat: Infinity, ease: "easeInOut" } }}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(80% 70% at 30% 40%, rgba(27,16,9,.25), rgba(27,16,9,.85) 75%), linear-gradient(180deg, rgba(27,16,9,.2) 40%, #1B1009 100%)" }} />
-        <div style={{ position: "relative", maxWidth: 1000, margin: "0 auto", padding: "64px 20px 72px" }}>
-          <div className="flex items-center flex-wrap" style={{ gap: 40 }}>
-            <div style={{ flex: "1 1 360px", minWidth: 280 }}>
-              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(236,203,134,.4)", background: "rgba(27,16,9,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 20 }}>
+      {/* 히어로 — 체스판 격자 배경 위에 큰 제목과 실제 앱 화면 폰 */}
+      <div style={{ position: "relative", width: "100%", overflow: "hidden" }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "repeating-conic-gradient(rgba(196,154,80,.055) 0% 25%, transparent 0% 50%)", backgroundSize: "72px 72px", maskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)", WebkitMaskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)" }} />
+        <motion.img src="/ilust-1-web.webp" alt="" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 0.13, scale: [1, 1.06, 1] }} transition={{ opacity: { duration: 1 }, scale: { duration: 20, repeat: Infinity, ease: "easeInOut" } }}
+          style={{ position: "absolute", left: 0, top: 0, width: "60%", height: "100%", objectFit: "cover", maskImage: "linear-gradient(90deg,#000,transparent)", WebkitMaskImage: "linear-gradient(90deg,#000,transparent)" }} />
+        <div style={{ position: "relative", maxWidth: 1040, margin: "0 auto", padding: "52px 20px 36px" }}>
+          <div className="flex items-center flex-wrap" style={{ gap: 36 }}>
+            <div style={{ flex: "1 1 400px", minWidth: 280 }}>
+              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(236,203,134,.4)", background: "rgba(27,16,9,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 22 }}>
                 <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>v{version}</span>
                 {t("새 소식 보기")} <ArrowRight size={13} />
               </button></Reveal>
-              <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(34px, 6vw, 54px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.16, margin: "0 0 18px", letterSpacing: "-.02em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
-              <Reveal delay={0.1}><p style={{ fontSize: 14.5, color: T.ivory, opacity: 0.82, lineHeight: 1.8, margin: "0 0 28px", maxWidth: 460 }}>{t("엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템")}</p></Reveal>
-              <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10 }}>
-                <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 14px 30px -10px rgba(236,203,134,.45)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
-                <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", padding: "14px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 13.5, textDecoration: "none" }}>{t("기능 둘러보기")}</a>
+              <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
+              <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.82, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("엔진 분석 기반 학습, 오프닝 트리 도감, 실전 실수로 자동 생성되는 전술 퍼즐, 로드맵형 레슨, 티어 시스템")}</p></Reveal>
+              <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
+                <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+                <a href="#features" className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
+              </div></Reveal>
+              <Reveal delay={0.2}><div className="flex items-center flex-wrap" style={{ gap: 22 }}>
+                {[[7, t("티어 단계")], [4, t("오프닝 갈래")], [6, t("앱 탭")]].map(([n, l]) => (
+                  <div key={l}><div style={{ fontSize: 26, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div><div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginTop: 4 }}>{l}</div></div>
+                ))}
+                <div><div style={{ fontSize: 26, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>100%</div><div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginTop: 4 }}>{t("무료로 시작")}</div></div>
               </div></Reveal>
             </div>
-            <motion.div initial={{ opacity: 0, scale: 0.7, rotate: -8 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
-              style={{ flex: "0 0 auto", width: 260, maxWidth: "100%", margin: "0 auto", position: "relative" }}>
-              <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-                style={{ width: 260, height: 260, maxWidth: "100%", aspectRatio: "1/1", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 10px rgba(236,203,134,.08), 0 0 0 22px rgba(236,203,134,.04)", ...GOLD_DISC }}>
-                <div style={{ filter: "drop-shadow(0 10px 22px rgba(0,0,0,.55))" }}><Mascot char="milku" expr="great" size={190} /></div>
-              </motion.div>
-              <div style={{ position: "absolute", bottom: -16, left: -30, zIndex: 2 }}>
-                <DecoBoard {...DECO_A} size={100} tilt={-11} />
-              </div>
-            </motion.div>
+            <div style={{ flex: "1 1 340px", minWidth: 300 }}><HeroPhones /></div>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "8px 20px 72px" }}>
-        <KineticTagline />
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "0 20px 72px" }}>
+        <ShotStrip />
 
-        <section style={{ maxWidth: 640, margin: "36px auto 64px" }}>
+        <section style={{ maxWidth: 640, margin: "20px auto 72px" }}>
           <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("수를 두는 데서 끝나지 않고 그 수가 왜 좋았는지·나빴는지까지 확인. 아래에서 기능별로 소개")}</SpeechBubble>
         </section>
 
         <WhatsNew version={version} />
 
         <SectionDivider />
-
-        <Chapter no="01" eyebrow={t("배움")} title={t("실전에서 배우는 체스")} desc={t("엔진 분석, 오프닝 도감, 맞춤 퍼즐, 매일의 퀘스트까지 한 곳에서.")} id="features" />
-        <section className="flex flex-col" style={{ gap: 56 }}>
-          {FEATURES.map((f, i) => (
-            <React.Fragment key={f.title}>
-              <FeatureRow {...f} reverse={i % 2 === 1} />
-              {i === 1 && (
-                <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
-                  <DecoBoard {...DECO_B} tilt={-6} />
-                  <DecoBoard {...DECO_C} tilt={6} delay={0.12} />
-                </div>
-              )}
-              {i === 3 && (
-                <div className="flex items-center justify-center flex-wrap" style={{ gap: 24, margin: "6px 0" }}>
-                  <DecoBoard {...DECO_D} tilt={5} />
-                </div>
-              )}
-            </React.Fragment>
-          ))}
-        </section>
+        <TourSection />
 
         <SectionDivider />
         <FamousOpeningsSection />
-        <SectionDivider />
-        <StatsRow />
-        <SectionDivider />
 
-        <Chapter no="02" eyebrow={t("분석")} title={t("내 대국을 숫자로 읽기")} desc={t("chess.com 연동과 독자적인 정확도 체계로 내 수의 질을 측정해요.")} id="accuracy" />
+        <SectionDivider />
+        <UiKitSection />
+
+        <SectionDivider />
+        <Chapter no="03" eyebrow={t("분석")} title={t("내 대국을 숫자로 읽기")} desc={t("chess.com 연동과 독자적인 정확도 체계로 내 수의 질을 측정해요.")} id="accuracy" />
         <ChessComSection />
         <SectionDivider />
         <AccuracySystemSection />
 
         <SectionDivider />
-
         <SkinShowcase />
 
-        <div style={{ marginTop: 64 }} id="tiers">
-          <Chapter no="04" eyebrow={t("성장")} title={t("아이언부터 그랜드마스터까지")} desc={t("7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승")} />
+        <div style={{ marginTop: 72 }} id="tiers">
+          <Chapter no="05" eyebrow={t("성장")} title={t("아이언부터 그랜드마스터까지")} desc={t("7단계 티어 경험치 시스템. 퍼즐을 풀수록 경험치가 쌓이고 티어 상승")} />
           <TierStrip />
           <div style={{ marginTop: 44 }}><GrandmasterCard /></div>
         </div>
@@ -3040,7 +3357,7 @@ export default function AboutPage() {
 
   return (
     <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
-      <style>{"@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}}"}</style>
+      <style>{"@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
       <Backdrop />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
@@ -3066,8 +3383,8 @@ export default function AboutPage() {
       <div ref={pagerRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp}
         style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflow: "hidden", touchAction: "pan-y" }}>
         <div style={{ display: "flex", width: total * 100 + "%", height: "100%", transform: "translateX(calc(" + (-page * 100) / total + "% + " + dragPx + "px))", transition: dragging ? "none" : "transform .38s cubic-bezier(.22,.9,.32,1)" }}>
-          <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><IntroPage version={LATEST_VERSION} onOpenHistory={() => goTo(1)} /></div>
-          <div ref={(el) => (pageElRefs.current[1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" }}><HistoryPage /></div>
+          <div ref={(el) => (pageElRefs.current[0] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}><IntroPage version={LATEST_VERSION} onOpenHistory={() => goTo(1)} /></div>
+          <div ref={(el) => (pageElRefs.current[1] = el)} style={{ width: 100 / total + "%", flexShrink: 0, height: "100%", overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}><HistoryPage /></div>
         </div>
       </div>
     </div>
