@@ -1,6 +1,7 @@
 // (v0.6.9) 스킨 뽑기 화면 — 도감 스킨 페이지 맨 위의 상자(흑백 체크 + 금장, 가운데 금빛 킹과 열쇠 구멍)와 1회·5회 뽑기 버튼, 결과 창.
 //  뽑기 규칙·가격·확률은 lib/gacha.js(순수 모듈), 코인·보유 목록 반영은 App의 pullGacha가 맡는다. 여기는 보여주기만 한다.
 import { useState, useEffect, useRef, useId } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
@@ -241,7 +242,7 @@ export function GachaSection({ coins, onPull }) {
           )}
         </AnimatePresence>
       </div>
-      <AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onFast={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage((s) => (s ? { ...s, phase: "cards" } : s)); }} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>
+      {createPortal(<AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onFast={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage((s) => (s ? { ...s, phase: "cards" } : s)); }} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>, document.body)}
     </section>
   );
 }
