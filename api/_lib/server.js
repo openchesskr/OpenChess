@@ -21,11 +21,11 @@ const mem = new Map(); // key -> { start, n }
 function memHit(key, limit, windowSec, cost = 1) {
   const now = Date.now(), e = mem.get(key);
   if (cost === 0) return !!e && now - e.start < windowSec * 1000 && e.n > limit;
-  if (!e || now - e.start >= windowSec * 1000) { mem.set(key, { start: now, n: cost }); if (mem.size > 5000) for (const [k, v] of mem) if (now - v.start > 3600e3) mem.delete(k); return false; }
-  e.n += cost; return e.n > limit;
+  if (!e || now - e.start >= windowSec * 1000) { mem.set(key, { start: now, n: Math.max(0, cost) }); if (mem.size > 5000) for (const [k, v] of mem) if (now - v.start > 3600e3) mem.delete(k); return false; }
+  e.n = Math.max(0, e.n + cost); return e.n > limit;
 }
 
-/** rules: [[key, limit, windowSeconds, cost?], …] — 하나라도 초과하면 true. cost 0은 세지 않고 초과 여부만 본다. */
+/** rules: [[key, limit, windowSeconds, cost?], …] — 하나라도 초과하면 true. cost 0은 세지 않고 초과 여부만 보고, 음수는 환불. */
 export async function rateLimited(env, rules) {
   let limited = false;
   for (const [key, limit, windowSec, cost = 1] of rules) {

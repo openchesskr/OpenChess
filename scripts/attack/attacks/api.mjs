@@ -65,18 +65,19 @@ const base = [
     } },
 ];
 // ---- BUG-107 수정 검증: /api/auth-login · /api/auth-recover ----
+const m_recover = { n: 0 };
 function authMock() {
   const counts = new Map(); const calls = [];
   const impl = async (url, opt) => {
     const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
     calls.push(u);
-    if (u.includes("/rpc/rate_limit_hit")) { const cost = body.p_cost === undefined ? 1 : body.p_cost; const n = (counts.get(body.p_key) || 0) + cost; counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+    if (u.includes("/rpc/rate_limit_hit")) { const cost = body.p_cost === undefined ? 1 : body.p_cost; const n = cost === 0 ? (counts.get(body.p_key) || 0) : Math.max(0, (counts.get(body.p_key) || 0) + cost); if (cost !== 0) counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
     if (u.includes("/rpc/email_for_username")) return new Response(JSON.stringify(body.p_username === "victim" ? "victim@example.com" : null), { status: 200 });
     if (u.includes("/rpc/account_providers")) return new Response(JSON.stringify(["email"]), { status: 200 });
     if (u.includes("/auth/v1/token")) return body.email === "victim@example.com" && body.password === "right-password"
       ? new Response(JSON.stringify({ access_token: "AT", refresh_token: "RT", user: { id: "u-victim" } }), { status: 200 })
       : new Response(JSON.stringify({ error_code: "invalid_credentials" }), { status: 400 });
-    if (u.includes("/auth/v1/recover")) return new Response("{}", { status: 200 });
+    if (u.includes("/auth/v1/recover")) { m_recover.n++; return new Response("{}", { status: 200 }); }
     return new Response("{}", { status: 404 });
   };
   return { impl, calls };
@@ -133,6 +134,21 @@ export const authAttacks = [
       });
       const same = a.code === b.code && JSON.stringify(a.body) === JSON.stringify(b.body);
       return { breached: !same || JSON.stringify(a.body).includes("@"), evidence: `known ${a.code} ${JSON.stringify(a.body)} / unknown ${b.code} ${JSON.stringify(b.body)}` };
+    } },
+  { id: "BUG-107h", kind: "attack", title: "동시 요청 경합: 서로 다른 IP 80개가 한꺼번에 victim에게 틀린 시도 — 한도(30회)를 넘겨 비밀번호 검증까지 가는가",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-login.js"); const m = authMock();
+      let tokenCalls = 0; const inner = m.impl;
+      await withFetch(async (u, o) => { if (String(u).includes("/auth/v1/token")) tokenCalls++; return inner(u, o); },
+        () => Promise.all(Array.from({ length: 80 }, (_, i) => handler(loginReq("victim", "guess" + i, "5.5." + Math.floor(i / 10) + "." + i), mkRes()))));
+      return { breached: tokenCalls > 30, evidence: `동시 80건 중 비밀번호 검증까지 간 요청 ${tokenCalls}건 (한도 30)` };
+    } },
+  { id: "BUG-107i", kind: "attack", title: "/api/auth-recover 메일 폭탄: 서로 다른 IP 12곳이 같은 계정에 재설정 요청 — 메일이 몇 통 나가는가",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-recover.js"); const m = authMock(); m_recover.n = 0;
+      const codes = new Set();
+      await withFetch(m.impl, async () => { for (let i = 0; i < 12; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "12.0.0." + i }, body: { login: "victim" } }, r); codes.add(r.code + JSON.stringify(r.body)); } });
+      return { breached: m_recover.n > 5 || codes.size > 1, evidence: `요청 12건 → 실제 메일 ${m_recover.n}통(한도 5), 응답은 항상 같음: ${[...codes].join(" / ")}` };
     } },
 ];
 

@@ -2174,20 +2174,21 @@ alter table public.rate_limits enable row level security;
 revoke all on public.rate_limits from public, anon, authenticated;
 drop function if exists public.rate_limit_hit(text, int, int) cascade;
 drop function if exists public.rate_limit_hit(text, int, int, int) cascade;
--- p_cost = 이번 호출이 더하는 횟수(기본 1). 0이면 세지 않고 지금까지 초과했는지만 본다(실패한 시도만 세는 키에 쓴다).
+-- p_cost = 이번 호출이 더하는 횟수(기본 1). 0이면 세지 않고 초과 여부만 보고, 음수면 환불한다(시도 전에 미리 잡고 성공하면 돌려주는 방식에 쓴다).
 create or replace function public.rate_limit_hit(p_key text, p_limit int, p_window_seconds int, p_cost int default 1)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare v_start timestamptz; v_n int;
 begin
   if p_key is null or length(p_key) > 200 or p_limit < 1 or p_window_seconds < 1 or p_window_seconds > 86400 then raise exception 'invalid args'; end if;
   v_start := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
-  if p_cost < 0 or p_cost > 10 then raise exception 'invalid args'; end if;
+  if p_cost < -10 or p_cost > 10 then raise exception 'invalid args'; end if;
   if p_cost = 0 then
     select n into v_n from public.rate_limits where key = p_key and window_start = v_start;
     return coalesce(v_n, 0) > p_limit;
   end if;
-  insert into public.rate_limits(key, window_start, n) values (p_key, v_start, p_cost)
-  on conflict (key, window_start) do update set n = public.rate_limits.n + p_cost
+  -- p_cost < 0 은 앞서 미리 잡아 둔 횟수를 돌려주는 환불(로그인 성공 시). 0 미만으로 내려가지 않는다.
+  insert into public.rate_limits(key, window_start, n) values (p_key, v_start, greatest(0, p_cost))
+  on conflict (key, window_start) do update set n = greatest(0, public.rate_limits.n + p_cost)
   returning n into v_n;
   if random() < 0.02 then delete from public.rate_limits where window_start < now() - interval '2 days'; end if;
   return v_n > p_limit;
