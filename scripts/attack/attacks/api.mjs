@@ -143,12 +143,22 @@ export const authAttacks = [
         () => Promise.all(Array.from({ length: 80 }, (_, i) => handler(loginReq("victim", "guess" + i, "5.5." + Math.floor(i / 10) + "." + i), mkRes()))));
       return { breached: tokenCalls > 30, evidence: `동시 80건 중 비밀번호 검증까지 간 요청 ${tokenCalls}건 (한도 30)` };
     } },
-  { id: "BUG-107i", kind: "attack", title: "/api/auth-recover 메일 폭탄: 서로 다른 IP 12곳이 같은 계정에 재설정 요청 — 메일이 몇 통 나가는가",
+  { id: "BUG-107i", kind: "attack", title: "/api/auth-recover 메일 폭탄: 서로 다른 IP 12곳이 같은 계정에 재설정 요청 — 쿨다운 안에 메일이 몇 통 나가는가",
     async run() {
       authEnv(); const { default: handler } = await load("auth-recover.js"); const m = authMock(); m_recover.n = 0;
       const codes = new Set();
       await withFetch(m.impl, async () => { for (let i = 0; i < 12; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "12.0.0." + i }, body: { login: "victim" } }, r); codes.add(r.code + JSON.stringify(r.body)); } });
-      return { breached: m_recover.n > 5 || codes.size > 1, evidence: `요청 12건 → 실제 메일 ${m_recover.n}통(한도 5), 응답은 항상 같음: ${[...codes].join(" / ")}` };
+      return { breached: m_recover.n > 1 || codes.size > 1, evidence: `요청 12건(IP 12곳) → 실제 메일 ${m_recover.n}통(10분 쿨다운당 1통), 응답은 항상 같음: ${[...codes].join(" / ")}` };
+    } },
+  { id: "BUG-107j", kind: "attack", title: "재설정 연타: 한 IP의 연타가 대상 쿨다운을 창당 1통 이상 소모하지 않는지(주인의 대기는 최대 10분으로 한정)",
+    async run() {
+      authEnv(); const { default: handler } = await load("auth-recover.js"); const m = authMock(); m_recover.n = 0;
+      await withFetch(m.impl, async () => {
+        for (let i = 0; i < 20; i++) await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "13.0.0.1" }, body: { login: "victim" } }, mkRes());   // 공격자 한 IP 연타
+        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "13.9.9.9" }, body: { login: "victim" } }, mkRes());                         // 주인
+      });
+      // 공격자의 첫 요청이 그 창의 1통을 가져가므로 주인은 다음 창(최대 10분 뒤)에 받는다 — 시간당 총량 한도와 달리 대기가 10분으로 한정된다. 연타가 추가로 소모하지 않으면 메일은 정확히 1통.
+      return { breached: m_recover.n !== 1, evidence: `공격자 20건 + 주인 1건 → 메일 ${m_recover.n}통 (창당 1통. 주인은 최대 10분 뒤 다음 창에서 받음)` };
     } },
 ];
 
