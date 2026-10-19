@@ -79,6 +79,12 @@ if (anon) {
   const pol = sql.split(";").map((x) => x.replace(/\s+/g, " ").trim()).find((x) => /^create policy "chat insert own" on public\.chat_messages/i.test(x));
   if (!pol || !/share_reward is null/i.test(pol) || !/pvp_invite_id is null/i.test(pol)) problems.push('"chat insert own" 정책이 share_reward·pvp_invite_id를 막지 않는다(RPC 우회 — BUG-122)');
 }
+// 10) 표의 컬럼 기본값(default public.fn())에 쓰이는 함수는 INSERT한 사용자 권한으로 실행된다 — 허용 목록에 없으면 그 표에 쓰는 모든 요청이 permission denied가 된다.
+//     (v0.7.0 개발 중 실제로 발생: profiles.mid의 default public.gen_mid() → 프로필 저장 실패)
+if (anon) {
+  const allowedAll = new Set([...anon, ...auth]);
+  for (const d of sql.matchAll(/default\s+public\.(\w+)\s*\(/gi)) if (defs.has(d[1]) && !allowedAll.has(d[1])) problems.push("컬럼 기본값에 쓰이는 `" + d[1] + "`가 함수 권한 허용 목록에 없다 — 해당 표에 쓰는 요청이 permission denied가 된다");
+}
 // 블록 위치: 마지막 함수 정의보다 뒤
 if (block) {
   const lastDef = Math.max(...[...sql.matchAll(/create (?:or replace )?function\s+public\.\w+/gi)].map((m) => m.index));

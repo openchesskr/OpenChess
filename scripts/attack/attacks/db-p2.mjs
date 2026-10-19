@@ -60,19 +60,8 @@ export default [
       // 한 호출씩 실행해 실패(속도 제한)를 센다 — 한 트랜잭션에 넣으면 첫 오류에서 전부 되돌려진다.
       for (const q of sql.split("\n")) if (sb.as("anon", null, q).ok) ok++;
       const n = sb.admin(`select count(*) from public.puzzles where no>=900000`).out;
-      return { breached: Number(n) > 30, evidence: `비로그인 100회 시도 → ${n}개 저장(상한 분당 30)` };
-    } },
-  { id: "BUG-113", kind: "attack", title: "일반 계정이 자기 프로필 pub.xp를 조작해 리더보드 1위 차지",
-    async run({ sb, U }) {
-      sb.as("authenticated", U.mallory, `update public.profiles set pub = jsonb_build_object('xp', 999999999999) where id='${U.mallory}';`);
-      const top = sb.as("anon", null, `select username from public.leaderboard_top(1);`).out;
-      return { breached: top === "mallory", evidence: `조작 후 리더보드 1위=${top} (서버가 xp를 검증하지 않음)` };
-    } },
-  { id: "BUG-113b", kind: "attack", title: "일반 계정이 user_progress에 코인·보유 스킨을 임의로 써넣기",
-    async run({ sb, U }) {
-      sb.as("authenticated", U.mallory, `insert into public.user_progress(id,progress) values ('${U.mallory}','{"coins":999999999}') on conflict (id) do update set progress=excluded.progress;`);
-      const c = sb.admin(`select progress->>'coins' from public.user_progress where id='${U.mallory}'`).out;
-      return { breached: c === "999999999", evidence: `서버가 코인 ${c}를 그대로 저장함 (뽑기 비용을 서버가 확인하지 않음)` };
+      // 고정 1분 창이라 테스트 도중 창이 바뀌면 최대 2배(60)까지 가능하다 — 그 이상이면 뚫린 것.
+      return { breached: Number(n) > 60, evidence: `비로그인 100회 시도 → ${n}개 저장(상한 분당 30, 창이 바뀌면 최대 60)` };
     } },
   { id: "BUG-115", kind: "attack", title: "리뷰 캐시 선점: anon·일반 계정이 RPC로 아직 리뷰되지 않은 chess.com 대국 번호에 가짜 기보를 직접 저장",
     async run({ sb, U }) {
@@ -96,15 +85,13 @@ export default [
       const orphan = sb.admin(`select count(*) from public.reviewed_games where cc_id=777 and data is null`).out;
       return { breached: noGame !== "f" || wrong !== "f" || wrongLen !== "f" || good !== "t" || stored !== "true" || orphan !== "0", evidence: `기보 없는 대국 ${noGame} · 다른 대국 분석 ${wrong} · 수 개수 불일치 ${wrongLen} · 정상 분석 ${good}(표기 +/# 무시) · 기보 없는 분석 행 ${orphan}개` };
     } },
-  { id: "BUG-122", kind: "attack", title: "공유 보상 파밍: 친구끼리 puzzle_share_reward를 반복 호출해 상대 XP를 무한 생성(금액도 클라이언트가 정함)",
+  { id: "BUG-122", kind: "attack", title: "공유 보상 파밍: 옛 puzzle_share_reward(금액을 클라이언트가 정하던 RPC)를 반복 호출 — 지금은 RPC 자체가 없고 보상은 서버가 금액을 정한다(정상 흐름은 BUG-113h)",
     async run({ sb, U }) {
       const mid = sb.admin(`insert into public.chat_messages(from_uid,to_uid,puzzle_no) values ('${U.victim}','${U.bob}',111111) returning id`).out.split("\n")[0];
-      const calls = Array.from({ length: 60 }, () => `select public.puzzle_share_reward(${mid}, 1000);`).join("\n");
-      for (const q of calls.split("\n")) sb.as("authenticated", U.bob, q);
+      let ok = 0;
+      for (let i = 0; i < 10; i++) if (sb.as("authenticated", U.bob, `select public.puzzle_share_reward(${mid}, 1000);`).ok) ok++;
       const total = Number(sb.admin(`select coalesce(sum((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out);
-      const maxOne = Number(sb.admin(`select coalesce(max((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out);
-      // 임시 상한(BUG-113 계획 2단계 전까지): 건당 10 이하·같은 공유 메시지당 하루 30회 → 최대 300. 이를 넘으면 뚫린 것.
-      return { breached: total > 300 || maxOne > 10, evidence: `bob이 60번 호출 → victim이 받은 보상 XP 합계 ${total}(상한 300), 한 건 최대 ${maxOne}(상한 10). 원래는 6만 XP였음` };
+      return { breached: ok > 0 || total > 0, evidence: `옛 RPC 호출 10번 중 성공 ${ok}번, 생성된 보상 ${total} (RPC 삭제됨)` };
     } },
   { id: "BUG-122c", kind: "attack", title: "RPC 우회: 친구가 채팅 테이블에 share_reward(시스템 전용 컬럼)를 직접 넣어 상한 없는 보상 메시지 생성",
     async run({ sb, U }) {
@@ -112,13 +99,6 @@ export default [
       const n = sb.admin(`select coalesce(sum((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out;
       const plain = sb.as("authenticated", U.bob, `insert into public.chat_messages(from_uid,to_uid,body) values ('${U.bob}','${U.victim}','일반 메시지는 정상');`);
       return { breached: Number(n) > 0 || !plain.ok, evidence: Number(n) > 0 ? `친구가 직접 넣은 보상 ${n} XP가 저장됨` : `share_reward 직접 삽입 거부(${r.err.split("\n")[0].slice(0, 60)}) · 일반 메시지 전송은 ${plain.ok ? "정상" : "실패!"}` };
-    } },
-  { id: "BUG-122b", kind: "hold", title: "정상 경로 유지: 공유받은 퍼즐을 풀면 공유한 친구에게 보상 메시지가 간다(소액)",
-    async run({ sb, U }) {
-      const mid = sb.admin(`insert into public.chat_messages(from_uid,to_uid,puzzle_no) values ('${U.victim}','${U.bob}',111111) returning id`).out.split("\n")[0];
-      const a = sb.as("authenticated", U.bob, `select public.puzzle_share_reward(${mid}, 7);`);
-      const n = sb.admin(`select count(*) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out;
-      return { breached: !(a.ok && a.out === "t" && n === "1"), evidence: `호출 ${a.ok ? a.out : a.err}, 보상 메시지 ${n}건` };
     } },
   { id: "BUG-117", kind: "attack", title: "account_providers를 브라우저(anon·로그인)가 직접 호출해 이메일 가입 여부·방식 열거",
     async run({ sb, U }) {

@@ -414,6 +414,8 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 create index if not exists idx_notifications_to_time on public.notifications(to_uid, created_at desc);
+-- (v0.7.0 BUG-113) 보상 알림의 금액은 서버가 알림을 만들 때만 정한다 — payload는 받는 사람이 고칠 수 있어 보상 계산에 쓰지 않는다. economy_claim_notification 참고.
+alter table public.notifications add column if not exists reward_amount bigint;
 alter table public.notifications enable row level security;
 drop policy if exists "notif select own" on public.notifications;
 drop policy if exists "notif insert auth" on public.notifications;
@@ -692,23 +694,8 @@ grant execute on function public.puzzle_repost_toggle(bigint) to authenticated;
 -- 애초에 발생하지 않는다. 금액은 클라이언트가 계산해 보내지만(이 앱의 XP 자체가 이미 전부 클라이언트
 -- 계산이라 신뢰 모델은 동일), 비정상적으로 큰 값이 들어오는 것만 서버에서 상한으로 방어한다.
 drop function if exists public.puzzle_share_reward(bigint, bigint) cascade;
-create or replace function public.puzzle_share_reward(p_share_msg_id bigint, p_amount bigint)
-returns boolean language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_from uuid; v_no bigint; v_amount bigint;
-begin
-  if v_me is null then return false; end if;
-  select from_uid, puzzle_no into v_from, v_no
-  from public.chat_messages where id = p_share_msg_id and to_uid = v_me and puzzle_no is not null;
-  if v_from is null or v_from = v_me then return false; end if;
-  -- (v0.7.0 보안 BUG-122) 금액은 클라이언트가 정해서 보내고 횟수 제한도 없어, 친구끼리 반복 호출하면 XP를 무한히 만들 수 있었다(60번에 6만 XP 재현).
-  -- 정상 보상은 라인 풀이 XP(최대 71)의 10%라 7 이하이므로 상한을 10으로 낮추고, 같은 공유 메시지당 하루 30회·받는 사람당 하루 200회로 제한한다.
-  -- 근본 대책은 서버가 금액을 정하는 구조(SECURITY_PLAN_BUG-113.md 2단계).
-  if public.rate_limit_hit('srw:' || v_me || ':' || p_share_msg_id, 30, 86400) or public.rate_limit_hit('srw:u:' || v_me, 200, 86400) then return false; end if;
-  v_amount := greatest(1, least(coalesce(p_amount, 0), 10));
-  insert into public.chat_messages(from_uid, to_uid, share_reward) values (v_me, v_from, jsonb_build_object('amount', v_amount, 'no', v_no));
-  return true;
-end; $$;
-grant execute on function public.puzzle_share_reward(bigint, bigint) to authenticated;
+-- (v0.7.0 BUG-113·122) puzzle_share_reward RPC는 없앴다 — 공유 보상은 economy_line_solved가 서버에서 금액을 정해 직접 지급한다(클라이언트가 금액을 정하던 구조가 XP 파밍의 원인).
+drop function if exists public.puzzle_share_reward(bigint, bigint) cascade;
 
 -- ============================================================================
 -- 7-2) puzzle_popularity_all — 퍼즐 탭 "인기순" 정렬용 인기 점수 (사용자 요청)
@@ -1003,13 +990,15 @@ alter table public.move_notes enable row level security;
 -- XP를 증감시키지 않는다, 7-1번 섹션 주석 참고). auth.uid()가 없으면(비로그인) 1을 돌려주는데,
 -- 어차피 insert 정책이 로그인 없이는 애초에 막는다.
 create or replace function public.move_notes_cap()
-returns int language sql stable security definer set search_path = public as $$
-  select case
+returns int language plpgsql stable security definer set search_path = public as $$
+begin
+  -- (v0.7.0 BUG-113) XP는 서버 원장(economy)에서 읽는다. economy 표가 이 함수보다 뒤에 만들어지므로 plpgsql로 둔다(본문은 실행할 때 해석).
+  return case
     when public.is_content_editor(auth.uid()) then 2147483647
-    when coalesce((select (up.progress->>'xp')::bigint from public.user_progress up where up.id = auth.uid()), 0) >= 200000 then 2
+    when coalesce((select e.xp from public.economy e where e.uid = auth.uid()), 0) >= 200000 then 2
     else 1
   end;
-$$;
+end; $$;
 grant execute on function public.move_notes_cap() to authenticated;
 
 -- 등록·수정 시 서버에서도 흔한 욕설·혐오 표현을 다시 검사한다 — 클라이언트 필터(src/App.jsx의
@@ -3817,8 +3806,8 @@ begin
     select 1 from public.notifications
     where to_uid = v_creator and kind = 'daily_puzzle_selected' and (payload ->> 'no')::bigint = v_no
   ) then
-    insert into public.notifications(to_uid, kind, payload)
-    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', p_date, 'reward', v_reward, 'claimed', false));
+    insert into public.notifications(to_uid, kind, payload, reward_amount)
+    values (v_creator, 'daily_puzzle_selected', jsonb_build_object('no', v_no, 'date', p_date, 'reward', v_reward, 'claimed', false), v_reward);
   end if;
   return v_no;
 end; $$;
@@ -4103,12 +4092,421 @@ revoke all on function public.game_analysis_put(jsonb, jsonb) from public;
 grant execute on function public.game_analysis_put(jsonb, jsonb) to authenticated;
 
 -- ============================================================================
+-- 경제 원장 (v0.7.0 보안, BUG-113) — XP·코인·보유 스킨은 서버가 주인이다
+-- ============================================================================
+-- 예전에는 브라우저가 XP·코인·스킨을 계산해 user_progress에 통째로 저장했고 서버는 값을 확인하지 않아, 개발자 도구로 코인 999,999,999·리더보드 1위·스킨 전부 보유가
+-- 가능했다. 이제 값은 이 절의 표(economy)에만 있고 브라우저는 읽기만 한다. 값을 바꾸는 유일한 길은 아래 SECURITY DEFINER RPC들이며, 금액·확률은 서버가 정한다.
+-- 설계 문서: SECURITY_PLAN_BUG-113.md
+--  · 경제 상수(티어 문턱·뽑기 가격/확률·퀘스트 보상)는 economy_params()에 한 곳으로 모았다. 클라이언트 상수와는 scripts/check-economy-constants.mjs가 일치를 검사한다.
+--  · 한 번만 받을 수 있는 보상(라인 첫 풀이·퀘스트·챕터·알림)은 economy_claims의 (uid, kind, ref) 기본키로 서버가 중복을 막는다.
+--  · 자동화로 퍼즐 XP를 긁는 것은 라인 수 상한(서버가 정답 트리에서 센 실제 라인 수)·하루 150라인·4초 간격으로 막는다.
+--  · 변동은 economy_ledger에 모두 남는다(감사용). 이상치는 economy_anomalies에 기록된다.
+create table if not exists public.economy (
+  uid uuid primary key references auth.users(id) on delete cascade,
+  xp bigint not null default 0 check (xp >= 0),
+  coins bigint not null default 0 check (coins >= 0),
+  owned_skins text[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+create table if not exists public.economy_ledger (
+  id bigint generated always as identity primary key,
+  uid uuid not null references auth.users(id) on delete cascade,
+  kind text not null,
+  ref text,
+  xp_delta bigint not null default 0,
+  coins_delta bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_economy_ledger_uid_time on public.economy_ledger(uid, created_at desc);
+create table if not exists public.economy_claims (
+  uid uuid not null references auth.users(id) on delete cascade,
+  kind text not null,
+  ref text not null,
+  created_at timestamptz not null default now(),
+  primary key (uid, kind, ref)
+);
+create table if not exists public.economy_anomalies (
+  id bigint generated always as identity primary key,
+  uid uuid references auth.users(id) on delete cascade,
+  note text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.economy enable row level security;
+alter table public.economy_ledger enable row level security;
+alter table public.economy_claims enable row level security;
+alter table public.economy_anomalies enable row level security;
+drop policy if exists "economy select own" on public.economy;
+drop policy if exists "economy ledger select own" on public.economy_ledger;
+create policy "economy select own" on public.economy for select using (auth.uid() = uid);
+create policy "economy ledger select own" on public.economy_ledger for select using (auth.uid() = uid);
+revoke all on public.economy, public.economy_ledger, public.economy_claims, public.economy_anomalies from public, anon, authenticated;
+grant select on public.economy, public.economy_ledger to authenticated;
+
+-- 경제 상수 한 곳 — 클라이언트 상수(tierSystem.js·gacha.js·App.jsx 보상)와 같아야 한다(check-economy-constants).
+create or replace function public.economy_params()
+returns jsonb language sql immutable as $$
+  select '{
+    "tierXpCum": [500, 2000, 10000, 50000, 100000, 200000],
+    "tierUpCoinsPerIndex": 50,
+    "gachaPrice": {"1": 500, "5": 2400},
+    "gachaDupRefund": 150,
+    "gachaPool": [
+      {"id": "coral", "weight": 28, "rarity": "common"},
+      {"id": "forest", "weight": 26, "rarity": "common"},
+      {"id": "deco", "weight": 22, "rarity": "rare"},
+      {"id": "stars", "weight": 15, "rarity": "epic"},
+      {"id": "crystal", "weight": 9, "rarity": "legend"}
+    ],
+    "pieces": ["P", "N", "B", "R", "Q", "K"],
+    "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
+    "questBonus": {"xp": 20, "coins": 50},
+    "chapterDefaultCoins": 100,
+    "chapterMaxCoins": 1000,
+    "devBonusCoins": 10000
+  }'::jsonb;
+$$;
+revoke all on function public.economy_params() from public;
+
+create or replace function public._tier_index(p_xp bigint)
+returns int language sql immutable set search_path = public as $$
+  select count(*)::int from jsonb_array_elements_text(public.economy_params() -> 'tierXpCum') t where p_xp >= t::bigint;
+$$;
+
+create or replace function public._kst_today()
+returns date language sql stable as $$ select (now() at time zone 'Asia/Seoul')::date; $$;
+
+-- 처음 접근할 때 행을 만든다. 이미 클라이언트가 user_progress에 저장해 둔 값은 '기준선'으로 한 번 인정하되 범위로 자르고, 의심스러운 값은 economy_anomalies에 남긴다.
+create or replace function public._economy_ensure(p_uid uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_prog jsonb; v_xp bigint := 0; v_coins bigint := 0; v_owned text[] := '{}';
+begin
+  if exists (select 1 from public.economy where uid = p_uid) then return; end if;
+  select progress into v_prog from public.user_progress where id = p_uid;
+  if v_prog is not null then
+    if jsonb_typeof(v_prog -> 'xp') = 'number' then v_xp := least(greatest((v_prog ->> 'xp')::numeric, 0), 5000000)::bigint; end if;
+    if jsonb_typeof(v_prog -> 'coins') = 'number' then v_coins := least(greatest((v_prog ->> 'coins')::numeric, 0), 1000000)::bigint; end if;
+    if jsonb_typeof(v_prog -> 'ownedSkins') = 'array' then
+      select coalesce(array_agg(s), '{}') into v_owned from (
+        select distinct s from jsonb_array_elements_text(v_prog -> 'ownedSkins') s
+        where s ~ '^(pc:[a-z]{2,20}:[PNBRQK]|piece:[a-z]{2,20}|board:[a-z]{2,20})$' limit 200
+      ) q;
+    end if;
+    if v_xp > 250000 or v_coins > 50000 then
+      insert into public.economy_anomalies(uid, note) values (p_uid, 'baseline xp=' || v_xp || ' coins=' || v_coins || ' (기준선으로 인정했지만 검토 필요)');
+    end if;
+  end if;
+  insert into public.economy(uid, xp, coins, owned_skins) values (p_uid, v_xp, v_coins, v_owned) on conflict (uid) do nothing;
+  insert into public.economy_ledger(uid, kind, ref, xp_delta, coins_delta) values (p_uid, 'baseline', null, v_xp, v_coins);
+end; $$;
+
+-- XP·코인 변동의 유일한 통로. 티어가 오르면 새 티어 인덱스×50 코인을 함께 지급(한 번에 여러 티어를 올라도 마지막 티어 몫만, 기존 클라이언트 규칙과 같음).
+create or replace function public._economy_apply(p_uid uuid, p_xp bigint, p_coins bigint, p_kind text, p_ref text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_xp bigint; v_coins bigint; v_owned text[]; v_before int; v_after int; v_reward bigint := 0;
+begin
+  perform public._economy_ensure(p_uid);
+  select xp, coins, owned_skins into v_xp, v_coins, v_owned from public.economy where uid = p_uid for update;
+  v_before := public._tier_index(v_xp);
+  v_xp := v_xp + p_xp; v_coins := v_coins + p_coins;
+  if v_xp < 0 then v_xp := 0; end if;
+  if v_coins < 0 then raise exception 'insufficient coins'; end if;
+  v_after := public._tier_index(v_xp);
+  if v_after > v_before then
+    v_reward := v_after * ((public.economy_params() ->> 'tierUpCoinsPerIndex')::bigint);
+    v_coins := v_coins + v_reward;
+    insert into public.economy_ledger(uid, kind, ref, xp_delta, coins_delta) values (p_uid, 'tier_up', v_after::text, 0, v_reward);
+  end if;
+  if v_after >= 6 then
+    select array_agg(distinct s) into v_owned from unnest(v_owned || array['board:grandmaster', 'piece:grandmaster']) s;
+  end if;
+  update public.economy set xp = v_xp, coins = v_coins, owned_skins = v_owned, updated_at = now() where uid = p_uid;
+  update public.profiles set pub = pub || jsonb_build_object('xp', v_xp) where id = p_uid;
+  if p_xp <> 0 or p_coins <> 0 then
+    insert into public.economy_ledger(uid, kind, ref, xp_delta, coins_delta) values (p_uid, p_kind, p_ref, p_xp, p_coins);
+  end if;
+  return jsonb_build_object('xp', v_xp, 'coins', v_coins, 'owned', to_jsonb(v_owned), 'tierUp', nullif(v_reward, 0), 'tierIndex', v_after);
+end; $$;
+
+-- 퍼즐의 실제 라인 수(루트에서 사용자 수로 끝나는 잎, 클라이언트 treeLinesOf와 같은 규칙). 개발자 재조정(puzzleOverrides)이 있으면 그걸 따른다.
+create or replace function public._puzzle_line_count(p_no bigint)
+returns int language plpgsql stable security definer set search_path = public as $$
+declare v_data jsonb; v_ov jsonb; v_tree jsonb; v_n int;
+begin
+  select data into v_data from public.puzzles where no = p_no;
+  if v_data is null then return 0; end if;
+  select value -> 'puzzleOverrides' -> p_no::text into v_ov from public.app_content where key = 'global';
+  if v_ov is not null and jsonb_typeof(v_ov -> 'tree') = 'object' then v_tree := v_ov -> 'tree';
+  elsif v_ov is not null and jsonb_typeof(v_ov -> 'lines') = 'array' and jsonb_array_length(v_ov -> 'lines') > 0 then return jsonb_array_length(v_ov -> 'lines');
+  elsif jsonb_typeof(v_data -> 'tree') = 'object' then v_tree := v_data -> 'tree';
+  elsif jsonb_typeof(v_data -> 'lines') = 'array' and jsonb_array_length(v_data -> 'lines') > 0 then return jsonb_array_length(v_data -> 'lines');
+  elsif v_data ? 'solution' then return 1;
+  else return 0; end if;
+  with recursive walk(node, depth) as (
+    select v_tree, 0
+    union all
+    select k, w.depth + 1 from walk w, jsonb_array_elements(case when jsonb_typeof(w.node -> 'children') = 'array' then w.node -> 'children' else '[]'::jsonb end) k
+    where w.depth < 80 and (k ->> 'pass') is distinct from 'false'
+  )
+  select count(*) into v_n from walk w
+  where w.depth % 2 = 1 and w.depth > 0 and not exists (
+    select 1 from jsonb_array_elements(case when jsonb_typeof(w.node -> 'children') = 'array' then w.node -> 'children' else '[]'::jsonb end) c where (c ->> 'pass') is distinct from 'false'
+  );
+  return v_n;
+end; $$;
+
+-- ---- RPC (브라우저 호출) ----------------------------------------------------
+create or replace function public.economy_get()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_row public.economy;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  perform public._economy_ensure(v_uid);
+  select * into v_row from public.economy where uid = v_uid;
+  return jsonb_build_object('xp', v_row.xp, 'coins', v_row.coins, 'owned', to_jsonb(v_row.owned_skins), 'tierIndex', public._tier_index(v_row.xp));
+end; $$;
+
+-- 퍼즐 라인을 처음 풀었다고 신고. XP는 서버가 정한다: {13~17 난수 × (기존 별 수+1.2)}. 같은 라인은 한 번만, 퍼즐의 실제 라인 수까지만, 하루 150라인·4초 간격.
+-- p_share_msg: 채팅으로 공유받은 퍼즐을 열어 풀었을 때 그 메시지 id — 얻은 XP의 10%를 공유해 준 친구에게 서버가 직접 지급한다(금액을 클라이언트가 정하지 않는다).
+create or replace function public.economy_line_solved(p_no bigint, p_tag text, p_share_msg bigint default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid(); v_count int; v_existing int; v_total int; v_stars int; v_gain bigint; v_ref text; v_res jsonb;
+  v_sharer uuid; v_reward bigint; v_cur public.economy; v_ins int;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_no is null or p_no <= 0 or p_tag is null or length(p_tag) = 0 or length(p_tag) > 200 then raise exception 'invalid'; end if;
+  v_count := public._puzzle_line_count(p_no);
+  if v_count < 1 then raise exception 'puzzle not found'; end if;
+  v_ref := p_no || ':' || p_tag;
+  perform public._economy_ensure(v_uid);
+  select count(*) into v_existing from public.economy_claims where uid = v_uid and kind = 'line' and ref like p_no || ':%';
+  if exists (select 1 from public.economy_claims where uid = v_uid and kind = 'line' and ref = v_ref) or v_existing >= v_count then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'gain', 0, 'duplicate', true);
+  end if;
+  if public.rate_limit_hit('line:d:' || v_uid, 150, 86400) then raise exception 'daily limit'; end if;
+  if public.rate_limit_hit('line:s:' || v_uid, 3, 12) then raise exception 'too fast'; end if;
+  v_total := greatest(v_count, v_existing + 1);
+  v_stars := case when v_existing <= 0 then 0 when v_existing >= v_total then 3 when v_existing * 2 >= v_total then 2 else 1 end;
+  v_gain := floor((13 + floor(random() * 5)) * (v_stars + 1.2))::bigint;
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'line', v_ref) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'gain', 0, 'duplicate', true);
+  end if;
+  v_res := public._economy_apply(v_uid, v_gain, 0, 'line', v_ref);
+  if p_share_msg is not null then
+    select from_uid into v_sharer from public.chat_messages where id = p_share_msg and to_uid = v_uid and puzzle_no = p_no and from_uid <> v_uid;
+    if v_sharer is not null then
+      v_reward := greatest(1, round(v_gain * 0.1));
+      perform public._economy_apply(v_sharer, v_reward, 0, 'share_reward', p_share_msg::text);
+      insert into public.chat_messages(from_uid, to_uid, share_reward) values (v_uid, v_sharer, jsonb_build_object('amount', v_reward, 'no', p_no, 'applied', true));
+    end if;
+  end if;
+  return v_res || jsonb_build_object('gain', v_gain, 'duplicate', false);
+end; $$;
+
+-- 일일 퀘스트 보상. 슬롯: puzzle·dailypuzzle·cc_0~2(각 10코인), bonus(다섯 슬롯을 모두 받은 날 XP 20+코인 50). 하루(KST) 슬롯당 1회.
+-- 서버가 확인하는 것: puzzle = 오늘 라인 풀이 신고 1건 이상, dailypuzzle = 오늘의 퍼즐을 푼 기록(선정이 없는 날은 통과). cc_*(chess.com 활동)는 서버가 확인할 수 없어 하루 슬롯당 10코인으로 한정된다.
+create or replace function public.economy_claim_quest(p_slot text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid(); v_day date := public._kst_today(); v_ref text; v_coins bigint; v_xp bigint := 0; v_pick bigint; v_ins int; v_cur public.economy; v_n int;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_slot is null or p_slot not in ('puzzle', 'dailypuzzle', 'cc_0', 'cc_1', 'cc_2', 'bonus') then raise exception 'invalid slot'; end if;
+  perform public._economy_ensure(v_uid);
+  v_ref := v_day::text || ':' || p_slot;
+  if exists (select 1 from public.economy_claims where uid = v_uid and kind = 'quest' and ref = v_ref) then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  if p_slot = 'bonus' then
+    select count(*) into v_n from public.economy_claims where uid = v_uid and kind = 'quest' and ref like v_day::text || ':%' and ref <> v_ref;
+    if v_n < 5 then raise exception 'quests not complete'; end if;
+    v_coins := (public.economy_params() -> 'questBonus' ->> 'coins')::bigint; v_xp := (public.economy_params() -> 'questBonus' ->> 'xp')::bigint;
+  else
+    v_coins := (public.economy_params() -> 'questCoins' ->> p_slot)::bigint;
+    if p_slot = 'puzzle' then
+      if not exists (select 1 from public.economy_claims where uid = v_uid and kind = 'line' and created_at >= (v_day::timestamp at time zone 'Asia/Seoul')) then raise exception 'no puzzle solved today'; end if;
+    elsif p_slot = 'dailypuzzle' then
+      select puzzle_no into v_pick from public.daily_puzzle_picks where date = v_day;
+      if v_pick is not null and not exists (select 1 from public.economy_claims where uid = v_uid and kind = 'line' and ref like v_pick || ':%') then raise exception 'daily puzzle not solved'; end if;
+    end if;
+  end if;
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'quest', v_ref) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  return public._economy_apply(v_uid, v_xp, v_coins, 'quest', v_ref) || jsonb_build_object('duplicate', false, 'gainCoins', v_coins, 'gainXp', v_xp);
+end; $$;
+
+-- 메인 퀘스트(레슨) 챕터 보상: 챕터당 1회, 금액은 서버의 공유 콘텐츠(app_content)에 개발자가 정해 둔 값(없으면 100, 최대 1000). 문항을 맞혔는지는 서버가 확인할 수 없다(챕터 수만큼으로 한정).
+create or replace function public.economy_claim_chapter(p_key text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_amount bigint; v_ins int; v_cur public.economy;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_key is null or p_key !~ '^[A-Za-z0-9_-]{1,40}$' then raise exception 'invalid chapter'; end if;
+  perform public._economy_ensure(v_uid);
+  -- 주의: PostgreSQL의 least()는 NULL을 무시한다 — 값이 없으면 기본값, 있으면 상한으로 자르도록 case로 나눈다.
+  select (case when jsonb_typeof(value -> 'lessons' -> p_key -> 'reward') = 'number'
+               then least((value -> 'lessons' -> p_key ->> 'reward')::numeric, (public.economy_params() ->> 'chapterMaxCoins')::numeric)
+               else (public.economy_params() ->> 'chapterDefaultCoins')::numeric end)::bigint
+    into v_amount from public.app_content where key = 'global';
+  v_amount := greatest(0, coalesce(v_amount, (public.economy_params() ->> 'chapterDefaultCoins')::bigint));
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'chapter', p_key) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  return public._economy_apply(v_uid, 0, v_amount, 'chapter', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', v_amount);
+end; $$;
+
+-- 오늘의 퍼즐 선정 알림 보상 수령. 금액은 서버가 알림을 만들 때 정한 reward_amount(수정 불가 컬럼) — payload는 사용자가 고칠 수 있어 쓰지 않는다. 알림당 1회.
+create or replace function public.economy_claim_notification(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_amount bigint; v_ins int; v_cur public.economy;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  select reward_amount into v_amount from public.notifications where id = p_id and to_uid = v_uid and kind = 'daily_puzzle_selected';
+  if not found then raise exception 'notification not found'; end if;
+  v_amount := least(greatest(coalesce(v_amount, 0), 0), 10000);
+  perform public._economy_ensure(v_uid);
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'notif', p_id::text) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  return public._economy_apply(v_uid, 0, v_amount, 'notification', p_id::text) || jsonb_build_object('duplicate', false, 'gainCoins', v_amount);
+end; $$;
+
+-- 스킨 뽑기. 난수·가격·환급·보유 반영을 서버가 한다(lib/gacha.js와 같은 규칙, 상수는 economy_params).
+create or replace function public.gacha_pull(p_count int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid(); v_params jsonb := public.economy_params(); v_cost bigint; v_row public.economy; v_owned text[]; v_refund bigint := 0;
+  v_total int; v_r numeric; v_acc int := 0; v_pool jsonb; v_pick jsonb; v_set text; v_rarity text; v_piece text; v_pieces jsonb := v_params -> 'pieces';
+  v_is_new boolean; v_rf bigint; v_had_board boolean; v_results jsonb := '[]'::jsonb; v_board_unlocked jsonb := '[]'::jsonb; i int; k int; v_key text;
+  v_has_all boolean;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  v_cost := (v_params -> 'gachaPrice' ->> p_count::text)::bigint;
+  if v_cost is null then raise exception 'invalid count'; end if;
+  if public.rate_limit_hit('gacha:' || v_uid, 60, 60) then raise exception 'rate limited'; end if;
+  perform public._economy_ensure(v_uid);
+  select * into v_row from public.economy where uid = v_uid for update;
+  if v_row.coins < v_cost then raise exception 'insufficient coins'; end if;
+  v_owned := v_row.owned_skins;
+  v_pool := v_params -> 'gachaPool';
+  select sum((e ->> 'weight')::int) into v_total from jsonb_array_elements(v_pool) e;
+  for i in 1..p_count loop
+    v_r := random() * v_total; v_acc := 0; v_pick := null;
+    for k in 0..jsonb_array_length(v_pool) - 1 loop
+      v_acc := v_acc + (v_pool -> k ->> 'weight')::int;
+      if v_r < v_acc then v_pick := v_pool -> k; exit; end if;
+    end loop;
+    if v_pick is null then v_pick := v_pool -> (jsonb_array_length(v_pool) - 1); end if;
+    v_set := v_pick ->> 'id'; v_rarity := v_pick ->> 'rarity';
+    v_piece := v_pieces ->> least(jsonb_array_length(v_pieces) - 1, floor(random() * jsonb_array_length(v_pieces))::int);
+    v_key := 'pc:' || v_set || ':' || v_piece;
+    v_is_new := not (v_key = any(v_owned) or ('piece:' || v_set) = any(v_owned));
+    v_rf := case when v_is_new then 0 else (v_params ->> 'gachaDupRefund')::bigint end;
+    select bool_and(('pc:' || v_set || ':' || (p #>> '{}')) = any(v_owned) or ('piece:' || v_set) = any(v_owned)) into v_has_all from jsonb_array_elements(v_pieces) p;
+    v_had_board := ('board:' || v_set) = any(v_owned) or coalesce(v_has_all, false);
+    if not (v_key = any(v_owned)) then v_owned := v_owned || v_key; end if;
+    v_refund := v_refund + v_rf;
+    select bool_and(('pc:' || v_set || ':' || (p #>> '{}')) = any(v_owned) or ('piece:' || v_set) = any(v_owned)) into v_has_all from jsonb_array_elements(v_pieces) p;
+    if not v_had_board and (('board:' || v_set) = any(v_owned) or coalesce(v_has_all, false)) then v_board_unlocked := v_board_unlocked || to_jsonb(v_set); end if;
+    v_results := v_results || jsonb_build_object('id', v_set, 'piece', v_piece, 'rarity', v_rarity, 'isNew', v_is_new, 'refund', v_rf);
+  end loop;
+  update public.economy set owned_skins = v_owned where uid = v_uid;
+  return public._economy_apply(v_uid, 0, -v_cost + v_refund, 'gacha', p_count::text) ||
+    jsonb_build_object('ok', true, 'cost', v_cost, 'refund', v_refund, 'results', v_results, 'boardUnlocked', v_board_unlocked);
+end; $$;
+
+-- 개발자 도구(설정 탭의 재화 패널). 개발자/공동개발자만.
+create or replace function public.economy_dev_set(p_xp bigint, p_coins bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_cur public.economy;
+begin
+  if v_uid is null or not public.am_content_editor() then raise exception 'not authorized'; end if;
+  perform public._economy_ensure(v_uid);
+  select * into v_cur from public.economy where uid = v_uid for update;
+  return public._economy_apply(v_uid, greatest(0, least(coalesce(p_xp, v_cur.xp), 100000000)) - v_cur.xp, greatest(0, least(coalesce(p_coins, v_cur.coins), 100000000)) - v_cur.coins, 'dev_set', null);
+end; $$;
+create or replace function public.economy_dev_bonus()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_ins int; v_cur public.economy; v_target bigint := (public.economy_params() ->> 'devBonusCoins')::bigint;
+begin
+  if v_uid is null or not public.am_content_editor() then raise exception 'not authorized'; end if;
+  perform public._economy_ensure(v_uid);
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'dev', 'bonus') on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  select * into v_cur from public.economy where uid = v_uid;
+  if v_ins = 0 or v_cur.coins >= v_target then return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true); end if;
+  return public._economy_apply(v_uid, 0, v_target - v_cur.coins, 'dev_bonus', null) || jsonb_build_object('duplicate', false);
+end; $$;
+
+-- ---- 가드 트리거 -------------------------------------------------------------
+-- user_progress에는 경제 값을 더 이상 저장하지 않는다(옛 클라이언트가 보내도 서버가 지운다).
+create or replace function public._user_progress_strip_economy()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.progress is not null and jsonb_typeof(new.progress) = 'object' then
+    new.progress := new.progress - 'xp' - 'coins' - 'ownedSkins' - 'devBonusGranted';
+  end if;
+  return new;
+end; $$;
+drop trigger if exists user_progress_strip_economy on public.user_progress;
+create trigger user_progress_strip_economy before insert or update on public.user_progress for each row execute function public._user_progress_strip_economy();
+
+-- 공개 프로필의 xp는 서버 원장에서만 온다 — 클라이언트가 보낸 값은 무시하고, 퍼즐 레이팅·풀이 수는 범위만 자른다(리더보드가 이 값을 정렬한다).
+create or replace function public._profiles_pub_guard()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_xp bigint; v_pub jsonb := coalesce(new.pub, '{}'::jsonb);
+begin
+  -- (v0.7.0 보안 BUG-125) 아이디는 가입 때 정해지면 바꿀 수 없다 — 예전에는 본인 프로필 update로 아이디를 마음대로 바꿀 수 있어, 개발자/공동개발자 판정(아이디 기준)을
+  -- 노리고 아직 가입하지 않은 공동개발자 아이디로 바꾸는 식의 사칭이 가능했다. 클라이언트의 프로필 저장(publishProfile)은 같은 아이디를 그대로 다시 보내므로 영향이 없다.
+  if tg_op = 'UPDATE' then new.username := old.username; new.id := old.id; end if;
+  if jsonb_typeof(v_pub) <> 'object' then v_pub := '{}'::jsonb; end if;
+  select xp into v_xp from public.economy where uid = new.id;
+  v_pub := v_pub || jsonb_build_object('xp', coalesce(v_xp, 0));
+  if jsonb_typeof(v_pub -> 'puzzleRating') = 'number' then v_pub := v_pub || jsonb_build_object('puzzleRating', least(4000, greatest(0, (v_pub ->> 'puzzleRating')::numeric))); end if;
+  if jsonb_typeof(v_pub -> 'solvedCount') = 'number' then v_pub := v_pub || jsonb_build_object('solvedCount', least(1000000, greatest(0, (v_pub ->> 'solvedCount')::numeric))); end if;
+  new.pub := v_pub;
+  return new;
+end; $$;
+drop trigger if exists profiles_pub_guard on public.profiles;
+create trigger profiles_pub_guard before insert or update on public.profiles for each row execute function public._profiles_pub_guard();
+
+-- 알림의 보상 금액은 서버가 알림을 만들 때만 정한다(payload는 받는 사람이 고칠 수 있어 쓰지 않는다). 받는 사람은 read·payload만 바꿀 수 있다.
+revoke update on public.notifications from anon, authenticated;
+grant update (read, payload) on public.notifications to authenticated;
+
+-- ---- 기존 데이터 이월 (이 파일을 다시 실행해도 안전) -------------------------------
+-- 이미 user_progress에 있던 XP·코인·스킨을 기준선으로 한 번 인정하고(범위로 자름, 이상치는 economy_anomalies에 기록), 공개 프로필 xp를 원장 값으로 맞춘다.
+-- 옛 방식으로 받아 둔 읽지 않은 공유 보상 메시지는 더는 쓰이지 않으므로 읽음 처리한다. 옛 알림의 보상 금액은 payload에서 한 번 옮긴다(상한 10000).
+select public._economy_ensure(id) from public.user_progress;
+update public.profiles p set pub = p.pub || jsonb_build_object('xp', coalesce((select e.xp from public.economy e where e.uid = p.id), 0))
+  where coalesce(p.pub ->> 'xp', '') <> coalesce((select e.xp::text from public.economy e where e.uid = p.id), '0');
+update public.chat_messages set read = true where share_reward is not null and not read;
+update public.notifications set reward_amount = least(greatest(coalesce((payload ->> 'reward')::numeric, 0), 0), 10000)::bigint
+  where kind = 'daily_puzzle_selected' and reward_amount is null and jsonb_typeof(payload -> 'reward') = 'number';
+
+-- ============================================================================
 -- 함수 실행 권한 최종 확정 (v0.7.0 보안, BUG-108·118) — 기본 차단 + 허용 목록
 -- ============================================================================
 -- PostgreSQL은 새 함수에 PUBLIC 실행 권한을 기본으로 주고 Supabase도 anon/authenticated에 기본 부여한다. 그래서 위에서 'service_role에만 준다'고
 -- 적은 함수도 revoke를 빼먹으면 일반 로그인 사용자가 /rest/v1/rpc/…로 직접 부를 수 있었다(pvp_finish_verified로 대국 결과 위조 — BUG-108).
 -- 이 블록이 이 파일의 모든 public 함수(확장 제공 함수 제외)의 권한을 한 번에 정한다: PUBLIC은 항상 회수, anon·authenticated는 아래 허용 목록에
 -- 있는 함수만 실행 가능, service_role은 전부 실행 가능. 목록에 없는 함수(내부 보조 함수·서버 전용 함수)는 브라우저에서 호출할 수 없다.
+-- 주의: 표의 컬럼 기본값(default)에 쓰이는 함수(profiles.mid의 gen_mid)도 INSERT를 한 사용자 권한으로 실행되므로 허용 목록에 있어야 한다(없으면 프로필 저장이 permission denied).
 -- 브라우저가 부르는 새 RPC를 추가하면 여기에도 함께 올려야 하고(scripts/check-sql-function-acl.mjs가 빠진 것을 잡는다), 서버 전용 함수는 올리지 않는다.
 do $acl$
 declare
@@ -4120,6 +4518,7 @@ declare
     'search_puzzles_prefix', 'username_available'
   ];
   v_auth text[] := array[
+    'gen_mid',
     'attack_finish', 'attack_forfeit', 'attack_next', 'attack_progress',
     'attack_report', 'attack_start', 'bot_game_record', 'chat_blocked_between',
     'chat_clear_conversation', 'chat_edit_message', 'chat_rooms', 'claim_username',
@@ -4130,8 +4529,8 @@ declare
     'knight_resolve_round', 'knight_start_round', 'legacy_like_toggle', 'minigame_submit_best',
     'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
     'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
-    'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc', 'puzzle_share_reward',
-    'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
+    'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc',
+    'economy_claim_chapter', 'economy_claim_notification', 'economy_claim_quest', 'economy_dev_bonus', 'economy_dev_set', 'economy_get', 'economy_line_solved', 'gacha_pull', 'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
     'pvp_finish', 'pvp_invite_cancel', 'pvp_invite_friend', 'pvp_invite_respond',
     'pvp_move', 'pvp_queue_join', 'pvp_queue_leave', 'pvp_rematch_decline',
     'pvp_rematch_offer', 'report_set_status', 'reports_for_dev', 'rush_forfeit',

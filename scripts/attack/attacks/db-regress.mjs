@@ -49,4 +49,16 @@ export default [
       run("편집자 정책(콘텐츠 쓰기는 거부가 정상)", "anon", null, `select count(*) from public.app_content;`);
       return { breached: errs.length > 0, evidence: errs.length ? "깨짐: " + errs.join(" | ") : "일상 동작 7종 정상" };
     } },
+  { id: "R4", kind: "hold", title: "정상 기능 유지: 프로필 저장(upsert)·가입 직후 프로필 생성·닉네임/소개글 갱신이 권한 오류 없이 동작(컬럼 기본값 함수 포함)",
+    async run({ sb, U }) {
+      const errs = [];
+      const run = (label, role, uid, q) => { const r = sb.as(role, uid, q); if (!r.ok) errs.push(label + ": " + r.err.split("\n")[0]); return r; };
+      run("프로필 upsert(publishProfile)", "authenticated", U.bob, `insert into public.profiles(id,username,pub) values ('${U.bob}','bob','{"nickname":"밥","bio":"안녕"}') on conflict (id) do update set username=excluded.username, pub=excluded.pub;`);
+      const fresh = "55555555-5555-5555-5555-555555555555";
+      sb.admin(`insert into auth.users(id,email,raw_user_meta_data) values ('${fresh}','fresh@example.com','{"username":"fresh"}');`);   // 가입 트리거가 profiles를 만든다
+      const mid = sb.admin(`select mid from public.profiles where id='${fresh}'`).out;
+      run("회원 번호 부여", "authenticated", fresh, `select 1;`);
+      if (!/^[A-Z]{5}[0-9]{4}$/.test(mid)) errs.push("신규 회원 번호 형식 이상: " + mid);
+      return { breached: errs.length > 0, evidence: errs.length ? "깨짐: " + errs.join(" | ") : `프로필 저장·가입 직후 프로필 생성 정상(신규 회원 번호 ${mid})` };
+    } },
 ];

@@ -475,14 +475,17 @@ export async function puzzlePopularityScores() {
     return m;
   } catch { return {}; }
 }
-// (v0.1.0) 친구가 내가 공유한 퍼즐을 풀어 얻은 XP의 10%를 나에게 돌려준다 — p_share_msg_id로 그 공유
-// 메시지가 실제로 나(호출자)에게 온 것인지 서버가 검증하므로, 임의 메시지 id로 위조 보상을 요청할 수
-// 없다. RPC는 보상 금액 자체를 내 XP에 더하지 않고 공유자에게 갈 chat_messages 시스템 메시지만 남긴다
-// (XP는 각자 자기 클라이언트만 갱신 가능 — checkUnreadChat이 이 메시지를 realtime으로 받아 적용한다).
-export async function puzzleShareReward(shareMsgId, amount) {
-  if (!SB_ON || shareMsgId == null) return false;
-  try { return !!(await sbRpc("puzzle_share_reward", { p_share_msg_id: shareMsgId, p_amount: amount })); } catch { return false; }
-}
+// (v0.7.0 보안 BUG-113) XP·코인·보유 스킨은 서버 원장(economy)이 주인이다 — 아래 함수는 모두 서버에 '행위'를 신고하고, 금액·확률은 서버가 정한 값을 그대로 돌려받는다.
+// 반환: { xp, coins, owned:[…], … }(실패하면 던진다). 로그인하지 않았거나 서버가 없으면 null.
+const ecoCall = async (fn, args) => { if (!SB_ON || !SB_TOKEN) return null; return await sbRpc(fn, args || {}); };
+export const economyGet = () => ecoCall("economy_get");
+export const economyLineSolved = (no, tag, shareMsgId) => ecoCall("economy_line_solved", { p_no: no, p_tag: String(tag), p_share_msg: shareMsgId == null ? null : shareMsgId });
+export const economyClaimQuest = (slot) => ecoCall("economy_claim_quest", { p_slot: slot });
+export const economyClaimChapter = (key) => ecoCall("economy_claim_chapter", { p_key: key });
+export const economyClaimNotification = (id) => ecoCall("economy_claim_notification", { p_id: id });
+export const economyGacha = (count) => ecoCall("gacha_pull", { p_count: count });
+export const economyDevSet = (xp, coins) => ecoCall("economy_dev_set", { p_xp: xp == null ? null : xp, p_coins: coins == null ? null : coins });
+export const economyDevBonus = () => ecoCall("economy_dev_bonus");
 // (16차) "이 퍼즐을 푼 친구" 표기용 — 퍼즐 번호별 해결자 uid 기록. 테이블 puzzle_solvers(no, uid) PK(no,uid) 필요.
 // 테이블이 없거나 Supabase 미설정이면 무해하게 비활성(전체 풀이수만 표시).
 export async function puzzleSolverAdd(no, uid) { if (!SB_ON || !uid) return; try { await sbUpsert("puzzle_solvers", { no, uid }); } catch { } }

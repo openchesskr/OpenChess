@@ -183,9 +183,13 @@ export function GachaSection({ coins, onPull }) {
   const timers = useRef([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const busy = !!stage;
-  const pull = (count) => {
-    if (busy || !onPull || (coins || 0) < GACHA_PRICE[count]) return;
-    const r = onPull(count);
+  const [pending, setPending] = useState(false);   // (v0.7.0) 서버가 뽑기를 처리하는 동안 중복 누름 방지
+  const pull = async (count) => {
+    if (busy || pending || !onPull || (coins || 0) < GACHA_PRICE[count]) return;
+    setPending(true);
+    let r = null;
+    try { r = await onPull(count); } catch { r = null; }
+    setPending(false);
     if (!r || !r.ok) return;
     setStage({ r, phase: "enter" });
     const go = (ms, phase) => timers.current.push(setTimeout(() => setStage((s) => (s ? { ...s, phase } : s)), ms));

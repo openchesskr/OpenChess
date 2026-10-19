@@ -28,7 +28,7 @@ export default [
         cross join (values ('anon'),('authenticated')) v(role)
         where n.nspname='public' and p.prokind='f' and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')
           and has_function_privilege(v.role, p.oid, 'execute')
-          and (p.proname like '\\_%' or p.proname in ('pvp_finish_verified','email_for_username','rate_limit_hit','handle_new_user','gen_mid'))`);
+          and (p.proname like '\\_%' or p.proname in ('pvp_finish_verified','email_for_username','rate_limit_hit','handle_new_user'))`);
       return { breached: !!r.out, evidence: r.out ? "브라우저가 실행 가능한 내부 함수: " + r.out : "내부·서버 전용 함수는 브라우저 역할이 실행 불가" };
     } },
   { id: "BUG-109a", kind: "attack", title: "puzzle_like_toggle에 피해자 uid를 넣어 남의 명의로 좋아요",
