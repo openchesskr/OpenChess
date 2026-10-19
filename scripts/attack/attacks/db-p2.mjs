@@ -53,12 +53,12 @@ export default [
       const c = sb.as("authenticated", U.bob, `select public.puzzle_solve(111111);`);
       return { breached: !(a.ok && b.ok && c.ok), evidence: `풀이 기록 ${a.ok}, 라인 시간 ${b.ok}, 풀이 수 ${c.ok ? c.out : c.err}` };
     } },
-  { id: "BUG-112c", kind: "attack", title: "puzzle_share_put 도배: 비로그인이 새 퍼즐을 연속 100개 올리기",
+  { id: "BUG-112c", kind: "attack", title: "puzzle_share_put_verified 도배: 비로그인이 새 퍼즐을 연속 100개 올리기",
     async run({ sb }) {
       let ok = 0;
-      const sql = Array.from({ length: 100 }, (_, i) => `select public.puzzle_share_put(${900000 + i}, '{"id":"${idForNo(900000 + i)}"}'::jsonb);`).join("\n");
+      const sql = Array.from({ length: 100 }, (_, i) => `select public.puzzle_share_put_verified(null, ${900000 + i}, '{"id":"${idForNo(900000 + i)}"}'::jsonb);`).join("\n");
       // 한 호출씩 실행해 실패(속도 제한)를 센다 — 한 트랜잭션에 넣으면 첫 오류에서 전부 되돌려진다.
-      for (const q of sql.split("\n")) if (sb.as("anon", null, q).ok) ok++;
+      for (const q of sql.split("\n")) if (sb.as("service_role", null, q).ok) ok++;
       const n = sb.admin(`select count(*) from public.puzzles where no>=900000`).out;
       // 고정 1분 창이라 테스트 도중 창이 바뀌면 최대 2배(60)까지 가능하다 — 그 이상이면 뚫린 것.
       return { breached: Number(n) > 60, evidence: `비로그인 100회 시도 → ${n}개 저장(상한 분당 30, 창이 바뀌면 최대 60)` };
@@ -113,5 +113,47 @@ export default [
       const b = sb.as("anon", null, `select public._is_dev_account('${U.dev}');`);
       const leaked = a === "t" || b.out === "t";
       return { breached: leaked, evidence: leaked ? `is_content_editor=${a}, _is_dev_account=${b.ok ? b.out : "거부"} — 누가 관리자인지 외부에 노출` : "anon은 두 함수 모두 실행 불가" };
+    } },
+  { id: "BUG-124b", kind: "attack", title: "봇 대국 기록 직접 저장: 옛 bot_game_record 호출 · 검증용 service 함수를 브라우저가 호출 · 서버(service_role)는 정상 저장",
+    async run({ sb, U }) {
+      const old = sb.as("authenticated", U.mallory, `select public.bot_game_record('{e4,e5}', 'w', 'win', 3000, '600-0');`);
+      const direct = sb.as("authenticated", U.mallory, `select public.bot_game_record_verified('${U.mallory}', '{e4,e5}', 'w', 'win', 3000, '600-0');`);
+      const anon = sb.as("anon", null, `select public.bot_game_record_verified('${U.mallory}', '{e4,e5}', 'w', 'win', 3000, '600-0');`);
+      const n0 = sb.admin(`select count(*) from public.bot_games`).out;
+      const svc = sb.as("service_role", null, `select public.bot_game_record_verified('${U.mallory}', '{e4,e5}', 'w', 'loss', 1500, '600-0');`);
+      const n1 = sb.admin(`select count(*) from public.bot_games`).out;
+      return { breached: old.ok || direct.ok || anon.ok || n0 !== "0" || !svc.ok || n1 !== "1", evidence: `옛 RPC·직접 호출 거부(${old.err.split("\n")[0].slice(0, 45)}) · 서버(service_role) 저장 ${svc.ok ? "정상" : "실패"}(${n1}건)` };
+    } },
+  { id: "BUG-123", kind: "attack", title: "혼자 하기 점수 위조: 최고점 제출 후 남이 그 기록을 읽거나 순위에 오르는지 · 본인은 개인 기록을 계속 볼 수 있는지",
+    async run({ sb, U }) {
+      sb.as("authenticated", U.mallory, `select public.minigame_submit_best('coord', 150);`);   // 위조 가능한 최고점
+      sb.admin(`update public.minigame_stats set rated_games = 5, rating = 1300 where uid='${U.mallory}' and game='coord'`);
+      const otherCol = sb.as("authenticated", U.bob, `select best_score from public.minigame_stats where uid='${U.mallory}';`);
+      const anonCol = sb.as("anon", null, `select best_score from public.minigame_stats;`);
+      const star = sb.as("authenticated", U.bob, `select * from public.minigame_stats where uid='${U.mallory}';`);
+      const safe = sb.as("anon", null, `select rating from public.minigame_stats where uid='${U.mallory}' and game='coord';`);
+      const lb = sb.as("anon", null, `select rank || ':' || coalesce(best_score::text, 'null') from public.minigame_leaderboard('coord', 'best', 'all', 10);`).out;
+      const mineRows = sb.as("authenticated", U.mallory, `select best_score from public.minigame_my_best();`).out;
+      const othersRows = sb.as("authenticated", U.bob, `select count(*) from public.minigame_my_best();`).out;
+      // 제출 속도 제한: 시간당 120회를 채운 상태에서는 더 높은 점수도 거부되고, 창이 지나면 다시 받는다.
+      sb.admin(`insert into public.rate_limits(key, window_start, n) values ('mgbest:${U.bob}', to_timestamp(floor(extract(epoch from now()) / 3600) * 3600), 120) on conflict (key, window_start) do update set n = 120`);
+      const limited = sb.as("authenticated", U.bob, `select public.minigame_submit_best('attack', 50);`).out;
+      sb.admin(`delete from public.rate_limits where key = 'mgbest:${U.bob}'`);
+      const allowed = sb.as("authenticated", U.bob, `select public.minigame_submit_best('attack', 50);`).out;
+      const bad = otherCol.ok || anonCol.ok || star.ok || !safe.ok || safe.out !== "1300" || /150/.test(lb) || mineRows !== "150" || othersRows !== "0" || limited !== "f" || allowed !== "t";
+      return { breached: bad, evidence: `남이 best_score 컬럼 읽기 ${otherCol.ok ? "성공!" : "거부"}·select * ${star.ok ? "성공!" : "거부"}·공개 컬럼(레이팅 ${safe.out}) 정상 · 순위에 위조 점수 ${/150/.test(lb) ? "노출!" : "없음(레이팅 기준)"} · 내 개인 기록 ${mineRows} · 제출 한도(120/시간) 초과 시 ${limited === "f" ? "거부" : "통과!"}, 창이 지나면 ${allowed === "t" ? "다시 허용" : "거부!"}` };
+    } },
+  { id: "BUG-118b", kind: "attack", title: "프로필 사진 추적: 외부 URL(추적 픽셀)·svg·javascript:·거대한 data URL을 사진으로 저장 · 정상 업로드 사진은 유지 · 소개글 길이 제한",
+    async run({ sb, U }) {
+      const set = (photo, extra = "") => { sb.as("authenticated", U.mallory, `update public.profiles set pub = jsonb_build_object('photo', $p$${photo}$p$ ${extra}) where id='${U.mallory}';`); return sb.admin(`select coalesce(pub->>'photo','') from public.profiles where id='${U.mallory}'`).out; };
+      const ext = set("https://evil.example/pixel.png?viewer=1");
+      const svg = set("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=");
+      const js = set("javascript:alert(1)");
+      const huge = set("data:image/jpeg;base64," + "A".repeat(250000));
+      const good = set("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD=");
+      sb.as("authenticated", U.mallory, `update public.profiles set pub = jsonb_build_object('bio', repeat('가', 5000), 'nickname', repeat('n', 300)) where id='${U.mallory}';`);
+      const bioLen = sb.admin(`select length(pub->>'bio') || '/' || length(pub->>'nickname') from public.profiles where id='${U.mallory}'`).out;
+      const bad = ext !== "" || svg !== "" || js !== "" || huge !== "" || !good.startsWith("data:image/jpeg") || bioLen !== "600/60";
+      return { breached: bad, evidence: `외부 URL ${ext === "" ? "제거" : "저장됨!"} · svg ${svg === "" ? "제거" : "저장됨!"} · javascript: ${js === "" ? "제거" : "저장됨!"} · 25만 자 data ${huge === "" ? "제거" : "저장됨!"} · 정상 JPEG ${good ? "유지" : "삭제됨!"} · 소개글/닉네임 길이 ${bioLen}` };
     } },
 ];

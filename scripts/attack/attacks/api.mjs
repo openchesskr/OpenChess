@@ -1,3 +1,4 @@
+import { puzzleNo as fnvNo } from "../ids.mjs";
 // 서버리스 API(/api/*) 모의 공격 — fetch를 가짜로 바꿔 외부(Lichess·Gemini·Supabase)로 실제 요청이 나가지 않는다.
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -237,6 +238,69 @@ export const authAttacks = [
         for (let i = 0; i < 25; i++) { const r = mkRes(); await handler(loginReq("user" + i + "@example.com", "x", "21.0.0.1"), r); if (r.body && r.body.providers) sameIpHints++; }
       });
       return { breached: sameEmailHints > 5 || sameIpHints > 10, evidence: `같은 이메일 12회 중 힌트 ${sameEmailHints}(상한 5/10분) · 같은 IP 이메일 25개 중 힌트 ${sameIpHints}(상한 10/10분)` };
+    } },
+  { id: "BUG-124", kind: "attack", title: "/api/bot-game: 이기지 않은 대국을 승리로 기록 · 불법 수순 · 로그인 없이 · 정상 대국(체크메이트 승·패, 기권 패배)은 저장",
+    async run() {
+      authEnv(); const { default: handler } = await load("bot-game.js"); const saved = [];
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) return new Response("false", { status: 200 });
+        if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "u1" }), { status: 200 });
+        if (u.includes("/rpc/bot_game_record_verified")) { saved.push(body); return new Response("1", { status: 200 }); }
+        return new Response("{}", { status: 404 });
+      };
+      const post = (b, token = "t") => ({ method: "POST", headers: { authorization: token ? "Bearer " + token : "", "x-vercel-forwarded-for": "1.1.1.1" }, body: b });
+      const fool = ["f3", "e5", "g4", "Qh4#"];            // 백이 체크메이트당함(흑 승)
+      const open = ["e4", "e5", "Nf3", "Nc6"];             // 진행 중
+      const R = {};
+      await withFetch(impl, async () => {
+        const run = async (k, b, t) => { const r = mkRes(); await handler(post(b, t), r); R[k] = r.code; };
+        await run("anon", { sans: fool, color: "w", result: "loss", bot_elo: 1500, time_control: "600-0" }, "");
+        await run("fakeWin", { sans: open, color: "w", result: "win", bot_elo: 3000, time_control: "600-0" });                  // 끝나지 않았는데 승리
+        await run("fakeWinMate", { sans: fool, color: "w", result: "win", bot_elo: 3000, time_control: "600-0" });              // 체크메이트당했는데 승리
+        await run("wrongColor", { sans: fool, color: "b", result: "loss", bot_elo: 1500, time_control: "600-0" });             // 흑이 이겼는데 흑의 패배
+        await run("illegal", { sans: ["e4", "e5", "Ke3"], color: "w", result: "loss", bot_elo: 1500, time_control: "600-0" });
+        await run("eloHuge", { sans: fool, color: "w", result: "loss", bot_elo: 99999, time_control: "600-0" });
+        await run("mateLoss", { sans: fool, color: "w", result: "loss", bot_elo: 1500, time_control: "600-0" });              // 정상
+        await run("mateWinBlack", { sans: fool, color: "b", result: "win", bot_elo: 1500, time_control: "600-0" });           // 정상(흑이 이김)
+        await run("resign", { sans: open, color: "w", result: "loss", bot_elo: 1500, time_control: "600-0" });                // 정상(기권)
+      });
+      const bad = R.anon !== 401 || R.fakeWin !== 400 || R.fakeWinMate !== 400 || R.wrongColor !== 400 || R.illegal !== 400 || R.eloHuge !== 400 || R.mateLoss !== 200 || R.mateWinBlack !== 200 || R.resign !== 200 || saved.length !== 3;
+      return { breached: bad, evidence: `비로그인 ${R.anon} · 미종료 승리 위조 ${R.fakeWin} · 메이트당하고 승리 ${R.fakeWinMate} · 색 뒤바꿈 ${R.wrongColor} · 불법 수 ${R.illegal} · 봇 레이팅 99999 ${R.eloHuge} · 정상(체크메이트 패 ${R.mateLoss}, 흑 승 ${R.mateWinBlack}, 기권 ${R.resign}) 저장 ${saved.length}건` };
+    } },
+  { id: "BUG-121d", kind: "attack", title: "/api/puzzle-share: 불법 수순·번호-id 불일치·시작 위치 위조·초대형 트리 거부 · 합법 퍼즐(표준/FEN)은 저장 · 게스트 호출 제한 · 번호 충돌은 409",
+    async run() {
+      authEnv(); const { default: handler } = await load("puzzle-share.js"); const saved = []; const counts = new Map(); let collide = false;
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + 1; counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+        if (u.includes("/auth/v1/user")) return new Response(JSON.stringify({ id: "u1" }), { status: 200 });
+        if (u.includes("/rpc/puzzle_share_put_verified")) { if (collide) return new Response("collision", { status: 400 }); saved.push(body); return new Response("null", { status: 200 }); }
+        return new Response("{}", { status: 404 });
+      };
+      // 표준 시작 위치: 1.e4 e5 2.Nf3 (설정) → 흑의 실수 2...Nc6 아님; 여기선 mistakeSan = "Nc6", 정답 트리는 3.Bb5 / 3.d4
+      const mk = (id, over = {}) => ({ id, name: "테스트 퍼즐", setupSans: ["e4", "e5", "Nf3"], mistakeSan: "Nc6", themes: ["punish"],
+        tree: { children: [{ san: "Bb5", children: [{ san: "a6", children: [{ san: "Ba4" }] }] }, { san: "d4", children: [{ san: "exd4", children: [{ san: "Nxd4" }] }] }] }, ...over });
+      const id1 = "testpuzzle-1", no1 = fnvNo(id1);
+      const post = (no, data, token = "", ip = "3.3.3.3") => ({ method: "POST", headers: { authorization: token ? "Bearer " + token : "", "x-vercel-forwarded-for": ip }, body: { no, data, public: true } });
+      const run = async (req) => { const r = mkRes(); await withFetch(impl, () => handler(req, r)); return r.code; };
+      const R = {};
+      R.good = await run(post(no1, mk(id1)));
+      R.badNo = await run(post(no1 + 1 > 999999 ? 100000 : no1 + 1, mk(id1)));
+      R.illegalMove = await run(post(no1, mk(id1, { tree: { children: [{ san: "Bb5", children: [{ san: "Qxh7" }] }] } })));
+      R.fakeStart = await run(post(no1, mk(id1, { setupSans: ["e4", "e5", "Ke3"] })));
+      R.lines = await run(post(no1, mk(id1, { tree: undefined, lines: [{ tag: "a", solution: ["Bb5", "a6", "Ba4"] }] })));
+      R.badLines = await run(post(no1, mk(id1, { tree: undefined, lines: [{ tag: "a", solution: ["Bb5", "Qe2"] }] })));
+      const idF = "fen:4k3/8/8/8/8/8/8/4K2R w K - 0 1", noF = fnvNo(idF);
+      R.fen = await run(post(noF, { id: idF, name: "FEN", fen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1", setupSans: [], tree: { children: [{ san: "Rh8+", children: [{ san: "Kd7" }] }] } }));
+      R.badFen = await run(post(noF, { id: idF, fen: "not a fen", setupSans: [] }));
+      const deep = (n) => (n ? { children: [{ san: n % 2 ? "Nf3" : "Ng1", children: deep(n - 1).children }] } : { children: [] });
+      R.tooDeep = await run(post(no1, mk(id1, { tree: deep(100) })));
+      R.hugeName = await run(post(no1, mk(id1, { name: "x".repeat(500) })));
+      collide = true; R.collision = await run(post(no1, mk(id1))); collide = false;
+      let blocked = 0; for (let i = 0; i < 40; i++) if (await run(post(no1, mk(id1), "", "9.9.9.9")) === 429) blocked++;
+      const bad = R.good !== 200 || R.badNo !== 400 || R.illegalMove !== 400 || R.fakeStart !== 400 || R.lines !== 200 || R.badLines !== 400 || R.fen !== 200 || R.badFen !== 400 || R.tooDeep !== 400 || R.hugeName !== 400 || R.collision !== 409 || blocked < 5;
+      return { breached: bad, evidence: `정상(표준 ${R.good}·옛 lines ${R.lines}·FEN ${R.fen}) 저장 · 번호-id 불일치 ${R.badNo} · 불법 수 ${R.illegalMove} · 불법 시작 ${R.fakeStart} · 불법 lines ${R.badLines} · 가짜 FEN ${R.badFen} · 너무 깊은 트리 ${R.tooDeep} · 긴 이름 ${R.hugeName} · 번호 충돌 ${R.collision} · 게스트 40회 중 제한 ${blocked}건` };
     } },
 ];
 

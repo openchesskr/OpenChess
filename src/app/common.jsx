@@ -4574,9 +4574,19 @@ export function minigameBestLabel(game, v) {
 }
 export async function fetchMinigameStats(uid) {
   if (!SB_ON || !uid) return {};
-  const rows = await sbSelect("minigame_stats?uid=eq." + uid + "&select=game,rating,peak_rating,rated_games,games,wins,losses,draws,streak,best_streak,best_score,best_detail");
+  // (v0.7.0 BUG-123) 혼자 플레이 기록(best_*)은 본인만 볼 수 있다 — 표에서는 읽히지 않으므로 공개 컬럼만 읽고, 내 것이면 minigame_my_best RPC로 합친다.
+  const rows = await sbSelect("minigame_stats?uid=eq." + uid + "&select=game,rating,peak_rating,rated_games,games,wins,losses,draws,streak,best_streak");
   const out = {};
   (rows || []).forEach((r) => { out[r.game] = r; });
+  if (SB_TOKEN) {
+    try {
+      const mine = await sbRpc("minigame_my_best");
+      (Array.isArray(mine) ? mine : []).forEach((b) => {
+        if (b.uid !== uid) return;
+        out[b.game] = { ...(out[b.game] || { game: b.game, rating: 1200, peak_rating: 1200, rated_games: 0, games: 0, wins: 0, losses: 0, draws: 0, streak: 0, best_streak: 0 }), best_score: b.best_score, best_detail: b.best_detail };
+      });
+    } catch { /* 개인 기록을 못 읽어도 나머지는 보인다 */ }
+  }
   return out;
 }
 // (v0.6.2) 레이팅 칩 — 미니게임 허브 버튼 이름 옆에 붙던 금색 알약을 공용으로 뺐다. 일반 대국 타임 컨트롤 선택·/user 성취도 카드가 똑같이 쓴다.
@@ -5030,6 +5040,15 @@ export function solvedLineTagsOf(p, savedArr) {
 export function puzzleNo(id) { let h = 2166136261; const s = String(id); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) % 900000 + 100000; }
 // (v0.1.0) 퍼즐 공유 — 인스타그램 릴스 공유처럼 친구와의 대화창에 퍼즐 미리보기 카드(puzzle_no 설정된
 // chat_messages 행)로 남긴다. 공유 수는 RPC로 원자적으로 늘린다(puzzle_solve와 동일하게 행이 없으면 새로 만듦).
+// (v0.7.0 보안 BUG-121) 퍼즐 올리기·테마 합치기의 유일한 입구 — 서버 API(/api/puzzle-share)가 chess.js로 시작 위치·정답 트리 수순이 합법인지 확인한 뒤에만 저장한다.
+// 로그인했으면 토큰을 함께 보낸다(개발자만 기존 퍼즐 본문을 바꿀 수 있고, 올리기 한도도 더 넉넉하다). 실패하면 던진다.
+export async function puzzleSharePut(no, data, isPublic = true) {
+  const r = await fetch(apiUrl("/api/puzzle-share"), {
+    method: "POST", headers: { "Content-Type": "application/json", ...(SB_TOKEN ? { Authorization: "Bearer " + SB_TOKEN } : {}) },
+    body: JSON.stringify({ no, data, public: isPublic }),
+  });
+  if (!r.ok) throw new Error("puzzle-share " + r.status);
+}
 export async function puzzleShareSend(no, fromUid, toUid) {
   if (!SB_ON || !fromUid || !toUid) return false;
   try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, puzzle_no: no }); } catch { return false; }
@@ -5083,7 +5102,7 @@ export async function puzzleShare(p) {
     // 여부를 나중에 바꾸는 건 puzzleSetVisibility(생성자 권한 박스)로만 한다.
     if (!server && p.public === false) row.is_public = false;
     // (v0.7.0 보안 BUG-110) puzzles 테이블 직접 쓰기는 막혔다 — 서버 RPC가 새 퍼즐 올리기와 테마 합치기만 허용한다.
-    await sbRpc("puzzle_share_put", { p_no: no, p_data: merged, p_public: row.is_public !== false });
+    await puzzleSharePut(no, merged, row.is_public !== false);
     // (v0.3.4 기능) 사용자 요청 — 이 퍼즐(no)에 아직 생성자가 기록되지 않았다면(creator_uid is
     // null) 지금 이 공유를 실행한 로그인 유저를 생성자로 선점한다. puzzle_claim_creator는 이미
     // 생성자가 있으면 조용히 아무 일도 하지 않으므로(멱등), 같은 퍼즐을 나중에 또 만난 다른

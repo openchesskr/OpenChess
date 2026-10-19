@@ -76,4 +76,15 @@ export default [
       const n = sb.admin(`select count(*) from public.friend_edges where (from_uid='${U.mallory}' or to_uid='${U.mallory}') and status='accepted'`).out;
       return { breached: n !== "0", evidence: n !== "0" ? "친구 관계가 만들어짐" : "친구 관계 없음 (" + (r.ok ? r.out : r.err.split("\n")[0]) + ")" };
     } },
+  { id: "BUG-119", kind: "attack", title: "진행 중 대국 열람: 비로그인 · 대국자와 친구가 아닌 로그인 계정이 대국자 uid·수순을 읽기 / 친구의 관전은 유지",
+    async run({ sb, U }) {
+      // 시드: 대국 1 = mallory(백) vs victim(흑), 대국 2 = victim(백) vs bob(흑). victim-bob은 친구.
+      const anon = sb.as("anon", null, `select count(*) from public.pvp_games;`).out;
+      const stranger = sb.as("authenticated", U.dev, `select count(*) from public.pvp_games;`).out;            // dev는 아무와도 친구 아님
+      const mallory = sb.as("authenticated", U.mallory, `select count(*) from public.pvp_games where id=2;`).out;   // mallory는 victim/bob과 친구 아님(1번 대국 참가자일 뿐)
+      sb.admin(`insert into public.friend_edges(from_uid,to_uid,status) values ('${U.dev}','${U.bob}','accepted') on conflict do nothing`);
+      const friend = sb.as("authenticated", U.dev, `select count(*) from public.pvp_games where id=2;`).out;      // dev는 bob(대국자)의 친구 → 관전 가능
+      const mine = sb.as("authenticated", U.victim, `select count(*) from public.pvp_games;`).out;               // 참가자는 자기 대국 모두
+      return { breached: anon !== "0" || stranger !== "0" || mallory !== "0" || friend !== "1" || mine !== "2", evidence: `비로그인 ${anon}건·낯선 로그인 ${stranger}건·친구 아닌 계정이 남의 대국 ${mallory}건 읽음(모두 0이어야 함) · 대국자의 친구가 관전 ${friend}건 · 참가자 본인 ${mine}건` };
+    } },
 ];

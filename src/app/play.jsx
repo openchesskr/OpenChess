@@ -11,6 +11,7 @@ import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "fram
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
 import { X, Cpu, Star, User, Target, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
+import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";
 import { createPortal } from "react-dom";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -2180,7 +2181,7 @@ function MinigameLeaderboard({ game: initialGame, myUid, onOpenProfile }) {
       </div>
       <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
         {isChessRatingGame(game) && <MinigameSegmented value={game} onChange={setGame} options={CHESS_RATING_CATS.map((c) => ({ key: "chess_" + c, label: tcCatLabel(TC_KEY_CAT[c]) }))} />}
-        {!isChessRatingGame(game) && <MinigameSegmented value={kind} onChange={setKind} options={[{ key: "rating", label: t("레이팅") }, { key: "best", label: t("혼자 플레이 기록") }]} />}
+        {/* (v0.7.0 BUG-123) 혼자 플레이 기록은 브라우저가 신고한 점수라 순위에서 뺐다 — 내 기록은 로비 상단에서 본다. */}
         <MinigameSegmented value={scope} onChange={setScope} options={[{ key: "all", label: t("전체") }, { key: "friends", label: t("친구"), disabled: !myUid }]} />
       </div>
       {rows == null ? (
@@ -5059,7 +5060,8 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
     if (mode !== "bot" || !myUid || fenRoot || sans.length < 2) return;
     const loser = (result.end === "checkmate" || result.end === "resign" || result.end === "flag") ? result.color : null;
     const outcome = loser ? (loser === activeColor ? "loss" : "win") : "draw";
-    sbRpc("bot_game_record", { p_sans: sans.slice(), p_color: activeColor, p_result: outcome, p_bot_elo: botTier.elo, p_time_control: timeControl.key }).catch(() => { });
+    // (v0.7.0 보안 BUG-124) 서버 API가 수순을 재생해 합법·결과를 확인한 뒤에만 저장한다(체크메이트 승패·무승부 확인, 끝나지 않은 위치의 '승리'는 저장하지 않음).
+    if (SB_TOKEN) fetch(apiUrl("/api/bot-game"), { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }, body: JSON.stringify({ sans: sans.slice(), color: activeColor, result: outcome, bot_elo: botTier.elo, time_control: timeControl.key }) }).catch(() => { });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultKey]);
 

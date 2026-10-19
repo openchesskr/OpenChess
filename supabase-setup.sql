@@ -2184,8 +2184,11 @@ begin
 end; $$;
 revoke all on function public.puzzle_no_of(text) from public;
 grant execute on function public.puzzle_no_of(text) to anon, authenticated, service_role;
+-- (v0.7.0 보안 BUG-121) 브라우저가 부르던 puzzle_share_put은 없앴다 — 서버 API(/api/puzzle-share)가 chess.js로 퍼즐의 시작 위치·정답 트리 수순이 합법인지 확인한 뒤에만
+-- 이 함수를 service_role로 부른다(p_actor = 올린 사람, 비로그인이면 null).
 drop function if exists public.puzzle_share_put(bigint, jsonb, boolean) cascade;
-create or replace function public.puzzle_share_put(p_no bigint, p_data jsonb, p_public boolean default true)
+drop function if exists public.puzzle_share_put_verified(uuid, bigint, jsonb, boolean) cascade;
+create or replace function public.puzzle_share_put_verified(p_actor uuid, p_no bigint, p_data jsonb, p_public boolean default true)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_old jsonb; v_exists boolean; v_themes jsonb;
 begin
@@ -2193,18 +2196,20 @@ begin
   if p_data is null or jsonb_typeof(p_data) <> 'object' then raise exception 'invalid data'; end if;
   if length(p_data::text) > 300000 then raise exception 'data too large'; end if;
   if public.puzzle_no_of(p_data ->> 'id') is distinct from p_no then raise exception 'puzzle number does not match id'; end if;
-  if auth.uid() is null then p_public := true; end if;   -- 비로그인은 비공개로 올릴 수 없다(비공개 지정으로 남의 번호를 숨겨 선점하는 것 방지)
+  if p_actor is null then p_public := true; end if;   -- 비로그인은 비공개로 올릴 수 없다(비공개 지정으로 남의 번호를 숨겨 선점하는 것 방지)
   -- (v0.7.0 BUG-112) 올리기 속도 제한: 로그인 사용자당 분당 30회, 비로그인은 전체 합쳐 분당 30회.
-  if public.rate_limit_hit(case when auth.uid() is null then 'share:anon' else 'share:' || auth.uid() end, 30, 60) then raise exception 'rate limited'; end if;
+  if public.rate_limit_hit(case when p_actor is null then 'share:anon' else 'share:' || p_actor end, 30, 60) then raise exception 'rate limited'; end if;
   select data into v_old from public.puzzles where no = p_no for update;
   v_exists := found;
+  -- (BUG-121) 같은 번호에 이미 다른 id의 퍼즐이 있으면(번호 충돌) 합치지도 덮어쓰지도 않고 거부한다 — 충돌을 일부러 만들어 남의 퍼즐 테마를 오염시키지 못하게.
+  if v_exists and v_old is not null and v_old ? 'id' and (v_old ->> 'id') is distinct from (p_data ->> 'id') then raise exception 'collision'; end if;
   if not v_exists then
     insert into public.puzzles(no, data, is_public) values (p_no, p_data, coalesce(p_public, true)) on conflict (no) do nothing;
     return;
   end if;
   if v_old is null or v_old = '{}'::jsonb then
     update public.puzzles set data = p_data where no = p_no;
-  elsif auth.uid() is not null and public.is_content_editor(auth.uid()) then
+  elsif p_actor is not null and public.is_content_editor(p_actor) then
     update public.puzzles set data = p_data where no = p_no;
   else
     select coalesce(jsonb_agg(distinct t), '[]'::jsonb) into v_themes from (
@@ -2215,7 +2220,9 @@ begin
     end if;
   end if;
 end; $$;
-grant execute on function public.puzzle_share_put(bigint, jsonb, boolean) to anon, authenticated;
+revoke all on function public.puzzle_share_put_verified(uuid, bigint, jsonb, boolean) from public, anon, authenticated;
+grant execute on function public.puzzle_share_put_verified(uuid, bigint, jsonb, boolean) to service_role;
+
 
 -- (v0.7.0 보안) 서버리스 함수들이 인스턴스와 상관없이 공유하는 호출 제한 — 고정 창 카운터. service_role 전용.
 -- 반환값 true = 제한 초과. 키는 호출하는 서버 코드가 정한다(예: login:ip:<주소>).
@@ -3555,6 +3562,8 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   if p_game not in ('coord', 'knight', 'rush', 'attack') then raise exception 'bad game'; end if;
   if p_score is null or p_score <= 0 then return false; end if;
+  -- (v0.7.0 BUG-123) 본인에게만 보이는 개인 기록이므로 위조해도 남에게 영향이 없다. 그래도 도배는 막는다(시간당 120회).
+  if public.rate_limit_hit('mgbest:' || v_me, 120, 3600) then return false; end if;
   if (p_game = 'coord' and p_score > 150) or (p_game = 'attack' and p_score > 120) or (p_game = 'rush' and p_score > 300)
      or (p_game = 'knight' and p_score > 5000000) then raise exception 'score out of range'; end if;
   insert into public.minigame_stats(uid, game) values (v_me, p_game) on conflict (uid, game) do nothing;
@@ -3569,31 +3578,39 @@ grant execute on function public.minigame_submit_best(text, numeric, jsonb) to a
 -- 랭킹 — p_kind: 'rating'(레이팅 대전 3판 이상) | 'best'(혼자 플레이 최고 기록), p_scope: 'all' | 'friends'
 -- (나 + 수락된 친구). 상위 p_limit명과, 그 안에 내가 없으면 내 행을 하나 더 붙여 돌려준다(is_me).
 -- 같은 점수는 먼저 달성한 사람이 앞선다.
+-- (v0.7.0 보안 BUG-123) 순위는 서버가 대국을 진행·확정한 레이팅만으로 매긴다. 혼자 플레이 기록(best)은 브라우저가 신고한 점수라 검증할 수 없어 순위에서 뺐다
+-- (p_kind 인자는 옛 클라이언트 호환을 위해 남겨 두지만 무시한다). 본인의 혼자 기록은 minigame_my_best()로만 읽는다.
 create or replace function public.minigame_leaderboard(p_game text, p_kind text default 'rating', p_scope text default 'all', p_limit int default 50)
 returns table (rank bigint, uid uuid, username text, pub jsonb, rating int, rated_games int, wins int, losses int, draws int, best_score numeric, best_detail jsonb, is_me boolean)
 language sql stable security definer set search_path = public as $$
   with pool as (
     select s.* from public.minigame_stats s
     where s.game = p_game
-      and (case when p_kind = 'best' then s.best_score is not null else s.rated_games >= 3 end)
+      and s.rated_games >= 3
       and (p_scope <> 'friends' or s.uid = auth.uid() or s.uid in (
         select case when e.from_uid = auth.uid() then e.to_uid else e.from_uid end
         from public.friend_edges e
         where e.status = 'accepted' and (e.from_uid = auth.uid() or e.to_uid = auth.uid())))
   ), ranked as (
-    select row_number() over (order by
-        case when p_kind = 'best' then p.best_score else p.rating end desc,
-        case when p_kind = 'best' then p.best_at else p.updated_at end asc) as rank, p.*
+    select row_number() over (order by p.rating desc, p.updated_at asc) as rank, p.*
     from pool p
   )
   select r.rank, r.uid, pr.username,
     jsonb_build_object('nickname', pr.pub -> 'nickname', 'photo', pr.pub -> 'photo', 'displayId', pr.pub -> 'displayId', 'xp', pr.pub -> 'xp'),
-    r.rating, r.rated_games, r.wins, r.losses, r.draws, r.best_score, r.best_detail, r.uid = auth.uid()
+    r.rating, r.rated_games, r.wins, r.losses, r.draws, null::numeric, null::jsonb, r.uid = auth.uid()
   from ranked r join public.profiles pr on pr.id = r.uid
   where r.rank <= least(greatest(p_limit, 1), 100) or r.uid = auth.uid()
   order by r.rank;
 $$;
 grant execute on function public.minigame_leaderboard(text, text, text, int) to anon, authenticated;
+
+-- 혼자 플레이 기록(best_*)은 본인만 본다: 다른 사람이 읽을 수 있는 컬럼에서 뺀다(표 전체 select 권한을 거두고 안전한 컬럼만 다시 준다).
+revoke select on public.minigame_stats from anon, authenticated;
+grant select (uid, game, rating, peak_rating, rated_games, games, wins, losses, draws, streak, best_streak, updated_at) on public.minigame_stats to anon, authenticated;
+create or replace function public.minigame_my_best()
+returns table(uid uuid, game text, best_score numeric, best_detail jsonb) language sql stable security definer set search_path = public as $$
+  select s.uid, s.game, s.best_score, s.best_detail from public.minigame_stats s where s.uid = auth.uid() and s.best_score is not null;
+$$;
 
 -- (v0.6.2) 봇과 둔 일반 대국 기록 — 실시간 대국(pvp_games)과 달리 서버에 남는 곳이 없어 "내 일반 대국 기록"에서 빠졌다. 대국이 끝나면 클라이언트가 bot_game_record로
 -- 한 번 올린다. 레이팅·랭킹에는 전혀 반영되지 않는 순수 기록이라(클라이언트가 보내는 값이므로) 입력 크기·범위만 검증하고, 사람마다 최근 100판만 남긴다.
@@ -3612,11 +3629,14 @@ alter table public.bot_games enable row level security;
 drop policy if exists "bot games select own" on public.bot_games;
 create policy "bot games select own" on public.bot_games for select using (auth.uid() = uid);
 grant select on public.bot_games to authenticated;
-create or replace function public.bot_game_record(p_sans text[], p_color text, p_result text, p_bot_elo int, p_time_control text default '600-0')
+-- (v0.7.0 보안 BUG-124) 예전 bot_game_record(브라우저가 결과를 신고한 대로 저장)는 없앴다 — 이기지 않은 대국을 승리로 기록할 수 있었다.
+-- 이제 서버 API(/api/bot-game)가 chess.js로 수순을 처음부터 재생해 합법·결과(체크메이트 승패·무승부)를 확인한 뒤에만 이 함수를 service_role로 부른다.
+drop function if exists public.bot_game_record(text[], text, text, int, text) cascade;
+create or replace function public.bot_game_record_verified(p_uid uuid, p_sans text[], p_color text, p_result text, p_bot_elo int, p_time_control text default '600-0')
 returns bigint language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid(); v_id bigint;
+declare v_me uuid := p_uid; v_id bigint;
 begin
-  if v_me is null then raise exception 'auth required'; end if;
+  if v_me is null then raise exception 'uid required'; end if;
   if p_color not in ('w', 'b') or p_result not in ('win', 'loss', 'draw') then raise exception 'bad value'; end if;
   if p_sans is null or coalesce(array_length(p_sans, 1), 0) < 2 or array_length(p_sans, 1) > 600 then raise exception 'bad sans'; end if;
   if p_bot_elo is null or p_bot_elo < 100 or p_bot_elo > 3200 then raise exception 'bad bot'; end if;
@@ -3626,7 +3646,8 @@ begin
   delete from public.bot_games where uid = v_me and id not in (select id from public.bot_games where uid = v_me order by created_at desc, id desc limit 100);
   return v_id;
 end; $$;
-grant execute on function public.bot_game_record(text[], text, text, int, text) to authenticated;
+revoke all on function public.bot_game_record_verified(uuid, text[], text, text, int, text) from public, anon, authenticated;
+grant execute on function public.bot_game_record_verified(uuid, text[], text, text, int, text) to service_role;
 
 -- (v0.6.2) /user 프로필의 "일반 대국 기록" — 누구의 프로필이든(내 것·남의 것) 같은 함수로 읽는다. pvp_games·bot_games는 본인만 select할 수 있어 남의 기록은 직접 못 읽으므로,
 -- 끝난 일반 대국(실시간 pvp_games + 봇 bot_games)의 공개해도 되는 필드(수순·결과·시간 규정·레이팅 증감·상대 이름)만 돌려준다. 채팅·무승부 제안 등 다른 컬럼은 노출하지 않는다.
@@ -3853,9 +3874,20 @@ grant execute on function public.daily_puzzle_pick_ensure_today() to anon, authe
 -- 모든 문(pg_cron 스케줄 등)이 적용되지 않은 채 스크립트가 중단된다.
 drop policy if exists "pvp games select own" on public.pvp_games;
 drop policy if exists "pvp games select own or spectate" on public.pvp_games;
+-- (v0.7.0 보안 BUG-119) 예전에는 진행 중인 모든 대국이 비로그인에게까지 공개돼 대국자 uid·수순·시계를 누구나 긁어 갈 수 있었다. 관전은 '친구의 대국을 구경하는 기능'이므로
+-- 대국자의 친구(수락된 friend_edges)인 로그인 사용자에게만 연다 — 참가자 본인은 언제나 읽는다.
 create policy "pvp games select own or spectate" on public.pvp_games for select using (
-  auth.uid() = white_uid or auth.uid() = black_uid or status = 'active'
-  or (status <> 'active' and updated_at > now() - interval '10 minutes')
+  auth.uid() = white_uid or auth.uid() = black_uid
+  or (
+    auth.uid() is not null
+    and (status = 'active' or updated_at > now() - interval '10 minutes')
+    and exists (
+      select 1 from public.friend_edges fe
+      where fe.status = 'accepted'
+        and ((fe.from_uid = auth.uid() and fe.to_uid in (pvp_games.white_uid, pvp_games.black_uid))
+          or (fe.to_uid = auth.uid() and fe.from_uid in (pvp_games.white_uid, pvp_games.black_uid)))
+    )
+  )
 );
 
 -- ============================================================================
@@ -4252,7 +4284,7 @@ begin
   where w.depth % 2 = 1 and w.depth > 0 and not exists (
     select 1 from jsonb_array_elements(case when jsonb_typeof(w.node -> 'children') = 'array' then w.node -> 'children' else '[]'::jsonb end) c where (c ->> 'pass') is distinct from 'false'
   );
-  return v_n;
+  return least(v_n, 50);   -- 한 퍼즐의 보상 가능한 라인 수 상한(수십 개짜리 가짜 라인으로 XP를 늘리지 못하게)
 end; $$;
 
 -- ---- RPC (브라우저 호출) ----------------------------------------------------
@@ -4487,6 +4519,17 @@ begin
   if jsonb_typeof(v_pub) <> 'object' then v_pub := '{}'::jsonb; end if;
   select xp into v_xp from public.economy where uid = new.id;
   v_pub := v_pub || jsonb_build_object('xp', coalesce(v_xp, 0));
+  -- (v0.7.0 보안 BUG-118) 프로필 사진은 업로드한 이미지(data:image, 256px로 줄인 JPEG)만 허용한다. 외부 주소(URL)를 넣으면 그 프로필을 보는 모든 사람의 브라우저가 공격자 서버에서
+  -- 이미지를 받아 가 IP·접속 시각이 노출되는 추적이 가능했다. 그 밖의 값은 지운다. 이름·소개글은 길이를 자르고, 프로필 전체 크기에 상한을 둔다.
+  if v_pub ? 'photo' then
+    if jsonb_typeof(v_pub -> 'photo') <> 'string' or ((v_pub ->> 'photo') <> ''
+       and not ((v_pub ->> 'photo') ~ '^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$' and length(v_pub ->> 'photo') <= 200000)) then
+      v_pub := v_pub || jsonb_build_object('photo', '');
+    end if;
+  end if;
+  if jsonb_typeof(v_pub -> 'nickname') = 'string' then v_pub := v_pub || jsonb_build_object('nickname', left(v_pub ->> 'nickname', 60)); end if;
+  if jsonb_typeof(v_pub -> 'bio') = 'string' then v_pub := v_pub || jsonb_build_object('bio', left(v_pub ->> 'bio', 600)); end if;
+  if length(v_pub::text) > 300000 then raise exception 'profile too large'; end if;
   if jsonb_typeof(v_pub -> 'puzzleRating') = 'number' then v_pub := v_pub || jsonb_build_object('puzzleRating', least(4000, greatest(0, (v_pub ->> 'puzzleRating')::numeric))); end if;
   if jsonb_typeof(v_pub -> 'solvedCount') = 'number' then v_pub := v_pub || jsonb_build_object('solvedCount', least(1000000, greatest(0, (v_pub ->> 'solvedCount')::numeric))); end if;
   new.pub := v_pub;
@@ -4506,6 +4549,8 @@ select public._economy_ensure(id) from public.user_progress;
 update public.profiles p set pub = p.pub || jsonb_build_object('xp', coalesce((select e.xp from public.economy e where e.uid = p.id), 0))
   where coalesce(p.pub ->> 'xp', '') <> coalesce((select e.xp::text from public.economy e where e.uid = p.id), '0');
 update public.chat_messages set read = true where share_reward is not null and not read;
+-- (BUG-118) 이미 저장된 외부 사진 주소를 정리한다: 가드 트리거가 no-op 갱신에도 실행되므로 사진이 있는 프로필만 한 번 갱신한다.
+update public.profiles set pub = pub where coalesce(pub ->> 'photo', '') <> '' and (pub ->> 'photo') !~ '^data:image/(png|jpeg|webp|gif);base64,';
 update public.notifications set reward_amount = least(greatest(coalesce((payload ->> 'reward')::numeric, 0), 0), 10000)::bigint
   where kind = 'daily_puzzle_selected' and reward_amount is null and jsonb_typeof(payload -> 'reward') = 'number';
 
@@ -4524,19 +4569,19 @@ declare
   v_anon text[] := array[
     'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
-    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_share_put', 'puzzle_solve',
+    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve',
     'search_puzzles_prefix', 'username_available'
   ];
   v_auth text[] := array[
     'gen_mid',
     'attack_finish', 'attack_forfeit', 'attack_next', 'attack_progress',
-    'attack_report', 'attack_start', 'bot_game_record', 'chat_blocked_between',
+    'attack_report', 'attack_start', 'chat_blocked_between',
     'chat_clear_conversation', 'chat_edit_message', 'chat_rooms', 'claim_username',
     'coord_click', 'coord_finish', 'coord_forfeit', 'coord_reveal_next',
     'daily_puzzle_cache_put', 'daily_puzzle_pick_run', 'delete_own_account', 'friend_accept', 'friend_remove',
     'friend_request', 'friend_request_by_mid', 'friend_suggestions', 'game_analysis_put',
     'knight_forfeit', 'knight_move_ping', 'knight_report',
-    'knight_resolve_round', 'knight_start_round', 'legacy_like_toggle', 'minigame_submit_best',
+    'knight_resolve_round', 'knight_start_round', 'minigame_my_best', 'legacy_like_toggle', 'minigame_submit_best',
     'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
     'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
     'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc',
