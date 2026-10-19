@@ -55,7 +55,8 @@ const setIds = [...theme.matchAll(/\{ id: "(\w+)", label: t\("[^"]+"\), desc: t\
 eq([...setIds].sort(), G.GACHA_POOL.map((p) => p.id).sort(), "뽑기 풀과 스킨 세트(SKIN_SETS) id가 다름");
 for (const id of setIds) if (!new RegExp("^  " + id + ": \\{ label: t\\(\"[^\"]+\"\\), gacha: true, set: \"" + id + "\"", "mg").test(theme)) fails.push("세트 " + id + "의 보드·기물 스킨이 gacha: true가 아님");
 // ⑤ 연결
-ok(/gachaPull\(count, ownedSkins, ocCoins\)/.test(app) && /setOcCoins\(r\.coins\)/.test(app) && /setOwnedSkins\(r\.owned\)/.test(app), "App의 뽑기가 gachaPull 결과를 코인·보유 목록에 반영하지 않음");
+// (v0.7.0 BUG-113) 뽑기는 서버(gacha_pull)가 한다 — 클라이언트는 서버 결과를 반영만 한다. lib/gacha.js의 gachaPull은 규칙의 기준 구현(테스트용)으로 남고, 서버 상수와의 일치는 check-economy-constants가 본다.
+ok(/economyGacha\(count\)/.test(app) && /applyEconomyRef\.current\(r\)/.test(app) && !/gachaPull\(count, ownedSkins, ocCoins\)/.test(app), "App의 뽑기가 서버(economyGacha) 결과를 반영하지 않거나 클라이언트에서 직접 뽑음");
 ok(!/buySkin|SkinShopCard/.test(app + dex), "개별 스킨 구매·장착 UI가 남아 있음(스킨은 세트 단위로만 장착)");
 ok(!/^  ocean: \{/m.test(theme), "삭제한 푸른 바다 스킨이 theme에 남아 있음");
 ok(/pieceTypes/.test(app) && /ownedPieceTypes/.test(app), "App이 장착 세트의 보유 기물(pieceTypes)을 SkinContext로 넘기지 않음");

@@ -186,7 +186,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
         </label>
         {profile.photo && <button onClick={() => set({ photo: "" })} className="press" style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("제거")}</button>}
       </div>
-      <input value={(profile.photo || "").startsWith("data:") ? "" : (profile.photo || "")} onChange={(e) => set({ photo: e.target.value })} placeholder={t("또는 이미지 주소(URL) 입력")} style={field} />
+      {/* (v0.7.0 보안 BUG-118) 외부 이미지 주소 입력은 없앴다 — 주소를 넣으면 프로필을 보는 사람의 접속 정보가 그 서버로 새어 나간다. 업로드만 허용(서버도 data:image만 저장). */}
       <div style={lab}>{t("이름")}</div>
       <input value={profile.nickname || ""} onChange={(e) => set({ nickname: e.target.value })} placeholder={t("표시 이름")} style={field} />
       {/* (사용자 요청) 소개 — 프로필 카드·검색 창에서 닉네임 바로 밑에 표시되는 한 줄 자기소개. */}

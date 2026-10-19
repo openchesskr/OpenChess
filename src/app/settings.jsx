@@ -15,7 +15,7 @@ import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -311,7 +311,7 @@ async function regenerateOnePuzzle(engine, no) {
   const opts = { ...puzzleThemeOpts(th, ov.target, ov.puzzleType), firstSan, tagSeq: 0 };
   const gen = await genPuzzleTree(engine, setup, opts, undefined, fenRoot);
   if (!gen) throw new Error(t("이 기준으로는 트리를 만들 수 없음"));
-  await sbUpsert("puzzles", { no, data: { ...data, tree: gen.tree, lines: gen.lines } });
+  await puzzleSharePut(no, { ...data, tree: gen.tree, lines: gen.lines });  // (v0.7.0 BUG-110) 개발자 계정만 본문 전체 교체 가능
   let overridesTouched = false;
   if (CONTENT.puzzleOverrides && CONTENT.puzzleOverrides[no]) { delete CONTENT.puzzleOverrides[no]; overridesTouched = true; }
   return { overridesTouched };

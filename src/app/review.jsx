@@ -19,7 +19,7 @@ import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard
 import { pickHighlights } from "../lib/highlights.js";
 import { recordReviewMistakes } from "../lib/growthStore.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
-import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
+import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
@@ -870,8 +870,8 @@ async function reviewedAnalysisShare(ccId, result, depth) {
   if (!SB_ON || !ccId || !result) return;
   // (v0.5.7 BUG-023) reviewed_analysis_put RPC로 — 비어 있거나 더 새 버전·더 깊은 분석일 때만 바뀐다.
   const analysis = { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result };
-  try { await sbRpc("reviewed_analysis_put", { p_cc_id: Number(ccId), p_analysis: analysis }); }
-  catch { try { await sbUpsert("reviewed_games", { cc_id: Number(ccId), analysis }); } catch { } }
+  // (v0.7.0 보안 BUG-115) 서버 API(/api/review-put)를 거친다 — 로그인 필요, 호출 제한, 크기·형식 검증.
+  await reviewPut("analysis", ccId, analysis);
 }
 // (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다, 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
 // 내 OpenChess 대국이 아니면(PGN 붙여넣기·남의 대국) 아무 일도 하지 않는다. 실패는 조용히 무시.

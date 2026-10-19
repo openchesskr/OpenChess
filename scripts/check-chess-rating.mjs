@@ -50,10 +50,12 @@ if (!/<MinigameLeaderboard game=\{chessGame\}/.test(app)) fails.push("일반 대
 {
   if (!/create table if not exists public\.bot_games/.test(sql)) fails.push("bot_games 표가 없음");
   if (!/create policy "bot games select own" on public\.bot_games for select using \(auth\.uid\(\) = uid\)/.test(sql)) fails.push("bot_games select 정책(본인만)이 없음");
-  if (/grant (insert|update|delete)[^;]*on public\.bot_games/.test(sql)) fails.push("bot_games에 직접 쓰기 권한이 있음 — bot_game_record RPC로만 쓰게 해야 함");
-  if (!/grant execute on function public\.bot_game_record\(text\[\], text, text, int, text\) to authenticated/.test(sql)) fails.push("bot_game_record 실행 권한 grant가 없음");
+  if (/grant (insert|update|delete)[^;]*on public\.bot_games/.test(sql)) fails.push("bot_games에 직접 쓰기 권한이 있음 — 서버 API(/api/bot-game)를 거친 bot_game_record_verified로만 쓰게 해야 함");
+  // (v0.7.0 BUG-124) 봇 대국 기록은 서버 API가 수순을 검증한 뒤 service_role 전용 함수로만 저장한다 — 브라우저가 부르는 bot_game_record는 없다.
+  if (!/grant execute on function public\.bot_game_record_verified\(uuid, text\[\], text, text, int, text\) to service_role/.test(sql)) fails.push("bot_game_record_verified의 service_role 전용 grant가 없음");
+  if (/grant execute on function public\.bot_game_record\(/.test(sql)) fails.push("옛 bot_game_record를 브라우저에 다시 열었음(BUG-124)");
   const play = readFileSync(new URL("../src/app/play.jsx", import.meta.url), "utf8");
-  if (!/sbRpc\("bot_game_record"/.test(play)) fails.push("봇 대국 종료 시 bot_game_record를 부르지 않음");
+  if (!/apiUrl\("\/api\/bot-game"\)/.test(play) || /sbRpc\("bot_game_record"/.test(play)) fails.push("봇 대국 종료 시 서버 API(/api/bot-game)로 기록하지 않음");
   if (/<KnightRaceLegend/.test(play)) fails.push("나이트 레이스 범례(KnightRaceLegend)가 다시 쓰이고 있음 — 사용자 요청으로 삭제됨");
 }
 // ⑥ (v0.6.2) 타임 컨트롤 분류별 레이팅 — 서버·클라이언트 분류 기준 일치

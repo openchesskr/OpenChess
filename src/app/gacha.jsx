@@ -1,6 +1,7 @@
 // (v0.6.9) 스킨 뽑기 화면 — 도감 스킨 페이지 맨 위의 상자(흑백 체크 + 금장, 가운데 금빛 킹과 열쇠 구멍)와 1회·5회 뽑기 버튼, 결과 창.
 //  뽑기 규칙·가격·확률은 lib/gacha.js(순수 모듈), 코인·보유 목록 반영은 App의 pullGacha가 맡는다. 여기는 보여주기만 한다.
 import { useState, useEffect, useRef, useId } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
@@ -133,7 +134,7 @@ export function BoardUnlockScene({ id, onDone }) {
 }
 
 /** 뽑기 연출 무대 — 주변이 어두워지며 상자가 화면 한가운데로 오고, 흔들린 뒤 열리며 빛이 터지고, 뽑은 기물 카드(그리고 보드 해금)가 이어진다. */
-function GachaStage({ stage, onClose }) {
+function GachaStage({ stage, onClose, onFast }) {
   const { r, phase } = stage;
   const n = r.results.length;
   const [shown, setShown] = useState(0);
@@ -146,10 +147,14 @@ function GachaStage({ stage, onClose }) {
   }, [showCards, shown, n, bi]);
   const cardsDone = shown >= n;
   const next = () => { if (r.boardUnlocked.length && bi + 1 < r.boardUnlocked.length) setBi(bi + 1); else onClose(); };
+  // 우상단 건너뛰기: 상자 연출 중이면 카드 전부 공개 단계로, 카드가 다 나왔거나 보드 해금 중이면 바로 닫는다.
+  const skip = () => { if (bi < 0 && !(showCards && cardsDone)) { onFast(); setShown(n); } else onClose(); };
   const chestPhase = phase === "shake" ? "shake" : phase === "open" ? "open" : phase === "cards" ? "open" : "idle";
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
-      style={{ position: "fixed", inset: 0, zIndex: 400, background: "radial-gradient(120% 90% at 50% 45%, rgba(30,18,8,.96), rgba(4,2,1,.99))", overflow: "hidden" }}>
+      style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100dvh", zIndex: 400, background: "radial-gradient(120% 90% at 50% 45%, rgba(30,18,8,.96), rgba(4,2,1,.99))", overflow: "hidden" }}>
+      <button onClick={skip} className="press" aria-label={t("건너뛰기")}
+        style={{ position: "absolute", top: "max(14px, env(safe-area-inset-top))", right: "max(14px, env(safe-area-inset-right))", zIndex: 5, padding: "8px 16px", borderRadius: 999, border: "1px solid " + T.brass, background: "rgba(20,12,6,.7)", color: T.brassHi, fontWeight: 800, fontSize: 13, cursor: "pointer", backdropFilter: "blur(4px)" }}>{t("건너뛰기")} ›</button>
       {bi < 0 && <LightBurst level={phase === "open" ? 1 : phase === "cards" ? 0.3 : 0} />}
       <AnimatePresence>
         {bi < 0 && !showCards && (
@@ -159,13 +164,12 @@ function GachaStage({ stage, onClose }) {
         )}
       </AnimatePresence>
       {showCards && bi < 0 && (
-        <div style={{ position: "absolute", inset: 0, overflowY: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ maxWidth: 560, width: "100%", textAlign: "center", padding: "20px 0" }}>
+        <div style={{ position: "absolute", inset: 0, overflowY: "auto", display: "flex", padding: "max(60px, calc(env(safe-area-inset-top) + 48px)) 16px max(24px, env(safe-area-inset-bottom))" }}>
+          <div style={{ maxWidth: 560, width: "100%", textAlign: "center", margin: "auto" }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", perspective: 900 }}>
               {r.results.map((x, i) => <ResultCard key={i} r={x} show={i < shown} />)}
             </div>
             <div style={{ marginTop: 26, display: "flex", gap: 10, justifyContent: "center" }}>
-              {!cardsDone && <button onClick={() => setShown(n)} className="press" style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("건너뛰기")}</button>}
               {cardsDone && <button onClick={next} className="press" style={{ padding: "10px 34px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14, cursor: "pointer" }}>{t("확인")}</button>}
             </div>
           </div>
@@ -183,9 +187,13 @@ export function GachaSection({ coins, onPull }) {
   const timers = useRef([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const busy = !!stage;
-  const pull = (count) => {
-    if (busy || !onPull || (coins || 0) < GACHA_PRICE[count]) return;
-    const r = onPull(count);
+  const [pending, setPending] = useState(false);   // (v0.7.0) 서버가 뽑기를 처리하는 동안 중복 누름 방지
+  const pull = async (count) => {
+    if (busy || pending || !onPull || (coins || 0) < GACHA_PRICE[count]) return;
+    setPending(true);
+    let r = null;
+    try { r = await onPull(count); } catch { r = null; }
+    setPending(false);
     if (!r || !r.ok) return;
     setStage({ r, phase: "enter" });
     const go = (ms, phase) => timers.current.push(setTimeout(() => setStage((s) => (s ? { ...s, phase } : s)), ms));
@@ -234,7 +242,7 @@ export function GachaSection({ coins, onPull }) {
           )}
         </AnimatePresence>
       </div>
-      <AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>
+      {createPortal(<AnimatePresence>{stage && <GachaStage key="stage" stage={stage} onFast={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage((s) => (s ? { ...s, phase: "cards" } : s)); }} onClose={() => { timers.current.forEach(clearTimeout); timers.current = []; setStage(null); }} />}</AnimatePresence>, document.body)}
     </section>
   );
 }

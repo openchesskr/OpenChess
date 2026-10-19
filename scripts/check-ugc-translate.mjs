@@ -126,7 +126,7 @@ if (!/UGC_TRANSLATE_PREF_KEY\) !== "0"/.test(rd("src/lib/prefs.js"))) fails.push
 
 // ⑥ Gemini 쿼터 남용 방지(BUG-072) — 로그인 없이 쓰는 scan-board도 호출 제한이 있고, translate는 로그인과 호출 제한이 있다.
 const scan = rd("api/scan-board.js");
-if (!/scanRateLimited\(ip\)/.test(scan) || !/res\.status\(429\)/.test(scan)) fails.push("api/scan-board.js: 호출 제한이 없음 — 누구나 공유 Gemini 쿼터를 소진시킬 수 있다");
+if (!/scanLimited\(/.test(scan) || !/res\.status\(429\)/.test(scan)) fails.push("api/scan-board.js: 호출 제한이 없음 — 누구나 공유 Gemini 쿼터를 소진시킬 수 있다");
 if (!/rateLimited\(user\.id, texts\.length\)/.test(api)) fails.push("api/translate.js: 사용자별 호출 제한이 없음");
 { const h = { post: { method: "POST", headers: { "x-forwarded-for": "9.9.9.9" }, body: {} } }; const { default: scanHandler } = await import("../api/scan-board.js"); const codes = [];
   for (let i = 0; i < 14; i++) { const res = { status(c) { codes.push(c); return this; }, json() { } }; await scanHandler(h.post, res); }

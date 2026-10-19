@@ -16,7 +16,7 @@ import { SITE_FONT } from "./components/engineLines.jsx";
 import { Search, Users, MessageCircle, Star, Send, Check } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, EngineContext, MaterialIcon, MinigamePrefsContext, PuzzleShareSheet, VisualPrefsContext, achievableTitles, ccTitleStats, computeTitleMetrics, sanitizeTitleSet, titleDef, validTitleId, chatConvPrefsFetch, chatFetchAll, chatMarkRead, computeDexLayout, friendAccept, friendEdges, friendRemove, getAnalysisPool, invalidateBookIndex, loadContent, mainQuestOverallProgress, moveFxModeFromSaved, notifyCreate, puzzleDeleteRemote, puzzleFetch, puzzleNo, puzzleShare, puzzleTreeOf, resolveReviewIdentifier, reviewGameIdentifier, reviewGameKey, reviewStorageKey, reviewedGameFetch, reviewedGameShare, setSacConfirmEvaluator, snapNode, solvedLineTagsOf, starsOf, themesOf, todayStr, treeLinesOf, useChessCom, useNarrow, useRealtimeTable, userProfile, usersProfiles } from "./app/common.jsx";
-import { ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleShareReward, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto } from "./app/shell.jsx";
+import { ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto, economyGet, economyLineSolved, economyClaimQuest, economyClaimChapter, economyClaimNotification, economyGacha, economyDevSet, economyDevBonus } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
 import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
 import { ChatsModal, ChatWindow, FriendsModal, ProfileWindow, UserProfilePage, UserSearchModal } from "./app/social.jsx";
@@ -149,6 +149,17 @@ export default function App() {
     });
   }, [totalXp]);
   const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
+  // (v0.7.0 보안 BUG-113) XP·코인·보유 스킨은 서버 원장이 주인이다 — 화면의 값은 항상 서버가 돌려준 값으로만 바뀐다(아래 economy* 호출의 응답을 여기에 반영).
+  // 로그인하지 않은 방문자는 보상·재화가 없다(0 그대로).
+  const applyEconomy = useCallback((e) => {
+    if (!e) return;
+    if (e.xp != null) setTotalXp(Number(e.xp));
+    if (e.coins != null) setOcCoins(Number(e.coins));
+    if (Array.isArray(e.owned)) setOwnedSkins(new Set(e.owned));
+  }, []);
+  const applyEconomyRef = useRef(applyEconomy);
+  applyEconomyRef.current = applyEconomy;
+  const questInflightRef = useRef(new Set());
   // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 아무 제한 없이 열 수 있다 — reviewUnlocked는
   // 더는 소비되는 재화의 잠금 해제 기록이 아니라, "리뷰한 대국만" 필터(AccountChessStats)를 위해 리뷰를
   // 연 적 있는 대국을 계속 기록해 두는 순수 이력용 집합이다(reviewGameKey(game) 문자열의 Set).
@@ -268,7 +279,8 @@ export default function App() {
       rewards.forEach((m) => shareRewardSeenRef.current.add(m.id));
       const total = rewards.reduce((s, m) => s + (m.share_reward.amount || 0), 0);
       if (total > 0) {
-        setTotalXp((x) => x + total);
+        // (v0.7.0 BUG-113) XP는 친구가 퍼즐을 풀 때 서버가 이미 내 원장에 지급했다 — 여기서는 알림만 보이고 서버 값을 다시 읽어 온다.
+        economyGet().then((e) => e && applyEconomyRef.current(e)).catch(() => { });
         setToast({ type: "share_reward", amount: total });
         setTimeout(() => setToast((t) => (t && t.type === "share_reward" ? null : t)), 1800);
       }
@@ -295,8 +307,8 @@ export default function App() {
   // 보상(일일 퀘스트·티어 승급 등)과 동일하게 클라이언트 progress(ocCoins)에 바로 반영한다(서버는
   // 알림 자체만 SECURITY DEFINER로 만들어 줄 뿐, 코인 액수 자체는 검증하지 않는 기존 구조 그대로).
   const onClaimNotif = useCallback((n) => {
-    const amount = (n.payload && n.payload.reward) || 0;
-    if (amount > 0) setOcCoins((c) => c + amount);
+    // (v0.7.0 BUG-113) 금액은 서버가 알림을 만들 때 정한 값(reward_amount)이다 — 서버가 지급하고 이중 수령을 막는다.
+    economyClaimNotification(n.id).then((e) => { if (e) applyEconomyRef.current(e); }).catch(() => { });
   }, []);
   const [authMode, setAuthMode] = useState("login");
   const [confirmLogout, setConfirmLogout] = useState(false);
@@ -507,7 +519,7 @@ export default function App() {
     try { if (!_rec && !_oauth) acc = await authRestore(); } catch { }
     const activeUid = acc ? acc.uid : null;
     const raw = await store.get(localKeyFor(activeUid));
-    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setTotalXp(d.xp || 0); setPuzzleRating(d.puzzleRating || 800); if (d.puzzleMomentum != null) setPuzzleMomentum(d.puzzleMomentum); setOcCoins(d.coins || 0); setReviewUnlocked(new Set(d.reviewUnlocked || [])); if (d.devBonusGranted) setDevBonusGranted(true); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(sanitizeTitleSet(d.titles)); setSeenTitles(d.seenTitles ? sanitizeTitleSet(d.seenTitles) : sanitizeTitleSet(d.titles)); if (d.currentTitle) setCurrentTitle(validTitleId(d.currentTitle) ? d.currentTitle : null); setOwnedSkins(new Set(d.ownedSkins || [])); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.dailyPuzzleStreak) setDailyPuzzleStreak(d.dailyPuzzleStreak); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true); if (d.mgDangerOn === true) setMgDangerOn(true); { const _fx = moveFxModeFromSaved(d); if (_fx) setMoveFxMode(_fx); }
+    if (raw) { try { const d = JSON.parse(raw); setUnlocked(new Set(d.unlocked || [])); setProfile(d.profile || { nickname: "", chesscom: "" }); setPuzzles(d.puzzles || []); setSolved(new Set(d.solved || [])); setLikedPuzzles(new Set(d.likedPuzzles || [])); setRepostedPuzzles(new Set(d.repostedPuzzles || [])); setLineSolves(d.lineSolves || {}); setPuzzleRating(d.puzzleRating || 800); if (d.puzzleMomentum != null) setPuzzleMomentum(d.puzzleMomentum); setReviewUnlocked(new Set(d.reviewUnlocked || [])); setDeletedPuzzles(new Set(d.deleted || [])); if (d.archivedPuzzles) setArchivedPuzzles(d.archivedPuzzles); setEarnedTitles(sanitizeTitleSet(d.titles)); setSeenTitles(d.seenTitles ? sanitizeTitleSet(d.seenTitles) : sanitizeTitleSet(d.titles)); if (d.currentTitle) setCurrentTitle(validTitleId(d.currentTitle) ? d.currentTitle : null); if (d.boardSkin) setBoardSkin(d.boardSkin); if (d.pieceSkin) setPieceSkin(d.pieceSkin); if (d.dailyQuest) setDailyQuest(d.dailyQuest); if (d.mainQuest) setMainQuest(d.mainQuest); if (Array.isArray(d.recentOpenings)) setRecentOpenings(d.recentOpenings); if (Array.isArray(d.learnSans)) setLearnSans(d.learnSans); if (d.learnExtra) setLearnExtra(d.learnExtra); if (d.dismissedAnnounceVersion) setDismissedAnnounceVersion(d.dismissedAnnounceVersion); if (d.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(d.dailyPuzzleLastShownAt); if (d.dailyPuzzleHideDate) setDailyPuzzleHideDate(d.dailyPuzzleHideDate); if (d.dailyPuzzleStreak) setDailyPuzzleStreak(d.dailyPuzzleStreak); if (d.lineClearOn === false) setLineClearOn(false); if (d.puzzleClearOn === false) setPuzzleClearOn(false); if (d.coachBubbleOn === true) setCoachBubbleOn(true); if (d.mgDangerOn === true) setMgDangerOn(true); { const _fx = moveFxModeFromSaved(d); if (_fx) setMoveFxMode(_fx); }
       // (UX1) 새로고침해도 현재 탭·집중 분석·퍼즐 진행 상황이 유지되도록 복원
       // (v0.2.3 버그 수정) 복원 대상이 "어제 이전"의 오늘의 퍼즐(id: "daily_YYYY-MM-DD", 그 문자열
       // 자체가 날짜를 담고 있음)이면 복원하지 않는다 — 예전엔 이 값이 그대로 복원돼, 어제 오늘의
@@ -535,7 +547,8 @@ export default function App() {
     // 되돌린다. 새로고침 타이밍이 나쁘면 방금 dev 패널로 바꾼 값이 한 번 되돌아 보일 수 있지만(진짜
     // 서버 저장 자체는 그대로 진행 중이므로 곧 다시 저장되어 정상화된다), 클라이언트가 서버 값을
     // 임의로 이기게 하는 것보다 이 쪽이 안전하다.
-    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.xp != null) setTotalXp(pr.xp); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.puzzleMomentum != null) setPuzzleMomentum(pr.puzzleMomentum); if (pr.coins != null) setOcCoins(pr.coins); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.devBonusGranted) setDevBonusGranted(true); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(sanitizeTitleSet(pr.titles)); setSeenTitles(pr.seenTitles ? sanitizeTitleSet(pr.seenTitles) : sanitizeTitleSet(pr.titles)); if (pr.currentTitle) setCurrentTitle(validTitleId(pr.currentTitle) ? pr.currentTitle : null); if (pr.ownedSkins) setOwnedSkins(new Set(pr.ownedSkins)); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.dailyPuzzleStreak) setDailyPuzzleStreak(pr.dailyPuzzleStreak); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); if (pr.mgDangerOn === true) setMgDangerOn(true); { const _fx = moveFxModeFromSaved(pr); if (_fx) setMoveFxMode(_fx); } const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
+    if (acc) { setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {}; if (pr.unlocked) setUnlocked(new Set(pr.unlocked)); if (pr.puzzles) setPuzzles(pr.puzzles); if (pr.solved) setSolved(new Set(pr.solved)); if (pr.likedPuzzles) setLikedPuzzles(new Set(pr.likedPuzzles)); if (pr.repostedPuzzles) setRepostedPuzzles(new Set(pr.repostedPuzzles)); if (pr.lineSolves) setLineSolves(pr.lineSolves); if (pr.puzzleRating != null) setPuzzleRating(pr.puzzleRating); if (pr.puzzleMomentum != null) setPuzzleMomentum(pr.puzzleMomentum); if (pr.reviewUnlocked) setReviewUnlocked(new Set(pr.reviewUnlocked)); if (pr.deleted) setDeletedPuzzles(new Set(pr.deleted)); if (pr.archivedPuzzles) setArchivedPuzzles(pr.archivedPuzzles); if (pr.titles) setEarnedTitles(sanitizeTitleSet(pr.titles)); setSeenTitles(pr.seenTitles ? sanitizeTitleSet(pr.seenTitles) : sanitizeTitleSet(pr.titles)); if (pr.currentTitle) setCurrentTitle(validTitleId(pr.currentTitle) ? pr.currentTitle : null); if (pr.boardSkin) setBoardSkin(pr.boardSkin); if (pr.pieceSkin) setPieceSkin(pr.pieceSkin); if (pr.dailyQuest) setDailyQuest(pr.dailyQuest); if (pr.mainQuest) setMainQuest(pr.mainQuest); if (Array.isArray(pr.recentOpenings)) setRecentOpenings(pr.recentOpenings); if (pr.dismissedAnnounceVersion) setDismissedAnnounceVersion(pr.dismissedAnnounceVersion); if (pr.dailyPuzzleLastShownAt) setDailyPuzzleLastShownAt(pr.dailyPuzzleLastShownAt); if (pr.dailyPuzzleHideDate) setDailyPuzzleHideDate(pr.dailyPuzzleHideDate); if (pr.dailyPuzzleStreak) setDailyPuzzleStreak(pr.dailyPuzzleStreak); if (pr.lineClearOn === false) setLineClearOn(false); if (pr.puzzleClearOn === false) setPuzzleClearOn(false); if (pr.coachBubbleOn === true) setCoachBubbleOn(true); if (pr.mgDangerOn === true) setMgDangerOn(true); { const _fx = moveFxModeFromSaved(pr); if (_fx) setMoveFxMode(_fx); } const pub = acc.pub || {}; if (pub.chesscom || pub.nickname || pub.displayId || pub.photo || pub.firstMoves || pub.legacies || pub.legacyHistory) setProfile((p) => ({ ...p, chesscom: pub.chesscom || p.chesscom, nickname: pub.nickname || p.nickname, displayId: pub.displayId || p.displayId, photo: pub.photo || p.photo, firstMoves: pub.firstMoves || p.firstMoves, chesscomChangedAt: pub.chesscomChangedAt || p.chesscomChangedAt, legacies: pub.legacies || p.legacies, legacyHistory: pub.legacyHistory || p.legacyHistory })); }
+    if (acc) { try { applyEconomyRef.current(await economyGet()); } catch { } }   // (v0.7.0 BUG-113) XP·코인·스킨은 서버 원장에서 읽는다
     if (_oauth) { try { const oa = await authFromHash(_oauth); try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch { } if (oa) { if (oa.username) onAuth(oa); else setNeedUser(oa); } } catch { } }
     try { const counts = await puzzleSolveCounts(); if (counts && Object.keys(counts).length) setSolveCounts(counts); } catch { }
     try { const lcounts = await puzzleLikeCounts(); if (lcounts && Object.keys(lcounts).length) setLikeCounts(lcounts); } catch { }
@@ -592,17 +605,16 @@ export default function App() {
   // 퀘스트 진척도 요약(전체 챕터/문항 수는 CONTENT 기준이라 개인정보 아님, claimed/doneItems만 개인)도
   // 함께 공개해, 설정 탭 "내 프로필"에서만 보이던 이 두 정보를 유저 검색·친구 프로필에서도 볼 수 있게 한다.
   useEffect(() => { if (loaded && uid && user) publishProfile(uid, user, { nickname: profile.nickname || "", photo: profile.photo || "", bio: profile.bio || "", chesscom: profile.chesscom || "", chesscomChangedAt: profile.chesscomChangedAt || null, title: currentTitle || "", firstMoves: profile.firstMoves || null, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount: solved.size, displayId: profile.displayId || "", solvedNos: [...solved].map((id) => puzzleNo(id)), mainQuestSummary: mainQuestOverallProgress(mainQuest), legacies: profile.legacies || null, legacyHistory: profile.legacyHistory || null }); }, [loaded, uid, user, profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.chesscomChangedAt, currentTitle, profile.firstMoves, totalXp, puzzleRating, solved, profile.displayId, mainQuest, profile.legacies, profile.legacyHistory]);
-  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);
-  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, xp: totalXp, puzzleRating, puzzleMomentum, coins: ocCoins, reviewUnlocked: [...reviewUnlocked], devBonusGranted, deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, ownedSkins: [...ownedSkins], boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, totalXp, puzzleRating, puzzleMomentum, ocCoins, reviewUnlocked, devBonusGranted, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, ownedSkins, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);
+  useEffect(() => { if (loaded) store.set(localKeyFor(uid), JSON.stringify({ unlocked: [...unlocked], profile, puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked: [...reviewUnlocked], deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, learnSans, learnExtra, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode })); }, [unlocked, profile, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, liveOn, loaded, learnSans, learnExtra, uid, tab, learnFuture, learnFocus, puzzleActive, treeFocus, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);
+  useEffect(() => { if (loaded && uid) progressSave(uid, { unlocked: [...unlocked], puzzles, solved: [...solved], likedPuzzles: [...likedPuzzles], repostedPuzzles: [...repostedPuzzles], lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked: [...reviewUnlocked], deleted: [...deletedPuzzles], archivedPuzzles, titles: [...earnedTitles], seenTitles: [...seenTitles], currentTitle, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode }); }, [unlocked, puzzles, solved, likedPuzzles, repostedPuzzles, lineSolves, puzzleRating, puzzleMomentum, reviewUnlocked, deletedPuzzles, archivedPuzzles, earnedTitles, seenTitles, currentTitle, boardSkin, pieceSkin, dailyQuest, mainQuest, recentOpenings, uid, loaded, dismissedAnnounceVersion, dailyPuzzleLastShownAt, dailyPuzzleHideDate, dailyPuzzleStreak, lineClearOn, puzzleClearOn, coachBubbleOn, mgDangerOn, moveFxMode]);
   // (버그 수정) 개발자·공동 개발자 계정에 나이트 OC 코인 10000개를 1회 지급 — 기존에 이미 가입해
   // progress가 저장돼 있던 계정도 소급 적용된다. devBonusGranted 플래그로 1회만 지급하므로,
   // 이후 코인을 다 쓰더라도 로그인할 때마다 다시 채워주지는 않는다.
   useEffect(() => {
-    if (!loaded || !uid || devBonusGranted) return;
-    if (!isDev && !isCodev) return;
-    setOcCoins((c) => Math.max(c, 10000));
-    setDevBonusGranted(true);
-  }, [loaded, uid, isDev, isCodev, devBonusGranted]);
+    if (!loaded || !uid || (!isDev && !isCodev)) return;
+    // (v0.7.0 BUG-113) 서버가 개발자/공동개발자 여부를 확인해 1회만 지급한다(이미 받았으면 그대로).
+    economyDevBonus().then((e) => { if (e) applyEconomyRef.current(e); }).catch(() => { });
+  }, [loaded, uid, isDev, isCodev]);
   // (16차) 퍼즐 카드에 "친구 N명이 풀었습니다" 표기를 위해, 로그인 시 내 친구 목록과 각 퍼즐의 해결자 uid를 한 번에 조회.
   useEffect(() => {
     if (!loaded) return;
@@ -652,12 +664,15 @@ export default function App() {
   const markTitleSeen = useCallback((id) => { setSeenTitles((prev) => (prev.has(id) ? prev : new Set(prev).add(id))); }, []);
   // (v0.6.9) 스킨은 세트 단위 — 뽑기로 얻고 도감에서 세트로 장착한다(개별 구매·장착 없음).
   // (v0.6.9) 스킨 뽑기 — 코인 계산·확률·중복 환급은 lib/gacha.js(순수 함수, check-gacha가 검사)가 하고, 여기서는 그 결과를 코인·보유 목록에 반영한다.
-  const pullGacha = useCallback((count) => {
-    const r = gachaPull(count, ownedSkins, ocCoins);
-    if (!r.ok) return r;
-    setOcCoins(r.coins); setOwnedSkins(r.owned);
-    return r;
-  }, [ocCoins, ownedSkins]);
+  // (v0.7.0 BUG-113) 난수·가격·환급·보유 반영은 서버(gacha_pull)가 한다 — 서버가 돌려준 결과를 그대로 보여 주고 원장을 반영한다(비동기).
+  const pullGacha = useCallback(async (count) => {
+    try {
+      const r = await economyGacha(count);
+      if (!r || !r.ok) return { ok: false, reason: "server" };
+      applyEconomyRef.current(r);
+      return { ok: true, cost: r.cost, refund: r.refund, results: r.results, boardUnlocked: r.boardUnlocked, coins: r.coins, owned: new Set(r.owned) };
+    } catch (e) { return { ok: false, reason: /insufficient/.test(String(e && e.serverMessage)) ? "coins" : "server" }; }
+  }, []);
   // 세트 장착 — 기물은 가진 것만 그 세트 모양이 되고(나머지는 기본), 보드는 기물 6종을 모두 모아 해금한 세트일 때만 따라온다.
   const equipSkinSet = useCallback((setId) => { setPieceSkin(setId); setBoardSkin(ownsBoard(ownedSkins, setId) ? setId : "classic"); }, [ownedSkins]);
   // 없어진 스킨(예: 삭제된 푸른 바다)이 저장돼 있으면 기본으로 취급한다.
@@ -696,7 +711,8 @@ export default function App() {
     setTimeout(() => setToast((x) => (x && x.type === "exitHint" ? null : x)), 2000);
   }), []);
   const onAuth = useCallback((acc) => { if (!acc) return; setUser(acc.username); setUid(acc.uid); const pr = acc.progress || {};
-    setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setTotalXp(pr.xp != null ? pr.xp : 0); setPuzzleRating(pr.puzzleRating != null ? pr.puzzleRating : 800); setPuzzleMomentum(pr.puzzleMomentum != null ? pr.puzzleMomentum : 0.5); setOcCoins(pr.coins != null ? pr.coins : 0); setDevBonusGranted(!!pr.devBonusGranted); setReviewUnlocked(new Set(pr.reviewUnlocked || [])); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(sanitizeTitleSet(pr.titles)); setSeenTitles(pr.seenTitles ? sanitizeTitleSet(pr.seenTitles) : sanitizeTitleSet(pr.titles)); setCurrentTitle(validTitleId(pr.currentTitle) ? pr.currentTitle : null); setOwnedSkins(new Set(pr.ownedSkins || [])); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
+    economyGet().then((e) => e && applyEconomyRef.current(e)).catch(() => { });   // (v0.7.0 BUG-113) 서버 원장 값으로 시작(로그인 전 게스트가 쌓은 값은 이어받지 않는다)
+    setUnlocked(new Set(pr.unlocked || [])); setPuzzles(pr.puzzles || []); setSolved(new Set(pr.solved || [])); setLikedPuzzles(new Set(pr.likedPuzzles || [])); setRepostedPuzzles(new Set(pr.repostedPuzzles || [])); setLineSolves(pr.lineSolves || {}); prevTierIndexRef.current = null; setPuzzleRating(pr.puzzleRating != null ? pr.puzzleRating : 800); setPuzzleMomentum(pr.puzzleMomentum != null ? pr.puzzleMomentum : 0.5); setReviewUnlocked(new Set(pr.reviewUnlocked || [])); setDeletedPuzzles(new Set(pr.deleted || [])); setArchivedPuzzles(pr.archivedPuzzles || {}); setEarnedTitles(sanitizeTitleSet(pr.titles)); setSeenTitles(pr.seenTitles ? sanitizeTitleSet(pr.seenTitles) : sanitizeTitleSet(pr.titles)); setCurrentTitle(validTitleId(pr.currentTitle) ? pr.currentTitle : null); setBoardSkin(pr.boardSkin || "classic"); setPieceSkin(pr.pieceSkin || "classic"); setDailyQuest(pr.dailyQuest || null); setMainQuest(pr.mainQuest || { claimed: {} }); setRecentOpenings(Array.isArray(pr.recentOpenings) ? pr.recentOpenings : []);
     // (버그 수정) 다른 필드들과 달리 이 값은 "값이 있으면만 덮어쓰기"로 두면 안 된다 — 계정이
     // 한 번도 공지를 닫은 적이 없으면 pr.dismissedAnnounceVersion이 undefined인데, 그때 이
     // if를 건너뛰면 로그인 직전(게스트 상태)의 로컬 값이 그대로 남아 "이 계정도 이미 닫았다"고
@@ -906,24 +922,25 @@ export default function App() {
   // (15차 기능4) 새로 해결한 라인마다 경험치를 지급 — 해당 퍼즐에서 "기존에 이미 보유했던 별 수"를 기준으로 계산한다.
   // 획득량은 화면 중앙 토스트로 크게 표시한다(티어 승급 토스트와 같은 자리를 공유 — 승급이 뒤이어 발생하면 그쪽으로 자연스럽게 대체됨).
   const onLineSolved = useCallback((id, tag, totalLines) => {
+    // 별(해결한 라인 목록) 표시는 화면용 로컬 상태 — XP는 서버가 정한다.
     setLineSolves((prev) => {
       const curArr = prev[id] || [];
       if (curArr.includes(tag)) return prev;
-      // (20차 기능1) 경험치 배율은 이 퍼즐에서 "기존에 보유한 별 수"(0~3, 해결 라인 수/전체 라인 수 기준) 기준
-      const existingStars = starsOf(curArr.length, Math.max(totalLines || 1, curArr.length + 1));
-      const gain = rollLineXp(existingStars);
-      setTotalXp((x) => x + gain);
-      setToast({ type: "xp", amount: gain });
-      setTimeout(() => setToast((t) => (t && t.type === "xp" ? null : t)), 1400);
-      // (v0.1.0) 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열어 지금 이 퍼즐(no 일치)을 푸는 중이면,
-      // 방금 얻은 XP의 10%를 공유해 준 친구에게 돌려준다(친구 본인 클라이언트가 나중에 realtime으로
-      // 받아 스스로 적용 — 여기선 서버에 기록만 남긴다).
-      const ref = shareReferralRef.current;
-      if (ref && uid && ref.no === puzzleNo(id) && ref.fromUid !== uid) {
-        puzzleShareReward(ref.msgId, Math.max(1, Math.round(gain * 0.1)));
-      }
       return { ...prev, [id]: [...curArr, tag] };
     });
+    if (!uid) return;   // 로그인하지 않으면 보상이 없다
+    // (v0.7.0 BUG-113) 라인을 풀었다고 서버에 신고하면 서버가 정답 트리의 실제 라인 수·중복·속도를 확인해 XP({13~17 난수 × (기존 별 수+1.2)})를 지급한다.
+    // 채팅으로 공유받은 퍼즐을 "풀러 가기"로 열어 푸는 중이면 그 메시지 id를 함께 보내, 서버가 얻은 XP의 10%를 공유해 준 친구에게 직접 지급한다.
+    const ref = shareReferralRef.current;
+    const shareMsg = ref && ref.no === puzzleNo(id) && ref.fromUid !== uid ? ref.msgId : null;
+    economyLineSolved(puzzleNo(id), tag, shareMsg).then((r) => {
+      if (!r) return;
+      applyEconomyRef.current(r);
+      if (r.gain > 0) {
+        setToast({ type: "xp", amount: r.gain });
+        setTimeout(() => setToast((t) => (t && t.type === "xp" ? null : t)), 1400);
+      }
+    }).catch(() => { });
   }, [uid]);
   // (v0.4.1 기능, item 3) 공개 퍼즐 레이팅 갱신 — 추천 랭킹용 이벤트(puzzleLineSolveTimeAdd 등)와
   // 같은 원칙으로, 이미 푼 라인을 다시 풀거나 다시 틀려도 매번(중복 풀이 포함) 그대로 반영한다.
@@ -955,7 +972,7 @@ export default function App() {
         reward: tierUpReward,
       });
       if (uid) notifyCreate(uid, "tier_up", { tierLabel: tierInfo.tier.label });
-      setOcCoins((c) => c + tierUpReward);
+      // (v0.7.0 BUG-113) 승급 코인은 XP를 올린 서버 호출 안에서 이미 지급됐다(응답으로 코인이 반영됨) — 여기서는 연출만 한다.
     }
     prevTierIndexRef.current = tierInfo.tierIndex;
   }, [tierInfo.tierIndex, loaded]);
@@ -975,16 +992,28 @@ export default function App() {
   // 공용 "coins" 토스트(화면 중앙 별 팝업)만 떴다 — questSlotLabel로 그 슬롯의 라벨을 함께 실어
   // 전용 "questClear" 토스트(상단 배너, 라벨+보상 표시)를 띄운다. 다섯 번 다 뜰 수 있으므로 전체 클리어
   // 팝업(DailyQuestClearedModal)과 달리 확인 없이 2.6초 후 자동으로 사라진다.
+  const dailyQuestRef = useRef(null);
+  dailyQuestRef.current = dailyQuest;
   const claimQuestCoins = useCallback((questKey, amount) => {
-    setDailyQuest((dq) => {
-      if (!dq || dq.claimed[questKey]) return dq;
-      setOcCoins((c) => c + amount);
-      const label = questSlotLabel(questKey, dq);
-      setToast({ type: "questClear", amount, label });
-      setTimeout(() => setToast((t) => (t && t.type === "questClear" ? null : t)), 2600);
-      return { ...dq, claimed: { ...dq.claimed, [questKey]: true } };
-    });
-  }, []);
+    // (v0.7.0 BUG-113) 보상은 서버(economy_claim_quest)가 하루 슬롯당 1회, 가능한 조건(오늘 푼 라인 등)을 확인하고 지급한다. 받는 데 성공했을 때만 화면에서 '받음'으로 표시한다.
+    const dq = dailyQuestRef.current;
+    if (!uid || !dq || dq.claimed[questKey] || questInflightRef.current.has(questKey)) return;
+    questInflightRef.current.add(questKey);
+    const date = dq.date;
+    economyClaimQuest(questKey).then((e) => {
+      if (!e) return;
+      applyEconomyRef.current(e);
+      setDailyQuest((cur) => {
+        if (!cur || cur.date !== date || cur.claimed[questKey]) return cur;
+        return { ...cur, claimed: { ...cur.claimed, [questKey]: true } };
+      });
+      if (!e.duplicate) {
+        const label = questSlotLabel(questKey, dailyQuestRef.current || dq);
+        setToast({ type: "questClear", amount: e.gainCoins != null ? e.gainCoins : amount, label });
+        setTimeout(() => setToast((t) => (t && t.type === "questClear" ? null : t)), 2600);
+      }
+    }).catch(() => { }).finally(() => { questInflightRef.current.delete(questKey); });
+  }, [uid]);
   // (20차 기능4) 메인 퀘스트 챕터 — 문항을 맞힐 때마다 기록하고, 챕터를 모두 맞히면 코인 보상을 1회 지급한다.
   const onAnswerChapter = useCallback((chKey, itemIdx) => {
     setMainQuest((mq) => {
@@ -994,18 +1023,24 @@ export default function App() {
       return { ...mq, answered: { ...answered, [chKey]: { ...chAns, [itemIdx]: true } } };
     });
   }, []);
+  const mainQuestRef = useRef(null);
+  mainQuestRef.current = mainQuest;
   const claimMainChapter = useCallback((chKey) => {
-    setMainQuest((mq) => {
-      const claimed = (mq && mq.claimed) || {};
-      if (claimed[chKey]) return mq;
-      const ch = CONTENT.lessons[chKey];
-      const amount = (ch && ch.reward) || 100;
-      setOcCoins((c) => c + amount);
-      setToast({ type: "coins", amount });
-      setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
-      return { ...mq, claimed: { ...claimed, [chKey]: true } };
-    });
-  }, []);
+    // (v0.7.0 BUG-113) 챕터 보상은 서버(economy_claim_chapter)가 챕터당 1회, 공유 콘텐츠에 정해 둔 금액으로 지급한다.
+    const claimed = (mainQuestRef.current && mainQuestRef.current.claimed) || {};
+    const key = "ch:" + chKey;
+    if (!uid || claimed[chKey] || questInflightRef.current.has(key)) return;
+    questInflightRef.current.add(key);
+    economyClaimChapter(chKey).then((e) => {
+      if (!e || e.error) return;   // 서버가 모르는 챕터이거나 제한에 걸리면 지급·표시 없음
+      applyEconomyRef.current(e);
+      setMainQuest((mq) => ({ ...mq, claimed: { ...((mq && mq.claimed) || {}), [chKey]: true } }));
+      if (!e.duplicate) {
+        setToast({ type: "coins", amount: e.gainCoins });
+        setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
+      }
+    }).catch(() => { }).finally(() => { questInflightRef.current.delete(key); });
+  }, [uid]);
   // 퍼즐 퀘스트 목표 달성 시 지급
   useEffect(() => {
     if (!dailyQuest || dailyQuest.puzzleCount < dailyQuest.puzzleTarget) return;
@@ -1044,10 +1079,16 @@ export default function App() {
     if (!dailyQuest || dailyQuest.bonusClaimed) return;
     const allDone = dailyQuest.claimed.puzzle && dailyQuest.claimed.dailypuzzle && [0, 1, 2].every((i) => dailyQuest.claimed["cc_" + i]);
     if (!allDone) return;
-    setTotalXp((x) => x + 20);
-    setOcCoins((c) => c + 50); // (19차 기능5) 일일 퀘스트 전체 완료 보상: OC 나이트 코인 50개
-    setDailyQuest((dq) => (dq && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
-  }, [dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
+    // (v0.7.0 BUG-113) 전체 완료 보너스(XP 20 + 코인 50)도 서버가 슬롯 5개를 모두 받았는지 확인하고 하루 1회 지급한다.
+    if (!uid || questInflightRef.current.has("bonus")) return;
+    questInflightRef.current.add("bonus");
+    const date = dailyQuest.date;
+    economyClaimQuest("bonus").then((e) => {
+      if (!e) return;
+      applyEconomyRef.current(e);
+      setDailyQuest((dq) => (dq && dq.date === date && !dq.bonusClaimed ? { ...dq, bonusClaimed: true } : dq));
+    }).catch(() => { }).finally(() => { questInflightRef.current.delete("bonus"); });
+  }, [uid, dailyQuest && JSON.stringify(dailyQuest.claimed), dailyQuest && dailyQuest.bonusClaimed]);
   // (v0.2.9 기능) 전체 클리어를 실제로 "봤는지"는 bonusClaimed(보상 지급 여부)와 별개로 추적한다 —
   // 이번 접속에서 방금 클리어했든, 접속하지 않는 사이(예: chess.com 연동 활동만으로) 이미 클리어돼
   // 있었든 상관없이 아직 이 팝업을 못 봤으면(clearAnnounced가 아직 false) 지금 접속에서 반드시 한
@@ -1824,7 +1865,7 @@ export default function App() {
             <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
           </div>
         )}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={setTotalXp} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={setOcCoins} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={(v) => economyDevSet(v, null).then((e) => e && applyEconomy(e)).catch(() => { })} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={(v) => economyDevSet(null, v).then((e) => e && applyEconomy(e)).catch(() => { })} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로
