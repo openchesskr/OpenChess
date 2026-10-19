@@ -2774,4 +2774,13 @@ export default {
   "미니게임 점수, 채팅 공유 보상, 프로필 정보를 위조하는 방법을 막았다.": "Se cerraron las formas de falsificar puntuaciones de minijuegos, recompensas por compartir en el chat y datos del perfil.",
   "모의 공격 84건을 빌드할 때마다 돌린다.": "En cada compilación se ejecutan 84 ataques simulados.",
   "지금까지 낸 버전은 {0}개다. 아래로 내려갈수록 오래된 버전이다.": "Hasta ahora hemos publicado {0} versiones. Cuanto más abajo, más antigua es la versión.",
+  "{0} 시리즈": "Serie {0}",
+  "버전 {0}개": "Versiones: {0}",
+  "공개한 버전": "Versiones publicadas",
+  "누적 변경": "Cambios totales",
+  "기능 {0}건": "Funciones: {0}",
+  "첫 공개": "Primera publicación",
+  "최근 공개": "Última publicación",
+  "변경 내용 검색": "Buscar cambios",
+  "조건에 맞는 변경 내용이 없다.": "Ningún cambio coincide.",
 };

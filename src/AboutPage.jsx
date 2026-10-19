@@ -2919,115 +2919,187 @@ function VersionHighlight({ h }) {
   return null;
 }
 
-// ============================================================ 버전 기록 페이지 (v0.7.0 개편) ============================================================
-// 한 페이지에 최신 버전부터 아래로 내려갈수록 이전 버전. 최신 3개는 펼쳐 두고, 나머지는 눌러서 펼친다.
-const OPEN_BY_DEFAULT = 3;
-function CatCard({ cat, items }) {
-  const c = CAT[cat];
+// ============================================================ 버전 기록 페이지 (v0.7.0 재설계) ============================================================
+// 위에서부터: 통계 → 필터·검색 줄 → 최신 버전 대형 카드 → 시리즈(0.6.x, 0.5.x …)별 타임라인. 이전 버전은 눌러서 펼친다.
+const eraOf = (ver) => ver.split(".").slice(0, 2).join(".");
+const CAT_ORDER = ["feature", "ui", "ux", "perf", "fix", "security"];
+const dateNum = (d) => parseInt(d.replace(/\D/g, ""), 10);
+function HStat({ n, label, sub }) {
   return (
-    <div style={{ borderRadius: 14, padding: "14px 16px 12px", background: "rgba(0,0,0,.2)", border: "1px solid #4A3521", borderLeft: "3px solid " + c.color, minWidth: 0 }}>
-      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-        <span style={{ width: 22, height: 22, borderRadius: 7, background: c.color + "26", border: "1px solid " + c.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><c.Icon size={12} color={c.color} /></span>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: c.color, letterSpacing: ".04em" }}>{c.label}</span>
-        <span style={{ fontSize: 10.5, color: T.inkSoft, marginLeft: "auto" }}>{items.length}</span>
-      </div>
-      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-        {items.map((x, i) => (
-          <li key={i} className="flex items-start" style={{ gap: 8, padding: "5px 0", fontSize: 12.5, color: T.ivory, lineHeight: 1.7 }}>
-            <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: "50%", background: c.color, flexShrink: 0, marginTop: 8, opacity: 0.85 }} />
-            <span style={{ minWidth: 0 }}>{x}</span>
-          </li>
-        ))}
-      </ul>
+    <div style={{ ...GLASS, borderRadius: 18, padding: "16px 18px", flex: "1 1 150px", minWidth: 140 }}>
+      <div style={{ fontSize: 30, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi, marginTop: 8 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
-function VersionEntry({ v, i, open, onToggle }) {
-  const isLatest = i === 0;
-  const total = v.sections.reduce((n, s) => n + s.items.length, 0);
+function CatPill({ cat, active, count, onClick }) {
+  const c = cat === "all" ? { label: t("전체"), color: T.brassHi, Icon: null } : CAT[cat];
   return (
-    <motion.article id={"v" + v.version.replace(/\./g, "-")} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.45, ease: [0.22, 0.9, 0.32, 1] }}
-      style={{ position: "relative", paddingLeft: 34, marginBottom: 18, scrollMarginTop: 120 }}>
-      {/* 타임라인 점 */}
-      <span aria-hidden="true" style={{ position: "absolute", left: 4, top: 22, width: 13, height: 13, borderRadius: "50%", background: isLatest ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "#2E1B10", border: "2px solid " + (isLatest ? T.brassHi : T.brass), boxShadow: isLatest ? "0 0 0 5px rgba(236,203,134,.15), 0 0 16px rgba(236,203,134,.5)" : "none" }} />
-      <div style={{ ...GLASS, borderRadius: 20, overflow: "hidden", ...(isLatest ? { border: "1px solid rgba(236,203,134,.5)" } : null) }}>
-        <button onClick={onToggle} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer", padding: "18px 20px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit" }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="flex items-center flex-wrap" style={{ gap: 8, marginBottom: 6 }}>
-              <span style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
-              {isLatest && <span style={{ fontSize: 10, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "2px 9px" }}>{t("최신")}</span>}
-              <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
-            </div>
-            <p style={{ margin: 0, fontSize: 13.5, color: T.ivoryHi, fontWeight: 700, lineHeight: 1.55 }}>{v.summary}</p>
-            {!open && (
-              <div className="flex items-center flex-wrap" style={{ gap: 6, marginTop: 10 }}>
-                {v.sections.map((s) => { const c = CAT[s.cat]; return (
-                  <span key={s.cat} className="flex items-center" style={{ gap: 5, fontSize: 10.5, fontWeight: 800, color: c.color, border: "1px solid " + c.color + "66", background: c.color + "14", borderRadius: 999, padding: "2px 9px" }}><c.Icon size={10} />{c.label} {s.items.length}</span>
-                ); })}
-              </div>
-            )}
-          </div>
-          <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: "50%", border: "1px solid rgba(196,154,80,.45)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: T.brassHi, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}><ChevronDown size={16} /></span>
-        </button>
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div key="body" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: [0.22, 0.9, 0.32, 1] }} style={{ overflow: "hidden" }}>
-              <div style={{ padding: "0 20px 22px" }}>
-                <div style={{ height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.4), transparent)", marginBottom: 16 }} />
-                {v.mascot && <div style={{ marginBottom: 12 }}><SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble></div>}
-                <VersionHighlight h={v.highlight} />
-                <div className="about-hist-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 12 }}>
-                  {v.sections.map((s) => <CatCard key={s.cat} cat={s.cat} items={s.items} />)}
-                </div>
-                {v.mascot && <div style={{ marginTop: 18 }}><SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble></div>}
-                <div style={{ marginTop: 12, fontSize: 10.5, color: T.inkSoft, textAlign: "right" }}>{tx("{0}개 변경", total)}</div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.article>
+    <button onClick={onClick} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800, border: "1px solid " + (active ? c.color : "rgba(196,154,80,.28)"), background: active ? c.color + "26" : "rgba(196,154,80,.05)", color: active ? c.color : T.inkSoft, transition: "all .18s" }}>
+      {c.Icon && <c.Icon size={12} />}{c.label}{count != null && <span style={{ fontSize: 10.5, opacity: 0.75, fontFamily: "ui-monospace,monospace" }}>{count}</span>}
+    </button>
   );
 }
-function HistoryPage({ scrollEl }) {
-  const [openSet, setOpenSet] = useState(() => new Set(VERSION_HISTORY.slice(0, OPEN_BY_DEFAULT).map((v) => v.version)));
-  const allOpen = openSet.size === VERSION_HISTORY.length;
-  const toggle = (ver) => setOpenSet((s) => { const n = new Set(s); n.has(ver) ? n.delete(ver) : n.add(ver); return n; });
-  const jump = (ver) => {
-    setOpenSet((s) => new Set(s).add(ver));
-    setTimeout(() => { const el = document.getElementById("v" + ver.replace(/\./g, "-")); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
-  };
+function ItemList({ sections, big }) {
   return (
-    <div style={{ maxWidth: 780, margin: "0 auto", padding: "52px 20px 96px" }}>
+    <div>
+      {sections.map((s) => {
+        const c = CAT[s.cat];
+        return s.items.map((x, i) => (
+          <div key={s.cat + i} className="flex items-start" style={{ gap: 10, padding: big ? "9px 0" : "6px 0" }}>
+            <span title={c.label} style={{ flexShrink: 0, marginTop: big ? 3 : 2, width: big ? 22 : 19, height: big ? 22 : 19, borderRadius: 7, background: c.color + "24", border: "1px solid " + c.color + "99", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={big ? 12 : 10.5} color={c.color} /></span>
+            <span style={{ minWidth: 0, fontSize: big ? 14 : 12.8, color: T.ivory, lineHeight: 1.75 }}>{x}</span>
+          </div>
+        ));
+      })}
+    </div>
+  );
+}
+function LatestCard({ v, secs }) {
+  return (
+    <motion.section initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
+      style={{ position: "relative", borderRadius: 28, padding: 2, background: "linear-gradient(140deg," + T.brassHi + ",rgba(196,154,80,.25) 35%,rgba(196,154,80,.05) 60%," + T.brass + ")", boxShadow: "0 30px 70px -30px rgba(236,203,134,.35)", marginBottom: 56 }}>
+      <div style={{ borderRadius: 26, overflow: "hidden", position: "relative", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)", padding: "30px 28px 26px" }}>
+        <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.14)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
+        <div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
+          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "3px 11px" }}>{t("최신")}</span>
+          <span style={{ fontSize: 12, color: T.inkSoft }}>{v.date}</span>
+        </div>
+        <div className="flex items-center flex-wrap" style={{ gap: 26, position: "relative" }}>
+          <div style={{ flex: "1 1 320px", minWidth: 260 }}>
+            <div style={{ fontSize: "clamp(44px, 9vw, 68px)", fontWeight: 900, lineHeight: 1, fontFamily: "ui-monospace,monospace", background: "linear-gradient(100deg," + T.ivoryHi + "," + T.brassHi + " 60%," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", letterSpacing: "-.03em", marginBottom: 14 }}>v{v.version}</div>
+            <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.6, maxWidth: 440 }}>{v.summary}</p>
+          </div>
+          {v.highlight && v.highlight.kind === "icon" && (
+            <div style={{ flex: "0 0 auto", margin: "0 auto" }}><VersionHighlight h={v.highlight} /></div>
+          )}
+        </div>
+        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.45), transparent)", margin: "22px 0 18px" }} />
+        <div style={{ position: "relative" }}><ItemList sections={secs} big /></div>
+      </div>
+    </motion.section>
+  );
+}
+function EraBlock({ era, rows, openSet, toggle, forceOpen }) {
+  const last = rows[rows.length - 1].v.date, first = rows[0].v.date;
+  return (
+    <section id={"era-" + era.replace(".", "-")} style={{ position: "relative", marginBottom: 48, scrollMarginTop: 130 }}>
+      <div className="flex items-end" style={{ gap: 16, marginBottom: 16, position: "relative" }}>
+        <span style={{ fontSize: 64, fontWeight: 900, lineHeight: 0.85, color: "transparent", WebkitTextStroke: "1.5px " + T.brass, letterSpacing: "-.03em" }}>{era}</span>
+        <div style={{ paddingBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{tx("{0} 시리즈", era)}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("버전 {0}개", rows.length)} · {last}{last !== first ? " → " + first : ""}</div>
+        </div>
+        <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.4), transparent)", marginBottom: 10 }} />
+      </div>
+      <div style={{ ...GLASS, borderRadius: 20, overflow: "hidden" }}>
+        {rows.map(({ v, secs }, i) => {
+          const open = forceOpen || openSet.has(v.version);
+          const cnt = secs.reduce((n, s) => n + s.items.length, 0);
+          return (
+            <div id={"v" + v.version.replace(/\./g, "-")} key={v.version} style={{ borderTop: i ? "1px solid rgba(196,154,80,.14)" : "none", scrollMarginTop: 130 }}>
+              <button onClick={() => toggle(v.version)} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: open ? "rgba(196,154,80,.07)" : "transparent", border: "none", cursor: "pointer", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit", transition: "background .2s" }}>
+                <span style={{ flexShrink: 0, width: 66, fontSize: 15, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ivoryHi, lineHeight: 1.55 }}>{v.summary}</span>
+                  <span className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 5 }}>
+                    <span style={{ fontSize: 11, color: T.inkSoft }}>{v.date}</span>
+                    {secs.map((s) => <span key={s.cat} title={CAT[s.cat].label} style={{ width: 7, height: 7, borderRadius: "50%", background: CAT[s.cat].color }} />)}
+                    <span style={{ fontSize: 11, color: T.inkSoft }}>{tx("{0}개 변경", cnt)}</span>
+                  </span>
+                </span>
+                <ChevronDown size={16} color={T.brass} style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }} />
+              </button>
+              <AnimatePresence initial={false}>
+                {open && (
+                  <motion.div key="b" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.28, ease: [0.22, 0.9, 0.32, 1] }} style={{ overflow: "hidden" }}>
+                    <div style={{ padding: "2px 18px 18px 98px" }} className="about-era-body">
+                      {v.mascot && <div style={{ marginBottom: 12 }}><SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble></div>}
+                      <ItemList sections={secs} />
+                      {v.mascot && <div style={{ marginTop: 14 }}><SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble></div>}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+function HistoryPage() {
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+  const [openSet, setOpenSet] = useState(() => new Set());
+  const norm = q.trim().toLowerCase();
+  const searching = filter !== "all" || norm !== "";
+  const catCounts = useMemo(() => { const m = {}; VERSION_HISTORY.forEach((v) => v.sections.forEach((s) => { m[s.cat] = (m[s.cat] || 0) + s.items.length; })); return m; }, []);
+  const total = useMemo(() => Object.values(catCounts).reduce((a, b) => a + b, 0), [catCounts]);
+  const view = useMemo(() => VERSION_HISTORY.map((v) => {
+    const hit = (x) => !norm || String(x).toLowerCase().includes(norm) || v.version.includes(norm);
+    const secs = v.sections.filter((s) => filter === "all" || s.cat === filter).map((s) => ({ cat: s.cat, items: s.items.filter(hit) })).filter((s) => s.items.length);
+    return { v, secs };
+  }).filter((r) => r.secs.length), [filter, norm]);
+  const showLatest = !searching && view.length && view[0].v.version === VERSION_HISTORY[0].version;
+  const rest = showLatest ? view.slice(1) : view;
+  const eras = useMemo(() => { const out = []; rest.forEach((r) => { const e = eraOf(r.v.version); const g = out[out.length - 1]; if (g && g.era === e) g.rows.push(r); else out.push({ era: e, rows: [r] }); }); return out; }, [rest]);
+  const toggle = (ver) => setOpenSet((s) => { const n = new Set(s); n.has(ver) ? n.delete(ver) : n.add(ver); return n; });
+  const allOpen = rest.length > 0 && rest.every((r) => openSet.has(r.v.version));
+  const jumpEra = (e) => { const el = document.getElementById("era-" + e.replace(".", "-")); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const first = VERSION_HISTORY[VERSION_HISTORY.length - 1], latest = VERSION_HISTORY[0];
+  const allEras = useMemo(() => { const s = []; VERSION_HISTORY.forEach((v) => { const e = eraOf(v.version); if (!s.includes(e)) s.push(e); }); return s; }, []);
+  return (
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: "56px 20px 96px" }}>
       <Reveal>
         <div style={{ textAlign: "center", marginBottom: 30 }}>
-          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 12 }}>
+          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 14 }}>
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
             <History size={14} color={T.brass} />
             <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".18em" }}>CHANGELOG</span>
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
           </div>
-          <h2 style={{ fontSize: "clamp(26px, 4.5vw, 36px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px", letterSpacing: "-.01em" }}>{t("버전 기록")}</h2>
-          <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("지금까지 낸 버전은 {0}개다. 아래로 내려갈수록 오래된 버전이다.", VERSION_HISTORY.length)}</p>
+          <h2 style={{ fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.02em" }}>{t("버전 기록")}</h2>
+          <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("지금까지 낸 버전은 {0}개다. 아래로 내려갈수록 오래된 버전이다.", VERSION_HISTORY.length)}</p>
         </div>
       </Reveal>
 
-      {/* 버전 바로가기 — 가로로 스크롤되는 칩 줄(상단에 붙어 따라다님) */}
-      <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -20px 22px", padding: "10px 20px", background: "linear-gradient(180deg, rgba(27,16,9,.96), rgba(27,16,9,.82))", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(196,154,80,.15)" }}>
-        <div className="flex items-center" style={{ gap: 8 }}>
-          <div className="no-swipe" style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 2, scrollbarWidth: "none" }}>
-            {VERSION_HISTORY.map((v) => (
-              <button key={v.version} onClick={() => jump(v.version)} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brassHi, border: "1px solid rgba(196,154,80,.35)", background: "rgba(196,154,80,.07)", borderRadius: 999, padding: "4px 11px", cursor: "pointer" }}>{v.version}</button>
-            ))}
-          </div>
-          <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(VERSION_HISTORY.map((v) => v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "6px 13px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
+      <Reveal delay={0.05}>
+        <div className="flex flex-wrap" style={{ gap: 12, marginBottom: 30 }}>
+          <HStat n={VERSION_HISTORY.length} label={t("공개한 버전")} sub={"v" + first.version + " → v" + latest.version} />
+          <HStat n={total} label={t("누적 변경")} sub={tx("기능 {0}건", catCounts.feature || 0)} />
+          <HStat n={first.date.split(".").slice(0, 2).join(".")} label={t("첫 공개")} sub={first.date} />
+          <HStat n={latest.date.split(".").slice(1).join(".")} label={t("최근 공개")} sub={latest.date} />
         </div>
+      </Reveal>
+
+      {/* 필터·검색 줄 — 위에 붙어서 따라온다 */}
+      <div className="no-swipe" style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -20px 26px", padding: "10px 20px 12px", background: "linear-gradient(180deg, rgba(27,16,9,.97), rgba(27,16,9,.85))", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(196,154,80,.15)" }}>
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, scrollbarWidth: "none" }}>
+          <CatPill cat="all" active={filter === "all"} onClick={() => setFilter("all")} />
+          {CAT_ORDER.filter((c) => catCounts[c]).map((c) => <CatPill key={c} cat={c} count={catCounts[c]} active={filter === c} onClick={() => setFilter(filter === c ? "all" : c)} />)}
+        </div>
+        <div className="flex items-center" style={{ gap: 8 }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("변경 내용 검색")} aria-label={t("검색")}
+            style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,.3)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 999, padding: "8px 16px", color: T.ivoryHi, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+          {!searching && (
+            <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(rest.map((r) => r.v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
+          )}
+        </div>
+        {!searching && (
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 9, scrollbarWidth: "none" }}>
+            {allEras.map((e) => <button key={e} onClick={() => jumpEra(e)} className="press" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brass, background: "transparent", border: "1px solid rgba(196,154,80,.25)", borderRadius: 8, padding: "2px 9px", cursor: "pointer" }}>{e}</button>)}
+          </div>
+        )}
       </div>
 
-      <div style={{ position: "relative" }}>
-        <div aria-hidden="true" style={{ position: "absolute", left: 10, top: 28, bottom: 28, width: 2, background: "linear-gradient(180deg, " + T.brassHi + ", rgba(196,154,80,.35) 12%, rgba(196,154,80,.12))", borderRadius: 2 }} />
-        {VERSION_HISTORY.map((v, i) => <VersionEntry key={v.version} v={v} i={i} open={openSet.has(v.version)} onToggle={() => toggle(v.version)} />)}
-      </div>
+      {showLatest && <LatestCard v={view[0].v} secs={view[0].secs} />}
+
+      {view.length === 0 && <div style={{ textAlign: "center", padding: "50px 0", color: T.inkSoft, fontSize: 14 }}>{t("조건에 맞는 변경 내용이 없다.")}</div>}
+
+      {eras.map((g) => <EraBlock key={g.era} era={g.era} rows={g.rows} openSet={openSet} toggle={toggle} forceOpen={searching} />)}
+
       <div style={{ textAlign: "center", padding: "28px 0 8px" }}>
         <DecoBoard {...DECO_F} size={110} caption={null} />
         <div style={{ marginTop: 14 }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
@@ -3083,7 +3155,7 @@ export default function AboutPage() {
 
   return (
     <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
-      <style>{"@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
+      <style>{"@media (max-width: 560px){.about-era-body{padding-left:18px !important}}@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
       <Backdrop />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>

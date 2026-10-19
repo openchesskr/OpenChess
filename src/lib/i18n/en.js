@@ -2774,4 +2774,13 @@ export default {
   "미니게임 점수, 채팅 공유 보상, 프로필 정보를 위조하는 방법을 막았다.": "Closed the ways to forge minigame scores, chat share rewards and profile data.",
   "모의 공격 84건을 빌드할 때마다 돌린다.": "84 simulated attacks run on every build.",
   "지금까지 낸 버전은 {0}개다. 아래로 내려갈수록 오래된 버전이다.": "We have released {0} versions so far. The further down you go, the older the version.",
+  "{0} 시리즈": "{0} series",
+  "버전 {0}개": "Versions: {0}",
+  "공개한 버전": "Versions released",
+  "누적 변경": "Total changes",
+  "기능 {0}건": "Features: {0}",
+  "첫 공개": "First release",
+  "최근 공개": "Latest release",
+  "변경 내용 검색": "Search changes",
+  "조건에 맞는 변경 내용이 없다.": "No changes match.",
 };
