@@ -295,6 +295,8 @@ export const authAttacks = [
       R.fen = await run(post(noF, { id: idF, name: "FEN", fen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1", setupSans: [], tree: { children: [{ san: "Rh8+", children: [{ san: "Kd7" }] }] } }));
       R.badFen = await run(post(noF, { id: idF, fen: "not a fen", setupSans: [] }));
       R.fenMistake = await run(post(noF, { id: idF, fen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1", mistakeSan: "Rh8+", tree: { children: [{ san: "Kd7" }] } }));
+      R.fenJunk = await run(post(noF, { id: idF, fen: "x".repeat(500), setupSans: ["e4"], tree: { children: [] } }));
+      R.setupEmpty = await run(post(noF, { id: idF, setupSans: ["e4", "", null], tree: { children: [] } }));
       R.fenNonStr = await run(post(noF, { id: idF, fen: { a: 1 }, tree: { children: [] } }));
       R.mistakeNonStr = await run(post(noF, { id: idF, fen: "4k3/8/8/8/8/8/8/4K2R w K - 0 1", mistakeSan: ["Rh8+"], tree: { children: [] } }));
       const deep = (n) => (n ? { children: [{ san: n % 2 ? "Nf3" : "Ng1", children: deep(n - 1).children }] } : { children: [] });
@@ -302,7 +304,7 @@ export const authAttacks = [
       R.hugeName = await run(post(no1, mk(id1, { name: "x".repeat(500) })));
       collide = true; R.collision = await run(post(no1, mk(id1))); collide = false;
       let blocked = 0; for (let i = 0; i < 40; i++) if (await run(post(no1, mk(id1), "", "9.9.9.9")) === 429) blocked++;
-      const bad = R.good !== 200 || R.badNo !== 400 || R.illegalMove !== 400 || R.fakeStart !== 400 || R.lines !== 200 || R.badLines !== 400 || R.fen !== 200 || R.badFen !== 400 || R.fenMistake !== 200 || R.fenNonStr !== 400 || R.mistakeNonStr !== 400 || R.tooDeep !== 400 || R.hugeName !== 400 || R.collision !== 409 || blocked < 5;
+      const bad = R.good !== 200 || R.badNo !== 400 || R.illegalMove !== 400 || R.fakeStart !== 400 || R.lines !== 200 || R.badLines !== 400 || R.fen !== 200 || R.badFen !== 400 || R.fenMistake !== 200 || R.fenNonStr !== 400 || R.fenJunk !== 400 || R.setupEmpty !== 400 || R.mistakeNonStr !== 400 || R.tooDeep !== 400 || R.hugeName !== 400 || R.collision !== 409 || blocked < 5;
       return { breached: bad, evidence: `정상(표준 ${R.good}·옛 lines ${R.lines}·FEN ${R.fen}) 저장 · 번호-id 불일치 ${R.badNo} · 불법 수 ${R.illegalMove} · 불법 시작 ${R.fakeStart} · 불법 lines ${R.badLines} · 가짜 FEN ${R.badFen} · FEN+mistake ${R.fenMistake} · 비문자열 fen ${R.fenNonStr}/mistake ${R.mistakeNonStr} · 너무 깊은 트리 ${R.tooDeep} · 긴 이름 ${R.hugeName} · 번호 충돌 ${R.collision} · 게스트 40회 중 제한 ${blocked}건` };
     } },
 ];

@@ -21,9 +21,13 @@ function rootPosition(d) {
   if (d.fen != null && typeof d.fen !== "string") return null;
   if (d.mistakeSan != null && typeof d.mistakeSan !== "string") return null;
   if (d.setupSans != null && (!Array.isArray(d.setupSans) || d.setupSans.length > 120)) return null;
+  for (const san of d.setupSans || []) if (typeof san !== "string" || !san || san.length > 12) return null;
+  if (d.mistakeSan === "") return null;
+  // fen은 setupSans가 있어 쓰이지 않더라도 저장되므로 항상 길이·합법성을 검증한다(다른 소비자가 읽어도 안전하게).
+  if (d.fen) { if (d.fen.length > 100) return null; try { new Chess().load(d.fen); } catch { return null; } }
   const setup = [...(d.setupSans || []), d.mistakeSan].filter(Boolean);
   const c = new Chess();
-  if (!(d.setupSans && d.setupSans.length) && d.fen) { try { c.load(d.fen); } catch { return null; } }
+  if (!(d.setupSans && d.setupSans.length) && d.fen) c.load(d.fen);
   for (const san of setup) { if (typeof san !== "string" || san.length > 12) return null; try { c.move(san); } catch { return null; } }
   return c;
 }
