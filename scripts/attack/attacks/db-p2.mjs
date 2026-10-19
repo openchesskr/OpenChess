@@ -96,6 +96,23 @@ export default [
       const orphan = sb.admin(`select count(*) from public.reviewed_games where cc_id=777 and data is null`).out;
       return { breached: noGame !== "f" || wrong !== "f" || wrongLen !== "f" || good !== "t" || stored !== "true" || orphan !== "0", evidence: `기보 없는 대국 ${noGame} · 다른 대국 분석 ${wrong} · 수 개수 불일치 ${wrongLen} · 정상 분석 ${good}(표기 +/# 무시) · 기보 없는 분석 행 ${orphan}개` };
     } },
+  { id: "BUG-122", kind: "attack", title: "공유 보상 파밍: 친구끼리 puzzle_share_reward를 반복 호출해 상대 XP를 무한 생성(금액도 클라이언트가 정함)",
+    async run({ sb, U }) {
+      const mid = sb.admin(`insert into public.chat_messages(from_uid,to_uid,puzzle_no) values ('${U.victim}','${U.bob}',111111) returning id`).out.split("\n")[0];
+      const calls = Array.from({ length: 60 }, () => `select public.puzzle_share_reward(${mid}, 1000);`).join("\n");
+      for (const q of calls.split("\n")) sb.as("authenticated", U.bob, q);
+      const total = Number(sb.admin(`select coalesce(sum((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out);
+      const maxOne = Number(sb.admin(`select coalesce(max((share_reward->>'amount')::bigint),0) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out);
+      // 임시 상한(BUG-113 계획 2단계 전까지): 건당 10 이하·같은 공유 메시지당 하루 30회 → 최대 300. 이를 넘으면 뚫린 것.
+      return { breached: total > 300 || maxOne > 10, evidence: `bob이 60번 호출 → victim이 받은 보상 XP 합계 ${total}(상한 300), 한 건 최대 ${maxOne}(상한 10). 원래는 6만 XP였음` };
+    } },
+  { id: "BUG-122b", kind: "hold", title: "정상 경로 유지: 공유받은 퍼즐을 풀면 공유한 친구에게 보상 메시지가 간다(소액)",
+    async run({ sb, U }) {
+      const mid = sb.admin(`insert into public.chat_messages(from_uid,to_uid,puzzle_no) values ('${U.victim}','${U.bob}',111111) returning id`).out.split("\n")[0];
+      const a = sb.as("authenticated", U.bob, `select public.puzzle_share_reward(${mid}, 7);`);
+      const n = sb.admin(`select count(*) from public.chat_messages where to_uid='${U.victim}' and share_reward is not null`).out;
+      return { breached: !(a.ok && a.out === "t" && n === "1"), evidence: `호출 ${a.ok ? a.out : a.err}, 보상 메시지 ${n}건` };
+    } },
   { id: "BUG-117", kind: "attack", title: "account_providers를 브라우저(anon·로그인)가 직접 호출해 이메일 가입 여부·방식 열거",
     async run({ sb, U }) {
       const a = sb.as("anon", null, `select public.account_providers('victim@example.com');`);

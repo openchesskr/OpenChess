@@ -697,7 +697,11 @@ begin
   select from_uid, puzzle_no into v_from, v_no
   from public.chat_messages where id = p_share_msg_id and to_uid = v_me and puzzle_no is not null;
   if v_from is null or v_from = v_me then return false; end if;
-  v_amount := greatest(1, least(coalesce(p_amount, 0), 1000));
+  -- (v0.7.0 보안 BUG-122) 금액은 클라이언트가 정해서 보내고 횟수 제한도 없어, 친구끼리 반복 호출하면 XP를 무한히 만들 수 있었다(60번에 6만 XP 재현).
+  -- 정상 보상은 라인 풀이 XP(최대 71)의 10%라 7 이하이므로 상한을 10으로 낮추고, 같은 공유 메시지당 하루 30회·받는 사람당 하루 200회로 제한한다.
+  -- 근본 대책은 서버가 금액을 정하는 구조(SECURITY_PLAN_BUG-113.md 2단계).
+  if public.rate_limit_hit('srw:' || v_me || ':' || p_share_msg_id, 30, 86400) or public.rate_limit_hit('srw:u:' || v_me, 200, 86400) then return false; end if;
+  v_amount := greatest(1, least(coalesce(p_amount, 0), 10));
   insert into public.chat_messages(from_uid, to_uid, share_reward) values (v_me, v_from, jsonb_build_object('amount', v_amount, 'no', v_no));
   return true;
 end; $$;
