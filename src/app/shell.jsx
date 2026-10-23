@@ -11,7 +11,7 @@ import { TierLogoDisc } from "../components/pieces.jsx";
 import { T, MOTION_EASE, tierPieceSrc } from "../lib/theme.js";
 import { Sparkles, ChevronRight, Bell, Play, Search, Check, X, Target, Star, Crown, Library, Settings, Users, Info, ChevronDown, EyeOff, Eye } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { motion, AnimatePresence, useMotionValue, animate as animateMv } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
@@ -966,6 +966,9 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
 // 어떻게 바꿨는지(승/무/패 숫자가 넘어가고 승률이 새 값까지 올라가거나 내려감) 보여 준다.
 const CC_TOAST_MS = 8000;       // 자동으로 닫히기까지(마우스를 올려 두면 멈춤)
 const CC_TOAST_REVEAL_MS = 900; // 직전 전적을 먼저 보여 주고, 이 대국을 반영하기까지
+const CC_SWIPE_DIST = 70;       // (v0.7.1) 이만큼(px) 이상 밀면 쓸어 넘겨 닫힘
+const CC_SWIPE_VEL = 450;       // 또는 이 속도(px/s) 이상으로 튕기면 닫힘
+const CC_SWIPE_OUT = 380;       // 닫힐 때 날아가는 거리(px) — 투명도가 0이 되는 지점
 // (v0.5.6 사용자 요청) 전적 칩 앞 오프닝 이름(예: "Italian Game: Classical Variation") 서체 — 결과 줄에서 이 자리로 옮겼다.
 const CC_TOAST_LABEL_FONT = "'Playfair Display', 'Nanum Myeongjo', serif";
 const ccWrColor = (n, wr) => (n < 3 || wr == null ? "#8A7458" : wr >= 60 ? T.best : wr >= 40 ? T.inaccuracy : T.blunder); // 도감 전적 칩과 같은 규칙
@@ -1045,13 +1048,28 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
     ctlRef.current = c;
     return () => c.stop();
   }, [left]);
-  useEffect(() => { const c = ctlRef.current; if (!c) return; if (hover) c.pause(); else c.play(); }, [hover]);
+  const [dragging, setDragging] = useState(false);
+  const dragX = useMotionValue(0);
+  const dragFade = useTransform(dragX, [-CC_SWIPE_OUT, -CC_SWIPE_DIST * 1.6, 0, CC_SWIPE_DIST * 1.6, CC_SWIPE_OUT], [0, 0.35, 1, 0.35, 0]);
+  const hold = hover || dragging;
+  useEffect(() => { const c = ctlRef.current; if (!c) return; if (hold) c.pause(); else c.play(); }, [hold]);
   const iconBtn = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
   return (
     <motion.div role="status" onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
       initial={{ opacity: 0, transform: "translateY(-14px) scale(0.96)" }} animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }} exit={{ opacity: 0, transform: "translateY(-10px) scale(0.97)" }}
       transition={{ duration: 0.34, ease: [0.22, 1.2, 0.36, 1] }}
-      style={{ position: "relative", overflow: "hidden", pointerEvents: "auto", background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
+      style={{ pointerEvents: "auto" }}>
+    {/* (v0.7.1, 사용자 요청) 좌우로 쓸어 넘겨 닫기 — 등장·퇴장 transform(문자열)과 겹치지 않게 카드를 안쪽 래퍼로 분리하고 거기에만 드래그(x)를 건다.
+        세로 스크롤은 그대로 두려고 touch-action: pan-y. 밀린 거리나 속도가 기준을 넘으면 그 방향으로 날아가며 닫히고, 아니면 제자리로 돌아온다.
+        끌고 있는 동안은 자동 닫힘 타이머를 멈춘다(hover와 같은 취급). 버튼 클릭은 임계 거리 안의 움직임이라 그대로 동작. */}
+    <motion.div drag="x" dragMomentum={false} dragElastic={0.9}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={(_, info) => {
+        const far = Math.abs(info.offset.x) > CC_SWIPE_DIST || Math.abs(info.velocity.x) > CC_SWIPE_VEL;
+        if (far) animateMv(dragX, (info.offset.x < 0 ? -1 : 1) * CC_SWIPE_OUT, { duration: 0.18, ease: "easeIn", onComplete: () => closeRef.current() });
+        else { setDragging(false); animateMv(dragX, 0, { type: "spring", stiffness: 520, damping: 34 }); }
+      }}
+      style={{ x: dragX, opacity: dragFade, touchAction: "pan-y", position: "relative", overflow: "hidden", background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: T.book }}>{t("최근 대국")}</span>
         {game.timeClass && <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>· {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</span>}
@@ -1095,6 +1113,7 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
         </span>
       </div>
       <motion.span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 2.5, background: T.book, transformOrigin: "left", scaleX: left, opacity: 0.8 }} />
+    </motion.div>
     </motion.div>
   );
 }
