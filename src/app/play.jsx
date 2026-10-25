@@ -2279,14 +2279,32 @@ const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s 
 function MgLobbyLabel({ children }) {
   return <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.6)", letterSpacing: ".02em", margin: "0 2px 8px" }}>{children}</div>;
 }
-function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable }) {
+// (v0.7.1 디자인) 로비 맨 위 배너 — 네 게임이 똑같은 목록처럼 보이던 로비에 게임마다의 얼굴(고유 색·아이콘·한 줄 설명)을 준다.
+// 설명 문구는 플레이 탭 카드와 같은 PLAY_SPECIAL_GAMES의 desc를 그대로 쓴다(새 문구 없음).
+function MinigameHero({ spec }) {
+  if (!spec) return null;
+  const { Icon, accent, desc } = spec;
+  return (
+    <div style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16,
+      background: "linear-gradient(135deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.38)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 12px 26px -14px rgba(36,21,9,.75)" }}>
+      <span aria-hidden="true" style={{ position: "absolute", left: -34, top: -44, width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle," + accent + "66 0%," + accent + "00 70%)", pointerEvents: "none" }} />
+      <span aria-hidden="true" style={{ position: "absolute", right: -14, bottom: -18, width: 128, height: 96, opacity: 0.1, pointerEvents: "none", transform: "rotate(-10deg)",
+        backgroundImage: "conic-gradient(#FFF6DE 25%, transparent 0 50%, #FFF6DE 0 75%, transparent 0)", backgroundSize: "32px 32px",
+        WebkitMaskImage: "linear-gradient(90deg, transparent, #000 70%)", maskImage: "linear-gradient(90deg, transparent, #000 70%)" }} />
+      <span style={{ position: "relative", width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff",
+        background: "linear-gradient(150deg," + accent + "," + accent + "B3)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -6px " + accent }}><Icon size={24} strokeWidth={2.2} /></span>
+      <p style={{ position: "relative", margin: 0, minWidth: 0, wordBreak: "keep-all", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55, color: "rgba(255,246,222,.88)" }}>{desc}</p>
+    </div>
+  );
+}
+function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable, accent }) {
   return (
     <button onClick={onClick} disabled={disabled} className={"press mg-row" + (primary ? " primary" : "")} aria-expanded={expandable ? !!open : undefined}
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 14px 11px 11px", textAlign: "left", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1,
         ...MG_LOBBY_CARD_STYLE, ...(primary ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "1px solid rgba(120,84,30,.5)" } : null),
         ...(open ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderColor: "rgba(169,122,44,.55)" } : null) }}>
       <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
-        background: primary ? "rgba(36,21,9,.14)" : "rgba(196,154,80,.15)", color: primary ? "#241509" : MG_GOLD }}><Icon size={19} /></span>
+        background: primary ? "rgba(36,21,9,.14)" : accent ? accent + "26" : "rgba(196,154,80,.15)", color: primary ? "#241509" : accent || MG_GOLD }}><Icon size={19} /></span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: primary ? "#241509" : T.ink, lineHeight: 1.25 }}>{label}</span>
         {sub && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: primary ? "rgba(36,21,9,.7)" : "rgba(90,58,34,.6)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
@@ -2295,20 +2313,24 @@ function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, e
     </button>
   );
 }
-function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar }) {
+// 로비 섹션이 위에서부터 차례로 살짝 올라오며 나타난다(transform 문자열만 — 합성기에서 처리).
+const mgRise = (i) => ({ initial: { opacity: 0, transform: "translateY(10px)" }, animate: { opacity: 1, transform: "translateY(0px)" }, transition: { duration: 0.34, delay: i * 0.06, ease: [0.22, 0.8, 0.3, 1] } });
+function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar, spec }) {
   const [pickBot, setPickBot] = useState(false);
   const botOpen = pickBot && !!botOptions;
+  const accent = spec ? spec.accent : null;
   return (
     <div style={{ width: "100%", maxWidth: 520, margin: "0 auto", padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 20 }}>
       <style>{MG_LOBBY_CSS}</style>
-      {statsBar}
-      <div>
+      {spec && <motion.div {...mgRise(0)}><MinigameHero spec={spec} /></motion.div>}
+      <motion.div {...mgRise(1)}>{statsBar}</motion.div>
+      <motion.div {...mgRise(2)}>
         <MgLobbyLabel>{t("플레이 모드")}</MgLobbyLabel>
         {err && <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 2px 8px" }}>{err}</p>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <MinigameModeRow Icon={User} label={t("혼자 플레이하기")} sub={soloSub} onClick={onSolo} />
+          <MinigameModeRow Icon={User} label={t("혼자 플레이하기")} sub={soloSub} onClick={onSolo} accent={accent} />
           <div>
-            <MinigameModeRow Icon={Cpu} label={t("봇과 플레이하기")} sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
+            <MinigameModeRow Icon={Cpu} label={t("봇과 플레이하기")} sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} accent={accent} />
             <AnimatePresence initial={false}>
               {botOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
@@ -2325,7 +2347,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
           </div>
           <MinigameModeRow Icon={Shuffle} label={t("랜덤 매칭")} sub={myUid ? t("실시간 대전 상대 찾기") : t("로그인 후 이용 가능")} onClick={onRandom} disabled={!myUid} primary />
         </div>
-      </div>
+      </motion.div>
       {roster}
       {footer}
     </div>
@@ -2498,6 +2520,7 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   if (inLobby) body = (
     <MinigameLobby footer={footer} myUid={myUid} soloSub={soloSub} botSub={botSub} botOptions={botOptions}
       statsBar={<MinigameStatsBar myUid={myUid} game={gameType} row={myStats} onOpenRanking={() => start({ kind: "rank" })} />}
+      spec={PLAY_SPECIAL_GAMES.find((g) => g.gameType === gameType)}
       onSolo={() => start({ kind: "solo" })} onBot={(opt) => start({ kind: "bot", opt })} onRandom={m.join} err={m.err || m.inviteErr}
       roster={<FriendPvpRoster lobby myUid={myUid} friendList={m.friendList} myInvite={m.myInvite} onInvite={m.sendInvite} onOpenProfile={onOpenProfile} />} />
   );
