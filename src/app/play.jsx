@@ -25,7 +25,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
+import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -93,6 +93,8 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
   return counts;
 }
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"]; // 구분 값(한국어 고정). 화면에는 tcCatLabel로 번역해 표시
+// (v0.7.1 디자인) 봇 강도별 색 — 앱의 티어 색(아이언~그랜드마스터)을 그대로 빌려 강해질수록 색이 달라지게 한다.
+const PLAY_BOT_TIER_KEY = { 400: "iron", 800: "bronze", 1200: "silver", 1600: "gold", 2000: "diamond", 2400: "master", 2800: "grandmaster" };
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
   { elo: 800, label: "800", desc: t("초보") },
@@ -389,57 +391,82 @@ function playResultCopy(result, activeColor) {
   if (result.end === "stalemate") return { kind: "draw", title: t("무승부"), subtitle: t("스테일메이트"), mascot: "milku", emotion: "think" };
   return { kind: "draw", title: t("무승부"), subtitle: t("3회 동형 반복"), mascot: "milku", emotion: "think" };
 }
-function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
+// (v0.7.1 디자인) 대국 종료 정산 카드 — 승·패·무가 색으로 한눈에 보이게(머리 칸 글로우·제목 색), 쓰이지 않던 마스코트(copy.mascot)를 얹고, 승자 표시(왕관)·
+// 내 진영(백/흑)·수 수·시간 규정을 칩으로 정리했다. 승리하면 화면 전체로 금빛 조각이 흩날린다. 버튼·핸들러는 이전과 같다.
+function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, moveCount, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
   if (!copy) return null;
-  const kindColor = copy.kind === "win" ? T.best : copy.kind === "loss" ? T.blunder : T.brassHi;
-  const checker = "repeating-conic-gradient(" + T.boardDark + " 0% 25%, " + T.boardLight + " 0% 50%) 0 0/36px 36px";
+  const win = copy.kind === "win", loss = copy.kind === "loss";
+  const kindColor = win ? T.best : loss ? T.blunder : T.brassHi;
+  const titleColor = win ? "#9BE59A" : loss ? "#FF9D90" : T.brassHi;
+  const checker = "repeating-conic-gradient(rgba(255,246,222,.07) 0% 25%, transparent 0% 50%) 0 0/28px 28px";
+  const oppColor = activeColor === "w" ? "b" : "w";
+  const pvp = mode === "pvp";
+  const ring = (isWinner) => (isWinner ? T.best : "rgba(150,112,58,.45)");
+  const avatar = (photo, initial, isBot, isWinner) => {
+    const base = { width: 54, height: 54, borderRadius: 15, border: "2.5px solid " + ring(isWinner), boxShadow: isWinner ? "0 0 0 3px rgba(60,138,60,.18)" : "none" };
+    if (photo) return <img src={photo} alt="" style={{ ...base, objectFit: "cover" }} />;
+    if (isBot) return <span style={{ ...base, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Cpu size={22} /></span>;
+    return <span style={{ ...base, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{initial}</span>;
+  };
+  const player = (photo, initial, isBot, isWinner, name, color) => (
+    <div style={{ textAlign: "center", minWidth: 0, flex: 1 }}>
+      <div style={{ position: "relative", display: "inline-block" }}>
+        {avatar(photo, initial, isBot, isWinner)}
+        {isWinner && <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "2px solid " + T.paper, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Crown size={11} strokeWidth={2.6} /></span>}
+      </div>
+      <div className="flex items-center justify-center" style={{ gap: 5, marginTop: 7, minWidth: 0 }}>
+        <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0, background: color === "w" ? "#FFFDF7" : "#2A1A0E", border: "1.5px solid " + (color === "w" ? "#BFAA80" : "#000") }} />
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      </div>
+    </div>
+  );
+  const chip = (children) => <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 999, background: "rgba(196,154,80,.14)", border: "1px solid rgba(150,112,58,.3)", fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{children}</span>;
+  const rise = (i) => ({ initial: { opacity: 0, transform: "translateY(8px)" }, animate: { opacity: 1, transform: "translateY(0px)" }, transition: { duration: 0.32, delay: 0.12 + i * 0.07, ease: [0.22, 0.8, 0.3, 1] } });
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(10,6,3,.68)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(10,6,3,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      {win && <VictoryBurst />}
       <motion.div onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 18, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.97 }}
         transition={{ type: "spring", stiffness: 320, damping: 26 }}
-        style={{ width: "100%", maxWidth: 360, borderRadius: 16, overflow: "hidden", background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -14px rgba(0,0,0,.7)" }}>
-        <div style={{ position: "relative", background: checker, padding: "20px 16px 16px", textAlign: "center" }}>
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,12,6,.15), rgba(20,12,6,.55))" }} />
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 2, width: 26, height: 26, borderRadius: 8, background: "rgba(20,12,6,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-.01em", textShadow: "0 2px 6px rgba(0,0,0,.5)" }}>{copy.title}</div>
-            {copy.subtitle && <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 2 }}>{copy.subtitle}</div>}
+        style={{ width: "100%", maxWidth: 360, borderRadius: 20, overflow: "hidden", background: T.paper, border: "1px solid " + (win ? "rgba(60,138,60,.55)" : "#DCCBA8"), boxShadow: "0 24px 60px -14px rgba(0,0,0,.75)" }}>
+        <div style={{ position: "relative", overflow: "hidden", minHeight: 118, padding: "22px 18px 18px", background: "linear-gradient(160deg," + T.ebony3 + "," + T.ebony + ")" }}>
+          <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: checker, pointerEvents: "none" }} />
+          <span aria-hidden="true" style={{ position: "absolute", left: -50, top: -70, width: 240, height: 240, borderRadius: "50%", background: "radial-gradient(circle," + kindColor + "66 0%," + kindColor + "00 68%)", pointerEvents: "none" }} />
+          <button onClick={onClose} aria-label={t("닫기")} className="press hit" style={{ "--hy": "-9px", "--hx": "-9px", position: "absolute", top: 10, right: 10, zIndex: 3, width: 26, height: 26, borderRadius: 8, background: "rgba(255,246,222,.1)", color: "#FFF6DE", border: "1px solid rgba(255,246,222,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
+          <motion.div initial={{ opacity: 0, transform: "translateY(10px) scale(0.7)" }} animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }} transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+            style={{ position: "absolute", right: 14, bottom: -4, zIndex: 1, pointerEvents: "none" }}>
+            <Mascot name={copy.mascot} emotion={copy.emotion} size={92} />
+          </motion.div>
+          <div style={{ position: "relative", zIndex: 2, textAlign: "left", paddingRight: 96 }}>
+            {copy.subtitle && <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 999, background: "rgba(255,246,222,.1)", border: "1px solid " + kindColor + "99", fontSize: 11.5, fontWeight: 800, color: "rgba(255,246,222,.92)" }}>{copy.subtitle}</span>}
+            <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 1.1, marginTop: copy.subtitle ? 8 : 0, color: titleColor, letterSpacing: "-.02em", textShadow: "0 2px 12px " + kindColor + "66" }}>{copy.title}</div>
           </div>
         </div>
-        <div style={{ padding: "16px 18px 18px" }}>
-          <div className="flex items-center justify-center" style={{ gap: 14, marginBottom: 12 }}>
-            <div style={{ textAlign: "center", minWidth: 0 }}>
-              {mode === "pvp" && opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }} />
-                : mode === "pvp" ? <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}>{(oppName || "?")[0].toUpperCase()}</span>
-                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}><Cpu size={20} /></span>}
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || t("상대")) : botTier.label}</div>
+        <div style={{ padding: "18px 18px 18px" }}>
+          <motion.div {...rise(0)} className="flex items-start justify-center" style={{ gap: 10, marginBottom: 14 }}>
+            {player(pvp && opponentPub && opponentPub.photo ? opponentPub.photo : null, (oppName || "?")[0].toUpperCase(), !pvp, loss, pvp ? (oppName || t("상대")) : botTier.label, oppColor)}
+            <span style={{ alignSelf: "center", flexShrink: 0, fontSize: 11.5, fontWeight: 900, color: T.inkSoft, opacity: 0.8, letterSpacing: ".06em" }}>VS</span>
+            {player(myPhoto || null, (myName || "U")[0].toUpperCase(), false, win, myName || "Unnamed", activeColor)}
+          </motion.div>
+          {(timeControl || moveCount > 0) && (
+            <motion.div {...rise(1)} className="flex items-center justify-center" style={{ gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+              {timeControl && chip(<>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</>)}
+              {moveCount > 0 && chip(tx("{0}수", moveCount))}
+            </motion.div>
+          )}
+          <motion.div {...rise(2)}>
+            {/* (리디자인, 사용자 요청) 리뷰 버튼은 리뷰 기능을 상징하는 연두색(T.best)·별 아이콘 — 이 버튼이 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도 알 수 있게 한다. */}
+            {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.25), 0 8px 16px -10px rgba(44,90,41,.9)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0}대국 리뷰 보기", <Star size={15} fill="#fff" color="#fff" />)}</button>}
+            <div className="flex gap-2">
+              {/* (사용자 요청) 봇 대국은 누르면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게 제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
+                  상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서 제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
+              <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.14)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
+                {mode !== "pvp" ? t("재대결") : rematchOfferedByMe ? t("상대 응답 기다리는 중…") : rematchOfferedByOpp ? t("재대결 수락") : t("재대결 신청")}
+              </button>
+              <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("닫기")}</button>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>VS</span>
-            <div style={{ textAlign: "center", minWidth: 0 }}>
-              {myPhoto ? <img src={myPhoto} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }} />
-                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }}>{(myName || "U")[0].toUpperCase()}</span>}
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
-            </div>
-          </div>
-          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</div>}
-          {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
-              "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
-              리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
-              그대로 가져와, 이 버튼이 대국 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도
-              알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
-          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0}대국 리뷰 보기", <Star size={15} fill="#fff" color="#fff" />)}</button>}
-          <div className="flex gap-2">
-            {/* (사용자 요청) 봇 대국은 눌러면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게
-                제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
-                상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서
-                제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
-            <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.12)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
-              {mode !== "pvp" ? t("재대결") : rematchOfferedByMe ? t("상대 응답 기다리는 중…") : rematchOfferedByOpp ? t("재대결 수락") : t("재대결 신청")}
-            </button>
-            <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("닫기")}</button>
-          </div>
+          </motion.div>
         </div>
       </motion.div>
     </div>
@@ -5415,7 +5442,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                         <MgRatingChip style={{ fontSize: 11.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
                       </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
-                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
+                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "11px 3px", borderRadius: 10, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
                         </button>
                       ))}
@@ -5480,17 +5507,18 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", t("백")], ["b", t("흑")], ["random", t("랜덤")]].map(([k, lb]) => (
-                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                      <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: "50%", flexShrink: 0, border: "1.5px solid " + (k === "w" ? "#BFAA80" : "#000"), background: k === "w" ? "#FFFDF7" : k === "b" ? "#2A1A0E" : "conic-gradient(#FFFDF7 0 50%, #2A1A0E 0)" }} />{lb}</button>
                   ))}
                 </div>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("상대할 봇 선택")}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
-                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
-                      <span style={{ width: 32, height: 32, borderRadius: "50%", background: botTier.elo === t.elo ? T.brass : "#EDE1C6", color: botTier.elo === t.elo ? "#241509" : T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={16} /></span>
+                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", boxShadow: botTier.elo === t.elo ? "0 6px 14px -10px rgba(120,84,30,.8)" : "none", cursor: "pointer", textAlign: "left" }}>
+                      <span style={{ width: 36, height: 36, borderRadius: 11, background: tierGradientCss(PLAY_BOT_TIER_KEY[t.elo]), color: "rgba(36,21,9,.85)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: botTier.elo === t.elo ? "0 0 0 2px rgba(255,246,222,.9), 0 0 0 3.5px " + T.brass : "inset 0 1px 0 rgba(255,255,255,.35)", opacity: botTier.elo === t.elo ? 1 : 0.88 }}><Cpu size={17} /></span>
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13.5, color: T.ink }}>{t.label}</span>
-                        <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{t.desc}</span>
+                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 15, color: T.ink, lineHeight: 1.2 }}>{t.label}</span>
+                        <span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, marginTop: 1 }}>{t.desc}</span>
                       </span>
                       {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
                     </button>
@@ -5560,7 +5588,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             <AnimatePresence>
               {resultModalOpen && result && (
                 <PlayResultModal result={result} activeColor={activeColor} mode={mode} botTier={botTier} opponentPub={opponentPub}
-                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null}
+                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null} moveCount={Math.ceil(sans.length / 2)}
                   onClose={() => setResultModalOpen(false)}
                   onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
                   onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />
