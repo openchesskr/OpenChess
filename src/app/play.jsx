@@ -9,7 +9,7 @@ import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
-import { X, Cpu, Star, User, Target, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
+import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";
@@ -568,7 +568,7 @@ const MG_GOLD = "#A97A2C";
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: CoordCrosshairIcon, accent: T.brilliant, Component: CoordRaceGame },
   { key: "knight-race", gameType: "knight", name: t("나이트 레이스"), desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
   { key: "rush-hour", gameType: "rush", name: t("백랭크 러시아워"), desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
@@ -838,15 +838,18 @@ function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceA
 // 띄운다(띠 왼쪽 절반을 a–g 파일 × 8–5랭크로 본다). 다섯 칸이 시차를 두고 돌아 늘 한두 개가 떠 있다.
 const MG_PINGS = [{ c: 2, r: 1 }, { c: 5, r: 0 }, { c: 1, r: 3 }, { c: 4, r: 2 }, { c: 5, r: 3 }];
 const MG_PING_MS = 4000;
-function MgCrosshair({ size }) {
+function MgCrosshair({ size, color = "#fff", flat }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
-      <circle cx="12" cy="12" r="7" fill="none" stroke="#fff" strokeWidth="2.2" />
-      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="1.8" fill="#fff" />
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
+      <circle cx="12" cy="12" r="7" fill="none" stroke={color} strokeWidth="2.2" />
+      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="1.8" fill={color} />
     </svg>
   );
 }
+// (v0.7.1) 좌표 인지 게임의 얼굴 아이콘 — 허브 카드·게임 보드에서 쓰던 조준경 그대로. lucide 아이콘과 같은 규격(size·color)이라 PLAY_SPECIAL_GAMES의
+// Icon 자리(로비 배너·모드 행·프로필 전적)에 그대로 들어간다. 글자색(currentColor)을 따르고 그림자는 뺀다.
+function CoordCrosshairIcon({ size = 24, color = "currentColor" }) { return <MgCrosshair size={size} color={color} flat />; }
 function MgCoordPings({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   return (
