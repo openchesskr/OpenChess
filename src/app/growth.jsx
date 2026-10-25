@@ -26,7 +26,7 @@ const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: 0 };
 const sub = { fontSize: 11.5, color: T.inkSoft, lineHeight: 1.55 };
 const chip = (on) => ({ padding: "5px 11px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
 const btn = (primary) => ({ padding: "9px 14px", borderRadius: 10, border: primary ? "none" : "1px solid #C9B58C", background: primary ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: primary ? T.ivoryHi : T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT });
-const critHead = { fontSize: 10, fontWeight: 800, color: T.inkSoft, paddingBottom: 2, paddingLeft: 12 };
+const critHead = { fontSize: 11, fontWeight: 800, color: T.inkSoft, paddingBottom: 2, paddingLeft: 12 };
 const critCell = { borderTop: "1px solid rgba(0,0,0,.06)", padding: "6px 0" };
 const critNum = { textAlign: "right", paddingLeft: 12, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
 const LEVEL_COLOR = { same: "#3F7A3A", close: "#7FA04A", far: "#D9822B", veryFar: "#C8453B", na: "#9A8B72" };
@@ -44,7 +44,7 @@ function Stat({ value, label, accent }) {
   return (
     <div style={{ flex: 1, minWidth: 0, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
       <div style={{ fontSize: 20, fontWeight: 900, color: accent || T.ink, fontFamily: "Georgia, serif", lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap" }}>{label}</div>
     </div>
   );
 }
@@ -97,7 +97,7 @@ function WeaknessMap({ list, onPractice }) {
           </div>
           <div style={{ ...sub, fontWeight: 800, margin: "12px 0 6px" }}>{t("구간 × 유형")}</div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "separate", borderSpacing: 2, fontSize: 10.5, color: T.ink }}>
+            <table style={{ borderCollapse: "separate", borderSpacing: 2, fontSize: 11.5, color: T.ink }}>
               <thead><tr><th />{cols.map((th) => <th key={th} style={{ fontWeight: 700, padding: "0 3px 3px", whiteSpace: "nowrap", color: T.inkSoft }}>{themeLabel(th)}</th>)}</tr></thead>
               <tbody>{PHASES.map((p, ri) => (
                 <tr key={p}><td style={{ fontWeight: 700, paddingRight: 5, whiteSpace: "nowrap" }}>{phaseLabel(p)}</td>
@@ -235,7 +235,7 @@ function MasterStyle({ games }) {
               <span style={{ fontSize: 15, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
             </div>
             <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en")}</div>
-            <div style={{ fontSize: 10.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + ", " : ""}{t("{0}판 분석", x.games)}</div>
+            <div style={{ fontSize: 11.5, color: T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.elo ? peakText(x.elo) + ", " : ""}{t("{0}판 분석", x.games)}</div>
           </button>
         ))}
       </div>
@@ -266,18 +266,18 @@ function MasterStyle({ games }) {
         <span style={{ ...critHead, textAlign: "right" }}>{t("차이")}</span>
         {CRITERIA_GROUPS.map((g) => (
           <Fragment key={g.id}>
-            <div style={{ gridColumn: "1 / -1", fontSize: 10.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "10px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
+            <div style={{ gridColumn: "1 / -1", fontSize: 11.5, fontWeight: 800, color: T.inkSoft, letterSpacing: ".04em", margin: "10px 0 3px" }}>{criterionGroupLabel(g.id)}</div>
             {g.keys.map((k) => {
               const r = byKey[k]; if (!r) return null;
               return (
                 <Fragment key={k}>
                   <div style={{ ...critCell, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
                     <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3, overflowWrap: "anywhere" }}>{criterionLabel(k)}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 9px", lineHeight: 1.3, maxWidth: "100%", overflowWrap: "anywhere" }}>{levelLabel(r.level)}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 9px", lineHeight: 1.3, maxWidth: "100%", overflowWrap: "anywhere" }}>{levelLabel(r.level)}</span>
                   </div>
                   <span style={{ ...critCell, ...critNum, color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
                   <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
-                  <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700, fontSize: 10.5 }}>{formatDiff(k, r.diff)}</span>
+                  <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700, fontSize: 11.5 }}>{formatDiff(k, r.diff)}</span>
                 </Fragment>
               );
             })}

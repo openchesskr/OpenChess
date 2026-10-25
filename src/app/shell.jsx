@@ -1053,6 +1053,18 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
   const dragFade = useTransform(dragX, [-CC_SWIPE_OUT, -CC_SWIPE_DIST * 1.6, 0, CC_SWIPE_DIST * 1.6, CC_SWIPE_OUT], [0, 0.35, 1, 0.35, 0]);
   const hold = hover || dragging;
   useEffect(() => { const c = ctlRef.current; if (!c) return; if (hold) c.pause(); else c.play(); }, [hold]);
+  // (v0.7.1) 쓸어 넘겨 닫을 수 있다는 걸 처음 한 번만 살짝 옆으로 밀었다 돌아오는 움직임으로 알려 준다(기기당 1회, 20px짜리 짧은 움직임).
+  useEffect(() => {
+    const KEY = "occ_cc_swipe_hint_v1";
+    try { if (window.localStorage.getItem(KEY)) return; } catch { return; }
+    let c;
+    const timer = setTimeout(() => {
+      if (dragX.get() !== 0) return;
+      try { window.localStorage.setItem(KEY, "1"); } catch { }
+      c = animateMv(dragX, [0, 20, -6, 0], { duration: 0.95, ease: "easeInOut" });
+    }, CC_TOAST_REVEAL_MS + 900);
+    return () => { clearTimeout(timer); if (c) c.stop(); };
+  }, [dragX]);
   const iconBtn = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
   return (
     <motion.div role="status" onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}

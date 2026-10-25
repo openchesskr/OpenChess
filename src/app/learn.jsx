@@ -643,7 +643,7 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
         <ImageSourceMenu onFile={onScanFile} disabled={scanning} busy={scanning} label={t("이미지 스캔")} busyLabel={t("인식하는 중... {0}%", scanProgress)}
           buttonStyle={{ ...edBtn(scanning), width: "100%" }} />
       </div>
-      <p style={{ fontSize: 10.5, color: "rgba(244,238,226,.5)", margin: "8px 0 0", lineHeight: 1.5 }}>{t("PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환됨.")}</p>
+      <p style={{ fontSize: 11.5, color: "rgba(244,238,226,.5)", margin: "8px 0 0", lineHeight: 1.5 }}>{t("PGN은 검증 후 그 수순 그대로 분석 탭에서 이어 둘 수 있음. FEN은 그 포지션(차례·캐슬링 권리·앙파상 포함)부터 이어 두는 FEN 모드로 전환됨.")}</p>
     </div>
   );
   const fenCard = (
@@ -654,7 +654,7 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
           style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, fontSize: 11 }} />
         <button onClick={copyFen} title={t("FEN 복사")} aria-label={t("FEN 복사")} className="press" style={{ ...edBtn(false), width: 34, padding: 0, flexShrink: 0 }}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
       </div>
-      {fenErr && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 5 }}>{fenErr}</div>}
+      {fenErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 5 }}>{fenErr}</div>}
     </div>
   );
   const paletteCard = (
@@ -813,7 +813,7 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
               {(m.name || m.isMain) && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || "Main Line"}</MarqueeText>}
             </div>
             {!hideFocus && (
-              <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
+              <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
             )}
           </div>
           <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, cursor: "pointer" }}>
@@ -826,7 +826,7 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
             {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬 — 게임 수 텍스트가 길어져도
                 justify-content: space-between으로 %는 항상 오른쪽 끝에 고정된다. 통계가 아직 도착
                 전(statsLoading)이면 "-" 대신 3-dot bounce 인디케이터로 로딩 중임을 보여준다. */}
-            <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+            <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT }}>
               <span style={{ whiteSpace: "nowrap" }}>{m.games != null ? fmtFull(gamesDisp) + " / " + fmtFull(posGamesDisp) : statsLoading ? <PendingDots size={10} /> : "-"}</span>
               <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{m.adopt != null ? adoptDisp.toFixed(2) + "%" : statsLoading ? <PendingDots size={10} /> : "-"}</span>
             </span>
@@ -1684,7 +1684,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
     } catch (e) { setBulkErr(t("저장 실패. 다시 시도")); } finally { setBulkSaving(false); }
   };
   const inputStyle = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: T.paper, color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
-  const labelStyle = { fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "85vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 14, border: "1px solid " + T.brass, padding: 16 }}>
@@ -1710,7 +1710,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
         <div style={{ marginBottom: 8 }}>
           <label style={labelStyle}>{t("PGN 기보")}</label>
           <textarea value={pgn} onChange={(e) => setPgn(e.target.value)} rows={5} style={{ ...inputStyle, fontFamily: SITE_FONT, resize: "vertical" }} placeholder="1.e4 e5 2.Nf3 Nc6 3.Bb5 ..." />
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? t("{0}수 인식됨", (parsed.length)) : t("인식된 수 없음")}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 3 }}>{parsed.length > 0 ? t("{0}수 인식됨", (parsed.length)) : t("인식된 수 없음")}</div>
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>{tx("대국 결과{0}", !resultTouched && result && <span style={{ color: T.inkSoft, fontWeight: 600 }}>{" "}{t("(자동 입력됨)")}</span>)}</label>
@@ -1953,10 +1953,10 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
           <div>
             <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); }} rows={3} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
             <div className="flex items-center justify-between" style={{ marginTop: 4 }}>
-              <span style={{ fontSize: 10, color: T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
+              <span style={{ fontSize: 11, color: T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
               <div className="flex gap-2">
-                <button disabled={busy} onClick={save} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
-                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 10.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("취소")}</button>
+                <button disabled={busy} onClick={save} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
+                <button disabled={busy} onClick={() => { setEditing(false); setDraft(n.body); }} className="press" style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.inkSoft, cursor: "pointer" }}>{t("취소")}</button>
               </div>
             </div>
           </div>
@@ -1970,16 +1970,16 @@ function MoveNoteCard({ n, canModerate, uid, onSaved, onDeleted, ownSans, onJump
               그쪽으로 바뀐다. 로그인하지 않았으면(uid 없음) 카운트만 보이고 누를 수 없다. */}
           <div className="flex items-center gap-2">
             <button onClick={() => uid && onVote(n.id, 1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === 1 ? T.brass : T.inkSoft }}>
-              <ThumbsUp size={12} fill={n.my_vote === 1 ? T.brass : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.likes || 0}</span>
+              <ThumbsUp size={12} fill={n.my_vote === 1 ? T.brass : "none"} /><span style={{ fontSize: 11.5, fontWeight: 700 }}>{n.likes || 0}</span>
             </button>
             <button onClick={() => uid && onVote(n.id, -1)} disabled={!uid} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "none", border: "none", padding: 0, cursor: uid ? "pointer" : "default", color: n.my_vote === -1 ? T.blunder : T.inkSoft }}>
-              <ThumbsDown size={12} fill={n.my_vote === -1 ? T.blunder : "none"} /><span style={{ fontSize: 10.5, fontWeight: 700 }}>{n.dislikes || 0}</span>
+              <ThumbsDown size={12} fill={n.my_vote === -1 ? T.blunder : "none"} /><span style={{ fontSize: 11.5, fontWeight: 700 }}>{n.dislikes || 0}</span>
             </button>
           </div>
           {canEditThis && (
             <div className="flex gap-2">
-              <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>{t("편집")}</button>
-              <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
+              <button onClick={() => setEditing(true)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.cocoa || "#5A3A22", cursor: "pointer" }}>{t("편집")}</button>
+              <button disabled={busy} onClick={remove} className="press" style={{ fontSize: 11, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}><Trash2 size={10} /></button>
             </div>
           )}
         </div>
@@ -2055,14 +2055,14 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 10.5, color: T.inkSoft }}>{notes.length}</span>}</div>
+        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 11.5, color: T.inkSoft }}>{notes.length}</span>}</div>
       </div>
       {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
           때만 의미가 있으므로 그때만 보여준다. */}
       {hasNotes && notes.length > 1 && (
         <div className="flex items-center gap-1" style={{ marginBottom: 8 }}>
           {Object.entries(MOVE_NOTE_SORTS).map(([key, s]) => (
-            <button key={key} onClick={() => setNoteSort(key)} className="press" style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "1px solid " + (noteSort === key ? T.brass : "#DCCBA8"), background: noteSort === key ? T.brass : "transparent", color: noteSort === key ? "#241509" : T.inkSoft, cursor: "pointer" }}>{s.label}</button>
+            <button key={key} onClick={() => setNoteSort(key)} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, border: "1px solid " + (noteSort === key ? T.brass : "#DCCBA8"), background: noteSort === key ? T.brass : "transparent", color: noteSort === key ? "#241509" : T.inkSoft, cursor: "pointer" }}>{s.label}</button>
           ))}
         </div>
       )}
@@ -2090,13 +2090,13 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
         <div>
           <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder={t("이 수의 짧은 설명 작성")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
           <div className="flex items-center justify-between" style={{ marginTop: 5 }}>
-            <span style={{ fontSize: 10, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
+            <span style={{ fontSize: 11, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
             <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>{t("등록")}</button>
           </div>
           {/* (v0.4.0 기능) 바로 다음 수는 SAN을 그냥 문장에 적기만 해도 자동으로 링크가 된다는 것과,
               더 뒤쪽 수로 링크를 걸려면 [[...]] 안에 이어지는 수순을 적어야 한다는 걸 안내한다. */}
           <p style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 4, lineHeight: 1.4 }}>{tx("Tip: \"12.Nf3\"처럼 수 번호와 함께 적으면 해당 수로 이동하는 링크가 됨. 이어지는 수순으로 링크하려면 {0}처럼 대괄호 두 개 안에 수 번호와 수순을 공백으로 구분해 적기. 대괄호 안은 150자 제한에서 제외", <code style={{ fontSize: 9.5 }}>[[12.e5 Nf3 Nc6 Bb5]]</code>)}</p>
-          {err && <p style={{ fontSize: 10.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
+          {err && <p style={{ fontSize: 11.5, color: T.blunder, marginTop: 4 }}>{err}</p>}
         </div>
       )}
     </div>
@@ -2178,7 +2178,7 @@ function MasterPgnBox({ sans, focusPly, onPick }) {
 // mine: 내 통계처럼 한쪽 진영(내가 둔 쪽) 기준일 때 — w=승리(초록)·d=무승부·b=패배(빨강). 아니면 백·무·흑 비율.
 function ResultBar({ w, d, b, h = 10, labeled, mine }) {
   const n = w + d + b || 1, pw = (100 * w) / n, pd = (100 * d) / n, pb = (100 * b) / n;
-  const seg = (pct, bg, fg) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
+  const seg = (pct, bg, fg) => <span style={{ width: pct + "%", background: bg, color: fg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, fontFamily: SITE_FONT, overflow: "hidden", whiteSpace: "nowrap" }}>{labeled && pct >= 12 ? Math.round(pct) + "%" : ""}</span>;
   const [l1, l3] = mine ? [t("승리"), t("패배")] : [t("백"), t("흑")];
   return <div role="img" aria-label={l1 + " " + Math.round(pw) + "%, " + t("무승부") + " " + Math.round(pd) + "%, " + l3 + " " + Math.round(pb) + "%"} style={{ display: "flex", height: h, borderRadius: 5, overflow: "hidden", border: "1px solid #CDB98E" }}>{mine ? <>{seg(pw, T.best, "#fff")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, T.blunder, "#fff")}</> : <>{seg(pw, "#FBF5E8", "#3A2A18")}{seg(pd, "#B9AE98", "#3A2A18")}{seg(pb, "#3A2A18", "#F4EEE2")}</>}</div>;
 }
@@ -2220,11 +2220,11 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
   const lo = Math.max(0, Math.floor(Math.min(50, ...pcts) - 3)), hi = Math.min(100, Math.ceil(Math.max(50, ...pcts) + 3)), span = Math.max(1, hi - lo), AREA = 84;
   return (
     <div style={{ marginTop: 10, padding: "9px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #E4D5B6" }}>
-      <div {...ap(0, { marginBottom: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
+      <div {...ap(0, { marginBottom: 5, fontSize: 11.5, fontWeight: 800, color: T.inkSoft })}>{title}</div>
       <div {...ap(1)}><ResultBar w={summary.w} d={summary.d} b={summary.b} h={14} labeled mine={mine} /></div>
       {((moves && moves.length > 0) || forceShow) && (
         <div style={{ marginTop: 9 }}>
-          <div {...ap(2, { fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
+          <div {...ap(2, { fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}>{t("채택률")}</div>
           {(!moves || moves.length === 0) && <div style={{ fontSize: 11, color: T.inkSoft, padding: "3px 0" }}>-</div>}
           {moves.slice(0, 5).map((mv, ri) => {
             const tot = mv.white + mv.draws + mv.black, share = Math.round((100 * tot) / (summary.n || 1));
@@ -2240,7 +2240,7 @@ function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, min
       )}
       {(valid.length >= 2 || forceShow) && (
         <div style={{ marginTop: 9 }}>
-          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
+          <div {...ap(8, { display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginBottom: 3 })}><SideSquare side={ply % 2 === 0 ? "w" : "b"} /><span>{t("승점 획득 확률")}</span></div>
           <div {...ap(9, { position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "flex-start", gap: 4, height: AREA + 26 })}>
             <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 12 + ((50 - lo) / span) * AREA, borderTop: "1px dashed rgba(90,70,40,.45)" }} />
             {trend.map((x) => (
@@ -2264,9 +2264,9 @@ function StatsFilterRows({ rows }) {
     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
       {rows.map(([label, opts, cur, set]) => (
         <div key={label} className="flex items-center gap-2">
-          <span style={{ width: 44, flexShrink: 0, fontSize: 10, fontWeight: 800, color: T.inkSoft }}>{label}</span>
+          <span style={{ width: 44, flexShrink: 0, fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{label}</span>
           <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2, flexWrap: "wrap" }}>
-            {opts.map(([k, lab]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{lab}</button>)}
+            {opts.map(([k, lab]) => <button key={k} onClick={() => set(k)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: cur === k ? T.brass : "transparent", color: cur === k ? "#241509" : T.inkSoft }}>{lab}</button>)}
           </div>
         </div>
       ))}
@@ -2303,7 +2303,7 @@ function UserGameRow({ g, ratingChange, onOpenMyGame, onOpenMyGameAnalyze }) {
           </div>
           <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: won ? T.best : lost ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
         </div>
-        <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{dateTxt}{tcTxt ? ", " + tcTxt : ""}{!won && !lost ? ", " + drawKindLabel(g.moves) : ""}</div>
       </div>
       <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
         <button onClick={() => onOpenMyGame && onOpenMyGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: T.ebony2, color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={13} /></button>
@@ -2602,7 +2602,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           {masterGames.length > 1 && (
             <div className="inline-flex" style={{ borderRadius: 8, background: "rgba(0,0,0,.06)", padding: 2, gap: 2 }}>
               {[["default", t("기본")], ["recent", t("최신순")], ["rating", t("레이팅순")]].map(([k, label]) => (
-                <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
+                <button key={k} onClick={() => setMasterSort(k)} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 7px", borderRadius: 6, border: "none", cursor: "pointer", background: masterSort === k ? T.brass : "transparent", color: masterSort === k ? "#241509" : T.inkSoft }}>{label}</button>
               ))}
             </div>
           )}
@@ -2649,7 +2649,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
                     </div>
                     <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 12, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{g.date || g.year}{g.event ? ", " : ""}{g.event ? (() => { const tg = tournamentOfEvent(g.event, g.year); return tg && onOpenTournament
+                  <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{g.date || g.year}{g.event ? ", " : ""}{g.event ? (() => { const tg = tournamentOfEvent(g.event, g.year); return tg && onOpenTournament
                       ? <a role="link" tabIndex={0} title={t("도감 마스터 트리에서 이 대회 보기")} onClick={(e) => { e.stopPropagation(); onOpenTournament(tg); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenTournament(tg); } }} style={{ color: "#2E9BD6", textDecoration: "underline", cursor: "pointer" }}>{g.event}</a>
                       : g.event; })() : null}{openingGameId === g.id ? t(", 기보를 불러오는 중…") : reviewingGameId === g.id ? t(", 리뷰를 여는 중…") : ""}</div>
                 </div>
@@ -2685,8 +2685,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
             <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5 }}>{tx("{0} 개발자 편집", <Crown size={14} />)}</div>
             {!devEdit && <div className="flex gap-2">
-              <button onClick={openDevEdit} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름·키워드 편집")}</button>
-              {canEdit && (m.book || isUnbooked(editKey, san)) && <button onClick={toggleUnbook} className="press" style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + (isUnbooked(editKey, san) ? T.excellent : T.blunder), background: "transparent", color: isUnbooked(editKey, san) ? T.excellent : T.blunder, cursor: "pointer" }}>{isUnbooked(editKey, san) ? t("이론 수로 복구") : t("이론 수에서 삭제")}</button>}
+              <button onClick={openDevEdit} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름·키워드 편집")}</button>
+              {canEdit && (m.book || isUnbooked(editKey, san)) && <button onClick={toggleUnbook} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + (isUnbooked(editKey, san) ? T.excellent : T.blunder), background: "transparent", color: isUnbooked(editKey, san) ? T.excellent : T.blunder, cursor: "pointer" }}>{isUnbooked(editKey, san) ? t("이론 수로 복구") : t("이론 수에서 삭제")}</button>}
             </div>}
           </div>
           {devEdit && (
@@ -2741,7 +2741,7 @@ function RecommendReasonEditor({ sentKey, bumpContent }) {
     if (t) CONTENT.recommends[sentKey] = t; else delete CONTENT.recommends[sentKey];
     await bumpContent(); setEditing(false); setDraft("");
   };
-  if (!editing) return <button onClick={() => { setDraft(recommendReasonFor(sentKey) || ""); setEditing(true); }} className="press" style={{ marginTop: 8, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: "#8A6A18", cursor: "pointer" }}>{t("✎ 추천 이유 편집")}</button>;
+  if (!editing) return <button onClick={() => { setDraft(recommendReasonFor(sentKey) || ""); setEditing(true); }} className="press" style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: "#8A6A18", cursor: "pointer" }}>{t("✎ 추천 이유 편집")}</button>;
   return (
     <div style={{ marginTop: 8 }}>
       <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} placeholder={t("추천 이유 (비우면 자동)")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box" }} />
@@ -2798,7 +2798,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
     <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 12, padding: "11px 14px", border: "1px solid " + T.brass, marginBottom: 12 }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2" style={{ color: T.brassHi, fontSize: 13, fontWeight: 800 }}>{tx("{0} 주요 분기점", <Sparkles size={15} />)}</div>
-        {canEdit && <div className="flex gap-2"><button onClick={() => { setDraft(reason); setEditing(true); }} className="press" style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("편집")}</button><button onClick={remove} className="press" style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button></div>}
+        {canEdit && <div className="flex gap-2"><button onClick={() => { setDraft(reason); setEditing(true); }} className="press" style={{ fontSize: 11.5, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("편집")}</button><button onClick={remove} className="press" style={{ fontSize: 11.5, padding: "2px 7px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button></div>}
       </div>
       <p style={{ color: T.ivory, fontSize: 12.5, marginTop: 5, lineHeight: 1.55 }}>{reason}</p>
     </div>
@@ -3518,7 +3518,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                   { label: "PGN", key: "pgn", value: sansToPgnText(sans, fenRoot.turn) || t("(시작 위치)") },
                 ].map((row) => (
                   <div key={row.key} className="flex items-center gap-2">
-                    <span style={{ fontSize: 10, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, flexShrink: 0, width: 28 }}>{row.label}</span>
                     <code style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", whiteSpace: "nowrap", fontSize: 11, color: T.ivoryHi, fontFamily: SEQ_FONT, WebkitOverflowScrolling: "touch" }}>{row.value}</code>
                     <button onClick={async () => { try { await navigator.clipboard.writeText(row.value); setFenCopied(row.key); setTimeout(() => setFenCopied((c) => (c === row.key ? null : c)), 1500); } catch { } }}
                       title={t("{0} 복사", (row.label))} className="press" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.18)", color: T.brassHi, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -3627,12 +3627,12 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                     <div style={{ position: "absolute", top: 0, right: 6 }}><Mascot name={color === "w" ? "milku" : "kokoa"} emotion={(lastQ && lastQ.kind ? mascotForKind(lastQ.kind) : ["milku", "wink"])[1]} size={42} /></div>
                     {branch ? (
                       <>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
                         <ClampText resetKey={key}>{branch}</ClampText>
                       </>
                     ) : (
                       <>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 10, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
                         {rec ? (
                           <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
@@ -3672,7 +3672,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                             </div>
                             {curName && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: T.ink, fontWeight: 600 }}>{curName}</MarqueeText>}
                           </div>
-                          {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 10.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
+                          {!fenRoot && <button onClick={() => enterFocusAt(sans.slice(0, -1), lastSan)} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>}
                         </div>
                           {curKind && <div style={{ marginTop: 7, fontSize: 12, fontWeight: 800, color: QCOLOR[curKind] || T.inkSoft }}>{QLABEL[curKind]}</div>}
                           {/* (18차 UI9) 일반 수 블록과 동일한 레이아웃의 수 통계(채택률 바 + 회수/%) + 승률 바.
@@ -3688,7 +3688,7 @@ export function LearnTab({ onOpenTournament, engine, liveOn, onFocusActive, unlo
                                   <div style={{ width: Math.min(100, (curStat && curStat.adopt) || 0) + "%", height: "100%", background: QCOLOR[curKind] || T.brass, opacity: .85 }} />
                                 </div>
                                 {/* (사용자 요청) 채택률(%) 텍스트는 항상 블록 기준 오른쪽 정렬. */}
-                                <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT }}>
+                                <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flex: 1, minWidth: 0, fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT }}>
                                   <span style={{ whiteSpace: "nowrap" }}>{curStat && curStat.games != null ? fmtFull(curGamesCountDisp) + (curStat.posTotal != null ? " / " + fmtFull(curPosTotalDisp) : "") : curStatLoading ? <PendingDots size={10} /> : "-"}</span>
                                   <span style={{ color: T.ink, fontWeight: 700, flexShrink: 0, textAlign: "right" }}>{curStat && curStat.adopt != null ? curAdoptDisp.toFixed(2) + "%" : curStatLoading ? <PendingDots size={10} /> : "-"}</span>
                                 </span>

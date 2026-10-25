@@ -414,13 +414,13 @@ function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPh
               {mode === "pvp" && opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }} />
                 : mode === "pvp" ? <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}>{(oppName || "?")[0].toUpperCase()}</span>
                 : <span style={{ width: 46, height: 46, borderRadius: 12, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}><Cpu size={20} /></span>}
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || t("상대")) : botTier.label}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || t("상대")) : botTier.label}</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>VS</span>
             <div style={{ textAlign: "center", minWidth: 0 }}>
               {myPhoto ? <img src={myPhoto} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }} />
                 : <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }}>{(myName || "U")[0].toUpperCase()}</span>}
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
             </div>
           </div>
           {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</div>}
@@ -541,7 +541,7 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile,
                 </span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
+                  <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                 </span>
               </button>
               <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>
@@ -1589,7 +1589,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
         </>)}
       </motion.div>
       {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
-      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>{t("친선전: 전적만 기록, 레이팅 변동 없음")}</div>}
+      {rating && rating.unrated && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>{t("친선전: 전적만 기록, 레이팅 변동 없음")}</div>}
       {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
@@ -1598,7 +1598,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
             return (
               <motion.div key={i} initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.25 + i * 0.04 }}
                 title={r.detail || ""}
-                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 10.5, fontWeight: 800, color: T.ink }}>
+                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 11.5, fontWeight: 800, color: T.ink }}>
                 <div style={{ opacity: 0.7 }}>{r.label || i + 1}</div>
                 {r.detail && <div style={{ fontSize: 9.5, opacity: 0.85, marginTop: 1 }}>{r.detail}</div>}
               </motion.div>
@@ -1612,7 +1612,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
             <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.06 }}
               style={{ padding: "8px 6px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.35)" }}>
               <div style={{ fontSize: 16, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: "rgba(90,58,34,.70)", marginTop: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginTop: 2 }}>{s.label}</div>
             </motion.div>
           ))}
         </div>
@@ -1682,7 +1682,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
       {sub && <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginBottom: 10 }}>{sub}</div>}
       <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 6, marginBottom: 12 }}>
         {!solo && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
             <span>{t("나")}</span><span /><span>{oppLabel}</span>
           </div>
         )}
@@ -1690,7 +1690,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
           <motion.div key={r.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.07 }}
             style={{ display: "grid", gridTemplateColumns: solo ? "72px 1fr" : "1fr 72px 1fr", gap: 6, alignItems: "stretch" }}>
             {!solo && <div style={cellStyle(r.win === "me")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{r.label}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{r.label}</div>
             {solo ? <div style={cellStyle(false)}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>
               : <div style={cellStyle(r.win === "opp")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.opp}</div></div>}
           </motion.div>
@@ -1701,7 +1701,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
         <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.55)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: (100 * left / ROUND_SETTLE_MS) + "%", background: "linear-gradient(90deg,#A8842F," + T.brassHi + ")", transition: "width .1s linear" }} />
         </div>
-        <div style={{ fontSize: 10.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{tx("{0}까지 {1}초", nextLabel, Math.ceil(left / 1000))}</div>
+        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{tx("{0}까지 {1}초", nextLabel, Math.ceil(left / 1000))}</div>
       </div>
       {onNext && <button onClick={onNext} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{nextLabel}</button>}
     </div>
@@ -2084,9 +2084,9 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   const placed = row && row.rated_games >= MINIGAME_PLACEMENT;
   const cell = (label, value, sub, first) => (
     <div style={{ minWidth: 0, flex: 1, padding: "2px 6px", textAlign: "center", borderLeft: first ? "none" : "1px solid " + MG_LOBBY_LINE }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.6)", marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.55)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(90,58,34,.55)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
     </div>
   );
   return (
@@ -2148,7 +2148,7 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
           {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>{t("나")}</span>}
         </span>
-        {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
+        {sub && <span style={{ display: "block", fontSize: 11, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
       </span>
       <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: r.rank <= 3 ? MG_GOLD : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </motion.button>
@@ -2197,7 +2197,7 @@ function MinigameLeaderboard({ game: initialGame, myUid, onOpenProfile }) {
           </>)}
         </div>
       )}
-      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>{t("레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록")}</p>}
+      {kind === "rating" && <p style={{ fontSize: 11, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>{t("레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록")}</p>}
     </div>
   );
 }
@@ -2216,7 +2216,7 @@ function MinigameRatingChange({ rating }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
       style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.55)", border: "1px solid " + c, marginBottom: 14 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{t("레이팅")}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{t("레이팅")}</span>
       <span style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12.5, fontWeight: 900, color: c, fontVariantNumeric: "tabular-nums" }}>{Arrow && <Arrow size={14} />}{diff > 0 ? "+" + diff : diff}</span>
     </motion.div>
@@ -2315,7 +2315,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(" + botOptions.length + ",minmax(0,1fr))", gap: 6, padding: 8, borderRadius: "0 0 14px 14px", border: "1px solid rgba(169,122,44,.55)", borderTop: "none", background: "rgba(255,255,255,.45)" }}>
                     {botOptions.map((b) => (
                       <button key={b.key} onClick={() => onBot(b)} className="press mg-row" style={{ padding: "9px 0", borderRadius: 10, border: "1px solid " + MG_LOBBY_LINE, background: MG_LOBBY_CARD, color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-                        {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.6)", marginTop: 2 }}>{b.sub}</div>}
+                        {b.label}{b.sub && <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(90,58,34,.6)", marginTop: 2 }}>{b.sub}</div>}
                       </button>
                     ))}
                   </div>
@@ -2451,7 +2451,7 @@ function MgPvpRematch({ pvp }) {
       <button onClick={onClick} disabled={busy} className="press" style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: theirs ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.14)", color: theirs ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: busy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
         {mine ? <PendingDots size={9} /> : <RotateCcw size={14} />}{label}
       </button>
-      {note && <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{note}</span>}
+      {note && <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{note}</span>}
     </div>
   );
 }
@@ -2649,7 +2649,7 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={started ? target : null} roundIdx={n} />
-      <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
+      <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 11.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
         <span style={{ fontWeight: 800, color: level.ink }}>{tx("난이도 {0}", level.label)}</span><CoordMultChip level={level} size={10.5} />
         <span>· {loadMinigameBest("coord") == null ? t("첫 기록 도전") : t("최고 기록 {0}점", loadMinigameBest("coord"))}</span>
       </div>
@@ -4223,7 +4223,7 @@ function attackDecide(me, opp, myRating, oppRating) {
 }
 function AttackLedger({ tally, label }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "rgba(90,58,34,.75)", fontWeight: 700 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700 }}>
       <span style={{ minWidth: 24 }}>{label}</span>
       {ATTACK_GRADES.map((gi) => (
         <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><AttackGradeBadge grade={gi.g} /><b style={{ color: T.ink, fontVariantNumeric: "tabular-nums" }}>{tally[gi.g]}</b></span>
@@ -4256,7 +4256,7 @@ function AttackOppStatus({ st }) {
     text = t("체크메이트 수순을 찾는 중");
   }
   return (
-    <span aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 10.5, fontWeight: win ? 900 : 700, color }}>
+    <span aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11.5, fontWeight: win ? 900 : 700, color }}>
       <span key={st.s + ":" + (st.left ?? st.n ?? "")} style={{ display: "inline-flex", flexShrink: 0 }}>{icon}</span>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
     </span>
@@ -4322,7 +4322,7 @@ function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }
     ts.push(setTimeout(() => doneRef.current && doneRef.current(), 900 + (lastRow + 1) * ATTACK_TB_STEP_MS + 2400));
     return () => ts.forEach(clearTimeout);
   }, [lastRow]);
-  const rows = ATTACK_TB_ORDER.map((g, i) => ({ i, key: g, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}><AttackGradeBadge grade={g} /><span style={{ fontSize: 10 }}>{attackGradeInfo(g).label}</span></span>, me: me[g], opp: opp[g], hide: decisive >= 0 && i > decisive }));
+  const rows = ATTACK_TB_ORDER.map((g, i) => ({ i, key: g, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}><AttackGradeBadge grade={g} /><span style={{ fontSize: 11 }}>{attackGradeInfo(g).label}</span></span>, me: me[g], opp: opp[g], hide: decisive >= 0 && i > decisive }));
   if (decisive < 0) rows.push({ i: 4, key: "rating", label: <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.8)" }}>{t("레이팅")}</span>, me: myRating, opp: oppRating, hide: false });
   const color = verdict.winner === "me" ? MG_GOLD : verdict.winner === "opp" ? T.blunder : "#9C8563";
   const cell = (hl, dim) => ({ padding: "9px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.22)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), boxShadow: hl ? "0 0 14px rgba(232,196,110,.45)" : "none", textAlign: "center", opacity: dim ? 0.45 : 1, transition: "all .25s ease" });
@@ -4343,7 +4343,7 @@ function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }
               <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "me", win === "opp")}>
                 <div style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown ? r.me : "?"}</div>
               </motion.div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.72)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.72)" }}>
                 {r.label}{shown && win === null && !r.hide && <span style={{ color: "rgba(90,58,34,.55)", fontSize: 14 }}>=</span>}
               </div>
               <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "opp", win === "me")}>
@@ -4404,7 +4404,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
                 <AttackGradeBadge grade={current.g} />
                 <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{tx("{0} 차례, {1}수 안에 메이트", pos.fen.split(" ")[1] === "w" ? t("백") : t("흑"), pos.mateIn)}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -4664,7 +4664,7 @@ function AttackDevPanel({ pool, onChanged }) {
           {pool && pool.dev.length > 0 && (
             <div style={{ maxHeight: 160, overflowY: "auto", borderTop: "1px solid rgba(150,112,58,.35)", paddingTop: 6 }}>
               {pool.dev.map((p) => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
                   <AttackGradeBadge grade={attackGradeOfMate(p.mateIn)} />
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src}, {p.fen}</span>
                   <button onClick={() => remove(p)} className="press" aria-label={t("삭제")} style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
@@ -4691,7 +4691,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? ", " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? ", " + counts[i] : ""}</span>
           ))}
         </div>
       }
@@ -5383,13 +5383,13 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "nowrap", whiteSpace: "nowrap", minHeight: 20 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "nowrap", whiteSpace: "nowrap", minHeight: 20 }}>
                         {tcCatLabel(cat)}
                         {/* (v0.6.3) 분류별 레이팅 — 미니게임 허브 버튼의 레이팅 칩과 같은 디자인, 배치 전이어도 항상 표시(기본 1200) */}
-                        <MgRatingChip style={{ fontSize: 10.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
+                        <MgRatingChip style={{ fontSize: 11.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
                       </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
-                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
+                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
                         </button>
                       ))}
@@ -5438,7 +5438,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
                             <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                            <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
+                            <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                           </span>
                         </button>
                         <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>

@@ -2734,7 +2734,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
     dragRef.current = null;
   };
   const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
-  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>{t("시작 위치")}</span></div>;
+  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .72 }}>{t("시작 위치")}</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
@@ -3034,6 +3034,19 @@ export function Mascot({ name = "milku", emotion = "great", size = 44, style }) 
   const src = MASCOT_ART[name + "_" + emo] || "";
   if (src) return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 2px 3px rgba(0,0,0,.35))", ...style }} />;
   return <MascotAvatar size={Math.round(size * 0.92)} name={name} />;
+}
+// (v0.7.1 디자인) 탭 상단 제목 — 퍼즐·학습·설정이 각자 다른 크기·여백으로 쓰던 제목을 한 곳으로 모은다. 제목 아래 짧은 브라스 막대가 탭의 시작점을
+// 알려 준다. lead는 제목 앞에 놓는 그림(퍼즐 탭의 마스코트). 새 문구가 없어 번역 추가는 필요 없다.
+export function PageTitle({ children, lead = null, style }) {
+  return (
+    <div className="flex items-center gap-2" style={{ margin: lead ? "0 0 6px" : "6px 0 14px", ...style }}>
+      {lead}
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em", color: T.ivoryHi, margin: 0 }}>{children}</h2>
+        <span aria-hidden="true" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
+      </div>
+    </div>
+  );
 }
 export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", stacked = false }) {
   const label = mascot === "kokoa" ? "KOKOA" : "MILKU";
@@ -5279,7 +5292,7 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} className="hit" style={{ "--hy": "-12px", "--hx": "-6px", color: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}>{children}</a>;
 }
 export function questLabelNode(q) {
   const text = questLabel(q);

@@ -15,7 +15,7 @@ import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { PageTitle, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -260,7 +260,7 @@ function DailyPuzzleDevPanel({ card }) {
         <input value={pzOpening} onChange={(e) => setPzOpening(e.target.value)} placeholder={t("오프닝 이름(선택)")} style={{ ...inputStyle, flex: "1 1 130px" }} />
       </div>
       <textarea value={pzPgn} onChange={(e) => setPzPgn(e.target.value)} placeholder={t("PGN 수순 붙여넣기 (마지막 수가 상대의 실수, 퍼즐 시작)")} rows={3} style={{ ...inputStyle, width: "100%", marginBottom: 4, resize: "vertical" }} />
-      <p style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? t("{0}수 인식됨", (pzMoves.length)) : t("인식할 수 있는 수순 없음")) : ""}</p>
+      <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 4 }}>{pzPgn.trim() ? (pzMoves.length ? t("{0}수 인식됨", (pzMoves.length)) : t("인식할 수 있는 수순 없음")) : ""}</p>
       {pzErr && <p style={{ fontSize: 11, color: T.blunder, marginBottom: 4 }}>{pzErr}</p>}
       {pzOk && <p style={{ fontSize: 11, color: T.best, marginBottom: 4 }}>{t("저장됨")}</p>}
       <button onClick={savePuzzle} disabled={pzBusy || pzMoves.length < 2 || !pzDate.trim()} className="press" style={{ ...btnStyle, opacity: (pzBusy || pzMoves.length < 2 || !pzDate.trim()) ? .5 : 1 }}>{t("퍼즐 저장")}</button>
@@ -354,7 +354,7 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
         {running
           ? <button onClick={stop} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder }}>{t("중단")}</button>
           : <button onClick={start} disabled={!engine || engine.status !== "ready"} className="press" style={{ padding: "9px 16px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, border: "none", cursor: "pointer", opacity: (!engine || engine.status !== "ready") ? .5 : 1 }}>{status === "idle" ? t("전체 재생성 시작") : t("처음부터 다시 시작")}</button>}
-        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 10.5, color: T.blunder }}>{t("엔진 준비 후 시작 가능")}</span> : null}
+        {!engine || engine.status !== "ready" ? <span style={{ fontSize: 11.5, color: T.blunder }}>{t("엔진 준비 후 시작 가능")}</span> : null}
       </div>
       {status !== "idle" && (
         <div style={{ marginBottom: 10 }}>
@@ -371,8 +371,8 @@ function PuzzleBatchRegenPanel({ engine, bumpContent, card }) {
       )}
       {failed.length > 0 && (
         <div style={{ maxHeight: 160, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>{tx("실패 {0}건", failed.length)}</div>
-          {failed.map((f) => <div key={f.no} style={{ fontSize: 10, color: T.blunder }}>#{f.no}: {f.error}</div>)}
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.blunder, marginBottom: 4 }}>{tx("실패 {0}건", failed.length)}</div>
+          {failed.map((f) => <div key={f.no} style={{ fontSize: 11, color: T.blunder }}>#{f.no}: {f.error}</div>)}
         </div>
       )}
     </div>
@@ -552,12 +552,12 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         </div>
       )}
       {status === "scanned" && corrupted.length > 0 && (
-        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
+        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 11, color: T.blunder }}>
           {corrupted.map((no) => "#" + no).join(", ")}
         </div>
       )}
       {deleteFailed.length > 0 && (
-        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>{tx("말소 실패: {0}", deleteFailed.map((no) => "#" + no).join(", "))}
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 11, color: T.blunder }}>{tx("말소 실패: {0}", deleteFailed.map((no) => "#" + no).join(", "))}
         </div>
       )}
 
@@ -591,12 +591,12 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         </div>
       )}
       {dedup.status === "scanned" && dedup.groups.length > 0 && (
-        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 10, color: T.blunder }}>
+        <div style={{ maxHeight: 120, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, marginBottom: 4, fontSize: 11, color: T.blunder }}>
           {dedup.groups.map((g) => t("#{0} 유지 ← {1}", g.keep, g.remove.map((no) => "#" + no).join(", "))).join(", ")}
         </div>
       )}
       {dedup.deleteFailed.length > 0 && (
-        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 10, color: T.blunder }}>{tx("정리 실패: {0}", dedup.deleteFailed.map((no) => "#" + no).join(", "))}
+        <div style={{ maxHeight: 100, overflowY: "auto", padding: 8, borderRadius: 8, background: "rgba(213,88,88,.08)", border: "1px solid " + T.blunder, fontSize: 11, color: T.blunder }}>{tx("정리 실패: {0}", dedup.deleteFailed.map((no) => "#" + no).join(", "))}
         </div>
       )}
 
@@ -608,7 +608,7 @@ function PuzzleControlCenterPanel({ engine, bumpContent, card }) {
         <button onClick={doRegenOne} disabled={!validNo || ctlBusy || !engine || engine.status !== "ready"} className="press" style={{ ...btnStyle, opacity: (!validNo || ctlBusy || !engine || engine.status !== "ready") ? .5 : 1 }}>{ctlBusy ? t("처리 중…") : t("재생성")}</button>
         <button onClick={doDeleteOne} disabled={!validNo || ctlBusy} className="press" style={{ ...btnStyle, borderColor: T.blunder, color: T.blunder, opacity: (!validNo || ctlBusy) ? .5 : 1 }}>{t("삭제")}</button>
       </div>
-      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 10.5, color: T.blunder, marginBottom: 4 }}>{t("재생성은 엔진 준비 후 가능 (삭제는 바로 가능)")}</p>}
+      {(!engine || engine.status !== "ready") && <p style={{ fontSize: 11.5, color: T.blunder, marginBottom: 4 }}>{t("재생성은 엔진 준비 후 가능 (삭제는 바로 가능)")}</p>}
       {ctlMsg && <p style={{ fontSize: 11, color: ctlMsg.ok ? T.best : T.blunder, fontWeight: 700 }}>{ctlMsg.text}</p>}
     </div>
   );
@@ -629,11 +629,11 @@ function EngineDownloadRow({ id, label }) {
       {busy && (
         <div style={{ marginTop: 8 }}>
           <div style={{ height: 6, borderRadius: 3, background: "#EADFC6", overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: T.brass, transition: "width .25s" }} /></div>
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 4 }}>{t("내려받는 중 {0}%", pct)}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 4 }}>{t("내려받는 중 {0}%", pct)}</div>
         </div>
       )}
-      {!busy && st.status === "error" && <div style={{ fontSize: 10.5, color: T.blunder, marginTop: 6 }}>{t("내려받기 실패. 연결 확인 후 다시 시도")}</div>}
-      {!busy && st.status !== "error" && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 6 }}>{t("앱에 포함되지 않은 엔진. 내려받은 뒤 사용")}</div>}
+      {!busy && st.status === "error" && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{t("내려받기 실패. 연결 확인 후 다시 시도")}</div>}
+      {!busy && st.status !== "error" && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 6 }}>{t("앱에 포함되지 않은 엔진. 내려받은 뒤 사용")}</div>}
     </div>
   );
 }
@@ -646,11 +646,11 @@ function UgcTranslateToggle() {
       <div className="flex items-center justify-between" style={{ gap: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("다른 언어로 쓴 글 자동 번역")}</div>
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
         </div>
         <button onClick={flip} role="switch" aria-checked={on} aria-label={t("다른 언어로 쓴 글 자동 번역")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
       </div>
-      <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{t("번역할 때 글이 번역 서비스(Google Gemini)로 전송됨")}</div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{t("번역할 때 글이 번역 서비스(Google Gemini)로 전송됨")}</div>
     </div>
   );
 }
@@ -661,7 +661,7 @@ function DevModeRow({ label, hint, on, onToggle }) {
     <div className="flex items-center justify-between" style={{ gap: 12, padding: "6px 0" }}>
       <div style={{ minWidth: 0 }}>
         <div className="flex items-center gap-2" style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}><Crown size={14} style={{ color: T.brass, flexShrink: 0 }} />{label}</div>
-        {hint && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
+        {hint && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{hint}</div>}
       </div>
       <button onClick={onToggle} role="switch" aria-checked={!!on} aria-label={label} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
     </div>
@@ -676,7 +676,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
         <Icon size={15} style={{ color: T.brass, flexShrink: 0 }} />
         <span style={{ minWidth: 0, flex: 1 }}>
           <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span>
-          {desc && <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, marginTop: 1 }}>{desc}</span>}
+          {desc && <span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, marginTop: 1 }}>{desc}</span>}
         </span>
         <ChevronDown size={16} style={{ color: T.inkSoft, flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
       </button>
@@ -782,7 +782,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           단이 나뉘는 자리에선 위 여백이 잘려 오른쪽 단이 14px 올라가므로, 단 안에서는 카드 간격을 아래 여백으로 준다. */}
       <style>{"@media (min-width:1000px){.settings-root{max-width:1080px !important}.settings-cols{column-count:2;column-gap:18px}.settings-cols{padding-top:14px}.settings-cols>*{break-inside:avoid;margin-top:0 !important;margin-bottom:14px}}"}</style>
       {/* (버그 수정) 제목 옆 원형 아이콘이 하단 탭바의 설정 아이콘과 중복돼 제거. */}
-      <div className="flex items-center gap-2"><h2 style={{ fontSize: 18, fontWeight: 800, color: T.ivoryHi }}>{t("설정")}</h2></div>
+      <PageTitle>{t("설정")}</PageTitle>
       <div className="settings-cols">
 
       {/* 계정 — 로그아웃 상태에서는 로그인 유도, 로그인 상태에서는 같은 자리에 프로필 미리보기(v0.3.9). */}
@@ -841,7 +841,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
       <div style={card}>
         <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
           <div className="flex items-center gap-2"><SlidersHorizontal size={16} style={{ color: T.brass }} /><span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("리뷰 설정")}</span></div>
-          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
+          <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 700, color: engineStatus === "ready" ? T.best : engineStatus === "off" ? T.blunder : T.inkSoft }}>
             {engineStatus === "ready" ? <Wifi size={12} /> : engineStatus === "off" ? <WifiOff size={12} /> : <Cpu size={12} />}
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
@@ -851,7 +851,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
             고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
         {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
-          <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 6 }}>{t("신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요")}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>{t("신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요")}</div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
@@ -872,10 +872,10 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
           })}
           {/* (v0.6.3, 앱) 내려받은 큰 엔진 삭제 — 저장 공간 확보. 지금 쓰는 엔진은 지울 수 없다. */}
           {ANALYSIS_ENGINE_IDS.filter((id) => HEAVY_ENGINE_IDS.includes(id) && engineDownloadState(id).status === "ready" && engineUsable(id) && isNativeApp() && enginePref !== id).map((id) => (
-            <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 10.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
+            <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
           ))}
         </div>
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
@@ -895,7 +895,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                   <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{o.label}</span>
                 </div>
-                <div style={{ fontSize: 10, color: T.inkSoft, marginLeft: 24 }}>{o.desc}</div>
+                <div style={{ fontSize: 11, color: T.inkSoft, marginLeft: 24 }}>{o.desc}</div>
               </button>
             );
           })}
@@ -910,7 +910,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("포지션 변동성 보정")}</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("날카로운 포지션의 실수를 더 엄격하게 반영")}</div>
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{t("날카로운 포지션의 실수를 더 엄격하게 반영")}</div>
           </div>
           <button onClick={() => setSharpOn(!sharpOn)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: sharpOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: sharpOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -932,7 +932,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <div className="flex items-center justify-between">
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{o.label}</div>
-                <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{o.desc}</div>
+                <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{o.desc}</div>
               </div>
               <button onClick={() => o.set(!o.on)} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: o.on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: o.on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
             </div>
@@ -972,7 +972,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         {/* (v0.6.3, 사용자 요청) 온·오프 토글 대신 표시 범위 선택 — 모두 표시 / 탁월한 수·유일한 수만 / 표시하지 않음. */}
         <div>
           <label htmlFor="move-fx-mode" style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("수 등급 이펙트")}</label>
-          <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1, marginBottom: 8 }}>{t("수를 두면 보드에 표시할 등급 이펙트의 범위")}</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1, marginBottom: 8 }}>{t("수를 두면 보드에 표시할 등급 이펙트의 범위")}</div>
           <Dropdown id="move-fx-mode" ariaLabel={t("수 등급 이펙트")} value={normalizeMoveFxMode(moveFxMode)} onChange={(v) => setMoveFxMode(normalizeMoveFxMode(v))}
             options={[{ value: "all", label: t("모두 표시") }, { value: "key", label: t("탁월한 수 및 유일한 수만 표시") }, { value: "off", label: t("표시하지 않음") }]} />
         </div>
@@ -981,7 +981,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
         <div className="flex items-center justify-between">
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("통제 칸 표시")}</div>
-            <div style={{ fontSize: 10, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 1 }}>{t("나이트 레이스·백랭크 러시아워에서 상대 기물이 통제하는 칸 표시")}</div>
           </div>
           <button onClick={() => setMgDangerOn(!mgDangerOn)} aria-pressed={!!mgDangerOn} aria-label={t("통제 칸 표시")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: mgDangerOn ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: mgDangerOn ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -1019,7 +1019,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                   <button onClick={() => onOpenUserProfile && onOpenUserProfile(id)} className="press" style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: onOpenUserProfile ? "pointer" : "default" }}>{codevDisplayIds[id] || id}</button>{" "}
                   <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 500 }}>{t("공동 개발자")}</span>
                 </span>
-                {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button>}
+                {canManageCodev && <button onClick={() => removeCodev(id)} className="press" style={{ fontSize: 11.5, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, cursor: "pointer" }}>{t("해제")}</button>}
               </div>
             ))}
           {/* (v0.2.0) 업데이트 공지 팝업은 버전마다 최초 접속 시 한 번만 뜨고 다시 안 뜨므로, 그
@@ -1032,12 +1032,12 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                 <div key={v.version} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < CHANGELOG.length - 1 ? "1px dashed #DCCBA8" : "none" }}>
                   <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
                     <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? T.brass : T.inkSoft, fontFamily: SITE_FONT }}>v{v.version}</span>
-                    <span style={{ fontSize: 10.5, color: T.inkSoft }}>{v.date}</span>
+                    <span style={{ fontSize: 11.5, color: T.inkSoft }}>{v.date}</span>
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 16 }}>
                     {v.items.map((t, j) => <li key={j} style={{ fontSize: 11.5, color: T.ink, fontWeight: 600, lineHeight: 1.55, marginBottom: 3 }}>{t}</li>)}
                   </ul>
-                  {v.dev && v.dev.length > 0 && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 3 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
+                  {v.dev && v.dev.length > 0 && <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 3 }}>{tx("개발: {0}", v.dev.join(", "))}</div>}
                 </div>
               ))}
             </div>
@@ -1225,7 +1225,7 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
             바뀌어도(연결·해제와 무관) 이 계정(profiles 행) 하나에 항상 같은 값으로 고정돼 있다. */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 12px", marginBottom: 14, borderRadius: 10, background: "rgba(196,154,80,.12)", border: "1px solid rgba(196,154,80,.35)" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>MID</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".06em", marginBottom: 2 }}>MID</div>
             <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "ui-monospace,monospace", letterSpacing: ".05em" }}>{mid == null ? t("불러오는 중…") : (mid || "-")}</div>
           </div>
           {!!mid && (
@@ -1262,7 +1262,7 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
           </div>
         )}
         {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
-        <p style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>{t("어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결")}</p>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>{t("어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결")}</p>
 
         <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
         <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>{t("로그아웃")}</button>
