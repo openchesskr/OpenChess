@@ -15,7 +15,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "lucide-react";
+import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "lucide-react";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -28,6 +28,7 @@ import { playMoveSfx } from "../lib/prefs.js";
 import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, deriveKeywords, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { YoutubeVideosBlock } from "../components/youtubeVideos.jsx";
 import UgcText from "../components/UgcText.jsx";
 async function lichessFetchText(url) {
   const hit = _lichessCache.get(url);
@@ -1535,6 +1536,8 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const isUnderpromo = /=/.test(san) && !/=Q/.test(san);
   const extraArrows = active && kind === "brilliant" && !isUnderpromo ? brilliantArrows(sans, san) : [];
   const mkKey = active ? sansKey + "|" + san : "";
+  // (v0.7.1) 해설 페이지 영상 블록의 검색 수순 — 이 수까지
+  const focusVideoSans = useMemo(() => (active ? [...sans, san] : []), [active, sansKey, san]);
   const [devEdit, setDevEdit] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [kwDraft, setKwDraft] = useState([]);
@@ -1614,7 +1617,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     return () => { cancelled = true; };
   }, [active, sansKey, san, masterRetry]);
   return {
-    active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey, focusVideoSans,
     editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
     openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
@@ -2055,7 +2058,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="flex items-center gap-2"><BookOpen size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("해설")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 11.5, color: T.inkSoft }}>{notes.length}</span>}</div>
+        <div className="flex items-center gap-2"><MessageSquare size={14} style={{ color: T.brass }} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("댓글")}</span>{hasNotes && notes.length > 1 && <span style={{ fontSize: 11.5, color: T.inkSoft }}>{notes.length}</span>}</div>
       </div>
       {/* (사용자 요청) 인기순(좋아요-싫어요)/날짜순(오래된 순)/최신순 정렬 선택 — 설명이 2개 이상일
           때만 의미가 있으므로 그때만 보여준다. */}
@@ -2079,16 +2082,16 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
           </div>
         </>
       ) : (
-        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6 }}>{t("해설 없음")}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6 }}>{t("아직 댓글 없음. 첫 댓글 남기기")}</p>
       )}
       <div style={{ height: 1, background: "#E4D5B6", margin: "10px 0" }} />
       {!uid ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{t("로그인 후 설명 작성 가능")}</p>
+        <p style={{ fontSize: 11, color: T.inkSoft }}>{t("로그인 후 댓글 작성 가능")}</p>
       ) : !canAddMore ? (
         <p style={{ fontSize: 11, color: T.inkSoft }}>{cap > 1 ? t("이미 이 수에 설명을 {0}개 남겼어요(최대 {1}개). 위 카드에서 수정·삭제 가능", myNotes.length, cap) : t("이미 작성함. 위 카드에서 수정·삭제 가능")}</p>
       ) : (
         <div>
-          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder={t("이 수의 짧은 설명 작성")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
+          <textarea value={draft} onChange={(e) => { const v = e.target.value; if (moveNoteEffectiveLen(v) <= MOVE_NOTE_MAX_LEN) setDraft(v); setErr(""); }} rows={2} placeholder={t("이 수에 댓글 작성")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, resize: "none", boxSizing: "border-box" }} />
           <div className="flex items-center justify-between" style={{ marginTop: 5 }}>
             <span style={{ fontSize: 11, color: moveNoteEffectiveLen(draft) >= MOVE_NOTE_MAX_LEN ? T.blunder : T.inkSoft }}>{moveNoteEffectiveLen(draft)}/{MOVE_NOTE_MAX_LEN}</span>
             <button disabled={busy || !draft.trim()} onClick={submit} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: busy ? "default" : "pointer", opacity: busy || !draft.trim() ? 0.6 : 1 }}>{t("등록")}</button>
@@ -2323,7 +2326,7 @@ function FocusPanel(props) {
 }
 function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleWizard, onJump, onOpenMasterGame, onOpenMasterGameReview, onOpenMyGame, onOpenMyGameAnalyze, nextMovesPanel, uid, username, noteCap }) {
   const {
-    sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey,
+    sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey, focusVideoSans,
     editKey, devEdit, setDevEdit,
     nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
     stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
@@ -2684,7 +2687,11 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
         </>,
         <>
-        <div><MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} /></div>
+        <div>
+          {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + 그 수까지의 PGN 수순으로 찾은 YouTube 영상 */}
+          <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
+          <YoutubeVideosBlock sans={focusVideoSans} />
+        </div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>

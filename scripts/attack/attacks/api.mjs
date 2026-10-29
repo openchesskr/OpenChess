@@ -93,6 +93,35 @@ const base = [
       }, () => handler({ method: "POST", headers: { authorization: "Bearer t" }, body: { game_id: 5, status: "black_won" } }, res));
       return { breached: res.code !== 403, evidence: "응답 코드 " + res.code };
     } },
+  { id: "YT-1", kind: "attack", title: "/api/youtube 남용: 같은 IP 40회 · 임의 검색어 중계 · 불법 수순 · API 키·위험 썸네일 노출",
+    async run() {
+      Object.assign(process.env, { YOUTUBE_API_KEY: "SECRET_YT_KEY", VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });
+      const { default: handler } = await load("youtube.js");
+      const counts = new Map(); const upstream = [];
+      const impl = async (url, opt) => {
+        const u = String(url), body = opt && opt.body ? JSON.parse(opt.body) : {};
+        if (u.includes("/rpc/rate_limit_hit")) { const n = (counts.get(body.p_key) || 0) + (body.p_cost === undefined ? 1 : body.p_cost); counts.set(body.p_key, n); return new Response(JSON.stringify(n > body.p_limit), { status: 200 }); }
+        upstream.push(u);
+        return new Response(JSON.stringify({ items: [
+          { id: { videoId: "dQw4w9WgXcQ" }, snippet: { title: "A &amp; B", channelTitle: "c", publishedAt: "2024-01-02T00:00:00Z", thumbnails: { medium: { url: "javascript:alert(1)" } } } },
+          { id: { videoId: "<script>" }, snippet: { title: "x" } },
+        ] }), { status: 200 });
+      };
+      let passed = 0, blocked = 0; const free = mkRes(), illegal = mkRes(), ok = mkRes();
+      await withFetch(impl, async () => {
+        for (let i = 0; i < 40; i++) { const r = mkRes(); await handler({ method: "GET", query: { moves: "e4" }, headers: { "x-vercel-forwarded-for": "9.9.9.9", "x-forwarded-for": "10.0.0." + i } }, r); r.code === 429 ? blocked++ : passed++; }
+        await handler({ method: "GET", query: { moves: "buy cheap watches", q: "spam" }, headers: { "x-vercel-forwarded-for": "9.9.9.1" } }, free);
+        await handler({ method: "GET", query: { moves: "e4,e4" }, headers: { "x-vercel-forwarded-for": "9.9.9.2" } }, illegal);
+        await handler({ method: "GET", query: { moves: "e4,e5,Nf3" }, headers: { "x-vercel-forwarded-for": "9.9.9.3" } }, ok);
+      });
+      const leak = JSON.stringify([free.body, illegal.body, ok.body]).includes("SECRET");
+      const relayed = upstream.some((u) => /spam|watches/.test(u));
+      const vids = (ok.body && ok.body.videos) || [];
+      const unsafe = vids.some((v) => !v.thumb.startsWith("https://i.ytimg.com/") || !/^[A-Za-z0-9_-]{11}$/.test(v.id));
+      const queryOk = upstream.some((u) => decodeURIComponent(u.replace(/\+/g, " ")).includes("q=1. e4 e5 2. Nf3"));
+      const bad = passed > 20 || free.code !== 400 || illegal.code !== 400 || relayed || leak || unsafe || vids.length !== 1 || !queryOk;
+      return { breached: bad, evidence: `40회 중 통과 ${passed}·차단 ${blocked}(상한 20/분, 헤더 위조 무시) · 임의 검색어 ${free.code} · 불법 수순 ${illegal.code} · 중계 ${relayed ? "됨" : "안 됨"} · 키 노출 ${leak ? "있음" : "없음"} · 영상 ${vids.length}개(위험 값 ${unsafe ? "있음" : "걸러짐"}) · 검색어 ${queryOk ? "PGN 수순" : "이상"}` };
+    } },
 ];
 // ---- BUG-107 수정 검증: /api/auth-login · /api/auth-recover ----
 const m_recover = { n: 0 };
