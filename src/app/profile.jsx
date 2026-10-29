@@ -1,7 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'profile' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
 import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
@@ -14,7 +14,9 @@ import { badgeIcon } from "../components/badges.jsx";
 import { PieceGlyph, TierPieceGlyph } from "../components/pieces.jsx";
 import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tierSystem.js";
 import { createPortal } from "react-dom";
-import { ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
+import { legacyMotionPlan, STAMP_MS } from "../lib/legacyMotion.js";
+import { LegacyMotionLayer, LegacyStampBadge, legacyMotionHidden } from "../components/legacyMotion.jsx";
+import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
 import { RecentPerformanceRow } from "./recentPerf.jsx";
@@ -693,19 +695,26 @@ function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
 // (사용자 요청) heroActive — 유산으로 지정한 수가 두어지는 바로 그 순간(부모의 boardHeroActive)만
 // true인 값. animation-name을 "none"에서 실제 키프레임으로 바꾸는 것만으로 브라우저가 그 순간에
 // 애니메이션을 새로 시작하므로, 그 이전/이후 수에는 전혀 흔들림이 남지 않는다(별도 key remount 불필요).
-function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroActive }) {
+// (v0.7.1, 사용자 요청) motionPlan이 있으면(수를 두는 연출 중) 기물을 움직이는 연출 층(LegacyMotionLayer)을 겹치고, 그 층이 대신 그리는 칸(hidden)의
+// 기물은 정적 보드에서 비운다. stamp({ sq, kind, stage })는 도착 칸 우상단 수 아이콘 — "stamp"면 윤곽선을 그린 뒤 도장처럼 찍고, "fx"면 그 자리에서
+// 수 등급 이펙트(MoveClassFx, 설정 탭 "시각 효과")를 이어서 재생하며(이펙트가 끝 모습으로 같은 자리 배지를 그리므로 그동안 배지는 숨긴다), "static"이면 배지만.
+function LegacyLightBoard({ board, size = 320, stamp, flip, heroActive, motionPlan, motionKey, hidden }) {
   const cell = Math.max(1, Math.floor(size / 8));
   const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
   // (사용자 요청) 보드가 처음 나타날 때, 아래(영사기 블록이 있는 하단 중앙)에서 나온 빛이 격자를
   // 한 칸씩 그리듯 빠르게 퍼져나가는 연출 — LegacyLightBoard 인스턴스는 수가 진행돼도 다시 마운트
   // 되지 않으므로(appliedCount는 board prop만 바꾼다) motion의 initial→animate는 이 최초 등장에만 재생된다.
   const originR = 7, originC = 3.5;
+  const halo = stamp ? stamp.sq : null;
   const haloDisplay = halo ? (flip ? [7 - halo[0], 7 - halo[1]] : halo) : null;
+  const glowFilter = (c) => "drop-shadow(0 0 3px " + (c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (c === "w" ? T.brassHi : "#8A6A2F") + "cc)";
+  const renderPiece = (pc, scale = 1) => <PieceGlyph type={pc.t} color={pc.c} size={cell * 0.72 * scale} pieceSkin="classic" style={{ filter: glowFilter(pc.c) }} />;
   return (
     <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
       {rows.map((row, r) => row.map((p, c) => {
         const [br, bc] = flip ? [7 - r, 7 - c] : [r, c];
         const isHalo = halo && halo[0] === br && halo[1] === bc;
+        if (hidden && hidden.has(br + "," + bc)) p = null;
         const isLight = (r + c) % 2 === 0;
         const dist = Math.hypot(r - originR, c - originC);
         // (사용자 요청) 영사기가 쏘는 빛처럼, 칸마다 밝기가 조금씩 다르게·계속(무한 반복) 미세하게
@@ -719,24 +728,24 @@ function LegacyLightBoard({ board, size = 320, halo, haloKind, flip, heroActive 
             background: isLight ? "rgba(236,203,134,.16)" : "rgba(61,38,22,.42)",
             display: "flex", alignItems: "center", justifyContent: "center",
             animationName: "legacyBoardFlicker", animationDuration: flickerDur + "s", animationDelay: flickerDelay + "s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
-            {/* (사용자 요청) 기물 칸을 감싸던 등급색 테두리(링)를 없앴다 — 우상단 수 체계 배지만 남긴다. */}
-            {isHalo && haloKind && (
-              // (사용자 요청) 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 동일한 위치·크기·스타일(3656줄).
-              <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, width: cell * 0.44, height: cell * 0.44, borderRadius: "50%", background: QCOLOR[haloKind], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, border: "2px solid #fff", boxShadow: "0 2px 5px rgba(0,0,0,.55)", zIndex: 6 }}>
-                {badgeIcon(haloKind, cell * 0.38)}
+            {isHalo && stamp && stamp.kind && stamp.stage === "fx" && <MoveClassFx kind={stamp.kind} cell={cell} vc={c} vr={r} />}
+            {isHalo && stamp && stamp.kind && (stamp.stage === "stamp" || stamp.stage === "static") && (
+              // 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 같은 위치·크기(Board 참고). 하단 아이콘 줄 대신 여기서만 보여 준다(v0.7.1).
+              <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, zIndex: 6 }}>
+                <LegacyStampBadge stage={stamp.stage} color={QCOLOR[stamp.kind]} icon={badgeIcon(stamp.kind, cell * 0.38)} size={cell * 0.44} />
               </div>
             )}
             {p && (
               // (사용자 요청) 유산 수를 둔 순간엔 더 크게 흔들리는(legacyPieceShake) 전용 키프레임을 쓴다.
               <span style={{ display: "inline-flex", animationName: heroActive ? "legacyPieceShake" : "none", animationDuration: "0.55s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
                 animationDelay: (haloDisplay ? Math.hypot(r - haloDisplay[0], c - haloDisplay[1]) : 0) * 0.03 + "s" }}>
-                <PieceGlyph type={p.t} color={p.c} size={cell * 0.72} pieceSkin="classic" style={{
-                  filter: "drop-shadow(0 0 3px " + (p.c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (p.c === "w" ? T.brassHi : "#8A6A2F") + "cc)" }} />
+                {renderPiece(p)}
               </span>
             )}
           </motion.div>
         );
       }))}
+      {motionPlan && <LegacyMotionLayer key={motionKey} plan={motionPlan} cell={cell} flip={flip} renderPiece={renderPiece} />}
     </div>
   );
 }
@@ -892,14 +901,6 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
   // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
   const HERO_PRE_MS = 900;
-  useEffect(() => {
-    if (phase !== "board" || appliedCount >= endCount) return;
-    const isPreHero = appliedCount === moveIndex;
-    // (사용자 요청) 다음 수로 넘어가는 간격을 살짝 늘림(1150ms → 1450ms). 유산 수 직전만 먼저
-    // 확대할 시간을 주기 위해 더 짧게(HERO_PRE_MS) 둔다.
-    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), isPreHero ? HERO_PRE_MS : 1450);
-    return () => clearTimeout(t);
-  }, [phase, appliedCount, endCount, moveIndex]);
   const board = useMemo(() => boardFromSans(sans.slice(0, appliedCount)), [sans, appliedCount]);
   const prevBoard = useMemo(() => boardFromSans(sans.slice(0, Math.max(0, appliedCount - 1))), [sans, appliedCount]);
   const lastSan = appliedCount > 0 ? sans[appliedCount - 1] : null;
@@ -918,28 +919,50 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     return i === moveIndex ? typeInfo.kind : null;
   };
   const haloKind = appliedCount > 0 ? kindAt(appliedCount - 1) : null;
-  const allSlots = useMemo(() => Array.from({ length: Math.max(0, endCount - startCount) }, (_, idx) => startCount + idx), [startCount, endCount]);
-  const color = QCOLOR[typeInfo.kind];
-  // (사용자 요청) 체스보드에서도 유산으로 지정한 수가 두어지는 순간, 타이핑 단계와 같은 느낌으로
-  // 확대·어둡게·기물 흔들림 연출을 준다. heroActive(boardHeroActive) prop 값 자체가 CSS
-  // animation-name을 "none"↔실제 키프레임으로 바꿔주므로(별도 key remount 없이도 브라우저가
-  // 값이 바뀌는 시점에 애니메이션을 다시 재생한다) 이 순간에만, 그리고 정확히 한 번만 흔들리고
-  // 그 이후 수들에는 전혀 적용되지 않는다.
-  // (버그 수정) appliedCount-1===moveIndex "그 순간"만 켜는 파생값을 그대로 썼더니, 유산 수가
-  // 재생 구간의 마지막 수라 그 뒤로 appliedCount가 더 이상 바뀌지 않는 경우 이 값이 영원히
-  // true로 남아 체스보드가 확대된 채 원래 크기로 돌아오지 않았다 — 스스로 만료되는 타이머를 가진
-  // 상태값으로 바꿔, 뒤이은 수가 있든 없든 HERO_TOTAL_MS 뒤에는 항상 꺼지도록 한다. 또한 "먼저
-  // 확대한 뒤 그 수가 두어지도록" 하기 위해, 그 수가 실제로 놓이기 직전(appliedCount===moveIndex)
-  // 부터 이미 확대 창을 열어 둔다(놓인 직후appliedCount===moveIndex+1까지 계속 이어짐).
-  const HERO_TOTAL_MS = 2300;
-  const heroWindowOpen = phase === "board" && (appliedCount === moveIndex || appliedCount === moveIndex + 1);
-  const [boardHeroActive, setBoardHeroActive] = useState(false);
+  // (v0.7.1, 사용자 요청) 수 하나의 연출 단계 — "motion"(기물 잡기·이동, LegacyMotionLayer) → "stamp"(도착 칸 우상단에 윤곽선이 한 바퀴 그려지고 아이콘이
+  // 도장처럼 찍힘) → "fx"(설정 탭 "시각 효과"가 그 등급을 켜 두었으면 수 등급 이펙트를 바로 이어서) → "done". 재생 구간의 첫 포지션(startCount)은 연출 없이 시작한다.
+  const { moveFx: moveFxOn, moveFxMode } = useContext(VisualPrefsContext);
+  const motionPlan = useMemo(() => (appliedCount > startCount && lastSan ? legacyMotionPlan(prevBoard, lastSan, lastMover) : null), [appliedCount, startCount, lastSan, prevBoard, lastMover]);
+  const [stage, setStage] = useState("done"); // "motion" | "stamp" | "fx" | "done"
+  const [stepId, setStepId] = useState(0);
   useEffect(() => {
-    if (!heroWindowOpen) { setBoardHeroActive(false); return; }
-    setBoardHeroActive(true);
-    const t = setTimeout(() => setBoardHeroActive(false), HERO_TOTAL_MS);
+    if (phase !== "board" || appliedCount <= startCount) { setStage("done"); return undefined; }
+    const kind = haloKind;
+    const fxOn = !!(kind && MOVE_FX[kind] && moveFxOn && moveFxKindOn(moveFxMode, kind));
+    const tMotion = motionPlan ? motionPlan.total + 80 : 0, tStamp = kind ? STAMP_MS + 80 : 0, tFx = fxOn ? MOVE_FX_MS : 0;
+    setStepId((n) => n + 1);
+    setStage(motionPlan ? "motion" : kind ? "stamp" : "done");
+    const ts = [];
+    if (motionPlan) ts.push(setTimeout(() => setStage(kind ? "stamp" : "done"), tMotion));
+    if (kind) ts.push(setTimeout(() => setStage(fxOn ? "fx" : "done"), tMotion + tStamp));
+    if (fxOn) ts.push(setTimeout(() => setStage("done"), tMotion + tStamp + tFx));
+    return () => ts.forEach(clearTimeout);
+  }, [phase, appliedCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  const moving = stage === "motion" && !!motionPlan;
+  const motionHidden = useMemo(() => (moving ? legacyMotionHidden(motionPlan) : null), [moving, motionPlan]);
+  const stamp = haloInfo && haloKind && !moving ? { sq: haloInfo.to, kind: haloKind, stage: stage === "stamp" ? "stamp" : stage === "fx" ? "fx" : "static" } : null;
+  // (v0.7.1) 수 하나의 연출(기물 이동·잡기 → 수 아이콘 도장 → 수 등급 이펙트)이 모두 끝난(stage === "done") 뒤 잠깐 쉬고 다음 수로 넘어간다 —
+  // 예전엔 1.45초 고정 간격이라 긴 연출(퀸 파동·이펙트)이 다음 수에 잘렸다. 유산 수 직전만 먼저 확대할 시간(HERO_PRE_MS)을 준다.
+  const STEP_PAUSE_MS = 550;
+  useEffect(() => {
+    if (phase !== "board" || appliedCount >= endCount || stage !== "done") return;
+    const isPreHero = appliedCount === moveIndex;
+    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), isPreHero ? HERO_PRE_MS : STEP_PAUSE_MS);
     return () => clearTimeout(t);
-  }, [heroWindowOpen]);
+  }, [phase, appliedCount, endCount, moveIndex, stage]);
+  const color = QCOLOR[typeInfo.kind];
+  // (사용자 요청) 체스보드에서도 유산으로 지정한 수가 두어지는 순간, 타이핑 단계와 같은 느낌으로 확대·어둡게·기물 흔들림 연출을 준다(heroActive가 CSS animation-name을
+  // 바꿔 그 순간에만 한 번 흔들린다).
+  // (v0.7.1) 유산 수 확대는 그 수 직전(appliedCount === moveIndex)부터 그 수의 연출이 모두 끝나고 잠깐(450ms) 뒤까지 — 예전엔 2.3초 고정이라 긴 연출이
+  // 확대가 풀린 뒤에 이어졌다. 유산 수가 재생 구간의 마지막 수여도 연출이 끝나면 반드시 풀린다(heroRelease).
+  const [heroRelease, setHeroRelease] = useState(false);
+  useEffect(() => {
+    if (appliedCount !== moveIndex + 1) { setHeroRelease(false); return undefined; }
+    if (stage !== "done") return undefined;
+    const t = setTimeout(() => setHeroRelease(true), 450);
+    return () => clearTimeout(t);
+  }, [appliedCount, stage, moveIndex]);
+  const boardHeroActive = phase === "board" && (appliedCount === moveIndex || (appliedCount === moveIndex + 1 && !heroRelease));
   // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
   const [lightBoardSize, boardWrapRef] = useBoardSize(440);
   const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
@@ -1039,12 +1062,14 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {/* (v0.7.1) 하단 아이콘 줄(width 100%)을 없애면서 이 열의 너비 기준이 사라져 보드가 내용 폭만큼 쪼그라들었다 — 너비를 직접 준다. */}
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
             {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
                 유산 등급 라벨은 없앤다. */}
             <motion.div ref={boardWrapRef} animate={{ x: heroBoardXform.x, y: heroBoardXform.y, scale: heroBoardXform.scale }} transition={{ duration: 0.5, ease: "easeInOut" }}
               style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={board} size={lightBoardSize} halo={haloInfo ? haloInfo.to : null} haloKind={haloKind} flip={flip} heroActive={boardHeroActive} />
+              <LegacyLightBoard board={moving ? prevBoard : board} size={lightBoardSize} stamp={stamp} flip={flip} heroActive={boardHeroActive}
+                motionPlan={moving ? motionPlan : null} motionKey={stepId} hidden={motionHidden} />
             </motion.div>
             {/* (버그 수정) 체스보드가 boardHeroActive 동안 최대 배율로 확대되면(위 motion.div가
                 z-index:2로 자기 레이아웃 박스보다 훨씬 크게 그려짐) 바로 아래 있는 이 블록(아이콘
@@ -1055,38 +1080,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
                 뒤이므로) 다시 페이드인되며 정상적으로 보인다. */}
             <motion.div animate={{ opacity: boardHeroActive ? 0 : 1 }} transition={{ duration: 0.35 }}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", pointerEvents: boardHeroActive ? "none" : "auto" }}>
-              {/* (사용자 요청) 아이콘 자리를 처음부터(재생 시작 전부터) 전부 고정해 둔다 — 매 수마다
-                  새 아이콘이 추가되며 레이아웃이 밀리지 않도록, startCount~endCount 범위의 슬롯을 전부
-                  미리 그려 두고 아직 두지 않은 수는 자리만 차지한 채 안 보이게(visibility:hidden) 한다.
-                  한 줄 flex-wrap(justifyContent:center)이라 다음 줄로 넘어가도 정렬이 흐트러지지 않는다.
-                  유산으로 지정한 수의 자리만 금색 테두리로 구분한다. */}
-              <div style={{ minHeight: 34, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, margin: "6px 0 2px", width: "100%", maxWidth: lightBoardSize }}>
-                {allSlots.map((i) => {
-                  const revealed = i < appliedCount;
-                  const k = kindAt(i);
-                  const isHero = i === moveIndex;
-                  // (버그 수정) 금색 테두리가 있는 칸(hero)과 없는 칸의 실제 렌더 크기가 서로 달라(테두리
-                  // 두께만큼) flex 정렬이 흔들리던 문제 — 모든 칸에 항상 같은 두께의 테두리를 두되
-                  // (기본은 투명), box-sizing:border-box로 테두리가 안쪽에 그려지게 해 바깥 크기(34×34)를
-                  // 항상 동일하게 고정한다.
-                  // (버그 수정) 그런데도 금테가 아이콘 중심과 안 맞고 위로 치우쳐 보인다는 신고가
-                  // 있어 Playwright로 실제 DOM 좌표를 재본 결과, 아이콘을 감싸던 안쪽 <span>이 일반
-                  // inline 요소라 줄바꿈 기준선(baseline) 아래로 "보이지 않는 여백"이 비대칭으로 붙어
-                  // (이미지 하단 descender 여백), 부모의 justify/align-items:center가 그 여백까지
-                  // 포함해 중앙 정렬하면서 정작 눈에 보이는 아이콘만 위로 몇 px 치우쳐 보였다(실측:
-                  // 세로 2px 어긋남, 가로는 정확히 일치) — 이 안쪽 span도 inline-flex로 바꿔 그 보이지
-                  // 않는 기준선 여백 자체를 없앴다.
-                  return (
-                    <span key={i} style={{ width: 34, height: 34, boxSizing: "border-box", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "50%",
-                      visibility: revealed && k ? "visible" : "hidden",
-                      border: "2px solid " + ((isHero && revealed) ? T.brassHi : "transparent"),
-                      boxShadow: (isHero && revealed) ? "0 0 12px 2px rgba(236,203,134,.85), 0 0 4px " + (k ? QCOLOR[k] : "transparent") : "none",
-                      background: (isHero && revealed) ? "rgba(236,203,134,.12)" : "transparent" }}>
-                      {revealed && k && <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", filter: "drop-shadow(0 0 6px " + QCOLOR[k] + ")" }}>{badgeIcon(k, 26)}</span>}
-                    </span>
-                  );
-                })}
-              </div>
+              {/* (v0.7.1, 사용자 요청) 보드 아래 수 아이콘 줄은 없앴다 — 수 아이콘은 도착 칸 우상단에 도장처럼 찍힌다(LegacyLightBoard stamp). */}
               {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
               <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: lightBoardSize, height: beamHeight,
