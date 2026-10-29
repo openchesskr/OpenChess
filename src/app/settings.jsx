@@ -6,16 +6,16 @@ import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from 
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { Instagram, Youtube, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
+import { Zap, Instagram, Youtube, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
 import LangPicker from "../components/LangPicker.jsx";
-import { loadUgcTranslatePref, saveUgcTranslatePref } from "../lib/prefs.js";
+import { loadUgcTranslatePref, saveUgcTranslatePref, REVIEW_SPEED_DEPTH, QUICK_REVIEW_ENGINE } from "../lib/prefs.js";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { PageTitle, ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { PageTitle, ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -684,7 +684,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
     </div>
   );
 }
-export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
+export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
@@ -846,22 +846,25 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
         </div>
+        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 18 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
+            고정된 동안 아래 엔진·속도 선택은 잠기지만, 원래 고른 값은 그대로 저장돼 있어 끄면 돌아온다. */}
+        <div className="flex items-center justify-between" style={{ gap: 10, padding: "10px 12px", marginBottom: 14, borderRadius: 10, border: "1.5px solid " + (quickReview ? T.brass : "#DCCBA8"), background: quickReview ? "rgba(196,154,80,.14)" : "#fff" }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><Zap size={14} style={{ color: T.brass }} />{t("빠른 리뷰")}</div>
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 18 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
+          </div>
+          <button onClick={() => setQuickReview(!quickReview)} role="switch" aria-checked={!!quickReview} aria-label={t("빠른 리뷰")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: quickReview ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: quickReview ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
+        </div>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("분석 엔진")}</div>
-        {/* (v0.5.1 기능) Stockfish 18은 신경망 파일이 108MB나 돼 느린 회선에서는 부팅에 몇 분씩 걸릴 수
-            있다(실제 재현 사례) — "불러오는 중…"이 오래 떠 있으면 멈춘 것처럼 보이므로, 이 프로필을
-            고른 채 아직 연결되지 않은 동안에는 그 이유를 짧게 안내한다. */}
-        {enginePref === "full18" && engineStatus !== "ready" && engineStatus !== "off" && (
-          <div style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>{t("신경망 파일(108MB)이 커서 회선에 따라 부팅에 몇 분 소요")}</div>
-        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {ANALYSIS_ENGINE_IDS.map((id) => {
             const p = ENGINE_PROFILES[id];
-            const on = enginePref === p.id;
+            const on = (quickReview ? QUICK_REVIEW_ENGINE : enginePref) === p.id;
             // (v0.6.3, 앱) 앱에 포함되지 않은 큰 엔진은 선택 대신 내려받기 행으로 보여 준다.
             if (engineNeedsDownload(id)) return <EngineDownloadRow key={p.id} id={p.id} label={p.label} />;
             return (
-              <button key={p.id} onClick={() => setEnginePref(p.id)} className="press"
-                style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+              <button key={p.id} onClick={() => { if (!quickReview) setEnginePref(p.id); }} disabled={!!quickReview} className="press"
+                style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: quickReview ? "default" : "pointer", opacity: quickReview && !on ? 0.5 : 1,
                   border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.12)" : "#fff" }}>
                 <div className="flex items-center gap-2">
                   <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
@@ -875,27 +878,28 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
           ))}
         </div>
-        <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
+        <p style={{ fontSize: 11.5, color: quickReview ? T.brass : T.inkSoft, fontWeight: quickReview ? 700 : 400, marginTop: 8 }}>{quickReview ? t("빠른 리뷰 사용 중. 엔진과 리뷰 속도 고정") : t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
-        {/* (v0.3.9 기능) 사용자 요청 — 게임 리뷰의 분석 속도/정확도를 선택. "더 빠르게"는 기존
+        {/* (v0.3.9 기능) 사용자 요청 — 게임 리뷰의 분석 속도/정확도를 선택. (v0.7.1 이전) "더 빠르게"는 기존
             그대로(REVIEW_DEPTH=20), "더 정확하게"는 포지션당 depth 상한을 25로 올린다 — movetime은
             그대로라 예전엔 depth 20에서 일찍 끝나던 쉬운 포지션들도 남는 시간을 마저 써서 depth
             25까지 더 파고들게 되고, 그만큼 리뷰 전체 시간도 자연히 늘어난다. */}
         <div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>{t("리뷰 속도")}</div>
         <div style={{ display: "flex", gap: 8 }}>
-          {[{ id: "fast", label: t("더 빠르게"), desc: "depth=" + REVIEW_DEPTH }, { id: "accurate", label: t("더 정확하게"), desc: "depth=25" }].map((o) => {
-            const on = reviewSpeed === o.id;
+          {/* (v0.7.1, 사용자 요청) 3단계 — 더 빠르게(depth 15)·평균(depth 20, 예전 "더 빠르게")·더 정확하게(depth 25). 빠른 리뷰 중에는 "더 빠르게"로 고정. */}
+          {[{ id: "fast", label: t("더 빠르게") }, { id: "normal", label: t("평균") }, { id: "accurate", label: t("더 정확하게") }].map((o) => {
+            const on = (quickReview ? "fast" : reviewSpeed) === o.id;
             return (
-              <button key={o.id} onClick={() => setReviewSpeed(o.id)} className="press"
-                style={{ flex: 1, textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+              <button key={o.id} onClick={() => { if (!quickReview) setReviewSpeed(o.id); }} disabled={!!quickReview} className="press"
+                style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "10px 10px", borderRadius: 10, cursor: quickReview ? "default" : "pointer", opacity: quickReview && !on ? 0.5 : 1,
                   border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.12)" : "#fff" }}>
                 <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
                   <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (on ? T.brass : "#C9B58C"), background: on ? T.brass : "transparent", flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{o.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{o.label}</span>
                 </div>
-                <div style={{ fontSize: 11, color: T.inkSoft, marginLeft: 24 }}>{o.desc}</div>
+                <div style={{ fontSize: 11, color: T.inkSoft, marginLeft: 24 }}>{"depth=" + REVIEW_SPEED_DEPTH[o.id]}</div>
               </button>
             );
           })}

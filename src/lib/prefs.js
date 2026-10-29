@@ -1,8 +1,27 @@
-// (v0.3.9 기능) 사용자 요청 — 설정 탭 "리뷰 설정" 카드의 리뷰 속도(더 빠르게=depth 20 그대로/
-// 더 정확하게=depth 25) 선택. 엔진 선택과 같은 패턴으로 이 기기에만 저장한다.
-export const REVIEW_SPEED_PREF_KEY = "occ_review_speed_pref";
-export function loadReviewSpeedPref() { try { return window.localStorage.getItem(REVIEW_SPEED_PREF_KEY) === "accurate" ? "accurate" : "fast"; } catch { return "fast"; } }
-export function saveReviewSpeedPref(v) { try { window.localStorage.setItem(REVIEW_SPEED_PREF_KEY, v); } catch { } }
+// (v0.3.9 기능) 사용자 요청 — 설정 탭 "리뷰 설정" 카드의 리뷰 속도 선택. 엔진 선택과 같은 패턴으로 이 기기에만 저장한다.
+// (v0.7.1, 사용자 요청) 3단계로 — 더 빠르게(depth 15)·평균(depth 20)·더 정확하게(depth 25). 예전 "더 빠르게"(fast)는 depth 20이었으므로
+//  저장 키를 바꿔(v2) 옛 값을 옮긴다: 옛 "accurate"는 그대로, 옛 "fast"(=depth 20)는 "평균"으로 — 업데이트만으로 리뷰 깊이가 몰래 얕아지지 않게.
+//  평균의 depth는 common.jsx REVIEW_DEPTH(20)와 같아야 한다(scripts/check-review-speed.mjs가 확인).
+export const REVIEW_SPEED_PREF_KEY = "occ_review_speed_pref_v2";
+const REVIEW_SPEED_PREF_KEY_OLD = "occ_review_speed_pref";
+export const REVIEW_SPEEDS = ["fast", "normal", "accurate"];
+export const REVIEW_SPEED_DEPTH = { fast: 15, normal: 20, accurate: 25 };
+export function loadReviewSpeedPref() {
+  try {
+    const v = window.localStorage.getItem(REVIEW_SPEED_PREF_KEY);
+    if (REVIEW_SPEEDS.includes(v)) return v;
+    return window.localStorage.getItem(REVIEW_SPEED_PREF_KEY_OLD) === "accurate" ? "accurate" : "normal";
+  } catch { return "normal"; }
+}
+export function saveReviewSpeedPref(v) { try { window.localStorage.setItem(REVIEW_SPEED_PREF_KEY, REVIEW_SPEEDS.includes(v) ? v : "normal"); } catch { } }
+// (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜면 엔진을 Stockfish 18 Lite, 리뷰 depth를 15로 고정하고, 리뷰 진입 연출(보드 연출·정확도 그래프)을 건너뛰어
+//  분석이 끝나는 즉시 리뷰 화면을 연다. 기본은 꺼짐. 고정된 동안에도 원래 고른 엔진·속도는 그대로 저장돼 있어 끄면 돌아온다.
+export const QUICK_REVIEW_ENGINE = "lite";
+export const REVIEW_QUICK_PREF_KEY = "occ_review_quick_pref";
+export function loadQuickReviewPref() { try { return window.localStorage.getItem(REVIEW_QUICK_PREF_KEY) === "1"; } catch { return false; } }
+export function saveQuickReviewPref(v) { try { window.localStorage.setItem(REVIEW_QUICK_PREF_KEY, v ? "1" : "0"); } catch { } }
+// 리뷰 분석 깊이 — 빠른 리뷰가 켜져 있으면 속도 선택과 상관없이 depth 15.
+export function reviewDepthFor(speed, quick) { return quick ? REVIEW_SPEED_DEPTH.fast : (REVIEW_SPEED_DEPTH[speed] || REVIEW_SPEED_DEPTH.normal); }
 // (v0.3.9 기능) 사용자 요청 — 포지션 변동성 보정(sharpLossMultiplier, "날카로운 국면일수록 실수를 더
 // 엄격하게 반영") on/off. 기본은 켜짐(기존 동작 그대로) — 꺼도 재분석이 필요 없다(원본 손실·날카로움
 // 값은 그대로 저장돼 있고, 최종 정확도 변환에서만 이 배율을 적용하거나 건너뛴다).

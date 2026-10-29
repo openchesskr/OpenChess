@@ -2837,4 +2837,9 @@ export default {
   "프로필 편집에서 연동": "Víncula la cuenta en Editar perfil",
   "🎰 오프닝 룰렛": "🎰 Ruleta de aperturas",
   "🧠 최선의 수 퀴즈": "🧠 Quiz de la mejor jugada",
+  "빠른 리뷰": "Revisión rápida",
+  "Stockfish 18 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면": "Fija Stockfish 18 Lite con profundidad 15. Sin animaciones, abre la revisión en cuanto termina el análisis",
+  "빠른 리뷰 사용 중. 엔진과 리뷰 속도 고정": "Revisión rápida activada. Motor y velocidad de revisión fijados",
+  "평균": "Estándar",
+  "빠른 리뷰 분석 중": "Analizando para la revisión rápida",
 };
