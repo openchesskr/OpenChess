@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'social' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { SB_ON, sbInsert, sbRpc, sbSelect, SB_URL, sbHeaders, sbUpsert, sbClient } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { sanSrc, stripSuffix, startBoard, boardFromSans, sansToFen, MAX_SEARCH_DEPTH, fenOfRoot, pvUciToSans, parseFenFull, looksLikeFen, gameEndState, drawKindLabel, applySan, moveNumber, plyIsWhite } from "../lib/chessRules.js";
@@ -1148,7 +1149,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
         keys.forEach((k) => {
           const [fu, slot] = k.split("|");
           const pub = (profiles[fu] && profiles[fu].pub) || {};
-          const entry = pub.legacies && pub.legacies[slot];
+          const entry = normalizeLegacyEntry(pub.legacies && pub.legacies[slot]);   // (BUG-130) 상대가 써 넣은 값 — 검증 후에만 표시
           const typeInfo = LEGACY_TYPES.find((t) => t.key === legacyBaseKey(slot));
           n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
         });

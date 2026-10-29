@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'profile' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { normalizeLegacies, normalizeLegacyHistory } from "../lib/legacyEntry.js";
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
@@ -1187,7 +1188,10 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
 // 퍼즐 좋아요(likedPuzzles/likeCounts/onToggleLike)와 달리 App 최상단 state가 아니라 이 행 스코프의
 // 로컬 state로 두는 이유 — 프로필 주인이 바뀔 때마다(다른 유저 프로필을 열 때마다) 새로 조회해야
 // 하는 값이라, 전역에 계속 들고 있을 이유가 없다.
-function LegacyStoneRow({ legacies, history, onManageLegacy, isGM, onShareLegacy, ownerUid, viewerUid }) {
+function LegacyStoneRow({ legacies: rawLegacies, history: rawHistory, onManageLegacy, isGM, onShareLegacy, ownerUid, viewerUid }) {
+  // (BUG-130) 남의 공개 프로필 값은 누구나 쓸 수 있다 — 검증을 통과한 유산만 화면에 넘긴다(잘못된 칸은 빈 칸).
+  const legacies = useMemo(() => normalizeLegacies(rawLegacies), [rawLegacies]);
+  const history = useMemo(() => normalizeLegacyHistory(rawHistory), [rawHistory]);
   const [openKey, setOpenKey] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const [likeCounts, setLikeCounts] = useState({});

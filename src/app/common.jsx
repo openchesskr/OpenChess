@@ -6507,9 +6507,12 @@ export const LEGACY_TILE_FLEX = "0 0 calc((100% - 16px) / 3)";
 // 등급 색으로 칠한다. 칸 크기를 실제 폭에서 재야 기물(PieceGlyph, 숫자 size)이 칸에 맞는다.
 export function legacyEntryPosition(entry) {
   if (!entry || !Array.isArray(entry.sans) || entry.sans[entry.moveIndex] == null) return null;
-  const before = boardFromSans(entry.sans.slice(0, entry.moveIndex));
-  const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex) ? "w" : "b");
-  return { board: boardFromSans(entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
+  // 들어오는 곳에서 normalizeLegacyEntry로 거르지만(BUG-130), 미리보기 하나 때문에 화면 전체가 깨지지 않도록 여기서도 막는다.
+  try {
+    const before = boardFromSans(entry.sans.slice(0, entry.moveIndex));
+    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex) ? "w" : "b");
+    return { board: boardFromSans(entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
+  } catch { return null; }
 }
 export function LegacyMiniBoard({ entry, color }) {
   const ref = useRef(null);
