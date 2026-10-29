@@ -15,7 +15,7 @@ import { parsePgnMoves } from "../lib/pgn.js";
 import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
-import { PageTitle, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
+import { PageTitle, ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, REVIEW_DEPTH, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
@@ -1163,7 +1163,7 @@ const ACCOUNT_CENTER_PROVIDERS = [
   { key: "apple", label: "Apple", Icon: AppleLogo, chip: { background: "#000" } },
   { key: "facebook", label: "Facebook", Icon: FacebookLogo, chip: { background: "#1877F2" } },
 ];
-export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, onAccountDeleted }) {
+export function AccountCenterModal({ onClose, myUid, username, chesscomUsername, onLogoutClick, onAccountDeleted }) {
   const [identities, setIdentities] = useState(null); // null=불러오는 중
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1264,6 +1264,22 @@ export function AccountCenterModal({ onClose, myUid, username, onLogoutClick, on
         )}
         {err && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 8, lineHeight: 1.5 }}>{err}</div>}
         <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.4 }}>{t("어떤 수단으로 로그인해도 같은 계정으로 연결. 다른 기기·로그인 방식을 함께 쓰려면 미리 연결")}</p>
+
+        {/* (v0.7.1, 사용자 요청) 로그인 수단과 별개로, 이 계정에 연동된 chess.com 아이디를 한눈에 — 변경·해제는 프로필 편집에서 한다. */}
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: T.brass, margin: "18px 0 2px" }}>{t("연동된 서비스")}</div>
+        <div style={{ borderTop: "1px solid rgba(0,0,0,.08)", borderBottom: "1px solid rgba(0,0,0,.08)" }}>
+          <div style={{ ...row, alignItems: "center" }}>
+            <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+              <span style={{ height: 26, padding: "0 9px", borderRadius: 13, background: "#FFFDF6", border: "1px solid #CDB98E", display: "inline-flex", alignItems: "center", flexShrink: 0 }}><ChesscomLogo height={13} /></span>
+              {chesscomUsername
+                ? <span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chesscomUsername}</span>
+                : <span style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>{t("연동 안 됨")}</span>}
+            </div>
+            {chesscomUsername
+              ? <a href={"https://www.chess.com/member/" + encodeURIComponent(chesscomUsername)} target="_blank" rel="noopener noreferrer" className="press" style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 7, border: "1px solid #C9B58C", color: T.ink, fontWeight: 700, fontSize: 11, textDecoration: "none" }}>{t("프로필 보기")}</a>
+              : <span style={{ flexShrink: 0, fontSize: 11, color: T.inkSoft }}>{t("프로필 편집에서 연동")}</span>}
+          </div>
+        </div>
 
         <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
         <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>{t("로그아웃")}</button>

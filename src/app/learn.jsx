@@ -2124,18 +2124,23 @@ const masterResultOf = (g) => (g.winner === "white" ? "w" : g.winner === "black"
 const masterDateKey = (g) => { const m = /^(\d{4})\.(\d\d)(?:\.(\d\d))?$/.exec(g.date || ""); return m ? (+m[1]) * 10000 + (+m[2]) * 100 + (+(m[3] || 0)) : (g.year || 0) * 10000; };
 const masterMinRating = (g) => Math.min((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
 const masterMaxRating = (g) => Math.max((g.white && g.white.rating) || 0, (g.black && g.black.rating) || 0);
-// (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 직접 그린 왕관 아이콘.
+// (v0.6.6, 사용자 요청) 흑·백 표시는 승률 막대(ResultBar)와 같은 색의 둥근 정사각형, 승자 표시는 왕관 아이콘(v0.7.1에 보석 세공 스타일로 다시 그림).
 const MASTER_SIDE_COLOR = { w: { bg: "#FBF5E8", bd: "#CDB98E" }, b: { bg: "#3A2A18", bd: "#CDB98E" } };
 function SideSquare({ side }) {
   const c = MASTER_SIDE_COLOR[side];
   return <span aria-label={side === "w" ? t("백") : t("흑")} style={{ display: "inline-block", flexShrink: 0, width: 15, height: 15, borderRadius: 4, background: c.bg, border: "1.5px solid " + c.bd, boxSizing: "border-box", alignSelf: "center" }} />;
 }
+// (v0.7.1 디자인, 사용자 요청 "아이콘을 더 독창적으로") 면을 나눠 빛을 받는 보석 세공 왕관 — 왼쪽에서 오른쪽으로 갈수록 어두워지는 네 면과 가운데 보석 한 알, 밑단 띠. 윤곽선 없이 면의 명암만으로 그린다.
 function CrownIcon({ size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={t("승리")} style={{ flexShrink: 0, alignSelf: "center" }}>
-      <path d="M3 8.5 7.6 12 12 5l4.4 7L21 8.5 19 18H5z" fill="#E2B652" stroke="#8F6A22" strokeWidth="1.4" strokeLinejoin="round" />
-      <rect x="5" y="19.2" width="14" height="2.2" rx="1" fill="#B98A34" stroke="#8F6A22" strokeWidth="1" />
-      <circle cx="3" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="12" cy="4.6" r="1.7" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" /><circle cx="21" cy="8" r="1.6" fill="#F6DE97" stroke="#8F6A22" strokeWidth="1" />
+      <path d="M3.4 7.6 8.5 12 7.2 18.2H4.5Z" fill="#EBC663" />
+      <path d="M8.5 12 12 4.6V18.2H7.2Z" fill="#F8E2A0" />
+      <path d="M12 4.6 15.5 12 16.8 18.2H12Z" fill="#D8A941" />
+      <path d="M15.5 12 20.6 7.6 19.5 18.2H16.8Z" fill="#B58632" />
+      <path d="M4.6 19.1H19.4L18.7 21.6H5.3Z" fill="#8A6322" />
+      <path d="M12 12.1 13.5 14.3 12 16.5 10.5 14.3Z" fill="#FFF7DC" />
+      <circle cx="3.4" cy="7.2" r="1.25" fill="#FFF1B8" /><circle cx="12" cy="4.2" r="1.35" fill="#FFF1B8" /><circle cx="20.6" cy="7.2" r="1.25" fill="#FFF1B8" />
     </svg>
   );
 }

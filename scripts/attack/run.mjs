@@ -12,6 +12,7 @@ import dbHolds from "./attacks/db-holds.mjs";
 import apiAttacks from "./attacks/api.mjs";
 import regress from "./attacks/db-regress.mjs";
 import economy from "./attacks/db-economy.mjs";
+import chatCards from "./attacks/db-chat-cards.mjs";
 import { idForNo } from "./ids.mjs";
 const PID = idForNo(111111);
 // 라인 3개짜리 퍼즐: e4 → (e5 Nf3) | (c5 Nf3) | (e6 d4)
@@ -19,7 +20,7 @@ const PUZZLE_DATA = JSON.stringify({ orig: true, id: PID, tree: { children: [{ s
 
 const args = process.argv.slice(2);
 const only = (args.includes("--only") ? args[args.indexOf("--only") + 1] : "").split(",").filter(Boolean);
-const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds, ...regress, ...economy];
+const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds, ...regress, ...economy, ...chatCards];
 if (args.includes("--list")) { for (const a of ALL) console.log(a.id.padEnd(9), a.kind.padEnd(7), a.title); process.exit(0); }
 
 export const U = { victim: "11111111-1111-1111-1111-111111111111", mallory: "22222222-2222-2222-2222-222222222222", bob: "33333333-3333-3333-3333-333333333333", dev: "44444444-4444-4444-4444-444444444444" };

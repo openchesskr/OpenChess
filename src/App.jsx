@@ -1738,6 +1738,7 @@ export default function App() {
           <AccountCenterModal
             myUid={uid}
             username={user}
+            chesscomUsername={profile.chesscom}
             onClose={() => { setAccountCenterOpen(false); popScreen("account-center"); }}
             onLogoutClick={() => { setAccountCenterOpen(false); popScreen("account-center"); setConfirmLogout(true); }}
             onAccountDeleted={() => { setAccountCenterOpen(false); popScreen("account-center"); logout(); }}

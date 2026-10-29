@@ -13,6 +13,7 @@
   "app/social.jsx",
   "components/appErrorBoundary.jsx",
   "components/badges.jsx",
+  "components/chatCards.jsx",
   "components/chatPlus.jsx",
   "components/engineLines.jsx",
   "components/keywordScroll.jsx",

@@ -4,7 +4,7 @@
 // 체스 보드는 앱의 Board(스킨·드래그 포함)를 그대로 쓰도록 prop(Board)으로 받는다 — App.jsx를 되부르는 순환 import를 피하려는 것.
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus, MoreVertical, Send } from "lucide-react";
+import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus, MoreVertical, Send, Brain, Dices } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { parseFenFull, replayFromFen, replaySans, boardFromSans, epTarget, fenLegalDests, buildSan, colorOfRoot, fenOfRoot } from "../lib/chessRules.js";
 import { parsePgnSans, sanSequenceValid } from "../lib/pgn.js";
@@ -12,7 +12,7 @@ import { CHAT_REACTIONS, REPORT_REASONS, FEN_IN_TEXT, MOVETEXT_IN_TEXT, reportsF
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
 const menuBtn = { display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "7px 9px", borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.ivory, textAlign: "left", whiteSpace: "nowrap" };
-const stop = (e) => e.stopPropagation();
+export const stop = (e) => e.stopPropagation();
 
 // ---- 메시지 메뉴 — 위에 반응 줄, 아래에 동작 버튼. 말풍선이 없는 쪽(대화창 가운데 쪽)에 뜬다(위치는 호출부가 잡는다). ----
 export const CHAT_MENU_W = 214;
@@ -75,6 +75,8 @@ export function chatSnippet(m) {
   if (m.legacy_slot != null) return t("유산 공유");
   if (m.poll) return t("수 투표");
   if (m.cobo) return t("같이 보기 보드");
+  if (m.quiz) return t("퀴즈");
+  if (m.roulette) return t("오프닝 룰렛");
   return t("메시지");
 }
 
@@ -103,7 +105,7 @@ export function ReplyBar({ target, authorName, onCancel }) {
 }
 
 // ---- 가운데 모달 틀(신고·투표 만들기 공통) ----
-function Sheet({ title, onClose, children, width = 360 }) {
+export function Sheet({ title, onClose, children, width = 360 }) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} onMouseDown={stop} onTouchStart={stop}
       style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(10,6,3,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -118,7 +120,7 @@ function Sheet({ title, onClose, children, width = 360 }) {
     </motion.div>
   );
 }
-const primaryBtn = (on = true) => ({ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: on ? "pointer" : "default", opacity: on ? 1 : 0.5, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" });
+export const primaryBtn = (on = true) => ({ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: on ? "pointer" : "default", opacity: on ? 1 : 0.5, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" });
 
 // ---- 신고 시트 — 사유 + 자세한 내용(선택) + "차단도 하기" ----
 export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlocked }) {
@@ -276,7 +278,7 @@ export function ChessSnippetCard({ Board, snippet, onOpen }) {
 }
 
 // ---- 입력창 옆 "+" 메뉴 ----
-export function ChatAttachMenu({ onPoll, onCobo, onClose, anchorStyle }) {
+export function ChatAttachMenu({ onQuiz, onRoulette, onClose, anchorStyle }) {
   useEffect(() => {
     const close = () => onClose();
     document.addEventListener("mousedown", close); document.addEventListener("touchstart", close);
@@ -284,8 +286,8 @@ export function ChatAttachMenu({ onPoll, onCobo, onClose, anchorStyle }) {
   }, [onClose]);
   return (
     <div onMouseDown={stop} onTouchStart={stop} style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 40, width: 220, padding: 6, borderRadius: 12, background: T.ebony2, border: "1px solid #000", boxShadow: "0 10px 24px -8px rgba(0,0,0,.6)", ...anchorStyle }}>
-      <button onClick={onPoll} className="press" style={menuBtn}>{tx("{0}\"여기서 뭐 둘래?\" 수 투표", <BarChart3 size={14} />)}</button>
-      <button onClick={onCobo} className="press" style={menuBtn}>{tx("{0}같이 보기 보드", <Users size={14} />)}</button>
+      <button onClick={onQuiz} className="press" style={menuBtn}>{tx("{0}퀴즈: 최선의 수 맞히기", <Brain size={14} />)}</button>
+      <button onClick={onRoulette} className="press" style={menuBtn}>{tx("{0}오프닝 룰렛", <Dices size={14} />)}</button>
     </div>
   );
 }
@@ -295,35 +297,6 @@ export function AttachButton({ open, onClick }) {
       style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: open ? T.brass : "#fff", color: open ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
       <Plus size={17} style={{ transform: open ? "rotate(45deg)" : "none", transition: "transform .15s" }} />
     </button>
-  );
-}
-
-// ---- 포지션 고르기 시트(투표·같이 보기 공통) — FEN을 붙여넣거나 시작 위치에서 직접 몇 수 둬서 정한다. ----
-export function PositionPickSheet({ Board, title, cta, onSend, onClose }) {
-  const [fenText, setFenText] = useState("");
-  const [sans, setSans] = useState([]);
-  const root = useMemo(() => { const t = fenText.trim(); return t ? parseFenFull(t) : null; }, [fenText]);
-  const fenBad = !!fenText.trim() && !root;
-  const fen = fenOfRoot(root, sans);
-  useEffect(() => { setSans([]); }, [fenText]);
-  return (
-    <Sheet title={title} onClose={onClose} width={380}>
-      <p style={{ fontSize: 11.5, color: T.inkSoft, margin: "0 0 8px", lineHeight: 1.5 }}>{t("보드에서 직접 수를 두거나 FEN을 붙여넣어 포지션 지정")}</p>
-      <input value={fenText} onChange={(e) => setFenText(e.target.value)} placeholder={t("FEN 붙여넣기 (비우면 시작 위치)")}
-        style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 9, border: "1px solid " + (fenBad ? T.blunder : "#C9B58C"), background: "#fff", fontSize: 11.5, color: T.ink, marginBottom: 8, fontFamily: "ui-monospace,monospace" }} />
-      {fenBad && <p style={{ fontSize: 11, color: T.blunder, fontWeight: 700, margin: "-4px 0 8px" }}>{t("FEN 형식이 올바르지 않음")}</p>}
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <ChatMoveBoard Board={Board} root={root} sans={sans} size={300} onMove={(san) => setSans((s) => [...s, san])} flip={root ? root.turn === "b" : false} />
-      </div>
-      <div className="flex items-center justify-between" style={{ margin: "8px 0 12px", gap: 8 }}>
-        <span style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700 }}>{sans.length ? t("{0}수 둠", (sans.length)) : t("그대로")}, {tx("{0} 차례", chatPosInfo(root, sans).color === "w" ? t("백") : t("흑"))}</span>
-        <div className="flex gap-1">
-          <button onClick={() => setSans((s) => s.slice(0, -1))} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}무르기", <Undo2 size={12} />)}</button>
-          <button onClick={() => setSans([])} disabled={!sans.length} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 8px", borderRadius: 7, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 11, fontWeight: 800, cursor: sans.length ? "pointer" : "default", opacity: sans.length ? 1 : 0.5 }}>{tx("{0}처음", <RotateCcw size={12} />)}</button>
-        </div>
-      </div>
-      <button onClick={() => !fenBad && onSend(fen)} disabled={fenBad} className="press" style={primaryBtn(!fenBad)}>{cta}</button>
-    </Sheet>
   );
 }
 

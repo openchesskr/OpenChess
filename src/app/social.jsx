@@ -8,9 +8,11 @@ import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User } from "lucide-react";
 import { chesscomChangeDaysLeft } from "../lib/chesscom.js";
-import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
+import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatQuizAnswersFetch, chatQuizAnswer, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
-import { ReportSheet, UserSafetyMenu, ChatHeaderActions, ChatSearchPanel, CHAT_MENU_W, ChatMsgMenu, PollCard, CoboCard, ReactionChips, ReplyQuote, chessSnippetOf, ChessSnippetCard, ChatCommandPalette, ChatHelpCard, ReplyBar, AttachButton, ChatAttachMenu, chatSnippet, PositionPickSheet, CoBoardScreen } from "../components/chatPlus.jsx";
+import { makeRoulette } from "../lib/openingRoulette.js";
+import { QuizCard, QuizComposeSheet, RouletteCard, RouletteComposeSheet } from "../components/chatCards.jsx";
+import { ReportSheet, UserSafetyMenu, ChatHeaderActions, ChatSearchPanel, CHAT_MENU_W, ChatMsgMenu, PollCard, CoboCard, ReactionChips, ReplyQuote, chessSnippetOf, ChessSnippetCard, ChatCommandPalette, ChatHelpCard, ReplyBar, AttachButton, ChatAttachMenu, chatSnippet, CoBoardScreen } from "../components/chatPlus.jsx";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { deriveBlindGame, parseChatCommand, blindMoveToken, chatCommandSuggestions, CHAT_COMMANDS as CHAT_CMD_LIST, chatCommandAvailable } from "../lib/chatCommands.js";
 import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "../lib/pgn.js";
@@ -18,7 +20,7 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { Board, CONTENT, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, CONTENT, SNAP, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -1008,12 +1010,13 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
   // ---- (v0.5.7 기능, 사용자 요청 "채팅을 실제 SNS 수준으로") 채팅 강화 — src/components/chatPlus.jsx·src/lib/chatApi.js ----
   const [reactions, setReactions] = useState({});   // messageId -> [{uid, emoji}]
   const [pollVotes, setPollVotes] = useState({});   // messageId -> [{uid, san}]
+  const [quizAnswers, setQuizAnswers] = useState({}); // (v0.7.1) messageId -> [{uid, san}] — 퀴즈 답
   const [replyTo, setReplyTo] = useState(null);     // 답장할 메시지
   const [searchOpen, setSearchOpen] = useState(false);
   const [reportFor, setReportFor] = useState(null); // { msg } | { msg: null } — 신고 시트
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
-  const [pickSheet, setPickSheet] = useState(null); // "poll" | "cobo" | null
+  const [pickSheet, setPickSheet] = useState(null); // "quiz" | "roulette" | null (v0.7.1: 예전 "poll"·"cobo"는 +메뉴에서 뺐다)
   const [coboMsg, setCoboMsg] = useState(null);     // 열려 있는 같이 보기 보드
   const [hasOlder, setHasOlder] = useState(false);  // 서버에 더 이전 메시지가 있는지
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -1276,14 +1279,16 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
   const replyTargetOf = (id) => msgs.find((x) => x.id === id) || replyCache[id] || null;
   // (v0.5.7) 반응·투표 — 보이는 메시지의 것을 모아 받는다. 상대가 새로 단 것은 Realtime(상대 uid 필터)으로, 내 것은 바로 로컬 반영.
   const pollIdsKey = msgs.filter((m) => m.poll).map((m) => m.id).join(",");
+  const quizIdsKey = msgs.filter((m) => m.quiz).map((m) => m.id).join(",");
   const loadReactions = useCallback(async () => {
     const ids = msgs.map((m) => m.id);
-    const [rx, pv] = await Promise.all([chatReactionsFetch(ids), chatPollVotesFetch(msgs.filter((m) => m.poll).map((m) => m.id))]);
-    setReactions(rx); setPollVotes(pv);
-  }, [msgIdsKey, pollIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const [rx, pv, qa] = await Promise.all([chatReactionsFetch(ids), chatPollVotesFetch(msgs.filter((m) => m.poll).map((m) => m.id)), chatQuizAnswersFetch(msgs.filter((m) => m.quiz).map((m) => m.id))]);
+    setReactions(rx); setPollVotes(pv); setQuizAnswers(qa);
+  }, [msgIdsKey, pollIdsKey, quizIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (msgs.length) loadReactions(); }, [loadReactions]); // eslint-disable-line react-hooks/exhaustive-deps
   useRealtimeTable("chat_reactions", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
   useRealtimeTable("chat_poll_votes", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
+  useRealtimeTable("chat_quiz_answers", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
   const toggleReaction = async (m, emoji, on) => {
     setMenuFor(null);
     setReactions((prev) => {
@@ -1292,6 +1297,12 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
     });
     const ok = await chatReactToggle(m.id, myUid, emoji, on);
     if (!ok) { showNotice(t("반응 등록 실패")); loadReactions(); }
+  };
+  // (v0.7.1) 퀴즈 답 — 한 번만 낼 수 있다(서버가 수정·삭제를 막는다). 먼저 화면에 반영하고, 실패하면 다시 불러와 되돌린다.
+  const answerQuiz = async (m, san) => {
+    setQuizAnswers((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((a) => a.uid !== myUid), { uid: myUid, san }] }));
+    const ok = await chatQuizAnswer(m.id, myUid, san);
+    if (!ok) { showNotice(t("답 전송 실패")); loadReactions(); }
   };
   const castVote = async (m, san) => {
     setPollVotes((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((v) => v.uid !== myUid), { uid: myUid, san }] }));
@@ -1326,6 +1337,22 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
       const sign = root.turn === "w" ? 1 : -1;
       const evalTxt = top.mate != null ? "#" + (top.mate * sign > 0 ? "" : "-") + Math.abs(top.mate) : ((top.cp * sign) / 100 > 0 ? "+" : "") + ((top.cp * sign) / 100).toFixed(2);
       return san ? { san, evalTxt } : null;
+    } catch { return null; }
+  }, [engine]);
+  // (v0.7.1) 퀴즈 만들기 — 앱의 분석 엔진으로 그 포지션의 상위 후보 수(MultiPV 8, 최대 약 4.5초)를 받아 [{ san, cp|mate }](둘 차례 기준)로 돌려준다.
+  const engineMulti = useCallback(async (root) => {
+    if (!engine || engine.status !== "ready") return null;
+    try {
+      const pool = await getAnalysisPool(engine.profile, engine.urls);
+      const w = poolWorker(pool, 0, engine);
+      const pvs = await w.evaluateMulti(fenOfRoot(root, []), MAX_SEARCH_DEPTH, 8, 4500, () => {}, "chat-quiz");
+      const out = [];
+      for (const pv of pvs || []) {
+        if (!pv || !pv.pv || !pv.pv.length || (pv.cp == null && pv.mate == null)) continue;
+        const san = pvUciToSans([], pv.pv, 1, root)[0];
+        if (san) out.push(pv.mate != null ? { san, mate: pv.mate } : { san, cp: pv.cp });
+      }
+      return out;
     } catch { return null; }
   }, [engine]);
   // (v0.1.4 기능) 실시간 타이핑 표시 — DB에 쓰지 않는 Supabase Realtime broadcast 채널을 대화 상대와
@@ -1485,12 +1512,14 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           catch (e) { setCmdError(inviteFailText(e, t("대국"))); }
           setSending(false); return;
         }
-        case "poll": case "board": {
-          // FEN을 비우면 포지션 고르기 창(+ 메뉴와 같은 창)을 연다.
-          if (!cmd.fen) { setText(""); setPickSheet(cmd.name === "poll" ? "poll" : "cobo"); return; }
-          if (!parseFenFull(cmd.fen)) { setCmdError(t("FEN을 읽을 수 없어요. 사용법: {0}", cmd.name === "poll" ? "/poll [FEN]" : "/board [FEN]")); return; }
+        case "quiz": setText(""); setPickSheet("quiz"); return;
+        case "roulette": {
+          // 수를 비우면 고르는 창(+ 메뉴와 같은 창), 수가 있으면 바로 뽑아 보낸다.
           setText("");
-          await sendSpecial(cmd.name === "poll" ? { poll: { fen: cmd.fen } } : { cobo: { fen: cmd.fen, sans: [] } });
+          if (cmd.ply == null) { setPickSheet("roulette"); return; }
+          const r = makeRoulette(SNAP.tree, cmd.ply);
+          if (!r) { setCmdError(t("이 길이의 오프닝이 도감에 없음")); return; }
+          await sendSpecial({ roulette: r });
           return;
         }
         default: break;
@@ -1937,7 +1966,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           }
           // (v0.5.7 기능) 수 투표·같이 보기 카드 — 다른 공유 카드처럼 보낸 사람 쪽으로 정렬한다. 꾹 누르기/오른쪽 클릭 메뉴는 반응·답장·삭제·신고.
           // 카드 안(보드)은 자기 조작을 위해 mousedown/touchstart를 막으므로, 꾹 누르기 타이머는 캡처 단계에서 건다.
-          if (m.poll || m.cobo) {
+          if (m.poll || m.cobo || m.quiz || m.roulette) {
             const showAvatarC = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             const openMenuC = (el) => openMsgMenu(m.id, el, mine, CHAT_MENU_W, 190);
             const cancelPress = () => clearTimeout(longPressTimerRef.current);
@@ -1961,9 +1990,13 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
                         onDelete={mine ? () => doDelete(m) : null}
                         onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
                     )}
-                    {m.poll
-                      ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
-                      : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
+                    {m.quiz
+                      ? <QuizCard Board={Board} msg={m} answers={quizAnswers[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onAnswer={(san) => answerQuiz(m, san)} />
+                      : m.roulette
+                        ? <RouletteCard msg={m} onOpen={(sans) => onOpenBoardSans && onOpenBoardSans(sans)} />
+                        : m.poll
+                          ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
+                          : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
                   </div>
                 </div>
               </React.Fragment>
@@ -2168,7 +2201,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
         <div className="flex items-center gap-2" style={{ position: "relative" }}>
           {/* (v0.5.7) "+" — 수 투표·같이 보기 보드 */}
           <AttachButton open={attachOpen} onClick={() => setAttachOpen((v) => !v)} />
-          {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onPoll={() => { setAttachOpen(false); setPickSheet("poll"); }} onCobo={() => { setAttachOpen(false); setPickSheet("cobo"); }} />}
+          {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onQuiz={() => { setAttachOpen(false); setPickSheet("quiz"); }} onRoulette={() => { setAttachOpen(false); setPickSheet("roulette"); }} />}
           <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label={t("이모티콘")} style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={onInputKeyDown} placeholder={editingId != null ? t("수정할 내용 입력…") : t("메시지 입력…")} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? t("수정") : t("전송")}</button>
@@ -2178,8 +2211,8 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
       {/* (v0.5.7) 신고·포지션 고르기(투표/같이 보기)·같이 보기 화면 */}
       <AnimatePresence>
         {reportFor && <ReportSheet key="report" targetName={otherUsername} snippet={reportFor.msg ? chatSnippet(reportFor.msg) : null} alreadyBlocked={blockedByMe} onSubmit={submitReport} onClose={() => setReportFor(null)} />}
-        {pickSheet && <PositionPickSheet key="pick" Board={Board} title={pickSheet === "poll" ? t("\"여기서 뭐 둘래?\" 투표 만들기") : t("같이 보기 보드 시작")} cta={pickSheet === "poll" ? t("이 포지션으로 투표 보내기") : t("이 포지션으로 같이 보기")}
-          onClose={() => setPickSheet(null)} onSend={(fen) => sendSpecial(pickSheet === "poll" ? { poll: { fen } } : { cobo: { fen, sans: [] } })} />}
+        {pickSheet === "quiz" && <QuizComposeSheet key="quiz" Board={Board} analyze={engine ? engineMulti : null} onClose={() => setPickSheet(null)} onSend={(quiz) => sendSpecial({ quiz })} />}
+        {pickSheet === "roulette" && <RouletteComposeSheet key="roulette" tree={SNAP.tree} onClose={() => setPickSheet(null)} onSend={(roulette) => sendSpecial({ roulette })} />}
         {coboMsg && <CoBoardScreen key="cobo" Board={Board} sbClient={sbClient} msg={coboMsg} myUid={myUid} myName={myUsername} otherName={otherUsername} onClose={() => setCoboMsg(null)}
           onOpenAnalysis={(root, sans) => { setCoboMsg(null); const fen = fenOfRoot(root, sans); if (root || !sans.length) { onOpenBoardFen && onOpenBoardFen(fen); } else { onOpenBoardSans && onOpenBoardSans(sans); } }} />}
       </AnimatePresence>
@@ -2783,7 +2816,7 @@ export function ChatsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoard
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? t("🎉 공유 보상 XP +{0}", m.share_reward.amount) : m.puzzle_no != null ? t("🧩 퍼즐 공유") : m.legacy_slot != null ? t("💎 유산 공유") : m.review_id != null ? t("📊 리뷰 공유") : m.pvp_invite_id != null ? t("⚔️ 실시간 대국 신청") : m.poll ? t("📊 \"여기서 뭐 둘래?\" 투표") : m.cobo ? t("👥 같이 보기 보드 초대") : m.emoji ? t("(이모티콘)") : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? t("🎉 공유 보상 XP +{0}", m.share_reward.amount) : m.puzzle_no != null ? t("🧩 퍼즐 공유") : m.legacy_slot != null ? t("💎 유산 공유") : m.review_id != null ? t("📊 리뷰 공유") : m.pvp_invite_id != null ? t("⚔️ 실시간 대국 신청") : m.poll ? t("📊 \"여기서 뭐 둘래?\" 투표") : m.cobo ? t("👥 같이 보기 보드 초대") : m.quiz ? t("🧠 최선의 수 퀴즈") : m.roulette ? t("🎰 오프닝 룰렛") : m.emoji ? t("(이모티콘)") : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}

@@ -27,7 +27,7 @@ export async function chatFetchPage(myUid, otherUid, before) {
   } catch { return []; }
 }
 
-// 보내기 — extra: { reply_to, poll, cobo }. 새 컬럼이 아직 없는 프로젝트에서 답장이 실패하면 답장 없이 한 번 더 보낸다.
+// 보내기 — extra: { reply_to, poll, cobo, quiz, roulette }. 새 컬럼이 아직 없는 프로젝트에서 답장이 실패하면 답장 없이 한 번 더 보낸다.
 export async function chatSendMessage(myUid, toUid, body, emoji, extra) {
   if (!SB_ON || !myUid || !toUid) return false;
   const row = { from_uid: myUid, to_uid: toUid, body: body || null, emoji: emoji || null };
@@ -35,6 +35,8 @@ export async function chatSendMessage(myUid, toUid, body, emoji, extra) {
   if (ex.reply_to != null) row.reply_to = ex.reply_to;
   if (ex.poll) row.poll = ex.poll;
   if (ex.cobo) row.cobo = ex.cobo;
+  if (ex.quiz) row.quiz = ex.quiz;
+  if (ex.roulette) row.roulette = ex.roulette;
   try { await sbInsert("chat_messages", row); return true; }
   catch {
     if (row.reply_to == null) return false;
@@ -94,6 +96,22 @@ export async function chatPollVotesFetch(ids) {
 export async function chatPollVote(messageId, uid, san) {
   if (!SB_ON || messageId == null || !uid || !san) return false;
   try { await sbUpsert("chat_poll_votes", { message_id: messageId, uid, san, created_at: new Date().toISOString() }); return true; } catch { return false; }
+}
+
+// (v0.7.1) 퀴즈 답 — { messageId: [{uid, san}] }. 받는 사람이 한 번만 낼 수 있다(서버가 수정·삭제를 막는다).
+export async function chatQuizAnswersFetch(ids) {
+  const list = [...new Set((ids || []).filter((x) => x != null))];
+  if (!SB_ON || !list.length) return {};
+  const out = {};
+  try {
+    const rows = await sbSelect("chat_quiz_answers?message_id=in.(" + list.join(",") + ")&select=message_id,uid,san");
+    (rows || []).forEach((r) => { (out[r.message_id] = out[r.message_id] || []).push({ uid: r.uid, san: r.san }); });
+  } catch { }
+  return out;
+}
+export async function chatQuizAnswer(messageId, uid, san) {
+  if (!SB_ON || messageId == null || !uid || !san) return false;
+  try { await sbInsert("chat_quiz_answers", { message_id: messageId, uid, san }); return true; } catch { return false; }
 }
 
 // 차단 — 내가 차단한 사람 uid 목록 / 차단·해제.
