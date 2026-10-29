@@ -44,5 +44,12 @@ export function normalizeLegacies(map) {
 }
 export function normalizeLegacyHistory(list) {
   if (!Array.isArray(list)) return null;
-  return list.slice(-200).map((h) => (h && typeof h === "object" ? { ...h, entry: normalizeLegacyEntry(h.entry) } : null)).filter((h) => h && h.entry && typeof h.slotKey === "string");
+  // 검사한 필드만 새로 담는다(펼치기 금지 — 검사 안 한 값이 화면까지 따라오지 않게).
+  const out = [];
+  for (const h of list.slice(-200)) {
+    if (!h || typeof h !== "object" || typeof h.slotKey !== "string" || !/^[a-z]{1,16}2?$/.test(h.slotKey)) continue;
+    const entry = normalizeLegacyEntry(h.entry);
+    if (entry) out.push({ slotKey: h.slotKey, entry, replacedAt: Number.isFinite(h.replacedAt) ? h.replacedAt : null });
+  }
+  return out;
 }

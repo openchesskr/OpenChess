@@ -27,6 +27,8 @@ for (const [label, v] of [
 ]) safe(label, v);
 ok("묶음: 잘못된 칸만 빈 칸", (() => { const r = normalizeLegacies({ best: good, only: { sans: [1] }, brilliant2: good }); return r.best && r.only === null && r.brilliant2; })());
 ok("묶음: 모양이 틀리면 null", normalizeLegacies("x") === null && normalizeLegacies([good]) === null);
+ok("이력: 검사한 필드만 담음", (() => { const r = normalizeLegacyHistory([{ slotKey: "best", entry: good, replacedAt: { toString() { throw 1; } }, evil: 1 }]); return r.length === 1 && r[0].replacedAt === null && !("evil" in r[0]); })());
+ok("이력: 잘못된 slotKey는 뺌", normalizeLegacyHistory([{ slotKey: {}, entry: good }, { slotKey: "<b>", entry: good }]).length === 0);
 ok("이력: 잘못된 항목은 뺌", (() => { const r = normalizeLegacyHistory([{ slotKey: "best", entry: good }, { slotKey: "only", entry: { sans: [{}] } }, null, 5]); return r.length === 1; })());
 
 // 화면 연결 — 남의 데이터가 들어오는 두 곳

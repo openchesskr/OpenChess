@@ -135,6 +135,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **증상**: `pub.legacies`는 사용자가 자기 공개 프로필에 임의 JSON으로 써 넣을 수 있다. `sans`에 숫자·null·객체가 섞이면 `sanSrc`/`replaySans`가 `.replace is not a function`으로 throw해, 그 프로필이나 공유 카드를 여는 사람의 화면이 렌더 중 깨진다. 새 미니 보드 타일은 프로필을 열기만 해도 수순을 재생하므로 노출이 커졌다(재생 화면은 개편 전부터 같은 위험).
 - **원인**: 남이 쓴 유산 값을 검증 없이 화면 컴포넌트에 그대로 넘겼다.
 - **수정**: `src/lib/legacyEntry.js`에 `normalizeLegacyEntry`·`normalizeLegacies`·`normalizeLegacyHistory`를 만들어 모양(문자열 수, 정수 moveIndex 범위, 최대 600수)과 수순 합법성까지 확인하고, 틀린 칸은 빈 칸으로 만든다. 남의 데이터가 들어오는 두 입구(LegacyStoneRow, 채팅 공유 미리보기)에서 반드시 거치게 했고, 미니 보드 계산에도 try/catch를 이중으로 넣었다.
+- **후속 수정(같은 날, 2차 보안 리뷰)**: 이력 항목을 `{...h}`로 펼쳐 검사 안 한 `replacedAt`이 날짜 표시까지 따라가던 구멍 — 검사한 필드(slotKey·entry·숫자 replacedAt)만 새로 담도록 바꾸고, `fmtDateOnly`의 실패 처리도 `String(d)`(이것도 throw 가능) 대신 빈 문자열로.
 - **안전장치**: `scripts/check-legacy-entry.mjs`(prebuild, `npm run check:legacy-entry`) — 15가지 잘못된 입력이 throw 없이 null이 되는지, 정상·구버전 항목이 통과하는지, 두 입구가 검증 함수를 쓰는지 검사한다.
 - **검증**: 수정 전 `sans: [1,2]`·`[null]`·`[{}]`로 throw 재현 → 수정 후 검사 통과, `npm run build` 통과.
 - **남은 일**: 서버에서 공개 프로필 저장 시 유산 모양을 검증하는 것은 SQL만으로 수순 합법성을 볼 수 없어 이번엔 하지 않았다(클라이언트 검증으로 화면 깨짐은 막힘).
