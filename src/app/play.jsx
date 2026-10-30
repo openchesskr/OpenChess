@@ -9,7 +9,7 @@ import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
-import { X, Cpu, Star, User, Target, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
+import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";
@@ -25,7 +25,7 @@ import { rushParse, rushTargetsFrom, rushAttacked, rushApply } from "../lib/rush
 import { QCOLOR, BADGE_ICON_SRC } from "../lib/moveKinds.js";
 import { LICHESS_API } from "../lib/lichessApi.js";
 import { NavBtn } from "../components/uiPrimitives.jsx";
-import { Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
+import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
@@ -93,6 +93,8 @@ async function classifyOwnMovesFast(sans, fenRoot, myColor, engine, isCancelled)
   return counts;
 }
 const TIME_CONTROL_CATS = ["불렛", "블리츠", "래피드", "스탠다드"]; // 구분 값(한국어 고정). 화면에는 tcCatLabel로 번역해 표시
+// (v0.7.1 디자인) 봇 강도별 색 — 앱의 티어 색(아이언~그랜드마스터)을 그대로 빌려 강해질수록 색이 달라지게 한다.
+const PLAY_BOT_TIER_KEY = { 400: "iron", 800: "bronze", 1200: "silver", 1600: "gold", 2000: "diamond", 2400: "master", 2800: "grandmaster" };
 const PLAY_BOT_TIERS = [
   { elo: 400, label: "400", desc: t("체스를 막 배운 친구") },
   { elo: 800, label: "800", desc: t("초보") },
@@ -389,57 +391,82 @@ function playResultCopy(result, activeColor) {
   if (result.end === "stalemate") return { kind: "draw", title: t("무승부"), subtitle: t("스테일메이트"), mascot: "milku", emotion: "think" };
   return { kind: "draw", title: t("무승부"), subtitle: t("3회 동형 반복"), mascot: "milku", emotion: "think" };
 }
-function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
+// (v0.7.1 디자인) 대국 종료 정산 카드 — 승·패·무가 색으로 한눈에 보이게(머리 칸 글로우·제목 색), 쓰이지 않던 마스코트(copy.mascot)를 얹고, 승자 표시(왕관)·
+// 내 진영(백/흑)·수 수·시간 규정을 칩으로 정리했다. 승리하면 화면 전체로 금빛 조각이 흩날린다. 버튼·핸들러는 이전과 같다.
+function PlayResultModal({ result, activeColor, mode, botTier, opponentPub, myPhoto, myName, oppName, timeControl, moveCount, onClose, onReview, onRematch, rematchOfferedByMe, rematchOfferedByOpp }) {
   const copy = playResultCopy(result, activeColor);
   if (!copy) return null;
-  const kindColor = copy.kind === "win" ? T.best : copy.kind === "loss" ? T.blunder : T.brassHi;
-  const checker = "repeating-conic-gradient(" + T.boardDark + " 0% 25%, " + T.boardLight + " 0% 50%) 0 0/36px 36px";
+  const win = copy.kind === "win", loss = copy.kind === "loss";
+  const kindColor = win ? T.best : loss ? T.blunder : T.brassHi;
+  const titleColor = win ? "#9BE59A" : loss ? "#FF9D90" : T.brassHi;
+  const checker = "repeating-conic-gradient(rgba(255,246,222,.07) 0% 25%, transparent 0% 50%) 0 0/28px 28px";
+  const oppColor = activeColor === "w" ? "b" : "w";
+  const pvp = mode === "pvp";
+  const ring = (isWinner) => (isWinner ? T.best : "rgba(150,112,58,.45)");
+  const avatar = (photo, initial, isBot, isWinner) => {
+    const base = { width: 54, height: 54, borderRadius: 15, border: "2.5px solid " + ring(isWinner), boxShadow: isWinner ? "0 0 0 3px rgba(60,138,60,.18)" : "none" };
+    if (photo) return <img src={photo} alt="" style={{ ...base, objectFit: "cover" }} />;
+    if (isBot) return <span style={{ ...base, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Cpu size={22} /></span>;
+    return <span style={{ ...base, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{initial}</span>;
+  };
+  const player = (photo, initial, isBot, isWinner, name, color) => (
+    <div style={{ textAlign: "center", minWidth: 0, flex: 1 }}>
+      <div style={{ position: "relative", display: "inline-block" }}>
+        {avatar(photo, initial, isBot, isWinner)}
+        {isWinner && <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "2px solid " + T.paper, color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Crown size={11} strokeWidth={2.6} /></span>}
+      </div>
+      <div className="flex items-center justify-center" style={{ gap: 5, marginTop: 7, minWidth: 0 }}>
+        <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0, background: color === "w" ? "#FFFDF7" : "#2A1A0E", border: "1.5px solid " + (color === "w" ? "#BFAA80" : "#000") }} />
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      </div>
+    </div>
+  );
+  const chip = (children) => <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 999, background: "rgba(196,154,80,.14)", border: "1px solid rgba(150,112,58,.3)", fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{children}</span>;
+  const rise = (i) => ({ initial: { opacity: 0, transform: "translateY(8px)" }, animate: { opacity: 1, transform: "translateY(0px)" }, transition: { duration: 0.32, delay: 0.12 + i * 0.07, ease: [0.22, 0.8, 0.3, 1] } });
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(10,6,3,.68)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(10,6,3,.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      {win && <VictoryBurst />}
       <motion.div onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 18, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.97 }}
         transition={{ type: "spring", stiffness: 320, damping: 26 }}
-        style={{ width: "100%", maxWidth: 360, borderRadius: 16, overflow: "hidden", background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -14px rgba(0,0,0,.7)" }}>
-        <div style={{ position: "relative", background: checker, padding: "20px 16px 16px", textAlign: "center" }}>
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(20,12,6,.15), rgba(20,12,6,.55))" }} />
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 2, width: 26, height: 26, borderRadius: 8, background: "rgba(20,12,6,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-.01em", textShadow: "0 2px 6px rgba(0,0,0,.5)" }}>{copy.title}</div>
-            {copy.subtitle && <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.85)", marginTop: 2 }}>{copy.subtitle}</div>}
+        style={{ width: "100%", maxWidth: 360, borderRadius: 20, overflow: "hidden", background: T.paper, border: "1px solid " + (win ? "rgba(60,138,60,.55)" : "#DCCBA8"), boxShadow: "0 24px 60px -14px rgba(0,0,0,.75)" }}>
+        <div style={{ position: "relative", overflow: "hidden", minHeight: 118, padding: "22px 18px 18px", background: "linear-gradient(160deg," + T.ebony3 + "," + T.ebony + ")" }}>
+          <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: checker, pointerEvents: "none" }} />
+          <span aria-hidden="true" style={{ position: "absolute", left: -50, top: -70, width: 240, height: 240, borderRadius: "50%", background: "radial-gradient(circle," + kindColor + "66 0%," + kindColor + "00 68%)", pointerEvents: "none" }} />
+          <button onClick={onClose} aria-label={t("닫기")} className="press hit" style={{ "--hy": "-9px", "--hx": "-9px", position: "absolute", top: 10, right: 10, zIndex: 3, width: 26, height: 26, borderRadius: 8, background: "rgba(255,246,222,.1)", color: "#FFF6DE", border: "1px solid rgba(255,246,222,.25)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={14} /></button>
+          <motion.div initial={{ opacity: 0, transform: "translateY(10px) scale(0.7)" }} animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }} transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.1 }}
+            style={{ position: "absolute", right: 14, bottom: -4, zIndex: 1, pointerEvents: "none" }}>
+            <Mascot name={copy.mascot} emotion={copy.emotion} size={92} />
+          </motion.div>
+          <div style={{ position: "relative", zIndex: 2, textAlign: "left", paddingRight: 96 }}>
+            {copy.subtitle && <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 999, background: "rgba(255,246,222,.1)", border: "1px solid " + kindColor + "99", fontSize: 11.5, fontWeight: 800, color: "rgba(255,246,222,.92)" }}>{copy.subtitle}</span>}
+            <div style={{ fontSize: 34, fontWeight: 900, lineHeight: 1.1, marginTop: copy.subtitle ? 8 : 0, color: titleColor, letterSpacing: "-.02em", textShadow: "0 2px 12px " + kindColor + "66" }}>{copy.title}</div>
           </div>
         </div>
-        <div style={{ padding: "16px 18px 18px" }}>
-          <div className="flex items-center justify-center" style={{ gap: 14, marginBottom: 12 }}>
-            <div style={{ textAlign: "center", minWidth: 0 }}>
-              {mode === "pvp" && opponentPub && opponentPub.photo ? <img src={opponentPub.photo} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }} />
-                : mode === "pvp" ? <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}>{(oppName || "?")[0].toUpperCase()}</span>
-                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "#EDE1C6", color: T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (copy.kind === "loss" ? T.best : "#C9B58C") }}><Cpu size={20} /></span>}
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mode === "pvp" ? (oppName || t("상대")) : botTier.label}</div>
+        <div style={{ padding: "18px 18px 18px" }}>
+          <motion.div {...rise(0)} className="flex items-start justify-center" style={{ gap: 10, marginBottom: 14 }}>
+            {player(pvp && opponentPub && opponentPub.photo ? opponentPub.photo : null, (oppName || "?")[0].toUpperCase(), !pvp, loss, pvp ? (oppName || t("상대")) : botTier.label, oppColor)}
+            <span style={{ alignSelf: "center", flexShrink: 0, fontSize: 11.5, fontWeight: 900, color: T.inkSoft, opacity: 0.8, letterSpacing: ".06em" }}>VS</span>
+            {player(myPhoto || null, (myName || "U")[0].toUpperCase(), false, win, myName || "Unnamed", activeColor)}
+          </motion.div>
+          {(timeControl || moveCount > 0) && (
+            <motion.div {...rise(1)} className="flex items-center justify-center" style={{ gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+              {timeControl && chip(<>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</>)}
+              {moveCount > 0 && chip(tx("{0}수", moveCount))}
+            </motion.div>
+          )}
+          <motion.div {...rise(2)}>
+            {/* (리디자인, 사용자 요청) 리뷰 버튼은 리뷰 기능을 상징하는 연두색(T.best)·별 아이콘 — 이 버튼이 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도 알 수 있게 한다. */}
+            {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.25), 0 8px 16px -10px rgba(44,90,41,.9)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0}대국 리뷰 보기", <Star size={15} fill="#fff" color="#fff" />)}</button>}
+            <div className="flex gap-2">
+              {/* (사용자 요청) 봇 대국은 누르면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게 제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
+                  상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서 제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
+              <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.14)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
+                {mode !== "pvp" ? t("재대결") : rematchOfferedByMe ? t("상대 응답 기다리는 중…") : rematchOfferedByOpp ? t("재대결 수락") : t("재대결 신청")}
+              </button>
+              <button onClick={onClose} className="press" style={{ flex: 1, padding: "11px 0", borderRadius: 12, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("닫기")}</button>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>VS</span>
-            <div style={{ textAlign: "center", minWidth: 0 }}>
-              {myPhoto ? <img src={myPhoto} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover", border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }} />
-                : <span style={{ width: 46, height: 46, borderRadius: 12, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, border: "2px solid " + (copy.kind === "win" ? T.best : "#C9B58C") }}>{(myName || "U")[0].toUpperCase()}</span>}
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, marginTop: 5, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName || "Unnamed"}</div>
-            </div>
-          </div>
-          {timeControl && <div style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>{timeControl.label}{timeControl.cat ? ", " + tcCatLabel(timeControl.cat) : ""}</div>}
-          {/* (리디자인, 사용자 요청) 예전엔 재대결·닫기 아래 버튼들과 마찬가지로 금색(T.brass) 계열이라,
-              "이 버튼을 누르면 다른 화면(리뷰)으로 넘어간다"는 신호가 색만 봐서는 드러나지 않았다 —
-              리뷰 기능 자체를 상징하는 색(T.best, "최선의 수" 등급에 쓰이는 연두색)과 흰색 별 아이콘을
-              그대로 가져와, 이 버튼이 대국 결과 팝업이 아니라 리뷰 기능으로 이어진다는 걸 색만으로도
-              알 수 있게 한다. 레이아웃(패딩·radius·굵기)은 아래 재대결/닫기 버튼과 동일하게 유지. */}
-          {onReview && <button onClick={onReview} className="press" style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.best + ",#2C5A29)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", marginBottom: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>{tx("{0}대국 리뷰 보기", <Star size={15} fill="#fff" color="#fff" />)}</button>}
-          <div className="flex gap-2">
-            {/* (사용자 요청) 봇 대국은 눌러면 곧장 같은 조건으로 재시작한다. 실시간 대국은 상대에게
-                제안을 보내야 하므로, 내가 이미 보내 응답을 기다리는 중이면 취소(재클릭으로 토글)로,
-                상대가 먼저 보내 뒀으면 "수락"으로 라벨이 바뀐다 — onRematch 하나가 서버 쪽에서
-                제안/수락을 함께 처리하므로(pvp_rematch_offer) 클릭 핸들러 자체는 항상 그대로다. */}
-            <button onClick={rematchOfferedByMe ? onClose : onRematch} className="press" disabled={rematchOfferedByMe} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + T.brass, background: rematchOfferedByMe ? "rgba(196,154,80,.05)" : "rgba(196,154,80,.12)", color: rematchOfferedByMe ? T.inkSoft : T.ink, fontWeight: 800, fontSize: 12.5, cursor: rematchOfferedByMe ? "default" : "pointer" }}>
-              {mode !== "pvp" ? t("재대결") : rematchOfferedByMe ? t("상대 응답 기다리는 중…") : rematchOfferedByOpp ? t("재대결 수락") : t("재대결 신청")}
-            </button>
-            <button onClick={onClose} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #C9B58C", background: "transparent", color: T.inkSoft, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("닫기")}</button>
-          </div>
+          </motion.div>
         </div>
       </motion.div>
     </div>
@@ -541,7 +568,7 @@ function FriendPvpRoster({ myUid, friendList, myInvite, onInvite, onOpenProfile,
                 </span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                  <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
+                  <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                 </span>
               </button>
               <button onClick={() => onInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>
@@ -568,7 +595,7 @@ const MG_GOLD = "#A97A2C";
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
 export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: Target, accent: T.brilliant, Component: CoordRaceGame },
+  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: CoordCrosshairIcon, accent: T.brilliant, Component: CoordRaceGame },
   { key: "knight-race", gameType: "knight", name: t("나이트 레이스"), desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
   // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
   { key: "rush-hour", gameType: "rush", name: t("백랭크 러시아워"), desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
@@ -838,15 +865,18 @@ function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceA
 // 띄운다(띠 왼쪽 절반을 a–g 파일 × 8–5랭크로 본다). 다섯 칸이 시차를 두고 돌아 늘 한두 개가 떠 있다.
 const MG_PINGS = [{ c: 2, r: 1 }, { c: 5, r: 0 }, { c: 1, r: 3 }, { c: 4, r: 2 }, { c: 5, r: 3 }];
 const MG_PING_MS = 4000;
-function MgCrosshair({ size }) {
+function MgCrosshair({ size, color = "#fff", flat }) {
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
-      <circle cx="12" cy="12" r="7" fill="none" stroke="#fff" strokeWidth="2.2" />
-      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="1.8" fill="#fff" />
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
+      <circle cx="12" cy="12" r="7" fill="none" stroke={color} strokeWidth="2.2" />
+      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="1.8" fill={color} />
     </svg>
   );
 }
+// (v0.7.1) 좌표 인지 게임의 얼굴 아이콘 — 허브 카드·게임 보드에서 쓰던 조준경 그대로. lucide 아이콘과 같은 규격(size·color)이라 PLAY_SPECIAL_GAMES의
+// Icon 자리(로비 배너·모드 행·프로필 전적)에 그대로 들어간다. 글자색(currentColor)을 따르고 그림자는 뺀다.
+function CoordCrosshairIcon({ size = 24, color = "currentColor" }) { return <MgCrosshair size={size} color={color} flat />; }
 function MgCoordPings({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   return (
@@ -1589,7 +1619,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
         </>)}
       </motion.div>
       {/* (v0.5.4) 실시간 대전 결과 — 랜덤 매칭이면 레이팅 변화, 친구 도전이면 친선전 안내. */}
-      {rating && rating.unrated && <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>{t("친선전: 전적만 기록, 레이팅 변동 없음")}</div>}
+      {rating && rating.unrated && <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.65)", marginBottom: 12 }}>{t("친선전: 전적만 기록, 레이팅 변동 없음")}</div>}
       {rating && !rating.unrated && <MinigameRatingChange rating={rating} />}
       {rounds && rounds.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14, maxWidth: 380 }}>
@@ -1598,7 +1628,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
             return (
               <motion.div key={i} initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.25 + i * 0.04 }}
                 title={r.detail || ""}
-                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 10.5, fontWeight: 800, color: T.ink }}>
+                style={{ minWidth: 34, padding: "4px 6px", borderRadius: 8, background: c + "33", border: "1px solid " + c, fontSize: 11.5, fontWeight: 800, color: T.ink }}>
                 <div style={{ opacity: 0.7 }}>{r.label || i + 1}</div>
                 {r.detail && <div style={{ fontSize: 9.5, opacity: 0.85, marginTop: 1 }}>{r.detail}</div>}
               </motion.div>
@@ -1612,7 +1642,7 @@ function MinigameResult({ outcome, myScore, oppScore, oppLabel, rounds, stats, n
             <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.06 }}
               style={{ padding: "8px 6px", borderRadius: 10, background: "rgba(255,255,255,.55)", border: "1px solid rgba(150,112,58,.35)" }}>
               <div style={{ fontSize: 16, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: "rgba(90,58,34,.70)", marginTop: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginTop: 2 }}>{s.label}</div>
             </motion.div>
           ))}
         </div>
@@ -1682,7 +1712,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
       {sub && <div style={{ fontSize: 11, color: "rgba(90,58,34,.70)", marginBottom: 10 }}>{sub}</div>}
       <div style={{ width: "100%", maxWidth: 360, display: "grid", gap: 6, marginBottom: 12 }}>
         {!solo && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 1fr", gap: 6, fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.65)" }}>
             <span>{t("나")}</span><span /><span>{oppLabel}</span>
           </div>
         )}
@@ -1690,7 +1720,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
           <motion.div key={r.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.07 }}
             style={{ display: "grid", gridTemplateColumns: solo ? "72px 1fr" : "1fr 72px 1fr", gap: 6, alignItems: "stretch" }}>
             {!solo && <div style={cellStyle(r.win === "me")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{r.label}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{r.label}</div>
             {solo ? <div style={cellStyle(false)}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.me}</div></div>
               : <div style={cellStyle(r.win === "opp")}><div style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{r.opp}</div></div>}
           </motion.div>
@@ -1701,7 +1731,7 @@ function MinigameRoundSettle({ roundNo, roundTotal, result, myScore, oppScore, o
         <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,.55)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: (100 * left / ROUND_SETTLE_MS) + "%", background: "linear-gradient(90deg,#A8842F," + T.brassHi + ")", transition: "width .1s linear" }} />
         </div>
-        <div style={{ fontSize: 10.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{tx("{0}까지 {1}초", nextLabel, Math.ceil(left / 1000))}</div>
+        <div style={{ fontSize: 11.5, color: "rgba(90,58,34,.65)", marginTop: 5 }}>{tx("{0}까지 {1}초", nextLabel, Math.ceil(left / 1000))}</div>
       </div>
       {onNext && <button onClick={onNext} className="press" style={{ padding: "10px 26px", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{nextLabel}</button>}
     </div>
@@ -2084,9 +2114,9 @@ function MinigameStatsBar({ myUid, game, row, onOpenRanking }) {
   const placed = row && row.rated_games >= MINIGAME_PLACEMENT;
   const cell = (label, value, sub, first) => (
     <div style={{ minWidth: 0, flex: 1, padding: "2px 6px", textAlign: "center", borderLeft: first ? "none" : "1px solid " + MG_LOBBY_LINE }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)", marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.6)", marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.55)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(90,58,34,.55)", marginTop: 3, minHeight: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub || ""}</div>
     </div>
   );
   return (
@@ -2148,7 +2178,7 @@ function MinigameRankRow({ r, game, kind, onOpenProfile, index }) {
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
           {r.is_me && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 900, padding: "1px 5px", borderRadius: 999, background: T.brassHi, color: "#241509" }}>{t("나")}</span>}
         </span>
-        {sub && <span style={{ display: "block", fontSize: 10, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
+        {sub && <span style={{ display: "block", fontSize: 11, color: "rgba(90,58,34,.60)", marginTop: 1 }}>{sub}</span>}
       </span>
       <span style={{ flexShrink: 0, fontSize: 14, fontWeight: 900, color: r.rank <= 3 ? MG_GOLD : T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </motion.button>
@@ -2197,7 +2227,7 @@ function MinigameLeaderboard({ game: initialGame, myUid, onOpenProfile }) {
           </>)}
         </div>
       )}
-      {kind === "rating" && <p style={{ fontSize: 10, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>{t("레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록")}</p>}
+      {kind === "rating" && <p style={{ fontSize: 11, color: "rgba(90,58,34,.55)", textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>{t("레이팅은 랜덤 매칭에서만 변동. 친구 도전은 전적만 기록")}</p>}
     </div>
   );
 }
@@ -2216,7 +2246,7 @@ function MinigameRatingChange({ rating }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
       style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(255,255,255,.55)", border: "1px solid " + c, marginBottom: 14 }}>
-      <span style={{ fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{t("레이팅")}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.70)" }}>{t("레이팅")}</span>
       <span style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12.5, fontWeight: 900, color: c, fontVariantNumeric: "tabular-nums" }}>{Arrow && <Arrow size={14} />}{diff > 0 ? "+" + diff : diff}</span>
     </motion.div>
@@ -2279,14 +2309,32 @@ const MG_LOBBY_CSS = ".mg-row{transition:border-color .15s ease,background .15s 
 function MgLobbyLabel({ children }) {
   return <div style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.6)", letterSpacing: ".02em", margin: "0 2px 8px" }}>{children}</div>;
 }
-function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable }) {
+// (v0.7.1 디자인) 로비 맨 위 배너 — 네 게임이 똑같은 목록처럼 보이던 로비에 게임마다의 얼굴(고유 색·아이콘·한 줄 설명)을 준다.
+// 설명 문구는 플레이 탭 카드와 같은 PLAY_SPECIAL_GAMES의 desc를 그대로 쓴다(새 문구 없음).
+function MinigameHero({ spec }) {
+  if (!spec) return null;
+  const { Icon, accent, desc } = spec;
+  return (
+    <div style={{ position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 14, padding: "15px 16px", borderRadius: 16,
+      background: "linear-gradient(135deg," + T.ebony3 + "," + T.ebony2 + ")", border: "1px solid rgba(236,203,134,.38)", boxShadow: "inset 0 1px 0 rgba(255,246,222,.08), 0 12px 26px -14px rgba(36,21,9,.75)" }}>
+      <span aria-hidden="true" style={{ position: "absolute", left: -34, top: -44, width: 150, height: 150, borderRadius: "50%", background: "radial-gradient(circle," + accent + "66 0%," + accent + "00 70%)", pointerEvents: "none" }} />
+      <span aria-hidden="true" style={{ position: "absolute", right: -14, bottom: -18, width: 128, height: 96, opacity: 0.1, pointerEvents: "none", transform: "rotate(-10deg)",
+        backgroundImage: "conic-gradient(#FFF6DE 25%, transparent 0 50%, #FFF6DE 0 75%, transparent 0)", backgroundSize: "32px 32px",
+        WebkitMaskImage: "linear-gradient(90deg, transparent, #000 70%)", maskImage: "linear-gradient(90deg, transparent, #000 70%)" }} />
+      <span style={{ position: "relative", width: 50, height: 50, borderRadius: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff",
+        background: "linear-gradient(150deg," + accent + "," + accent + "B3)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -6px " + accent }}><Icon size={24} strokeWidth={2.2} /></span>
+      <p style={{ position: "relative", margin: 0, minWidth: 0, wordBreak: "keep-all", fontSize: 12.5, fontWeight: 700, lineHeight: 1.55, color: "rgba(255,246,222,.88)" }}>{desc}</p>
+    </div>
+  );
+}
+function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, expandable, accent }) {
   return (
     <button onClick={onClick} disabled={disabled} className={"press mg-row" + (primary ? " primary" : "")} aria-expanded={expandable ? !!open : undefined}
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 14px 11px 11px", textAlign: "left", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1,
         ...MG_LOBBY_CARD_STYLE, ...(primary ? { background: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "1px solid rgba(120,84,30,.5)" } : null),
         ...(open ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderColor: "rgba(169,122,44,.55)" } : null) }}>
       <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
-        background: primary ? "rgba(36,21,9,.14)" : "rgba(196,154,80,.15)", color: primary ? "#241509" : MG_GOLD }}><Icon size={19} /></span>
+        background: primary ? "rgba(36,21,9,.14)" : accent ? accent + "26" : "rgba(196,154,80,.15)", color: primary ? "#241509" : accent || MG_GOLD }}><Icon size={19} /></span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: primary ? "#241509" : T.ink, lineHeight: 1.25 }}>{label}</span>
         {sub && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: primary ? "rgba(36,21,9,.7)" : "rgba(90,58,34,.6)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span>}
@@ -2295,27 +2343,31 @@ function MinigameModeRow({ Icon, label, sub, onClick, disabled, primary, open, e
     </button>
   );
 }
-function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar }) {
+// 로비 섹션이 위에서부터 차례로 살짝 올라오며 나타난다(transform 문자열만 — 합성기에서 처리).
+const mgRise = (i) => ({ initial: { opacity: 0, transform: "translateY(10px)" }, animate: { opacity: 1, transform: "translateY(0px)" }, transition: { duration: 0.34, delay: i * 0.06, ease: [0.22, 0.8, 0.3, 1] } });
+function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRandom, err, roster, footer, statsBar, spec }) {
   const [pickBot, setPickBot] = useState(false);
   const botOpen = pickBot && !!botOptions;
+  const accent = spec ? spec.accent : null;
   return (
     <div style={{ width: "100%", maxWidth: 520, margin: "0 auto", padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 20 }}>
       <style>{MG_LOBBY_CSS}</style>
-      {statsBar}
-      <div>
+      {spec && <motion.div {...mgRise(0)}><MinigameHero spec={spec} /></motion.div>}
+      <motion.div {...mgRise(1)}>{statsBar}</motion.div>
+      <motion.div {...mgRise(2)}>
         <MgLobbyLabel>{t("플레이 모드")}</MgLobbyLabel>
         {err && <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 2px 8px" }}>{err}</p>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <MinigameModeRow Icon={User} label={t("혼자 플레이하기")} sub={soloSub} onClick={onSolo} />
+          <MinigameModeRow Icon={User} label={t("혼자 플레이하기")} sub={soloSub} onClick={onSolo} accent={accent} />
           <div>
-            <MinigameModeRow Icon={Cpu} label={t("봇과 플레이하기")} sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} />
+            <MinigameModeRow Icon={Cpu} label={t("봇과 플레이하기")} sub={botSub} expandable={!!botOptions} open={botOpen} onClick={() => (botOptions ? setPickBot((v) => !v) : onBot(null))} accent={accent} />
             <AnimatePresence initial={false}>
               {botOpen && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(" + botOptions.length + ",minmax(0,1fr))", gap: 6, padding: 8, borderRadius: "0 0 14px 14px", border: "1px solid rgba(169,122,44,.55)", borderTop: "none", background: "rgba(255,255,255,.45)" }}>
                     {botOptions.map((b) => (
                       <button key={b.key} onClick={() => onBot(b)} className="press mg-row" style={{ padding: "9px 0", borderRadius: 10, border: "1px solid " + MG_LOBBY_LINE, background: MG_LOBBY_CARD, color: T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-                        {b.label}{b.sub && <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(90,58,34,.6)", marginTop: 2 }}>{b.sub}</div>}
+                        {b.label}{b.sub && <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(90,58,34,.6)", marginTop: 2 }}>{b.sub}</div>}
                       </button>
                     ))}
                   </div>
@@ -2325,7 +2377,7 @@ function MinigameLobby({ myUid, soloSub, botSub, botOptions, onSolo, onBot, onRa
           </div>
           <MinigameModeRow Icon={Shuffle} label={t("랜덤 매칭")} sub={myUid ? t("실시간 대전 상대 찾기") : t("로그인 후 이용 가능")} onClick={onRandom} disabled={!myUid} primary />
         </div>
-      </div>
+      </motion.div>
       {roster}
       {footer}
     </div>
@@ -2451,7 +2503,7 @@ function MgPvpRematch({ pvp }) {
       <button onClick={onClick} disabled={busy} className="press" style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid " + T.brass, background: theirs ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(196,154,80,.14)", color: theirs ? "#241509" : T.ink, fontWeight: 800, fontSize: 12.5, cursor: busy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
         {mine ? <PendingDots size={9} /> : <RotateCcw size={14} />}{label}
       </button>
-      {note && <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{note}</span>}
+      {note && <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.7)" }}>{note}</span>}
     </div>
   );
 }
@@ -2498,6 +2550,7 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   if (inLobby) body = (
     <MinigameLobby footer={footer} myUid={myUid} soloSub={soloSub} botSub={botSub} botOptions={botOptions}
       statsBar={<MinigameStatsBar myUid={myUid} game={gameType} row={myStats} onOpenRanking={() => start({ kind: "rank" })} />}
+      spec={PLAY_SPECIAL_GAMES.find((g) => g.gameType === gameType)}
       onSolo={() => start({ kind: "solo" })} onBot={(opt) => start({ kind: "bot", opt })} onRandom={m.join} err={m.err || m.inviteErr}
       roster={<FriendPvpRoster lobby myUid={myUid} friendList={m.friendList} myInvite={m.myInvite} onInvite={m.sendInvite} onOpenProfile={onOpenProfile} />} />
   );
@@ -2649,7 +2702,7 @@ function CoordSoloBoard({ onExit, onStatusChange, onRematch, level = COORD_SOLO_
         </motion.div>
       </div>
       <CoordTargetLabel targetSq={started ? target : null} roundIdx={n} />
-      <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
+      <div className="flex items-center justify-center" style={{ gap: 6, fontSize: 11.5, color: "rgba(90,58,34,.65)", flexShrink: 0 }}>
         <span style={{ fontWeight: 800, color: level.ink }}>{tx("난이도 {0}", level.label)}</span><CoordMultChip level={level} size={10.5} />
         <span>· {loadMinigameBest("coord") == null ? t("첫 기록 도전") : t("최고 기록 {0}점", loadMinigameBest("coord"))}</span>
       </div>
@@ -4223,7 +4276,7 @@ function attackDecide(me, opp, myRating, oppRating) {
 }
 function AttackLedger({ tally, label }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "rgba(90,58,34,.75)", fontWeight: 700 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(90,58,34,.75)", fontWeight: 700 }}>
       <span style={{ minWidth: 24 }}>{label}</span>
       {ATTACK_GRADES.map((gi) => (
         <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><AttackGradeBadge grade={gi.g} /><b style={{ color: T.ink, fontVariantNumeric: "tabular-nums" }}>{tally[gi.g]}</b></span>
@@ -4256,7 +4309,7 @@ function AttackOppStatus({ st }) {
     text = t("체크메이트 수순을 찾는 중");
   }
   return (
-    <span aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 10.5, fontWeight: win ? 900 : 700, color }}>
+    <span aria-live="polite" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11.5, fontWeight: win ? 900 : 700, color }}>
       <span key={st.s + ":" + (st.left ?? st.n ?? "")} style={{ display: "inline-flex", flexShrink: 0 }}>{icon}</span>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
     </span>
@@ -4322,7 +4375,7 @@ function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }
     ts.push(setTimeout(() => doneRef.current && doneRef.current(), 900 + (lastRow + 1) * ATTACK_TB_STEP_MS + 2400));
     return () => ts.forEach(clearTimeout);
   }, [lastRow]);
-  const rows = ATTACK_TB_ORDER.map((g, i) => ({ i, key: g, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}><AttackGradeBadge grade={g} /><span style={{ fontSize: 10 }}>{attackGradeInfo(g).label}</span></span>, me: me[g], opp: opp[g], hide: decisive >= 0 && i > decisive }));
+  const rows = ATTACK_TB_ORDER.map((g, i) => ({ i, key: g, label: <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}><AttackGradeBadge grade={g} /><span style={{ fontSize: 11 }}>{attackGradeInfo(g).label}</span></span>, me: me[g], opp: opp[g], hide: decisive >= 0 && i > decisive }));
   if (decisive < 0) rows.push({ i: 4, key: "rating", label: <span style={{ fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.8)" }}>{t("레이팅")}</span>, me: myRating, opp: oppRating, hide: false });
   const color = verdict.winner === "me" ? MG_GOLD : verdict.winner === "opp" ? T.blunder : "#9C8563";
   const cell = (hl, dim) => ({ padding: "9px 6px", borderRadius: 10, background: hl ? "rgba(236,203,134,.22)" : "rgba(255,255,255,.55)", border: "1px solid " + (hl ? T.brassHi : "rgba(150,112,58,.35)"), boxShadow: hl ? "0 0 14px rgba(232,196,110,.45)" : "none", textAlign: "center", opacity: dim ? 0.45 : 1, transition: "all .25s ease" });
@@ -4343,7 +4396,7 @@ function AttackTiebreakSettle({ me, opp, myRating, oppRating, oppLabel, onDone }
               <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "me", win === "opp")}>
                 <div style={{ fontSize: 17, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{shown ? r.me : "?"}</div>
               </motion.div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10.5, fontWeight: 800, color: "rgba(90,58,34,.72)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 11.5, fontWeight: 800, color: "rgba(90,58,34,.72)" }}>
                 {r.label}{shown && win === null && !r.hide && <span style={{ color: "rgba(90,58,34,.55)", fontSize: 14 }}>=</span>}
               </div>
               <motion.div animate={active ? { scale: [1, 1.08, 1] } : {}} transition={{ duration: 0.4 }} style={cell(win === "opp", win === "me")}>
@@ -4404,7 +4457,7 @@ function AttackArena({ startAt, endAt, current, pool, myTally, oppTally, oppLabe
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px 5px 6px", borderRadius: 12, background: "rgba(255,255,255,.6)", border: "1px solid " + attackGradeInfo(current.g).color }}>
                 <AttackGradeBadge grade={current.g} />
                 <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{tx("{0} 차례, {1}수 안에 메이트", pos.fen.split(" ")[1] === "w" ? t("백") : t("흑"), pos.mateIn)}</span>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(90,58,34,.6)" }}>#{current.n}</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -4664,7 +4717,7 @@ function AttackDevPanel({ pool, onChanged }) {
           {pool && pool.dev.length > 0 && (
             <div style={{ maxHeight: 160, overflowY: "auto", borderTop: "1px solid rgba(150,112,58,.35)", paddingTop: 6 }}>
               {pool.dev.map((p) => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "rgba(90,58,34,.85)", padding: "3px 0" }}>
                   <AttackGradeBadge grade={attackGradeOfMate(p.mateIn)} />
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{p.src}, {p.fen}</span>
                   <button onClick={() => remove(p)} className="press" aria-label={t("삭제")} style={{ background: "transparent", border: "none", color: T.blunder, cursor: "pointer" }}><Trash2 size={13} /></button>
@@ -4691,7 +4744,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       lobbyExtra={
         <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
           {ATTACK_GRADES.map((gi, i) => (
-            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? ", " + counts[i] : ""}</span>
+            <span key={gi.g} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "rgba(90,58,34,.80)" }}><AttackGradeBadge grade={gi.g} />{gi.label}{counts ? ", " + counts[i] : ""}</span>
           ))}
         </div>
       }
@@ -5383,13 +5436,13 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 14 }}>
                   {TIME_CONTROL_CATS.map((cat) => (
                     <div key={cat} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "nowrap", whiteSpace: "nowrap", minHeight: 20 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, flexWrap: "nowrap", whiteSpace: "nowrap", minHeight: 20 }}>
                         {tcCatLabel(cat)}
                         {/* (v0.6.3) 분류별 레이팅 — 미니게임 허브 버튼의 레이팅 칩과 같은 디자인, 배치 전이어도 항상 표시(기본 1200) */}
-                        <MgRatingChip style={{ fontSize: 10.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
+                        <MgRatingChip style={{ fontSize: 11.5 }}>{(chessAll["chess_" + TC_CAT_KEY[cat]] || { rating: 1200 }).rating}</MgRatingChip>
                       </div>
                       {TIME_CONTROLS.filter((t) => t.cat === cat).map((t) => (
-                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "7px 3px", borderRadius: 8, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 10.5, lineHeight: 1.25, cursor: "pointer" }}>
+                        <button key={t.key} onClick={() => setTimeControl(t)} className="press" style={{ padding: "11px 3px", borderRadius: 10, border: "1px solid " + (timeControl.key === t.key ? T.brass : "#C9B58C"), background: timeControl.key === t.key ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: timeControl.key === t.key ? "#241509" : T.ink, fontWeight: 800, fontSize: 11.5, lineHeight: 1.25, cursor: "pointer" }}>
                           {t.label}
                         </button>
                       ))}
@@ -5438,7 +5491,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
                             <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.pub.nickname || f.username}</span>
-                            <span style={{ display: "block", fontSize: 10, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
+                            <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{presenceLabel(f.lastSeenMs) || t("오프라인")}</span>
                           </span>
                         </button>
                         <button onClick={() => sendFriendInvite(f)} disabled={!!myInvite} className="press" style={{ flexShrink: 0, padding: "6px 13px", borderRadius: 8, border: "none", background: myInvite ? "rgba(196,154,80,.3)" : "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 11.5, cursor: myInvite ? "default" : "pointer" }}>{t("도전")}</button>
@@ -5454,17 +5507,18 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("진영 선택")}</div>
                 <div className="flex gap-2" style={{ marginBottom: 16 }}>
                   {[["w", t("백")], ["b", t("흑")], ["random", t("랜덤")]].map(([k, lb]) => (
-                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{lb}</button>
+                    <button key={k} onClick={() => setColorPick(k)} className="press" style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (colorPick === k ? T.brass : "#C9B58C"), background: colorPick === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: colorPick === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                      <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: "50%", flexShrink: 0, border: "1.5px solid " + (k === "w" ? "#BFAA80" : "#000"), background: k === "w" ? "#FFFDF7" : k === "b" ? "#2A1A0E" : "conic-gradient(#FFFDF7 0 50%, #2A1A0E 0)" }} />{lb}</button>
                   ))}
                 </div>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("상대할 봇 선택")}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 }}>
                   {PLAY_BOT_TIERS.map((t) => (
-                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", cursor: "pointer", textAlign: "left" }}>
-                      <span style={{ width: 32, height: 32, borderRadius: "50%", background: botTier.elo === t.elo ? T.brass : "#EDE1C6", color: botTier.elo === t.elo ? "#241509" : T.inkSoft, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Cpu size={16} /></span>
+                    <button key={t.elo} onClick={() => setBotTier(t)} className="press" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (botTier.elo === t.elo ? T.brass : "#C9B58C"), background: botTier.elo === t.elo ? "rgba(196,154,80,.14)" : "#fff", boxShadow: botTier.elo === t.elo ? "0 6px 14px -10px rgba(120,84,30,.8)" : "none", cursor: "pointer", textAlign: "left" }}>
+                      <span style={{ width: 36, height: 36, borderRadius: 11, background: tierGradientCss(PLAY_BOT_TIER_KEY[t.elo]), color: "rgba(36,21,9,.85)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: botTier.elo === t.elo ? "0 0 0 2px rgba(255,246,222,.9), 0 0 0 3.5px " + T.brass : "inset 0 1px 0 rgba(255,255,255,.35)", opacity: botTier.elo === t.elo ? 1 : 0.88 }}><Cpu size={17} /></span>
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13.5, color: T.ink }}>{t.label}</span>
-                        <span style={{ display: "block", fontSize: 11, color: T.inkSoft }}>{t.desc}</span>
+                        <span style={{ display: "block", fontFamily: SITE_FONT, fontWeight: 800, fontSize: 15, color: T.ink, lineHeight: 1.2 }}>{t.label}</span>
+                        <span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, marginTop: 1 }}>{t.desc}</span>
                       </span>
                       {botTier.elo === t.elo && <Check size={16} color={T.brass} />}
                     </button>
@@ -5534,7 +5588,7 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
             <AnimatePresence>
               {resultModalOpen && result && (
                 <PlayResultModal result={result} activeColor={activeColor} mode={mode} botTier={botTier} opponentPub={opponentPub}
-                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null}
+                  myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null} moveCount={Math.ceil(sans.length / 2)}
                   onClose={() => setResultModalOpen(false)}
                   onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
                   onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />

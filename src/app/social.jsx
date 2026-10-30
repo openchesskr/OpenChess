@@ -1,16 +1,19 @@
 // (v0.6.0, App.jsx 분할) 'social' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { SB_ON, sbInsert, sbRpc, sbSelect, SB_URL, sbHeaders, sbUpsert, sbClient } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
-import { sanSrc, stripSuffix, startBoard, boardFromSans, sansToFen, MAX_SEARCH_DEPTH, fenOfRoot, pvUciToSans, parseFenFull, looksLikeFen, gameEndState, drawKindLabel, applySan, moveNumber } from "../lib/chessRules.js";
+import { sanSrc, stripSuffix, startBoard, boardFromSans, sansToFen, MAX_SEARCH_DEPTH, fenOfRoot, pvUciToSans, parseFenFull, looksLikeFen, gameEndState, drawKindLabel, applySan, moveNumber, plyIsWhite } from "../lib/chessRules.js";
 import { T, MOTION_EASE } from "../lib/theme.js";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User } from "lucide-react";
+import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User, FileText, ChevronRight, Minus, Plus, Globe } from "lucide-react";
 import { chesscomChangeDaysLeft } from "../lib/chesscom.js";
-import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
+import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatQuizAnswersFetch, chatQuizAnswer, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
-import { ReportSheet, UserSafetyMenu, ChatHeaderActions, ChatSearchPanel, CHAT_MENU_W, ChatMsgMenu, PollCard, CoboCard, ReactionChips, ReplyQuote, chessSnippetOf, ChessSnippetCard, ChatCommandPalette, ChatHelpCard, ReplyBar, AttachButton, ChatAttachMenu, chatSnippet, PositionPickSheet, CoBoardScreen } from "../components/chatPlus.jsx";
+import { makeRoulette } from "../lib/openingRoulette.js";
+import { QuizCard, QuizComposeSheet, RouletteCard, RouletteComposeSheet } from "../components/chatCards.jsx";
+import { ReportSheet, UserSafetyMenu, ChatHeaderActions, ChatSearchPanel, CHAT_MENU_W, ChatMsgMenu, PollCard, CoboCard, ReactionChips, ReplyQuote, chessSnippetOf, ChessSnippetCard, ChatCommandPalette, ChatHelpCard, ReplyBar, AttachButton, ChatAttachMenu, chatSnippet, CoBoardScreen } from "../components/chatPlus.jsx";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { deriveBlindGame, parseChatCommand, blindMoveToken, chatCommandSuggestions, CHAT_COMMANDS as CHAT_CMD_LIST, chatCommandAvailable } from "../lib/chatCommands.js";
 import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "../lib/pgn.js";
@@ -18,7 +21,7 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { Board, CONTENT, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, CONTENT, SNAP, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -1008,12 +1011,13 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
   // ---- (v0.5.7 기능, 사용자 요청 "채팅을 실제 SNS 수준으로") 채팅 강화 — src/components/chatPlus.jsx·src/lib/chatApi.js ----
   const [reactions, setReactions] = useState({});   // messageId -> [{uid, emoji}]
   const [pollVotes, setPollVotes] = useState({});   // messageId -> [{uid, san}]
+  const [quizAnswers, setQuizAnswers] = useState({}); // (v0.7.1) messageId -> [{uid, san}] — 퀴즈 답
   const [replyTo, setReplyTo] = useState(null);     // 답장할 메시지
   const [searchOpen, setSearchOpen] = useState(false);
   const [reportFor, setReportFor] = useState(null); // { msg } | { msg: null } — 신고 시트
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
-  const [pickSheet, setPickSheet] = useState(null); // "poll" | "cobo" | null
+  const [pickSheet, setPickSheet] = useState(null); // "quiz" | "roulette" | null (v0.7.1: 예전 "poll"·"cobo"는 +메뉴에서 뺐다)
   const [coboMsg, setCoboMsg] = useState(null);     // 열려 있는 같이 보기 보드
   const [hasOlder, setHasOlder] = useState(false);  // 서버에 더 이전 메시지가 있는지
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -1145,7 +1149,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
         keys.forEach((k) => {
           const [fu, slot] = k.split("|");
           const pub = (profiles[fu] && profiles[fu].pub) || {};
-          const entry = pub.legacies && pub.legacies[slot];
+          const entry = normalizeLegacyEntry(pub.legacies && pub.legacies[slot]);   // (BUG-130) 상대가 써 넣은 값 — 검증 후에만 표시
           const typeInfo = LEGACY_TYPES.find((t) => t.key === legacyBaseKey(slot));
           n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
         });
@@ -1276,14 +1280,16 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
   const replyTargetOf = (id) => msgs.find((x) => x.id === id) || replyCache[id] || null;
   // (v0.5.7) 반응·투표 — 보이는 메시지의 것을 모아 받는다. 상대가 새로 단 것은 Realtime(상대 uid 필터)으로, 내 것은 바로 로컬 반영.
   const pollIdsKey = msgs.filter((m) => m.poll).map((m) => m.id).join(",");
+  const quizIdsKey = msgs.filter((m) => m.quiz).map((m) => m.id).join(",");
   const loadReactions = useCallback(async () => {
     const ids = msgs.map((m) => m.id);
-    const [rx, pv] = await Promise.all([chatReactionsFetch(ids), chatPollVotesFetch(msgs.filter((m) => m.poll).map((m) => m.id))]);
-    setReactions(rx); setPollVotes(pv);
-  }, [msgIdsKey, pollIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const [rx, pv, qa] = await Promise.all([chatReactionsFetch(ids), chatPollVotesFetch(msgs.filter((m) => m.poll).map((m) => m.id)), chatQuizAnswersFetch(msgs.filter((m) => m.quiz).map((m) => m.id))]);
+    setReactions(rx); setPollVotes(pv); setQuizAnswers(qa);
+  }, [msgIdsKey, pollIdsKey, quizIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (msgs.length) loadReactions(); }, [loadReactions]); // eslint-disable-line react-hooks/exhaustive-deps
   useRealtimeTable("chat_reactions", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
   useRealtimeTable("chat_poll_votes", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
+  useRealtimeTable("chat_quiz_answers", otherUid ? "uid=eq." + otherUid : null, () => loadReactions(), !!(myUid && otherUid), 0);
   const toggleReaction = async (m, emoji, on) => {
     setMenuFor(null);
     setReactions((prev) => {
@@ -1292,6 +1298,12 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
     });
     const ok = await chatReactToggle(m.id, myUid, emoji, on);
     if (!ok) { showNotice(t("반응 등록 실패")); loadReactions(); }
+  };
+  // (v0.7.1) 퀴즈 답 — 한 번만 낼 수 있다(서버가 수정·삭제를 막는다). 먼저 화면에 반영하고, 실패하면 다시 불러와 되돌린다.
+  const answerQuiz = async (m, san) => {
+    setQuizAnswers((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((a) => a.uid !== myUid), { uid: myUid, san }] }));
+    const ok = await chatQuizAnswer(m.id, myUid, san);
+    if (!ok) { showNotice(t("답 전송 실패")); loadReactions(); }
   };
   const castVote = async (m, san) => {
     setPollVotes((prev) => ({ ...prev, [m.id]: [...(prev[m.id] || []).filter((v) => v.uid !== myUid), { uid: myUid, san }] }));
@@ -1326,6 +1338,22 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
       const sign = root.turn === "w" ? 1 : -1;
       const evalTxt = top.mate != null ? "#" + (top.mate * sign > 0 ? "" : "-") + Math.abs(top.mate) : ((top.cp * sign) / 100 > 0 ? "+" : "") + ((top.cp * sign) / 100).toFixed(2);
       return san ? { san, evalTxt } : null;
+    } catch { return null; }
+  }, [engine]);
+  // (v0.7.1) 퀴즈 만들기 — 앱의 분석 엔진으로 그 포지션의 상위 후보 수(MultiPV 8, 최대 약 4.5초)를 받아 [{ san, cp|mate }](둘 차례 기준)로 돌려준다.
+  const engineMulti = useCallback(async (root) => {
+    if (!engine || engine.status !== "ready") return null;
+    try {
+      const pool = await getAnalysisPool(engine.profile, engine.urls);
+      const w = poolWorker(pool, 0, engine);
+      const pvs = await w.evaluateMulti(fenOfRoot(root, []), MAX_SEARCH_DEPTH, 8, 4500, () => {}, "chat-quiz");
+      const out = [];
+      for (const pv of pvs || []) {
+        if (!pv || !pv.pv || !pv.pv.length || (pv.cp == null && pv.mate == null)) continue;
+        const san = pvUciToSans([], pv.pv, 1, root)[0];
+        if (san) out.push(pv.mate != null ? { san, mate: pv.mate } : { san, cp: pv.cp });
+      }
+      return out;
     } catch { return null; }
   }, [engine]);
   // (v0.1.4 기능) 실시간 타이핑 표시 — DB에 쓰지 않는 Supabase Realtime broadcast 채널을 대화 상대와
@@ -1485,12 +1513,14 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           catch (e) { setCmdError(inviteFailText(e, t("대국"))); }
           setSending(false); return;
         }
-        case "poll": case "board": {
-          // FEN을 비우면 포지션 고르기 창(+ 메뉴와 같은 창)을 연다.
-          if (!cmd.fen) { setText(""); setPickSheet(cmd.name === "poll" ? "poll" : "cobo"); return; }
-          if (!parseFenFull(cmd.fen)) { setCmdError(t("FEN을 읽을 수 없어요. 사용법: {0}", cmd.name === "poll" ? "/poll [FEN]" : "/board [FEN]")); return; }
+        case "quiz": setText(""); setPickSheet("quiz"); return;
+        case "roulette": {
+          // 수를 비우면 고르는 창(+ 메뉴와 같은 창), 수가 있으면 바로 뽑아 보낸다.
           setText("");
-          await sendSpecial(cmd.name === "poll" ? { poll: { fen: cmd.fen } } : { cobo: { fen: cmd.fen, sans: [] } });
+          if (cmd.ply == null) { setPickSheet("roulette"); return; }
+          const r = makeRoulette(SNAP.tree, cmd.ply);
+          if (!r) { setCmdError(t("이 길이의 오프닝이 도감에 없음")); return; }
+          await sendSpecial({ roulette: r });
           return;
         }
         default: break;
@@ -1937,7 +1967,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           }
           // (v0.5.7 기능) 수 투표·같이 보기 카드 — 다른 공유 카드처럼 보낸 사람 쪽으로 정렬한다. 꾹 누르기/오른쪽 클릭 메뉴는 반응·답장·삭제·신고.
           // 카드 안(보드)은 자기 조작을 위해 mousedown/touchstart를 막으므로, 꾹 누르기 타이머는 캡처 단계에서 건다.
-          if (m.poll || m.cobo) {
+          if (m.poll || m.cobo || m.quiz || m.roulette) {
             const showAvatarC = !mine && (i === 0 || msgs[i - 1].from_uid !== m.from_uid);
             const openMenuC = (el) => openMsgMenu(m.id, el, mine, CHAT_MENU_W, 190);
             const cancelPress = () => clearTimeout(longPressTimerRef.current);
@@ -1961,9 +1991,13 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
                         onDelete={mine ? () => doDelete(m) : null}
                         onReport={!mine ? () => { setMenuFor(null); setReportFor({ msg: m }); } : null} />
                     )}
-                    {m.poll
-                      ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
-                      : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
+                    {m.quiz
+                      ? <QuizCard Board={Board} msg={m} answers={quizAnswers[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onAnswer={(san) => answerQuiz(m, san)} />
+                      : m.roulette
+                        ? <RouletteCard msg={m} onOpen={(sans) => onOpenBoardSans && onOpenBoardSans(sans)} />
+                        : m.poll
+                          ? <PollCard Board={Board} msg={m} votes={pollVotes[m.id]} myUid={myUid} nameOf={nameOf} mine={mine} onVote={(san) => castVote(m, san)} engineBest={engine ? engineBest : null} />
+                          : <CoboCard msg={m} mine={mine} otherName={otherUsername} onJoin={() => setCoboMsg(m)} />}
                   </div>
                 </div>
               </React.Fragment>
@@ -2168,7 +2202,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
         <div className="flex items-center gap-2" style={{ position: "relative" }}>
           {/* (v0.5.7) "+" — 수 투표·같이 보기 보드 */}
           <AttachButton open={attachOpen} onClick={() => setAttachOpen((v) => !v)} />
-          {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onPoll={() => { setAttachOpen(false); setPickSheet("poll"); }} onCobo={() => { setAttachOpen(false); setPickSheet("cobo"); }} />}
+          {attachOpen && <ChatAttachMenu onClose={() => setAttachOpen(false)} onQuiz={() => { setAttachOpen(false); setPickSheet("quiz"); }} onRoulette={() => { setAttachOpen(false); setPickSheet("roulette"); }} />}
           <button ref={pickerAnchorRef} onClick={togglePicker} className="press" aria-label={t("이모티콘")} style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: pickerOpen ? T.brass : "#fff", color: pickerOpen ? "#241509" : T.inkSoft, border: "1px solid #C9B58C", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Smile size={17} /></button>
           <input value={text} onChange={onTextChange} onKeyDown={onInputKeyDown} placeholder={editingId != null ? t("수정할 내용 입력…") : t("메시지 입력…")} style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
           <button onClick={() => send(text.trim(), null)} disabled={!text.trim() || sending} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: text.trim() ? "pointer" : "default", opacity: text.trim() ? 1 : 0.5, fontSize: 12 }}>{editingId != null ? t("수정") : t("전송")}</button>
@@ -2178,8 +2212,8 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
       {/* (v0.5.7) 신고·포지션 고르기(투표/같이 보기)·같이 보기 화면 */}
       <AnimatePresence>
         {reportFor && <ReportSheet key="report" targetName={otherUsername} snippet={reportFor.msg ? chatSnippet(reportFor.msg) : null} alreadyBlocked={blockedByMe} onSubmit={submitReport} onClose={() => setReportFor(null)} />}
-        {pickSheet && <PositionPickSheet key="pick" Board={Board} title={pickSheet === "poll" ? t("\"여기서 뭐 둘래?\" 투표 만들기") : t("같이 보기 보드 시작")} cta={pickSheet === "poll" ? t("이 포지션으로 투표 보내기") : t("이 포지션으로 같이 보기")}
-          onClose={() => setPickSheet(null)} onSend={(fen) => sendSpecial(pickSheet === "poll" ? { poll: { fen } } : { cobo: { fen, sans: [] } })} />}
+        {pickSheet === "quiz" && <QuizComposeSheet key="quiz" Board={Board} analyze={engine ? engineMulti : null} onClose={() => setPickSheet(null)} onSend={(quiz) => sendSpecial({ quiz })} />}
+        {pickSheet === "roulette" && <RouletteComposeSheet key="roulette" tree={SNAP.tree} onClose={() => setPickSheet(null)} onSend={(roulette) => sendSpecial({ roulette })} />}
         {coboMsg && <CoBoardScreen key="cobo" Board={Board} sbClient={sbClient} msg={coboMsg} myUid={myUid} myName={myUsername} otherName={otherUsername} onClose={() => setCoboMsg(null)}
           onOpenAnalysis={(root, sans) => { setCoboMsg(null); const fen = fenOfRoot(root, sans); if (root || !sans.length) { onOpenBoardFen && onOpenBoardFen(fen); } else { onOpenBoardSans && onOpenBoardSans(sans); } }} />}
       </AnimatePresence>
@@ -2290,128 +2324,202 @@ function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, usernam
   // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴 — 이 창은 chess.com 대국
   // 선택 시 AccountChessStats(필터·대국 목록)까지 펼쳐지므로 좁은 화면에서 특히 필요했다.
   const narrow = useNarrow(640);
-  // (사용자 요청) 이번 버전에 새로 만든 퍼즐 만들기 마법사와 레이아웃·디자인을 통일한다 — 어두운
-  // 바탕 위에 단계마다 번호가 붙은 밝은 박스(T.paper 카드)를 얹는 형태로, 창 배경도 다른 전체 화면
-  // 마법사들과 같은 어두운 라디얼 그라데이션으로 바꾼다.
-  const stepNo = step === "source" || step === "paste" ? 1 : step === "analyzing" ? 1 : step === "pick" ? 2 : 3;
+  // (v0.7.1 개편, 사용자 요청) 더 세련된 마법사 — 유산 블록과 같은 어보니·브래스 재질의 창 위에 3단계 진행 표시줄을 두고, 단계마다
+  // 바뀌는 버튼은 아래 고정 줄로 모은다. 후보 수는 목록 대신 "그 수를 둔 직후 포지션" 미니 보드 격자로, 재생 범위는 선택 박스 대신
+  // −/+ 조절과 실제 재생될 수순 타임라인으로 보여 준다. 분석·저장 로직은 그대로다.
+  const stepNo = step === "pick" ? 2 : step === "count" ? 3 : 1;
+  const accent = QCOLOR[typeInfo.kind];
+  const flip = side === "b";
+  const candidates = useMemo(() => (sans ? qualifying.map((m) => ({ m, entry: { sans, moveIndex: m.ply, side } })) : []), [sans, result, side]);
+  const choose = (ply) => { setMoveIndex(ply); setPlayCount(Math.min(5, Math.max(1, sans.length - ply))); setBeforeCount(Math.min(3, ply)); setStep("count"); };
+  const panel = { background: "rgba(255,248,232,.035)", border: "1px solid rgba(196,154,80,.26)", borderRadius: 14, padding: 14 };
+  const ghostBtn = { padding: "10px 16px", borderRadius: 11, border: "1px solid rgba(196,154,80,.45)", background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 12.5, cursor: "pointer" };
+  const primaryBtn = { flex: 1, padding: "10px 16px", borderRadius: 11, border: "none", background: "linear-gradient(180deg,#E6C27C,#B98B3F)", color: "#241509", fontWeight: 900, fontSize: 13, cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -8px rgba(230,194,124,.8)" };
+  const STEPS = [t("대국 선택"), t("수 선택"), t("재생 범위")];
+  const rangeStart = moveIndex != null ? moveIndex - Math.min(beforeCount, maxBeforeCount) : 0;
+  const rangeEnd = moveIndex != null ? moveIndex + Math.min(playCount, maxPlayCount) - 1 : 0;
+  const footer = step === "paste" ? (
+    <><button onClick={() => setStep("source")} className="press" style={ghostBtn}>{t("뒤로")}</button><button onClick={loadPgnText} className="press" style={primaryBtn}>{t("불러오기")}</button></>
+  ) : step === "pick" ? (
+    <button onClick={() => setStep("source")} className="press" style={{ ...ghostBtn, flex: 1 }}>{t("다른 대국 선택")}</button>
+  ) : step === "count" ? (
+    <><button onClick={() => setStep("pick")} className="press" style={ghostBtn}>{t("뒤로")}</button><button onClick={save} className="press" style={primaryBtn}>{t("저장")}</button></>
+  ) : step === "analyzing" && analyzeErr ? (
+    <button onClick={() => setStep("source")} className="press" style={{ ...ghostBtn, flex: 1 }}>{t("뒤로")}</button>
+  ) : null;
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,.12)", flexShrink: 0 }}>
-          <div className="flex items-center gap-2"><Gem size={17} style={{ color: QCOLOR[typeInfo.kind] }} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{tx("유산, {0}", typeInfo.short)}</span></div>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
-        {(step === "source" || step === "paste") && (
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 대국 선택", stepNo)}</div>
-        {step === "source" && (
-          <div>
-            <p style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 12 }}>{tx("이 유산에 새길 대국 선택. {0}은 \"{1}\" 등급의 수만 지정 가능", typeInfo.label, QLABEL[typeInfo.kind])}</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button onClick={() => setStep("paste")} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: "transparent", color: T.ink, fontWeight: 800, fontSize: 13, cursor: "pointer", textAlign: "left" }}>{t("PGN 직접 입력")}</button>
-              <button onClick={() => setShowChesscomStats((v) => !v)} disabled={!chesscomReady} className="press" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid " + T.brass, background: showChesscomStats ? "rgba(196,154,80,.14)" : "transparent", color: chesscomReady ? T.ink : T.inkSoft, fontWeight: 800, fontSize: 13, cursor: chesscomReady ? "pointer" : "default", opacity: chesscomReady ? 1 : 0.5, textAlign: "left" }}>{tx("chess.com 대국에서 선택{0}", !chesscomReady ? t(" (설정에서 chess.com 계정 연동 시 이용 가능)") : "")}</button>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.66)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 480, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(760px, 88vh)", display: "flex", flexDirection: "column",
+        background: "radial-gradient(140% 90% at 50% -20%, " + accent + "26 0%, rgba(0,0,0,0) 55%), radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)",
+        borderRadius: narrow ? 0 : 18, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 24px 60px -14px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06)", overflow: "hidden", color: T.ivory }}>
+        {/* 머리: 등급 배지 + 유산 이름 + 진행 표시줄 */}
+        <div style={{ padding: "16px 16px 12px", flexShrink: 0 }}>
+          <div className="flex items-center justify-between" style={{ gap: 10 }}>
+            <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
+              <span aria-hidden="true" style={{ display: "inline-flex", filter: "drop-shadow(0 0 10px " + accent + "88)" }}>{badgeIcon(typeInfo.kind, 30)}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em", color: accent }}>{QLABEL[typeInfo.kind]}</div>
+                <div style={{ fontFamily: LEGACY_FONT, fontSize: 16, fontWeight: 900, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{typeInfo.label}</div>
+              </div>
             </div>
-            {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에
-                펼친다 — 각 대국 줄의 검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. */}
+            <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.35)", color: T.ivory, border: "1px solid rgba(196,154,80,.35)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+          </div>
+          <div aria-label={STEPS[stepNo - 1]} style={{ display: "flex", alignItems: "flex-start", marginTop: 14 }}>
+            {STEPS.map((lab, i) => {
+              const n = i + 1, done = n < stepNo, cur = n === stepNo;
+              return (
+                <React.Fragment key={lab}>
+                  {i > 0 && <span aria-hidden="true" style={{ flex: 1, height: 2, marginTop: 10, borderRadius: 2, background: n <= stepNo ? "linear-gradient(90deg," + accent + "," + accent + "aa)" : "rgba(196,154,80,.2)", transition: "background .3s" }} />}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 64, flexShrink: 0 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, boxSizing: "border-box",
+                      background: done ? accent : cur ? "rgba(0,0,0,.4)" : "transparent", color: done ? "#fff" : cur ? accent : "rgba(242,232,210,.4)",
+                      border: "1.5px solid " + (done || cur ? accent : "rgba(196,154,80,.3)"), boxShadow: cur ? "0 0 0 4px " + accent + "26" : "none", transition: "all .25s" }}>{done ? <Check size={12} strokeWidth={3} /> : n}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: cur ? 800 : 600, color: cur ? T.ivoryHi : "rgba(242,232,210,.5)", textAlign: "center", lineHeight: 1.2 }}>{lab}</span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(196,154,80,.4), transparent)", flexShrink: 0 }} />
+        <motion.div key={step} initial={{ opacity: 0, transform: "translateY(8px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} transition={{ duration: 0.22, ease: MOTION_EASE }}
+          style={{ padding: 16, flex: "1 1 auto", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        {step === "source" && (
+          <>
+            <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "rgba(242,232,210,.75)", margin: 0 }}>{tx("이 유산에 새길 대국 선택. {0}은 \"{1}\" 등급의 수만 지정 가능", typeInfo.label, QLABEL[typeInfo.kind])}</p>
+            {[
+              { key: "pgn", icon: <FileText size={18} />, title: t("PGN 직접 입력"), desc: t("기보를 붙여넣고 플레이한 진영 선택"), on: true, active: false, onClick: () => setStep("paste") },
+              { key: "cc", icon: <Globe size={18} />, title: tx("chess.com 대국에서 선택{0}", ""), desc: chesscomReady ? t("최근 chess.com 대국 목록에서 바로 선택") : t("설정에서 chess.com 계정 연동 시 이용 가능"), on: chesscomReady, active: showChesscomStats, onClick: () => setShowChesscomStats((v) => !v) },
+            ].map((o) => (
+              <button key={o.key} onClick={o.on ? o.onClick : undefined} disabled={!o.on} aria-expanded={o.key === "cc" ? o.active : undefined} className="press"
+                style={{ ...panel, display: "flex", alignItems: "center", gap: 12, textAlign: "left", cursor: o.on ? "pointer" : "default", opacity: o.on ? 1 : 0.5, color: T.ivory,
+                  border: "1px solid " + (o.active ? accent : "rgba(196,154,80,.26)"), background: o.active ? accent + "14" : panel.background }}>
+                <span style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid rgba(196,154,80,.35)", color: T.brassHi }}>{o.icon}</span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ivoryHi }}>{o.title}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "rgba(242,232,210,.6)", marginTop: 2 }}>{o.desc}</span>
+                </span>
+                <ChevronRight size={16} style={{ flexShrink: 0, color: T.brass, transform: o.active ? "rotate(90deg)" : "none", transition: "transform .2s" }} />
+              </button>
+            ))}
+            {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에 펼친다 — 각 대국 줄의
+                검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. 그 UI는 밝은 종이 바탕 기준이라 종이 패널에 담는다. */}
             {showChesscomStats && chesscomReady && (
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #E4D5B6" }}>
+              <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 10, color: T.ink }}>
                 <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setSide(g.color); setStep("analyzing"); }} />
               </div>
             )}
-            {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "8px 0", width: "100%", borderRadius: 9, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("이 유산 삭제")}</button>}
-          </div>
+            {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 4, padding: "9px 0", width: "100%", borderRadius: 11, border: "1px solid rgba(229,115,115,.55)", background: "rgba(229,115,115,.06)", color: "#F2A3A3", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Trash2 size={13} />{t("이 유산 삭제")}</button>}
+          </>
         )}
         {step === "paste" && (
-          <div>
-            <textarea value={pgnText} onChange={(e) => setPgnText(e.target.value)} placeholder={t("PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)")} rows={7} style={{ width: "100%", boxSizing: "border-box", padding: 10, borderRadius: 9, border: "1px solid " + (pgnErr ? T.blunder : "#C9B58C"), fontFamily: SITE_FONT, fontSize: 12.5, resize: "vertical" }} />
-            {pgnErr && <div style={{ fontSize: 11.5, color: T.blunder, marginTop: 6 }}>{pgnErr}</div>}
+          <>
+            <textarea value={pgnText} onChange={(e) => { setPgnText(e.target.value); if (pgnErr) setPgnErr(""); }} placeholder={t("PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)")} rows={8} autoFocus
+              style={{ width: "100%", boxSizing: "border-box", padding: 12, borderRadius: 12, border: "1px solid " + (pgnErr ? T.blunder : "rgba(196,154,80,.4)"), background: "rgba(0,0,0,.38)", color: T.ivoryHi,
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, lineHeight: 1.55, resize: "vertical", outline: "none" }} />
+            {pgnErr && <div role="alert" style={{ fontSize: 11.5, color: "#F2A3A3", marginTop: -4 }}>{pgnErr}</div>}
             {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 5 }}>{t("플레이한 진영")}</div>
-              <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 7 }}>{t("플레이한 진영")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }} role="radiogroup" aria-label={t("플레이한 진영")}>
                 {[["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-                  <button key={k} type="button" onClick={() => setSide(k)} className="press" style={{ padding: "6px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: side === k ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: side === k ? T.ivoryHi : T.inkSoft }}>{lab}</button>
+                  <button key={k} type="button" role="radio" aria-checked={side === k} onClick={() => setSide(k)} className="press"
+                    style={{ ...panel, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", color: T.ivoryHi, fontSize: 13, fontWeight: 800,
+                      border: "1px solid " + (side === k ? accent : "rgba(196,154,80,.26)"), background: side === k ? accent + "18" : panel.background, boxShadow: side === k ? "0 0 0 3px " + accent + "22" : "none" }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", background: k === "w" ? "#C9A86E" : "#6E4B2A" }}><PieceGlyph type="K" color={k} size={24} pieceSkin="classic" /></span>
+                    {lab}
+                    {side === k && <Check size={14} style={{ marginLeft: "auto", color: accent }} />}
+                  </button>
                 ))}
               </div>
             </div>
-            <div className="flex gap-2" style={{ marginTop: 10 }}>
-              <button onClick={() => setStep("source")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
-              <button onClick={loadPgnText} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>{t("불러오기")}</button>
-            </div>
-          </div>
-        )}
-          </div>
+          </>
         )}
         {step === "analyzing" && (
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "24px 13px", textAlign: "center" }}>
-            <div style={{ fontSize: 12.5, color: T.inkSoft, marginBottom: 10 }}>{tx("대국을 분석하는 중이에요… ({0}", Math.round(progress * 100))}%)</div>
-            <div style={{ height: 8, borderRadius: 999, background: "#EEE2C6", overflow: "hidden", border: "1px solid #DCCBA8", maxWidth: 260, margin: "0 auto" }}>
-              <div style={{ width: (progress * 100) + "%", height: "100%", background: "linear-gradient(90deg,#8A6A2F," + T.brass + ")", transition: "width .3s ease" }} />
+          <div style={{ ...panel, display: "flex", flexDirection: "column", alignItems: "center", padding: "28px 14px", gap: 12 }}>
+            <div style={{ position: "relative", width: 92, height: 92 }}>
+              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(196,154,80,.18)" strokeWidth="6" />
+                <circle cx="46" cy="46" r="40" fill="none" stroke={accent} strokeWidth="6" strokeLinecap="round" strokeDasharray={2 * Math.PI * 40} strokeDashoffset={2 * Math.PI * 40 * (1 - progress)}
+                  transform="rotate(-90 46 46)" style={{ transition: "stroke-dashoffset .35s ease", filter: "drop-shadow(0 0 6px " + accent + "99)" }} />
+              </svg>
+              <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SITE_FONT, fontSize: 19, fontWeight: 900, color: T.ivoryHi }}>{Math.round(progress * 100)}%</span>
             </div>
-            {analyzeErr && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{t("분석 실패. 다시 시도")}</div>
-                <button onClick={() => setStep("source")} className="press" style={{ padding: "7px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
-              </div>
-            )}
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ivoryHi }}>{t("대국 분석 중")}</div>
+            <div className="flex items-center" style={{ gap: 6, fontSize: 11.5, color: "rgba(242,232,210,.65)" }}>
+              <span style={{ display: "inline-flex" }}>{badgeIcon(typeInfo.kind, 14)}</span>{tx("찾은 후보 {0}개", qualifying.length)}
+            </div>
+            {analyzeErr && <div role="alert" style={{ fontSize: 11.5, color: "#F2A3A3" }}>{t("분석 실패. 다시 시도")}</div>}
           </div>
         )}
         {step === "pick" && result && (
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 수 선택", stepNo)}</div>
-            {qualifying.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "16px 0" }}>{tx("이 대국에는 \"{0}\" 등급의 수 없음. 다른 대국 선택", QLABEL[typeInfo.kind])}</div>
-            ) : (
-              <>
-                <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 8 }}>"{tx("{0}\" 등급의 수 중 하나 선택", QLABEL[typeInfo.kind])}</p>
-                <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {qualifying.map((m) => (
-                    <MoveLongPressPreview key={m.ply} priorSans={sans.slice(0, m.ply)} san={m.san} kind={m.kind} flip={side === "b"}>
-                      <button onClick={() => { setMoveIndex(m.ply); setPlayCount(Math.min(5, Math.max(1, sans.length - m.ply))); setBeforeCount(Math.min(3, m.ply)); setStep("count"); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid " + QCOLOR[m.kind], background: "#fff", cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}>
-                        <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 14)}</span>
-                        <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 13, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
-                      </button>
-                    </MoveLongPressPreview>
-                  ))}
-                </div>
-              </>
-            )}
-            <button onClick={() => setStep("source")} className="press" style={{ marginTop: 12, padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("다른 대국 선택")}</button>
-          </div>
+          qualifying.length === 0 ? (
+            <div style={{ ...panel, fontSize: 12.5, color: "rgba(242,232,210,.75)", textAlign: "center", padding: "28px 14px" }}>{tx("이 대국에는 \"{0}\" 등급의 수 없음. 다른 대국 선택", QLABEL[typeInfo.kind])}</div>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: "rgba(242,232,210,.7)", margin: 0 }}>"{tx("{0}\" 등급의 수 중 하나 선택", QLABEL[typeInfo.kind])}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 10 }}>
+                {candidates.map(({ m, entry }) => (
+                  <button key={m.ply} onClick={() => choose(m.ply)} className="press" aria-label={moveNumber(m.ply) + m.san}
+                    style={{ position: "relative", padding: 6, borderRadius: 12, border: "1px solid " + accent + "66", background: "rgba(0,0,0,.3)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <LegacyMiniBoard entry={entry} color={accent} />
+                    <span className="flex items-center justify-center" style={{ gap: 5 }}>
+                      <span style={{ display: "inline-flex" }}>{badgeIcon(m.kind, 14)}</span>
+                      <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 12.5, color: T.ivoryHi }}>{moveNumber(m.ply)}{m.san}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )
         )}
         {step === "count" && moveIndex != null && sans && (
-          <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{tx("{0}. 재생 범위 설정", stepNo)}</div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
-            {/* (사용자 요청) 지정한 수 앞뒤로 몇 수 함께 보여줄지를 직접 입력이 아니라 1~7수 범위의
-                선택 박스로 고른다. */}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 6 }}>{t("이 수보다 몇 수 전부터 표시할지 선택")}</p>
-            {beforeOptions.length > 0 ? (
-              <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-                <select value={beforeCount} onChange={(e) => setBeforeCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
-                  {beforeOptions.map((n) => <option key={n} value={n}>{tx("{0}수", n)}</option>)}
-                </select>
-                <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("전부터")}</span>
+          <>
+            <div style={{ ...panel, display: "flex", gap: 14, alignItems: "center" }}>
+              <div style={{ width: 112, flexShrink: 0, padding: 4, borderRadius: 10, background: "rgba(0,0,0,.35)", border: "1px solid " + accent + "55" }}><LegacyMiniBoard entry={{ sans, moveIndex, side }} color={accent} /></div>
+              <div style={{ minWidth: 0 }}>
+                <span style={{ display: "inline-flex", filter: "drop-shadow(0 0 8px " + accent + "88)" }}>{badgeIcon(typeInfo.kind, 22)}</span>
+                <div style={{ fontFamily: LEGACY_FONT, fontSize: 19, fontWeight: 900, color: T.ivoryHi, marginTop: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
+                <div style={{ fontSize: 11.5, color: accent, fontWeight: 800, marginTop: 2 }}>{QLABEL[typeInfo.kind]}</div>
               </div>
-            ) : (
-              <p style={{ fontSize: 11, color: T.inkSoft, marginBottom: 12 }}>{t("이 수보다 앞선 수 없음")}</p>
-            )}
-            <p style={{ fontSize: 11.5, color: T.inkSoft, marginBottom: 10 }}>{t("이 수부터 몇 수까지 재생할지 선택")}</p>
-            <div className="flex items-center gap-2">
-              <select value={playCount} onChange={(e) => setPlayCount(parseInt(e.target.value, 10))} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #C9B58C", fontFamily: SITE_FONT, fontSize: 13, background: "#fff" }}>
-                {playOptions.map((n) => <option key={n} value={n}>{tx("{0}수", n)}</option>)}
-              </select>
-              <span style={{ fontSize: 11.5, color: T.inkSoft }}>{t("까지")}</span>
             </div>
-            <div className="flex gap-2" style={{ marginTop: 14 }}>
-              <button onClick={() => setStep("pick")} className="press" style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("뒤로")}</button>
-              <button onClick={save} className="press" style={{ flex: 1, padding: "8px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, fontSize: 12.5, border: "none", cursor: "pointer" }}>{t("저장")}</button>
+            {/* (사용자 요청) 앞뒤 수는 1~7수 범위 — 선택 박스 대신 −/+ 조절. 앞선 수가 없으면 앞 조절은 숨긴다. */}
+            <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 12 }}>
+              {beforeOptions.length > 0
+                ? <LegacyCountStepper label={t("이 수보다 몇 수 전부터 표시할지 선택")} value={beforeCount} min={1} max={beforeOptions.length} onChange={setBeforeCount} accent={accent} />
+                : <div style={{ fontSize: 11.5, color: "rgba(242,232,210,.6)" }}>{t("이 수보다 앞선 수 없음")}</div>}
+              <LegacyCountStepper label={t("이 수부터 몇 수까지 재생할지 선택")} value={playCount} min={1} max={playOptions.length} onChange={setPlayCount} accent={accent} />
+              {/* 실제로 재생될 수순 — 유산 수만 등급 색으로 */}
+              <div style={{ borderTop: "1px solid rgba(196,154,80,.2)", paddingTop: 10 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 7, letterSpacing: ".04em" }}>{tx("총 {0}수 재생", rangeEnd - rangeStart + 1)}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {sans.slice(rangeStart, rangeEnd + 1).map((s, k) => {
+                    const ply = rangeStart + k, hero = ply === moveIndex;
+                    return <span key={ply} style={{ padding: "3px 7px", borderRadius: 7, fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: hero ? 900 : 700,
+                      background: hero ? accent : "rgba(0,0,0,.3)", color: hero ? "#fff" : "rgba(242,232,210,.8)", border: "1px solid " + (hero ? accent : "rgba(196,154,80,.22)"), boxShadow: hero ? "0 0 10px " + accent + "77" : "none" }}>{(plyIsWhite(ply) || k === 0 ? moveNumber(ply) : "") + s}</span>;
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          </>
         )}
-        </div>
+        </motion.div>
+        {footer && <div className="flex" style={{ gap: 8, padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))", borderTop: "1px solid rgba(196,154,80,.22)", background: "rgba(10,6,3,.45)", flexShrink: 0 }}>{footer}</div>}
       </div>
+    </div>
+  );
+}
+// (v0.7.1) 유산 마법사의 재생 범위 조절 — 선택 박스 대신 −/+ 버튼과 큰 숫자. min~max 밖으로는 못 간다.
+function LegacyCountStepper({ label, value, min, max, onChange, accent }) {
+  const v = Math.max(min, Math.min(max, value));
+  const btn = (dis) => ({ width: 32, height: 32, borderRadius: 9, border: "1px solid " + (dis ? "rgba(196,154,80,.18)" : "rgba(196,154,80,.5)"), background: "rgba(0,0,0,.3)", color: dis ? "rgba(242,232,210,.3)" : T.ivoryHi,
+    cursor: dis ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 });
+  return (
+    <div className="flex items-center" style={{ gap: 10 }}>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "rgba(242,232,210,.8)", lineHeight: 1.4 }}>{label}</span>
+      <button type="button" onClick={() => onChange(v - 1)} disabled={v <= min} aria-label={t("줄이기")} className="press" style={btn(v <= min)}><Minus size={14} /></button>
+      <span aria-live="polite" style={{ minWidth: 44, textAlign: "center", fontFamily: SITE_FONT, fontWeight: 900, fontSize: 15, color: T.ivoryHi }}>{tx("{0}수", v)}<span style={{ display: "block", height: 2, marginTop: 2, borderRadius: 2, background: accent, opacity: 0.7 }} /></span>
+      <button type="button" onClick={() => onChange(v + 1)} disabled={v >= max} aria-label={t("늘리기")} className="press" style={btn(v >= max)}><Plus size={14} /></button>
     </div>
   );
 }
@@ -2783,7 +2891,7 @@ export function ChatsModal({ docked, onOpenChat, me, myUid, onClose, onOpenBoard
                         {muted && <BellOff size={10} style={{ color: T.inkSoft, flexShrink: 0 }} />}
                         <span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub.nickname || pub.displayId || pr.username}</span>
                       </span>
-                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? t("🎉 공유 보상 XP +{0}", m.share_reward.amount) : m.puzzle_no != null ? t("🧩 퍼즐 공유") : m.legacy_slot != null ? t("💎 유산 공유") : m.review_id != null ? t("📊 리뷰 공유") : m.pvp_invite_id != null ? t("⚔️ 실시간 대국 신청") : m.poll ? t("📊 \"여기서 뭐 둘래?\" 투표") : m.cobo ? t("👥 같이 보기 보드 초대") : m.emoji ? t("(이모티콘)") : (m.body || "")}</span>
+                      <span style={{ display: "block", fontSize: 11, color: unread > 0 ? T.ink : T.inkSoft, fontWeight: unread > 0 ? 800 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.share_reward ? t("🎉 공유 보상 XP +{0}", m.share_reward.amount) : m.puzzle_no != null ? t("🧩 퍼즐 공유") : m.legacy_slot != null ? t("💎 유산 공유") : m.review_id != null ? t("📊 리뷰 공유") : m.pvp_invite_id != null ? t("⚔️ 실시간 대국 신청") : m.poll ? t("📊 \"여기서 뭐 둘래?\" 투표") : m.cobo ? t("👥 같이 보기 보드 초대") : m.quiz ? t("🧠 최선의 수 퀴즈") : m.roulette ? t("🎰 오프닝 룰렛") : m.emoji ? t("(이모티콘)") : (m.body || "")}</span>
                     </span>
                     <span style={{ fontSize: 9.5, color: T.inkSoft, flexShrink: 0 }}>{relTime(m.created_at)}</span>
                     {/* (18차 보충 UX7) 상대별 안읽은 메시지 수를 빨간 원+흰 숫자로 표시 — 읽으면 사라진다 */}

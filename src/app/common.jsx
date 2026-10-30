@@ -2734,7 +2734,7 @@ export function SequenceBar({ sans, future = [], onJump, drawn, startColor, font
     dragRef.current = null;
   };
   const dragHandlers = { onPointerDown, onPointerMove, onPointerCancel: () => { dragRef.current = null; }, onClickCapture };
-  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .5 }}>{t("시작 위치")}</span></div>;
+  if (!all.length) return <div style={{ color: T.ivoryHi, fontWeight: 700, fontSize: 13.5, fontFamily: seqFont, letterSpacing: ".02em" }}><span style={{ opacity: .72 }}>{t("시작 위치")}</span></div>;
   if (!onJump) {
     const parts = []; all.slice(0, sans.length).forEach((san, i) => { if (plyIsWhite(i, startColor)) parts.push(plyMoveNum(i, startColor) + "." + san); else if (parts.length) parts[parts.length - 1] += " " + san; else parts.push(plyMoveNum(i, startColor) + "..." + san); });
     // (사용자 요청) 스테일메이트·3회 동형 반복을 별도 알림 박스로 띄우지 않고, 기보 표시 창 맨
@@ -3034,6 +3034,19 @@ export function Mascot({ name = "milku", emotion = "great", size = 44, style }) 
   const src = MASCOT_ART[name + "_" + emo] || "";
   if (src) return <img src={src} alt="" style={{ width: size, height: size, objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 2px 3px rgba(0,0,0,.35))", ...style }} />;
   return <MascotAvatar size={Math.round(size * 0.92)} name={name} />;
+}
+// (v0.7.1 디자인) 탭 상단 제목 — 퍼즐·학습·설정이 각자 다른 크기·여백으로 쓰던 제목을 한 곳으로 모은다. 제목 아래 짧은 브라스 막대가 탭의 시작점을
+// 알려 준다. lead는 제목 앞에 놓는 그림(퍼즐 탭의 마스코트). 새 문구가 없어 번역 추가는 필요 없다.
+export function PageTitle({ children, lead = null, style }) {
+  return (
+    <div className="flex items-center gap-2" style={{ margin: lead ? "0 0 6px" : "6px 0 14px", ...style }}>
+      {lead}
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em", color: T.ivoryHi, margin: 0 }}>{children}</h2>
+        <span aria-hidden="true" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
+      </div>
+    </div>
+  );
 }
 export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", stacked = false }) {
   const label = mascot === "kokoa" ? "KOKOA" : "MILKU";
@@ -5279,7 +5292,7 @@ function ChesscomTextLink({ children }) {
     document.addEventListener("visibilitychange", cancel);
     window.addEventListener("pagehide", cancel);
   };
-  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} style={{ color: "inherit", textDecoration: "underline" }}>{children}</a>;
+  return <a href={CHESSCOM_GET_APP_URL} data-prefer-app="1" onClick={onClick} className="hit" style={{ "--hy": "-12px", "--hx": "-6px", color: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}>{children}</a>;
 }
 export function questLabelNode(q) {
   const text = questLabel(q);
@@ -6463,7 +6476,8 @@ export function legacyMoveLabel(entry) {
 // 재질(어보니+브래스)을 쓰도록 버튼 자체의 스타일을 하나로 공유한다(사용자 요청: 추가 전후로 블록
 // 크기가 달라 보이던 문제).
 export const LEGACY_BLOCK_BTN_STYLE = {
-  width: "100%", aspectRatio: "1 / 1", borderRadius: 14, position: "relative", overflow: "hidden",
+  // (v0.7.1) 채워진 칸이 보드(정사각) + 아래 수 이름 띠를 담도록 세로로 조금 길게 — 빈 칸도 같은 비율.
+  width: "100%", aspectRatio: "5 / 6", boxSizing: "border-box", borderRadius: 14, position: "relative", overflow: "hidden",
   background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
   border: "1.5px solid " + T.brass,
   boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), inset 0 -12px 20px -14px rgba(0,0,0,.8), 0 4px 10px -4px rgba(0,0,0,.65)",
@@ -6489,28 +6503,84 @@ export const LEGACY_TILE_FLEX = "0 0 calc((100% - 16px) / 3)";
 // (v0.3.4 기능) size(px) — 프로필의 3칸 행(LEGACY_TILE_FLEX, 부모 폭에 비례)이 아니라 고정 픽셀
 // 크기로도 쓸 수 있게 한다. 채팅에 공유된 유산 카드가 프로필과 정확히 같은 디자인을 재사용하기
 // 위해 추가했다 — 채팅 말풍선처럼 3칸 행 맥락이 없는 곳에서는 flex-basis 대신 고정 폭이 필요하다.
+// (v0.7.1 기능, 사용자 요청) 유산 수를 둔 직후의 포지션 전체 — 사용자 진영이 아래로 오게 뒤집고, 유산 수의 출발·도착 칸을
+// 등급 색으로 칠한다. 칸 크기를 실제 폭에서 재야 기물(PieceGlyph, 숫자 size)이 칸에 맞는다.
+export function legacyEntryPosition(entry) {
+  if (!entry || !Array.isArray(entry.sans) || entry.sans[entry.moveIndex] == null) return null;
+  // 들어오는 곳에서 normalizeLegacyEntry로 거르지만(BUG-130), 미리보기 하나 때문에 화면 전체가 깨지지 않도록 여기서도 막는다.
+  try {
+    const before = boardFromSans(entry.sans.slice(0, entry.moveIndex));
+    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex) ? "w" : "b");
+    return { board: boardFromSans(entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
+  } catch { return null; }
+}
+export function LegacyMiniBoard({ entry, color }) {
+  const ref = useRef(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    setW(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => setW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const pos = useMemo(() => legacyEntryPosition(entry), [entry]);
+  if (!pos) return <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1" }} />;
+  const flip = (entry.side || "w") === "b";
+  const cell = w / 8;
+  const isMoveSq = (r, c) => (pos.from && pos.from[0] === r && pos.from[1] === c) || (pos.to && pos.to[0] === r && pos.to[1] === c);
+  return (
+    <div ref={ref} aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 7, overflow: "hidden",
+      boxShadow: "0 0 0 1px rgba(0,0,0,.7), inset 0 0 0 1px rgba(236,203,134,.12)" }}>
+      {Array.from({ length: 64 }, (_, k) => {
+        const vr = k >> 3, vc = k & 7;
+        const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
+        const p = pos.board[r][c];
+        const light = (vr + vc) % 2 === 0;
+        const hit = isMoveSq(r, c);
+        return (
+          <div key={k} style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+            background: light ? "#C9A86E" : "#6E4B2A" }}>
+            {hit && <span style={{ position: "absolute", inset: 0, background: color, opacity: pos.to && pos.to[0] === r && pos.to[1] === c ? 0.62 : 0.4 }} />}
+            {p && cell > 0 && <span style={{ position: "relative", display: "inline-flex" }}><PieceGlyph type={p.t} color={p.c} size={cell * 0.9} pieceSkin="classic" /></span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+const LEGACY_TILE_ICON_BTN = { position: "absolute", bottom: 5, zIndex: 2, width: 18, height: 18, borderRadius: 6, background: "rgba(14,9,5,.7)", color: T.brassHi, border: "1px solid rgba(196,154,80,.35)",
+  cursor: "pointer", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 };
 export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size, likeCount, isLiked, onToggleLike }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
-      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} style={LEGACY_BLOCK_BTN_STYLE}>
+      {/* (v0.7.1, 사용자 요청) 수 이름 대신 유산 수를 둔 직후의 포지션 전체를 보드로 보여 준다. 수 이름은 아래 띠에 작게. */}
+      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + legacyMoveLabel(entry)}
+        style={{ ...LEGACY_BLOCK_BTN_STYLE, padding: 5, gap: 0, justifyContent: "flex-start" }}>
         <LegacyBlockDecor />
-        <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 15, lineHeight: 1.15, color, textAlign: "center", wordBreak: "keep-all",
-          textShadow: "0 1px 0 rgba(0,0,0,.9), 0 -1px 0 rgba(255,255,255,.06), 0 0 9px " + color + "88" }}>{legacyMoveLabel(entry)}</span>
+        <div style={{ position: "relative", width: "100%", flexShrink: 0 }}><LegacyMiniBoard entry={entry} color={color} /></div>
+        {/* 아래 띠: 수 이름(등급 색). 좌우 끝은 편집·공유 버튼 자리라 비워 둔다. */}
+        <div style={{ position: "relative", flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "0 22px", boxSizing: "border-box" }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 11, lineHeight: 1, color,
+            textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{legacyMoveLabel(entry)}</span>
+        </div>
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
       <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
-      {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. */}
+      {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. 보드를 덜 가리도록 작은 알약으로. */}
       {onToggleLike && (
         <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label={t("유산 좋아요")} title={t("좋아요")} className="press"
-          style={{ position: "absolute", top: 4, left: 4, zIndex: 2, display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", borderRadius: 7, background: "rgba(0,0,0,.55)", color: isLiked ? T.brassHi : T.ivory, border: "1px solid #000", cursor: "pointer" }}>
-          <ThumbsUp size={11} fill={isLiked ? T.brassHi : "none"} />
-          <span style={{ fontSize: 10, fontWeight: 800 }}>{likeCount || 0}</span>
+          style={{ position: "absolute", top: 2, left: 2, zIndex: 2, display: "inline-flex", alignItems: "center", gap: 2, padding: "2px 5px", borderRadius: 999, background: "rgba(14,9,5,.78)", color: isLiked ? T.brassHi : T.ivory, border: "1px solid " + (isLiked ? T.brass : "rgba(0,0,0,.8)"), cursor: "pointer" }}>
+          <ThumbsUp size={9} fill={isLiked ? T.brassHi : "none"} />
+          <span style={{ fontSize: 9, fontWeight: 800, lineHeight: 1 }}>{likeCount || 0}</span>
         </button>
       )}
-      {/* (사용자 요청) 편집(펜) 아이콘은 좌하단으로, 공유(종이비행기) 아이콘은 우하단에 새로 추가. */}
-      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label={t("유산 편집")} title={t("편집")} className="press" style={{ position: "absolute", bottom: 4, left: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>✎</button>}
-      {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label={t("유산 공유")} title={t("공유")} className="press" style={{ position: "absolute", bottom: 4, right: 4, zIndex: 2, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.55)", color: T.brassHi, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Send size={11} /></button>}
+      {/* (사용자 요청) 편집(펜) 아이콘은 좌하단으로, 공유(종이비행기) 아이콘은 우하단 — 보드 아래 띠의 양 끝. */}
+      {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label={t("유산 편집")} title={t("편집")} className="press" style={{ ...LEGACY_TILE_ICON_BTN, left: 4 }}>✎</button>}
+      {onShare && <button onClick={(e) => { e.stopPropagation(); onShare(); }} aria-label={t("유산 공유")} title={t("공유")} className="press" style={{ ...LEGACY_TILE_ICON_BTN, right: 4 }}><Send size={10} /></button>}
     </div>
   );
 }

@@ -350,6 +350,19 @@ alter table public.chat_messages add column if not exists reply_to bigint refere
 alter table public.chat_messages add column if not exists poll jsonb;
 -- (v0.5.7) 같이 보기(공동 분석) 보드 초대 카드 — {fen, sans}. 보드 조작 자체는 DB 없이 Realtime broadcast로만 주고받는다.
 alter table public.chat_messages add column if not exists cobo jsonb;
+-- (v0.7.1 기능, 사용자 요청) 채팅 퀴즈 카드 — { fen, opts:[{san, cp|mate}], best }. 보낸 사람이 정한 포지션에서 최선의 수를 오지선다로 맞힌다. 답은 chat_quiz_answers에(아래 채팅 강화 절).
+alter table public.chat_messages add column if not exists quiz jsonb;
+-- (v0.7.1 기능, 사용자 요청) 오프닝 룰렛 카드 — { ply, name, eco, sans, reel }. 오프닝 도감에서 같은 ply의 오프닝을 뽑은 결과(릴 이름 목록은 두 사람 화면의 같은 연출용).
+alter table public.chat_messages add column if not exists roulette jsonb;
+-- 클라이언트가 직접 넣는 JSON이라 모양·크기를 서버에서도 막는다(터무니없이 큰 값으로 대화방·알림 목록을 무겁게 만들 수 없게).
+do $quizcheck$ begin
+  if not exists (select 1 from pg_constraint where conname = 'chat_messages_quiz_shape') then
+    alter table public.chat_messages add constraint chat_messages_quiz_shape check (quiz is null or (jsonb_typeof(quiz) = 'object' and octet_length(quiz::text) <= 2000));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'chat_messages_roulette_shape') then
+    alter table public.chat_messages add constraint chat_messages_roulette_shape check (roulette is null or (jsonb_typeof(roulette) = 'object' and octet_length(roulette::text) <= 4000));
+  end if;
+end $quizcheck$;
 create index if not exists idx_chat_messages_to_time on public.chat_messages(to_uid, created_at desc);
 alter table public.chat_messages enable row level security;
 drop policy if exists "chat select own" on public.chat_messages;
@@ -398,7 +411,7 @@ begin
     -- 서버에서도 이중으로 막는다).
     -- (v0.5.7) 투표·같이 보기 카드와 리뷰·대국 신청 카드도 텍스트로 고칠 수 없다.
     where id = p_id and from_uid = auth.uid() and puzzle_no is null and share_reward is null and legacy_slot is null
-      and review_id is null and pvp_invite_id is null and poll is null and cobo is null;
+      and review_id is null and pvp_invite_id is null and poll is null and cobo is null and quiz is null and roulette is null;
 end; $$;
 grant execute on function public.chat_edit_message(bigint, text) to authenticated;
 
@@ -3930,6 +3943,27 @@ create policy "poll votes insert" on public.chat_poll_votes for insert with chec
 create policy "poll votes update" on public.chat_poll_votes for update using (auth.uid() = uid)
   with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
 grant select, insert, update on public.chat_poll_votes to authenticated;
+
+-- (v0.7.1 기능, 사용자 요청) 퀴즈 답 — 퀴즈 카드(chat_messages.quiz) 하나에 받는 사람이 한 번만 답한다(한 번 낸 답은 바꿀 수 없다: update·delete 권한 없음).
+-- 보낸 사람은 자기 퀴즈에 답할 수 없고(받는 사람만), 두 사람 모두 읽을 수 있다(select 정책의 서브쿼리가 chat_messages RLS를 거치므로 참가자만).
+create table if not exists public.chat_quiz_answers (
+  message_id bigint not null references public.chat_messages(id) on delete cascade,
+  uid uuid not null references auth.users(id) on delete cascade,
+  san text not null check (char_length(san) between 2 and 10),
+  created_at timestamptz not null default now(),
+  primary key (message_id, uid)
+);
+alter table public.chat_quiz_answers enable row level security;
+drop policy if exists "quiz answers read" on public.chat_quiz_answers;
+drop policy if exists "quiz answers insert" on public.chat_quiz_answers;
+create policy "quiz answers read" on public.chat_quiz_answers for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "quiz answers insert" on public.chat_quiz_answers for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.quiz is not null and m.to_uid = auth.uid()));
+grant select, insert on public.chat_quiz_answers to authenticated;
+do $quizrt$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_quiz_answers') then
+    alter publication supabase_realtime add table public.chat_quiz_answers;
+  end if;
+end $quizrt$;
 
 -- 신고 — 신고 대상 메시지의 그 순간 본문을 서버가 복사해 둔다(나중에 지워져도 검토할 수 있게, 클라이언트가 본문을 위조할 수 없게).
 -- 신고한 사람은 자기 신고만 볼 수 있고, 검토는 대시보드(service role)에서 한다.

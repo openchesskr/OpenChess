@@ -72,9 +72,15 @@ isErr("/play 한 단어 모르는 이름은 조용히 보내지 않고 안내", 
   eq("/play 미니게임 목록 = PLAY_SPECIAL_GAMES", CHAT_PLAY_GAMES.map((g) => g.gameType).sort(), appTypes);
 }
 isErr("/play 빈 값", P("/play", IDLE));
-eq("/poll 비우면 고르기 창", P("/poll", IDLE), { name: "poll", fen: null });
-eq("/board FEN", P("/board " + FEN0, IDLE), { name: "board", fen: FEN0 });
-isErr("/board FEN 아님", P("/board hello", IDLE));
+eq("/quiz", P("/quiz", IDLE), { name: "quiz" });
+isErr("/quiz 뒤 군더더기", P("/quiz 1.e4", IDLE));
+eq("/roulette 비우면 고르는 창", P("/roulette", IDLE), { name: "roulette", ply: null });
+eq("/roulette 6", P("/roulette 6", IDLE), { name: "roulette", ply: 6 });
+eq("/roulette 19(상한)", P("/roulette 19", IDLE), { name: "roulette", ply: 19 });
+isErr("/roulette 0", P("/roulette 0", IDLE));
+isErr("/roulette 20(상한 초과)", P("/roulette 20", IDLE));
+isErr("/roulette 숫자 아님", P("/roulette abc", IDLE));
+eq("예전 /poll·/board는 명령어가 아니라 평범한 문장", [P("/poll", IDLE), P("/board " + FEN0, IDLE)], [null, null]);
 eq("/help", P("/help", IDLE), { name: "help" });
 isErr("/help 뒤 군더더기", P("/help me", IDLE));
 eq("/blind (대기 중)", P("/blind", IDLE), { name: "blind" });
@@ -89,9 +95,9 @@ for (const c of CHAT_COMMANDS) if (!c.usage || !c.desc || !c.group) fails.push("
 
 // ── 자동완성 ──
 eq("'/' 아님", S("hi", IDLE).mode, "none");
-eq("'/' 전체 목록(대기 중)", S("/", IDLE).items.map((c) => c.name), ["puzzle", "legacy", "review", "poll", "board", "play", "blind", "help"]);
-eq("'/' 전체 목록(대국 중)", S("/", ACTIVE).items.map((c) => c.name), ["puzzle", "legacy", "review", "poll", "board", "play", "resign", "draw", "eval", "help"]);
-eq("'/p' 좁히기", S("/p", IDLE).items.map((c) => c.name), ["puzzle", "poll", "play"]);
+eq("'/' 전체 목록(대기 중)", S("/", IDLE).items.map((c) => c.name), ["puzzle", "legacy", "review", "quiz", "roulette", "play", "blind", "help"]);
+eq("'/' 전체 목록(대국 중)", S("/", ACTIVE).items.map((c) => c.name), ["puzzle", "legacy", "review", "quiz", "roulette", "play", "resign", "draw", "eval", "help"]);
+eq("'/p' 좁히기", S("/p", IDLE).items.map((c) => c.name), ["puzzle", "play"]);
 eq("'/play' 정확히 일치", S("/play", IDLE).exact, true);
 eq("'/pla' 아직 일치 아님", S("/pla", IDLE).exact, false);
 eq("'/play ' 힌트", [S("/play ", IDLE).mode, S("/play ", IDLE).items.map((c) => c.name)], ["hint", ["play"]]);

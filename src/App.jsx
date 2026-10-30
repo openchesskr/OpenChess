@@ -5,7 +5,7 @@ import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
 import { SB_ON, sbRpc } from "./lib/supabaseClient.js";
 import { engineNeedsDownload, initDownloadedEngines } from "./lib/engineDownload.js";
 import { closeExternalBrowser, decideBackAction, exitApp, installNativeLinkGuard, isNativeApp, listenBackButton, listenDeepLinks, parseAuthFragment, parseDeepLink } from "./lib/nativeApp.js";
-import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref } from "./lib/prefs.js";
+import { loadBgmVolume, loadBgmPref, saveBgmPref, saveBgmVolume, loadSfxPref, loadSfxVolume, saveSfxPref, saveSfxVolume, playSfx, loadReviewSpeedPref, saveReviewSpeedPref, loadReviewVolatilityPref, saveReviewVolatilityPref, loadQuickReviewPref, saveQuickReviewPref, QUICK_REVIEW_ENGINE } from "./lib/prefs.js";
 import { parseFenFull, sansToFen, stripSuffix } from "./lib/chessRules.js";
 import { loadCcSeen, saveCcSeen, latestEndTime, pendingCcGames, ccGameKey, recordAround, ratingDeltaOf } from "./lib/ccGameToast.js";
 import { BOARD_SKINS, PIECE_SKINS, T, MOTION_EASE } from "./lib/theme.js";
@@ -404,7 +404,12 @@ export default function App() {
   const setEnginePref = useCallback((v) => { if (engineNeedsDownload(v)) return; setEnginePrefState(v); saveEnginePref(v); }, []);
   // (v0.6.3) 앱: 이미 내려받은 큰 엔진을 연결하고, 저장해 둔 엔진 선택을 되살린다(웹은 즉시 끝나 아무 일도 안 함).
   useEffect(() => { let off = false; initDownloadedEngines(ENGINE_PROFILES).then(() => { if (!off) setEnginePrefState(loadEnginePref()); }).catch(() => { }); return () => { off = true; }; }, []);
-  const engine = useEngine(enginePref);
+  // (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜져 있는 동안은 엔진을 Stockfish 18 Lite로 고정한다(설정 탭 엔진 목록도 잠긴다). 사용자가 고른 엔진(enginePref)은
+  // 그대로 저장돼 있어 끄면 원래 엔진으로 돌아간다. 리뷰 depth 15 고정·진입 연출 생략은 ReviewPage가 quick prop으로 처리한다.
+  const [quickReview, setQuickReviewState] = useState(loadQuickReviewPref);
+  const setQuickReview = useCallback((v) => { setQuickReviewState(v); saveQuickReviewPref(v); }, []);
+  const activeEnginePref = quickReview ? QUICK_REVIEW_ENGINE : enginePref;
+  const engine = useEngine(activeEnginePref);
   // (v0.5.9 BUG-038) 분석 탭 후보 블록·FEN 모드·도감처럼 엔진을 직접 들고 있지 않은 동기 채점이 요청하는 희생 엔진 확인은 공용 분석
   // 풀의 마지막 워커로 돌린다(메인 엔진은 실시간 분석 큐가 길 수 있어 피한다). 풀을 못 띄우면 메인 엔진으로.
   useEffect(() => {
@@ -471,14 +476,14 @@ export default function App() {
   // 리뷰 링크로 곧장 들어오는 경우에도 대비). requestIdleCallback이 없는 환경(사파리 등)은 넉넉한
   // setTimeout으로 대체한다. 초기 페이지 렌더링·분석 엔진 부팅과 경합하지 않도록 우선순위를 가장 낮춰 둔다.
   useEffect(() => {
-    const boot = () => { const p = ENGINE_PROFILES[enginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
+    const boot = () => { const p = ENGINE_PROFILES[activeEnginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
     if (typeof window.requestIdleCallback === "function") {
       const id = window.requestIdleCallback(boot, { timeout: 8000 });
       return () => window.cancelIdleCallback(id);
     }
     const id = setTimeout(boot, 3000);
     return () => clearTimeout(id);
-  }, [enginePref]);
+  }, [activeEnginePref]);
 
   useEffect(() => { loadContent().then(() => setContentVer((v) => v + 1)); }, []);
   // (v0.5.7 성능) 마스코트 이미지는 더 이상 번들에 없으므로, 첫 화면이 뜬 뒤 유휴 시간에 미리 받아 둔다(모달에서 빈칸으로 깜박이지 않게).
@@ -1629,7 +1634,7 @@ export default function App() {
           <a href={isNativeApp() ? "/" : "https://openchess.kr"} style={{ display: "block" }}>
             <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: tinyHeader ? 24 : narrowHeader ? 30 : 46, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))", cursor: "pointer" }} />
           </a>
-          <a href="/about" style={{ fontSize: 8.5, fontWeight: 700, color: T.brassHi, opacity: .8, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
+          <a href="/about" className="hit" style={{ "--hy": "-6px", "--hx": "-12px", fontSize: 9.5, fontWeight: 700, color: T.brassHi, opacity: .85, letterSpacing: ".02em", textAlign: "right", textDecoration: "none", marginTop: -3, cursor: "pointer" }}>v{APP_VERSION}</a>
         </div>
         <div className="flex items-center" style={{ gap: tinyHeader ? 3 : narrowHeader ? 6 : 12, minWidth: 0 }}>
           {/* (18차 UI8) 티어 UI — 티어명과 XP 게이지가 항상 하나의 배지로 붙어 있다(compact에서도 게이지 유지).
@@ -1648,13 +1653,13 @@ export default function App() {
               않는다(이제 자식에 height를 따로 지정하지 않는다). 어느 브라우저에서도 border는 항상
               같은 방식으로 그려지므로 이 문제가 구조적으로 재발하지 않는다. */}
           <div className="flex" style={{ height: narrowHeader ? 27 : 34, borderRadius: 9, border: "1px solid " + T.brass, boxSizing: "border-box", alignItems: "stretch", overflow: "visible", flexShrink: 0 }}>
-            <button onClick={() => { if (dock.enabled) dock.open({ id: "search", type: "search" }); else { setSearchOpen(true); pushScreen("search"); } }} aria-label={t("유저 검색")} className="press" style={{ width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
-            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "friends", type: "friends" }); else { setFriendsOpen(true); pushScreen("friends"); } }} aria-label={t("친구")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { if (dock.enabled) dock.open({ id: "search", type: "search" }); else { setSearchOpen(true); pushScreen("search"); } }} aria-label={t("유저 검색")} className="press hit" style={{ "--hy": "-9px", "--hx": user ? "0px" : "-4px", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: user ? "8px 0 0 8px" : 8, borderRight: user ? "1px solid rgba(196,154,80,.4)" : "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Search size={narrowHeader ? 13 : 16} /></button>
+            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "friends", type: "friends" }); else { setFriendsOpen(true); pushScreen("friends"); } }} aria-label={t("친구")} className="press hit" style={{ "--hy": "-9px", "--hx": "0px", position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRight: "1px solid rgba(196,154,80,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <Users size={narrowHeader ? 13 : 16} />
               {pendingFriendCount > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{pendingFriendCount > 9 ? "9+" : pendingFriendCount}</span>}
             </button>}
             {/* (18차 UX7) 채팅 모아보기 버튼 — 세그먼트의 마지막 자리 */}
-            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "chats", type: "chats" }); else { setChatsOpen(true); pushScreen("chats"); } }} aria-label={t("채팅")} className="press" style={{ position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            {user && <button onClick={() => { if (dock.enabled) dock.open({ id: "chats", type: "chats" }); else { setChatsOpen(true); pushScreen("chats"); } }} aria-label={t("채팅")} className="press hit" style={{ "--hy": "-9px", "--hx": "0px", position: "relative", width: narrowHeader ? 27 : 34, background: T.ebony3, color: T.brassHi, border: "none", borderRadius: "0 8px 8px 0", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <MessageCircle size={narrowHeader ? 13 : 16} />
               {unreadChatTotal > 0 && <span style={{ position: "absolute", top: -6, right: -6, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 999, background: T.blunder, color: "#fff", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #000", lineHeight: 1, zIndex: 5 }}>{unreadChatTotal > 9 ? "9+" : unreadChatTotal}</span>}
             </button>}
@@ -1667,8 +1672,8 @@ export default function App() {
               likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
           ) : (
             <div className="flex items-center" style={{ gap: narrowHeader ? 5 : 10 }}>
-              <button onClick={() => openAuth("login")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{t("로그인")}</button>
-              <button onClick={() => openAuth("signup")} className="press" style={{ padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{t("회원가입")}</button>
+              <button onClick={() => openAuth("login")} className="press hit" style={{ "--hy": "-9px", "--hx": "-2px", padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "transparent", color: T.ivory, border: "1px solid " + T.brass, fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{t("로그인")}</button>
+              <button onClick={() => openAuth("signup")} className="press hit" style={{ "--hy": "-9px", "--hx": "-2px", padding: narrowHeader ? "5px 8px" : "6px 12px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", fontSize: narrowHeader ? 11.5 : 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{t("회원가입")}</button>
             </div>
           )}
         </div>
@@ -1705,7 +1710,7 @@ export default function App() {
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} sharpOn={reviewSharpOn} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} sharpOn={reviewSharpOn} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={enterPvpGame} />}
       {user && <GlobalMinigameRematchBanner myUid={uid} onAccepted={enterPvpGame} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는
@@ -1738,6 +1743,7 @@ export default function App() {
           <AccountCenterModal
             myUid={uid}
             username={user}
+            chesscomUsername={profile.chesscom}
             onClose={() => { setAccountCenterOpen(false); popScreen("account-center"); }}
             onLogoutClick={() => { setAccountCenterOpen(false); popScreen("account-center"); setConfirmLogout(true); }}
             onAccountDeleted={() => { setAccountCenterOpen(false); popScreen("account-center"); logout(); }}
@@ -1865,7 +1871,7 @@ export default function App() {
             <PlayPage seed={playGame} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} />
           </div>
         )}
-        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={(v) => economyDevSet(v, null).then((e) => e && applyEconomy(e)).catch(() => { })} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={(v) => economyDevSet(null, v).then((e) => e && applyEconomy(e)).catch(() => { })} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
+        {tab === "set" && <SettingsTab key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} quickReview={quickReview} setQuickReview={setQuickReview} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={(v) => economyDevSet(v, null).then((e) => e && applyEconomy(e)).catch(() => { })} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={(v) => economyDevSet(null, v).then((e) => e && applyEconomy(e)).catch(() => { })} solvedCount={solved.size} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
       </main>
 
       {/* (버그 수정) 안드로이드 Chrome은 스크롤 중 주소창이 접히고 펼쳐지며 뷰포트 높이가 실시간으로

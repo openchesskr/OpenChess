@@ -1,7 +1,7 @@
 // (v0.5.7, 사용자 요청 "채팅 명령어 체계 정리") 채팅 명령어의 단일 출처 — 목록(자동완성·도움말)과 해석(ChatPanel의 send)이
 // 모두 이 표를 쓴다. scripts/check-chat-commands.mjs가 해석 결과를 검사한다.
 //
-// 문법: /명령어 [종류] [값] — 예) /puzzle 123456, /review pgn 1.e4 e5, /play 15+10, /poll, /board <FEN>
+// 문법: /명령어 [종류] [값] — 예) /puzzle 123456, /review pgn 1.e4 e5, /play 15+10, /quiz, /roulette 6
 // 예전 형식(/puzzle -num 123456, /review -recent·-PGN·-FEN)도 그대로 받는다(이미 익숙한 사용자를 위해).
 // 결과: null(명령어가 아님 — 평범한 텍스트로 보냄) | { name, ...인자 } | { error, usage }(명령어는 맞는데 형식이 틀림 — 보내지 않음)
 
@@ -39,8 +39,8 @@ export const CHAT_COMMANDS = [
   { name: "puzzle", usage: t("/puzzle <번호>"), desc: t("그 번호의 퍼즐 공유"), group: t("공유"), example: "/puzzle 123456" },
   { name: "legacy", usage: "/legacy <1~6>", desc: t("내 유산 공유 (1~3 기본 칸, 4~6 그랜드마스터 보너스 칸)"), group: t("공유"), example: "/legacy 1" },
   { name: "review", usage: t("/review recent | pgn <코드> | fen <코드>"), desc: t("최근 chess.com 대국이나 PGN·FEN 리뷰 공유"), group: t("공유"), example: "/review recent" },
-  { name: "poll", usage: "/poll [FEN]", desc: t("\"여기서 뭐 둘래?\" 수 투표 전송 (FEN을 비우면 포지션 선택 창)"), group: t("공유"), example: "/poll" },
-  { name: "board", usage: "/board [FEN]", desc: t("같이 보기 보드 열기. 한 보드를 둘이 함께 둠"), group: t("공유"), example: "/board" },
+  { name: "quiz", usage: "/quiz", desc: t("퀴즈 만들기: 입력한 PGN·FEN 포지션에서 최선의 수를 오지선다로 맞히기"), group: t("공유"), example: "/quiz" },
+  { name: "roulette", usage: t("/roulette [수]"), desc: t("정한 수까지의 오프닝을 도감에서 뽑는 룰렛 전송 (수를 비우면 고르는 창)"), group: t("공유"), example: "/roulette 6" },
   { name: "play", usage: t("/play <분>[+<초>] | <미니게임 이름>"), desc: t("상대에게 실시간 체스 대국이나 미니게임 대결 신청. 예: /play 10, /play 15+10, /play knight"), group: t("대국"), example: "/play 10",
     choices: [
       { value: "3", label: t("체스 3분") }, { value: "10", label: t("체스 10분") }, { value: "15+10", label: t("체스 15+10") },
@@ -63,8 +63,6 @@ export function chatCommandAvailable(c, ctx) {
 }
 
 const err = (name, msg) => ({ error: t("{0}사용법: {1}", (msg ? msg + " " : ""), BY_NAME[name].usage), usage: BY_NAME[name].usage, name });
-// FEN처럼 보이는지(여덟 줄 배치) — 실제 유효성은 호출부가 parseFenFull로 다시 확인한다.
-const FENISH = /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}(\s|$)/;
 
 export function parseChatCommand(body, ctx) {
   const s = (body || "").trim();
@@ -110,9 +108,12 @@ export function parseChatCommand(body, ctx) {
       if (/\s/.test(rest)) return null;
       return err(name, t("\"{0}\" 알 수 없는 이름. 미니게임: {1}.", rest, CHAT_PLAY_GAMES.map((g) => g.key + "(" + g.label + ")").join(", ")));
     }
-    case "poll": case "board": {
-      if (!rest) return { name, fen: null };
-      return FENISH.test(rest) ? { name, fen: rest } : err(name, t("FEN 형식 아님"));
+    case "quiz": return rest ? err(name, "") : { name };
+    case "roulette": {
+      // 수(ply) 1~19 — 오프닝 도감 트리가 20수 앞까지라 그 길이만 뽑을 수 있다(openingRoulette.js의 ROULETTE_MIN/MAX_PLY와 같은 값).
+      if (!rest) return { name, ply: null };
+      const n = /^\d{1,2}$/.test(rest) ? Number(rest) : 0;
+      return n >= 1 && n <= 19 ? { name, ply: n } : err(name, t("수는 1~19 사이로 입력."));
     }
     default:
       return null;

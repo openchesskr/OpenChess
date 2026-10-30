@@ -46,6 +46,10 @@ button, input, select, textarea { font-family: inherit; }
 
 .press { cursor: pointer; transition: transform .1s ease, opacity .1s ease; }
 .press:active { transform: scale(0.96); opacity: 0.88; }
+/* (v0.7.1) 보이는 크기는 그대로 두고 터치 영역만 넓힌다(권장 44px 안팎) — 작은 헤더 버튼용. 여백은 --hy(위아래)·--hx(좌우)로 조절.
+   이웃 버튼과 겹치지 않도록 간격이 좁은 쪽은 --hx를 0에 가깝게 준다. */
+.hit { position: relative; }
+.hit::after { content: ""; position: absolute; inset: var(--hy, -8px) var(--hx, -4px); }
 
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 

@@ -12,7 +12,7 @@ import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
 import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
-import { playMoveSfx } from "../lib/prefs.js";
+import { playMoveSfx, reviewDepthFor } from "../lib/prefs.js";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
@@ -1567,7 +1567,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
 }
 // (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
-export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn }) {
+export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, sharpOn }) {
   // (v0.3.9 기능) 사용자 요청 — "더 정확하게"를 고르면 depth 상한을 20→25로 올린다(movetime은
   // 그대로 — 상한이 높아진 만큼 예전엔 depth 20에서 일찍 멈추던 쉬운 포지션들도 남은 시간을 더 써서
   // depth 25까지 파고들게 되므로, 그 자체로 이미 "더 오래 걸리지만 더 정확한" 리뷰가 된다).
@@ -1577,14 +1577,16 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   // 안 나오고("계산 중"에 멈춘 수 아이콘) 엔진 라인도 첫 단계(REVIEW_MOVETIME_MS) 안에 못 끝나는
   // 원인이었다 — 하필 날카로운 포지션(탁월한 수·유일한 수가 나올 법한 자리)일수록 더 잘 걸렸다.
   // "정확하게"를 고른 경우엔 movetime 예산 자체도 비례해 늘린다.
-  const reviewDepth = reviewSpeed === "accurate" ? 25 : REVIEW_DEPTH;
-  const reviewMovetimeMs = reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
+  // (v0.7.1, 사용자 요청) 속도 3단계(더 빠르게 15·평균 20·더 정확하게 25), 빠른 리뷰(quick)면 15 고정 — reviewDepthFor(lib/prefs.js).
+  const reviewDepth = reviewDepthFor(reviewSpeed, quick);
+  const reviewMovetimeMs = !quick && reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
   const narrow = useNarrow(760);
   // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
   const reviewPosKey = useMemo(() => reviewStorageKey(game), [game]);
   const savedPos = useMemo(() => loadReviewPos(reviewPosKey), [reviewPosKey]);
-  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || "summary"); // "summary" | "review"
+  // (v0.7.1) 빠른 리뷰는 요약 화면을 건너뛰고 곧장 리뷰 화면(첫 수)으로 들어간다.
+  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || (quick ? "review" : "summary")); // "summary" | "review"
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [result, setResult] = useState(null);
   // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가
@@ -1603,7 +1605,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   // (v0.3.8 기능) 정확도 공개 애니메이션(ReviewAccuracyRevealAnim)은 분석이 100% 끝난 뒤 한 번만
   // 재생한다 — 저장된 위치가 있다면(=이전에 이미 그 화면을 지나 리뷰까지 들어와 있었다는 뜻) 새로고침
   // 때마다 다시 보여줄 필요가 없어 건너뛴다.
-  const [introRevealDone, setIntroRevealDone] = useState(() => !!(savedPos && savedPos.introSeen));
+  const [introRevealDone, setIntroRevealDone] = useState(() => !!quick || !!(savedPos && savedPos.introSeen)); // (v0.7.1) 빠른 리뷰는 정확도 공개 연출 생략
   // 이 마운트가 "이미 본 적 있는 리뷰"로 시작했는지(=introRevealDone이 sessionStorage에서 true로
   // seed됐는지) — 이 값 자체는 절대 안 바뀌는 스냅샷이라 ref로 고정해 둔다. 데이터(resultDone)는
   // 새로고침·재진입 때마다 항상 다시 기다려야 하지만(분석은 캐시하지 않음), 이미 본 적 있는 리뷰라면
@@ -1614,7 +1616,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   // 보여줄 데이터조차 없을 수 있는 구간) 시각적 주의를 끌기 위한 1회성 체스보드 연출
   // (ReviewBoardIntroAnim) — introRevealDone과 같은 패턴으로 sessionStorage에 시청 여부를 남겨,
   // 새로고침·이어보기에서는 다시 재생하지 않는다.
-  const [boardIntroDone, setBoardIntroDone] = useState(() => !!(savedPos && savedPos.boardIntroSeen));
+  const [boardIntroDone, setBoardIntroDone] = useState(() => !!quick || !!(savedPos && savedPos.boardIntroSeen)); // (v0.7.1) 빠른 리뷰는 보드 진입 연출 생략
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
   // curPly/sans는 건드리지 않는다 — 분석 탭의 sans/future와 같은 패턴으로 curPly 이후에 갈라져 나온
@@ -1672,7 +1674,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
       const expectedLen = sans ? sans.length : null;
       const local = loadCachedReviewResult(resultCacheKey, expectedLen, reviewDepth);
       if (local) {
-        if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); if (!game.id && !fenRoot) ocAnalysisShare(sans, local, reviewDepth); }
+        if (!cancelled) { setResult(local); setGradedCount(expectedLen || 0); setResultDone(true); analysisStartedRef.current = true; setCacheChecked(true); if (!game.id && !fenRoot && reviewDepth >= REVIEW_DEPTH) ocAnalysisShare(sans, local, reviewDepth); }
         return;
       }
       if (game.id) {
@@ -1700,8 +1702,11 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
         if (!cancelled) {
           setResult(r); setGradedCount(sans.length); setResultDone(true);
           saveCachedReviewResult(resultCacheKey, r, reviewDepth);
-          if (game.id) reviewedAnalysisShare(game.id, r, reviewDepth);
-          else if (!fenRoot) ocAnalysisShare(sans, r, reviewDepth);
+          // (v0.7.1) depth 15(더 빠르게·빠른 리뷰) 결과는 이 기기 캐시에만 둔다 — 다른 사람과 공유하는 대국 분석·프로필 퍼포먼스 레이팅(BUG-095: 깊이가 섞이면 값이 어긋남)에는 표준 깊이 이상만 올린다.
+          if (reviewDepth >= REVIEW_DEPTH) {
+            if (game.id) reviewedAnalysisShare(game.id, r, reviewDepth);
+            else if (!fenRoot) ocAnalysisShare(sans, r, reviewDepth);
+          }
         }
       } catch { if (!cancelled) setErr(true); }
     })();
@@ -2329,6 +2334,24 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, sharpOn 
   // 이어보기(introRevealDone=true)여도 이 화면은 그대로 보여주되, ReviewAccuracyRevealAnim 내부에서
   // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
   // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
+  // (v0.7.1, 사용자 요청) 빠른 리뷰 — 보드 연출·그래프 연출 없이 진행 막대만 보여 주다가, 분석이 끝나는 즉시 리뷰 화면으로 넘어간다.
+  if (quick && (!resultDone || !result)) {
+    const pct = sans.length ? Math.round((gradedCount / sans.length) * 100) : 0;
+    return (
+      <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
+        {header}
+        <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ width: "100%", maxWidth: 300, textAlign: "center" }}>
+            <div className="flex items-center justify-center gap-2" style={{ color: RV.text, fontSize: 14, fontWeight: 800, marginBottom: 12 }}><PendingDots size={12} />{t("빠른 리뷰 분석 중")}</div>
+            <div style={{ height: 6, borderRadius: 3, background: RV.panel, border: "1px solid " + RV.border, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")", transition: "width .2s linear" }} />
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: RV.soft, fontFamily: SITE_FONT }}>{gradedCount} / {sans.length}, depth {reviewDepth}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!introRevealDone || !resultDone || !result) return (
     // (버그 수정) 여기서 position을 "relative"로 덮어썼더니 wrap 본래의 position:"fixed"(뷰포트
     // 전체를 덮는 실제 이유)가 사라져, 이 리뷰 대기 화면 자체가 더 이상 뷰포트에 고정되지 않고

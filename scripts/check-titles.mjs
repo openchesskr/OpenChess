@@ -23,7 +23,7 @@ for (const s of TITLE_SERIES) if (!new RegExp("\\b" + s.icon + "\\b").test(iconB
 for (const m of new Set(TITLE_SERIES.map((s) => s.metric))) if (!common.includes('case "' + m + '":')) fail("지표 " + m + "의 조건 문구(titleCondText)가 없음");
 // 오프닝마다 엠블럼(국기·이니셜)이 있어야 하고, 모든 계열에 포인트 색이 있어야 한다
 const emb = fs.readFileSync(new URL("../src/components/titleEmblems.jsx", import.meta.url), "utf8");
-for (const f of OPENING_FAMILIES) if (!new RegExp("^  " + f.key + ": (\\{|mono\\(|INDIA,)", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
+for (const f of OPENING_FAMILIES) if (!new RegExp("^  " + f.key + ": (\\{|glyph\\(|INDIA,)", "m").test(emb)) fail("오프닝 " + f.key + "의 엠블럼이 titleEmblems.jsx에 없음");
 for (const s of TITLE_SERIES) if (!/^#[0-9A-Fa-f]{6}$/.test(seriesAccent(s.key)) || seriesAccent(s.key) === "#7A5A34" && s.key !== "dex") fail(s.key + ": 포인트 색(ACCENT)이 없음");
 // (v0.6.9) 인디언 디펜스 계열 엠블럼은 모두 인도 국기(INDIA), 오프닝 칭호의 퍼즐 기준은 낮게 유지, 희귀 갈래의 이름은 "히든 칭호"
 for (const f of OPENING_FAMILIES) if (/indian/i.test(f.label) && !new RegExp("^  " + f.key + ": INDIA,", "m").test(emb)) fail(f.label + " 엠블럼이 인도 국기(INDIA)가 아님");

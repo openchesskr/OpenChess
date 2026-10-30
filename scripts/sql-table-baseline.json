@@ -5,6 +5,7 @@
   "chat_conv_prefs":["uid","other_uid","pinned","muted","cleared_before","updated_at"],
   "chat_messages":["id","from_uid","to_uid","body","emoji","puzzle_no","share_reward","read","created_at"],
   "chat_poll_votes":["message_id","uid","san","created_at"],
+  "chat_quiz_answers":["message_id","uid","san","created_at"],
   "chat_reactions":["message_id","uid","emoji","created_at"],
   "daily_puzzle_cache":["date","data","created_at"],
   "economy":["uid","xp","coins","owned_skins","updated_at"],

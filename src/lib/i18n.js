@@ -129,7 +129,7 @@ export function tx(key, ...params) {
 /** 언어별 숫자·날짜 서식(인도는 hi-IN의 10만·천만 단위 구분). */
 export function fmtNum(n, opts) { try { return new Intl.NumberFormat(langInfo.locale, opts).format(n); } catch { return String(n); } }
 export function fmtDate(d, opts) { try { return new Date(d).toLocaleString(langInfo.locale, opts); } catch { return String(d); } }
-export function fmtDateOnly(d, opts) { try { return new Date(d).toLocaleDateString(langInfo.locale, opts); } catch { return String(d); } }
+export function fmtDateOnly(d, opts) { try { return new Date(d).toLocaleDateString(langInfo.locale, opts); } catch { return ""; } }   // (BUG-130) 실패 시 String(d)도 throw할 수 있어 빈 문자열
 /** 언어를 바꾸고 새로고침한다(모듈 최상위 문자열까지 전부 새 언어로 다시 만들기 위해). */
 export function setLang(code) {
   if (!CODES.includes(code) || code === lang) return;
