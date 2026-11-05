@@ -8,7 +8,7 @@ import { t } from "../lib/i18n.js";
 // 블록 글자(█)가 노이즈에서 풀려 나오는 스크램블, 글자 하나씩 짚어 가는 하이라이트, 흐르는 마키,
 // 한 수씩 두어지는 텍스트 보드를 이 파일 하나에 모았다. 애니메이션은 기기의 "애니메이션 줄이기" 설정이 아니라
 // 사이트 설정만 따른다(check-reduced-motion 원칙).
-const C = { neon: "#19E3A8", neonHi: "#8CFFD9", ink: "#8FA3C7", ivory: "#F4F8FF", navy: "#060A16", panel: "#0C1426" };
+const C = { neon: "#C49A50", neonHi: "#ECCB86", ink: "#B8A78C", ivory: "#FAF2E2", navy: "#1B1009", panel: "#2E1B10" };
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace";
 const CUT = "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))";
 
@@ -60,8 +60,8 @@ function BlockLetter({ ch, active, run, onPick, index }) {
   const art = useScramble(GLYPH[ch].join("\n"), run, 30 + index * 4);
   return (
     <button type="button" onClick={onPick} aria-label={ch} className="press"
-      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: active ? C.neon : "#27406B", transition: "color .3s, filter .3s, transform .3s",
-        filter: active ? "drop-shadow(0 0 10px rgba(25,227,168,.65))" : "none", transform: active ? "translateY(-4px) skewX(-6deg)" : "skewX(-6deg)" }}>
+      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: active ? C.neon : "#5A4128", transition: "color .3s, filter .3s, transform .3s",
+        filter: active ? "drop-shadow(0 0 10px rgba(196,154,80,.65))" : "none", transform: active ? "translateY(-4px) skewX(-6deg)" : "skewX(-6deg)" }}>
       <pre style={{ margin: 0, fontFamily: MONO, fontWeight: 700, fontSize: "clamp(13px, 4.4vw, 30px)", lineHeight: 1, letterSpacing: 0, whiteSpace: "pre" }}>{art}</pre>
     </button>
   );
@@ -89,15 +89,15 @@ function OpenCard({ item, no, active, onPick }) {
   return (
     <motion.button type="button" onClick={onPick} whileHover={{ y: -4 }} className="press"
       style={{ position: "relative", padding: 0, border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit", clipPath: CUT,
-        background: active ? "linear-gradient(135deg," + C.neonHi + "," + C.neon + ")" : "rgba(40,70,130,.55)", transition: "background .3s" }}>
+        background: active ? "linear-gradient(135deg," + C.neonHi + "," + C.neon + ")" : "rgba(124,79,46,.55)", transition: "background .3s" }}>
       <div style={{ margin: 1.5, clipPath: CUT, padding: "18px 16px 16px", minHeight: 150, position: "relative", overflow: "hidden",
-        background: active ? "linear-gradient(160deg,#0F2A3A,#07142A 70%)" : "linear-gradient(160deg,#101B33,#0A1224)" }}>
+        background: active ? "linear-gradient(160deg,#3A2A18,#241509 70%)" : "linear-gradient(160deg,#3A2516,#20140B)" }}>
         <span aria-hidden="true" style={{ position: "absolute", right: -6, top: -14, fontSize: 96, fontWeight: 900, fontStyle: "italic", lineHeight: 1,
-          color: "transparent", WebkitTextStroke: "1.5px " + (active ? "rgba(25,227,168,.55)" : "rgba(143,163,199,.18)") }}>{item.k}</span>
+          color: "transparent", WebkitTextStroke: "1.5px " + (active ? "rgba(196,154,80,.55)" : "rgba(184,167,140,.18)") }}>{item.k}</span>
         <div style={{ position: "relative", fontFamily: MONO, fontSize: 11, fontWeight: 800, color: active ? C.neon : C.ink, letterSpacing: ".18em" }}>{"0" + no} ▸ {item.k}</div>
         <div style={{ position: "relative", fontSize: 22, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", color: C.ivory, margin: "6px 0 8px", letterSpacing: "-.01em" }}>{item.w}</div>
-        <p style={{ position: "relative", margin: 0, fontSize: 12.5, lineHeight: 1.7, color: "#B7C6E4" }}>{item.d}</p>
-        <div aria-hidden="true" style={{ position: "relative", marginTop: 12, height: 4, background: "rgba(143,163,199,.15)" }}>
+        <p style={{ position: "relative", margin: 0, fontSize: 12.5, lineHeight: 1.7, color: "#D9CBB0" }}>{item.d}</p>
+        <div aria-hidden="true" style={{ position: "relative", marginTop: 12, height: 4, background: "rgba(184,167,140,.15)" }}>
           <motion.div initial={false} animate={{ width: active ? "100%" : no * 25 + "%" }} transition={{ duration: 0.5 }} style={{ height: "100%", background: "linear-gradient(90deg," + C.neon + "," + C.neonHi + ")", boxShadow: active ? "0 0 10px " + C.neon : "none" }} />
         </div>
       </div>
@@ -132,7 +132,7 @@ export function AsciiBoard() {
   const { b, last } = boardAt(shown);
   const hot = new Set(last || []);
   return (
-    <div style={{ fontFamily: MONO, fontSize: 15, lineHeight: 1.45, color: C.ink, display: "inline-block", textAlign: "left", padding: "14px 16px", clipPath: CUT, background: "linear-gradient(160deg,#101B33,#0A1224)", boxShadow: "inset 0 0 0 1px rgba(40,70,130,.6)" }}>
+    <div style={{ fontFamily: MONO, fontSize: 15, lineHeight: 1.45, color: C.ink, display: "inline-block", textAlign: "left", padding: "14px 16px", clipPath: CUT, background: "linear-gradient(160deg,#3A2516,#20140B)", boxShadow: "inset 0 0 0 1px rgba(124,79,46,.6)" }}>
       <div style={{ color: C.neon, fontSize: 11, fontWeight: 800, letterSpacing: ".16em", marginBottom: 6 }}>┌─ LIVE ▸ ITALIAN GAME</div>
       {b.map((row, r) => (
         <div key={r} style={{ whiteSpace: "pre" }}>
@@ -141,7 +141,7 @@ export function AsciiBoard() {
             const name = String.fromCharCode(97 + c) + (8 - r);
             const isWhite = r > 3 && p !== ".";
             const isHot = hot.has(name);
-            return <span key={c} style={{ display: "inline-block", width: "1.5em", textAlign: "center", color: p === "." ? "rgba(143,163,199,.28)" : isWhite ? C.ivory : C.neon, background: isHot ? "rgba(25,227,168,.22)" : "transparent", textShadow: isHot ? "0 0 8px " + C.neon : "none" }}>{p === "." ? ((r + c) % 2 ? "·" : " ") : p + "︎"}</span>;
+            return <span key={c} style={{ display: "inline-block", width: "1.5em", textAlign: "center", color: p === "." ? "rgba(184,167,140,.28)" : isWhite ? C.ivory : C.neon, background: isHot ? "rgba(196,154,80,.22)" : "transparent", textShadow: isHot ? "0 0 8px " + C.neon : "none" }}>{p === "." ? ((r + c) % 2 ? "·" : " ") : p + "︎"}</span>;
           })}
         </div>
       ))}
@@ -157,8 +157,8 @@ export function AsciiBoard() {
 export function AsciiMarquee({ reverse = false, dim = false }) {
   const unit = "░▒▓█ OBSERVE ▸ PRACTICE ▸ EVALUATE ▸ NEXT LEVEL █▓▒░  ♜  OPENING ◆ PUZZLE ◆ ENDGAME ◆ NETWORK  ♞  ";
   return (
-    <div aria-hidden="true" style={{ overflow: "hidden", whiteSpace: "nowrap", borderTop: "1px solid rgba(25,227,168,.25)", borderBottom: "1px solid rgba(25,227,168,.25)", background: "rgba(6,10,22,.7)", padding: "9px 0", transform: "skewY(-1.2deg)" }}>
-      <div style={{ display: "inline-block", fontFamily: MONO, fontWeight: 800, fontStyle: "italic", fontSize: 13, letterSpacing: ".14em", color: dim ? "rgba(143,163,199,.55)" : C.neon, animation: (reverse ? "open-marquee-r" : "open-marquee") + " 46s linear infinite" }}>
+    <div aria-hidden="true" style={{ overflow: "hidden", whiteSpace: "nowrap", borderTop: "1px solid rgba(196,154,80,.25)", borderBottom: "1px solid rgba(196,154,80,.25)", background: "rgba(27,16,9,.7)", padding: "9px 0", transform: "skewY(-1.2deg)" }}>
+      <div style={{ display: "inline-block", fontFamily: MONO, fontWeight: 800, fontStyle: "italic", fontSize: 13, letterSpacing: ".14em", color: dim ? "rgba(184,167,140,.55)" : C.neon, animation: (reverse ? "open-marquee-r" : "open-marquee") + " 46s linear infinite" }}>
         {unit.repeat(4)}
       </div>
     </div>
@@ -208,7 +208,7 @@ export function OpenSection() {
           return (
             <button key={s.id} type="button" onClick={() => { setSi(i); setActive(0); setHold(true); }} className="press"
               style={{ clipPath: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)", padding: "9px 26px", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 900, fontStyle: "italic",
-                background: on ? "linear-gradient(180deg," + C.neonHi + "," + C.neon + ")" : "rgba(40,70,130,.4)", color: on ? "#04101A" : C.ink }}>{s.tab}</button>
+                background: on ? "linear-gradient(180deg," + C.neonHi + "," + C.neon + ")" : "rgba(124,79,46,.4)", color: on ? "#241509" : C.ink }}>{s.tab}</button>
           );
         })}
       </div>
@@ -219,10 +219,10 @@ export function OpenSection() {
             {["O", "P", "E", "N"].map((ch, i) => <BlockLetter key={ch} ch={ch} index={i} run={seen} active={i === active} onPick={() => pick(i)} />)}
           </div>
           <div style={{ marginTop: 18, textAlign: "center", minHeight: 74 }}>
-            <div style={{ fontFamily: MONO, fontSize: "clamp(20px, 4.6vw, 30px)", fontWeight: 900, fontStyle: "italic", color: C.neonHi, textShadow: "0 0 18px rgba(25,227,168,.45)", letterSpacing: ".04em" }}>
+            <div style={{ fontFamily: MONO, fontSize: "clamp(20px, 4.6vw, 30px)", fontWeight: 900, fontStyle: "italic", color: C.neonHi, textShadow: "0 0 18px rgba(196,154,80,.45)", letterSpacing: ".04em" }}>
               <span style={{ color: C.neon }}>{item.k}</span> ▸ {word}<span className="open-caret">▌</span>
             </div>
-            <p style={{ margin: "8px auto 0", maxWidth: 380, fontSize: 13.5, color: "#B7C6E4", lineHeight: 1.75 }}>{item.d}</p>
+            <p style={{ margin: "8px auto 0", maxWidth: 380, fontSize: 13.5, color: "#D9CBB0", lineHeight: 1.75 }}>{item.d}</p>
           </div>
         </div>
         <AsciiBoard />

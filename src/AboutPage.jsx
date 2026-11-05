@@ -16,24 +16,24 @@ import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextAr
 // BOARD_GLOSS·GeoBackdrop을 그대로 가져오지 않고, 같은 톤을 내도록 필요한 값만 옮겨 적었다
 // (기존 사이트와 시각적으로 통일되게).
 const T = {
-  ebony: "#060A16", ebony2: "#0C1426",
-  ivory: "#DCE7FF", ivoryHi: "#F4F8FF",
-  ink: "#3B4F7A", inkSoft: "#8FA3C7",
-  brass: "#19E3A8", brassHi: "#8CFFD9",
+  ebony: "#1B1009", ebony2: "#2E1B10",
+  ivory: "#EBDDC4", ivoryHi: "#FAF2E2",
+  ink: "#5A3A22", inkSoft: "#B8A78C",
+  brass: "#C49A50", brassHi: "#ECCB86",
 };
 // (기존 BOARD_GLOSS와 동일한 금색 광택 테두리 — 보드·모식도 등 사이트 전역에서 쓰는 것과 같은 처리)
 const GLOSS_BORDER = {
   border: "2px solid transparent",
-  borderImage: "linear-gradient(135deg, #B9FFE8, #19E3A8 45%, #0B7F5D) 1",
-  boxShadow: "0 0 0 1px rgba(25,227,168,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
+  borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
+  boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
 };
 // 브라스 그러데이션 원 — 마스코트 초상(SpeechBubble 아바타·히어로 MILKU)을 감싸는 원형 배경 전용.
 // (v0.1.3) 실제 티어 배지(App.jsx TierLogoDisc)는 흰색 십각형으로 바뀌었지만, 이 원은 티어가 아니라
 // 마스코트 초상 프레임이라 그대로 둔다 — 아래 TierBadgeShape이 실제 티어 배지 쪽만 맞춰 바꾼다.
 const GOLD_DISC = {
   borderRadius: "50%",
-  background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#0B7F5D 100%)",
-  border: "1px solid #055A42",
+  background: "radial-gradient(70% 70% at 32% 28%," + T.brassHi + "," + T.brass + " 68%,#8A6C2F 100%)",
+  border: "1px solid #6E5424",
   boxShadow: "inset 0 1px 2px rgba(255,255,255,.5), inset 0 -3px 6px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.35)",
 };
 // (v0.1.3 UI) App.jsx TierLogoDisc와 동일한 흰색 십각형 배지 — 이 페이지의 티어 스트립·승급 데모도
@@ -121,7 +121,7 @@ function Mascot({ char = "milku", expr = "great", size = 72 }) {
 function SpeechBubble({ mascot, name, children, align = "left" }) {
   const avatar = <div style={{ width: 76, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}><Mascot char={mascot.char} expr={mascot.expr} size={60} /></div>;
   const bubble = (
-    <div style={{ minWidth: 0, flex: 1, background: "linear-gradient(180deg,#101B33,#04101A)", borderRadius: 14, padding: "13px 16px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
+    <div style={{ minWidth: 0, flex: 1, background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "13px 16px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
       <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 4 }}>{name}</div>
       <p style={{ color: T.ivory, fontSize: 13, lineHeight: 1.65, margin: 0 }}>{children}</p>
     </div>
@@ -158,7 +158,7 @@ function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.85, rotate: tilt + (tilt >= 0 ? 7 : -7), y: 18 }} whileInView={{ opacity: 1, scale: 1, rotate: tilt, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
       <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay }}
-        style={{ borderRadius: 20, padding: 5, background: "linear-gradient(160deg,#101B33,#0A1224)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
+        style={{ borderRadius: 20, padding: 5, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
         <div style={{ borderRadius: 15, overflow: "hidden", border: "1px solid #000", height: 340 }}>
           <img src={src} alt={alt} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
         </div>
@@ -202,8 +202,8 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
               const light = (r + c) % 2 === 0;
               return (
                 <div key={r + "_" + c} style={{ position: "absolute", top: dpct(r), left: dpct(c), width: "12.5%", height: "12.5%", background: light ? SQ_LIGHT_BG : SQ_DARK_BG, backgroundBlendMode: "overlay, normal" }}>
-                  {c === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(40,70,130,.65)" : "rgba(200,240,255,.55)" }}>{8 - r}</span>}
-                  {r === 7 && <span style={{ position: "absolute", bottom: 1, right: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(40,70,130,.65)" : "rgba(200,240,255,.55)" }}>{FILES[c]}</span>}
+                  {c === 0 && <span style={{ position: "absolute", top: 1, left: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(124,79,46,.65)" : "rgba(232,210,166,.55)" }}>{8 - r}</span>}
+                  {r === 7 && <span style={{ position: "absolute", bottom: 1, right: 2, fontSize: Math.max(6, size * 0.052), fontWeight: 800, lineHeight: 1, color: light ? "rgba(124,79,46,.65)" : "rgba(232,210,166,.55)" }}>{FILES[c]}</span>}
                 </div>
               );
             }))}
@@ -362,7 +362,7 @@ function GrandmasterSkinPreview() {
       </div>
       <div className="flex items-center" style={{ gap: 4 }}>
         {["/pieces/grandmaster/white-queen.webp", "/pieces/grandmaster/black-knight.webp", "/pieces/grandmaster/white-rook.webp"].map((src) => (
-          <div key={src} style={{ width: 52, height: 52, borderRadius: 10, background: "rgba(0,0,0,.28)", border: "1px solid #1B2A4A", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <div key={src} style={{ width: 52, height: 52, borderRadius: 10, background: "rgba(0,0,0,.28)", border: "1px solid #4A3521", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
           </div>
         ))}
@@ -374,7 +374,7 @@ function GrandmasterCard() {
   return (
     <Reveal>
       <div style={{ position: "relative", borderRadius: 20, padding: "2px", background: GM_AURORA, boxShadow: "0 20px 50px -20px rgba(185,131,255,.35)" }}>
-        <div style={{ borderRadius: 18, padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#050813 55%,#0f1f1a)" }}>
+        <div style={{ borderRadius: 18, padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#150C05 55%,#0f1f1a)" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 28 }}>
             <motion.div initial={{ opacity: 0, scale: 0.8, rotate: -6 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ flex: "0 0 auto", width: 168, margin: "0 auto" }}>
@@ -441,7 +441,7 @@ function KineticWord({ children, index, accent }) {
         letterSpacing: "-.02em",
         lineHeight: 1.08,
         color: accent ? T.brassHi : T.ivoryHi,
-        textShadow: accent ? "0 2px 20px rgba(25,227,168,.4)" : "0 2px 14px rgba(0,0,0,.3)",
+        textShadow: accent ? "0 2px 20px rgba(196,154,80,.4)" : "0 2px 14px rgba(0,0,0,.3)",
       }}
     >{children}</motion.span>
   );
@@ -465,7 +465,7 @@ function Chapter({ no, eyebrow, title, desc, id }) {
   return (
     <Reveal>
       <header id={id} style={{ position: "relative", textAlign: "center", margin: "0 auto 34px", maxWidth: 560, scrollMarginTop: 80 }}>
-        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -34, transform: "translateX(-50%)", fontSize: 108, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(25,227,168,.16)", fontFamily: "ui-monospace,monospace", userSelect: "none", pointerEvents: "none" }}>{no}</span>
+        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -34, transform: "translateX(-50%)", fontSize: 108, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", userSelect: "none", pointerEvents: "none" }}>{no}</span>
         <div style={{ position: "relative" }}>
           <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 10 }}>
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
@@ -479,7 +479,7 @@ function Chapter({ no, eyebrow, title, desc, id }) {
     </Reveal>
   );
 }
-const GLASS = { background: "linear-gradient(155deg, rgba(16,27,51,.62), rgba(6,10,22,.5))", border: "1px solid rgba(25,227,168,.2)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px -24px rgba(0,0,0,.7)", backdropFilter: "blur(6px)", clipPath: "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))" };
+const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27,16,9,.5))", border: "1px solid rgba(196,154,80,.2)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px -24px rgba(0,0,0,.7)", backdropFilter: "blur(6px)", clipPath: "polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px))" };
 
 
 
@@ -552,8 +552,8 @@ function Phone({ src, alt, width = 240, tilt = 0, style, children }) {
   return (
     <div style={{ perspective: 900, width, maxWidth: "100%", ...style }}>
       <motion.div onMouseMove={onMove} onMouseLeave={onLeave} style={{ rotateX: rx, rotateY: ry, rotateZ: tilt, transformStyle: "preserve-3d" }}>
-        <div style={{ position: "relative", borderRadius: width * 0.15, padding: Math.max(5, width * 0.03), background: "linear-gradient(160deg,#5A3E27,#1F130B 55%,#101B33)", border: "1px solid rgba(140,255,217,.55)", boxShadow: "0 30px 60px -22px rgba(0,0,0,.85), 0 0 0 1px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.25)" }}>
-          <div style={{ position: "relative", borderRadius: width * 0.12, overflow: "hidden", aspectRatio: "540 / 1088", background: "#060A16" }}>
+        <div style={{ position: "relative", borderRadius: width * 0.15, padding: Math.max(5, width * 0.03), background: "linear-gradient(160deg,#5A3E27,#1F130B 55%,#3A2516)", border: "1px solid rgba(236,203,134,.55)", boxShadow: "0 30px 60px -22px rgba(0,0,0,.85), 0 0 0 1px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.25)" }}>
+          <div style={{ position: "relative", borderRadius: width * 0.12, overflow: "hidden", aspectRatio: "540 / 1088", background: "#1B1009" }}>
             {src && <img src={src} alt={alt || ""} loading="lazy" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
             {children}
             <span aria-hidden="true" style={{ position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)", width: "26%", height: 5, borderRadius: 3, background: "rgba(0,0,0,.65)" }} />
@@ -570,7 +570,7 @@ function FloatChip({ children, x, y, delay = 0, rot = 0, z = 3 }) {
     <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 + delay, duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ position: "absolute", ...x, ...y, zIndex: z }}>
       <motion.div animate={{ y: [0, -9, 0] }} transition={{ duration: 3.4 + delay * 2, repeat: Infinity, ease: "easeInOut", delay }}
-        style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 14, background: "linear-gradient(160deg,#101B33,#0A1224)", border: "1px solid rgba(140,255,217,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
+        style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid rgba(236,203,134,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
         {children}
       </motion.div>
     </motion.div>
@@ -586,7 +586,7 @@ function HeroPhones() {
   const cur = HERO_SHOTS[i], nxt = HERO_SHOTS[(i + 1) % HERO_SHOTS.length];
   return (
     <div style={{ position: "relative", width: 330, maxWidth: "100%", height: 560, margin: "0 auto" }}>
-      <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "52%", width: 360, height: 360, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(140,255,217,.28), transparent 68%)", filter: "blur(10px)" }} />
+      <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "52%", width: 360, height: 360, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28), transparent 68%)", filter: "blur(10px)" }} />
       <div style={{ position: "absolute", right: -26, top: 54, opacity: 0.55, filter: "blur(.4px)" }}>
         <AnimatePresence mode="wait"><motion.div key={nxt.n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}><Phone src={SHOT(nxt.n)} width={170} tilt={9} /></motion.div></AnimatePresence>
       </div>
@@ -599,7 +599,7 @@ function HeroPhones() {
         </Phone>
       </div>
       <div className="flex items-center justify-center" style={{ position: "absolute", left: 14, width: 250, bottom: 0, gap: 6 }}>
-        {HERO_SHOTS.map((h, k) => <span key={h.n} style={{ width: k === i ? 22 : 6, height: 6, borderRadius: 3, background: k === i ? T.brassHi : "rgba(25,227,168,.35)", transition: "all .3s" }} />)}
+        {HERO_SHOTS.map((h, k) => <span key={h.n} style={{ width: k === i ? 22 : 6, height: 6, borderRadius: 3, background: k === i ? T.brassHi : "rgba(196,154,80,.35)", transition: "all .3s" }} />)}
       </div>
       <FloatChip x={{ left: -8 }} y={{ top: 70 }} delay={0.1} rot={-4}>
         <img src={MOVE_IMG("Brilliant")} alt="" style={{ width: 24, height: 24 }} /><span style={{ fontSize: 12, fontWeight: 800, color: "#7FD6D2" }}>{t("탁월한 수")}</span><span style={{ fontSize: 12, fontWeight: 900, color: T.ivoryHi, fontFamily: "ui-monospace,monospace" }}>+1.8</span>
@@ -644,7 +644,7 @@ function EvalDemo() {
   const [ev, mv, cls] = evs[n];
   const pct = Math.max(4, Math.min(96, 50 + ev * 9));
   return (
-    <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "linear-gradient(160deg,#101B33,#0A1224)", border: "1px solid #1B2A4A" }}>
+    <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521" }}>
       <div style={{ position: "relative", height: 24, borderRadius: 6, background: "#101010", overflow: "hidden", border: "1px solid #000" }}>
         <motion.div animate={{ width: pct + "%" }} transition={{ type: "spring", stiffness: 120, damping: 18 }} style={{ position: "absolute", left: 0, top: 0, bottom: 0, background: "#fff" }} />
         <span style={{ position: "absolute", left: 8, top: 3, fontSize: 12, fontWeight: 900, color: "#111", fontFamily: "ui-monospace,monospace", mixBlendMode: "normal" }}>{(ev > 0 ? "+" : "") + ev.toFixed(2)}</span>
@@ -662,16 +662,16 @@ function PuzzleDemo() {
   useEffect(() => { const id = setInterval(() => setStep((v) => (v + 1) % 2), 2600); return () => clearInterval(id); }, []);
   const themes = [[t("기물 희생하기"), "#D9736A"], [t("우위 점하기"), "#6FA8DC"], [t("실수 응징하기"), "#8FB55E"]];
   return (
-    <div style={{ borderRadius: 18, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #0B7F5D", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#101B33", maxWidth: 360, margin: "0 auto", position: "relative" }}>
+    <div style={{ borderRadius: 18, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         <div className="flex items-center" style={{ gap: 8 }}>
           <TierBadgeShape size={34}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
-          <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(40,60,110,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#19E3A8" }} /></div></div>
+          <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(90,58,34,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#C49A50" }} /></div></div>
         </div>
-        <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(16,27,51,.9)", color: T.brassHi, borderRadius: 999, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
+        <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 999, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
       </div>
       <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
-        {themes.map(([l, c], i) => <span key={l} style={{ fontSize: 11, fontWeight: 800, color: i === 2 ? "#fff" : "#101B33", background: i === 2 ? c : "rgba(16,27,51,.08)", border: "1px solid " + c, borderRadius: 999, padding: "3px 10px" }}>{l}</span>)}
+        {themes.map(([l, c], i) => <span key={l} style={{ fontSize: 11, fontWeight: 800, color: i === 2 ? "#fff" : "#3A2516", background: i === 2 ? c : "rgba(58,37,22,.08)", border: "1px solid " + c, borderRadius: 999, padding: "3px 10px" }}>{l}</span>)}
       </div>
       <div className="flex justify-center" style={{ position: "relative" }}>
         <DecoBoard {...DECO_B} size={200} caption={null} />
@@ -696,22 +696,22 @@ function QuestDemo() {
   const [done, setDone] = useState({});
   const n = Object.keys(done).filter((k) => done[k]).length;
   return (
-    <div style={{ borderRadius: 16, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #0B7F5D", color: "#101B33", flex: 1 }}>
+    <div style={{ borderRadius: 16, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 900 }}>{t("일일 퀘스트")}</span>
-        <span style={{ fontSize: 11, color: "rgba(16,27,51,.6)" }}>{t("눌러서 완료 처리해 볼 수 있습니다")}</span>
+        <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료 처리해 볼 수 있습니다")}</span>
       </div>
       {QUESTS.map((q) => {
         const on = !!done[q.k];
         return (
-          <button key={q.k} onClick={() => setDone((d) => ({ ...d, [q.k]: !d[q.k] }))} className="press no-swipe" style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 6, borderRadius: 12, border: "1px solid rgba(40,60,110,.25)", background: on ? "rgba(143,181,94,.22)" : "rgba(255,255,255,.4)", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
-            <span style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid " + (on ? "#5F8A3A" : "rgba(40,60,110,.4)"), background: on ? "#5F8A3A" : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Check size={13} color="#fff" />}</span>
+          <button key={q.k} onClick={() => setDone((d) => ({ ...d, [q.k]: !d[q.k] }))} className="press no-swipe" style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 6, borderRadius: 12, border: "1px solid rgba(90,58,34,.25)", background: on ? "rgba(143,181,94,.22)" : "rgba(255,255,255,.4)", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid " + (on ? "#5F8A3A" : "rgba(90,58,34,.4)"), background: on ? "#5F8A3A" : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Check size={13} color="#fff" />}</span>
             <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 12.5, fontWeight: 800, textDecoration: on ? "line-through" : "none", opacity: on ? 0.6 : 1 }}>{q.label}</span><span style={{ display: "block", fontSize: 10.5, opacity: 0.6 }}>{q.sub}</span></span>
             <span className="flex items-center" style={{ gap: 3, fontSize: 12, fontWeight: 900 }}>+10<img src="/oc-coin.png" alt="" style={{ width: 15, height: 15 }} /></span>
           </button>
         );
       })}
-      <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 12, border: "1px solid " + (n === QUESTS.length ? "#19E3A8" : "rgba(40,60,110,.3)"), background: n === QUESTS.length ? "rgba(25,227,168,.25)" : "rgba(255,255,255,.3)" }}>
+      <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 12, border: "1px solid " + (n === QUESTS.length ? "#C49A50" : "rgba(90,58,34,.3)"), background: n === QUESTS.length ? "rgba(196,154,80,.25)" : "rgba(255,255,255,.3)" }}>
         <motion.img animate={n === QUESTS.length ? { rotate: [0, -12, 12, 0], scale: [1, 1.2, 1] } : {}} src="/oc-coin.png" alt="" style={{ width: 30, height: 30 }} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900 }}>{t("모든 퀘스트 완료 보상")}</div><div style={{ fontSize: 10.5, opacity: 0.65 }}>{tx("OC 나이트 코인 {0}개, {1}/{2} 완료", 50, n, QUESTS.length)}</div></div>
       </div>
@@ -727,7 +727,7 @@ function XpDemo() {
   const cur = TIER_DEMO[ti];
   const solve = () => setXp((v) => { const nv = v + 90; if (nv >= cur.max) { setTi((x) => (x + 1) % TIER_DEMO.length); return 0; } return nv; });
   return (
-    <div style={{ borderRadius: 16, padding: 16, background: "linear-gradient(160deg,#101B33,#0A1224)", border: "1px solid #1B2A4A", flex: 1, display: "flex", flexDirection: "column" }}>
+    <div style={{ borderRadius: 16, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("경험치와 티어")}</div>
       <div className="flex items-center" style={{ gap: 14, flex: 1 }}>
         <AnimatePresence mode="popLayout"><motion.div key={ti} initial={{ scale: 0.4, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 260, damping: 15 }}>
@@ -739,7 +739,7 @@ function XpDemo() {
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{xp.toLocaleString()} / {cur.max.toLocaleString()} XP</div>
         </div>
       </div>
-      <button onClick={solve} className="press no-swipe" style={{ marginTop: 12, padding: "10px 0", borderRadius: 11, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: 13, color: "#04101A", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 0 #07644A" }}>{t("퍼즐 풀기")} +90 XP</button>
+      <button onClick={solve} className="press no-swipe" style={{ marginTop: 12, padding: "10px 0", borderRadius: 11, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: 13, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 0 #7A5E22" }}>{t("퍼즐 풀기")} +90 XP</button>
     </div>
   );
 }
@@ -771,7 +771,7 @@ function RarityDemo() {
       <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
         {RARITIES.map(([r, c]) => <motion.span key={r} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
       </div>
-      <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #1B2A4A" }}>
+      <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
         <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900, color: T.ivoryHi }}>{t("1회 뽑기")}</div><div style={{ fontSize: 11, color: T.inkSoft }}>{t("중복이면 150코인 환급")}</div></div>
         <span style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>500</span>
@@ -800,11 +800,11 @@ function ChapterNav({ scrollRef }) {
   }, [scrollRef]);
   const go = (id) => { const el = document.getElementById("ch-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
-    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 520, borderRadius: 18, background: "rgba(5,8,19,.88)", backdropFilter: "blur(10px)", border: "1px solid rgba(25,227,168,.3)", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8)", display: "flex", padding: "4px" }}>
+    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 520, borderRadius: 18, background: "rgba(22,12,6,.88)", backdropFilter: "blur(10px)", border: "1px solid rgba(196,154,80,.3)", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8)", display: "flex", padding: "4px" }}>
       {TAB_META.map((m, i) => {
         const on = i === cur;
         return (
-          <button key={m.id} onClick={() => go(m.id)} className="press" aria-label={m.label} style={{ position: "relative", flex: 1, minWidth: 0, background: on ? "rgba(25,227,168,.16)" : "transparent", border: "none", borderRadius: 14, cursor: "pointer", padding: "9px 2px 7px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit", transition: "background .2s, color .2s" }}>
+          <button key={m.id} onClick={() => go(m.id)} className="press" aria-label={m.label} style={{ position: "relative", flex: 1, minWidth: 0, background: on ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderRadius: 14, cursor: "pointer", padding: "9px 2px 7px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit", transition: "background .2s, color .2s" }}>
             <m.Icon size={19} />
             <span style={{ fontSize: 10.5, fontWeight: 800 }}>{m.label}</span>
           </button>
@@ -836,8 +836,8 @@ function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extr
         <div style={{ flex: "1 1 340px", minWidth: 280, maxWidth: shots.length ? 460 : 720, margin: shots.length ? 0 : "0 auto" }}>
           {blocks.map((b, i) => (
             <motion.div key={b[0]} initial={{ opacity: 0, x: flip ? -22 : 22 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.35 }} transition={{ duration: 0.45, delay: i * 0.05, ease: [0.22, 0.9, 0.32, 1] }}
-              className="flex items-start" style={{ gap: 14, padding: "16px 0", borderTop: i ? "1px solid rgba(25,227,168,.16)" : "none" }}>
-              <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 10, background: "rgba(25,227,168,.13)", border: "1px solid rgba(25,227,168,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{String(i + 1).padStart(2, "0")}</span>
+              className="flex items-start" style={{ gap: 14, padding: "16px 0", borderTop: i ? "1px solid rgba(196,154,80,.16)" : "none" }}>
+              <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 10, background: "rgba(196,154,80,.13)", border: "1px solid rgba(196,154,80,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{String(i + 1).padStart(2, "0")}</span>
               <div style={{ minWidth: 0 }}>
                 <h4 style={{ margin: "0 0 5px", fontSize: 16, fontWeight: 900, color: T.ivoryHi }}>{b[0]}</h4>
                 <p style={{ margin: 0, fontSize: 13.5, color: T.inkSoft, lineHeight: 1.85 }}>{b[1]}</p>
@@ -855,21 +855,21 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
   return (
     <div>
       <div style={{ position: "relative", width: "100%", overflow: "hidden" }}>
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "repeating-conic-gradient(rgba(25,227,168,.055) 0% 25%, transparent 0% 50%)", backgroundSize: "72px 72px", maskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)", WebkitMaskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)" }} />
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "repeating-conic-gradient(rgba(196,154,80,.055) 0% 25%, transparent 0% 50%)", backgroundSize: "72px 72px", maskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)", WebkitMaskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)" }} />
         <motion.img src="/ilust-1-web.webp" alt="" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 0.13, scale: [1, 1.06, 1] }} transition={{ opacity: { duration: 1 }, scale: { duration: 20, repeat: Infinity, ease: "easeInOut" } }}
           style={{ position: "absolute", left: 0, top: 0, width: "60%", height: "100%", objectFit: "cover", maskImage: "linear-gradient(90deg,#000,transparent)", WebkitMaskImage: "linear-gradient(90deg,#000,transparent)" }} />
         <div style={{ position: "relative", maxWidth: 1040, margin: "0 auto", padding: "52px 20px 36px" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 36 }}>
             <div style={{ flex: "1 1 400px", minWidth: 280 }}>
-              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(140,255,217,.4)", background: "rgba(6,10,22,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 22 }}>
-                <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#04101A", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>v{version}</span>
+              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(236,203,134,.4)", background: "rgba(27,16,9,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 22 }}>
+                <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>v{version}</span>
                 {t("새 소식 보기")} <ArrowRight size={13} />
               </button></Reveal>
               <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
               <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("오프닝을 외우는 대신 직접 두면서 익히고, 내가 틀린 수는 퍼즐로 다시 푸는 체스 학습 사이트입니다. 가입하지 않아도 쓸 수 있고 전부 무료입니다.")}</p></Reveal>
               <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
-                <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#04101A", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #07644A, 0 16px 34px -10px rgba(140,255,217,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
-                <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(25,227,168,.45)", background: "rgba(6,10,22,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
+                <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+                <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
               </div></Reveal>
               <Reveal delay={0.2}><div className="flex items-center flex-wrap" style={{ gap: 22 }}>
                 {[["7", t("티어 단계")], ["4", t("오프닝 갈래")], ["6", t("앱 탭")], ["100%", t("무료로 시작")]].map(([n, l]) => (
@@ -1002,14 +1002,14 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         </section>
 
         <Reveal delay={0.05}>
-          <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 26, background: "radial-gradient(90% 120% at 100% 0%, rgba(140,255,217,.16), transparent 60%), linear-gradient(160deg,#101B33,#0A1224)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
+          <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 26, background: "radial-gradient(90% 120% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
             <div style={{ flex: "1 1 260px", minWidth: 220 }}>
               <h3 style={{ fontSize: 24, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>{t("지금 시작")}</h3>
               <p style={{ fontSize: 13.5, color: T.inkSoft, margin: 0 }}>{t("가입하지 않고 게스트로도 둘러볼 수 있습니다.")}</p>
             </div>
             <div className="flex items-center" style={{ gap: 18 }}>
               <Mascot char="kokoa" expr="celebrate" size={72} />
-              <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#04101A", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #07644A", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+              <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
             </div>
           </section>
         </Reveal>
@@ -2882,7 +2882,7 @@ function TierPromoDemo() {
   const cur = PROMO_TIERS[i];
   return (
     <Reveal>
-      <div style={{ margin: "8px 0 28px", padding: "22px 16px", borderRadius: 16, background: "linear-gradient(160deg,#04101A,#050813)", ...GLOSS_BORDER, overflow: "hidden", position: "relative", height: 132 }}>
+      <div style={{ margin: "8px 0 28px", padding: "22px 16px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER, overflow: "hidden", position: "relative", height: 132 }}>
         <AnimatePresence mode="popLayout">
           <motion.div key={i} initial={{ x: 90, opacity: 0, scale: 0.7 }} animate={{ x: 0, opacity: 1, scale: 1 }} exit={{ x: -90, opacity: 0, scale: 0.7 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -2948,7 +2948,7 @@ function VersionHighlight({ h }) {
   if (h.kind === "img") return <ImageHighlight src={h.src} label={h.label} />;
   if (h.kind === "shot") return <ShotHighlight src={h.src} label={h.label} tilt={h.tilt} />;
   if (h.kind === "tierStrip") return (
-    <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#04101A,#050813)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
+    <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
   );
   if (h.kind === "tierPromo") return <TierPromoDemo />;
   return null;
@@ -2971,7 +2971,7 @@ function HStat({ n, label, sub }) {
 function CatPill({ cat, active, count, onClick }) {
   const c = cat === "all" ? { label: t("전체"), color: T.brassHi, Icon: null } : CAT[cat];
   return (
-    <button onClick={onClick} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800, border: "1px solid " + (active ? c.color : "rgba(25,227,168,.28)"), background: active ? c.color + "26" : "rgba(25,227,168,.05)", color: active ? c.color : T.inkSoft, transition: "all .18s" }}>
+    <button onClick={onClick} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800, border: "1px solid " + (active ? c.color : "rgba(196,154,80,.28)"), background: active ? c.color + "26" : "rgba(196,154,80,.05)", color: active ? c.color : T.inkSoft, transition: "all .18s" }}>
       {c.Icon && <c.Icon size={12} />}{c.label}{count != null && <span style={{ fontSize: 10.5, opacity: 0.75, fontFamily: "ui-monospace,monospace" }}>{count}</span>}
     </button>
   );
@@ -2994,11 +2994,11 @@ function ItemList({ sections, big }) {
 function LatestCard({ v, secs }) {
   return (
     <motion.section initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
-      style={{ position: "relative", borderRadius: 28, padding: 2, background: "linear-gradient(140deg," + T.brassHi + ",rgba(25,227,168,.25) 35%,rgba(25,227,168,.05) 60%," + T.brass + ")", boxShadow: "0 30px 70px -30px rgba(140,255,217,.35)", marginBottom: 56 }}>
-      <div style={{ borderRadius: 26, overflow: "hidden", position: "relative", background: "radial-gradient(90% 80% at 100% 0%, rgba(140,255,217,.16), transparent 60%), linear-gradient(160deg,#0C1426,#160C06)", padding: "30px 28px 26px" }}>
-        <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(25,227,168,.14)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
+      style={{ position: "relative", borderRadius: 28, padding: 2, background: "linear-gradient(140deg," + T.brassHi + ",rgba(196,154,80,.25) 35%,rgba(196,154,80,.05) 60%," + T.brass + ")", boxShadow: "0 30px 70px -30px rgba(236,203,134,.35)", marginBottom: 56 }}>
+      <div style={{ borderRadius: 26, overflow: "hidden", position: "relative", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)", padding: "30px 28px 26px" }}>
+        <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.14)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
         <div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
-          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#04101A", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "3px 11px" }}>{t("최신")}</span>
+          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "3px 11px" }}>{t("최신")}</span>
           <span style={{ fontSize: 12, color: T.inkSoft }}>{v.date}</span>
         </div>
         <div className="flex items-center flex-wrap" style={{ gap: 26, position: "relative" }}>
@@ -3010,7 +3010,7 @@ function LatestCard({ v, secs }) {
             <div style={{ flex: "0 0 auto", margin: "0 auto" }}><VersionHighlight h={v.highlight} /></div>
           )}
         </div>
-        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(25,227,168,.45), transparent)", margin: "22px 0 18px" }} />
+        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.45), transparent)", margin: "22px 0 18px" }} />
         <div style={{ position: "relative" }}><ItemList sections={secs} big /></div>
       </div>
     </motion.section>
@@ -3026,15 +3026,15 @@ function EraBlock({ era, rows, openSet, toggle, forceOpen }) {
           <div style={{ fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{tx("{0} 시리즈", era)}</div>
           <div style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("버전 {0}개", rows.length)} · {last}{last !== first ? " → " + first : ""}</div>
         </div>
-        <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(25,227,168,.4), transparent)", marginBottom: 10 }} />
+        <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.4), transparent)", marginBottom: 10 }} />
       </div>
       <div style={{ ...GLASS, borderRadius: 20, overflow: "hidden" }}>
         {rows.map(({ v, secs }, i) => {
           const open = forceOpen || openSet.has(v.version);
           const cnt = secs.reduce((n, s) => n + s.items.length, 0);
           return (
-            <div id={"v" + v.version.replace(/\./g, "-")} key={v.version} style={{ borderTop: i ? "1px solid rgba(25,227,168,.14)" : "none", scrollMarginTop: 130 }}>
-              <button onClick={() => toggle(v.version)} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: open ? "rgba(25,227,168,.07)" : "transparent", border: "none", cursor: "pointer", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit", transition: "background .2s" }}>
+            <div id={"v" + v.version.replace(/\./g, "-")} key={v.version} style={{ borderTop: i ? "1px solid rgba(196,154,80,.14)" : "none", scrollMarginTop: 130 }}>
+              <button onClick={() => toggle(v.version)} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: open ? "rgba(196,154,80,.07)" : "transparent", border: "none", cursor: "pointer", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit", transition: "background .2s" }}>
                 <span style={{ flexShrink: 0, width: 66, fontSize: 15, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ivoryHi, lineHeight: 1.55 }}>{v.summary}</span>
@@ -3110,21 +3110,21 @@ function HistoryPage() {
       </Reveal>
 
       {/* 필터·검색 줄 — 위에 붙어서 따라온다 */}
-      <div className="no-swipe" style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -20px 26px", padding: "10px 20px 12px", background: "linear-gradient(180deg, rgba(6,10,22,.97), rgba(6,10,22,.85))", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(25,227,168,.15)" }}>
+      <div className="no-swipe" style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -20px 26px", padding: "10px 20px 12px", background: "linear-gradient(180deg, rgba(27,16,9,.97), rgba(27,16,9,.85))", backdropFilter: "blur(8px)", borderBottom: "1px solid rgba(196,154,80,.15)" }}>
         <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, scrollbarWidth: "none" }}>
           <CatPill cat="all" active={filter === "all"} onClick={() => setFilter("all")} />
           {CAT_ORDER.filter((c) => catCounts[c]).map((c) => <CatPill key={c} cat={c} count={catCounts[c]} active={filter === c} onClick={() => setFilter(filter === c ? "all" : c)} />)}
         </div>
         <div className="flex items-center" style={{ gap: 8 }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("변경 내용 검색")} aria-label={t("검색")}
-            style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,.3)", border: "1px solid rgba(25,227,168,.3)", borderRadius: 999, padding: "8px 16px", color: T.ivoryHi, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,.3)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 999, padding: "8px 16px", color: T.ivoryHi, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
           {!searching && (
-            <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(rest.map((r) => r.v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#04101A", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
+            <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(rest.map((r) => r.v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
           )}
         </div>
         {!searching && (
           <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 9, scrollbarWidth: "none" }}>
-            {allEras.map((e) => <button key={e} onClick={() => jumpEra(e)} className="press" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brass, background: "transparent", border: "1px solid rgba(25,227,168,.25)", borderRadius: 8, padding: "2px 9px", cursor: "pointer" }}>{e}</button>)}
+            {allEras.map((e) => <button key={e} onClick={() => jumpEra(e)} className="press" style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, fontFamily: "ui-monospace,monospace", color: T.brass, background: "transparent", border: "1px solid rgba(196,154,80,.25)", borderRadius: 8, padding: "2px 9px", cursor: "pointer" }}>{e}</button>)}
           </div>
         )}
       </div>
@@ -3189,14 +3189,14 @@ export default function AboutPage() {
   useEffect(() => { const el = pageElRefs.current[page]; if (el) el.scrollTo({ top: 0, behavior: "auto" }); }, [page]);
 
   return (
-    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(25,227,168,.1), transparent 70%), linear-gradient(180deg,#04101A,#070D1C 40%,#060A16)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
+    <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
       <style>{"@media (max-width: 560px){.about-era-body{padding-left:18px !important}}@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
       <Backdrop />
-      <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#101B33,#0B1326)" }}>
+      <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
-          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#04101A", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
+          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>
         {/* 탭 — 현재 페이지 아래에 금색 밑줄이 미끄러져 이동 */}
         <nav role="tablist" className="flex items-center justify-center" style={{ gap: 6, padding: "0 20px 10px" }}>
@@ -3204,7 +3204,7 @@ export default function AboutPage() {
             const on = page === i;
             return (
               <button key={m.key} role="tab" aria-selected={on} onClick={() => goTo(i)} className="press"
-                style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: on ? "#04101A" : T.brassHi, background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "rgba(25,227,168,.08)", boxShadow: on ? "0 4px 14px -4px rgba(140,255,217,.55)" : "inset 0 0 0 1px rgba(25,227,168,.3)", transition: "background .2s, color .2s" }}>
+                style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: on ? "#241509" : T.brassHi, background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "rgba(196,154,80,.08)", boxShadow: on ? "0 4px 14px -4px rgba(236,203,134,.55)" : "inset 0 0 0 1px rgba(196,154,80,.3)", transition: "background .2s, color .2s" }}>
                 <m.Icon size={14} />{m.label}
                 {i === 1 && <span style={{ fontSize: 10, fontFamily: "ui-monospace,monospace", opacity: 0.85 }}>v{LATEST_VERSION}</span>}
               </button>
