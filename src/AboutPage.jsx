@@ -10,6 +10,7 @@ import {
 import { t, tx } from "./lib/i18n.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
+import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -23,6 +24,7 @@ const T = {
 };
 // (기존 BOARD_GLOSS와 동일한 금색 광택 테두리 — 보드·모식도 등 사이트 전역에서 쓰는 것과 같은 처리)
 const GLOSS_BORDER = {
+  clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
   border: "2px solid transparent",
   borderImage: "linear-gradient(135deg, #F3DFAE, #C49A50 45%, #8A6C2F) 1",
   boxShadow: "0 0 0 1px rgba(196,154,80,.3), inset 0 1px 3px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.3)",
@@ -83,6 +85,8 @@ function Diamond({ x, y, size = 16, opacity = 0.18 }) {
 function Backdrop() {
   return (
     <svg aria-hidden="true" width="100%" height="100%" viewBox="0 0 1200 2400" preserveAspectRatio="xMidYMin slice" style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}>
+      <defs><pattern id="ab-grid" width="60" height="60" patternUnits="userSpaceOnUse"><path d="M60 0H0V60" fill="none" stroke="#C49A50" strokeWidth="0.6" opacity="0.09" /></pattern></defs>
+      <rect width="1200" height="2400" fill="url(#ab-grid)" />
       <circle cx="980" cy="180" r="320" fill="none" stroke={T.brass} strokeWidth="1" opacity="0.08" />
       <circle cx="120" cy="900" r="260" fill="none" stroke={T.brass} strokeWidth="1" opacity="0.06" strokeDasharray="2 9" />
       <circle cx="1080" cy="1500" r="300" fill="none" stroke={T.brass} strokeWidth="1" opacity="0.07" />
@@ -119,17 +123,17 @@ function Mascot({ char = "milku", expr = "great", size = 72 }) {
 
 // (기존 MascotBubble과 동일한 시각 언어 — 원형 초상 + 이름표 + 말풍선)
 function SpeechBubble({ mascot, name, children, align = "left" }) {
-  const avatar = <div style={{ width: 76, height: 76, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...GOLD_DISC }}><Mascot char={mascot.char} expr={mascot.expr} size={60} /></div>;
-  const bubble = (
-    <div style={{ minWidth: 0, flex: 1, background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, padding: "13px 16px", border: "1px solid #000", boxShadow: "inset 0 1px 0 rgba(255,255,255,.05)" }}>
-      <div style={{ color: T.brassHi, fontSize: 11, fontWeight: 800, marginBottom: 4 }}>{name}</div>
-      <p style={{ color: T.ivory, fontSize: 13, lineHeight: 1.65, margin: 0 }}>{children}</p>
-    </div>
-  );
+  const right = align === "right";
   return (
     <Reveal>
-      <div className="flex items-start" style={{ gap: 12, flexDirection: align === "right" ? "row-reverse" : "row" }}>
-        {avatar}{bubble}
+      <div className="flex items-start" style={{ gap: 14, flexDirection: right ? "row-reverse" : "row" }}>
+        <div style={{ width: 78, height: 78, flexShrink: 0, clipPath: octagon(15), background: "linear-gradient(135deg," + T.brassHi + "," + T.brass + " 55%,#8A6C2F)" }}>
+          <div style={{ margin: 2, height: "calc(100% - 4px)", clipPath: octagon(13), display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%,#5A3A22,#20140B)" }}><Mascot char={mascot.char} expr={mascot.expr} size={62} /></div>
+        </div>
+        <CutPanel cutSize={12} style={{ flex: 1 }} bodyStyle={{ padding: "11px 16px 14px" }}>
+          <div style={{ marginBottom: 4 }}><Sys color={T.brassHi}>{"// "}{name}</Sys></div>
+          <p style={{ color: T.ivory, fontSize: 13, lineHeight: 1.7, margin: 0 }}>{children}</p>
+        </CutPanel>
       </div>
     </Reveal>
   );
@@ -137,17 +141,7 @@ function SpeechBubble({ mascot, name, children, align = "left" }) {
 
 // 섹션 사이 구분선 — 사이트 전역 장식(브라스 다이아몬드)과 같은 모티프 + 워드마크 반복.
 function SectionDivider() {
-  return (
-    <Reveal y={0}>
-      <div className="flex items-center" style={{ gap: 10, margin: "56px 0", opacity: 0.75 }}>
-        <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")" }} />
-        <motion.svg width="14" height="14" viewBox="0 0 14 14" animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></motion.svg>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".22em", color: T.brass }}>OPENCHESS</span>
-        <motion.svg width="14" height="14" viewBox="0 0 14 14" animate={{ rotate: -360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }}><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="none" stroke={T.brass} strokeWidth="1.4" /></motion.svg>
-        <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)" }} />
-      </div>
-    </Reveal>
-  );
+  return <Reveal y={0}><AsciiRule label="OPENCHESS" /></Reveal>;
 }
 
 // (v0.1.3 기능) "실제 웹사이트 화면 스크린샷도 많이 사용해 달라"는 요청 — 게스트 모드로 각 탭을
@@ -158,8 +152,8 @@ function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.85, rotate: tilt + (tilt >= 0 ? 7 : -7), y: 18 }} whileInView={{ opacity: 1, scale: 1, rotate: tilt, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
       <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay }}
-        style={{ borderRadius: 20, padding: 5, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
-        <div style={{ borderRadius: 15, overflow: "hidden", border: "1px solid #000", height: 340 }}>
+        style={{ borderRadius: 2, padding: 5, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
+        <div style={{ borderRadius: 2, overflow: "hidden", border: "1px solid #000", height: 340 }}>
           <img src={src} alt={alt} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
         </div>
       </motion.div>
@@ -196,7 +190,7 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
     <motion.div ref={wrapRef} initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ width: size, flexShrink: 0 }}>
       <motion.div animate={inView ? { y: [0, -7, 0] } : { y: 0 }} transition={inView ? { duration: 3.6, repeat: Infinity, ease: "easeInOut", delay } : { duration: 0.3 }} style={{ willChange: "transform" }}>
-        <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", ...GLOSS_BORDER }}>
+        <div style={{ position: "relative", borderRadius: 2, overflow: "hidden", ...GLOSS_BORDER }}>
           <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
             {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
               const light = (r + c) % 2 === 0;
@@ -234,7 +228,7 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
           </div>
         </div>
       </motion.div>
-      {caption && <div style={{ marginTop: 10, textAlign: "center" }}><span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, background: "rgba(0,0,0,.35)", borderRadius: 999, padding: "4px 11px", border: "1px solid " + T.brass, display: "inline-block" }}>{caption}</span></div>}
+      {caption && <div style={{ marginTop: 10, textAlign: "center" }}><span style={{ fontSize: 10.5, fontWeight: 800, color: T.brassHi, background: "rgba(0,0,0,.35)", borderRadius: 2, padding: "4px 11px", border: "1px solid " + T.brass, display: "inline-block" }}>{caption}</span></div>}
     </motion.div>
   );
 }
@@ -337,7 +331,7 @@ function TierStrip() {
             <TierBadgeShape size={56 + i * 3}>
               <img src={t.img} alt={t.label} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
             </TierBadgeShape>
-            <span style={{ fontSize: 9.5, fontWeight: 800, color: T.brassHi, whiteSpace: "nowrap" }}>{t.label}</span>
+            <span style={{ fontSize: 9.5, fontWeight: 800, fontStyle: "italic", color: T.brassHi, whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{"T" + (i + 1) + " ▸ "}{t.label}</span>
           </motion.div>
         ))}
       </motion.div>
@@ -357,12 +351,12 @@ const GM_AURORA = "linear-gradient(120deg,#B983FF,#6EE7C8 50%,#FF8FD1)";
 function GrandmasterSkinPreview() {
   return (
     <div className="flex items-center" style={{ gap: 14 }}>
-      <div style={{ width: 76, height: 76, borderRadius: 12, overflow: "hidden", flexShrink: 0, ...GLOSS_BORDER }}>
+      <div style={{ width: 76, height: 76, borderRadius: 2, overflow: "hidden", flexShrink: 0, ...GLOSS_BORDER }}>
         <div style={{ width: "100%", height: "100%", backgroundImage: "url(/boards/grandmaster-board.jpg)", backgroundSize: "200% 200%", backgroundPosition: "0% 0%" }} />
       </div>
       <div className="flex items-center" style={{ gap: 4 }}>
         {["/pieces/grandmaster/white-queen.webp", "/pieces/grandmaster/black-knight.webp", "/pieces/grandmaster/white-rook.webp"].map((src) => (
-          <div key={src} style={{ width: 52, height: 52, borderRadius: 10, background: "rgba(0,0,0,.28)", border: "1px solid #4A3521", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <div key={src} style={{ width: 52, height: 52, borderRadius: 2, background: "rgba(0,0,0,.28)", border: "1px solid #4A3521", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
           </div>
         ))}
@@ -373,8 +367,8 @@ function GrandmasterSkinPreview() {
 function GrandmasterCard() {
   return (
     <Reveal>
-      <div style={{ position: "relative", borderRadius: 20, padding: "2px", background: GM_AURORA, boxShadow: "0 20px 50px -20px rgba(185,131,255,.35)" }}>
-        <div style={{ borderRadius: 18, padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#150C05 55%,#0f1f1a)" }}>
+      <div style={{ position: "relative", clipPath: cut(26), padding: "2px", background: GM_AURORA, filter: "drop-shadow(0 20px 40px rgba(185,131,255,.3))" }}>
+        <div style={{ clipPath: cut(25), padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#150C05 55%,#0f1f1a)" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 28 }}>
             <motion.div initial={{ opacity: 0, scale: 0.8, rotate: -6 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ flex: "0 0 auto", width: 168, margin: "0 auto" }}>
@@ -386,7 +380,7 @@ function GrandmasterCard() {
                 <Crown size={15} color="#E8C6FF" />
                 <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", background: GM_AURORA, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("최종 티어")}</span>
               </div>
-              <h3 style={{ fontSize: 23, fontWeight: 900, color: T.ivoryHi, margin: "0 0 10px" }}>{t("그랜드마스터")}</h3>
+              <h3 className="ab-glitch" style={{ fontSize: 26, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 10px", display: "inline-block" }}>{t("그랜드마스터")}</h3>
               <p style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.75, margin: "0 0 16px" }}>{t("아이언에서 시작해 여섯 단계를 모두 넘어야 도달하는 일곱 번째, 마지막 티어입니다")}</p>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: T.brassHi, letterSpacing: ".04em", marginBottom: 6 }}>{t("달성 조건")}</div>
@@ -464,16 +458,16 @@ function KineticTagline() {
 function Chapter({ no, eyebrow, title, desc, id }) {
   return (
     <Reveal>
-      <header id={id} style={{ position: "relative", textAlign: "center", margin: "0 auto 34px", maxWidth: 560, scrollMarginTop: 80 }}>
-        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -34, transform: "translateX(-50%)", fontSize: 108, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", userSelect: "none", pointerEvents: "none" }}>{no}</span>
+      <header id={id} style={{ position: "relative", textAlign: "center", margin: "0 auto 40px", maxWidth: 600, scrollMarginTop: 80 }}>
+        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -40, transform: "translateX(-50%) skewX(-8deg)", fontSize: 120, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.2)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none", whiteSpace: "nowrap" }}>{no}</span>
         <div style={{ position: "relative" }}>
-          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 10 }}>
-            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".18em" }}><ScrambleText text={String(eyebrow)} /></span>
-            <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
+          <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 12 }}>
+            <Sys style={{ opacity: 0.7 }}>{"// CH."}{no}</Sys>
+            <Tag solid><ScrambleText text={String(eyebrow)} /></Tag>
           </div>
-          <h2 style={{ fontSize: "clamp(24px, 4vw, 32px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 10px", letterSpacing: "-.01em", lineHeight: 1.25 }}>{title}</h2>
-          {desc && <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{desc}</p>}
+          <h2 className="ab-glitch" style={{ fontSize: "clamp(25px, 4.2vw, 34px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.015em", lineHeight: 1.25, display: "inline-block" }}>{title}</h2>
+          <div aria-hidden="true" style={{ width: 64, height: 4, margin: "0 auto 14px", clipPath: para(4), background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
+          {desc && <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.85, margin: 0 }}>{desc}</p>}
         </div>
       </header>
     </Reveal>
@@ -493,15 +487,17 @@ const NEW_CARDS = [
 function NewCard({ c, i }) {
   return (
     <motion.div initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
-      whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      style={{ ...GLASS, gridColumn: c.wide ? "span 2" : "span 1", borderRadius: 20, padding: "22px 22px 24px", position: "relative", overflow: "hidden", minWidth: 0 }} className="about-bento">
-      <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 130, height: 130, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
-      <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
-        <span style={{ width: 38, height: 38, borderRadius: 12, background: c.color + "22", border: "1px solid " + c.color + "88", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={19} color={c.color} /></span>
-        <span style={{ fontSize: 11, fontWeight: 800, color: c.color, letterSpacing: ".1em" }}>{c.tag}</span>
-      </div>
-      <h3 style={{ fontSize: 18, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{c.title}</h3>
-      <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{c.desc}</p>
+      whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: c.wide ? "span 2" : "span 1", minWidth: 0 }} className="about-bento">
+      <CutPanel accent={c.color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
+        <Brackets color={c.color} />
+        <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
+        <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
+          <span style={{ width: 40, height: 40, clipPath: octagon(10), background: c.color + "33", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={20} color={c.color} /></span>
+          <Tag color={c.color}>{c.tag}</Tag>
+        </div>
+        <h3 style={{ fontSize: 18, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{c.title}</h3>
+        <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{c.desc}</p>
+      </CutPanel>
     </motion.div>
   );
 }
@@ -527,7 +523,7 @@ function SkinSets() {
       {SKIN_SHOWCASE.map((k, i) => (
         <motion.div key={k.id} initial={{ opacity: 0, y: 24, rotate: i % 2 ? 2 : -2 }} whileInView={{ opacity: 1, y: 0, rotate: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
           whileHover={{ y: -6, transition: { duration: 0.2 } }}
-          style={{ ...GLASS, flex: "1 1 160px", maxWidth: 190, borderRadius: 18, padding: "16px 12px 14px", textAlign: "center" }}>
+          style={{ ...GLASS, flex: "1 1 160px", maxWidth: 190, borderRadius: 2, padding: "16px 12px 14px", textAlign: "center" }}>
           <div className="flex items-end justify-center" style={{ height: 76, marginBottom: 10 }}>
             {["white-pawn", "black-knight", "white-queen"].map((f, j) => (
               <img key={f} src={"/pieces/" + k.id + "/" + f + ".webp"} alt="" loading="lazy" style={{ height: j === 2 ? 74 : 60, width: "auto", marginLeft: j ? -10 : 0, filter: "drop-shadow(0 6px 8px rgba(0,0,0,.5))" }} />
@@ -570,7 +566,7 @@ function FloatChip({ children, x, y, delay = 0, rot = 0, z = 3 }) {
     <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 + delay, duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ position: "absolute", ...x, ...y, zIndex: z }}>
       <motion.div animate={{ y: [0, -9, 0] }} transition={{ duration: 3.4 + delay * 2, repeat: Infinity, ease: "easeInOut", delay }}
-        style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid rgba(236,203,134,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
+        style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 2, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid rgba(236,203,134,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
         {children}
       </motion.div>
     </motion.div>
@@ -644,7 +640,7 @@ function EvalDemo() {
   const [ev, mv, cls] = evs[n];
   const pct = Math.max(4, Math.min(96, 50 + ev * 9));
   return (
-    <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521" }}>
+    <div style={{ marginTop: 18, padding: 14, borderRadius: 2, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521" }}>
       <div style={{ position: "relative", height: 24, borderRadius: 6, background: "#101010", overflow: "hidden", border: "1px solid #000" }}>
         <motion.div animate={{ width: pct + "%" }} transition={{ type: "spring", stiffness: 120, damping: 18 }} style={{ position: "absolute", left: 0, top: 0, bottom: 0, background: "#fff" }} />
         <span style={{ position: "absolute", left: 8, top: 3, fontSize: 12, fontWeight: 900, color: "#111", fontFamily: "ui-monospace,monospace", mixBlendMode: "normal" }}>{(ev > 0 ? "+" : "") + ev.toFixed(2)}</span>
@@ -662,23 +658,23 @@ function PuzzleDemo() {
   useEffect(() => { const id = setInterval(() => setStep((v) => (v + 1) % 2), 2600); return () => clearInterval(id); }, []);
   const themes = [[t("기물 희생하기"), "#D9736A"], [t("우위 점하기"), "#6FA8DC"], [t("실수 응징하기"), "#8FB55E"]];
   return (
-    <div style={{ borderRadius: 18, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
+    <div style={{ borderRadius: 2, padding: 16, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", boxShadow: "0 24px 44px -20px rgba(0,0,0,.8)", color: "#3A2516", maxWidth: 360, margin: "0 auto", position: "relative" }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         <div className="flex items-center" style={{ gap: 8 }}>
           <TierBadgeShape size={34}><img src="/iron-pawn.png" alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} /></TierBadgeShape>
           <div><div style={{ fontSize: 12, fontWeight: 900 }}>{t("아이언")} 5</div><div style={{ width: 90, height: 4, borderRadius: 2, background: "rgba(90,58,34,.2)", marginTop: 3 }}><motion.div animate={{ width: step ? "46%" : "28%" }} style={{ height: "100%", borderRadius: 2, background: "#C49A50" }} /></div></div>
         </div>
-        <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 999, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
+        <span className="flex items-center" style={{ gap: 5, fontSize: 12, fontWeight: 900, background: "rgba(58,37,22,.9)", color: T.brassHi, borderRadius: 2, padding: "4px 10px" }}><img src="/oc-coin.png" alt="" style={{ width: 16, height: 16 }} />800</span>
       </div>
       <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
-        {themes.map(([l, c], i) => <span key={l} style={{ fontSize: 11, fontWeight: 800, color: i === 2 ? "#fff" : "#3A2516", background: i === 2 ? c : "rgba(58,37,22,.08)", border: "1px solid " + c, borderRadius: 999, padding: "3px 10px" }}>{l}</span>)}
+        {themes.map(([l, c], i) => <span key={l} style={{ fontSize: 11, fontWeight: 800, color: i === 2 ? "#fff" : "#3A2516", background: i === 2 ? c : "rgba(58,37,22,.08)", border: "1px solid " + c, borderRadius: 2, padding: "3px 10px" }}>{l}</span>)}
       </div>
       <div className="flex justify-center" style={{ position: "relative" }}>
         <DecoBoard {...DECO_B} size={200} caption={null} />
         <AnimatePresence>
           {step === 1 && (
             <motion.div initial={{ opacity: 0, y: 14, scale: 0.7 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}
-              style={{ position: "absolute", right: 4, top: -6, display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(180deg,#8FB55E,#5F8A3A)", color: "#fff", borderRadius: 12, padding: "6px 12px", fontSize: 13, fontWeight: 900, boxShadow: "0 8px 18px -6px rgba(0,0,0,.5)" }}>
+              style={{ position: "absolute", right: 4, top: -6, display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(180deg,#8FB55E,#5F8A3A)", color: "#fff", borderRadius: 2, padding: "6px 12px", fontSize: 13, fontWeight: 900, boxShadow: "0 8px 18px -6px rgba(0,0,0,.5)" }}>
               <Check size={15} />{t("정답!")} <span style={{ fontFamily: "ui-monospace,monospace" }}>+18 XP</span>
             </motion.div>
           )}
@@ -696,7 +692,7 @@ function QuestDemo() {
   const [done, setDone] = useState({});
   const n = Object.keys(done).filter((k) => done[k]).length;
   return (
-    <div style={{ borderRadius: 16, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
+    <div style={{ borderRadius: 2, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 900 }}>{t("일일 퀘스트")}</span>
         <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료 처리해 볼 수 있습니다")}</span>
@@ -704,14 +700,14 @@ function QuestDemo() {
       {QUESTS.map((q) => {
         const on = !!done[q.k];
         return (
-          <button key={q.k} onClick={() => setDone((d) => ({ ...d, [q.k]: !d[q.k] }))} className="press no-swipe" style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 6, borderRadius: 12, border: "1px solid rgba(90,58,34,.25)", background: on ? "rgba(143,181,94,.22)" : "rgba(255,255,255,.4)", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
+          <button key={q.k} onClick={() => setDone((d) => ({ ...d, [q.k]: !d[q.k] }))} className="press no-swipe" style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", marginBottom: 6, borderRadius: 2, border: "1px solid rgba(90,58,34,.25)", background: on ? "rgba(143,181,94,.22)" : "rgba(255,255,255,.4)", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
             <span style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid " + (on ? "#5F8A3A" : "rgba(90,58,34,.4)"), background: on ? "#5F8A3A" : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Check size={13} color="#fff" />}</span>
             <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 12.5, fontWeight: 800, textDecoration: on ? "line-through" : "none", opacity: on ? 0.6 : 1 }}>{q.label}</span><span style={{ display: "block", fontSize: 10.5, opacity: 0.6 }}>{q.sub}</span></span>
             <span className="flex items-center" style={{ gap: 3, fontSize: 12, fontWeight: 900 }}>+10<img src="/oc-coin.png" alt="" style={{ width: 15, height: 15 }} /></span>
           </button>
         );
       })}
-      <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 12, border: "1px solid " + (n === QUESTS.length ? "#C49A50" : "rgba(90,58,34,.3)"), background: n === QUESTS.length ? "rgba(196,154,80,.25)" : "rgba(255,255,255,.3)" }}>
+      <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 2, border: "1px solid " + (n === QUESTS.length ? "#C49A50" : "rgba(90,58,34,.3)"), background: n === QUESTS.length ? "rgba(196,154,80,.25)" : "rgba(255,255,255,.3)" }}>
         <motion.img animate={n === QUESTS.length ? { rotate: [0, -12, 12, 0], scale: [1, 1.2, 1] } : {}} src="/oc-coin.png" alt="" style={{ width: 30, height: 30 }} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900 }}>{t("모든 퀘스트 완료 보상")}</div><div style={{ fontSize: 10.5, opacity: 0.65 }}>{tx("OC 나이트 코인 {0}개, {1}/{2} 완료", 50, n, QUESTS.length)}</div></div>
       </div>
@@ -727,7 +723,7 @@ function XpDemo() {
   const cur = TIER_DEMO[ti];
   const solve = () => setXp((v) => { const nv = v + 90; if (nv >= cur.max) { setTi((x) => (x + 1) % TIER_DEMO.length); return 0; } return nv; });
   return (
-    <div style={{ borderRadius: 16, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
+    <div style={{ borderRadius: 2, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("경험치와 티어")}</div>
       <div className="flex items-center" style={{ gap: 14, flex: 1 }}>
         <AnimatePresence mode="popLayout"><motion.div key={ti} initial={{ scale: 0.4, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 260, damping: 15 }}>
@@ -739,7 +735,7 @@ function XpDemo() {
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{xp.toLocaleString()} / {cur.max.toLocaleString()} XP</div>
         </div>
       </div>
-      <button onClick={solve} className="press no-swipe" style={{ marginTop: 12, padding: "10px 0", borderRadius: 11, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: 13, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 0 #7A5E22" }}>{t("퍼즐 풀기")} +90 XP</button>
+      <button onClick={solve} className="press no-swipe" style={{ marginTop: 12, padding: "10px 0", borderRadius: 2, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 900, fontSize: 13, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 0 #7A5E22" }}>{t("퍼즐 풀기")} +90 XP</button>
     </div>
   );
 }
@@ -751,7 +747,7 @@ function KitCell({ children, delay = 0 }) {
 function MoveGrid() {
   const MOVES = [["Brilliant", t("탁월한 수")], ["Great", t("유일한 수")], ["Best", t("최선의 수")], ["Excellent", t("우수한 수")], ["Good", t("좋은 수")], ["Book", t("이론")], ["Inaccuarcy", t("부정확")], ["Mistake", t("실수")], ["Miss", t("놓친 수")], ["Blunder", t("블런더")]];
   return (
-    <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
+    <div style={{ ...GLASS, borderRadius: 2, padding: 16, flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("수 등급")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
         {MOVES.map(([k, l], i) => (
@@ -766,12 +762,12 @@ function MoveGrid() {
 }
 function RarityDemo() {
   return (
-    <div style={{ ...GLASS, borderRadius: 16, padding: 16, flex: 1 }}>
+    <div style={{ ...GLASS, borderRadius: 2, padding: 16, flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("스킨 등급")}</div>
       <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
         {RARITIES.map(([r, c]) => <motion.span key={r} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
       </div>
-      <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 12, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
+      <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 2, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
         <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900, color: T.ivoryHi }}>{t("1회 뽑기")}</div><div style={{ fontSize: 11, color: T.inkSoft }}>{t("중복이면 150코인 환급")}</div></div>
         <span style={{ fontSize: 14, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>500</span>
@@ -800,16 +796,18 @@ function ChapterNav({ scrollRef }) {
   }, [scrollRef]);
   const go = (id) => { const el = document.getElementById("ch-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
-    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 520, borderRadius: 18, background: "rgba(22,12,6,.88)", backdropFilter: "blur(10px)", border: "1px solid rgba(196,154,80,.3)", boxShadow: "0 12px 30px -14px rgba(0,0,0,.8)", display: "flex", padding: "4px" }}>
-      {TAB_META.map((m, i) => {
-        const on = i === cur;
-        return (
-          <button key={m.id} onClick={() => go(m.id)} className="press" aria-label={m.label} style={{ position: "relative", flex: 1, minWidth: 0, background: on ? "rgba(196,154,80,.16)" : "transparent", border: "none", borderRadius: 14, cursor: "pointer", padding: "9px 2px 7px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: on ? T.brassHi : "#8E7A5E", fontFamily: "inherit", transition: "background .2s, color .2s" }}>
-            <m.Icon size={19} />
-            <span style={{ fontSize: 10.5, fontWeight: 800 }}>{m.label}</span>
-          </button>
-        );
-      })}
+    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 540, clipPath: cut(12), background: "linear-gradient(135deg,rgba(236,203,134,.5),rgba(196,154,80,.15) 50%,rgba(196,154,80,.4))", filter: "drop-shadow(0 12px 22px rgba(0,0,0,.6))" }}>
+      <div style={{ margin: 1.5, clipPath: cut(12), background: "rgba(22,12,6,.92)", backdropFilter: "blur(10px)", display: "flex", padding: 4, gap: 2 }}>
+        {TAB_META.map((m, i) => {
+          const on = i === cur;
+          return (
+            <button key={m.id} onClick={() => go(m.id)} className="press ab-glitch" aria-label={m.label} style={{ position: "relative", flex: 1, minWidth: 0, clipPath: para(7), background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "transparent", border: "none", cursor: "pointer", padding: "8px 2px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: on ? "#241509" : T.brass, fontFamily: "inherit", transition: "background .2s, color .2s" }}>
+              <m.Icon size={18} />
+              <span style={{ fontSize: 10, fontWeight: 800, fontStyle: "italic" }}>{m.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -821,7 +819,7 @@ function PhoneFan({ shots }) {
         <motion.figure key={x.n} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.2 }} transition={{ duration: 0.55, delay: i * 0.1, ease: [0.22, 0.9, 0.32, 1] }}
           style={{ margin: 0, marginTop: i % 2 ? 36 : 0, width: w, maxWidth: "100%", textAlign: "center" }}>
           <Phone src={SHOT(x.n)} alt={x.cap} width={w} tilt={i % 2 ? 2 : -2} />
-          <figcaption style={{ marginTop: 12, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, lineHeight: 1.5 }}>{x.cap}</figcaption>
+          <figcaption style={{ marginTop: 12, fontSize: 11, fontWeight: 700, color: T.inkSoft, lineHeight: 1.5, fontFamily: "ui-monospace,monospace" }}>{"▸ "}{x.cap}</figcaption>
         </motion.figure>
       ))}
     </div>
@@ -829,19 +827,20 @@ function PhoneFan({ shots }) {
 }
 function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extra, flip }) {
   return (
-    <section id={"ch-" + id} style={{ scrollMarginTop: 84, marginBottom: 96 }}>
+    <section id={"ch-" + id} style={{ scrollMarginTop: 84, marginBottom: 100 }}>
       <Chapter no={no} eyebrow={label} title={title} desc={lead} />
       <div className="flex items-start flex-wrap justify-center" style={{ gap: 44, flexDirection: flip ? "row-reverse" : "row" }}>
         {shots.length > 0 && <PhoneFan shots={shots} />}
-        <div style={{ flex: "1 1 340px", minWidth: 280, maxWidth: shots.length ? 460 : 720, margin: shots.length ? 0 : "0 auto" }}>
+        <div style={{ flex: "1 1 340px", minWidth: 280, maxWidth: shots.length ? 470 : 720, margin: shots.length ? 0 : "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
           {blocks.map((b, i) => (
-            <motion.div key={b[0]} initial={{ opacity: 0, x: flip ? -22 : 22 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.35 }} transition={{ duration: 0.45, delay: i * 0.05, ease: [0.22, 0.9, 0.32, 1] }}
-              className="flex items-start" style={{ gap: 14, padding: "16px 0", borderTop: i ? "1px solid rgba(196,154,80,.16)" : "none" }}>
-              <span style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 10, background: "rgba(196,154,80,.13)", border: "1px solid rgba(196,154,80,.55)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>{String(i + 1).padStart(2, "0")}</span>
-              <div style={{ minWidth: 0 }}>
-                <h4 style={{ margin: "0 0 5px", fontSize: 16, fontWeight: 900, color: T.ivoryHi }}>{b[0]}</h4>
-                <p style={{ margin: 0, fontSize: 13.5, color: T.inkSoft, lineHeight: 1.85 }}>{b[1]}</p>
-              </div>
+            <motion.div key={b[0]} initial={{ opacity: 0, x: flip ? -22 : 22 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.35 }} transition={{ duration: 0.45, delay: i * 0.05, ease: [0.22, 0.9, 0.32, 1] }}>
+              <CutPanel cutSize={10} className="ab-glitch" bodyStyle={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 16px 15px 0", background: "linear-gradient(100deg,rgba(25,16,9,.98),rgba(40,26,15,.96))" }}>
+                <span style={{ flexShrink: 0, alignSelf: "stretch", width: 46, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 2, fontSize: 19, fontWeight: 900, fontStyle: "italic", color: T.brass, fontFamily: "ui-monospace,monospace", borderRight: "1px solid rgba(196,154,80,.22)" }}>{String(i + 1).padStart(2, "0")}</span>
+                <div style={{ minWidth: 0 }}>
+                  <h4 style={{ margin: "0 0 5px", fontSize: 15.5, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi }}>{b[0]}</h4>
+                  <p style={{ margin: 0, fontSize: 13.3, color: T.inkSoft, lineHeight: 1.85 }}>{b[1]}</p>
+                </div>
+              </CutPanel>
             </motion.div>
           ))}
         </div>
@@ -861,19 +860,22 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <div style={{ position: "relative", maxWidth: 1040, margin: "0 auto", padding: "52px 20px 36px" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 36 }}>
             <div style={{ flex: "1 1 400px", minWidth: 280 }}>
-              <Reveal><button onClick={onOpenHistory} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 8px", borderRadius: 999, border: "1px solid rgba(236,203,134,.4)", background: "rgba(27,16,9,.55)", backdropFilter: "blur(6px)", color: T.brassHi, fontSize: 12, fontWeight: 800, cursor: "pointer", marginBottom: 22 }}>
-                <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>v{version}</span>
-                {t("새 소식 보기")} <ArrowRight size={13} />
+              <Reveal><button onClick={onOpenHistory} className="press ab-glitch" style={{ display: "inline-flex", alignItems: "center", gap: 10, clipPath: para(9), padding: "7px 22px 7px 14px", border: "none", background: "rgba(236,203,134,.14)", color: T.brassHi, fontSize: 12, fontWeight: 800, fontStyle: "italic", cursor: "pointer", marginBottom: 22, fontFamily: "ui-monospace,monospace" }}>
+                <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", clipPath: para(5), padding: "2px 12px", fontSize: 11, fontWeight: 900 }}>v{version}</span>
+                {"▸ "}{t("새 소식 보기")} <ArrowRight size={13} />
               </button></Reveal>
               <Reveal delay={0.05}><h1 style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
               <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("오프닝을 외우는 대신 직접 두면서 익히고, 내가 틀린 수는 퍼즐로 다시 푸는 체스 학습 사이트입니다. 가입하지 않아도 쓸 수 있고 전부 무료입니다.")}</p></Reveal>
               <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
                 <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
-                <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 999, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
+                <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 2, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
               </div></Reveal>
-              <Reveal delay={0.2}><div className="flex items-center flex-wrap" style={{ gap: 22 }}>
+              <Reveal delay={0.2}><div className="flex flex-wrap" style={{ gap: 8 }}>
                 {[["7", t("티어 단계")], ["4", t("오프닝 갈래")], ["6", t("앱 탭")], ["100%", t("무료로 시작")]].map(([n, l]) => (
-                  <div key={l}><div style={{ fontSize: 26, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div><div style={{ fontSize: 11, color: T.inkSoft, fontWeight: 700, marginTop: 4 }}>{l}</div></div>
+                  <CutPanel key={l} cutSize={9} className="ab-glitch" bodyStyle={{ padding: "9px 16px 10px", background: "rgba(27,16,9,.85)" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div>
+                    <div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700, marginTop: 5 }}>{l}</div>
+                  </CutPanel>
                 ))}
               </div></Reveal>
             </div>
@@ -908,7 +910,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             [t("chess.com 연동"), t("설정에서 chess.com 아이디를 연결하면 실제로 둔 대국을 불러옵니다. 어디서 수가 무너졌는지 그 대국에서 바로 확인할 수 있습니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
-            <KitCell><div style={{ ...GLASS, borderRadius: 16, padding: "16px 16px 18px", flex: 1 }}><div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi }}>{t("평가 바 미리보기")}</div><EvalDemo /></div></KitCell>
+            <KitCell><div style={{ ...GLASS, borderRadius: 2, padding: "16px 16px 18px", flex: 1 }}><div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi }}>{t("평가 바 미리보기")}</div><EvalDemo /></div></KitCell>
             <KitCell delay={0.08}><MoveGrid /></KitCell>
           </div>} />
 
@@ -986,7 +988,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <div style={{ margin: "0 -20px 44px" }}><AsciiMarquee reverse dim /></div>
 
         <Reveal>
-          <div style={{ maxWidth: 360, margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+          <div style={{ maxWidth: 360, margin: "0 auto", borderRadius: 2, overflow: "hidden", ...GLOSS_BORDER }}>
             <FloatImg src="/ilust-4-web.webp" alt="MILKU vs KOKOA" />
           </div>
         </Reveal>
@@ -996,15 +998,16 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가해서 채팅하고, 프로필에서 서로의 풀이 수와 칭호를 볼 수 있습니다. 퍼즐을 공유하면 친구가 푼 만큼 경험치도 일부 받습니다.")}</SpeechBubble>
           </div>
           <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
-            style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 16, overflow: "hidden", ...GLOSS_BORDER }}>
+            style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 2, overflow: "hidden", ...GLOSS_BORDER }}>
             <FloatImg src="/ilust-2-web.webp" alt={t("MILKU와 KOKOA의 악수")} delay={0.4} />
           </motion.div>
         </section>
 
         <Reveal delay={0.05}>
-          <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 26, background: "radial-gradient(90% 120% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
+          <section className="flex items-center flex-wrap" style={{ gap: 28, marginTop: 72, padding: "40px 32px", borderRadius: 2, background: "radial-gradient(90% 120% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, justifyContent: "space-between" }}>
             <div style={{ flex: "1 1 260px", minWidth: 220 }}>
-              <h3 style={{ fontSize: 24, fontWeight: 900, color: T.ivoryHi, margin: "0 0 8px" }}>{t("지금 시작")}</h3>
+              <Sys style={{ opacity: 0.8 }}><ScrambleText text="[ NEXT LEVEL ▸ READY ]" /></Sys>
+              <h3 style={{ fontSize: 28, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "8px 0 8px" }}>{t("지금 시작")}</h3>
               <p style={{ fontSize: 13.5, color: T.inkSoft, margin: 0 }}>{t("가입하지 않고 게스트로도 둘러볼 수 있습니다.")}</p>
             </div>
             <div className="flex items-center" style={{ gap: 18 }}>
@@ -2882,7 +2885,7 @@ function TierPromoDemo() {
   const cur = PROMO_TIERS[i];
   return (
     <Reveal>
-      <div style={{ margin: "8px 0 28px", padding: "22px 16px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER, overflow: "hidden", position: "relative", height: 132 }}>
+      <div style={{ margin: "8px 0 28px", padding: "22px 16px", borderRadius: 2, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER, overflow: "hidden", position: "relative", height: 132 }}>
         <AnimatePresence mode="popLayout">
           <motion.div key={i} initial={{ x: 90, opacity: 0, scale: 0.7 }} animate={{ x: 0, opacity: 1, scale: 1 }} exit={{ x: -90, opacity: 0, scale: 0.7 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
             style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -2948,7 +2951,7 @@ function VersionHighlight({ h }) {
   if (h.kind === "img") return <ImageHighlight src={h.src} label={h.label} />;
   if (h.kind === "shot") return <ShotHighlight src={h.src} label={h.label} tilt={h.tilt} />;
   if (h.kind === "tierStrip") return (
-    <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 16, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
+    <Reveal><div style={{ margin: "8px 0 28px", padding: "18px 14px", borderRadius: 2, background: "linear-gradient(160deg,#241509,#150C05)", ...GLOSS_BORDER }}><TierStrip /></div></Reveal>
   );
   if (h.kind === "tierPromo") return <TierPromoDemo />;
   return null;
@@ -2961,29 +2964,30 @@ const CAT_ORDER = ["feature", "ui", "ux", "perf", "fix", "security"];
 const dateNum = (d) => parseInt(d.replace(/\D/g, ""), 10);
 function HStat({ n, label, sub }) {
   return (
-    <div style={{ ...GLASS, borderRadius: 18, padding: "16px 18px", flex: "1 1 150px", minWidth: 140 }}>
-      <div style={{ fontSize: 30, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}>{n}</div>
-      <div style={{ fontSize: 12, fontWeight: 800, color: T.ivoryHi, marginTop: 8 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10.5, color: T.inkSoft, marginTop: 2 }}>{sub}</div>}
-    </div>
+    <CutPanel cutSize={12} className="ab-glitch" style={{ flex: "1 1 150px", minWidth: 140 }} bodyStyle={{ padding: "14px 18px 15px" }}>
+      <Sys style={{ opacity: 0.7 }}>{"// "}{label}</Sys>
+      <div style={{ fontSize: 32, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1, margin: "10px 0 6px", textShadow: "-2px 0 rgba(217,115,106,.35), 2px 0 rgba(111,168,220,.3)" }}><ScrambleText text={String(n)} style={{ fontSize: "inherit", fontWeight: "inherit" }} /></div>
+      {sub && <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{sub}</div>}
+    </CutPanel>
   );
 }
 function CatPill({ cat, active, count, onClick }) {
   const c = cat === "all" ? { label: t("전체"), color: T.brassHi, Icon: null } : CAT[cat];
   return (
-    <button onClick={onClick} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800, border: "1px solid " + (active ? c.color : "rgba(196,154,80,.28)"), background: active ? c.color + "26" : "rgba(196,154,80,.05)", color: active ? c.color : T.inkSoft, transition: "all .18s" }}>
+    <button onClick={onClick} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, clipPath: para(8), padding: "7px 18px", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800, fontStyle: "italic", border: "none",
+      background: active ? "linear-gradient(180deg," + c.color + "," + c.color + "CC)" : "rgba(255,255,255,.05)", color: active ? "#241509" : c.color }}>
       {c.Icon && <c.Icon size={12} />}{c.label}{count != null && <span style={{ fontSize: 10.5, opacity: 0.75, fontFamily: "ui-monospace,monospace" }}>{count}</span>}
     </button>
   );
 }
 function ItemList({ sections, big }) {
   return (
-    <div>
+    <div style={{ position: "relative", paddingLeft: big ? 4 : 0 }}>
       {sections.map((s) => {
         const c = CAT[s.cat];
         return s.items.map((x, i) => (
           <div key={s.cat + i} className="flex items-start" style={{ gap: 10, padding: big ? "9px 0" : "6px 0" }}>
-            <span title={c.label} style={{ flexShrink: 0, marginTop: big ? 3 : 2, width: big ? 22 : 19, height: big ? 22 : 19, borderRadius: 7, background: c.color + "24", border: "1px solid " + c.color + "99", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={big ? 12 : 10.5} color={c.color} /></span>
+            <span title={c.label} style={{ flexShrink: 0, marginTop: big ? 3 : 2, width: big ? 22 : 19, height: big ? 22 : 19, clipPath: octagon(5), background: c.color + "30", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={big ? 12 : 10.5} color={c.color} /></span>
             <span style={{ minWidth: 0, fontSize: big ? 14 : 12.8, color: T.ivory, lineHeight: 1.75 }}>{x}</span>
           </div>
         ));
@@ -2993,70 +2997,76 @@ function ItemList({ sections, big }) {
 }
 function LatestCard({ v, secs }) {
   return (
-    <motion.section initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
-      style={{ position: "relative", borderRadius: 28, padding: 2, background: "linear-gradient(140deg," + T.brassHi + ",rgba(196,154,80,.25) 35%,rgba(196,154,80,.05) 60%," + T.brass + ")", boxShadow: "0 30px 70px -30px rgba(236,203,134,.35)", marginBottom: 56 }}>
-      <div style={{ borderRadius: 26, overflow: "hidden", position: "relative", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)", padding: "30px 28px 26px" }}>
-        <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.14)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
-        <div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
-          <span style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", borderRadius: 999, padding: "3px 11px" }}>{t("최신")}</span>
-          <span style={{ fontSize: 12, color: T.inkSoft }}>{v.date}</span>
+    <motion.section initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ marginBottom: 60, filter: "drop-shadow(0 24px 40px rgba(236,203,134,.18))" }}>
+      <CutPanel accent={T.brassHi} cutSize={30} bodyStyle={{ position: "relative", overflow: "hidden", padding: "30px 28px 26px", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)" }}>
+        <Brackets color={T.brassHi} size={12} inset={10} />
+        <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
+        <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 16, position: "relative" }}>
+          <Tag solid>{t("최신")}</Tag>
+          <Sys style={{ opacity: 0.8 }}>{"// "}{v.date}</Sys>
         </div>
         <div className="flex items-center flex-wrap" style={{ gap: 26, position: "relative" }}>
           <div style={{ flex: "1 1 320px", minWidth: 260 }}>
-            <div style={{ fontSize: "clamp(44px, 9vw, 68px)", fontWeight: 900, lineHeight: 1, fontFamily: "ui-monospace,monospace", background: "linear-gradient(100deg," + T.ivoryHi + "," + T.brassHi + " 60%," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", letterSpacing: "-.03em", marginBottom: 14 }}>v{v.version}</div>
+            <div className="ab-glitch" style={{ display: "inline-block", fontSize: "clamp(44px, 9vw, 70px)", fontWeight: 900, fontStyle: "italic", lineHeight: 1, marginBottom: 14, color: T.brassHi, textShadow: "-3px 0 rgba(217,115,106,.45), 3px 0 rgba(111,168,220,.4), 0 0 30px rgba(236,203,134,.3)" }}>
+              <ScrambleText text={"v" + v.version} style={{ fontSize: "inherit", fontWeight: "inherit", letterSpacing: "-.02em" }} />
+            </div>
             <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: T.ivoryHi, lineHeight: 1.6, maxWidth: 440 }}>{v.summary}</p>
           </div>
           {v.highlight && v.highlight.kind === "icon" && (
             <div style={{ flex: "0 0 auto", margin: "0 auto" }}><VersionHighlight h={v.highlight} /></div>
           )}
         </div>
-        <div style={{ height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.45), transparent)", margin: "22px 0 18px" }} />
+        <div aria-hidden="true" style={{ height: 6, margin: "22px 0 16px", background: "repeating-linear-gradient(100deg," + T.brass + " 0 10px, transparent 10px 16px)", opacity: 0.35 }} />
         <div style={{ position: "relative" }}><ItemList sections={secs} big /></div>
-      </div>
+      </CutPanel>
     </motion.section>
   );
 }
 function EraBlock({ era, rows, openSet, toggle, forceOpen }) {
   const last = rows[rows.length - 1].v.date, first = rows[0].v.date;
   return (
-    <section id={"era-" + era.replace(".", "-")} style={{ position: "relative", marginBottom: 48, scrollMarginTop: 130 }}>
-      <div className="flex items-end" style={{ gap: 16, marginBottom: 16, position: "relative" }}>
-        <span style={{ fontSize: 64, fontWeight: 900, lineHeight: 0.85, color: "transparent", WebkitTextStroke: "1.5px " + T.brass, letterSpacing: "-.03em" }}>{era}</span>
+    <section id={"era-" + era.replace(".", "-")} style={{ position: "relative", marginBottom: 54, scrollMarginTop: 130 }}>
+      <div className="flex items-end" style={{ gap: 16, marginBottom: 18, position: "relative" }}>
+        <span className="ab-glitch" style={{ fontSize: 68, fontWeight: 900, fontStyle: "italic", lineHeight: 0.85, color: "transparent", WebkitTextStroke: "1.5px " + T.brass, letterSpacing: "-.03em", fontFamily: "ui-monospace,monospace" }}>{era}</span>
         <div style={{ paddingBottom: 4 }}>
-          <div style={{ fontSize: 14, fontWeight: 900, color: T.ivoryHi }}>{tx("{0} 시리즈", era)}</div>
-          <div style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("버전 {0}개", rows.length)} · {last}{last !== first ? " → " + first : ""}</div>
+          <Sys style={{ opacity: 0.75 }}>{"// SERIES"}</Sys>
+          <div style={{ fontSize: 14, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, marginTop: 2 }}>{tx("{0} 시리즈", era)}</div>
+          <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{tx("버전 {0}개", rows.length)} · {last}{last !== first ? " → " + first : ""}</div>
         </div>
-        <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(196,154,80,.4), transparent)", marginBottom: 10 }} />
+        <span aria-hidden="true" style={{ flex: 1, height: 6, marginBottom: 10, background: "repeating-linear-gradient(100deg," + T.brass + " 0 8px, transparent 8px 14px)", opacity: 0.3 }} />
       </div>
-      <div style={{ ...GLASS, borderRadius: 20, overflow: "hidden" }}>
+      <div style={{ position: "relative", paddingLeft: 18, borderLeft: "2px solid rgba(196,154,80,.3)", marginLeft: 6 }}>
         {rows.map(({ v, secs }, i) => {
           const open = forceOpen || openSet.has(v.version);
           const cnt = secs.reduce((n, s) => n + s.items.length, 0);
           return (
-            <div id={"v" + v.version.replace(/\./g, "-")} key={v.version} style={{ borderTop: i ? "1px solid rgba(196,154,80,.14)" : "none", scrollMarginTop: 130 }}>
-              <button onClick={() => toggle(v.version)} aria-expanded={open} className="press" style={{ width: "100%", textAlign: "left", background: open ? "rgba(196,154,80,.07)" : "transparent", border: "none", cursor: "pointer", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, color: "inherit", fontFamily: "inherit", transition: "background .2s" }}>
-                <span style={{ flexShrink: 0, width: 66, fontSize: 15, fontWeight: 900, color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ivoryHi, lineHeight: 1.55 }}>{v.summary}</span>
-                  <span className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 5 }}>
-                    <span style={{ fontSize: 11, color: T.inkSoft }}>{v.date}</span>
-                    {secs.map((s) => <span key={s.cat} title={CAT[s.cat].label} style={{ width: 7, height: 7, borderRadius: "50%", background: CAT[s.cat].color }} />)}
-                    <span style={{ fontSize: 11, color: T.inkSoft }}>{tx("{0}개 변경", cnt)}</span>
+            <div id={"v" + v.version.replace(/\./g, "-")} key={v.version} style={{ position: "relative", marginBottom: 10, scrollMarginTop: 130 }}>
+              <span aria-hidden="true" style={{ position: "absolute", left: -28, top: 20, width: 12, height: 12, transform: "rotate(45deg)", background: open ? T.brassHi : T.ebony, border: "2px solid " + T.brass, boxShadow: open ? "0 0 10px " + T.brass : "none", transition: "all .25s" }} />
+              <CutPanel cutSize={12} accent={open ? T.brass : undefined} bodyStyle={{ overflow: "hidden", background: open ? "linear-gradient(160deg,rgba(58,37,22,.98),rgba(27,16,9,.98))" : undefined }}>
+                <button onClick={() => toggle(v.version)} aria-expanded={open} className="press ab-glitch" style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer", padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, fontFamily: "inherit" }}>
+                  <span style={{ flexShrink: 0, width: 70, fontSize: 16, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace" }}>v{v.version}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ivoryHi, lineHeight: 1.55 }}>{v.summary}</span>
+                    <span className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{v.date}</span>
+                      {secs.map((s) => <span key={s.cat} title={CAT[s.cat].label} style={{ width: 8, height: 5, clipPath: para(2), background: CAT[s.cat].color }} />)}
+                      <span style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{tx("{0}개 변경", cnt)}</span>
+                    </span>
                   </span>
-                </span>
-                <ChevronDown size={16} color={T.brass} style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }} />
-              </button>
-              <AnimatePresence initial={false}>
-                {open && (
-                  <motion.div key="b" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.28, ease: [0.22, 0.9, 0.32, 1] }} style={{ overflow: "hidden" }}>
-                    <div style={{ padding: "2px 18px 18px 98px" }} className="about-era-body">
-                      {v.mascot && <div style={{ marginBottom: 12 }}><SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble></div>}
-                      <ItemList sections={secs} />
-                      {v.mascot && <div style={{ marginTop: 14 }}><SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble></div>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  <ChevronDown size={16} color={T.brass} style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }} />
+                </button>
+                <AnimatePresence initial={false}>
+                  {open && (
+                    <motion.div key="b" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.28, ease: [0.22, 0.9, 0.32, 1] }} style={{ overflow: "hidden" }}>
+                      <div style={{ padding: "2px 18px 18px 18px", borderTop: "1px dashed rgba(196,154,80,.25)", marginTop: 2 }} className="about-era-body">
+                        {v.mascot && <div style={{ margin: "12px 0" }}><SpeechBubble mascot={v.mascot.intro} name={v.mascot.intro.name} align={v.mascot.intro.align}>{v.mascot.intro.text}</SpeechBubble></div>}
+                        <ItemList sections={secs} />
+                        {v.mascot && <div style={{ marginTop: 14 }}><SpeechBubble mascot={v.mascot.outro} name={v.mascot.outro.name} align={v.mascot.outro.align}>{v.mascot.outro.text}</SpeechBubble></div>}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </CutPanel>
             </div>
           );
         })}
@@ -3092,10 +3102,10 @@ function HistoryPage() {
           <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 14 }}>
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
             <History size={14} color={T.brass} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: T.brass, letterSpacing: ".18em" }}>CHANGELOG</span>
+            <Sys><ScrambleText text="[ CHANGELOG ]" /></Sys>
             <span style={{ width: 28, height: 1, background: T.brass, opacity: 0.6 }} />
           </div>
-          <h2 style={{ fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 900, color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.02em" }}>{t("버전 기록")}</h2>
+          <h2 style={{ fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.02em" }}>{t("버전 기록")}</h2>
           <p style={{ fontSize: 14, color: T.inkSoft, lineHeight: 1.8, margin: 0 }}>{tx("지금까지 낸 버전은 {0}개입니다. 아래로 내려갈수록 오래된 버전입니다.", VERSION_HISTORY.length)}</p>
         </div>
       </Reveal>
@@ -3117,9 +3127,9 @@ function HistoryPage() {
         </div>
         <div className="flex items-center" style={{ gap: 8 }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("변경 내용 검색")} aria-label={t("검색")}
-            style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,.3)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 999, padding: "8px 16px", color: T.ivoryHi, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,.3)", border: "1px solid rgba(196,154,80,.3)", borderRadius: 2, padding: "8px 16px", color: T.ivoryHi, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
           {!searching && (
-            <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(rest.map((r) => r.v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
+            <button onClick={() => setOpenSet(allOpen ? new Set() : new Set(rest.map((r) => r.v.version)))} className="press" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: "#241509", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", border: "none", borderRadius: 2, padding: "8px 14px", cursor: "pointer" }}>{allOpen ? t("모두 접기") : t("모두 펼치기")}</button>
           )}
         </div>
         {!searching && (
@@ -3190,13 +3200,13 @@ export default function AboutPage() {
 
   return (
     <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
-      <style>{"@media (max-width: 560px){.about-era-body{padding-left:18px !important}}@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
+      <style>{""+KIT_CSS+"@media (max-width: 560px){.about-era-body{padding-left:18px !important}}@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
       <Backdrop />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
           <img src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
-          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
+          <a href="/" className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 2, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>
         {/* 탭 — 현재 페이지 아래에 금색 밑줄이 미끄러져 이동 */}
         <nav role="tablist" className="flex items-center justify-center" style={{ gap: 6, padding: "0 20px 10px" }}>
@@ -3204,7 +3214,7 @@ export default function AboutPage() {
             const on = page === i;
             return (
               <button key={m.key} role="tab" aria-selected={on} onClick={() => goTo(i)} className="press"
-                style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: on ? "#241509" : T.brassHi, background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "rgba(196,154,80,.08)", boxShadow: on ? "0 4px 14px -4px rgba(236,203,134,.55)" : "inset 0 0 0 1px rgba(196,154,80,.3)", transition: "background .2s, color .2s" }}>
+                style={{ clipPath: para(10), position: "relative", display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 22px", borderRadius: 0, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: on ? "#241509" : T.brassHi, background: on ? "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")" : "rgba(196,154,80,.08)", boxShadow: on ? "0 4px 14px -4px rgba(236,203,134,.55)" : "inset 0 0 0 1px rgba(196,154,80,.3)", transition: "background .2s, color .2s" }}>
                 <m.Icon size={14} />{m.label}
                 {i === 1 && <span style={{ fontSize: 10, fontFamily: "ui-monospace,monospace", opacity: 0.85 }}>v{LATEST_VERSION}</span>}
               </button>
