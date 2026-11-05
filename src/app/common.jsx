@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareBg, T, DRAG_SCROLL_MULT } from "../lib/theme.js";
 import { sbClient, SB_ON, SB_TOKEN, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
+import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic } from "../lib/mecTactics.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
 import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
@@ -3509,6 +3510,26 @@ function pawnTensionFact(sansBeforeMove, san, color, fenRoot) {
 // ply(=sansBeforeMove.length)로 순환시킨다(REVIEW_COACH_COPY가 등급별 코멘트를 ply로 순환시키는
 // 것과 같은 방식) — 매번 랜덤하게 바뀌진 않지만, 대국을 훑어보는 동안 문구가 다양해진다. 기물
 // 이름(PIECE_KOR)은 "나이트"만 받침이 없어 조사가 갈리므로, 직접 붙이지 않고 josa* 헬퍼를 쓴다.
+// (v0.7.2) 전술 이름(문장·번역에 같은 표기를 쓴다)과 탐지 결과 → 문장 변환.
+const tacName = (k) => lcLatin(({ fork: t("포크"), skewer: t("스큐어"), discoveredAttack: t("디스커버드 어택"), discoveredCheck: t("디스커버드 체크"), doubleCheck: t("더블 체크"), promotion: t("승격") })[k] || k);
+const PKU = (c) => PIECE_KOR[String(c).toUpperCase()];
+function mecTacticPhrase(tac, seed) {
+  switch (tac.kind) {
+    case "fork": return MEC_PHRASES.fork(PKU(tac.piece), PKU(tac.targets[0].type), PKU(tac.targets[1].type), seed);
+    case "pinAbs": return MEC_PHRASES.pinAbs(PKU(tac.piece), PKU(tac.pinned), seed);
+    case "pinRel": return MEC_PHRASES.pinRel(PKU(tac.piece), PKU(tac.pinned), PKU(tac.behind), seed);
+    case "skewer": return MEC_PHRASES.skewer(PKU(tac.piece), PKU(tac.front), PKU(tac.back), seed);
+    case "discoveredAttack": return MEC_PHRASES.discoveredAttack(PKU(tac.piece), PKU(tac.slider), PKU(tac.target), seed);
+    case "discoveredCheck": return MEC_PHRASES.discoveredCheck(PKU(tac.piece), PKU(tac.by), seed);
+    case "doubleCheck": return MEC_PHRASES.doubleCheck(seed);
+    case "backRank": return MEC_PHRASES.backRank(PKU(tac.piece), seed);
+    case "mateThreat": return MEC_PHRASES.mateThreat(tac.san, seed);
+    case "promotion": return MEC_PHRASES.promotion(PKU(tac.piece), seed);
+    case "passedPawn": return MEC_PHRASES.passedPawn(tac.left, tac.squares.to, seed);
+    default: return null;
+  }
+}
+const MEC_POOR_KINDS = ["inaccuracy", "mistake", "miss", "blunder"];
 export function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
 // FEN 기반 — 공짜 기물을 잡지 않고도 좋은 수. 상대의 방치된(공짜로 잡을 수 있는) 기물이 있는데
 // 이 수가 그걸 잡지 않았고, 그런데도 이 수의 Stockfish 등급이 나쁘지 않다면(MEC_GOOD_KINDS)
@@ -4029,6 +4050,25 @@ const MEC_PHRASES = {
   captureWin: (p, s) => mecPick([t("교환 끝에 상대 {0:을/를} 얻었어요.", p), t("상대 {0:을/를} 잡았어요, 순이득이에요.", p), t("상대 {0:을/를} 얻었어요 — 교환이 이어져도 이득이에요.", p)], s),
   captureTrade: (p, s) => mecPick([t("상대 {0:을/를} 잡아 대등하게 교환했어요.", p), t("상대 {0:을/를} 잡아 기물을 맞바꿨어요.", p), t("상대 {0:을/를} 잡으며 교환했어요.", p)], s),
   checkForce: (s) => mecPick([t("체크로 상대의 응수를 강제했어요."), t("체크예요, 상대는 킹을 지키는 수밖에 없어요."), t("체크로 주도권을 잡았어요.")], s),
+  // (v0.7.2) 전술 — 이 수가 만든 것(A)
+  fork: (p, a, b, s) => mecPick([t("{0:이/가} 상대 {1:과/와} {2:을/를} 동시에 노려요 — 포크예요.", p, a, b), t("포크예요, {0:이/가} 상대 {1:과/와} {2:을/를} 한꺼번에 공격해요.", p, a, b), t("{0:이/가} 상대 {1:과/와} {2:을/를} 한 번에 노리는 포크예요. 둘 다 지키기는 어려워요.", p, a, b)], s),
+  pinAbs: (p, x, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 킹 앞에 묶었어요 — 핀이에요.", p, x), t("핀이에요, 상대 {1:은/는} 킹을 지키느라 움직일 수 없어요.", p, x), t("상대 {1:이/가} 킹 앞에서 핀에 걸렸어요, {0:이/가} 그 줄을 누르고 있어요.", p, x)], s),
+  pinRel: (p, x, y, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 뒤에 있는 {2} 앞에 묶었어요 — 핀이에요.", p, x, y), t("핀이에요, 상대 {1:이/가} 움직이면 뒤의 {2:을/를} 잃을 수 있어요.", p, x, y), t("상대 {1:은/는} 뒤의 {2:을/를} 지키느라 함부로 움직일 수 없는 핀 상태예요.", p, x, y)], s),
+  skewer: (p, x, y, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 먼저 노려요, 비키면 뒤의 {2:을/를} 잡을 수 있는 스큐어예요.", p, x, y), t("스큐어예요, 상대 {1:이/가} 피하면 뒤의 {2:이/가} 그대로 노출돼요.", p, x, y), t("상대 {1:을/를} 앞세워 뒤의 {2}까지 노리는 스큐어예요.", p, x, y)], s),
+  discoveredAttack: (m, sl, tg, s) => mecPick([t("{0:이/가} 비키는 순간 뒤에 있던 {1:이/가} 상대 {2:을/를} 노려요 — 디스커버드 어택이에요.", m, sl, tg), t("디스커버드 어택이에요, {0:이/가} 길을 열어 {1:이/가} 상대 {2:을/를} 겨눠요.", m, sl, tg), t("{0:을/를} 움직여 {1}의 공격선을 열었어요. 상대 {2:이/가} 노려져요.", m, sl, tg)], s),
+  discoveredCheck: (m, by, s) => mecPick([t("{0:이/가} 비키면서 {1:이/가} 체크를 걸었어요 — 디스커버드 체크예요.", m, by), t("디스커버드 체크예요, {0:을/를} 움직인 틈에 {1:이/가} 상대 킹을 노려요.", m, by), t("{0:을/를} 옮기자 뒤의 {1:이/가} 체크를 걸어요 — 디스커버드 체크예요.", m, by)], s),
+  doubleCheck: (s) => mecPick([t("두 기물이 동시에 체크를 걸었어요 — 더블 체크라 킹이 움직일 수밖에 없어요."), t("더블 체크예요, 막거나 잡을 수 없고 킹이 직접 피해야 해요."), t("체크가 두 곳에서 와요 — 더블 체크는 킹이 움직여야만 풀려요.")], s),
+  backRank: (p, s) => mecPick([t("상대 킹이 마지막 줄에 갇혀 있어서 {0}의 체크가 위협적이에요 — 백랭크 약점이에요.", p), t("백랭크 약점이에요, 킹이 도망갈 칸이 없어서 {0:으로/로} 체크를 걸었어요.", p), t("킹이 마지막 줄에서 빠져나갈 틈이 없어요. {0:으로/로} 체크해 압박해요.", p)], s),
+  mateThreat: (m, s) => mecPick([t("다음 수에 {0}, 즉 체크메이트를 노려요.", m), t("체크메이트 위협이에요 — 막지 않으면 {0} 한 수로 끝나요.", m), t("메이트 위협을 만들었어요. 다음 수 {0} 위협을 막아야 해요.", m)], s),
+  promotion: (p, s) => mecPick([t("폰이 {0:으로/로} 승격했어요.", p), t("끝까지 전진한 폰이 {0:으로/로} 승격했어요.", p), t("승격으로 {0:을/를} 새로 얻었어요.", p)], s),
+  passedPawn: (n, sq, s) => mecPick([t("막을 폰이 없는 통과폰이에요 — 승격까지 {0}칸 남았어요.", n, sq), t("통과폰이 {1}까지 전진했어요, 승격까지 {0}칸이에요.", n, sq), t("상대 폰이 막지 못하는 통과폰을 밀었어요. 승격까지 {0}칸 남았어요.", n, sq)], s),
+  // (v0.7.2) 나쁜 수의 원인(B) — 상대가 얻는 것
+  replyMate: (m, s) => mecPick([t("이 수를 두면 상대가 {0:으로/로} 바로 체크메이트예요.", m), t("상대에게 {0}, 체크메이트를 허용했어요.", m), t("{0} 한 수로 체크메이트가 나는 자리를 내줬어요.", m)], s),
+  replyTactic: (m, name, s) => mecPick([t("이 수 뒤에 상대가 {0:으로/로} {1:을/를} 걸 수 있어요.", m, name), t("상대에게 {0}의 {1} 기회를 열어 줬어요.", m, name), t("상대의 {0} {1:이/가} 가능해졌어요.", m, name)], s),
+  pinnedMove: (p, y, s) => mecPick([t("핀에 걸린 {0:을/를} 움직여서 뒤의 {1:이/가} 그대로 노출됐어요.", p, y), t("{0:은/는} {1:을/를} 지키려 핀에 걸려 있었는데, 움직여서 {1:이/가} 공격받아요.", p, y), t("핀을 무시하고 {0:을/를} 움직여서 {1:을/를} 위험에 빠뜨렸어요.", p, y)], s),
+  // (v0.7.2) 놓친 수의 전술(C)
+  missedMate: (m, s) => mecPick([t("더 좋은 수는 {0}였어요 — 바로 체크메이트였어요.", m), t("{0:으로/로} 체크메이트를 낼 수 있었어요.", m), t("놓친 수가 있어요, {0} 한 수로 체크메이트예요.", m)], s),
+  missedTactic: (m, name, s) => mecPick([t("더 좋은 수는 {0}였어요 — {1:을/를} 걸 수 있었어요.", m, name), t("{0:으로/로} {1:을/를} 걸 수 있었는데 놓쳤어요.", m, name), t("{1:이/가} 가능했어요, 더 좋은 수는 {0}였어요.", m, name)], s),
   exchangeFreeGive: (p, s) => mecPick([t("{0:을/를} 아무 대가 없이 상대에게 내주는 수예요.", p), t("지켜주는 기물 없이 {0:을/를} 공짜로 내줬어요.", p), t("{0:이/가} 공짜로 잡히는 자리로 갔어요.", p)], s),
   exchangeAccepted: (p, s) => mecPick([t("상대의 교환 요청을 받아들여 {0:을/를} 잡았어요.", p), t("교환 요청을 수락하고 {0:을/를} 그대로 잡았어요.", p), t("{0:을/를} 잡으며 교환 요청을 받아들였어요.", p)], s),
   exchangeDeclined: (p, s) => mecPick([t("상대의 교환 요청을 거절하고 기물을 물렸어요.", p), t("교환에 응하지 않고 {0:을/를} 노리던 기물을 피신시켰어요.", p), t("상대와의 교환을 거절하는 수예요.", p)], s),
@@ -4234,6 +4274,36 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       else if (nextMoveCastleFact(sansBeforeMove, san, color, fenRoot)) facts.push(MEC_PHRASES.nextCastle(seed));
     }
   }
+  // (v0.7.2) 전술(A·B·C) — chess.js로 독립 검증한 결과만 쓴다(src/lib/mecTactics.js).
+  //  · 좋은 등급의 수: 이 수가 만든 전술(포크·핀·스큐어·디스커버드·더블 체크·백랭크·메이트 위협·승격·통과폰)이 있으면 대표 사실이 된다.
+  //    잡는 수는 잡은 결과 문장 뒤에 이어 붙이고, 그 외에는 기존 사실을 대신한다(시각화용 threatOut은 새 전술 정보로 교체).
+  //  · 나쁜 등급의 수: 이 수 뒤에 상대가 얻는 전술·메이트(B), 핀에 걸린 기물을 움직인 경우(B), 놓친 최선 수의 전술(C)을 기존 설명 뒤에 덧붙인다.
+  try {
+    const fenBefore = fenOfRoot(fenRoot, sansBeforeMove);
+    if (MEC_GOOD_KINDS.includes(kind)) {
+      const tac = moveTactics(fenBefore, san)[0];
+      const phrase = tac ? mecTacticPhrase(tac, seed) : null;
+      if (phrase) {
+        if (!facts.length) facts.push(phrase);
+        else if (moveInfo && moveInfo.isCap) facts[0] = facts[0] + " " + phrase;
+        else { facts[0] = phrase; if (threatOut) for (const k of Object.keys(threatOut)) delete threatOut[k]; }
+        if (threatOut) threatOut.tactic = { kind: tac.kind, squares: tac.squares };
+      }
+    } else if (MEC_POOR_KINDS.includes(kind)) {
+      const extra = [];
+      const pm = pinnedMoveFact(fenBefore, san);
+      if (pm) { extra.push(MEC_PHRASES.pinnedMove(PKU(pm.piece), PKU(pm.exposed), seed)); if (threatOut) threatOut.tactic = { kind: "pinnedMove", squares: pm.squares }; }
+      else {
+        const rt = replyTactics(fenOfRoot(fenRoot, [...sansBeforeMove, san]));
+        if (rt) { extra.push(rt.kind === "mate" ? MEC_PHRASES.replyMate(rt.san, seed) : MEC_PHRASES.replyTactic(rt.san, tacName(rt.kind), seed)); if (threatOut) threatOut.tactic = { kind: "reply:" + rt.kind, san: rt.san, squares: rt.squares }; }
+      }
+      if (bestSan && stripSuffix(bestSan) !== stripSuffix(san)) {
+        const bt = bestMoveTactic(fenBefore, bestSan);
+        if (bt) extra.push(bt.kind === "mate" ? MEC_PHRASES.missedMate(bt.san, seed) : MEC_PHRASES.missedTactic(bt.san, tacName(bt.kind), seed));
+      }
+      if (extra.length) { if (facts.length) facts[0] = facts[0] + " " + extra.join(" "); else facts.push(extra.join(" ")); }
+    }
+  } catch { /* 전술 탐지 실패는 기존 설명만 보여 준다 */ }
   // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
   // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
   const devNote = developmentNote(sansBeforeMove, san, color, kind, fenRoot);
