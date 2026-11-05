@@ -1,5 +1,5 @@
-import React from "react";
-import { ScrambleText, MONO } from "./OpenTextArt.jsx";
+import React, { useEffect, useState } from "react";
+import { ScrambleText, MONO, useScramble } from "./OpenTextArt.jsx";
 
 // /about 디자인 키트 — OPEN 텍스트 아트 섹션에서 정한 시각 언어를 페이지 전체에 쓰기 위한 부품.
 //  · 모서리를 비스듬히 자른 패널(CutPanel) · 평행사변형 라벨/버튼 · 모노스페이스 `// 라벨` · 블록 문자 구분선 · 호버 글리치
@@ -18,6 +18,21 @@ export const KIT_CSS = `
 .ab-glitch{transition:filter .2s}
 .ab-glitch:hover{animation:ab-jit .34s steps(2) 1;filter:drop-shadow(-2px 0 rgba(217,115,106,.55)) drop-shadow(2px 0 rgba(111,168,220,.5))}
 .ab-caret{animation:ab-blink 1s steps(1) infinite}
+@keyframes ab-burst{0%,90%,100%{transform:none;text-shadow:none;filter:none}91%{transform:translate(-3px,0) skewX(-5deg);text-shadow:-3px 0 rgba(217,115,106,.75),3px 0 rgba(111,168,220,.65)}93%{transform:translate(4px,1px) skewX(4deg);text-shadow:3px 0 rgba(217,115,106,.7),-3px 0 rgba(111,168,220,.6)}95%{transform:translate(-2px,-1px);text-shadow:-2px 0 rgba(217,115,106,.6),2px 0 rgba(111,168,220,.5);filter:brightness(1.25)}97%{transform:translate(2px,0) skewX(-3deg);text-shadow:2px 0 rgba(217,115,106,.5),-2px 0 rgba(111,168,220,.4)}}
+.ab-burst{animation:ab-burst 7s steps(1,end) infinite;display:inline-block}
+.ab-burst-b{animation:ab-burst 8.5s steps(1,end) infinite}
+@keyframes ab-flicker{0%,100%{opacity:1}6%{opacity:.35}8%{opacity:1}52%{opacity:.8}54%{opacity:.3}56%{opacity:1}}
+.ab-flicker{animation:ab-flicker 5.5s steps(1,end) infinite}
+@keyframes ab-sweep{from{transform:translateY(-120%)}to{transform:translateY(420%)}}
+.ab-sweep{position:absolute;left:0;right:0;top:0;height:22%;pointer-events:none;background:linear-gradient(180deg,transparent,rgba(236,203,134,.16) 50%,transparent);animation:ab-sweep 5.2s linear infinite}
+@keyframes ab-drift{from{transform:translateY(105vh)}to{transform:translateY(-12vh)}}
+.ab-drift{position:fixed;bottom:0;font-family:ui-monospace,monospace;font-weight:700;color:#C49A50;opacity:.07;pointer-events:none;white-space:pre;line-height:1.1;animation:ab-drift linear infinite}
+.ab-sheen{position:relative;overflow:hidden}
+.ab-sheen::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);pointer-events:none}
+.ab-sheen:hover::after{left:130%;transition:left .55s ease}
+.ab-grain{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.06;mix-blend-mode:overlay}
+.ab-vignette{position:fixed;inset:0;pointer-events:none;z-index:3;background:radial-gradient(120% 90% at 50% 40%,transparent 55%,rgba(0,0,0,.45))}
+@keyframes ab-progress-head{0%,100%{opacity:1}50%{opacity:.4}}
 `;
 
 // `// LABEL` 형태의 모노스페이스 라벨.
@@ -35,10 +50,15 @@ export function Tag({ children, color = K.brassHi, solid, style }) {
 
 // 모서리를 자른 패널. 바깥 레이어가 가는 테두리색, 안쪽이 본체. accent를 주면 테두리가 그 색으로 빛난다.
 export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className }) {
+  const onMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--mx", (e.clientX - r.left) + "px"); e.currentTarget.style.setProperty("--my", (e.clientY - r.top) + "px"); e.currentTarget.style.setProperty("--spot", "1"); };
+  const onLeave = (e) => e.currentTarget.style.setProperty("--spot", "0");
   const edge = accent ? "linear-gradient(135deg," + accent + "," + accent + "55 55%," + accent + "AA)" : "linear-gradient(135deg,rgba(236,203,134,.55),rgba(196,154,80,.18) 50%,rgba(196,154,80,.4))";
   return (
-    <div className={className} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...style }}>
-      <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", ...bodyStyle }}>{children}</div>
+    <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...style }}>
+      <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...bodyStyle }}>
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, opacity: "var(--spot, 0)", transition: "opacity .25s", background: "radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(236,203,134,.2), transparent 70%)" }} />
+        {children}
+      </div>
     </div>
   );
 }
@@ -65,5 +85,31 @@ export function AsciiRule({ label = "OPENCHESS", style }) {
       <span style={{ fontSize: 11, fontWeight: 800, fontStyle: "italic", letterSpacing: ".3em", whiteSpace: "nowrap" }}>◆ <ScrambleText text={label} /> ◆</span>
       <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", fontSize: 11, letterSpacing: ".05em", opacity: 0.55 }}>{"█▓▒░"}{"─".repeat(60)}</span>
     </div>
+  );
+}
+
+// 상단 상태 줄 — 엔진·오프닝·퍼즐·코치가 "준비됨"을 알리듯 문구가 노이즈에서 풀려 나오며 순환한다.
+const STATUS = ["ENGINE ▸ STOCKFISH 18 READY", "OPENINGS ▸ 4 BRANCHES SYNCED", "PUZZLES ▸ YOUR MISTAKES LOADED", "REVIEW ▸ COACH ONLINE", "NEXT LEVEL ▸ LOADING"];
+export function StatusTicker({ style }) {
+  const [i, setI] = useState(0);
+  useEffect(() => { const id = setInterval(() => setI((v) => (v + 1) % STATUS.length), 2800); return () => clearInterval(id); }, []);
+  const txt = useScramble(STATUS[i], true, 22);
+  return (
+    <div aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".16em", color: K.brass, marginBottom: 12, ...style }}>
+      <span className="ab-caret" style={{ width: 7, height: 7, borderRadius: "50%", background: "#8FB55E", boxShadow: "0 0 8px #8FB55E" }} />
+      <span style={{ minWidth: 250, whiteSpace: "nowrap" }}>{txt}</span>
+    </div>
+  );
+}
+// 배경에 천천히 떠오르는 텍스트 아트 기둥(체스 기물·0/1·블록 문자)과 필름 그레인·비네트.
+const DRIFT = [["♜\n0\n1\n▒\n♞\n░\n1\n♝", 6, 14, 70, -10], ["░\n♛\n1\n0\n▓\n♚\n0", 17, 11, 95, -40], ["1\n♟\n▒\n0\n♝\n░\n1\n♜\n0", 31, 13, 80, -25], ["0\n♞\n░\n1\n♛\n▓", 48, 12, 110, -60], ["♚\n1\n▒\n♟\n0\n░\n♜", 63, 15, 75, -5], ["▓\n0\n♝\n1\n░\n♞\n0\n1", 78, 11, 100, -50], ["1\n♜\n░\n0\n♛\n▒\n♟", 91, 13, 85, -30]];
+const GRAIN = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
+export function AmbientLayer() {
+  return (
+    <>
+      {DRIFT.map(([txt, left, size, dur, delay], i) => <span key={i} aria-hidden="true" className="ab-drift" style={{ left: left + "%", fontSize: size, animationDuration: dur + "s", animationDelay: delay + "s" }}>{txt}</span>)}
+      <div aria-hidden="true" className="ab-grain" style={{ backgroundImage: GRAIN }} />
+      <div aria-hidden="true" className="ab-vignette" />
+    </>
   );
 }
