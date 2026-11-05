@@ -10,6 +10,7 @@ import { MOTION_EASE, FILES, BOARD_SKINS, PIECE_SKINS, BOARD_GLOSS, boardSquareB
 import { sbClient, SB_ON, SB_TOKEN, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch } from "../lib/supabaseClient.js";
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic } from "../lib/mecTactics.js";
+import { strategicFact } from "../lib/mecStrategy.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
 import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
@@ -3530,6 +3531,25 @@ function mecTacticPhrase(tac, seed) {
   }
 }
 const MEC_POOR_KINDS = ["inaccuracy", "mistake", "miss", "blunder"];
+function mecStrategyPhrase(f, good, seed) {
+  switch (f.kind) {
+    case "luft": return MEC_PHRASES.luft(seed);
+    case "shield": return MEC_PHRASES.shield(good, seed);
+    case "outpost": return MEC_PHRASES.outpost(PKU(f.piece), f.squares.to, seed);
+    case "seventh": return MEC_PHRASES.seventh(PKU(f.piece), seed);
+    case "openLine": return MEC_PHRASES.openLine(PKU(f.piece), seed);
+    case "centerPawn": return MEC_PHRASES.centerPawn(f.square, seed);
+    case "centerControl": return MEC_PHRASES.centerControl(f.square, seed);
+    case "passedCreated": return MEC_PHRASES.passedCreated(f.square, seed);
+    case "doubled": return MEC_PHRASES.doubled(good, seed);
+    case "isolated": return MEC_PHRASES.isolated(good, seed);
+    case "kingActivation": return MEC_PHRASES.kingActivation(seed);
+    case "kingWalk": return MEC_PHRASES.kingWalk(good, seed);
+    case "passiveMinor": return MEC_PHRASES.passiveMinor(PKU(f.piece), f.count, seed);
+    case "wingSpace": return MEC_PHRASES.wingSpace(f.file, f.side === "queen" ? t("퀸사이드") : t("킹사이드"), seed);
+    default: return null;
+  }
+}
 export function mecPick(variants, seed) { return variants[((seed % variants.length) + variants.length) % variants.length]; }
 // FEN 기반 — 공짜 기물을 잡지 않고도 좋은 수. 상대의 방치된(공짜로 잡을 수 있는) 기물이 있는데
 // 이 수가 그걸 잡지 않았고, 그런데도 이 수의 Stockfish 등급이 나쁘지 않다면(MEC_GOOD_KINDS)
@@ -4069,6 +4089,21 @@ const MEC_PHRASES = {
   // (v0.7.2) 놓친 수의 전술(C)
   missedMate: (m, s) => mecPick([t("더 좋은 수는 {0}였어요 — 바로 체크메이트였어요.", m), t("{0:으로/로} 체크메이트를 낼 수 있었어요.", m), t("놓친 수가 있어요, {0} 한 수로 체크메이트예요.", m)], s),
   missedTactic: (m, name, s) => mecPick([t("더 좋은 수는 {0}였어요 — {1:을/를} 걸 수 있었어요.", m, name), t("{0:으로/로} {1:을/를} 걸 수 있었는데 놓쳤어요.", m, name), t("{1:이/가} 가능했어요, 더 좋은 수는 {0}였어요.", m, name)], s),
+  // (v0.7.2) 전략·구조(D) — 전술이 없는 조용한 수
+  luft: (s) => mecPick([t("킹 앞에 숨 쉴 칸(루프트)을 만들어 마지막 줄 체크메이트 위협을 줄였어요."), t("폰을 움직여 킹이 피할 칸을 열었어요 — 백랭크 위험이 줄어요."), t("킹에게 도망갈 칸이 생겼어요. 마지막 줄 약점을 미리 막은 수예요.")], s),
+  shield: (good, s) => mecPick(good ? [t("킹 앞의 폰을 움직여 킹 주변이 약해졌지만, 엔진에 의하면 괜찮은 수예요."), t("킹 앞 폰을 밀어 킹 주변에 빈틈이 생겼지만, 엔진에 의하면 감수할 만해요.")] : [t("킹 앞의 폰을 움직여서 킹 주변이 약해졌어요."), t("킹을 지키던 폰을 밀어 킹 주변에 빈틈이 생겼어요.")], s),
+  outpost: (p, sq, s) => mecPick([t("{0:이/가} 상대 폰이 몰아낼 수 없는 {1}의 전초기지에 자리 잡았어요.", p, sq), t("{1}에 있는 {0:은/는} 폰이 받쳐 주고 상대 폰이 건드릴 수 없는 전초기지예요.", p, sq), t("{0:을/를} 전초기지 {1}에 세웠어요 — 쫓아낼 폰이 없어요.", p, sq)], s),
+  seventh: (p, s) => mecPick([t("{0:이/가} 상대 진영의 7번째 줄까지 올라왔어요. 폰과 킹을 압박해요.", p), t("{0:을/를} 7번째 줄에 세워 상대 폰을 노려요.", p), t("7번째 줄에 올라온 {0}, 상대를 안쪽에서 압박해요.", p)], s),
+  openLine: (p, s) => mecPick([t("폰을 움직여 {0}의 길을 열었어요.", p), t("{0:이/가} 활동할 수 있도록 폰이 비켜 줬어요.", p), t("폰이 비키면서 {0}의 활동 범위가 넓어졌어요.", p)], s),
+  centerPawn: (sq, s) => mecPick([t("폰으로 중앙 {0:을/를} 차지했어요.", sq), t("중앙 {0:을/를} 폰으로 점령해 공간을 확보했어요.", sq), t("{0}에 폰을 세워 중앙을 장악하려 해요.", sq)], s),
+  centerControl: (sq, s) => mecPick([t("폰이 중앙의 {0:을/를} 노려 중앙 통제를 도와요.", sq), t("중앙의 {0} 칸을 폰으로 압박했어요.", sq), t("폰으로 중앙 {0:을/를} 지켜보며 상대 기물의 진입을 막아요.", sq)], s),
+  passedCreated: (sq, s) => mecPick([t("{0}에 통과폰이 생겼어요 — 막을 상대 폰이 없어요.", sq), t("이 수로 {0}의 폰이 통과폰이 됐어요.", sq), t("상대 폰이 막지 못하는 통과폰이 새로 생겼어요.")], s),
+  doubled: (good, s) => mecPick(good ? [t("폰이 겹쳤지만, 엔진에 의하면 감수할 만한 수예요."), t("겹폰이 생겼어요 — 폰 구조는 약해지지만 엔진에 의하면 괜찮아요.")] : [t("잡으면서 같은 파일에 폰이 두 개가 됐어요 — 겹폰이라 폰 구조가 약해져요."), t("폰이 겹쳐서 폰 구조가 약해졌어요.")], s),
+  isolated: (good, s) => mecPick(good ? [t("폰이 외톨이가 됐어요 — 고립폰이지만 엔진에 의하면 감수할 만해요."), t("고립폰이 생겼지만 엔진에 의하면 괜찮은 수예요.")] : [t("옆에서 지켜 줄 폰이 없는 고립폰이 생겼어요."), t("폰이 외톨이가 돼서 지키기 어려워졌어요.")], s),
+  kingActivation: (s) => mecPick([t("엔드게임이라 킹을 중앙 쪽으로 보내 직접 싸우게 해요."), t("킹을 활용하는 게 중요한 엔드게임이에요. 킹이 중앙으로 다가갔어요."), t("킹이 중앙으로 나와 폰과 기물을 거들어요.")], s),
+  kingWalk: (good, s) => mecPick(good ? [t("킹이 마지막 줄을 벗어났지만, 엔진에 의하면 괜찮은 수예요."), t("킹이 앞으로 나와 노출될 수 있지만 엔진에 의하면 감수할 만해요.")] : [t("킹이 마지막 줄을 벗어나 앞으로 나왔어요 — 공격에 노출될 수 있어요."), t("킹이 안전한 자리를 떠나 위험해졌어요.")], s),
+  passiveMinor: (p, n, s) => mecPick([t("{0:이/가} 갈 수 있는 칸이 {1}칸뿐이라 활동성이 떨어져요.", p, n), t("{0:은/는} 움직일 칸이 {1}칸밖에 없어 답답한 자리예요.", p, n)], s),
+  wingSpace: (file, side, s) => mecPick([t("측면 폰({0}열)을 앞으로 밀어 {1} 공간을 넓혀요.", file, side), t("{1}에서 {0}폰을 전진시켜 공간을 확보했어요.", file, side)], s),
   exchangeFreeGive: (p, s) => mecPick([t("{0:을/를} 아무 대가 없이 상대에게 내주는 수예요.", p), t("지켜주는 기물 없이 {0:을/를} 공짜로 내줬어요.", p), t("{0:이/가} 공짜로 잡히는 자리로 갔어요.", p)], s),
   exchangeAccepted: (p, s) => mecPick([t("상대의 교환 요청을 받아들여 {0:을/를} 잡았어요.", p), t("교환 요청을 수락하고 {0:을/를} 그대로 잡았어요.", p), t("{0:을/를} 잡으며 교환 요청을 받아들였어요.", p)], s),
   exchangeDeclined: (p, s) => mecPick([t("상대의 교환 요청을 거절하고 기물을 물렸어요.", p), t("교환에 응하지 않고 {0:을/를} 노리던 기물을 피신시켰어요.", p), t("상대와의 교환을 거절하는 수예요.", p)], s),
@@ -4304,6 +4339,20 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       if (extra.length) { if (facts.length) facts[0] = facts[0] + " " + extra.join(" "); else facts.push(extra.join(" ")); }
     }
   } catch { /* 전술 탐지 실패는 기존 설명만 보여 준다 */ }
+  // (v0.7.2) 전략·구조(D) — 위에서 아무 사실도 못 찾은 조용한 수에만 적용한다(src/lib/mecStrategy.js).
+  const isCapMove = !!(moveInfo && moveInfo.isCap);
+  if (!facts.length || isCapMove) {
+    try {
+      const good = MEC_GOOD_KINDS.includes(kind), poor = MEC_POOR_KINDS.includes(kind);
+      const st = strategicFact(fenOfRoot(fenRoot, sansBeforeMove), san, good ? "good" : poor ? "poor" : "neutral");
+      const phrase = st ? mecStrategyPhrase(st, good || !poor, seed) : null;
+      // 잡는 수에는 폰 구조 변화(새 통과폰·겹폰·고립폰)만 잡은 결과 뒤에 이어 붙인다.
+      if (phrase && (!facts.length || (isCapMove && ["passedCreated", "doubled", "isolated"].includes(st.kind)))) {
+        if (facts.length) facts[0] = facts[0] + " " + phrase; else facts.push(phrase);
+        if (threatOut) threatOut.strategy = { kind: st.kind, squares: st.squares };
+      }
+    } catch { /* 전략 탐지 실패는 기존 설명만 보여 준다 */ }
+  }
   // R6 — 전개. 이 기물의 첫 이동이면, 최종적으로 고른 문장(facts[0]) 앞에 "전개했다" 문장을 붙여
   // 하나의 글로 잇는다. 붙일 다른 사실이 없으면 전개 문장 하나만 남긴다.
   const devNote = developmentNote(sansBeforeMove, san, color, kind, fenRoot);
