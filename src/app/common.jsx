@@ -2663,23 +2663,24 @@ export function Board({ board, flip, size = 336, arrows = [], haloSquares = [], 
             // (R7 기능) "위협" 애니메이션의 공격자 화살표는 danger와 같은 굵고 붉은 스타일을, 수비자
             // 화살표는 같은 굵기의 초록색(T.good)을 쓴다 — 둘 다 채택률·평가치와 무관한 고정 강조 화살표다.
             const isDefender = a.kind === "threatDefender";
+            const isTactic = a.kind === "tactic"; // (v0.7.2) 전술 연출 화살표 — 색·점선을 호출부가 정한다
             const t = Math.min(1, Math.max(0, a.weight != null ? a.weight : (a.adopt || 0) / 60));
             // (v0.2.2 기능) 탁월한 수의 "내 기물이 공격받는다" 경고 화살표는 채택률·평가치와 무관하게
             // 항상 눈에 띄게 두껍고 진하게, 색은 확실한 붉은색(T.danger)으로 그린다.
-            const w = (isDanger || isDefender) ? 0.11 : 0.05 + t * 0.14;
+            const w = isTactic ? (a.width || 0.11) : (isDanger || isDefender) ? 0.11 : 0.05 + t * 0.14;
             // (기능) 예방 수 애니메이션 — 수비자 화살표가 뜨는 순간 공격자 화살표를 지우지 않고
             // fading 플래그만 얹어 옅게(거의 사라지듯) 남겨, "수비자가 나타나며 공격자가 사라진다"는
             // 전환이 느껴지게 한다.
-            const op = a.fading ? 0.12 : ((isDanger || isDefender) ? 0.92 : 0.45 + t * 0.5);
-            const head = (isDanger || isDefender) ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
+            const op = a.fading ? 0.12 : ((isDanger || isDefender || isTactic) ? 0.92 : 0.45 + t * 0.5);
+            const head = (isDanger || isDefender || isTactic) ? 0.32 : 0.28 + t * 0.14;    // 화살촉도 두께에 비례
             const bx = x2 - ux * head, by = y2 - uy * head;  // 샤프트 끝(=화살촉 밑변 중심)
             const nx = -uy, ny = ux;                          // 수직 단위벡터
             const hw = head * 0.62;                           // 화살촉 반폭
             const pts = (x2) + "," + (y2) + " " + (bx + nx * hw) + "," + (by + ny * hw) + " " + (bx - nx * hw) + "," + (by - ny * hw);
-            const col = isDanger ? T.danger : isDefender ? T.good : T.arrow;
+            const col = isTactic ? (a.color || T.danger) : isDanger ? T.danger : isDefender ? T.good : T.arrow;
             return (
               <g key={i} opacity={op} style={{ transition: "opacity .5s ease" }}>
-                <line x1={x1} y1={y1} x2={bx} y2={by} stroke={col} strokeWidth={w} strokeLinecap="round" />
+                <line x1={x1} y1={y1} x2={bx} y2={by} stroke={col} strokeWidth={w} strokeLinecap="round" strokeDasharray={isTactic && a.dash ? "0.2 0.16" : undefined} />
                 <polygon points={pts} fill={col} />
               </g>
             );
@@ -3531,6 +3532,7 @@ function mecTacticPhrase(tac, seed) {
   }
 }
 const MEC_POOR_KINDS = ["inaccuracy", "mistake", "miss", "blunder"];
+const tacticKeyword = (k) => ({ fork: t("포크"), pinAbs: t("핀"), pinRel: t("핀"), skewer: t("스큐어"), discoveredAttack: t("디스커버드 어택"), discoveredCheck: t("디스커버드 체크"), doubleCheck: t("더블 체크"), backRank: t("백랭크"), mateThreat: t("체크메이트"), promotion: t("승격"), passedPawn: t("통과폰") })[k] || null;
 function mecStrategyPhrase(f, good, seed) {
   switch (f.kind) {
     case "luft": return MEC_PHRASES.luft(seed);
@@ -4075,11 +4077,11 @@ const MEC_PHRASES = {
   pinAbs: (p, x, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 킹 앞에 묶었어요 — 핀이에요.", p, x), t("핀이에요, 상대 {1:은/는} 킹을 지키느라 움직일 수 없어요.", p, x), t("상대 {1:이/가} 킹 앞에서 핀에 걸렸어요, {0:이/가} 그 줄을 누르고 있어요.", p, x)], s),
   pinRel: (p, x, y, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 뒤에 있는 {2} 앞에 묶었어요 — 핀이에요.", p, x, y), t("핀이에요, 상대 {1:이/가} 움직이면 뒤의 {2:을/를} 잃을 수 있어요.", p, x, y), t("상대 {1:은/는} 뒤의 {2:을/를} 지키느라 함부로 움직일 수 없는 핀 상태예요.", p, x, y)], s),
   skewer: (p, x, y, s) => mecPick([t("{0:이/가} 상대 {1:을/를} 먼저 노려요, 비키면 뒤의 {2:을/를} 잡을 수 있는 스큐어예요.", p, x, y), t("스큐어예요, 상대 {1:이/가} 피하면 뒤의 {2:이/가} 그대로 노출돼요.", p, x, y), t("상대 {1:을/를} 앞세워 뒤의 {2}까지 노리는 스큐어예요.", p, x, y)], s),
-  discoveredAttack: (m, sl, tg, s) => mecPick([t("{0:이/가} 비키는 순간 뒤에 있던 {1:이/가} 상대 {2:을/를} 노려요 — 디스커버드 어택이에요.", m, sl, tg), t("디스커버드 어택이에요, {0:이/가} 길을 열어 {1:이/가} 상대 {2:을/를} 겨눠요.", m, sl, tg), t("{0:을/를} 움직여 {1}의 공격선을 열었어요. 상대 {2:이/가} 노려져요.", m, sl, tg)], s),
+  discoveredAttack: (m, sl, tg, s) => mecPick([t("{0:이/가} 비키는 순간 뒤에 있던 {1:이/가} 상대 {2:을/를} 노려요 — 디스커버드 어택이에요.", m, sl, tg), t("디스커버드 어택이에요, {0:이/가} 길을 열어 {1:이/가} 상대 {2:을/를} 겨눠요.", m, sl, tg), t("{0:을/를} 움직여 {1}의 공격선을 열었어요 — 디스커버드 어택이에요. 상대 {2:이/가} 노려져요.", m, sl, tg)], s),
   discoveredCheck: (m, by, s) => mecPick([t("{0:이/가} 비키면서 {1:이/가} 체크를 걸었어요 — 디스커버드 체크예요.", m, by), t("디스커버드 체크예요, {0:을/를} 움직인 틈에 {1:이/가} 상대 킹을 노려요.", m, by), t("{0:을/를} 옮기자 뒤의 {1:이/가} 체크를 걸어요 — 디스커버드 체크예요.", m, by)], s),
   doubleCheck: (s) => mecPick([t("두 기물이 동시에 체크를 걸었어요 — 더블 체크라 킹이 움직일 수밖에 없어요."), t("더블 체크예요, 막거나 잡을 수 없고 킹이 직접 피해야 해요."), t("체크가 두 곳에서 와요 — 더블 체크는 킹이 움직여야만 풀려요.")], s),
-  backRank: (p, s) => mecPick([t("상대 킹이 마지막 줄에 갇혀 있어서 {0}의 체크가 위협적이에요 — 백랭크 약점이에요.", p), t("백랭크 약점이에요, 킹이 도망갈 칸이 없어서 {0:으로/로} 체크를 걸었어요.", p), t("킹이 마지막 줄에서 빠져나갈 틈이 없어요. {0:으로/로} 체크해 압박해요.", p)], s),
-  mateThreat: (m, s) => mecPick([t("다음 수에 {0}, 즉 체크메이트를 노려요.", m), t("체크메이트 위협이에요 — 막지 않으면 {0} 한 수로 끝나요.", m), t("메이트 위협을 만들었어요. 다음 수 {0} 위협을 막아야 해요.", m)], s),
+  backRank: (p, s) => mecPick([t("상대 킹이 마지막 줄에 갇혀 있어서 {0}의 체크가 위협적이에요 — 백랭크 약점이에요.", p), t("백랭크 약점이에요, 킹이 도망갈 칸이 없어서 {0:으로/로} 체크를 걸었어요.", p), t("킹이 마지막 줄에서 빠져나갈 틈이 없어요. {0:으로/로} 체크해 압박해요 — 백랭크 약점이에요.", p)], s),
+  mateThreat: (m, s) => mecPick([t("다음 수에 {0}, 즉 체크메이트를 노려요.", m), t("체크메이트 위협이에요 — 막지 않으면 {0} 한 수로 끝나요.", m), t("체크메이트 위협을 만들었어요. 다음 수 {0} 위협을 막아야 해요.", m)], s),
   promotion: (p, s) => mecPick([t("폰이 {0:으로/로} 승격했어요.", p), t("끝까지 전진한 폰이 {0:으로/로} 승격했어요.", p), t("승격으로 {0:을/를} 새로 얻었어요.", p)], s),
   passedPawn: (n, sq, s) => mecPick([t("막을 폰이 없는 통과폰이에요 — 승격까지 {0}칸 남았어요.", n, sq), t("통과폰이 {1}까지 전진했어요, 승격까지 {0}칸이에요.", n, sq), t("상대 폰이 막지 못하는 통과폰을 밀었어요. 승격까지 {0}칸 남았어요.", n, sq)], s),
   // (v0.7.2) 나쁜 수의 원인(B) — 상대가 얻는 것
@@ -4322,7 +4324,12 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
         if (!facts.length) facts.push(phrase);
         else if (moveInfo && moveInfo.isCap) facts[0] = facts[0] + " " + phrase;
         else { facts[0] = phrase; if (threatOut) for (const k of Object.keys(threatOut)) delete threatOut[k]; }
-        if (threatOut) threatOut.tactic = { kind: tac.kind, squares: tac.squares };
+        if (threatOut) {
+          threatOut.tactic = { kind: tac.kind, squares: tac.squares };
+          // 문장 속 전술 용어 하나에만 밑줄을 그어 누르면 연출이 나오게 한다(MecKeywordLine). 문장에 용어가 없으면 평범한 문장으로 둔다.
+          const kw = tacticKeyword(tac.kind);
+          if (kw && facts[0].toLowerCase().includes(kw.toLowerCase())) threatOut.keyword = kw;
+        }
       }
     } else if (MEC_POOR_KINDS.includes(kind)) {
       const extra = [];
@@ -4364,6 +4371,8 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
     if (MEC_GOOD_KINDS.includes(kind)) {
       const good = castleQualityGoodPhrase(seed);
       facts.length = 0;
+      // 캐슬링 문장이 위의 모든 사실을 대신하므로, 그 사실들이 채운 시각화 데이터(전술·용어)도 함께 지운다.
+      if (threatOut) for (const k of Object.keys(threatOut)) delete threatOut[k];
       facts.push(/^O-O-O/.test(san) ? good + " " + MEC_PHRASES.queensideNote(seed) : good);
     } else if (!facts.length) facts.push(MEC_PHRASES.castleBadFallback(seed));
   } else if (!facts.length && /\+$/.test(san) && MEC_GOOD_KINDS.includes(kind)) {

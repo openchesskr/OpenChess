@@ -36,6 +36,11 @@ for (const g of games) {
     const mv = c.move(san); n++;
     const to = {};
     const text = (mecFacts(sans.slice(0, p), san, color, "good", null, 0, to, null)[0] || "");
+    // (v0.7.2) 이 수가 만든 전술이 대표 문장이면, 문장 안의 전술 용어 하나가 keyword로 지정돼(밑줄·클릭 연출) 있어야 한다
+    if (to.tactic && !String(to.tactic.kind).startsWith("reply:") && to.tactic.kind !== "pinnedMove") {
+      if (!to.keyword) fails.push("전술 문장에 용어(keyword)가 없음: " + to.tactic.kind + " → " + text);
+      else if (!text.toLowerCase().includes(to.keyword.toLowerCase())) fails.push("keyword가 문장에 없음: " + to.keyword + " → " + text);
+    }
     const tag = (p % 2 ? Math.floor(p / 2) + 1 + "..." : Math.floor(p / 2) + 1 + ".") + san + " → " + text;
     if (mv.captured && /안 잡았|잡을 수도 있었지만|잡을 수 있었어요|잡지 않았|안 잡아도/.test(text)) fails.push("잡는 수에 '안 잡았다' 문장: " + tag);
     if (mv.captured && /수비자 제거/.test(text)) {

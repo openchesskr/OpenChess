@@ -757,7 +757,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow, onShowPlan, planLoading, planText, canShowPlan }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow, onShowPlan, planLoading, planText, canShowPlan }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -788,6 +788,7 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
                 : threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
                 : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
                 : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
+                : tacticDetail ? () => onTacticClick && onTacticClick(tacticDetail)
                 : null}
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
@@ -2038,6 +2039,9 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"/"수비자
   // 제거"). 문장 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
   const mecKeyword = mecThreatOut.current.keyword || null;
+  // (v0.7.2) 이 수가 만든 전술(포크·핀·스큐어 등)의 연출 데이터 — 용어를 누르면 playTacticAnimation이 전술별 화살표를 그린다. 상대가 얻는 전술·놓친 수는 문장만 보여 준다.
+  const tacticRaw = mecThreatOut.current.tactic || null;
+  const tacticDetail = tacticRaw && mecKeyword && !String(tacticRaw.kind).startsWith("reply:") && tacticRaw.kind !== "pinnedMove" ? tacticRaw : null;
   // (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
   // 돌려야 해 자동으로 못 붙이고 온디맨드로 남겨 뒀던 항목) 코치 카드의 "재배치 계획" 버튼을 눌러야만
   // 지금 포지션에서 멀티PV 1줄을 새로 돌려 relocationPlanFromPv로 분석한다 — 같은 포지션(effSans
@@ -2107,6 +2111,37 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }]), 700));
     threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }, defender]), 950));
     threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, 2400));
+  };
+  // (v0.7.2) 전술 연출 — 전술마다 다른 모양으로 보여 준다. 빨간 실선=공격, 주황 점선=뒤에 묶인·관통되는 기물, 파란 점선=방금 비킨 이동, 초록 점선=다음 수·진행 방향, 금색 테두리=핵심 칸.
+  const playTacticAnimation = (detail) => {
+    clearThreatTimers();
+    setThreatArrows([]); setHaloSquares([]);
+    const rc = (sq) => [8 - parseInt(sq[1], 10), "abcdefgh".indexOf(sq[0])];
+    const RED = T.danger || "#D9736A", ORANGE = "#E0995F", BLUE = "#6FA8DC", GREEN = T.good || "#8FB55E", GOLD = T.brassHi || "#ECCB86";
+    const ar = (from, to, color, dash) => ({ arrow: { from: rc(from), to: rc(to), kind: "tactic", color, dash: !!dash } });
+    const ha = (...sqs) => ({ halos: sqs.map(rc) });
+    const q = detail.squares || {};
+    let steps = [];
+    switch (detail.kind) {
+      case "fork": steps = [ha(...q.targets), ...q.targets.map((tg) => ar(q.to, tg, RED))]; break;
+      case "pinAbs": case "pinRel": steps = [ha(q.x), ar(q.s, q.x, RED), { ...ar(q.x, q.y, ORANGE, true), ...ha(q.x, q.y) }]; break;
+      case "skewer": steps = [ar(q.s, q.x, RED), { ...ar(q.x, q.y, ORANGE, true), ...ha(q.y) }]; break;
+      case "discoveredAttack": steps = [ar(q.from, q.to, BLUE, true), ha(q.slider), { ...ar(q.slider, q.target, RED), ...ha(q.slider, q.target) }]; break;
+      case "discoveredCheck": steps = [ar(q.from, q.to, BLUE, true), ha(q.king), ar(q.checker, q.king, RED)]; break;
+      case "doubleCheck": steps = [ha(q.king), ...q.checkers.map((c) => ar(c, q.king, RED))]; break;
+      case "backRank": steps = [ha(q.king), ar(q.to, q.king, RED)]; break;
+      case "mateThreat": steps = [ha(q.king), ar(q.mateFrom, q.mateTo, GREEN, true)]; break;
+      case "promotion": steps = [ar(q.from, q.to, GOLD), ha(q.to)]; break;
+      case "passedPawn": steps = [ha(q.to), ar(q.to, q.goal, GREEN, true)]; break;
+      default: return;
+    }
+    steps.forEach((st, i) => {
+      threatTimers.current.push(setTimeout(() => {
+        if (st.halos) setHaloSquares(st.halos);
+        if (st.arrow) setThreatArrows((prev) => [...prev, st.arrow]);
+      }, i * 480));
+    });
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, steps.length * 480 + 1600));
   };
   // (기능) 연결/중첩 애니메이션 — 서로 지켜주는 두 기물 사이를 수비자(초록) 화살표로 양방향
   // 순서대로 보여준다(R7과 같은 순차 등장 패턴, 색만 둘 다 수비자).
@@ -2377,7 +2412,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -2440,7 +2475,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
               전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} />
           </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (

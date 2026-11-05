@@ -60,6 +60,12 @@ for (const g of games) {
     for (const t of moveTactics(fen, sans[p])) {
       nt++;
       const tag = (p % 2 ? Math.floor(p / 2) + 1 + "..." : Math.floor(p / 2) + 1 + ".") + sans[p] + " [" + t.kind + "]";
+      // 전술 시각화(review.jsx playTacticAnimation)가 읽는 칸 좌표가 전부 있고 올바른 칸 이름인지
+      const NEED = { fork: ["to", "targets"], pinAbs: ["s", "x", "y"], pinRel: ["s", "x", "y"], skewer: ["s", "x", "y"], discoveredAttack: ["from", "slider", "target"], discoveredCheck: ["from", "checker", "king"], doubleCheck: ["king", "checkers"], backRank: ["to", "king"], mateThreat: ["king", "mateFrom", "mateTo"], promotion: ["from", "to"], passedPawn: ["to", "goal"] };
+      for (const key of NEED[t.kind] || []) {
+        const v = t.squares && t.squares[key]; const arr = Array.isArray(v) ? v : [v];
+        if (!arr.length || arr.some((x) => !/^[a-h][1-8]$/.test(String(x)))) fails.push("연출 좌표 누락·오류(" + key + "): " + tag + " " + JSON.stringify(t.squares));
+      }
       if (t.kind === "fork") {
         // 수 생성기로 확인: 차례를 내게 돌렸을 때 이 기물이 대상 칸의 기물을 실제로 잡을 수 있어야 한다(킹 대상은 제외)
         const parts = c.fen().split(" "); parts[1] = mv.color; parts[3] = "-";

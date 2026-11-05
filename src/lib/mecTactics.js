@@ -117,12 +117,12 @@ function analyzeMove(before, mv, after) {
     let passed = true;
     for (let r = tr + dir; r >= 0 && r < 8; r += dir) for (const df of [-1, 0, 1]) { const f = tf + df; if (f < 0 || f > 7) continue; const E = b[r][f]; if (E && E.type === "p" && E.color === opp) passed = false; }
     const rel = color === "w" ? parseInt(to[1], 10) : 9 - parseInt(to[1], 10);
-    if (passed && rel >= 5) res.push({ kind: "passedPawn", left: 8 - rel, squares: { to } });
+    if (passed && rel >= 5) res.push({ kind: "passedPawn", left: 8 - rel, squares: { to, goal: to[0] + (color === "w" ? "8" : "1") } });
   }
   // 메이트 위협(체크가 아닐 때): 상대 차례를 건너뛰고 내가 한 번 더 두면 체크메이트인가
   if (!after.isCheck()) {
     const m = mateThreat(after, color);
-    if (m) res.push({ kind: "mateThreat", san: m, squares: { to } });
+    if (m) res.push({ kind: "mateThreat", san: m.san, squares: { to, king: oppKing, mateFrom: m.from, mateTo: m.to } });
   }
   res.sort((a, c) => TACTIC_PRIORITY.indexOf(a.kind) - TACTIC_PRIORITY.indexOf(c.kind));
   return res;
@@ -130,7 +130,7 @@ function analyzeMove(before, mv, after) {
 function mateThreat(after, color) {
   const parts = after.fen().split(" "); parts[1] = color; parts[3] = "-";
   let c; try { c = new Chess(parts.join(" ")); } catch { return null; }
-  for (const mv of c.moves({ verbose: true })) { c.move(mv.san); const mate = c.isCheckmate(); c.undo(); if (mate) return mv.san; }
+  for (const mv of c.moves({ verbose: true })) { c.move(mv.san); const mate = c.isCheckmate(); c.undo(); if (mate) return { san: mv.san, from: mv.from, to: mv.to }; }
   return null;
 }
 function play(fen, san) {
