@@ -155,17 +155,17 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     const info = sanSrc(board, san, color);
     const promoKor = PIECE_KOR[(info && info.promo) || "N"] || lcLatin(t("기물"));
     const reason = underpromoReason(board, san, color);
-    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 스테일메이트(무승부). 대신 {0} 승진", promoKor);
-    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 바로 잡힘. {0} 승진은 안전하게 남음", promoKor);
-    else typeSentence = t("퀸이 아닌 {0} 승진. 흔치 않은 선택", promoKor);
+    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 {0:을/를} 골라 승진하는 수예요", promoKor);
+    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 곧바로 잡히지만 {0:은/는} 안전하게 남을 수 있어, 대신 {0:을/를} 골라 승진하는 수예요", promoKor);
+    else typeSentence = t("퀸이 아닌 {0:을/를} 골라 승진하는, 흔치 않은 감각의 수예요", promoKor);
   } else if (sub.type === "exchangeSac") {
-    typeSentence = t("{0:과/와} {1} 교환. 쉽지 않지만 이 상황에선 탁월한 선택", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
+    typeSentence = t("{0:과/와} {1:을/를} 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이에요", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
   } else if (sub.type === "neglect" && sub.piece) {
-    typeSentence = t("{0} 위협을 무시하고 더 큰 이득을 얻는 수", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수예요", (PIECE_KOR[sub.piece]));
   } else if (sub.piece) {
-    typeSentence = t("{0} 희생. 눈앞의 손해를 감수하고 더 큰 것을 노림", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수예요", (PIECE_KOR[sub.piece]));
   } else {
-    typeSentence = t("눈에 보이는 손해를 감수하고 더 큰 것을 노리는 수");
+    typeSentence = t("눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수예요");
   }
   let reasonSentence = null;
   if (alreadyLosing) {
@@ -173,12 +173,12 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
         const endKor = lcLatin(drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복"));
-        reasonSentence = t("이미 불리한 상황. {0} 수순으로 {1} 무승부를 강제", drawSeek.line.join(" "), endKor);
+        reasonSentence = t("이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, {0} 수순으로 {1:을/를} 만들어 무승부를 강제해야 했던 수예요", drawSeek.line.join(" "), endKor);
       }
     } catch { }
   }
   let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
-  if (notBest) text += t(" 엔진 최선은 아니지만 찾기 어려운 수.");
+  if (notBest) text += t(" 참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수예요.");
   return text;
 }
 // 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
@@ -237,7 +237,7 @@ function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
   return best;
 }
 function relocationPlanPhrase(plan) {
-  return t("{0} 재배치 계획: {1}", (PIECE_KOR[plan.piece] || lcLatin(t("기물"))), plan.squares.join(" → "));
+  return t("{0:이/가} {1:으로/로} 이동하는 재배치 계획이 보여요.", (PIECE_KOR[plan.piece] || lcLatin(t("기물"))), plan.squares.join(" → "));
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
 // (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이
@@ -2020,7 +2020,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     if (!activeMove || activeMove.kind === "book") return [];
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
-      return [mecPick([t("체크메이트 강제 수순. 메이트까지 {0}수", n), t("체크메이트 수순 진입. {0}수 뒤 체크메이트", n), t("메이트 {0}수 전. 체크메이트로 끝나는 강제 수순", n)], effSans.length)];
+      return [mecPick([t("체크메이트로 몰아가는 강제 수순이에요, 메이트까지 {0}수 남았어요.", n), t("이제부터는 체크메이트 수순이에요 — {0}수 뒤에 체크메이트예요.", n), t("메이트 {0}수 전이에요, 체크메이트로 끝나는 강제 수순이에요.", n)], effSans.length)];
     }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
   }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
@@ -2066,7 +2066,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     }
   }, [engine, effSans, fenRoot, planKey, planByKey]);
   const planText = planEntry && !planEntry.loading
-    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : t("뚜렷한 재배치 계획 없음"))
+    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : t("이 포지션에서는 뚜렷한 재배치 계획을 찾지 못했어요."))
     : null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
