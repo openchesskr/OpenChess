@@ -9,11 +9,11 @@ import { t } from "../lib/i18n.js";
 // 한 수씩 두어지는 텍스트 보드를 이 파일 하나에 모았다. 애니메이션은 기기의 "애니메이션 줄이기" 설정이 아니라
 // 사이트 설정만 따른다(check-reduced-motion 원칙).
 const C = { neon: "#C49A50", neonHi: "#ECCB86", ink: "#B8A78C", ivory: "#FAF2E2", navy: "#1B1009", panel: "#2E1B10" };
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace";
+export const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace";
 const CUT = "polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px))";
 
 // ── 블록 글자(5줄, N만 7칸) ──
-const GLYPH = {
+export const GLYPH = {
   O: [" ████ ", "██  ██", "██  ██", "██  ██", " ████ "],
   P: ["█████ ", "██  ██", "█████ ", "██    ", "██    "],
   E: ["██████", "██    ", "█████ ", "██    ", "██████"],
@@ -31,7 +31,7 @@ const mix = (text, keep) => {
 };
 
 // 노이즈에서 한 글자씩 풀려 나오는 문자열. run이 true가 되거나 text가 바뀔 때마다 다시 재생한다.
-function useScramble(text, run = true, ms = 34) {
+export function useScramble(text, run = true, ms = 34) {
   const [out, setOut] = useState(() => mix(text, 0));
   useEffect(() => {
     if (!run) { setOut(mix(text, 0)); return undefined; }

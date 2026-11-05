@@ -478,10 +478,10 @@ export default function App() {
   useEffect(() => {
     const boot = () => { const p = ENGINE_PROFILES[activeEnginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
     if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(boot, { timeout: 8000 });
+      const id = window.requestIdleCallback(boot, { timeout: quickReview ? 1500 : 8000 }) // (v0.7.2) 빠른 리뷰는 풀을 더 일찍 데워 둔다;
       return () => window.cancelIdleCallback(id);
     }
-    const id = setTimeout(boot, 3000);
+    const id = setTimeout(boot, quickReview ? 800 : 3000);
     return () => clearTimeout(id);
   }, [activeEnginePref]);
 

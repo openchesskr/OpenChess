@@ -12,7 +12,8 @@ import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
 import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
-import { playMoveSfx, reviewDepthFor } from "../lib/prefs.js";
+import { playMoveSfx, reviewDepthFor, QUICK_REVIEW_MOVETIME_MS } from "../lib/prefs.js";
+import QuickReviewIntro from "../components/QuickReviewIntro.jsx";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
@@ -1579,7 +1580,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // "정확하게"를 고른 경우엔 movetime 예산 자체도 비례해 늘린다.
   // (v0.7.1, 사용자 요청) 속도 3단계(더 빠르게 15·평균 20·더 정확하게 25), 빠른 리뷰(quick)면 15 고정 — reviewDepthFor(lib/prefs.js).
   const reviewDepth = reviewDepthFor(reviewSpeed, quick);
-  const reviewMovetimeMs = !quick && reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
+  const reviewMovetimeMs = quick ? QUICK_REVIEW_MOVETIME_MS : reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
   const narrow = useNarrow(760);
   // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
@@ -1616,6 +1617,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // 보여줄 데이터조차 없을 수 있는 구간) 시각적 주의를 끌기 위한 1회성 체스보드 연출
   // (ReviewBoardIntroAnim) — introRevealDone과 같은 패턴으로 sessionStorage에 시청 여부를 남겨,
   // 새로고침·이어보기에서는 다시 재생하지 않는다.
+  const [quickIntroDone, setQuickIntroDone] = useState(false); // (v0.7.2) 빠른 리뷰 진입 연출(OPEN) 종료 여부
   const [boardIntroDone, setBoardIntroDone] = useState(() => !!quick || !!(savedPos && savedPos.boardIntroSeen)); // (v0.7.1) 빠른 리뷰는 보드 진입 연출 생략
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
@@ -2335,20 +2337,12 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
   // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
   // (v0.7.1, 사용자 요청) 빠른 리뷰 — 보드 연출·그래프 연출 없이 진행 막대만 보여 주다가, 분석이 끝나는 즉시 리뷰 화면으로 넘어간다.
-  if (quick && (!resultDone || !result)) {
-    const pct = sans.length ? Math.round((gradedCount / sans.length) * 100) : 0;
+  if (quick && (!resultDone || !result || !quickIntroDone)) {
     return (
       <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
         {header}
-        <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ width: "100%", maxWidth: 300, textAlign: "center" }}>
-            <div className="flex items-center justify-center gap-2" style={{ color: RV.text, fontSize: 14, fontWeight: 800, marginBottom: 12 }}><PendingDots size={12} />{t("빠른 리뷰 분석 중")}</div>
-            <div style={{ height: 6, borderRadius: 3, background: RV.panel, border: "1px solid " + RV.border, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")", transition: "width .2s linear" }} />
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: RV.soft, fontFamily: SITE_FONT }}>{gradedCount} / {sans.length}, depth {reviewDepth}</div>
-          </div>
-        </div>
+        <QuickReviewIntro done={!!(resultDone && result)} gradedCount={gradedCount} total={sans.length} depth={reviewDepth} label={t("빠른 리뷰 분석 중")}
+          colors={{ text: RV.text, soft: RV.soft, panel: RV.panel, border: RV.border, brass: T.brass, brassHi: T.brassHi }} onDone={() => setQuickIntroDone(true)} />
       </div>
     );
   }
