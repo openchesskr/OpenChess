@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import { t } from "../lib/i18n.js";
+import { isLite } from "../lib/perfMode.js";
 
 // /about 전용 텍스트 아트 모음 — OPEN의 네 글자에 단어를 하나씩 붙인 두 가지 풀이
 //  (1) Observe · Practice · Evaluate · Next level : 학습 순환
@@ -34,6 +35,7 @@ const mix = (text, keep) => {
 export function useScramble(text, run = true, ms = 34) {
   const [out, setOut] = useState(() => mix(text, 0));
   useEffect(() => {
+    if (isLite()) { setOut(text); return undefined; } // 가벼운 모드: 풀려 나오는 연출 없이 바로 최종 글자
     if (!run) { setOut(mix(text, 0)); return undefined; }
     let f = 0;
     const total = Math.max(10, Math.min(28, text.length));
@@ -158,7 +160,7 @@ export function AsciiMarquee({ reverse = false, dim = false }) {
   const unit = "░▒▓█ OBSERVE ▸ PRACTICE ▸ EVALUATE ▸ NEXT LEVEL █▓▒░  ♜  OPENING ◆ PUZZLE ◆ ENDGAME ◆ NETWORK  ♞  ";
   return (
     <div aria-hidden="true" style={{ overflow: "hidden", whiteSpace: "nowrap", borderTop: "1px solid rgba(196,154,80,.25)", borderBottom: "1px solid rgba(196,154,80,.25)", background: "rgba(27,16,9,.7)", padding: "9px 0", transform: "skewY(-1.2deg)" }}>
-      <div style={{ display: "inline-block", fontFamily: MONO, fontWeight: 800, fontStyle: "italic", fontSize: 13, letterSpacing: ".14em", color: dim ? "rgba(184,167,140,.55)" : C.neon, animation: (reverse ? "open-marquee-r" : "open-marquee") + " 46s linear infinite" }}>
+      <div className="open-marquee-run" style={{ display: "inline-block", fontFamily: MONO, fontWeight: 800, fontStyle: "italic", fontSize: 13, letterSpacing: ".14em", color: dim ? "rgba(184,167,140,.55)" : C.neon, animation: (reverse ? "open-marquee-r" : "open-marquee") + " 46s linear infinite" }}>
         {unit.repeat(4)}
       </div>
     </div>

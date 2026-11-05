@@ -8,9 +8,10 @@ import {
 } from "lucide-react";
 
 import { t, tx } from "./lib/i18n.js";
+import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
-import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, cut, para, octagon } from "./components/AboutKit.jsx";
+import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -105,7 +106,7 @@ function Backdrop() {
 // once:false일 때 뷰포트를 벗어나면 자동으로 initial 상태로 되돌아갔다가 재진입 시 다시 재생됨).
 function Reveal({ children, delay = 0, y = 16, once = false }) {
   return (
-    <motion.div initial={{ opacity: 0, y, skewX: -4 }} whileInView={{ opacity: 1, y: 0, skewX: 0, x: [-9, 6, -3, 0] }} viewport={{ once, amount: 0.25 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1], x: { duration: 0.42, delay, times: [0, 0.35, 0.7, 1] } }}>
+    <motion.div initial={{ opacity: 0, y, skewX: -4 }} whileInView={{ opacity: 1, y: 0, skewX: 0, x: isLite() ? 0 : [-9, 6, -3, 0] }} viewport={{ once: once || isLite(), amount: 0.25 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1], x: { duration: 0.42, delay, times: [0, 0.35, 0.7, 1] } }}>
       {children}
     </motion.div>
   );
@@ -151,7 +152,7 @@ function SectionDivider() {
 function PhoneFrame({ src, alt, tilt = 0, delay = 0 }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.85, rotate: tilt + (tilt >= 0 ? 7 : -7), y: 18 }} whileInView={{ opacity: 1, scale: 1, rotate: tilt, y: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, delay, ease: [0.22, 0.9, 0.32, 1] }}>
-      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay }}
+      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 4, repeat: LOOP(), ease: "easeInOut", delay }}
         style={{ borderRadius: 2, padding: 5, background: "linear-gradient(160deg,#3A2516,#20140B)", ...GLOSS_BORDER, boxShadow: GLOSS_BORDER.boxShadow + ", 0 20px 40px -16px rgba(0,0,0,.65)" }}>
         <div style={{ borderRadius: 2, overflow: "hidden", border: "1px solid #000", height: 340 }}>
           <img src={src} alt={alt} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", display: "block" }} />
@@ -189,7 +190,7 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
   return (
     <motion.div ref={wrapRef} initial={{ opacity: 0, scale: 0.8, rotate: tilt + (tilt >= 0 ? 8 : -8) }} whileInView={{ opacity: 1, scale: 1, rotate: tilt }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, delay, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ width: size, flexShrink: 0 }}>
-      <motion.div animate={inView ? { y: [0, -7, 0] } : { y: 0 }} transition={inView ? { duration: 3.6, repeat: Infinity, ease: "easeInOut", delay } : { duration: 0.3 }} style={{ willChange: "transform" }}>
+      <motion.div animate={inView ? { y: [0, -7, 0] } : { y: 0 }} transition={inView ? { duration: 3.6, repeat: LOOP(), ease: "easeInOut", delay } : { duration: 0.3 }} style={{ willChange: "transform" }}>
         <div style={{ position: "relative", borderRadius: 2, overflow: "hidden", ...GLOSS_BORDER }}>
           <div style={{ position: "relative", width: "100%", aspectRatio: "1/1" }}>
             {Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => {
@@ -220,7 +221,7 @@ function DecoBoard({ size = 148, pieces = [], move, caption, tilt = 0, delay = 0
               <motion.div
                 initial={{ x: 0, y: 0 }}
                 animate={inView ? { x: (move.to[1] - move.from[1]) * 100 + "%", y: (move.to[0] - move.from[0]) * 100 + "%" } : { x: 0, y: 0 }}
-                transition={inView ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] } : { duration: 0.3 }}
+                transition={inView ? { duration: 1.1, repeat: LOOP(), repeatType: "reverse", repeatDelay: 0.9, ease: [0.4, 1.1, 0.5, 1] } : { duration: 0.3 }}
                 style={{ position: "absolute", top: dpct(move.from[0]), left: dpct(move.from[1]), width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", zIndex: 2, willChange: "transform" }}>
                 <img src={DECO_PIECE_SRC[move.piece]} alt="" style={{ width: "78%", height: "78%", objectFit: "contain", filter: "drop-shadow(0 3px 3px rgba(0,0,0,.55))" }} />
               </motion.div>
@@ -367,12 +368,12 @@ function GrandmasterSkinPreview() {
 function GrandmasterCard() {
   return (
     <Reveal>
-      <div style={{ position: "relative", clipPath: cut(26), padding: "2px", background: GM_AURORA, filter: "drop-shadow(0 20px 40px rgba(185,131,255,.3))" }}>
+      <div className="ab-fx" style={{ position: "relative", clipPath: cut(26), padding: "2px", background: GM_AURORA, filter: "drop-shadow(0 20px 40px rgba(185,131,255,.3))" }}>
         <div style={{ clipPath: cut(25), padding: "32px 28px", background: "linear-gradient(160deg,#241a33,#150C05 55%,#0f1f1a)" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 28 }}>
             <motion.div initial={{ opacity: 0, scale: 0.8, rotate: -6 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.5 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ flex: "0 0 auto", width: 168, margin: "0 auto" }}>
-              <motion.img src="/gm-trophy-web.webp" alt={t("그랜드마스터 트로피")} loading="lazy" animate={{ y: [0, -9, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+              <motion.img src="/gm-trophy-web.webp" alt={t("그랜드마스터 트로피")} loading="lazy" animate={{ y: [0, -9, 0] }} transition={{ duration: 3.6, repeat: LOOP(), ease: "easeInOut" }}
                 style={{ width: "100%", display: "block", filter: "drop-shadow(0 14px 24px rgba(0,0,0,.6))" }} />
             </motion.div>
             <div style={{ flex: "1 1 300px", minWidth: 260 }}>
@@ -410,7 +411,7 @@ function GrandmasterCard() {
 // 않게 한다.
 function FloatImg({ src, alt, delay = 0 }) {
   return (
-    <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay }}>
+    <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3.6, repeat: LOOP(), ease: "easeInOut", delay }}>
       <img src={src} alt={alt} loading="lazy" style={{ width: "100%", display: "block" }} />
     </motion.div>
   );
@@ -566,7 +567,7 @@ function FloatChip({ children, x, y, delay = 0, rot = 0, z = 3 }) {
   return (
     <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 + delay, duration: 0.5, ease: [0.22, 0.9, 0.32, 1] }}
       style={{ position: "absolute", ...x, ...y, zIndex: z }}>
-      <motion.div animate={{ y: [0, -9, 0] }} transition={{ duration: 3.4 + delay * 2, repeat: Infinity, ease: "easeInOut", delay }}
+      <motion.div animate={{ y: [0, -9, 0] }} transition={{ duration: 3.4 + delay * 2, repeat: LOOP(), ease: "easeInOut", delay }}
         style={{ rotate: rot, display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 2, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid rgba(236,203,134,.45)", boxShadow: "0 14px 28px -12px rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>
         {children}
       </motion.div>
@@ -797,7 +798,7 @@ function ChapterNav({ scrollRef }) {
   }, [scrollRef]);
   const go = (id) => { const el = document.getElementById("ch-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
-    <div className="no-swipe" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 540, clipPath: cut(12), background: "linear-gradient(135deg,rgba(236,203,134,.5),rgba(196,154,80,.15) 50%,rgba(196,154,80,.4))", filter: "drop-shadow(0 12px 22px rgba(0,0,0,.6))" }}>
+    <div className="no-swipe ab-fx" style={{ position: "sticky", top: 10, zIndex: 6, margin: "0 auto 8px", maxWidth: 540, clipPath: cut(12), background: "linear-gradient(135deg,rgba(236,203,134,.5),rgba(196,154,80,.15) 50%,rgba(196,154,80,.4))", filter: "drop-shadow(0 12px 22px rgba(0,0,0,.6))" }}>
       <div style={{ margin: 1.5, clipPath: cut(12), background: "rgba(22,12,6,.92)", backdropFilter: "blur(10px)", display: "flex", padding: 4, gap: 2 }}>
         {TAB_META.map((m, i) => {
           const on = i === cur;
@@ -828,7 +829,7 @@ function PhoneFan({ shots }) {
 }
 function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extra, flip }) {
   return (
-    <section id={"ch-" + id} style={{ scrollMarginTop: 84, marginBottom: 100 }}>
+    <section id={"ch-" + id} style={{ scrollMarginTop: 84, marginBottom: 100, contentVisibility: "auto", containIntrinsicSize: "auto 1100px" }}>
       <Chapter no={no} eyebrow={label} title={title} desc={lead} />
       <div className="flex items-start flex-wrap justify-center" style={{ gap: 44, flexDirection: flip ? "row-reverse" : "row" }}>
         {shots.length > 0 && <PhoneFan shots={shots} />}
@@ -854,11 +855,11 @@ function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extr
 function IntroPage({ version, onOpenHistory, scrollRef }) {
   return (
     <div>
-      <div onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--hx", (e.clientX - r.left) + "px"); e.currentTarget.style.setProperty("--hy", (e.clientY - r.top) + "px"); }} style={{ position: "relative", width: "100%", overflow: "hidden" }}>
+      <div onMouseMove={(e) => { if (isLite()) return; const el = e.currentTarget, x = e.clientX, y = e.clientY; if (el.__raf) return; el.__raf = requestAnimationFrame(() => { el.__raf = 0; const r = el.getBoundingClientRect(); el.style.setProperty("--hx", (x - r.left) + "px"); el.style.setProperty("--hy", (y - r.top) + "px"); }); }} style={{ position: "relative", width: "100%", overflow: "hidden" }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(360px circle at var(--hx, 70%) var(--hy, 30%), rgba(236,203,134,.13), transparent 70%)" }} />
         <span aria-hidden="true" className="ab-sweep" style={{ height: "14%", opacity: 0.8 }} />
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: "repeating-conic-gradient(rgba(196,154,80,.055) 0% 25%, transparent 0% 50%)", backgroundSize: "72px 72px", maskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)", WebkitMaskImage: "radial-gradient(70% 80% at 70% 40%, #000, transparent 75%)" }} />
-        <motion.img src="/ilust-1-web.webp" alt="" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 0.13, scale: [1, 1.06, 1] }} transition={{ opacity: { duration: 1 }, scale: { duration: 20, repeat: Infinity, ease: "easeInOut" } }}
+        <motion.img src="/ilust-1-web.webp" alt="" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 0.13, scale: [1, 1.06, 1] }} transition={{ opacity: { duration: 1 }, scale: { duration: 20, repeat: LOOP(), ease: "easeInOut" } }}
           style={{ position: "absolute", left: 0, top: 0, width: "60%", height: "100%", objectFit: "cover", maskImage: "linear-gradient(90deg,#000,transparent)", WebkitMaskImage: "linear-gradient(90deg,#000,transparent)" }} />
         <div style={{ position: "relative", maxWidth: 1040, margin: "0 auto", padding: "52px 20px 36px" }}>
           <div className="flex items-center flex-wrap" style={{ gap: 36 }}>
@@ -874,14 +875,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
                 <a href="/" className="press ab-sheen" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
                 <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 2, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
               </div></Reveal>
-              <Reveal delay={0.2}><div className="flex flex-wrap" style={{ gap: 8 }}>
-                {[["7", t("티어 단계")], ["4", t("오프닝 갈래")], ["6", t("앱 탭")], ["100%", t("무료로 시작")]].map(([n, l]) => (
-                  <CutPanel key={l} cutSize={9} className="ab-glitch" bodyStyle={{ padding: "9px 16px 10px", background: "rgba(27,16,9,.85)" }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1 }}><ScrambleText text={String(n)} style={{ fontSize: "inherit", fontWeight: "inherit" }} /></div>
-                    <div style={{ fontSize: 10.5, color: T.inkSoft, fontWeight: 700, marginTop: 5 }}>{l}</div>
-                  </CutPanel>
-                ))}
-              </div></Reveal>
+              
             </div>
             <div style={{ flex: "1 1 340px", minWidth: 300 }}><HeroPhones /></div>
           </div>
@@ -1024,7 +1018,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <div className="flex items-center justify-center" style={{ marginTop: 40 }}>
           <DecoBoard {...DECO_E} size={124} tilt={0} />
         </div>
-        <div style={{ textAlign: "center", padding: "28px 0 8px" }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
+        <FooterMark />
       </div>
     </div>
   );
@@ -2909,9 +2903,9 @@ function IconHighlight({ Icon, color, label }) {
   return (
     <Reveal>
       <div className="flex flex-col items-center" style={{ gap: 10, margin: "8px 0 28px" }}>
-        <motion.div animate={{ boxShadow: ["0 0 0 0 " + color + "55", "0 0 0 16px " + color + "00"] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+        <motion.div animate={{ boxShadow: ["0 0 0 0 " + color + "55", "0 0 0 16px " + color + "00"] }} transition={{ duration: 1.8, repeat: LOOP(), ease: "easeOut" }}
           style={{ width: 92, height: 92, borderRadius: "50%", background: "radial-gradient(70% 70% at 32% 28%,#FFFFFF22," + color + "22)", border: "1px solid " + color, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <motion.div animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}>
+          <motion.div animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 1.8, repeat: LOOP(), ease: "easeInOut" }}>
             <Icon size={38} color={color} />
           </motion.div>
         </motion.div>
@@ -2940,7 +2934,7 @@ function ImageHighlight({ src, label }) {
   return (
     <Reveal>
       <div className="flex flex-col items-center" style={{ gap: 10, margin: "8px 0 28px" }}>
-        <motion.div animate={{ boxShadow: ["0 0 0 0 " + T.brass + "55", "0 0 0 16px " + T.brass + "00"] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+        <motion.div animate={{ boxShadow: ["0 0 0 0 " + T.brass + "55", "0 0 0 16px " + T.brass + "00"] }} transition={{ duration: 1.8, repeat: LOOP(), ease: "easeOut" }}
           style={{ width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(70% 70% at 32% 28%,#FFFFFF22," + T.brass + "22)", border: "1px solid " + T.brass, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <img src={src} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
         </motion.div>
@@ -3001,7 +2995,7 @@ function ItemList({ sections, big }) {
 }
 function LatestCard({ v, secs }) {
   return (
-    <motion.section initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ marginBottom: 60, filter: "drop-shadow(0 24px 40px rgba(236,203,134,.18))" }}>
+    <motion.section className="ab-fx" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ marginBottom: 60, filter: "drop-shadow(0 24px 40px rgba(236,203,134,.18))" }}>
       <CutPanel accent={T.brassHi} cutSize={30} bodyStyle={{ position: "relative", overflow: "hidden", padding: "30px 28px 26px", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)" }}>
         <Brackets color={T.brassHi} size={12} inset={10} />
         <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
@@ -3029,7 +3023,7 @@ function LatestCard({ v, secs }) {
 function EraBlock({ era, rows, openSet, toggle, forceOpen }) {
   const last = rows[rows.length - 1].v.date, first = rows[0].v.date;
   return (
-    <section id={"era-" + era.replace(".", "-")} style={{ position: "relative", marginBottom: 54, scrollMarginTop: 130 }}>
+    <section id={"era-" + era.replace(".", "-")} style={{ position: "relative", marginBottom: 54, scrollMarginTop: 130, contentVisibility: "auto", containIntrinsicSize: "auto 700px" }}>
       <div className="flex items-end" style={{ gap: 16, marginBottom: 18, position: "relative" }}>
         <span className="ab-glitch ab-flicker" style={{ fontSize: 68, fontWeight: 900, fontStyle: "italic", lineHeight: 0.85, color: "transparent", WebkitTextStroke: "1.5px " + T.brass, letterSpacing: "-.03em", fontFamily: "ui-monospace,monospace" }}>{era}</span>
         <div style={{ paddingBottom: 4 }}>
@@ -3151,7 +3145,7 @@ function HistoryPage() {
 
       <div style={{ textAlign: "center", padding: "28px 0 8px" }}>
         <DecoBoard {...DECO_F} size={110} caption={null} />
-        <div style={{ marginTop: 14 }}><span style={{ fontSize: 11, color: T.inkSoft }}>© OpenChess</span></div>
+        <FooterMark />
       </div>
     </div>
   );
@@ -3164,6 +3158,7 @@ const PAGES_META = [{ key: "intro", label: t("사이트 소개"), Icon: Compass 
 const LATEST_VERSION = VERSION_HISTORY[0].version;
 
 export default function AboutPage() {
+  usePerfLite(); // 가벼운 모드로 바뀌면 다시 그려 무한 반복 모션을 멈춘다
   // 공지 모달의 "자세히 보기"(?page=2)나 #history로 들어오면 버전 기록 페이지부터 보여준다.
   const initialPage = useMemo(() => {
     try {

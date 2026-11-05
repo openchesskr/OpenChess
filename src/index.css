@@ -106,3 +106,13 @@ html:not([lang="ko"]) button, html:not([lang="ko"]) input, html:not([lang="ko"])
   header button, header a[href="/about"] { position: relative; }
   header button::after, header a[href="/about"]::after { content: ""; position: absolute; inset: -9px -3px; }
 }
+
+/* (v0.7.2) 저사양 성능 모드(src/lib/perfMode.js) — <html data-perf="lite">일 때 장식 효과를 줄여 렉을 막는다.
+   블러·필터는 화면 전체를 다시 그리게 해 구형 기기에서 가장 비싸고, 끝없이 도는 CSS 애니메이션은 계속 프레임을 쓴다.
+   스크롤·클릭 반응(.press 등)과 한 번 재생되는 입장 연출은 그대로 둔다. */
+html[data-perf="lite"] *, html[data-perf="lite"] *::before, html[data-perf="lite"] *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+html[data-perf="lite"] .ab-fx { filter: none !important; }
+html[data-perf="lite"] .ab-drift, html[data-perf="lite"] .ab-grain, html[data-perf="lite"] .ab-vignette, html[data-perf="lite"] .ab-sweep { display: none !important; }
+html[data-perf="lite"] .ab-burst, html[data-perf="lite"] .ab-burst-b, html[data-perf="lite"] .ab-flicker { animation: none !important; }
+html[data-perf="lite"] .ab-glitch:hover { animation: none !important; filter: none !important; }
+html[data-perf="lite"] .about-strip, html[data-perf="lite"] .open-marquee-run { animation-play-state: paused !important; }

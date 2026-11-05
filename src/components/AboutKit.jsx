@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ScrambleText, MONO, useScramble } from "./OpenTextArt.jsx";
+import { isLite } from "../lib/perfMode.js";
 
 // /about 디자인 키트 — OPEN 텍스트 아트 섹션에서 정한 시각 언어를 페이지 전체에 쓰기 위한 부품.
 //  · 모서리를 비스듬히 자른 패널(CutPanel) · 평행사변형 라벨/버튼 · 모노스페이스 `// 라벨` · 블록 문자 구분선 · 호버 글리치
@@ -30,7 +31,7 @@ export const KIT_CSS = `
 .ab-sheen{position:relative;overflow:hidden}
 .ab-sheen::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);pointer-events:none}
 .ab-sheen:hover::after{left:130%;transition:left .55s ease}
-.ab-grain{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.06;mix-blend-mode:overlay}
+.ab-grain{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.035}
 .ab-vignette{position:fixed;inset:0;pointer-events:none;z-index:3;background:radial-gradient(120% 90% at 50% 40%,transparent 55%,rgba(0,0,0,.45))}
 @keyframes ab-progress-head{0%,100%{opacity:1}50%{opacity:.4}}
 `;
@@ -49,13 +50,21 @@ export function Tag({ children, color = K.brassHi, solid, style }) {
 }
 
 // 모서리를 자른 패널. 바깥 레이어가 가는 테두리색, 안쪽이 본체. accent를 주면 테두리가 그 색으로 빛난다.
+// bodyStyle에 값이 undefined인 키(예: background: open ? … : undefined)가 있으면 spread가 기본값을 지워 버려 테두리 그러데이션이 비쳐 보였다 — undefined 키는 버린다.
+const definedOnly = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
 export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className }) {
-  const onMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--mx", (e.clientX - r.left) + "px"); e.currentTarget.style.setProperty("--my", (e.clientY - r.top) + "px"); e.currentTarget.style.setProperty("--spot", "1"); };
+  // 마우스 스포트라이트 — 이벤트마다 스타일을 쓰지 않고 프레임당 한 번만 갱신한다. 가벼운 모드에서는 쓰지 않는다.
+  const onMove = (e) => {
+    if (isLite()) return;
+    const el = e.currentTarget, x = e.clientX, y = e.clientY;
+    if (el.__raf) return;
+    el.__raf = requestAnimationFrame(() => { el.__raf = 0; const r = el.getBoundingClientRect(); el.style.setProperty("--mx", (x - r.left) + "px"); el.style.setProperty("--my", (y - r.top) + "px"); el.style.setProperty("--spot", "1"); });
+  };
   const onLeave = (e) => e.currentTarget.style.setProperty("--spot", "0");
   const edge = accent ? "linear-gradient(135deg," + accent + "," + accent + "55 55%," + accent + "AA)" : "linear-gradient(135deg,rgba(236,203,134,.55),rgba(196,154,80,.18) 50%,rgba(196,154,80,.4))";
   return (
     <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...style }}>
-      <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...bodyStyle }}>
+      <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...definedOnly(bodyStyle) }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, opacity: "var(--spot, 0)", transition: "opacity .25s", background: "radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(236,203,134,.2), transparent 70%)" }} />
         {children}
       </div>
@@ -111,5 +120,15 @@ export function AmbientLayer() {
       <div aria-hidden="true" className="ab-grain" style={{ backgroundImage: GRAIN }} />
       <div aria-hidden="true" className="ab-vignette" />
     </>
+  );
+}
+
+// 페이지 맨 아래 워드마크 — 외곽선 큰 글자와 상태 줄.
+export function FooterMark({ note = "© OpenChess" }) {
+  return (
+    <div style={{ textAlign: "center", padding: "44px 0 8px", userSelect: "none" }}>
+      <div aria-hidden="true" className="ab-flicker" style={{ fontFamily: MONO, fontSize: "clamp(40px, 11vw, 104px)", fontWeight: 900, fontStyle: "italic", letterSpacing: "-.02em", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.35)", maskImage: "linear-gradient(180deg,#000 30%,transparent 100%)", WebkitMaskImage: "linear-gradient(180deg,#000 30%,transparent 100%)" }}>OPENCHESS</div>
+      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note} · SYSTEM OK <span className="ab-caret" style={{ color: K.brass }}>▌</span></div>
+    </div>
   );
 }

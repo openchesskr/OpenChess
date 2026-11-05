@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
+import { engineLineGapMs } from "../lib/perfMode.js";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
@@ -1426,7 +1427,7 @@ export function bootAnalysisWorker(urls) {
         if (mp && pvList && pvList.length && sc) {
           job.lines[parseInt(mp[1], 10)] = { uci: pvList[0], pv: pvList, depth: dm ? parseInt(dm[1], 10) : null, cp: sc[1] === "cp" ? parseInt(sc[2], 10) : null, mate: sc[1] === "mate" ? parseInt(sc[2], 10) : null };
           // (v0.2.1) 실시간 스트리밍 — depth가 깊어질 때마다(throttle ~90ms) 현재 라인들을 흘려보낸다.
-          if (job.onLines) { const now = Date.now(); if (!job.lastLinesEmit || now - job.lastLinesEmit >= 90) { job.lastLinesEmit = now; job.onLines(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k])); } }
+          if (job.onLines) { const now = Date.now(); if (!job.lastLinesEmit || now - job.lastLinesEmit >= engineLineGapMs()) { job.lastLinesEmit = now; job.onLines(Object.keys(job.lines).sort((a, b) => a - b).map((k) => job.lines[k])); } }
         }
       } else if (sc && !job.multi) {
         job.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
