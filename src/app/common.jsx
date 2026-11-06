@@ -13,7 +13,7 @@ import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic, checkmateInfo } from "../lib/mecTactics.js";
 import { strategicFact } from "../lib/mecStrategy.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
+import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, underBigThreat, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -1304,8 +1304,13 @@ export const sacConfirmListeners = new Set();      // 확인이 끝날 때마다
 let sacConfirmDefaultEval = null;
 export function setSacConfirmEvaluator(fn) { sacConfirmDefaultEval = fn; }
 function sacConfirmKey(fenRoot, prevSans, san) { return fenOfRoot(fenRoot, prevSans) + "|" + stripSuffix(san); }
-export function sacVerdict(fenRoot, prevSans, san) { const v = sacConfirmCache.get(sacConfirmKey(fenRoot, prevSans, san)); return typeof v === "boolean" ? v : undefined; }
+export function sacVerdict(fenRoot, prevSans, san) {
+  // (v0.7.3, 사용자 요청) 두기 전 내 기물이 2점 이상 위협받는 중이면 엔진 확인 없이 곧바로 "희생(탁월 자격)" — 동기 채점 화면도 첫 호출부터 true를 받는다.
+  try { if (underBigThreat(boardOfRoot(fenRoot, prevSans), plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b")) return true; } catch { }
+  const v = sacConfirmCache.get(sacConfirmKey(fenRoot, prevSans, san)); return typeof v === "boolean" ? v : undefined; }
 function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
+  // (v0.7.3, 사용자 요청) 두기 전에 내 기물이 2점 이상 위협받는 중이면 엔진 확인 없이 탁월 자격이 확정된다(moveQuality.js underBigThreat).
+  try { if (underBigThreat(boardOfRoot(fenRoot, prevSans), color)) return Promise.resolve(true); } catch { }
   const key = sacConfirmKey(fenRoot, prevSans, san);
   const hit = sacConfirmCache.get(key);
   if (hit !== undefined) return typeof hit === "boolean" ? Promise.resolve(hit) : hit;

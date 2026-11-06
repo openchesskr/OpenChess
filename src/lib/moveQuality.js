@@ -229,7 +229,15 @@ export function forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, hr, 
   }
   return false;
 }
-export function isSacrifice(board, sanRaw, color) {
+// (v0.7.3, 사용자 요청) 두기 전에 내 기물이 상대에게 2점 이상 이득을 내줄 위협을 받는 중이면, 그 상황에서 둔 좋은 수는 전부 탁월로 인정한다(기물을 구하는 수도 포함).
+// 이 위협 규칙은 정적 판정의 예외(포크에 몰려 어쩔 수 없는 수·다른 기물을 구한 수·반격 수 등)보다 우선하며, 엔진 확인(confirmSacrifice)도 거치지 않는다.
+export const THREAT_BRILLIANT_MIN_LOSS = 2;
+export function underBigThreat(board, color) {
+  try { return hangingLossSq(board, color, null).loss >= THREAT_BRILLIANT_MIN_LOSS; } catch { return false; }
+}
+// opts.threatRule=false면 위 위협 규칙 없이 옛 정적 판정만(퍼즐 희생 후보 열거·옛 사례 검사용).
+export function isSacrifice(board, sanRaw, color, opts) {
+  if (!(opts && opts.threatRule === false) && underBigThreat(board, color)) return true;
   const info = sanSrc(board, sanRaw, color);
   if (!info) return false;
   const [fr, fc] = info.from;
@@ -467,7 +475,7 @@ export function staticSacrificeSans(board, color, ep) {
     for (const d of legalDests(board, fr, fc, color, ep)) {
       const promo = pc.t === "P" && (d[0] === 0 || d[0] === 7) ? "Q" : undefined;
       const san = buildSan(board, fr, fc, d[0], d[1], color, ep, promo);
-      if (san && isSacrifice(board, san, color)) out.push(san);
+      if (san && isSacrifice(board, san, color, { threatRule: false })) out.push(san);
     }
   }
   return out;
