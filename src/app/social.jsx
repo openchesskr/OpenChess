@@ -217,7 +217,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
 // (v0.7.3, 사용자 요청) 비율은 그대로 두고 칼럼 가로 폭을 가득 채우도록 키운다 — maxScale을 주지 않으면 상한 없이 폭에 맞춘다(예전엔 0.6~0.85배로 줄여 오른쪽이 비었다).
-function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
+export function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
   const BASE_W = 260, BASE_H = 74;
   const ref = useRef(null);
   const [w, setW] = useState(0);
@@ -248,7 +248,7 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
 // (사용자 요청) chess.com 통계 보기의 카드 상단 신원 표시 — 사진·아이디는 여기 한 곳에서만 보여주고
 // (AccountChessStats 안의 중복 사진·아이디 줄은 compact 옵션으로 생략), 국적·시간 규정별 레이팅도
 // 이 자리로 끌어올려 함께 보여준다. MyProfileCard·UserSearchModal·FriendsModal이 모두 공유한다.
-function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
+export function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
   const name = (ccHeaderProf && ccHeaderProf.username) || fallbackUsername;
   return (
     // (사용자 요청) alignItems를 center에서 start로 바꿔, 아래쪽 줄(실명·마지막 접속)이 있고 없고에
@@ -2526,7 +2526,7 @@ function LegacyCountStepper({ label, value, min, max, onChange, accent }) {
 }
 // (사용자 요청) chess.com 통계를 보는 동안엔 티어·퍼즐 레이팅(OpenChess 전용 지표) 대신, 같은 자리에
 // 래피드/블리츠/불릿 레이팅을 보여준다 — TierRatingRow와 같은 줄 높이·배지 모양을 그대로 쓴다.
-function ChesscomRatingRow({ ccHeaderProf }) {
+export function ChesscomRatingRow({ ccHeaderProf }) {
   if (!ccHeaderProf) return null;
   const items = [
     { label: t("래피드"), v: ccHeaderProf.rapid },

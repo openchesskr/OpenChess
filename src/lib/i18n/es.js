@@ -3031,4 +3031,10 @@ export default {
   "더블 체크로 완성한 체크메이트입니다. 두 기물이 동시에 체크를 걸어 킹이 직접 피해야 하는데 갈 칸이 없습니다.": "Un jaque mate logrado con un jaque doble. Dos piezas dan jaque a la vez, por lo que el Rey debe moverse él mismo, pero no tiene casilla adonde ir.",
   "사다리 체크메이트입니다. 두 기물이 이웃한 두 선을 나눠 막아 킹이 피할 칸이 없습니다.": "Jaque mate de escalera. Dos piezas se reparten dos líneas contiguas, así que el Rey no tiene casilla adonde huir.",
   "{0:이/가} 건 체크를 막거나 피할 수 없는 체크메이트입니다. 킹의 도망칠 칸이 모두 막혀 이 수로 게임이 끝납니다.": "El jaque de {0} no se puede bloquear ni evitar: es jaque mate. Todas las casillas de huida del Rey están cubiertas y la partida termina con esta jugada.",
+  "로그인하면 내 프로필과 최근 대국을 볼 수 있음": "Inicia sesión para ver tu perfil y tus partidas recientes",
+  "내 프로필": "Mi perfil",
+  "설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨": "Vincula tu cuenta de chess.com en Ajustes para ver tus partidas recientes",
+  "표시할 대국 없음": "No hay partidas que mostrar",
+  "아직 리뷰하지 않은 대국": "Aún sin revisar",
+  "오프닝 정보 없음": "Sin información de apertura",
 };

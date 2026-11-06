@@ -4521,6 +4521,21 @@ export function reviewStorageKey(game) {
   if (game.sans && game.sans.length) return "oc-review-pos:pgn:" + game.sans.join(" ");
   return null;
 }
+// (v0.7.3) 이 기기에 저장된 게임 리뷰 결과(oc-review-result:*)에서 내 정확도·수 등급 개수만 읽는다 — 학습 탭의 최근 대국 박스가 "리뷰한 대국"에 요약을 보여 준다.
+// 엔진·네트워크를 쓰지 않는 동기 조회라 카드마다 불러도 가볍다. 리뷰한 적 없으면 null. game.color가 내 진영.
+export function cachedReviewSummary(game) {
+  try {
+    const k = reviewStorageKey(game); if (!k || typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(k.replace("oc-review-pos:", "oc-review-result:")); if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (!p || p.v !== REVIEW_RESULT_CACHE_VERSION || !p.result || !Array.isArray(p.result.moves)) return null;
+    const mineWhite = game.color === "w";
+    const acc = mineWhite ? p.result.whiteAcc : p.result.blackAcc;
+    const counts = {};
+    for (const m of p.result.moves) if (m && m.kind && !!m.white === mineWhite) counts[m.kind] = (counts[m.kind] || 0) + 1;
+    return { acc: Number.isFinite(acc) ? acc : null, counts };
+  } catch { return null; }
+}
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL(openchess.kr/review/(식별자))의 "PGN 분석" 쪽
 // 식별자는 암호화한다. 진짜 비밀을 지키는 용도가 아니라(키 자체가 클라이언트 번들에 있어 누구나
 // 복호화할 수 있음), URL을 짧고 안 읽히게 만드는 게 목적 — Web Crypto AES-GCM을 그대로 쓴다.

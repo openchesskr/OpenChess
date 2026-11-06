@@ -28,5 +28,37 @@ for (const f of files) {
     },
   });
 }
+// (v0.7.3 재발 방지) 상대 경로 import의 이름이 대상 파일에 실제로 export돼 있는지도 검사한다. 위 검사는 "import로 선언됐다"만 보므로, 엉뚱한 파일에서 가져온 이름
+// (예: fetchChesscomProfile을 lib/chesscom.js에서 import — 실제로는 common.jsx)은 통과하고 브라우저에서 모듈 로드가 통째로 실패했다(vite 빌드도 통과).
+const exportCache = new Map();
+function exportsOf(file) {
+  if (exportCache.has(file)) return exportCache.get(file);
+  let res = { names: new Set(), star: false };
+  try {
+    const ast = babel.parseSync(fs.readFileSync(file, "utf8"), { filename: file, sourceType: "module", babelrc: false, configFile: false, parserOpts: { plugins: ["jsx"] } });
+    for (const n of ast.program.body) {
+      if (n.type === "ExportAllDeclaration") res.star = true;
+      else if (n.type === "ExportNamedDeclaration") {
+        if (n.declaration) { const d = n.declaration; if (d.id) res.names.add(d.id.name); if (d.declarations) d.declarations.forEach((x) => { if (x.id && x.id.name) res.names.add(x.id.name); else if (x.id && x.id.properties) x.id.properties.forEach((q) => q.value && q.value.name && res.names.add(q.value.name)); }); }
+        n.specifiers.forEach((sp) => res.names.add(sp.exported.name));
+      }
+    }
+  } catch { res.star = true; }
+  exportCache.set(file, res); return res;
+}
+function resolveRel(from, spec) {
+  const base = path.resolve(path.dirname(from), spec);
+  for (const c of [base, base + ".js", base + ".jsx", base + ".mjs", path.join(base, "index.js"), path.join(base, "index.jsx")]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
+  return null;
+}
+for (const f of files) {
+  let ast; try { ast = babel.parseSync(fs.readFileSync(f, "utf8"), { filename: f, sourceType: "module", babelrc: false, configFile: false, parserOpts: { plugins: ["jsx"] } }); } catch { continue; }
+  for (const n of ast.program.body) {
+    if (n.type !== "ImportDeclaration" || !n.source.value.startsWith(".") || !/\.(jsx?|mjs)$/.test(n.source.value)) continue;
+    const target = resolveRel(f, n.source.value); if (!target) { problems.push(f + " — import 대상 파일을 찾지 못함: " + n.source.value); continue; }
+    const ex = exportsOf(target); if (ex.star) continue;
+    for (const sp of n.specifiers) if (sp.type === "ImportSpecifier" && !ex.names.has(sp.imported.name)) problems.push(f + ":" + n.loc.start.line + " — " + n.source.value + "에 export되지 않은 이름 " + sp.imported.name);
+  }
+}
 if (problems.length) { console.error("check-undefined-refs 실패 (" + problems.length + "건):\n  " + problems.slice(0, 60).join("\n  ")); process.exit(1); }
 console.log("✔ check-undefined-refs: " + files.length + "개 파일에 정의되지 않은 이름 없음");

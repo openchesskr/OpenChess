@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-143 | P1 | (개발 중 발견·수정, 배포 전) 엉뚱한 파일에서 import한 이름(`fetchChesscomProfile`을 `lib/chesscom.js`에서)이 빌드·`check-undefined-refs`를 통과 — 브라우저에서는 그 모듈이 로드되지 않아 앱 화면이 통째로 안 뜰 수 있음 | 수정 완료(v0.7.3, 배포 전) · `check-undefined-refs`가 상대 import 이름의 실제 export 여부를 검사 | 2026-11-06 |
 | BUG-142 | P2 | 희생 퍼즐 첫 수 탐색(`findSacrificeFirstMove`)이 정적 희생 후보를 보드 순서(a8→h1)로 앞에서 10개만 평가 — 후보가 많은 포지션에서 진짜 탁월한 수가 순서 때문에 평가조차 못 받고 버려짐 | 수정 완료(v0.7.3) · 유망 순서(체크·큰 기물) 정렬 + 14개로 확대 · `check-puzzle-gen` | 2026-11-06 |
 | BUG-141 | P2 | 승부가 난 평가치(±4점 이상)에서도 "유일한 수"(상한 +6)·블런더·실수가 매겨짐 — +9→+6처럼 여전히 크게 이기는 수, 이미 -6인 포지션의 수까지 실수·블런더로 표시(실측: 문제 수의 18%가 이런 수) | 수정 완료(v0.7.3) · `DECIDED_CP=400` · `check-move-grading` 경계 사례 9건 | 2026-11-06 |
 | BUG-140 | P2 | 퍼즐 라인이 이상한 위치에서 끊김 — 깊이·노드 상한이나 "이득 기준 충족" 종료가 상대의 되잡기 직전(교환 중간)·퀸이 공격받는 채·체크 중에 발생(실측: 자동 생성 라인의 약 15~30%) | 수정 완료(v0.7.3) · 미해결 위치는 상한을 조금 넘겨 정리 · `check-puzzle-gen` · 개발 도구 `analyze:puzzle-gen` | 2026-11-06 |
@@ -139,6 +140,15 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-143 · [P1] 잘못된 파일에서 import한 이름이 빌드를 통과해 모듈 로드가 실패함(배포 전 발견)
+- **상태**: 수정 완료(v0.7.3, 배포 전)
+- **발견일**: 2026-11-06 (학습 탭 개편 중 컴포넌트를 실제로 마운트해 확인하다가)
+- **위치**: `src/app/learn.jsx` import, `scripts/check-undefined-refs.mjs`
+- **증상**: 브라우저에서 "The requested module '/src/lib/chesscom.js' does not provide an export named 'fetchChesscomProfile'" — 이 모듈을 쓰는 화면이 통째로 로드되지 않는다.
+- **원인**: `fetchChesscomProfile`은 `app/common.jsx`가 export하는데 `lib/chesscom.js`에서 가져오게 썼다. vite 빌드(rollup)와 기존 `check-undefined-refs`는 "import로 선언됐다"만 보고 대상 파일이 그 이름을 export하는지는 확인하지 않았다.
+- **수정**: 올바른 파일에서 import.
+- **안전장치**: `check-undefined-refs`가 모든 상대 경로 import의 이름이 대상 파일에 실제로 export돼 있는지 검사한다(`export *`가 있는 파일은 건너뜀). 잘못된 import를 일부러 넣어 감지되는 것을 확인했다.
 
 ### BUG-142 · [P2] 희생 퍼즐 첫 수 탐색이 후보를 순서대로 앞에서 잘라 탁월한 수를 놓침
 - **상태**: 수정 완료(v0.7.3)

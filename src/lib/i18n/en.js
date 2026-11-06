@@ -3031,4 +3031,10 @@ export default {
   "더블 체크로 완성한 체크메이트입니다. 두 기물이 동시에 체크를 걸어 킹이 직접 피해야 하는데 갈 칸이 없습니다.": "A Checkmate completed by a double Check. Two pieces give Check at once, so the King must move itself, but it has no square to go to.",
   "사다리 체크메이트입니다. 두 기물이 이웃한 두 선을 나눠 막아 킹이 피할 칸이 없습니다.": "Ladder Checkmate. Two pieces split two neighboring lines between them, so the King has no square to escape to.",
   "{0:이/가} 건 체크를 막거나 피할 수 없는 체크메이트입니다. 킹의 도망칠 칸이 모두 막혀 이 수로 게임이 끝납니다.": "The Check from {0} cannot be blocked or escaped, so this is Checkmate. Every square the King could flee to is covered, and the game ends with this move.",
+  "로그인하면 내 프로필과 최근 대국을 볼 수 있음": "Log in to see your profile and recent games",
+  "내 프로필": "My profile",
+  "설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨": "Link your chess.com account in Settings to see recent games",
+  "표시할 대국 없음": "No games to show",
+  "아직 리뷰하지 않은 대국": "Not reviewed yet",
+  "오프닝 정보 없음": "No opening info",
 };
