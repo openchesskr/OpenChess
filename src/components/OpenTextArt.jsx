@@ -32,7 +32,7 @@ const mix = (text, keep) => {
 };
 
 // 노이즈에서 한 글자씩 풀려 나오는 문자열. run이 true가 되거나 text가 바뀔 때마다 다시 재생한다.
-export function useScramble(text, run = true, ms = 34) {
+export function useScramble(text, run = true, ms = 34, nonce = 0) {
   const [out, setOut] = useState(() => mix(text, 0));
   useEffect(() => {
     if (isLite()) { setOut(text); return undefined; } // 가벼운 모드: 풀려 나오는 연출 없이 바로 최종 글자
@@ -45,15 +45,18 @@ export function useScramble(text, run = true, ms = 34) {
       if (f >= total) clearInterval(id);
     }, ms);
     return () => clearInterval(id);
-  }, [text, run, ms]);
+  }, [text, run, ms, nonce]);
   return out;
 }
 
 // 화면에 들어올 때마다 풀려 나오는 한 줄 글자 — 챕터 머리말 등에 쓴다.
-export function ScrambleText({ text, style, className }) {
+export function ScrambleText({ text, style, className, loopMs = 0 }) {
   const ref = useRef(null);
   const seen = useInView(ref, { amount: 0.6 });
-  const out = useScramble(text, seen);
+  // loopMs가 있으면 화면에 보이는 동안 그 간격마다 글자가 다시 노이즈에서 풀려 나온다(자동 반복).
+  const [round, setRound] = useState(0);
+  useEffect(() => { if (!loopMs || !seen || isLite()) return undefined; const id = setInterval(() => setRound((v) => v + 1), loopMs); return () => clearInterval(id); }, [loopMs, seen]);
+  const out = useScramble(text, seen, 34, round);
   return <span ref={ref} className={className} style={{ fontFamily: MONO, ...style }}>{out}</span>;
 }
 

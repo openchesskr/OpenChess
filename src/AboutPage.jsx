@@ -11,7 +11,7 @@ import { t, tx } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
-import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, cut, para, octagon } from "./components/AboutKit.jsx";
+import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
 // App 대신 이 컴포넌트를 렌더링). 그래서 여기서 쓰는 색 토큰·장식 모티프는 App.jsx의 T 객체·
@@ -80,7 +80,7 @@ function TierBadgeShape({ size, children }) {
 }
 
 function Diamond({ x, y, size = 16, opacity = 0.18 }) {
-  return <rect x={x} y={y} width={size} height={size} transform={"rotate(45 " + (x + size / 2) + " " + (y + size / 2) + ")"} fill="none" stroke={T.brass} strokeWidth="1.2" opacity={opacity} />;
+  return <g className="ab-diamond" style={{ transformBox: "fill-box", transformOrigin: "center", animationDelay: -((x * 7 + y * 3) % 9) + "s" }}><rect x={x} y={y} width={size} height={size} transform={"rotate(45 " + (x + size / 2) + " " + (y + size / 2) + ")"} fill="none" stroke={T.brass} strokeWidth="1.2" opacity={opacity} /></g>;
 }
 // (기존 GeoBackdrop과 같은 계열의 옅은 와이어프레임 다이아몬드 배경 — 톤을 맞추되 더 절제된 밀도로.
 function Backdrop() {
@@ -119,7 +119,7 @@ function Reveal({ children, delay = 0, y = 16, once = false }) {
 // 완전히 다른 자산 — App.jsx에 인라인 base64로 박혀 있던 걸 이 페이지(무거운 초기화가 없는 정적
 // 컴포넌트)에서도 가볍게 쓸 수 있도록 public/mascot/*.webp 파일로 그대로 추출해 둔 것을 가리킨다.
 function Mascot({ char = "milku", expr = "great", size = 72 }) {
-  return <img src={"/mascot/" + char + "_" + expr + ".webp"} alt="" style={{ width: size, height: size, objectFit: "contain" }} />;
+  return <img className="ab-bob" src={"/mascot/" + char + "_" + expr + ".webp"} alt="" style={{ width: size, height: size, objectFit: "contain", animationDelay: -(size % 7) * 0.4 + "s" }} />;
 }
 
 // (기존 MascotBubble과 동일한 시각 언어 — 원형 초상 + 이름표 + 말풍선)
@@ -132,7 +132,7 @@ function SpeechBubble({ mascot, name, children, align = "left" }) {
           <span aria-hidden="true" className="ab-spin" style={{ background: "conic-gradient(from 0deg, " + T.brassHi + ", transparent 28%, " + T.brass + " 55%, transparent 78%, " + T.brassHi + ")", opacity: 0.85 }} />
           <div style={{ position: "relative", margin: 2, height: "calc(100% - 4px)", clipPath: octagon(13), display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%,#5A3A22,#20140B)" }}><Mascot char={mascot.char} expr={mascot.expr} size={62} /></div>
         </div>
-        <CutPanel cutSize={12} style={{ flex: 1 }} bodyStyle={{ padding: "11px 16px 14px" }}>
+        <CutPanel chase cutSize={12} style={{ flex: 1 }} bodyStyle={{ padding: "11px 16px 14px" }}>
           <div style={{ marginBottom: 4 }}><Sys color={T.brassHi}>{"// "}{name}</Sys></div>
           <p style={{ color: T.ivory, fontSize: 13, lineHeight: 1.7, margin: 0 }}>{children}</p>
         </CutPanel>
@@ -330,7 +330,7 @@ function TierStrip() {
         {tiers.map((t, i) => (
           <motion.div key={t.key} className="flex flex-col items-center" style={{ gap: 6, flex: 1 }}
             variants={{ hidden: { opacity: 0, y: 20, scale: 0.7 }, show: { opacity: 1, y: 0, scale: 1 } }} transition={{ duration: 0.4, ease: [0.22, 0.9, 0.32, 1] }}>
-            <span className="ab-breathe" style={{ display: "inline-flex", animationDelay: i * 0.35 + "s" }}><TierBadgeShape size={56 + i * 3}>
+            <span className="ab-wave" style={{ display: "inline-flex", animationDelay: i * 0.45 + "s" }}><TierBadgeShape size={56 + i * 3}>
               <img src={t.img} alt={t.label} style={{ width: "72%", height: "72%", objectFit: "contain" }} />
             </TierBadgeShape></span>
             <span style={{ fontSize: 9.5, fontWeight: 800, fontStyle: "italic", color: T.brassHi, whiteSpace: "nowrap", fontFamily: "ui-monospace,monospace" }}>{"T" + (i + 1) + " ▸ "}{t.label}</span>
@@ -463,14 +463,16 @@ function Chapter({ no, eyebrow, title, desc, id }) {
   return (
     <Reveal>
       <header id={id} style={{ position: "relative", textAlign: "center", margin: "0 auto 40px", maxWidth: 600, scrollMarginTop: 80 }}>
+        <FloatGlyph ch={"♞♜♝♛♚♟".charAt((parseInt(no, 10) || 0) % 6)} style={{ left: -6, top: 4 }} />
+        <FloatGlyph ch={"♟♚♛♝♜♞".charAt((parseInt(no, 10) || 0) % 6)} style={{ right: -6, top: 14, fontSize: 28 }} delay={1.6} />
         <span aria-hidden="true" className="ab-flicker" style={{ position: "absolute", left: "50%", top: -40, transform: "translateX(-50%) skewX(-8deg)", fontSize: 120, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.2)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none", whiteSpace: "nowrap" }}>{no}</span>
         <div style={{ position: "relative" }}>
           <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 12 }}>
             <Sys style={{ opacity: 0.7 }}>{"// CH."}{no}</Sys>
-            <Tag solid><ScrambleText text={String(eyebrow)} /></Tag>
+            <Tag solid><ScrambleText text={String(eyebrow)} loopMs={9000} /></Tag>
           </div>
           <h2 className="ab-glitch ab-burst" style={{ fontSize: "clamp(25px, 4.2vw, 34px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.015em", lineHeight: 1.25, display: "inline-block" }}>{title}</h2>
-          <motion.div aria-hidden="true" initial={{ width: 0 }} whileInView={{ width: 64 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.25, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: 4, margin: "0 auto 14px", clipPath: para(4), background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
+          <motion.div aria-hidden="true" initial={{ width: 0 }} whileInView={{ width: 64 }} viewport={{ once: false, amount: 0.6 }} transition={{ duration: 0.6, delay: 0.25, ease: [0.22, 0.9, 0.32, 1] }} className="ab-shimmer" style={{ height: 4, margin: "0 auto 14px", clipPath: para(4), background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ",#FAF2E2," + T.brassHi + "," + T.brass + ")" }} />
           {desc && <p style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.85, margin: 0 }}>{desc}</p>}
         </div>
       </header>
@@ -492,7 +494,7 @@ function NewCard({ c, i }) {
   return (
     <motion.div initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
       whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: c.wide ? "span 2" : "span 1", minWidth: 0 }} className="about-bento">
-      <CutPanel tilt accent={c.color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
+      <CutPanel chase tilt accent={c.color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
         <Brackets color={c.color} />
         <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
         <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
@@ -587,6 +589,9 @@ function HeroPhones() {
   const cur = HERO_SHOTS[i], nxt = HERO_SHOTS[(i + 1) % HERO_SHOTS.length];
   return (
     <div style={{ position: "relative", width: 330, maxWidth: "100%", height: 560, margin: "0 auto" }}>
+      <span aria-hidden="true" className="ab-spin" style={{ inset: "6%", borderRadius: "50%", border: "1px dashed rgba(236,203,134,.3)", zIndex: 0, animationDuration: "50s" }}>
+        <span style={{ position: "absolute", left: "50%", top: -4, width: 8, height: 8, marginLeft: -4, borderRadius: "50%", background: T.brassHi, boxShadow: "0 0 12px " + T.brassHi }} />
+      </span>
       <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "52%", width: 360, height: 360, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle, rgba(236,203,134,.28), transparent 68%)", filter: "blur(10px)" }} />
       <div style={{ position: "absolute", right: -26, top: 54, opacity: 0.55, filter: "blur(.4px)" }}>
         <AnimatePresence mode="wait"><motion.div key={nxt.n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}><Phone src={SHOT(nxt.n)} width={170} tilt={9} /></motion.div></AnimatePresence>
@@ -695,9 +700,11 @@ const QUESTS = [
 ];
 function QuestDemo() {
   const [done, setDone] = useState({});
+  const [step, questRef] = useAutoCycle(QUESTS.length + 2, 1200); // 퀘스트를 차례로 완료 → 보상 → 처음으로(자동 반복)
+  useEffect(() => { if (step === 0) setDone({}); else if (step <= QUESTS.length) setDone((d) => ({ ...d, [QUESTS[step - 1].k]: true })); }, [step]);
   const n = Object.keys(done).filter((k) => done[k]).length;
   return (
-    <div style={{ borderRadius: 2, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
+    <div ref={questRef} style={{ borderRadius: 2, padding: 14, background: SQ_LIGHT_BG, border: "2px solid #8A6C2F", color: "#3A2516", flex: 1 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 900 }}>{t("일일 퀘스트")}</span>
         <span style={{ fontSize: 11, color: "rgba(58,37,22,.6)" }}>{t("눌러서 완료 처리해 볼 수 있습니다")}</span>
@@ -727,8 +734,10 @@ function XpDemo() {
   const [ti, setTi] = useState(0);
   const cur = TIER_DEMO[ti];
   const solve = () => setXp((v) => { const nv = v + 90; if (nv >= cur.max) { setTi((x) => (x + 1) % TIER_DEMO.length); return 0; } return nv; });
+  const [tick, xpRef] = useAutoCycle(1000000, 1300); // 보이는 동안 1.3초마다 퍼즐을 하나씩 푼 것처럼 경험치가 차오른다(자동 반복)
+  useEffect(() => { if (tick > 0) solve(); }, [tick]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div style={{ borderRadius: 2, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
+    <div ref={xpRef} style={{ borderRadius: 2, padding: 16, background: "linear-gradient(160deg,#3A2516,#20140B)", border: "1px solid #4A3521", flex: 1, display: "flex", flexDirection: "column" }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("경험치와 티어")}</div>
       <div className="flex items-center" style={{ gap: 14, flex: 1 }}>
         <AnimatePresence mode="popLayout"><motion.div key={ti} initial={{ scale: 0.4, rotate: -20, opacity: 0 }} animate={{ scale: 1, rotate: 0, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ type: "spring", stiffness: 260, damping: 15 }}>
@@ -750,14 +759,15 @@ function KitCell({ children, delay = 0 }) {
 }
 
 function MoveGrid() {
+  const [hot, hotRef] = useAutoCycle(11, 1100); // 수 등급 아이콘을 하나씩 돌아가며 강조(자동 반복)
   const MOVES = [["Brilliant", t("탁월한 수")], ["Great", t("유일한 수")], ["Best", t("최선의 수")], ["Excellent", t("우수한 수")], ["Good", t("좋은 수")], ["Book", t("이론")], ["Inaccuarcy", t("부정확")], ["Mistake", t("실수")], ["Miss", t("놓친 수")], ["Blunder", t("블런더")]];
   return (
     <div style={{ ...GLASS, borderRadius: 2, padding: 16, flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("수 등급")}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
+      <div ref={hotRef} style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 8 }}>
         {MOVES.map(([k, l], i) => (
           <motion.div key={k} whileHover={{ y: -4, scale: 1.08 }} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.5 }} transition={{ delay: i * 0.04, type: "spring", stiffness: 300, damping: 18 }} style={{ textAlign: "center" }}>
-            <img src={MOVE_IMG(k)} alt="" style={{ width: "62%", maxWidth: 38, aspectRatio: "1/1" }} />
+            <img src={MOVE_IMG(k)} alt="" style={{ width: "62%", maxWidth: 38, aspectRatio: "1/1", transition: "transform .3s, filter .3s", transform: hot % MOVES.length === i ? "scale(1.28)" : "none", filter: hot % MOVES.length === i ? "drop-shadow(0 0 9px rgba(236,203,134,.9))" : "none" }} />
             <div style={{ fontSize: 9.5, fontWeight: 800, color: T.inkSoft, marginTop: 4, lineHeight: 1.3 }}>{l}</div>
           </motion.div>
         ))}
@@ -766,11 +776,12 @@ function MoveGrid() {
   );
 }
 function RarityDemo() {
+  const [hotR, rarRef] = useAutoCycle(RARITIES.length, 1300); // 등급 배지를 하나씩 돌아가며 빛낸다(자동 반복)
   return (
     <div style={{ ...GLASS, borderRadius: 2, padding: 16, flex: 1 }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: T.ivoryHi, marginBottom: 12 }}>{t("스킨 등급")}</div>
-      <div className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
-        {RARITIES.map(([r, c]) => <motion.span key={r} className="ab-breathe" whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: "0 0 14px -4px " + c }}>{r}</motion.span>)}
+      <div ref={rarRef} className="flex flex-wrap" style={{ gap: 8, marginBottom: 14 }}>
+        {RARITIES.map(([r, c], ri) => <motion.span key={r} animate={{ scale: hotR === ri ? 1.14 : 1 }} whileHover={{ scale: 1.1, rotate: -2 }} style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".1em", color: c, border: "1px solid " + c, background: c + "1A", borderRadius: 8, padding: "4px 10px", boxShadow: hotR === ri ? "0 0 22px " + c : "0 0 14px -4px " + c, transition: "box-shadow .3s" }}>{r}</motion.span>)}
       </div>
       <div className="flex items-center" style={{ gap: 10, padding: "10px 12px", borderRadius: 2, background: "rgba(0,0,0,.25)", border: "1px solid #4A3521" }}>
         <img src="/oc-coin.png" alt="" style={{ width: 26, height: 26 }} />
@@ -876,7 +887,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
               <Reveal delay={0.05}><h1 className="ab-burst-b" style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
               <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("오프닝을 외우는 대신 직접 두면서 익히고, 내가 틀린 수는 퍼즐로 다시 푸는 체스 학습 사이트입니다. 가입하지 않아도 쓸 수 있고 전부 무료입니다.")}</p></Reveal>
               <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
-                <a href="/" className="press ab-sheen ab-breathe" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+                <a href="/" className="press ab-sheen ab-glint ab-breathe" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
                 <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 2, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
               </div></Reveal>
               
@@ -899,6 +910,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <WhatsNew version={version} />
 
         <div style={{ height: 72 }} />
+        <div style={{ margin: "0 -20px 28px" }}><AsciiMarquee reverse dim /></div>
         <ChapterNav scrollRef={scrollRef} />
         <div style={{ height: 40 }} />
 
@@ -1014,7 +1026,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             </div>
             <div className="flex items-center" style={{ gap: 18 }}>
               <Mascot char="kokoa" expr="celebrate" size={72} />
-              <a href="/" className="press ab-sheen ab-breathe" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
+              <a href="/" className="press ab-sheen ab-glint ab-breathe" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "14px 26px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 14.5, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22", whiteSpace: "nowrap" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
             </div>
           </section>
         </Reveal>
@@ -2966,7 +2978,7 @@ const CAT_ORDER = ["feature", "ui", "ux", "perf", "fix", "security"];
 const dateNum = (d) => parseInt(d.replace(/\D/g, ""), 10);
 function HStat({ n, label, sub }) {
   return (
-    <CutPanel tilt cutSize={12} className="ab-glitch" style={{ flex: "1 1 150px", minWidth: 140 }} bodyStyle={{ padding: "14px 18px 15px" }}>
+    <CutPanel chase tilt cutSize={12} className="ab-glitch" style={{ flex: "1 1 150px", minWidth: 140 }} bodyStyle={{ padding: "14px 18px 15px" }}>
       <Sys style={{ opacity: 0.7 }}>{"// "}{label}</Sys>
       <div style={{ fontSize: 32, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1, margin: "10px 0 6px", textShadow: "-2px 0 rgba(217,115,106,.35), 2px 0 rgba(111,168,220,.3)" }}><ScrambleText text={String(n)} style={{ fontSize: "inherit", fontWeight: "inherit" }} /></div>
       {sub && <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{sub}</div>}
@@ -3000,7 +3012,7 @@ function ItemList({ sections, big }) {
 function LatestCard({ v, secs }) {
   return (
     <motion.section className="ab-fx" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ marginBottom: 60, filter: "drop-shadow(0 24px 40px rgba(236,203,134,.18))" }}>
-      <CutPanel accent={T.brassHi} cutSize={30} bodyStyle={{ position: "relative", overflow: "hidden", padding: "30px 28px 26px", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)" }}>
+      <CutPanel chase accent={T.brassHi} cutSize={30} bodyStyle={{ position: "relative", overflow: "hidden", padding: "30px 28px 26px", background: "radial-gradient(90% 80% at 100% 0%, rgba(236,203,134,.16), transparent 60%), linear-gradient(160deg,#2E1B10,#160C06)" }}>
         <Brackets color={T.brassHi} size={12} inset={10} />
         <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
         <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 16, position: "relative" }}>
@@ -3219,7 +3231,7 @@ export default function AboutPage() {
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
           <img className="ab-glitch" src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />
           <span style={{ marginLeft: "auto", marginRight: 10 }}><LangSwitch /></span>
-          <a href="/" className="press ab-sheen" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 2, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
+          <a href="/" className="press ab-sheen ab-glint" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 2, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 800, fontSize: 13, textDecoration: "none" }}>{tx("시작하기 {0}", <ArrowRight size={14} />)}</a>
         </div>
         {/* 탭 — 현재 페이지 아래에 금색 밑줄이 미끄러져 이동 */}
         <nav role="tablist" className="flex items-center justify-center" style={{ gap: 6, padding: "0 20px 10px" }}>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ScrambleText, MONO, useScramble } from "./OpenTextArt.jsx";
 import { isLite } from "../lib/perfMode.js";
 
@@ -37,6 +37,22 @@ export const KIT_CSS = `
 @keyframes ab-breathe{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.035);filter:brightness(1.14)}}
 .ab-breathe{animation:ab-breathe 3.6s ease-in-out infinite}
 @keyframes ab-spin{to{transform:rotate(360deg)}}
+@keyframes ab-spin-rev{to{transform:rotate(-360deg)}}
+@keyframes ab-float{0%{transform:translateY(0) rotate(-7deg)}100%{transform:translateY(-12px) rotate(7deg)}}
+.ab-float{position:absolute;font-family:ui-monospace,monospace;font-weight:900;color:#C49A50;opacity:.22;pointer-events:none;animation:ab-float 5s ease-in-out infinite alternate}
+@keyframes ab-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.ab-bob{animation:ab-bob 3.4s ease-in-out infinite}
+@keyframes ab-eq{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+.ab-eq{display:inline-block;width:3px;height:12px;background:#C49A50;transform-origin:bottom;animation:ab-eq 1.1s ease-in-out infinite}
+@keyframes ab-wave{0%,55%,100%{filter:drop-shadow(0 0 0 rgba(236,203,134,0)) brightness(1)}28%{filter:drop-shadow(0 0 11px rgba(236,203,134,.85)) brightness(1.22)}}
+.ab-wave{animation:ab-wave 4.2s ease-in-out infinite}
+@keyframes ab-diamond{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-16px) rotate(18deg)}}
+.ab-diamond{animation:ab-diamond 9s ease-in-out infinite}
+@keyframes ab-shimmer{from{background-position:0 0}to{background-position:-200% 0}}
+.ab-shimmer{background-size:200% 100% !important;animation:ab-shimmer 2.8s linear infinite}
+@keyframes ab-glint{0%,62%{left:-60%}100%{left:130%}}
+.ab-glint{position:relative;overflow:hidden}
+.ab-glint::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);transform:skewX(-18deg);pointer-events:none;animation:ab-glint 5.5s ease-in-out infinite}
 .ab-spin{position:absolute;inset:-45%;animation:ab-spin 6s linear infinite}
 .ab-lift{transition:transform .25s cubic-bezier(.22,.9,.32,1)}
 .ab-lift:hover{transform:translateY(-4px) scale(1.015) !important}
@@ -52,7 +68,7 @@ export function Sys({ children, color = K.brass, style }) {
 // 평행사변형 라벨 — 카테고리·상태 표시.
 export function Tag({ children, color = K.brassHi, solid, style }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, clipPath: para(7), padding: "3px 14px", fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".1em", fontStyle: "italic",
+    <span className={solid ? "ab-glint" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 5, clipPath: para(7), padding: "3px 14px", fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".1em", fontStyle: "italic",
       background: solid ? "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")" : color + "22", color: solid ? "#241509" : color, ...style }}>{children}</span>
   );
 }
@@ -60,7 +76,7 @@ export function Tag({ children, color = K.brassHi, solid, style }) {
 // 모서리를 자른 패널. 바깥 레이어가 가는 테두리색, 안쪽이 본체. accent를 주면 테두리가 그 색으로 빛난다.
 // bodyStyle에 값이 undefined인 키(예: background: open ? … : undefined)가 있으면 spread가 기본값을 지워 버려 테두리 그러데이션이 비쳐 보였다 — undefined 키는 버린다.
 const definedOnly = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
-export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className, tilt = false }) {
+export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className, tilt = false, chase = false }) {
   // 마우스 스포트라이트 — 이벤트마다 스타일을 쓰지 않고 프레임당 한 번만 갱신한다. 가벼운 모드에서는 쓰지 않는다.
   const onMove = (e) => {
     if (isLite()) return;
@@ -76,6 +92,7 @@ export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, cla
   const edge = accent ? "linear-gradient(135deg," + accent + "," + accent + "55 55%," + accent + "AA)" : "linear-gradient(135deg,rgba(236,203,134,.55),rgba(196,154,80,.18) 50%,rgba(196,154,80,.4))";
   return (
     <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...(tilt ? { transform: "perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))", transition: "transform .18s ease-out" } : null), ...style }}>
+      {chase && <span aria-hidden="true" className="ab-spin" style={{ background: "conic-gradient(from 0deg, transparent 0 62%, " + (accent || K.brassHi) + " 82%, transparent 100%)", opacity: 0.95 }} />}
       <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...definedOnly(bodyStyle) }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, opacity: "var(--spot, 0)", transition: "opacity .25s", background: "radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(236,203,134,.2), transparent 70%)" }} />
         {children}
@@ -103,7 +120,7 @@ export function AsciiRule({ label = "OPENCHESS", style }) {
   return (
     <div aria-hidden="true" style={{ display: "flex", alignItems: "center", gap: 12, margin: "60px 0", fontFamily: MONO, color: K.brass, opacity: 0.85, overflow: "hidden", ...style }}>
       <span style={{ flex: 1, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", fontSize: 11, letterSpacing: ".05em", opacity: 0.55 }}>{"─".repeat(60)}░▒▓█</span>
-      <span style={{ fontSize: 11, fontWeight: 800, fontStyle: "italic", letterSpacing: ".3em", whiteSpace: "nowrap" }}>◆ <ScrambleText text={label} /> ◆</span>
+      <span style={{ fontSize: 11, fontWeight: 800, fontStyle: "italic", letterSpacing: ".3em", whiteSpace: "nowrap" }}>◆ <ScrambleText text={label} loopMs={8000} /> ◆</span>
       <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", fontSize: 11, letterSpacing: ".05em", opacity: 0.55 }}>{"█▓▒░"}{"─".repeat(60)}</span>
     </div>
   );
@@ -119,6 +136,7 @@ export function StatusTicker({ style }) {
     <div aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".16em", color: K.brass, marginBottom: 12, ...style }}>
       <span className="ab-caret" style={{ width: 7, height: 7, borderRadius: "50%", background: "#8FB55E", boxShadow: "0 0 8px #8FB55E" }} />
       <span style={{ minWidth: 250, whiteSpace: "nowrap" }}>{txt}</span>
+      <EqBars />
     </div>
   );
 }
@@ -140,7 +158,27 @@ export function FooterMark({ note = "© OpenChess" }) {
   return (
     <div style={{ textAlign: "center", padding: "44px 0 8px", userSelect: "none" }}>
       <div aria-hidden="true" className="ab-flicker" style={{ fontFamily: MONO, fontSize: "clamp(40px, 11vw, 104px)", fontWeight: 900, fontStyle: "italic", letterSpacing: "-.02em", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.35)", maskImage: "linear-gradient(180deg,#000 30%,transparent 100%)", WebkitMaskImage: "linear-gradient(180deg,#000 30%,transparent 100%)" }}>OPENCHESS</div>
-      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note} · SYSTEM OK <span className="ab-caret" style={{ color: K.brass }}>▌</span></div>
+      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note} · SYSTEM OK <EqBars n={3} style={{ marginLeft: 6, verticalAlign: "middle" }} /></div>
     </div>
   );
+}
+
+// 보이는 동안만 n개 중 하나씩 자동으로 넘어가는 인덱스(데모 자동 재생용). 가벼운 모드에서는 멈춘다. ref를 데모 바깥 요소에 달아 쓴다.
+export function useAutoCycle(n, ms) {
+  const ref = useRef(null); const [i, setI] = useState(0); const [on, setOn] = useState(false);
+  useEffect(() => {
+    const el = ref.current; if (!el || typeof IntersectionObserver === "undefined") { setOn(true); return undefined; }
+    const io = new IntersectionObserver(([e]) => setOn(e.isIntersecting), { threshold: 0.25 }); io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => { if (!on || isLite()) return undefined; const id = setInterval(() => setI((v) => (v + 1) % n), ms); return () => clearInterval(id); }, [on, n, ms]);
+  return [i, ref];
+}
+// 둥둥 떠다니는 체스 기물 글자(챕터 머리말 모서리 장식).
+export function FloatGlyph({ ch, style, delay = 0 }) {
+  return <span aria-hidden="true" className="ab-float" style={{ fontSize: 34, animationDelay: delay + "s", ...style }}>{ch}</span>;
+}
+// 이퀄라이저 막대 — "작동 중" 느낌의 상태 장식.
+export function EqBars({ n = 4, style }) {
+  return <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "flex-end", gap: 2, height: 12, ...style }}>{Array.from({ length: n }, (_, i) => <span key={i} className="ab-eq" style={{ animationDelay: (i * 0.17) + "s", animationDuration: (0.9 + (i % 3) * 0.25) + "s" }} />)}</span>;
 }

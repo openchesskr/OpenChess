@@ -118,3 +118,5 @@ html[data-perf="lite"] .ab-glitch:hover { animation: none !important; filter: no
 html[data-perf="lite"] .about-strip, html[data-perf="lite"] .open-marquee-run { animation-play-state: paused !important; }
 html[data-perf="lite"] .ab-breathe, html[data-perf="lite"] .ab-spin { animation: none !important; }
 html[data-perf="lite"] .ab-lift:hover { transform: none; }
+html[data-perf="lite"] .ab-float, html[data-perf="lite"] .ab-bob, html[data-perf="lite"] .ab-eq, html[data-perf="lite"] .ab-wave, html[data-perf="lite"] .ab-diamond, html[data-perf="lite"] .ab-shimmer { animation: none !important; }
+html[data-perf="lite"] .ab-glint::after { display: none !important; }
