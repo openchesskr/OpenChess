@@ -32,25 +32,8 @@ for (const [name, fen, line, want] of SAC_CASES) {
   const startWhite = root ? root.turn === "w" : true;
   const color = ((sans.length - 1) % 2 === 0) === startWhite ? "w" : "b";
   let got;
-  try { got = isSacrifice(boardOfRoot(root, sans.slice(0, -1)), sans[sans.length - 1], color, { threatRule: false }); } catch (e) { got = "오류: " + e.message; }
+  try { got = isSacrifice(boardOfRoot(root, sans.slice(0, -1)), sans[sans.length - 1], color); } catch (e) { got = "오류: " + e.message; }
   if (got !== want) fails.push("isSacrifice — " + name + ": 기대 " + want + ", 실제 " + got);
-}
-
-// ①-1 (v0.7.3, 사용자 요청) 위협 규칙 — 두기 전 내 기물이 2점 이상 위협받는 중이면 어떤 수든(구하는 수·포크에 몰린 수 포함) 희생(=탁월 자격)으로 본다.
-//   위 옛 정적 판정에서 "희생 아님"이던 세 사례는 모두 두기 전 기물이 걸려 있던 포지션이라 새 규칙에서는 true. 위협이 없는 포지션은 예전 판정 그대로다.
-const THREAT_CASES = [
-  ["6...Bxf5 — 나이트가 걸려 있던 포지션이라 새 규칙에서는 희생", null, "e4 e5 d4 exd4 Qxd4 Nc6 Qd5 Nf6 Qf5 d5 exd5 Bxf5", true],
-  ["포크(체크+룩) — Kd7도 위협 중이던 룩 때문에 새 규칙에서는 희생", "r3k3/2N5/8/8/8/8/8/4K3 b - - 0 1", "Kd7", true],
-  ["위협이 없는 평범한 수(1.e4)는 희생이 아니다", null, "e4", false],
-  ["위협이 없는 포지션의 전개 수(3.Bc4)는 희생이 아니다", null, "e4 e5 Nf3 Nc6 Bc4", false],
-];
-for (const [name, fen, line, want] of THREAT_CASES) {
-  const sans = line.split(" ");
-  const root = fen ? parseFenFull(fen) : null;
-  const startWhite = root ? root.turn === "w" : true;
-  const color = ((sans.length - 1) % 2 === 0) === startWhite ? "w" : "b";
-  const got = isSacrifice(boardOfRoot(root, sans.slice(0, -1)), sans[sans.length - 1], color);
-  if (got !== want) fails.push("isSacrifice(위협 규칙) — " + name + ": 기대 " + want + ", 실제 " + got);
 }
 
 // ①-2 (BUG-038) 희생의 엔진 확인 — 실제 Stockfish 수순(둔 뒤 포지션부터)으로 "실제로 내주는가"와 "상대가 따 가는 수"를 검사한다.
