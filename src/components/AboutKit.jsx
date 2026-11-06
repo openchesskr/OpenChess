@@ -38,6 +38,13 @@ export const KIT_CSS = `
 .ab-breathe{animation:ab-breathe 3.6s ease-in-out infinite}
 @keyframes ab-spin{to{transform:rotate(360deg)}}
 @keyframes ab-spin-rev{to{transform:rotate(-360deg)}}
+@keyframes ab-vscan{0%{top:-45%}100%{top:105%}}
+.ab-vscan{position:absolute;right:-1px;top:-45%;width:2px;height:45%;background:linear-gradient(180deg,transparent,#ECCB86,transparent);animation:ab-vscan 3.6s ease-in-out infinite;pointer-events:none}
+@keyframes ab-bracket{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
+.ab-bracket{animation:ab-bracket 2.8s ease-in-out infinite}
+@keyframes ab-textglow{0%,100%{text-shadow:none}50%{text-shadow:0 0 14px rgba(236,203,134,.45)}}
+.ab-textglow{animation:ab-textglow 4s ease-in-out infinite}
+.ab-burst-glow{display:inline-block;animation:ab-burst 7s steps(1,end) infinite,ab-textglow 4s ease-in-out infinite}
 @keyframes ab-float{0%{transform:translateY(0) rotate(-7deg)}100%{transform:translateY(-12px) rotate(7deg)}}
 .ab-float{position:absolute;font-family:ui-monospace,monospace;font-weight:900;color:#C49A50;opacity:.22;pointer-events:none;animation:ab-float 5s ease-in-out infinite alternate}
 @keyframes ab-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
@@ -76,7 +83,7 @@ export function Tag({ children, color = K.brassHi, solid, style }) {
 // 모서리를 자른 패널. 바깥 레이어가 가는 테두리색, 안쪽이 본체. accent를 주면 테두리가 그 색으로 빛난다.
 // bodyStyle에 값이 undefined인 키(예: background: open ? … : undefined)가 있으면 spread가 기본값을 지워 버려 테두리 그러데이션이 비쳐 보였다 — undefined 키는 버린다.
 const definedOnly = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
-export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className, tilt = false, chase = false }) {
+export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className, tilt = false, chase = false, chaseDelay = 0 }) {
   // 마우스 스포트라이트 — 이벤트마다 스타일을 쓰지 않고 프레임당 한 번만 갱신한다. 가벼운 모드에서는 쓰지 않는다.
   const onMove = (e) => {
     if (isLite()) return;
@@ -92,7 +99,7 @@ export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, cla
   const edge = accent ? "linear-gradient(135deg," + accent + "," + accent + "55 55%," + accent + "AA)" : "linear-gradient(135deg,rgba(236,203,134,.55),rgba(196,154,80,.18) 50%,rgba(196,154,80,.4))";
   return (
     <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...(tilt ? { transform: "perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))", transition: "transform .18s ease-out" } : null), ...style }}>
-      {chase && <span aria-hidden="true" className="ab-spin" style={{ background: "conic-gradient(from 0deg, transparent 0 62%, " + (accent || K.brassHi) + " 82%, transparent 100%)", opacity: 0.95 }} />}
+      {chase && <span aria-hidden="true" className="ab-spin" style={{ background: "conic-gradient(from 0deg, transparent 0 62%, " + (accent || K.brassHi) + " 82%, transparent 100%)", opacity: 0.95, animationDelay: chaseDelay + "s" }} />}
       <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...definedOnly(bodyStyle) }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, opacity: "var(--spot, 0)", transition: "opacity .25s", background: "radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(236,203,134,.2), transparent 70%)" }} />
         {children}
@@ -102,15 +109,16 @@ export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, cla
 }
 
 // 코너 브래킷(┌ ┐ └ ┘) 장식 — 패널 위에 absolute로 얹는다.
-export function Brackets({ color = K.brass, size = 9, inset = 6 }) {
+export function Brackets({ color = K.brass, size = 9, inset = 6, pulse = false, delay = 0 }) {
   const b = "1.5px solid " + color;
   const base = { position: "absolute", width: size, height: size, opacity: 0.7, pointerEvents: "none" };
+  const cls = pulse ? "ab-bracket" : undefined;
   return (
     <>
-      <span aria-hidden="true" style={{ ...base, left: inset, top: inset, borderLeft: b, borderTop: b }} />
-      <span aria-hidden="true" style={{ ...base, right: inset + 12, top: inset, borderRight: b, borderTop: b }} />
-      <span aria-hidden="true" style={{ ...base, left: inset + 12, bottom: inset, borderLeft: b, borderBottom: b }} />
-      <span aria-hidden="true" style={{ ...base, right: inset, bottom: inset, borderRight: b, borderBottom: b }} />
+      <span aria-hidden="true" className={cls} style={{ ...base, animationDelay: delay + "s", left: inset, top: inset, borderLeft: b, borderTop: b }} />
+      <span aria-hidden="true" className={cls} style={{ ...base, animationDelay: delay + "s", right: inset + 12, top: inset, borderRight: b, borderTop: b }} />
+      <span aria-hidden="true" className={cls} style={{ ...base, animationDelay: delay + "s", left: inset + 12, bottom: inset, borderLeft: b, borderBottom: b }} />
+      <span aria-hidden="true" className={cls} style={{ ...base, animationDelay: delay + "s", right: inset, bottom: inset, borderRight: b, borderBottom: b }} />
     </>
   );
 }

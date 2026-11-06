@@ -851,10 +851,15 @@ function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extr
         <div style={{ flex: "1 1 340px", minWidth: 280, maxWidth: shots.length ? 470 : 720, margin: shots.length ? 0 : "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
           {blocks.map((b, i) => (
             <motion.div key={b[0]} initial={{ opacity: 0, x: flip ? -22 : 22 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: false, amount: 0.35 }} transition={{ duration: 0.45, delay: i * 0.05, ease: [0.22, 0.9, 0.32, 1] }}>
-              <CutPanel cutSize={10} className="ab-glitch" bodyStyle={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 16px 15px 0", background: "linear-gradient(100deg,rgba(25,16,9,.98),rgba(40,26,15,.96))" }}>
-                <span style={{ flexShrink: 0, alignSelf: "stretch", width: 46, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 2, fontSize: 19, fontWeight: 900, fontStyle: "italic", color: T.brass, fontFamily: "ui-monospace,monospace", borderRight: "1px solid rgba(196,154,80,.22)" }}>{String(i + 1).padStart(2, "0")}</span>
+              <CutPanel chase tilt chaseDelay={-((i * 1.9 + 0.7) % 8)} cutSize={10} className="ab-glitch" bodyStyle={{ display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 16px 15px 0", background: "linear-gradient(100deg,rgba(25,16,9,.98),rgba(40,26,15,.96))" }}>
+                <Brackets pulse delay={i * 0.4} size={7} inset={5} />
+                <span className="ab-wave" style={{ position: "relative", flexShrink: 0, alignSelf: "stretch", width: 46, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 2, fontSize: 19, fontWeight: 900, fontStyle: "italic", color: T.brass, fontFamily: "ui-monospace,monospace", borderRight: "1px solid rgba(196,154,80,.22)", animationDelay: (i * 0.6) + "s" }}>
+                  {String(i + 1).padStart(2, "0")}
+                  <span aria-hidden="true" className="ab-vscan" style={{ animationDelay: -(i * 0.9) + "s" }} />
+                </span>
                 <div style={{ minWidth: 0 }}>
-                  <h4 style={{ margin: "0 0 5px", fontSize: 15.5, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi }}>{b[0]}</h4>
+                  <h4 className="ab-burst-glow" style={{ margin: "0 0 5px", fontSize: 15.5, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, animationDelay: -((i * 2.3) % 7) + "s, " + (i * 0.5) + "s" }}>{b[0]}</h4>
+                  <span aria-hidden="true" className="ab-shimmer" style={{ display: "block", height: 2, width: 34, margin: "0 0 7px", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ",#FAF2E2," + T.brassHi + "," + T.brass + ")", animationDelay: -(i * 0.7) + "s" }} />
                   <p style={{ margin: 0, fontSize: 13.3, color: T.inkSoft, lineHeight: 1.85 }}>{b[1]}</p>
                 </div>
               </CutPanel>

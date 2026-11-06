@@ -120,3 +120,6 @@ html[data-perf="lite"] .ab-breathe, html[data-perf="lite"] .ab-spin { animation:
 html[data-perf="lite"] .ab-lift:hover { transform: none; }
 html[data-perf="lite"] .ab-float, html[data-perf="lite"] .ab-bob, html[data-perf="lite"] .ab-eq, html[data-perf="lite"] .ab-wave, html[data-perf="lite"] .ab-diamond, html[data-perf="lite"] .ab-shimmer { animation: none !important; }
 html[data-perf="lite"] .ab-glint::after { display: none !important; }
+html[data-perf="lite"] .ab-vscan, html[data-perf="lite"] .ab-bracket, html[data-perf="lite"] .ab-textglow { animation: none !important; }
+html[data-perf="lite"] .ab-vscan { display: none !important; }
+html[data-perf="lite"] .ab-burst-glow { animation: none !important; }
