@@ -41,14 +41,17 @@ for (const g of games) {
       if (!to.keyword) fails.push("전술 문장에 용어(keyword)가 없음: " + to.tactic.kind + " → " + text);
       else if (!text.toLowerCase().includes(to.keyword.toLowerCase())) fails.push("keyword가 문장에 없음: " + to.keyword + " → " + text);
     }
+    // (v0.7.2) 코치 문장은 문어체이고 특수 기호(대시·느낌표·물음표·말줄임표·괄호·콜론)를 쓰지 않는다. 해요체 어미도 남아 있으면 안 된다.
+    if (/[—!?…()~→:;]/.test(text)) fails.push("코치 문장에 특수 기호: " + text);
+    if (/(어요|아요|에요|예요|해요|세요|합니다|니다)([.,\s]|$)/.test(text)) fails.push("코치 문장에 해요체·합니다체 어미: " + text);
     const tag = (p % 2 ? Math.floor(p / 2) + 1 + "..." : Math.floor(p / 2) + 1 + ".") + san + " → " + text;
-    if (mv.captured && /안 잡았|잡을 수도 있었지만|잡을 수 있었어요|잡지 않았|안 잡아도/.test(text)) fails.push("잡는 수에 '안 잡았다' 문장: " + tag);
+    if (mv.captured && /안 잡았|잡을 수도 있었지만|잡을 수 있었다|잡지 않았|안 잡아도/.test(text)) fails.push("잡는 수에 '안 잡았다' 문장: " + tag);
     if (mv.captured && /수비자 제거/.test(text)) {
       const recap = c.moves({ verbose: true }).some((m) => m.to === mv.to && m.captured);
       if (recap) fails.push("되잡히는 수에 '수비자 제거': " + tag);
     }
-    if (/(전개했어요|적절한 칸이에요) \S/.test(text)) fails.push("문장 사이 마침표 없음: " + tag);
-    if (/잃게 돼요|지금대로면/.test(text)) fails.push("좋은 수에 '손실 예정/위험' 단정 문구(엔진 평가와 모순): " + tag);
+    if (/(전개했다|적절한 칸이다) \S/.test(text)) fails.push("문장 사이 마침표 없음: " + tag);
+    if (/잃게 된다|지금대로면/.test(text)) fails.push("좋은 수에 '손실 예정/위험' 단정 문구(엔진 평가와 모순): " + tag);
     if (/과보호/.test(text)) {
       // 과보호는 상대가 실제로 노리는 아군 기물이 있을 때만 — 이동한 기물 주변에 상대가 공격 중인 아군이 하나도 없으면 오탐
       const after = new Chess(c.fen()); const opp = color === "w" ? "b" : "w";
@@ -63,6 +66,27 @@ for (const g of games) {
     }
     if (mv.captured && !mv.flags.includes("e") && !/캡처|획득|되잡|교환|수비자 제거|체크메이트|!!|!$|손해|손실|위협|위험|겨눔|폰끼리|폰과|폰이|제안|수락|거절|대치|잡았|얻었|잡아|잡으며|맞바꿨|받아들|요청|노리|겨누|마주/.test(text) && text) fails.push("잡는 수인데 잡은 결과를 말하지 않음: " + tag);
   }
+}
+// (v0.7.2) 소스의 코치 문구 전체(MEC 문장·말풍선 본문·탁월한 수 설명·체크메이트 수순 안내)를 직접 읽어 문어체·무기호 규칙을 검사한다 — 위 표본에 안 걸리는 나쁜 수·전략 문장까지 막는다.
+{
+  const rd = (f) => readFileSync(join(ROOT, f), "utf8");
+  const common = rd("src/app/common.jsx"), review = rd("src/app/review.jsx");
+  const lit = /t\("((?:[^"\\]|\\.)*)"/g;
+  const region = (src, from, to) => { const i = src.indexOf(from); const j = src.indexOf(to, i); return src.slice(i, j); };
+  const regions = [
+    common.slice(common.indexOf("function developmentNote"), common.indexOf("\n};", common.indexOf("const MEC_PHRASES = {"))),   // 전개 문장·MEC_PHRASES 등
+    region(review, "const REVIEW_COACH_COPY", "\n};"),                  // 말풍선 본문
+    region(review, "async function brilliantExplain", "\n}\n"),        // 탁월한 수 설명
+    region(review, "function reviewCoachCopy", "\n}\n"),               // 응징 수순 등
+  ];
+  let count = 0;
+  for (const src of regions) for (const m of src.matchAll(lit)) {
+    const x = m[1].replace(/\{\d+(?::[^}]*)?\}/g, ""); count++;
+    if (x.trim().length < 6 || /^\s*:/.test(x)) continue;   // 용어 키와 제목("10.Na4: 우수한 수"의 ": 우수한 수")은 제외
+    if (/[—!?…()~→:;]/.test(x)) fails.push("코치 문구에 특수 기호: " + m[1]);
+    if (/(어요|아요|에요|예요|해요|세요|합니다)([.,\s]|$)/.test(x)) fails.push("코치 문구에 해요체·합니다체 어미: " + m[1]);
+  }
+  if (count < 200) fails.push("코치 문구 영역을 제대로 읽지 못함(" + count + "개)");
 }
 if (fails.length) { console.error("✗ MEC 문장 모순 " + fails.length + "건 (표본 " + n + "수)\n" + fails.slice(0, 12).map((x) => "  - " + x).join("\n")); process.exit(1); }
 console.log("✓ MEC 문장 일관성 (표본 " + n + "수, 모순 0건)");
