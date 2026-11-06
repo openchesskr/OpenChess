@@ -5,6 +5,8 @@
  *  · "지켜주는 기물 없이 … 공짜로"는 실제로 지키는 기물이 없을 때만
  *  · 잡는 수의 대표 문장은 잡은 결과(캡처·획득·되잡기·교환·수비자 제거·체크메이트 등)를 말해야 한다
  *  · (BUG-079) 좋은 수 평가에 "손실 예정/위험" 단정 문구 금지, 아무도 노리지 않는 기물에는 "과보호" 금지, 킹 이동에 "과보호" 금지
+ *  · (v0.7.3) 코치 문장은 존댓말(합니다체)이고 모든 설명이 마침표로 끝나는 문장이어야 한다 — "~이다·~한다" 평서형·해요체·"겹폰"·"마지막 줄" 같은 옛 표기는 금지
+ *  · (v0.7.3) 체크메이트 수는 종류별 고유 문구(백랭크·질식·더블 체크·사다리·일반)로 설명하고, "체크메이트" 용어(keyword)와 시각화 데이터(킹·체크한 기물·주변 칸)를 함께 돌려줘야 한다
  *  실행: node scripts/check-mec-facts.mjs  (prebuild)
  */
 import { build } from "esbuild";
@@ -12,6 +14,7 @@ import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Chess } from "chess.js";
 import { decodeMoves } from "../src/lib/moveCodec.js";
+import { checkmateInfo } from "../src/lib/mecTactics.js";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 const dir = mkdtempSync(join(ROOT, "node_modules/.mec-check-"));   // 번들이 react 등을 찾을 수 있게 프로젝트 안에 둔다
@@ -22,6 +25,12 @@ const { mecFacts } = await import(out);
 rmSync(dir, { recursive: true, force: true });
 
 const fails = [];
+// 존댓말 판정: 문장 끝의 "~다"는 반드시 "~니다"여야 한다(이다·한다·했다·있다 같은 평서형 금지).
+const PLAIN_END = /(?:(?![니])[가-힣])다(?=[.]\s|[.]$|$)/;
+// 사용자가 바꾸라고 한 옛 표기: 겹폰→더블폰, "마지막/7번째/그 줄"→랭크·파일, "이 수 외에는 답이 없다"
+const OLD_TERMS = /겹폰|(?:마지막|\d번째|그) 줄|이 수 외에는 답이/;
+// 문장이 아니라 다른 문장 속에 끼워 쓰는 용어 조각(마침표 검사 제외)
+const TERM_FRAGMENTS = new Set(["3회 동형 반복"]);
 const games = [];
 for (const f of ["norway", "candidates", "dortmund"]) {
   const d = JSON.parse(readFileSync(join(ROOT, "src/data/tournaments/" + f + ".json"), "utf8"));
@@ -43,7 +52,10 @@ for (const g of games) {
     }
     // (v0.7.2) 코치 문장은 문어체이고 특수 기호(대시·느낌표·물음표·말줄임표·괄호·콜론)를 쓰지 않는다. 해요체 어미도 남아 있으면 안 된다.
     if (/[—!?…()~→:;]/.test(text)) fails.push("코치 문장에 특수 기호: " + text);
-    if (/(어요|아요|에요|예요|해요|세요|합니다|니다)([.,\s]|$)/.test(text)) fails.push("코치 문장에 해요체·합니다체 어미: " + text);
+    if (/(어요|아요|에요|예요|해요|세요)([.,\s]|$)/.test(text)) fails.push("코치 문장에 해요체 어미: " + text);
+    if (text && !/[.]$/.test(text)) fails.push("코치 문장이 마침표로 끝나지 않음(문장 형태가 아님): " + text);
+    if (PLAIN_END.test(text)) fails.push("코치 문장에 평서형(~다) 어미 — 존댓말(~습니다·~입니다)이어야 함: " + text);
+    if (OLD_TERMS.test(text)) fails.push("코치 문장에 옛 표기(겹폰·마지막 줄 등): " + text);
     const tag = (p % 2 ? Math.floor(p / 2) + 1 + "..." : Math.floor(p / 2) + 1 + ".") + san + " → " + text;
     if (mv.captured && /안 잡았|잡을 수도 있었지만|잡을 수 있었다|잡지 않았|안 잡아도/.test(text)) fails.push("잡는 수에 '안 잡았다' 문장: " + tag);
     if (mv.captured && /수비자 제거/.test(text)) {
@@ -84,9 +96,39 @@ for (const g of games) {
     const x = m[1].replace(/\{\d+(?::[^}]*)?\}/g, ""); count++;
     if (x.trim().length < 6 || /^\s*:/.test(x)) continue;   // 용어 키와 제목("10.Na4: 우수한 수"의 ": 우수한 수")은 제외
     if (/[—!?…()~→:;]/.test(x)) fails.push("코치 문구에 특수 기호: " + m[1]);
-    if (/(어요|아요|에요|예요|해요|세요|합니다)([.,\s]|$)/.test(x)) fails.push("코치 문구에 해요체·합니다체 어미: " + m[1]);
+    if (/(어요|아요|에요|예요|해요|세요)([.,\s]|$)/.test(x)) fails.push("코치 문구에 해요체 어미: " + m[1]);
+    if (PLAIN_END.test(x)) fails.push("코치 문구에 평서형(~다) 어미 — 존댓말이어야 함: " + m[1]);
+    if (OLD_TERMS.test(x)) fails.push("코치 문구에 옛 표기(겹폰·마지막 줄 등): " + m[1]);
+    if (!/[.]\s*$/.test(x.trim()) && x.trim().length >= 8 && !TERM_FRAGMENTS.has(x.trim())) fails.push("코치 문구가 마침표로 끝나지 않음(문장 형태가 아님): " + m[1]);
   }
   if (count < 200) fails.push("코치 문구 영역을 제대로 읽지 못함(" + count + "개)");
+}
+// (v0.7.3) 체크메이트: 종류 판별 + 고유 문구 + 시각화 데이터
+{
+  const CASES = [
+    ["backRank", "6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", "Ra8#", 6],
+    ["smothered", "6rk/6pp/8/6N1/8/8/8/4K3 w - - 0 1", "Nf7#", 4],
+    ["ladder", "7k/R7/8/8/8/8/8/1R4K1 w - - 0 1", "Rb8#", 4],
+    ["generic", "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1", "Qxf7#", 6],
+  ];
+  for (const [want, fen, san, zoneN] of CASES) {
+    const r = checkmateInfo(fen, san);
+    if (!r) { fails.push("체크메이트 분석 실패: " + want + " " + san); continue; }
+    if (r.mate !== want) fails.push("체크메이트 종류 오판: 기대 " + want + " / 실제 " + r.mate + " (" + san + ")");
+    if (!r.squares || !r.squares.king || !r.squares.checkers.length) fails.push("체크메이트 시각화 데이터(king·checkers) 없음: " + san);
+    if (r.squares.zone.length !== zoneN) fails.push("킹 주변 칸 수 오류: " + san + " 기대 " + zoneN + " / 실제 " + r.squares.zone.length);
+    if (r.squares.zone[0].sq !== r.squares.king) fails.push("zone[0]이 킹 칸이 아님: " + san);
+  }
+  // 실제 수순으로 mecFacts가 고유 문구·용어·연출 데이터를 내는지(풀스 메이트)
+  const to = {};
+  const txt = (mecFacts(["f3", "e5", "g4"], "Qh4#", "b", "best", null, 0, to, null)[0] || "");
+  if (!txt.includes("체크메이트")) fails.push("체크메이트 수에 고유 문구 없음: " + txt);
+  if (to.keyword !== "체크메이트" || !txt.includes(to.keyword)) fails.push("체크메이트 용어(keyword)가 문장에 없음: " + txt);
+  if (!to.tactic || to.tactic.kind !== "checkmate" || !to.tactic.squares || !to.tactic.squares.zone.length) fails.push("체크메이트 시각화 데이터(tactic) 없음");
+  for (const kind of ["brilliant", "only"]) {
+    const t2 = {}; const x = (mecFacts(["f3", "e5", "g4"], "Qh4#", "b", kind, null, 0, t2, null)[0] || "");
+    if (!x.includes("체크메이트") || !t2.tactic) fails.push("등급 " + kind + "의 체크메이트에도 고유 문구·시각화가 있어야 함: " + x);
+  }
 }
 if (fails.length) { console.error("✗ MEC 문장 모순 " + fails.length + "건 (표본 " + n + "수)\n" + fails.slice(0, 12).map((x) => "  - " + x).join("\n")); process.exit(1); }
 console.log("✓ MEC 문장 일관성 (표본 " + n + "수, 모순 0건)");

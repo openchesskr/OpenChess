@@ -216,7 +216,8 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // "프로필 편집" 버튼을 누르면 기존 프로필 편집 블록(+chess.com 연동)이 모달 창으로 뜬다.
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
-function EquippedTitleFit({ id, indent = 0, maxScale = 0.85, onClick }) {
+// (v0.7.3, 사용자 요청) 비율은 그대로 두고 칼럼 가로 폭을 가득 채우도록 키운다 — maxScale을 주지 않으면 상한 없이 폭에 맞춘다(예전엔 0.6~0.85배로 줄여 오른쪽이 비었다).
+function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
   const BASE_W = 260, BASE_H = 74;
   const ref = useRef(null);
   const [w, setW] = useState(0);
@@ -780,7 +781,7 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
               {/* (v0.6.9, 사용자 요청) 장착 칭호: 프로필 사진과 왼쪽을 맞추고, 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
-              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} maxScale={0.6} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
+              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
               {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}

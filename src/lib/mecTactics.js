@@ -181,3 +181,48 @@ export function bestMoveTactic(fenBefore, san) {
   const ok = ["doubleCheck", "discoveredCheck", "fork", "skewer", "discoveredAttack", "promotion"];
   try { const t = analyzeMove(g.before, g.mv, g.after).find((x) => ok.includes(x.kind)); return t ? { ...t, san } : null; } catch { return null; }
 }
+
+// (v0.7.3, 사용자 요청) 체크메이트 분석 — 이 수가 어떤 종류의 체크메이트인지와, 시각화에 쓸 칸 정보를 돌려준다.
+//   type: "smothered"(질식) · "double"(더블 체크) · "backRank"(백랭크) · "ladder"(사다리) · "generic"
+//   squares: { king, checkers, zone } — zone은 킹 칸 + 주변 8칸(판 안쪽만) 각각의 { sq, occ, attackers }.
+//     occ: null(빈 칸) | "own"(막힌 쪽 자기 기물이 차지) | "foe"(메이트 건 쪽 기물이 차지).
+//     attackers: 그 칸을 공격·보호하는 메이트 건 쪽 기물의 칸들. 킹을 가린 채 계산하면 킹 뒤쪽 칸도 슬라이더가 겨누는 것으로 잡힌다(도망 불가의 이유).
+export function checkmateInfo(fenBefore, san) {
+  const g = play(fenBefore, san); if (!g || !g.after.isCheckmate()) return null;
+  try {
+    const { after, mv } = g; const color = mv.color, opp = color === "w" ? "b" : "w";
+    const king = kingSq(after, opp); if (!king) return null;
+    const checkers = after.attackers(king, color);
+    const noKing = new Chess(after.fen()); noKing.remove(king);
+    const kf = FILES.indexOf(king[0]), kr = parseInt(king[1], 10);
+    const zone = [];
+    // 킹 칸 → 위 → 오른쪽 위 … 시계 방향으로 주변 칸
+    const order = [[0, 0], [0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]];
+    for (const [df, dr] of order) {
+      const f = kf + df, r = kr + dr; if (f < 0 || f > 7 || r < 1 || r > 8) continue;
+      const sq = FILES[f] + r, p = after.get(sq);
+      const occ = df === 0 && dr === 0 ? null : !p ? null : p.color === opp ? "own" : "foe";
+      const attackers = df === 0 && dr === 0 ? checkers : noKing.attackers(sq, color);
+      zone.push({ sq, occ, attackers });
+    }
+    const neighbors = zone.slice(1);
+    let type = "generic";
+    const one = checkers.length === 1 ? after.get(checkers[0]) : null;
+    if (checkers.length >= 2) type = "double";
+    else if (one && one.type === "n" && neighbors.every((z) => z.occ === "own")) type = "smothered";
+    else {
+      const backRank = king[1] === (opp === "w" ? "1" : "8");
+      const fRow = (opp === "w" ? 2 : 7);
+      const front = neighbors.filter((z) => parseInt(z.sq[1], 10) === fRow);
+      if (backRank && one && (one.type === "r" || one.type === "q") && checkers[0][1] === king[1] && front.length && front.every((z) => z.occ === "own")) type = "backRank";
+      else if (one && (one.type === "r" || one.type === "q")) {
+        // 사다리: 킹이 가장자리에 있고, 체크한 룩·퀸 말고 메이트 쪽의 룩·퀸이 이웃한 선에서 도망 칸을 막는다
+        const onEdgeRank = king[1] === "1" || king[1] === "8", onEdgeFile = king[0] === "a" || king[0] === "h";
+        const heavy = boardList(after).filter((p) => p.color === color && (p.type === "r" || p.type === "q") && p.sq !== checkers[0]);
+        const adjLine = (p) => (onEdgeRank && Math.abs(parseInt(p.sq[1], 10) - kr) === 1) || (onEdgeFile && Math.abs(FILES.indexOf(p.sq[0]) - kf) === 1);
+        if ((onEdgeRank || onEdgeFile) && heavy.some(adjLine)) type = "ladder";
+      }
+    }
+    return { kind: "checkmate", mate: type, piece: one ? one.type : mv.piece, squares: { king, checkers, zone } };
+  } catch { return null; }
+}

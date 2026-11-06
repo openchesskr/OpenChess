@@ -155,17 +155,17 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     const info = sanSrc(board, san, color);
     const promoKor = PIECE_KOR[(info && info.promo) || "N"] || lcLatin(t("기물"));
     const reason = underpromoReason(board, san, color);
-    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 {0:을/를} 골라 승진하는 수이다.", promoKor);
-    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 곧바로 잡히지만 {0:은/는} 안전하게 남을 수 있어, 대신 {0:을/를} 골라 승진하는 수이다.", promoKor);
-    else typeSentence = t("퀸이 아닌 {0:을/를} 골라 승진하는, 흔치 않은 감각의 수이다.", promoKor);
+    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 {0:을/를} 골라 승진하는 수입니다.", promoKor);
+    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 곧바로 잡히지만 {0:은/는} 안전하게 남을 수 있어, 대신 {0:을/를} 골라 승진하는 수입니다.", promoKor);
+    else typeSentence = t("퀸이 아닌 {0:을/를} 골라 승진하는, 흔치 않은 감각의 수입니다.", promoKor);
   } else if (sub.type === "exchangeSac") {
-    typeSentence = t("{0:과/와} {1:을/를} 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이다.", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
+    typeSentence = t("{0:과/와} {1:을/를} 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택입니다.", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
   } else if (sub.type === "neglect" && sub.piece) {
-    typeSentence = t("{0:을/를} 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수이다.", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수입니다.", (PIECE_KOR[sub.piece]));
   } else if (sub.piece) {
-    typeSentence = t("{0:을/를} 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수이다.", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수입니다.", (PIECE_KOR[sub.piece]));
   } else {
-    typeSentence = t("눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수이다.");
+    typeSentence = t("눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수입니다.");
   }
   let reasonSentence = null;
   if (alreadyLosing) {
@@ -173,12 +173,12 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
         const endKor = lcLatin(drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복"));
-        reasonSentence = t("이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, {0} 수순으로 {1:을/를} 만들어 무승부를 강제해야 했던 수이다.", drawSeek.line.join(" "), endKor);
+        reasonSentence = t("이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, {0} 수순으로 {1:을/를} 만들어 무승부를 강제해야 했던 수입니다.", drawSeek.line.join(" "), endKor);
       }
     } catch { }
   }
   let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
-  if (notBest) text += t("참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수이다.");
+  if (notBest) text += t("참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수입니다.");
   return text;
 }
 // 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
@@ -310,17 +310,17 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
 // 지킵니다")까지 자연어로 분석해 주지만, 그 수준의 맥락 분석 엔진은 이 세션 범위를 벗어난다 — 등급별로
 // 뜻이 통하는 일반적인 설명 템플릿을 여러 개 두고 ply로 순환시켜, 같은 등급이 반복돼도 문구가 안 겹치게 한다.
 const REVIEW_COACH_COPY = {
-  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: [t("기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수이다."), t("찾기 어려운 수를 정확히 찾아냈다.")] },
-  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: [t("엔진이 찾은 이 포지션의 가장 좋은 수이다."), t("정확한 수")] },
-  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: [t("다른 수는 크게 불리하며, 반드시 이 수를 두어야 한다."), t("이 수 외에는 답이 없다.")] },
-  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: [t("최선은 아니지만 아주 좋은 선택이다."), t("이 포지션에서 둘 만한 좋은 수 가운데 하나이다.")] },
-  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: [t("무난하고 안정적인 수이다."), t("포지션을 잘 유지하는 수이다.")] },
-  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: [t("오래 검증된 정석 수이다."), t("책에 나오는 잘 알려진 수이다.")] },
-  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: [t("더 나은 수가 있다. 큰 손해는 아니지만 아쉬운 수이다."), t("포지션이 약간 나빠졌다.")] },
-  miss: { head: t(": 기회를 놓침"), mascot: ["kokoa", "surprise"], body: [t("상대의 실수를 응징할 기회를 활용하지 못했다."), t("더 강한 수가 있었다.")] },
-  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: [t("포지션이 눈에 띄게 나빠졌다."), t("더 나은 대안이 있었다.")] },
-  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: [t("크게 불리해짐"), t("포지션이 크게 무너졌다.")] },
-  pending: { head: "", mascot: ["milku", "think"], body: [t("아직 분석되지 않은 수이다.")] },
+  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: [t("기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수입니다."), t("찾기 어려운 수를 정확히 찾아냈습니다.")] },
+  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: [t("엔진이 찾은 이 포지션의 가장 좋은 수입니다."), t("정확한 수입니다.")] },
+  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: [t("다른 수는 크게 불리하며, 반드시 이 수를 두어야 합니다."), t("이 수는 현재 포지션에서 유일한 수입니다.")] },
+  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: [t("최선은 아니지만 아주 좋은 선택입니다."), t("이 포지션에서 둘 만한 좋은 수 가운데 하나입니다.")] },
+  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: [t("무난하고 안정적인 수입니다."), t("포지션을 잘 유지하는 수입니다.")] },
+  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: [t("오래 검증된 정석 수입니다."), t("책에 나오는 잘 알려진 수입니다.")] },
+  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: [t("더 나은 수가 있습니다. 큰 손해는 아니지만 아쉬운 수입니다."), t("포지션이 약간 나빠졌습니다.")] },
+  miss: { head: t(": 기회를 놓침"), mascot: ["kokoa", "surprise"], body: [t("상대의 실수를 응징할 기회를 활용하지 못했습니다."), t("더 강한 수가 있었습니다.")] },
+  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: [t("포지션이 눈에 띄게 나빠졌습니다."), t("더 나은 대안이 있었습니다.")] },
+  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: [t("포지션이 크게 불리해졌습니다."), t("포지션이 크게 무너졌습니다.")] },
+  pending: { head: "", mascot: ["milku", "think"], body: [t("아직 분석되지 않은 수입니다.")] },
 };
 // (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
 // Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
@@ -332,14 +332,16 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   // (기능) 탁월한 수는 brilliantExplain이 만든 하나의 논리적인 글(유형 설명 + 엔진 PV 근거)이
   // 준비되면 일반 문구 대신 그 글을 그대로 보여준다 — 계산 전(엔진 응답 대기 중)에는 기존 기본
   // 문구로 대체해 빈 카드가 보이지 않게 한다.
-  let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
+  // (v0.7.3 BUG-137) ply가 없는 수(예전 자유 탐색 수)가 와도 NaN이 화면에 나오지 않게 한다 — 번호·문구 선택 모두 같은 ply를 쓴다.
+  const ply = Number.isFinite(m.ply) ? m.ply : 0;
+  let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[ply % c.body.length];
   if (m.kind !== "book") {
     const extra = [];
-    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push(t("상대의 응징 수순은 {0}이다.", punishLine.join(" ")));
+    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push(t("상대의 응징 수순은 {0}입니다.", punishLine.join(" ")));
     // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
     // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
     if (m.kind === "only" && onlyRefutation) {
-      extra.push(t("{0} 등 다른 수는 상대의 {1} 응징으로 불리해진다.", onlyRefutation.altSan, onlyRefutation.continuation.join(" ")));
+      extra.push(t("{0} 등 다른 수는 상대의 {1} 응징으로 불리해집니다.", onlyRefutation.altSan, onlyRefutation.continuation.join(" ")));
     }
     if (extra.length) body = body + " " + extra.join(" ");
   }
@@ -352,8 +354,8 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   const emo = (c.mascot && c.mascot[1]) || "great";
   const name = m.white ? "milku" : "kokoa";
   // (v0.7.2) 제목 맨 앞에 수 번호를 붙인다(백 "10.Na4", 흑 "10...Na4"). 시작 진영은 이 수의 ply 홀짝과 둔 쪽으로 알아낸다.
-  const startColor = ((m.ply % 2 === 0) === !!m.white) ? "w" : "b";
-  return { headline: moveNumber(m.ply, startColor) + stripSuffix(m.san) + c.head, body, mecLine, mascot: [name, emo] };
+  const startColor = ((ply % 2 === 0) === !!m.white) ? "w" : "b";
+  return { headline: moveNumber(ply, startColor) + stripSuffix(m.san) + c.head, body, mecLine, mascot: [name, emo] };
 }
 // (v0.2.1 기능) reviewPlayerInfo의 name은 데이터가 없을 때 "백"/"흑"/"나"/"상대" 같은 표시용 대체
 // 문구로 채워지므로, chess.com 아바타를 조회할 진짜 아이디는 이 함수로 따로 뽑는다 — game.white/black에
@@ -1894,16 +1896,18 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     const prevSans = effSans.slice(0, -1);
     const san = effSans[effSans.length - 1];
     const white = plyIsWhite(prevSans.length, fenRoot ? fenRoot.turn : "w");
+    // (v0.7.3 버그 수정) 이 수의 ply(0부터, result.moves의 ply와 같은 기준) — 빠져 있어 코치 제목이 "NaN.수"로 나오고 문구 선택(m.ply % 길이)도 NaN이었다.
+    const ply = prevSans.length;
     // (기능) 게임 리뷰 본편(analyzeGame)·분석 탭 후보 블록은 이론 수를 만나면 곧장 "이론" 등급으로
     // 확정하고 실시간 분석을 건너뛰는데, 자유 탐색 채점만 이 확인이 빠져 있어 이론 수를 둬도 매번
     // 실시간 재검색을 거쳐 평가치 기반 등급(최선/우수 등)으로 잘못 표시됐다. 같은 isBookMoveAt
     // 확인을 그대로 적용해, 자유 탐색 중에도 이론 수는 즉시 "이론" 아이콘으로 확정한다.
-    if (!fenRoot && isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, kind: "book", best: null }); return; }
+    if (!fenRoot && isBookMoveAt(prevSans.join(" "), san)) { setExploreMove({ san, white, ply, kind: "book", best: null }); return; }
     // (v0.2.4 버그 수정) playFree가 남겨 둔 "이 포지션|이 수" 기록 — 방금 화면에 보여준 추천을
     // 그대로 뒀다면 아래 재검색 결과와 무관하게 최선의 수로 확정한다(재검색은 movetime 상한 안에서
     // 타이밍에 따라 살짝 다른 1순위를 낼 수 있어, 방금 안내한 추천과 다른 수로 오판정되곤 했다).
     const forced = forcedBestRef.current === prevSans.join(" ") + "|" + san;
-    setExploreMove({ san, white, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
+    setExploreMove({ san, white, ply, kind: "pending", best: null }); // 즉시 "분석 중" 아이콘부터 보여준다
     (async () => {
       if (!engine || engine.status !== "ready") return;
       try {
@@ -1939,7 +1943,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
             singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRoot), san,
           }, { fenRoot, prevSans, san, color: col, evaluate: (fen) => wAfter.evaluate(fen, MAX_SEARCH_DEPTH, undefined, movetime) });
           if (cancelled) return;
-          if (!cancelled) setExploreMove({ san, white, kind, best: matched ? null : bestSan, beforeCp: bestCp });
+          if (!cancelled) setExploreMove({ san, white, ply, kind, best: matched ? null : bestSan, beforeCp: bestCp });
         };
         await grade(REVIEW_MOVETIME_MS);
         if (cancelled) return;
@@ -2085,17 +2089,27 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
       case "doubleCheck": steps = [ha(q.king), ...q.checkers.map((c) => ar(c, q.king, RED))]; break;
       case "backRank": steps = [ha(q.king), ar(q.to, q.king, RED)]; break;
       case "mateThreat": steps = [ha(q.king), ar(q.mateFrom, q.mateTo, GREEN, true)]; break;
+      // (v0.7.3, 사용자 요청) 체크메이트: ① 킹을 공격한 기물(체크) ② 킹 주변 9칸 ③ 그 칸들을 겨누는 기물의 공격 칸을 한 칸씩 — 막힌 칸(자기 기물이 차지)은 금색 테두리만 둔다.
+      case "checkmate": {
+        const zone = q.zone || [];
+        const sqs = zone.map((z) => z.sq);
+        steps = [{ ...ha(q.king), arrows: (q.checkers || []).map((c) => ar(c, q.king, RED).arrow) }, ha(...sqs)];
+        zone.slice(1).forEach((z) => { if (z.attackers && z.attackers.length) steps.push({ arrows: z.attackers.map((a) => ({ ...ar(a, z.sq, ORANGE).arrow, width: 0.07 })) }); });
+        break;
+      }
       case "promotion": steps = [ha(q.to)]; break;
       case "passedPawn": steps = [ha(q.to), ar(q.to, q.goal, GREEN, true)]; break;
       default: return;
     }
+    const stepMs = detail.kind === "checkmate" ? 380 : 480; // 체크메이트는 칸 수가 많아 조금 빠르게 넘긴다
     steps.forEach((st, i) => {
       threatTimers.current.push(setTimeout(() => {
         if (st.halos) setHaloSquares(st.halos);
         if (st.arrow) setThreatArrows((prev) => [...prev, st.arrow]);
-      }, base + 200 + i * 480));
+        if (st.arrows) setThreatArrows((prev) => [...prev, ...st.arrows]);
+      }, base + 200 + i * stepMs));
     });
-    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, base + 200 + steps.length * 480 + 1600));
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, base + 200 + steps.length * stepMs + 1600));
   };
   // (기능) 연결/중첩 애니메이션 — 서로 지켜주는 두 기물 사이를 수비자(초록) 화살표로 양방향
   // 순서대로 보여준다(R7과 같은 순차 등장 패턴, 색만 둘 다 수비자).
@@ -2305,7 +2319,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
       <div className="flex items-center gap-2">
         {/* (v0.3.0 기능) result가 있어도(=첫 수 채점 완료) 전체 분석은 백그라운드에서 계속 진행 중일 수
             있다 — 아직 안 끝났으면 진행 중임을 알리는 작은 배지를 보여준다(끝나면 조용히 사라짐). */}
-        {result && !resultDone && sans && sans.length > 0 && (
+        {result && !resultDone && sans && sans.length > 0 && !(quick && !quickIntroDone) && (
           <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 700, color: RV.dim, whiteSpace: "nowrap" }}>{tx("{0} 분석 중 {1}", <Cpu size={11} />, Math.round((gradedCount / sans.length) * 100))}%</span>
         )}
         {result ? (
@@ -2337,7 +2351,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     return (
       <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
         {header}
-        <QuickReviewIntro done={!!(resultDone && result)} gradedCount={gradedCount} total={sans.length} depth={reviewDepth} label={t("빠른 리뷰 분석 중")}
+        <QuickReviewIntro done={!!(resultDone && result)} gradedCount={gradedCount} total={sans.length}
           colors={{ text: RV.text, soft: RV.soft, panel: RV.panel, border: RV.border, brass: T.brass, brassHi: T.brassHi }} onDone={() => setQuickIntroDone(true)} />
       </div>
     );

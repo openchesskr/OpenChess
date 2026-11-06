@@ -31,6 +31,20 @@ const mix = (text, keep) => {
   return o;
 };
 
+// (v0.7.3) 글리치가 켜진 동안 글자 일부가 노이즈 문자(░▒▓█#%&@…)로 바뀌며 깜빡인다 — /about의 스크램블과 같은 문자 집합.
+// rate는 한 번에 바뀌는 글자 비율. 공백·줄바꿈은 그대로 둔다. 가벼운 모드에서는 바꾸지 않는다.
+export function useGlitchFlicker(text, active, ms = 70, rate = 0.2) {
+  const [out, setOut] = useState(text);
+  useEffect(() => {
+    if (!active || isLite()) { setOut(text); return undefined; }
+    const roll = () => { let o = ""; for (let i = 0; i < text.length; i++) { const ch = text[i]; o += /\s/.test(ch) || Math.random() > rate ? ch : noiseChar(); } setOut(o); };
+    roll();
+    const id = setInterval(roll, ms);
+    return () => { clearInterval(id); setOut(text); };
+  }, [text, active, ms, rate]);
+  return active ? out : text;
+}
+
 // 노이즈에서 한 글자씩 풀려 나오는 문자열. run이 true가 되거나 text가 바뀔 때마다 다시 재생한다.
 export function useScramble(text, run = true, ms = 34, nonce = 0) {
   const [out, setOut] = useState(() => mix(text, 0));
