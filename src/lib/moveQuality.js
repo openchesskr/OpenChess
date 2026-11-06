@@ -485,9 +485,10 @@ export const ONLY_MAX_BEST_CP = DECIDED_CP;    // 유일한 수는 두기 전 �
 export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac, priorSac = false, singleRecapture, oppJustErred = false, san = "" }) {
   let kind = tierOf(Math.max(0, loss));
   if (kind === "best" && !matched) kind = "excellent";
-  // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않았고, 직전 자기 희생을 잇는 수가 아닐 때
+  // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않을 때.
+  // (v0.7.3, 사용자 요청) 직전 자기 희생을 잇는 수(priorSac)도 희생이면 탁월로 인정한다 — 예전엔 연속 희생의 두 번째 수부터 탁월에서 빠졌다. priorSac 인자는 호출부 호환용으로 남겨 두되 판정에는 쓰지 않는다.
   const badlyLosing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing && !priorSac) {
+  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing) {
     try { if (isSac && isSac()) kind = "brilliant"; } catch { /* 판정 실패는 희생 아님 */ }
   }
   // 승부가 난 포지션 — 둔 뒤에도 크게 이기고 있거나(playedCp ≥ +4) 두기 전부터 크게 지고 있었으면(bestCp ≤ -4) 손실이 아무리 커도(예: +9 → +6) 그 수로 승부가 바뀌지 않는다.

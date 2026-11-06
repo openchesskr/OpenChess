@@ -112,7 +112,8 @@ const G = [
   ["(v0.7.3) 희생이고 둔 뒤 -1.4(하한 -1.5 안쪽)면 탁월", { loss: 20, matched: false, bestCp: -100, playedCp: -140, isSac: yes }, "brilliant"],
   ["희생이어도 둔 뒤 -1.5 미만이면 탁월 아님", { loss: 20, matched: false, bestCp: -140, playedCp: -170, isSac: yes }, "excellent"],
   ["두기 전 2점 이상 지고 있으면 탁월 아님", { loss: 0, matched: true, bestCp: -250, playedCp: -250, isSac: yes }, "best"],
-  ["직전 자기 희생을 잇는 수는 탁월 아님", { loss: 0, matched: true, bestCp: 50, playedCp: 50, isSac: yes, priorSac: true }, "best"],
+  ["(v0.7.3) 직전 자기 희생을 잇는 수도 희생이면 탁월", { loss: 0, matched: true, bestCp: 50, playedCp: 50, isSac: yes, priorSac: true }, "brilliant"],
+  ["직전 희생을 잇는 수라도 희생이 아니면(회수 수) 탁월 아님", { loss: 0, matched: true, bestCp: 50, playedCp: 50, isSac: no, priorSac: true }, "best"],
   ["1순위가 아니면 손실이 작아도 우수", { loss: 5, matched: false, bestCp: 30, playedCp: 25, isSac: no }, "excellent"],
   // (v0.7.3, 사용자 요청) 승부가 난 평가치(±4점 이상)에서는 유일한 수·블런더류를 매기지 않는다
   ["+4.5 위치는 2순위와 차이가 커도 유일 아님", { loss: 0, matched: true, bestCp: 450, playedCp: 450, secondCp: 100, isSac: no }, "best"],
