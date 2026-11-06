@@ -9,6 +9,8 @@ import { t, tx } from "../lib/i18n.js";
 // 연출 없이 곧바로 넘어간다. 애니메이션은 기기의 "애니메이션 줄이기"가 아니라 사이트 설정만 따른다.
 // (v0.7.3) 단계는 분석 진행률이 아니라 시간 기준으로 한 칸씩 넘어간다 — 단계마다 최소 DWELL_MS씩 보여 줘서 분석이 빨리 끝나도 EVALUATE가 안 보이는 일이 없다.
 const DWELL_MS = 700;
+// (v0.7.3) 게이지 막대 아래에 단계마다 붙는 이름 — 막대가 차기 시작하면 노이즈에서 풀려 나오고, 글리치 중에는 특수문자가 깜빡인다.
+const GAUGE_LABELS = ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"];
 const WORDS = [
   { k: "O", w: "OBSERVE" },
   { k: "P", w: "PRACTICE" },
@@ -75,6 +77,15 @@ function GlitchLetters({ glitch, lit, colors }) {
         {["O", "P", "E", "N"].map((ch, i) => <GlitchLetter key={ch} ch={ch} on={lit.includes(i)} glitch={glitch} colors={colors} font={font} />)}
       </div>
     </FitBox>
+  );
+}
+
+function GaugeLabel({ text, on, glitch, colors }) {
+  const word = useScramble(text, on, 28);
+  const shown = useGlitchFlicker(word, glitch && on, 70, 0.22);
+  return (
+    <div style={{ marginTop: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", whiteSpace: "nowrap", textAlign: "center", color: on ? colors.brassHi : colors.soft, opacity: on ? 1 : 0.45,
+      textShadow: on && glitch ? "-1px 0 #D9736A, 1px 0 #6FA8DC" : on ? "0 0 8px rgba(196,154,80,.55)" : "none", transition: "color .25s, opacity .25s" }}>{on ? shown : text}</div>
   );
 }
 
@@ -149,6 +160,7 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
                 <div style={{ height: 6, background: colors.panel, border: "1px solid " + colors.border, overflow: "hidden", transform: "skewX(-18deg)" }}>
                   <div style={{ height: "100%", width: fill * 100 + "%", background: "linear-gradient(90deg," + colors.brass + "," + colors.brassHi + ")", transition: "width .2s linear" }} />
                 </div>
+                <GaugeLabel text={GAUGE_LABELS[i]} on={fill > 0 || shown >= i} glitch={glitch} colors={colors} />
               </div>
             );
           })}

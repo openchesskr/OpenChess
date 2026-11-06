@@ -25,6 +25,8 @@ if (!/const DWELL_MS = \d+/.test(body)) fails.push("QuickReviewIntro: 단계별 
 if (!/useGlitchFlicker\(base/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: OPEN 글자·단어 모두에 특수문자 깜빡임(useGlitchFlicker)이 필요함");
 if (!/function FitBox/.test(body) || (body.match(/<FitBox>/g) || []).length < 2) fails.push("QuickReviewIntro: OPEN 글자·단어를 FitBox(안전 영역 맞춤)로 감싸야 함");
 if (!/env\(safe-area-inset-left\)/.test(body)) fails.push("QuickReviewIntro: 뷰포트 안전 영역(env(safe-area-inset-*)) 여백이 없음");
+for (const w of ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"]) if (!body.includes('"' + w + '"')) fails.push("QuickReviewIntro: 게이지 아래 '" + w + "' 이름이 없음");
+if (!/function GaugeLabel/.test(body) || !/useScramble\(text/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: 게이지 이름에 스크램블·특수문자 깜빡임 효과가 필요함");
 if (!/tx\("\{0\} 분석 중 \{1\}"/.test(body)) fails.push("QuickReviewIntro: 하단 '분석 중 n%' 표시가 없음");
 { // 단계가 4개이고 모두 같은 최소 시간을 쓰는지: shown을 한 칸씩만 올린다
   if (!/setShown\(\(v\) => Math\.min\(target, v \+ 1\)\)/.test(body)) fails.push("QuickReviewIntro: 단계를 한 칸씩 올리지 않음(EVALUATE가 건너뛰어질 수 있음)");
