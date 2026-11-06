@@ -116,3 +116,5 @@ html[data-perf="lite"] .ab-drift, html[data-perf="lite"] .ab-grain, html[data-pe
 html[data-perf="lite"] .ab-burst, html[data-perf="lite"] .ab-burst-b, html[data-perf="lite"] .ab-flicker { animation: none !important; }
 html[data-perf="lite"] .ab-glitch:hover { animation: none !important; filter: none !important; }
 html[data-perf="lite"] .about-strip, html[data-perf="lite"] .open-marquee-run { animation-play-state: paused !important; }
+html[data-perf="lite"] .ab-breathe, html[data-perf="lite"] .ab-spin { animation: none !important; }
+html[data-perf="lite"] .ab-lift:hover { transform: none; }

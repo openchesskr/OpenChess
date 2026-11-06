@@ -34,6 +34,14 @@ export const KIT_CSS = `
 .ab-grain{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.035}
 .ab-vignette{position:fixed;inset:0;pointer-events:none;z-index:3;background:radial-gradient(120% 90% at 50% 40%,transparent 55%,rgba(0,0,0,.45))}
 @keyframes ab-progress-head{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes ab-breathe{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.035);filter:brightness(1.14)}}
+.ab-breathe{animation:ab-breathe 3.6s ease-in-out infinite}
+@keyframes ab-spin{to{transform:rotate(360deg)}}
+.ab-spin{position:absolute;inset:-45%;animation:ab-spin 6s linear infinite}
+.ab-lift{transition:transform .25s cubic-bezier(.22,.9,.32,1)}
+.ab-lift:hover{transform:translateY(-4px) scale(1.015) !important}
+.ab-input{transition:box-shadow .25s,border-color .25s}
+.ab-input:focus{box-shadow:0 0 0 2px rgba(236,203,134,.35),0 0 18px rgba(236,203,134,.25) !important;border-color:#ECCB86 !important}
 `;
 
 // `// LABEL` 형태의 모노스페이스 라벨.
@@ -52,18 +60,22 @@ export function Tag({ children, color = K.brassHi, solid, style }) {
 // 모서리를 자른 패널. 바깥 레이어가 가는 테두리색, 안쪽이 본체. accent를 주면 테두리가 그 색으로 빛난다.
 // bodyStyle에 값이 undefined인 키(예: background: open ? … : undefined)가 있으면 spread가 기본값을 지워 버려 테두리 그러데이션이 비쳐 보였다 — undefined 키는 버린다.
 const definedOnly = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== undefined));
-export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className }) {
+export function CutPanel({ children, cutSize = 14, accent, style, bodyStyle, className, tilt = false }) {
   // 마우스 스포트라이트 — 이벤트마다 스타일을 쓰지 않고 프레임당 한 번만 갱신한다. 가벼운 모드에서는 쓰지 않는다.
   const onMove = (e) => {
     if (isLite()) return;
     const el = e.currentTarget, x = e.clientX, y = e.clientY;
     if (el.__raf) return;
-    el.__raf = requestAnimationFrame(() => { el.__raf = 0; const r = el.getBoundingClientRect(); el.style.setProperty("--mx", (x - r.left) + "px"); el.style.setProperty("--my", (y - r.top) + "px"); el.style.setProperty("--spot", "1"); });
+    el.__raf = requestAnimationFrame(() => {
+      el.__raf = 0; const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", (x - r.left) + "px"); el.style.setProperty("--my", (y - r.top) + "px"); el.style.setProperty("--spot", "1");
+      if (tilt) { el.style.setProperty("--rx", ((0.5 - (y - r.top) / r.height) * 7).toFixed(2) + "deg"); el.style.setProperty("--ry", (((x - r.left) / r.width - 0.5) * 9).toFixed(2) + "deg"); }
+    });
   };
-  const onLeave = (e) => e.currentTarget.style.setProperty("--spot", "0");
+  const onLeave = (e) => { e.currentTarget.style.setProperty("--spot", "0"); e.currentTarget.style.setProperty("--rx", "0deg"); e.currentTarget.style.setProperty("--ry", "0deg"); };
   const edge = accent ? "linear-gradient(135deg," + accent + "," + accent + "55 55%," + accent + "AA)" : "linear-gradient(135deg,rgba(236,203,134,.55),rgba(196,154,80,.18) 50%,rgba(196,154,80,.4))";
   return (
-    <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...style }}>
+    <div className={className} onMouseMove={onMove} onMouseLeave={onLeave} style={{ position: "relative", clipPath: cut(cutSize), background: edge, minWidth: 0, ...(tilt ? { transform: "perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))", transition: "transform .18s ease-out" } : null), ...style }}>
       <div style={{ margin: 1.5, clipPath: cut(cutSize), height: "calc(100% - 3px)", background: "linear-gradient(160deg,rgba(58,37,22,.96),rgba(27,16,9,.98))", position: "relative", ...definedOnly(bodyStyle) }}>
         <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, opacity: "var(--spot, 0)", transition: "opacity .25s", background: "radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(236,203,134,.2), transparent 70%)" }} />
         {children}
