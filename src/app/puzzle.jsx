@@ -2346,7 +2346,7 @@ function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance,
             그라데이션 대신 T.ivoryHi 크림 그라데이션, 해결 시엔 같은 연두색 그라데이션을 그대로 쓴다. */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", border: "1px solid " + (isSolved ? "#A9C589" : (isActive ? T.brass : "#CDB98E")), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.4)" : "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E") }}>
           <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#FBF5E8", border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), position: "relative" }}>
-            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(0,0,0,.08)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div aria-hidden="true" className="oc-skel oc-skel-light" style={{ width: 100, height: 100, borderRadius: 8 }} />}
             {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
           </div>
           {solveCountText(solveCount, null) && <div style={{ fontSize: 11.5, color: "#2E6E2E", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
@@ -3449,7 +3449,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   유저에게 그대로 노출돼 있었다(누구나 남의 퍼즐을 즉시 지울 수 있었음) — 퍼즐 삭제는
                   퍼즐 풀이 화면 2페이지의 생성자 전용·확인 다이얼로그 경로로만 하도록 이 카드에서는
                   onDelete를 넘기지 않는다. */}
-              {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
+              {feed.map((p, i) => <FadeIn key={p.id} index={i} lift><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
             </AnimatePresence>
           </div>}
       </>

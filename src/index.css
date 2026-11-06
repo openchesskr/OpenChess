@@ -159,3 +159,20 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
   .oc-modal-bg > div { animation-name: ocSheetUp; }
 }
 @keyframes ocSheetUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+
+/* (v0.7.3) 탭 제목 밑줄이 왼쪽에서 자라 나온다. */
+@keyframes ocBar { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+.oc-title-bar { transform-origin: left center; animation: ocBar .55s .12s cubic-bezier(.22,.9,.32,1) backwards; }
+
+/* 막대 그래프(승률·순위 막대 등)가 왼쪽에서 채워지며 나타난다. 끝나면 transform이 남지 않는다(backwards). */
+@keyframes ocGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.oc-grow { transform-origin: left center; animation: ocGrow .75s cubic-bezier(.22,.9,.32,1) backwards; }
+
+/* 마우스를 올리면 눌리는 버튼이 살짝 밝아진다(터치 기기 제외). */
+@media (hover: hover) and (pointer: fine) {
+  .press:not(:disabled):hover { filter: brightness(1.07); }
+}
+html[data-perf="lite"] .press:hover { filter: none; }
+/* 크림색 카드 위 스켈레톤(밝은 배경용) */
+.oc-skel.oc-skel-light { background: linear-gradient(100deg, rgba(90,58,34,.07) 30%, rgba(196,154,80,.22) 50%, rgba(90,58,34,.07) 70%); background-size: 200% 100%; }
+html[data-perf="lite"] .oc-skel.oc-skel-light { animation: none; }

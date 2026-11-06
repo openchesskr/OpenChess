@@ -1,7 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
-import { engineLineGapMs } from "../lib/perfMode.js";
+import { engineLineGapMs, isLite } from "../lib/perfMode.js";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
 import { isNativeApp, openExternal } from "../lib/nativeApp.js";
 import { MOVE_FX_MODES, DEFAULT_MOVE_FX_MODE, normalizeMoveFxMode, moveFxModeFromSaved, moveFxKindOn } from "../lib/moveFxPrefs.js";
@@ -34,12 +34,14 @@ import { puzzleAverageRating } from "../lib/puzzleRating.js";
 import { poolFallbackWorker } from "../lib/enginePool.js";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
+import { LoadingRows } from "../components/motionKit.jsx";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
 // 냈다(분석 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
-export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, className, style }, ref) {
+export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, lift = false, className, style }, ref) {
   return (
     <motion.div ref={ref} layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+      whileHover={lift && !isLite() ? { y: -3, transition: { duration: 0.18, ease: MOTION_EASE } } : undefined}
       transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
       {children}
     </motion.div>
@@ -3066,7 +3068,7 @@ export function PageTitle({ children, lead = null, style }) {
       {lead}
       <div>
         <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em", color: T.ivoryHi, margin: 0 }}>{children}</h2>
-        <span aria-hidden="true" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
+        <span aria-hidden="true" className="oc-title-bar" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
       </div>
     </div>
   );
@@ -4766,7 +4768,7 @@ export function WinBar({ wdl, height = 8 }) {
   const w = Math.round(100 * wdl.w / tot), d = Math.round(100 * wdl.d / tot), b = 100 - w - d;
   return (
     <div>
-      <div style={{ display: "flex", height, borderRadius: 4, overflow: "hidden", border: "1px solid rgba(0,0,0,.25)" }}>
+      <div className="oc-grow" style={{ display: "flex", height, borderRadius: 4, overflow: "hidden", border: "1px solid rgba(0,0,0,.25)" }}>
         <div style={{ width: w + "%", background: T.ivoryHi }} />
         <div style={{ width: d + "%", background: "#9C8A6A" }} />
         <div style={{ width: b + "%", background: "#241509" }} />
@@ -6111,7 +6113,7 @@ export function FriendSendList({ myUid, send, onSent, blockedReason }) {
   return (
     <ShareSection label={t("친구에게 보내기")} last>
       {sendErr && <p role="alert" style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{sendErr}</p>}
-      {friends == null ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+      {friends == null ? <LoadingRows lines={3} label={t("불러오는 중…")} height={30} gap={6} />
         : friends.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("공유할 친구 없음. 먼저 친구 추가")}</div>
         : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {friends.map((u) => {
@@ -6569,14 +6571,14 @@ export function SolvedPuzzlesBlock({ puzzles, total, loading, renderCard, onOpen
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{tx("푼 퍼즐 {0}", <span style={{ color: T.inkSoft, fontWeight: 700 }}>({fmtFull(total)})</span>)}</div>
       {puzzles.length === 0 ? (
-        <p style={{ fontSize: 11, color: T.inkSoft }}>{loading ? t("불러오는 중…") : t("푼 퍼즐 없음")}</p>
+        loading ? <LoadingRows lines={2} label={t("불러오는 중…")} height={44} /> : <p style={{ fontSize: 11, color: T.inkSoft }}>{t("푼 퍼즐 없음")}</p>
       ) : (
         /* (v0.1.3 버그 수정) 카드를 좁은 프로필 카드 폭에서 균등 3열(grid 1fr)로 강제 배치하면
            PuzzleCard가 퍼즐 탭 기준 최소폭(148px)보다 훨씬 좁게 눌려 오프닝 이름 같은 텍스트가 한
            글자씩 세로로 쪼개져 보이는 왜곡이 있었다 — 퍼즐 탭과 동일하게 카드 폭을 고정하고, 칸 수를
            늘리는 대신(공간이 좁으므로) 가로 스크롤로 전부 훑어보도록 한다. */
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-          {puzzles.map((p, i) => <FadeIn key={p.id} index={i} style={{ width: 230, minWidth: 230, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</FadeIn>)}
+          {puzzles.map((p, i) => <FadeIn key={p.id} index={i} lift style={{ width: 230, minWidth: 230, flexShrink: 0 }}>{renderCard(p, () => openPuzzle(p))}</FadeIn>)}
           {loading && <div style={{ width: 230, minWidth: 230, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><p style={{ fontSize: 11, color: T.inkSoft }}>{t("더 불러오는 중…")}</p></div>}
         </div>
       )}

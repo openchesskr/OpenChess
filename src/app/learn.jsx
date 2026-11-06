@@ -29,6 +29,7 @@ import { playMoveSfx } from "../lib/prefs.js";
 import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, deriveKeywords, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { LoadingRows } from "../components/motionKit.jsx";
 import { YoutubeVideosBlock } from "../components/youtubeVideos.jsx";
 import UgcText from "../components/UgcText.jsx";
 async function lichessFetchText(url) {
@@ -2071,7 +2072,7 @@ function MoveExplainBlock({ moveKey, canModerate, uid, username, noteCap, onJump
         </div>
       )}
       {notes === null ? (
-        <p style={{ fontSize: 11.5, color: T.inkSoft }}>{t("불러오는 중…")}</p>
+        <LoadingRows lines={3} label={t("불러오는 중…")} />
       ) : hasNotes ? (
         <>
           <div key={noteSort} className="hide-scrollbar" style={{ display: "flex", flexDirection: "column", overflowY: "auto", maxHeight: 260, WebkitOverflowScrolling: "touch" }}>

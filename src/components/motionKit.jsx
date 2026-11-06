@@ -86,3 +86,13 @@ export function RevealOnce({ children, delay = 0, y = 14, style }) {
     </motion.div>
   );
 }
+
+/** "불러오는 중…" 글자 대신 쓰는 자리표시자 — 줄 모양 스켈레톤 여러 줄. 스크린리더에는 label을 읽어 준다. */
+export function LoadingRows({ lines = 3, label, gap = 8, height = 14, style }) {
+  const widths = ["100%", "82%", "64%", "90%", "72%"];
+  return (
+    <div role="status" aria-busy="true" aria-label={label} style={{ display: "flex", flexDirection: "column", gap, padding: "6px 2px", ...style }}>
+      {Array.from({ length: lines }, (_, i) => <Skeleton key={i} width={widths[i % widths.length]} height={height} />)}
+    </div>
+  );
+}

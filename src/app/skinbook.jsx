@@ -140,7 +140,7 @@ function SetDexView({ owned }) {
           <span style={{ fontSize: 13, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{t("세트 수집 현황")}</span>
           <Count n={full} total={sets.length} />
         </div>
-        <div style={{ height: 6, borderRadius: 999, background: "rgba(0,0,0,.45)", overflow: "hidden" }}><div style={{ width: (100 * full / sets.length) + "%", height: "100%", background: "linear-gradient(90deg,#D9A93F,#F3D58B)" }} /></div>
+        <div style={{ height: 6, borderRadius: 999, background: "rgba(0,0,0,.45)", overflow: "hidden" }}><div className="oc-grow" style={{ width: (100 * full / sets.length) + "%", height: "100%", background: "linear-gradient(90deg,#D9A93F,#F3D58B)" }} /></div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {sets.filter((s) => s.id !== "classic").map((set) => {

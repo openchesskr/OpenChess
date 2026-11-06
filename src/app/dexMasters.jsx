@@ -7,6 +7,7 @@ import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "lu
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
+import { LoadingRows } from "../components/motionKit.jsx";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
 import { CHAMPIONS, TRANSFERS, SPLIT_ROWS, UPCOMING } from "../data/worldChampions.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
@@ -160,7 +161,7 @@ const FideNode = React.memo(function FideNode({ n, onPick, picked, fx, dim }) {
           <span style={{ display: "flex", alignItems: "center", minWidth: 0, fontFamily: FONT_SERIF, fontSize: 17.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0, whiteSpace: "nowrap" }}><Flag code={f.fed} size={19} /><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{masterName(f.name, "en")}</span></span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span aria-hidden="true" style={{ position: "relative", flex: 1, height: 7, borderRadius: 4, background: "rgba(90,58,20,.14)", overflow: "hidden", boxShadow: "inset 0 1px 1px rgba(90,58,20,.25)" }}>
-              <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 4, background: medal ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
+              <span className="oc-grow" style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 4, background: medal ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} />
               <span style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(90deg,transparent 0 17px,rgba(255,255,255,.45) 17px 18px)" }} />
             </span>
             <span style={{ fontFamily: FONT_NUM, ...NUM, fontSize: 21, fontWeight: 700, lineHeight: 1, color: MG_GOLD_TXT, textShadow: "0 1px 0 rgba(255,255,255,.6)" }}>{f.rating}</span>
@@ -197,7 +198,7 @@ const DbMasterNode = React.memo(function DbMasterNode({ n, onPick, picked, fx, d
           </span>
         </span>
         {/* 아래쪽 가는 엘로 막대 — DB 선수들 사이에서의 최고 엘로 위치 */}
-        {m.elo ? <span aria-hidden="true" style={{ position: "absolute", left: 62, right: 0, bottom: 0, height: 4, background: "rgba(90,58,20,.1)" }}><span style={{ display: "block", width: pct + "%", height: "100%", background: star ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} /></span> : null}
+        {m.elo ? <span aria-hidden="true" style={{ position: "absolute", left: 62, right: 0, bottom: 0, height: 4, background: "rgba(90,58,20,.1)" }}><span className="oc-grow" style={{ display: "block", width: pct + "%", height: "100%", background: star ? "linear-gradient(90deg,#F2D77F,#B98A34)" : "linear-gradient(90deg,#D9BE86,#B08A3E)" }} /></span> : null}
       </span>
     </button>
   );
@@ -295,7 +296,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
       </>}
       {head(info && info.pgn ? t("대회 자료") : t("마스터 대국 DB"))}
       {info && info.pgn && <div style={{ fontSize: 10.5, color: T.inkSoft, marginBottom: 3 }}>{t("연도 블록을 누르면 순위·대진표와 모든 대국을 볼 수 있음")}</div>}
-      {!idx ? <div style={rowSty}>{t("불러오는 중…")}</div> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
+      {!idx ? <LoadingRows lines={2} label={t("불러오는 중…")} /> : !info || !info.games ? <div style={rowSty}>{t("수록된 대국 없음")}</div> : <>
         <div style={rowSty}>{t("대국 {0}판", info.games)}, {info.y0}{info.y1 !== info.y0 ? "–" + info.y1 : ""}</div>
         {info.players.length > 0 && <div style={{ ...rowSty, fontSize: 11.5 }}>{t("최다 출전")}: {info.players.map(([n, c]) => enName(n) + " (" + c + ")").join(", ")}</div>}
         {!info.pgn && <div style={{ fontSize: 9.5, color: T.inkSoft, marginTop: 2 }}>{t("DB에는 일부 대국만 수록되어 실제 대회보다 적음")}</div>}
