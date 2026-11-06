@@ -73,13 +73,13 @@ const engine = (table) => { const calls = []; const f = async (sans) => { calls.
 }
 // ④ 연결
 const growth = readFileSync(new URL("../src/app/growth.jsx", import.meta.url), "utf8");
-const quest = readFileSync(new URL("../src/app/quest.jsx", import.meta.url), "utf8");
+const quest = readFileSync(new URL("../src/app/learn.jsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
-const learn = readFileSync(new URL("../src/app/learn.jsx", import.meta.url), "utf8");
+const learn = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
 ok(/findOpeningMistakes\(/.test(growth) && /<OpeningMistakes /.test(growth), "성장 분석이 오프닝 실수 카드를 쓰지 않음");
 ok(/getAnalysisPool\(/.test(growth), "오프닝 실수가 분석 풀 워커를 쓰지 않음(실시간 분석 큐를 막을 수 있음)");
 ok(/<GrowthPanel [^>]*engine=\{engine\}[^>]*onOpenReview=\{onOpenReview\}/.test(quest), "학습 탭이 성장 분석에 엔진·리뷰 열기를 넘기지 않음");
-ok(/<QuestTab [^>]*engine=\{engine\} onOpenReview=\{openReview\}/.test(app), "App이 학습 탭에 엔진·리뷰 열기를 넘기지 않음");
+ok(/<LearnTab [^>]*engine=\{engine\} onOpenReview=\{openReview\}/.test(app), "App이 학습 탭에 엔진·리뷰 열기를 넘기지 않음");
 ok(!/focus-mistakes/.test(learn), "집중 분석에 오프닝 실수 엔진 분석이 되돌아옴(학습 탭으로 옮김)");
 if (fails.length) { console.error("✖ check-opening-mistakes 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-opening-mistakes: 반복 수순의 평가 하락 판정, 불릿 제외·최소 대국 수, 호출 상한·취소, 학습 탭 연결이 유지된다");

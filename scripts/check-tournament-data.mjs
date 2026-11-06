@@ -128,7 +128,7 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
   // 대회 이름 색인(eventIndex.json) — 모든 회차의 이름이 색인에 있어야 집중 분석의 대회 이름 링크가 그 연도 블록으로 간다(build-event-index.mjs)
   const evx = rj("src/data/eventIndex.json").events, nk = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
   for (const [id, d] of data) for (const e of d.eds) for (const ev of [e.ev, ...(e.evs || [])]) { const k = nk(ev); if (k && !(evx[k] || []).some((x) => x[0] === id && x[1] === e.y)) { fails.push("eventIndex.json에 없음: " + id + "/" + e.y + " " + ev + " — node scripts/build-event-index.mjs"); break; } }
-  { const ln = readFileSync(url("src/app/learn.jsx"), "utf8"), ap = readFileSync(url("src/App.jsx"), "utf8"), dxx = readFileSync(url("src/app/dex.jsx"), "utf8"), dm2 = readFileSync(url("src/app/dexMasters.jsx"), "utf8");
+  { const ln = readFileSync(url("src/app/analysis.jsx"), "utf8"), ap = readFileSync(url("src/App.jsx"), "utf8"), dxx = readFileSync(url("src/app/dex.jsx"), "utf8"), dm2 = readFileSync(url("src/app/dexMasters.jsx"), "utf8");
     if (!/tournamentOfEvent\(g\.event/.test(ln) || !/onOpenTournament\(tg\)/.test(ln)) fails.push("집중 분석 마스터 통계의 대회 이름 링크 연결 없음");
     if (/lichessRes\.games/.test(ln.slice(ln.indexOf("const games = [...dev"), ln.indexOf("const games = [...dev") + 220))) fails.push("마스터 통계 목록에 Lichess 대국이 다시 섞임(대회 정보가 없어 뺀 것)");
     if (!/setMasterNav\(target\)/.test(ap) || !/peekMasterNav\(\)/.test(dxx) || !/takeMasterNav\(\)/.test(dm2) || !/flyTo\(focusId\)/.test(dm2)) fails.push("대회 이름 → 마스터 트리 찾아가기·검색 이동 연결 없음"); }

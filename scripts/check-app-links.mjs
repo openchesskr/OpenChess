@@ -109,7 +109,7 @@ if (!/listenDeepLinks\(/.test(app) || !/initDownloadedEngines\(ENGINE_PROFILES\)
   eq(classifyLinkClick("tel:+8210", null, O).action, "mail", "tel은 전화 앱");
   eq(classifyLinkClick("javascript:alert(1)", null, O), { action: "none" }, "javascript: 스킴은 건드리지 않음");
   eq(classifyLinkClick("#top", null, O), { action: "none" }, "앵커는 건드리지 않음");
-  const st = { canGoBack: false, tab: "learn", homeTab: "learn", now: 10000, armedAt: 0 };
+  const st = { canGoBack: false, tab: "analysis", homeTab: "analysis", now: 10000, armedAt: 0 };
   eq(decideBackAction({ ...st, canGoBack: true }), "back", "되감을 히스토리가 있으면 history.back");
   eq(decideBackAction({ ...st, tab: "set" }), "home", "홈이 아닌 탭이면 홈으로");
   eq(decideBackAction(st), "hint", "홈에서 처음 누르면 종료 안내");

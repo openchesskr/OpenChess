@@ -30,7 +30,7 @@ for (const f of ["src/components/chatPlus.jsx", "src/lib/chatApi.js", "src/lib/c
   if (/ugcTranslate|UgcText|ugcText/.test(rd(f))) fails.push(f + ": 채팅 파일이 사용자 글 번역 모듈을 사용함");
 }
 const CHAT_FN = /Chat|Bubble|Message|Msg|Invite|Poll|Reaction/i;
-for (const f of ["src/app/social.jsx", "src/app/learn.jsx"]) {
+for (const f of ["src/app/social.jsx", "src/app/analysis.jsx"]) {
   const ast = parser.parse(rd(f), { sourceType: "module", plugins: ["jsx"] });
   traverse(ast, {
     JSXOpeningElement(p) {

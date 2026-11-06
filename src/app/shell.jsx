@@ -692,7 +692,7 @@ export function AnnouncementModal({ onClose }) {
 // 레이아웃 대신 체스보드를 상단에 별도로 크게 배치해 위아래로 늘리고(좁은 화면에서 104px짜리
 // 보드는 너무 작았다), 데스크톱은 레이아웃 구조(좌: 날짜+보드, 우: 점선 구분선+텍스트+버튼)는
 // 그대로 두고 크기 비율만 전체적으로 키운다.
-export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenLearn }) {
+export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, onOpenAnalysis }) {
   const [hide, setHide] = useState(false);
   const close = () => onClose(hide);
   const t_ = todayStr();
@@ -772,7 +772,7 @@ export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, on
                     집중 분석을 나가면 이 팝업이 다시 뜨는 것은 App.jsx의 onOpenLearnFocus가 닫기
                     전에 기억해 뒀다가 focus를 나갈 때 다시 열어주는 방식으로 처리한다. */}
                 <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 9, background: "linear-gradient(160deg,#2E1B10,#1B0F07)", border: "1px solid #000" }}>
-                  <SequenceBar sans={puzzleSans} onJump={onOpenLearn ? (ply) => { onOpenLearn(puzzleSans.slice(0, ply)); close(); } : undefined} />
+                  <SequenceBar sans={puzzleSans} onJump={onOpenAnalysis ? (ply) => { onOpenAnalysis(puzzleSans.slice(0, ply)); close(); } : undefined} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
                   <MascotBubble text={t("{0}  포지션. 최선의 수 찾기", (livePuzzleName(puzzle) || puzzle.opening))} ply={0} mascot="kokoa" emotion="wink" stacked />
@@ -1150,14 +1150,12 @@ export const store = {
 // 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
 // (사용자 요청) 하단 탭 순서를 분석/플레이/퍼즐/학습/도감/설정으로 재배치 — 내부 키·경로 매핑은
 // 그대로 두고 배열 순서만 바꾼다(렌더링이 이 배열을 그대로 순회하므로 그 외 변경 불필요).
-export const TABS = [{ key: "learn", label: t("분석"), Icon: null }, { key: "store", label: t("플레이"), Icon: Play }, { key: "puzzle", label: t("퍼즐"), Icon: null }, { key: "quest", label: t("학습"), Icon: null }, { key: "dex", label: t("도감"), Icon: Library }, { key: "set", label: t("설정"), Icon: Settings }];
-// (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/learn, /book, /puzzle, /quest, /store, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
-// (사용자 요청) 탭 내부 키("learn"=분석, "quest"=학습)와 실제로 화면에 뜨는 URL 경로가 서로
-// 뒤바뀌어 있었다 — 분석 탭이 /learn으로, 학습 탭이 /quest로 보였다. 내부 키 이름은 그대로 두고
-// (다른 코드 전반에서 이미 광범위하게 참조하므로), 경로만 각 탭의 실제 한국어 라벨과 일치하도록
-// 바로잡는다: 분석("learn" 키) → /analysis, 학습("quest" 키) → /learn.
-export const TAB_PATH = { learn: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", quest: "/learn", store: "/play", set: "/setting" };
-const PATH_TAB = { "/analysis": "learn", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "quest", "/play": "store", "/setting": "set" };
+export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key: "store", label: t("플레이"), Icon: Play }, { key: "puzzle", label: t("퍼즐"), Icon: null }, { key: "learn", label: t("학습"), Icon: null }, { key: "dex", label: t("도감"), Icon: Library }, { key: "set", label: t("설정"), Icon: Settings }];
+// (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/analysis, /book, /puzzle, /learn, /play, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
+// (v0.7.3, 사용자 요청) 탭 내부 키를 화면에 보이는 이름·URL 경로와 일치시켰다: 분석 = "analysis"(/analysis), 학습 = "learn"(/learn).
+// 예전엔 분석이 "learn", 학습이 "quest"라는 키를 써서 경로(/analysis·/learn)와 코드가 엇갈렸다.
+export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", learn: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
 export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 // (UX7) 로컬 캐시를 계정(uid) 단위로 분리 — 이걸 안 하면 같은 기기에서 다른 계정으로 로그인할 때
 // 퍼즐·프로필·칭호·chess.com 연동 등이 이전 계정 것을 그대로 물려받는 사고가 남(실제로 있었음).

@@ -558,7 +558,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ### BUG-068 · [P3] 보드 편집 화면 도구 줄 글자가 낱글자로 줄바꿈됨
 - **상태**: 수정 완료
 - **발견일**: 2026-10-09 (사용자 제보 — 스크린샷)
-- **위치**: `src/app/learn.jsx` `BoardEditorModal` 도구 줄(`resetClearRow`)
+- **위치**: `src/app/analysis.jsx` `BoardEditorModal` 도구 줄(`resetClearRow`)
 - **증상**: 폭 약 420px 화면에서 "초기화·지우기·뒤집기" 버튼 글자가 "초기/화"처럼 두 줄로 쪼개진다.
 - **근본 원인**: 직전 재디자인에서 한 줄에 7개 버튼을 `nowrap` 컨테이너로 밀어 넣어, 버튼이 줄어들며 글자가 한 글자씩 줄바꿈됐다(버튼에 `white-space: nowrap`도 없었다).
 - **수정 내용**: 버튼·알약 스타일에 `white-space: nowrap`+`flex-shrink: 0`, 도구 줄을 "라벨 버튼 묶음 / 되돌리기 묶음" 두 묶음으로 나눠 자리가 모자라면 묶음 단위로만 아랫줄로 내려가게 했다.
@@ -667,7 +667,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 ### BUG-056 · [P3] 보드 편집 뒤집기 버튼이 눈에 띄지 않음
 - **상태**: 수정 완료 (v0.6.2, 사용자 요청)
-- **위치**: `src/app/learn.jsx` `BoardEditorModal`
+- **위치**: `src/app/analysis.jsx` `BoardEditorModal`
 - **증상**: 뒤집기가 흑 기물 팔레트 줄 맨 앞의 작은 아이콘 하나뿐이라 사용자가 기능이 없다고 느낌.
 - **수정 내용**: 초기화·지우기 줄에 분석 탭과 같은 ⇅ 버튼(`aria-pressed`, `title` 포함) 추가, 팔레트의 중복 버튼은 자리만 남김.
 
@@ -682,7 +682,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 ### BUG-054 · [P1] 분석 탭 FEN 모드에서 엔진이 동작하지 않음
 - **상태**: 수정 완료 (v0.6.2, 사용자 요청) · 사용자 기기(모바일)에서 직접 재현은 못 했고, 코드 분석과 시뮬레이션으로 확인한 원인을 고침
-- **위치**: `src/app/learn.jsx`(FEN 모드 엔진 effect), `src/app/common.jsx` `poolWorker`, `src/lib/enginePool.js`
+- **위치**: `src/app/analysis.jsx`(FEN 모드 엔진 effect), `src/app/common.jsx` `poolWorker`, `src/lib/enginePool.js`
 - **증상**: FEN을 불러오면 평가치 0.00, 엔진 라인·후보 수 블록 없음.
 - **근본 원인**: ① effect가 `await getAnalysisPool(...)`로 풀 전체 부팅을 기다림(신경망이 큰 프로필은 워커를 차례로 부팅해 오래 걸리고 그동안 화면이 비어 있음). ② 풀이 비면 `poolWorker`가 `useEngine` 인스턴스를 돌려주는데 `evaluateMulti(fen,d,multipv,mt,onProgress,onLines,slot)`와 풀 워커의 `(fen,d,multipv,mt,onLines,slot)` 인자 순서가 달라 slot 문자열이 `onLines`로 들어가 TypeError → try/catch가 삼켜 아무 표시 없이 실패. 같은 패턴이 리뷰 엔진 라인·채팅 봇·블라인드 평가 등 `poolWorker` 사용처(learn·review·social) 전체에 있었음.
 - **수정 내용**: 2.5초 안에 풀이 안 뜨면 공용 엔진으로 즉시 시작, `poolFallbackWorker` 어댑터로 인자 순서 통일.
@@ -714,7 +714,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 ### BUG-050 · [P2] 분석 탭 수 블록 Lichess 통계 비정상 표시
 - **상태**: 수정 완료 (v0.6.1, 사용자 요청)
-- **위치**: `src/app/learn.jsx` 수 블록 통계(`applyMain`, `statPumpRef`)
+- **위치**: `src/app/analysis.jsx` 수 블록 통계(`applyMain`, `statPumpRef`)
 - **증상**: 블록에 "65,770,080 / —"처럼 회수만 있고 전체 표본·채택률(%)이 "—"이며 채택률 막대가 비어 있다.
 - **근본 원인**: 포지션 전체 통계(`fetchLichess(sans)`)가 레이트리밋·일시 오류로 한 번 실패하면 재시도 없이 `posGames`가 비었다. 이후 보충 조회(`statPumpRef`)는 수별 회수만 채웠고, 채택률은 클로저가 붙잡은 옛 `posGames`로 계산돼 `posGames`가 나중에 정해져도 갱신되지 않았다.
 - **수정 내용**: 실패 시 1.5초·3초 뒤 두 번 더 시도, `posGames`가 정해지면 채택률이 빈 수를 다시 계산, 끝내 못 얻으면 수별 회수의 합을 전체 표본으로 사용.
@@ -1335,7 +1335,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ### BUG-090 · [P2] 집중 분석 "내 통계"에 상대가 그 수를 둔 대국이 섞임
 - **상태**: 수정 완료(v0.6.6)
 - **발견일**: 2026-10-13
-- **위치**: `src/app/learn.jsx`(FocusPanelBody `myBase`)
+- **위치**: `src/app/analysis.jsx`(FocusPanelBody `myBase`)
 - **증상**: 1.e4 분석에 내가 흑으로 상대의 1.e4를 받은 대국이 들어가 승률·채택률·그래프가 틀림
 - **근본 원인**: 수순이 같은 대국만 골랐고, 그 수를 둔 쪽이 나인지는 보지 않았다
 - **수정 내용**: 이 수를 두는 쪽(ply 짝수=백)과 내 진영이 같은 대국만 통계에 넣음. 진영이 고정되므로 진영 필터를 없애고 승률·채택률·승점 획득 확률을 내 기준(승리 초록·패배 빨강)으로 표시
@@ -1344,7 +1344,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ### BUG-091 · [P2] 집중 분석 탐색 페이지의 다음 수가 틀리고 눌러도 이동하지 않음
 - **상태**: 수정 완료(v0.6.6)
 - **발견일**: 2026-10-13
-- **위치**: `src/app/learn.jsx`(LearnTab `enterFocus`·`enterFocusAt`, 다음 수 블록 핸들러)
+- **위치**: `src/app/analysis.jsx`(AnalysisTab `enterFocus`·`enterFocusAt`, 다음 수 블록 핸들러)
 - **증상**: 탐색 페이지가 보고 있는 수의 다음 수가 아니라 그 수와 같은 ply의 수(형제)를 보여주고, 블록을 눌러도 집중 분석 수가 안 바뀜
 - **근본 원인**: 집중 분석에 들어가도 보드 수순(sans)이 그 수 직전 위치로 남아 있었고, 다음 수 블록의 클릭은 집중 분석 중 비활성인 보드 이동(go)을 불렀다
 - **수정 내용**: 집중 분석에 들어가거나 옮길 때 보드 수순을 그 수까지로 맞추고, 집중 분석 중 블록 클릭은 enterFocusAt(replace)로 그 수로 옮김

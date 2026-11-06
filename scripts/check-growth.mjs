@@ -105,11 +105,11 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
 }
 // ── ⑥ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/quest.jsx"), pz = rd("src/app/puzzle.jsx");
+const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/learn.jsx"), pz = rd("src/app/puzzle.jsx");
 ok(/recordReviewMistakes\(/.test(review), "ReviewPage가 리뷰가 끝나면 내 실수를 기록하지 않음");
 ok(/pickHighlights\(/.test(review) && /drawHighlightCard/.test(review), "리뷰 공유 시트가 하이라이트 카드를 쓰지 않음");
-ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(QuestTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
-ok(/<QuestTab growthUid=\{uid\} growthGames=\{chesscom\.games\}/.test(app), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음");
+ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(LearnTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
+ok(/<LearnTab growthUid=\{uid\} growthGames=\{chesscom\.games\}/.test(app), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음");
 ok(!/GrowthCenter|GrowthEntryCard|onOpenGrowth/.test(app + pz + quest), "성장 분석이 다시 별도 버튼·화면으로 분리됨(학습 탭 안에 바로 펼쳐 보여야 함)");
 ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 네 기능 로직(기준별 비교 포함)을 모두 쓰지 않음");
 ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");

@@ -847,7 +847,7 @@ async function ocAnalysisShare(sans, result, depth) {
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
 // 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
 // 훅과 Stockfish 16 프로필 자체를 없앴다 — ReviewPage는 이제 App 루트의 공유 engine을 prop으로
-// 받는다(LearnTab·PuzzleTab 등과 동일한 패턴). 실제 계산은 여전히 getAnalysisPool의 풀이 담당한다
+// 받는다(AnalysisTab·PuzzleTab 등과 동일한 패턴). 실제 계산은 여전히 getAnalysisPool의 풀이 담당한다
 // (analyzeGame, 엔진 라인 패널, 수 판정 모두 이 풀을 공유 — 위 analysisPoolCache 주석 참고).
 // (v0.2.9 기능 → v0.3.8 전면 개편) 게임 리뷰(analyzeGame)가 도는 동안 보여줄 일러스트 — 예전엔 세
 // 장(ilust-5·6·7, MILKU·KOKOA가 체스보드를 사이에 두고 있는 장면들)을 카드 세 칸에 겹쳐서 한 번에
