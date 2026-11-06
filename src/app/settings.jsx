@@ -18,7 +18,7 @@ import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
 import { PageTitle, ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
-import { t, tx, lang, LANGS, setLang } from "../lib/i18n.js";
+import { t, tx, lang, LANGS, setLang, fmtDateOnly } from "../lib/i18n.js";
 import Dropdown from "../components/Dropdown.jsx";
 
 // (v0.4.7 기능, 사용자 재제보) "퍼즐 컨트롤 센터"의 손상 검사가 라인 개수(0개)만 보다 보니, 트리·라인
@@ -1174,6 +1174,7 @@ export function AccountCenterModal({ onClose, myUid, username, chesscomUsername,
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState("");
   const [deleteErr, setDeleteErr] = useState("");
+  const [deletionAt, setDeletionAt] = useState(null); // 탈퇴 요청이 접수되면 삭제 예정 시각(ISO)
   const load = useCallback(async () => { setIdentities(await getUserIdentities()); }, []);
   useEffect(() => { load(); }, [load]);
   // (v0.4.3 기능, 사용자 요청) 계정마다 하나씩 부여되는 9자리 회원 번호(MID, v0.4.4부터 앞 영문
@@ -1206,8 +1207,9 @@ export function AccountCenterModal({ onClose, myUid, username, chesscomUsername,
   };
   const doDelete = async () => {
     setDeleteErr(""); setBusy(true);
-    try { await sbRpc("delete_own_account", {}); onAccountDeleted(); }
-    catch { setDeleteErr(t("계정 삭제 실패. 잠시 후 다시 시도")); setBusy(false); }
+    // (v0.7.2) 탈퇴는 즉시 삭제가 아니라 7일 유예 요청이다. 서버가 삭제 예정 시각을 돌려주고, 그 시각이 지나면 자동으로 기록을 말소한다.
+    try { const at = await sbRpc("request_account_deletion", {}); setDeletionAt(typeof at === "string" ? at : new Date(Date.now() + 7 * 864e5).toISOString()); setBusy(false); }
+    catch { setDeleteErr(t("탈퇴 요청 실패. 잠시 후 다시 시도")); setBusy(false); }
   };
   const row = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 4px" };
   return (
@@ -1288,20 +1290,50 @@ export function AccountCenterModal({ onClose, myUid, username, chesscomUsername,
         <div style={{ height: 1, background: "#C9B58C", margin: "16px 0" }} />
         <button onClick={onLogoutClick} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer", marginBottom: 10 }}>{t("로그아웃")}</button>
 
-        {!confirmDelete ? (
+        {deletionAt ? (
+          <div style={{ padding: "12px 13px", borderRadius: 10, background: "rgba(200,69,59,.1)", border: "1px solid " + T.blunder }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("탈퇴 요청 완료")}</div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: T.ink, lineHeight: 1.6, marginBottom: 10 }}>{t("{0}까지 다시 로그인하면 탈퇴를 취소할 수 있음. 그 이후에는 모든 데이터가 영구 삭제됨", fmtDateOnly(deletionAt, { year: "numeric", month: "long", day: "numeric" }))}</p>
+            <button onClick={onAccountDeleted} className="press" style={{ width: "100%", padding: "9px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{t("확인")}</button>
+          </div>
+        ) : !confirmDelete ? (
           <button onClick={() => { setConfirmDelete(true); setDeleteTyped(""); setDeleteErr(""); }} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>{t("계정 탈퇴")}</button>
         ) : (
           <div style={{ padding: "12px 13px", borderRadius: 10, background: "rgba(200,69,59,.1)", border: "1px solid " + T.blunder }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>{t("정말 탈퇴할까요? 프로필·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제되며 되돌릴 수 없음")}</p>
+            <p style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.6, marginBottom: 8 }}>{t("탈퇴를 요청하면 진행 중인 대국은 기권 처리되며, 7일의 유예 기간 후 프로필·퍼즐·친구·채팅 등 모든 데이터가 영구 삭제됨. 유예 기간에 다시 로그인하면 취소 가능")}</p>
             <input value={deleteTyped} onChange={(e) => setDeleteTyped(e.target.value)} placeholder={t("확인을 위해 \"{0}\" 입력", username)} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, boxSizing: "border-box", marginBottom: 8, fontSize: 12.5 }} />
             {deleteErr && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{deleteErr}</div>}
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(false)} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #C9B58C", background: "transparent", color: T.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{t("취소")}</button>
-              <button onClick={doDelete} disabled={busy || deleteTyped !== username} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: (busy || deleteTyped !== username) ? "default" : "pointer", opacity: (busy || deleteTyped !== username) ? 0.55 : 1 }}>{busy ? t("삭제하는 중…") : t("영구 삭제")}</button>
+              <button onClick={doDelete} disabled={busy || deleteTyped !== username} className="press" style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: T.blunder, color: "#fff", fontWeight: 800, fontSize: 12, cursor: (busy || deleteTyped !== username) ? "default" : "pointer", opacity: (busy || deleteTyped !== username) ? 0.55 : 1 }}>{busy ? t("요청하는 중…") : t("탈퇴 요청")}</button>
             </div>
           </div>
         )}
       </motion.div>
     </motion.div>
+  );
+}
+/** (v0.7.2) 탈퇴 유예 중인 계정으로 로그인했을 때 앱 전체를 막고 보여주는 창 — 남은 기간을 알리고 탈퇴를 취소하거나 로그아웃하게 한다. */
+export function DeletionPendingModal({ scheduledAt, onCancelled, onLogout }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const leftMs = Math.max(0, new Date(scheduledAt).getTime() - Date.now());
+  const days = Math.max(1, Math.ceil(leftMs / 864e5));
+  const cancel = async () => {
+    setErr(""); setBusy(true);
+    try { await sbRpc("cancel_account_deletion", {}); onCancelled(); }
+    catch { setErr(t("탈퇴 취소 실패. 잠시 후 다시 시도")); setBusy(false); }
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ width: "100%", maxWidth: 360, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 22, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("탈퇴 예정 계정")}</div>
+        <p style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.65, marginBottom: 6 }}>{t("이 계정은 탈퇴가 요청되어 {0}에 모든 데이터가 영구 삭제될 예정임", fmtDateOnly(scheduledAt, { year: "numeric", month: "long", day: "numeric" }))}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6, marginBottom: 14 }}>{t("남은 기간 약 {0}일. 탈퇴를 취소하면 계정이 그대로 복구됨", days)}</p>
+        {err && <div style={{ fontSize: 11.5, color: T.blunder, marginBottom: 8 }}>{err}</div>}
+        <button onClick={cancel} disabled={busy} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13, cursor: busy ? "default" : "pointer", marginBottom: 8, opacity: busy ? .6 : 1 }}>{busy ? t("취소하는 중…") : t("탈퇴 취소")}</button>
+        <button onClick={onLogout} disabled={busy} className="press" style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid " + T.blunder, background: "transparent", color: T.blunder, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{t("로그아웃")}</button>
+      </div>
+    </div>
   );
 }
