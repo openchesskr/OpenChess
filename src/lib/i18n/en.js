@@ -3021,4 +3021,6 @@ export default {
   "회원 탈퇴 시 계정 센터의 \"계정 탈퇴\"로 프로필·진도·퍼즐·친구·채팅 등 모든 데이터를 7일의 유예 기간 후 영구 삭제(유예 기간에 다시 로그인하면 취소 가능)": "When you leave, \"Delete account\" in the Account center permanently deletes all data, including your profile, progress, puzzles, friends, and chats, after a 7-day grace period (logging in again during the grace period cancels it)",
   "탈퇴는 계정 센터에서 언제든 가능하며 탈퇴 요청 7일 후 데이터 영구 삭제": "Your data is permanently deleted 7 days after the deletion request",
   "요청하면 7일의 유예 기간 후 자동으로 영구 삭제되며, 유예 기간에 다시 로그인해 탈퇴를 취소하지 않으면 되돌릴 수 없음": "Your data is permanently deleted automatically after a 7-day grace period, and can't be recovered unless you log in again during that period to cancel",
+  "회원 탈퇴를 7일 유예 방식으로 변경. 유예 기간에 다시 로그인하면 취소할 수 있고, 기간이 지나면 모든 기록 자동 삭제.": "Account deletion now has a 7-day grace period. Logging in again during it cancels the deletion, and after it all records are deleted automatically.",
+  "회원 탈퇴가 7일 유예 방식으로 바뀌었습니다. 탈퇴를 요청한 뒤 7일 안에 다시 로그인하면 취소할 수 있고, 기간이 지나면 모든 기록이 자동으로 삭제됩니다.": "Account deletion now works with a 7-day grace period. If you log in again within 7 days of requesting it, you can cancel it, and after that period all records are deleted automatically.",
 };

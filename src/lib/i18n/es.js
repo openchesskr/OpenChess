@@ -3021,4 +3021,6 @@ export default {
   "회원 탈퇴 시 계정 센터의 \"계정 탈퇴\"로 프로필·진도·퍼즐·친구·채팅 등 모든 데이터를 7일의 유예 기간 후 영구 삭제(유예 기간에 다시 로그인하면 취소 가능)": "Al darte de baja, «Eliminar cuenta» en el Centro de cuenta borra de forma permanente todos los datos (perfil, progreso, puzles, amigos y chats) tras un periodo de gracia de 7 días (volver a iniciar sesión en ese periodo lo cancela)",
   "탈퇴는 계정 센터에서 언제든 가능하며 탈퇴 요청 7일 후 데이터 영구 삭제": "Los datos se eliminan de forma permanente 7 días después de la solicitud",
   "요청하면 7일의 유예 기간 후 자동으로 영구 삭제되며, 유예 기간에 다시 로그인해 탈퇴를 취소하지 않으면 되돌릴 수 없음": "Se eliminan de forma permanente y automática tras un periodo de gracia de 7 días, y no se pueden recuperar salvo que vuelvas a iniciar sesión en ese periodo para cancelarlo",
+  "회원 탈퇴를 7일 유예 방식으로 변경. 유예 기간에 다시 로그인하면 취소할 수 있고, 기간이 지나면 모든 기록 자동 삭제.": "La eliminación de cuenta ahora tiene un periodo de gracia de 7 días. Volver a iniciar sesión en ese periodo la cancela, y después todos los registros se eliminan automáticamente.",
+  "회원 탈퇴가 7일 유예 방식으로 바뀌었습니다. 탈퇴를 요청한 뒤 7일 안에 다시 로그인하면 취소할 수 있고, 기간이 지나면 모든 기록이 자동으로 삭제됩니다.": "La eliminación de cuenta ahora funciona con un periodo de gracia de 7 días. Si vuelves a iniciar sesión dentro de los 7 días posteriores a la solicitud, puedes cancelarla; pasado ese plazo, todos los registros se eliminan automáticamente.",
 };

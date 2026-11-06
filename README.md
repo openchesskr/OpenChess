@@ -84,7 +84,7 @@
 
 ### OpenChess v0.7.2 - 2026/11/06
 
-테마: 리뷰 코치(MEC) 고도화. 설명하지 못하던 수(표본의 약 16%)를 전술·전략·구조 탐지로 설명하고, 전술 용어를 누르면 기물 이동 모션과 전술별 화살표를 재생한다. 빠른 리뷰는 더 빨라지고 전용 진입 연출을 갖는다. SQL 변경 없음.
+테마: 리뷰 코치(MEC) 고도화와 회원 탈퇴 7일 유예. 설명하지 못하던 수(표본의 약 16%)를 전술·전략·구조 탐지로 설명하고, 전술 용어를 누르면 기물 이동 모션과 전술별 화살표를 재생한다. 빠른 리뷰는 더 빨라지고 전용 진입 연출을 갖는다. SQL 변경 있음(`supabase-setup.sql` 재실행).
 
 **기능**
 - 빠른 리뷰 개선: 포지션당 탐색 시간 상한 `QUICK_REVIEW_MOVETIME_MS`=600(표준 1500), 분석 풀 사전 부팅 시점을 앞당김(`requestIdleCallback` timeout 8000→1500, 대체 3000→800ms). 전용 진입 연출 `QuickReviewIntro`: 진행률 0·25·50·75%마다 블록 글자 OPEN이 하나씩 켜지며 OBSERVE → PRACTICE → EVALUATE → NEXT LEVEL이 RGB 분리·슬라이스·떨림 글리치와 함께 바뀌고, 끝나면 NEXT LEVEL 확정 연출 뒤 리뷰 화면으로 접힘(캐시로 기다림이 없으면 연출 생략).
@@ -94,6 +94,7 @@
 - 전술 시각화: 문장 속 전술 용어 하나에만 밑줄(`tacticKeyword`)을 긋고 누르면 `playTacticAnimation`이 전술별로 다른 연출을 재생(빨간 실선=공격, 주황 점선=뒤에 묶인·관통 기물, 초록 점선=다음 수·진행 방향, 금색 테두리=핵심 칸). 이 수의 기물이 출발 칸에서 도착 칸으로 미끄러지는 모션(`SlidePiece`, `Board`의 `slideMove` prop, `beginMoveSlide` 520ms)을 먼저 재생한 뒤 화살표가 이어지며, 위협·연결·수비자 제거 연출에도 같은 모션을 붙였다(수비자 제거는 이전 포지션 정지 → 모션 → 도착).
 - 코치 말풍선: 제목에 수 번호(`10.Na4: 우수한 수`, 흑은 `10...`, `moveNumber`·ply 홀짝으로 시작 진영 계산). 코치 설명 전체(276문장)를 문어체("~이다·~한다·~했다")로 통일하고 특수 기호(대시·느낌표·괄호·콜론·말줄임표)를 삭제, 유일한 수·탁월한 수 끝의 `!`·`!!` 부착 코드 제거. 문구는 어미 규칙 변환 후 직접 검수해 `t()` 키와 5개 언어 번역 키를 함께 이전하고 번역문의 기호도 정리. README 말투 규칙에 코치 예외(문어체·무기호)를 명시.
 - 리뷰 코치 카드의 "계획" 버튼과 관련 코드(`relocationPlanFromPv`·`relocationPlanPhrase`·상태·캐시·핸들러·번역 키)를 삭제.
+- 회원 탈퇴 7일 유예: `request_account_deletion`이 진행 중 대국을 기권 처리하고 `profiles.deletion_scheduled_at`=요청+7일을 기록, 유예 계정은 RLS로 타인에게 숨김(`_profiles_pub_guard`가 클라이언트의 플래그 변경을 막음). 유예 중 로그인하면 `DeletionPendingModal`이 앱을 막고 `cancel_account_deletion`으로 취소하거나 로그아웃. 매시간 `purge_due_account_deletions`(pg_cron `account_deletion_purge_hourly`)가 기한 지난 계정을 `_erase_account`(기권 처리 → 만든 퍼즐 삭제 → auth.users 삭제, 나머지는 cascade)로 말소. `delete_own_account` 제거. 약관·삭제 안내·FAQ 문구 갱신, `check-account-deletion` 확장. 알려진 한계 BUG-136(P2).
 
 **성능**
 - 저사양 성능 모드 `src/lib/perfMode.js`: CPU 2코어 이하·메모리 2GB 이하·데이터 절약 기기는 처음부터, 그 밖은 접속 후 20초간 프레임 간격(60프레임 평균 32ms 초과가 연속 3구간)을 재서 자동 전환. `<html data-perf="lite">`로 블러·필터·무한 CSS 애니메이션을 끄고, 코드 쪽은 `LOOP()`(무한 반복 모션 1회로)·스크램블 생략·실시간 엔진 라인 화면 갱신 간격 90→280ms(분석 탭)·퀘스트 알림 아이콘 반복 정지. `localStorage.oc_perf_mode`(lite/full/auto)로 고정 가능. 기기의 "애니메이션 줄이기" 설정은 보지 않는다(`check-reduced-motion` 원칙).
