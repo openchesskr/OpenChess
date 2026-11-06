@@ -652,7 +652,7 @@ export function findOpeningPathByName(name) {   // (UX2) 이름이 같은 첫(�
 export function AnnouncementModal({ onClose }) {
   const latest = CHANGELOG[0];
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 440, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
         <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         <div className="flex items-center gap-2" style={{ marginBottom: 4, paddingRight: 32 }}>
@@ -734,7 +734,7 @@ export function DailyPuzzleNoticeModal({ puzzle, solveCount, onOpen, onClose, on
   // (사용자 요청) 풀기 버튼은 기존 금색 그라데이션을 그대로 유지한다.
   const playBtn = <button onClick={onOpen} className="press" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: narrow ? "9px 0" : "7px 0", borderRadius: 10, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: narrow ? 13 : 11.5, border: "none", cursor: "pointer" }}>{tx("{0}풀기", <Play size={narrow ? 13 : 11} fill="#241509" />)}</button>;
   return (
-    <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+    <div className="oc-modal-bg" onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 96, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: narrow ? 380 : 620, margin: "auto" }}>
         {/* (스케치) 다이어리 위에서 내려다보는 마스코트 — 카드 위 왼쪽에 살짝 겹쳐 뜬다. */}
         <div style={{ position: "absolute", top: narrow ? -38 : -54, left: 10, zIndex: 2 }}><Mascot name="kokoa" emotion="wink" size={narrow ? 62 : 96} /></div>
@@ -1761,7 +1761,7 @@ export function UsernameSetupModal({ account, onDone, onCancel }) {
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
   const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #C9B58C", marginBottom: 8, background: "#fff", color: T.ink, boxSizing: "border-box" };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{t("아이디 설정")}</div>
@@ -1939,7 +1939,7 @@ export function NewPasswordModal({ recovery, onDone, onClose }) {
   // 모달 바깥으로 삐져나오던 버그 — border-box로 명시.
   const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #C9B58C", marginBottom: 8, background: "#fff", color: T.ink, boxSizing: "border-box" };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 340, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{t("새 비밀번호 설정")}</div>

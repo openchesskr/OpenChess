@@ -699,7 +699,7 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
   }
   // 데스크톱 — 보드를 왼쪽 무대에, 나머지 카드는 오른쪽 칼럼(넘치면 그 칼럼만 스크롤)에 둔다.
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.7)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       {ghostEl}
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(940px, 100%)", maxHeight: "min(720px, 100%)", display: "flex", gap: 24, background: bg, borderRadius: 18, border: "1px solid #000", boxShadow: "0 30px 70px -16px rgba(0,0,0,.7)", padding: 22 }}>
         <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>{boardEl}{resetClearRow}</div>
@@ -1690,7 +1690,7 @@ function AddMasterGameModal({ onClose, onSaved }) {
   const inputStyle = { width: "100%", padding: "7px 9px", borderRadius: 8, border: "1px solid #DCCBA8", background: T.paper, color: T.ink, fontSize: 12.5, boxSizing: "border-box" };
   const labelStyle = { fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 3, display: "block" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, maxHeight: "85vh", overflowY: "auto", background: "linear-gradient(180deg,#F6EEDD,#E6D6B6)", borderRadius: 14, border: "1px solid " + T.brass, padding: 16 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 13.5, fontWeight: 900, color: T.ink }}>{t("마스터 대국 추가")}</span>

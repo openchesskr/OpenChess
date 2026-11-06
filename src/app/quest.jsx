@@ -920,7 +920,7 @@ function LessonEditor({ lessonKey, bumpContent, onClose }) {
   const movePageAt = (i, dir) => { const j = i + dir; if (j < 0 || j >= pages.length) return; const arr = [...pages]; [arr[i], arr[j]] = [arr[j], arr[i]]; setPages(arr); };
   const addPage = () => setPages([...pages, { startSans: [], flip: false, beats: [] }]);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: T.paper, borderRadius: 16, padding: 18, border: "1px solid #DCCBA8", boxShadow: "0 24px 60px -12px rgba(0,0,0,.7)" }}>
         <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer" }}>✕</button>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10, paddingRight: 30 }}>{isNew ? t("새 레슨 추가") : t("레슨 편집")} {saving && <span style={{ fontSize: 11, color: T.inkSoft, fontWeight: 600 }}>{t("저장 중…")}</span>}</div>

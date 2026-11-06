@@ -6015,7 +6015,7 @@ export function ShareSheetFrame({ title, icon, onClose, zIndex = 90, children })
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex, display: "flex", alignItems: narrow ? "stretch" : "center", justifyContent: "center", padding: narrow ? 0 : "24px 16px" }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex, display: "flex", alignItems: narrow ? "stretch" : "center", justifyContent: "center", padding: narrow ? 0 : "24px 16px" }}>
       <div role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
         style={{ width: "100%", maxWidth: narrow ? "100%" : 400, height: narrow ? "100%" : undefined, maxHeight: narrow ? undefined : "calc(100dvh - 48px)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", paddingTop: narrow ? "env(safe-area-inset-top)" : 0, paddingBottom: narrow ? "env(safe-area-inset-bottom)" : 0 }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>

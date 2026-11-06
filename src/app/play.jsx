@@ -2422,7 +2422,7 @@ function MinigameHelpButton({ title, children }) {
 }
 function MinigameForfeitConfirm({ onCancel, onConfirm, bot }) {
   return (
-    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("정말 나갈까요?")}</div>
         <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? t("진행 중인 게임 종료, 기록 없음") : t("대전 포기 처리, 상대 승리")}</p>

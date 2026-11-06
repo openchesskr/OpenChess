@@ -123,3 +123,39 @@ html[data-perf="lite"] .ab-glint::after { display: none !important; }
 html[data-perf="lite"] .ab-vscan, html[data-perf="lite"] .ab-bracket, html[data-perf="lite"] .ab-textglow { animation: none !important; }
 html[data-perf="lite"] .ab-vscan { display: none !important; }
 html[data-perf="lite"] .ab-burst-glow { animation: none !important; }
+
+/* (v0.7.3) 전체 효과·반응형 다듬기 — 공용 모션 키트(components/motionKit.jsx)와 짝을 이루는 유틸 클래스.
+   기기의 "애니메이션 줄이기"는 보지 않는다(check-reduced-motion). 끝없이 도는 것만 가벼운 모드(data-perf="lite")에서 멈춘다. */
+@keyframes ocSkel { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.oc-skel { background: linear-gradient(100deg, rgba(196,154,80,.10) 30%, rgba(236,203,134,.26) 50%, rgba(196,154,80,.10) 70%); background-size: 200% 100%; animation: ocSkel 1.6s linear infinite; }
+html[data-perf="lite"] .oc-skel { animation: none; }
+
+@keyframes ocAppIn { from { opacity: 0; } to { opacity: 1; } }
+.oc-app-in { animation: ocAppIn .45s ease-out backwards; }
+
+/* 마우스가 있는 기기에서만 카드가 살짝 떠오른다(터치에는 호버가 없어 :active만). */
+.oc-lift { transition: transform .22s cubic-bezier(.22,.9,.32,1), box-shadow .22s ease, border-color .22s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .oc-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 26px -12px rgba(0,0,0,.55); }
+}
+html[data-perf="lite"] .oc-lift:hover { transform: none; }
+
+/* 키보드로 이동할 때만 보이는 금색 포커스 링(마우스 클릭에는 나타나지 않는다). */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, summary:focus-visible { outline: 2px solid #ECCB86; outline-offset: 2px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid #C49A50; outline-offset: 1px; }
+
+/* 하단 탭 아이콘: 선택될 때 한 번 튀어 오른다. */
+@keyframes ocTabPop { 0% { transform: scale(.78) translateY(2px); } 55% { transform: scale(1.16) translateY(-2px); } 100% { transform: scale(1) translateY(0); } }
+.oc-tab-pop { animation: ocTabPop .38s cubic-bezier(.22,.9,.32,1) both; }
+
+/* (v0.7.3) 모달 열림 연출 — 어두운 배경은 페이드, 안쪽 카드는 살짝 떠오르며 커진다. fill-mode가 backwards라 끝난 뒤엔 transform이 남지 않는다.
+   이미 framer-motion으로 연출하는 모달(play/shell의 일부)에는 붙이지 않는다(CSS가 inline transform을 덮어 어긋난다). */
+@keyframes ocFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ocModalPop { from { opacity: 0; transform: translateY(14px) scale(.965); } to { opacity: 1; transform: none; } }
+.oc-modal-bg { animation: ocFade .2s ease-out backwards; }
+.oc-modal-bg > div { animation: ocModalPop .3s cubic-bezier(.22,.9,.32,1) backwards; }
+@media (max-width: 639px) {
+  /* 모바일 전체 높이 시트는 아래에서 올라온다. */
+  .oc-modal-bg > div { animation-name: ocSheetUp; }
+}
+@keyframes ocSheetUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }

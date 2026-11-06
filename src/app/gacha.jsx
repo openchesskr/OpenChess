@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { CoinIcon } from "./common.jsx";
+import { CountUp } from "../components/motionKit.jsx";
 import { GACHA_PRICE, GACHA_POOL, GACHA_RARITY, GACHA_TOTAL_WEIGHT } from "../lib/gacha.js";
 import { RarityTag } from "./skinbook.jsx";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -214,7 +215,7 @@ export function GachaSection({ coins, onPull }) {
       <div className="flex items-center justify-between" style={{ padding: "12px 14px 0", gap: 8 }}>
         <span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi, fontFamily: SITE_FONT, letterSpacing: 0.2 }}>{t("스킨 뽑기")}</span>
         <span className="flex items-center gap-1" title={t("보유 중인 OC 나이트 코인")} style={{ background: "rgba(0,0,0,.4)", border: "1px solid rgba(236,203,134,.3)", borderRadius: 999, padding: "3px 11px 3px 5px" }}>
-          <CoinIcon size={20} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}>{(coins || 0).toLocaleString()}</span>
+          <CoinIcon size={20} /><span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi, fontFamily: SITE_FONT }}><CountUp value={coins || 0} duration={900} /></span>
         </span>
       </div>
       <div style={{ padding: "2px 24px 0", maxWidth: 300, margin: "0 auto", aspectRatio: "240 / 224", boxSizing: "content-box" }}>
