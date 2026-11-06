@@ -12,7 +12,8 @@ import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
 import { reviewIntroLayout, RI } from "../lib/reviewIntroLayout.js";
-import { playMoveSfx, reviewDepthFor } from "../lib/prefs.js";
+import { playMoveSfx, reviewDepthFor, QUICK_REVIEW_MOVETIME_MS } from "../lib/prefs.js";
+import QuickReviewIntro from "../components/QuickReviewIntro.jsx";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
@@ -154,17 +155,17 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
     const info = sanSrc(board, san, color);
     const promoKor = PIECE_KOR[(info && info.promo) || "N"] || lcLatin(t("기물"));
     const reason = underpromoReason(board, san, color);
-    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 스테일메이트(무승부). 대신 {0} 승진", promoKor);
-    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 바로 잡힘. {0} 승진은 안전하게 남음", promoKor);
-    else typeSentence = t("퀸이 아닌 {0} 승진. 흔치 않은 선택", promoKor);
+    if (reason === "stalemate") typeSentence = t("퀸으로 승진하면 상대가 둘 수 있는 합법수가 없어져 스테일메이트로 무승부가 되므로, 대신 {0:을/를} 골라 승진하는 수이다.", promoKor);
+    else if (reason === "safety") typeSentence = t("퀸으로 승진하면 곧바로 잡히지만 {0:은/는} 안전하게 남을 수 있어, 대신 {0:을/를} 골라 승진하는 수이다.", promoKor);
+    else typeSentence = t("퀸이 아닌 {0:을/를} 골라 승진하는, 흔치 않은 감각의 수이다.", promoKor);
   } else if (sub.type === "exchangeSac") {
-    typeSentence = t("{0:과/와} {1} 교환. 쉽지 않지만 이 상황에선 탁월한 선택", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
+    typeSentence = t("{0:과/와} {1:을/를} 교환하는 건 쉽지 않은 선택이지만, 지금 상황에선 탁월한 선택이다.", PIECE_KOR[sub.give], PIECE_KOR[sub.get]);
   } else if (sub.type === "neglect" && sub.piece) {
-    typeSentence = t("{0} 위협을 무시하고 더 큰 이득을 얻는 수", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 그대로 걸어 둔 채 그 위협을 무시하고, 대신 더 큰 이득을 얻어내는 수이다.", (PIECE_KOR[sub.piece]));
   } else if (sub.piece) {
-    typeSentence = t("{0} 희생. 눈앞의 손해를 감수하고 더 큰 것을 노림", (PIECE_KOR[sub.piece]));
+    typeSentence = t("{0:을/를} 내주는 과감한 희생으로, 눈앞의 손해를 감수하고 더 큰 것을 노리는 수이다.", (PIECE_KOR[sub.piece]));
   } else {
-    typeSentence = t("눈에 보이는 손해를 감수하고 더 큰 것을 노리는 수");
+    typeSentence = t("눈에 보이는 손해를 감수하면서까지 더 큰 것을 노리는, 찾기 쉽지 않은 수이다.");
   }
   let reasonSentence = null;
   if (alreadyLosing) {
@@ -172,12 +173,12 @@ async function brilliantExplain(engine, sansBeforeMove, san, color, alreadyLosin
       const drawSeek = await brilliantDrawSeekLine(engine, sansAfterMove, slot);
       if (drawSeek) {
         const endKor = lcLatin(drawSeek.end === "stalemate" ? t("스테일메이트") : t("3회 동형 반복"));
-        reasonSentence = t("이미 불리한 상황. {0} 수순으로 {1} 무승부를 강제", drawSeek.line.join(" "), endKor);
+        reasonSentence = t("이미 불리하던 상황에서 그대로 두면 계속 밀릴 뿐이라, {0} 수순으로 {1:을/를} 만들어 무승부를 강제해야 했던 수이다.", drawSeek.line.join(" "), endKor);
       }
     } catch { }
   }
   let text = reasonSentence ? typeSentence + ". " + reasonSentence + "." : typeSentence + ".";
-  if (notBest) text += t(" 엔진 최선은 아니지만 찾기 어려운 수.");
+  if (notBest) text += t("참고로 엔진이 고른 최선의 수는 아니지만, 찾기 힘든 감각적이고 탁월한 수이다.");
   return text;
 }
 // 나쁜 수(실수·블런더·놓친 기회) 다음 상대의 응징 수순 — 새 엔진 로직을 따로 만들지 않고 이미 있는
@@ -205,38 +206,6 @@ async function onlyMoveRefutation(engine, sansBeforeMove, plies = 2, fenRoot) {
     if (!continuation.length) return null;
     return { altSan: stripSuffix(altSan), continuation };
   } catch { return null; }
-}
-// (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
-// 돌려야 해 코치 카드에 자동으로 붙이지 못하고 온디맨드로 남겨 뒀던 항목) 지금 포지션에서 엔진이
-// 예상하는 이후 진행(PV)을 그대로 재생하면서, 같은 기물이 두 번 이상(=세 칸 이상 경로) 자리를
-// 옮기는 가지를 찾는다 — 여러 수에 걸쳐 목적지로 이동하는 "재배치 계획"의 가장 단순한 정의다.
-// PV 안에서 한 번이라도 이런 기물이 있으면 그중 가장 긴 경로를 고른다(여러 후보가 있으면 가장
-// 뚜렷한 계획일 가능성이 높다). 캐슬링은 킹·룩 두 기물이 동시에 움직여 "한 기물의 경로"로 보기
-// 애매하므로, 그 지점에서 진행 중이던 경로를 끊고 새 경로를 시작하지 않는다.
-function relocationPlanFromPv(fenRoot, prevSans, pvSans) {
-  let board = boardOfRoot(fenRoot, prevSans);
-  let color = colorOfRoot(fenRoot, prevSans.length);
-  const paths = new Map(); // 지금 그 기물이 있는 칸("r,c") -> { piece, color, squares:[sqName,...] }
-  let best = null;
-  for (const san of pvSans) {
-    const info = sanSrc(board, san, color);
-    if (!info) break;
-    if (info.castle) { board = applySan(board, san, color); color = color === "w" ? "b" : "w"; continue; }
-    const fromKey = info.from.join(","), toKey = info.to.join(",");
-    const prior = paths.get(fromKey);
-    const path = prior
-      ? { piece: prior.piece, color: prior.color, squares: [...prior.squares, sqName(info.to[0], info.to[1])] }
-      : { piece: info.piece, color, squares: [sqName(info.from[0], info.from[1]), sqName(info.to[0], info.to[1])] };
-    paths.delete(fromKey);
-    paths.set(toKey, path);
-    if (path.squares.length >= 3 && (!best || path.squares.length > best.squares.length)) best = path;
-    board = applySan(board, san, color);
-    color = color === "w" ? "b" : "w";
-  }
-  return best;
-}
-function relocationPlanPhrase(plan) {
-  return t("{0} 재배치 계획: {1}", (PIECE_KOR[plan.piece] || lcLatin(t("기물"))), plan.squares.join(" → "));
 }
 // (19차 기능3) 평가치 변동 그래프 — 백 승률 시퀀스를 영역으로 채우고 주요 수 위치에 색점 마커.
 // (v0.2.1 버그 수정) width="100%"·height="92"(고정 px)를 함께 쓰면, 컴퓨터 환경처럼 실제 렌더 폭이
@@ -341,17 +310,17 @@ function EvalGraph({ evalWin, moves, curPly, onJump }) {
 // 지킵니다")까지 자연어로 분석해 주지만, 그 수준의 맥락 분석 엔진은 이 세션 범위를 벗어난다 — 등급별로
 // 뜻이 통하는 일반적인 설명 템플릿을 여러 개 두고 ply로 순환시켜, 같은 등급이 반복돼도 문구가 안 겹치게 한다.
 const REVIEW_COACH_COPY = {
-  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: [t("기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수"), t("찾기 어려운 수를 정확히 찾아냄")] },
-  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: [t("엔진이 찾은 이 포지션의 가장 좋은 수"), t("정확한 수")] },
-  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: [t("다른 수는 크게 불리. 반드시 이 수"), t("이 수 외엔 답이 없음")] },
-  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: [t("최선은 아니지만 아주 좋은 선택"), t("이 포지션의 좋은 수 중 하나")] },
-  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: [t("무난하고 안정적인 수"), t("포지션을 잘 유지하는 수")] },
-  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: [t("오래 검증된 정석 수"), t("책에 나오는 잘 알려진 수")] },
-  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: [t("더 나은 수가 있음. 큰 손해는 아니지만 아쉬움"), t("포지션이 살짝 나빠짐")] },
-  miss: { head: t(" : 기회를 놓침"), mascot: ["kokoa", "surprise"], body: [t("상대 실수를 응징할 기회를 활용하지 못함"), t("더 강한 수가 있었음")] },
-  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: [t("포지션이 눈에 띄게 나빠짐"), t("더 나은 대안이 있었음")] },
-  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: [t("크게 불리해짐"), t("포지션이 크게 무너짐")] },
-  pending: { head: "", mascot: ["milku", "think"], body: [t("아직 분석되지 않은 수")] },
+  brilliant: { head: t(": 탁월한 수"), mascot: ["kokoa", "celebrate"], body: [t("기물을 내주는 위험을 감수했지만 정확히 계산된 최고의 수이다."), t("찾기 어려운 수를 정확히 찾아냈다.")] },
+  best: { head: t(": 최선의 수"), mascot: ["milku", "great"], body: [t("엔진이 찾은 이 포지션의 가장 좋은 수이다."), t("정확한 수")] },
+  only: { head: t(": 유일한 수"), mascot: ["milku", "surprise"], body: [t("다른 수는 크게 불리하며, 반드시 이 수를 두어야 한다."), t("이 수 외에는 답이 없다.")] },
+  excellent: { head: t(": 우수한 수"), mascot: ["milku", "wink"], body: [t("최선은 아니지만 아주 좋은 선택이다."), t("이 포지션에서 둘 만한 좋은 수 가운데 하나이다.")] },
+  good: { head: t(": 좋은 수"), mascot: ["milku", "great"], body: [t("무난하고 안정적인 수이다."), t("포지션을 잘 유지하는 수이다.")] },
+  book: { head: t(": 이론 수"), mascot: ["milku", "wink"], body: [t("오래 검증된 정석 수이다."), t("책에 나오는 잘 알려진 수이다.")] },
+  inaccuracy: { head: t(": 부정확한 수"), mascot: ["kokoa", "think"], body: [t("더 나은 수가 있다. 큰 손해는 아니지만 아쉬운 수이다."), t("포지션이 약간 나빠졌다.")] },
+  miss: { head: t(": 기회를 놓침"), mascot: ["kokoa", "surprise"], body: [t("상대의 실수를 응징할 기회를 활용하지 못했다."), t("더 강한 수가 있었다.")] },
+  mistake: { head: t(": 실수"), mascot: ["kokoa", "surprise"], body: [t("포지션이 눈에 띄게 나빠졌다."), t("더 나은 대안이 있었다.")] },
+  blunder: { head: t(": 블런더"), mascot: ["kokoa", "angry"], body: [t("크게 불리해짐"), t("포지션이 크게 무너졌다.")] },
+  pending: { head: "", mascot: ["milku", "think"], body: [t("아직 분석되지 않은 수이다.")] },
 };
 // (기능) MEC(mecFactsArr)·punishLine·brilliantNote·onlyRefutation의 근거를 코멘트에 덧붙인다 —
 // Stockfish 등급(m.kind) 자체는 바꾸지 않는다. 정석 수(book)만 제외하고 모든 등급에 적용한다
@@ -366,11 +335,11 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   let body = (m.kind === "brilliant" && brilliantNote) ? brilliantNote : c.body[m.ply % c.body.length];
   if (m.kind !== "book") {
     const extra = [];
-    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push(t("상대 응징 수순: {0}", punishLine.join(" ")));
+    if (m.kind === "blunder" && punishLine && punishLine.length) extra.push(t("상대의 응징 수순은 {0}이다.", punishLine.join(" ")));
     // 유일한 수: "다른 수는 안 돼요"로 끝내지 않고, 실제 2순위 후보를 뒀다면 상대가 어떻게
     // 응징하는지(onlyRefutation)까지 — 이게 없으면(엔진 계산 실패 등) 조용히 생략한다.
     if (m.kind === "only" && onlyRefutation) {
-      extra.push(t("{0} 등 다른 수는 상대의 {1} 응징으로 불리해짐", onlyRefutation.altSan, onlyRefutation.continuation.join(" ")));
+      extra.push(t("{0} 등 다른 수는 상대의 {1} 응징으로 불리해진다.", onlyRefutation.altSan, onlyRefutation.continuation.join(" ")));
     }
     if (extra.length) body = body + " " + extra.join(" ");
   }
@@ -382,7 +351,9 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
   const name = m.white ? "milku" : "kokoa";
-  return { headline: stripSuffix(m.san) + c.head, body, mecLine, mascot: [name, emo] };
+  // (v0.7.2) 제목 맨 앞에 수 번호를 붙인다(백 "10.Na4", 흑 "10...Na4"). 시작 진영은 이 수의 ply 홀짝과 둔 쪽으로 알아낸다.
+  const startColor = ((m.ply % 2 === 0) === !!m.white) ? "w" : "b";
+  return { headline: moveNumber(m.ply, startColor) + stripSuffix(m.san) + c.head, body, mecLine, mascot: [name, emo] };
 }
 // (v0.2.1 기능) reviewPlayerInfo의 name은 데이터가 없을 때 "백"/"흑"/"나"/"상대" 같은 표시용 대체
 // 문구로 채워지므로, chess.com 아바타를 조회할 진짜 아이디는 이 함수로 따로 뽑는다 — game.white/black에
@@ -756,7 +727,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow, onShowPlan, planLoading, planText, canShowPlan }) {
+function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -787,25 +758,16 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
                 : threatDetail ? () => onThreatClick && onThreatClick(threatDetail)
                 : preventDetail ? () => onPreventClick && onPreventClick(preventDetail)
                 : connectDetail ? () => onConnectClick && onConnectClick(connectDetail)
+                : tacticDetail ? () => onTacticClick && onTacticClick(tacticDetail)
                 : null}
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
           )}
-          {/* (신규 기능) "재배치 계획" 온디맨드 결과 — 매 수 자동으로 엔진을 돌리기엔 비용이 커서
-              버튼을 눌러야만 계산한다(README v0.4.9 개발자 기록에 남겨 뒀던 항목). */}
-          {move.kind !== "book" && (planLoading || planText) && (
-            <p style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4, fontStyle: planLoading ? "italic" : "normal" }}>
-              {planLoading ? t("재배치 계획 분석 중…") : planText}
-            </p>
-          )}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
-        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> Show</button>
-        {onShowPlan && move.kind !== "book" && (
-          <button onClick={onShowPlan} disabled={!canShowPlan || planLoading || !!planText} title={t("엔진으로 재배치 계획 찾기")} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: "transparent", color: canShowPlan ? RV.text : RV.dim, cursor: canShowPlan && !planLoading && !planText ? "pointer" : "default", fontSize: 10 }}>{tx("{0} 계획", <Route size={narrow ? 13 : 16} />)}</button>
-        )}
-        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : "Next"}</button>
+        <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> {t("보기")}</button>
+        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : t("다음")}</button>
       </div>
     </div>
   );
@@ -1579,7 +1541,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // "정확하게"를 고른 경우엔 movetime 예산 자체도 비례해 늘린다.
   // (v0.7.1, 사용자 요청) 속도 3단계(더 빠르게 15·평균 20·더 정확하게 25), 빠른 리뷰(quick)면 15 고정 — reviewDepthFor(lib/prefs.js).
   const reviewDepth = reviewDepthFor(reviewSpeed, quick);
-  const reviewMovetimeMs = !quick && reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
+  const reviewMovetimeMs = quick ? QUICK_REVIEW_MOVETIME_MS : reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
   const narrow = useNarrow(760);
   // (v0.3.8 기능) 새로고침해도 이어보기 — reviewStorageKey 참고. 마운트 시 한 번만 읽으면 되므로
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
@@ -1616,6 +1578,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // 보여줄 데이터조차 없을 수 있는 구간) 시각적 주의를 끌기 위한 1회성 체스보드 연출
   // (ReviewBoardIntroAnim) — introRevealDone과 같은 패턴으로 sessionStorage에 시청 여부를 남겨,
   // 새로고침·이어보기에서는 다시 재생하지 않는다.
+  const [quickIntroDone, setQuickIntroDone] = useState(false); // (v0.7.2) 빠른 리뷰 진입 연출(OPEN) 종료 여부
   const [boardIntroDone, setBoardIntroDone] = useState(() => !!quick || !!(savedPos && savedPos.boardIntroSeen)); // (v0.7.1) 빠른 리뷰는 보드 진입 연출 생략
   const [showingLine, setShowingLine] = useState(false);
   // (v0.2.1 기능) 리뷰 보드에서 직접 원하는 수를 둘 수 있게 하되, 그 수는 실제 대국 기보가 아니므로
@@ -2018,7 +1981,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     if (!activeMove || activeMove.kind === "book") return [];
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
-      return [mecPick([t("체크메이트 강제 수순. 메이트까지 {0}수", n), t("체크메이트 수순 진입. {0}수 뒤 체크메이트", n), t("메이트 {0}수 전. 체크메이트로 끝나는 강제 수순", n)], effSans.length)];
+      return [mecPick([t("체크메이트로 몰아가는 강제 수순이며, 메이트까지 {0}수 남았다.", n), t("이제부터는 체크메이트 수순이다. {0}수 뒤에 체크메이트이다.", n), t("메이트 {0}수 전이며, 체크메이트로 끝나는 강제 수순이다.", n)], effSans.length)];
     }
     try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
   }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
@@ -2036,36 +1999,9 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // facts[0]으로 뽑을 때 함께 채워 준다("위협"/"위협 대처"/"과보호"/"예방 수"/"연결"/"중첩"/"수비자
   // 제거"). 문장 전체가 아니라 이 단어 하나만 밑줄이 그어지고 클릭 가능해야 한다.
   const mecKeyword = mecThreatOut.current.keyword || null;
-  // (신규 기능, README v0.4.9 개발자 기록 — "여러 수에 걸친 기물 재배치 계획"은 매 수 엔진을 새로
-  // 돌려야 해 자동으로 못 붙이고 온디맨드로 남겨 뒀던 항목) 코치 카드의 "재배치 계획" 버튼을 눌러야만
-  // 지금 포지션에서 멀티PV 1줄을 새로 돌려 relocationPlanFromPv로 분석한다 — 같은 포지션(effSans
-  // 문자열 그대로를 키로 씀, exploring 중인 자유 탐색 위치도 자연히 구분된다)을 다시 봐도 재요청하지
-  // 않도록 결과를 캐시한다.
-  const planKey = effSans.join(" ");
-  const [planByKey, setPlanByKey] = useState({}); // key -> { loading, plan (null=계획 없음, undefined=아직 안 물어봄) }
-  const planEntry = planByKey[planKey];
-  // (코드 리뷰 지적 반영) 버튼을 누른 뒤 응답이 오기 전에 화면을 벗어나면(ReviewPage 언마운트) 이
-  // 컴포넌트의 setPlanByKey가 그대로 불려 "언마운트된 컴포넌트에 상태 갱신" 경고가 났다 — 이 파일의
-  // 다른 비동기 엔진 호출들(예: 657·11367행 근처)과 같은 패턴으로 마운트 여부를 ref로 추적한다.
-  const planMountedRef = useRef(true);
-  useEffect(() => () => { planMountedRef.current = false; }, []);
-  const onShowPlan = useCallback(async () => {
-    if (!engine || engine.status !== "ready" || planByKey[planKey]) return;
-    setPlanByKey((m) => ({ ...m, [planKey]: { loading: true, plan: undefined } }));
-    try {
-      const pvs = await engine.evaluateMulti(fenOfRoot(fenRoot, effSans), REVIEW_DEPTH, 1, REVIEW_MOVETIME_MS);
-      if (!planMountedRef.current) return;
-      const pv = pvs && pvs[0];
-      const pvSans = pv && pv.pv ? pvUciToSans(effSans, pv.pv, 10, fenRoot) : [];
-      const plan = pvSans.length ? relocationPlanFromPv(fenRoot, effSans, pvSans) : null;
-      setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: plan || null } }));
-    } catch {
-      if (planMountedRef.current) setPlanByKey((m) => ({ ...m, [planKey]: { loading: false, plan: null } }));
-    }
-  }, [engine, effSans, fenRoot, planKey, planByKey]);
-  const planText = planEntry && !planEntry.loading
-    ? (planEntry.plan ? relocationPlanPhrase(planEntry.plan) : t("뚜렷한 재배치 계획 없음"))
-    : null;
+  // (v0.7.2) 이 수가 만든 전술(포크·핀·스큐어 등)의 연출 데이터 — 용어를 누르면 playTacticAnimation이 전술별 화살표를 그린다. 상대가 얻는 전술·놓친 수는 문장만 보여 준다.
+  const tacticRaw = mecThreatOut.current.tactic || null;
+  const tacticDetail = tacticRaw && mecKeyword && !String(tacticRaw.kind).startsWith("reply:") && tacticRaw.kind !== "pinnedMove" ? tacticRaw : null;
   // (R7 기능, 과보호까지 재사용) "위협"·"과보호" 코멘트를 클릭하면 공격자 화살표를 하나씩, 이어서
   // 수비자 화살표를 하나씩 순서대로 보여주고, 다 보여준 뒤 1초 더 있다가 한꺼번에 지운다. 예방 수는
   // 구조가 달라서(공격자 1개→수비자 1개로 교체되는 느낌을 내야 함) 공격자를 보여준 뒤 그 공격자를
@@ -2076,9 +2012,29 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // (신규) 수비자 제거 애니메이션의 1단계("수를 두기 전 포지션으로 되돌리기")용 — 값이 있는 동안
   // 보드에 이 포지션을 표시하고, null이면 평소대로 현재 수(activeMove)까지 둔 포지션을 보여준다.
   const [rdBoardOverride, setRdBoardOverride] = useState(null);
+  const [slideMove, setSlideMove] = useState(null); // (v0.7.2) 연출 중 이 수의 기물이 출발 칸에서 도착 칸으로 미끄러지는 오버레이
   const threatTimers = useRef([]);
   const clearThreatTimers = () => { threatTimers.current.forEach(clearTimeout); threatTimers.current = []; };
-  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); return clearThreatTimers; }, [activeMove, effSans]);
+  useEffect(() => { clearThreatTimers(); setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); setSlideMove(null); return clearThreatTimers; }, [activeMove, effSans]);
+  // (v0.7.2) 이 수의 기물 이동 모션 — 이 수를 두기 전 포지션에서 움직인 기물만 뺀 보드를 깔고, 그 기물이 출발 칸에서 도착 칸으로 미끄러지게 한다.
+  // 돌려주는 값은 모션이 끝나기까지 걸리는 시간(ms). 모션을 만들 수 없으면(캐슬링 등으로 출발 칸을 못 구함) 0.
+  // 호출한 쪽이 이 시간이 지나면 endMoveSlide()로 보드를 이 수를 둔 뒤 포지션으로 돌린다.
+  const MOVE_SLIDE_MS = 520;
+  const beginMoveSlide = () => {
+    try {
+      const prev = boardOfRoot(fenRoot, effSans.slice(0, -1));
+      const info = sanSrc(prev, activeMove.san, activeMove.white ? "w" : "b");
+      if (!info || !info.from || !info.to) return 0;
+      const piece = prev[info.from[0]][info.from[1]];
+      if (!piece) return 0;
+      const hidden = prev.map((r) => r.slice());
+      hidden[info.from[0]][info.from[1]] = null;
+      setRdBoardOverride(hidden);
+      setSlideMove({ from: info.from, to: info.to, piece, key: Date.now(), ms: MOVE_SLIDE_MS });
+      return MOVE_SLIDE_MS + 140;
+    } catch { return 0; }
+  };
+  const endMoveSlide = () => { setRdBoardOverride(null); setSlideMove(null); };
   const playThreatAnimation = (detail) => {
     clearThreatTimers();
     setHaloSquares([]);
@@ -2087,10 +2043,12 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
       ...detail.defenders.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatDefender" })),
     ];
     setThreatArrows([]);
+    const base = beginMoveSlide(); // 이 수로 기물이 움직이는 모습부터 보여 준 뒤 화살표를 그린다
+    if (base) threatTimers.current.push(setTimeout(endMoveSlide, base));
     steps.forEach((arrow, i) => {
-      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
+      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), base + i * 450));
     });
-    threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([]), base + steps.length * 450 + 1000));
   };
   // (기능) 예방 수 애니메이션 — 금색 테두리로 방어 대상 칸을 밝히고, 상대의 진입 경로를 빨간 공격자
   // 화살표로 먼저 보여준 뒤, 그 화살표가 옅게 사라지는 것과 동시에(fading) 내 응수 경로를 초록
@@ -2106,6 +2064,39 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     threatTimers.current.push(setTimeout(() => setThreatArrows([{ ...attacker, fading: true }, defender]), 950));
     threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, 2400));
   };
+  // (v0.7.2) 전술 연출 — 전술마다 다른 모양으로 보여 준다. 빨간 실선=공격, 주황 점선=뒤에 묶인·관통되는 기물, 파란 점선=방금 비킨 이동, 초록 점선=다음 수·진행 방향, 금색 테두리=핵심 칸.
+  const playTacticAnimation = (detail) => {
+    clearThreatTimers();
+    setThreatArrows([]); setHaloSquares([]);
+    const base = beginMoveSlide(); // 먼저 이 수로 기물이 출발 칸에서 도착 칸으로 움직이는 모션을 보여 준다
+    if (base) threatTimers.current.push(setTimeout(endMoveSlide, base));
+    const rc = (sq) => [8 - parseInt(sq[1], 10), "abcdefgh".indexOf(sq[0])];
+    const RED = T.danger || "#D9736A", ORANGE = "#E0995F", BLUE = "#6FA8DC", GREEN = T.good || "#8FB55E", GOLD = T.brassHi || "#ECCB86";
+    const ar = (from, to, color, dash) => ({ arrow: { from: rc(from), to: rc(to), kind: "tactic", color, dash: !!dash } });
+    const ha = (...sqs) => ({ halos: sqs.map(rc) });
+    const q = detail.squares || {};
+    let steps = [];
+    switch (detail.kind) {
+      case "fork": steps = [ha(...q.targets), ...q.targets.map((tg) => ar(q.to, tg, RED))]; break;
+      case "pinAbs": case "pinRel": steps = [ha(q.x), ar(q.s, q.x, RED), { ...ar(q.x, q.y, ORANGE, true), ...ha(q.x, q.y) }]; break;
+      case "skewer": steps = [ar(q.s, q.x, RED), { ...ar(q.x, q.y, ORANGE, true), ...ha(q.y) }]; break;
+      case "discoveredAttack": steps = [ha(q.slider), { ...ar(q.slider, q.target, RED), ...ha(q.slider, q.target) }]; break;
+      case "discoveredCheck": steps = [ha(q.king), ar(q.checker, q.king, RED)]; break;
+      case "doubleCheck": steps = [ha(q.king), ...q.checkers.map((c) => ar(c, q.king, RED))]; break;
+      case "backRank": steps = [ha(q.king), ar(q.to, q.king, RED)]; break;
+      case "mateThreat": steps = [ha(q.king), ar(q.mateFrom, q.mateTo, GREEN, true)]; break;
+      case "promotion": steps = [ha(q.to)]; break;
+      case "passedPawn": steps = [ha(q.to), ar(q.to, q.goal, GREEN, true)]; break;
+      default: return;
+    }
+    steps.forEach((st, i) => {
+      threatTimers.current.push(setTimeout(() => {
+        if (st.halos) setHaloSquares(st.halos);
+        if (st.arrow) setThreatArrows((prev) => [...prev, st.arrow]);
+      }, base + 200 + i * 480));
+    });
+    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); }, base + 200 + steps.length * 480 + 1600));
+  };
   // (기능) 연결/중첩 애니메이션 — 서로 지켜주는 두 기물 사이를 수비자(초록) 화살표로 양방향
   // 순서대로 보여준다(R7과 같은 순차 등장 패턴, 색만 둘 다 수비자).
   const playConnectAnimation = (detail) => {
@@ -2116,10 +2107,12 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
       { from: detail.sqB, to: detail.sqA, kind: "threatDefender" },
     ];
     setThreatArrows([]);
+    const base = beginMoveSlide();
+    if (base) threatTimers.current.push(setTimeout(endMoveSlide, base));
     steps.forEach((arrow, i) => {
-      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), i * 450));
+      threatTimers.current.push(setTimeout(() => setThreatArrows((prev) => [...prev, arrow]), base + i * 450));
     });
-    threatTimers.current.push(setTimeout(() => setThreatArrows([]), steps.length * 450 + 1000));
+    threatTimers.current.push(setTimeout(() => setThreatArrows([]), base + steps.length * 450 + 1000));
   };
   // (신규) 수비자 제거 애니메이션 — 사용자 요청 3단계: ① 이 수를 두기 전 포지션으로 되돌려서 공짜로
   // 잡힐 기물에 대한 공격자·수비자 화살표를 함께 보여준다. ② 잠시 뒤 수비자를 제거하는 실제 수를
@@ -2131,11 +2124,16 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     setHaloSquares([detail.targetSq]);
     const attackerArrows = detail.attackers.map((sq) => ({ from: sq, to: detail.targetSq, kind: "threatAttacker" }));
     const defenderArrow = { from: detail.defenderSq, to: detail.targetSq, kind: "threatDefender" };
-    setRdBoardOverride(boardFromSans(effSans.slice(0, -1)));
+    setRdBoardOverride(boardOfRoot(fenRoot, effSans.slice(0, -1)));
     setThreatArrows([...attackerArrows, defenderArrow]);
-    threatTimers.current.push(setTimeout(() => setRdBoardOverride(null), 900));
-    threatTimers.current.push(setTimeout(() => setThreatArrows([...attackerArrows, { ...defenderArrow, fading: true }]), 1050));
-    threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); setRdBoardOverride(null); }, 2400));
+    // 900ms 동안 이 수를 두기 전 포지션을 보여 준 뒤, 수비자를 제거하는 기물이 실제로 미끄러져 도착하는 모션을 재생한다.
+    threatTimers.current.push(setTimeout(() => {
+      const d = beginMoveSlide();
+      if (!d) { setRdBoardOverride(null); return; }
+      threatTimers.current.push(setTimeout(endMoveSlide, d));
+      threatTimers.current.push(setTimeout(() => setThreatArrows([...attackerArrows, { ...defenderArrow, fading: true }]), d + 150));
+      threatTimers.current.push(setTimeout(() => { setThreatArrows([]); setHaloSquares([]); endMoveSlide(); }, d + 1500));
+    }, 900));
   };
   // (기능) 탁월한 수 — 유형(직접 희생/방치 희생/언더프로모션) + 엔진 PV 근거를 하나의 글로 엮은
   // 설명(brilliantExplain, 엔진 필요, 비동기). 두기 전 평가(bestCp)가 이미 마이너스면(mover 관점)
@@ -2335,20 +2333,12 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // resultDone이 되는 즉시(REVEAL_HOLD_MS로 더 붙잡지 않고) onDone이 불려 다음 화면으로 곧장 넘어간다
   // — "이미 본 적 있는 리뷰는 애니메이션을 다시 재생하지 않는다"는 원래 의도는 그대로 유지된다.
   // (v0.7.1, 사용자 요청) 빠른 리뷰 — 보드 연출·그래프 연출 없이 진행 막대만 보여 주다가, 분석이 끝나는 즉시 리뷰 화면으로 넘어간다.
-  if (quick && (!resultDone || !result)) {
-    const pct = sans.length ? Math.round((gradedCount / sans.length) * 100) : 0;
+  if (quick && (!resultDone || !result || !quickIntroDone)) {
     return (
       <div style={{ ...wrap, display: "flex", flexDirection: "column" }}>
         {header}
-        <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ width: "100%", maxWidth: 300, textAlign: "center" }}>
-            <div className="flex items-center justify-center gap-2" style={{ color: RV.text, fontSize: 14, fontWeight: 800, marginBottom: 12 }}><PendingDots size={12} />{t("빠른 리뷰 분석 중")}</div>
-            <div style={{ height: 6, borderRadius: 3, background: RV.panel, border: "1px solid " + RV.border, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: pct + "%", background: "linear-gradient(90deg," + T.brass + "," + T.brassHi + ")", transition: "width .2s linear" }} />
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: RV.soft, fontFamily: SITE_FONT }}>{gradedCount} / {sans.length}, depth {reviewDepth}</div>
-          </div>
-        </div>
+        <QuickReviewIntro done={!!(resultDone && result)} gradedCount={gradedCount} total={sans.length} depth={reviewDepth} label={t("빠른 리뷰 분석 중")}
+          colors={{ text: RV.text, soft: RV.soft, panel: RV.panel, border: RV.border, brass: T.brass, brassHi: T.brassHi }} onDone={() => setQuickIntroDone(true)} />
       </div>
     );
   }
@@ -2383,13 +2373,13 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
+                <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
                   boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
@@ -2425,7 +2415,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               동일하게 그 보드 칸(막대 제외)에 붙어 실제 렌더된 폭을 재고, useBoardSize가 8px 격자에
               맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
+            <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
               boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
           </div>
@@ -2446,7 +2436,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
               전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} onShowPlan={onShowPlan} planLoading={!!(planEntry && planEntry.loading)} planText={planText} canShowPlan={!!engine && engine.status === "ready"} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
           </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (

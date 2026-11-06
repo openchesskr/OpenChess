@@ -7,6 +7,7 @@
  *  npm run build 전에 prebuild로 자동 실행된다. 실행: node scripts/check-review-speed.mjs
  */
 import { readFileSync } from "node:fs";
+const common0 = readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8");
 const store = new Map();
 globalThis.window = { localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) } };
 const P = await import("../src/lib/prefs.js");
@@ -18,6 +19,9 @@ eq("빠른 리뷰는 15 고정", P.REVIEW_SPEEDS.map((s) => P.reviewDepthFor(s, 
 eq("빠른 리뷰 끄면 선택한 속도", P.REVIEW_SPEEDS.map((s) => P.reviewDepthFor(s, false)), [15, 20, 25]);
 eq("모르는 값은 평균", P.reviewDepthFor("weird", false), 20);
 eq("빠른 리뷰 엔진", P.QUICK_REVIEW_ENGINE, "lite");
+// (v0.7.2) 빠른 리뷰는 포지션당 시간 상한도 표준(REVIEW_MOVETIME_MS)보다 짧아야 하고, 너무 짧아 depth 15를 못 채우지 않도록 하한을 둔다
+const mt = /export const REVIEW_MOVETIME_MS = (\d+);/.exec(common0);
+eq("빠른 리뷰 시간 상한 < 표준", P.QUICK_REVIEW_MOVETIME_MS < (mt ? Number(mt[1]) : 0) && P.QUICK_REVIEW_MOVETIME_MS >= 400, true);
 const common = readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8");
 const m = /export const REVIEW_DEPTH = (\d+);/.exec(common);
 eq("평균 depth = REVIEW_DEPTH", P.REVIEW_SPEED_DEPTH.normal, m ? Number(m[1]) : null);

@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'learn' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
+import { LOOP } from "../lib/perfMode.js";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
@@ -763,7 +764,7 @@ function QuestTag({ onClick }) {
       style={{ position: "absolute", top: -8, left: -8, width: W, height: H, padding: 0, border: "none", background: "transparent", zIndex: 5, cursor: onClick ? "pointer" : "default", transformOrigin: H / 2 + "px 50%", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.38))" }}>
       {/* 손짓 1 — 아이콘 뒤에서 퍼져 나가며 옅어지는 금빛 고리(알약·아이콘 아래에 깔려 왼쪽·위·아래로만 보인다) */}
       <motion.span initial={{ opacity: 0, transform: "scale(1)" }} animate={{ opacity: [0.9, 0], transform: ["scale(1)", "scale(1.9)"] }}
-        transition={{ duration: QUEST_PING_DUR, delay: QUEST_IDLE_START, ease: "easeOut", repeat: Infinity, repeatDelay: QUEST_IDLE_PERIOD - QUEST_PING_DUR }}
+        transition={{ duration: QUEST_PING_DUR, delay: QUEST_IDLE_START, ease: "easeOut", repeat: LOOP(), repeatDelay: QUEST_IDLE_PERIOD - QUEST_PING_DUR }}
         style={{ position: "absolute", left: 0, top: 0, width: H, height: H, borderRadius: "50%", border: "2px solid " + T.brassHi, boxSizing: "border-box", willChange: "transform, opacity" }} />
       {/* 펼쳐지는 알약 — 왼쪽(아이콘 뒤)에 말려 있다가 clipPath로 오른쪽까지 드러난다 */}
       <motion.span initial={{ clipPath: clipClosed }} animate={{ clipPath: clipOpen }} transition={{ duration: D, delay: R, ease: [0.3, 0.7, 0.3, 1] }}
@@ -776,7 +777,7 @@ function QuestTag({ onClick }) {
           style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 10, borderRadius: 999, background: "linear-gradient(90deg,#6E5424 0%," + T.brassHi + " 45%,#FFF6DE 55%,#8A6C2F 100%)", willChange: "transform, opacity" }} />
         {/* 손짓 2 — 고리가 퍼진 직후 알약 위를 왼쪽에서 오른쪽으로 스치는 비스듬한 빛줄기(알약 overflow로 잘린다) */}
         <motion.span initial={{ transform: "translateX(-20px) skewX(-22deg)" }} animate={{ transform: ["translateX(-20px) skewX(-22deg)", "translateX(" + (W + 6) + "px) skewX(-22deg)"] }}
-          transition={{ duration: QUEST_SHINE_DUR, delay: QUEST_IDLE_START + QUEST_SHINE_LAG, ease: [0.45, 0, 0.35, 1], repeat: Infinity, repeatDelay: QUEST_IDLE_PERIOD - QUEST_SHINE_DUR }}
+          transition={{ duration: QUEST_SHINE_DUR, delay: QUEST_IDLE_START + QUEST_SHINE_LAG, ease: [0.45, 0, 0.35, 1], repeat: LOOP(), repeatDelay: QUEST_IDLE_PERIOD - QUEST_SHINE_DUR }}
           style={{ position: "absolute", left: 0, top: -2, bottom: -2, width: 14, background: "linear-gradient(90deg, rgba(255,248,225,0) 0%, rgba(255,248,225,.9) 50%, rgba(255,248,225,0) 100%)", pointerEvents: "none", willChange: "transform" }} />
       </motion.span>
       {/* 아이콘 원 */}

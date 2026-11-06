@@ -3709,19 +3709,31 @@ grant execute on function public.profile_recent_games(uuid, int, int) to anon, a
 --
 -- 계정 탈퇴만 별도 SQL 함수가 필요하다 — auth.users 삭제는 REST(PostgREST)로 직접 열 수 없고
 -- (그 테이블은 애초에 REST에 노출되지 않는다), Admin API(서비스 롤 키)는 클라이언트에 절대 노출하면
--- 안 되므로, "본인 행만" 지우는 SECURITY DEFINER 함수로 우회한다. 이 함수는 SQL Editor에서 만들면
+-- 안 되므로, SECURITY DEFINER 함수로 우회한다. 이 함수는 SQL Editor에서 만들면
 -- 소유자가 postgres(Supabase가 auth 스키마에 대한 권한을 이미 준 역할)가 되므로, authenticated로는
 -- 원래 불가능한 auth.users delete가 함수 안에서는 가능하다. profiles/pvp_games/chat_messages 등
 -- 이 프로젝트의 모든 사용자 데이터 테이블이 auth.users(id)를 on delete cascade로 참조하고 있으므로
 -- (일부 "작성자" 컬럼만 on delete set null로 콘텐츠 자체는 남긴다 — 예: puzzles.creator_uid), 이
--- 한 번의 삭제로 계정과 관련 데이터가 함께 정리된다. 되돌릴 수 없다 — 클라이언트에서 반드시 확인
--- 절차(아이디 입력 등)를 거친 뒤에만 호출해야 한다.
+-- 한 번의 삭제로 계정과 관련 데이터가 함께 정리된다. 되돌릴 수 없다.
+--
+-- (v0.7.2) 탈퇴는 즉시 삭제가 아니라 1주 유예 뒤 말소다.
+--   · request_account_deletion(): 본인 프로필에 deletion_scheduled_at = 지금 + 7일을 기록한다. 진행 중인 대국은 이때 기권 처리한다(상대가 일주일을 기다리지 않게).
+--   · 유예 중에는 프로필이 다른 사람에게 보이지 않는다(profiles select 정책). 본인은 다시 로그인해 cancel_account_deletion()으로 취소할 수 있다.
+--   · purge_due_account_deletions(): pg_cron이 매시간 실행해 기한이 지난 계정을 _erase_account로 말소한다(아래 pg_cron 블록).
+--   · deletion_scheduled_at은 클라이언트가 직접 바꿀 수 없다(_profiles_pub_guard가 되돌린다) — 위 세 함수만 바꾼다.
+alter table public.profiles add column if not exists deletion_scheduled_at timestamptz;
+create index if not exists idx_profiles_deletion_scheduled on public.profiles (deletion_scheduled_at) where deletion_scheduled_at is not null;
+-- 유예 중인 계정은 본인 외에는 프로필을 볼 수 없다.
+drop policy if exists "profiles select all" on public.profiles;
+create policy "profiles select all" on public.profiles for select using (deletion_scheduled_at is null or id = auth.uid());
 drop function if exists public.delete_own_account() cascade;
-create or replace function public.delete_own_account()
+-- 실제 말소(되돌릴 수 없음) — 내부 전용(_로 시작해 service_role만 실행). request·purge 함수만 이 함수를 부른다.
+drop function if exists public._erase_account(uuid) cascade;
+create or replace function public._erase_account(p_uid uuid)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_me uuid := auth.uid();
+declare v_me uuid := p_uid;
 begin
-  if v_me is null then raise exception 'auth required'; end if;
+  if v_me is null then raise exception 'uid required'; end if;
   -- (v0.6.4, BUG-061) 진행 중인 대국은 지우기 전에 기권 처리한다 — 그대로 지우면 상대 화면에서 대국이 아무 결과 없이 사라지고 레이팅·전적에도 반영되지 않는다.
   -- 상태를 바꾸는 update가 결과 집계 트리거(_minigame_on_game_end)를 거치므로 상대는 정상적인 승리로 기록된다. (대국 행 자체는 아래 삭제의 cascade로 지워진다.)
   update public.pvp_games
@@ -3732,7 +3744,50 @@ begin
   delete from public.puzzles where creator_uid = v_me;
   delete from auth.users where id = v_me;
 end; $$;
-grant execute on function public.delete_own_account() to authenticated;
+-- 탈퇴 요청 — 유예 기한(지금 + 7일)을 돌려준다. 이미 요청했다면 처음 기한을 그대로 돌려준다(다시 눌러도 기한이 늘어나지 않는다).
+create or replace function public.request_account_deletion()
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_at timestamptz;
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  -- 진행 중인 대국은 지금 기권 처리한다(결과 집계 트리거를 거쳐 상대는 정상 승리로 기록된다).
+  update public.pvp_games
+     set status = case when white_uid = v_me then 'black_won' else 'white_won' end, updated_at = now()
+   where status = 'active' and (white_uid = v_me or black_uid = v_me);
+  perform set_config('oc.allow_deletion_flag', '1', true);
+  update public.profiles set deletion_scheduled_at = coalesce(deletion_scheduled_at, now() + interval '7 days')
+   where id = v_me returning deletion_scheduled_at into v_at;
+  if v_at is null then raise exception 'profile required'; end if;
+  return v_at;
+end; $$;
+-- 탈퇴 취소 — 유예 중에 다시 로그인한 본인만.
+create or replace function public.cancel_account_deletion()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid();
+begin
+  if v_me is null then raise exception 'auth required'; end if;
+  perform set_config('oc.allow_deletion_flag', '1', true);
+  update public.profiles set deletion_scheduled_at = null where id = v_me;
+end; $$;
+-- 내 탈퇴 예정 시각(없으면 null).
+create or replace function public.my_account_deletion()
+returns timestamptz language sql stable security definer set search_path = public as $$
+  select deletion_scheduled_at from public.profiles where id = auth.uid();
+$$;
+-- 기한이 지난 계정을 말소한다 — pg_cron 전용(목록에 없어 service_role만 실행). 한 계정이 실패해도 나머지는 계속한다. 말소한 계정 수를 돌려준다.
+create or replace function public.purge_due_account_deletions()
+returns int language plpgsql security definer set search_path = public as $$
+declare r record; n int := 0;
+begin
+  for r in select id from public.profiles where deletion_scheduled_at is not null and deletion_scheduled_at <= now() order by deletion_scheduled_at limit 100 loop
+    begin
+      perform public._erase_account(r.id); n := n + 1;
+    exception when others then
+      raise warning 'account purge failed for %: %', r.id, sqlerrm;
+    end;
+  end loop;
+  return n;
+end; $$;
 -- (v0.6.4, BUG-061) 위 수정 이전에 탈퇴한 계정이 남긴 작성자 아이디 정리 — 작성자(creator_uid)가 비었는데 아이디만 남은 퍼즐 중, 그 아이디를 쓰는 현재 계정이 없는 것은 탈퇴 계정의 흔적이다.
 update public.puzzles set creator_username = null
  where creator_uid is null and creator_username is not null and creator_username <> ''
@@ -4549,7 +4604,13 @@ declare v_xp bigint; v_pub jsonb := coalesce(new.pub, '{}'::jsonb);
 begin
   -- (v0.7.0 보안 BUG-125) 아이디는 가입 때 정해지면 바꿀 수 없다 — 예전에는 본인 프로필 update로 아이디를 마음대로 바꿀 수 있어, 개발자/공동개발자 판정(아이디 기준)을
   -- 노리고 아직 가입하지 않은 공동개발자 아이디로 바꾸는 식의 사칭이 가능했다. 클라이언트의 프로필 저장(publishProfile)은 같은 아이디를 그대로 다시 보내므로 영향이 없다.
-  if tg_op = 'UPDATE' then new.username := old.username; new.id := old.id; end if;
+  if tg_op = 'UPDATE' then
+    new.username := old.username; new.id := old.id;
+    -- (v0.7.2) 탈퇴 예정 시각은 탈퇴 요청·취소 함수만 바꾼다(그 함수가 같은 트랜잭션에서 oc.allow_deletion_flag를 켠다). 클라이언트의 프로필 저장은 값을 건드리지 못한다.
+    if coalesce(current_setting('oc.allow_deletion_flag', true), '') <> '1' then new.deletion_scheduled_at := old.deletion_scheduled_at; end if;
+  else
+    new.deletion_scheduled_at := null;
+  end if;
   if jsonb_typeof(v_pub) <> 'object' then v_pub := '{}'::jsonb; end if;
   select xp into v_xp from public.economy where uid = new.id;
   v_pub := v_pub || jsonb_build_object('xp', coalesce(v_xp, 0));
@@ -4612,7 +4673,7 @@ declare
     'attack_report', 'attack_start', 'chat_blocked_between',
     'chat_clear_conversation', 'chat_edit_message', 'chat_rooms', 'claim_username',
     'coord_click', 'coord_finish', 'coord_forfeit', 'coord_reveal_next',
-    'daily_puzzle_cache_put', 'daily_puzzle_pick_run', 'delete_own_account', 'friend_accept', 'friend_remove',
+    'daily_puzzle_cache_put', 'daily_puzzle_pick_run', 'request_account_deletion', 'cancel_account_deletion', 'my_account_deletion', 'friend_accept', 'friend_remove',
     'friend_request', 'friend_request_by_mid', 'friend_suggestions', 'game_analysis_put',
     'knight_forfeit', 'knight_move_ping', 'knight_report',
     'knight_resolve_round', 'knight_start_round', 'minigame_my_best', 'legacy_like_toggle', 'minigame_submit_best',
@@ -4660,4 +4721,10 @@ select cron.schedule(
   'daily_puzzle_pick_nightly',
   '50 14 * * *', -- UTC 14:50 = KST 23:50
   $$ select public.daily_puzzle_pick_run(); $$
+);
+-- (v0.7.2) 탈퇴 유예(1주)가 지난 계정을 매시간 말소한다.
+select cron.schedule(
+  'account_deletion_purge_hourly',
+  '10 * * * *',
+  $$ select public.purge_due_account_deletions(); $$
 );

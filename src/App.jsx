@@ -23,7 +23,7 @@ import { ChatsModal, ChatWindow, FriendsModal, ProfileWindow, UserProfilePage, U
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
 import { ReviewPage } from "./app/review.jsx";
-import { AccountCenterModal, SettingsTab } from "./app/settings.jsx";
+import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
 import { LearnTab } from "./app/learn.jsx";
 import { CollectionTab } from "./app/dex.jsx";
 import { PuzzleTab } from "./app/puzzle.jsx";
@@ -191,6 +191,7 @@ export default function App() {
   const [recentOpenings, setRecentOpenings] = useState([]);  // (17차) 최근 푼 퍼즐/집중분석한 오프닝 — 일일 퀘스트 후보 풀
   const [user, setUser] = useState(null); // username (표시/검색)
   const [uid, setUid] = useState(null);    // auth uid (데이터 접근)
+  const [deletionAt, setDeletionAt] = useState(null); // (v0.7.2) 탈퇴 유예 중이면 삭제 예정 시각(ISO)
   const [authOpen, setAuthOpen] = useState(false);
   const [recovery, setRecovery] = useState(null);
   const [needUser, setNeedUser] = useState(null);   // 최초 구글 로그인 → 아이디 설정 대기
@@ -478,10 +479,10 @@ export default function App() {
   useEffect(() => {
     const boot = () => { const p = ENGINE_PROFILES[activeEnginePref] || ENGINE_PROFILES[defaultEnginePref()]; getAnalysisPool(p.id, p.urls); };
     if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(boot, { timeout: 8000 });
+      const id = window.requestIdleCallback(boot, { timeout: quickReview ? 1500 : 8000 }) // (v0.7.2) 빠른 리뷰는 풀을 더 일찍 데워 둔다;
       return () => window.cancelIdleCallback(id);
     }
-    const id = setTimeout(boot, 3000);
+    const id = setTimeout(boot, quickReview ? 800 : 3000);
     return () => clearTimeout(id);
   }, [activeEnginePref]);
 
@@ -732,7 +733,7 @@ export default function App() {
   // 잠깐 보이거나, 다음 로그인이 서버에서 못 채운 필드에 이전 계정 값이 남는 사고로 이어질 수 있음.
   const logout = useCallback(() => {
     authLogout();
-    setUser(null); setUid(null); setDevOn(false); setConfirmLogout(false);
+    setUser(null); setUid(null); setDeletionAt(null); setDevOn(false); setConfirmLogout(false);
     setUnlocked(new Set()); setPuzzles([]); setSolved(new Set()); setLikedPuzzles(new Set()); setRepostedPuzzles(new Set()); setLineSolves({}); prevTierIndexRef.current = null; setTotalXp(0); setOcCoins(0); setReviewUnlocked(new Set()); setDeletedPuzzles(new Set()); setArchivedPuzzles({});
     setEarnedTitles(new Set()); setSeenTitles(new Set()); setCurrentTitle(null); setOwnedSkins(new Set()); setBoardSkin("classic"); setPieceSkin("classic"); setProfile({ nickname: "", chesscom: "", displayId: "", photo: "", firstMoves: null, legacies: null }); setDevBonusGranted(false); setLineClearOn(true); setPuzzleClearOn(true); setCoachBubbleOn(false);
     setLearnSans([]); setLearnExtra({}); setTreeFocus([]); setDailyQuest(null); setMainQuest({ claimed: {} }); setRecentOpenings([]);
@@ -745,6 +746,15 @@ export default function App() {
     setDismissedAnnounceVersion(null); setFriendUids([]); setPuzzleSolvers({}); setSolverNames({}); setShareReferral(null);
     setDailyPuzzleLastShownAt(0); setDailyPuzzleHideDate(null);
   }, []);
+  // (v0.7.2) 로그인하면 탈퇴 유예 중인 계정인지 서버에 묻고, 그렇다면 앱을 막고 탈퇴 취소·로그아웃만 고르게 한다.
+  useEffect(() => {
+    if (!uid) { setDeletionAt(null); return; }
+    let cancelled = false;
+    (async () => {
+      try { const at = await sbRpc("my_account_deletion", {}); if (!cancelled) setDeletionAt(typeof at === "string" && at ? at : null); } catch { /* 조회 실패 시 막지 않음 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [uid]);
   deepLinkRef.current = async (url) => {
     const link = parseDeepLink(url);
     if (!link) return;
@@ -1738,6 +1748,7 @@ export default function App() {
           earnedTitles={earnedTitles} onEquipTitle={equipTitle} isDev={isDev} isCodev={isCodev} devOn={devOn} codevOn={codevOn} chesscomStatus={chesscom.status} chesscom={chesscom} />
       )}
       {tierUpAnim && <TierUpOverlay fromTierKey={tierUpAnim.fromKey} fromDivision={tierUpAnim.fromDiv} toTierKey={tierUpAnim.toKey} toDivision={tierUpAnim.toDiv} reward={tierUpAnim.reward} onDone={() => setTierUpAnim(null)} />}
+      {deletionAt && uid && <DeletionPendingModal scheduledAt={deletionAt} onCancelled={() => setDeletionAt(null)} onLogout={logout} />}
       <AnimatePresence>
         {accountCenterOpen && user && (
           <AccountCenterModal

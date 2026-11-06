@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
+import { initPerfMode } from "./lib/perfMode.js";
 import App from "./App.jsx";
 import { AppErrorBoundary, reloadOnceForChunkError } from "./components/appErrorBoundary.jsx";
 
@@ -20,6 +21,7 @@ const path = window.location.pathname.replace(/\/$/, "") || "/";
 // 배포 직후 예전 파일을 찾지 못해 동적 import가 실패하면 Vite가 이 이벤트를 보낸다. 한 번만 새로고침해서 새 파일로 바꾼다.
 window.addEventListener("vite:preloadError", (e) => { if (reloadOnceForChunkError(e && e.payload)) e.preventDefault(); });
 window.addEventListener("unhandledrejection", (e) => { reloadOnceForChunkError(e && e.reason); });
+initPerfMode(); // (v0.7.2) 저사양 기기 성능 모드(렉 방지) — 기기 성능만 본다
 createRoot(document.getElementById("root")).render(
   <AppErrorBoundary>
     {path === "/about" ? <Suspense fallback={null}><AboutPage /></Suspense> : path === "/faq" ? <Suspense fallback={null}><FaqPage /></Suspense> : path === "/privacy" || path === "/terms" || path === "/account-deletion" ? <Suspense fallback={null}><LegalPage kind={path.slice(1)} /></Suspense> : <App />}
