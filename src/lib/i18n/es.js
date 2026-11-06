@@ -2993,4 +2993,5 @@ export default {
   "킹사이드": "Flanco de Rey",
   "핀": "Clavada",
   "통과폰": "Peón pasado",
+  "보기": "Ver",
 };

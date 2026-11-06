@@ -2993,4 +2993,5 @@ export default {
   "킹사이드": "Kingside",
   "핀": "Pin",
   "통과폰": "Passed pawn",
+  "보기": "Show",
 };
