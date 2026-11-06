@@ -13,7 +13,7 @@ import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic, checkmateInfo } from "../lib/mecTactics.js";
 import { strategicFact } from "../lib/mecStrategy.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
+import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -353,7 +353,7 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
 // "기물 희생하기" 퍼즐의 정답 라인으로 만들어졌다. 이제 ① 엔진 상위 후보 중 탁월한 수와 ② 엔진 상위권 밖이라도 정적으로 희생인 모든 합법 수
 // (1.Rc7처럼 최선수가 아니어서 MultiPV에 안 잡히는 희생)를 직접 평가해, 사이트 전체와 같은 규칙(gradeMoveKindConfirmed)으로 탁월한 수가 된 것만 고른다.
 // 없으면 null — 호출부가 "희생이 없는 포지션"이라고 알려야 하며, 희생이 아닌 수로 대신 만들지 않는다.
-const SAC_SEARCH_MAX_EXTRA = 10;
+const SAC_SEARCH_MAX_EXTRA = 14;   // (v0.7.3) 10 → 14(위 정렬로 유망한 수부터 평가하므로 꼬리를 조금 더 본다)
 // 희생은 "최선수보다 조금 못한 수"인 경우가 많아(손실 ≤ 70cp면 탁월) 얕은 탐색의 평가 노이즈에 판정이 뒤집힌다(1.Rc7: 1.5초 탐색 −1.2 → 깊은 탐색 −0.5).
 // 사용자가 직접 누른 단발 작업이고 평가할 수가 몇 개뿐이라, 이 탐색만 리뷰보다 깊게(후보마다 5초) 돌려 최선수와 같은 깊이로 비교한다.
 const SAC_SEARCH_MOVETIME_MS = 5000;
@@ -373,7 +373,11 @@ export async function findSacrificeFirstMove(engine, preSans, fenRoot) {
   // 엔진 상위 후보에 없는 정적 희생 수 — 합법 수를 전부 만들어 isSacrifice로 걸러낸 뒤, 둔 뒤 포지션을 평가한다.
   const brd = boardOfRoot(fenRoot, preSans);
   const ep = fenRoot ? replayFromFen(fenRoot, preSans).ep : null;
-  const extras = staticSacrificeSans(brd, color, ep).filter((san) => !seen.has(stripSuffix(san)));
+  // (v0.7.3 버그 수정) 정적 희생 후보를 보드 순서(a8→h1) 그대로 앞에서 10개만 평가해, 후보가 많은 포지션(퀸·룩이 여러 곳을 잡을 수 있는 중반)에서는 진짜 탁월한 수가
+  // 순서 때문에 평가조차 못 받고 버려졌다("탁월한 수를 못 찾는다"). 유망한 순서로 정렬한다 — 체크가 먼저, 그다음 희생하는 기물 가치가 큰 수(퀸 희생 > 룩 > 비숍·나이트), 그다음 잡는 수.
+  const SAC_RANK = { Q: 9, R: 5, B: 3, N: 3, K: 0 };
+  const sacScore = (san) => (/[+#]/.test(san) ? 100 : 0) + (SAC_RANK[san[0]] || 0) * 4 + (san.includes("x") ? 2 : 0);
+  const extras = staticSacrificeSans(brd, color, ep).filter((san) => !seen.has(stripSuffix(san))).sort((a, b) => sacScore(b) - sacScore(a));
   const sacEval = (fen) => nextWorker().evaluate(fen, REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS);
   const graded = await Promise.all(extras.slice(0, SAC_SEARCH_MAX_EXTRA).map(async (san) => {
     try {
@@ -433,15 +437,41 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
   // 그 자리에서 계속 갱신하며, 실제로 트리가 만들어지는 과정을 그대로 시각화할 수 있게 한다.
   // (병렬화로 여러 가지가 동시에 끝나므로 이 path가 항상 한 줄로 매끄럽게 이어지지는 않지만,
   // 진행률(%) 자체는 여전히 정확하다.)
-  const bumpNode = (path) => { nodeCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
+  const bumpNode = (path, inSettle) => { nodeCount++; if (inSettle) settleCount++; onProgress && onProgress(Math.min(0.95, nodeCount / maxNodes), path); };
   // depth = 루트(사용자의 첫 수를 둘 위치)로부터의 반수. 짝수 = 사용자 차례.
   // (v0.3.0 기능) forceMate — 이 가지가 이미 "상대가 강제 메이트당하는 수순"에 들어섰다는 표시.
   // 한 번 true가 되면 자손 노드에도 그대로 물려줘, 실제 체크메이트(#)가 나올 때까지는 maxPlies
   // 상한을 무시하고 계속 확장한다(요청: "메이트 수순에 돌입하면 반드시 그 가지가 체크메이트까지
   // 이어지도록"). maxNodes(전체 노드 예산)는 폭주 방지용 안전망으로 그대로 유지한다.
-  async function expand(cur, depth, sawUserCapture, forceMate, pvsIn) {
-    if ((depth >= maxPlies && !forceMate) || nodeCount >= maxNodes) return [];
+  // (v0.7.3 버그 수정, 사용자 제보) 라인이 이상한 위치에서 끊기던 문제. 깊이 상한(maxPlies)이나 노드 상한(maxNodes)에서 그냥 잘라 내면, 마지막 사용자 수 바로 뒤에
+  // 상대가 이득을 보는 잡기가 남아 있거나(교환이 끝나지 않음·퀸이 공격받는 채) 체크 중이거나 희생 퍼즐인데 아직 기물을 못 되찾은 위치에서 라인이 끝났다
+  // (실측: 자동 생성 라인의 약 30~40%가 이런 미해결 위치로 끝남). 이제 그런 위치에서는 상한을 조금(SETTLE_EXTRA_PLIES수·SETTLE_EXTRA_NODES노드) 넘겨서라도
+  // 정리가 끝날 때까지 이어 간다 — 정리된 위치에서는 예전처럼 상한에서 멈춘다.
+  // 정리(settling)용 노드는 본 예산(maxNodes)과 따로 센다 — 형제 가지가 동시에 본 예산을 다 써 버려도 미해결 라인은 자기 몫(SETTLE_EXTRA_NODES)만큼 이어 갈 수 있다.
+  const SETTLE_EXTRA_PLIES = 4, SETTLE_EXTRA_NODES = 24;
+  let settleCount = 0;
+  function leafUnsettled(cur) {
+    try {
+      const brd = boardOfRoot(fenRoot, cur);
+      if (hangingLossSq(brd, userColor, null).loss >= 2) return true;                                   // 상대가 바로 이득을 보는 잡기가 남아 있다
+      const last = cur[cur.length - 1] || "";
+      if (/\+$/.test(last)) return true;                                                                 // 체크로 끝남(상대 응수가 강제)
+      if (requireMaterialRecovery && materialDiff(brd, userColor) < Math.min(0, startMat)) return true;   // 희생 퍼즐인데 아직 기물을 되찾지 못함
+    } catch { }
+    return false;
+  }
+  async function expand(cur, depth, sawUserCapture, forceMate, pvsIn, settling = false) {
     const isUserTurn = depth % 2 === 0;
+    // 상대 차례 노드는 뒤따르는 사용자 응수가 있어야만 살아남는다(없으면 아래에서 버려진다) — 그러니 사용자 응수가 상한(maxPlies)을 넘는 상대 노드는 만들지도 않는다.
+    // (예전엔 이 노드를 평가해 만들어 놓고 버려, 라인이 사용자 수 직후(상대의 되잡기 직전)에서 끊겼고 엔진 호출도 낭비였다.)
+    const overDepth = !forceMate && (isUserTurn ? depth >= maxPlies : depth + 1 >= maxPlies);
+    if (overDepth || nodeCount >= maxNodes) {
+      // 상한에 닿았다 — 마지막 사용자 수(상대 차례) 위치가 미해결이면 더 이어 가고, 이어 가기 시작했으면(settling) 사용자 응수까지 이어 정리한다.
+      const room = depth + 1 < maxPlies + SETTLE_EXTRA_PLIES && settleCount < SETTLE_EXTRA_NODES;
+      const go = room && (isUserTurn ? settling : leafUnsettled(cur));
+      if (!go) return [];
+      settling = true;
+    }
     let cands = await puzzleCandidatesAt(nextWorker(), cur, pvsIn, fenRoot);
     if (!cands || !cands.length) return [];
     // (15차) 첫 수 이후로 전개하는 수/캐슬링은 라인을 이어가지 않는다(전술적으로 배울 게 없음).
@@ -452,7 +482,7 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
     // 걸러졌다. 남은 후보 중 최상위가 무조건 plausible[0]으로 채택되니, 진짜 최선 응수가
     // 사라지고 훨씬 나쁜(때론 블런더급) 수만 유일한 갈래로 남는 원인이었다 — 이 필터는
     // 사용자 차례에만 적용한다.
-    if (isUserTurn && (depth >= 1 || firstSan)) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));
+    if (isUserTurn && (depth >= 1 || firstSan) && !settling) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));   // (v0.7.3) 정리 중에는 전개·캐슬링도 필요한 응수일 수 있어 거르지 않는다
     if (!cands.length) return [];
     const canBranch = nodeCount + 2 < maxNodes;
     let chosen;
@@ -487,12 +517,13 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
       const pass = isUserTurn ? PUZZLE_PASS_KINDS.includes(c.kind) : true;
       const node = { san: c.san, kind: c.kind, ev: c.ev, adopt: c.adopt, pass, children: [] };
       const cur2 = [...cur, c.san];
-      bumpNode(cur2);
+      bumpNode(cur2, settling);
       if (!pass) return node;   // 막힌 가지(표시 전용)는 더 확장하지 않는다
       if (isUserTurn) {
         const captured = sawUserCapture || c.san.includes("x");
         let terminal = /#$/.test(c.san);   // 체크메이트로 즉시 종료
         let childForceMate = forceMate;
+        let settleHere = settling;
         let pvs2 = null;
         if (!terminal) {
           // (v0.3.1 성능) 예전엔 여기서 cur2 위치를 단일PV로 한 번 평가해(종료 판정용) 두고, 곧이어
@@ -544,15 +575,19 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
                   }
                 }
               }
-              if ((gainOk || materialLockOk) && matOk && capOk) terminal = true;
+              if ((gainOk || materialLockOk) && matOk && capOk) {
+                // (v0.7.3) 이득 기준을 채웠어도 상대가 바로 이득을 보는 잡기가 남아 있으면(예: Bxb7 뒤에 퀸이 폰에게 공격받는 채) 그 자리에서 끝내지 않고 정리될 때까지 이어 간다.
+                if (depth + 1 < maxPlies + SETTLE_EXTRA_PLIES && settleCount < SETTLE_EXTRA_NODES && leafUnsettled(cur2)) settleHere = true;
+                else terminal = true;
+              }
             }
           }
         }
-        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate, pvs2);
+        if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate, pvs2, settleHere);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
         return node;
       } else {
-        node.children = await expand(cur2, depth + 1, sawUserCapture, forceMate);
+        node.children = await expand(cur2, depth + 1, sawUserCapture, forceMate, undefined, settling);
         if (!node.children.some((k) => k.pass !== false)) return null;   // 상대 수로 끝나는 가지는 버린다(항상 사용자 수로 끝맺음)
         return node;
       }
