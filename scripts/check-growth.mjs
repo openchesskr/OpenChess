@@ -110,7 +110,8 @@ ok(/recordReviewMistakes\(/.test(review), "ReviewPage가 리뷰가 끝나면 내
 ok(/pickHighlights\(/.test(review) && /drawHighlightCard/.test(review), "리뷰 공유 시트가 하이라이트 카드를 쓰지 않음");
 ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(LearnTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
 // (v0.7.3) 학습 탭 개편으로 프로필 prop이 앞에 붙었다 — 순서와 무관하게 <LearnTab ...> 태그 안에 있으면 된다.
-ok(/<LearnTab [^>]*growthUid=\{uid\}[^>]*growthGames=\{chesscom\.games\}/.test(app), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음");
+// renderProfile={(mid) => <UserProfilePage .../>}처럼 prop 안에 ">"가 있어 태그 끝을 정규식으로 못 찾으므로, <LearnTab 뒤 일정 구간 안에서 두 prop을 찾는다.
+{ const i = app.indexOf("<LearnTab "); const seg = i >= 0 ? app.slice(i, i + 4000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음"); }
 ok(!/GrowthCenter|GrowthEntryCard|onOpenGrowth/.test(app + pz + quest), "성장 분석이 다시 별도 버튼·화면으로 분리됨(학습 탭 안에 바로 펼쳐 보여야 함)");
 ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 네 기능 로직(기준별 비교 포함)을 모두 쓰지 않음");
 ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");

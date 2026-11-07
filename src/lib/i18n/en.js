@@ -3037,4 +3037,5 @@ export default {
   "표시할 대국 없음": "No games to show",
   "아직 리뷰하지 않은 대국": "Not reviewed yet",
   "오프닝 정보 없음": "No opening info",
+  "프로필을 불러오지 못함": "Could not load the profile",
 };

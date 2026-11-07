@@ -217,7 +217,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
 // (v0.7.3, 사용자 요청) 비율은 그대로 두고 칼럼 가로 폭을 가득 채우도록 키운다 — maxScale을 주지 않으면 상한 없이 폭에 맞춘다(예전엔 0.6~0.85배로 줄여 오른쪽이 비었다).
-export function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
+function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
   const BASE_W = 260, BASE_H = 74;
   const ref = useRef(null);
   const [w, setW] = useState(0);
@@ -248,7 +248,7 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
 // (사용자 요청) chess.com 통계 보기의 카드 상단 신원 표시 — 사진·아이디는 여기 한 곳에서만 보여주고
 // (AccountChessStats 안의 중복 사진·아이디 줄은 compact 옵션으로 생략), 국적·시간 규정별 레이팅도
 // 이 자리로 끌어올려 함께 보여준다. MyProfileCard·UserSearchModal·FriendsModal이 모두 공유한다.
-export function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
+function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
   const name = (ccHeaderProf && ccHeaderProf.username) || fallbackUsername;
   return (
     // (사용자 요청) alignItems를 center에서 start로 바꿔, 아래쪽 줄(실명·마지막 접속)이 있고 없고에
@@ -618,7 +618,8 @@ function renderMentionText(body) {
 // 통합했다. MID 초대 링크(계정 센터에서 복사)로 들어오면 자동으로 친구 요청까지 보낸다(autoInvite).
 // 데스크톱처럼 폭이 넉넉하면 신원/친구 요청을 왼쪽 고정 열에, 통계·활동을 오른쪽 넓은 열에 나란히
 // 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
-export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+// (v0.7.3, 사용자 요청) embedded — 학습 탭 안에 /user 페이지 레이아웃 그대로 끼워 넣는 모드. 전체 화면 오버레이(position:fixed)가 아니라 일반 흐름 안의 카드로 그리고, 뒤로가기 버튼·고정(sticky) 헤더는 쓰지 않는다.
+export function UserProfilePage({ docked, embedded, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
   const [pubUsername, setPubUsername] = useState(null);
@@ -735,7 +736,7 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
   };
   const isSelf = !!(myUid && pubUid && myUid === pubUid);
   return (
-    <div style={docked ? { minHeight: "100%", background: T.paper } : { position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+    <div style={embedded ? { borderRadius: 16, overflow: "hidden", border: "1px solid #C9B58C", background: T.paper } : docked ? { minHeight: "100%", background: T.paper } : { position: "fixed", inset: 0, zIndex: 300, background: T.paper, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       {safetyMsg && <div role="status" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 410, padding: "10px 16px", borderRadius: 12, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, border: "1px solid " + T.brass, fontSize: 12.5, fontWeight: 700 }}>{safetyMsg}</div>}
       <AnimatePresence>
         {reportOpen && <ReportSheet key="profile-report" targetName={(pub && pub.nickname) || pubUsername || t("사용자")} snippet={null} alreadyBlocked={blockedByMe} onSubmit={submitProfileReport} onClose={() => setReportOpen(false)} />}
@@ -755,9 +756,9 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: "sticky", top: 0, background: T.paper, zIndex: 5, gap: 8 }}>
+      <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", position: embedded ? "static" : "sticky", top: 0, background: T.paper, zIndex: 5, gap: 8 }}>
         <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-          {!docked && <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>}
+          {!docked && !embedded && <button onClick={onClose} aria-label={t("뒤로")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><ArrowLeft size={16} /></button>}
           {/* (v0.6.1, 사용자 요청) "프로필" 글자 자리에 @아이디 — 카드 안의 @아이디 줄은 없앴다. */}
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pub || pubUsername ? <>@{(pub && pub.displayId) || pubUsername}</> : t("프로필")}</span>
         </div>
@@ -768,7 +769,7 @@ export function UserProfilePage({ docked, mid, autoInvite, onClose, me, myUid, o
           {me && pubUid && !isSelf ? <UserSafetyMenu blocked={blockedByMe} onReport={() => setReportOpen(true)} onToggleBlock={() => setBlocked(!blockedByMe)} /> : <span style={{ width: 30 }} />}
         </div>
       </div>
-      <div style={{ maxWidth: docked ? "none" : wide ? 920 : 480, margin: "0 auto", padding: docked ? "14px 14px 40px" : wide ? "26px 24px 60px" : "18px 16px 60px" }}>
+      <div style={{ maxWidth: docked || embedded ? "none" : wide ? 920 : 480, margin: "0 auto", padding: embedded ? (wide ? "20px 24px 28px" : "16px 14px 24px") : docked ? "14px 14px 40px" : wide ? "26px 24px 60px" : "18px 16px 60px" }}>
         {notFound ? (
           <p style={{ fontSize: 13, color: T.inkSoft, textAlign: "center", padding: "40px 0" }}>{t("이 MID의 유저 없음")}</p>
         ) : !pub ? (
@@ -2526,7 +2527,7 @@ function LegacyCountStepper({ label, value, min, max, onChange, accent }) {
 }
 // (사용자 요청) chess.com 통계를 보는 동안엔 티어·퍼즐 레이팅(OpenChess 전용 지표) 대신, 같은 자리에
 // 래피드/블리츠/불릿 레이팅을 보여준다 — TierRatingRow와 같은 줄 높이·배지 모양을 그대로 쓴다.
-export function ChesscomRatingRow({ ccHeaderProf }) {
+function ChesscomRatingRow({ ccHeaderProf }) {
   if (!ccHeaderProf) return null;
   const items = [
     { label: t("래피드"), v: ccHeaderProf.rapid },

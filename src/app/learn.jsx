@@ -8,15 +8,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { boardFromSans, liveLegalDests, buildSan, stripSuffix } from "../lib/chessRules.js";
 import { playMoveSfx } from "../lib/prefs.js";
-import { PageTitle, Board, fetchChesscomProfile, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, questLabelNode, questOpeningMovesText, useBoardSize, useNarrow } from "./common.jsx";
+import { PageTitle, Board, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, questLabelNode, questOpeningMovesText, useBoardSize, useNarrow } from "./common.jsx";
 
 import { GrowthPanel } from "./growth.jsx";
-import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
-import { TierRatingRow } from "./profile.jsx";
-import { EquippedTitleFit, ChesscomHeaderIdentity, ChesscomRatingRow } from "./social.jsx";
-import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { computeRatingChanges } from "../lib/chesscom.js";
-import { SB_ON } from "../lib/supabaseClient.js";
+import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import { t, tx } from "../lib/i18n.js";
 // 다음 KST 자정까지 남은 밀리초
@@ -1013,37 +1008,20 @@ function useLearnFold(id, forceOpen) {
   const set = (v) => { setOpen(v); try { window.localStorage.setItem(learnFoldKey(id), v ? "1" : "0"); } catch { } };
   return [open, set];
 }
-function LearnProfileHome({ profile, user, uid, currentTitle, totalXp, puzzleRating, solvedCount, chesscom, openAuth, onOpenGame, onOpenGameAnalyze }) {
-  const narrow = useNarrow(880);
-  const [view, setView] = useState("oc");
-  const [timeFilter, setTimeFilter] = useState("all");
-  const [ccHeaderProf, setCcHeaderProf] = useState(null);
-  const ccName = profile && profile.chesscom;
-  const myPub = useMemo(() => ({ nickname: profile.nickname, photo: profile.photo, bio: profile.bio, chesscom: profile.chesscom, title: currentTitle, xp: totalXp || 0, puzzleRating: puzzleRating || 800, solvedCount, displayId: profile.displayId }),
-    [profile.nickname, profile.photo, profile.bio, profile.chesscom, profile.displayId, currentTitle, totalXp, puzzleRating, solvedCount]);
+// 내 프로필 — /user 페이지(UserProfilePage)를 그대로 끼워 넣는다. 그 페이지가 내 MID로 서버 프로필을 읽으므로 MID를 먼저 찾는다.
+// 최근 대국은 그 페이지 안의 목록(한 줄에 한 판)을 그대로 쓴다. 로그인하지 않았거나 MID를 못 찾으면 안내만 보여 준다.
+function LearnProfileHome({ user, uid, openAuth, renderProfile }) {
+  const [mid, setMid] = useState(null);   // null=조회 중, ""=없음
   useEffect(() => {
     let off = false;
-    if (!ccName) { setCcHeaderProf(null); return undefined; }
-    fetchChesscomProfile(ccName).then((p) => { if (!off) setCcHeaderProf(p); }).catch(() => { });
-    return () => { off = true; };
-  }, [ccName]);
-  // OpenChess 대국 — 서버(profile_recent_games)에서 내 끝난 대국을 읽는다(실시간 대국 + 봇 대국).
-  const [rows, setRows] = useState(null);
-  useEffect(() => {
-    if (!SB_ON || !uid) { setRows([]); return undefined; }
-    let off = false; setRows(null);
-    fetchProfileGameRows(uid).then((r) => { if (!off) setRows(Array.isArray(r) ? r.filter((x) => Array.isArray(x.sans) && x.sans.length > 0) : []); }).catch(() => { if (!off) setRows([]); });
+    if (!uid || !SB_ON) { setMid(""); return undefined; }
+    setMid(null);
+    (async () => {
+      try { const rows = await sbSelect("profiles?id=eq." + uid + "&select=mid&limit=1"); if (!off) setMid((rows && rows[0] && rows[0].mid) || ""); }
+      catch { if (!off) setMid(""); }
+    })();
     return () => { off = true; };
   }, [uid]);
-  const ocGames = useMemo(() => (rows || []).map((r) => profileGameRowToGame(r, user)), [rows, user]);
-  const ccReady = !!(chesscom && chesscom.status === "ready");
-  const ccGames = useMemo(() => (ccReady ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess"), [ccReady, chesscom && chesscom.games]);
-  const base = view === "oc" ? ocGames : ccGames;
-  const games = useMemo(() => (timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter)), [base, timeFilter]);
-  const ratingChanges = useMemo(() => {
-    if (view === "oc") { const m = new Map(); games.forEach((g) => { if (g._delta != null) m.set(g, g._delta); }); return m; }
-    return ccReady ? computeRatingChanges(ccGames.filter((g) => timeFilter === "all" || g.timeClass === timeFilter)) : new Map();
-  }, [view, games, ccGames, ccReady, timeFilter]);
   if (!user) {
     return (
       <div style={{ borderRadius: 16, border: "1px solid #C9B58C", background: "linear-gradient(180deg,#F7EFDF,#E8D9B8)", padding: "22px 18px", textAlign: "center" }}>
@@ -1055,43 +1033,12 @@ function LearnProfileHome({ profile, user, uid, currentTitle, totalXp, puzzleRat
       </div>
     );
   }
-  const loadingGames = view === "oc" ? rows == null : chesscom && chesscom.status === "loading";
-  return (
-    <div style={{ display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 16 : 28, alignItems: "flex-start" }}>
-      <div style={{ width: narrow ? "100%" : 320, flexShrink: 0, borderRadius: 16, border: "1px solid #C9B58C", background: "linear-gradient(180deg,#F7EFDF,#E8D9B8)", padding: "14px 16px 12px", boxSizing: "border-box" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{t("내 프로필")}</span>
-          <StatsViewToggle value={view} onChange={(v) => { setView(v); setTimeFilter("all"); }} scale={1} />
-        </div>
-        {currentTitle && view === "oc" && <div style={{ marginBottom: 10 }}><EquippedTitleFit id={currentTitle} /></div>}
-        {view === "cc" && ccName ? (
-          <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={ccName} />
-        ) : (
-          <div className="flex items-start gap-3" style={{ marginBottom: 10 }}>
-            {myPub.photo ? <img src={myPub.photo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
-              : <span style={{ width: 64, height: 64, borderRadius: 16, flexShrink: 0, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24 }}>{(myPub.nickname || user || "?").slice(0, 1).toUpperCase()}</span>}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis" }}>{myPub.nickname || myPub.displayId || user}</div>
-              {myPub.bio && <div style={{ fontSize: 12, color: T.ink, marginTop: 5, lineHeight: 1.4 }}>{myPub.bio}</div>}
-            </div>
-          </div>
-        )}
-        {view === "oc" ? <TierRatingRow pub={myPub} /> : (ccName ? <ChesscomRatingRow ccHeaderProf={ccHeaderProf} /> : null)}
-      </div>
-      <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
-        <div style={{ marginBottom: 12 }}>
-          <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
-        </div>
-        {loadingGames ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
-          : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>
-          : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
-          : <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("표시할 대국 없음")}</p>}
-      </div>
-    </div>
-  );
+  if (mid === null) return <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />;
+  if (!mid) return <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("프로필을 불러오지 못함")}</p>;
+  return renderProfile(mid);
 }
 export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight,
-  profile, user, uid, currentTitle, totalXp, puzzleRating, solvedCount, chesscom, openAuth, onOpenGame, onOpenGameAnalyze }) {
+  user, uid, openAuth, renderProfile }) {
   // 일일 퀘스트 배지를 눌러 들어오면(questHighlight) 일일 퀘스트 섹션을 펼쳐 강조가 보이게 한다.
   const [qOpen, setQOpen] = useLearnFold("quest", !!questHighlight);
   const [gOpen, setGOpen] = useLearnFold("growth", false);
@@ -1100,7 +1047,7 @@ export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQu
     <div>
       <PageTitle>{t("학습")}</PageTitle>
       <FadeIn index={0} layout={false}>
-        <LearnProfileHome profile={profile || {}} user={user} uid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount} chesscom={chesscom} openAuth={openAuth} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} renderProfile={renderProfile} />
       </FadeIn>
       {/* (v0.7.3) 기존 학습 도구는 그대로 두고 접어 둔다. 펼침 상태는 이 기기에 기억한다. */}
       <LearnFold id="quest" title={t("일일 퀘스트")} open={qOpen} setOpen={setQOpen}>
