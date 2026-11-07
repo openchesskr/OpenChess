@@ -8,29 +8,78 @@ import { readFileSync } from "node:fs";
 const fails = [];
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
 const ok = (c, m) => { if (!c) fails.push(m); };
-const R = await import("../src/lib/reviewedCount.js"), H = await import("../src/lib/highlights.js"), S = await import("../src/lib/masterStyle.js");
+const R = await import("../src/lib/reviewedCount.js"), A = await import("../src/lib/growthAnalysis.js"), H = await import("../src/lib/highlights.js"), S = await import("../src/lib/masterStyle.js");
 const { CRITERIA_GROUPS } = S;
 
-// ── ① 리뷰 5판 게이트 ──
+// ── ① 리뷰 5판 게이트·내 대국 수집 ──
+const P = "oc-review-result:";
+const fakeStore = (entries) => { const m = new Map(entries); return { get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) }; };
 {
-  const fake = (entries) => { const m = new Map(entries); return { get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => (m.has(k) ? m.get(k) : null) }; };
-  const good = JSON.stringify({ v: 1, d: 20, result: { moves: [{ san: "e4" }] } });
-  const P = "oc-review-result:";
-  const st = fake([
-    [P + "cc:Me|Foe|100", good], [P + "cc:foe|ME|200", good],            // 내 chess.com 대국 2판(흰·검 어느 쪽이든, 대소문자 무시)
-    [P + "cc:Foe|Other|300", good],                                     // 남의 chess.com 대국 — 제외
-    [P + "id:pvp-12", good], [P + "id:bot-3", good],                    // 내 OpenChess 대국 2판
-    [P + "pgn:e4 e5", good], [P + "fen:x|y", good],                     // PGN·FEN 리뷰(내 대국인지 알 수 없음) — 제외
-    [P + "cc:Me|Foe|400", JSON.stringify({ v: 0, result: { moves: [{}] } })],   // 옛 버전 — 제외
-    [P + "cc:Me|Foe|500", JSON.stringify({ v: 1, result: { moves: [] } })],     // 수 목록 없음 — 제외
-    [P + "cc:Me|Foe|600", "{깨진 JSON"],                                // 깨진 값 — 제외(throw 안 함)
-    ["oc-review-pos:cc:Me|Foe|700", good],                              // 리뷰 결과가 아니라 위치 기록 — 제외
+  const good = (extra) => JSON.stringify({ v: 1, d: 20, result: { moves: [{ san: "e4", white: true, kind: "best" }] }, ...(extra ? { m: extra } : {}) });
+  const st = fakeStore([
+    [P + "cc:Me|Foe|100", good()], [P + "cc:foe|ME|200", good()],                                      // 내 chess.com 대국 2판(흰·검 어느 쪽이든, 대소문자 무시)
+    [P + "cc:Foe|Other|300", good()],                                                                  // 남의 chess.com 대국 — 제외
+    [P + "id:pvp-12", good({ color: "w", owner: "tester" })], [P + "id:bot-3", good({ color: "b", owner: "tester" })],   // 내 OpenChess 대국 2판(메타 있음)
+    [P + "id:pvp-99", good()],                                                                         // 메타 없는 옛 항목 — 진영을 몰라 제외
+    [P + "id:pvp-77", good({ color: "w", owner: "someoneelse" })],                                     // 남의 프로필에서 연 대국 — 제외
+    [P + "pgn:e4 e5", good()], [P + "fen:x|y", good()],                                                // PGN·FEN 리뷰 — 제외
+    [P + "cc:Me|Foe|400", JSON.stringify({ v: 0, result: { moves: [{}] } })],                          // 옛 버전 — 제외
+    [P + "cc:Me|Foe|500", JSON.stringify({ v: 1, result: { moves: [] } })],                            // 수 목록 없음 — 제외
+    [P + "cc:Me|Foe|600", "{깨진 JSON"],                                                               // 깨진 값 — 제외(throw 안 함)
+    ["oc-review-pos:cc:Me|Foe|700", good()],                                                           // 리뷰 결과가 아니라 위치 기록 — 제외
   ]);
-  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: st }), 4, "내 대국 4판(cc 2 + OpenChess 2)만 센다");
-  eq(R.countMyReviewedGames({ ccName: "", version: 1, storage: st }), 2, "chess.com 아이디가 없으면 OpenChess 대국만 센다");
-  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: fake([]) }), 0, "빈 저장소는 0");
-  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: null }), 0, "저장소가 없어도 throw 없이 0(브라우저 밖)");
+  const recs = R.collectMyReviews({ names: ["Tester"], ccName: "me", version: 1, storage: st });
+  eq(recs.length, 4, "내 대국 4판(cc 2 + OpenChess 2)만 모은다");
+  eq(recs.map((r) => r.color).sort(), ["b", "b", "w", "w"], "진영: cc는 이름으로, OpenChess는 메타로");
+  eq(recs.find((r) => r.key === P + "cc:foe|ME|200").owner, "me", "cc 대국의 owner는 일치한 내 아이디");
+  eq(R.countMyReviewedGames({ names: ["tester"], ccName: "", version: 1, storage: st }), 2, "chess.com 아이디가 없으면 OpenChess 대국만 센다");
+  eq(R.countMyReviewedGames({ names: [], ccName: "", version: 1, storage: st }), 0, "내 아이디를 모르면 0");
+  eq(R.countMyReviewedGames({ names: ["tester"], ccName: "me", version: 1, storage: fakeStore([]) }), 0, "빈 저장소는 0");
+  eq(R.countMyReviewedGames({ names: ["tester"], ccName: "me", version: 1, storage: null }), 0, "저장소가 없어도 throw 없이 0(브라우저 밖)");
   eq(R.GROWTH_MIN_REVIEWS, 5, "성장 분석은 리뷰 5판부터");
+}
+// ── ①-b 분석: 구간·원인·수 유형·곡선·성장 가능성 ──
+{
+  const SANS = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 c4 c6".split(" ");
+  const mkRec = (acc, i) => ({ key: "k" + i, endTime: 1000 + i, owner: "me", color: "w", white: "me", black: "foe", id: null, opening: "Ruy Lopez",
+    result: { whiteAcc: acc, blackAcc: 70, moves: SANS.map((san, ply) => { const white = ply % 2 === 0; let kind = "good", loss = 1; if (white && ply === 6) { kind = "blunder"; loss = 40; } if (white && ply === 16) { kind = "mistake"; loss = 15; } return { san, white, kind, lossWinPct: loss, sharp: 0, best: ply === 6 ? "Bxc6" : ply === 16 ? "d4" : null }; }) } });
+  const { games, growth: gr } = A.growthFromRecords([60, 64, 66, 70, 74, 80].map(mkRec));
+  ok(gr && gr.n === 6 && games.length === 6, "여섯 판이 모두 분석됨");
+  eq(gr.curve.map((c) => c.acc), [60, 64, 66, 70, 74, 80], "성장 곡선은 시간순 판별 정확도");
+  eq([gr.trend.k, gr.trend.recent, gr.trend.prev, gr.trend.delta], [3, 74.7, 63.3, 11.3], "최근 3판 vs 이전 3판 변화");
+  ok(games[0].mine.every((x) => x.phase), "내 수마다 구간이 붙음");
+  eq(games[0].mine.length, 11, "백 11수만 내 수로 뽑음(흑 수는 제외)");
+  eq(gr.phases.map((p) => [p.key, p.games > 0]), [["opening", true], ["middle", true], ["end", false]], "오프닝·중반 구간 정확도 계산, 엔드게임은 표본 없음");
+  ok(gr.weakPhase && gr.phases.every((p) => p.acc == null || gr.weakPhase.acc <= p.acc), "가장 약한 구간은 평균 정확도가 가장 낮은 구간");
+  eq(gr.causes.map((c) => c.key).sort(), ["missedWin", "positional"], "원인 분류: Ba4(Bxc6을 놓침)=기물 획득 놓침, h3=포지션 판단");
+  ok(gr.causes[0].lossSum >= gr.causes[1].lossSum && Math.abs(gr.causes.reduce((s, c) => s + c.share, 0) - 1) < 1e-9, "원인은 손실 큰 순이고 비중의 합이 1");
+  ok(gr.focus && gr.focus.cause === "missedWin" && gr.focus.games === 6 && gr.focus.gain > 0, "고칠 한 가지 = 손실 비중이 가장 큰 반복 원인, 상승폭 > 0");
+  ok(gr.focus.examples.length === 2 && gr.focus.examples[0].loss >= gr.focus.examples[1].loss, "예시는 손실 큰 순 2개");
+  eq(gr.moveTypes.find((r) => r.key === "b").bad, 6, "수 유형별: 비숍으로 둔 나쁜 수 6개(Ba4)");
+  eq(gr.moveTypes.find((r) => r.key === "castle").n, 6, "수 유형별: 캐슬링 6번");
+  ok(gr.worst.length <= 7 && gr.worst.every((w, i) => i === 0 || gr.worst[i - 1].loss >= w.loss), "가장 아쉬운 수는 손실 큰 순");
+  eq(gr.pending, 0, "분류가 끝나면 pending 0");
+  // 분류 전(pending)에는 원인에서 빠지고 개수만 알린다 — 화면이 빠른 계산을 먼저 그리기 위한 계약
+  const cache0 = new Map(); const g0 = [60, 64].map(mkRec).map((r) => A.analyzeGame(r, cache0));
+  const before = A.buildGrowth(g0);
+  ok(before.pending === 4 && before.causes.length === 0 && before.moveTypes.length > 0, "분류 전: 원인 없음·pending 개수·수 유형은 이미 계산됨");
+  const step = A.classifyPending(g0, cache0, 0);   // 시간 예산 0 — 캐시 적중이 없으면 하나도 못 한다
+  eq(step.left, 4, "시간 예산이 0이면 아무것도 분류하지 않고 남은 개수를 알림");
+  A.classifyPending(g0, cache0, Infinity);
+  eq(A.buildGrowth(g0).pending, 0, "끝까지 돌리면 모두 분류됨");
+  eq(cache0.size, 2, "같은 포지션·수는 캐시 하나로(두 판에 똑같이 나온 2개 수)");
+  // 캐시 영속: 저장 후 불러오면 같은 분류가 즉시 붙어 pending이 없다
+  const ls = fakeStore([]); A.saveCauseCache(cache0, ls);
+  const cache1 = A.loadCauseCache(ls);
+  const g1 = [60, 64].map(mkRec).map((r) => A.analyzeGame(r, cache1));
+  ok(g1.every((g) => g.mine.every((x) => !x.pending)), "저장된 분류 캐시를 불러오면 다시 계산하지 않는다");
+  // 방어: 깨진 입력·내 진영 없음
+  eq(A.analyzeGame({ color: null, result: { moves: [] } }), null, "진영이 없으면 분석하지 않음");
+  eq(A.buildGrowth([]), null, "판이 없으면 null");
+  ok(A.analyzeGame({ color: "w", result: { moves: [{ san: "zz9", white: true, kind: "best" }] } }).mine.length === 0, "해석 불가한 수에서 멈추고 throw하지 않음");
+  eq(A.loadCauseCache(fakeStore([["oc_growth_cause_v1", "{깨짐"]])).size, 0, "깨진 캐시는 빈 캐시");
+  // 같은 원인을 없앤 정확도는 원래보다 높거나 같다(계산식이 단조)
+  ok(gr.focus.gain >= 0, "성장 가능성 추정은 음수가 아님");
 }
 // ── ② 하이라이트 ──
 const mk = (san, white, kind, extra = {}) => ({ san, white, kind, lossWinPct: 20, best: null, ...extra });
@@ -83,8 +132,11 @@ ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(
 // renderProfile={(mid) => <UserProfilePage .../>}처럼 prop 안에 ">"가 있어 태그 끝을 정규식으로 못 찾으므로, <LearnTab 뒤 일정 구간 안에서 두 prop을 찾는다.
 { const i = app.indexOf("<LearnTab "); const seg = i >= 0 ? app.slice(i, i + 4000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음"); }
 // 게이트: 5판 미만이면 마스터 스타일을 포함한 성장 분석 요소를 가리고 게이지 바 안내(ReviewGate)만 보인다.
-ok(/countMyReviewedGames\(\{/.test(growth) && /reviewed >= GROWTH_MIN_REVIEWS/.test(growth), "성장 분석이 리뷰 판 수(5판)로 열리지 않음");
-ok(/\{open \? <MasterStyle [^>]*\/> : <ReviewGate /.test(growth), "리뷰 5판 미만이면 ReviewGate(게이지 바)만 보여야 함");
+ok(/collectMyReviews\(\{/.test(growth) && /records\.length >= GROWTH_MIN_REVIEWS/.test(growth), "성장 분석이 리뷰 판 수(5판)로 열리지 않음");
+ok(/touchReviewMeta\(resultCacheKey, game\)/.test(review) && /owner: game\.username/.test(review), "리뷰 화면이 결과에 성장 분석용 메타(진영·owner 등)를 남기지 않음");
+for (const sec of ["Overview", "GrowthCurve", "FocusCard", "PhaseCard", "CauseCard", "TypeCard", "WorstCard"]) ok(new RegExp("<" + sec + " ").test(growth), "성장 분석 본문에 " + sec + " 구획이 없음");
+ok(/classifyPending\(/.test(growth) && /saveCauseCache\(/.test(growth), "원인 분류는 시간 예산으로 나눠 돌리고 캐시를 저장해야 함(전술 탐색이 느려 한꺼번에 돌리면 화면이 멈춤)");
+ok(/\{!open \? <ReviewGate [^>]*\/> : \(/.test(growth) && /<MasterStyle /.test(growth), "리뷰 5판 미만이면 ReviewGate(게이지 바)만 보여야 하고, 달성하면 분석 본문과 마스터 스타일을 보여야 함");
 { const gate = (growth.match(/function ReviewGate[\s\S]*?\n}\n/) || [""])[0]; ok(/role="progressbar"/.test(gate) && /Array\.from\(\{ length: need \}/.test(gate) && /더 리뷰하면 열림/.test(gate) && /리뷰 버튼/.test(gate), "ReviewGate: 게이지 바(칸 수 = 필요한 판 수)·남은 판 수·리뷰 안내가 있어야 함"); }
 // 마스터 스타일
 ok(/matchMasters\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 마스터 스타일 로직(기준별 비교 포함)을 쓰지 않음");

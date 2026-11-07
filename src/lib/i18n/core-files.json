@@ -44,5 +44,7 @@
   "lib/tierSystem.js",
   "lib/tournamentData.js",
   "lib/tournamentView.js",
-  "lib/ugcTranslate.js"
+  "lib/ugcTranslate.js",
+  "lib/growthAnalysis.js",
+  "app/gameHistory.jsx"
 ]

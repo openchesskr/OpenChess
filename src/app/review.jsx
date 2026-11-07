@@ -825,6 +825,17 @@ function saveCachedReviewResult(storageKey, result, depth) {
   if (!storageKey || !result) return;
   try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, d: depth, result })); } catch { }
 }
+// (v0.7.4) 성장 분석이 "내 대국"만 골라 쓰도록, 결과 항목에 메타(m)를 덧붙인다 — 내 진영·종료 시각·오프닝·선수·id와 리뷰를 연 쪽(owner). 진영(game.color)이 있는 내 대국 리뷰만 기록한다.
+function touchReviewMeta(storageKey, game) {
+  if (!storageKey || !game || (game.color !== "w" && game.color !== "b")) return;
+  try {
+    const raw = window.localStorage.getItem(storageKey); if (!raw) return;
+    const p = JSON.parse(raw); if (!p || p.v !== REVIEW_RESULT_CACHE_VERSION || !p.result) return;
+    const m = { color: game.color, endTime: game.endTime || null, opening: game.opening || null, white: (game.white && game.white.username) || null, black: (game.black && game.black.username) || null, id: game.id || null, owner: game.username ? String(game.username).toLowerCase() : null };
+    if (JSON.stringify(p.m) === JSON.stringify(m)) return;
+    p.m = m; window.localStorage.setItem(storageKey, JSON.stringify(p));
+  } catch { }
+}
 // chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도
 // 함께 올려 둔다 — 다른 기기·다른 유저가 같은 대국을 리뷰로 열어도 항상 같은 값을 보게 하기 위함
 // (이것도 "재현성" 신고를 해결하는 데 필요하다 — 로컬 캐시만으로는 이 기기에서만 일관될 뿐이다).
@@ -2334,10 +2345,11 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     // (카드와 무관한 다른 상태 변화로 리렌더될 때마다) 아바타 URL이 안 바뀌었는데도 카드를 새로
     // 그리게 만든다 — 실제로 값이 바뀔 때만 다시 계산되도록 아바타 URL(원시값)만 deps로 쓴다.
   }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
-  // (v0.6.4) 분석이 끝난 리뷰에서 내 실수를 성장 센터(약점 지도·복습 카드)에 기록한다. 같은 대국을 다시 열어도 같은 id라 중복·진도 초기화 없음.
+  // (v0.7.4) 분석이 끝난 리뷰(캐시·새 분석 모두)에 성장 분석용 메타를 남긴다. 같은 대국을 다시 열어도 같은 값이라 덮어쓰기 없음.
   useEffect(() => {
-    if (!resultDone || !result || !game.color || fenRoot) return;
-  }, [resultDone, result, game.color, myUid, reviewPosKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+    if (!resultDone || !result || fenRoot) return;
+    touchReviewMeta(resultCacheKey, game);
+  }, [resultDone, result, game, resultCacheKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.6.4) 하이라이트 카드 데이터 — 가장 극적인 수 최대 3개. 깨끗한 대국이면 비어 있어 시트에서 구획을 숨긴다.
   const highlightData = useMemo(() => {
     if (!resultDone || !result || fenRoot || !shareCardData) return null;

@@ -1035,7 +1035,7 @@ export function LearnTab({ growthUid, growthGames, mainQuest, onAnswerChapter, o
   user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, me, onOpenTitle }) {
   const [lOpen, setLOpen] = useLearnFold("lessons", false);
   // (v0.7.3, 사용자 요청) 예전 프로필 자리에 성장 분석(실수 통계·약점 지도·복습 카드·오프닝 실수·마스터 스타일)을 그대로 펼쳐 보여 준다.
-  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} ccName={ccName} />;
+  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} ccName={ccName} user={user} onOpenGameAnalyze={onOpenGameAnalyze} />;
   return (
     <div>
       <PageTitle>{t("학습")}</PageTitle>
