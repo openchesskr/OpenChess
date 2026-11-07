@@ -21,7 +21,7 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { Board, CONTENT, SNAP, TitleBadge, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -218,7 +218,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
 // (v0.7.3, 사용자 요청) 비율은 그대로 두고 칼럼 가로 폭을 가득 채우도록 키운다 — maxScale을 주지 않으면 상한 없이 폭에 맞춘다(예전엔 0.6~0.85배로 줄여 오른쪽이 비었다).
 function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
-  const BASE_W = 260, BASE_H = 74;
+  const BASE_W = 260, BASE_H = 74 * TITLE_SCALE;   // 칭호가 TITLE_SCALE(75%)로 줄어 높이도 그만큼
   const ref = useRef(null);
   const [w, setW] = useState(0);
   useLayoutEffect(() => {

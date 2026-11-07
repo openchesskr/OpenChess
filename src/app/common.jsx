@@ -5874,6 +5874,7 @@ function titleShape(shapeTier, c) {
 }
 const TITLE_SHAPE_CUT = [0, 5, 11, 12];
 const fmtCompactN = (n) => (n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : fmtFull(n));
+export const TITLE_SCALE = 0.75;   // 칭호 배지 크기(v0.7.3) — 바꾸려면 여기 한 곳만
 export function TitleBadge({ id, earned = true, equipped = false, progress = null, progress2 = null, onEquip, compact = false, locked = false, fresh = false, onSeen, noPeek = false, spot = false }) {
   const def = titleDef(id);
   // 해금 진척도: 안 얻은 칭호는 항상(좌하단 조건 + 우측 게이지), 얻은 칭호는 꾹 누르거나 왼쪽으로 밀면 잠깐 보인다.
@@ -5940,7 +5941,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   const pieceSz = Math.round(H * 0.95);
   const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
-  return (
+  const badge = (
     <div ref={rootRef} data-title-id={id} style={{ position: "relative", width: "100%", boxSizing: "border-box", padding: "5px 6px", transform: pressing ? "scale(.95)" : "none", transition: "transform .12s ease", ...(spot ? { animation: "titleFindShake .6s ease-in-out 5" } : null) }}>
       {spot && <span aria-hidden="true" style={{ position: "absolute", inset: 2, borderRadius: 8, pointerEvents: "none", zIndex: 8, animation: "titleUnlockRing 1.3s ease-out 3" }} />}
       <div onClick={handleClick} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={onUp} role="button" aria-label={labelText + " " + nameText}
@@ -6014,6 +6015,13 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
           {sparks.map(([dx, dy], i) => <Sparkles key={i} size={11 + (i % 3) * 3} style={{ position: "absolute", left: 18 + i * 14 + "%", top: "50%", color: "#FFE9A8", "--dx": dx + "px", "--dy": dy + "px", animation: `titleSpark ${0.9 + (i % 3) * 0.2}s ease-out ${i * 0.07}s forwards`, opacity: 0 }} />)}
         </div>
       )}
+    </div>
+  );
+  // (v0.7.3, 사용자 요청) 칭호 크기를 현재의 75%로 — 배지를 1/TITLE_SCALE배 넓게 배치한 뒤 TITLE_SCALE로 줄여, 높이·글자·장식은 75%가 되고 가로는 칸을 계속 가득 채운다.
+  // 바깥 상자의 높이를 줄어든 높이로 고정해 목록 간격도 함께 줄어든다(transform은 레이아웃 높이를 바꾸지 않으므로).
+  return (
+    <div style={{ width: "100%", height: (H + 10) * TITLE_SCALE }}>
+      <div style={{ width: (100 / TITLE_SCALE) + "%", transform: "scale(" + TITLE_SCALE + ")", transformOrigin: "left top" }}>{badge}</div>
     </div>
   );
 }

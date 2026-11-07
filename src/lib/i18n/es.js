@@ -3039,4 +3039,6 @@ export default {
   "오프닝 정보 없음": "Sin información de apertura",
   "프로필을 불러오지 못함": "No se pudo cargar el perfil",
   "옆으로 밀어서 이동": "Desliza para moverte",
+  "100개": "100",
+  "대국 출처": "Origen de las partidas",
 };

@@ -149,7 +149,7 @@ export default function App() {
       return next;
     });
   }, [totalXp]);
-  const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 50개 지급(영구 저장)
+  const [ocCoins, setOcCoins] = useState(0);   // (19차 기능5) OC 나이트 코인 — 일일 퀘스트 전체 완료 시 100개 지급(영구 저장)
   // (v0.7.0 보안 BUG-113) XP·코인·보유 스킨은 서버 원장이 주인이다 — 화면의 값은 항상 서버가 돌려준 값으로만 바뀐다(아래 economy* 호출의 응답을 여기에 반영).
   // 로그인하지 않은 방문자는 보상·재화가 없다(0 그대로).
   const applyEconomy = useCallback((e) => {
@@ -1095,7 +1095,7 @@ export default function App() {
     if (!dailyQuest || dailyQuest.bonusClaimed) return;
     const allDone = dailyQuest.claimed.puzzle && dailyQuest.claimed.dailypuzzle && [0, 1, 2].every((i) => dailyQuest.claimed["cc_" + i]);
     if (!allDone) return;
-    // (v0.7.0 BUG-113) 전체 완료 보너스(XP 20 + 코인 50)도 서버가 슬롯 5개를 모두 받았는지 확인하고 하루 1회 지급한다.
+    // (v0.7.0 BUG-113) 전체 완료 보너스(XP 20 + 코인 100)도 서버가 슬롯 5개를 모두 받았는지 확인하고 하루 1회 지급한다.
     if (!uid || questInflightRef.current.has("bonus")) return;
     questInflightRef.current.add("bonus");
     const date = dailyQuest.date;
@@ -1874,7 +1874,7 @@ export default function App() {
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenAnalysis={(sans) => onOpenAnalysisFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenAnalysisFen={onOpenAnalysisFen} dailyPuzzleStreak={dailyPuzzleStreak} puzzleMomentum={puzzleMomentum} />}
-        {tab === "learn" && <LearnTab user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={profile.chesscom} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} renderProfile={(mid, onViewChange) => <UserProfilePage embedded compact hideRecentGames onViewChange={onViewChange} mid={mid} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenTitle={onOpenTitle} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />} growthUid={uid} growthGames={chesscom.games} engine={engine} onOpenReview={openReview} dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
+        {tab === "learn" && <LearnTab user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={profile.chesscom} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} growthUid={uid} growthGames={chesscom.games} engine={engine} onOpenReview={openReview} dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} mainQuest={mainQuest} onAnswerChapter={onAnswerChapter} onClaimChapter={claimMainChapter} canEdit={canEdit} canEditLessons={canEditLessons} bumpContent={bumpContent} contentVer={contentVer} questHighlight={questHighlight} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
             탭과 같은 이유(위 CollectionTab 주석 참고)로 언마운트는 하지 않고 display:none으로만

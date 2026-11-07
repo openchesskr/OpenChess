@@ -721,7 +721,7 @@ function QuestDemo() {
       })}
       <div className="flex items-center" style={{ gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 2, border: "1px solid " + (n === QUESTS.length ? "#C49A50" : "rgba(90,58,34,.3)"), background: n === QUESTS.length ? "rgba(196,154,80,.25)" : "rgba(255,255,255,.3)" }}>
         <motion.img animate={n === QUESTS.length ? { rotate: [0, -12, 12, 0], scale: [1, 1.2, 1] } : {}} src="/oc-coin.png" alt="" style={{ width: 30, height: 30 }} />
-        <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900 }}>{t("모든 퀘스트 완료 보상")}</div><div style={{ fontSize: 10.5, opacity: 0.65 }}>{tx("OC 나이트 코인 {0}개, {1}/{2} 완료", 50, n, QUESTS.length)}</div></div>
+        <div style={{ flex: 1 }}><div style={{ fontSize: 12.5, fontWeight: 900 }}>{t("모든 퀘스트 완료 보상")}</div><div style={{ fontSize: 10.5, opacity: 0.65 }}>{tx("OC 나이트 코인 {0}개, {1}/{2} 완료", 100, n, QUESTS.length)}</div></div>
       </div>
     </div>
   );

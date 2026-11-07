@@ -3039,4 +3039,6 @@ export default {
   "오프닝 정보 없음": "No opening info",
   "프로필을 불러오지 못함": "Could not load the profile",
   "옆으로 밀어서 이동": "Swipe to move",
+  "100개": "100",
+  "대국 출처": "Game source",
 };
