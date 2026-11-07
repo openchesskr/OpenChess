@@ -40,28 +40,20 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
     if (/overflowX: "auto"/.test(ln)) fails.push("LessonMap: 가로 스크롤 지도로 되돌아감");
   }
 }
-{ // (v0.7.4) 성장 분석은 맨 위에 /user 프로필 상단 정보(칭호·사진·이름·소개·MID·티어/퍼즐 레이팅) → 요약 띠 → 구획 탭 순서. 기존 네 영역(약점 지도·복습 카드·오프닝 실수·마스터 스타일)과 세 지표는 유지한다.
+{ // (v0.7.4) 성장 분석: 맨 위 /user 프로필 상단 정보(칭호·사진·이름·소개·MID·티어/퍼즐 레이팅) → 리뷰 5판 게이트(게이지 바) 또는 마스터 스타일. 나머지 분석 요소는 삭제했다.
   const gr = rd("src/app/growth.jsx");
   const gp = (gr.match(/export function GrowthPanel[\s\S]*$/) || [""])[0];
   if (!gp) fails.push("GrowthPanel을 찾지 못함");
   else {
-    if (!/<GrowthHeader /.test(gp) || !/<GrowthSummary /.test(gp)) fails.push("GrowthPanel: 프로필 헤더(GrowthHeader)·요약 띠(GrowthSummary)가 없음");
-    if (gp.indexOf("<GrowthHeader") > gp.indexOf("<GrowthSummary")) fails.push("GrowthPanel: 프로필 헤더가 요약 띠보다 위에 있어야 함");
-    for (const c of ["WeaknessMap", "ReviewCards", "OpeningMistakes", "MasterStyle"]) if (!new RegExp("<" + c + " ").test(gp)) fails.push("GrowthPanel: " + c + " 구획이 빠짐(기존 정보 유지)");
+    if (!/<GrowthHeader /.test(gp)) fails.push("GrowthPanel: 프로필 헤더(GrowthHeader)가 없음");
+    if (!/<ReviewGate /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 리뷰 5판 게이트(ReviewGate)와 마스터 스타일(MasterStyle)이 필요함");
+    if (gp.indexOf("<GrowthHeader") > gp.indexOf("<ReviewGate")) fails.push("GrowthPanel: 프로필 헤더가 게이트보다 위에 있어야 함");
   }
   const gh = (gr.match(/function GrowthHeader[\s\S]*?\n}\n/) || [""])[0];
   for (const [re, what] of [[/EquippedTitleFit/, "장착 칭호"], [/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"], [/TierRatingRow/, "티어·퍼즐 레이팅"]]) if (!re.test(gh)) fails.push("GrowthHeader: " + what + " 표시가 없음(/user 상단 정보)");
-  for (const k of ["분석한 실수", "오늘 복습", "익힌 카드"]) if (!gr.includes('t("' + k + '")')) fails.push("성장 분석: '" + k + "' 지표가 없음");
   if (!/me=\{me\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 내 프로필(me)을 넘기지 않음");
-}
-{ // (v0.7.4) 네 구획의 새 레이아웃 유지: 약점 지도(구간 색 누적 막대, 예전 구간×유형 표 폐지)·복습 카드(복습 간격 단계 막대)·오프닝 실수(백/흑 전환)·마스터 스타일(지문 띠 + 묶음별 접이식).
-  const gr = rd("src/app/growth.jsx");
-  const part = (a, b) => (gr.match(new RegExp("function " + a + "[\\s\\S]*?\\nfunction " + b)) || [""])[0];
-  if (!/PHASE_COLOR/.test(gr) || /<table/.test(gr)) fails.push("약점 지도: 구간 색 누적 막대(PHASE_COLOR)를 쓰고 예전 구간×유형 <table>은 쓰지 않아야 함");
-  if (!/const stages = useMemo/.test(gr)) fails.push("복습 카드: 복습 간격 단계(stages) 분포 막대가 없음");
-  if (!/const \[side, setSide\]/.test(gr) || !/role="tablist"/.test((gr.match(/function OpeningMistakes[\s\S]*?\n}\n/) || [""])[0])) fails.push("오프닝 실수: 백/흑 전환 탭(side)이 없음 — 두 색을 위아래로 쌓지 않는다");
-  const ms = (gr.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0];
-  if (!/allKeys\.map/.test(ms) || !/openG/.test(ms) || !/className="growth-crit-table"/.test(ms)) fails.push("마스터 스타일: 기준 지문 띠(allKeys)·묶음별 접이식(openG)·비교 표(growth-crit-table)가 필요함");
+  if (!/ccName=\{ccName\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 chess.com 아이디(ccName)를 넘기지 않음 — 내 리뷰 판 수를 셀 수 없음");
+  for (const dead of ["WeaknessMap", "ReviewCards", "OpeningMistakes", "GrowthSummary", "GROWTH_SECTIONS"]) if (new RegExp("function " + dead + "\\b").test(gr)) fails.push("growth.jsx: 삭제한 성장 분석 요소(" + dead + ")가 다시 들어옴");
 }
 { // (v0.7.4) 데스크톱 /learn: 화면 높이 2열 대시보드(왼쪽 프로필·일일 퀘스트 정확히 반반, 오른쪽은 최근 대국만), 일일 퀘스트 compact, 최근 대국 박스 확장, 알림 → 학습 탭.
   const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
@@ -80,7 +72,6 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   else {
     if (!/CC_TOAST_LABEL_FONT/.test(box) || !/recordAround\(/.test(box) || !/ccWrColor/.test(box)) fails.push("GameBox: 오프닝 줄이 chess.com 알림과 같은 디자인(CC_TOAST_LABEL_FONT·전적 칩)이 아님");
     if (!/badgeIcon\("brilliant"/.test(box) || !/badgeIcon\("only"/.test(box)) fails.push("GameBox: 좌하단 탁월한 수·유일한 수 개수가 없음");
-    if (!/growthOfGame\(/.test(box)) fails.push("GameBox: 성장 분석 연계 정보(growthOfGame)가 없음");
     if (!/<Search size=/.test(box) || !/<BestMoveJumpButton/.test(box)) fails.push("GameBox: 대국 보기·리뷰하기는 검색 아이콘 버튼 + 연두색 리뷰 아이콘 버튼이어야 함");
     if (/>\{t\("대국 보기"\)\}<\/button>|>\{summary \? t\("리뷰 보기"\) : t\("리뷰하기"\)\}<\/button>/.test(box)) fails.push("GameBox: 글자 버튼으로 되돌아감");
   }

@@ -18,7 +18,6 @@ import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
 import { pickHighlights } from "../lib/highlights.js";
-import { recordReviewMistakes } from "../lib/growthStore.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
@@ -2338,7 +2337,6 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // (v0.6.4) 분석이 끝난 리뷰에서 내 실수를 성장 센터(약점 지도·복습 카드)에 기록한다. 같은 대국을 다시 열어도 같은 id라 중복·진도 초기화 없음.
   useEffect(() => {
     if (!resultDone || !result || !game.color || fenRoot) return;
-    try { recordReviewMistakes(myUid, result, { color: game.color, gameKey: reviewPosKey, fenRoot }); } catch { /* 기록 실패는 리뷰에 영향 없음 */ }
   }, [resultDone, result, game.color, myUid, reviewPosKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.6.4) 하이라이트 카드 데이터 — 가장 극적인 수 최대 3개. 깨끗한 대국이면 비어 있어 시트에서 구획을 숨긴다.
   const highlightData = useMemo(() => {

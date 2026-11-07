@@ -1,67 +1,39 @@
 #!/usr/bin/env node
-/** (v0.6.4) 성장 센터(약점 지도·실수 복습 카드·하이라이트·마스터 스타일) 안전장치.
- *  ① 실수 추출: 내 쪽만, 최선수가 있는 실수·블런더·놓친 수만, 수 두기 전 FEN과 id가 맞고 중복 합치기가 동작한다.
- *  ② 분류: 메이트 허용·기물 방치·메이트 놓침·기물 획득 놓침을 실제 포지션으로 가려낸다.
- *  ③ 간격 반복: 맞히면 칸이 오르고 일정이 밀리며, 틀리면 처음 칸으로 돌아가고, 오늘 풀 카드만 뽑힌다. 정답 판정은 체크 기호를 무시한다.
- *  ④ 하이라이트: 최대 3개, 서로 떨어져 있고 시간순이며 점수 하한을 지킨다. 깨끗한 판은 비어 있다.
- *  ⑤ 마스터 스타일: 특징 계산이 손으로 센 값과 같고, 표본이 적으면 매칭하지 않으며, 같은 성향의 가짜 마스터가 가장 가깝게 나온다. 마스터 데이터 형식.
- *  ⑥ 연결: 리뷰가 실수를 기록하고, 공유 시트가 하이라이트를 쓰며, 도감 화면이 성장 센터를 연다. */
+/** (v0.7.4 개편) 성장 분석 안전장치. 약점 지도·복습 카드·오프닝 실수는 처음부터 다시 설계하려고 삭제했다 — 이 검사는 남은 것과 새 게이트를 지킨다.
+ *  ① 리뷰 5판 게이트: 내가 리뷰한 대국 수 계산(내 chess.com 아이디가 한쪽인 대국·내 OpenChess 대국 id만, 남의 대국·PGN·옛 버전·빈 수 목록은 제외)과 5판 기준, 게이지 바·안내 문구 연결.
+ *  ② 하이라이트: 최대 3개, 서로 떨어져 있고 시간순이며 점수 하한을 지킨다. 깨끗한 판은 비어 있다.
+ *  ③ 마스터 스타일: 특징 계산이 손으로 센 값과 같고, 표본이 적으면 매칭하지 않으며, 같은 성향의 가짜 마스터가 가장 가깝게 나온다. 마스터 데이터 형식.
+ *  ④ 연결: 삭제한 성장 분석 코드(실수 기록·복습 카드·오프닝 실수)가 다시 들어오지 않는다. */
 import { readFileSync } from "node:fs";
 const fails = [];
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(m + ": " + JSON.stringify(a) + " ≠ " + JSON.stringify(b)); };
 const ok = (c, m) => { if (!c) fails.push(m); };
-const W = await import("../src/lib/weakness.js"), H = await import("../src/lib/highlights.js"), S = await import("../src/lib/masterStyle.js");
+const R = await import("../src/lib/reviewedCount.js"), H = await import("../src/lib/highlights.js"), S = await import("../src/lib/masterStyle.js");
 const { CRITERIA_GROUPS } = S;
 
-// ── ① 추출 ──  1.f3 e5 2.g4 Qh4# : 백(나)의 f3·g4가 실수. 최선수는 임의 값.
-const mk = (san, white, kind, extra = {}) => ({ san, white, kind, lossWinPct: 20, best: null, ...extra });
-const res1 = { moves: [mk("f3", true, "mistake", { best: "e4" }), mk("e5", false, "good"), mk("g4", true, "blunder", { best: "d4", lossWinPct: 90 }), mk("Qh4#", false, "best")], evalWin: [50, 30, 20, 5, 0] };
-const ms = W.extractMistakes(res1, { color: "w", gameKey: "k1", now: 1000 });
-eq(ms.map((m) => m.id), ["k1#0", "k1#2"], "내 쪽(백) 실수만, id = 게임키#ply");
-eq(ms[0].fen, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "수 두기 전 FEN");
-eq(ms[1].theme, "allowedMate", "2.g4는 Qh4#을 허용 → 메이트 허용");
-eq(W.extractMistakes(res1, { color: "b", gameKey: "k1" }).length, 0, "흑은 실수가 없다(최선·good)");
-eq(W.extractMistakes({ moves: [mk("e4", true, "mistake")] }, { color: "w", gameKey: "k" }).length, 0, "최선수가 없는 실수는 카드가 될 수 없다");
-eq(W.extractMistakes(res1, { color: "w", gameKey: "k", fenRoot: {} }).length, 0, "사용자 지정 시작 위치는 다루지 않는다");
-eq(W.mergeMistakes(ms, ms).length, 2, "같은 id는 합치지 않는다");
-eq(W.mergeMistakes([], Array.from({ length: 450 }, (_, i) => ({ id: "x" + i }))).length, W.MAX_MISTAKES, "목록 상한");
-
-// ── ② 분류 ──
-const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-eq(W.classifyMistake(START, "g4", "e4", "opening"), "opening", "그냥 약한 오프닝 수 → 오프닝 원칙");
-// 백 퀸이 d1, 흑 퀸 d8이 열린 채 Qxd8 가능한 포지션에서 다른 수를 둠 → 기물 획득 놓침
-eq(W.classifyMistake("3qk3/8/8/8/8/8/8/3QK3 w - - 0 1", "Ke2", "Qxd8+", "end"), "missedWin", "퀸 교환 대신 다른 수 → 기물 획득 놓침");
-// 메이트 놓침: 백 Qh5 + Ra1 vs 흑 킹 h8: Ra8#
-eq(W.classifyMistake("7k/6pp/8/8/8/8/8/R3K3 w - - 0 1", "Kd2", "Ra8#", "end"), "missedMate", "백 룩 메이트(Ra8#)를 놓침");
-// 기물 방치: 백 퀸이 d1에서 d5로 가서 흑 폰 e6에 잡힘
-eq(W.classifyMistake("4k3/8/4p3/8/8/8/8/3QK3 w - - 0 1", "Qd5", "Qd4", "middle"), "hung", "폰에 잡히는 자리로 퀸을 보냄 → 기물 방치");
-
-// ── ③ 간격 반복 ──
-const DAY = 86400000, c0 = { id: "a", best: "Nf3+", box: 0, due: 0, loss: 10 };
-const g1 = W.gradeCard(c0, true, 1000);
-eq([g1.box, g1.due, g1.reps], [1, 1000 + DAY, 1], "정답: 1칸 위로, 다음은 1일 뒤");
-eq(W.gradeCard({ ...g1, box: 5 }, true, 0).box, 5, "맨 위 칸은 넘지 않는다");
-const gw = W.gradeCard({ ...g1, box: 3 }, false, 1000);
-eq([gw.box, gw.lapses, gw.due], [0, 1, 1000 + 300000], "오답: 처음 칸, 5분 뒤 다시");
-eq(W.dueCards([{ id: "x", due: 5, loss: 1 }, { id: "y", due: 99999, loss: 1 }, { id: "z", due: 1, loss: 9 }], 100).map((c) => c.id), ["z", "x"], "오늘 풀 카드만, 오래된 것부터");
-eq(W.dueCards(Array.from({ length: 30 }, (_, i) => ({ id: i, due: 0, loss: i })), 1, 10).length, 10, "세션 한도");
-ok(W.isCardAnswer(c0, "Nf3"), "정답 판정은 체크 기호를 무시"); ok(!W.isCardAnswer(c0, "Nc3"), "다른 수는 오답");
-eq(W.srsStats([{ box: 5, due: 0 }, { box: 1, due: 9e15 }], 1), { total: 2, due: 1, mastered: 1, learning: 1 }, "복습 통계");
-const rep = W.weaknessReport(ms);
-eq([rep.total, rep.byPhase[0].n, rep.heat.flat().reduce((a, b) => a + b, 0)], [2, 2, 2], "리포트 합계 · 열지도 칸 수");
-eq(W.weaknessReport([]).weakPhase, null, "빈 기록 리포트");
-// 저장소: 기록은 계정별로 분리되고, 같은 리뷰를 다시 열어도 복습 진도가 초기화되지 않는다
+// ── ① 리뷰 5판 게이트 ──
 {
-  const ls = new Map(); globalThis.window = { localStorage: { getItem: (k) => ls.get(k) ?? null, setItem: (k, v) => ls.set(k, v) }, dispatchEvent() { } }; globalThis.Event = class { };
-  const G = await import("../src/lib/growthStore.js");
-  eq(G.recordReviewMistakes("u1", res1, { color: "w", gameKey: "g1" }), 2, "리뷰 끝 → 실수 2개 기록");
-  const d = G.loadGrowth("u1"); d.mistakes[0] = W.gradeCard(d.mistakes[0], true, 5000); G.saveGrowth("u1", d);
-  eq(G.recordReviewMistakes("u1", res1, { color: "w", gameKey: "g1" }), 0, "같은 대국을 다시 열면 중복 기록 없음");
-  eq(G.loadGrowth("u1").mistakes[0].box, 1, "복습 진도가 유지됨");
-  eq(G.loadGrowth("u2").mistakes.length, 0, "다른 계정은 분리");
+  const fake = (entries) => { const m = new Map(entries); return { get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => (m.has(k) ? m.get(k) : null) }; };
+  const good = JSON.stringify({ v: 1, d: 20, result: { moves: [{ san: "e4" }] } });
+  const P = "oc-review-result:";
+  const st = fake([
+    [P + "cc:Me|Foe|100", good], [P + "cc:foe|ME|200", good],            // 내 chess.com 대국 2판(흰·검 어느 쪽이든, 대소문자 무시)
+    [P + "cc:Foe|Other|300", good],                                     // 남의 chess.com 대국 — 제외
+    [P + "id:pvp-12", good], [P + "id:bot-3", good],                    // 내 OpenChess 대국 2판
+    [P + "pgn:e4 e5", good], [P + "fen:x|y", good],                     // PGN·FEN 리뷰(내 대국인지 알 수 없음) — 제외
+    [P + "cc:Me|Foe|400", JSON.stringify({ v: 0, result: { moves: [{}] } })],   // 옛 버전 — 제외
+    [P + "cc:Me|Foe|500", JSON.stringify({ v: 1, result: { moves: [] } })],     // 수 목록 없음 — 제외
+    [P + "cc:Me|Foe|600", "{깨진 JSON"],                                // 깨진 값 — 제외(throw 안 함)
+    ["oc-review-pos:cc:Me|Foe|700", good],                              // 리뷰 결과가 아니라 위치 기록 — 제외
+  ]);
+  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: st }), 4, "내 대국 4판(cc 2 + OpenChess 2)만 센다");
+  eq(R.countMyReviewedGames({ ccName: "", version: 1, storage: st }), 2, "chess.com 아이디가 없으면 OpenChess 대국만 센다");
+  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: fake([]) }), 0, "빈 저장소는 0");
+  eq(R.countMyReviewedGames({ ccName: "me", version: 1, storage: null }), 0, "저장소가 없어도 throw 없이 0(브라우저 밖)");
+  eq(R.GROWTH_MIN_REVIEWS, 5, "성장 분석은 리뷰 5판부터");
 }
-
-// ── ④ 하이라이트 ──
+// ── ② 하이라이트 ──
+const mk = (san, white, kind, extra = {}) => ({ san, white, kind, lossWinPct: 20, best: null, ...extra });
 const long = { moves: Array.from({ length: 30 }, (_, i) => mk(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1", "b5", "Bb3", "d6", "c3", "O-O", "h3", "Nb8", "d4", "Nbd7", "c4", "c6", "cxb5", "axb5", "Nc3", "Bb7", "Bg5", "b4", "Nb1", "h6"][i], i % 2 === 0, "good", { lossWinPct: 0 })), evalWin: new Array(31).fill(50) };
 long.moves[6].kind = "blunder"; long.moves[6].lossWinPct = 40; long.moves[8].kind = "blunder"; long.moves[8].lossWinPct = 35;   // 가까운 둘(ply 6·8)은 하나만
 long.moves[14].kind = "brilliant"; long.moves[22].kind = "mistake"; long.moves[22].lossWinPct = 25;
@@ -73,7 +45,7 @@ ok(hl.some((h) => h.ply === 14 && h.kind === "brilliant"), "탁월한 수 포함
 eq(H.pickHighlights({ moves: long.moves.map((m) => ({ ...m, kind: "good", lossWinPct: 0 })), evalWin: new Array(31).fill(50) }).length, 0, "깨끗한 판은 하이라이트 없음");
 eq(H.pickHighlights({ moves: [] }).length, 0, "빈 결과");
 
-// ── ⑤ 마스터 스타일 ──
+// ── ③ 마스터 스타일 ──
 const G = (moves, color, result = "win") => ({ moves, color, result });
 const f = S.styleFeatures([G(["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6"], "w"), G(["d4", "d5", "c4", "e6", "Nc3", "Nf6"], "b"), G(["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "O-O-O", "Nf6"], "w", "draw")]);
 eq([f.vec[0], f.vec[1], f.vec[3], f.vec[5], f.vec[12], f.vec[7]], [1, 0, null, 1, 1 / 3, 1], "특징: 백 e4 비율·백 d4·흑 e5(분모 없으면 null)·흑 …d5·무승부·퀸사이드 캐슬링");
@@ -103,19 +75,24 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
   ok(S.STYLE_KEYS.every((k) => S.criterionLabel(k) && S.criterionLabel(k) !== k), "모든 기준에 이름이 있다");
   eq([S.formatCriterion("w_e4", 0.456), S.formatCriterion("length", 0.7), S.formatCriterion("drawRate", null)], ["46%", "약 42수", "-"], "값 표기(비율·평균 수·없음)");
 }
-// ── ⑥ 연결 ──
+// ── ④ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/learn.jsx"), pz = rd("src/app/puzzle.jsx");
-ok(/recordReviewMistakes\(/.test(review), "ReviewPage가 리뷰가 끝나면 내 실수를 기록하지 않음");
+const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/learn.jsx"), common = rd("src/app/common.jsx");
 ok(/pickHighlights\(/.test(review) && /drawHighlightCard/.test(review), "리뷰 공유 시트가 하이라이트 카드를 쓰지 않음");
 ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(LearnTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
-// (v0.7.3) 학습 탭 개편으로 프로필 prop이 앞에 붙었다 — 순서와 무관하게 <LearnTab ...> 태그 안에 있으면 된다.
 // renderProfile={(mid) => <UserProfilePage .../>}처럼 prop 안에 ">"가 있어 태그 끝을 정규식으로 못 찾으므로, <LearnTab 뒤 일정 구간 안에서 두 prop을 찾는다.
 { const i = app.indexOf("<LearnTab "); const seg = i >= 0 ? app.slice(i, i + 4000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음"); }
-ok(!/GrowthCenter|GrowthEntryCard|onOpenGrowth/.test(app + pz + quest), "성장 분석이 다시 별도 버튼·화면으로 분리됨(학습 탭 안에 바로 펼쳐 보여야 함)");
-ok(/gradeCard\(/.test(growth) && /dueCards\(/.test(growth) && /matchMasters\(/.test(growth) && /weaknessReport\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 네 기능 로직(기준별 비교 포함)을 모두 쓰지 않음");
+// 게이트: 5판 미만이면 마스터 스타일을 포함한 성장 분석 요소를 가리고 게이지 바 안내(ReviewGate)만 보인다.
+ok(/countMyReviewedGames\(\{/.test(growth) && /reviewed >= GROWTH_MIN_REVIEWS/.test(growth), "성장 분석이 리뷰 판 수(5판)로 열리지 않음");
+ok(/\{open \? <MasterStyle [^>]*\/> : <ReviewGate /.test(growth), "리뷰 5판 미만이면 ReviewGate(게이지 바)만 보여야 함");
+{ const gate = (growth.match(/function ReviewGate[\s\S]*?\n}\n/) || [""])[0]; ok(/role="progressbar"/.test(gate) && /Array\.from\(\{ length: need \}/.test(gate) && /더 리뷰하면 열림/.test(gate) && /리뷰 버튼/.test(gate), "ReviewGate: 게이지 바(칸 수 = 필요한 판 수)·남은 판 수·리뷰 안내가 있어야 함"); }
+// 마스터 스타일
+ok(/matchMasters\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 마스터 스타일 로직(기준별 비교 포함)을 쓰지 않음");
 ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");
 ok(/const peakText = /.test(growth) && !/"Elo " \+/.test(growth), "마스터 레이팅 표기가 모든 언어 공통 \"Peak 2xxx\"가 아님");
 ok(CRITERIA_GROUPS.flatMap((g) => g.keys).length === S.STYLE_KEYS.length && S.STYLE_KEYS.every((k) => CRITERIA_GROUPS.some((g) => g.keys.includes(k))), "기준 표(CRITERIA_GROUPS)가 스타일 특징 13개를 하나도 빠짐없이 한 번씩 담지 않음");
+// 삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록)가 되살아나지 않게 — 새 설계가 확정되기 전에는 넣지 않는다.
+{ const all = [review, growth, app, quest, common, rd("src/app/gameHistory.jsx")].join("\n");
+  ok(!/lib\/weakness\.js|growthStore|openingMistakes|recordReviewMistakes|WeaknessMap|ReviewCards|OpeningMistakes|occ-growth/.test(all.replace(/occ_growth_v1/g, "")), "삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록) 참조가 다시 생김"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
-console.log("✔ check-growth: 실수 추출·분류, 간격 반복, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");
+console.log("✔ check-growth: 리뷰 5판 게이트(내 대국 집계·게이지 바), 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

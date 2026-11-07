@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Target } from "lucide-react";
+import { Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -10,8 +10,6 @@ import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
 import { TIME_CLASS_LABEL, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey } from "./common.jsx";
 import { recordAround } from "../lib/ccGameToast.js";
 import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
-import { loadGrowth } from "../lib/growthStore.js";
-import { themeLabel } from "../lib/weakness.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { t, tx } from "../lib/i18n.js";
@@ -381,24 +379,12 @@ export function RecentGamesList({ games, ratingChanges, username, resetKey, onOp
 const BOX_PAGE_SIZE = 8;
 const iconBtnStyle = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 const pillStyle = (strong) => ({ fontSize: 10.5, fontWeight: strong ? 800 : 700, color: strong ? T.ink : T.inkSoft, background: strong ? "rgba(90,58,34,.1)" : "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" });
-// 이 대국의 리뷰에서 기록된 실수(성장 분석 저장소) — 개수와 가장 많은 유형. 이 기기에서 리뷰하지 않았으면 null.
-function growthOfGame(g, uid) {
-  try {
-    const key = reviewStorageKey(g); if (!key) return null;
-    const mine = loadGrowth(uid).mistakes.filter((m) => m && typeof m.id === "string" && m.id.startsWith(key + "#"));
-    if (!mine.length) return null;
-    const by = {}; for (const m of mine) by[m.theme] = (by[m.theme] || 0) + 1;
-    const top = Object.entries(by).sort((x, y) => y[1] - x[1])[0];
-    return { n: mine.length, theme: top ? top[0] : null };
-  } catch { return null; }
-}
-function GameBox({ g, rc, username, uid, allGames, onOpenGame, onOpenGameAnalyze, index }) {
+function GameBox({ g, rc, username, allGames, onOpenGame, onOpenGameAnalyze, index }) {
   const won = g.result === "win", lost = g.result === "loss";
   const accent = won ? T.best : lost ? T.blunder : T.inkSoft;
   const oppSide = g.color === "w" ? g.black : g.white;
   const board = useMemo(() => { try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves]);
   const summary = useMemo(() => cachedReviewSummary(g), [g]);
-  const growth = useMemo(() => growthOfGame(g, uid), [g, uid, summary]);
   const rec = useMemo(() => { try { return g.opening ? recordAround(allGames, g) : null; } catch { return null; } }, [allGames, g]);
   const d = g.endTime ? new Date(g.endTime * 1000) : null;
   const date = d ? d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0") : "";
@@ -440,11 +426,10 @@ function GameBox({ g, rc, username, uid, allGames, onOpenGame, onOpenGameAnalyze
             {rc == null && g.rating != null && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{g.rating}</span>}
             {won === false && lost === false && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{drawKindLabel(g.moves)}</span>}
           </div>
-          {/* 성장 분석 연계: 정확도·이 대국에서 기록된 실수와 가장 많은 유형 */}
-          {summary && (
+          {/* 정확도(리뷰한 대국만). 성장 분석 연계 정보는 성장 분석을 새로 설계하면서 다시 붙인다. */}
+          {summary && summary.acc != null && (
             <div className="flex items-center" style={{ gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-              {summary.acc != null && <span style={{ fontSize: 12, fontWeight: 900, color: T.ink, whiteSpace: "nowrap" }}>{t("정확도")} <span style={{ fontFamily: SITE_FONT, color: T.best }}>{summary.acc.toFixed(1)}%</span></span>}
-              {growth && <span title={growth.theme ? themeLabel(growth.theme) : undefined} className="flex items-center" style={{ gap: 4, fontSize: 11, fontWeight: 800, color: T.mistake, background: "rgba(217,130,43,.12)", border: "1px solid rgba(217,130,43,.35)", borderRadius: 999, padding: "1px 8px", maxWidth: "100%" }}><Target size={11} /><span style={{ whiteSpace: "nowrap" }}>{t("실수")} {growth.n}</span>{growth.theme && <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>· {themeLabel(growth.theme)}</span>}</span>}
+              <span style={{ fontSize: 12, fontWeight: 900, color: T.ink, whiteSpace: "nowrap" }}>{t("정확도")} <span style={{ fontFamily: SITE_FONT, color: T.best }}>{summary.acc.toFixed(1)}%</span></span>
             </div>
           )}
         </div>
@@ -465,7 +450,7 @@ function GameBox({ g, rc, username, uid, allGames, onOpenGame, onOpenGameAnalyze
     </motion.div>
   );
 }
-export function RecentGameBoxes({ games, ratingChanges, username, uid, resetKey, onOpenGame, onOpenGameAnalyze }) {
+export function RecentGameBoxes({ games, ratingChanges, username, resetKey, onOpenGame, onOpenGameAnalyze }) {
   const [page, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [resetKey]);
   const all = useMemo(() => [...(games || [])].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)), [games]);
@@ -477,7 +462,7 @@ export function RecentGameBoxes({ games, ratingChanges, username, uid, resetKey,
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{t("최근 대국")}</span><span style={{ fontSize: 11.5, color: "#C9B58C" }}>{tx("{0}판", all.length)}</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 330px), 1fr))", gap: 12 }}>
-        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} uid={uid} allGames={all} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
+        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} allGames={all} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
       </div>
       <ListPager page={cur} setPage={setPage} pageCount={pageCount} />
     </div>

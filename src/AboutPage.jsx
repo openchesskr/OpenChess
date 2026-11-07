@@ -942,6 +942,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             [t("나이트 레이스"), t("나이트를 최소한의 이동으로 목표 칸까지 보냅니다. 나이트 움직임에 감을 잡으려고 넣었습니다.")],
             [t("무한 체크메이트 게임"), t("체크메이트 문제가 끝없이 이어집니다. 한 수 앞을 보는 습관을 들이는 용도입니다.")],
             [t("백랭크 러시아워"), t("백랭크 메이트를 노리는 짧은 문제를 빠르게 이어서 풉니다.")],
+            [t("일일 퀘스트"), t("매일 갱신됩니다. 퍼즐 풀기, 일일 퍼즐 풀기, chess.com 대국 같은 항목을 끝내면 코인을 받고, 전부 끝내면 보너스 코인이 나옵니다.")],
           ]} />
 
         <TabChapter id="puzzle" no="03" Icon={Puzzle} label={t("퍼즐")} title={t("내가 틀린 수가 퍼즐이 됩니다")}
@@ -955,13 +956,12 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           extra={<PuzzleDemo />} />
 
         <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
-          lead={t("학습 탭은 오늘 할 일을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("일일 퀘스트와 성장 분석") }, { n: "learn-2", cap: t("약점 지도와 복습 카드") }, { n: "learn-3", cap: t("레슨 로드맵") }]}
+          lead={t("학습 탭은 내 성장을 모아 둔 곳입니다.")}
+          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }, { n: "learn-3", cap: t("레슨 로드맵") }]}
           blocks={[
-            [t("일일 퀘스트"), t("매일 갱신됩니다. 퍼즐 풀기, 일일 퍼즐 풀기, chess.com 대국 같은 항목을 끝내면 코인을 받고, 전부 끝내면 보너스 코인이 나옵니다.")],
-            [t("성장 분석"), t("분석한 실수의 수, 오늘 복습한 수, 익힌 카드의 수를 보여줍니다. 얼마나 쌓였는지 한눈에 볼 수 있습니다.")],
-            [t("약점 지도와 복습 카드"), t("게임 리뷰를 열면 내가 둔 실수, 블런더, 놓친 수가 자동으로 쌓이고 약점 지도가 그려집니다. 같은 실수는 복습 카드가 되어 다시 나옵니다.")],
-            [t("오프닝 실수와 레슨"), t("chess.com 대국에서 반복한 오프닝 실수를 찾아 줍니다. 레슨은 갈래를 따라 순서대로 열리고, 오프닝 원칙부터 시작합니다.")],
+            [t("성장 분석"), t("내 대국을 5판 이상 리뷰하면 열립니다. 모자랄 때는 게이지 바로 남은 판 수를 알려 줍니다.")],
+            [t("최근 대국"), t("대국마다 오프닝, 전적, 탁월한 수와 유일한 수의 개수가 보입니다. 연두색 버튼으로 바로 리뷰할 수 있습니다.")],
+            [t("레슨"), t("레슨은 갈래를 따라 순서대로 열리고, 오프닝 원칙부터 시작합니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>
