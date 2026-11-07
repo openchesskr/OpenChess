@@ -25,6 +25,12 @@ else {
   eq(P.gachaPool.map((x) => [x.id, x.weight]), GACHA_POOL.map((x) => [x.id, x.weight]), "뽑기 세트 가중치");
   eq(P.gachaPool.map((x) => x.rarity), GACHA_POOL.map((x) => x.rarity), "뽑기 등급");
   eq(P.pieces, GACHA_PIECES, "기물 종류");
+  // (v0.7.3) 일일 퀘스트 전체 완료 보상(코인) — 서버 economy_params().questBonus와 학습 탭·소개 페이지가 보여 주는 숫자가 같아야 한다.
+  { const learnSrc = rd("src/app/learn.jsx"), aboutSrc = rd("src/AboutPage.jsx");
+    const shown = /모든 퀘스트 완료 보상[\s\S]{0,600}?t\("(\d+)개"\)/.exec(learnSrc);
+    if (!shown || +shown[1] !== P.questBonus.coins) problems.push("일일 퀘스트 전체 완료 보상: 서버 " + P.questBonus.coins + "코인 ≠ 학습 탭 표시 " + (shown ? shown[1] : "없음"));
+    const about = /OC 나이트 코인 \{0\}개, \{1\}\/\{2\} 완료", (\d+),/.exec(aboutSrc);
+    if (!about || +about[1] !== P.questBonus.coins) problems.push("일일 퀘스트 전체 완료 보상: 서버 " + P.questBonus.coins + "코인 ≠ 소개 페이지 표시 " + (about ? about[1] : "없음")); }
   const app = rd("src/App.jsx");
   if (!new RegExp("tierInfo\\.tierIndex \\* " + P.tierUpCoinsPerIndex + "\\b").test(app)) problems.push("App.jsx 승급 연출의 코인(티어 인덱스 × " + P.tierUpCoinsPerIndex + ")이 서버와 다르다");
   const ts = rd("src/lib/tierSystem.js");

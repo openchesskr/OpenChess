@@ -1130,7 +1130,7 @@ function PuzzleClearBanner({ trigger }) {
   , 유저 차례: 트리의 '통과 가능(최선·우수)' 수만 정답으로 다음 단계 진행. 표시용 유혹 수·그 외 수는 오답.
   , 상대 차례: 목표 라인을 따라가되, 목표에서 벗어나면 미해결 라인이 남은 가지(채택률 순)를 자동 선택.
   , 리프(사용자 수)에 도달하면 그 라인 해결 — 별은 해결 라인 1개 이상 ★1 / 전체의 50% 이상 ★2 / 전부 ★3. */
-function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenLearn, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onPuzzleRenamed, onOpenProfile, onOpenLearnFen }) {
+function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare, myUid, myPuzzleRating, engine, liveOn, canEdit, bumpContent, initialLineNo, onLineChange, onOpenAnalysis, lineClearOn, puzzleClearOn, coachBubbleOn, onDeletePuzzle, onPuzzleRenamed, onOpenProfile, onOpenAnalysisFen }) {
   // (사용자 요청) 퍼즐 생성자에 한해, 2페이지(모식도)에서 자신이 만든 퍼즐을 삭제할 수 있게 — 실수로
   // 지우지 않도록 확인 다이얼로그를 한 번 더 띄운다(대화·친구 삭제 확인과 같은 패턴).
   const [confirmDeletePuzzle, setConfirmDeletePuzzle] = useState(false);
@@ -1535,7 +1535,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // "들어왔던 경로로 돌아가기"는 App.jsx의 onOpenLearnFocus가 나가기 전 puzzleActive를 따로
   // 기억해 뒀다가, 집중 분석을 닫으면 그 퍼즐을 다시 열어주는 방식으로 처리한다(이 화면을 안
   // 닫고 숨겨만 두는 방식은 실제로 시도했다가 진입 자체가 막히는 회귀가 있어 되돌림).
-  const pickToLearn = onOpenLearn ? (sans) => { onOpenLearn(sans); onClose(); } : undefined;
+  const pickToLearn = onOpenAnalysis ? (sans) => { onOpenAnalysis(sans); onClose(); } : undefined;
   // (버그 수정/기능) 모식도 노드 클릭 — 아직 안 둔(고스트) 갈래는 예전처럼 그 라인을 목표로 처음부터
   // 풀이하도록 보드 페이지로 이동한다. 이미 실제로 둔(공개된) 노드는 되돌아가 다시 풀 필요가 없으므로,
   // 대신 모식도 페이지에 새로 생긴 미니보드에서 그 수를 애니메이션으로 재생해 바로 복기할 수 있게 한다.
@@ -2056,7 +2056,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
                 보여주고 누르면(기보 클릭과 마찬가지로) 학습 탭으로 이동해 그 FEN 포지션을 그대로
                 보드 위에 불러온다. */}
             {fenRoot
-              ? <div onClick={() => { if (onOpenLearnFen && puzzle.fen) { onOpenLearnFen(puzzle.fen); onClose(); } }} style={{ cursor: onOpenLearnFen ? "pointer" : "default" }}><PuzzlePgnBox text={puzzle.fen} /></div>
+              ? <div onClick={() => { if (onOpenAnalysisFen && puzzle.fen) { onOpenAnalysisFen(puzzle.fen); onClose(); } }} style={{ cursor: onOpenAnalysisFen ? "pointer" : "default" }}><PuzzlePgnBox text={puzzle.fen} /></div>
               : <PuzzlePgnBox sans={curSans} onPick={pickToLearn} />}
             {/* (버그 수정) 바깥 페이저(보드↔모식도 스와이프)의 onPagerPointerDown이 이 보드 위에서 눌러도
                 예외 없이 setPointerCapture를 걸어, 클릭의 대상이 실제 눌린 칸이 아니라 페이저 쪽으로
@@ -2346,7 +2346,7 @@ function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance,
             그라데이션 대신 T.ivoryHi 크림 그라데이션, 해결 시엔 같은 연두색 그라데이션을 그대로 쓴다. */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: DAILY_CARD_W, padding: 8, borderRadius: 14, background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", border: "1px solid " + (isSolved ? "#A9C589" : (isActive ? T.brass : "#CDB98E")), boxShadow: isActive ? "0 10px 24px -8px rgba(0,0,0,.4)" : "0 3px 0 " + (isSolved ? "#9DB97E" : "#B59A6E") }}>
           <div style={{ width: DAILY_BOARD_SIZE, height: DAILY_BOARD_SIZE, flex: "0 0 auto", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: isSolved ? "linear-gradient(180deg,#E7F0DC,#D2E2BC)" : "#FBF5E8", border: "1px solid " + (isSolved ? "#A9C589" : "#CDB98E"), position: "relative" }}>
-            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div style={{ width: 100, height: 100, borderRadius: 8, background: "rgba(0,0,0,.08)", animation: "hintSquarePulse 1.3s ease-in-out infinite" }} />}
+            {puzzle ? <AnimatedMove sans={puzzle.setupSans} san={puzzle.mistakeSan} size={DAILY_BOARD_SIZE - 14} loopMs={2400} flip={flip} /> : <div aria-hidden="true" className="oc-skel oc-skel-light" style={{ width: 100, height: 100, borderRadius: 8 }} />}
             {isSolved && <Check size={16} strokeWidth={3.5} style={{ position: "absolute", top: -6, right: -6, color: "#fff", background: T.best, borderRadius: 999, padding: 3, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />}
           </div>
           {solveCountText(solveCount, null) && <div style={{ fontSize: 11.5, color: "#2E6E2E", fontWeight: 700, whiteSpace: "nowrap" }}>{solveCountText(solveCount, null)}</div>}
@@ -2488,7 +2488,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenLearn, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenLearnFen, dailyPuzzleStreak, puzzleMomentum }) {
+export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -3004,7 +3004,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // 통째로 건너뛰어져 이전 렌더보다 적은 수의 훅이 호출됐다. React는 이를 규칙 위반으로 감지해
   // "Rendered fewer hooks than expected" 오류를 던지며 화면 전체를 흰 화면으로 무너뜨렸다(퍼즐을
   // 아무거나 클릭만 하면 항상 재현됨). 조기 반환을 이 컴포넌트의 모든 훅 호출 뒤로 옮겨 해결한다.
-  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenLearn={onOpenLearn} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onPuzzleRenamed={onPuzzleRenamed} onOpenProfile={onOpenProfile} onOpenLearnFen={onOpenLearnFen} />;
+  if (active) return <PuzzleSolver puzzle={active} onClose={closeActive} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} solveCount={solveCounts ? solveCounts[puzzleNo(active.id)] : null} solvedTags={lineSolves ? lineSolves[active.id] : null} friendSolverNames={friendNamesFor(active.id)} isLiked={likedPuzzles.has(active.id)} likeCount={(likeCounts && likeCounts[puzzleNo(active.id)]) || 0} onToggleLike={onToggleLike} isReposted={repostedPuzzles ? repostedPuzzles.has(active.id) : false} repostCount={(repostCounts && repostCounts[puzzleNo(active.id)]) || 0} onToggleRepost={onToggleRepost} shareCount={(shareCounts && shareCounts[puzzleNo(active.id)]) || 0} onShare={onShare} myUid={myUid} myPuzzleRating={puzzleRating || 800} engine={engine} liveOn={liveOn} canEdit={canEdit} bumpContent={bumpContent} initialLineNo={targetLineNo} onLineChange={onLineChange} onOpenAnalysis={onOpenAnalysis} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} onDeletePuzzle={async (id) => { const ok = await onDeletePuzzle(id); if (ok) closeActive(); return ok; }} onPuzzleRenamed={onPuzzleRenamed} onOpenProfile={onOpenProfile} onOpenAnalysisFen={onOpenAnalysisFen} />;
   // (버그 수정) 예전엔 openingKeyOf(최상위 이름 하나)와 정확히 일치해야만 매칭됐다 — 세부 갈래
   // 이름(예: "…Najdorf Variation, English Attack")을 선택하면, 그 이름이 퍼즐의 firstNamedOpening과
   // 다르므로(항상 최상위 이름만 반환) 절대 매칭될 수 없었다. 이제는 그 퍼즐의 수순이 실제로 지나는
@@ -3449,7 +3449,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   유저에게 그대로 노출돼 있었다(누구나 남의 퍼즐을 즉시 지울 수 있었음) — 퍼즐 삭제는
                   퍼즐 풀이 화면 2페이지의 생성자 전용·확인 다이얼로그 경로로만 하도록 이 카드에서는
                   onDelete를 넘기지 않는다. */}
-              {feed.map((p, i) => <FadeIn key={p.id} index={i}><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
+              {feed.map((p, i) => <FadeIn key={p.id} index={i} lift><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
             </AnimatePresence>
           </div>}
       </>

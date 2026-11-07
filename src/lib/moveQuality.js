@@ -475,28 +475,40 @@ export function staticSacrificeSans(board, color, ep) {
 // (v0.5.9 BUG-036) 탁월로 인정하는 "둔 뒤 평가"(둔 쪽 관점) 하한. 예전엔 -40(-0.4)이라, 11...Bxc6처럼 엔진이 흑을 -0.66 정도로 보는
 // 평범한 오픈 시실리안 포지션의 교환 희생까지 막았다(리뷰 depth에서 흑 포지션은 -0.3~-0.7이 흔하다). chess.com 기준("둔 뒤 나쁜
 // 포지션이 아닐 것")에 맞춰 폰 하나(-1.0)까지 허용한다 — 그보다 나쁘면 희생이 아니라 그냥 불리해지는 수로 본다.
-export const BRILLIANT_MIN_PLAYED_CP = -100;
+export const BRILLIANT_MIN_PLAYED_CP = -150;   // (v0.7.3) -100 → -150. 실측(마스터·chess.com 4,400수)에서 엔진 확인까지 통과한 희생 중 -1.1~-1.3으로 막히는 수가 있었다.
+// (v0.7.3, 사용자 요청) "이미 승부가 난" 평가치 — 이 이상에서는 유일한 수·블런더·실수류를 매기지 않는다.
+//   +400(승률 약 81%) 이상을 둔 뒤에도 유지하면 "여전히 크게 이기는 중"이고, 두기 전부터 -400 이하면 "이미 크게 진 상태"다. 실측에서 "실수"로 매겨진 수의 상당수가
+//   +6.0 → +6.0 같은 이긴 포지션 안의 이동이었고, "유일한 수"의 10%가 +4~+6에서 나왔다(예전 상한 6점은 너무 높았다).
+//   메이트 점수(±1e5)도 이 기준에 자연히 걸린다. 값을 바꾸려면 여기 한 곳만 고친다(check-move-grading이 경계 사례를 검사한다).
+export const DECIDED_CP = 400;
+export const ONLY_MAX_BEST_CP = DECIDED_CP;    // 유일한 수는 두기 전 평가가 +4.0 미만일 때만(이미 이긴 포지션의 수는 유일해도 의미가 작다)
 export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac, priorSac = false, singleRecapture, oppJustErred = false, san = "" }) {
   let kind = tierOf(Math.max(0, loss));
   if (kind === "best" && !matched) kind = "excellent";
-  // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않았고, 직전 자기 희생을 잇는 수가 아닐 때
+  // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않을 때.
+  // (v0.7.3, 사용자 요청) 직전 자기 희생을 잇는 수(priorSac)도 희생이면 탁월로 인정한다 — 예전엔 연속 희생의 두 번째 수부터 탁월에서 빠졌다. priorSac 인자는 호출부 호환용으로 남겨 두되 판정에는 쓰지 않는다.
   const badlyLosing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing && !priorSac) {
+  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing) {
     try { if (isSac && isSac()) kind = "brilliant"; } catch { /* 판정 실패는 희생 아님 */ }
   }
-  // 이미 승부가 기운 위치(두기 전 기준)에서는 실수류를 한 단계씩 완화
-  if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
+  // 승부가 난 포지션 — 둔 뒤에도 크게 이기고 있거나(playedCp ≥ +4) 두기 전부터 크게 지고 있었으면(bestCp ≤ -4) 손실이 아무리 커도(예: +9 → +6) 그 수로 승부가 바뀌지 않는다.
+  // 부정확·실수·블런더·놓친 수는 매기지 않고 "좋은 수"로 둔다(탁월·최선·우수는 그대로).
+  const stillWon = playedCp >= DECIDED_CP, alreadyLost = bestCp <= -DECIDED_CP;
+  const decided = stillWon || alreadyLost;
+  if (decided && ["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "good";
+  // 그 아래 구간(|bestCp| 2~4점)은 예전처럼 한 단계씩만 완화
+  else if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // 유일한 수 — 1순위를 뒀고 2순위가 1.2점 이상 나쁘다(단순 되잡기·승부가 난 위치·2순위도 크게 이기는 위치 제외)
   if (kind === "best" && matched && secondCp !== undefined) {
     const gap = secondCp == null ? 9999 : bestCp - secondCp;
     const secondStillWinningBig = secondCp != null && secondCp >= 200;
-    if (gap >= 120 && Math.abs(bestCp) < 600 && !badlyLosing && !secondStillWinningBig) {
+    if (gap >= 120 && bestCp < ONLY_MAX_BEST_CP && !badlyLosing && !secondStillWinningBig) {
       let rc = false; try { rc = !!(singleRecapture && singleRecapture()); } catch { rc = false; }
       if (!rc) kind = "only";
     }
   }
-  // 놓친 수 — 상대 실수·블런더의 이점을 응징하지 못해 1점 이상 잃었지만 뒤집히진 않음
-  if (oppJustErred && ["inaccuracy", "mistake", "good"].includes(kind) && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
+  // 놓친 수 — 상대 실수·블런더의 이점을 응징하지 못해 1점 이상 잃었지만 뒤집히진 않음(승부가 난 포지션에서는 매기지 않는다)
+  if (oppJustErred && !decided && ["inaccuracy", "mistake", "good"].includes(kind) && bestCp >= 120 && loss >= 100 && playedCp >= -30) kind = "miss";
   // 언더프로모션은 탁월
   if (/=/.test(san) && !/=Q/.test(san) && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
   return kind;

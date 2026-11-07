@@ -101,7 +101,7 @@ function AchCell({ label, value, sub, dim, chip }) {
     </div>
   );
 }
-function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
+function AchievementDashboard({ hideRecentGames, pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
   const [stats, setStats] = useState(null);
   useEffect(() => {
     if (!uid) { setStats({}); return undefined; }
@@ -161,7 +161,7 @@ function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
           })}
         </div>
         {/* (v0.6.2, 사용자 요청) 일반 대국 최근 기록 — chess.com 대국 통계와 같은 UI(필터·전적·레이팅 그래프·최근 대국). 실시간·봇 대국 모두. */}
-        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideRecent={hideRecentGames} />
       </AchSection>
     </div>
   );
@@ -347,7 +347,7 @@ function TopOpeningsPair({ games, label }) {
 // (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
 // 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
 // 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
-export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId, compact }) {
+export function AccountChessStats({ hideRecent, chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId, compact }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -539,8 +539,8 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중분석의 "내 최근 대국" 목록과 통일. */}
-      <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
-        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />
+      {!hideRecent && <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
+        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />}
       {!recentOnly && (
         <>
           {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
@@ -678,7 +678,7 @@ function PublicSolvedPuzzles({ solvedNos, onOpenPuzzle, mySolved, myLineSolves, 
 function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
   return (
     <div style={{ position: "relative", flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
-      <button onClick={onClick} className="press" title={typeInfo.label + (bonus ? t(" 추가(그랜드마스터 보너스 칸)") : t(" 추가"))} style={LEGACY_BLOCK_BTN_STYLE}>
+      <button onClick={onClick} className="press" title={typeInfo.label} style={LEGACY_BLOCK_BTN_STYLE}>
         <LegacyBlockDecor />
         <span aria-hidden="true" style={{ position: "relative", fontSize: 26, fontWeight: 300, lineHeight: 1, color: T.brassHi, opacity: 0.85 }}>+</span>
       </button>
@@ -756,53 +756,19 @@ function LegacyLightBoard({ board, size = 320, stamp, flip, heroActive, motionPl
 // (사용자 요청) "다시 보기" 버튼을 없애는 대신, 이 블록 자체를 눌러 언제든 처음부터 다시 재생한다.
 function LegacyProjectorBlock({ entry, size = 76, onClick }) {
   return (
-    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
-      background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-      border: "1.5px solid " + T.brass, cursor: onClick ? "pointer" : "default",
-      boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), 0 0 26px 6px rgba(196,154,80,.5), 0 6px 14px -6px rgba(0,0,0,.7)",
+    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: 5, position: "relative", overflow: "hidden", flexShrink: 0,
+      background: "linear-gradient(160deg, #20324D 0%, #14213A 55%, #0C1424 100%)",
+      border: "2px solid #D4AF5F", cursor: onClick ? "pointer" : "default",
+      boxShadow: "inset 0 0 0 3px #0C1424, inset 0 0 0 4px rgba(212,175,95,.55), 0 0 26px 6px rgba(212,175,95,.45), 0 6px 14px -6px rgba(0,0,0,.7)",
       display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.2) 0%, rgba(236,203,134,0) 45%)" }} />
-      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: T.brassHi, textAlign: "center", padding: "0 4px" }}>
+      <LegacyBlockDecor />
+      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: "#ECCB86", textAlign: "center", padding: "6px 4px 0" }}>
         {legacyMoveLabel(entry)}
       </span>
     </button>
   );
 }
-// (v0.3.4 기능) 유산 수가 위에서 떨어져 부딪히는 충격으로, 주변에 있던 이전 수 텍스트가 튕겨나가듯
-// 흩어지는 연출 — framer-motion의 스프링(질량-감쇠 진동) 물리 엔진으로 두 단계를 순서대로 재생한다:
-// (1) 충격을 맞고 짧게 눌렸다 튀어오르는 반동(뻣뻣하고 감쇠가 약한 스프링 — 눈에 보이는 바운스가
-// 남는다), (2) 그 반동을 타고 옆으로 흩어지며 사라지는 궤적(부드럽고 감쇠가 강한 스프링). delay는
-// 유산 수(충격 지점)로부터 각 토큰이 떨어진 거리에 비례해 줘, 충격파가 인접한 곳부터 먼 곳으로
-// 순서대로 퍼져나가는 것처럼 보이게 한다(예전엔 배열 인덱스 순서를 그대로 썼는데, 유산 수와 가장
-// 가까운 마지막 토큰이 오히려 가장 늦게 반응해 파동이 거꾸로 퍼지는 것처럼 보였다).
-function LegacyShatterToken({ active, delay, dir, children }) {
-  const controls = useAnimationControls();
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    (async () => {
-      await new Promise((r) => setTimeout(r, delay));
-      if (cancelled) return;
-      // 1단계 — 충격에 눌렸다 튀어오르는 반동.
-      await controls.start({ y: 8, rotate: dir * 5, transition: { type: "spring", stiffness: 900, damping: 11, mass: 0.5 } });
-      if (cancelled) return;
-      // 2단계 — 그 반동을 타고 옆으로 흩어지며 사라진다(위치는 스프링, 불투명도는 별도 tween으로).
-      controls.start({
-        y: 30 + dir * 6, x: dir * 26, rotate: dir * (16 + Math.abs(dir) * 4), opacity: 0,
-        transition: { default: { type: "spring", stiffness: 110, damping: 14, mass: 0.9 }, opacity: { duration: 0.35, ease: "easeIn" } },
-      });
-    })();
-    return () => { cancelled = true; };
-  }, [active, delay, dir]);
-  return (
-    <motion.span animate={controls} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>
-      {children}
-    </motion.span>
-  );
-}
-// 유산 확대 연출 — 클릭하면 먼저 암석판이 확대되며 룬 문자가 빛나고(charge, ~0.9s), 이어서(사용자
-// 요청) 실제로 수를 두지 않고 PGN 텍스트만 화면에 한 수씩 빠르게 타이핑되며 나타나고(typing, 한
-// 수당 45ms), 다 나타나면 빛의 체스보드가 등장해(board) 지정된 수부터 원래 속도(1.15초/수)로
+// 유산 재생 화면 — 열리면 곧바로 빛의 체스보드가 등장해 지정된 수 앞(beforeCount)부터
 // playCount만큼 자동 재생한다. board 단계에서는 보드 아래 유산 블록(LegacyProjectorBlock)을 놓고,
 // 그 블록에서 보드로 금빛 광선이 뻗어 올라가는 영사기 연출을 함께 보여준다.
 export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
@@ -810,95 +776,13 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
   // (사용자 요청) 사용자가 지정한 진영이 항상 아래에 오도록 보드를 뒤집는다(구버전 항목은 side가
   // 없어 기본 백 기준으로 표시).
   const flip = side === "b";
-  const [phase, setPhase] = useState("charge"); // "charge" | "typing" | "board"
+  // (v0.7.3) 고유 진입 연출(암석판 확대·기보 타이핑)을 없앴다 — 열리면 곧바로 보드 재생이 시작된다.
+  const phase = "board";
   // (사용자 요청) 지정한 수보다 beforeCount수만큼 앞당겨 시작해, 그 수까지 이어지는 흐름을 먼저
   // 보여준다(구버전 항목은 beforeCount가 없어 0 = 기존처럼 지정한 수부터 시작).
   const startCount = Math.max(0, moveIndex - (entry.beforeCount || 0));
   const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount));
   const [appliedCount, setAppliedCount] = useState(startCount);
-  const pgnTokens = useMemo(() => sans.map((s, i) => moveNumber(i) + s), [sans]);
-  const [typedCount, setTypedCount] = useState(0);
-  const typingRef = useRef(null);
-  useEffect(() => { const t = setTimeout(() => setPhase("typing"), 950); return () => clearTimeout(t); }, []);
-  // (사용자 요청) 기보 타이핑 연출을 3단계로 짰다 — "before"(유산 수 이전 토큰이 한 수씩 타이핑됨)
-  // → "heroSolo"(유산 수가 먼저 화면 정중앙에 크게 등장하고, 그 충격으로 주변(이전) 토큰들이
-  // 와르르 무너져 내리며 사라짐 — 등장과 붕괴가 인과관계로 보이도록 붕괴 시작에 짧은 지연을 둔다)
-  // → "after"(유산 수가 원래 자리인 왼쪽 위로 옮겨가고, 그 옆부터 나머지 토큰이 한 수씩 타이핑됨).
-  // "heroSolo"↔"after" 두 단계의 유산 수 스팬은 같은 layoutId="legacyHeroToken"을 공유해,
-  // framer-motion이 정중앙 큰 글자에서 본문 흐름 속 제자리로 자동으로 매끄럽게 이동·축소(FLIP)해 준다.
-  const [typingStage, setTypingStage] = useState("before"); // "before" | "heroSolo" | "after"
-  const [afterTypedCount, setAfterTypedCount] = useState(0);
-  const beforeTokens = useMemo(() => pgnTokens.slice(0, moveIndex), [pgnTokens, moveIndex]);
-  const afterTokensArr = useMemo(() => pgnTokens.slice(moveIndex + 1), [pgnTokens, moveIndex]);
-  const heroTok = pgnTokens[moveIndex];
-  // (사용자 요청) 유산 수 직전 토큰까지 다 타이핑된 뒤 곧바로 유산 수가 떨어지면 등장이 너무
-  // 순식간이라 극적으로 느껴지지 않는다 — 잠깐(1초) 숨을 고른 뒤에야 떨어지도록 짧은 정적을 준다.
-  const HERO_ENTRANCE_DELAY_MS = 1000;
-  useEffect(() => {
-    if (phase !== "typing" || typingStage !== "before") return;
-    if (typedCount >= moveIndex) {
-      const t = setTimeout(() => setTypingStage("heroSolo"), HERO_ENTRANCE_DELAY_MS);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(() => setTypedCount((n) => Math.min(moveIndex, n + 1)), 80);
-    return () => clearTimeout(t);
-  }, [phase, typingStage, typedCount, moveIndex]);
-  // (사용자 요청) 유산 수의 기보가 "확실하게" 등장한 뒤에야 주변 수가 무너지기 시작해야 한다 —
-  // 예전엔 유산 수의 낙하 스프링이 대략 언제 바닥을 찍는지 시간을 추측해(WAVE_BASE_MS) 그 시점에
-  // 무조건 무너뜨리기 시작했는데, 기기 성능·리렌더 지연에 따라 실제 낙하 애니메이션이 아직 안
-  // 끝났는데도 무너짐이 먼저 시작될 수 있었다(추측이라 확실하지 않음). 대신 유산 수 motion.span의
-  // onAnimationComplete(framer-motion이 스프링이 실제로 정착했을 때 호출)로 heroLanded를 켜고,
-  // LegacyShatterToken의 active를 이 값에 직접 연결해 "정말로 다 등장한 뒤"에만 무너짐이 시작되도록
-  // 확실하게 순서를 보장한다.
-  const [heroLanded, setHeroLanded] = useState(false);
-  // (v0.3.4 기능) 파동이 유산 수(충격 지점)로부터 퍼져나가는 속도 — 거리(토큰 개수 차이) 1당
-  // WAVE_STEP_MS만큼 늦게 반응한다. WAVE_BASE_MS는 이제 착지 시점을 추측할 필요가 없어(heroLanded가
-  // 이미 착지를 보장) 착지 직후 아주 짧은 호흡만 준다.
-  const WAVE_BASE_MS = 80, WAVE_STEP_MS = 45;
-  // (사용자 요청 반영) 무너짐 시작이 착지 완료 확인 이후로 미뤄진 만큼(예전의 낙관적 추측 260ms보다
-  // 늦게 시작), 가장 먼 토큰까지 다 흩어질 시간을 더 넉넉히 준다.
-  const HERO_SOLO_MS = 2000;
-  useEffect(() => {
-    if (typingStage !== "heroSolo") return;
-    const t = setTimeout(() => setTypingStage("after"), HERO_SOLO_MS);
-    return () => clearTimeout(t);
-  }, [typingStage]);
-  // (버그 수정) 유산 수가 정중앙에서 왼쪽 위 제자리로 옮겨가는 layoutId FLIP 전환(아래 motion.span의
-  // transition, 0.6초)이 채 끝나기도 전에 다음 토큰이 곧장 타이핑되기 시작하면, 아직 이동 중인
-  // 유산 수 위에 다음 토큰이 겹쳐 보이는 문제가 있었다(실제로 Playwright 스크린샷으로 재현·확인) —
-  // 첫 "이후" 토큰만은 유산 수가 완전히 자리 잡을 시간(HERO_LAND_MS, FLIP 시간보다 살짝 여유를 둠)
-  // 만큼 기다렸다가 나타나도록 해, 유산 수가 제자리에 멈춘 뒤에야 그 옆에서부터 타이핑이 이어진다.
-  const HERO_LAND_MS = 650;
-  useEffect(() => {
-    if (phase !== "typing" || typingStage !== "after") return;
-    const afterLen = afterTokensArr.length;
-    if (afterTypedCount >= afterLen) {
-      // (사용자 요청) 유산으로 지정한 수가 대국의 마지막 수라 방금 막 나타난 참이면, 다음 화면으로도 조금 늦게 넘어간다.
-      const heroWasLast = afterLen === 0;
-      const t = setTimeout(() => setPhase("board"), heroWasLast ? 1200 : 320);
-      return () => clearTimeout(t);
-    }
-    const delay = afterTypedCount === 0 ? HERO_LAND_MS : 80;
-    const t = setTimeout(() => setAfterTypedCount((n) => Math.min(afterLen, n + 1)), delay);
-    return () => clearTimeout(t);
-  }, [phase, typingStage, afterTypedCount, afterTokensArr.length]);
-  // (버그 수정) 유산 수가 정중앙→왼쪽 위 제자리로 옮겨가는 layoutId FLIP 전환이 시작되는 바로 그
-  // 타이밍(typingStage가 "after"로 바뀌는 순간)에 이 효과도 함께 실행돼, typingRef의 scrollTop을
-  // 강제로 바꾸면 framer-motion이 측정해 둔 "도착 위치"가 그 직후 스크롤로 다시 밀려나 정렬이
-  // 어긋나 보였다(유산 수가 이어지는 타이핑에서 위치가 안 맞던 원인). 실제로 넘칠 때만(overflow가
-  // 있을 때만) 스크롤하고, 그마저도 현재 프레임의 레이아웃이 커밋된 뒤(requestAnimationFrame)에만
-  // 실행해 FLIP의 레이아웃 측정과 같은 틱에서 겹치지 않게 했다.
-  useEffect(() => {
-    const el = typingRef.current;
-    if (!el) return;
-    const id = requestAnimationFrame(() => {
-      if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [typedCount, afterTypedCount, typingStage]);
-  // (사용자 요청) 유산 수가 정중앙에 등장해 있는 동안(그 충격으로 주변 수가 무너지는 순간 포함)
-  // 화면이 어두워진다.
-  const heroActive = typingStage === "heroSolo";
   // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
   // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
   const HERO_PRE_MS = 900;
@@ -990,75 +874,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
       {/* 배경 별 입자(순수 CSS 장식) */}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.55, backgroundImage: "radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 65%, #fff, transparent), radial-gradient(1.5px 1.5px at 85% 20%, #fff, transparent), radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 55% 45%, #fff, transparent), radial-gradient(1px 1px at 12% 68%, #fff, transparent), radial-gradient(1.5px 1.5px at 92% 55%, #fff, transparent)" }} />
       <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
-      {phase === "charge" ? (
-        <motion.div initial={{ scale: 1, opacity: 0 }} animate={{ scale: [1, 1.14, 1.08], opacity: 1 }} transition={{ duration: 0.9, ease: "easeOut" }}
-          style={{ width: 150, height: 150, borderRadius: 20, position: "relative", overflow: "hidden",
-            background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-            border: "1.5px solid " + T.brass, boxShadow: "0 0 60px 4px " + color + "55, inset 0 1px 0 rgba(255,255,255,.08)",
-            display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
-          <motion.span animate={{ opacity: [0.5, 1, 0.6, 1], textShadow: ["0 0 6px " + color, "0 0 26px " + color, "0 0 10px " + color, "0 0 26px " + color] }} transition={{ duration: 0.9, times: [0, 0.4, 0.7, 1] }}
-            style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 20, color, textAlign: "center", padding: "0 10px" }}>
-            {legacyMoveLabel(entry)}
-          </motion.span>
-        </motion.div>
-      ) : phase === "typing" ? (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.45, ease: "easeInOut" }}
-          style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-          {/* (사용자 요청) 갈색 카드 배경·"대국 훑어보기" 문구를 없애고, 기보 텍스트만 배경 위에 떠 보이게 한다. */}
-          {/* (사용자 요청) 유산으로 지정한 수 앞의 토큰이 무너져 내리는 동안·유산 수가 정중앙에 떠
-              있는 동안에는 주변이 어두워진다. */}
-          <motion.div aria-hidden="true" animate={{ opacity: heroActive ? 1 : 0 }} transition={{ duration: 0.45 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          {/* (v0.3.4 UI) 유산 수가 등장할 차례가 되면, 위에서 떨어지듯 화면 정중앙에 크게 낙하해
-              부딪히고(스프링 물리로 튀어오르는 반동까지 남는다) — 그 충격이 앞의 수들에 옆으로
-              퍼져나가는 파동처럼 전해져(LegacyShatterToken, 유산 수와 가까운 순서대로 반동 후
-              흩어짐), 다 흩어지면 유산 수가 원래 자리(왼쪽 위)로 옮겨간 뒤 그 옆에서부터 나머지
-              수들이 이어서 타이핑된다. */}
-          <div ref={typingRef} style={{ width: "100%", maxHeight: 220, overflow: "hidden", padding: "16px 18px", display: "flex", flexWrap: "wrap", alignItems: "flex-start", fontFamily: LEGACY_FONT, fontSize: 15, lineHeight: 1.8, wordBreak: "break-word" }}>
-            {typingStage === "before" && beforeTokens.slice(0, typedCount).map((tok, i) => (
-              <span key={i} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</span>
-            ))}
-            {typingStage === "heroSolo" && beforeTokens.slice(0, typedCount).map((tok, i) => (
-              // 유산 수(충격 지점)에 가장 가까운 마지막 토큰(i = moveIndex-1)의 거리가 0 — 멀어질수록
-              // delay가 커져, 충격파가 가까운 곳부터 먼 곳으로 순서대로 퍼져나가는 것처럼 보인다.
-              // (사용자 요청) active를 heroLanded에 연결해, 유산 수가 실제로 다 착지한 뒤에만 시작한다.
-              <LegacyShatterToken key={i} active={heroLanded} delay={WAVE_BASE_MS + (moveIndex - 1 - i) * WAVE_STEP_MS} dir={i % 2 === 0 ? -1 : 1}>{tok}</LegacyShatterToken>
-            ))}
-            {typingStage === "after" && (
-              // (사용자 요청) 정중앙 solo 등장(아래)과 같은 layoutId를 공유 — framer-motion이 두
-              // 인스턴스 사이를 자동으로 매끄럽게 이동·축소시켜 "정중앙 → 왼쪽 위 제자리"로 보인다.
-              // (v0.3.4 UI) 낙하 물리와 결을 맞춰, 이 자리 잡기(FLIP)도 easeInOut 대신 스프링으로.
-              <motion.span layoutId="legacyHeroToken" transition={{ type: "spring", stiffness: 300, damping: 26 }}
-                style={{ display: "inline-block", marginRight: 8, fontWeight: 900, fontSize: 19, color, textShadow: "0 0 16px " + color + ", 0 2px 10px rgba(0,0,0,.6)" }}>
-                {heroTok}
-              </motion.span>
-            )}
-            {typingStage === "after" && afterTokensArr.slice(0, afterTypedCount).map((tok, idx) => (
-              <span key={idx} style={{ display: "inline-block", marginRight: 6, color: T.ivoryHi, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{tok}</span>
-            ))}
-            {typingStage === "after" && <motion.span aria-hidden="true" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} style={{ color: T.brassHi, marginLeft: 2 }}>▍</motion.span>}
-          </div>
-          {typingStage === "heroSolo" && (
-            <motion.div style={{ position: "fixed", inset: 0, zIndex: 6, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              {/* (v0.3.4 UI → v0.3.5 버그 수정) 위에서 떨어져 정중앙에 부딪히듯 등장 — 스프링(질량-감쇠
-                  진동) 물리로 계산돼 자리를 잡는다(easeOut 트윈이 아니라 진짜 스프링). damping이 13으로
-                  너무 낮아(감쇠비 ≈0.33) 착지 후에도 여러 차례 위아래로 튀는 진동이 한동안 눈에 띄게
-                  이어지는 문제가 있었다 — damping을 22로 올려(감쇠비 ≈0.56) 착지 직후 한 번만 또렷하게
-                  튀어오르고 곧바로 정착하도록 다듬었다(완전히 감쇠비 1로 만들면 반동 자체가 없어져
-                  "부딪히는" 느낌이 사라지므로, 반동은 남기되 반복 진동만 없앤다).
-                  (사용자 요청) onAnimationComplete로 이 스프링이 실제로 정착한 순간을 확실히 알아내
-                  heroLanded를 켠다 — 주변 수 무너짐(LegacyShatterToken)은 이 값이 켜진 뒤에만 시작된다. */}
-              <motion.span layoutId="legacyHeroToken" initial={{ opacity: 0, y: -220, scale: 0.85 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: "spring", stiffness: 380, damping: 22, mass: 1 }}
-                onAnimationComplete={() => setHeroLanded(true)}
-                style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 34, color, textShadow: "0 0 26px " + color + ", 0 2px 14px rgba(0,0,0,.7)" }}>
-                {heroTok}
-              </motion.span>
-            </motion.div>
-          )}
-        </motion.div>
-      ) : (
+      {phase === "board" && (
         <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
           {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
           <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
@@ -1107,35 +923,21 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
 // LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
 function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare, likeCounts, likedSlots, onToggleLike }) {
+  // (v0.7.3) 포지션이 잘 보이도록 3열 대신 칸이 최소 150px인 자동 열(대개 2열)로 크게 — 종류(최선·유일·탁월) 순서는 그대로.
+  // 남의 프로필(onManageLegacy 없음)에서는 채워진 칸만 그린다.
   return (
-    <div className="flex" style={{ gap: 8 }}>
-      {LEGACY_TYPES.map((t) => {
-        const colSlots = slots.filter((s) => s.typeInfo.key === t.key);
-        if (!colSlots.length) return null;
-        // (사용자 요청) 남의 프로필(onManageLegacy 없음)에서는 빈 칸을 아예 그리지 않는데, 그래도
-        // 이 칼럼 래퍼 자체는 flex-basis(LEGACY_TILE_FLEX)를 차지해 "원래 자리"에 빈 여백으로
-        // 남아 있었다 — 채워진 칸이 하나도 없는 칼럼은 래퍼째로 건너뛰어, 남은 칼럼들이 왼쪽부터
-        // 채워지고 오른쪽에 여백이 생기게 한다.
-        if (!onManageLegacy && !colSlots.some((s) => legacies && legacies[s.slotKey])) return null;
-        return (
-          <div key={t.key} style={{ display: "flex", flexDirection: "column", gap: 8, flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
-            {colSlots.map(({ slotKey, typeInfo }) => {
-              const bonus = slotKey.endsWith("2");
-              const entry = legacies && legacies[slotKey];
-              // (버그 방지) LegacyStoneTile/LegacyEmptySlot 자신의 루트에 flex:LEGACY_TILE_FLEX가
-              // 박혀 있어(가로 3칸 행 기준) 세로 열(flexDirection:column) 안에 그대로 두면 main axis가
-              // 세로로 바뀌어 오작동한다 — flex가 아닌 일반 블록 래퍼로 한 겹 감싸 무력화한다.
-              if (entry) return (
-                <div key={slotKey}>
-                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
-                    likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
-                  {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
-                </div>
-              );
-              return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
-            })}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, padding: "2px 2px 6px" }}>
+      {slots.map(({ slotKey, typeInfo }) => {
+        const bonus = slotKey.endsWith("2");
+        const entry = legacies && legacies[slotKey];
+        if (entry) return (
+          <div key={slotKey}>
+            <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
+              likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
+            {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
           </div>
         );
+        return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
       })}
     </div>
   );
@@ -1151,7 +953,7 @@ function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onS
   // 모달에도 맞춘다 — 이 창만 빠져 있었다.
   const narrow = useNarrow(640);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
         <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("유산 전체 보기")}</span>
@@ -1275,7 +1077,7 @@ export function TierRatingRow({ pub }) {
     </div>
   );
 }
-export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function PublicProfileStats({ hideRecentGames, pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   return (
@@ -1284,7 +1086,7 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
-      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      <AchievementDashboard hideRecentGames={hideRecentGames} pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
@@ -1298,15 +1100,15 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
 // 버튼 자체는 이제 카드 우상단(아이디 라벨과 같은 줄)에 두므로, 이 컴포넌트는 더는 토글을 직접
 // 그리지 않고 statsView를 부모(UserSearchModal·FriendsModal)로부터 값만 받아 그 값에 맞는 통계만
 // 보여준다 — 토글 버튼은 부모가 헤더 줄에서 statsViewToggle 헬퍼로 그린다.
-export function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideTierRow, mySolved, myLineSolves, actions, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function ProfileStatsPanel({ hideRecentGames, pub, statsView, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideTierRow, mySolved, myLineSolves, actions, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   return (
     <div style={{ marginBottom: 12 }}>
       {actions && <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>{actions}</div>}
       {statsView === "oc" ? (
-        <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+        <PublicProfileStats hideRecentGames={hideRecentGames} pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
       ) : pub.chesscom ? (
-        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact />
+        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideRecent={hideRecentGames} compact />
       ) : (
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />

@@ -4280,7 +4280,7 @@ returns jsonb language sql immutable as $$
     ],
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
-    "questBonus": {"xp": 20, "coins": 50},
+    "questBonus": {"xp": 20, "coins": 100},
     "seedChapters": {"l_intro": 40, "l_e4": 60, "l_e4_e5": 60, "l_e4_e5_open": 70, "l_e4_c5": 60, "l_e4_e6": 60, "l_e4_c6": 60, "l_d4": 60, "l_d4_d5": 60, "l_d4_nf6": 60},
     "chapterDefaultCoins": 100,
     "chapterMaxCoins": 1000,
@@ -4429,7 +4429,7 @@ begin
   return v_res || jsonb_build_object('gain', v_gain, 'duplicate', false);
 end; $$;
 
--- 일일 퀘스트 보상. 슬롯: puzzle·dailypuzzle·cc_0~2(각 10코인), bonus(다섯 슬롯을 모두 받은 날 XP 20+코인 50). 하루(KST) 슬롯당 1회.
+-- 일일 퀘스트 보상. 슬롯: puzzle·dailypuzzle·cc_0~2(각 10코인), bonus(다섯 슬롯을 모두 받은 날 XP 20+코인 100 — v0.7.3에서 50→100). 하루(KST) 슬롯당 1회.
 -- 서버가 확인하는 것: puzzle = 오늘 라인 풀이 신고 1건 이상, dailypuzzle = 오늘의 퍼즐을 푼 기록(선정이 없는 날은 통과). cc_*(chess.com 활동)는 서버가 확인할 수 없어 하루 슬롯당 10코인으로 한정된다.
 create or replace function public.economy_claim_quest(p_slot text)
 returns jsonb language plpgsql security definer set search_path = public as $$

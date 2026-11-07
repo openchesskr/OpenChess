@@ -28,7 +28,7 @@ import { NavBtn } from "../components/uiPrimitives.jsx";
 import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
-// (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 LearnTab/리뷰의 grade)과 같은
+// (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 AnalysisTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
 // 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
 async function classifyMoveKindQuick(engine, fenRoot, prevSans, san, movetime = 700, slot) {
@@ -2422,7 +2422,7 @@ function MinigameHelpButton({ title, children }) {
 }
 function MinigameForfeitConfirm({ onCancel, onConfirm, bot }) {
   return (
-    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 300, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 14, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t("정말 나갈까요?")}</div>
         <p style={{ fontSize: 13, color: T.inkSoft, marginBottom: 16 }}>{bot ? t("진행 중인 게임 종료, 기록 없음") : t("대전 포기 처리, 상대 승리")}</p>

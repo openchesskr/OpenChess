@@ -27,7 +27,7 @@ ok("제목 엔티티 풀기", r[1].title === "T & '0" && r[1].publishedAt === "2
 eq("빈 응답", cleanResults(null), []);
 ok("클라이언트·서버 최대 수순 길이 같음", CLIENT_MAX === YT_MAX_PLIES);
 
-const learn = readFileSync(new URL("../src/app/learn.jsx", import.meta.url), "utf8");
+const learn = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
 const block = readFileSync(new URL("../src/components/youtubeVideos.jsx", import.meta.url), "utf8");
 ok("해설 페이지에 댓글 블록 + 영상 블록", /<MoveExplainBlock [^>]*\/>\s*<YoutubeVideosBlock sans=\{focusVideoSans\} \/>/.test(learn));
 ok("댓글 블록 제목이 \"댓글\"", learn.includes('{t("댓글")}</span>'));

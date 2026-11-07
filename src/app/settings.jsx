@@ -1325,7 +1325,7 @@ export function DeletionPendingModal({ scheduledAt, onCancelled, onLogout }) {
     catch { setErr(t("탈퇴 취소 실패. 잠시 후 다시 시도")); setBusy(false); }
   };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div className="oc-modal-bg" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 360, background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 22, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("탈퇴 예정 계정")}</div>
         <p style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.65, marginBottom: 6 }}>{t("이 계정은 탈퇴가 요청되어 {0}에 모든 데이터가 영구 삭제될 예정임", fmtDateOnly(scheduledAt, { year: "numeric", month: "long", day: "numeric" }))}</p>

@@ -4,6 +4,7 @@ import { CONTACT_EMAIL } from "./lib/siteConfig.js";
 
 import { t, tx, fmtDateOnly } from "./lib/i18n.js";
 import LangSwitch from "./components/LangSwitch.jsx";
+import { RevealOnce, ScrollTopButton } from "./components/motionKit.jsx";
 // (v0.6.0, 앱 출시 준비) 개인정보처리방침(/privacy)·이용약관(/terms). App을 거치지 않는 가벼운 정적 페이지로,
 // main.jsx가 경로만 보고 이 컴포넌트를 렌더링한다(스토어 심사에서 로그인 없이 열리는 주소가 필요하다).
 // 문구는 사이트 규칙대로 명사형·개조식. 시행일을 바꿀 때는 아래 EFFECTIVE 한 곳만 고친다.
@@ -132,13 +133,16 @@ export default function LegalPage({ kind }) {
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "44px 20px 80px" }}>
         <h1 style={{ fontSize: 26, fontWeight: 900, color: T.ivoryHi, margin: "0 0 6px" }}>{title}</h1>
         <p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 30px" }}>{t("시행일: {0}", fmtDateOnly(EFFECTIVE_ISO, { year: "numeric", month: "long", day: "numeric" }))}</p>
+        {/* (v0.7.3) 섹션이 스크롤로 들어올 때 한 번 떠오른다(/about의 Reveal과 같은 곡선). */}
         {sections.map((s) => (
-          <section key={s.h} style={{ marginBottom: 26 }}>
+          <RevealOnce key={s.h} style={{ marginBottom: 26 }}>
+          <section>
             <h2 style={{ fontSize: 15.5, fontWeight: 800, color: T.brass, margin: "0 0 10px" }}>{s.h}</h2>
             <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
               {s.list.map((t) => <li key={t} style={{ fontSize: 13.5, lineHeight: 1.75, color: T.ivory }}>{t}</li>)}
             </ul>
           </section>
+          </RevealOnce>
         ))}
         <div style={{ display: "flex", gap: 18, marginTop: 40, flexWrap: "wrap" }}>
           <a href={other.href} style={{ color: T.brass, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>{tx("{0} 보기", other.label)}</a>
@@ -146,6 +150,7 @@ export default function LegalPage({ kind }) {
           <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: T.inkSoft, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>{tx("{0} OpenChess로 돌아가기", <ArrowLeft size={13} />)}</a>
         </div>
       </main>
+      <ScrollTopButton label={t("맨 위로")} threshold={500} />
     </div>
   );
 }

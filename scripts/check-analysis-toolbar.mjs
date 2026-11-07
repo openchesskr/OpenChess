@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const fails = [];
-const learn = rd("src/app/learn.jsx"), social = rd("src/app/social.jsx");
+const learn = rd("src/app/analysis.jsx"), social = rd("src/app/social.jsx");
 // ①
 const iCopy = learn.indexOf("<NotationTools sans={sans}"), iEdit = learn.indexOf('title={t("보드 편집")} aria-label={t("보드 편집")}'), iRev = learn.indexOf("<BestMoveJumpButton title={t(\"기보 분석(리뷰)\")}");
 if (!(iCopy > 0 && iEdit > iCopy && iRev > iEdit)) fails.push("분석 탭 버튼 순서가 복사 → 편집 → 리뷰가 아님");

@@ -41,7 +41,7 @@ function dexIsUnlocked(chesscom, ccReady, unlockAll, pathSans) {
 }
 // (개편) 도감 오프닝 상세 블록 — 모식도 안, 그 수 노드 옆에 인라인으로 열리고 닫힌다. 기존 카드 내용
 // (미리보기·해금 상태·WDL·내 chess.com 전적)에 수 체계 아이콘·평가치·채택률·수 키워드를 더해 보여준다.
-function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, onOpenLearn, vertical, scale = 1, tailPos = null, canAdd, editInfo, onStageAdd, onUnstageAdd, onToggleRemove, boxRef }) {
+function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, onOpenAnalysis, vertical, scale = 1, tailPos = null, canAdd, editInfo, onStageAdd, onUnstageAdd, onToggleRemove, boxRef }) {
   // (버그 수정) 흑의 6번째 수(ply 12)처럼 그 수 자신에게는 ECO 명칭이 새로 안 붙는(리체스 API가
   // 그 정확한 위치에 이름을 안 주는) 깊은 이론 라인을 열면, m.name이 없어 그냥 "Main Line"이라는
   // 뭉뚱그린 표시만 떴다 — 실제 원인은 체스 오프닝 이름이 매 수마다 새로 붙는 게 아니라 마지막으로
@@ -85,8 +85,8 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
         <CircleBadge kind={kind} descOnClick />
         {/* (UI) 사용자 요청 — 이 수를 누르면 그 기보가 입력된 분석 탭으로 바로 이동한다(예전엔
             집중 분석 모드로 이동했었다). */}
-        {onOpenLearn
-          ? <button onClick={() => onOpenLearn([...path, m.san])} className="press" style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
+        {onOpenAnalysis
+          ? <button onClick={() => onOpenAnalysis([...path, m.san])} className="press" style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{moveNumber(ply)}{m.san}</button>
           : <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 17, color: isUnlocked ? T.ink : "#8A7458" }}>{moveNumber(ply)}{m.san}</span>}
         {evTxt && <span style={{ fontFamily: SITE_FONT, fontWeight: 700, fontSize: 12.5, color: QCOLOR[kind] }}>{evTxt}</span>}
         <span style={{ marginLeft: "auto" }}>{isUnlocked ? <span style={{ display: "inline-flex", alignItems: "center", color: T.best }}><Check size={15} /></span> : <span style={{ fontSize: 11, color: "#8A7458", fontWeight: 700 }}>{t("미해금")}</span>}</span>
@@ -95,8 +95,8 @@ function DexMoveBlock({ path, m, isUnlocked, cc, onClose, style, onOpenOpening, 
       {kws.length > 0 && <div className="flex flex-wrap gap-1" style={{ marginTop: 7 }}>{kws.map((k) => <KeywordChip key={k} k={k} />)}</div>}
       {/* (사용자 요청) 오프닝 이름을 누르면 그 기보가 입력된 분석 탭으로 바로 이동한다(예전엔
           집중 분석 모드로 이동했었다). */}
-      {label && (onOpenLearn
-        ? <button onClick={() => onOpenLearn([...path, m.san])} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
+      {label && (onOpenAnalysis
+        ? <button onClick={() => onOpenAnalysis([...path, m.san])} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : onOpenOpening
         ? <button onClick={() => onOpenOpening(label)} className="press text-left" style={{ display: "block", width: "100%", fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.brass : T.brassHi, marginTop: 6, wordBreak: "keep-all", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>{label}</button>
         : <div style={{ fontSize: 12.5, fontWeight: 700, color: isUnlocked ? T.ink : T.ivory, marginTop: 6, wordBreak: "keep-all" }}>{label}</div>)}
@@ -250,7 +250,7 @@ const DexNodesLayer = React.memo(function DexNodesLayer({ items, openKey, select
     );
   });
 });
-function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenLearn, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
+function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOpen, chesscom, ccReady, unlockAll, vertical, onOpenOpening, onOpenAnalysis, priorityRef, onUnlockStats, contentVer, canAdd, bumpContent, rightSlot }) {
   const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const boxW = SCHEMATIC_BOX_W, boxH = SCHEMATIC_BOX_H;
   // (v0.3.2 개편 → v0.5.6) 나침반형 방사 트리 — 1수(e4/d4)는 중심 회로 칩에서 정확히 위/아래 ROOT_GAP 거리에 두고, 그 아래는 팔마다
@@ -1245,7 +1245,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
           연 순간 그대로의 고정된 모양으로만 보인다. */}
       {frozenCard && (
         <DexMoveBlock path={frozenCard.item.path.slice(0, -1)} m={frozenCard.parentM} isUnlocked={frozenCard.item.unlocked}
-          cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn}
+          cc={ccReady ? chesscom.analyze(frozenCard.item.path) : null} onClose={() => onToggleOpen(frozenCard.key)} onOpenOpening={onOpenOpening} onOpenAnalysis={onOpenAnalysis}
           vertical={vertical} scale={cardFit && cardFit.key === frozenCard.key ? cardFit.scale : frozenCard.cardScale} tailPos={cardFit && cardFit.key === frozenCard.key ? cardFit.tailPos : frozenCard.tailPos}
           canAdd={canAdd} editInfo={editInfo} onStageAdd={stageAdd} onUnstageAdd={unstageAdd} onToggleRemove={toggleStageRemove} boxRef={cardElRef}
           style={cardFit && cardFit.key === frozenCard.key
@@ -1386,7 +1386,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenLearn, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
@@ -1473,7 +1473,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
           우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한
           브라스/금색 강조 숫자로 보이도록 스타일을 키운다. 실제 렌더 위치는 OpeningSchematic이
           캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
-      <OpeningSchematic tabsSlot={backBtn} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenLearn={onOpenLearn} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
+      <OpeningSchematic tabsSlot={backBtn} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenAnalysis={onOpenAnalysis} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
         rightSlot={
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
