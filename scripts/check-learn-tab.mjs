@@ -54,5 +54,14 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   for (const k of ["분석한 실수", "오늘 복습", "익힌 카드"]) if (!gr.includes('t("' + k + '")')) fails.push("성장 분석: '" + k + "' 지표가 없음");
   if (!/me=\{me\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 내 프로필(me)을 넘기지 않음");
 }
+{ // (v0.7.4) 네 구획의 새 레이아웃 유지: 약점 지도(구간 색 누적 막대, 예전 구간×유형 표 폐지)·복습 카드(복습 간격 단계 막대)·오프닝 실수(백/흑 전환)·마스터 스타일(지문 띠 + 묶음별 접이식).
+  const gr = rd("src/app/growth.jsx");
+  const part = (a, b) => (gr.match(new RegExp("function " + a + "[\\s\\S]*?\\nfunction " + b)) || [""])[0];
+  if (!/PHASE_COLOR/.test(gr) || /<table/.test(gr)) fails.push("약점 지도: 구간 색 누적 막대(PHASE_COLOR)를 쓰고 예전 구간×유형 <table>은 쓰지 않아야 함");
+  if (!/const stages = useMemo/.test(gr)) fails.push("복습 카드: 복습 간격 단계(stages) 분포 막대가 없음");
+  if (!/const \[side, setSide\]/.test(gr) || !/role="tablist"/.test((gr.match(/function OpeningMistakes[\s\S]*?\n}\n/) || [""])[0])) fails.push("오프닝 실수: 백/흑 전환 탭(side)이 없음 — 두 색을 위아래로 쌓지 않는다");
+  const ms = (gr.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0];
+  if (!/allKeys\.map/.test(ms) || !/openG/.test(ms) || !/className="growth-crit-table"/.test(ms)) fails.push("마스터 스타일: 기준 지문 띠(allKeys)·묶음별 접이식(openG)·비교 표(growth-crit-table)가 필요함");
+}
 if (fails.length) { console.error("✗ learn-tab check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ learn-tab check: 일일 퀘스트 박스·모바일 3페이지 페이저·/user 프로필 + 대국 박스 구성 유지");
