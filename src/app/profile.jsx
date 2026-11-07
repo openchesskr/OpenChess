@@ -101,7 +101,7 @@ function AchCell({ label, value, sub, dim, chip }) {
     </div>
   );
 }
-function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
+function AchievementDashboard({ hideRecentGames, pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
   const [stats, setStats] = useState(null);
   useEffect(() => {
     if (!uid) { setStats({}); return undefined; }
@@ -161,7 +161,7 @@ function AchievementDashboard({ pub, uid, mq, onOpenGame, onOpenGameAnalyze }) {
           })}
         </div>
         {/* (v0.6.2, 사용자 요청) 일반 대국 최근 기록 — chess.com 대국 통계와 같은 UI(필터·전적·레이팅 그래프·최근 대국). 실시간·봇 대국 모두. */}
-        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        <OpenChessGameHistory uid={uid} username={pub.nickname || pub.displayId || ""} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideRecent={hideRecentGames} />
       </AchSection>
     </div>
   );
@@ -347,7 +347,7 @@ function TopOpeningsPair({ games, label }) {
 // (사용자 요청) onSelectGame — 유산(Legacy) 관리 화면이 이 컴포넌트를 그대로 재사용하면서, "최근 대국"
 // 각 줄의 검색·리뷰 버튼 자리에 그 대신 "선택" 버튼 하나만 두기 위한 선택적 콜백. 넘기지 않으면(기존
 // 프로필·유저 검색 등) 지금까지와 완전히 동일하게 동작한다.
-export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId, compact }) {
+export function AccountChessStats({ hideRecent, chesscom, username, onOpenOpening, onOpenGame, onOpenGameAnalyze, reviewUnlocked, onSelectGame, selectedGameId, compact }) {
   const [prof, setProf] = useState(null);
   useEffect(() => {
     let cc = false;
@@ -539,8 +539,8 @@ export function AccountChessStats({ chesscom, username, onOpenOpening, onOpenGam
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
       {/* (프로필) 전적 아래 가장 최근에 플레이한 대국 몇 판 — 보기로 분석 보드에 불러온다.
           (디자인) 레이팅 증감·타임컨트롤·정확도 표기를 집중분석의 "내 최근 대국" 목록과 통일. */}
-      <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
-        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />
+      {!hideRecent && <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={username + "|" + timeFilter}
+        onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onSelectGame={onSelectGame} selectedGameId={selectedGameId} />}
       {!recentOnly && (
         <>
           {/* (v0.2.2 UX#3, v0.2.6 개편) 가장 많이 둔 오프닝 — 이제 오프닝 이름 빈도로 집계해 번갈아
@@ -1275,7 +1275,7 @@ export function TierRatingRow({ pub }) {
     </div>
   );
 }
-export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function PublicProfileStats({ hideRecentGames, pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   return (
@@ -1284,7 +1284,7 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
       {actions && <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>{actions}</div>}
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
-      <AchievementDashboard pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      <AchievementDashboard hideRecentGames={hideRecentGames} pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
       <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
@@ -1298,15 +1298,15 @@ export function PublicProfileStats({ pub, onOpenOpening, onOpenGame, onOpenGameA
 // 버튼 자체는 이제 카드 우상단(아이디 라벨과 같은 줄)에 두므로, 이 컴포넌트는 더는 토글을 직접
 // 그리지 않고 statsView를 부모(UserSearchModal·FriendsModal)로부터 값만 받아 그 값에 맞는 통계만
 // 보여준다 — 토글 버튼은 부모가 헤더 줄에서 statsViewToggle 헬퍼로 그린다.
-export function ProfileStatsPanel({ pub, statsView, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideTierRow, mySolved, myLineSolves, actions, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function ProfileStatsPanel({ hideRecentGames, pub, statsView, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideTierRow, mySolved, myLineSolves, actions, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   return (
     <div style={{ marginBottom: 12 }}>
       {actions && <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>{actions}</div>}
       {statsView === "oc" ? (
-        <PublicProfileStats pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+        <PublicProfileStats hideRecentGames={hideRecentGames} pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
       ) : pub.chesscom ? (
-        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} compact />
+        <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideRecent={hideRecentGames} compact />
       ) : (
         <div style={{ textAlign: "center", padding: "22px 10px" }}>
           <ChesscomLogo height={28} />

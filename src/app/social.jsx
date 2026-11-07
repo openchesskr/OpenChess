@@ -619,12 +619,14 @@ function renderMentionText(body) {
 // 데스크톱처럼 폭이 넉넉하면 신원/친구 요청을 왼쪽 고정 열에, 통계·활동을 오른쪽 넓은 열에 나란히
 // 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
 // (v0.7.3, 사용자 요청) embedded — 학습 탭 안에 /user 페이지 레이아웃 그대로 끼워 넣는 모드. 전체 화면 오버레이(position:fixed)가 아니라 일반 흐름 안의 카드로 그리고, 뒤로가기 버튼·고정(sticky) 헤더는 쓰지 않는다.
-export function UserProfilePage({ docked, embedded, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+// compact — 좁은 열(학습 탭 왼쪽)에 넣을 때 화면 폭과 무관하게 세로 한 열 배치 · hideRecentGames — 최근 대국 목록은 빼고(옆 열에 따로 표시) · onViewChange(statsView) — OpenChess/chess.com 토글이 바뀔 때 알림.
+export function UserProfilePage({ docked, embedded, compact, hideRecentGames, onViewChange, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
   const [pubUsername, setPubUsername] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [statsView, setStatsView] = useState("oc");
+  useEffect(() => { if (onViewChange) onViewChange(statsView); }, [statsView]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [ccHeaderProf, setCcHeaderProf] = useState(null);
   const [reqState, setReqState] = useState(null); // null | "pending" | "accepted" | "exists"
   const [reqBusy, setReqBusy] = useState(false);
@@ -640,7 +642,7 @@ export function UserProfilePage({ docked, embedded, mid, autoInvite, onClose, me
     return () => clearTimeout(t);
   }, [reqPopup]);
   const narrowPage = useNarrow(880);
-  const wide = !docked && !narrowPage;   // 도킹 창(340px)은 항상 모바일 배치(세로 한 열)
+  const wide = !docked && !compact && !narrowPage;   // 도킹 창(340px)은 항상 모바일 배치(세로 한 열)
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
   // (v0.6.0, 스토어 심사 대비) 프로필 신고·차단 — 채팅 밖에서도 사용자 콘텐츠(닉네임·사진·소개)를 신고하고 차단할 수 있어야 한다.
   const [blockedByMe, setBlockedByMe] = useState(false);
@@ -863,7 +865,7 @@ export function UserProfilePage({ docked, embedded, mid, autoInvite, onClose, me
               {/* (사용자 요청) OC/Chess.com 통계 토글이 뚝 바뀌는 대신 부드럽게 크로스페이드된다. */}
               <AnimatePresence mode="wait">
                 <motion.div key={statsView} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: MOTION_EASE }}>
-                  <ProfileStatsPanel pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideTierRow={wide} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pubUid} viewerUid={myUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+                  <ProfileStatsPanel hideRecentGames={hideRecentGames} pub={pub} statsView={statsView} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideTierRow={wide} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={pubUid} viewerUid={myUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
                 </motion.div>
               </AnimatePresence>
             </motion.div>

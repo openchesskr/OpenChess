@@ -12,6 +12,8 @@ import { PageTitle, Board, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Ma
 
 import { GrowthPanel } from "./growth.jsx";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
+import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
+import { computeRatingChanges } from "../lib/chesscom.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import { t, tx } from "../lib/i18n.js";
 // 다음 KST 자정까지 남은 밀리초
@@ -1008,9 +1010,43 @@ function useLearnFold(id, forceOpen) {
   const set = (v) => { setOpen(v); try { window.localStorage.setItem(learnFoldKey(id), v ? "1" : "0"); } catch { } };
   return [open, set];
 }
-// 내 프로필 — /user 페이지(UserProfilePage)를 그대로 끼워 넣는다. 그 페이지가 내 MID로 서버 프로필을 읽으므로 MID를 먼저 찾는다.
-// 최근 대국은 그 페이지 안의 목록(한 줄에 한 판)을 그대로 쓴다. 로그인하지 않았거나 MID를 못 찾으면 안내만 보여 준다.
-function LearnProfileHome({ user, uid, openAuth, renderProfile }) {
+// (v0.7.3, 사용자 요청) 학습 탭 상단 — 왼쪽: /user 프로필 페이지 그대로(대국 목록만 뺀 나머지 전부, 세로 한 열) · 오른쪽: 최근 대국을 큰 박스로 모아서.
+// 좁은 화면에서는 프로필 → 대국 순서로 세로로 쌓는다. 그 페이지가 내 MID로 서버 프로필을 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 로그인 안내만 보여 준다.
+function LearnGamesColumn({ view, user, uid, chesscom, ccName, onOpenGame, onOpenGameAnalyze }) {
+  const [timeFilter, setTimeFilter] = useState("all");
+  useEffect(() => { setTimeFilter("all"); }, [view]);
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    if (!SB_ON || !uid) { setRows([]); return undefined; }
+    let off = false; setRows(null);
+    fetchProfileGameRows(uid).then((r) => { if (!off) setRows(Array.isArray(r) ? r.filter((x) => Array.isArray(x.sans) && x.sans.length > 0) : []); }).catch(() => { if (!off) setRows([]); });
+    return () => { off = true; };
+  }, [uid]);
+  const ocGames = useMemo(() => (rows || []).map((r) => profileGameRowToGame(r, user)), [rows, user]);
+  const ccReady = !!(chesscom && chesscom.status === "ready");
+  const ccGames = useMemo(() => (ccReady ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess"), [ccReady, chesscom && chesscom.games]);
+  const base = view === "oc" ? ocGames : ccGames;
+  const games = useMemo(() => (timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter)), [base, timeFilter]);
+  const ratingChanges = useMemo(() => {
+    if (view === "oc") { const m = new Map(); games.forEach((g) => { if (g._delta != null) m.set(g, g._delta); }); return m; }
+    return ccReady ? computeRatingChanges(ccGames.filter((g) => timeFilter === "all" || g.timeClass === timeFilter)) : new Map();
+  }, [view, games, ccGames, ccReady, timeFilter]);
+  const loading = view === "oc" ? rows == null : !!(chesscom && chesscom.status === "loading");
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ marginBottom: 12 }}>
+        <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
+      </div>
+      {loading ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
+        : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>
+        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        : <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("표시할 대국 없음")}</p>}
+    </div>
+  );
+}
+function LearnProfileHome({ user, uid, openAuth, renderProfile, chesscom, ccName, onOpenGame, onOpenGameAnalyze }) {
+  const narrow = useNarrow(1000);
+  const [view, setView] = useState("oc");
   const [mid, setMid] = useState(null);   // null=조회 중, ""=없음
   useEffect(() => {
     let off = false;
@@ -1035,10 +1071,17 @@ function LearnProfileHome({ user, uid, openAuth, renderProfile }) {
   }
   if (mid === null) return <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />;
   if (!mid) return <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("프로필을 불러오지 못함")}</p>;
-  return renderProfile(mid);
+  return (
+    <div style={{ display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 18 : 24, alignItems: "flex-start" }}>
+      <div style={{ width: narrow ? "100%" : 500, flexShrink: 0, minWidth: 0 }}>{renderProfile(mid, setView)}</div>
+      <div style={{ flex: 1, minWidth: 0, width: "100%" }}>
+        <LearnGamesColumn view={view} user={user} uid={uid} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+      </div>
+    </div>
+  );
 }
 export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight,
-  user, uid, openAuth, renderProfile }) {
+  user, uid, openAuth, renderProfile, chesscom, ccName, onOpenGame, onOpenGameAnalyze }) {
   // 일일 퀘스트 배지를 눌러 들어오면(questHighlight) 일일 퀘스트 섹션을 펼쳐 강조가 보이게 한다.
   const [qOpen, setQOpen] = useLearnFold("quest", !!questHighlight);
   const [gOpen, setGOpen] = useLearnFold("growth", false);
@@ -1047,7 +1090,7 @@ export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQu
     <div>
       <PageTitle>{t("학습")}</PageTitle>
       <FadeIn index={0} layout={false}>
-        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} renderProfile={renderProfile} />
+        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} renderProfile={renderProfile} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       </FadeIn>
       {/* (v0.7.3) 기존 학습 도구는 그대로 두고 접어 둔다. 펼침 상태는 이 기기에 기억한다. */}
       <LearnFold id="quest" title={t("일일 퀘스트")} open={qOpen} setOpen={setQOpen}>
