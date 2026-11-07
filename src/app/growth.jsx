@@ -472,38 +472,26 @@ function useMyMid(uid) {
   }, [uid]);
   return mid;
 }
-function GrowthHeader({ uid, me, onOpenTitle, dense }) {
+function GrowthHeader({ uid, me, onOpenTitle }) {
   const mid = useMyMid(uid);
   const name = me.nickname || me.displayId || me.username || "";
   const isGM = tierFromXp(me.xp || 0).tier.key === "grandmaster";
   const hasTitle = !!(me.title && titleDef(me.title));
-  const photo = dense ? 56 : 72;
+  const photo = 72;
   const identity = (
-    <div style={{ display: "flex", alignItems: "center", gap: dense ? 12 : 14, minWidth: 0, flex: 1 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0, flex: 1 }}>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
         <span style={{ position: "relative", display: "inline-flex" }}>
           {me.photo
-            ? <img src={me.photo} alt="" style={{ width: photo, height: photo, borderRadius: dense ? 16 : 20, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(isGM) || {}) }} />
-            : <span style={{ width: photo, height: photo, borderRadius: dense ? 16 : 20, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: dense ? 24 : 30 }}>{(name || "?")[0].toUpperCase()}</span>}
-          <OnlineDot lastSeenMs={Date.now()} overlay size={dense ? 11 : 13} />
+            ? <img src={me.photo} alt="" style={{ width: photo, height: photo, borderRadius: 20, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(isGM) || {}) }} />
+            : <span style={{ width: photo, height: photo, borderRadius: 20, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 30 }}>{(name || "?")[0].toUpperCase()}</span>}
+          <OnlineDot lastSeenMs={Date.now()} overlay size={13} />
         </span>
         {!!mid && <div style={{ fontSize: 9.5, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{mid}</div>}
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: dense ? 17 : 19, fontWeight: 800, color: T.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-        <div style={{ fontSize: 12, color: T.ink, marginTop: 3, minHeight: dense ? 0 : 15, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{me.bio ? <UgcText text={me.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
-      </div>
-    </div>
-  );
-  if (dense) return (
-    <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 10, position: "relative" }}>
-      <div aria-hidden style={{ height: 4, background: "linear-gradient(90deg,#8A6C2F,#ECCB86 50%,#8A6C2F)" }} />
-      <div style={{ padding: "10px 14px 8px" }}>
-        {hasTitle && <div style={{ marginBottom: 8, maxWidth: 260 }}><EquippedTitleFit id={me.title} maxScale={1} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          {identity}
-          <div style={{ flexShrink: 0, marginBottom: -8 }}><TierRatingRow pub={{ xp: me.xp || 0, puzzleRating: me.puzzleRating }} /></div>
-        </div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: T.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        <div style={{ fontSize: 12, color: T.ink, marginTop: 3, minHeight: 15, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{me.bio ? <UgcText text={me.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
       </div>
     </div>
   );
@@ -522,16 +510,16 @@ function GrowthHeader({ uid, me, onOpenTitle, dense }) {
 }
 
 /* ── 요약 띠: 분석한 실수·오늘 복습·익힌 카드 + 익힘 진행률 ── */
-function GrowthSummary({ rep, st, dense }) {
+function GrowthSummary({ rep, st }) {
   const pct = st.total ? Math.round((st.mastered / st.total) * 100) : 0;
   const cell = (value, label, accent) => (
-    <div style={{ flex: 1, minWidth: 0, textAlign: "center", padding: dense ? "7px 4px 6px" : "12px 4px 10px" }}>
-      <div style={{ fontSize: dense ? 19 : 24, fontWeight: 900, color: accent || T.ivoryHi, fontFamily: "Georgia, serif", lineHeight: 1.1 }}>{value}</div>
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "12px 4px 10px" }}>
+      <div style={{ fontSize: 24, fontWeight: 900, color: accent || T.ivoryHi, fontFamily: "Georgia, serif", lineHeight: 1.1 }}>{value}</div>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#CDBA98", marginTop: 3, whiteSpace: "nowrap" }}>{label}</div>
     </div>
   );
   return (
-    <div style={{ borderRadius: 16, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", marginBottom: dense ? 10 : 12, overflow: "hidden" }}>
+    <div style={{ borderRadius: 16, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", marginBottom: 12, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch" }}>
         {cell(rep.total, t("분석한 실수"))}
         <span aria-hidden style={{ width: 1, background: "rgba(236,203,134,.18)", margin: "10px 0" }} />
@@ -555,7 +543,7 @@ const GROWTH_SECTIONS = [
 
 /* 학습 탭에 들어가는 성장 분석 전체 — 맨 위 프로필 헤더, 요약 띠, 그 아래 네 영역을 구획 탭으로 나눠 보여 준다.
    (v0.7.4) 오늘 복습할 카드가 있으면 처음부터 복습 카드 구획이 열린다. */
-export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom, me, onOpenTitle, dense }) {
+export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom, me, onOpenTitle }) {
   const [data, update] = useGrowth(uid);
   const [filter, setFilter] = useState("all");
   const st = useMemo(() => srsStats(data.mistakes), [data]);
@@ -564,18 +552,18 @@ export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom, me,
   const narrow = useNarrow(720);
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
-      {me && <GrowthHeader uid={uid} me={me} onOpenTitle={onOpenTitle} dense={dense} />}
-      <GrowthSummary rep={rep} st={st} dense={dense} />
-      <div role="tablist" aria-label={t("성장 분석")} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, margin: dense ? "0 0 10px" : "0 0 12px" }}>
+      {me && <GrowthHeader uid={uid} me={me} onOpenTitle={onOpenTitle} />}
+      <GrowthSummary rep={rep} st={st} />
+      <div role="tablist" aria-label={t("성장 분석")} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, margin: "0 0 12px" }}>
         {GROWTH_SECTIONS.map(({ key, label, Icon }) => {
           const on = sec === key;
           return (
             <button key={key} role="tab" aria-selected={on} onClick={() => setSec(key)} className="press"
-              style={{ position: "relative", display: "flex", flexDirection: dense ? "row" : "column", alignItems: "center", justifyContent: "center", gap: dense ? 6 : 5, padding: dense ? "8px 4px" : "10px 4px 9px", borderRadius: dense ? 12 : 14, cursor: "pointer", fontFamily: SITE_FONT, fontSize: narrow ? 11 : 11.5, fontWeight: 800, lineHeight: 1.2, textAlign: "center", minWidth: 0,
+              style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, padding: "10px 4px 9px", borderRadius: 14, cursor: "pointer", fontFamily: SITE_FONT, fontSize: narrow ? 11 : 11.5, fontWeight: 800, lineHeight: 1.2, textAlign: "center", minWidth: 0,
                 border: "1px solid " + (on ? T.brass : "#4A3322"), background: on ? "linear-gradient(180deg,#ECCB86,#C49A50)" : "rgba(255,255,255,.04)", color: on ? "#241509" : "#E3D3B3" }}>
-              <Icon size={dense ? 14 : 17} />
+              <Icon size={17} />
               <span style={{ wordBreak: "keep-all" }}>{label()}</span>
-              {key === "review" && st.due > 0 && <span style={{ position: dense ? "static" : "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#C8453B", color: "#fff", border: "2px solid #1B1009", boxSizing: "content-box", fontSize: 10.5, fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{st.due}</span>}
+              {key === "review" && st.due > 0 && <span style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#C8453B", color: "#fff", border: "2px solid #1B1009", boxSizing: "content-box", fontSize: 10.5, fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{st.due}</span>}
             </button>
           );
         })}

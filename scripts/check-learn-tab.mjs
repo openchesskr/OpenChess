@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** (v0.7.3 재발 방지) 학습 탭 구성(src/app/learn.jsx)이 사용자 요청대로 유지되는지 소스에서 검사한다.
- *  ① 일일 퀘스트는 접히지 않고 박스로 최근 대국과 같은 열 맨 위(데스크톱) / 별도 페이지(모바일)에 나온다 — 접이식(LearnFold) 안에 넣지 않는다.
- *  ② 모바일은 프로필·일일 퀘스트·최근 대국 3페이지(LearnPager): 가로 스크롤 스냅 + 위에 붙는 탭 줄(role=tab) + 현재 위치 점/번호 + "옆으로 밀어서 이동" 안내 + 다음 페이지가 보이는 폭(calc(100% - …)).
+ *  ① (v0.7.4) 일일 퀘스트는 학습 탭이 아니라 플레이 탭에 있다(데스크톱 좌우 분할, 모바일 세로 스크롤). 학습 탭에는 퀘스트 카드·props가 없다.
+ *  ② 모바일은 성장 분석·최근 대국 2페이지(LearnPager): 가로 스크롤 스냅 + 위에 붙는 탭 줄(role=tab) + 현재 위치 점/번호 + "옆으로 밀어서 이동" 안내 + 다음 페이지가 보이는 폭(calc(100% - …)).
  *  ③ (v0.7.3) 왼쪽(데스크톱)/첫 페이지(모바일)는 프로필이 아니라 성장 분석(GrowthPanel)이고, 최근 대국은 큰 박스(RecentGameBoxes)로 따로 보여 준다. 일일 퀘스트 카드(DailyQuestCard)에는 그라데이션을 쓰지 않는다.
  *  실행: node scripts/check-learn-tab.mjs (npm run build 전에 prebuild로 자동 실행)
  */
@@ -10,8 +10,7 @@ const rd = (f) => fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
 const learn = rd("src/app/learn.jsx"), app = rd("src/App.jsx");
 const fails = [];
 const tab = (learn.match(/export function LearnTab[\s\S]*$/) || [""])[0];
-if (/<LearnFold[^>]*id="quest"/.test(tab)) fails.push("LearnTab: 일일 퀘스트가 접이식(LearnFold) 안에 들어 있음 — 박스로 위에 보여야 함");
-if (!/questNode=\{questNode\}/.test(tab)) fails.push("LearnTab: 일일 퀘스트(questNode)를 LearnProfileHome에 넘기지 않음");
+if (/DailyQuestCard|questNode|dailyQuest/.test(learn)) fails.push("learn.jsx: 일일 퀘스트는 플레이 탭으로 옮겼으므로 학습 탭에 남기지 않음");
 if (!/<LearnFold[^>]*id="lessons"/.test(tab)) fails.push("LearnTab: 레슨은 접어서 유지해야 함");
 if (/<LearnFold[^>]*id="growth"/.test(tab) || !/growthNode=\{growthNode\}/.test(tab) || !/<GrowthPanel /.test(tab)) fails.push("LearnTab: 성장 분석(GrowthPanel)은 접지 않고 프로필 자리(growthNode)에 펼쳐 보여야 함");
 const pager = (learn.match(/function LearnPager[\s\S]*?\n}\n/) || [""])[0];
@@ -24,10 +23,11 @@ else {
   if (!/idx \+ 1\}\/\{pages\.length\}/.test(pager)) fails.push("LearnPager: 현재 페이지 n/N 표시가 없음");
 }
 const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
-for (const k of ["growth", "quest", "games"]) if (!new RegExp('key: "' + k + '"').test(home)) fails.push("LearnProfileHome: 모바일 페이지 '" + k + "'가 없음");
+for (const k of ["growth", "games"]) if (!new RegExp('key: "' + k + '"').test(home)) fails.push("LearnProfileHome: 모바일 페이지 '" + k + "'가 없음");
+if (/key: "quest"/.test(home)) fails.push("LearnProfileHome: 모바일 일일 퀘스트 페이지가 다시 생김");
 if (!/useNarrow\(720\)/.test(home)) fails.push("LearnProfileHome: 모바일 기준(720px)이 바뀜");
 if (/<UserProfilePage embedded/.test(app)) fails.push("App: 학습 탭에 /user 프로필 페이지가 다시 들어옴(프로필 정보는 성장 분석으로 대체됨)");
-{ const dq = (learn.match(/function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0]; if (!dq) fails.push("DailyQuestCard를 찾지 못함"); else if (/gradient\(/.test(dq)) fails.push("DailyQuestCard: 그라데이션(linear/radial-gradient)을 쓰면 안 됨(단색 면 + 얇은 테두리)"); }
+{ const dqs = rd("src/app/dailyQuest.jsx"), dq = (dqs.match(/export function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0]; if (!dq) fails.push("DailyQuestCard(dailyQuest.jsx)를 찾지 못함"); else if (/gradient\(/.test(dq)) fails.push("DailyQuestCard: 그라데이션(linear/radial-gradient)을 쓰면 안 됨(단색 면 + 얇은 테두리)"); }
 if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박스(RecentGameBoxes)를 쓰지 않음");
 { // (v0.7.3) 레슨은 듀오링고식 세로 경로(원형 노드 + 굽이치는 길 + "시작" 말풍선) — 가로 카드 지도·그라데이션으로 되돌리지 않는다.
   const ln = (learn.match(/const LESSON_NODE_D[\s\S]*?\nfunction LessonMap[\s\S]*?\n}\n/) || [""])[0];
@@ -65,11 +65,16 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
 }
 { // (v0.7.4) 데스크톱 /learn: 화면 높이 2열 대시보드(왼쪽 프로필·일일 퀘스트 정확히 반반, 오른쪽은 최근 대국만), 일일 퀘스트 compact, 최근 대국 박스 확장, 알림 → 학습 탭.
   const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
-  if (!/className="learn-dash"/.test(home) || !/gridTemplateRows: "minmax\(0, 1fr\) minmax\(0, 1fr\)"/.test(home)) fails.push("LearnProfileHome: 데스크톱은 왼쪽이 위·아래 정확히 반반(gridTemplateRows 1fr 1fr)인 2열 대시보드(learn-dash)여야 함");
+  if (!/className="learn-dash"/.test(home) || !/gridTemplateColumns: "minmax\(0, 1fr\) minmax\(0, 1fr\)"/.test(home)) fails.push("LearnProfileHome: 데스크톱은 화면 높이 기준 2열 대시보드(learn-dash: 왼쪽 성장 분석·오른쪽 최근 대국)여야 함");
   const wide = (home.match(/className="learn-dash"[\s\S]*$/) || [""])[0];
-  if (!/denseGrowthNode/.test(wide) || !/compactQuestNode/.test(wide)) fails.push("LearnProfileHome: 왼쪽 위 프로필(denseGrowthNode)·왼쪽 아래 일일 퀘스트(compactQuestNode)");
-  if (/questNode\}[\s\S]*gamesNode/.test(wide.replace(/compactQuestNode \|\| questNode/, "")) && /\{questNode\}\{gamesNode\}/.test(wide)) fails.push("LearnProfileHome: 오른쪽 열은 최근 대국으로만 채워야 함(퀘스트를 같이 두지 않음)");
-  if (!/compact/.test((learn.match(/function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0])) fails.push("DailyQuestCard: compact 모드가 없음");
+  if (!/\{growthNode\}/.test(wide) || !/\{gamesNode\}/.test(wide)) fails.push("LearnProfileHome: 데스크톱 2열은 왼쪽 growthNode·오른쪽 gamesNode");
+  // 플레이 탭: 일일 퀘스트(데스크톱 좌우 분할 · 모바일 세로 스크롤), 대국 중에는 숨김, 학습 탭 아이콘/알림 연결
+  const play = rd("src/app/play.jsx");
+  if (!/<DailyQuestCard /.test(play) || !/showQuest/.test(play)) fails.push("PlayPage: 일일 퀘스트 카드(DailyQuestCard)가 없음");
+  if (!/step === "setup"/.test((play.match(/const showQuest[^\n]*/) || [""])[0])) fails.push("PlayPage: 대국 중(step=playing)에는 퀘스트를 숨겨야 함");
+  if (!/gridTemplateColumns: "minmax\(0, " \+ hubMaxW \+ "px\) minmax\(0, 1fr\)"/.test(play)) fails.push("PlayPage: 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트 좌우 분할이어야 함");
+  if (!/onQuestBadgeClick = useCallback\(\(openingName\) => \{\s*setTab\("store"\)/.test(app)) fails.push("App: 분석 탭 퀘스트 배지는 플레이 탭(store)으로 이동해야 함");
+  if (!/questActive=\{tab === "store"\}/.test(app)) fails.push("App: 퀘스트는 플레이 탭이 보일 때만 마운트(questActive)해야 함 — 숨겨진 탭에서 완료 공개 연출이 먼저 끝나면 안 됨");
   const gh = rd("src/app/gameHistory.jsx"), box = (gh.match(/function GameBox[\s\S]*?\nexport function RecentGameBoxes/) || [""])[0];
   if (!box) fails.push("GameBox를 찾지 못함");
   else {
@@ -84,4 +89,4 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   if (!/onOpen=\{\(\) => \{ dismissCcToast\(\); switchTab\("learn"\); \}\}/.test(app)) fails.push("App: chess.com 알림 onOpen이 학습 탭(switchTab(\"learn\"))으로 연결되지 않음");
 }
 if (fails.length) { console.error("✗ learn-tab check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
-console.log("✓ learn-tab check: 일일 퀘스트 박스·모바일 3페이지 페이저·/user 프로필 + 대국 박스 구성 유지");
+console.log("✓ learn-tab check: 학습 탭(성장 분석·최근 대국 2열/2페이지)·플레이 탭 일일 퀘스트 좌우 분할 구성 유지");

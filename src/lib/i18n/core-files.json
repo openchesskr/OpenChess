@@ -3,6 +3,7 @@
   "FaqPage.jsx",
   "LegalPage.jsx",
   "app/common.jsx",
+  "app/dailyQuest.jsx",
   "app/dex.jsx",
   "app/dexMasters.jsx",
   "app/growth.jsx",

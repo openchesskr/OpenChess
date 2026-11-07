@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
+import { DailyQuestCard } from "./dailyQuest.jsx";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
@@ -4756,7 +4757,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent }) {
+export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent, questActive, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, questHighlight }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -5391,12 +5392,15 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   // 자체 로고 헤더)라 상단 사이트 헤더·하단 탭바가 함께 가려졌다 — 다른 탭과 똑같이 <main> 안에서
   // 그려지는 평범한 콘텐츠로 바꿔, 사이트 공용 헤더·하단 탭바가 이 탭에서도 항상 보이게 한다.
   const hubMaxW = narrow ? PLAY_HUB_MAX_W : PLAY_HUB_MAX_W_DESKTOP;
+  const showQuest = !!(questActive && dailyQuest && step === "setup");
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   return (
     // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
     // 일반 대국 부분만 460px로 가운데에 둔다.
-    <div style={{ maxWidth: 880, margin: "0 auto" }}>
+    // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
+    // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
+    <div style={showQuest && !narrow ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
@@ -5632,6 +5636,11 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
           <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
       </div>
+      {showQuest && (
+        <div style={{ minWidth: 0, marginTop: narrow ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
+          <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
+        </div>
+      )}
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
