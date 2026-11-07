@@ -40,5 +40,19 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
     if (/overflowX: "auto"/.test(ln)) fails.push("LessonMap: 가로 스크롤 지도로 되돌아감");
   }
 }
+{ // (v0.7.4) 성장 분석은 맨 위에 /user 프로필 상단 정보(칭호·사진·이름·소개·MID·티어/퍼즐 레이팅) → 요약 띠 → 구획 탭 순서. 기존 네 영역(약점 지도·복습 카드·오프닝 실수·마스터 스타일)과 세 지표는 유지한다.
+  const gr = rd("src/app/growth.jsx");
+  const gp = (gr.match(/export function GrowthPanel[\s\S]*$/) || [""])[0];
+  if (!gp) fails.push("GrowthPanel을 찾지 못함");
+  else {
+    if (!/<GrowthHeader /.test(gp) || !/<GrowthSummary /.test(gp)) fails.push("GrowthPanel: 프로필 헤더(GrowthHeader)·요약 띠(GrowthSummary)가 없음");
+    if (gp.indexOf("<GrowthHeader") > gp.indexOf("<GrowthSummary")) fails.push("GrowthPanel: 프로필 헤더가 요약 띠보다 위에 있어야 함");
+    for (const c of ["WeaknessMap", "ReviewCards", "OpeningMistakes", "MasterStyle"]) if (!new RegExp("<" + c + " ").test(gp)) fails.push("GrowthPanel: " + c + " 구획이 빠짐(기존 정보 유지)");
+  }
+  const gh = (gr.match(/function GrowthHeader[\s\S]*?\n}\n/) || [""])[0];
+  for (const [re, what] of [[/EquippedTitleFit/, "장착 칭호"], [/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"], [/TierRatingRow/, "티어·퍼즐 레이팅"]]) if (!re.test(gh)) fails.push("GrowthHeader: " + what + " 표시가 없음(/user 상단 정보)");
+  for (const k of ["분석한 실수", "오늘 복습", "익힌 카드"]) if (!gr.includes('t("' + k + '")')) fails.push("성장 분석: '" + k + "' 지표가 없음");
+  if (!/me=\{me\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 내 프로필(me)을 넘기지 않음");
+}
 if (fails.length) { console.error("✗ learn-tab check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ learn-tab check: 일일 퀘스트 박스·모바일 3페이지 페이저·/user 프로필 + 대국 박스 구성 유지");

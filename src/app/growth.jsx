@@ -3,11 +3,16 @@
 // 대국 하이라이트 카드는 리뷰 공유 시트(review.jsx)에 있다.
 import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { Chess } from "chess.js";
-import { Target, Check, Sparkles, RotateCcw } from "lucide-react";
+import { Target, Check, Sparkles, RotateCcw, BookOpen, Users } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { ChatMoveBoard } from "../components/chatPlus.jsx";
-import { Board, getAnalysisPool } from "./common.jsx";
+import { Board, getAnalysisPool, OnlineDot, titleDef, useNarrow } from "./common.jsx";
+import { EquippedTitleFit } from "./social.jsx";
+import { TierRatingRow } from "./profile.jsx";
+import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
+import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
+import UgcText from "../components/UgcText.jsx";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { parseFenFull, sansToFen, moveNumber } from "../lib/chessRules.js";
 import { OM, eligibleGames, findOpeningMistakes, gamesOfLine } from "../lib/openingMistakes.js";
@@ -21,8 +26,8 @@ import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.
 import { t, tx } from "../lib/i18n.js";
 
 // 학습 탭의 다른 카드(일일 퀘스트 등)와 같은 종이 카드 톤.
-const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 14, marginBottom: 12 };
-const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: 0 };
+const card = { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 16, padding: 16, marginBottom: 12, boxShadow: "0 1px 0 rgba(255,255,255,.55) inset, 0 6px 18px -12px rgba(0,0,0,.55)" };
+const h3 = { fontSize: 14, fontWeight: 800, color: T.ink, margin: 0, letterSpacing: "-.01em" };
 const sub = { fontSize: 11.5, color: T.inkSoft, lineHeight: 1.55 };
 const chip = (on) => ({ padding: "5px 11px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
 const btn = (primary) => ({ padding: "9px 14px", borderRadius: 10, border: primary ? "none" : "1px solid #C9B58C", background: primary ? "linear-gradient(180deg,#3A2516,#241509)" : "transparent", color: primary ? T.ivoryHi : T.ink, fontWeight: 800, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT });
@@ -39,14 +44,6 @@ function useGrowth(uid) {
 }
 function Bar({ value, color = T.brass }) {
   return <div style={{ height: 8, borderRadius: 4, background: "rgba(0,0,0,.08)", overflow: "hidden", flex: 1, minWidth: 0 }}><div style={{ width: Math.round(Math.max(0, Math.min(1, value)) * 100) + "%", height: "100%", background: color, borderRadius: 4 }} /></div>;
-}
-function Stat({ value, label, accent }) {
-  return (
-    <div style={{ flex: 1, minWidth: 0, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
-      <div style={{ fontSize: 20, fontWeight: 900, color: accent || T.ink, fontFamily: "Georgia, serif", lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap" }}>{label}</div>
-    </div>
-  );
 }
 
 /* ── 약점 지도 ── */
@@ -386,24 +383,115 @@ function OpeningMistakes({ uid, games, engine, onOpenReview, hasChesscom }) {
   );
 }
 
-/* 학습 탭에 들어가는 성장 분석 전체 — 별도 버튼 없이 세 영역을 한 번에 펼쳐 보인다. */
-export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom }) {
+/* ── 프로필 헤더 ──
+   (v0.7.4, 사용자 요청) /user 페이지 상단에 있던 신원 정보(장착 칭호·프로필 사진·이름·소개·MID·티어/퍼즐 레이팅)를 성장 분석 맨 위에 그대로 가져온다.
+   내 정보이므로 친구 요청·신고 메뉴는 없고, 접속 표시는 항상 켜 둔다. */
+function useMyMid(uid) {
+  const [mid, setMid] = useState("");
+  useEffect(() => {
+    if (!uid || !SB_ON) { setMid(""); return undefined; }
+    let off = false;
+    sbSelect("profiles?id=eq." + uid + "&select=mid&limit=1").then((rows) => { if (!off) setMid((rows && rows[0] && rows[0].mid) || ""); }).catch(() => {});
+    return () => { off = true; };
+  }, [uid]);
+  return mid;
+}
+function GrowthHeader({ uid, me, onOpenTitle }) {
+  const mid = useMyMid(uid);
+  const name = me.nickname || me.displayId || me.username || "";
+  const isGM = tierFromXp(me.xp || 0).tier.key === "grandmaster";
+  const hasTitle = !!(me.title && titleDef(me.title));
+  return (
+    <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 12, position: "relative" }}>
+      <div aria-hidden style={{ height: 6, background: "linear-gradient(90deg,#8A6C2F,#ECCB86 50%,#8A6C2F)" }} />
+      <div style={{ padding: "14px 16px 12px" }}>
+        {hasTitle && <div style={{ marginBottom: 10 }}><EquippedTitleFit id={me.title} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              {me.photo
+                ? <img src={me.photo} alt="" style={{ width: 72, height: 72, borderRadius: 20, objectFit: "cover", border: "1px solid #C9B58C", ...(gmPhotoRingStyle(isGM) || {}) }} />
+                : <span style={{ width: 72, height: 72, borderRadius: 20, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 30 }}>{(name || "?")[0].toUpperCase()}</span>}
+              <OnlineDot lastSeenMs={Date.now()} overlay size={13} />
+            </span>
+            {!!mid && <div style={{ fontSize: 9.5, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 5 }}>#{mid}</div>}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 19, fontWeight: 800, color: T.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+            <div style={{ fontSize: 12, color: T.ink, marginTop: 4, minHeight: 15, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{me.bio ? <UgcText text={me.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: "10px 16px 4px", borderTop: "1px solid rgba(0,0,0,.07)", background: "rgba(0,0,0,.03)" }}>
+        <TierRatingRow pub={{ xp: me.xp || 0, puzzleRating: me.puzzleRating }} />
+      </div>
+    </div>
+  );
+}
+
+/* ── 요약 띠: 분석한 실수·오늘 복습·익힌 카드 + 익힘 진행률 ── */
+function GrowthSummary({ rep, st }) {
+  const pct = st.total ? Math.round((st.mastered / st.total) * 100) : 0;
+  const cell = (value, label, accent) => (
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "12px 4px 10px" }}>
+      <div style={{ fontSize: 24, fontWeight: 900, color: accent || T.ivoryHi, fontFamily: "Georgia, serif", lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#CDBA98", marginTop: 3, whiteSpace: "nowrap" }}>{label}</div>
+    </div>
+  );
+  return (
+    <div style={{ borderRadius: 16, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", marginBottom: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+        {cell(rep.total, t("분석한 실수"))}
+        <span aria-hidden style={{ width: 1, background: "rgba(236,203,134,.18)", margin: "10px 0" }} />
+        {cell(st.due, t("오늘 복습"), st.due ? "#FF8A7A" : undefined)}
+        <span aria-hidden style={{ width: 1, background: "rgba(236,203,134,.18)", margin: "10px 0" }} />
+        {cell(st.mastered, t("익힌 카드"), T.brassHi)}
+      </div>
+      <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} style={{ height: 5, background: "rgba(255,255,255,.08)" }}>
+        <div style={{ width: pct + "%", height: "100%", background: "linear-gradient(90deg,#C49A50,#ECCB86)", transition: "width .5s ease" }} />
+      </div>
+    </div>
+  );
+}
+
+const GROWTH_SECTIONS = [
+  { key: "weak", label: () => t("약점 지도"), Icon: Target },
+  { key: "review", label: () => t("복습 카드"), Icon: RotateCcw },
+  { key: "opening", label: () => t("오프닝 실수"), Icon: BookOpen },
+  { key: "style", label: () => t("마스터 스타일"), Icon: Users },
+];
+
+/* 학습 탭에 들어가는 성장 분석 전체 — 맨 위 프로필 헤더, 요약 띠, 그 아래 네 영역을 구획 탭으로 나눠 보여 준다.
+   (v0.7.4) 오늘 복습할 카드가 있으면 처음부터 복습 카드 구획이 열린다. */
+export function GrowthPanel({ uid, games, engine, onOpenReview, hasChesscom, me, onOpenTitle }) {
   const [data, update] = useGrowth(uid);
   const [filter, setFilter] = useState("all");
   const st = useMemo(() => srsStats(data.mistakes), [data]);
   const rep = useMemo(() => weaknessReport(data.mistakes), [data]);
+  const [sec, setSec] = useState(() => (st.due ? "review" : "weak"));
+  const narrow = useNarrow(720);
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
-      <div className="flex items-center gap-2" style={{ margin: "4px 0 10px" }}><RotateCcw size={15} style={{ color: T.brassHi }} /><h2 style={{ fontSize: 16, fontWeight: 800, color: T.ivoryHi, margin: 0 }}>{t("성장 분석")}</h2></div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Stat value={rep.total} label={t("분석한 실수")} />
-        <Stat value={st.due} label={t("오늘 복습")} accent={st.due ? "#C8453B" : undefined} />
-        <Stat value={st.mastered} label={t("익힌 카드")} />
+      {me && <GrowthHeader uid={uid} me={me} onOpenTitle={onOpenTitle} />}
+      <GrowthSummary rep={rep} st={st} />
+      <div role="tablist" aria-label={t("성장 분석")} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, margin: "0 0 12px" }}>
+        {GROWTH_SECTIONS.map(({ key, label, Icon }) => {
+          const on = sec === key;
+          return (
+            <button key={key} role="tab" aria-selected={on} onClick={() => setSec(key)} className="press"
+              style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, padding: "10px 4px 9px", borderRadius: 14, cursor: "pointer", fontFamily: SITE_FONT, fontSize: narrow ? 11 : 11.5, fontWeight: 800, lineHeight: 1.2, textAlign: "center", minWidth: 0,
+                border: "1px solid " + (on ? T.brass : "#4A3322"), background: on ? "linear-gradient(180deg,#ECCB86,#C49A50)" : "rgba(255,255,255,.04)", color: on ? "#241509" : "#E3D3B3" }}>
+              <Icon size={17} />
+              <span style={{ wordBreak: "keep-all" }}>{label()}</span>
+              {key === "review" && st.due > 0 && <span style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#C8453B", color: "#fff", border: "2px solid #1B1009", boxSizing: "content-box", fontSize: 10.5, fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{st.due}</span>}
+            </button>
+          );
+        })}
       </div>
-      <WeaknessMap list={data.mistakes} onPractice={(th) => setFilter(th)} />
-      <ReviewCards list={data.mistakes} update={update} filter={filter} setFilter={setFilter} />
-      <OpeningMistakes uid={uid} games={games} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} />
-      <MasterStyle games={games} />
+      {sec === "weak" && <WeaknessMap list={data.mistakes} onPractice={(th) => { setFilter(th); setSec("review"); }} />}
+      {sec === "review" && <ReviewCards list={data.mistakes} update={update} filter={filter} setFilter={setFilter} />}
+      {sec === "opening" && <OpeningMistakes uid={uid} games={games} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} />}
+      {sec === "style" && <MasterStyle games={games} />}
     </section>
   );
 }

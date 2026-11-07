@@ -217,7 +217,7 @@ function ProfileEditor({ profile, setProfile, earnedTitles, currentTitle, onEqui
 // (v0.6.9, 사용자 요청) /user 페이지의 플랫폼 분리 토글과 같은 줄 왼쪽에 장착 칭호를 보여준다. 칭호 배너는 폭이 넓어서(기본 260px 기준 디자인)
 // 남는 폭에 맞춰 축소해 그린다 — 클릭·꾹 누르기 반응은 없다(남의 칭호이므로 읽기 전용).
 // (v0.7.3, 사용자 요청) 비율은 그대로 두고 칼럼 가로 폭을 가득 채우도록 키운다 — maxScale을 주지 않으면 상한 없이 폭에 맞춘다(예전엔 0.6~0.85배로 줄여 오른쪽이 비었다).
-function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
+export function EquippedTitleFit({ id, indent = 0, maxScale = Infinity, onClick }) {
   const BASE_W = 260, BASE_H = 74 * TITLE_SCALE;   // 칭호가 TITLE_SCALE(75%)로 줄어 높이도 그만큼
   const ref = useRef(null);
   const [w, setW] = useState(0);

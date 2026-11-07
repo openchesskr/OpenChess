@@ -1174,11 +1174,11 @@ function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpen
   );
 }
 export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight,
-  user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze }) {
+  user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, me, onOpenTitle }) {
   const [lOpen, setLOpen] = useLearnFold("lessons", false);
   const questNode = dailyQuest ? <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /> : null;
   // (v0.7.3, 사용자 요청) 예전 프로필 자리에 성장 분석(실수 통계·약점 지도·복습 카드·오프닝 실수·마스터 스타일)을 그대로 펼쳐 보여 준다.
-  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} />;
+  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} me={me} onOpenTitle={onOpenTitle} />;
   return (
     <div>
       <PageTitle>{t("학습")}</PageTitle>
