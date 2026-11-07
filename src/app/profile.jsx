@@ -756,13 +756,13 @@ function LegacyLightBoard({ board, size = 320, stamp, flip, heroActive, motionPl
 // (사용자 요청) "다시 보기" 버튼을 없애는 대신, 이 블록 자체를 눌러 언제든 처음부터 다시 재생한다.
 function LegacyProjectorBlock({ entry, size = 76, onClick }) {
   return (
-    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: size * 0.18, position: "relative", overflow: "hidden", flexShrink: 0,
-      background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-      border: "1.5px solid " + T.brass, cursor: onClick ? "pointer" : "default",
-      boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), 0 0 26px 6px rgba(196,154,80,.5), 0 6px 14px -6px rgba(0,0,0,.7)",
+    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: 5, position: "relative", overflow: "hidden", flexShrink: 0,
+      background: "linear-gradient(160deg, #20324D 0%, #14213A 55%, #0C1424 100%)",
+      border: "2px solid #D4AF5F", cursor: onClick ? "pointer" : "default",
+      boxShadow: "inset 0 0 0 3px #0C1424, inset 0 0 0 4px rgba(212,175,95,.55), 0 0 26px 6px rgba(212,175,95,.45), 0 6px 14px -6px rgba(0,0,0,.7)",
       display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.2) 0%, rgba(236,203,134,0) 45%)" }} />
-      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: T.brassHi, textAlign: "center", padding: "0 4px" }}>
+      <LegacyBlockDecor />
+      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: "#ECCB86", textAlign: "center", padding: "6px 4px 0" }}>
         {legacyMoveLabel(entry)}
       </span>
     </button>
@@ -923,35 +923,21 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
 // 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
 // LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
 function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare, likeCounts, likedSlots, onToggleLike }) {
+  // (v0.7.3) 포지션이 잘 보이도록 3열 대신 칸이 최소 150px인 자동 열(대개 2열)로 크게 — 종류(최선·유일·탁월) 순서는 그대로.
+  // 남의 프로필(onManageLegacy 없음)에서는 채워진 칸만 그린다.
   return (
-    <div className="flex" style={{ gap: 8 }}>
-      {LEGACY_TYPES.map((t) => {
-        const colSlots = slots.filter((s) => s.typeInfo.key === t.key);
-        if (!colSlots.length) return null;
-        // (사용자 요청) 남의 프로필(onManageLegacy 없음)에서는 빈 칸을 아예 그리지 않는데, 그래도
-        // 이 칼럼 래퍼 자체는 flex-basis(LEGACY_TILE_FLEX)를 차지해 "원래 자리"에 빈 여백으로
-        // 남아 있었다 — 채워진 칸이 하나도 없는 칼럼은 래퍼째로 건너뛰어, 남은 칼럼들이 왼쪽부터
-        // 채워지고 오른쪽에 여백이 생기게 한다.
-        if (!onManageLegacy && !colSlots.some((s) => legacies && legacies[s.slotKey])) return null;
-        return (
-          <div key={t.key} style={{ display: "flex", flexDirection: "column", gap: 8, flex: LEGACY_TILE_FLEX, minWidth: 0 }}>
-            {colSlots.map(({ slotKey, typeInfo }) => {
-              const bonus = slotKey.endsWith("2");
-              const entry = legacies && legacies[slotKey];
-              // (버그 방지) LegacyStoneTile/LegacyEmptySlot 자신의 루트에 flex:LEGACY_TILE_FLEX가
-              // 박혀 있어(가로 3칸 행 기준) 세로 열(flexDirection:column) 안에 그대로 두면 main axis가
-              // 세로로 바뀌어 오작동한다 — flex가 아닌 일반 블록 래퍼로 한 겹 감싸 무력화한다.
-              if (entry) return (
-                <div key={slotKey}>
-                  <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
-                    likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
-                  {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
-                </div>
-              );
-              return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
-            })}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, padding: "2px 2px 6px" }}>
+      {slots.map(({ slotKey, typeInfo }) => {
+        const bonus = slotKey.endsWith("2");
+        const entry = legacies && legacies[slotKey];
+        if (entry) return (
+          <div key={slotKey}>
+            <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
+              likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
+            {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
           </div>
         );
+        return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
       })}
     </div>
   );

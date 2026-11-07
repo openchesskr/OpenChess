@@ -6694,19 +6694,33 @@ export function legacyMoveLabel(entry) {
 // 재질(어보니+브래스)을 쓰도록 버튼 자체의 스타일을 하나로 공유한다(사용자 요청: 추가 전후로 블록
 // 크기가 달라 보이던 문제).
 export const LEGACY_BLOCK_BTN_STYLE = {
-  // (v0.7.1) 채워진 칸이 보드(정사각) + 아래 수 이름 띠를 담도록 세로로 조금 길게 — 빈 칸도 같은 비율.
-  width: "100%", aspectRatio: "5 / 6", boxSizing: "border-box", borderRadius: 14, position: "relative", overflow: "hidden",
-  background: "linear-gradient(155deg, " + T.ebony3 + " 0%, " + T.ebony2 + " 55%, " + T.ebony + " 100%)",
-  border: "1.5px solid " + T.brass,
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,.08), inset 0 -12px 20px -14px rgba(0,0,0,.8), 0 4px 10px -4px rgba(0,0,0,.65)",
+  // (v0.7.3) 고대 그리스 양식 — 에게해 청색 대리석 바탕 + 금 테두리(이중 액자) + 위쪽 그리스 키(메안더) 띠. 보드가 잘 보이도록 칸 자체도 더 크게(LegacyGrid의 2열).
+  width: "100%", aspectRatio: "5 / 6", boxSizing: "border-box", borderRadius: 6, position: "relative", overflow: "hidden",
+  background: "linear-gradient(160deg, #20324D 0%, #14213A 55%, #0C1424 100%)",
+  border: "2px solid #D4AF5F",
+  boxShadow: "inset 0 0 0 3px #0C1424, inset 0 0 0 4px rgba(212,175,95,.55), inset 0 -16px 24px -16px rgba(0,0,0,.8), 0 6px 14px -6px rgba(0,0,0,.7), 0 0 0 1px rgba(0,0,0,.6)",
   cursor: "pointer", padding: "8px 4px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5,
 };
-// 금빛 광택 하이라이트(좌상단 사선) + 코너 글로우(순수 CSS, 이미지 자산 없음) — 두 블록이 함께 쓴다.
+// 그리스 키(메안더) 무늬 — 금색 선, 가로로 반복.
+const GREEK_KEY_URL = "url(\"data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><g fill='none' stroke='#D4AF5F' stroke-width='1.1' stroke-linecap='square'><path d='M0 7H3V1H9V7H12'/><path d='M5 7V4H7V7'/></g></svg>") + "\")";
+/** 월계수 가지(좌우 대칭으로 쓴다) — 수 이름 양옆 장식. */
+export function LaurelBranch({ flip, size = 16, color = "#D4AF5F" }) {
+  return (
+    <svg aria-hidden="true" width={size} height={size * 1.3} viewBox="0 0 16 21" style={{ transform: flip ? "scaleX(-1)" : "none", flexShrink: 0 }}>
+      <path d="M12 20C6 17 3 11 4 2" fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+      {[[4.5, 4.5, -25], [8, 7.5, 10], [4, 9.5, -30], [8.5, 12.5, 15], [5, 14.5, -25], [9.5, 17, 20]].map(([x, y, r], i) => (
+        <ellipse key={i} cx={x} cy={y} rx="2.6" ry="1.2" transform={"rotate(" + r + " " + x + " " + y + ")"} fill={color} opacity=".92" />
+      ))}
+    </svg>
+  );
+}
+// 금빛 광택 + 위쪽 그리스 키 띠 + 안쪽 액자선 — 채워진 칸·빈 칸이 함께 쓴다.
 export function LegacyBlockDecor() {
   return (
     <>
-      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.16) 0%, rgba(236,203,134,0) 40%)" }} />
-      <span aria-hidden="true" style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", width: "150%", height: 44, background: "radial-gradient(closest-side, " + T.brass + "33, transparent)" }} />
+      <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(125deg, rgba(236,203,134,.14) 0%, rgba(236,203,134,0) 38%)", pointerEvents: "none" }} />
+      <span aria-hidden="true" style={{ position: "absolute", top: 7, left: 9, right: 9, height: 8, backgroundImage: GREEK_KEY_URL, backgroundRepeat: "repeat-x", backgroundSize: "12px 8px", backgroundPosition: "center", opacity: .95, pointerEvents: "none" }} />
+      <span aria-hidden="true" style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", width: "150%", height: 44, background: "radial-gradient(closest-side, rgba(212,175,95,.28), transparent)", pointerEvents: "none" }} />
     </>
   );
 }
@@ -6750,8 +6764,8 @@ export function LegacyMiniBoard({ entry, color }) {
   const cell = w / 8;
   const isMoveSq = (r, c) => (pos.from && pos.from[0] === r && pos.from[1] === c) || (pos.to && pos.to[0] === r && pos.to[1] === c);
   return (
-    <div ref={ref} aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 7, overflow: "hidden",
-      boxShadow: "0 0 0 1px rgba(0,0,0,.7), inset 0 0 0 1px rgba(236,203,134,.12)" }}>
+    <div ref={ref} aria-hidden="true" style={{ width: "100%", aspectRatio: "1 / 1", display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", borderRadius: 2, overflow: "hidden",
+      boxShadow: "0 0 0 1px rgba(0,0,0,.8), 0 0 0 2px rgba(212,175,95,.5)" }}>
       {Array.from({ length: 64 }, (_, k) => {
         const vr = k >> 3, vc = k & 7;
         const r = flip ? 7 - vr : vr, c = flip ? 7 - vc : vc;
@@ -6777,13 +6791,15 @@ export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
       {/* (v0.7.1, 사용자 요청) 수 이름 대신 유산 수를 둔 직후의 포지션 전체를 보드로 보여 준다. 수 이름은 아래 띠에 작게. */}
       <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + legacyMoveLabel(entry)}
-        style={{ ...LEGACY_BLOCK_BTN_STYLE, padding: 5, gap: 0, justifyContent: "flex-start" }}>
+        style={{ ...LEGACY_BLOCK_BTN_STYLE, padding: "20px 8px 4px", gap: 0, justifyContent: "flex-start" }}>
         <LegacyBlockDecor />
         <div style={{ position: "relative", width: "100%", flexShrink: 0 }}><LegacyMiniBoard entry={entry} color={color} /></div>
-        {/* 아래 띠: 수 이름(등급 색). 좌우 끝은 편집·공유 버튼 자리라 비워 둔다. */}
-        <div style={{ position: "relative", flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "0 22px", boxSizing: "border-box" }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 11, lineHeight: 1, color,
+        {/* 아래 띠: 월계수 사이에 수 이름(등급 색). 좌우 끝은 편집·공유 버튼 자리라 비워 둔다. */}
+        <div style={{ position: "relative", flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: "0 16px", boxSizing: "border-box", borderTop: "1px solid rgba(212,175,95,.35)", marginTop: 6 }}>
+          <LaurelBranch size={13} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 13, lineHeight: 1, color,
             textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{legacyMoveLabel(entry)}</span>
+          <LaurelBranch size={13} flip />
         </div>
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
