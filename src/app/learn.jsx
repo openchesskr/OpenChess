@@ -283,36 +283,62 @@ function layoutLessonTree(lessons) {
   for (const id of ids) if (pos[id]) maxCol = Math.max(maxCol, pos[id].col);
   return { pos, childrenOf, roots, maxRow, maxCol };
 }
-// (v0.4.2 UI) 노드를 "원형 아이콘 버튼 + 아래쪽 캡션" 대신 가로로 넓은 직사각형 카드로 바꿨다 —
-// 왼쪽에 상태 아이콘(자물쇠/재생/체크) 배지, 오른쪽에 레슨 이름과 보상을 한 카드 안에 담는다.
-const LESSON_CARD_W = 208, LESSON_CARD_H = 58, LESSON_BADGE_D = 38;
-const LESSON_COL_W = 232, LESSON_ROW_H = 92;
+// (v0.7.3 UI) 듀오링고식 레슨 경로 — 가로로 넓은 카드 지도 대신, 위에서 아래로 이어지는 "동그란 노드" 길.
+//  · 한 줄(row = 선행 레슨 깊이)에 노드가 하나면 좌우로 굽이치며 내려가고, 갈래가 있으면 한 줄에 나란히 펼친다.
+//  · 노드는 단색 원 + 아래쪽 두꺼운 그림자(눌리는 느낌). 진행 중인 레슨은 둘레에 진행 링, 지금 할 레슨 위에는 "시작" 말풍선.
+//  · 그라데이션은 쓰지 않는다(학습 탭의 다른 박스들과 같은 단색 면 규칙).
+const LESSON_NODE_D = 68, LESSON_ROW_H = 126, LESSON_TOP = 50, LESSON_BOTTOM = 62, LESSON_WAVE = [0.5, 0.7, 0.5, 0.3];
 const LESSON_NODE_STYLE = {
-  locked: { bg: "linear-gradient(180deg,#E9DEC2,#D9C69C)", border: "#C2AD82", color: "#8A7A5E", badgeBg: "rgba(138,122,94,.16)", ring: null },
-  available: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", badgeBg: "rgba(36,21,9,.14)", ring: "rgba(196,154,80,.4)" },
-  progress: { bg: "linear-gradient(180deg," + T.brass + ",#A8842F)", border: "#F0D89A", color: "#241509", badgeBg: "rgba(36,21,9,.14)", ring: "rgba(196,154,80,.4)" },
-  done: { bg: "linear-gradient(180deg,#59A455,#3F7A3A)", border: "#9BE39B", color: "#EAF7E6", badgeBg: "rgba(234,247,230,.2)", ring: "rgba(63,122,58,.35)" },
+  locked: { face: "#DCCFB0", edge: "#BFAE88", color: "#8A7A5E", track: null },
+  available: { face: "#C9A45C", edge: "#8E6F2F", color: "#241509", track: "#8E6F2F" },
+  progress: { face: "#C9A45C", edge: "#8E6F2F", color: "#241509", track: "#8E6F2F" },
+  done: { face: "#59A455", edge: "#3F7A3A", color: "#F2FBEF", track: null },
 };
-function LessonNode({ id, lesson, state, x, y, onOpen, canEdit, onEdit }) {
+/** 줄(row)별로 노드를 모아 x 위치(0~1 비율)를 정한다: 한 개면 굽이, 여러 개면 균등 분할(왼쪽부터 col 순서). */
+function lessonPathPositions(layout, ids) {
+  const rows = {};
+  for (const id of ids) (rows[layout.pos[id].row] = rows[layout.pos[id].row] || []).push(id);
+  const out = {};
+  for (const r of Object.keys(rows)) {
+    const list = rows[r].sort((a, b) => layout.pos[a].col - layout.pos[b].col);
+    list.forEach((id, i) => {
+      out[id] = { row: +r, x: list.length === 1 ? LESSON_WAVE[+r % LESSON_WAVE.length] : (i + 1) / (list.length + 1) };
+    });
+  }
+  return out;
+}
+function LessonNode({ id, lesson, state, prog, x, cy, current, onOpen, canEdit, onEdit }) {
   const s = LESSON_NODE_STYLE[state];
+  const locked = state === "locked";
+  const R = LESSON_NODE_D / 2 + 6, C = 2 * Math.PI * R;
+  const frac = prog && prog.total ? Math.min(1, prog.done / prog.total) : 0;
   return (
-    <div style={{ position: "absolute", left: x, top: y, width: LESSON_CARD_W, height: LESSON_CARD_H }}>
-      <button onClick={() => state !== "locked" && onOpen(id)} disabled={state === "locked"} className={state === "locked" ? "" : "press"}
-        title={lesson.title}
-        style={{ width: "100%", height: "100%", borderRadius: 16, border: "3px solid " + s.border, background: s.bg, color: s.color,
-          display: "flex", alignItems: "center", gap: 10, padding: "0 12px 0 0", cursor: state === "locked" ? "default" : "pointer", textAlign: "left",
-          boxShadow: s.ring ? "0 0 0 5px " + s.ring + ", 0 3px 8px rgba(90,58,34,.25)" : "0 3px 8px rgba(90,58,34,.25)" }}>
-        <span style={{ width: LESSON_BADGE_D, height: LESSON_BADGE_D, borderRadius: 12, background: s.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: 10 }}>
-          {state === "locked" ? <Lock size={19} /> : state === "done" ? <Check size={22} /> : <Play size={19} fill={s.color} />}
-        </span>
-        <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 800, color: state === "locked" ? T.inkSoft : s.color, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "keep-all" }}>{lesson.title}</span>
-          {state !== "locked" && (
-            <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: state === "done" ? "rgba(234,247,230,.85)" : "rgba(36,21,9,.7)" }}><CoinIcon size={11} /> {lesson.reward || 60}</span>
-          )}
-        </span>
-      </button>
-      {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title={t("레슨 편집")} style={{ width: 18, height: 18, borderRadius: 5, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.85)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: -6, right: -6, zIndex: 1 }}><Settings size={10} /></button>}
+    <div style={{ position: "absolute", left: (x * 100) + "%", top: cy - LESSON_NODE_D / 2, width: 112, marginLeft: -56, display: "flex", flexDirection: "column", alignItems: "center", zIndex: 1 }}>
+      {current && (
+        <motion.div aria-hidden="true" animate={{ y: [0, -5, 0] }} transition={{ duration: 1.3, repeat: LOOP(), ease: "easeInOut" }}
+          style={{ position: "absolute", top: -38, padding: "4px 10px", borderRadius: 10, background: "#FFFDF6", border: "2px solid " + s.edge, color: "#8E6F2F", fontSize: 11.5, fontWeight: 900, letterSpacing: ".04em", whiteSpace: "nowrap" }}>
+          {t("시작")}
+          <span style={{ position: "absolute", left: "50%", bottom: -7, width: 10, height: 10, marginLeft: -5, background: "#FFFDF6", borderRight: "2px solid " + s.edge, borderBottom: "2px solid " + s.edge, transform: "rotate(45deg)" }} />
+        </motion.div>
+      )}
+      <div style={{ position: "relative", width: LESSON_NODE_D, height: LESSON_NODE_D }}>
+        {state === "progress" && (
+          <svg width={LESSON_NODE_D + 16} height={LESSON_NODE_D + 16} style={{ position: "absolute", left: -8, top: -8, pointerEvents: "none", transform: "rotate(-90deg)" }}>
+            <circle cx={R + 2} cy={R + 2} r={R} fill="none" stroke="rgba(142,111,47,.22)" strokeWidth={5} />
+            <circle cx={R + 2} cy={R + 2} r={R} fill="none" stroke={s.track} strokeWidth={5} strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)} />
+          </svg>
+        )}
+        <button onClick={() => !locked && onOpen(id)} disabled={locked} className={locked ? "" : "press"} aria-label={lesson.title} title={lesson.title}
+          style={{ width: "100%", height: "100%", borderRadius: "50%", border: "none", background: s.face, color: s.color, display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: locked ? "default" : "pointer", boxShadow: "0 6px 0 " + s.edge }}>
+          {locked ? <Lock size={26} /> : state === "done" ? <Check size={32} strokeWidth={3.2} /> : <Play size={28} fill={s.color} />}
+        </button>
+        {canEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(id); }} className="press" title={t("레슨 편집")} style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.9)", color: T.inkSoft, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", position: "absolute", top: -4, right: -4, zIndex: 2 }}><Settings size={11} /></button>}
+      </div>
+      <div style={{ marginTop: 14, maxWidth: 112, textAlign: "center", padding: "1px 6px", borderRadius: 6, background: T.paper }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: locked ? T.inkSoft : T.ink, lineHeight: 1.25, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "keep-all" }}>{lesson.title}</div>
+        {!locked && <div className="flex items-center justify-center gap-1" style={{ fontSize: 10.5, fontWeight: 800, color: state === "done" ? "#3F7A3A" : "#8A6A2F", marginTop: 1 }}><CoinIcon size={11} /> {lesson.reward || 60}</div>}
+      </div>
     </div>
   );
 }
@@ -349,54 +375,37 @@ function LessonMap({ mainQuest, onAnswer, onClaim, canEdit, bumpContent, content
   }, []);
   const layout = useMemo(() => layoutLessonTree(CONTENT.lessons), [contentVer]);
   const ids = useMemo(() => Object.keys(CONTENT.lessons).filter((id) => layout.pos[id]), [layout]);
-  // (v0.4.2) 카드가 넓은 직사각형이 되면서, 루트가 좌상단에 고정되고 갈래가 늘어날수록 우하단으로
-  // 뻗어나가는 대각선 형태가 됐다 — 컨테이너 크기도 그 최대 col/row + 카드 한 장 크기만큼 잡는다.
-  const nodeX = (id) => layout.pos[id].col * LESSON_COL_W + 14;
-  const nodeY = (id) => layout.pos[id].row * LESSON_ROW_H + 10;
-  const width = (layout.maxCol) * LESSON_COL_W + LESSON_CARD_W + 28;
-  const height = (layout.maxRow) * LESSON_ROW_H + LESSON_CARD_H + 20;
+  const pathPos = useMemo(() => lessonPathPositions(layout, ids), [layout, ids]);
+  const cyOf = (id) => LESSON_TOP + pathPos[id].row * LESSON_ROW_H + LESSON_NODE_D / 2;
+  const height = LESSON_TOP + layout.maxRow * LESSON_ROW_H + LESSON_NODE_D + LESSON_BOTTOM;
   const overall = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest, contentVer]);
-  // 루트는 항상 좌상단(col 0)에 고정되므로, 마운트 시 지금 도전할 만한(해금됐고 아직 다 못 깬)
-  // 레슨—없으면 첫 최상위 레슨—이 뷰포트 안에 들어오도록만 가로로 스크롤해 준다.
-  const scrollRef = useRef(null);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !ids.length) return;
-    const frontier = ids.find((id) => { const st = lessonNodeState(mainQuest, id); return st === "available" || st === "progress"; }) || layout.roots[0] || ids[0];
-    if (!frontier || !layout.pos[frontier]) return;
-    const targetX = nodeX(frontier) + LESSON_CARD_W / 2;
-    el.scrollLeft = Math.max(0, targetX - el.clientWidth / 2);
-  }, [layout, ids.length]);
+  // 지금 할 레슨(해금됐고 아직 다 못 깬 첫 레슨) — "시작" 말풍선을 붙인다.
+  const currentId = ids.find((id) => { const st = lessonNodeState(mainQuest, id); return st === "available" || st === "progress"; }) || null;
   return (
     <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: T.paper, border: "1px solid #DCCBA8" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("레슨")}</span>
         <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, marginLeft: "auto" }}>{overall.claimed}/{tx("{0} 완료", overall.totalChapters)}</span>
       </div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 10 }}>{t("체스 개념과 오프닝 학습 코스. 갈래를 따라 순서대로 해금")}</div>
+      <div style={{ fontSize: 11, color: T.inkSoft, marginBottom: 6 }}>{t("체스 개념과 오프닝 학습 코스. 갈래를 따라 순서대로 해금")}</div>
       {ids.length === 0 ? (
         <div style={{ fontSize: 12, color: T.inkSoft, padding: "16px 0", textAlign: "center" }}>{t("등록된 레슨 없음")}</div>
       ) : (
-        <div ref={scrollRef} style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
-          <div style={{ position: "relative", width, height }}>
-            <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-              {ids.flatMap((id) => {
-                const lesson = CONTENT.lessons[id];
-                const parents = lessonParents(lesson).filter((p) => layout.pos[p]);
-                return parents.map((p) => {
-                  const claimed = isLessonClaimed(mainQuest, p);
-                  // 카드가 넓은 직사각형이라 부모 카드 아래쪽 중앙에서 자식 카드 위쪽 중앙으로 잇는다 —
-                  // 열이 다르면 자연히 대각선으로 우하단을 향해 기울어져 보인다.
-                  return <line key={p + "->" + id} x1={nodeX(p) + LESSON_CARD_W / 2} y1={nodeY(p) + LESSON_CARD_H} x2={nodeX(id) + LESSON_CARD_W / 2} y2={nodeY(id)}
-                    stroke={claimed ? "rgba(63,122,58,.55)" : "rgba(196,154,80,.55)"} strokeWidth={4} strokeLinecap="round" />;
-                });
-              })}
-            </svg>
-            {ids.map((id) => (
-              <LessonNode key={id} id={id} lesson={CONTENT.lessons[id]} state={lessonNodeState(mainQuest, id)}
-                x={nodeX(id)} y={nodeY(id)} onOpen={setOpenKey} canEdit={canEdit} onEdit={setEditKey} />
-            ))}
-          </div>
+        <div className="oc-lesson-path" style={{ position: "relative", width: "100%", maxWidth: 460, height, margin: "0 auto" }}>
+          <svg viewBox={"0 0 100 " + height} preserveAspectRatio="none" width="100%" height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}>
+            {ids.flatMap((id) => {
+              const parents = lessonParents(CONTENT.lessons[id]).filter((p) => pathPos[p]);
+              return parents.map((p) => {
+                const x1 = pathPos[p].x * 100, x2 = pathPos[id].x * 100, y1 = cyOf(p), y2 = cyOf(id), m = (y1 + y2) / 2;
+                return <path key={p + "->" + id} d={"M" + x1 + " " + y1 + " C" + x1 + " " + m + " " + x2 + " " + m + " " + x2 + " " + y2} fill="none"
+                  stroke={isLessonClaimed(mainQuest, p) ? "#59A455" : "#D6C39A"} strokeWidth={7} strokeLinecap="round" vectorEffect="non-scaling-stroke" />;
+              });
+            })}
+          </svg>
+          {ids.map((id) => (
+            <LessonNode key={id} id={id} lesson={CONTENT.lessons[id]} state={lessonNodeState(mainQuest, id)} prog={lessonProgress(mainQuest, id)}
+              x={pathPos[id].x} cy={cyOf(id)} current={id === currentId} onOpen={setOpenKey} canEdit={canEdit} onEdit={setEditKey} />
+          ))}
         </div>
       )}
       {canEdit && <button onClick={() => setEditKey("__new__")} className="press" style={{ marginTop: 10, fontSize: 11, fontWeight: 800, padding: "6px 10px", borderRadius: 8, border: "1px dashed " + T.brass, background: "transparent", color: "#8A6A2F", cursor: "pointer" }}>{t("+ 새 레슨 추가")}</button>}

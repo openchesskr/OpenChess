@@ -29,5 +29,16 @@ if (!/useNarrow\(720\)/.test(home)) fails.push("LearnProfileHome: 모바일 기�
 if (/<UserProfilePage embedded/.test(app)) fails.push("App: 학습 탭에 /user 프로필 페이지가 다시 들어옴(프로필 정보는 성장 분석으로 대체됨)");
 { const dq = (learn.match(/function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0]; if (!dq) fails.push("DailyQuestCard를 찾지 못함"); else if (/gradient\(/.test(dq)) fails.push("DailyQuestCard: 그라데이션(linear/radial-gradient)을 쓰면 안 됨(단색 면 + 얇은 테두리)"); }
 if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박스(RecentGameBoxes)를 쓰지 않음");
+{ // (v0.7.3) 레슨은 듀오링고식 세로 경로(원형 노드 + 굽이치는 길 + "시작" 말풍선) — 가로 카드 지도·그라데이션으로 되돌리지 않는다.
+  const ln = (learn.match(/const LESSON_NODE_D[\s\S]*?\nfunction LessonMap[\s\S]*?\n}\n/) || [""])[0];
+  if (!ln) fails.push("레슨 경로(LESSON_NODE_D ~ LessonMap)를 찾지 못함");
+  else {
+    if (!/borderRadius: "50%"/.test(ln)) fails.push("LessonNode: 원형 노드가 아님");
+    if (!/lessonPathPositions/.test(ln) || !/LESSON_WAVE/.test(ln)) fails.push("LessonMap: 굽이치는 세로 경로 배치(lessonPathPositions/LESSON_WAVE)가 없음");
+    if (!/t\("시작"\)/.test(ln)) fails.push("LessonNode: 지금 할 레슨 '시작' 말풍선이 없음");
+    if (/gradient\(/.test(ln.replace(/\/\/.*$/gm, ""))) fails.push("레슨 경로: 그라데이션을 쓰면 안 됨");
+    if (/overflowX: "auto"/.test(ln)) fails.push("LessonMap: 가로 스크롤 지도로 되돌아감");
+  }
+}
 if (fails.length) { console.error("✗ learn-tab check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ learn-tab check: 일일 퀘스트 박스·모바일 3페이지 페이저·/user 프로필 + 대국 박스 구성 유지");
