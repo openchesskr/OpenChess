@@ -82,6 +82,32 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.3 - 2026/11/07
+
+테마: 학습 탭·레슨·유산 개편과 사이트 전반 모션 보강, 수 등급·퍼즐 생성 재검토. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`economy_params()`의 `questBonus.coins` 20→100).
+
+**기능**
+- 학습 탭(`src/app/learn.jsx`, 옛 quest.jsx): 왼쪽 성장 분석(`GrowthPanel`), 오른쪽 일일 퀘스트 보드(`DailyQuestCard`, 그라데이션 없는 단색 면)와 최근 대국 큰 박스(`RecentGameBoxes`, OpenChess/chess.com 토글·필터). 모바일(720px 이하)은 성장·퀘스트·대국 3페이지 가로 스냅 페이저(`LearnPager`, 탭 줄·점·peek). 탭 코드명 정리: 분석=`analysis`(analysis.jsx), 학습=`learn`.
+- 일일 퀘스트 전체 완료 보상 코인 20→100(서버 `economy_params`·화면·`check-economy-constants` 동기).
+- 레슨 로드맵: 가로 카드 지도를 듀오링고식 세로 경로로 교체(`lessonPathPositions`, 원형 노드·진행 링·"시작" 말풍선·곡선 연결선). 해금 규칙·`LessonScreen`·편집기 불변.
+- 유산: `LegacyManageModal`(마법사)과 재생 화면의 암석판 확대·기보 타이핑 진입 연출(`LegacyShatterToken` 포함) 삭제. 리뷰 코치 카드에 "유산으로 남기기"(`legacyAction`) — 내 대국(`game.color`)에서 내가 둔 최선·유일·탁월 수만, FEN 시작·자유 탐색 제외. 빈 칸 우선(그랜드마스터는 `*2` 칸까지), 꽉 차 있으면 한 번 더 눌러 교체하고 기존 유산은 `legacyHistory`로 보존(`saveLegacyFromReview`). 칸을 누르면 안내·삭제만 있는 `LegacyGuideModal`.
+- 수 등급(`moveQuality.js`): 승부가 난 평가치(`DECIDED_CP`)에서는 유일한 수 상한·블런더·실수 제한, 탁월 하한 −1.5, 직전 희생을 잇는 희생도 탁월. 실측(Stockfish 4,417수)으로 검증하고, "위협 규칙"은 시도 후 사용자 요청으로 롤백.
+- 퍼즐 생성: 희생 후보 정렬(`findSacrificeFirstMove`), 라인이 미해결 교환·체크·공격받는 퀸에서 끊기지 않게 정리(끝 위치 정리 3%대로 감소).
+- 리뷰 코치: 전부 합니다체, 용어 교체(더블폰·파일·장악), 체크메이트 종류별 문구와 시각화(킹을 공격하는 기물·킹 주변 9칸 통제), 전술 연출 기물 칸 정중앙·크기 수정.
+
+**UI**
+- 공용 모션 키트(`motionKit.jsx`): 탭 전환 페이드(opacity만), 하단 탭 표시선, 모달 열림, `CountUp`, `ScrollTopButton`, `Skeleton`·`LoadingRows`, 법적 문서 `RevealOnce`, 카드 호버 리프트, 버튼 호버 피드백. 기기 "동작 줄이기"는 보지 않고 성능 모드(`isLite`)만 따름.
+- 유산 타일: 자동 열 그리드(칸 최소 150px, 보통 2열)로 확대, 에게해 청색 대리석 바탕·금 이중 액자·그리스 키(메안더) 띠·월계수 수 이름.
+- 칭호 `TITLE_SCALE`=0.75, 칭호가 가로 폭을 채우도록 배치.
+- 빠른 리뷰 연출: 모바일 OPEN 폭 맞춤, 글리치 특수문자 깜빡임, 4단계 균등 노출, 헤더 진행률을 하단으로, 게이지 아래 OPENING·PUZZLE·ENDGAME·NETWORK 효과.
+
+**버그 수정**
+- BUG-137(P2) 자유 탐색 수 번호 NaN, BUG-138(P2) 전술 연출 기물 위치·크기, BUG-139(P3) 모바일 OPEN 잘림, BUG-140(P2) 퍼즐 라인 조기 종료, BUG-141(P2) 승부난 평가치의 유일한 수·블런더, BUG-142(P2) 희생 후보 앞쪽 절단, BUG-143(P1, 배포 전) 잘못된 파일에서 import한 이름이 빌드를 통과(`check-undefined-refs`가 상대 경로 import 이름 존재까지 검사). BUG-136(P2)은 미결.
+
+**시스템**
+- prebuild 검사 추가: `check-motion-kit`, `check-review-ui`, `check-puzzle-gen`, `check-learn-tab`(레슨 경로 포함), `check-legacy-flow`(유산은 /review에서만 생성·마법사·진입 연출 금지), `check-move-grading`. 실측 도구 `analyze-grading.mjs`·`analyze-puzzle-gen.mjs`.
+- `package.json` 0.7.3, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.2 - 2026/11/06
 
 테마: 리뷰 코치(MEC) 고도화와 회원 탈퇴 7일 유예. 설명하지 못하던 수(표본의 약 16%)를 전술·전략·구조 탐지로 설명하고, 전술 용어를 누르면 기물 이동 모션과 전술별 화살표를 재생한다. 빠른 리뷰는 더 빨라지고 전용 진입 연출을 갖는다. SQL 변경 있음(`supabase-setup.sql` 재실행).
