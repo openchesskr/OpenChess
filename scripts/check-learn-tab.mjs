@@ -63,5 +63,25 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   const ms = (gr.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0];
   if (!/allKeys\.map/.test(ms) || !/openG/.test(ms) || !/className="growth-crit-table"/.test(ms)) fails.push("마스터 스타일: 기준 지문 띠(allKeys)·묶음별 접이식(openG)·비교 표(growth-crit-table)가 필요함");
 }
+{ // (v0.7.4) 데스크톱 /learn: 화면 높이 2열 대시보드(왼쪽 프로필·일일 퀘스트 정확히 반반, 오른쪽은 최근 대국만), 일일 퀘스트 compact, 최근 대국 박스 확장, 알림 → 학습 탭.
+  const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
+  if (!/className="learn-dash"/.test(home) || !/gridTemplateRows: "minmax\(0, 1fr\) minmax\(0, 1fr\)"/.test(home)) fails.push("LearnProfileHome: 데스크톱은 왼쪽이 위·아래 정확히 반반(gridTemplateRows 1fr 1fr)인 2열 대시보드(learn-dash)여야 함");
+  const wide = (home.match(/className="learn-dash"[\s\S]*$/) || [""])[0];
+  if (!/denseGrowthNode/.test(wide) || !/compactQuestNode/.test(wide)) fails.push("LearnProfileHome: 왼쪽 위 프로필(denseGrowthNode)·왼쪽 아래 일일 퀘스트(compactQuestNode)");
+  if (/questNode\}[\s\S]*gamesNode/.test(wide.replace(/compactQuestNode \|\| questNode/, "")) && /\{questNode\}\{gamesNode\}/.test(wide)) fails.push("LearnProfileHome: 오른쪽 열은 최근 대국으로만 채워야 함(퀘스트를 같이 두지 않음)");
+  if (!/compact/.test((learn.match(/function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0])) fails.push("DailyQuestCard: compact 모드가 없음");
+  const gh = rd("src/app/gameHistory.jsx"), box = (gh.match(/function GameBox[\s\S]*?\nexport function RecentGameBoxes/) || [""])[0];
+  if (!box) fails.push("GameBox를 찾지 못함");
+  else {
+    if (!/CC_TOAST_LABEL_FONT/.test(box) || !/recordAround\(/.test(box) || !/ccWrColor/.test(box)) fails.push("GameBox: 오프닝 줄이 chess.com 알림과 같은 디자인(CC_TOAST_LABEL_FONT·전적 칩)이 아님");
+    if (!/badgeIcon\("brilliant"/.test(box) || !/badgeIcon\("only"/.test(box)) fails.push("GameBox: 좌하단 탁월한 수·유일한 수 개수가 없음");
+    if (!/growthOfGame\(/.test(box)) fails.push("GameBox: 성장 분석 연계 정보(growthOfGame)가 없음");
+    if (!/<Search size=/.test(box) || !/<BestMoveJumpButton/.test(box)) fails.push("GameBox: 대국 보기·리뷰하기는 검색 아이콘 버튼 + 연두색 리뷰 아이콘 버튼이어야 함");
+    if (/>\{t\("대국 보기"\)\}<\/button>|>\{summary \? t\("리뷰 보기"\) : t\("리뷰하기"\)\}<\/button>/.test(box)) fails.push("GameBox: 글자 버튼으로 되돌아감");
+  }
+  const shell = rd("src/app/shell.jsx");
+  if (!/export function ChesscomGameToast\(\{[^)]*onOpen/.test(shell)) fails.push("ChesscomGameToast: 알림을 누르면 학습 탭으로 가는 onOpen이 없음");
+  if (!/onOpen=\{\(\) => \{ dismissCcToast\(\); switchTab\("learn"\); \}\}/.test(app)) fails.push("App: chess.com 알림 onOpen이 학습 탭(switchTab(\"learn\"))으로 연결되지 않음");
+}
 if (fails.length) { console.error("✗ learn-tab check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ learn-tab check: 일일 퀘스트 박스·모바일 3페이지 페이저·/user 프로필 + 대국 박스 구성 유지");

@@ -49,8 +49,10 @@ function fmtRemainHMS(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return String(Math.floor(s / 3600)).padStart(2, "0") + ":" + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 }
-function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight }) {
+function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight, compact }) {
   const dq = dailyQuest;
+  // (v0.7.4, 사용자 요청) 데스크톱 대시보드에서는 요소 크기를 조금씩 줄인 compact 모드: 줄 간격·아이콘 칸·글자·보상 블록을 각각 약 15~25% 줄인다. 로직·색은 그대로.
+  const Z = compact ? { rowPad: "5px 9px", rowGap: 9, ico: 28, icoSize: 15, title: 12, sub: 10.5, bar: 4, barTop: 5, head: "7px 12px", headIco: 28, headIcoSize: 15, headTitle: 13.5, headSmall: 8.5, listGap: 5, listPad: 8, bonusPad: "6px 11px", bonusIco: 32, bonusIcoSize: 17, bonusCoin: 16, bonusTitle: 12, bonusSub: 10.5, mb: 0 } : { rowPad: "11px 12px", rowGap: 12, ico: 40, icoSize: 20, title: 13.5, sub: 11.5, bar: 5, barTop: 8, head: "13px 14px", headIco: 36, headIcoSize: 19, headTitle: 16, headSmall: 9.5, listGap: 8, listPad: 12, bonusPad: "12px 14px", bonusIco: 48, bonusIcoSize: 24, bonusCoin: 22, bonusTitle: 13.5, bonusSub: 11.5, mb: 16 };
   const [remain, setRemain] = useState(msUntilKstMidnight());
   useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
   // (버그 수정) questOpeningMovesText는 표에 없는 이름이면 오프닝 트리를 처음부터 훑는(BFS) 탐색을
@@ -85,17 +87,17 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
       <motion.div ref={highlighted ? (el) => el && el.scrollIntoView({ behavior: "smooth", block: "center" }) : undefined}
         layout={false} animate={flash ? { scale: [1, 1.03, 1] } : { scale: 1 }} transition={{ duration: 0.45 }}
         className={highlighted ? "dq-hi" : undefined}
-        style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12,
+        style={{ position: "relative", overflow: compact ? "hidden" : undefined, display: "flex", alignItems: "center", gap: Z.rowGap, padding: Z.rowPad, borderRadius: 12,
           background: done ? "#1E2A21" : SURFACE, border: "1px solid " + (highlighted ? BRASS : done ? "#355540" : LINE) }}>
-        <span style={{ position: "relative", width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
-          {done ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Icon size={20} color={tone} strokeWidth={1.75} />}
+        <span style={{ position: "relative", width: Z.ico, height: Z.ico, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
+          {done ? <Check size={Z.icoSize} strokeWidth={2.4} color={SAGE} /> : <Icon size={Z.icoSize} color={tone} strokeWidth={1.75} />}
           {flash && <Sparkles size={15} color={BRASS} className="dq-spark" style={{ position: "absolute", top: -7, right: -7 }} />}
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: done ? "#BFD9C6" : "#F1E6D0", lineHeight: 1.3 }}>{title}</div>
-          {sub && <div style={{ fontSize: 11.5, color: done ? "#87A590" : MUTED, marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
+          <div style={{ fontSize: Z.title, fontWeight: 700, color: done ? "#BFD9C6" : "#F1E6D0", lineHeight: 1.3 }}>{title}</div>
+          {sub && <div style={{ fontSize: Z.sub, color: done ? "#87A590" : MUTED, marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
           {progress != null && !done && (
-            <div style={{ height: 5, borderRadius: 3, background: INK, marginTop: 8, overflow: "hidden" }}>
+            <div style={compact ? { position: "absolute", left: 0, right: 0, bottom: 0, height: 3, background: INK } : { height: Z.bar, borderRadius: 3, background: INK, marginTop: Z.barTop, overflow: "hidden" }}>
               <motion.div initial={{ width: 0 }} animate={{ width: Math.round(progress * 100) + "%" }} transition={{ duration: 0.7, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: "100%", background: hue, borderRadius: 3 }} />
             </div>
           )}
@@ -107,15 +109,15 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
     );
   };
   return (
-    <div style={{ marginBottom: 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: INK }}>
+    <div style={{ marginBottom: Z.mb, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: INK, ...(compact ? { height: "100%", display: "flex", flexDirection: "column", boxSizing: "border-box" } : null) }}>
       <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqHi{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 5px rgba(201,164,92,.4)}} .dq-hi{animation:dqHi 1.1s ease-in-out 3} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
       {/* 머리띠 */}
-      <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: SURFACE, borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
+      <div className="flex items-center justify-between" style={{ gap: 8, padding: Z.head, background: SURFACE, borderBottom: "1px solid " + LINE, flexWrap: "wrap", flexShrink: 0 }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
-          <span style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><ListChecks size={19} color={BRASS} strokeWidth={1.75} /></span>
+          <span style={{ width: Z.headIco, height: Z.headIco, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><ListChecks size={Z.headIcoSize} color={BRASS} strokeWidth={1.75} /></span>
           <div>
-            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".24em", color: BRASS }}>DAILY QUEST</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#F7EFDF", lineHeight: 1.15 }}>{t("일일 퀘스트")}</div>
+            <div style={{ fontSize: Z.headSmall, fontWeight: 700, letterSpacing: ".24em", color: BRASS }}>DAILY QUEST</div>
+            <div style={{ fontSize: Z.headTitle, fontWeight: 800, color: "#F7EFDF", lineHeight: 1.15 }}>{t("일일 퀘스트")}</div>
           </div>
         </div>
         <div className="flex items-center" style={{ gap: 7, flexWrap: "wrap" }}>
@@ -124,7 +126,7 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
           <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 600, fontFamily: SITE_FONT, color: MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}><Timer size={12} strokeWidth={1.9} />{fmtRemainHMS(remain)}</span>
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: Z.listGap, padding: Z.listPad, ...(compact ? { flex: 1, minHeight: 0, overflowY: "auto" } : null) }}>
         {row({ k: "puzzle", Icon: Puzzle, hue: "#7FA9D1", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
         {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#E0A862", title: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
@@ -147,18 +149,18 @@ function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpeni
         })}
       </div>
       {/* (버그) 모든 퀘스트 완료 보상 — 일일 퀘스트 목록 아래 별도 블록으로 시각화(OC 나이트 코인 100) */}
-      <div className={allDone ? "dq-glow" : undefined} style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 12,
+      <div className={allDone ? "dq-glow" : undefined} style={{ margin: "0 " + Z.listPad + "px " + Z.listPad + "px", padding: Z.bonusPad, borderRadius: 12, display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
         border: "1px solid " + (allDone ? BRASS : LINE), background: SURFACE }}>
-        <span style={{ position: "relative", flexShrink: 0, width: 48, height: 48, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}>
-          <Gem size={24} color={BRASS} strokeWidth={1.6} />
-          <span style={{ position: "absolute", right: -6, bottom: -6 }}><CoinIcon size={22} /></span>
+        <span style={{ position: "relative", flexShrink: 0, width: Z.bonusIco, height: Z.bonusIco, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}>
+          <Gem size={Z.bonusIcoSize} color={BRASS} strokeWidth={1.6} />
+          <span style={{ position: "absolute", right: -6, bottom: -6 }}><CoinIcon size={Z.bonusCoin} /></span>
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: allDone ? "#E3CC93" : "#F1E6D0" }}>{t("모든 퀘스트 완료 보상")}</div>
-          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{tx("OC 나이트 코인 {0}, {1}/5 완료", <b style={{ color: "#E3CC93" }}>{t("100개")}</b>, doneCount)}</div>
-          <div style={{ display: "flex", gap: 4, marginTop: 8 }} aria-hidden="true">
+          <div style={{ fontSize: Z.bonusTitle, fontWeight: 800, color: allDone ? "#E3CC93" : "#F1E6D0" }}>{t("모든 퀘스트 완료 보상")}</div>
+          <div style={{ fontSize: Z.bonusSub, color: MUTED, marginTop: 2 }}>{tx("OC 나이트 코인 {0}, {1}/5 완료", <b style={{ color: "#E3CC93" }}>{t("100개")}</b>, doneCount)}</div>
+          {!compact && <div style={{ display: "flex", gap: 4, marginTop: 8 }} aria-hidden="true">
             {[0, 1, 2, 3, 4].map((i) => <motion.span key={i} initial={false} animate={{ backgroundColor: i < doneCount ? BRASS : INK }} style={{ flex: 1, height: 6, borderRadius: 3 }} />)}
-          </div>
+          </div>}
         </div>
         <span style={{ fontSize: 12.5, fontWeight: 800, flexShrink: 0, color: allDone ? "#E3CC93" : "#7C6B52" }}>{allDone ? (dq.bonusClaimed ? t("획득 완료") : t("획득")) : t("잠김")}</span>
       </div>
@@ -1079,7 +1081,7 @@ function LearnGamesColumn({ view, setView, user, uid, chesscom, ccName, onOpenGa
       </div>
       {view === "oc" && !user ? loginCard : loading ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
         : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>
-        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} uid={uid} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         : <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("표시할 대국 없음")}</p>}
     </div>
   );
@@ -1145,7 +1147,7 @@ function LearnPager({ pages }) {
 }
 // (v0.7.3, 사용자 요청) 학습 탭 상단 — 데스크톱: 왼쪽 /user 프로필(대국 목록만 뺀 나머지 전부) · 오른쪽 맨 위 일일 퀘스트 박스, 그 아래 최근 대국 큰 박스. 태블릿: 세로로 쌓기.
 // 모바일: 프로필·일일 퀘스트·최근 대국 3페이지(LearnPager). 프로필은 내 MID로 서버에서 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 프로필 자리에 로그인 안내.
-function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, questNode, growthNode, uid }) {
+function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, questNode, compactQuestNode, growthNode, denseGrowthNode, uid }) {
   const wideLayout = !useNarrow(1000);
   const mobile = useNarrow(720);
   const [view, setView] = useState("oc");
@@ -1166,10 +1168,16 @@ function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpen
   if (!wideLayout) {
     return <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{growthNode}{questNode}{gamesNode}</div>;
   }
+  // (v0.7.4, 사용자 요청) 데스크톱: 화면 높이를 기준으로 한 2열 대시보드. 왼쪽은 프로필(성장 분석)이 위쪽 절반, 일일 퀘스트(작게)가 아래쪽 절반을 정확히 반씩 차지하고(각각 안쪽 스크롤),
+  // 오른쪽은 최근 대국만 채운다(역시 안쪽 스크롤). 높이 = 화면 − 머리글·제목·하단 탭 여백.
+  const H = "calc(100dvh - 236px)";
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-      <div style={{ width: 500, flexShrink: 0, minWidth: 0 }}>{growthNode}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>{questNode}{gamesNode}</div>
+    <div className="learn-dash" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 20, height: H, minHeight: 520 }}>
+      <div style={{ display: "grid", gridTemplateRows: "minmax(0, 1fr) minmax(0, 1fr)", gap: 14, minHeight: 0 }}>
+        <div className="learn-dash-scroll" style={{ minHeight: 0, overflowY: "auto", paddingRight: 4 }}>{denseGrowthNode || growthNode}</div>
+        <div style={{ minHeight: 0 }}>{compactQuestNode || questNode}</div>
+      </div>
+      <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{gamesNode}</div>
     </div>
   );
 }
@@ -1177,13 +1185,15 @@ export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQu
   user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, me, onOpenTitle }) {
   const [lOpen, setLOpen] = useLearnFold("lessons", false);
   const questNode = dailyQuest ? <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /> : null;
+  const compactQuestNode = dailyQuest ? <DailyQuestCard compact dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /> : null;
   // (v0.7.3, 사용자 요청) 예전 프로필 자리에 성장 분석(실수 통계·약점 지도·복습 카드·오프닝 실수·마스터 스타일)을 그대로 펼쳐 보여 준다.
   const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} me={me} onOpenTitle={onOpenTitle} />;
+  const denseGrowthNode = <GrowthPanel dense uid={growthUid || null} games={growthGames} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} me={me} onOpenTitle={onOpenTitle} />;
   return (
     <div>
       <PageTitle>{t("학습")}</PageTitle>
       <FadeIn index={0} layout={false}>
-        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} questNode={questNode} growthNode={growthNode} />
+        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} questNode={questNode} compactQuestNode={compactQuestNode} growthNode={growthNode} denseGrowthNode={denseGrowthNode} />
       </FadeIn>
       {/* (v0.7.3) 레슨은 접어서 유지(펼침 상태는 이 기기에 기억). */}
       <LearnFold id="lessons" title={t("레슨")} open={lOpen} setOpen={setLOpen}>

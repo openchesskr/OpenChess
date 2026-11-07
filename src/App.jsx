@@ -1813,6 +1813,7 @@ export default function App() {
           {ccCur && ccCurInfo && !reviewGame && !playGame && !announceOpen && !puzzleNoticeOpen && !questClearOpen && !(toast && toast.type !== "xp" && toast.type !== "coins") && (
             <ChesscomGameToast key={ccGameKey(ccCur)} game={ccCur} rec={ccCurInfo.rec} ratingDelta={ccCurInfo.ratingDelta} more={ccQueue.length - 1}
               onClose={dismissCcToast}
+              onOpen={() => { dismissCcToast(); switchTab("learn"); }}
               onSearch={() => { dismissCcToast(); onOpenGame(ccCur.moves); }}
               onReview={() => { const g = ccCur; dismissCcToast(); onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username: profile.chesscom, white: g.white, black: g.black, id: g.id }); }} />
           )}

@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) App 껍데기: 헤더·알림·모달 등 App만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import React, { useRef, useState, useCallback, useEffect, useMemo, useLayoutEffect } from "react";
 import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken, SB_TOKEN, sbHeaders, sbPatch } from "../lib/supabaseClient.js";
 import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
@@ -970,8 +971,6 @@ const CC_SWIPE_DIST = 70;       // (v0.7.1) 이만큼(px) 이상 밀면 쓸어 �
 const CC_SWIPE_VEL = 450;       // 또는 이 속도(px/s) 이상으로 튕기면 닫힘
 const CC_SWIPE_OUT = 380;       // 닫힐 때 날아가는 거리(px) — 투명도가 0이 되는 지점
 // (v0.5.6 사용자 요청) 전적 칩 앞 오프닝 이름(예: "Italian Game: Classical Variation") 서체 — 결과 줄에서 이 자리로 옮겼다.
-const CC_TOAST_LABEL_FONT = "'Playfair Display', 'Nanum Myeongjo', serif";
-const ccWrColor = (n, wr) => (n < 3 || wr == null ? "#8A7458" : wr >= 60 ? T.best : wr >= 40 ? T.inaccuracy : T.blunder); // 도감 전적 칩과 같은 규칙
 function useCountTween(from, to, run, ms = 750) {
   const [v, setV] = useState(from);
   useEffect(() => {
@@ -1025,7 +1024,7 @@ function CcFlipNum({ value, hot, color }) {
     </CcShake>
   );
 }
-export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, onClose }) {
+export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onReview, onClose, onOpen }) {
   const won = game.result === "win", lost = game.result === "loss";
   const resColor = won ? T.best : lost ? T.blunder : T.inkSoft;
   const opp = game.color === "w" ? game.black : game.white;
@@ -1049,6 +1048,7 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
     return () => c.stop();
   }, [left]);
   const [dragging, setDragging] = useState(false);
+  const draggedRef = useRef(false);   // (v0.7.4) 쓸어 넘기려다 놓은 경우는 "알림 눌러 학습 탭으로" 클릭으로 치지 않는다.
   const dragX = useMotionValue(0);
   const dragFade = useTransform(dragX, [-CC_SWIPE_OUT, -CC_SWIPE_DIST * 1.6, 0, CC_SWIPE_DIST * 1.6, CC_SWIPE_OUT], [0, 0.35, 1, 0.35, 0]);
   const hold = hover || dragging;
@@ -1075,19 +1075,21 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
         세로 스크롤은 그대로 두려고 touch-action: pan-y. 밀린 거리나 속도가 기준을 넘으면 그 방향으로 날아가며 닫히고, 아니면 제자리로 돌아온다.
         끌고 있는 동안은 자동 닫힘 타이머를 멈춘다(hover와 같은 취급). 버튼 클릭은 임계 거리 안의 움직임이라 그대로 동작. */}
     <motion.div drag="x" dragMomentum={false} dragElastic={0.9}
-      onDragStart={() => setDragging(true)}
+      onDragStart={() => { draggedRef.current = true; setDragging(true); }}
+      onPointerDown={() => { draggedRef.current = false; }}
+      onClick={onOpen ? () => { if (!draggedRef.current) onOpen(); } : undefined}
       onDragEnd={(_, info) => {
         const far = Math.abs(info.offset.x) > CC_SWIPE_DIST || Math.abs(info.velocity.x) > CC_SWIPE_VEL;
         if (far) animateMv(dragX, (info.offset.x < 0 ? -1 : 1) * CC_SWIPE_OUT, { duration: 0.18, ease: "easeIn", onComplete: () => closeRef.current() });
         else { setDragging(false); animateMv(dragX, 0, { type: "spring", stiffness: 520, damping: 34 }); }
       }}
-      style={{ x: dragX, opacity: dragFade, touchAction: "pan-y", position: "relative", overflow: "hidden", background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
+      style={{ x: dragX, opacity: dragFade, touchAction: "pan-y", position: "relative", overflow: "hidden", cursor: onOpen ? "pointer" : undefined, background: "linear-gradient(160deg,#F3E6CC,#E2C89A)", color: T.ink, padding: "9px 12px 12px", borderRadius: 12, border: "2px solid " + T.book, boxShadow: "inset 0 0 0 1px rgba(138,90,43,.35), 0 12px 30px -8px rgba(0,0,0,.6)" }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: T.book }}>{t("최근 대국")}</span>
         {game.timeClass && <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft }}>· {TIME_CLASS_LABEL[game.timeClass] || game.timeClass}</span>}
         <span style={{ flex: 1 }} />
         {more > 0 && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#FFF6DE", background: T.book, borderRadius: 999, padding: "1px 7px" }}>{tx("다음 {0}판", more)}</span>}
-        <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
+        <button onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label={t("닫기")} className="press" style={{ width: 20, height: 20, padding: 0, border: "none", background: "transparent", color: T.inkSoft, cursor: "pointer", fontSize: 15, lineHeight: 1 }}>×</button>
       </div>
       <div className="flex items-center gap-2">
         <span title={game.color === "w" ? t("백") : t("흑")} style={{ width: 5, alignSelf: "stretch", minHeight: 34, flexShrink: 0, borderRadius: 3, background: game.color === "w" ? "linear-gradient(180deg,#FFFDF7,#E7DABB)" : "linear-gradient(180deg,#4A3826,#241509)", border: "1px solid " + (game.color === "w" ? "#C9B58C" : "#000") }} />
@@ -1099,8 +1101,8 @@ export function ChesscomGameToast({ game, rec, ratingDelta, more, onSearch, onRe
           </div>
           {opp && opp.username && <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs <b style={{ color: T.ink }}>{opp.username}</b>{opp.rating != null && <span style={{ fontFamily: SITE_FONT }}>({opp.rating})</span>}</div>}
         </div>
-        <button onClick={onSearch} aria-label={t("대국 보기")} title={t("분석 보드로 불러오기")} className="press" style={iconBtn}><Search size={13} /></button>
-        <BestMoveJumpButton title={t("게임 리뷰")} onClick={onReview} />
+        <button onClick={(e) => { e.stopPropagation(); onSearch(); }} aria-label={t("대국 보기")} title={t("분석 보드로 불러오기")} className="press" style={iconBtn}><Search size={13} /></button>
+        <BestMoveJumpButton title={t("게임 리뷰")} onClick={(e) => { if (e && e.stopPropagation) e.stopPropagation(); onReview(); }} />
       </div>
       <div className="flex items-center gap-2" style={{ marginTop: 9 }}>
         <span title={rec.scope === "opening" ? game.opening : undefined} style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: rec.scope === "opening" ? CC_TOAST_LABEL_FONT : undefined, fontSize: rec.scope === "opening" ? 12.5 : 10.5, fontWeight: 700, color: T.book }}>{rec.scope === "opening" ? game.opening : t("전체 전적")}</span>
