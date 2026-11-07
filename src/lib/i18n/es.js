@@ -3041,4 +3041,8 @@ export default {
   "옆으로 밀어서 이동": "Desliza para moverte",
   "100개": "100",
   "대국 출처": "Origen de las partidas",
+  "유산으로 남기기": "Guardar como legado",
+  "유산으로 저장됨": "Guardado como legado",
+  "기존 유산을 교체하려면 한 번 더 누르세요": "Pulsa de nuevo para reemplazar el legado existente",
+  "유산은 내 대국(OpenChess·chess.com)을 리뷰하다가 \"{0}\" 등급인 내 수에서 \"유산으로 남기기\"를 눌러 만듭니다.": "Los legados se crean al revisar tu propia partida (OpenChess o chess.com): pulsa \"Guardar como legado\" en tu jugada valorada como \"{0}\".",
 };

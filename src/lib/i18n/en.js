@@ -3041,4 +3041,8 @@ export default {
   "옆으로 밀어서 이동": "Swipe to move",
   "100개": "100",
   "대국 출처": "Game source",
+  "유산으로 남기기": "Save as legacy",
+  "유산으로 저장됨": "Saved as legacy",
+  "기존 유산을 교체하려면 한 번 더 누르세요": "Press again to replace the existing legacy",
+  "유산은 내 대국(OpenChess·chess.com)을 리뷰하다가 \"{0}\" 등급인 내 수에서 \"유산으로 남기기\"를 눌러 만듭니다.": "Legacies are made while reviewing your own game (OpenChess or chess.com): press \"Save as legacy\" on your move rated \"{0}\".",
 };

@@ -1327,6 +1327,10 @@ export default function App() {
   // 타임클래스 같은 대국 메타데이터를 갖춘 완전한 리뷰 화면으로 대체한다 — 분석 보드 상태는
   // 건드리지 않는다(onOpenGame과 달리 setTab("analysis")을 호출하지 않음).
   const [reviewGame, setReviewGame] = useState(null);
+  // (v0.7.3) 유산은 /review에서 만든다 — 같은 칸에 이미 있던 유산은 이력(legacyHistory)으로 밀어 두고 새 것으로 바꾼다.
+  const saveLegacyFromReview = (key, entry) => {
+    setProfile((p) => { const prev = p.legacies && p.legacies[key]; const history = prev ? [...(p.legacyHistory || []), { slotKey: key, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [key]: entry }, legacyHistory: history }; });
+  };
   // (v0.3.9 기능) 사용자 요청 — 내 프로필 카드가 더는 설정 탭에 상시 표시되지 않고, 헤더 드롭다운의
   // 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow)이 됐다.
   const [profileWinOpen, setProfileWinOpen] = useState(false);
@@ -1724,7 +1728,7 @@ export default function App() {
         mySolved={solved} myLineSolves={lineSolves} solveCounts={solveCounts} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}</AnimatePresence>
       {shareSheetPuzzle && <PuzzleShareSheet puzzle={shareSheetPuzzle} myUid={uid} onClose={() => setShareSheetPuzzle(null)} onShared={() => setShareCounts((m) => ({ ...m, [puzzleNo(shareSheetPuzzle.id)]: (m[puzzleNo(shareSheetPuzzle.id)] || 0) + 1 }))} />}
       {tierMapOpen && <TierJourneyMap totalXp={totalXp} onClose={() => { setTierMapOpen(false); popScreen("tiermap"); }} />}
-      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} sharpOn={reviewSharpOn} />}
+      {reviewGame && <ReviewPage game={reviewGame} onClose={closeReview} myUid={uid} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} sharpOn={reviewSharpOn} legacies={profile.legacies} legacyGM={tierFromXp(totalXp).tier.key === "grandmaster"} onSaveLegacy={saveLegacyFromReview} />}
       {user && <GlobalPvpInviteBanner myUid={uid} onAccepted={enterPvpGame} />}
       {user && <GlobalMinigameRematchBanner myUid={uid} onAccepted={enterPvpGame} />}
       {/* (사용자 요청) /play에서 실시간 상대와 대국 중 나가려 하면(뒤로가기·닫기 버튼) 곧장 나가는

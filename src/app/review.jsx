@@ -7,7 +7,7 @@ import { T, DRAG_SCROLL_MULT, BOARD_SKINS, boardSquareBg } from "../lib/theme.js
 import { QCOLOR, ANALYSIS_KIND_ROWS } from "../lib/moveKinds.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { SITE_FONT, EvalBadge, dedupeEngineLines, EvalBar, EngineLines } from "../components/engineLines.jsx";
-import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Check, Image as ImageIcon } from "lucide-react";
 import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
@@ -729,7 +729,7 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
+function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -764,6 +764,16 @@ function ReviewCoachCard({ move, evalDisp, brilliantNote, punishLine, mecNotes, 
                 : null}
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
+          )}
+          {/* (v0.7.3) 내 대국에서 등급이 최선·유일·탁월인 내 수는 여기서 바로 프로필 유산으로 남긴다(유산 마법사를 대체). */}
+          {legacyAction && (
+            <button type="button" onClick={legacyAction.onClick} disabled={legacyAction.state === "saved"} className={legacyAction.state === "saved" ? "" : "press"}
+              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: narrow ? "5px 10px" : "7px 12px", borderRadius: 9, cursor: legacyAction.state === "saved" ? "default" : "pointer",
+                border: "1px solid " + (legacyAction.state === "saved" ? "rgba(125,182,138,.6)" : QCOLOR[legacyAction.kind]), background: legacyAction.state === "saved" ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
+                color: legacyAction.state === "saved" ? "#9ED3A8" : RV.text, fontSize: narrow ? 11 : 12, fontWeight: 800 }}>
+              {legacyAction.state === "saved" ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
+              {legacyAction.state === "saved" ? t("유산으로 저장됨") : legacyAction.state === "confirm" ? t("기존 유산을 교체하려면 한 번 더 누르세요") : t("유산으로 남기기")}
+            </button>
           )}
         </div>
       </div>
@@ -1531,7 +1541,7 @@ function ReviewAccuracyRevealAnim({ result, resultDone, totalPlies, instant, onD
 }
 // (v0.3.5 기능) 사용자 요청 — 게임 리뷰도 이제 설정 탭에서 고른 분석 엔진(engine, App 루트의
 // useEngine(enginePref))을 그대로 prop으로 받아 쓴다(예전엔 항상 Stockfish 16으로 고정).
-export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, sharpOn }) {
+export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, sharpOn, legacies, legacyGM, onSaveLegacy }) {
   // (v0.3.9 기능) 사용자 요청 — "더 정확하게"를 고르면 depth 상한을 20→25로 올린다(movetime은
   // 그대로 — 상한이 높아진 만큼 예전엔 depth 20에서 일찍 멈추던 쉬운 포지션들도 남은 시간을 더 써서
   // depth 25까지 파고들게 되므로, 그 자체로 이미 "더 오래 걸리지만 더 정확한" 리뷰가 된다).
@@ -1730,6 +1740,30 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // 채점 결과), 아니면 실제 게임 수순의 채점 결과(curMove)를 쓴다. (v0.2.5) playFree보다 먼저
   // 선언돼야 해 위 exploreMove state 선언 바로 다음이 아니라 여기(curMove 정의 직후)에 둔다.
   const activeMove = exploring ? exploreMove : curMove;
+  // (v0.7.3) 유산 만들기 — 내 대국(game.color 있음)에서 내가 둔, 등급이 최선·유일·탁월인 수만. 자유 탐색 수·FEN 시작 대국은 제외.
+  const [legacyArm, setLegacyArm] = useState(null);
+  const legacyAction = useMemo(() => {
+    const m = activeMove;
+    if (!onSaveLegacy || !myUid || !game.color || fenRoot || exploring || !m || !result) return null;
+    if (!["best", "only", "brilliant"].includes(m.kind) || m.ply == null) return null;
+    if ((m.ply % 2 === 0) !== (game.color === "w")) return null;
+    const keys = legacyGM ? [m.kind, m.kind + "2"] : [m.kind];
+    const same = (e) => e && e.moveIndex === m.ply && e.sans && e.sans.length === sans.length && e.sans.join(" ") === sans.join(" ");
+    if (keys.some((k) => same(legacies && legacies[k]))) return { kind: m.kind, state: "saved" };
+    const empty = keys.find((k) => !(legacies && legacies[k]));
+    const target = empty || keys.slice().sort((a, b) => ((legacies[a] && legacies[a].savedAt) || 0) - ((legacies[b] && legacies[b].savedAt) || 0))[0];
+    const occupied = !empty;
+    const armed = legacyArm === m.ply;
+    return {
+      kind: m.kind, state: occupied && armed ? "confirm" : "ready",
+      onClick: () => {
+        if (occupied && !armed) { setLegacyArm(m.ply); return; }
+        const kinds = sans.map((_, i) => { const mm = result.moves.find((x) => x.ply === i); return mm ? mm.kind : "pending"; });
+        onSaveLegacy(target, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
+        setLegacyArm(null);
+      },
+    };
+  }, [activeMove, result, legacies, legacyGM, onSaveLegacy, myUid, game.color, fenRoot, exploring, legacyArm, sans]);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -2387,7 +2421,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} narrow />
+              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} narrow />
               {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
@@ -2450,7 +2484,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
               전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} />
+            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} />
           </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (

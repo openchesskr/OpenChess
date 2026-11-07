@@ -352,18 +352,11 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
             />
           )}
           {managingLegacy && (
-            <LegacyManageModal
+            <LegacyGuideModal
               typeInfo={LEGACY_TYPES.find((t) => t.key === legacyBaseKey(managingLegacy))}
-              slotKey={managingLegacy}
               existingEntry={profile.legacies && profile.legacies[managingLegacy]}
-              chesscom={chesscom}
-              username={profile.chesscom}
-              engine={engine}
               onClose={() => setManagingLegacy(null)}
-              // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 기능 — 새로 저장(덮어쓰기)하거나
-              // 삭제해서 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존해 둔다(그 칸 자체는
-              // 최신 것만 담으므로, 밀려나는 순간의 기존 값만 옮겨 적으면 된다).
-              onSave={(key, entry) => { setProfile((p) => { const prev = p.legacies && p.legacies[key]; const history = prev ? [...(p.legacyHistory || []), { slotKey: key, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [key]: entry }, legacyHistory: history }; }); setManagingLegacy(null); }}
+              // (사용자 요청) 지워진 유산까지 다시 볼 수 있는 이력 — 삭제로 그 칸에서 밀려나는 기존 유산을 profile.legacyHistory에 보존한다.
               onDelete={() => { setProfile((p) => { const prev = p.legacies && p.legacies[managingLegacy]; const history = prev ? [...(p.legacyHistory || []), { slotKey: managingLegacy, entry: prev, replacedAt: Date.now() }] : (p.legacyHistory || null); return { ...p, legacies: { ...(p.legacies || {}), [managingLegacy]: null }, legacyHistory: history }; }); setManagingLegacy(null); }}
             />
           )}
@@ -2248,267 +2241,24 @@ function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }
     </ShareSheetFrame>
   );
 }
-// 유산 만들기/편집 — PGN 직접 입력 또는 chess.com 대국 선택 → analyzeGame으로 전체 채점 → 그
-// 유산이 요구하는 등급(typeInfo.kind)을 만족하는 수만 고를 수 있게 필터링 → 재생할 수 개수 입력 → 저장.
-function LegacyManageModal({ typeInfo, slotKey, existingEntry, chesscom, username, onClose, onSave, onDelete, engine }) {
-  const [step, setStep] = useState("source"); // source | paste | analyzing | pick | count
-  // (사용자 요청) "chess.com 대국에서 선택"을 눌러도 창을 한 번 더 띄우지 않고, 이 자리 바로 아래에
-  // 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI(AccountChessStats)를 펼친다.
-  const [showChesscomStats, setShowChesscomStats] = useState(false);
-  const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
-  const [pgnText, setPgnText] = useState("");
-  const [pgnErr, setPgnErr] = useState("");
-  const [sans, setSans] = useState(null);
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [analyzeErr, setAnalyzeErr] = useState(false);
-  const [moveIndex, setMoveIndex] = useState(null);
-  const [playCount, setPlayCount] = useState(5);
-  // (사용자 요청) 지정한 수 앞으로도 몇 수 함께 재생할 수 있게 — 뒤(과거)에서부터 beforeCount수만큼
-  // 앞당겨 시작해, 그 수까지 이어지는 흐름을 보여준 뒤 지정한 수부터는 기존처럼 playCount만큼 이어간다.
-  const [beforeCount, setBeforeCount] = useState(0);
-  // (사용자 요청) PGN 직접 입력은 대국 데이터에 진영 정보가 없어, 재생 화면에서 어느 쪽을 아래에 둘지
-  // 알 수 없었다 — 사용자가 직접 고른 진영을 저장해 항상 그 진영이 아래에 오도록 보드를 뒤집는다.
-  // chess.com 대국 선택은 g.color로 이미 알 수 있어 자동으로 채운다(onSelectGame에서 setSide).
-  const [side, setSide] = useState("w");
-  const loadPgnText = () => {
-    const raw = pgnText.trim();
-    if (!raw) { setPgnErr(t("PGN 입력 필요")); return; }
-    const tokens = parsePgnMoves(raw);
-    if (!tokens.length) { setPgnErr(t("기보를 읽을 수 없음")); return; }
-    // (검증) NotationTools.submit과 동일한 방식 — 시작 위치부터 한 수씩 실제로 재생해, 불법적인
-    // 수가 섞여 있으면(오타·변화수 등) 저장 전에 걸러낸다.
-    let board = startBoard(); const validated = [];
-    for (const t_ of tokens) {
-      const color = validated.length % 2 === 0 ? "w" : "b";
-      const clean = t_.replace(/[+#]/g, "");
-      const src = sanSrc(board, clean, color);
-      if (!src) { setPgnErr(t("기보에 불법적인 수가 포함되어 있어요({0}번째 수).", validated.length + 1)); return; }
-      board = applySan(board, t_, color);
-      validated.push(t_);
-    }
-    if (validated.length < 1) { setPgnErr(t("기보가 너무 짧음")); return; }
-    setPgnErr(""); setSans(validated); setStep("analyzing");
-  };
-  // (v0.3.5 버그 수정) ReviewPage와 같은 이유 — engine이 항상 "ready"였던 전용 훅(useReviewEngine) 대신
-  // 실제 useEngine(enginePref)을 받으므로, "analyzing" 단계에 막 들어선 시점엔 아직 엔진이 부팅 중일
-  // 수 있다. 부팅 여부와 무관하게 매번 결과를 초기화하던 것과 실제 분석 시작을 분리해, engine.status가
-  // 뒤늦게 "ready"로 바뀌어도(analyzeStartedRef로 중복 시작만 막고) 다시 시도하도록 고쳤다.
-  const analyzeStartedRef = useRef(false);
-  useEffect(() => {
-    if (step === "analyzing") { setResult(null); setProgress(0); setAnalyzeErr(false); analyzeStartedRef.current = false; }
-  }, [step]);
-  useEffect(() => {
-    if (step !== "analyzing" || !sans || analyzeStartedRef.current || !engine) return;
-    if (engine.status === "off") { setAnalyzeErr(true); return; }
-    if (engine.status !== "ready") return; // 아직 부팅 중 — status가 바뀌면 다시 확인한다.
-    if (sans.length < 1) { setAnalyzeErr(true); return; }
-    analyzeStartedRef.current = true;
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await analyzeGame(sans, engine, REVIEW_DEPTH, (p) => { if (!cancelled) setProgress(p); }, REVIEW_MOVETIME_MS,
-          (partial) => { if (!cancelled) setResult(partial); });
-        if (!cancelled) { setResult(r); setStep("pick"); }
-      } catch { if (!cancelled) setAnalyzeErr(true); }
-    })();
-    return () => { cancelled = true; };
-  }, [step, sans, engine && engine.status]);
-  const qualifying = result ? result.moves.filter((m) => m.kind === typeInfo.kind) : [];
-  const maxPlayCount = sans && moveIndex != null ? Math.max(1, sans.length - moveIndex) : 20;
-  const maxBeforeCount = moveIndex != null ? moveIndex : 0;
-  // (사용자 요청) 앞뒤 수는 1~7수 범위로만 고를 수 있다(직접 입력 대신 선택 박스).
-  const playOptions = useMemo(() => Array.from({ length: Math.max(1, Math.min(7, maxPlayCount)) }, (_, i) => i + 1), [maxPlayCount]);
-  const beforeOptions = useMemo(() => Array.from({ length: Math.max(0, Math.min(7, maxBeforeCount)) }, (_, i) => i + 1), [maxBeforeCount]);
-  const save = () => {
-    if (moveIndex == null || !sans) return;
-    const kinds = result ? sans.map((_, i) => { const m = result.moves.find((mm) => mm.ply === i); return m ? m.kind : "pending"; }) : null;
-    onSave(slotKey || typeInfo.key, { sans, moveIndex, playCount: Math.max(1, Math.min(playCount, maxPlayCount)), beforeCount: Math.max(0, Math.min(beforeCount, maxBeforeCount)), kinds, side, savedAt: Date.now() });
-  };
-  // (v0.3.4 UI) 채팅·프로필·검색·친구 창과 같은 모바일 전체 화면 패턴 — 이 창은 chess.com 대국
-  // 선택 시 AccountChessStats(필터·대국 목록)까지 펼쳐지므로 좁은 화면에서 특히 필요했다.
-  const narrow = useNarrow(640);
-  // (v0.7.1 개편, 사용자 요청) 더 세련된 마법사 — 유산 블록과 같은 어보니·브래스 재질의 창 위에 3단계 진행 표시줄을 두고, 단계마다
-  // 바뀌는 버튼은 아래 고정 줄로 모은다. 후보 수는 목록 대신 "그 수를 둔 직후 포지션" 미니 보드 격자로, 재생 범위는 선택 박스 대신
-  // −/+ 조절과 실제 재생될 수순 타임라인으로 보여 준다. 분석·저장 로직은 그대로다.
-  const stepNo = step === "pick" ? 2 : step === "count" ? 3 : 1;
+// (v0.7.3) 유산 만들기 마법사를 없앴다 — 유산은 이제 내 대국(OpenChess·chess.com)을 /review에서 리뷰하다가 등급이 맞는 내 수에서 바로 만든다.
+// 이 창은 칸을 눌렀을 때 그 안내를 보여주고, 이미 있는 유산이면 삭제만 할 수 있게 한다.
+function LegacyGuideModal({ typeInfo, existingEntry, onClose, onDelete }) {
   const accent = QCOLOR[typeInfo.kind];
-  const flip = side === "b";
-  const candidates = useMemo(() => (sans ? qualifying.map((m) => ({ m, entry: { sans, moveIndex: m.ply, side } })) : []), [sans, result, side]);
-  const choose = (ply) => { setMoveIndex(ply); setPlayCount(Math.min(5, Math.max(1, sans.length - ply))); setBeforeCount(Math.min(3, ply)); setStep("count"); };
-  const panel = { background: "rgba(255,248,232,.035)", border: "1px solid rgba(196,154,80,.26)", borderRadius: 14, padding: 14 };
-  const ghostBtn = { padding: "10px 16px", borderRadius: 11, border: "1px solid rgba(196,154,80,.45)", background: "transparent", color: T.ivory, fontWeight: 700, fontSize: 12.5, cursor: "pointer" };
-  const primaryBtn = { flex: 1, padding: "10px 16px", borderRadius: 11, border: "none", background: "linear-gradient(180deg,#E6C27C,#B98B3F)", color: "#241509", fontWeight: 900, fontSize: 13, cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 6px 14px -8px rgba(230,194,124,.8)" };
-  const STEPS = [t("대국 선택"), t("수 선택"), t("재생 범위")];
-  const rangeStart = moveIndex != null ? moveIndex - Math.min(beforeCount, maxBeforeCount) : 0;
-  const rangeEnd = moveIndex != null ? moveIndex + Math.min(playCount, maxPlayCount) - 1 : 0;
-  const footer = step === "paste" ? (
-    <><button onClick={() => setStep("source")} className="press" style={ghostBtn}>{t("뒤로")}</button><button onClick={loadPgnText} className="press" style={primaryBtn}>{t("불러오기")}</button></>
-  ) : step === "pick" ? (
-    <button onClick={() => setStep("source")} className="press" style={{ ...ghostBtn, flex: 1 }}>{t("다른 대국 선택")}</button>
-  ) : step === "count" ? (
-    <><button onClick={() => setStep("pick")} className="press" style={ghostBtn}>{t("뒤로")}</button><button onClick={save} className="press" style={primaryBtn}>{t("저장")}</button></>
-  ) : step === "analyzing" && analyzeErr ? (
-    <button onClick={() => setStep("source")} className="press" style={{ ...ghostBtn, flex: 1 }}>{t("뒤로")}</button>
-  ) : null;
+  const narrow = useNarrow(640);
   return (
-    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.66)", zIndex: 220, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 480, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(760px, 88vh)", display: "flex", flexDirection: "column",
-        background: "radial-gradient(140% 90% at 50% -20%, " + accent + "26 0%, rgba(0,0,0,0) 55%), radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)",
-        borderRadius: narrow ? 0 : 18, border: narrow ? "none" : "1px solid " + T.brass, boxShadow: narrow ? "none" : "0 24px 60px -14px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06)", overflow: "hidden", color: T.ivory }}>
-        {/* 머리: 등급 배지 + 유산 이름 + 진행 표시줄 */}
-        <div style={{ padding: "16px 16px 12px", flexShrink: 0 }}>
-          <div className="flex items-center justify-between" style={{ gap: 10 }}>
-            <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
-              <span aria-hidden="true" style={{ display: "inline-flex", filter: "drop-shadow(0 0 10px " + accent + "88)" }}>{badgeIcon(typeInfo.kind, 30)}</span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em", color: accent }}>{QLABEL[typeInfo.kind]}</div>
-                <div style={{ fontFamily: LEGACY_FONT, fontSize: 16, fontWeight: 900, color: T.ivoryHi, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{typeInfo.label}</div>
-              </div>
-            </div>
-            <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(0,0,0,.35)", color: T.ivory, border: "1px solid rgba(196,154,80,.35)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.66)", zIndex: 220, display: "flex", alignItems: narrow ? "flex-end" : "center", justifyContent: "center", padding: narrow ? 0 : 16 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label={typeInfo.label} style={{ width: "100%", maxWidth: 420, background: T.paper, borderRadius: narrow ? "16px 16px 0 0" : 16, border: "1px solid #DCCBA8", padding: "18px 18px calc(18px + env(safe-area-inset-bottom, 0px))", color: T.ink }}>
+        <div className="flex items-center gap-3">
+          <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: accent, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 24)}</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 800 }}>{typeInfo.label}</div>
+            {existingEntry && <div style={{ fontSize: 12, color: T.inkSoft, fontFamily: SITE_FONT }}>{legacyMoveLabel(existingEntry)}</div>}
           </div>
-          <div aria-label={STEPS[stepNo - 1]} style={{ display: "flex", alignItems: "flex-start", marginTop: 14 }}>
-            {STEPS.map((lab, i) => {
-              const n = i + 1, done = n < stepNo, cur = n === stepNo;
-              return (
-                <React.Fragment key={lab}>
-                  {i > 0 && <span aria-hidden="true" style={{ flex: 1, height: 2, marginTop: 10, borderRadius: 2, background: n <= stepNo ? "linear-gradient(90deg," + accent + "," + accent + "aa)" : "rgba(196,154,80,.2)", transition: "background .3s" }} />}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: 64, flexShrink: 0 }}>
-                    <span style={{ width: 22, height: 22, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, boxSizing: "border-box",
-                      background: done ? accent : cur ? "rgba(0,0,0,.4)" : "transparent", color: done ? "#fff" : cur ? accent : "rgba(242,232,210,.4)",
-                      border: "1.5px solid " + (done || cur ? accent : "rgba(196,154,80,.3)"), boxShadow: cur ? "0 0 0 4px " + accent + "26" : "none", transition: "all .25s" }}>{done ? <Check size={12} strokeWidth={3} /> : n}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: cur ? 800 : 600, color: cur ? T.ivoryHi : "rgba(242,232,210,.5)", textAlign: "center", lineHeight: 1.2 }}>{lab}</span>
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>
-        <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(196,154,80,.4), transparent)", flexShrink: 0 }} />
-        <motion.div key={step} initial={{ opacity: 0, transform: "translateY(8px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} transition={{ duration: 0.22, ease: MOTION_EASE }}
-          style={{ padding: 16, flex: "1 1 auto", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-        {step === "source" && (
-          <>
-            <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "rgba(242,232,210,.75)", margin: 0 }}>{tx("이 유산에 새길 대국 선택. {0}은 \"{1}\" 등급의 수만 지정 가능", typeInfo.label, QLABEL[typeInfo.kind])}</p>
-            {[
-              { key: "pgn", icon: <FileText size={18} />, title: t("PGN 직접 입력"), desc: t("기보를 붙여넣고 플레이한 진영 선택"), on: true, active: false, onClick: () => setStep("paste") },
-              { key: "cc", icon: <Globe size={18} />, title: tx("chess.com 대국에서 선택{0}", ""), desc: chesscomReady ? t("최근 chess.com 대국 목록에서 바로 선택") : t("설정에서 chess.com 계정 연동 시 이용 가능"), on: chesscomReady, active: showChesscomStats, onClick: () => setShowChesscomStats((v) => !v) },
-            ].map((o) => (
-              <button key={o.key} onClick={o.on ? o.onClick : undefined} disabled={!o.on} aria-expanded={o.key === "cc" ? o.active : undefined} className="press"
-                style={{ ...panel, display: "flex", alignItems: "center", gap: 12, textAlign: "left", cursor: o.on ? "pointer" : "default", opacity: o.on ? 1 : 0.5, color: T.ivory,
-                  border: "1px solid " + (o.active ? accent : "rgba(196,154,80,.26)"), background: o.active ? accent + "14" : panel.background }}>
-                <span style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid rgba(196,154,80,.35)", color: T.brassHi }}>{o.icon}</span>
-                <span style={{ minWidth: 0, flex: 1 }}>
-                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ivoryHi }}>{o.title}</span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "rgba(242,232,210,.6)", marginTop: 2 }}>{o.desc}</span>
-                </span>
-                <ChevronRight size={16} style={{ flexShrink: 0, color: T.brass, transform: o.active ? "rotate(90deg)" : "none", transition: "transform .2s" }} />
-              </button>
-            ))}
-            {/* (사용자 요청) 별도 창 대신, 프로필 카드가 쓰는 것과 같은 chess.com 통계 UI를 바로 아래에 펼친다 — 각 대국 줄의
-                검색·리뷰 버튼 자리에는 onSelectGame으로 "선택" 버튼만 놓인다. 그 UI는 밝은 종이 바탕 기준이라 종이 패널에 담는다. */}
-            {showChesscomStats && chesscomReady && (
-              <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 14, padding: 10, color: T.ink }}>
-                <AccountChessStats chesscom={chesscom} username={username} onSelectGame={(g) => { setSans(g.moves); setSide(g.color); setStep("analyzing"); }} />
-              </div>
-            )}
-            {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 4, padding: "9px 0", width: "100%", borderRadius: 11, border: "1px solid rgba(229,115,115,.55)", background: "rgba(229,115,115,.06)", color: "#F2A3A3", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Trash2 size={13} />{t("이 유산 삭제")}</button>}
-          </>
-        )}
-        {step === "paste" && (
-          <>
-            <textarea value={pgnText} onChange={(e) => { setPgnText(e.target.value); if (pgnErr) setPgnErr(""); }} placeholder={t("PGN을 붙여넣으세요 (예: 1.e4 e5 2.Nf3 Nc6 ...)")} rows={8} autoFocus
-              style={{ width: "100%", boxSizing: "border-box", padding: 12, borderRadius: 12, border: "1px solid " + (pgnErr ? T.blunder : "rgba(196,154,80,.4)"), background: "rgba(0,0,0,.38)", color: T.ivoryHi,
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, lineHeight: 1.55, resize: "vertical", outline: "none" }} />
-            {pgnErr && <div role="alert" style={{ fontSize: 11.5, color: "#F2A3A3", marginTop: -4 }}>{pgnErr}</div>}
-            {/* (사용자 요청) 어느 진영으로 플레이했는지 골라 두면, 재생 화면에서 항상 그 진영이 아래에 오도록 보드를 뒤집는다. */}
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brass, marginBottom: 7 }}>{t("플레이한 진영")}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }} role="radiogroup" aria-label={t("플레이한 진영")}>
-                {[["w", t("백")], ["b", t("흑")]].map(([k, lab]) => (
-                  <button key={k} type="button" role="radio" aria-checked={side === k} onClick={() => setSide(k)} className="press"
-                    style={{ ...panel, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", color: T.ivoryHi, fontSize: 13, fontWeight: 800,
-                      border: "1px solid " + (side === k ? accent : "rgba(196,154,80,.26)"), background: side === k ? accent + "18" : panel.background, boxShadow: side === k ? "0 0 0 3px " + accent + "22" : "none" }}>
-                    <span style={{ width: 30, height: 30, borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", background: k === "w" ? "#C9A86E" : "#6E4B2A" }}><PieceGlyph type="K" color={k} size={24} pieceSkin="classic" /></span>
-                    {lab}
-                    {side === k && <Check size={14} style={{ marginLeft: "auto", color: accent }} />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-        {step === "analyzing" && (
-          <div style={{ ...panel, display: "flex", flexDirection: "column", alignItems: "center", padding: "28px 14px", gap: 12 }}>
-            <div style={{ position: "relative", width: 92, height: 92 }}>
-              <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
-                <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(196,154,80,.18)" strokeWidth="6" />
-                <circle cx="46" cy="46" r="40" fill="none" stroke={accent} strokeWidth="6" strokeLinecap="round" strokeDasharray={2 * Math.PI * 40} strokeDashoffset={2 * Math.PI * 40 * (1 - progress)}
-                  transform="rotate(-90 46 46)" style={{ transition: "stroke-dashoffset .35s ease", filter: "drop-shadow(0 0 6px " + accent + "99)" }} />
-              </svg>
-              <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SITE_FONT, fontSize: 19, fontWeight: 900, color: T.ivoryHi }}>{Math.round(progress * 100)}%</span>
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.ivoryHi }}>{t("대국 분석 중")}</div>
-            <div className="flex items-center" style={{ gap: 6, fontSize: 11.5, color: "rgba(242,232,210,.65)" }}>
-              <span style={{ display: "inline-flex" }}>{badgeIcon(typeInfo.kind, 14)}</span>{tx("찾은 후보 {0}개", qualifying.length)}
-            </div>
-            {analyzeErr && <div role="alert" style={{ fontSize: 11.5, color: "#F2A3A3" }}>{t("분석 실패. 다시 시도")}</div>}
-          </div>
-        )}
-        {step === "pick" && result && (
-          qualifying.length === 0 ? (
-            <div style={{ ...panel, fontSize: 12.5, color: "rgba(242,232,210,.75)", textAlign: "center", padding: "28px 14px" }}>{tx("이 대국에는 \"{0}\" 등급의 수 없음. 다른 대국 선택", QLABEL[typeInfo.kind])}</div>
-          ) : (
-            <>
-              <p style={{ fontSize: 12, color: "rgba(242,232,210,.7)", margin: 0 }}>"{tx("{0}\" 등급의 수 중 하나 선택", QLABEL[typeInfo.kind])}</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 10 }}>
-                {candidates.map(({ m, entry }) => (
-                  <button key={m.ply} onClick={() => choose(m.ply)} className="press" aria-label={moveNumber(m.ply) + m.san}
-                    style={{ position: "relative", padding: 6, borderRadius: 12, border: "1px solid " + accent + "66", background: "rgba(0,0,0,.3)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6 }}>
-                    <LegacyMiniBoard entry={entry} color={accent} />
-                    <span className="flex items-center justify-center" style={{ gap: 5 }}>
-                      <span style={{ display: "inline-flex" }}>{badgeIcon(m.kind, 14)}</span>
-                      <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 12.5, color: T.ivoryHi }}>{moveNumber(m.ply)}{m.san}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )
-        )}
-        {step === "count" && moveIndex != null && sans && (
-          <>
-            <div style={{ ...panel, display: "flex", gap: 14, alignItems: "center" }}>
-              <div style={{ width: 112, flexShrink: 0, padding: 4, borderRadius: 10, background: "rgba(0,0,0,.35)", border: "1px solid " + accent + "55" }}><LegacyMiniBoard entry={{ sans, moveIndex, side }} color={accent} /></div>
-              <div style={{ minWidth: 0 }}>
-                <span style={{ display: "inline-flex", filter: "drop-shadow(0 0 8px " + accent + "88)" }}>{badgeIcon(typeInfo.kind, 22)}</span>
-                <div style={{ fontFamily: LEGACY_FONT, fontSize: 19, fontWeight: 900, color: T.ivoryHi, marginTop: 4 }}>{moveNumber(moveIndex)}{sans[moveIndex]}</div>
-                <div style={{ fontSize: 11.5, color: accent, fontWeight: 800, marginTop: 2 }}>{QLABEL[typeInfo.kind]}</div>
-              </div>
-            </div>
-            {/* (사용자 요청) 앞뒤 수는 1~7수 범위 — 선택 박스 대신 −/+ 조절. 앞선 수가 없으면 앞 조절은 숨긴다. */}
-            <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 12 }}>
-              {beforeOptions.length > 0
-                ? <LegacyCountStepper label={t("이 수보다 몇 수 전부터 표시할지 선택")} value={beforeCount} min={1} max={beforeOptions.length} onChange={setBeforeCount} accent={accent} />
-                : <div style={{ fontSize: 11.5, color: "rgba(242,232,210,.6)" }}>{t("이 수보다 앞선 수 없음")}</div>}
-              <LegacyCountStepper label={t("이 수부터 몇 수까지 재생할지 선택")} value={playCount} min={1} max={playOptions.length} onChange={setPlayCount} accent={accent} />
-              {/* 실제로 재생될 수순 — 유산 수만 등급 색으로 */}
-              <div style={{ borderTop: "1px solid rgba(196,154,80,.2)", paddingTop: 10 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, marginBottom: 7, letterSpacing: ".04em" }}>{tx("총 {0}수 재생", rangeEnd - rangeStart + 1)}</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {sans.slice(rangeStart, rangeEnd + 1).map((s, k) => {
-                    const ply = rangeStart + k, hero = ply === moveIndex;
-                    return <span key={ply} style={{ padding: "3px 7px", borderRadius: 7, fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: hero ? 900 : 700,
-                      background: hero ? accent : "rgba(0,0,0,.3)", color: hero ? "#fff" : "rgba(242,232,210,.8)", border: "1px solid " + (hero ? accent : "rgba(196,154,80,.22)"), boxShadow: hero ? "0 0 10px " + accent + "77" : "none" }}>{(plyIsWhite(ply) || k === 0 ? moveNumber(ply) : "") + s}</span>;
-                  })}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-        </motion.div>
-        {footer && <div className="flex" style={{ gap: 8, padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))", borderTop: "1px solid rgba(196,154,80,.22)", background: "rgba(10,6,3,.45)", flexShrink: 0 }}>{footer}</div>}
+        <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: "12px 0 0", color: T.inkSoft }}>{tx("유산은 내 대국(OpenChess·chess.com)을 리뷰하다가 \"{0}\" 등급인 내 수에서 \"유산으로 남기기\"를 눌러 만듭니다.", QLABEL[typeInfo.kind])}</p>
+        {existingEntry && <button onClick={onDelete} className="press" style={{ marginTop: 14, padding: "10px 0", width: "100%", borderRadius: 11, border: "1px solid rgba(190,70,70,.5)", background: "rgba(190,70,70,.07)", color: "#A83B3B", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("이 유산 삭제")}</button>}
       </div>
     </div>
   );
