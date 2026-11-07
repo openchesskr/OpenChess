@@ -925,10 +925,11 @@ function LearnGamesColumn({ view, setView, user, uid, chesscom, ccName, onOpenGa
   const loading = view === "oc" ? rows == null : !!(chesscom && chesscom.status === "loading");
   return (
     <div style={{ minWidth: 0 }}>
-      {/* (v0.7.3) 프로필 페이지의 OpenChess / chess.com 토글이 없어져 이 열 맨 위로 옮겼다. */}
-      <div className="flex items-center" style={{ gap: 10, marginBottom: 12, flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 800, color: "#C9B58C" }}>{t("대국 출처")}</span><span style={{ display: "inline-flex", background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span></div>
-      <div style={{ marginBottom: 12 }}>
-        <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
+      {/* (v0.7.3) 프로필 페이지의 OpenChess / chess.com 토글이 없어져 이 열 맨 위로 옮겼다.
+          (v0.7.4, 사용자 요청) "대국 출처" 글자를 없애고, 플랫폼 토글과 시간 규정 토글을 같은 높이(32px)로 한 줄에 둔다. 좁은 화면에서는 줄바꿈 대신 가로로 밀어 본다. */}
+      <div className="learn-games-toggles" style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 8, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+        <span style={{ display: "inline-flex", flexShrink: 0, background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span>
+        <GameFilterPills height={32} options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
       </div>
       {view === "oc" && !user ? loginCard : loading ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
         : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>

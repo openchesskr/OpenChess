@@ -284,11 +284,12 @@ export function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   );
 }
 // 알약 모양 필터 버튼 묶음 — options: [[값, 라벨], ...]
-export function GameFilterPills({ options, value, onChange }) {
+// height를 주면(v0.7.4, 학습 탭 대국 열: 플랫폼 토글과 같은 높이로 한 줄에 맞춤) 바깥 높이를 그 값으로 고정하고 버튼이 안쪽을 채운다.
+export function GameFilterPills({ options, value, onChange, height }) {
   return (
-    <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+    <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2, ...(height ? { height, boxSizing: "border-box", alignItems: "stretch", flexShrink: 0 } : null) }}>
       {options.map(([k, lab]) => (
-        <button key={k} onClick={() => onChange(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: value === k ? T.ebony2 : "transparent", color: value === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+        <button key={k} onClick={() => onChange(k)} className="press" style={{ padding: height ? "0 9px" : "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap", background: value === k ? T.ebony2 : "transparent", color: value === k ? T.brassHi : T.inkSoft }}>{lab}</button>
       ))}
     </div>
   );
