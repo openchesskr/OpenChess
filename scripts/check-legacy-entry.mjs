@@ -10,7 +10,7 @@ import { normalizeLegacyEntry, normalizeLegacies, normalizeLegacyHistory, LEGACY
 
 const fails = [];
 const ok = (label, cond) => { if (!cond) fails.push(label); };
-const good = { sans: ["e4", "e5", "Nf3", "Nc6", "Bb5"], moveIndex: 4, playCount: 1, beforeCount: 2, kinds: ["book", "book", "book", "book", "best"], side: "b", savedAt: 1 };
+const good = { sans: ["e4", "e5", "Nf3", "Nc6", "Bb5"], moveIndex: 4, playCount: 1, beforeCount: 2, kinds: ["book", "book", "book", "book", "best"], side: "b", savedAt: 1, kind: null };
 const safe = (label, v) => { try { ok(label + " → null", normalizeLegacyEntry(v) === null); } catch (e) { fails.push(label + " 에서 throw: " + e.message); } };
 
 ok("정상 항목 통과", JSON.stringify(normalizeLegacyEntry(good)) === JSON.stringify(good));
