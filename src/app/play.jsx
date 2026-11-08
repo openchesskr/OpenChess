@@ -1,8 +1,9 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
-import { DailyQuestCard } from "./dailyQuest.jsx";
+import { DailyQuestCard, PlayQuestCard } from "./dailyQuest.jsx";
 import { SwipePager } from "../components/swipePager.jsx";
+import { emitPlayEvent } from "../lib/playQuest.js";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
@@ -2515,6 +2516,15 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
   const [runKey, setRunKey] = useState(0);
   const [liveStatus, setLiveStatus] = useState(null);
   const [confirmForfeit, setConfirmForfeit] = useState(false);
+  // (v0.7.4) 플레이 퀘스트 — 미니게임 한 판이 끝나면(모드 화면이 "active"가 아닌 상태를 알림) 한 번만 알린다. 매칭 취소(aborted)·대기는 제외.
+  const mgDoneRef = useRef(null);
+  useEffect(() => {
+    if (!liveStatus || liveStatus === "active" || liveStatus === "aborted" || liveStatus === "waiting") return;
+    const key = runKey + ":" + (m.game ? m.game.id : "x");
+    if (mgDoneRef.current === key) return;
+    mgDoneRef.current = key;
+    emitPlayEvent({ type: "minigame", game: gameType });
+  }, [liveStatus, runKey, gameType, m.game]);   // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.5.4) 로비로 돌아올 때마다 statsTick을 올려 방금 끝난 대전·기록이 로비 전적 바에 바로 반영되게 한다.
   const [statsTick, setStatsTick] = useState(0);
   const myStats = useMinigameMyStats(myUid, gameType, statsTick);
@@ -4758,7 +4768,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-export function PlayPage({ seed, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent, questActive, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, questHighlight }) {
+export function PlayPage({ seed, playQuest, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent, questActive, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, questHighlight }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -5107,6 +5117,17 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
 
   // (v0.6.2, 사용자 요청) 봇과 둔 대국도 "내 일반 대국 기록"에 남긴다 — 결과가 나오는 그 순간 한 번, 서버(bot_game_record)에 올린다. 레이팅·랭킹에는 반영되지 않는 순수 기록이다.
   // 표준 시작 위치에서 둔 대국만(FEN으로 시작한 대국은 기보만으로 복원할 수 없다), 최소 2수 이상일 때만 남기고, 실패해도 대국에는 아무 영향이 없다.
+  // (v0.7.4) 플레이 퀘스트 — 일반 대국(봇·실시간)이 끝나는 순간 한 번 알린다(인정 조건·승리 판정은 lib/playQuest.js). 시작 위치를 직접 정한(FEN) 대국은 제외.
+  const questEmittedRef = useRef(null);
+  useEffect(() => {
+    if (!resultKey) { questEmittedRef.current = null; return; }
+    if (questEmittedRef.current === resultKey) return;
+    questEmittedRef.current = resultKey;
+    if (fenRoot) return;
+    const loser = (result.end === "checkmate" || result.end === "resign" || result.end === "flag") ? result.color : null;
+    emitPlayEvent({ type: "game", won: !!loser && loser !== activeColor, plies: sans.length });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultKey]);
   const botRecordedKeyRef = useRef(null);
   useEffect(() => {
     if (!resultKey) { botRecordedKeyRef.current = null; return; }
@@ -5638,6 +5659,8 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   const questNode = showQuest ? (
         <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
           <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
+          {/* (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래. 일반 대국·미니게임 조건을 달성하면 클리어 */}
+          <PlayQuestCard playQuest={playQuest} />
         </div>
   ) : null;
   return (

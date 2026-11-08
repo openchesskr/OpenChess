@@ -51,7 +51,8 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
     if (!/<ProfileBlock[\s\S]*<AutoReviewGate[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
   }
   const gh = (gr.match(/function ProfileBlock[\s\S]*?\n}\n/) || [""])[0];
-  for (const [re, what] of [[/EquippedTitleFit/, "장착 칭호"], [/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"]]) if (!re.test(gh)) fails.push("ProfileBlock: " + what + " 표시가 없음(/user 상단 정보)");
+  if (/EquippedTitleFit/.test(gh)) fails.push("ProfileBlock: 학습 탭에는 칭호를 표시하지 않음(v0.7.4 사용자 요청)");
+  for (const [re, what] of [[/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"]]) if (!re.test(gh)) fails.push("ProfileBlock: " + what + " 표시가 없음(/user 상단 정보)");
   if (/TierRatingRow|puzzleRating|TierStatPill/.test(gr)) fails.push("growth.jsx: 성장 분석에는 퍼즐 티어·레이팅을 표시하지 않음");
   if (!/me=\{me\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 내 프로필(me)을 넘기지 않음");
   if (!/recent=\{src\.recent\}/.test(tab) || !/engine=\{engine\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 최근 대국(recent)과 엔진(engine)을 넘기지 않음 — 자동 리뷰를 못 함");

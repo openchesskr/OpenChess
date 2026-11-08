@@ -3114,20 +3114,7 @@ export function Mascot({ name = "milku", emotion = "great", size = 44, style }) 
 }
 // (v0.7.1 디자인) 탭 상단 제목 — 퍼즐·학습·설정이 각자 다른 크기·여백으로 쓰던 제목을 한 곳으로 모은다. 제목 아래 짧은 브라스 막대가 탭의 시작점을
 // 알려 준다. lead는 제목 앞에 놓는 그림(퍼즐 탭의 마스코트). 새 문구가 없어 번역 추가는 필요 없다.
-export function PageTitle({ children, lead = null, style }) {
-  // (v0.7.4, 사용자 요청) 모바일에서는 탭 상단의 제목(퍼즐·학습·설정)과 장식(마스코트·밑줄 막대)을 없애 콘텐츠가 바로 시작한다 — 하단 탭바에 이미 이름이 있다.
-  const narrow = useNarrow(720);
-  if (narrow) return null;
-  return (
-    <div className="flex items-center gap-2" style={{ margin: lead ? "0 0 6px" : "6px 0 14px", ...style }}>
-      {lead}
-      <div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em", color: T.ivoryHi, margin: 0 }}>{children}</h2>
-        <span aria-hidden="true" className="oc-title-bar" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
-      </div>
-    </div>
-  );
-}
+// (v0.7.4, 사용자 요청) 탭 상단의 제목(퍼즐·학습·설정)과 장식은 모든 화면에서 없앴다 — 하단 탭바·상단 메뉴에 이미 이름이 있다.
 export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", stacked = false }) {
   const label = mascot === "kokoa" ? "KOKOA" : "MILKU";
   // (사용자 요청) stacked — 설명이 길어질 걸 대비해, 마스코트를 작게 줄여 좌상단에 라벨과 나란히

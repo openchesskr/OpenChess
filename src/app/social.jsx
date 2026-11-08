@@ -252,7 +252,7 @@ function statsViewToggle(statsView, setStatsView, scale = 1) {
 // (사용자 요청) chess.com 통계 보기의 카드 상단 신원 표시 — 사진·아이디는 여기 한 곳에서만 보여주고
 // (AccountChessStats 안의 중복 사진·아이디 줄은 compact 옵션으로 생략), 국적·시간 규정별 레이팅도
 // 이 자리로 끌어올려 함께 보여준다. MyProfileCard·UserSearchModal·FriendsModal이 모두 공유한다.
-function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin, lift = 0 }) {
+function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
   const name = (ccHeaderProf && ccHeaderProf.username) || fallbackUsername;
   return (
     // (사용자 요청) alignItems를 center에서 start로 바꿔, 아래쪽 줄(실명·마지막 접속)이 있고 없고에
@@ -262,7 +262,7 @@ function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin, lift
     // (그 정보는 이제 오른쪽 통계 열에서 티어/퍼즐 레이팅 자리를 대신한다) — 그 결과 닉네임·소개·
     // 최근 접속 세 줄의 폰트 크기·marginTop·minHeight가 OpenChess 신원 블록과 값 그대로 완전히
     // 같아져 y좌표가 완전히 통일된다. 아이디도 더는 레이팅 칸과 폭을 나눠 쓰지 않아 덜 잘린다.
-    <div className="flex items-start gap-3" style={{ marginBottom: noMargin ? 0 : 14, marginTop: lift ? -lift : undefined }}>
+    <div className="flex items-start gap-3" style={{ marginBottom: noMargin ? 0 : 14 }}>
       {ccHeaderProf && ccHeaderProf.avatar ? <img src={ccHeaderProf.avatar} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover", border: "1px solid #C9B58C", flexShrink: 0 }} />
         : <span style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(180deg,#7FA650,#5C8038)", color: "#0F1A08", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26, flexShrink: 0 }}>{(name || "?")[0].toUpperCase()}</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
@@ -639,7 +639,7 @@ export function UserProfilePage({ docked, embedded, compact, hideRecentGames, on
     return () => clearTimeout(t);
   }, [reqPopup]);
   const narrowPage = useNarrow(880);
-  const hasTitleRow = !!(pub && pub.title && titleDef(pub.title));   // 장착 칭호가 있으면 칭호 줄 + 사진 위로 올리기
+  const hasTitleRow = !!(pub && pub.title && titleDef(pub.title));   // 장착 칭호가 있으면 신원 줄 아래에 칭호 한 줄
   const wide = !docked && !compact && !narrowPage;   // 도킹 창(340px)은 항상 모바일 배치(세로 한 열)
   const selPresence = usePresenceMap(pubUid ? [pubUid] : []);
   // (v0.6.0, 스토어 심사 대비) 프로필 신고·차단 — 채팅 밖에서도 사용자 콘텐츠(닉네임·사진·소개)를 신고하고 차단할 수 있어야 한다.
@@ -781,21 +781,19 @@ export function UserProfilePage({ docked, embedded, compact, hideRecentGames, on
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              {/* (v0.6.9, 사용자 요청) 장착 칭호: (v0.7.4) 사진 오른쪽 이름 열에 맞춰 오른쪽 정렬(왼쪽 끝 = 이름의 왼쪽 끝, indent = 사진 64 + 간격 12), 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
-              {hasTitleRow && <div style={{ marginBottom: 0 }}><EquippedTitleFit id={pub.title} indent={64 + 12} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
               {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {statsView === "cc" && pub.chesscom ? (
-                    <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} noMargin lift={hasTitleRow ? 12 : 0} />
+                    <ChesscomHeaderIdentity ccHeaderProf={ccHeaderProf} fallbackUsername={pub.chesscom} noMargin />
                   ) : (
                     <div className="flex items-start gap-3">
                       {/* (버그 수정, 사용자 요청) MID를 사진과 무관하게 카드 하단에 "MID ABCDE1234"로 한
                           줄 따로 차지하던 것을, 프로필 사진 바로 아래에 "#ABCDE1234" 형태로 가운데 정렬해
                           붙였다 — 사진의 일부처럼 보이도록. */}
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, marginTop: hasTitleRow ? -12 : 0 }}>   {/* (v0.7.4, 사용자 요청) 칭호가 있으면 사진을 조금 위로 올려 칭호 줄 왼쪽 빈 자리까지 쓴다 */}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
                       <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
                         {/* (사용자 요청) 지금 접속 중이면 아바타 테두리를 따라 은은하게 퍼지는 링을 계속
                             내보낸다 — 친구 로스터의 접속 표시와 같은 시각 언어(teal)를 프로필 히어로에도 이어,
@@ -848,6 +846,8 @@ export function UserProfilePage({ docked, embedded, compact, hideRecentGames, on
                   )}
                 </div>
               </div>
+              {/* (v0.7.4, 사용자 요청) 장착 칭호 — 사진·이름·소개 줄은 칭호가 없던 때의 배치 그대로 두고, 그 바로 아래에 별도의 한 줄로 표시한다. 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
+              {hasTitleRow && <div style={{ marginTop: -6, marginBottom: 14 }}><EquippedTitleFit id={pub.title} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
               {inviteMsg && <div style={{ fontSize: 11.5, fontWeight: 700, color: T.best, marginBottom: 10, padding: "7px 10px", borderRadius: 8, background: "rgba(120,200,120,.15)", border: "1px solid rgba(120,200,120,.4)" }}>{inviteMsg}</div>}
               {/* (사용자 요청) 데스크톱 레이아웃에서는 티어·퍼즐 레이팅을 오른쪽 통계 열(토글에 따라
                   바뀌는 패널)이 아니라 이 왼쪽 열, 유저 정보 바로 아래에 항상 표시한다 — 오른쪽

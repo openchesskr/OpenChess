@@ -47,6 +47,7 @@
   "lib/tournamentData.js",
   "lib/tournamentView.js",
   "lib/ugcTranslate.js",
+  "lib/playQuest.js",
   "lib/growthAnalysis.js",
   "app/gameHistory.jsx",
   "lib/mistakeWhy.js",

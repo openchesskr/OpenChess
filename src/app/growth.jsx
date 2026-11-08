@@ -6,7 +6,7 @@ import { isLite } from "../lib/perfMode.js";
 import { Lock, Search } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { OnlineDot, titleDef, Board, useNarrow } from "./common.jsx";
+import { OnlineDot, Board, useNarrow } from "./common.jsx";
 import { explainMistake } from "../lib/mistakeWhy.js";
 import { GROWTH_RECENT_GAMES, recordOf } from "../lib/recentGames.js";
 import { ensureReview, cachedReviewOf, reviewKeyOf } from "./autoReview.js";
@@ -14,7 +14,6 @@ import { analyzeGame, buildGrowth, classifyPending, loadCauseCache, saveCauseCac
 import { boardFromSans, moveNumber } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { EquippedTitleFit } from "./social.jsx";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import UgcText from "../components/UgcText.jsx";
@@ -297,7 +296,6 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
   const mid = useMyMid(uid);
   const name = me ? me.nickname || me.displayId || me.username || "" : "";
   const isGM = me ? tierFromXp(me.xp || 0).tier.key === "grandmaster" : false;
-  const hasTitle = !!(me && me.title && titleDef(me.title));
   const photo = 72;
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 16, marginBottom: 12, overflow: "hidden", position: "relative", boxShadow: "0 1px 0 rgba(255,255,255,.55) inset, 0 6px 18px -12px rgba(0,0,0,.55)" }}>
@@ -315,8 +313,6 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
               {!!mid && <div style={{ fontSize: 9.5, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{mid}</div>}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              {/* 장착 칭호 — 이름 바로 위에 붙여(이름 열 안, 왼쪽 끝 = 이름의 왼쪽 끝) 표시한다. */}
-              {hasTitle && <div style={{ marginBottom: 3 }}><EquippedTitleFit id={me.title} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
               <div style={{ fontSize: 19, fontWeight: 800, color: T.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
               <div style={{ fontSize: 12, color: T.ink, marginTop: 3, minHeight: 15, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{me.bio ? <UgcText text={me.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
             </div>

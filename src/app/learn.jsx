@@ -8,7 +8,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { boardFromSans, liveLegalDests, buildSan, stripSuffix } from "../lib/chessRules.js";
 import { playMoveSfx } from "../lib/prefs.js";
-import { PageTitle, Board, CONTENT, CoinIcon, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, useBoardSize, useNarrow } from "./common.jsx";
+import { Board, CONTENT, CoinIcon, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, useBoardSize, useNarrow } from "./common.jsx";
 
 import { GrowthPanel } from "./growth.jsx";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
@@ -996,7 +996,6 @@ export function LearnTab({ growthUid, growthGames, mainQuest, onAnswerChapter, o
   const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} onOpenGameAnalyze={onOpenGameAnalyze} onOpenGame={onOpenGame} />;
   return (
     <div>
-      <PageTitle>{t("학습")}</PageTitle>
       <FadeIn index={0} layout={false}>
         <LearnProfileHome user={user} openAuth={openAuth} ccName={ccName} src={src} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} growthNode={growthNode} />
       </FadeIn>
