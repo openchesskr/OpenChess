@@ -2061,6 +2061,7 @@ export default {
   "{0}와(과) 기준별 비교": "Comparación criterio por criterio con {0}",
   "비슷한 기준 {0}/{1}": "Criterios parecidos {0}/{1}",
   "성장 분석": "Análisis de crecimiento",
+  "가장 약한 구간": "Fase más débil",
   "성장 요약": "Resumen de progreso",
   "약점 진단": "Diagnóstico de debilidades",
   "구간별": "Por fase",

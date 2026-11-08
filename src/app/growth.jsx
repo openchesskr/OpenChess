@@ -2,7 +2,8 @@
 // 약점 지도·복습 카드·오프닝 실수·실수 요약은 "리뷰하는 대로 약점을 분석하고 성장 가능성을 찾는다"는 방향으로 처음부터 다시 설계하려고 모두 삭제했다(전용 라이브러리 3개 포함).
 // 마스터 스타일 로직은 lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사).
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { Lock, Users, TrendingUp, Target, Layers, BarChart3, Grid3x3, BookOpen } from "lucide-react";
+import { isLite } from "../lib/perfMode.js";
+import { Lock } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { OnlineDot, titleDef, Board, useNarrow } from "./common.jsx";
@@ -49,18 +50,31 @@ function SectionHead({ Icon, title, right }) {
 
 /* ── 테마 묶음 (v0.7.4, 사용자 요청: 중구난방 나열 → 합칠 수 있는 건 한 테마로, 정보를 체계적으로 구분) ──
    성장 분석은 네 테마로 나뉜다: ① 성장 요약(평균·변화·곡선) ② 약점 진단(구간·원인·유형 탭 + 지금 고칠 한 가지) ③ 실수 기록 ④ 마스터 스타일. 각 테마는 번호·제목·한 줄 설명 머리말 하나만 갖는다. */
-function ThemeSection({ no, Icon, title, desc, right, children }) {
+function ThemeSection({ id, no, title, desc, right, children }) {
   return (
-    <div style={{ borderTop: "1px solid #E4D5B6", paddingTop: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 16px 10px" }}>
-        <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 10, background: "linear-gradient(180deg,#ECCB86,#C49A50)", color: "#3A2810", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12.5, fontWeight: 900, fontFamily: "Georgia, serif" }}>{no}</span>
+    <div id={id} style={{ borderTop: "1px solid #E4D5B6", padding: "16px 0 4px", scrollMarginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, padding: "0 16px 12px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3 style={{ ...h3, display: "flex", alignItems: "center", gap: 6 }}><Icon size={15} style={{ color: "#8A6C2F", flexShrink: 0 }} />{title}</h3>
-          <div style={{ ...sub, fontSize: 11, marginTop: 1 }}>{desc}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#A8842F", fontFamily: "Georgia, serif" }}>{"0" + no}</div>
+          <h3 style={{ ...h3, fontSize: 17, marginTop: 1 }}>{title}</h3>
+          <div style={{ ...sub, fontSize: 11.5, marginTop: 2 }}>{desc}</div>
         </div>
         {right}
       </div>
       {children}
+    </div>
+  );
+}
+/* 테마로 바로 이동하는 칩 줄 — 성장 분석이 길어서 어디에 무엇이 있는지 먼저 보여 준다. */
+function SectionNav({ items }) {
+  const go = (id) => { try { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: isLite() ? "auto" : "smooth", block: "start" }); } catch { /* ignore */ } };
+  return (
+    <div role="navigation" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 16px 12px", scrollbarWidth: "none" }}>
+      {items.map(([id, label], i) => (
+        <button key={id} className="press" onClick={() => go(id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "6px 12px", borderRadius: 999, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 10, fontWeight: 900, color: "#A8842F", fontFamily: "Georgia, serif" }}>{"0" + (i + 1)}</span>{label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -128,10 +142,9 @@ function MasterStyle({ games, bare }) {
     return rankMasterMatches(m.list, query, (x) => masterName(x.name, "en"), (x) => x.name, (x) => x.elo);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
-  if (!data) return <div style={wrap(bare)}>{!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} />}<p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>;
+  if (!data) return <div style={wrap(bare)}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>;
   if (!m.ok) return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} />}
       <p style={{ ...sub, margin: 0 }}>{t("chess.com 대국이 {0}판 이상 연동되면 나와 닮은 마스터를 알려 줌 (지금 {1}판)", MIN_STYLE_GAMES, m.n)}</p>
     </div>
   );
@@ -211,7 +224,6 @@ function MasterStyle({ games, bare }) {
   );
   return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} right={<span style={sub}>{t("최근 {0}판 기준", m.n)}</span>} />}
       <div style={{ borderRadius: 14, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", padding: "10px 12px", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SimRing pct={Math.round(picked.sim * 100)} size={50} />
@@ -405,38 +417,43 @@ function MoveCard({ m, onReview, noBoard }) {
   );
 }
 
-/* 요약: 평균 정확도, 최근 변화, 가장 약한 구간, 지금 고칠 것 */
-function Overview({ g }) {
+/* 요약 히어로 — 핵심 숫자 세 개(평균 정확도·최근 변화·가장 약한 구간)를 타일로, 그 아래에 성장 곡선을 한 패널에 담는다. */
+function Overview({ g, onReview }) {
   const d = g.trend.delta, up = d != null && d >= 0.5, down = d != null && d <= -0.5;
-  const chip = (txt, key) => <span key={key} style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, background: "rgba(236,203,134,.12)", border: "1px solid rgba(236,203,134,.3)", borderRadius: 999, padding: "3px 10px" }}>{txt}</span>;
+  const wk = g.weakPhase ? g.phases.find((p) => p.key === g.weakPhase.key) : null;
+  const tile = { borderRadius: 12, background: "rgba(255,255,255,.05)", border: "1px solid rgba(236,203,134,.14)", padding: "10px 11px", minWidth: 0 };
+  const lab = { fontSize: 10.5, fontWeight: 700, color: "#CDBA98", lineHeight: 1.3, minHeight: 27 };
+  const big = { fontSize: 24, fontWeight: 900, fontFamily: "Georgia, serif", lineHeight: 1.15, marginTop: 3, whiteSpace: "nowrap" };
+  const note = { fontSize: 10.5, color: "#A8987C", marginTop: 2, lineHeight: 1.3 };
   return (
     <div style={{ padding: "0 16px 14px" }}>
-    <div style={{ ...darkPanel, marginBottom: 0, padding: "14px 16px" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: "#CDBA98" }}>{t("평균 정확도")}</div>
-          <div style={{ fontSize: 34, fontWeight: 900, color: T.ivoryHi, fontFamily: "Georgia, serif", lineHeight: 1.1 }}>{g.avgAcc != null ? g.avgAcc.toFixed(1) : "–"}<span style={{ fontSize: 16 }}>%</span></div>
-          <div style={{ fontSize: 11, color: "#A8987C" }}>{t("최근 {0}판 기준", g.n)}</div>
-        </div>
-        {d != null && (
-          <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "#CDBA98" }}>{t("최근 {0}판 기준 변화", g.trend.k)}</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: up ? "#7DB68A" : down ? "#FF8A7A" : "#E3CC93", fontFamily: "Georgia, serif" }}>{up ? "▲" : down ? "▼" : "–"} {Math.abs(d).toFixed(1)}%p</div>
+      <div style={{ ...darkPanel, marginBottom: 0, padding: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+          <div style={tile}>
+            <div style={lab}>{t("평균 정확도")}</div>
+            <div style={{ ...big, color: T.ivoryHi }}>{g.avgAcc != null ? g.avgAcc.toFixed(1) : "–"}<span style={{ fontSize: 13 }}>%</span></div>
+            <div style={note}>{t("최근 {0}판 기준", g.n)}</div>
           </div>
-        )}
+          <div style={tile}>
+            <div style={lab}>{t("최근 {0}판 기준 변화", g.trend.k)}</div>
+            <div style={{ ...big, color: up ? "#7DB68A" : down ? "#FF8A7A" : "#E3CC93" }}>{d == null ? "–" : <>{up ? "▲" : down ? "▼" : "±"}{Math.abs(d).toFixed(1)}<span style={{ fontSize: 13 }}>%p</span></>}</div>
+          </div>
+          <div style={tile}>
+            <div style={lab}>{t("가장 약한 구간")}</div>
+            <div style={{ ...big, fontSize: 17, paddingTop: 5, color: g.weakPhase ? "#FFB066" : T.ivoryHi }}>{g.weakPhase ? phaseLabel(g.weakPhase.key) : "–"}</div>
+            {wk && wk.acc != null && <div style={note}>{t("정확도 {0}%", wk.acc.toFixed(1))}</div>}
+          </div>
+        </div>
+        <GrowthCurve g={g} onReview={onReview} bare dark />
       </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
-        {g.weakPhase && chip(t("가장 약한 구간: {0}", phaseLabel(g.weakPhase.key)), "ph")}
-        {g.focus && chip(t("지금 고칠 것: {0}", causeLabel(g.focus.cause)), "fc")}
-      </div>
-      {g.pending > 0 && <div style={{ fontSize: 11, color: "#A8987C", marginTop: 8 }}>{t("실수 원인 분석 중, {0}개 남음", g.pending)}</div>}
-    </div>
+      {g.pending > 0 && <div style={{ ...sub, marginTop: 8 }}>{t("실수 원인 분석 중, {0}개 남음", g.pending)}</div>}
     </div>
   );
 }
 
 /* ① 성장 곡선 */
-function GrowthCurve({ g, onReview, bare }) {
+function GrowthCurve({ g, onReview, bare, dark }) {
+  const ink = dark ? "#CDBA98" : T.inkSoft, line = dark ? T.brassHi : "#A8842F", ring = dark ? "#2E1B10" : "#F1E6D0";
   const pts = g.curve.filter((c) => c.acc != null);
   const [sel, setSel] = useState(null);
   const idx = sel != null && sel < pts.length ? sel : pts.length - 1;
@@ -448,29 +465,28 @@ function GrowthCurve({ g, onReview, bare }) {
   const cur = pts[idx];
   const recentFrom = pts.length - g.trend.k;
   return (
-    <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={TrendingUp} title={t("성장 곡선")} right={<span style={{ ...sub, fontSize: 11 }}>{t("최근 {0}판 기준", g.n)}</span>} />}
+    <div style={dark ? { marginTop: 12 } : wrap(bare)}>
       <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={t("성장 곡선")} style={{ display: "block", overflow: "visible" }}>
-        {g.trend.k > 0 && pts.length > g.trend.k && <rect x={x(recentFrom) - 8} y={PY - 8} width={W - x(recentFrom) + 8 - PX + 8} height={H - 2 * PY + 16} rx="8" fill="rgba(196,154,80,.14)" />}
-        {g.avgAcc != null && <line x1={PX} x2={W - PX} y1={y(g.avgAcc)} y2={y(g.avgAcc)} stroke="#8A6C2F" strokeWidth="1" strokeDasharray="4 4" opacity=".7" />}
-        <text x={PX} y={y(hi) - 2} fontSize="9" fill={T.inkSoft}>{hi}</text>
-        <text x={PX} y={y(lo) + 10} fontSize="9" fill={T.inkSoft}>{lo}</text>
-        <polyline points={pts.map((p, i) => x(i) + "," + y(p.acc).toFixed(1)).join(" ")} fill="none" stroke="#A8842F" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {g.trend.k > 0 && pts.length > g.trend.k && <rect x={x(recentFrom) - 8} y={PY - 8} width={W - x(recentFrom) + 8 - PX + 8} height={H - 2 * PY + 16} rx="8" fill={dark ? "rgba(236,203,134,.1)" : "rgba(196,154,80,.14)"} />}
+        {g.avgAcc != null && <line x1={PX} x2={W - PX} y1={y(g.avgAcc)} y2={y(g.avgAcc)} stroke={dark ? "#9A8B72" : "#8A6C2F"} strokeWidth="1" strokeDasharray="4 4" opacity=".7" />}
+        <text x={PX} y={y(hi) - 2} fontSize="9" fill={ink}>{hi}</text>
+        <text x={PX} y={y(lo) + 10} fontSize="9" fill={ink}>{lo}</text>
+        <polyline points={pts.map((p, i) => x(i) + "," + y(p.acc).toFixed(1)).join(" ")} fill="none" stroke={line} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         {pts.map((p, i) => (
           <g key={p.key} onClick={() => setSel(i)} style={{ cursor: "pointer" }}>
             <circle cx={x(i)} cy={y(p.acc)} r="11" fill="transparent" />
-            <circle cx={x(i)} cy={y(p.acc)} r={i === idx ? 6 : 4} fill={p.acc >= g.avgAcc ? T.best : T.mistake} stroke={i === idx ? T.ink : "#F1E6D0"} strokeWidth={i === idx ? 2 : 1.5} />
+            <circle cx={x(i)} cy={y(p.acc)} r={i === idx ? 6 : 4} fill={p.acc >= g.avgAcc ? T.best : T.mistake} stroke={i === idx ? (dark ? T.ivoryHi : T.ink) : ring} strokeWidth={i === idx ? 2 : 1.5} />
           </g>
         ))}
       </svg>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,.04)", border: "1px solid #DCCBA8" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 10, background: dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)", border: dark ? "1px solid rgba(236,203,134,.14)" : "1px solid #DCCBA8" }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("정확도")} <span style={{ color: T.best, fontFamily: SITE_FONT }}>{cur.acc.toFixed(1)}%</span></div>
-          <div style={{ ...sub, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtDate(cur.endTime)}{cur.game.opening ? " · " + cur.game.opening : ""}</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: dark ? T.ivoryHi : T.ink }}>{t("정확도")} <span style={{ color: T.best, fontFamily: SITE_FONT }}>{cur.acc.toFixed(1)}%</span></div>
+          <div style={{ ...sub, color: ink, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtDate(cur.endTime)}{cur.game.opening ? " · " + cur.game.opening : ""}</div>
         </div>
         {onReview && <BestMoveJumpButton size={28} title={t("리뷰하기")} onClick={() => onReview(reviewGameOf(cur.game))} />}
       </div>
-      <p style={{ ...sub, margin: "8px 0 0", fontSize: 11 }}>{t("점을 눌러 그 대국의 정확도와 리뷰 보기")}</p>
+      <p style={{ ...sub, color: ink, margin: "8px 0 0", fontSize: 11 }}>{t("점을 눌러 그 대국의 정확도와 리뷰 보기")}</p>
     </div>
   );
 }
@@ -491,8 +507,8 @@ function FocusCard({ g, onReview }) {
   const text = { fontSize: 12.5, color: T.ink, lineHeight: 1.65, margin: 0 };
   const w = f && f.worst;
   return (
-    <div style={card}>
-      <SectionHead Icon={Target} title={t("지금 고칠 한 가지")} />
+    <div style={{ margin: "6px 16px 14px", padding: "14px 14px 4px", borderRadius: 14, background: "rgba(196,154,80,.1)", border: "1px solid rgba(196,154,80,.4)", borderLeft: "4px solid #C49A50" }}>
+      <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".04em", color: "#8A6C2F", marginBottom: 4 }}>{t("지금 고칠 한 가지")}</div>
       {!f ? (
         <p style={{ ...sub, margin: 0 }}>{g.pending > 0 ? t("실수 원인 분석 중, {0}개 남음", g.pending) : t("아직 두 판 이상에서 반복된 실수가 없음")}</p>
       ) : (
@@ -533,7 +549,6 @@ const chipStyle = { fontSize: 11, fontWeight: 800, color: T.ink, background: "rg
 function PhaseCard({ g, bare }) {
   return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={Layers} title={t("구간 진단")} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {g.phases.map((p) => {
           const weak = g.weakPhase && g.weakPhase.key === p.key, ok = p.acc != null && p.games >= MIN_PHASE_GAMES;
@@ -563,7 +578,6 @@ function CauseCard({ g, bare }) {
   const rows = g.causes.slice(0, 6), max = Math.max(...rows.map((c) => c.share), 0.01);
   return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={BarChart3} title={t("반복되는 실수 원인")} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map((c) => (
           <div key={c.key}>
@@ -586,7 +600,6 @@ function TypeCard({ g, bare }) {
   if (!g.moveTypes.length) return null;
   return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={Grid3x3} title={t("수 유형별 분석")} right={g.weakType ? <span style={{ fontSize: 11, fontWeight: 800, color: "#D9822B" }}>{t("가장 약한 유형")}: {(g.weakType.group === "piece" ? pieceLabel : actionLabel)(g.weakType.key)}</span> : null} />}
       {groups.map(([gk, title, lab]) => {
         const rows = g.moveTypes.filter((r) => r.group === gk); if (!rows.length) return null;
         return (
@@ -708,7 +721,7 @@ function MistakeBlock({ m, onReview, noBoard }) {
     </div>
   );
 }
-const PAGE = 5;
+const PAGE = 3;
 function MistakeLog({ g, onReview, bare }) {
   const narrow = useNarrow(720);   // (v0.7.4, 사용자 요청) 모바일에서는 체스보드 미리보기 없음
   const [phase, setPhase] = useState("all"), [sort, setSort] = useState("recent"), [shown, setShown] = useState(PAGE);
@@ -721,7 +734,6 @@ function MistakeLog({ g, onReview, bare }) {
   const pill = (on) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, flexShrink: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 800, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
   return (
     <div style={wrap(bare)}>
-      {!bare && <SectionHead Icon={BookOpen} title={t("실수 기록")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", all.length)}</span>} />}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "0 -2px 8px", padding: "2px", scrollbarWidth: "none" }}>
         {[["all", t("전체")], ...PHASES.map((ph) => [ph, phaseLabel(ph)])].map(([k, label]) => (
           <button key={k} className="press" onClick={() => pick(setPhase)(k)} aria-pressed={phase === k} style={pill(phase === k)}>{label}<span style={{ opacity: 0.65, fontWeight: 700 }}>{count(k)}</span></button>
@@ -781,22 +793,22 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
           <>
             {g ? (
               <>
-                <ThemeSection no="1" Icon={TrendingUp} title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
-                  <Overview g={g} />
-                  <GrowthCurve g={g} onReview={onOpenGameAnalyze} bare />
+                <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")]]} />
+                <ThemeSection id="gp-sum" no="1" title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
+                  <Overview g={g} onReview={onOpenGameAnalyze} />
                 </ThemeSection>
-                <ThemeSection no="2" Icon={Layers} title={t("약점 진단")} desc={t("어느 구간에서, 어떤 원인으로, 어떤 수에서 승률을 잃는지")}>
+                <ThemeSection id="gp-diag" no="2" title={t("약점 진단")} desc={t("어느 구간에서, 어떤 원인으로, 어떤 수에서 승률을 잃는지")}>
                   <DiagnosisTabs g={g} />
                   <FocusCard g={g} onReview={onOpenGameAnalyze} />
                 </ThemeSection>
                 {g.badMoves.length > 0 && (
-                  <ThemeSection no="3" Icon={BookOpen} title={t("실수 기록")} desc={t("승률이 크게 떨어진 수를 한 수씩 모아 보기")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", g.badMoves.length)}</span>}>
+                  <ThemeSection id="gp-log" no="3" title={t("실수 기록")} desc={t("승률이 크게 떨어진 수를 한 수씩 모아 보기")} right={<span style={{ ...sub, fontSize: 11, whiteSpace: "nowrap" }}>{t("실수·블런더 {0}개", g.badMoves.length)}</span>}>
                     <MistakeLog g={g} onReview={onOpenGameAnalyze} bare />
                   </ThemeSection>
                 )}
               </>
             ) : <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>}
-            <ThemeSection no="4" Icon={Users} title={t("마스터 스타일")} desc={t("내 플레이를 마스터들과 비교")}>
+            <ThemeSection id="gp-style" no="4" title={t("마스터 스타일")} desc={t("내 플레이를 마스터들과 비교")}>
               <MasterStyle games={games} bare />
             </ThemeSection>
           </>
