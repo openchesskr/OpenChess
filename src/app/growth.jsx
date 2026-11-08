@@ -2,12 +2,12 @@
 // 약점 지도·복습 카드·오프닝 실수·실수 요약은 "리뷰하는 대로 약점을 분석하고 성장 가능성을 찾는다"는 방향으로 처음부터 다시 설계하려고 모두 삭제했다(전용 라이브러리 3개 포함).
 // 마스터 스타일 로직은 lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사).
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { Lock, Users, TrendingUp, Target, Layers, BarChart3, Grid3x3, AlertTriangle } from "lucide-react";
+import { Lock, Users, TrendingUp, Target, Layers, BarChart3, Grid3x3, BookOpen } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { OnlineDot, titleDef, REVIEW_RESULT_CACHE_VERSION, Board } from "./common.jsx";
+import { OnlineDot, titleDef, REVIEW_RESULT_CACHE_VERSION, Board, mecFacts } from "./common.jsx";
 import { collectMyReviews, GROWTH_MIN_REVIEWS } from "../lib/reviewedCount.js";
-import { analyzeGame, buildGrowth, classifyPending, loadCauseCache, saveCauseCache, WORST_COUNT, phaseLabel, causeLabel, causeAdvice, pieceLabel, actionLabel, PHASES, MIN_PHASE_GAMES, MIN_TYPE_MOVES } from "../lib/growthAnalysis.js";
+import { analyzeGame, buildGrowth, classifyPending, loadCauseCache, saveCauseCache, betterMoves, joinSentences, phaseLabel, causeLabel, causeAdvice, pieceLabel, actionLabel, PHASES, MIN_PHASE_GAMES, MIN_TYPE_MOVES } from "../lib/growthAnalysis.js";
 import { boardFromSans, moveNumber } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
@@ -306,7 +306,7 @@ function purgeLegacyGrowthData() {
 
 
 /* ── 성장 분석 본문 (v0.7.4) ──
-   요약 → 성장 곡선 → 지금 고칠 한 가지 → 구간 진단 → 반복되는 실수 원인 → 수 유형별 분석 → 가장 아쉬웠던 수. 계산은 lib/growthAnalysis.js(순수 함수).
+   요약 → 성장 곡선 → 지금 고칠 한 가지 → 구간 진단 → 반복되는 실수 원인 → 수 유형별 분석 → 실수 기록(수 하나씩 블록). 계산은 lib/growthAnalysis.js(순수 함수).
    원인 분류가 느려서(전술 탐색) 화면은 빠른 계산을 먼저 그리고, 분류가 끝나는 대로 다시 그린다. */
 const tacLabel = (k) => ({ fork: t("포크"), skewer: t("스큐어"), discoveredAttack: t("디스커버드 어택"), discoveredCheck: t("디스커버드 체크"), doubleCheck: t("더블 체크"), promotion: t("승격") }[k] || k);
 const fmtDate = (sec) => { if (!sec) return ""; const d = new Date(sec * 1000); return String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0"); };
@@ -548,16 +548,117 @@ function TypeCard({ g }) {
   );
 }
 
-/* ⑥ 가장 아쉬웠던 수 */
-function WorstCard({ g, onReview }) {
-  // "지금 고칠 한 가지"의 예시와 같은 수는 한 번만 보여 준다(남는 게 없으면 구획을 숨김).
-  const shown = new Set(g.focus ? g.focus.examples.map((m) => m.game.key + ":" + m.ply) : []);
-  const list = g.worst.filter((m) => !shown.has(m.game.key + ":" + m.ply)).slice(0, WORST_COUNT);
-  if (!list.length) return null;
+/* ⑥ 실수 기록 (v0.7.4 — 예전 "오프닝 실수"를 되살려 발전시킴)
+   리뷰한 내 대국의 실수·블런더·놓친 수를 한 수씩 블록으로 보여 준다. 블록: 미니 보드 · 구간(오프닝·미들게임·엔드게임) · 그 대국의 오프닝 · 승률 변동(평가치를 로지스틱 곡선으로 바꾼 값, 전→후) ·
+   미들게임·엔드게임 실수는 유형 · MEC가 이 수가 왜 실수인지 설명 · 대신 둘 수 있었던 좋은 수(최선수 + 승률 차이 GOOD_ALT_MARGIN 이내 후보). */
+const PHASE_TINT = { opening: "#3E7CC4", middle: "#D9822B", end: "#16B5A6" };
+const explainCache = new Map(), explainQueue = [];
+let explainBusy = false;
+// MEC 설명은 수당 최대 수백 ms(전술 탐색)라 한 번에 하나씩 대기열로 계산한다 — 화면에서 사라진 블록의 작업은 건너뛴다. 같은 수는 한 번만 계산해 캐시.
+function explainPump() {
+  if (explainBusy) return;
+  let job; while ((job = explainQueue.shift()) && job.dead) { /* 건너뜀 */ }
+  if (!job) return;
+  explainBusy = true;
+  setTimeout(() => { try { job.run(); } finally { explainBusy = false; explainPump(); } }, 0);
+}
+function useExplain(m) {
+  const g = m.game, key = g.key + ":" + m.ply;
+  const [v, setV] = useState(() => explainCache.get(key) || null);
+  useEffect(() => {
+    if (explainCache.has(key)) { setV(explainCache.get(key)); return undefined; }
+    const job = { dead: false, run: () => {
+      let out = [];
+      try { out = mecFacts(g.sans.slice(0, m.ply), m.san, g.color, m.kind, m.best, m.beforeCp, null, null) || []; } catch { out = []; }
+      if (explainCache.size > 500) explainCache.clear();
+      explainCache.set(key, out);
+      if (!job.dead) setV(out);
+    } };
+    explainQueue.push(job); explainPump();
+    return () => { job.dead = true; };
+  }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return v;
+}
+/* 승률 변동 막대: 전→후. 남은 승률은 초록(50% 미만이면 주황), 잃은 구간은 붉게. */
+function WinDrop({ before, after }) {
+  if (before == null || after == null) return null;
+  const lost = Math.max(0, before - after), delta = after - before;
+  return (
+    <div title={t("승률은 평가치를 로지스틱 곡선으로 바꾼 값")}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{t("승률")}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{Math.round(before)}% → {Math.round(after)}%</span>
+        <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 900, color: T.blunder }}>{delta > 0 ? "+" : delta < 0 ? "−" : ""}{Math.abs(Math.round(delta))}%p</span>
+      </div>
+      <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(0,0,0,.09)" }} aria-hidden>
+        <div style={{ width: Math.max(0, Math.min(100, after)) + "%", background: after >= 50 ? T.best : "#D9822B" }} />
+        <div style={{ width: Math.max(0, Math.min(100 - after, lost)) + "%", background: "rgba(200,69,59,.6)" }} />
+      </div>
+    </div>
+  );
+}
+function MistakeBlock({ m, onReview }) {
+  const g = m.game, why = useExplain(m), better = betterMoves(m), late = m.phase !== "opening";
+  return (
+    <div style={{ borderRadius: 14, border: "1px solid #DCCBA8", background: "rgba(0,0,0,.025)", padding: 10, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 12 }}>
+        <MiniBoard sans={g.sans} ply={m.ply} color={g.color} />
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {badgeIcon(m.kind, 16)}
+            <span style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{moveNumber(m.ply)}{m.san}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 900, color: "#fff", background: PHASE_TINT[m.phase], borderRadius: 999, padding: "1px 8px" }}>{phaseLabel(m.phase)}</span>
+            <span style={{ ...sub, fontSize: 11 }}>{QLABEL[m.kind] || m.kind}</span>
+            {onReview && <span style={{ marginLeft: "auto" }}><BestMoveJumpButton size={28} title={t("리뷰하기")} onClick={() => onReview(reviewGameOf(g))} /></span>}
+          </div>
+          <div style={{ ...sub, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={g.opening || undefined}>{g.opening || t("오프닝 정보 없음")} · {fmtDate(g.endTime)}</div>
+          <WinDrop before={m.winBefore} after={m.winAfter} />
+          {late && (m.cause
+            ? <span style={{ alignSelf: "flex-start", fontSize: 10.5, fontWeight: 800, color: T.mistake, background: "rgba(217,130,43,.12)", border: "1px solid rgba(217,130,43,.35)", borderRadius: 999, padding: "1px 8px" }}>{causeLabel(m.cause)}{m.detail ? " · " + tacLabel(m.detail) : ""}</span>
+            : <span style={{ ...sub, fontSize: 10.5 }}>…</span>)}
+        </div>
+      </div>
+      {why === null ? <p style={{ ...sub, margin: "8px 0 0" }}>{t("설명 분석 중…")}</p>
+        : why.length > 0 && <p style={{ fontSize: 12, color: T.ink, lineHeight: 1.6, margin: "8px 0 0" }}>{joinSentences(why.slice(0, 2))}</p>}
+      {better.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...sub, fontSize: 11, fontWeight: 800, marginBottom: 4 }}>{t("대신 둘 수 있는 수")}</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {better.map((b) => (
+              <span key={b.san} title={b.best ? t("최선의 수") : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 10, border: "1px solid " + (b.best ? T.best : "#DCCBA8"), background: b.best ? "rgba(63,122,58,.1)" : "rgba(0,0,0,.03)", fontSize: 12, fontWeight: 800, color: T.ink }}>
+                <span style={{ fontFamily: "Georgia, serif" }}>{b.san}</span>
+                {b.win != null && <span style={{ fontSize: 11, fontWeight: 800, color: b.best ? T.best : T.inkSoft }}>{Math.round(b.win)}%</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+const PAGE = 5;
+function MistakeLog({ g, onReview }) {
+  const [phase, setPhase] = useState("all"), [sort, setSort] = useState("recent"), [shown, setShown] = useState(PAGE);
+  const all = g.badMoves;
+  if (!all.length) return null;
+  const drop = (m) => (m.winBefore != null && m.winAfter != null ? m.winBefore - m.winAfter : m.loss || 0);
+  const count = (ph) => (ph === "all" ? all.length : all.filter((m) => m.phase === ph).length);
+  const list = all.filter((m) => phase === "all" || m.phase === phase).sort(sort === "recent" ? (a, b) => (b.game.endTime || 0) - (a.game.endTime || 0) || a.ply - b.ply : (a, b) => drop(b) - drop(a));
+  const pick = (setter) => (v) => { setter(v); setShown(PAGE); };
+  const pill = (on) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, flexShrink: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 800, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
   return (
     <div style={card}>
-      <SectionHead Icon={AlertTriangle} title={t("가장 아쉬웠던 수")} />
-      {list.map((m) => <MoveCard key={m.game.key + ":" + m.ply} m={m} onReview={onReview} />)}
+      <SectionHead Icon={BookOpen} title={t("실수 기록")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", all.length)}</span>} />
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "0 -2px 8px", padding: "2px", scrollbarWidth: "none" }}>
+        {[["all", t("전체")], ...PHASES.map((ph) => [ph, phaseLabel(ph)])].map(([k, label]) => (
+          <button key={k} className="press" onClick={() => pick(setPhase)(k)} aria-pressed={phase === k} style={pill(phase === k)}>{label}<span style={{ opacity: 0.65, fontWeight: 700 }}>{count(k)}</span></button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {[["recent", t("최신순")], ["big", t("큰 실수순")]].map(([k, label]) => <button key={k} className="press" onClick={() => pick(setSort)(k)} aria-pressed={sort === k} style={{ ...pill(sort === k), padding: "3px 10px", fontSize: 11 }}>{label}</button>)}
+      </div>
+      {list.slice(0, shown).map((m) => <MistakeBlock key={m.game.key + ":" + m.ply} m={m} onReview={onReview} />)}
+      {list.length > shown && <button className="press" onClick={() => setShown((n) => n + PAGE)} style={{ ...pill(false), width: "100%", justifyContent: "center", padding: "8px 11px" }}>{t("더 보기")} <span style={{ opacity: 0.65, fontWeight: 700 }}>{list.length - shown}</span></button>}
     </div>
   );
 }
@@ -581,7 +682,7 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, ccName, user, onOpenG
               <PhaseCard g={g} />
               <CauseCard g={g} />
               <TypeCard g={g} />
-              <WorstCard g={g} onReview={onOpenGameAnalyze} />
+              <MistakeLog g={g} onReview={onOpenGameAnalyze} />
             </>
           ) : <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>}
           <MasterStyle games={games} />

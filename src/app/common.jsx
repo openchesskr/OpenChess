@@ -1615,6 +1615,7 @@ export function poolWorker(pool, idx, engine) {
 // 정확히 반영한다 — "유일한 수" 강등 같은 부가 등급 보정도 이제 fenRoot 리뷰에서 정확히 걸린다.
 // isBookMoveAt(이론 수 판정)만은 표준 시작 위치 전제 DB 자체가 임의 FEN에 대응되지 않아 fenRoot일
 // 때 건너뛴다.
+const REVIEW_ALTS_KINDS = ["inaccuracy", "mistake", "blunder", "miss"];   // (v0.7.4) moves[].alts를 저장하는 등급
 export async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove, fenRoot) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
@@ -1799,7 +1800,14 @@ export async function analyzeGame(fullSans, engine, depth, onProgress, movetime 
     // (v0.2.0 기능) /review 페이지가 "최선의 수는 Xx였어요" 코멘트·"수 보기" 화살표를 보여주려면
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
-    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
+    // (v0.7.4, 사용자 요청) 부정확·실수·놓친 수·블런더에는 엔진 상위 후보 수와 그 수를 뒀을 때의 승률(둔 사람 관점, 평가치를 로지스틱 곡선으로 바꾼 값)을 저장한다
+    // — 성장 분석의 "대신 둘 수 있는 수". 크기를 줄이려고 나쁜 등급에만 두고, 이 수 자신은 뺀다. 옛 결과에는 없다(그 경우 best만 보여 준다).
+    let alts;
+    if (REVIEW_ALTS_KINDS.includes(kind) && posEval[i].cands) {
+      alts = posEval[i].cands.map((c) => ({ san: uciToSan(brd, c.uci, color), win: Math.round(winPctFromCp(c.cp) * 10) / 10 })).filter((a) => a.san && stripSuffix(a.san) !== playedSan);
+      if (!alts.length) alts = undefined;
+    }
+    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp, ...(alts ? { alts } : null) });
     if (moverWhite) { wLoss.push(lossWinPct); wSharp.push(sharp); wKind.push(kind); } else { bLoss.push(lossWinPct); bSharp.push(sharp); bKind.push(kind); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
@@ -1907,7 +1915,9 @@ export async function analyzeGame(fullSans, engine, depth, onProgress, movetime 
       // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
       // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
       // 승률로만 변환되므로 문제없다).
-      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, third: p2 ? cpOfLine(p2) : null, ok: !!p0 };
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, third: p2 ? cpOfLine(p2) : null, ok: !!p0,
+        // (v0.7.4) 상위 후보 수(UCI)와 평가 — 나쁜 등급의 수에서 "대신 둘 수 있는 수"를 보여 주려고 이 수 채점 때 SAN·승률로 바꿔 함께 저장한다(moves[].alts).
+        cands: [p0, p1, p2].filter((l) => l && l.uci).map((l) => ({ uci: l.uci, cp: cpOfLine(l) })) };
       doneCount++;
       onProgress && onProgress(doneCount / (N + 1));
       tryFlush();

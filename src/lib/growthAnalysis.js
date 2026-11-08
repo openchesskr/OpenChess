@@ -21,6 +21,13 @@ export const MIN_PHASE_GAMES = 3;                                 // 구간 진�
 export const MIN_TYPE_MOVES = 8;                                  // 수 유형 한 줄은 이만큼의 수가 있어야 "가장 약한 유형" 후보가 된다
 export const HEAVY_GAMES = 30;                                    // 원인·수 유형·가장 아쉬운 수는 가장 최근 이만큼의 판만 쓴다(성능). 성장 곡선·구간 진단은 전부.
 export const WORST_COUNT = 5;
+export const GOOD_ALT_MARGIN = 10;                                // "대신 둘 수 있는 좋은 수" — 최선 후보와 승률 차이가 이 값(%p) 이내인 후보
+const SAN_RE = /^[KQRBNa-hxO0-9=+#!?\-]{2,16}$/;
+/* 리뷰 결과의 moves[].alts([{ san, win }]) 검증 — 남의 분석이 섞여 들어올 수 있어 형식이 틀린 값은 버린다(서버 api/review-put.js의 validAlts와 같은 기준). */
+export function cleanAlts(alts) {
+  if (!Array.isArray(alts) || alts.length > 3) return [];
+  return alts.filter((x) => x && typeof x.san === "string" && SAN_RE.test(x.san) && typeof x.win === "number" && Number.isFinite(x.win) && x.win >= 0 && x.win <= 100).map((x) => ({ san: x.san, win: x.win }));
+}
 
 const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 const stripSan = (s) => String(s || "").replace(/[+#!?]+$/g, "");
@@ -124,6 +131,10 @@ export function analyzeGame(rec, cache = null) {
     const x = { ply: i, san: m.san, best: m.best || null, kind: m.kind || null, loss, sharp: m.sharp, phase, piece: mv.piece,
       capture: !!mv.captured, check: /[+#]/.test(mv.san), castle: /[kq]/.test(mv.flags), promotion: !!mv.promotion, bad: BAD_KINDS.includes(m.kind) };
     if (x.bad) {
+      // (v0.7.4) 오프닝 실수 블록용 — 둔 사람 관점 승률 전/후(평가치를 로지스틱 곡선으로 바꾼 evalWin, 흰색 기준이라 흑이면 뒤집는다), MEC 설명 입력(beforeCp), 대안 수
+      const ew = result.evalWin, wh = rec.color === "w";
+      const wb = Array.isArray(ew) && Number.isFinite(ew[i]) ? (wh ? ew[i] : 100 - ew[i]) : null, wa = Array.isArray(ew) && Number.isFinite(ew[i + 1]) ? (wh ? ew[i + 1] : 100 - ew[i + 1]) : null;
+      x.winBefore = r1(wb); x.winAfter = r1(wa); x.beforeCp = Number.isFinite(m.beforeCp) ? m.beforeCp : null; x.alts = cleanAlts(m.alts);
       const hit = cache && cache.get(ckOf(fenBefore, m.san, m.best));
       if (hit) { x.cause = hit[0]; x.detail = hit[1] || null; } else { x.pending = true; x.fenAfter = g.fen(); }
       x.fenBefore = fenBefore;
@@ -157,6 +168,23 @@ export function classifyPending(games, cache, budgetMs = 120, windowGames = HEAV
   }
   return { left, changed };
 }
+/* 이 실수 대신 둘 수 있었던 좋은 수 — 엔진 최선수를 맨 앞에(best: true), 그 뒤로 최선 후보와 승률 차이가 GOOD_ALT_MARGIN 이내인 다른 후보. 각 항목 win은 그 수를 뒀을 때 둔 사람 관점 승률(알면). 옛 결과에는 alts가 없어 최선수만 나온다. */
+export function betterMoves(m) {
+  const key = (x) => stripSan(x), out = [], seen = new Set([key(m.san)]);
+  const alts = (m.alts || []).filter((a) => key(a.san) !== key(m.san));
+  if (m.best) { const a = alts.find((x) => key(x.san) === key(m.best)); out.push({ san: m.best, win: a ? a.win : m.winBefore, best: true }); seen.add(key(m.best)); }
+  const top = Math.max(m.winBefore == null ? 0 : m.winBefore, ...out.map((o) => (o.win == null ? 0 : o.win)), ...alts.map((a) => a.win));
+  for (const a of alts) { if (seen.has(key(a.san)) || a.win < top - GOOD_ALT_MARGIN) continue; out.push({ win: a.win, best: false, san: a.san }); seen.add(key(a.san)); }
+  return out;
+}
+
+/* MEC 설명 문장 여러 개를 한 문단으로 — 번역문은 끝 구두점이 없는 경우가 있어, 없으면 언어에 맞는 마침표(한자·가나는 。, 데바나가리는 ।, 그 밖은 .)를 붙여 이어 붙인다. */
+export function joinSentences(list) {
+  return (list || []).map((x) => String(x == null ? "" : x).trim()).filter(Boolean)
+    .map((x) => (/[.!?。！？।]$/.test(x) ? x : x + (/[\u3040-\u30ff\u3400-\u9fff]/.test(x) ? "。" : /[\u0900-\u097F]/.test(x) ? "।" : ".")))
+    .join(" ");
+}
+
 /* 이 원인의 수를 전부 "손실 0·최선"으로 바꿨을 때의 한 판 정확도 — 같은 계산식(accOf)으로 전/후를 비교해 상승폭을 구한다. */
 function accIfFixed(game, cause) {
   const fixed = game.mine.map((x) => (x.bad && x.cause === cause ? { ...x, loss: 0, kind: "best" } : x));
@@ -187,6 +215,8 @@ export function buildGrowth(games, { heavyGames = HEAVY_GAMES } = {}) {
   const heavy = games.slice(-heavyGames);
   const allBad = heavy.flatMap((g) => g.mine.filter((x) => x.bad && !x.pending).map((x) => ({ ...x, game: g })));
   const pending = heavy.reduce((s2, g) => s2 + g.mine.filter((x) => x.pending).length, 0);
+  // 실수 기록(오프닝 실수 블록)용 — 원인 분류가 끝나기 전의 수도 포함한다(원인 칩만 나중에 붙는다).
+  const badMoves = heavy.flatMap((g) => g.mine.filter((x) => x.bad).map((x) => ({ ...x, game: g })));
   const lossTotal = allBad.reduce((s, x) => s + (x.loss || 0), 0);
   const causes = CAUSES.map((c) => {
     const ms = allBad.filter((x) => x.cause === c), lossSum = ms.reduce((s, x) => s + (x.loss || 0), 0);
@@ -212,7 +242,7 @@ export function buildGrowth(games, { heavyGames = HEAVY_GAMES } = {}) {
   const weakType = weakCands.length ? weakCands.reduce((a, b) => (b.badRate > a.badRate ? b : a)) : null;
   // ⑥ 가장 아쉬웠던 수
   const worst = [...allBad].sort((a, b) => (b.loss || 0) - (a.loss || 0)).slice(0, WORST_COUNT + 2);   // 화면은 "고칠 한 가지" 예시(2개)와 겹치는 수를 빼고 WORST_COUNT개를 보여 주므로 여유분을 둔다
-  return { n, avgAcc: r1(avg(accs)), curve, trend, phases, weakPhase, causes, focus, moveTypes, weakType, worst, heavyN: heavy.length, badTotal: allBad.length, pending };
+  return { n, avgAcc: r1(avg(accs)), curve, trend, phases, weakPhase, causes, focus, moveTypes, weakType, worst, badMoves, heavyN: heavy.length, badTotal: allBad.length, pending };
 }
 
 /* 한 번에 끝까지(검사·스크립트용): 분석 → 남김없이 분류 → 계산. 화면은 이 함수 대신 단계별로 호출한다. */

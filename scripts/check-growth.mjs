@@ -41,8 +41,12 @@ const fakeStore = (entries) => { const m = new Map(entries); return { get length
 // ── ①-b 분석: 구간·원인·수 유형·곡선·성장 가능성 ──
 {
   const SANS = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 c4 c6".split(" ");
+  // evalWin(흰색 기준 승률 %): 평소 55, Ba4(ply 6)에서 55→20으로 추락, h3(ply 16)에서 52→40
+  const EW = SANS.map((_, ply) => (ply <= 6 ? 55 : ply <= 7 ? 20 : ply <= 16 ? 52 : 40)).concat([40]);
   const mkRec = (acc, i) => ({ key: "k" + i, endTime: 1000 + i, owner: "me", color: "w", white: "me", black: "foe", id: null, opening: "Ruy Lopez",
-    result: { whiteAcc: acc, blackAcc: 70, moves: SANS.map((san, ply) => { const white = ply % 2 === 0; let kind = "good", loss = 1; if (white && ply === 6) { kind = "blunder"; loss = 40; } if (white && ply === 16) { kind = "mistake"; loss = 15; } return { san, white, kind, lossWinPct: loss, sharp: 0, best: ply === 6 ? "Bxc6" : ply === 16 ? "d4" : null }; }) } });
+    result: { whiteAcc: acc, blackAcc: 70, evalWin: EW, moves: SANS.map((san, ply) => { const white = ply % 2 === 0; let kind = "good", loss = 1; if (white && ply === 6) { kind = "blunder"; loss = 40; } if (white && ply === 16) { kind = "mistake"; loss = 15; }
+      const alts = ply === 6 ? [{ san: "Bxc6", win: 55 }, { san: "O-O", win: 52 }, { san: "d3", win: 40 }] : ply === 16 ? [{ san: "d4", win: 52 }] : undefined;
+      return { san, white, kind, lossWinPct: loss, sharp: 0, best: ply === 6 ? "Bxc6" : ply === 16 ? "d4" : null, beforeCp: 10, ...(alts ? { alts } : null) }; }) } });
   const { games, growth: gr } = A.growthFromRecords([60, 64, 66, 70, 74, 80].map(mkRec));
   ok(gr && gr.n === 6 && games.length === 6, "여섯 판이 모두 분석됨");
   eq(gr.curve.map((c) => c.acc), [60, 64, 66, 70, 74, 80], "성장 곡선은 시간순 판별 정확도");
@@ -59,6 +63,24 @@ const fakeStore = (entries) => { const m = new Map(entries); return { get length
   eq(gr.moveTypes.find((r) => r.key === "castle").n, 6, "수 유형별: 캐슬링 6번");
   ok(gr.worst.length <= 7 && gr.worst.every((w, i) => i === 0 || gr.worst[i - 1].loss >= w.loss), "가장 아쉬운 수는 손실 큰 순");
   eq(gr.pending, 0, "분류가 끝나면 pending 0");
+  // 실수 기록(오프닝 실수 블록)용 데이터: 승률 전/후(둔 사람 관점), MEC 입력, 대안 수, 구간
+  ok(gr.badMoves.length === 12 && gr.badMoves.every((x) => x.bad && x.game), "실수 기록: 실수·블런더·놓친 수만 모음(판당 2개 × 6판)");
+  const ba = gr.badMoves.find((x) => x.san === "Ba4"), hh = gr.badMoves.find((x) => x.san === "h3");
+  eq([ba.phase, ba.winBefore, ba.winAfter, ba.beforeCp], ["opening", 55, 20, 10], "블런더 Ba4: 구간 오프닝, 승률 55%→20%(로지스틱 변환된 evalWin), beforeCp 보존");
+  eq(hh.phase, "middle", "h3는 중반 구간");
+  eq(ba.alts.map((a) => a.san), ["Bxc6", "O-O", "d3"], "alts가 그대로 실림");
+  eq(A.betterMoves(ba).map((b) => [b.san, b.win, b.best]), [["Bxc6", 55, true], ["O-O", 52, false]], "대신 둘 수 있는 수: 최선수 먼저, 최선과 10%p 이내 후보만(d3 40%는 제외)");
+  eq(A.betterMoves(hh).map((b) => b.san), ["d4"], "대안 후보가 최선수뿐이면 최선수만");
+  eq(A.betterMoves({ san: "Qh5", best: "Nf3", winBefore: 60, alts: [] }).map((b) => [b.san, b.win]), [["Nf3", 60]], "옛 결과(alts 없음)는 최선수만, 승률은 두기 전 승률");
+  eq(A.betterMoves({ san: "Qh5", best: null, winBefore: 60, alts: [{ san: "Qh5", win: 60 }] }), [], "둔 수 자신은 대안에서 뺀다");
+  eq(A.cleanAlts([{ san: "Nf3", win: 55 }, { san: "<script>", win: 50 }, { san: "e4", win: 120 }]).map((a) => a.san), ["Nf3"], "alts 검증: 형식 틀린 값(스크립트·범위 밖 승률)은 버림");
+  eq(A.cleanAlts([{ san: "d4", win: "9" }, null, { san: "c4", win: 50 }]).map((a) => a.san), ["c4"], "alts 검증: 문자열 승률·null은 버림");
+  eq(A.cleanAlts(new Array(4).fill({ san: "e4", win: 50 })), [], "alts는 최대 3개");
+  eq(A.cleanAlts("x"), [], "배열이 아니면 빈 목록");
+  eq(A.joinSentences(["A queen is lost", "Opponent's rook can be captured."]), "A queen is lost. Opponent's rook can be captured.", "문장 이어 붙이기: 끝 구두점이 없으면 마침표를 붙임");
+  eq(A.joinSentences(["퀸을 잃습니다.", " ", null, "룩이 잡힙니다"]), "퀸을 잃습니다. 룩이 잡힙니다.", "빈 문장은 버리고 한국어도 마침표 보정");
+  eq(A.joinSentences(["クイーンを失う", "ルークが取られる。"]), "クイーンを失う。 ルークが取られる。", "일본어는 。");
+  eq(A.joinSentences([]), "", "문장이 없으면 빈 문자열");
   // 분류 전(pending)에는 원인에서 빠지고 개수만 알린다 — 화면이 빠른 계산을 먼저 그리기 위한 계약
   const cache0 = new Map(); const g0 = [60, 64].map(mkRec).map((r) => A.analyzeGame(r, cache0));
   const before = A.buildGrowth(g0);
@@ -149,6 +171,18 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
   eq([f1.vec[13], f1.den[13]], [0.2, 5], "retreatGames를 주면 후퇴 수 비율이 vec[13]에 들어감");
   eq(S.STYLE_KEYS[13], "retreatRate", "14번째 기준은 retreatRate");
 }
+// ── ③-c 서버 공유 분석 검증(api/review-put.js): 대안 수(alts)가 형식을 지킨다 ──
+{
+  const RP = await import("../api/review-put.js");
+  const base = (m) => ({ v: 1, d: 20, result: { moves: [{ ply: 0, san: "e4", white: true, kind: "good", ...m }] } });
+  ok(RP.sanitizeAnalysis(base({ alts: [{ san: "Nf3", win: 55.5 }] })), "정상 alts는 통과");
+  ok(RP.sanitizeAnalysis(base({})), "alts 없는 옛 분석도 통과");
+  ok(!RP.sanitizeAnalysis(base({ alts: [{ san: "x".repeat(40), win: 50 }] })), "긴 문자열 alts는 거부");
+  ok(!RP.sanitizeAnalysis(base({ alts: [{ san: "Nf3", win: 500 }] })), "범위 밖 승률 alts는 거부");
+  ok(!RP.sanitizeAnalysis(base({ alts: [{ san: "Nf3", win: 50 }, { san: "e4", win: 50 }, { san: "d4", win: 50 }, { san: "c4", win: 50 }] })), "4개 이상 alts는 거부");
+  ok(!RP.sanitizeAnalysis(base({ alts: "Nf3" })), "배열이 아닌 alts는 거부");
+  ok(RP.validAlts([{ san: "O-O-O", win: 0 }, { san: "exd5", win: 100 }, { san: "e8=Q+", win: 50 }]), "캐슬링·잡기·승격 SAN은 통과");
+}
 // ── ④ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/learn.jsx"), common = rd("src/app/common.jsx");
@@ -158,8 +192,15 @@ ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(
 { const i = app.indexOf("<LearnTab "); const seg = i >= 0 ? app.slice(i, i + 4000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음"); }
 // 게이트: 5판 미만이면 마스터 스타일을 포함한 성장 분석 요소를 가리고 게이지 바 안내(ReviewGate)만 보인다.
 ok(/collectMyReviews\(\{/.test(growth) && /records\.length >= GROWTH_MIN_REVIEWS/.test(growth), "성장 분석이 리뷰 판 수(5판)로 열리지 않음");
+{ const common = rd("src/app/common.jsx"), api = rd("api/review-put.js");
+  ok(/alts\b/.test(common) && /REVIEW_ALTS_KINDS\.includes\(kind\)/.test(common) && /cands: \[p0, p1, p2\]/.test(common), "리뷰 분석이 나쁜 등급의 수에 대안 수(alts)를 저장하지 않음");
+  ok(/validAlts\(m\.alts\)/.test(api), "서버가 공유 분석의 alts를 검증하지 않음(남의 분석이 내 화면에 그려짐)");
+  const log = (growth.match(/function MistakeBlock[\s\S]*?\nconst PAGE/) || [""])[0];
+  ok(/<MiniBoard /.test(log) && /<WinDrop /.test(log) && /phaseLabel\(m\.phase\)/.test(log) && /g\.opening/.test(log) && /betterMoves\(m\)/.test(log) && /useExplain\(m\)/.test(log), "실수 블록: 미니 보드·구간·오프닝·승률 변동·MEC 설명·대안 수가 모두 있어야 함");
+  ok(/late = m\.phase !== "opening"/.test(log) && /\{late && /.test(log), "실수 블록: 유형 칩은 미들게임·엔드게임 실수에만 표시");
+  ok(/mecFacts\(/.test(growth) && /explainQueue/.test(growth), "실수 설명은 MEC(mecFacts)를 한 번에 하나씩 대기열로 계산해야 함(전술 탐색이 느림)"); }
 ok(/touchReviewMeta\(resultCacheKey, game\)/.test(review) && /owner: game\.username/.test(review), "리뷰 화면이 결과에 성장 분석용 메타(진영·owner 등)를 남기지 않음");
-for (const sec of ["Overview", "GrowthCurve", "FocusCard", "PhaseCard", "CauseCard", "TypeCard", "WorstCard"]) ok(new RegExp("<" + sec + " ").test(growth), "성장 분석 본문에 " + sec + " 구획이 없음");
+for (const sec of ["Overview", "GrowthCurve", "FocusCard", "PhaseCard", "CauseCard", "TypeCard", "MistakeLog"]) ok(new RegExp("<" + sec + " ").test(growth), "성장 분석 본문에 " + sec + " 구획이 없음");
 ok(/classifyPending\(/.test(growth) && /saveCauseCache\(/.test(growth), "원인 분류는 시간 예산으로 나눠 돌리고 캐시를 저장해야 함(전술 탐색이 느려 한꺼번에 돌리면 화면이 멈춤)");
 ok(/\{!open \? <ReviewGate [^>]*\/> : \(/.test(growth) && /<MasterStyle /.test(growth), "리뷰 5판 미만이면 ReviewGate(게이지 바)만 보여야 하고, 달성하면 분석 본문과 마스터 스타일을 보여야 함");
 { const gate = (growth.match(/function ReviewGate[\s\S]*?\n}\n/) || [""])[0]; ok(/role="progressbar"/.test(gate) && /Array\.from\(\{ length: need \}/.test(gate) && /더 리뷰하면 열림/.test(gate) && /리뷰 버튼/.test(gate), "ReviewGate: 게이지 바(칸 수 = 필요한 판 수)·남은 판 수·리뷰 안내가 있어야 함"); }
