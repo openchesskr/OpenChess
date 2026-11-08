@@ -989,9 +989,9 @@ function LearnPager({ pages }) {
         </div>
       </div>
       <div style={{ position: "relative" }}>
-        <div ref={scRef} onScroll={onScroll} style={{ display: "flex", gap: 12, overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", margin: "0 -18px", padding: "2px 18px 6px", scrollPaddingLeft: 18, alignItems: "flex-start" }}>
+        <div ref={scRef} onScroll={onScroll} style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", margin: "0 -18px", padding: "2px 18px 6px", scrollPaddingLeft: 18, alignItems: "flex-start" }}>
           {pages.map((pg, i) => (
-            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 30px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>{pg.node}</div>
+            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 14px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>{pg.node}</div>
           ))}
         </div>
         {hint && pages.length > 1 && (

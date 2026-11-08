@@ -1,7 +1,7 @@
 // (v0.7.4) 게임 리뷰 결과의 저장·조회·공유 — review.jsx 안에 있던 것을 꺼내 학습 탭의 자동 리뷰(autoReview.js)와 같이 쓴다.
 // 로컬(이 기기) 캐시 → chess.com 대국이면 서버 공유 캐시(reviewed_games) → 없으면 분석. 같은 키를 쓰므로 자동으로 한 리뷰를 리뷰 화면에서 열면 바로 보인다.
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
-import { REVIEW_RESULT_CACHE_VERSION, reviewStorageKey, reviewPut } from "./common.jsx";
+import { REVIEW_RESULT_CACHE_VERSION, reviewStorageKey, reviewPut, recordReviewSummary } from "./common.jsx";
 
 // 로컬(이 기기·브라우저) 캐시 — sessionStorage(탭 닫으면 사라짐)가 아니라 localStorage(브라우저를
 // 껐다 켜도 남음)를 쓴다, "다시 열 때마다"라는 신고가 새로고침뿐 아니라 다른 날 다시 들어와도
@@ -29,6 +29,7 @@ export function loadCachedReviewResult(storageKey, expectedLen, depth) {
 }
 export function saveCachedReviewResult(storageKey, result, depth) {
   if (!storageKey || !result) return;
+  recordReviewSummary(storageKey, result); // 결과 캐시와 별개로 정확도·탁월·유일 개수 요약을 남긴다(저장 실패해도 요약은 유지)
   try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, d: depth, result })); } catch { }
 }
 // chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도

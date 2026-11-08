@@ -34,7 +34,7 @@ const stripSan = (s) => String(s || "").replace(/[+#!?]+$/g, "");
 const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
 
-export const phaseLabel = (k) => ({ opening: t("오프닝"), middle: t("중반전"), end: t("엔드게임") }[k] || k);
+export const phaseLabel = (k) => ({ opening: t("오프닝"), middle: t("미들게임"), end: t("엔드게임") }[k] || k);
 export const CAUSES = ["allowedMate", "hung", "allowedTactic", "missedMate", "missedTactic", "missedWin", "missedCheck", "opening", "endgame", "positional"];
 export const causeLabel = (k) => ({
   allowedMate: t("메이트 허용"), hung: t("기물 방치"), allowedTactic: t("상대 전술 허용"), missedMate: t("메이트 놓침"), missedTactic: t("전술 놓침"),

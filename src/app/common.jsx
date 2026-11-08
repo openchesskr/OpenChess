@@ -4533,17 +4533,43 @@ export function reviewStorageKey(game) {
 }
 // (v0.7.3) 이 기기에 저장된 게임 리뷰 결과(oc-review-result:*)에서 내 정확도·수 등급 개수만 읽는다 — 학습 탭의 최근 대국 박스가 "리뷰한 대국"에 요약을 보여 준다.
 // 엔진·네트워크를 쓰지 않는 동기 조회라 카드마다 불러도 가볍다. 리뷰한 적 없으면 null. game.color가 내 진영.
+// (v0.7.4, 사용자 요청) 리뷰 결과(수십 KB)와 별개로 "정확도·수 등급 개수"만 작은 기록(oc-review-summary-v1)으로 남긴다.
+// 리뷰 결과가 용량 부족 등으로 지워져도 최근 대국 박스의 탁월·유일 개수는 계속 보이고, 자동 리뷰한 대국도 바로 채워진다. 흰·검 양쪽을 다 저장해 진영만 골라 읽는다.
+const SUMMARY_KEY = "oc-review-summary-v1", SUMMARY_MAX = 600;
+function summaryOfResult(result) {
+  if (!result || !Array.isArray(result.moves)) return null;
+  const w = {}, b = {};
+  for (const m of result.moves) if (m && m.kind) { const o = m.white ? w : b; o[m.kind] = (o[m.kind] || 0) + 1; }
+  const num = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
+  return { wa: num(result.whiteAcc), ba: num(result.blackAcc), w, b };
+}
+function readSummaries() { try { return JSON.parse(window.localStorage.getItem(SUMMARY_KEY)) || {}; } catch { return {}; } }
+export function recordReviewSummary(storageKey, result) {
+  try {
+    if (!storageKey || typeof window === "undefined") return;
+    const sm = summaryOfResult(result); if (!sm) return;
+    const all = readSummaries(); all[storageKey] = sm;
+    const keys = Object.keys(all);
+    if (keys.length > SUMMARY_MAX) for (const k of keys.slice(0, keys.length - SUMMARY_MAX)) delete all[k]; // 오래된 것부터(삽입 순서)
+    window.localStorage.setItem(SUMMARY_KEY, JSON.stringify(all));
+  } catch { }
+}
 export function cachedReviewSummary(game) {
   try {
     const k = reviewStorageKey(game); if (!k || typeof window === "undefined") return null;
-    const raw = window.localStorage.getItem(k.replace("oc-review-pos:", "oc-review-result:")); if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (!p || p.v !== REVIEW_RESULT_CACHE_VERSION || !p.result || !Array.isArray(p.result.moves)) return null;
+    const rk = k.replace("oc-review-pos:", "oc-review-result:");
     const mineWhite = game.color === "w";
-    const acc = mineWhite ? p.result.whiteAcc : p.result.blackAcc;
-    const counts = {};
-    for (const m of p.result.moves) if (m && m.kind && !!m.white === mineWhite) counts[m.kind] = (counts[m.kind] || 0) + 1;
-    return { acc: Number.isFinite(acc) ? acc : null, counts };
+    const pick = (sm) => { const acc = mineWhite ? sm.wa : sm.ba; return { acc: Number.isFinite(acc) ? acc : null, counts: mineWhite ? sm.w || {} : sm.b || {} }; };
+    const raw = window.localStorage.getItem(rk);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.v === REVIEW_RESULT_CACHE_VERSION && p.result && Array.isArray(p.result.moves)) {
+        const sm = summaryOfResult(p.result);
+        if (sm) { if (!readSummaries()[rk]) recordReviewSummary(rk, p.result); return pick(sm); }
+      }
+    }
+    const saved = readSummaries()[rk];
+    return saved ? pick(saved) : null;
   } catch { return null; }
 }
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL(openchess.kr/review/(식별자))의 "PGN 분석" 쪽

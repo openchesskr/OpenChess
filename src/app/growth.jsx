@@ -28,6 +28,8 @@ import { t } from "../lib/i18n.js";
 // (v0.7.4, 사용자 요청) 성장 분석의 모든 구획은 프로필의 크림색 블록 안에 들어간다 — 구획마다 따로 카드를 두지 않고 얇은 선으로 나눈다.
 const card = { padding: "14px 16px", borderTop: "1px solid #E4D5B6" };
 const sub = { fontSize: 11.5, color: T.inkSoft, lineHeight: 1.55 };
+// 테마 묶음 안에서는 구획이 자체 테두리·머리말 없이(bare) 들어가고, 머리말은 ThemeSection이 한 번만 그린다.
+const wrap = (bare) => (bare ? { padding: "2px 16px 14px" } : card);
 const h3 = { fontSize: 14, fontWeight: 800, color: T.ink, margin: 0, letterSpacing: "-.01em" };
 const critHead = { fontSize: 11, fontWeight: 800, color: T.inkSoft, paddingBottom: 2, paddingLeft: 12 };
 const critCell = { borderTop: "1px solid rgba(0,0,0,.06)", padding: "6px 0" };
@@ -41,6 +43,43 @@ function SectionHead({ Icon, title, right }) {
       <span style={{ width: 30, height: 30, borderRadius: 10, background: "rgba(196,154,80,.22)", color: "#8A6C2F", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={16} /></span>
       <h3 style={{ ...h3, flex: 1, minWidth: 0 }}>{title}</h3>
       {right}
+    </div>
+  );
+}
+
+/* ── 테마 묶음 (v0.7.4, 사용자 요청: 중구난방 나열 → 합칠 수 있는 건 한 테마로, 정보를 체계적으로 구분) ──
+   성장 분석은 네 테마로 나뉜다: ① 성장 요약(평균·변화·곡선) ② 약점 진단(구간·원인·유형 탭 + 지금 고칠 한 가지) ③ 실수 기록 ④ 마스터 스타일. 각 테마는 번호·제목·한 줄 설명 머리말 하나만 갖는다. */
+function ThemeSection({ no, Icon, title, desc, right, children }) {
+  return (
+    <div style={{ borderTop: "1px solid #E4D5B6", paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 16px 10px" }}>
+        <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 10, background: "linear-gradient(180deg,#ECCB86,#C49A50)", color: "#3A2810", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12.5, fontWeight: 900, fontFamily: "Georgia, serif" }}>{no}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ ...h3, display: "flex", alignItems: "center", gap: 6 }}><Icon size={15} style={{ color: "#8A6C2F", flexShrink: 0 }} />{title}</h3>
+          <div style={{ ...sub, fontSize: 11, marginTop: 1 }}>{desc}</div>
+        </div>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
+/* 약점 진단 — 구간별·원인별·유형별을 한 카드의 탭으로 합친다(같은 질문 "어디서 잃나"의 세 가지 단면). */
+function DiagnosisTabs({ g }) {
+  const tabs = [["phase", t("구간별"), g.phases.length > 0], ["cause", t("원인별"), g.causes.length > 0], ["type", t("유형별"), g.moveTypes.length > 0]].filter((x) => x[2]);
+  const [tab, setTab] = useState("phase");
+  if (!tabs.length) return null;
+  const cur = tabs.some((x) => x[0] === tab) ? tab : tabs[0][0];
+  return (
+    <div>
+      <div role="tablist" style={{ display: "flex", gap: 4, padding: "3px", margin: "0 16px 10px", borderRadius: 12, background: "rgba(90,58,34,.08)" }}>
+        {tabs.map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={cur === k} className="press" onClick={() => setTab(k)} style={{ flex: 1, padding: "7px 6px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 12.5, fontWeight: 900, color: cur === k ? T.ink : T.inkSoft, background: cur === k ? "#FBF4E4" : "transparent", boxShadow: cur === k ? "0 1px 4px rgba(0,0,0,.18)" : "none" }}>{label}</button>
+        ))}
+      </div>
+      {cur === "phase" && <PhaseCard g={g} bare />}
+      {cur === "cause" && <CauseCard g={g} bare />}
+      {cur === "type" && <TypeCard g={g} bare />}
     </div>
   );
 }
@@ -60,7 +99,7 @@ function SimRing({ pct, size = 66 }) {
     </svg>
   );
 }
-function MasterStyle({ games }) {
+function MasterStyle({ games, bare }) {
   const [data, setData] = useState(null);
   const [pickedName, setPickedName] = useState(null);   // 사용자가 고른 마스터(null이면 가장 닮은 마스터)
   const [query, setQuery] = useState("");
@@ -89,10 +128,10 @@ function MasterStyle({ games }) {
     return rankMasterMatches(m.list, query, (x) => masterName(x.name, "en"), (x) => x.name, (x) => x.elo);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
-  if (!data) return <div style={card}><SectionHead Icon={Users} title={t("마스터 스타일")} /><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>;
+  if (!data) return <div style={wrap(bare)}>{!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} />}<p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>;
   if (!m.ok) return (
-    <div style={card}>
-      <SectionHead Icon={Users} title={t("마스터 스타일")} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} />}
       <p style={{ ...sub, margin: 0 }}>{t("chess.com 대국이 {0}판 이상 연동되면 나와 닮은 마스터를 알려 줌 (지금 {1}판)", MIN_STYLE_GAMES, m.n)}</p>
     </div>
   );
@@ -171,8 +210,8 @@ function MasterStyle({ games }) {
     </div>
   );
   return (
-    <div style={card}>
-      <SectionHead Icon={Users} title={t("마스터 스타일")} right={<span style={sub}>{t("최근 {0}판 기준", m.n)}</span>} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={Users} title={t("마스터 스타일")} right={<span style={sub}>{t("최근 {0}판 기준", m.n)}</span>} />}
       <div style={{ borderRadius: 14, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", padding: "10px 12px", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SimRing pct={Math.round(picked.sim * 100)} size={50} />
@@ -397,7 +436,7 @@ function Overview({ g }) {
 }
 
 /* ① 성장 곡선 */
-function GrowthCurve({ g, onReview }) {
+function GrowthCurve({ g, onReview, bare }) {
   const pts = g.curve.filter((c) => c.acc != null);
   const [sel, setSel] = useState(null);
   const idx = sel != null && sel < pts.length ? sel : pts.length - 1;
@@ -409,8 +448,8 @@ function GrowthCurve({ g, onReview }) {
   const cur = pts[idx];
   const recentFrom = pts.length - g.trend.k;
   return (
-    <div style={card}>
-      <SectionHead Icon={TrendingUp} title={t("성장 곡선")} right={<span style={{ ...sub, fontSize: 11 }}>{t("최근 {0}판 기준", g.n)}</span>} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={TrendingUp} title={t("성장 곡선")} right={<span style={{ ...sub, fontSize: 11 }}>{t("최근 {0}판 기준", g.n)}</span>} />}
       <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={t("성장 곡선")} style={{ display: "block", overflow: "visible" }}>
         {g.trend.k > 0 && pts.length > g.trend.k && <rect x={x(recentFrom) - 8} y={PY - 8} width={W - x(recentFrom) + 8 - PX + 8} height={H - 2 * PY + 16} rx="8" fill="rgba(196,154,80,.14)" />}
         {g.avgAcc != null && <line x1={PX} x2={W - PX} y1={y(g.avgAcc)} y2={y(g.avgAcc)} stroke="#8A6C2F" strokeWidth="1" strokeDasharray="4 4" opacity=".7" />}
@@ -491,10 +530,10 @@ function FocusCard({ g, onReview }) {
 const chipStyle = { fontSize: 11, fontWeight: 800, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 999, padding: "3px 10px" };
 
 /* ③ 구간 진단 */
-function PhaseCard({ g }) {
+function PhaseCard({ g, bare }) {
   return (
-    <div style={card}>
-      <SectionHead Icon={Layers} title={t("구간 진단")} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={Layers} title={t("구간 진단")} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {g.phases.map((p) => {
           const weak = g.weakPhase && g.weakPhase.key === p.key, ok = p.acc != null && p.games >= MIN_PHASE_GAMES;
@@ -518,13 +557,13 @@ function PhaseCard({ g }) {
 }
 
 /* ④ 반복되는 실수 원인 */
-function CauseCard({ g }) {
+function CauseCard({ g, bare }) {
   const [open, setOpen] = useState(null);
   if (!g.causes.length) return null;
   const rows = g.causes.slice(0, 6), max = Math.max(...rows.map((c) => c.share), 0.01);
   return (
-    <div style={card}>
-      <SectionHead Icon={BarChart3} title={t("반복되는 실수 원인")} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={BarChart3} title={t("반복되는 실수 원인")} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map((c) => (
           <div key={c.key}>
@@ -542,12 +581,12 @@ function CauseCard({ g }) {
 }
 
 /* ⑤ 수 유형별 분석 */
-function TypeCard({ g }) {
+function TypeCard({ g, bare }) {
   const groups = [["piece", t("기물별"), pieceLabel], ["action", t("수 종류별"), actionLabel]];
   if (!g.moveTypes.length) return null;
   return (
-    <div style={card}>
-      <SectionHead Icon={Grid3x3} title={t("수 유형별 분석")} right={g.weakType ? <span style={{ fontSize: 11, fontWeight: 800, color: "#D9822B" }}>{t("가장 약한 유형")}: {(g.weakType.group === "piece" ? pieceLabel : actionLabel)(g.weakType.key)}</span> : null} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={Grid3x3} title={t("수 유형별 분석")} right={g.weakType ? <span style={{ fontSize: 11, fontWeight: 800, color: "#D9822B" }}>{t("가장 약한 유형")}: {(g.weakType.group === "piece" ? pieceLabel : actionLabel)(g.weakType.key)}</span> : null} />}
       {groups.map(([gk, title, lab]) => {
         const rows = g.moveTypes.filter((r) => r.group === gk); if (!rows.length) return null;
         return (
@@ -670,7 +709,7 @@ function MistakeBlock({ m, onReview, noBoard }) {
   );
 }
 const PAGE = 5;
-function MistakeLog({ g, onReview }) {
+function MistakeLog({ g, onReview, bare }) {
   const narrow = useNarrow(720);   // (v0.7.4, 사용자 요청) 모바일에서는 체스보드 미리보기 없음
   const [phase, setPhase] = useState("all"), [sort, setSort] = useState("recent"), [shown, setShown] = useState(PAGE);
   const all = g.badMoves;
@@ -681,8 +720,8 @@ function MistakeLog({ g, onReview }) {
   const pick = (setter) => (v) => { setter(v); setShown(PAGE); };
   const pill = (on) => ({ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, flexShrink: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 800, border: "1px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.2)" : "transparent", color: on ? T.ink : T.inkSoft });
   return (
-    <div style={card}>
-      <SectionHead Icon={BookOpen} title={t("실수 기록")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", all.length)}</span>} />
+    <div style={wrap(bare)}>
+      {!bare && <SectionHead Icon={BookOpen} title={t("실수 기록")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", all.length)}</span>} />}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "0 -2px 8px", padding: "2px", scrollbarWidth: "none" }}>
         {[["all", t("전체")], ...PHASES.map((ph) => [ph, phaseLabel(ph)])].map(([k, label]) => (
           <button key={k} className="press" onClick={() => pick(setPhase)(k)} aria-pressed={phase === k} style={pill(phase === k)}>{label}<span style={{ opacity: 0.65, fontWeight: 700 }}>{count(k)}</span></button>
@@ -742,16 +781,24 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
           <>
             {g ? (
               <>
-                <Overview g={g} />
-                <GrowthCurve g={g} onReview={onOpenGameAnalyze} />
-                <FocusCard g={g} onReview={onOpenGameAnalyze} />
-                <PhaseCard g={g} />
-                <CauseCard g={g} />
-                <TypeCard g={g} />
-                <MistakeLog g={g} onReview={onOpenGameAnalyze} />
+                <ThemeSection no="1" Icon={TrendingUp} title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
+                  <Overview g={g} />
+                  <GrowthCurve g={g} onReview={onOpenGameAnalyze} bare />
+                </ThemeSection>
+                <ThemeSection no="2" Icon={Layers} title={t("약점 진단")} desc={t("어느 구간에서, 어떤 원인으로, 어떤 수에서 승률을 잃는지")}>
+                  <DiagnosisTabs g={g} />
+                  <FocusCard g={g} onReview={onOpenGameAnalyze} />
+                </ThemeSection>
+                {g.badMoves.length > 0 && (
+                  <ThemeSection no="3" Icon={BookOpen} title={t("실수 기록")} desc={t("승률이 크게 떨어진 수를 한 수씩 모아 보기")} right={<span style={{ ...sub, fontSize: 11 }}>{t("실수·블런더 {0}개", g.badMoves.length)}</span>}>
+                    <MistakeLog g={g} onReview={onOpenGameAnalyze} bare />
+                  </ThemeSection>
+                )}
               </>
             ) : <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>}
-            <MasterStyle games={games} />
+            <ThemeSection no="4" Icon={Users} title={t("마스터 스타일")} desc={t("내 플레이를 마스터들과 비교")}>
+              <MasterStyle games={games} bare />
+            </ThemeSection>
           </>
         )}
       </ProfileBlock>
