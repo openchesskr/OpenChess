@@ -1032,7 +1032,7 @@ export function LearnTab({ growthUid, growthGames, mainQuest, onAnswerChapter, o
   const [lOpen, setLOpen] = useLearnFold("lessons", false);
   // (v0.7.3, 사용자 요청) 예전 프로필 자리에 성장 분석(실수 통계·약점 지도·복습 카드·오프닝 실수·마스터 스타일)을 그대로 펼쳐 보여 준다.
   // (v0.7.4, 사용자 요청) 성장 분석은 직접 리뷰하지 않아도 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰해 분석한다(항상 최신).
-  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} onOpenGameAnalyze={onOpenGameAnalyze} />;
+  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} onOpenGameAnalyze={onOpenGameAnalyze} onOpenGame={onOpenGame} />;
   return (
     <div>
       <PageTitle>{t("학습")}</PageTitle>
