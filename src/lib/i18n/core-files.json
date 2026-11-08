@@ -17,6 +17,7 @@
   "app/settings.jsx",
   "app/shell.jsx",
   "app/social.jsx",
+  "components/legacyPlayer.jsx",
   "components/DockWindows.jsx",
   "components/Dropdown.jsx",
   "components/UgcText.jsx",

@@ -22,6 +22,7 @@ import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { kindOfPost } from "../lib/legacyPosts.js";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
@@ -83,9 +84,12 @@ function parsePlayCommandArg(raw) {
 // 없으므로 퍼즐처럼 데이터 자체를 복제해 두지 않고, 그 슬롯 키(best/only/brilliant, 그랜드마스터
 // 보너스 칸이면 best2 등)만 저장한다 — 받는 쪽 화면이 from_uid(보낸 사람=유산 주인)의 공개 프로필에서
 // 그 슬롯을 그대로 읽어와 보여준다(그 사람이 나중에 그 칸을 바꾸면 공유된 카드도 최신 내용을 보여줌).
-async function legacyShareSend(fromUid, toUid, slotKey) {
+async function legacyShareSend(fromUid, toUid, slotKey, ownerUid) {
   if (!SB_ON || !fromUid || !toUid || !slotKey) return false;
-  try { await sbInsert("chat_messages", { from_uid: fromUid, to_uid: toUid, legacy_slot: slotKey }); return true; }
+  // (v0.7.4) 남의 유산 게시물도 보낼 수 있다 — 주인이 보낸 사람이 아니면 legacy_owner에 주인 uid를 함께 담는다(받는 쪽이 그 사람의 공개 프로필에서 읽는다).
+  const row = { from_uid: fromUid, to_uid: toUid, legacy_slot: slotKey };
+  if (ownerUid && ownerUid !== fromUid) row.legacy_owner = ownerUid;
+  try { await sbInsert("chat_messages", row); return true; }
   catch { return false; }
 }
 /* ============================================================ 설정 탭 ============================================================ */
@@ -1134,7 +1138,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
   // 달리 유산은 번호별 전역 저장소가 없어, 매번 그 사람의 "지금" 프로필을 그대로 읽어와 보여준다.
   const [legacyPreviews, setLegacyPreviews] = useState({});
   useEffect(() => {
-    const keys = [...new Set(msgs.filter((m) => m.legacy_slot != null).map((m) => m.from_uid + "|" + m.legacy_slot))].filter((k) => !(k in legacyPreviews));
+    const keys = [...new Set(msgs.filter((m) => m.legacy_slot != null).map((m) => (m.legacy_owner || m.from_uid) + "|" + m.legacy_slot))].filter((k) => !(k in legacyPreviews));
     if (!keys.length) return;
     let cancelled = false;
     (async () => {
@@ -1147,7 +1151,8 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           const [fu, slot] = k.split("|");
           const pub = (profiles[fu] && profiles[fu].pub) || {};
           const entry = normalizeLegacyEntry(pub.legacies && pub.legacies[slot]);   // (BUG-130) 상대가 써 넣은 값 — 검증 후에만 표시
-          const typeInfo = LEGACY_TYPES.find((t) => t.key === legacyBaseKey(slot));
+          const kind = entry ? kindOfPost(slot, entry) : null;   // (v0.7.4) 게시물 아이디(p…)는 entry.kind, 옛 슬롯은 키로
+          const typeInfo = kind ? LEGACY_TYPES.find((t) => t.key === kind) : null;
           n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
         });
         return n;
@@ -1723,7 +1728,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           // 버튼. 퍼즐 카드와 같은 패턴(당겨서 시각 확인 + 꾹 누르기/오른쪽 클릭으로 삭제 메뉴, 내가
           // 보낸 것만)을 따른다 — 다만 유산은 "전달"(다시 공유) 대신 삭제만 지원한다.
           if (m.legacy_slot != null) {
-            const key = m.from_uid + "|" + m.legacy_slot;
+            const key = (m.legacy_owner || m.from_uid) + "|" + m.legacy_slot;
             const lp = legacyPreviews[key]; // undefined=로딩중, null=찾을 수 없음, {entry,typeInfo}
             const dx = drag && drag.id === m.id ? drag.dx : 0;
             const d = new Date(m.created_at);
@@ -2226,10 +2231,10 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
 const LEGACY_SLOT_ORDER = ["best", "only", "brilliant", "best2", "only2", "brilliant2"];
 // (사용자 요청) 유산 공유 — 퍼즐 공유(PuzzleShareSheet)와 같은 패턴의 친구 선택 시트. 위쪽에 공유할
 // 유산 미리보기(등급 배지+새겨진 수)를 보여주고, 아래 친구 목록에서 보낼 대상을 고른다.
-export function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }) {
+export function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, ownerUid, zIndex, onClose, onShared }) {
   const color = QCOLOR[typeInfo.kind];
   return (
-    <ShareSheetFrame title={t("유산 공유")} onClose={onClose}>
+    <ShareSheetFrame title={t("유산 공유")} zIndex={zIndex} onClose={onClose}>
       <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)" }}>
         <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
         <div style={{ minWidth: 0 }}>
@@ -2237,7 +2242,7 @@ export function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onS
           <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
         </div>
       </div>
-      <FriendSendList myUid={myUid} send={(toUid) => legacyShareSend(myUid, toUid, slotKey)} onSent={onShared} />
+      <FriendSendList myUid={myUid} send={(toUid) => legacyShareSend(myUid, toUid, slotKey, ownerUid)} onSent={onShared} />
     </ShareSheetFrame>
   );
 }

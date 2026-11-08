@@ -2,6 +2,7 @@
 /** (v0.7.4 재발 방지) 유산 게시물 모델(src/lib/legacyPosts.js): 추가·중복·상한·크기·옛 슬롯 호환·저장함 검증.
  *  실행: node scripts/check-legacy-posts.mjs (prebuild로 자동 실행) */
 import { addPost, removePost, listPosts, findPost, kindOfPost, LEGACY_MAX_POSTS, toggleSaved, isSaved, normalizeSaved, SAVED_MAX } from "../src/lib/legacyPosts.js";
+import { legacyPath, parseLegacyPath } from "../src/lib/legacyPosts.js";
 import { normalizeLegacies } from "../src/lib/legacyEntry.js";
 const fails = [];
 const ok = (c, m) => { if (!c) fails.push(m); };
@@ -43,5 +44,10 @@ ok(toggleSaved([], { owner: "u1", id: "bad key", entry: old.best }).length === 0
 let big = []; for (let i = 0; i < SAVED_MAX + 3; i++) big = toggleSaved(big, { owner: "u" + i, id: "best", entry: old.best }, i);
 ok(big.length === SAVED_MAX && !isSaved(big, "u0", "best"), "저장함은 상한을 넘으면 오래된 것부터 밀려나야 함");
 ok(normalizeSaved([{ owner: "x", id: "BAD", entry: old.best }, { owner: "u", id: "best", entry: old.best, savedAt: 3 }]).length === 1, "불러온 저장함은 검증을 통과한 것만");
+// 공유 링크
+ok(legacyPath("abcde1234", "p1abc") === "/legacy/ABCDE1234-p1abc", "링크 경로는 /legacy/<MID 대문자>-<아이디>");
+{ const q = parseLegacyPath("/legacy/ABCDE1234-p1abc"); ok(q && q.mid === "ABCDE1234" && q.id === "p1abc", "링크를 읽어 mid·아이디로 되돌려야 함");
+  ok(parseLegacyPath("/legacy/abcde1234-best2").id === "best2", "옛 슬롯 키 아이디도 링크로 열려야 함");
+  for (const bad of ["/legacy/", "/legacy/ABCDE1234", "/legacy/ABCD1234-p1", "/legacy/ABCDE1234-P1", "/legacy/ABCDE1234-p1/x", "/user/ABCDE1234-p1"]) ok(parseLegacyPath(bad) === null, "잘못된 링크는 거절: " + bad); }
 if (fails.length) { console.error("✗ legacy-posts check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ legacy-posts check: 게시물 추가·중복·상한(200)·옛 슬롯 호환·저장함 통과");

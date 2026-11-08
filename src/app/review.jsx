@@ -766,21 +766,24 @@ function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLi
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
           )}
-          {/* (v0.7.3) 내 대국에서 등급이 최선·유일·탁월인 내 수는 여기서 바로 프로필 유산으로 남긴다(유산 마법사를 대체). */}
-          {legacyAction && (
-            <button type="button" onClick={legacyAction.onClick} disabled={legacyAction.state === "saved" || legacyAction.state === "full"} className={legacyAction.state === "saved" || legacyAction.state === "full" ? "" : "press"}
-              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: narrow ? "5px 10px" : "7px 12px", borderRadius: 9, cursor: legacyAction.state === "saved" || legacyAction.state === "full" ? "default" : "pointer",
-                border: "1px solid " + (legacyAction.state === "saved" ? "rgba(125,182,138,.6)" : QCOLOR[legacyAction.kind]), background: legacyAction.state === "saved" ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
-                color: legacyAction.state === "saved" ? "#9ED3A8" : RV.text, fontSize: narrow ? 11 : 12, fontWeight: 800 }}>
-              {legacyAction.state === "saved" ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
-              {legacyAction.state === "saved" ? t("유산으로 저장됨") : legacyAction.state === "full" ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : t("유산으로 남기기")}
-            </button>
-          )}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
         <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> {t("보기")}</button>
-        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : t("다음")}</button>
+        {/* (v0.7.4, 사용자 요청) 유산으로 남기기 — 내 대국에서 등급이 최선·유일·탁월인 내 수에서만. 다음 버튼 길이를 줄인 자리(같은 줄)에 둔다. */}
+        {legacyAction && (() => {
+          const st = legacyAction.state, done = st === "saved", full = st === "full", disabled = done || full;
+          return (
+            <button type="button" onClick={legacyAction.onClick} disabled={disabled} className={disabled ? "" : "press"} title={full ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : undefined}
+              style={{ flex: 1, minWidth: 0, marginLeft: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: narrow ? "7px 8px" : "10px 10px", borderRadius: 9, cursor: disabled ? "default" : "pointer", whiteSpace: "nowrap",
+                border: "1px solid " + (done ? "rgba(125,182,138,.6)" : full ? RV.border : QCOLOR[legacyAction.kind]), background: done ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
+                color: done ? "#9ED3A8" : full ? RV.dim : RV.text, fontSize: narrow ? 11.5 : 12.5, fontWeight: 800 }}>
+              {done ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{done ? t("유산으로 저장됨") : full ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : t("유산으로 남기기")}</span>
+            </button>
+          );
+        })()}
+        <button onClick={onNext} className="press" style={{ flex: legacyAction ? "0 0 auto" : 1, minWidth: legacyAction ? (narrow ? 64 : 76) : undefined, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : t("다음")}</button>
       </div>
     </div>
   );

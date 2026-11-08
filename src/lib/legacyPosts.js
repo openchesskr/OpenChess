@@ -83,3 +83,8 @@ export function normalizeSaved(list) {
   }
   return out.sort((a, b) => b.savedAt - a.savedAt);
 }
+
+/* ── 공유 링크: openchess.kr/legacy/<주인 MID>-<게시물 아이디> ── MID는 프로필의 고유 번호(영문 5 + 숫자 4), 게시물 아이디는 위 아이디(p… 또는 옛 슬롯 키). */
+export const LEGACY_LINK_RE = /^\/legacy\/([A-Za-z]{5}[0-9]{4})-([a-z][a-z0-9]{0,23})$/;
+export const legacyPath = (mid, id) => "/legacy/" + String(mid).toUpperCase() + "-" + id;
+export function parseLegacyPath(path) { const m = LEGACY_LINK_RE.exec(path || ""); return m ? { mid: m[1].toUpperCase(), id: m[2] } : null; }

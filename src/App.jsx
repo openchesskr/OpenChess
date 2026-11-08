@@ -23,8 +23,8 @@ import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
 import { ChatsModal, ChatWindow, FriendsModal, ProfileWindow, UserProfilePage, UserSearchModal } from "./app/social.jsx";
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
-import { LegacyActionsCtx } from "./app/legacyFeed.jsx";
-import { addPost, removePost, toggleSaved, normalizeSaved } from "./lib/legacyPosts.js";
+import { LegacyActionsCtx, LegacyPostPage } from "./app/legacyFeed.jsx";
+import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath } from "./lib/legacyPosts.js";
 import { ReviewPage } from "./app/review.jsx";
 import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
 import { AnalysisTab } from "./app/analysis.jsx";
@@ -123,6 +123,7 @@ export default function App() {
   const [boardSkin, setBoardSkin] = useState("classic");
   const [pieceSkin, setPieceSkin] = useState("classic");
   const [profile, setProfile] = useState({ nickname: "", chesscom: "" });
+  const [legacyLink, setLegacyLink] = useState(() => (typeof window !== "undefined" ? parseLegacyPath(window.location.pathname) : null));   // (v0.7.4) 공유 링크 /legacy/<MID>-<아이디>로 연 게시물 페이지
   const [savedLegacies, setSavedLegacies] = useState([]);   // (v0.7.4) 남의 유산 게시물 저장함 — 비공개, 진행 정보(progress)에 저장
   const [loaded, setLoaded] = useState(false);
   const [liveOn, setLiveOn] = useState(true);
@@ -246,6 +247,10 @@ export default function App() {
   const closeUserProfile = useCallback(() => {
     setViewedProfileMid(null); setViewedProfileAutoInvite(false);
     try { if (window.location.pathname.startsWith("/user/")) window.history.back(); } catch { }
+  }, []);
+  const closeLegacyLink = useCallback(() => {
+    setLegacyLink(null);
+    try { if (parseLegacyPath(window.location.pathname)) window.history.replaceState(null, "", "/"); } catch { }
   }, []);
   const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
@@ -1243,6 +1248,7 @@ export default function App() {
       if (!/^\/puzzle\/\d{6}-\d+$/.test(p)) setPuzzleActive(null);
       // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
       // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
+      setLegacyLink(parseLegacyPath(p));
       const userMatch = /^\/user\/([A-Za-z]{5}[0-9]{4})$/.exec(p);
       setViewedProfileMid(userMatch ? userMatch[1].toUpperCase() : null);
       if (!userMatch) setViewedProfileAutoInvite(false);
@@ -1760,6 +1766,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {legacyLink && <LegacyPostPage key={legacyLink.mid + legacyLink.id} mid={legacyLink.mid} id={legacyLink.id} viewerUid={uid} onClose={closeLegacyLink} onOpenProfile={(mid) => { closeLegacyLink(); openUserProfile(mid); }} />}
       {viewedProfileMid && <UserProfilePage mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenTitle={onOpenTitle} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {profileWinOpen && user && (
         <ProfileWindow onClose={() => { setProfileWinOpen(false); popScreen("profile"); }} profile={profile} setProfile={setProfile} user={user} myUid={uid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solved.size}
