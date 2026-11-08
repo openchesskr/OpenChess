@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, useContext, createContext, useLayoutEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Heart, Send, Repeat2, Trash2, X } from "lucide-react";
-import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
+import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import { LegacyPlayer } from "../components/legacyPlayer.jsx";
 import { SITE_URL } from "../lib/siteConfig.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
@@ -60,9 +60,9 @@ function useOwnerMid(ownerUid) {
 }
 const CARD_W = 230;   // 퍼즐 블록(SolvedPuzzlesBlock)과 같은 카드 폭
 const plainBtn = { display: "inline-flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: 0 };
-/* 퍼즐 카드(PuzzleCard)와 같은 디자인: 상아색 카드 · 정사각 미리보기(AnimatedMove — 퍼즐과 같은 보드·기물 비율) · 아래에 이름/날짜 ·
-   좋아요/리포스트 + 공유 버튼. 미리보기는 파란 블록에 금색 기하학 외곽선을 덧씌운다. */
-function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onShare, onRepost, reposted, onDelete, armed }) {
+/* 유산 카드 — 파란 바탕 + 금색 기하학 외곽선 액자. 배치는 퍼즐 카드(PuzzleCard)와 같다: 정사각 미리보기(AnimatedMove — 퍼즐과 같은 보드·기물 비율) ·
+   보드 아래에 생성자명/날짜(따로) · 좋아요/리포스트와 공유 버튼. 퍼즐 블록처럼 한 줄 가로 스크롤(230px)로 놓인다. */
+function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onShare, onRepost, reposted, repostCount, onDelete, armed }) {
   const info = LEGACY_TYPES.find((x) => x.key === kind);
   const wrapRef = useRef(null); const [boardW, setBoardW] = useState(190);
   useLayoutEffect(() => {
@@ -76,36 +76,36 @@ function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onSh
   const san = entry.sans[entry.moveIndex];
   const date = entry.savedAt ? fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" }) : "";
   const stop = (fn) => (e) => { e.stopPropagation(); fn(e); };
+  const mute = "#B9AC8C";
   return (
     <div onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} aria-label={t("{0} (눌러서 재생)", info ? info.label : "")} className="press text-left"
-      style={{ borderRadius: 12, padding: 10, paddingTop: 13, paddingBottom: 12, background: "linear-gradient(180deg," + T.ivoryHi + ",#E2D2B2)", boxShadow: "0 3px 0 #B59A6E", border: "1px solid #CDB98E", cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", boxSizing: "border-box" }}>
-      {onDelete && <button onClick={stop(onDelete)} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ position: "absolute", top: 5, right: 5, zIndex: 10, height: 22, minWidth: 22, padding: armed ? "0 7px" : 0, borderRadius: 7, background: armed ? "#C8453B" : "rgba(40,24,12,.78)", color: "#fff", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, fontWeight: 800 }}><Trash2 size={12} />{armed ? t("삭제") : null}</button>}
-      {/* 파란 블록 + 금색 기하학 외곽선 */}
-      <div style={{ position: "relative", marginBottom: 8 }}>
-        <div style={{ borderRadius: 10, padding: "13px 13px 14px", background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: onDelete ? "0 22px 8px 2px" : "0 2px 8px" }}>
-            <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid " + GOLD }}>{badgeIcon(kind, 17)}</span>
-            <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 13, color: "#F3E7C9", textShadow: "0 1px 0 rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>{legacyMoveLabel(entry)}</span>
-            <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: "#B9AC8C", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{info ? info.label : ""}</span>
-          </div>
-          <div ref={wrapRef} style={{ width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, overflow: "hidden" }}>
-            <AnimatedMove sans={before} san={san} size={boardW} loopMs={2400} flip={entry.side === "b"} badge={kind} />
-          </div>
+      style={{ borderRadius: 14, padding: "12px 12px 12px", background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", boxShadow: "0 8px 18px -10px rgba(0,0,0,.7), 0 3px 0 #070B14", border: "1px solid rgba(212,175,95,.35)", cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", boxSizing: "border-box" }}>
+      {onDelete && <button onClick={stop(onDelete)} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ position: "absolute", top: 8, right: 8, zIndex: 10, height: 22, minWidth: 22, padding: armed ? "0 7px" : 0, borderRadius: 7, background: armed ? "#C8453B" : "rgba(0,0,0,.45)", color: armed ? "#fff" : "#FF8A7A", border: armed ? "none" : "1px solid rgba(255,138,122,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, fontWeight: 800 }}><Trash2 size={12} />{armed ? t("삭제") : null}</button>}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, padding: onDelete ? "0 28px 8px 2px" : "0 2px 8px" }}>
+        <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid " + GOLD }}>{badgeIcon(kind, 19)}</span>
+        <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 14, color: "#F3E7C9", textShadow: "0 1px 0 rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>{legacyMoveLabel(entry)}</span>
+        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{info ? info.label : ""}</span>
+      </div>
+      {/* 금색 기하학 액자 안의 미리보기 */}
+      <div style={{ position: "relative", padding: 12, marginBottom: 8 }}>
+        <LegacyFrame />
+        <div ref={wrapRef} style={{ width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, overflow: "hidden" }}>
+          <AnimatedMove sans={before} san={san} size={boardW} loopMs={2400} flip={entry.side === "b"} badge={kind} />
         </div>
-        <div aria-hidden="true" style={{ position: "absolute", inset: 3, pointerEvents: "none" }}><LegacyFrame /></div>
       </div>
       {/* 생성자명과 날짜 — 따로, 보드 아래 */}
       <div className="flex items-center justify-between" style={{ flexShrink: 0, gap: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{creator || ""}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT, flexShrink: 0 }}>{date}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: "#F3E7C9", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{creator || ""}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: mute, fontFamily: SITE_FONT, flexShrink: 0 }}>{date}</span>
       </div>
       {/* 좋아요·리포스트 / 공유 — 퍼즐 카드와 같은 배치 */}
-      <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 8, gap: 10, flexShrink: 0 }}>
+      <div className="flex items-center justify-between" style={{ marginTop: "auto", paddingTop: 9, gap: 10, flexShrink: 0 }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
           {likeCount !== undefined && (onLike
-            ? <button onClick={stop(onLike)} aria-label={t("좋아요")} aria-pressed={!!liked} className="press" style={plainBtn}><Heart size={16} color={liked ? "#D9534F" : T.inkSoft} fill={liked ? "#D9534F" : "none"} /><span style={{ fontSize: 11.5, fontWeight: 800, color: liked ? "#D9534F" : T.inkSoft }}>{likeCount || 0}</span></button>
-            : <span style={{ ...plainBtn, cursor: "default" }}><Heart size={16} color={T.inkSoft} /><span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{likeCount || 0}</span></span>)}
-          {onRepost && <button onClick={stop(onRepost)} aria-label={t("리포스트")} title={t("리포스트")} aria-pressed={!!reposted} className="press" style={plainBtn}><Repeat2 size={17} color={reposted ? T.brilliant : T.inkSoft} /></button>}
+            ? <button onClick={stop(onLike)} aria-label={t("좋아요")} aria-pressed={!!liked} className="press" style={plainBtn}><Heart size={16} color={liked ? "#E5645F" : mute} fill={liked ? "#E5645F" : "none"} /><span style={{ fontSize: 11.5, fontWeight: 800, color: liked ? "#E5645F" : mute }}>{likeCount || 0}</span></button>
+            : <span style={{ ...plainBtn, cursor: "default" }}><Heart size={16} color={mute} /><span style={{ fontSize: 11.5, fontWeight: 800, color: mute }}>{likeCount || 0}</span></span>)}
+          {onRepost ? <button onClick={stop(onRepost)} aria-label={t("리포스트")} title={t("리포스트")} aria-pressed={!!reposted} className="press" style={plainBtn}><Repeat2 size={17} color={reposted ? "#3FD0BF" : mute} /><span style={{ fontSize: 11.5, fontWeight: 800, color: reposted ? "#3FD0BF" : mute }}>{repostCount || 0}</span></button>
+            : repostCount !== undefined && <span style={{ ...plainBtn, cursor: "default" }}><Repeat2 size={17} color={mute} /><span style={{ fontSize: 11.5, fontWeight: 800, color: mute }}>{repostCount || 0}</span></span>}
         </div>
         {onShare && <button onClick={stop(onShare)} aria-label={t("공유하기")} title={t("공유하기")} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 13px", borderRadius: 8, border: "1px solid " + T.brass, background: T.ebony2, color: T.brass, fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>{tx("{0}공유", <Send size={13} color={T.brass} />)}</button>}
       </div>
@@ -113,6 +113,37 @@ function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onSh
   );
 }
 
+/* 리포스트 수 — 게시물별로 몇 명이 리포스트했는지(서버 legacy_repost_counts). 키는 "주인uid|게시물아이디". 여러 주인의 것을 한 번에 읽는다. */
+async function legacyRepostCounts(ownerUids) {
+  const ids = [...new Set((ownerUids || []).filter(Boolean))].slice(0, 50);
+  if (!SB_ON || !ids.length) return {};
+  try {
+    const rows = await sbSelect("legacy_repost_counts?owner_uid=in.(" + ids.map(encodeURIComponent).join(",") + ")&select=owner_uid,slot_key,reposts");
+    const m = {}; (rows || []).forEach((x) => { m[x.owner_uid + "|" + x.slot_key] = x.reposts; }); return m;
+  } catch { return {}; }
+}
+async function legacyRepostToggle(ownerUid, slotKey) {
+  if (!SB_ON || !ownerUid || !slotKey) return null;
+  try { const r = await sbRpc("legacy_repost_toggle", { p_owner_uid: ownerUid, p_slot_key: slotKey }); const row = Array.isArray(r) ? r[0] : r; return row ? { reposted: !!row.reposted, reposts: row.reposts || 0 } : null; }
+  catch { return null; }
+}
+function useRepostCounts(ownerUids) {
+  const key = [...new Set((ownerUids || []).filter(Boolean))].sort().join(",");
+  const [counts, setCounts] = useState({});
+  useEffect(() => {
+    let off = false;
+    legacyRepostCounts(key ? key.split(",") : []).then((m) => { if (!off) setCounts(m); });
+    return () => { off = true; };
+  }, [key]);
+  return [counts, setCounts];
+}
+/* 리포스트 토글 — 내 리포스트함(로컬 목록)을 바꾸고 서버 집계도 맞춘다. 서버와 어긋나 있었으면 한 번 더 눌러 맞춘다. */
+async function doRepost(ctx, { owner, ownerName, id, entry }, was, setCounts) {
+  ctx.toggleSave({ owner, ownerName, id, entry });
+  let r = await legacyRepostToggle(owner, id);
+  if (r && r.reposted === was) r = await legacyRepostToggle(owner, id);
+  if (r) setCounts((m) => ({ ...m, [owner + "|" + id]: r.reposts }));
+}
 /* 공유 시트 — 주인의 MID를 읽어 공유 링크(openchess.kr/legacy/<MID>-<아이디>)를 함께 보여 준다. */
 function ShareWithLink({ item, viewerUid, zIndex, onClose }) {
   const mid = useOwnerMid(item.owner);
@@ -127,6 +158,7 @@ export default function LegacyFeed({ legacies, ownerUid, ownerName, viewerUid, i
   const reposts = useMemo(() => normalizeSaved(ctx && ctx.saved), [ctx]);
   const [tab, setTab] = useState("posts"), [shown, setShown] = useState(PAGE), [open, setOpen] = useState(null), [sending, setSending] = useState(null), [arm, setArm] = useState(null);
   const { counts, liked: likedSet, toggle: like } = useLegacyLikes(ownerUid, viewerUid);
+  const [rpCounts, setRpCounts] = useRepostCounts([ownerUid, ...reposts.map((r) => r.owner)]);
   useEffect(() => { if (!arm) return undefined; const id = setTimeout(() => setArm(null), 3000); return () => clearTimeout(id); }, [arm]);
   const canRepost = !!(ctx && ctx.toggleSave && viewerUid && !isOwn);
   if (!posts.length && !isOwn) return null;
@@ -149,7 +181,7 @@ export default function LegacyFeed({ legacies, ownerUid, ownerName, viewerUid, i
           {list.slice(0, shown).map((p, i) => tab === "reposts" ? (
             <FadeIn key={p.owner + "|" + p.id} index={i} lift style={cardBox}>
               <PostCard entry={p.entry} kind={p.entry.kind || kindFromId(p.id)} creator={p.ownerName}
-                onOpen={() => setOpen({ kind: p.entry.kind || kindFromId(p.id), entry: p.entry })} onRepost={() => ctx.toggleSave({ owner: p.owner, ownerName: p.ownerName, id: p.id, entry: p.entry })} reposted
+                onOpen={() => setOpen({ kind: p.entry.kind || kindFromId(p.id), entry: p.entry })} onRepost={() => doRepost(ctx, p, true, setRpCounts)} repostCount={rpCounts[p.owner + "|" + p.id] || 0} reposted
                 onShare={viewerUid ? () => setSending({ id: p.id, owner: p.owner, entry: p.entry, kind: p.entry.kind || kindFromId(p.id) }) : null} />
             </FadeIn>
           ) : (
@@ -157,7 +189,7 @@ export default function LegacyFeed({ legacies, ownerUid, ownerName, viewerUid, i
               <PostCard entry={p.entry} kind={p.kind || "best"} creator={ownerName} likeCount={counts[p.id] || 0} liked={likedSet.has(p.id)} onLike={like ? () => like(p.id) : null}
                 onOpen={() => setOpen({ kind: p.kind || "best", entry: p.entry })}
                 onShare={viewerUid ? () => setSending({ id: p.id, owner: ownerUid, entry: p.entry, kind: p.kind || "best" }) : null}
-                onRepost={canRepost ? () => ctx.toggleSave({ owner: ownerUid, ownerName, id: p.id, entry: p.entry }) : null} reposted={canRepost && isSaved(ctx.saved, ownerUid, p.id)}
+                onRepost={canRepost ? () => doRepost(ctx, { owner: ownerUid, ownerName, id: p.id, entry: p.entry }, isSaved(ctx.saved, ownerUid, p.id), setRpCounts) : null} reposted={canRepost && isSaved(ctx.saved, ownerUid, p.id)} repostCount={rpCounts[ownerUid + "|" + p.id] || 0}
                 onDelete={isOwn && ctx && ctx.removeMine ? () => { if (arm === p.id) { ctx.removeMine(p.id); setArm(null); } else setArm(p.id); } : null} armed={arm === p.id} />
             </FadeIn>
           ))}
@@ -195,6 +227,7 @@ export function LegacyPostPage({ mid, id, viewerUid, onClose, onOpenProfile }) {
     return () => { off = true; };
   }, [mid, id]);
   const { counts, liked, toggle } = useLegacyLikes(st.owner, viewerUid);
+  const [rpCounts, setRpCounts] = useRepostCounts([st.owner]);
   const [sending, setSending] = useState(false);
   const isOwn = !!(viewerUid && st.owner && viewerUid === st.owner);
   const canSave = !!(ctx && ctx.toggleSave && viewerUid && !isOwn);
@@ -224,7 +257,8 @@ export function LegacyPostPage({ mid, id, viewerUid, onClose, onOpenProfile }) {
                   : <span style={{ ...actBtn(false), cursor: "default" }}><Heart size={14} />{counts[id] || 0}</span>}
                 <button onClick={() => setSending(true)} aria-label={t("공유하기")} className="press" style={actBtn(false)}><Send size={14} />{t("공유하기")}</button>
                 {/* 링크 복사·친구에게 보내기는 공유 시트에 있다 */}
-                {canSave && <button onClick={() => ctx.toggleSave({ owner: st.owner, ownerName: st.name, id, entry: st.entry })} aria-pressed={isSaved(ctx.saved, st.owner, id)} className="press" style={actBtn(isSaved(ctx.saved, st.owner, id))}><Repeat2 size={14} />{t("리포스트")}</button>}
+                {canSave ? <button onClick={() => doRepost(ctx, { owner: st.owner, ownerName: st.name, id, entry: st.entry }, isSaved(ctx.saved, st.owner, id), setRpCounts)} aria-pressed={isSaved(ctx.saved, st.owner, id)} aria-label={t("리포스트")} className="press" style={actBtn(isSaved(ctx.saved, st.owner, id))}><Repeat2 size={14} />{rpCounts[st.owner + "|" + id] || 0}</button>
+                  : st.owner && <span style={{ ...actBtn(false), cursor: "default" }}><Repeat2 size={14} />{rpCounts[st.owner + "|" + id] || 0}</span>}
               </div>
               {!viewerUid && <p style={{ textAlign: "center", color: "#B9AC8C", fontSize: 12, marginTop: 14 }}>{t("로그인하면 좋아요·리포스트·친구에게 보내기를 할 수 있음")}</p>}
             </>

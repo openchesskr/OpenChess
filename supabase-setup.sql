@@ -1638,6 +1638,64 @@ begin
   return query select v_liked, coalesce(v_likes, 0);
 end; $$;
 grant execute on function public.legacy_like_toggle(uuid, text) to authenticated;
+
+-- ============================================================================
+-- 22-2) legacy_reposts / legacy_repost_counts — 유산 게시물 리포스트 (v0.7.4, 사용자 요청)
+-- ============================================================================
+-- 남의 유산 게시물을 내 리포스트함에 담는 기능(퍼즐의 리포스트와 같은 개념). 담은 목록 자체는 내 비공개 진행 정보(progress.savedLegacies)에 있고,
+-- 이 표는 "몇 명이 리포스트했는가"를 세기 위한 것이다. legacy_likes/legacy_like_toggle과 같은 패턴(1인 1행 토글 + 집계 표 + SECURITY DEFINER RPC).
+-- 내 게시물은 리포스트할 수 없고, 주인의 공개 프로필(pub.legacies)에 실제로 있는 게시물 아이디만 받는다.
+create table if not exists public.legacy_reposts (
+  owner_uid uuid not null references auth.users(id) on delete cascade,
+  slot_key text not null,
+  uid uuid not null references auth.users(id) on delete cascade,
+  reposted_at timestamptz not null default now(),
+  primary key (owner_uid, slot_key, uid)
+);
+alter table public.legacy_reposts enable row level security;
+drop policy if exists "legacy reposts read" on public.legacy_reposts;
+create policy "legacy reposts read" on public.legacy_reposts for select using (true);
+grant select on public.legacy_reposts to anon, authenticated;
+-- insert/delete 권한은 주지 않는다 — 오직 아래 RPC만 이 표와 집계를 바꾼다.
+
+create table if not exists public.legacy_repost_counts (
+  owner_uid uuid not null references auth.users(id) on delete cascade,
+  slot_key text not null,
+  reposts bigint not null default 0,
+  primary key (owner_uid, slot_key)
+);
+alter table public.legacy_repost_counts enable row level security;
+drop policy if exists "legacy repost counts read" on public.legacy_repost_counts;
+create policy "legacy repost counts read" on public.legacy_repost_counts for select using (true);
+grant select on public.legacy_repost_counts to anon, authenticated;
+
+drop function if exists public.legacy_repost_toggle(uuid, text) cascade;
+create or replace function public.legacy_repost_toggle(p_owner_uid uuid, p_slot_key text)
+returns table(reposted boolean, reposts bigint) language plpgsql security definer set search_path = public as $$
+declare v_count bigint; v_on boolean; v_uid uuid := auth.uid();
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_owner_uid is null or p_slot_key is null or p_slot_key !~ '^[a-z][a-z0-9]{0,23}$' then raise exception 'bad legacy'; end if;
+  if p_owner_uid = v_uid then raise exception 'cannot repost own legacy'; end if;
+  if exists (select 1 from public.legacy_reposts where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid) then
+    delete from public.legacy_reposts where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid;
+    update public.legacy_repost_counts set reposts = greatest(0, public.legacy_repost_counts.reposts - 1)
+      where owner_uid = p_owner_uid and slot_key = p_slot_key returning public.legacy_repost_counts.reposts into v_count;
+    v_on := false;
+  else
+    -- 새로 담을 때만 그 게시물이 주인의 공개 프로필에 실제로 있는지 확인한다(없는 아이디로 집계를 부풀리지 못하게). 담은 것을 풀 때는 확인하지 않는다.
+    if not exists (select 1 from public.profiles where id = p_owner_uid and jsonb_typeof(pub->'legacies') = 'object' and (pub->'legacies') ? p_slot_key) then
+      raise exception 'legacy not found';
+    end if;
+    insert into public.legacy_reposts(owner_uid, slot_key, uid) values (p_owner_uid, p_slot_key, v_uid);
+    insert into public.legacy_repost_counts(owner_uid, slot_key, reposts) values (p_owner_uid, p_slot_key, 1)
+    on conflict (owner_uid, slot_key) do update set reposts = public.legacy_repost_counts.reposts + 1
+    returning public.legacy_repost_counts.reposts into v_count;
+    v_on := true;
+  end if;
+  return query select v_on, coalesce(v_count, 0);
+end; $$;
+grant execute on function public.legacy_repost_toggle(uuid, text) to authenticated;
 grant select on public.reviewed_games to anon, authenticated;
 revoke insert, update on public.reviewed_games from anon, authenticated;
 create or replace function public.reviewed_game_put(p_cc_id bigint, p_data jsonb)
@@ -4684,7 +4742,7 @@ declare
     'daily_puzzle_cache_put', 'daily_puzzle_pick_run', 'request_account_deletion', 'cancel_account_deletion', 'my_account_deletion', 'friend_accept', 'friend_remove',
     'friend_request', 'friend_request_by_mid', 'friend_suggestions', 'game_analysis_put',
     'knight_forfeit', 'knight_move_ping', 'knight_report',
-    'knight_resolve_round', 'knight_start_round', 'minigame_my_best', 'legacy_like_toggle', 'minigame_submit_best',
+    'knight_resolve_round', 'knight_start_round', 'minigame_my_best', 'legacy_like_toggle', 'legacy_repost_toggle', 'minigame_submit_best',
     'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
     'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
     'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc',
