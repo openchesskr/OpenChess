@@ -21,6 +21,7 @@ import { pickHighlights } from "../lib/highlights.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
+import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult, reviewedAnalysisFetch, reviewedAnalysisShare, ocAnalysisShare } from "./reviewCache.js";
 import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 // (버그 수정) movetime 없이 "go depth 14"만 보내면 워커 큐의 기본 워치독(15000ms)에 걸릴 때까지
@@ -797,72 +798,6 @@ const RV = {
   table: "rgba(20,12,6,.4)",
   active: "rgba(236,203,134,.18)",
 };
-// 로컬(이 기기·브라우저) 캐시 — sessionStorage(탭 닫으면 사라짐)가 아니라 localStorage(브라우저를
-// 껐다 켜도 남음)를 쓴다, "다시 열 때마다"라는 신고가 새로고침뿐 아니라 다른 날 다시 들어와도
-// 재현되므로. reviewStorageKey와 같은 식별 방식(선수+종료 시각 / id / fenRoot+sans)을 재사용한다.
-function reviewResultStorageKey(game) {
-  const posKey = reviewStorageKey(game);
-  return posKey ? posKey.replace("oc-review-pos:", "oc-review-result:") : null;
-}
-// (v0.3.9 기능) "더 빠르게"/"더 정확하게"(depth 20/25)가 서로 다른 분석 결과를 만들어내므로, 캐시된
-// 결과가 지금 선택된 속도와 다른 depth로 분석된 것이면(예: depth 20으로 캐시돼 있는데 방금 "더
-// 정확하게"로 바꿈) 재사용하지 않고 새로 분석한다 — depth는 저장된 값에 함께 실어(`d`) 대조한다.
-// (포지션 변동성 보정 on/off는 여기 영향을 안 준다 — 분석 자체가 아니라 이미 저장된 손실·날카로움
-// 값을 최종 정확도로 변환하는 단계에서만 갈리므로, 캐시된 원본 그대로 재사용해도 무방하다.)
-function loadCachedReviewResult(storageKey, expectedLen, depth) {
-  if (!storageKey) return null;
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== REVIEW_RESULT_CACHE_VERSION || !parsed.result) return null;
-    if (depth != null && parsed.d !== depth) return null;
-    if (expectedLen != null && (!parsed.result.moves || parsed.result.moves.length !== expectedLen)) return null;
-    return parsed.result;
-  } catch { return null; }
-}
-function saveCachedReviewResult(storageKey, result, depth) {
-  if (!storageKey || !result) return;
-  try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, d: depth, result })); } catch { }
-}
-// (v0.7.4) 성장 분석이 "내 대국"만 골라 쓰도록, 결과 항목에 메타(m)를 덧붙인다 — 내 진영·종료 시각·오프닝·선수·id와 리뷰를 연 쪽(owner). 진영(game.color)이 있는 내 대국 리뷰만 기록한다.
-function touchReviewMeta(storageKey, game) {
-  if (!storageKey || !game || (game.color !== "w" && game.color !== "b")) return;
-  try {
-    const raw = window.localStorage.getItem(storageKey); if (!raw) return;
-    const p = JSON.parse(raw); if (!p || p.v !== REVIEW_RESULT_CACHE_VERSION || !p.result) return;
-    const m = { color: game.color, endTime: game.endTime || null, opening: game.opening || null, white: (game.white && game.white.username) || null, black: (game.black && game.black.username) || null, id: game.id || null, owner: game.username ? String(game.username).toLowerCase() : null };
-    if (JSON.stringify(p.m) === JSON.stringify(m)) return;
-    p.m = m; window.localStorage.setItem(storageKey, JSON.stringify(p));
-  } catch { }
-}
-// chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도
-// 함께 올려 둔다 — 다른 기기·다른 유저가 같은 대국을 리뷰로 열어도 항상 같은 값을 보게 하기 위함
-// (이것도 "재현성" 신고를 해결하는 데 필요하다 — 로컬 캐시만으로는 이 기기에서만 일관될 뿐이다).
-async function reviewedAnalysisFetch(ccId, expectedLen, depth) {
-  if (!SB_ON || !ccId) return null;
-  try {
-    const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=analysis&limit=1");
-    const a = rows && rows[0] ? rows[0].analysis : null;
-    if (!a || a.v !== REVIEW_RESULT_CACHE_VERSION || !a.result) return null;
-    if (depth != null && a.d !== depth) return null;
-    if (expectedLen != null && (!a.result.moves || a.result.moves.length !== expectedLen)) return null;
-    return a.result;
-  } catch { return null; }
-}
-async function reviewedAnalysisShare(ccId, result, depth) {
-  if (!SB_ON || !ccId || !result) return;
-  // (v0.5.7 BUG-023) reviewed_analysis_put RPC로 — 비어 있거나 더 새 버전·더 깊은 분석일 때만 바뀐다.
-  const analysis = { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result };
-  // (v0.7.0 보안 BUG-115) 서버 API(/api/review-put)를 거친다 — 로그인 필요, 호출 제한, 크기·형식 검증.
-  await reviewPut("analysis", ccId, analysis);
-}
-// (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다, 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
-// 내 OpenChess 대국이 아니면(PGN 붙여넣기·남의 대국) 아무 일도 하지 않는다. 실패는 조용히 무시.
-async function ocAnalysisShare(sans, result, depth) {
-  if (!SB_ON || !Array.isArray(sans) || !sans.length || !result) return;
-  try { await sbRpc("game_analysis_put", { p_sans: sans, p_analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
-}
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
 // 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
@@ -2345,11 +2280,6 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     // (카드와 무관한 다른 상태 변화로 리렌더될 때마다) 아바타 URL이 안 바뀌었는데도 카드를 새로
     // 그리게 만든다 — 실제로 값이 바뀔 때만 다시 계산되도록 아바타 URL(원시값)만 deps로 쓴다.
   }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
-  // (v0.7.4) 분석이 끝난 리뷰(캐시·새 분석 모두)에 성장 분석용 메타를 남긴다. 같은 대국을 다시 열어도 같은 값이라 덮어쓰기 없음.
-  useEffect(() => {
-    if (!resultDone || !result || fenRoot) return;
-    touchReviewMeta(resultCacheKey, game);
-  }, [resultDone, result, game, resultCacheKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.6.4) 하이라이트 카드 데이터 — 가장 극적인 수 최대 3개. 깨끗한 대국이면 비어 있어 시트에서 구획을 숨긴다.
   const highlightData = useMemo(() => {
     if (!resultDone || !result || fenRoot || !shareCardData) return null;

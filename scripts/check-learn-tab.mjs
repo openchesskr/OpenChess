@@ -45,14 +45,15 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   const gp = (gr.match(/export function GrowthPanel[\s\S]*$/) || [""])[0];
   if (!gp) fails.push("GrowthPanel을 찾지 못함");
   else {
-    if (!/<GrowthHeader /.test(gp)) fails.push("GrowthPanel: 프로필 헤더(GrowthHeader)가 없음");
-    if (!/<ReviewGate /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 리뷰 5판 게이트(ReviewGate)와 마스터 스타일(MasterStyle)이 필요함");
-    if (gp.indexOf("<GrowthHeader") > gp.indexOf("<ReviewGate")) fails.push("GrowthPanel: 프로필 헤더가 게이트보다 위에 있어야 함");
+    if (!/<ProfileBlock /.test(gp)) fails.push("GrowthPanel: 프로필 크림 블록(ProfileBlock) 안에 모든 구획이 들어가야 함");
+    if (!/<AutoReviewGate /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 자동 분석 게이지(AutoReviewGate)와 마스터 스타일(MasterStyle)이 필요함");
+    if (!/<ProfileBlock[\s\S]*<AutoReviewGate[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
   }
-  const gh = (gr.match(/function GrowthHeader[\s\S]*?\n}\n/) || [""])[0];
-  for (const [re, what] of [[/EquippedTitleFit/, "장착 칭호"], [/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"], [/TierRatingRow/, "티어·퍼즐 레이팅"]]) if (!re.test(gh)) fails.push("GrowthHeader: " + what + " 표시가 없음(/user 상단 정보)");
+  const gh = (gr.match(/function ProfileBlock[\s\S]*?\n}\n/) || [""])[0];
+  for (const [re, what] of [[/EquippedTitleFit/, "장착 칭호"], [/me\.photo/, "프로필 사진"], [/me\.nickname/, "이름"], [/me\.bio/, "소개"], [/#\{mid\}/, "MID"]]) if (!re.test(gh)) fails.push("ProfileBlock: " + what + " 표시가 없음(/user 상단 정보)");
+  if (/TierRatingRow|puzzleRating|TierStatPill/.test(gr)) fails.push("growth.jsx: 성장 분석에는 퍼즐 티어·레이팅을 표시하지 않음");
   if (!/me=\{me\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 내 프로필(me)을 넘기지 않음");
-  if (!/ccName=\{ccName\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 chess.com 아이디(ccName)를 넘기지 않음 — 내 리뷰 판 수를 셀 수 없음");
+  if (!/recent=\{src\.recent\}/.test(tab) || !/engine=\{engine\}/.test(tab)) fails.push("LearnTab: GrowthPanel에 최근 대국(recent)과 엔진(engine)을 넘기지 않음 — 자동 리뷰를 못 함");
   for (const dead of ["WeaknessMap", "ReviewCards", "OpeningMistakes", "GrowthSummary", "GROWTH_SECTIONS"]) if (new RegExp("function " + dead + "\\b").test(gr)) fails.push("growth.jsx: 삭제한 성장 분석 요소(" + dead + ")가 다시 들어옴");
 }
 { // (v0.7.4) 데스크톱 /learn: 화면 높이 2열 대시보드(왼쪽 프로필·일일 퀘스트 정확히 반반, 오른쪽은 최근 대국만), 일일 퀘스트 compact, 최근 대국 박스 확장, 알림 → 학습 탭.

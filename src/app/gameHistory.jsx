@@ -7,7 +7,7 @@ import { drawKindLabel, boardFromSans } from "../lib/chessRules.js";
 import { chessTcCategory } from "../lib/chessRating.js";
 import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
-import { TIME_CLASS_LABEL, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey } from "./common.jsx";
+import { TIME_CLASS_LABEL, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey, useNarrow } from "./common.jsx";
 import { recordAround } from "../lib/ccGameToast.js";
 import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
@@ -379,11 +379,11 @@ export function RecentGamesList({ games, ratingChanges, username, resetKey, onOp
 const BOX_PAGE_SIZE = 8;
 const iconBtnStyle = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 const pillStyle = (strong) => ({ fontSize: 10.5, fontWeight: strong ? 800 : 700, color: strong ? T.ink : T.inkSoft, background: strong ? "rgba(90,58,34,.1)" : "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" });
-function GameBox({ g, rc, username, allGames, onOpenGame, onOpenGameAnalyze, index }) {
+function GameBox({ g, rc, username, allGames, noBoard, onOpenGame, onOpenGameAnalyze, index }) {
   const won = g.result === "win", lost = g.result === "loss";
   const accent = won ? T.best : lost ? T.blunder : T.inkSoft;
   const oppSide = g.color === "w" ? g.black : g.white;
-  const board = useMemo(() => { try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves]);
+  const board = useMemo(() => { if (noBoard) return null; try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves, noBoard]);
   const summary = useMemo(() => cachedReviewSummary(g), [g]);
   const rec = useMemo(() => { try { return g.opening ? recordAround(allGames, g) : null; } catch { return null; } }, [allGames, g]);
   const d = g.endTime ? new Date(g.endTime * 1000) : null;
@@ -403,9 +403,12 @@ function GameBox({ g, rc, username, allGames, onOpenGame, onOpenGameAnalyze, ind
         <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}>{date}</span>
       </div>
       <div className="flex" style={{ gap: 14, padding: "10px 14px 8px 18px", alignItems: "stretch" }}>
-        <div style={{ width: 116, flexShrink: 0, pointerEvents: "none", borderRadius: 6, overflow: "hidden", alignSelf: "flex-start" }}>
-          {board ? <Board board={board} flip={g.color === "b"} size={116} interactive={false} showCoords={false} showEval={false} /> : <div style={{ width: 116, height: 116, background: "rgba(0,0,0,.08)" }} />}
-        </div>
+        {/* (v0.7.4, 사용자 요청) 모바일에서는 체스보드 미리보기를 없앤다 */}
+        {!noBoard && (
+          <div style={{ width: 116, flexShrink: 0, pointerEvents: "none", borderRadius: 6, overflow: "hidden", alignSelf: "flex-start" }}>
+            {board ? <Board board={board} flip={g.color === "b"} size={116} interactive={false} showCoords={false} showEval={false} /> : <div style={{ width: 116, height: 116, background: "rgba(0,0,0,.08)" }} />}
+          </div>
+        )}
         <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs {oppSide && oppSide.username ? oppSide.username : "?"}
             {oppSide && oppSide.rating != null && <span style={{ fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, marginLeft: 5 }}>({oppSide.rating})</span>}</div>
@@ -452,6 +455,7 @@ function GameBox({ g, rc, username, allGames, onOpenGame, onOpenGameAnalyze, ind
 }
 export function RecentGameBoxes({ games, ratingChanges, username, resetKey, onOpenGame, onOpenGameAnalyze }) {
   const [page, setPage] = useState(0);
+  const narrow = useNarrow(720);
   useEffect(() => { setPage(0); }, [resetKey]);
   const all = useMemo(() => [...(games || [])].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)), [games]);
   if (!all.length) return null;
@@ -462,7 +466,7 @@ export function RecentGameBoxes({ games, ratingChanges, username, resetKey, onOp
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{t("최근 대국")}</span><span style={{ fontSize: 11.5, color: "#C9B58C" }}>{tx("{0}판", all.length)}</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 330px), 1fr))", gap: 12 }}>
-        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} allGames={all} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
+        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} allGames={all} noBoard={narrow} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
       </div>
       <ListPager page={cur} setPage={setPage} pageCount={pageCount} />
     </div>

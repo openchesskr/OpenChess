@@ -52,6 +52,45 @@ export const causeAdvice = (k) => ({
   endgame: t("킹 활용과 폰 전진 기본기 연습하기"),
   positional: t("기물 활동성과 폰 구조를 비교해 계획 세우기"),
 }[k] || "");
+/* (v0.7.4, 사용자 요청) "지금 고칠 한 가지" 자세한 설명 — 원인마다 ① 무엇이 문제인가 ② 왜 생기나 ③ 이렇게 고쳐 보기(문장 끝마다 한 단계). 사이트 문구라 개조식. */
+export const causeWhat = (k) => ({
+  allowedMate: t("수를 둔 뒤 상대가 한 수 만에 체크메이트할 수 있는 상황. 한 수로 게임이 끝나 승률이 한꺼번에 무너짐."),
+  hung: t("공격받는 내 기물을 충분히 지키지 않은 채 수를 두어 기물을 그냥 내준 경우."),
+  allowedTactic: t("수를 둔 뒤 상대가 포크나 핀 같은 전술을 걸 수 있게 된 경우. 당장 기물을 잃지 않아도 다음 수에서 손해를 봄."),
+  missedMate: t("한 수로 체크메이트할 수 있었는데 다른 수를 둔 경우."),
+  missedTactic: t("포크나 핀 같은 전술로 이득을 볼 수 있었는데 놓친 경우."),
+  missedWin: t("지켜지지 않은 상대 기물이나 교환 이득이 있었는데 쓰지 않은 경우."),
+  missedCheck: t("체크로 시작하는 강한 수가 있었는데 다른 수를 둬 주도권을 놓친 경우."),
+  opening: t("오프닝에서 중앙 차지, 기물 전개, 킹 안전이라는 기본 원칙을 어긴 수."),
+  endgame: t("엔드게임에서 킹 활용이나 폰 전진 같은 기본기에서 승률이 크게 떨어진 수."),
+  positional: t("눈에 띄는 기물 손실은 없지만 엔진이 더 좋다고 평가한 다른 수가 있던 경우. 기물 활동성이나 폰 구조 같은 장기적 요소에서 손해."),
+}[k] || "");
+export const causeWhy = (k) => ({
+  allowedMate: t("내 수의 목적에만 집중하고 상대의 체크를 끝까지 확인하지 않아서 생김. 킹 주변을 지키던 기물을 움직일 때 특히 자주 생김."),
+  hung: t("내 공격에 집중하느라 상대 반격을 놓치거나, 움직인 기물이 위험한 칸에 놓였는지 확인하지 않아서 생김."),
+  allowedTactic: t("내 기물 둘이 같은 줄이나 상대 나이트·퀸의 공격 범위에 한꺼번에 걸리는 배치를 확인하지 않아서 생김."),
+  missedMate: t("상대 킹 주변에서 가능한 체크를 끝까지 세어 보지 않아서 생김. 기물을 내주는 체크는 특히 눈에 안 띔."),
+  missedTactic: t("내 기물의 공격 범위가 겹치는 칸을 찾지 않고 눈에 보이는 수만 둬서 생김."),
+  missedWin: t("내 계획에만 집중하느라 상대의 마지막 수가 만든 허점을 확인하지 않아서 생김."),
+  missedCheck: t("체크를 먼저 확인하지 않고 조용한 수만 후보에 올려서 생김."),
+  opening: t("외운 수순이 끝난 뒤 다음 수의 목적이 없어서 같은 기물을 반복해 움직이거나 폰만 밀 때 생김."),
+  endgame: t("기물이 줄어든 뒤에도 미들게임처럼 기물만 움직이고 킹을 중심으로 계획하지 않아서 생김."),
+  positional: t("당장 안전해 보이는 수를 고르고 기물이 어디서 가장 활발한지 비교하지 않아서 생김."),
+}[k] || "");
+export const causeFix = (k) => ({
+  allowedMate: t("수를 두기 전에 상대가 둘 수 있는 체크를 모두 세어 보기. 킹 주변 기물을 움직인다면 그 기물이 막고 있던 줄과 대각선부터 확인하기."),
+  hung: t("수를 두기 전에 움직이는 기물과 그 옆 기물이 공격받는지, 지켜지는지 한 번씩 점검하기. 상대의 마지막 수가 무엇을 노리는지 먼저 묻기."),
+  allowedTactic: t("수를 두기 전에 상대 나이트와 퀸이 갈 수 있는 칸에 내 기물이 둘 이상 걸리지 않는지 보기. 같은 줄이나 대각선에 킹과 큰 기물이 나란히 서지 않게 하기."),
+  missedMate: t("상대 킹을 향한 체크를 모두 나열해 보기. 체크마다 상대 킹이 갈 수 있는 칸이 남는지 확인하기."),
+  missedTactic: t("후보를 체크, 기물 잡기, 상대 기물을 공격하는 수 순서로 훑어보기. 나이트와 퀸이 동시에 노릴 수 있는 칸 찾아보기."),
+  missedWin: t("상대가 수를 둘 때마다 방치된 기물이 있는지 먼저 확인하기. 잡을 기물이 있으면 잡은 뒤 상대의 응수까지 따져 보기."),
+  missedCheck: t("모든 수에서 가능한 체크를 먼저 확인하는 습관 들이기. 체크 뒤 이어지는 수를 두 수 앞까지 살펴보기."),
+  opening: t("오프닝에서는 같은 기물을 두 번 움직이지 않고 나이트와 비숍부터 꺼내기. 10수 안에 캐슬링을 마치는 것을 목표로 삼기."),
+  endgame: t("엔드게임에서는 킹을 중앙으로 가져오기. 통과폰을 만들 수 있는지 먼저 확인하고 상대 통과폰은 킹으로 막을 수 있는지 세어 보기."),
+  positional: t("후보를 두세 개 만들고 가장 소극적인 기물이 어디로 가야 좋은지 비교하기. 폰 구조를 약하게 만드는 수는 한 번 더 생각하기."),
+}[k] || "");
+/* 문장 끝(. 또는 。)마다 한 단계로 나눈다 — 번역문도 문장 끝 구두점을 지킨다. */
+export const splitSteps = (text) => String(text || "").split(/(?<=[.。।])\s*/).map((x) => x.trim()).filter(Boolean);
 export const PIECES = ["p", "n", "b", "r", "q", "k"];
 export const pieceLabel = (k) => ({ p: t("폰"), n: t("나이트"), b: t("비숍"), r: t("룩"), q: t("퀸"), k: t("킹") }[k] || k);
 export const ACTIONS = ["capture", "check", "castle", "promotion"];
@@ -178,13 +217,6 @@ export function betterMoves(m) {
   return out;
 }
 
-/* MEC 설명 문장 여러 개를 한 문단으로 — 번역문은 끝 구두점이 없는 경우가 있어, 없으면 언어에 맞는 마침표(한자·가나는 。, 데바나가리는 ।, 그 밖은 .)를 붙여 이어 붙인다. */
-export function joinSentences(list) {
-  return (list || []).map((x) => String(x == null ? "" : x).trim()).filter(Boolean)
-    .map((x) => (/[.!?。！？।]$/.test(x) ? x : x + (/[\u3040-\u30ff\u3400-\u9fff]/.test(x) ? "。" : /[\u0900-\u097F]/.test(x) ? "।" : ".")))
-    .join(" ");
-}
-
 /* 이 원인의 수를 전부 "손실 0·최선"으로 바꿨을 때의 한 판 정확도 — 같은 계산식(accOf)으로 전/후를 비교해 상승폭을 구한다. */
 function accIfFixed(game, cause) {
   const fixed = game.mine.map((x) => (x.bad && x.cause === cause ? { ...x, loss: 0, kind: "best" } : x));
@@ -229,7 +261,14 @@ export function buildGrowth(games, { heavyGames = HEAVY_GAMES } = {}) {
     const diffs = heavy.map((g) => { const a0 = accOf(g.mine), a1 = accIfFixed(g, top.key); return a0 != null && a1 != null ? a1 - a0 : null; }).filter((x) => x != null);
     const detail = {}; for (const m of top.moves) if (m.detail) detail[m.detail] = (detail[m.detail] || 0) + 1;
     const topDetail = Object.entries(detail).sort((a, b) => b[1] - a[1])[0];
-    focus = { cause: top.key, n: top.n, games: top.games, share: top.share, gain: r1(avg(diffs)), detail: topDetail ? topDetail[0] : null, examples: [...top.moves].sort((a, b) => (b.loss || 0) - (a.loss || 0)).slice(0, 2) };
+    const dropOf = (m) => (m.winBefore != null && m.winAfter != null ? Math.max(0, m.winBefore - m.winAfter) : (m.loss || 0));
+    const phaseN = {}; for (const m of top.moves) phaseN[m.phase] = (phaseN[m.phase] || 0) + 1;
+    const topPhase = Object.entries(phaseN).sort((a, b) => b[1] - a[1])[0];
+    const movesTotal = heavy.reduce((s2, g) => s2 + g.mine.filter((x) => x.loss != null).length, 0);
+    const drops = top.moves.filter((m) => m.winBefore != null && m.winAfter != null).map(dropOf);
+    focus = { cause: top.key, n: top.n, games: top.games, share: top.share, gain: r1(avg(diffs)), detail: topDetail ? topDetail[0] : null,
+      avgDrop: drops.length ? r1(avg(drops)) : null, movesTotal, pctOfMoves: movesTotal ? Math.round((100 * top.n) / movesTotal) : null, topPhase: topPhase ? topPhase[0] : null,
+      worst: [...top.moves].sort((a, b) => dropOf(b) - dropOf(a))[0] || null, examples: [...top.moves].sort((a, b) => (b.loss || 0) - (a.loss || 0)).slice(0, 2) };
   }
   // ⑤ 수 유형별(내 모든 수, 같은 판 범위)
   const allMine = heavy.flatMap((g) => g.mine.filter((x) => x.loss != null));   // 수 유형은 원인 분류와 무관해 pending이어도 센다
