@@ -776,8 +776,8 @@ export function UserProfilePage({ docked, embedded, compact, hideRecentGames, on
                 뚝 나타나는 대신 두 축(신원 → 활동)이 순서대로 눈에 들어오게 한다. */}
             <motion.div initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, ease: MOTION_EASE }}
               style={{ width: wide ? 300 : "100%", flexShrink: 0, position: wide ? "sticky" : "static", top: wide ? 78 : undefined }}>
-              {/* (v0.6.9, 사용자 요청) 장착 칭호: 프로필 사진과 왼쪽을 맞추고, 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
-              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
+              {/* (v0.6.9, 사용자 요청) 장착 칭호: (v0.7.4) 사진 오른쪽 이름 열에 맞춰 오른쪽 정렬(왼쪽 끝 = 이름의 왼쪽 끝, indent = 사진 64 + 간격 12), 누르면 도감 업적 화면에서 그 칭호를 흔들어 보여 준다. */}
+              {pub.title && titleDef(pub.title) && <div style={{ marginBottom: 8 }}><EquippedTitleFit id={pub.title} indent={64 + 12} onClick={onOpenTitle ? () => onOpenTitle(pub.title) : undefined} /></div>}
               {/* (사용자 요청) 순위 배지는 삭제했다. */}
               {/* (사용자 요청) 신원 블록(사진+이름) 오른쪽에, 사진과 y좌표를 맞춰(alignItems:flex-start)
                   친구 요청 버튼 영역을 별도 칸으로 오른쪽 정렬한다. */}

@@ -304,7 +304,7 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
       <div aria-hidden style={{ height: 6, background: "linear-gradient(90deg,#8A6C2F,#ECCB86 50%,#8A6C2F)" }} />
       {me && (
         <div style={{ padding: "14px 16px 12px" }}>
-          {hasTitle && <div style={{ marginBottom: 10 }}><EquippedTitleFit id={me.title} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
+          {hasTitle && <div style={{ marginBottom: 10 }}><EquippedTitleFit id={me.title} indent={photo + 14} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
               <span style={{ position: "relative", display: "inline-flex" }}>
