@@ -143,6 +143,11 @@ ok(/matchMasters\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 �
 ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");
 ok(/const peakText = /.test(growth) && !/"Elo " \+/.test(growth), "마스터 레이팅 표기가 모든 언어 공통 \"Peak 2xxx\"가 아님");
 ok(CRITERIA_GROUPS.flatMap((g) => g.keys).length === S.STYLE_KEYS.length && S.STYLE_KEYS.every((k) => CRITERIA_GROUPS.some((g) => g.keys.includes(k))), "기준 표(CRITERIA_GROUPS)가 스타일 특징 13개를 하나도 빠짐없이 한 번씩 담지 않음");
+// (v0.7.4) 마스터 스타일 압축 레이아웃: 묶음 이름은 성장 분석 구간과 같은 "오프닝·미들게임·엔드게임 성향", 세 묶음을 한 격자에 한 줄씩(접이식 아님), 판정은 색 점.
+eq(["open", "mid", "game"].map(S.criterionGroupLabel), ["오프닝 성향", "미들게임 성향", "엔드게임 성향"], "기준 묶음 이름");
+ok(/const phaseRows = /.test(growth) && (growth.match(/className="growth-crit-table"/g) || []).length === 1, "마스터 스타일: 세 묶음을 한 격자(growth-crit-table 하나)에 보여야 함");
+ok(!/openG|toggleG|aria-expanded/.test((growth.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0]), "마스터 스타일: 접이식으로 되돌아감(압축 레이아웃은 모두 펼쳐 한 줄씩)");
+ok(/levelLabel\(r\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(growth), "마스터 스타일: 판정은 색 점(툴팁 판정 문구)과 범례로 보여야 함");
 // 삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록)가 되살아나지 않게 — 새 설계가 확정되기 전에는 넣지 않는다.
 { const all = [review, growth, app, quest, common, rd("src/app/gameHistory.jsx")].join("\n");
   ok(!/lib\/weakness\.js|growthStore|openingMistakes|recordReviewMistakes|WeaknessMap|ReviewCards|OpeningMistakes|occ-growth/.test(all.replace(/occ_growth_v1/g, "")), "삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록) 참조가 다시 생김"); }

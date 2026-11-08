@@ -107,7 +107,8 @@ export const criterionLabel = (key) => ({
   castleQ: t("퀸사이드 캐슬링(캐슬링한 대국 중)"), capRate: t("기물을 잡는 수의 비율"), checkRate: t("체크를 거는 수의 비율"),
   length: t("평균 대국 길이"), queenTrade: t("퀸 교환이 나온 대국"), drawRate: t("무승부 비율"),
 }[key] || key);
-export const criterionGroupLabel = (id) => ({ open: t("오프닝 선택"), mid: t("중반 성향"), game: t("대국 흐름") }[id] || id);
+// (v0.7.4, 사용자 요청) 묶음 이름을 성장 분석의 구간(오프닝·미들게임·엔드게임)과 맞췄다. 엔드게임 성향은 대국 길이·무승부 비율(끝까지 가는 정도)로 본다.
+export const criterionGroupLabel = (id) => ({ open: t("오프닝 성향"), mid: t("미들게임 성향"), game: t("엔드게임 성향") }[id] || id);
 /* 값 표기: 비율은 %, 대국 길이는 평균 수(한 수 = 백·흑 한 쌍; 특징값은 최대 120 plies = 60수 기준으로 0~1). */
 export function formatCriterion(key, v) {
   if (v == null) return "-";

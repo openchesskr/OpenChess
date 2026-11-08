@@ -63,7 +63,6 @@ function MasterStyle({ games }) {
   const [pickedName, setPickedName] = useState(null);   // 사용자가 고른 마스터(null이면 가장 닮은 마스터)
   const [query, setQuery] = useState("");
   const [focus, setFocus] = useState(false);
-  const [openG, setOpenG] = useState(() => new Set([CRITERIA_GROUPS[0] && CRITERIA_GROUPS[0].id]));
   useEffect(() => { let on = true; import("../data/masterStyles.json").then((m) => { if (on) setData(m.default || m); }); return () => { on = false; }; }, []);
   const feat = useMemo(() => styleFeatures((games || []).slice(0, 200).map((g) => ({ moves: g.moves, color: g.color, result: g.result }))), [games]);
   const m = useMemo(() => (data ? matchMasters(feat, data, data.masters.length) : null), [feat, data]);
@@ -78,7 +77,6 @@ function MasterStyle({ games }) {
     return rankMasterMatches(m.list, query, (x) => masterName(x.name, "en"), (x) => x.name, (x) => x.elo);
   }, [query, m]);
   const choose = (x) => { setPickedName(x.name); setQuery(""); setFocus(false); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch { /* ignore */ } };
-  const toggleG = (id) => setOpenG((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   if (!data) return <div style={card}><SectionHead Icon={Users} title={t("마스터 스타일")} /><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>;
   if (!m.ok) return (
     <div style={card}>
@@ -87,93 +85,86 @@ function MasterStyle({ games }) {
     </div>
   );
   const similarN = rows.filter((r) => r.level === "same" || r.level === "close").length, comparable = rows.filter((r) => r.level !== "na").length;
-  const allKeys = CRITERIA_GROUPS.flatMap((g) => g.keys).filter((k) => byKey[k]);
+  // (v0.7.4, 사용자 요청) 압축 레이아웃 — 오프닝·미들게임·엔드게임 성향 세 묶음을 한 격자에 한 줄씩. 판정 알약은 색 점(툴팁에 판정·차이)으로, 히어로·후보·검색은 두 줄로 줄였다.
+  const lastName = masterName(picked.name, "en").split(" ").slice(-1)[0];
+  const phaseRows = CRITERIA_GROUPS.map((gr) => ({ id: gr.id, ks: gr.keys.filter((k) => byKey[k]) })).filter((x) => x.ks.length);
+  const simOf = (ks) => ks.filter((k) => byKey[k].level === "same" || byKey[k].level === "close").length;
+  const dot = (lv, size = 9) => <span aria-hidden style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: LEVEL_COLOR[lv], flexShrink: 0 }} />;
   return (
     <div style={card}>
       <SectionHead Icon={Users} title={t("마스터 스타일")} right={<span style={sub}>{t("최근 {0}판 기준", m.n)}</span>} />
-      <div style={{ borderRadius: 14, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", padding: "14px 14px 12px", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <SimRing pct={Math.round(picked.sim * 100)} />
+      <div style={{ borderRadius: 14, background: "linear-gradient(180deg,#2E1B10,#241509)", border: "1px solid #4A3322", padding: "10px 12px", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <SimRing pct={Math.round(picked.sim * 100)} size={50} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 17, fontWeight: 900, color: T.ivoryHi, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
-            <div style={{ fontSize: 11.5, color: "#CDBA98", marginTop: 3, lineHeight: 1.5 }}>{picked.elo ? peakText(picked.elo) + ", " : ""}{t("{0}판 분석", picked.games)}, {t("일치도 {0}%", Math.round(picked.sim * 100))}</div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.brassHi, marginTop: 3 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
+            <div style={{ fontSize: 11, color: "#CDBA98", marginTop: 2, lineHeight: 1.4 }}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginTop: 1 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 3, marginTop: 12, flexWrap: "wrap" }} aria-hidden>
-          {allKeys.map((k) => <span key={k} title={criterionLabel(k) + ": " + levelLabel(byKey[k].level)} style={{ flex: "1 1 0", minWidth: 6, height: 9, borderRadius: 3, background: LEVEL_COLOR[byKey[k].level] }} />)}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }} aria-hidden>
+          {phaseRows.map((p) => (
+            <div key={p.id} style={{ flex: p.ks.length, display: "flex", gap: 2 }}>
+              {p.ks.map((k) => <span key={k} title={criterionLabel(k) + ": " + levelLabel(byKey[k].level)} style={{ flex: 1, height: 6, borderRadius: 3, background: LEVEL_COLOR[byKey[k].level] }} />)}
+            </div>
+          ))}
         </div>
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      {/* 후보 3명 + 이름 검색(다른 마스터와 비교) — 한 줄 */}
+      <div style={{ display: "flex", gap: 6, alignItems: "stretch", flexWrap: "wrap", marginBottom: 10 }}>
         {top3.map((x, i) => {
           const on = x.name === picked.name;
           return (
-            <button key={x.name} className="press" onClick={() => choose(x)} aria-pressed={on} style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "8px 10px", borderRadius: 11, cursor: "pointer", border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.18)" : "rgba(0,0,0,.025)", fontFamily: SITE_FONT }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 4 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 900, color: i === 0 ? "#8A6C2F" : T.inkSoft }}>{i + 1}</span>
-                <span style={{ fontSize: 13.5, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
-              </div>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en").split(" ").slice(-1)[0]}</div>
+            <button key={x.name} className="press" onClick={() => choose(x)} aria-pressed={on} title={masterName(x.name, "en")} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", borderRadius: 10, cursor: "pointer", border: "1.5px solid " + (on ? T.brass : "#DCCBA8"), background: on ? "rgba(196,154,80,.18)" : "rgba(0,0,0,.025)", fontFamily: SITE_FONT, minWidth: 0 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 900, color: i === 0 ? "#8A6C2F" : T.inkSoft }}>{i + 1}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, maxWidth: 84, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(x.name)} {masterName(x.name, "en").split(" ").slice(-1)[0]}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 900, color: T.ink }}>{Math.round(x.sim * 100)}%</span>
             </button>
           );
         })}
-      </div>
-      {/* 이름을 입력해 다른 마스터를 골라 비교한다. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <div style={{ position: "relative", flex: "1 1 170px", minWidth: 150 }}>
+        <div style={{ position: "relative", flex: "1 1 120px", minWidth: 110 }}>
           <input value={focus ? query : masterName(picked.name, "en")} onChange={(e) => setQuery(e.target.value)} onFocus={() => { setQuery(""); setFocus(true); }} onBlur={() => setTimeout(() => setFocus(false), 150)}
             onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) choose(suggestions[0]); }} aria-label={t("마스터 이름으로 검색")}
-            placeholder={focus ? t("마스터 이름으로 검색") : masterName(picked.name, "en")} style={{ width: "100%", height: 36, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(36,21,9,.92)", color: T.ivoryHi, fontSize: 12, fontFamily: SITE_FONT }} />
+            placeholder={focus ? t("마스터 이름으로 검색") : masterName(picked.name, "en")} style={{ width: "100%", height: 32, boxSizing: "border-box", padding: "0 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(36,21,9,.92)", color: T.ivoryHi, fontSize: 12, fontFamily: SITE_FONT }} />
           {focus && suggestions.length > 0 && (
             <div style={{ ...searchDropStyle, zIndex: 20 }}>
               {suggestions.map((x) => <SearchResultRow key={x.name} tag="master" tagLabel={t("마스터")} flag={masterFlag(x.name)} title={masterName(x.name, "en")} sub={masterInfoLine(x.name)} onClick={() => choose(x)} />)}
             </div>
           )}
         </div>
-        <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{t("와(과) 기준별 비교")}</span>
       </div>
-      {/* 묶음별 접이식 비교. 각 묶음은 한 격자라 숫자 3열은 내용 폭(auto) — 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고 줄마다 정렬된다.
-          판정 알약은 열이 아니라 라벨 아래에 두어, 알약 글자가 긴 언어에서도 칸 밖으로 넘치지 않는다(BUG-071). */}
-      {CRITERIA_GROUPS.map((g) => {
-        const ks = g.keys.filter((k) => byKey[k]); if (!ks.length) return null;
-        const open = openG.has(g.id), sim = ks.filter((k) => byKey[k].level === "same" || byKey[k].level === "close").length;
-        return (
-          <div key={g.id} style={{ borderTop: "1px solid rgba(0,0,0,.08)" }}>
-            <button className="press" onClick={() => toggleG(g.id)} aria-expanded={open} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 2px", background: "none", border: "none", cursor: "pointer", fontFamily: SITE_FONT, textAlign: "left" }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, color: T.ink }}>{criterionGroupLabel(g.id)}</span>
-              <span style={{ display: "inline-flex", gap: 2 }} aria-hidden>{ks.map((k) => <span key={k} style={{ width: 7, height: 7, borderRadius: 2, background: LEVEL_COLOR[byKey[k].level] }} />)}</span>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, flexShrink: 0 }}>{sim}/{ks.length}</span>
-              <span aria-hidden style={{ fontSize: 11, color: T.inkSoft, display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform .2s" }}>▸</span>
-            </button>
-            {open && (
-              <div className="growth-crit-table" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", columnGap: 0, fontSize: 11.5, paddingBottom: 8 }}>
-                <span />
-                <span style={{ ...critHead, textAlign: "right" }}>{t("나")}</span>
-                <span style={{ ...critHead, textAlign: "right", maxWidth: 76, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterName(picked.name, "en").split(" ").slice(-1)[0]}</span>
-                <span style={{ ...critHead, textAlign: "right" }}>{t("차이")}</span>
-                {ks.map((k) => {
-                  const r = byKey[k];
-                  return (
-                    <Fragment key={k}>
-                      <div style={{ ...critCell, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
-                        <span style={{ color: T.ink, fontWeight: 700, lineHeight: 1.3, overflowWrap: "anywhere" }}>{criterionLabel(k)}</span>
-                        <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: LEVEL_COLOR[r.level], borderRadius: 999, padding: "2px 9px", lineHeight: 1.3, maxWidth: "100%", overflowWrap: "anywhere" }}>{levelLabel(r.level)}</span>
-                      </div>
-                      <span style={{ ...critCell, ...critNum, color: T.ink, fontWeight: 800 }} title={t("나")}>{formatCriterion(k, r.mine)}</span>
-                      <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700 }} title={masterName(picked.name, "en")}>{formatCriterion(k, r.theirs)}</span>
-                      <span style={{ ...critCell, ...critNum, color: T.inkSoft, fontWeight: 700, fontSize: 11.5 }}>{formatDiff(k, r.diff)}</span>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {/* 성향 비교 — 한 격자(숫자 열은 내용 폭 auto라 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고 줄마다 정렬됨. BUG-071) */}
+      <div className="growth-crit-table" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", columnGap: 0, alignItems: "center", fontSize: 11.5 }}>
+        <span />
+        <span style={{ ...critHead, padding: 0, paddingLeft: 14, textAlign: "right" }}>{t("나")}</span>
+        <span style={{ ...critHead, padding: 0, paddingLeft: 14, textAlign: "right", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={masterName(picked.name, "en")}>{lastName}</span>
+        <span />
+        {phaseRows.map((p) => (
+          <Fragment key={p.id}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, margin: "8px 0 2px", paddingTop: 6, borderTop: "1px solid rgba(0,0,0,.1)" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{criterionGroupLabel(p.id)}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 900, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 999, padding: "1px 8px" }}>{simOf(p.ks)}/{p.ks.length}</span>
+            </div>
+            {p.ks.map((k) => {
+              const r = byKey[k];
+              return (
+                <Fragment key={k}>
+                  <span style={{ ...critCell, padding: "5px 0", minWidth: 0, color: T.ink, fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={criterionLabel(k)}>{criterionLabel(k)}</span>
+                  <span style={{ ...critCell, padding: "5px 0", ...critNum, paddingLeft: 14, color: T.ink, fontWeight: 800 }}>{formatCriterion(k, r.mine)}</span>
+                  <span style={{ ...critCell, padding: "5px 0", ...critNum, paddingLeft: 14, color: T.inkSoft, fontWeight: 700 }}>{formatCriterion(k, r.theirs)}</span>
+                  <span style={{ ...critCell, padding: "5px 0 5px 14px", display: "flex", justifyContent: "center" }} title={levelLabel(r.level) + (r.diff != null ? " · " + formatDiff(k, r.diff) : "")}>{dot(r.level, 10)}</span>
+                </Fragment>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 10, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }} aria-hidden>
+        {["same", "close", "far", "veryFar"].map((lv) => <span key={lv} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{dot(lv, 8)}{levelLabel(lv)}</span>)}
+      </div>
     </div>
   );
 }
-
 
 /* ── 프로필 헤더 ──
    (v0.7.4, 사용자 요청) /user 페이지 상단에 있던 신원 정보(장착 칭호·프로필 사진·이름·소개·MID·티어/퍼즐 레이팅)를 성장 분석 맨 위에 그대로 가져온다.
