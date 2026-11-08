@@ -1512,3 +1512,12 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **증상**: 학습 탭 개편 뒤에도 소개 페이지의 이미지가 이전 디자인
 - **근본 원인**: 스크린샷이 정적 파일이라 UI 변경과 함께 갱신되지 않음
 - **수정 내용**: 없음(버전 종료 전 갱신 예정)
+
+### BUG-109 · [P3] check-economy-constants가 App.jsx의 줄 번호(150~160)에 묶여 있어 위쪽에 줄이 늘면 오탐
+- **상태**: 수정 완료(v0.7.4)
+- **발견일**: 2026-11-08
+- **위치**: `scripts/check-economy-constants.mjs`
+- **증상**: App.jsx 위쪽에 import·state 몇 줄을 추가하자 "서버 응답(applyEconomy) 밖에서 setTotalXp 호출" 오류로 빌드 중단(실제 코드는 그대로 applyEconomy 안)
+- **근본 원인**: applyEconomy 범위를 줄 번호 상수로 하드코딩
+- **수정 내용**: `const applyEconomy`의 정의 줄부터 닫는 `}, [` 줄까지를 직접 찾아 범위로 사용(못 찾으면 실패로 보고)
+- **검증**: `npm run build` 통과

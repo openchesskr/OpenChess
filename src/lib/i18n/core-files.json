@@ -4,6 +4,7 @@
   "LegalPage.jsx",
   "app/common.jsx",
   "app/dailyQuest.jsx",
+  "app/legacyFeed.jsx",
   "app/dex.jsx",
   "app/dexMasters.jsx",
   "app/growth.jsx",

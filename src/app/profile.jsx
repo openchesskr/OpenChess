@@ -180,21 +180,21 @@ function hexAlpha(hex, a) {
 // (사용자 요청) 유산 블록 좋아요 — puzzle_like_toggle과 완전히 같은 토글 패턴이지만, 유산은 전역
 // 번호가 없어 (등록한 유저 ownerUid, 슬롯 키)로 식별한다. ownerUid의 유산 좋아요 수 전체와, 지금
 // 보는 사람(uid)이 그중 어느 슬롯을 좋아요했는지를 각각 한 번의 조회로 가져온다.
-async function legacyLikeCounts(ownerUid) {
+export async function legacyLikeCounts(ownerUid) {
   if (!SB_ON || !ownerUid) return {};
   try {
     const rows = await sbSelect("legacy_like_counts?owner_uid=eq." + encodeURIComponent(ownerUid) + "&select=slot_key,likes");
     const m = {}; (rows || []).forEach((x) => { m[x.slot_key] = x.likes; }); return m;
   } catch { return {}; }
 }
-async function legacyLikedSlots(ownerUid, uid) {
+export async function legacyLikedSlots(ownerUid, uid) {
   if (!SB_ON || !ownerUid || !uid) return new Set();
   try {
     const rows = await sbSelect("legacy_likes?owner_uid=eq." + encodeURIComponent(ownerUid) + "&uid=eq." + encodeURIComponent(uid) + "&select=slot_key");
     return new Set((rows || []).map((x) => x.slot_key));
   } catch { return new Set(); }
 }
-async function legacyLikeToggle(ownerUid, slotKey, uid) {
+export async function legacyLikeToggle(ownerUid, slotKey, uid) {
   // (보안 수정) 서버(legacy_like_toggle RPC)가 auth.uid()로 행위자를 직접 판별하므로 p_uid는 더 이상
   // 보내지 않는다 — uid 인자는 "로그인 여부"만 클라이언트에서 미리 확인하는 용도로 남겨 둔다.
   if (!SB_ON || !ownerUid || !uid) return null;
@@ -913,139 +913,16 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
     </motion.div>
   );
 }
-// 유산 칸 — 프로필의 "푼 퍼즐" 바로 위에 표시. onManageLegacy가 있으면(=내 프로필) 빈 칸에 추가
-// 버튼·채워진 칸에 편집 버튼이 뜨고, 없으면(=남의 프로필) 채워진 칸만 읽기 전용으로 보여준다
-// (유산이 하나도 없으면 섹션 자체를 감춘다).
-// (사용자 요청) 그랜드마스터 티어(isGM)면 종류(최선/유일/탁월)마다 칸을 하나씩 더(총 6칸) 쓸 수
-// 있다 — 기존 슬롯 키(best/only/brilliant)는 그대로 두고, 추가 슬롯은 "2"를 붙인 별도 키
-// (best2/only2/brilliant2)로 완전히 독립 저장해 기존 데이터 마이그레이션이 필요 없게 했다.
-// (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 세로 한 열에 묶어 보여준다 — 세 종류가
-// 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
-// LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
-function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare, likeCounts, likedSlots, onToggleLike }) {
-  // (v0.7.3) 포지션이 잘 보이도록 3열 대신 칸이 최소 150px인 자동 열(대개 2열)로 크게 — 종류(최선·유일·탁월) 순서는 그대로.
-  // 남의 프로필(onManageLegacy 없음)에서는 채워진 칸만 그린다.
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, padding: "2px 2px 6px" }}>
-      {slots.map(({ slotKey, typeInfo }) => {
-        const bonus = slotKey.endsWith("2");
-        const entry = legacies && legacies[slotKey];
-        if (entry) return (
-          <div key={slotKey}>
-            <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
-              likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
-            {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
-          </div>
-        );
-        return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
-      })}
-    </div>
-  );
-}
-// (사용자 요청) "더보기" — 프로필 카드 인라인 행과 별개로, 그 사용자가 등록해 둔 유산을 종류별로
-// 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면. (사용자 요청) 지워진 유산까지 다시
-// 볼 수 있는 이력(history) — 새로 저장하거나 삭제해서 그 칸에서 밀려난 옛 유산들을 "지난 유산"
-// 섹션에 최신순으로 나열한다(클릭하면 그대로 재생해 볼 수 있다. 편집·복원은 지원하지 않는다).
-function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare, likeCounts, likedSlots, onToggleLike }) {
-  const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
-  const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
-  // (v0.3.4 UI) 채팅·프로필·검색·친구 창(v0.3.2~v0.3.3)과 같은 모바일 전체 화면 패턴을 유산 관련
-  // 모달에도 맞춘다 — 이 창만 빠져 있었다.
-  const narrow = useNarrow(640);
-  return (
-    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("유산 전체 보기")}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
-          <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
-          {histItems.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("지난 유산")}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-                {histItems.map((h) => (
-                  <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
-                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(h.entry)}</div>
-                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? t(", {0} 교체/삭제됨", fmtDateOnly(h.replacedAt, { year: "numeric", month: "2-digit", day: "2-digit" })) : ""}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      <AnimatePresence>
-        {openTarget && <LegacyRevealScreen typeInfo={openTarget.typeInfo} entry={openTarget.entry} onClose={() => setOpenTarget(null)} />}
-      </AnimatePresence>
-    </div>
-  );
-}
-// (사용자 요청) 유산 블록 좋아요 — 프로필 주인(ownerUid)의 유산 슬롯별 좋아요 수와, 지금 보는 사람
-// (viewerUid)이 좋아요했는지를 이 행이 직접 조회·토글해서 아래 LegacyGrid/LegacyAllModal에 물려준다.
-// 퍼즐 좋아요(likedPuzzles/likeCounts/onToggleLike)와 달리 App 최상단 state가 아니라 이 행 스코프의
-// 로컬 state로 두는 이유 — 프로필 주인이 바뀔 때마다(다른 유저 프로필을 열 때마다) 새로 조회해야
-// 하는 값이라, 전역에 계속 들고 있을 이유가 없다.
-function LegacyStoneRow({ legacies: rawLegacies, history: rawHistory, onManageLegacy, isGM, onShareLegacy, ownerUid, viewerUid }) {
-  // (BUG-130) 남의 공개 프로필 값은 누구나 쓸 수 있다 — 검증을 통과한 유산만 화면에 넘긴다(잘못된 칸은 빈 칸).
-  const legacies = useMemo(() => normalizeLegacies(rawLegacies), [rawLegacies]);
-  const history = useMemo(() => normalizeLegacyHistory(rawHistory), [rawHistory]);
-  const [openKey, setOpenKey] = useState(null);
-  const [showAll, setShowAll] = useState(false);
-  const [likeCounts, setLikeCounts] = useState({});
-  const [likedSlots, setLikedSlots] = useState(new Set());
-  const likeInFlightRef = useRef(new Set());
-  useEffect(() => {
-    let cc = false;
-    setLikeCounts({}); setLikedSlots(new Set());
-    if (!ownerUid) return;
-    (async () => {
-      const [counts, liked] = await Promise.all([legacyLikeCounts(ownerUid), legacyLikedSlots(ownerUid, viewerUid)]);
-      if (!cc) { setLikeCounts(counts); setLikedSlots(liked); }
-    })();
-    return () => { cc = true; };
-  }, [ownerUid, viewerUid]);
-  const onToggleLike = viewerUid ? (slotKey) => {
-    if (likeInFlightRef.current.has(slotKey)) return;
-    likeInFlightRef.current.add(slotKey);
-    const wasLiked = likedSlots.has(slotKey);
-    setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.delete(slotKey); else n.add(slotKey); return n; });
-    setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? -1 : 1)) }));
-    legacyLikeToggle(ownerUid, slotKey, viewerUid).then((r) => {
-      if (!r) {
-        setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.add(slotKey); else n.delete(slotKey); return n; });
-        setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? 1 : -1)) }));
-        return;
-      }
-      setLikeCounts((m) => ({ ...m, [slotKey]: r.likes }));
-      setLikedSlots((s) => { if (s.has(slotKey) === r.liked) return s; const n = new Set(s); if (r.liked) n.add(slotKey); else n.delete(slotKey); return n; });
-    }).finally(() => { likeInFlightRef.current.delete(slotKey); });
-  } : null;
-  const slots = useMemo(() => {
-    const out = [];
-    for (const t of LEGACY_TYPES) { out.push({ slotKey: t.key, typeInfo: t }); if (isGM) out.push({ slotKey: t.key + "2", typeInfo: t }); }
-    return out;
-  }, [isGM]);
-  const any = slots.some((s) => legacies && legacies[s.slotKey]) || !!onManageLegacy;
+// (v0.7.4, 사용자 요청) 유산 — 최선·유일·탁월 3칸 슬롯 대신 인스타그램 게시물 같은 피드(legacyFeed.jsx, 최대 200개).
+// 피드는 profile.jsx·social.jsx를 다시 가져오므로 순환 참조를 피하려고 늦게(lazy) 불러온다.
+const LegacyFeedLazy = React.lazy(() => import("./legacyFeed.jsx"));
+function LegacyStoneRow({ legacies, ownerUid, viewerUid, ownerName, isOwn }) {
+  const any = isOwn || (legacies && typeof legacies === "object" && Object.keys(legacies).length > 0);
   if (!any) return null;
-  const openSlot = openKey ? slots.find((s) => s.slotKey === openKey) : null;
-  const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("유산")}</span>
-        {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
-        <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>{tx("더보기 {0}", <ChevronRight size={12} />)}</button>
-      </div>
-      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
-      <AnimatePresence>
-        {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
-      </AnimatePresence>
-      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />}
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("유산")}</div>
+      <React.Suspense fallback={null}><LegacyFeedLazy legacies={legacies} ownerUid={ownerUid} ownerName={ownerName} viewerUid={viewerUid} isOwn={isOwn} flush /></React.Suspense>
     </div>
   );
 }
@@ -1088,7 +965,7 @@ export function PublicProfileStats({ hideRecentGames, pub, onOpenOpening, onOpen
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
       <AchievementDashboard hideRecentGames={hideRecentGames} pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
-      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
+      <LegacyStoneRow legacies={pub.legacies} ownerUid={ownerUid} viewerUid={viewerUid} ownerName={pub.nickname || pub.displayId || ""} isOwn={!!onManageLegacy || (!!ownerUid && ownerUid === viewerUid)} />
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>

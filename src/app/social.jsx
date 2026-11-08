@@ -2226,7 +2226,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
 const LEGACY_SLOT_ORDER = ["best", "only", "brilliant", "best2", "only2", "brilliant2"];
 // (사용자 요청) 유산 공유 — 퍼즐 공유(PuzzleShareSheet)와 같은 패턴의 친구 선택 시트. 위쪽에 공유할
 // 유산 미리보기(등급 배지+새겨진 수)를 보여주고, 아래 친구 목록에서 보낼 대상을 고른다.
-function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }) {
+export function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, onClose, onShared }) {
   const color = QCOLOR[typeInfo.kind];
   return (
     <ShareSheetFrame title={t("유산 공유")} onClose={onClose}>

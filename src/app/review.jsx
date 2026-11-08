@@ -21,6 +21,7 @@ import { pickHighlights } from "../lib/highlights.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
+import { findPost, LEGACY_MAX_POSTS } from "../lib/legacyPosts.js";
 import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult, reviewedAnalysisFetch, reviewedAnalysisShare, ocAnalysisShare } from "./reviewCache.js";
 import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
@@ -767,12 +768,12 @@ function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLi
           )}
           {/* (v0.7.3) 내 대국에서 등급이 최선·유일·탁월인 내 수는 여기서 바로 프로필 유산으로 남긴다(유산 마법사를 대체). */}
           {legacyAction && (
-            <button type="button" onClick={legacyAction.onClick} disabled={legacyAction.state === "saved"} className={legacyAction.state === "saved" ? "" : "press"}
-              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: narrow ? "5px 10px" : "7px 12px", borderRadius: 9, cursor: legacyAction.state === "saved" ? "default" : "pointer",
+            <button type="button" onClick={legacyAction.onClick} disabled={legacyAction.state === "saved" || legacyAction.state === "full"} className={legacyAction.state === "saved" || legacyAction.state === "full" ? "" : "press"}
+              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: narrow ? "5px 10px" : "7px 12px", borderRadius: 9, cursor: legacyAction.state === "saved" || legacyAction.state === "full" ? "default" : "pointer",
                 border: "1px solid " + (legacyAction.state === "saved" ? "rgba(125,182,138,.6)" : QCOLOR[legacyAction.kind]), background: legacyAction.state === "saved" ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
                 color: legacyAction.state === "saved" ? "#9ED3A8" : RV.text, fontSize: narrow ? 11 : 12, fontWeight: 800 }}>
               {legacyAction.state === "saved" ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
-              {legacyAction.state === "saved" ? t("유산으로 저장됨") : legacyAction.state === "confirm" ? t("기존 유산을 교체하려면 한 번 더 누르세요") : t("유산으로 남기기")}
+              {legacyAction.state === "saved" ? t("유산으로 저장됨") : legacyAction.state === "full" ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : t("유산으로 남기기")}
             </button>
           )}
         </div>
@@ -1686,29 +1687,22 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // 선언돼야 해 위 exploreMove state 선언 바로 다음이 아니라 여기(curMove 정의 직후)에 둔다.
   const activeMove = exploring ? exploreMove : curMove;
   // (v0.7.3) 유산 만들기 — 내 대국(game.color 있음)에서 내가 둔, 등급이 최선·유일·탁월인 수만. 자유 탐색 수·FEN 시작 대국은 제외.
-  const [legacyArm, setLegacyArm] = useState(null);
+  // (v0.7.4) 유산은 게시물 — 칸 제한 없이 최대 LEGACY_MAX_POSTS개까지 쌓인다. 같은 수는 "저장됨", 가득 차면 막는다(기존 교체 확인 단계는 없어졌다).
   const legacyAction = useMemo(() => {
     const m = activeMove;
     if (!onSaveLegacy || !myUid || !game.color || fenRoot || exploring || !m || !result) return null;
     if (!["best", "only", "brilliant"].includes(m.kind) || m.ply == null) return null;
     if ((m.ply % 2 === 0) !== (game.color === "w")) return null;
-    const keys = legacyGM ? [m.kind, m.kind + "2"] : [m.kind];
-    const same = (e) => e && e.moveIndex === m.ply && e.sans && e.sans.length === sans.length && e.sans.join(" ") === sans.join(" ");
-    if (keys.some((k) => same(legacies && legacies[k]))) return { kind: m.kind, state: "saved" };
-    const empty = keys.find((k) => !(legacies && legacies[k]));
-    const target = empty || keys.slice().sort((a, b) => ((legacies[a] && legacies[a].savedAt) || 0) - ((legacies[b] && legacies[b].savedAt) || 0))[0];
-    const occupied = !empty;
-    const armed = legacyArm === m.ply;
+    if (findPost(legacies, sans, m.ply)) return { kind: m.kind, state: "saved" };
+    if (legacies && Object.keys(legacies).filter((k) => legacies[k]).length >= LEGACY_MAX_POSTS) return { kind: m.kind, state: "full" };
     return {
-      kind: m.kind, state: occupied && armed ? "confirm" : "ready",
+      kind: m.kind, state: "ready",
       onClick: () => {
-        if (occupied && !armed) { setLegacyArm(m.ply); return; }
         const kinds = sans.map((_, i) => { const mm = result.moves.find((x) => x.ply === i); return mm ? mm.kind : "pending"; });
-        onSaveLegacy(target, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
-        setLegacyArm(null);
+        onSaveLegacy(m.kind, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
       },
     };
-  }, [activeMove, result, legacies, legacyGM, onSaveLegacy, myUid, game.color, fenRoot, exploring, legacyArm, sans]);
+  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, fenRoot, exploring, sans]);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
