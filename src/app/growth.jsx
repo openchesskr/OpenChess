@@ -106,13 +106,13 @@ function MasterStyle({ games }) {
   const dot = (lv, size = 9) => <span aria-hidden style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: LEVEL_COLOR[lv], flexShrink: 0 }} />;
   const val = (k, who) => (byKey[k] ? byKey[k][who] : null);
   const ONE = t("기타"), STACK_COLORS = [T.brass, "#3E7CC4", "#9A8B72"];
-  const stack = (title, segs, ks) => {
-    // segs: [[이름, 키]…] — 마지막에 "기타"(1 − 합)를 붙인다
+  const stack = (title, segs, ks, { other = true } = {}) => {
+    // segs: [[이름, 키 또는 (who) => 값]…] — other(기본 true)면 마지막에 "기타"(1 − 합)를 붙인다. 합이 정확히 1인 구성(킹사이드+퀸사이드)은 other: false.
     const rowOf = (who) => {
-      const vs = segs.map(([, k]) => val(k, who)), ok = vs.every((v) => v != null), sum = vs.reduce((a, v) => a + (v || 0), 0);
-      return ok ? [...vs, Math.max(0, 1 - sum)] : null;
+      const vs = segs.map(([, k]) => (typeof k === "function" ? k(who) : val(k, who))), ok = vs.every((v) => v != null), sum = vs.reduce((a, v) => a + (v || 0), 0);
+      return ok ? (other ? [...vs, Math.max(0, 1 - sum)] : vs) : null;
     };
-    const names = [...segs.map(([nm]) => nm), ONE];
+    const names = other ? [...segs.map(([nm]) => nm), ONE] : segs.map(([nm]) => nm);
     return (
       <div style={{ padding: "5px 0 6px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
@@ -211,6 +211,11 @@ function MasterStyle({ games }) {
               {stack(t("백 첫 수"), [["1.e4", "w_e4"], ["1.d4", "w_d4"]], ["w_e4", "w_d4", "w_flank"])}
               {stack(t("흑 응수: 1.e4에 대해"), [["…e5", "b_e5"], ["…c5", "b_c5"]], ["b_e5", "b_c5"])}
               {stack(t("흑 응수: 1.d4에 대해"), [["…d5", "b_d5"], ["…Nf6", "b_nf6"]], ["b_d5", "b_nf6"])}
+            </>
+          ) : p.id === "mid" ? (
+            <>
+              {p.ks.filter((k) => k !== "castleQ").map((k) => pair(k))}
+              {byKey.castleQ && stack(t("캐슬링 방향(캐슬링한 대국 중)"), [[t("킹사이드"), (who) => (val("castleQ", who) == null ? null : 1 - val("castleQ", who))], [t("퀸사이드"), (who) => val("castleQ", who)]], ["castleQ"], { other: false })}
             </>
           ) : p.ks.map((k) => pair(k))
         ))}

@@ -175,6 +175,7 @@ ok(/const phaseRows = /.test(growth) && (growth.match(/className="growth-style-b
   ok(/stack\(t\("백 첫 수"\)/.test(ms) && /\["1\.e4", "w_e4"\], \["1\.d4", "w_d4"\]/.test(ms), "마스터 스타일: 백 첫 수(1.e4·1.d4·기타) 누적 막대가 없음");
   ok(/흑 응수: 1\.e4에 대해/.test(ms) && /흑 응수: 1\.d4에 대해/.test(ms) && /"b_e5"/.test(ms) && /"b_c5"/.test(ms) && /"b_d5"/.test(ms) && /"b_nf6"/.test(ms), "마스터 스타일: 흑 응수 레퍼토리(1.e4에 …e5·…c5, 1.d4에 …d5·…Nf6) 누적 막대가 없음");
   ok(/\["mine", t\("나"\), true\], \["theirs", lastName, false\]/.test(ms), "마스터 스타일: 누적 막대마다 내 막대 바로 아래에 마스터 막대가 있어야 함");
+  ok(/캐슬링 방향\(캐슬링한 대국 중\)/.test(ms) && /t\("킹사이드"\)/.test(ms) && /t\("퀸사이드"\)/.test(ms) && /other: false/.test(ms) && !/pair\("castleQ"\)/.test(ms), "마스터 스타일: 캐슬링 방향은 킹사이드·퀸사이드 합이 1인 누적 막대 하나(기타 없음)여야 함");
   ok(/retreatStats\(/.test(ms) && /setTimeout\(\(\) => setRetreat/.test(ms), "마스터 스타일: 후퇴 수 비율은 첫 화면을 그린 뒤 이어서 계산해야 함(chess.js 재생이 느림)");
   ok(!/openG|toggleG|aria-expanded/.test(ms), "마스터 스타일: 접이식으로 되돌아감"); }
 eq(S.CRITERIA_GROUPS.find((g) => g.id === "mid").keys.includes("retreatRate"), true, "미들게임 성향에 기물 후퇴 수 비율이 있음");

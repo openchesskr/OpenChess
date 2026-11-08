@@ -2061,6 +2061,7 @@ export default {
   "{0}와(과) 기준별 비교": "Comparación criterio por criterio con {0}",
   "비슷한 기준 {0}/{1}": "Criterios parecidos {0}/{1}",
   "성장 분석": "Análisis de crecimiento",
+  "캐슬링 방향(캐슬링한 대국 중)": "Lado del enroque (entre partidas con enroque)",
   "기물을 후퇴시키는 수의 비율": "Proporción de jugadas que retroceden una pieza",
   "흑 응수: 1.e4에 대해": "Respuestas de las negras a 1.e4",
   "흑 응수: 1.d4에 대해": "Respuestas de las negras a 1.d4",

@@ -2061,6 +2061,7 @@ export default {
   "{0}와(과) 기준별 비교": "Criterion-by-criterion comparison with {0}",
   "비슷한 기준 {0}/{1}": "Similar criteria {0}/{1}",
   "성장 분석": "Growth analysis",
+  "캐슬링 방향(캐슬링한 대국 중)": "Castling side (among games with castling)",
   "기물을 후퇴시키는 수의 비율": "Share of moves that retreat a piece",
   "흑 응수: 1.e4에 대해": "Black replies to 1.e4",
   "흑 응수: 1.d4에 대해": "Black replies to 1.d4",
