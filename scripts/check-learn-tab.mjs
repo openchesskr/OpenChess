@@ -13,21 +13,15 @@ const tab = (learn.match(/export function LearnTab[\s\S]*$/) || [""])[0];
 if (/DailyQuestCard|questNode|dailyQuest/.test(learn)) fails.push("learn.jsx: 일일 퀘스트는 플레이 탭으로 옮겼으므로 학습 탭에 남기지 않음");
 if (!/<LearnFold[^>]*id="lessons"/.test(tab)) fails.push("LearnTab: 레슨은 접어서 유지해야 함");
 if (/<LearnFold[^>]*id="growth"/.test(tab) || !/growthNode=\{growthNode\}/.test(tab) || !/<GrowthPanel /.test(tab)) fails.push("LearnTab: 성장 분석(GrowthPanel)은 접지 않고 프로필 자리(growthNode)에 펼쳐 보여야 함");
-const pager = (learn.match(/function LearnPager[\s\S]*?\n}\n/) || [""])[0];
-if (!pager) fails.push("LearnPager 없음");
-else {
-  if (!/scrollSnapType: "x mandatory"/.test(pager)) fails.push("LearnPager: 가로 스크롤 스냅(scrollSnapType x mandatory)이 없음");
-  if (/role="tab"/.test(pager)) fails.push("LearnPager: 위의 탭 줄(토글)이 다시 생김 — 사용자 요청으로 뺐음(가로 스와이프 2페이지만 유지)");
-  if (!/calc\(100% - \d+px\)/.test(pager)) fails.push("LearnPager: 다음 페이지가 보이는 폭(calc(100% - Npx))이 아님 — 넘길 수 있다는 단서가 사라짐");
-  if (!/옆으로 밀어서 이동/.test(pager)) fails.push("LearnPager: '옆으로 밀어서 이동' 안내가 없음");
-  if (!/idx \+ 1\}\/\{pages\.length\}/.test(pager)) fails.push("LearnPager: 현재 페이지 n/N 표시가 없음");
-}
-{ // (v0.7.4) 최근 대국: 시간 규정은 /play 표기(playTimeText), 필터는 플랫폼 토글 한 줄 + 시간 규정·흑/백 필터 한 줄.
-  const gh = rd("src/app/gameHistory.jsx"), col = (learn.match(/function LearnGamesColumn[\s\S]*?\n}\n/) || [""])[0];
-  if (!/playTimeText\(g\)/.test(gh) || !/timeControlFromKey/.test(gh)) fails.push("GameBox: 시간 규정이 /play 표기(playTimeText·timeControlFromKey)가 아님");
-  if (!/colorFilter/.test(col) || !/\["w", t\("백"\)\], \["b", t\("흑"\)\]/.test(col)) fails.push("LearnGamesColumn: 흑/백 필터가 없음");
-  const iSw = col.indexOf("<StatsViewToggle"), iTime = col.indexOf('["bullet"'), iColor = col.indexOf('["w", t("백")]');
-  if (!(iSw >= 0 && iSw < iTime && iTime < iColor)) fails.push("LearnGamesColumn: 플랫폼 토글(윗줄) → 시간 규정 → 흑/백(같은 아랫줄) 순서가 아님");
+{ // (v0.7.4) 모바일 가로 스와이프 2페이지는 공용 SwipePager 하나(학습 탭 · 플레이 탭이 같은 디자인). 탭 줄·점·n/N 표시는 없다.
+  const pager = rd("src/components/swipePager.jsx"), play = rd("src/app/play.jsx");
+  if (!/export function SwipePager/.test(pager)) fails.push("SwipePager 없음");
+  if (!/scrollSnapType: "x mandatory"/.test(pager)) fails.push("SwipePager: 가로 스크롤 스냅(scrollSnapType x mandatory)이 없음");
+  if (/role="tab"\b/.test(pager) || /idx \+ 1\}\/\{pages\.length\}/.test(pager)) fails.push("SwipePager: 탭 줄/점/n·N 표시가 다시 생김 — 사용자 요청으로 뺐음");
+  if (!/calc\(100% - \d+px\)/.test(pager)) fails.push("SwipePager: 다음 페이지가 보이는 폭(calc(100% - Npx))이 아님 — 넘길 수 있다는 단서가 사라짐");
+  if (!/옆으로 밀어서 이동/.test(pager)) fails.push("SwipePager: '옆으로 밀어서 이동' 안내가 없음");
+  if (/function LearnPager/.test(learn) || !/<SwipePager /.test(learn)) fails.push("learn.jsx: 학습 탭이 공용 SwipePager를 쓰지 않음");
+  if (!/<SwipePager /.test(play) || !/key: "play"/.test(play) || !/key: "quest"/.test(play)) fails.push("play.jsx: 모바일 플레이 탭이 게임·퀘스트 2페이지(SwipePager)가 아님");
 }
 const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
 for (const k of ["growth", "games"]) if (!new RegExp('key: "' + k + '"').test(home)) fails.push("LearnProfileHome: 모바일 페이지 '" + k + "'가 없음");

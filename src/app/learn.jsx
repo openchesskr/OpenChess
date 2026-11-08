@@ -2,7 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { useState, useEffect, useMemo, useRef } from "react";
 import { T, FILES } from "../lib/theme.js";
-import { Check, Lock, Play, Settings, X, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, Swords, ChevronsRight, TrendingUp, ScrollText, User } from "lucide-react";
+import { Check, Lock, Play, Settings, X, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, ScrollText, User } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
@@ -12,13 +12,14 @@ import { PageTitle, Board, CONTENT, CoinIcon, FadeIn, Mascot, isLessonClaimed, l
 
 import { GrowthPanel } from "./growth.jsx";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
-import { isLite, LOOP } from "../lib/perfMode.js";
+import { LOOP } from "../lib/perfMode.js";
 import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import { pickRecentGames } from "../lib/recentGames.js";
 import { t, tx } from "../lib/i18n.js";
+import { SwipePager } from "../components/swipePager.jsx";
 /* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
 // (사용자 요청) 메인 퀘스트(사지선다 챕터 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된 학습
 // 콘텐츠 "레슨"으로 전면 개편 — 레슨은 CONTENT.lessons(seedLessons 참고)에 parent로 서로 연결되어
@@ -952,52 +953,8 @@ function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpen
 }
 // (v0.7.3, 사용자 요청) 모바일에서는 프로필·일일 퀘스트·최근 대국을 가로로 넘기는 3개의 페이지로 보여 준다. 눈에 잘 띄도록: ① 위에 붙는(sticky) 탭 줄(아이콘+이름, 지금 페이지는 금색으로 채워지고
 // 밑줄이 미끄러져 이동) ② 다음 페이지가 오른쪽에 살짝 보이게(peek) 페이지 폭을 줄임 ③ "옆으로 밀어서 이동" 안내 화살표(처음 한 번 넘기면 사라지고 이 기기에 기억) ④ n/N 표시.
-const PAGER_SEEN_KEY = "oc_learn_pager_seen";
-function LearnPager({ pages }) {
-  const scRef = useRef(null), pageRefs = useRef([]);
-  const [idx, setIdx] = useState(0);
-  const [hint, setHint] = useState(() => { try { return window.localStorage.getItem(PAGER_SEEN_KEY) !== "1"; } catch { return true; } });
-  const raf = useRef(0);
-  const onScroll = () => {
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => {
-      const sc = scRef.current; if (!sc) return;
-      const mid = sc.scrollLeft + sc.clientWidth / 2;
-      let best = 0, bd = Infinity;
-      pageRefs.current.forEach((el, i) => { if (!el) return; const d = Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid); if (d < bd) { bd = d; best = i; } });
-      setIdx(best);
-      if (best > 0 || sc.scrollLeft > 24) { setHint(false); try { window.localStorage.setItem(PAGER_SEEN_KEY, "1"); } catch { } }
-    });
-  };
-  useEffect(() => () => cancelAnimationFrame(raf.current), []);
-  const go = (i) => { const el = pageRefs.current[i]; if (el && scRef.current) scRef.current.scrollTo({ left: el.offsetLeft - (scRef.current.clientWidth - el.offsetWidth) / 2, behavior: isLite() ? "auto" : "smooth" }); };
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "center", margin: "0 0 8px" }}>
-        <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 0 }} aria-hidden="true">
-          {pages.map((pg, i) => <motion.span key={pg.key} animate={{ width: i === idx ? 22 : 7, opacity: i === idx ? 1 : 0.45 }} style={{ height: 7, borderRadius: 4, background: T.brassHi, display: "block" }} />)}
-          <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: "#C9B58C", fontFamily: SITE_FONT }}>{idx + 1}/{pages.length}</span>
-        </div>
-      </div>
-      <div style={{ position: "relative" }}>
-        <div ref={scRef} onScroll={onScroll} style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", margin: "0 -18px", padding: "2px 18px 6px", scrollPaddingLeft: 18, alignItems: "flex-start" }}>
-          {pages.map((pg, i) => (
-            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 14px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>{pg.node}</div>
-          ))}
-        </div>
-        {hint && pages.length > 1 && (
-          <motion.div aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-            style={{ position: "absolute", right: 0, top: 96, zIndex: 5, pointerEvents: "none", display: "flex", alignItems: "center", gap: 2, padding: "9px 10px 9px 14px", borderRadius: "999px 0 0 999px", background: "linear-gradient(90deg,rgba(21,12,6,.0),rgba(21,12,6,.92) 35%)", color: T.brassHi, fontSize: 11.5, fontWeight: 900 }}>
-            {t("옆으로 밀어서 이동")}
-            <motion.span animate={{ x: [0, 6, 0] }} transition={{ duration: 1.1, repeat: LOOP(), ease: "easeInOut" }} style={{ display: "flex" }}><ChevronsRight size={18} /></motion.span>
-          </motion.div>
-        )}
-      </div>
-    </div>
-  );
-}
 // (v0.7.3, 사용자 요청) 학습 탭 상단 — 데스크톱: 왼쪽 /user 프로필(대국 목록만 뺀 나머지 전부) · 오른쪽 맨 위 일일 퀘스트 박스, 그 아래 최근 대국 큰 박스. 태블릿: 세로로 쌓기.
-// 모바일: 프로필·일일 퀘스트·최근 대국 3페이지(LearnPager). 프로필은 내 MID로 서버에서 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 프로필 자리에 로그인 안내.
+// 모바일: 프로필·일일 퀘스트·최근 대국 3페이지(SwipePager). 프로필은 내 MID로 서버에서 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 프로필 자리에 로그인 안내.
 function LearnProfileHome({ user, openAuth, ccName, src, onOpenGame, onOpenGameAnalyze, growthNode }) {
   const wideLayout = !useNarrow(1000);
   const mobile = useNarrow(720);
@@ -1014,8 +971,8 @@ function LearnProfileHome({ user, openAuth, ccName, src, onOpenGame, onOpenGameA
   const gamesNode = <LearnGamesColumn view={view} setView={setView} user={user} ccName={ccName} src={src} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} loginCard={loginCard} />;
   if (mobile) {
     // (v0.7.4, 사용자 요청) 일일 퀘스트는 플레이 탭으로 옮겨 갔다 — 성장 분석·최근 대국 2페이지.
-    const pages = [{ key: "growth", label: t("성장 분석"), Icon: TrendingUp, node: growthNode }, { key: "games", label: t("최근 대국"), Icon: Swords, node: gamesNode }].filter((pg) => pg.node);
-    return <LearnPager pages={pages} />;
+    const pages = [{ key: "growth", node: growthNode }, { key: "games", node: gamesNode }].filter((pg) => pg.node);
+    return <SwipePager pages={pages} />;
   }
   if (!wideLayout) {
     return <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{growthNode}{gamesNode}</div>;

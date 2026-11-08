@@ -2,6 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { DailyQuestCard } from "./dailyQuest.jsx";
+import { SwipePager } from "../components/swipePager.jsx";
 import { ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import { CHESS_RATING_CATS, TC_CAT_KEY, TC_KEY_CAT, chessRatingGame, isChessRatingGame } from "../lib/chessRating.js";
 import { Fragment, useMemo, useRef, useEffect, useState, useCallback, useContext, createContext } from "react";
@@ -5395,12 +5396,9 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
   const showQuest = !!(questActive && dailyQuest && step === "setup");
   const closeSetup = () => { if (pvpWaiting) leavePvpQueue(); if (myInvite) cancelFriendInvite(); setSetupOpen(false); };
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
-  return (
-    // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
-    // 일반 대국 부분만 460px로 가운데에 둔다.
-    // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
-    // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
-    <div style={showQuest && !narrow ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
+  // (v0.7.4, 사용자 요청) 모바일에서는 게임과 일일 퀘스트를 학습 탭과 완전히 같은 가로 스와이프 2페이지(SwipePager)로 보여 준다. 데스크톱은 좌우 2열.
+  const pagedPlay = narrow && showQuest;
+  const hubNode = (
       <div style={{ minWidth: 0 }}>
         <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
         {step === "setup" ? (
@@ -5636,11 +5634,19 @@ export function PlayPage({ seed, onClose, engine, onOpenReview, profile, usernam
           <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
       </div>
-      {showQuest && (
-        <div style={{ minWidth: 0, marginTop: narrow ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
+  );
+  const questNode = showQuest ? (
+        <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
           <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
         </div>
-      )}
+  ) : null;
+  return (
+    // (v0.5.5, 사용자 요청) 일반 대국(위, 460px)과 미니게임 목록(아래, 데스크톱에서 크게)을 한 화면에 — 바깥 폭은 넓게 두고
+    // 일반 대국 부분만 460px로 가운데에 둔다.
+    // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
+    // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
+    <div style={showQuest && !narrow ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
+      {pagedPlay ? <SwipePager pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} /> : <>{hubNode}{questNode}</>}
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>

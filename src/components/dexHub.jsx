@@ -1,6 +1,6 @@
 // (v0.6.8) 도감 첫 화면 — 테마(오프닝·마스터·업적·스킨)를 고르는 카드 목록. 설정 탭 카드와 같은 양피지색 카드 + 어두운 아이콘 칩 + 황동 포인트로 사이트 전체와 같은 결로 맞췄다.
 //  카드: 왼쪽 아이콘 칩, 가운데 이름과 수치(해금률·획득 수), 오른쪽 ›, 아래 달성률 게이지. 모바일은 한 줄에 하나, 넓은 화면은 두 줄 격자.
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ChevronRight } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
@@ -32,11 +32,18 @@ function HubCard({ item, onOpen }) {
 
 /** items: [{ key, label, Icon, percent(0~100|null), detail }] */
 export function DexHub({ items, onOpen }) {
+  // (v0.7.4, 사용자 요청) 모바일에서는 "컬렉션" 제목을 없앤다(하단 탭바에 이름이 있음). 다른 탭 상단 제목(PageTitle)과 같은 기준(720px).
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth <= 720);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 720px)"), on = () => setNarrow(mq.matches);
+    on(); mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   return (
     <div style={{ maxWidth: 760, margin: "0 auto" }}>
-      <div style={{ margin: "4px 2px 14px" }}>
+      {!narrow && <div style={{ margin: "4px 2px 14px" }}>
         <span style={{ fontFamily: SITE_FONT, fontSize: 20, fontWeight: 900, color: T.ivoryHi }}>{t("컬렉션")}</span>
-      </div>
+      </div>}
       <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: 12 }}>
         {items.map((it) => <HubCard key={it.key} item={it} onOpen={onOpen} />)}
       </div>
