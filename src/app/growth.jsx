@@ -15,7 +15,6 @@ import { boardFromSans, moveNumber } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { EquippedTitleFit } from "./social.jsx";
-import LegacyFeed from "./legacyFeed.jsx";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import UgcText from "../components/UgcText.jsx";
@@ -798,12 +797,6 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
   const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick });
   const showResults = enough && auto.settled && auto.done >= 1;
   const g = useGrowthData(showResults ? auto.records : []);
-  // 유산 게시물은 분석이 끝나기 전에도 보여 준다(분석과 무관).
-  const legacyNode = uid ? (
-    <ThemeSection id="gp-legacy" no={showResults ? "5" : "1"} title={t("유산")} desc={t("내가 남긴 최선·유일·탁월 수 게시물과 저장한 유산")}>
-      <LegacyFeed legacies={me ? me.legacies : null} ownerUid={uid} ownerName={me ? me.nickname || me.displayId || me.username || "" : ""} viewerUid={uid} isOwn />
-    </ThemeSection>
-  ) : null;
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
       <OpenGameCtx.Provider value={onOpenGame || null}>
@@ -812,13 +805,12 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
           <>
             {gamesLoading && !enough ? <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>
               : <AutoReviewGate phase={enough ? "analyze" : "need"} count={enough ? auto.done : recent.length} need={need} engineStatus={engine ? engine.status : "off"} />}
-            {legacyNode}
           </>
         ) : (
           <>
             {g ? (
               <>
-                <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")], ...(uid ? [["gp-legacy", t("유산")]] : [])]} />
+                <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")]]} />
                 <ThemeSection id="gp-sum" no="1" title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
                   <Overview g={g} onReview={onOpenGameAnalyze} />
                 </ThemeSection>
@@ -836,7 +828,6 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
             <ThemeSection id="gp-style" no="4" title={t("마스터 스타일")} desc={t("내 플레이를 마스터들과 비교")}>
               <MasterStyle games={games} bare />
             </ThemeSection>
-            {legacyNode}
           </>
         )}
       </ProfileBlock>
