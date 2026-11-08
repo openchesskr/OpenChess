@@ -1508,8 +1508,8 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
   const reviewPosKey = useMemo(() => reviewStorageKey(game), [game]);
   const savedPos = useMemo(() => loadReviewPos(reviewPosKey), [reviewPosKey]);
-  // (v0.7.1) 빠른 리뷰는 요약 화면을 건너뛰고 곧장 리뷰 화면(첫 수)으로 들어간다.
-  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || (quick ? "review" : "summary")); // "summary" | "review"
+  // (v0.7.1) 빠른 리뷰는 요약 화면을 건너뛰고 곧장 리뷰 화면(첫 수)으로 들어간다. (v0.7.4) 단 모바일은 정확도 화면이 먼저다.
+  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || (quick && !narrow ? "review" : "summary")); // "summary" | "review" — (v0.7.4) 빠른 리뷰도 모바일에서는 정확도(summary) 화면으로 먼저 들어간다
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [result, setResult] = useState(null);
   // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가

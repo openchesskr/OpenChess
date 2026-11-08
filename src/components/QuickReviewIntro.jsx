@@ -9,6 +9,9 @@ import { t, tx } from "../lib/i18n.js";
 // 연출 없이 곧바로 넘어간다. 애니메이션은 기기의 "애니메이션 줄이기"가 아니라 사이트 설정만 따른다.
 // (v0.7.3) 단계는 분석 진행률이 아니라 시간 기준으로 한 칸씩 넘어간다 — 단계마다 최소 DWELL_MS씩 보여 줘서 분석이 빨리 끝나도 EVALUATE가 안 보이는 일이 없다.
 const DWELL_MS = 700;
+// (v0.7.4, 사용자 요청) 글자(O·P·E·N)가 거의 같은 시간씩 보이게 — 예전엔 분석 진행률(처음 25%가 엔진 준비로 가장 오래 걸림)에 맞춰 O가 대부분의 시간을 쓰고
+// P·E·N이 1초 안에 몰려 지나갔다. 이제 단계 길이는 "예상 전체 시간 ÷ 4"(진행률로 계속 보정, MIN~MAX로 제한)로 정하고, 분석이 먼저 끝나면 남은 글자도 MIN씩 보여 준다.
+const STAGE_MIN_MS = 1150, STAGE_MAX_MS = 6000, STAGE_DEFAULT_TOTAL_MS = 5200;
 // (v0.7.3) 게이지 막대 아래에 단계마다 붙는 이름 — 막대가 차기 시작하면 노이즈에서 풀려 나오고, 글리치 중에는 특수문자가 깜빡인다.
 const GAUGE_LABELS = ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"];
 const WORDS = [
@@ -91,8 +94,7 @@ function GaugeLabel({ text, on, glitch, colors }) {
 
 export default function QuickReviewIntro({ done, gradedCount, total, colors, onDone }) {
   const pct = total ? Math.min(1, gradedCount / total) : 0;
-  const target = done ? 3 : Math.min(3, Math.floor(pct * 4));
-  // 화면에 보이는 단계(shown)는 목표(target)를 향해 한 칸씩, 단계마다 최소 DWELL_MS를 채우고 넘어간다.
+    // 화면에 보이는 단계(shown)는 목표(target)를 향해 한 칸씩, 단계마다 최소 DWELL_MS를 채우고 넘어간다.
   const [shown, setShown] = useState(0);
   const [glitch, setGlitch] = useState(true);
   const [finale, setFinale] = useState(false);
@@ -101,11 +103,18 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
   const mountedAt = useRef(Date.now());
   if (!done) waitedRef.current = true;
 
+  const stageStartRef = useRef(Date.now());
+  useEffect(() => { stageStartRef.current = Date.now(); }, [shown]);
   useEffect(() => {
-    if (shown >= target) return undefined;
-    const id = setTimeout(() => setShown((v) => Math.min(target, v + 1)), DWELL_MS);
+    if (shown >= 3) return undefined;
+    if (shown >= 2 && !done) return undefined;   // EVALUATE는 분석이 끝날 때까지 머문다(NEXT LEVEL은 끝나야 켜짐)
+    const elapsed = Date.now() - mountedAt.current;
+    const est = pct >= 0.08 ? elapsed / pct : Math.max(STAGE_DEFAULT_TOTAL_MS, elapsed * 2.2);   // 아직 진행률이 없으면(엔진 준비 중) 지금까지 걸린 시간에 비례해 단계 길이를 늘린다
+    const len = done ? STAGE_MIN_MS : Math.max(STAGE_MIN_MS, Math.min(STAGE_MAX_MS, est / 4));
+    const remaining = Math.max(0, len - (Date.now() - stageStartRef.current));
+    const id = setTimeout(() => setShown((v) => Math.min(3, v + 1)), remaining);
     return () => clearTimeout(id);
-  }, [shown, target]);
+  }, [shown, pct, done]);
 
   // 단계가 바뀔 때마다 글리치 한 번, 그리고 가끔 불규칙하게 잔글리치.
   useEffect(() => {
@@ -128,8 +137,8 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
   useEffect(() => {
     if (!done || !waitedRef.current || shown < 3) return undefined;
     setFinale(true);
-    const t1 = setTimeout(() => setLeaving(true), DWELL_MS);
-    const t2 = setTimeout(onDone, DWELL_MS + 270);
+    const t1 = setTimeout(() => setLeaving(true), STAGE_MIN_MS);
+    const t2 = setTimeout(onDone, STAGE_MIN_MS + 270);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [done, shown]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -144,15 +153,19 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
       <style>{KEYFRAMES}</style>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,.35) 1px, transparent 1px, transparent 3px)", animation: "qr-scan .5s linear infinite" }} />
       <div style={{ position: "relative", width: "100%", maxWidth: 340, minWidth: 0, textAlign: "center", animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>
-        <GlitchLetters glitch={glitch} lit={lit} colors={colors} />
-        <div data-phase={shown} style={{ marginTop: 20, minHeight: 34 }}>
-          <FitBox>
-            <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: ".06em", whiteSpace: "nowrap", color: colors.brassHi, textShadow: glitch ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : "0 0 14px rgba(196,154,80,.5)" }}>
-              {wordShown}<span style={{ animation: "qr-caret 1s steps(1) infinite", color: colors.brass }}>▌</span>
-            </div>
-          </FitBox>
+        {/* (v0.7.4, 사용자 요청) 단계 단어를 OPEN 글자 위로 옮기고, 이탤릭 얇은 글꼴 대신 크고 굵은 정자체(밝은 아이보리) + 위아래 금색 줄 판 위에 보여 잘 읽히게 한다. */}
+        <div data-phase={shown} style={{ marginBottom: 22 }}>
+          <div style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".3em", color: colors.soft, marginBottom: 8 }}>{"STEP " + String(Math.min(shown, 3) + 1).padStart(2, "0") + " / 04"}</div>
+          <div style={{ borderTop: "1px solid " + colors.brass, borderBottom: "1px solid " + colors.brass, background: "linear-gradient(90deg,transparent,rgba(196,154,80,.14),transparent)", padding: "10px 6px" }}>
+            <FitBox>
+              <div style={{ fontFamily: MONO, fontSize: 38, fontWeight: 900, letterSpacing: ".1em", whiteSpace: "nowrap", color: colors.text, textShadow: glitch ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : "0 0 18px rgba(236,203,134,.55), 0 2px 0 rgba(0,0,0,.7)" }}>
+                {wordShown}<span style={{ animation: "qr-caret 1s steps(1) infinite", color: colors.brassHi }}>▌</span>
+              </div>
+            </FitBox>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 4, margin: "18px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
+        <GlitchLetters glitch={glitch} lit={lit} colors={colors} />
+        <div style={{ display: "flex", gap: 4, margin: "22px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
           {WORDS.map((w, i) => {
             const fill = finale ? 1 : Math.max(0, Math.min(1, pct * 4 - i));
             return (

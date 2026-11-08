@@ -29,7 +29,9 @@ for (const w of ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"]) if (!body.includes(
 if (!/function GaugeLabel/.test(body) || !/useScramble\(text/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: 게이지 이름에 스크램블·특수문자 깜빡임 효과가 필요함");
 if (!/tx\("\{0\} 분석 중 \{1\}"/.test(body)) fails.push("QuickReviewIntro: 하단 '분석 중 n%' 표시가 없음");
 { // 단계가 4개이고 모두 같은 최소 시간을 쓰는지: shown을 한 칸씩만 올린다
-  if (!/setShown\(\(v\) => Math\.min\(target, v \+ 1\)\)/.test(body)) fails.push("QuickReviewIntro: 단계를 한 칸씩 올리지 않음(EVALUATE가 건너뛰어질 수 있음)");
+  if (!/setShown\(\(v\) => Math\.min\(3, v \+ 1\)\)/.test(body)) fails.push("QuickReviewIntro: 단계를 한 칸씩 올리지 않음(EVALUATE가 건너뛰어질 수 있음)");
+  // (v0.7.4) 글자마다 비슷한 시간: 단계 길이는 예상 전체 시간 ÷ 4, 최소 STAGE_MIN_MS — 진행률로 O만 길어지고 PEN이 몰려 지나가던 문제 방지
+  if (!/STAGE_MIN_MS/.test(body) || !/est \/ 4/.test(body) || /Math\.floor\(pct \* 4\)/.test(body)) fails.push("QuickReviewIntro: 글자별 노출 시간이 비슷해야 함(예상 전체 시간 ÷ 4 기준, 진행률 구간 고정 금지)");
 }
 
 const common = rd("src/app/common.jsx");
