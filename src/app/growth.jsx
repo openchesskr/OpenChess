@@ -304,7 +304,6 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
       <div aria-hidden style={{ height: 6, background: "linear-gradient(90deg,#8A6C2F,#ECCB86 50%,#8A6C2F)" }} />
       {me && (
         <div style={{ padding: "14px 16px 12px" }}>
-          {hasTitle && <div style={{ marginBottom: 10 }}><EquippedTitleFit id={me.title} indent={photo + 14} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
               <span style={{ position: "relative", display: "inline-flex" }}>
@@ -316,6 +315,8 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
               {!!mid && <div style={{ fontSize: 9.5, fontWeight: 700, color: T.inkSoft, fontFamily: "ui-monospace,monospace", marginTop: 4 }}>#{mid}</div>}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
+              {/* 장착 칭호 — 이름 바로 위에 붙여(이름 열 안, 왼쪽 끝 = 이름의 왼쪽 끝) 표시한다. */}
+              {hasTitle && <div style={{ marginBottom: 3 }}><EquippedTitleFit id={me.title} onClick={onOpenTitle ? () => onOpenTitle(me.title) : undefined} /></div>}
               <div style={{ fontSize: 19, fontWeight: 800, color: T.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
               <div style={{ fontSize: 12, color: T.ink, marginTop: 3, minHeight: 15, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{me.bio ? <UgcText text={me.bio} kind="bio" inline render={(shown, tg) => <>{tg}{shown}</>} /> : ""}</div>
             </div>
