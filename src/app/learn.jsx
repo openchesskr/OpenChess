@@ -921,11 +921,11 @@ function useRecentSources({ user, uid, chesscom, ccName }) {
   return { ocGames, ccGames, ccReady, ocLoading: rows == null, ccLoading: !!(chesscom && chesscom.status === "loading"), loading, recent };
 }
 function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpenGameAnalyze, loginCard }) {
-  const [timeFilter, setTimeFilter] = useState("all");
-  useEffect(() => { setTimeFilter("all"); }, [view]);
+  const [timeFilter, setTimeFilter] = useState("all"), [colorFilter, setColorFilter] = useState("all");
+  useEffect(() => { setTimeFilter("all"); setColorFilter("all"); }, [view]);
   const { ocGames, ccGames, ccReady } = src;
   const base = view === "oc" ? ocGames : ccGames;
-  const games = useMemo(() => (timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter)), [base, timeFilter]);
+  const games = useMemo(() => base.filter((g) => (timeFilter === "all" || g.timeClass === timeFilter) && (colorFilter === "all" || g.color === colorFilter)), [base, timeFilter, colorFilter]);
   const ratingChanges = useMemo(() => {
     if (view === "oc") { const m = new Map(); games.forEach((g) => { if (g._delta != null) m.set(g, g._delta); }); return m; }
     return ccReady ? computeRatingChanges(ccGames.filter((g) => timeFilter === "all" || g.timeClass === timeFilter)) : new Map();
@@ -935,13 +935,17 @@ function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpen
     <div style={{ minWidth: 0 }}>
       {/* (v0.7.3) 프로필 페이지의 OpenChess / chess.com 토글이 없어져 이 열 맨 위로 옮겼다.
           (v0.7.4, 사용자 요청) "대국 출처" 글자를 없애고, 플랫폼 토글과 시간 규정 토글을 같은 높이(32px)로 한 줄에 둔다. 좁은 화면에서는 줄바꿈 대신 가로로 밀어 본다. */}
+      {/* (v0.7.4, 사용자 요청) 플랫폼 토글은 한 줄 위로 올리고, 아래 줄에 시간 규정 · 흑/백 필터를 같은 디자인(같은 높이)으로 나란히 둔다. 좁은 화면에서는 줄바꿈 대신 가로로 밀어 본다. */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ display: "inline-flex", background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span>
+      </div>
       <div className="learn-games-toggles" style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 8, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
-        <span style={{ display: "inline-flex", flexShrink: 0, background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span>
         <GameFilterPills height={32} options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
+        <GameFilterPills height={32} options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
       </div>
       {view === "oc" && !user ? loginCard : loading ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
         : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>
-        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter + "|" + colorFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         : <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("표시할 대국 없음")}</p>}
     </div>
   );

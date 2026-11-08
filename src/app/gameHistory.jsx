@@ -7,7 +7,7 @@ import { drawKindLabel, boardFromSans } from "../lib/chessRules.js";
 import { chessTcCategory } from "../lib/chessRating.js";
 import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
-import { TIME_CLASS_LABEL, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey, useNarrow } from "./common.jsx";
+import { TIME_CLASS_LABEL, timeControlFromKey, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey, useNarrow } from "./common.jsx";
 import { recordAround } from "../lib/ccGameToast.js";
 import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
@@ -377,6 +377,16 @@ export function RecentGamesList({ games, ratingChanges, username, resetKey, onOp
 // 실수 개수와 가장 많은 유형 ③ 좌하단에 탁월한 수·유일한 수 개수(리뷰한 대국만) ④ 대국 보기·리뷰하기는 기존 사이트의 검색 아이콘 버튼과 연두색 리뷰 아이콘 버튼.
 // games는 chess.com 대국 객체(OpenChess 대국도 profileGameRowToGame으로 같은 모양).
 const BOX_PAGE_SIZE = 8;
+// (v0.7.4, 사용자 요청) 최근 대국의 시간 규정은 /play와 같은 표기("10분, 래피드" · "5분+2초, 블리츠")로 쓴다.
+// chess.com 원본("600", "180+2")과 OpenChess 키("600-0")를 같은 키로 맞춘 뒤 play의 timeControlFromKey 표기를 그대로 쓴다. 해석할 수 없으면(일일 "1/86400" 등) 분류 이름만 보인다.
+export function playTimeText(g) {
+  const cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
+  const m = /^(\d+)(?:[+-](\d+))?$/.exec(String(g.timeControl || ""));
+  if (!m || g.timeClass === "daily") return cls;
+  const sec = parseInt(m[1], 10), inc = parseInt(m[2] || "0", 10);
+  const lab = sec < 60 ? t("{0}초", sec) + (inc ? t("+{0}초", inc) : "") : timeControlFromKey(sec + "-" + inc).label;
+  return cls ? lab + ", " + cls : lab;
+}
 const iconBtnStyle = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 const pillStyle = (strong) => ({ fontSize: 10.5, fontWeight: strong ? 800 : 700, color: strong ? T.ink : T.inkSoft, background: strong ? "rgba(90,58,34,.1)" : "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" });
 function GameBox({ g, rc, username, allGames, noBoard, onOpenGame, onOpenGameAnalyze, index }) {
@@ -423,7 +433,7 @@ function GameBox({ g, rc, username, allGames, noBoard, onOpenGame, onOpenGameAna
             )}
           </div>
           <div className="flex items-center" style={{ gap: 5, flexWrap: "wrap" }}>
-            {g.timeClass && <span style={pillStyle(true)}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.timeControl ? " " + g.timeControl : ""}</span>}
+            {g.timeClass && <span style={pillStyle(true)}>{playTimeText(g)}</span>}
             <span style={pillStyle()}>{tx("{0}수", moveNo)}</span>
             <span style={pillStyle()}>{g.color === "w" ? t("백") : t("흑")}</span>
             {rc == null && g.rating != null && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{g.rating}</span>}

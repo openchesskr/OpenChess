@@ -22,6 +22,13 @@ else {
   if (!/옆으로 밀어서 이동/.test(pager)) fails.push("LearnPager: '옆으로 밀어서 이동' 안내가 없음");
   if (!/idx \+ 1\}\/\{pages\.length\}/.test(pager)) fails.push("LearnPager: 현재 페이지 n/N 표시가 없음");
 }
+{ // (v0.7.4) 최근 대국: 시간 규정은 /play 표기(playTimeText), 필터는 플랫폼 토글 한 줄 + 시간 규정·흑/백 필터 한 줄.
+  const gh = rd("src/app/gameHistory.jsx"), col = (learn.match(/function LearnGamesColumn[\s\S]*?\n}\n/) || [""])[0];
+  if (!/playTimeText\(g\)/.test(gh) || !/timeControlFromKey/.test(gh)) fails.push("GameBox: 시간 규정이 /play 표기(playTimeText·timeControlFromKey)가 아님");
+  if (!/colorFilter/.test(col) || !/\["w", t\("백"\)\], \["b", t\("흑"\)\]/.test(col)) fails.push("LearnGamesColumn: 흑/백 필터가 없음");
+  const iSw = col.indexOf("<StatsViewToggle"), iTime = col.indexOf('["bullet"'), iColor = col.indexOf('["w", t("백")]');
+  if (!(iSw >= 0 && iSw < iTime && iTime < iColor)) fails.push("LearnGamesColumn: 플랫폼 토글(윗줄) → 시간 규정 → 흑/백(같은 아랫줄) 순서가 아님");
+}
 const home = (learn.match(/function LearnProfileHome[\s\S]*?\n}\n/) || [""])[0];
 for (const k of ["growth", "games"]) if (!new RegExp('key: "' + k + '"').test(home)) fails.push("LearnProfileHome: 모바일 페이지 '" + k + "'가 없음");
 if (/key: "quest"/.test(home)) fails.push("LearnProfileHome: 모바일 일일 퀘스트 페이지가 다시 생김");
