@@ -16,7 +16,7 @@ import { TierRatingRow } from "./profile.jsx";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import UgcText from "../components/UgcText.jsx";
-import { styleFeatures, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
+import { styleFeatures, retreatStats, RETREAT_GAMES_APP, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
@@ -64,7 +64,17 @@ function MasterStyle({ games }) {
   const [query, setQuery] = useState("");
   const [focus, setFocus] = useState(false);
   useEffect(() => { let on = true; import("../data/masterStyles.json").then((m) => { if (on) setData(m.default || m); }); return () => { on = false; }; }, []);
-  const feat = useMemo(() => styleFeatures((games || []).slice(0, 200).map((g) => ({ moves: g.moves, color: g.color, result: g.result }))), [games]);
+  const styleGames = useMemo(() => (games || []).slice(0, 200).map((g) => ({ moves: g.moves, color: g.color, result: g.result })), [games]);
+  const feat0 = useMemo(() => styleFeatures(styleGames), [styleGames]);
+  // 후퇴 수 비율은 chess.js로 수순을 재생해야 해서(수당 약 90µs) 첫 화면을 먼저 그린 뒤 이어서 계산해 채운다.
+  const [retreat, setRetreat] = useState(null);
+  useEffect(() => {
+    setRetreat(null);
+    if (!styleGames.length) return undefined;
+    const id = setTimeout(() => setRetreat(retreatStats(styleGames, RETREAT_GAMES_APP)), 60);
+    return () => clearTimeout(id);
+  }, [styleGames]);
+  const feat = useMemo(() => { if (!retreat) return feat0; const vec = feat0.vec.slice(), den = feat0.den.slice(); vec[13] = retreat.rate; den[13] = retreat.den; return { ...feat0, vec, den }; }, [feat0, retreat]);
   const m = useMemo(() => (data ? matchMasters(feat, data, data.masters.length) : null), [feat, data]);
   const top3 = m && m.ok ? m.list.slice(0, 3) : [];
   const picked = m && m.ok ? (m.list.find((x) => x.name === pickedName) || m.list[0]) : null;
@@ -85,11 +95,79 @@ function MasterStyle({ games }) {
     </div>
   );
   const similarN = rows.filter((r) => r.level === "same" || r.level === "close").length, comparable = rows.filter((r) => r.level !== "na").length;
-  // (v0.7.4, 사용자 요청) 압축 레이아웃 — 오프닝·미들게임·엔드게임 성향 세 묶음을 한 격자에 한 줄씩. 판정 알약은 색 점(툴팁에 판정·차이)으로, 히어로·후보·검색은 두 줄로 줄였다.
+  // (v0.7.4, 사용자 요청) 막대 그래프 레이아웃 — 백 첫 수(1.e4·1.d4·기타)와 흑 응수 레퍼토리는 비율을 채운 누적 막대 바로 아래에 같은 마스터의 막대를 붙여 견주고,
+  // 미들게임·엔드게임 성향은 한 줄에 "나 / 마스터" 막대 한 쌍. 판정(거의 같음~많이 다름)은 줄 끝의 색 점(툴팁에 판정·차이)과 하단 범례.
   const lastName = masterName(picked.name, "en").split(" ").slice(-1)[0];
   const phaseRows = CRITERIA_GROUPS.map((gr) => ({ id: gr.id, ks: gr.keys.filter((k) => byKey[k]) })).filter((x) => x.ks.length);
   const simOf = (ks) => ks.filter((k) => byKey[k].level === "same" || byKey[k].level === "close").length;
+  const levelsOf = (ks) => ks.map((k) => byKey[k]).filter((r) => r && r.level !== "na");
+  const worstLevel = (ks) => { const ls = levelsOf(ks); if (!ls.length) return "na"; return ["veryFar", "far", "close", "same"].find((lv) => ls.some((r) => r.level === lv)); };
+  const levelTip = (ks) => levelLabel(worstLevel(ks));
   const dot = (lv, size = 9) => <span aria-hidden style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: LEVEL_COLOR[lv], flexShrink: 0 }} />;
+  const val = (k, who) => (byKey[k] ? byKey[k][who] : null);
+  const ONE = t("기타"), STACK_COLORS = [T.brass, "#3E7CC4", "#9A8B72"];
+  const stack = (title, segs, ks) => {
+    // segs: [[이름, 키]…] — 마지막에 "기타"(1 − 합)를 붙인다
+    const rowOf = (who) => {
+      const vs = segs.map(([, k]) => val(k, who)), ok = vs.every((v) => v != null), sum = vs.reduce((a, v) => a + (v || 0), 0);
+      return ok ? [...vs, Math.max(0, 1 - sum)] : null;
+    };
+    const names = [...segs.map(([nm]) => nm), ONE];
+    return (
+      <div style={{ padding: "5px 0 6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{title}</span>
+          <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>
+            {names.map((nm, i) => <span key={nm + i} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: STACK_COLORS[i] }} />{nm}</span>)}
+          </span>
+          <span style={{ marginLeft: "auto" }} title={levelTip(ks)}>{dot(worstLevel(ks), 10)}</span>
+        </div>
+        {[["mine", t("나"), true], ["theirs", lastName, false]].map(([who, who_label, me]) => {
+          const r = rowOf(who);
+          return (
+            <div key={who} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: me ? 0 : 2 }}>
+              <span style={{ width: 52, flexShrink: 0, fontSize: 10.5, fontWeight: 800, color: me ? T.ink : T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={who_label}>{who_label}</span>
+              <div style={{ flex: 1, minWidth: 0, height: 16, borderRadius: 5, overflow: "hidden", display: "flex", background: "rgba(0,0,0,.07)", opacity: me ? 1 : 0.85 }}>
+                {r ? r.map((v, i) => v > 0.0005 && (
+                  <div key={i} title={names[i] + " " + Math.round(v * 100) + "%"} style={{ flex: v, minWidth: 2, background: STACK_COLORS[i], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: i === 2 ? "#fff" : "#241509", whiteSpace: "nowrap", overflow: "hidden" }}>{v >= 0.12 ? Math.round(v * 100) + "%" : ""}</div>
+                )) : <span style={{ fontSize: 10.5, color: T.inkSoft, margin: "auto" }}>–</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+  // 한 기준 = 한 줄: 왼쪽 이름, 가운데 "나 / 마스터" 막대 한 쌍(그 줄 안에서 큰 값 기준 길이), 오른쪽 판정 점
+  const pair = (k) => {
+    const a = val(k, "mine"), b = val(k, "theirs"), top = Math.max(a || 0, b || 0, 0.001) * 1.25;
+    const bar = (v, color, who_label) => (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0, height: 7, borderRadius: 4, background: "rgba(0,0,0,.08)", overflow: "hidden" }} title={who_label}>{v != null && <div style={{ width: Math.max(2, (v / top) * 100) + "%", height: "100%", background: color, borderRadius: 4, transition: "width .5s ease" }} />}</div>
+        <span style={{ width: 54, flexShrink: 0, textAlign: "right", fontSize: 10.5, fontWeight: 800, color: color === T.brass ? T.ink : T.inkSoft, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatCriterion(k, v)}</span>
+      </div>
+    );
+    return (
+      <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: "1px solid rgba(0,0,0,.06)" }}>
+        <span style={{ flex: "0 0 40%", minWidth: 0, fontSize: 11.5, fontWeight: 700, color: T.ink, lineHeight: 1.3 }} title={criterionLabel(k)}>{criterionLabel(k)}</span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>{bar(a, T.brass, t("나"))}{bar(b, "#9A8B72", lastName)}</div>
+        <span title={levelLabel(byKey[k].level) + (byKey[k].diff != null ? " · " + formatDiff(k, byKey[k].diff) : "")} style={{ flexShrink: 0 }}>{dot(byKey[k].level, 10)}</span>
+      </div>
+    );
+  };
+  const section = (p, body) => (
+    <div key={p.id} style={{ marginTop: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0 2px", borderTop: "1px solid rgba(0,0,0,.1)" }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{criterionGroupLabel(p.id)}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 900, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 999, padding: "1px 8px" }}>{simOf(p.ks)}/{p.ks.length}</span>
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span aria-hidden style={{ width: 10, height: 5, borderRadius: 2, background: T.brass }} />{t("나")}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><span aria-hidden style={{ width: 10, height: 5, borderRadius: 2, background: "#9A8B72" }} />{lastName}</span>
+        </span>
+      </div>
+      {body}
+    </div>
+  );
   return (
     <div style={card}>
       <SectionHead Icon={Users} title={t("마스터 스타일")} right={<span style={sub}>{t("최근 {0}판 기준", m.n)}</span>} />
@@ -102,16 +180,9 @@ function MasterStyle({ games }) {
             <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginTop: 1 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }} aria-hidden>
-          {phaseRows.map((p) => (
-            <div key={p.id} style={{ flex: p.ks.length, display: "flex", gap: 2 }}>
-              {p.ks.map((k) => <span key={k} title={criterionLabel(k) + ": " + levelLabel(byKey[k].level)} style={{ flex: 1, height: 6, borderRadius: 3, background: LEVEL_COLOR[byKey[k].level] }} />)}
-            </div>
-          ))}
-        </div>
       </div>
       {/* 후보 3명 + 이름 검색(다른 마스터와 비교) — 한 줄 */}
-      <div style={{ display: "flex", gap: 6, alignItems: "stretch", flexWrap: "wrap", marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "stretch", flexWrap: "wrap", marginBottom: 8 }}>
         {top3.map((x, i) => {
           const on = x.name === picked.name;
           return (
@@ -133,30 +204,15 @@ function MasterStyle({ games }) {
           )}
         </div>
       </div>
-      {/* 성향 비교 — 한 격자(숫자 열은 내용 폭 auto라 어떤 언어의 값 표기("1.2×"·"±16pp"·"1.2倍")도 안 잘리고 줄마다 정렬됨. BUG-071) */}
-      <div className="growth-crit-table" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto auto", columnGap: 0, alignItems: "center", fontSize: 11.5 }}>
-        <span />
-        <span style={{ ...critHead, padding: 0, paddingLeft: 14, textAlign: "right" }}>{t("나")}</span>
-        <span style={{ ...critHead, padding: 0, paddingLeft: 14, textAlign: "right", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={masterName(picked.name, "en")}>{lastName}</span>
-        <span />
-        {phaseRows.map((p) => (
-          <Fragment key={p.id}>
-            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, margin: "8px 0 2px", paddingTop: 6, borderTop: "1px solid rgba(0,0,0,.1)" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{criterionGroupLabel(p.id)}</span>
-              <span style={{ fontSize: 10.5, fontWeight: 900, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 999, padding: "1px 8px" }}>{simOf(p.ks)}/{p.ks.length}</span>
-            </div>
-            {p.ks.map((k) => {
-              const r = byKey[k];
-              return (
-                <Fragment key={k}>
-                  <span style={{ ...critCell, padding: "5px 0", minWidth: 0, color: T.ink, fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={criterionLabel(k)}>{criterionLabel(k)}</span>
-                  <span style={{ ...critCell, padding: "5px 0", ...critNum, paddingLeft: 14, color: T.ink, fontWeight: 800 }}>{formatCriterion(k, r.mine)}</span>
-                  <span style={{ ...critCell, padding: "5px 0", ...critNum, paddingLeft: 14, color: T.inkSoft, fontWeight: 700 }}>{formatCriterion(k, r.theirs)}</span>
-                  <span style={{ ...critCell, padding: "5px 0 5px 14px", display: "flex", justifyContent: "center" }} title={levelLabel(r.level) + (r.diff != null ? " · " + formatDiff(k, r.diff) : "")}>{dot(r.level, 10)}</span>
-                </Fragment>
-              );
-            })}
-          </Fragment>
+      <div className="growth-style-bars">
+        {phaseRows.map((p) => section(p,
+          p.id === "open" ? (
+            <>
+              {stack(t("백 첫 수"), [["1.e4", "w_e4"], ["1.d4", "w_d4"]], ["w_e4", "w_d4", "w_flank"])}
+              {stack(t("흑 응수: 1.e4에 대해"), [["…e5", "b_e5"], ["…c5", "b_c5"]], ["b_e5", "b_c5"])}
+              {stack(t("흑 응수: 1.d4에 대해"), [["…d5", "b_d5"], ["…Nf6", "b_nf6"]], ["b_d5", "b_nf6"])}
+            </>
+          ) : p.ks.map((k) => pair(k))
         ))}
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 10, fontSize: 10.5, fontWeight: 700, color: T.inkSoft }} aria-hidden>

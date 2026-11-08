@@ -52,7 +52,7 @@ for (const f of core) {
 const growth = read("app/growth.jsx");
 const layoutFails = [];
 for (const m of growth.matchAll(/gridTemplateColumns:\s*"([^"]*)"/g)) if (!/repeat\(/.test(m[1]) && /\b\d+px\b/.test(m[1])) layoutFails.push("app/growth.jsx: 고정 px 열 \"" + m[1] + "\" — 언어에 따라 문구가 넘친다(auto 또는 minmax(0,1fr) 사용)");
-if (!/className="growth-crit-table"/.test(growth)) layoutFails.push("app/growth.jsx: 기준별 비교 표(growth-crit-table)가 없음");
+if (!/className="growth-style-bars"/.test(growth)) layoutFails.push("app/growth.jsx: 마스터 비교 막대 그래프(growth-style-bars)가 없음");
 fails.push(...layoutFails);
 
 if (update) {

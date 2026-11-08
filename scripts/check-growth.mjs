@@ -100,10 +100,10 @@ const f = S.styleFeatures([G(["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf
 eq([f.vec[0], f.vec[1], f.vec[3], f.vec[5], f.vec[12], f.vec[7]], [1, 0, null, 1, 1 / 3, 1], "특징: 백 e4 비율·백 d4·흑 e5(분모 없으면 null)·흑 …d5·무승부·퀸사이드 캐슬링");
 const data = JSON.parse(readFileSync(new URL("../src/data/masterStyles.json", import.meta.url), "utf8"));
 eq(data.keys, S.STYLE_KEYS, "마스터 데이터의 특징 순서가 앱과 같음");
-ok(data.masters.length >= 150 && data.masters.every((m) => m[3].length === 13), "마스터 데이터: 150명 이상, 특징 13개");
+ok(data.masters.length >= 150 && data.masters.every((m) => m[3].length === 14), "마스터 데이터: 150명 이상, 특징 14개(후퇴 수 비율 포함)");
 eq(S.matchMasters(f, data).ok, false, "표본(15판) 미만이면 매칭하지 않는다");
 // 가짜 마스터("Twin")의 벡터를 그대로 내 특징으로 만들면 그 마스터가 1등이어야 한다
-const twin = data.masters[7], fake = { vec: twin[3].slice(), den: new Array(13).fill(1e6), n: 40 };
+const twin = data.masters[7], fake = { vec: twin[3].slice(), den: new Array(14).fill(1e6), n: 40 };
 const mm = S.matchMasters(fake, data, 3);
 ok(mm.ok && mm.list[0].name === twin[0], "같은 성향이면 그 마스터가 가장 가깝다: " + (mm.list[0] && mm.list[0].name) + " vs " + twin[0]);
 ok(mm.list[0].sim > mm.list[2].sim, "닮은 정도가 순서대로 줄어든다");
@@ -120,9 +120,34 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
   eq([S.formatDiff("w_e4", 0.44), S.formatDiff("checkRate", 1.286), S.formatDiff("length", 1.6), S.formatDiff("w_e4", null)], ["±44%p", "1.3배", "1.6배", "-"], "차이 표기");
   ok(S.STYLE_KEYS.every((k) => S.CRITERION_KIND[k]), "모든 기준에 판정 방식(share·intensity·length)이 있다");
   const rowsSame = S.compareCriteria(twin[3], twin[3]);
-  ok(rowsSame.length === 13 && rowsSame.every((r) => r.level === "same" || r.level === "na"), "같은 벡터는 모든 기준이 거의 같음");
+  ok(rowsSame.length === 14 && rowsSame.every((r) => r.level === "same" || r.level === "na"), "같은 벡터는 모든 기준이 거의 같음");
   ok(S.STYLE_KEYS.every((k) => S.criterionLabel(k) && S.criterionLabel(k) !== k), "모든 기준에 이름이 있다");
   eq([S.formatCriterion("w_e4", 0.456), S.formatCriterion("length", 0.7), S.formatCriterion("drawRate", null)], ["46%", "약 42수", "-"], "값 표기(비율·평균 수·없음)");
+}
+// 후퇴 수 비율(14번째)은 표시·비교 전용 — 닮은꼴 순위에 영향을 주지 않는다(마스터끼리 표준편차 0.007이라 거리를 지배함)
+{
+  const twin2 = data.masters[7], base = { vec: twin2[3].slice(), den: new Array(14).fill(1e6), n: 40 };
+  const extreme = { vec: twin2[3].map((v, i) => (i === 13 ? 0.9 : v)), den: new Array(14).fill(1e6), n: 40 };
+  const r0 = S.matchMasters(base, data, 5), r1 = S.matchMasters(extreme, data, 5);
+  eq(r1.list.map((x) => x.name), r0.list.map((x) => x.name), "후퇴 수 비율이 극단이어도 닮은꼴 순위는 그대로");
+  ok(Math.abs(r1.list[0].dist - r0.list[0].dist) < 1e-9, "후퇴 수 비율은 거리 계산에 들어가지 않는다");
+  const cmp = S.compareCriteria(r1.u, twin2[3]).find((r) => r.key === "retreatRate");
+  ok(cmp && cmp.level !== "same", "하지만 기준별 비교에는 나온다(극단값이면 같음이 아님)");
+}
+// ── ③-b 후퇴 수 비율 ──
+{
+  const wg = { color: "w", moves: "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7".split(" ") };         // 백 5수 중 Bb5→a4 한 번이 후퇴(폰·캐슬링 제외)
+  const bg = { color: "b", moves: "e4 e5 Nf3 Nc6 Bb5 Nf6 O-O Nb8".split(" ") };                // 흑 4수 중 Nc6→b8 한 번이 후퇴(…e5·…Nf6은 전진)
+  eq(S.retreatStats([wg], 10), { rate: 0.2, den: 5 }, "백 후퇴 수 비율: 5수 중 Ba4 1번");
+  eq(S.retreatStats([bg], 10), { rate: 0.25, den: 4 }, "흑 후퇴 수 비율: 4수 중 Nb8 1번(흑은 숫자가 커지는 쪽이 후퇴)");
+  eq(S.retreatStats([wg, wg, wg], 2).den, 10, "maxGames만큼의 대국만 센다(앞쪽부터)");
+  eq(S.retreatStats([], 10), { rate: null, den: 0 }, "대국이 없으면 비율 없음");
+  eq(S.retreatStats([{ color: "w", moves: ["e4", "zz9", "Nf3", "Nc6", "Bb5", "a6"] }], 10).den, 1, "해석 불가한 수에서 그 판을 멈춘다(throw 안 함)");
+  eq(S.retreatStats([{ color: "w", moves: ["e4", "e5"] }], 10).den, 0, "6플라이 미만 대국은 건너뜀");
+  const f0 = S.styleFeatures([wg]), f1 = S.styleFeatures([wg], { retreatGames: 5 });
+  eq([f0.vec.length, f0.den.length, f0.vec[13]], [14, 14, null], "특징 14개, 후퇴 수 비율은 기본 계산하지 않음");
+  eq([f1.vec[13], f1.den[13]], [0.2, 5], "retreatGames를 주면 후퇴 수 비율이 vec[13]에 들어감");
+  eq(S.STYLE_KEYS[13], "retreatRate", "14번째 기준은 retreatRate");
 }
 // ── ④ 연결 ──
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
@@ -145,9 +170,15 @@ ok(/const peakText = /.test(growth) && !/"Elo " \+/.test(growth), "마스터 레
 ok(CRITERIA_GROUPS.flatMap((g) => g.keys).length === S.STYLE_KEYS.length && S.STYLE_KEYS.every((k) => CRITERIA_GROUPS.some((g) => g.keys.includes(k))), "기준 표(CRITERIA_GROUPS)가 스타일 특징 13개를 하나도 빠짐없이 한 번씩 담지 않음");
 // (v0.7.4) 마스터 스타일 압축 레이아웃: 묶음 이름은 성장 분석 구간과 같은 "오프닝·미들게임·엔드게임 성향", 세 묶음을 한 격자에 한 줄씩(접이식 아님), 판정은 색 점.
 eq(["open", "mid", "game"].map(S.criterionGroupLabel), ["오프닝 성향", "미들게임 성향", "엔드게임 성향"], "기준 묶음 이름");
-ok(/const phaseRows = /.test(growth) && (growth.match(/className="growth-crit-table"/g) || []).length === 1, "마스터 스타일: 세 묶음을 한 격자(growth-crit-table 하나)에 보여야 함");
-ok(!/openG|toggleG|aria-expanded/.test((growth.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0]), "마스터 스타일: 접이식으로 되돌아감(압축 레이아웃은 모두 펼쳐 한 줄씩)");
-ok(/levelLabel\(r\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(growth), "마스터 스타일: 판정은 색 점(툴팁 판정 문구)과 범례로 보여야 함");
+ok(/const phaseRows = /.test(growth) && (growth.match(/className="growth-style-bars"/g) || []).length === 1 && !/growth-crit-table/.test(growth), "마스터 스타일: 막대 그래프(growth-style-bars 하나)로 보여야 함(표로 되돌아감)");
+{ const ms = (growth.match(/function MasterStyle[\s\S]*?\n}\n/) || [""])[0];
+  ok(/stack\(t\("백 첫 수"\)/.test(ms) && /\["1\.e4", "w_e4"\], \["1\.d4", "w_d4"\]/.test(ms), "마스터 스타일: 백 첫 수(1.e4·1.d4·기타) 누적 막대가 없음");
+  ok(/흑 응수: 1\.e4에 대해/.test(ms) && /흑 응수: 1\.d4에 대해/.test(ms) && /"b_e5"/.test(ms) && /"b_c5"/.test(ms) && /"b_d5"/.test(ms) && /"b_nf6"/.test(ms), "마스터 스타일: 흑 응수 레퍼토리(1.e4에 …e5·…c5, 1.d4에 …d5·…Nf6) 누적 막대가 없음");
+  ok(/\["mine", t\("나"\), true\], \["theirs", lastName, false\]/.test(ms), "마스터 스타일: 누적 막대마다 내 막대 바로 아래에 마스터 막대가 있어야 함");
+  ok(/retreatStats\(/.test(ms) && /setTimeout\(\(\) => setRetreat/.test(ms), "마스터 스타일: 후퇴 수 비율은 첫 화면을 그린 뒤 이어서 계산해야 함(chess.js 재생이 느림)");
+  ok(!/openG|toggleG|aria-expanded/.test(ms), "마스터 스타일: 접이식으로 되돌아감"); }
+eq(S.CRITERIA_GROUPS.find((g) => g.id === "mid").keys.includes("retreatRate"), true, "미들게임 성향에 기물 후퇴 수 비율이 있음");
+ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(growth), "마스터 스타일: 판정은 색 점(툴팁 판정 문구)과 범례로 보여야 함");
 // 삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록)가 되살아나지 않게 — 새 설계가 확정되기 전에는 넣지 않는다.
 { const all = [review, growth, app, quest, common, rd("src/app/gameHistory.jsx")].join("\n");
   ok(!/lib\/weakness\.js|growthStore|openingMistakes|recordReviewMistakes|WeaknessMap|ReviewCards|OpeningMistakes|occ-growth/.test(all.replace(/occ_growth_v1/g, "")), "삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록) 참조가 다시 생김"); }
