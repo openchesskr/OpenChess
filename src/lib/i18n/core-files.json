@@ -19,6 +19,7 @@
   "app/social.jsx",
   "components/legacyPlayer.jsx",
   "components/dexHub.jsx",
+  "components/tierJourney.jsx",
   "components/DockWindows.jsx",
   "components/Dropdown.jsx",
   "components/UgcText.jsx",

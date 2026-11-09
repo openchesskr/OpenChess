@@ -17,6 +17,7 @@ import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tier
 import { createPortal } from "react-dom";
 import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import TierJourney from "../components/tierJourney.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
 import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
@@ -791,21 +792,6 @@ function useSettledInView(delay = 130) {
   return { settled, onViewportEnter: () => commit(true), onViewportLeave: () => commit(false) };
 }
 // 여정 지도 연결선 하나 — pathLength/opacity를 whileInView 대신 위 훅으로 디바운스된 animate로 몬다.
-function TierPathLine({ x1, y1, x2, y2, lineStyle, glow, transition, amount = 0.6 }) {
-  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
-  const hidden = { pathLength: 0, opacity: 0 };
-  const shown = { pathLength: 1, opacity: 1 };
-  return (
-    <motion.line x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
-      initial={hidden}
-      animate={settled ? shown : hidden}
-      viewport={{ once: false, amount }}
-      onViewportEnter={onViewportEnter}
-      onViewportLeave={onViewportLeave}
-      transition={transition}
-      style={glow} />
-  );
-}
 // 여정 지도 정거장 등장(등장 시 살짝 튀어오르며 회전이 풀리는 연출) — 위와 동일한 디바운스 적용.
 function TierStationReveal({ tilt, children }) {
   const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
@@ -824,255 +810,17 @@ function TierStationReveal({ tilt, children }) {
     </motion.div>
   );
 }
-function TierJourneyPath({ totalXp, scrollContainerRef, onColorChange }) {
-  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  // (사용자 요청) 여정 지도 전체를 조금씩 더 크게 — 정거장 원·간격·기물 이미지를 전부 비례해서 키운다.
-  const STATION_H = 116, STATION_GAP = 62;
-  // (v0.1.4 기능) "그랜드마스터는 마지막 단계라는 걸 보여주기 위해 선을 더 길게, 중앙 직선으로
-  // 이어지게" — 그랜드마스터 직전 간격만 크게 벌리고(GM_EXTRA_GAP), 맨 위(그랜드마스터 자신) 위로도
-  // 여백(GM_TOP_PAD)을 더 둬 오로라 배경 밴드가 위로 넉넉히 확장될 공간을 만든다.
-  const GM_EXTRA_GAP = 230, GM_TOP_PAD = 180;
-  // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
-  // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
-  const currentRef = useRef(null);
-  useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
-  // 시각적 세로 위치를 뒤집으면서(진행 순서 i는 그대로), 그랜드마스터 직전 구간의 간격만 예외적으로
-  // 크게 준다 — 나머지 정거장 사이 간격은 기존과 동일.
-  const lastIdx = TIER_STATIONS.length - 1;
-  const stationTops = useMemo(() => {
-    const tops = new Array(TIER_STATIONS.length);
-    tops[lastIdx] = GM_TOP_PAD;
-    for (let i = lastIdx - 1; i >= 0; i--) {
-      const gap = i === lastIdx - 1 ? STATION_GAP + GM_EXTRA_GAP : STATION_GAP;
-      tops[i] = tops[i + 1] + STATION_H + gap;
-    }
-    return tops;
-  }, [lastIdx]);
-  const topOf = (i) => stationTops[i];
-  // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
-  // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
-  // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
-  const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
-  const totalHeight = stationTops[0] + STATION_H;
-  // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
-  // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
-  // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
-  // 그 배경이 보인다.
-  // (v0.1.4 버그 수정) "티어 배경이 끊어져 보인다" — 예전엔 밴드마다 자기 영역 안에서만 위아래
-  // 70px을 검은색으로 페이드시켰다. 밴드끼리 서로 안 겹치니 경계에서는 두 배경이 섞이는 대신
-  // 양쪽 다 같은 어두운 배경으로 각자 사라졌다가 다시 나타나는 것처럼 보여, 이어지는 배경이 아니라
-  // 뚝뚝 끊어진 조각들처럼 읽혔다. 이제 각 밴드를 이웃 티어 영역까지 BG_FADE만큼 겹쳐 그리고, 그
-  // 겹친 구간에서 양쪽이 함께 반투명해지도록(한쪽은 옅어지고 다른 쪽은 짙어지며) 해 실제로 두
-  // 배경이 서로 섞여 이어지도록 한다(맨 처음 아이언의 아래쪽·맨 끝 그랜드마스터의 위쪽은 겹칠
-  // 이웃이 없으므로 확장하지 않는다).
-  const BG_FADE = 130;
-  const tierBands = useMemo(() => {
-    const bands = [];
-    let i = 0;
-    while (i < TIER_STATIONS.length) {
-      const key = TIER_STATIONS[i].tier.key;
-      let j = i;
-      while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
-      const startIdx = i, endIdx = j - 1;
-      const isFirst = i === 0, isLast = j === TIER_STATIONS.length;
-      let top = Math.min(topOf(startIdx), topOf(endIdx));
-      let bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
-      top = isLast ? 0 : top - BG_FADE;       // 그랜드마스터는 컨테이너 맨 위까지 그대로 채운다
-      if (!isFirst) bottom += BG_FADE;         // 아이언 아래쪽은 겹칠 이웃이 없어 확장하지 않는다
-      bands.push({ key, top, height: bottom - top });
-      i = j;
-    }
-    return bands;
-  }, []);
-  // (사용자 요청) 닫기 버튼 색이 지금 화면에 보이는 티어 배경에 따라 하늘색→보라색처럼 바로 바뀌지
-  // 않고, y좌표 스크롤을 따라 인접한 두 티어 색 사이를 서서히 섞으며 바뀌도록 한다. 각 티어 밴드의
-  // 세로 중앙 지점을 "색상 정지점"으로 삼아(색 자체는 TIER_COLORS — 실제 티어 이미지에서 뽑아낸
-  // 대표색, 그랜드마스터만 프로필 테두리에 쓰는 홀로그램 그러데이션의 첫 색을 그대로 씀), 지금
-  // 스크롤 위치가 그 두 지점 사이 어디쯤인지 비율로 계산해 hexLerp로 선형 보간한다.
-  const colorStops = useMemo(() => (
-    tierBands.map((b) => ({
-      y: b.top + b.height / 2,
-      hex: b.key === "grandmaster" ? TIER_COLORS.grandmaster.stops[0] : tierGlowHex(b.key),
-    })).sort((a, c) => a.y - c.y)
-  ), [tierBands]);
-  useEffect(() => {
-    const el = scrollContainerRef && scrollContainerRef.current;
-    if (!el || !colorStops.length || !onColorChange) return;
-    // 닫기 버튼이 뷰포트 상단 근처(top:18)에 고정돼 있으므로, "지금 버튼 자리에 어떤 배경이
-    // 보이는지"를 스크롤 위치 + 이 오프셋으로 근사한다.
-    const REF_OFFSET = 80;
-    const compute = () => {
-      const y = el.scrollTop + REF_OFFSET;
-      let hex = colorStops[0].hex;
-      if (y <= colorStops[0].y) hex = colorStops[0].hex;
-      else if (y >= colorStops[colorStops.length - 1].y) hex = colorStops[colorStops.length - 1].hex;
-      else {
-        for (let i = 0; i < colorStops.length - 1; i++) {
-          const a = colorStops[i], b = colorStops[i + 1];
-          if (y >= a.y && y <= b.y) { hex = hexLerp(a.hex, b.hex, (y - a.y) / (b.y - a.y)); break; }
-        }
-      }
-      onColorChange(hex);
-    };
-    compute();
-    el.addEventListener("scroll", compute, { passive: true });
-    return () => el.removeEventListener("scroll", compute);
-  }, [colorStops, scrollContainerRef, onColorChange]);
-  return (
-    // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
-    // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
-    <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
-      {/* (v0.1.3 기능) 티어별 배경 — 각 밴드 높이에 꽉 채우고(object-fit:cover), 원본 색감 그대로
-          쓰되(보정 없음) 천천히 확대·이동하는 카메라 무브(켄 번즈)를 반복 재생해 정지 이미지도
-          계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
-          이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
-      {tierBands.map((b) => (
-        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)" }}>
-          <motion.img
-            src={TIER_BG_IMAGE[b.key]} alt=""
-            animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
-            transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(15,9,5,.6), rgba(15,9,5,.72))" }} />
-        </div>
-      ))}
-      <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-        {TIER_STATIONS.slice(0, -1).map((_, i) => {
-          const x1 = i % 2 ? "78%" : "22%";
-          const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
-          const lit = i < currentIdx;
-          const lineStyle = { stroke: lit ? "#F5C542" : "rgba(255,255,255,.18)", strokeWidth: lit ? 3.5 : 3, strokeDasharray: lit ? undefined : "3 7", strokeLinecap: "round" };
-          const glow = lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined;
-          // (v0.1.4 기능) 그랜드마스터로 이어지는 마지막 구간은 "여기가 끝"이라는 인상을 주기 위해
-          // 지그재그 대각선 대신, 중앙으로 꺾여 들어가 그대로 수직으로 길게 뻗는 꺾은선(엘보)으로
-          // 그린다 — 직전 정거장 위치(22%/78%)에서 수평으로 중앙까지 이동한 뒤, 그 중앙 직선을 타고
-          // 위로 길게 올라가 그랜드마스터 정거장 정중앙에 닿는다.
-          if (i === lastIdx - 1) {
-            const elbowY = y1 - (y1 - y2) * 0.28;
-            return (
-              <React.Fragment key={i}>
-                <TierPathLine x1={x1} y1={y1} x2="50%" y2={elbowY} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.5, ease: "easeOut" }} />
-                <TierPathLine x1="50%" y1={elbowY} x2="50%" y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} />
-              </React.Fragment>
-            );
-          }
-          const x2 = (i + 1) % 2 ? "78%" : "22%";
-          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
-          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
-          // 가느다란 대각선은 바운딩 박스가 얇아 노출 비율이 스크롤 몇 픽셀 차이에도 크게 출렁여,
-          // 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 그 떨림만으로 무한히 깜빡이던 문제가
-          // 있었다 — TierPathLine이 그 신호를 130ms 디바운스해서 걸러낸다(위 useSettledInView 참고).
-          return <TierPathLine key={i} x1={x1} y1={y1} x2={x2} y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.7, ease: "easeOut" }} />;
-        })}
-      </svg>
-      {TIER_STATIONS.map((s, i) => {
-        const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
-        // (v0.1.4 기능) 그랜드마스터는 마지막 단계라는 것을 강조하기 위해 지그재그 대신 중앙(50%)에
-        // 배치 — 위 연결선 엘보도 이 중앙 지점을 향해 그려진다.
-        const cx = i === lastIdx ? "50%" : (i % 2 ? "78%" : "22%");
-        const top = topOf(i);
-        // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
-        // 색으로 은은하게 빛나는 글로우를 준다.
-        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 배경 전체의 불투명도를 낮췄더니, 배경 뒤로
-        // 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 배경을 통과해 뒤의 선이 섞여 보임) — 배경은
-        // 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는 기물 이미지
-        // 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
-        // (v0.1.3 UI) TierLogoDisc와 동일하게 원 대신 십각형으로, 배경은 브라스 골드 대신 흰색으로.
-        // box-shadow의 원형 글로우 대신, 실제 도형(SVG 폴리곤) 알파를 따라가는 drop-shadow 필터로
-        // "현재 구간" 링 글로우를 낸다.
-        const tc = TIER_COLORS[s.tier.key];
-        const ringColor = tc.stops ? tc.stops[1] : tc.hi;
-        // (버그 수정) 잠금 아이콘은 없애고, 이미지는 항상 원래 색 그대로 보여준다(muted 제거) —
-        // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
-        return (
-          <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
-            {/* (v0.1.4 버그 수정) "모바일에서 여정 지도가 왜곡된다"는 신고 원인 — framer-motion은
-                scale/rotate처럼 transform 계열 모션 값을 다루는 순간 그 엘리먼트의 transform CSS를
-                통째로 자기가 계산한 값으로 덮어써, style로 준 정적인 translateX(-50%) 중앙 정렬이
-                애니메이션이 끝나자마자 조용히 사라졌다 — 78% 자리 정거장이 중앙 정렬 없이 그대로
-                오른쪽으로 반 칸(48px)어치 더 밀려나, 화면이 좁은 모바일에서 오른쪽 끝이 뷰포트
-                밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
-                전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
-            <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              {/* (버그 수정) 정거장 등장 애니메이션도 연결선과 같은 이유로 깜빡였다 — TierStationReveal이
-                  onViewportEnter/Leave 신호를 130ms 디바운스해서 걸러내므로, once:false로 스크롤마다
-                  반복 재생되는 연출은 그대로 유지하면서 스크롤이 노출 경계에 멈췄을 때의 떨림만 없앤다. */}
-              <TierStationReveal tilt={i % 2 ? 10 : -10}>
-              <motion.div
-                ref={state === "current" ? currentRef : undefined}
-                animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
-                transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
-                style={{ position: "absolute", inset: 0 }}>
-                <div style={{
-                  position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                  filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
-                }}>
-                  <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-                    <path d={TIER_DECAGON_PATH} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" strokeLinejoin="round" />
-                  </svg>
-                  {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                      이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
-                  <div style={{ position: "relative", zIndex: 1 }}>
-                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={112} />
-                  </div>
-                </div>
-                {/* (버그 수정) "이미 지나온 티어" 초록 체크 배지가 정적이라 눈에 잘 안 띄었다 —
-                    은은하게 커졌다 작아지는 펄스를 반복해 완료됐다는 느낌을 계속 상기시킨다. */}
-                {state === "done" && (
-                  <motion.span
-                    animate={{ scale: [1, 1.18, 1], boxShadow: ["0 0 0 0 rgba(63,122,58,.55)", "0 0 0 5px rgba(63,122,58,0)", "0 0 0 0 rgba(63,122,58,0)"] }}
-                    transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-                    style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Check size={14} color="#fff" />
-                  </motion.span>
-                )}
-              </motion.div>
-              </TierStationReveal>
-            </div>
-            {state === "current" && (
-              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 5, width: 140, transform: "translateX(-50%)", textAlign: "center" }}>
-                <div style={{ fontSize: 12, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
-              </div>
-            )}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
 // (v0.0.6 개편) 티어 배지를 누르면 열리는 전체 화면 여정 지도 모달 — 위 TierJourneyPath를
 // "집중분석"(App.jsx 상단부) 전체화면 오버레이와 같은 몰입형 레이아웃(어두운 방사형 그러데이션
 // 배경)으로 감싼다.
 export function TierJourneyMap({ totalXp, onClose }) {
   const scrollRef = useRef(null);
-  // (사용자 요청) 닫기 버튼 색이 지금 스크롤로 보고 있는 티어 배경에 반응한다 — 처음 계산되기 전
-  // (마운트 직후 1프레임)에는 기존 금색 테두리로 시작해, 계산되는 즉시 그 색으로 자연스럽게 바뀐다.
-  const [btnColor, setBtnColor] = useState(null);
-  const bc = btnColor || T.brass;
-  // (버그 수정, 사용자 제보) /user 페이지 왼쪽 열처럼 framer-motion의 motion.div(항상 인라인
-  // transform을 갖는다) 안에서 이 화면을 열면, position:fixed가 뷰포트가 아니라 그 transform을
-  // 가진 조상을 기준으로 계산돼 — 여정 화면이 전체 화면을 덮지 못하고 그 조상 박스 안에만 갇혀,
-  // 그 조상 바깥의 /user 페이지 요소(헤더 등)가 오히려 위에 보이는 것처럼 나타났다. document.body로
-  // 포털을 띄우면 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에 그려진다.
-  // (버그 수정, 사용자 재제보) portal은 DOM 트리 위치는 body 최상위로 옮기지만 zIndex 자체는 그대로
-  // 옮겨 오지 않는다 — 예전 zIndex(83)는 /user 페이지(UserProfilePage, zIndex 300)보다 한참 낮아서,
-  // /user 페이지 안에서 티어 아이콘을 눌러 이 화면을 열어도 실제로는 열리긴 하지만 /user 페이지의
-  // 불투명한 배경 "뒤"에 그려져 화면엔 아무 변화가 없는 것처럼 보였다("표시되지 않는다"). 이 화면은
-  // 앱에서 가장 위에 뜨는 전체화면 오버레이로 의도된 것이므로, 지금까지 쓰인 어떤 모달·페이지
-  // zIndex(최대 500)보다도 확실히 높은 값으로 올려 어디서 열든 항상 맨 위에 그려지게 한다.
+  // (v0.7.4, 사용자 요청) 티어 여정 개편 — 티어 한 장씩의 챕터 연대기(components/tierJourney.jsx). 어떤 조상의 transform과도 무관하게 항상 맨 위에 그려지도록 body로 포털하고,
+  // 앱의 모든 모달·페이지(최대 500)보다 높은 zIndex(950)를 쓴다(/user 페이지 안에서 열어도 가려지지 않게).
+  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
   return createPortal((
-    <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
-      {/* (v0.2.3 버그 수정) 닫기 버튼이 스크롤되는 콘텐츠 안에 있어, 아래로 스크롤해 특정 티어를 보고
-          있을 때는 맨 위로 다시 올라와야만 닫을 수 있었다 — 뷰포트 우상단에 고정해 어느 스크롤
-          위치에서도 항상 누를 수 있게 한다.
-          (사용자 요청) 하늘색→보라색처럼 뚝 끊기지 않고 스크롤을 따라 서서히 바뀌는 색(bc, y좌표
-          기준 인접 티어 색 사이 보간값)으로 테두리·은은한 배경·글로우를 물들인다. */}
-      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 951, width: 38, height: 38, borderRadius: 11, border: "2px solid " + bc, background: hexAlpha(bc, .22), color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 16px " + hexAlpha(bc, .5), transition: "background .2s linear, border-color .2s linear, box-shadow .2s linear" }}>
-        <X size={18} />
-      </button>
-      <div style={{ maxWidth: "min(94vw, 760px)", margin: "0 auto", padding: "18px 16px 60px" }}>
-        <TierJourneyPath totalXp={totalXp} scrollContainerRef={scrollRef} onColorChange={setBtnColor} />
-      </div>
+    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+      <TierJourney totalXp={totalXp} onClose={onClose} scrollRef={scrollRef} />
     </div>
   ), document.body);
 }
