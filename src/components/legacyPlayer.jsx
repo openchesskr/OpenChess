@@ -26,7 +26,7 @@ const HERO_SPRING = { type: "spring", stiffness: 120, damping: 20, mass: 1 };   
 const LIGHT = "#C9A86E", DARK = "#6E4B2A";
 const RAYS = [0, 45, 90, 135, 180, 225, 270, 315];
 
-function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch, isHeroStep, step, introDone }) {
+function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch, isHeroStep, step, introDone, lastKind }) {
   const ref = useRef(null); const [w, setW] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return undefined;
@@ -49,14 +49,6 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         <motion.span key={"ls" + epoch + r + c} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: lite ? 0 : 0.35 }}
           style={{ position: "absolute", left: sx(c) + "%", top: sy(r) + "%", width: "12.5%", height: "12.5%", background: landed && i === 1 ? heroColor : LEGACY_GOLD_HI, mixBlendMode: "soft-light", opacity: landed && i === 1 ? 0.95 : 0.7 }} />
       ))}
-      {/* 이동 궤적 — 방금 둔 수의 출발 칸에서 도착 칸까지 빛나는 선이 그려진 뒤 천천히 옅어진다(유산 수는 등급 색) */}
-      {move && !lite && (
-        <svg key={"tr" + epoch + "-" + (move.from[0] * 8 + move.from[1]) + "-" + (move.to[0] * 8 + move.to[1])} aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1 }}>
-          <defs><linearGradient id={"trg" + epoch} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor={landed ? heroColor : LEGACY_GOLD_HI} stopOpacity="0" /><stop offset="1" stopColor={landed ? heroColor : LEGACY_GOLD_HI} stopOpacity="1" /></linearGradient></defs>
-          <motion.line x1={sx(move.from[1]) + 6.25} y1={sy(move.from[0]) + 6.25} x2={sx(move.to[1]) + 6.25} y2={sy(move.to[0]) + 6.25} stroke={landed ? heroColor : LEGACY_GOLD_HI} strokeWidth="1.6" strokeLinecap="round" vectorEffect="non-scaling-stroke"
-            style={{ filter: "drop-shadow(0 0 3px " + (landed ? heroColor : LEGACY_GOLD_HI) + ")" }} initial={{ pathLength: 0, opacity: 0.95 }} animate={{ pathLength: 1, opacity: [0.95, 0.95, 0.15] }} transition={{ pathLength: { duration: 0.5, ease: "easeOut" }, opacity: { duration: 1.6, times: [0, 0.4, 1] } }} />
-        </svg>
-      )}
       {/* 잡기 — 도착 칸에서 파편이 사방으로 */}
       {move && move.capture && !lite && Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2, d = cell * (0.9 + (i % 3) * 0.35); return (
         <motion.span key={"cap" + epoch + step + "-" + i} aria-hidden="true" initial={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }} animate={{ opacity: 0, x: Math.cos(a) * d, y: Math.sin(a) * d, scale: 0.3, rotate: 180 }} transition={{ duration: 0.7, ease: "easeOut" }}
@@ -112,9 +104,10 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
           ))}
         </>
       )}
-      {landed && move && (
-        <motion.span key={"bd" + epoch} aria-hidden="true" className="ab-glint" initial={isLite() ? false : { opacity: 0, scale: 0.2, y: 6, rotate: -25 }} animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: isLite() ? 0 : 0.3 }}
-          style={{ position: "absolute", left: "calc(" + (sx(move.to[1]) + 12.5) + "% - " + cell * 0.62 + "px)", top: "calc(" + sy(move.to[0]) + "% - " + cell * 0.22 + "px)", zIndex: 7, borderRadius: "50%", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.7))" }}>{badgeIcon(heroKind, Math.max(18, cell * 0.62))}</motion.span>
+      {/* 수 아이콘 — 리뷰 보드와 같은 자리(도착 칸 우상단 모서리)·같은 크기(칸의 44%). 유산 수는 도착할 때 한 번 튀어 오른다 */}
+      {move && lastKind && (
+        <motion.span key={"bd" + epoch + "-" + step} aria-hidden="true" className={landed ? "ab-glint" : undefined} initial={isLite() || !landed ? false : { opacity: 0, scale: 0.2, rotate: -25 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: landed && !isLite() ? 0.3 : 0 }}
+          style={{ position: "absolute", left: "calc(" + (sx(move.to[1]) + 12.5) + "% - " + cell * 0.26 + "px)", top: "calc(" + sy(move.to[0]) + "% - " + cell * 0.18 + "px)", width: cell * 0.44, height: cell * 0.44, zIndex: 7, borderRadius: "50%", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }}>{badgeIcon(lastKind, Math.max(12, cell * 0.44))}</motion.span>
       )}
     </div>
   );
@@ -145,6 +138,8 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
   const go = useCallback((n) => { setPlaying(false); setStep(Math.max(startCount, Math.min(endCount, n))); setEpoch((e) => e + 1); }, [startCount, endCount]);
   const replay = () => { setStep(startCount); setEpoch((e) => e + 1); setPlaying(true); };
   const toggle = () => { if (step >= endCount) replay(); else setPlaying((p) => !p); };
+  // 방금 둔 수의 등급 — 저장된 kinds(구버전은 없을 수 있음)에서, 없으면 유산 수 자리만 이 유산의 등급으로
+  const lastKind = step > startCount ? ((entry.kinds && entry.kinds[step - 1] && entry.kinds[step - 1] !== "pending" && QCOLOR[entry.kinds[step - 1]]) ? entry.kinds[step - 1] : step - 1 === moveIndex ? kind : null) : null;
   const hm = moves[moveIndex];
   const heroOrigin = hm ? (((flip ? 7 - hm.to[1] : hm.to[1]) + 0.5) * 12.5) + "% " + (((flip ? 7 - hm.to[0] : hm.to[0]) + 0.5) * 12.5) + "%" : "50% 50%";
   const frame = frames[Math.min(step, frames.length - 1)];
@@ -177,17 +172,16 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
       </div>
       {/* 데이터 칩 — 이 유산이 어떤 수인지(등급·수·진영·재생 길이) */}
       <motion.div initial={lite ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: lite ? 0 : 0.5, duration: 0.5 }} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        <Tag solid color={color} style={{ background: "linear-gradient(180deg," + color + "," + color + "CC)", color: "#10161F" }}>{kindName}</Tag>
-        <Tag color={K.brassHi}>{"KEY ▸ " + moveNumber(moveIndex) + sans[moveIndex]}</Tag>
-        <Tag color={K.soft}>{"SIDE ▸ " + (flip ? "BLACK" : "WHITE")}</Tag>
+        <Tag color={K.brassHi}>{moveNumber(moveIndex) + sans[moveIndex]}</Tag>
+        <Tag solid color={color} style={{ background: "linear-gradient(180deg," + color + "," + color + "CC)", color: "#10161F" }}>{QLABEL[kind] || kind}</Tag>
       </motion.div>
       <div style={{ position: "relative" }}>
         <motion.div initial={lite ? false : { opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: lite ? 1 : spotlight ? 1.1 : landed ? 1.05 : 1 }}
           transition={{ opacity: { duration: 0.7, delay: lite || introDone ? 0 : 0.15 }, y: { duration: 0.7, delay: lite || introDone ? 0 : 0.15, ease: [0.22, 0.9, 0.32, 1] }, scale: { type: "spring", stiffness: spotlight ? 55 : 90, damping: 18 } }}
           style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)", transformOrigin: heroOrigin, filter: (spotlight || landed) && !lite ? "drop-shadow(0 0 24px " + color + "66)" : "none", transition: "filter .6s" }}>
-          <LegacyFrame draw />
-          <Board frame={frame} move={move} flip={flip} heroMove={moves[moveIndex]} heroKind={kind} spotlight={spotlight} landed={landed} epoch={epoch} isHeroStep={landed} step={step} introDone={introDone} />
+          <LegacyFrame draw live />
+          <Board frame={frame} move={move} flip={flip} heroMove={moves[moveIndex]} heroKind={kind} spotlight={spotlight} landed={landed} epoch={epoch} isHeroStep={landed} step={step} introDone={introDone} lastKind={lastKind} />
         </motion.div>
         {!lite && <Brackets color={color} size={14} inset={2} pulse />}
         {/* 키 무브 배너 — 도착하면 대각선 띠가 보드를 가로질러 지나간다 */}
@@ -255,8 +249,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 10px" }}>
             <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + LEGACY_GOLD }}>{badgeIcon(kind, 22)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Sys color={K.soft} style={{ fontSize: 9.5 }}>// LEGACY ARCHIVE</Sys>
-              <div style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi, marginTop: 1 }}>{typeInfo ? typeInfo.label : ""}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi }}>{typeInfo ? typeInfo.label : ""}</div>
             </div>
             <button type="button" onClick={onClose} aria-label={t("닫기")} className="press" style={{ ...hudBtn(false, false), minWidth: 40, padding: "0 12px", height: 32 }}><X size={15} /></button>
           </div>
