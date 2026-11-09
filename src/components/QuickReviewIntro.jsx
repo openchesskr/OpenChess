@@ -83,13 +83,33 @@ function GlitchLetters({ glitch, lit, colors }) {
   );
 }
 
-function GaugeLabel({ text, on, glitch, colors }) {
-  const word = useScramble(text, on, 28);
-  const shown = useGlitchFlicker(word, glitch && on, 70, 0.22);
+// (v0.7.4, 사용자 요청) 게이지 한 칸이 가득 차는 순간, 그 칸 아래 이름이 글리치와 함께 바뀐다 — OPENING→OBSERVE, PUZZLE→PRACTICE, ENDGAME→EVALUATE, NETWORK→NEXT LEVEL.
+function GaugeLabel({ idle, final, full, on, glitch, colors }) {
+  const [burst, setBurst] = useState(false);
+  const firstRef = useRef(true);
+  useEffect(() => {
+    if (firstRef.current) { firstRef.current = false; return undefined; }
+    if (!full) return undefined;
+    setBurst(true);
+    const id = setTimeout(() => setBurst(false), 750);
+    return () => clearTimeout(id);
+  }, [full]);
+  const text = full ? final : idle;
+  const word = useScramble(text, on || full, 26, full ? 1 : 0);
+  const shown = useGlitchFlicker(word, burst || (glitch && on), 70, burst ? 0.45 : 0.22);
+  const hot = burst || (glitch && on);
   return (
-    <div style={{ marginTop: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", whiteSpace: "nowrap", textAlign: "center", color: on ? colors.brassHi : colors.soft, opacity: on ? 1 : 0.45,
-      textShadow: on && glitch ? "-1px 0 #D9736A, 1px 0 #6FA8DC" : on ? "0 0 8px rgba(196,154,80,.55)" : "none", transition: "color .25s, opacity .25s" }}>{on ? shown : text}</div>
+    <div style={{ marginTop: 6, fontFamily: MONO, fontSize: full ? 10.5 : 9.5, fontWeight: 900, letterSpacing: ".08em", whiteSpace: "nowrap", textAlign: "center", color: full ? colors.text : on ? colors.brassHi : colors.soft, opacity: on || full ? 1 : 0.45,
+      transform: burst ? "translateX(1.5px) skewX(-8deg)" : "none",
+      textShadow: hot ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : full ? "0 0 10px rgba(236,203,134,.7)" : on ? "0 0 8px rgba(196,154,80,.55)" : "none", transition: "color .25s, opacity .25s, font-size .2s" }}>{on || full ? shown : text}</div>
   );
+}
+
+// 한 글자(단계)가 보이는 시간 — 예상 전체 시간 ÷ 4(진행률로 보정), MIN~MAX 제한. 분석이 끝났으면 남은 단계는 MIN씩.
+function stageLen(pct, done, elapsed) {
+  if (done) return STAGE_MIN_MS;
+  const est = pct >= 0.08 ? elapsed / pct : Math.max(STAGE_DEFAULT_TOTAL_MS, elapsed * 2.2);   // 아직 진행률이 없으면(엔진 준비 중) 지금까지 걸린 시간에 비례해 늘린다
+  return Math.max(STAGE_MIN_MS, Math.min(STAGE_MAX_MS, est / 4));
 }
 
 export default function QuickReviewIntro({ done, gradedCount, total, colors, onDone }) {
@@ -105,12 +125,16 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
 
   const stageStartRef = useRef(Date.now());
   useEffect(() => { stageStartRef.current = Date.now(); }, [shown]);
+  // 지금 단계의 경과(0~0.96) — 게이지 칸이 단계 시간 동안 차오르다가 다음 단계가 시작될 때 가득 찬다.
+  const [frac, setFrac] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setFrac(Math.min(0.96, (Date.now() - stageStartRef.current) / stageLen(pct, done, Date.now() - mountedAt.current))), 90);
+    return () => clearInterval(id);
+  }, [pct, done]);
   useEffect(() => {
     if (shown >= 3) return undefined;
     if (shown >= 2 && !done) return undefined;   // EVALUATE는 분석이 끝날 때까지 머문다(NEXT LEVEL은 끝나야 켜짐)
-    const elapsed = Date.now() - mountedAt.current;
-    const est = pct >= 0.08 ? elapsed / pct : Math.max(STAGE_DEFAULT_TOTAL_MS, elapsed * 2.2);   // 아직 진행률이 없으면(엔진 준비 중) 지금까지 걸린 시간에 비례해 단계 길이를 늘린다
-    const len = done ? STAGE_MIN_MS : Math.max(STAGE_MIN_MS, Math.min(STAGE_MAX_MS, est / 4));
+    const len = stageLen(pct, done, Date.now() - mountedAt.current);
     const remaining = Math.max(0, len - (Date.now() - stageStartRef.current));
     const id = setTimeout(() => setShown((v) => Math.min(3, v + 1)), remaining);
     return () => clearTimeout(id);
@@ -143,9 +167,6 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
   }, [done, shown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lit = finale ? [0, 1, 2, 3] : Array.from({ length: shown + 1 }, (_, i) => i);
-  const cur = WORDS[shown];
-  const word = useScramble(cur.w, true, 24);
-  const wordShown = useGlitchFlicker(word, glitch, 70, 0.18);
   const pctText = Math.round(pct * 100);
 
   return (
@@ -153,27 +174,19 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
       <style>{KEYFRAMES}</style>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,.35) 1px, transparent 1px, transparent 3px)", animation: "qr-scan .5s linear infinite" }} />
       <div style={{ position: "relative", width: "100%", maxWidth: 340, minWidth: 0, textAlign: "center", animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>
-        {/* (v0.7.4, 사용자 요청) 단계 단어를 OPEN 글자 위로 옮기고, 이탤릭 얇은 글꼴 대신 크고 굵은 정자체(밝은 아이보리) + 위아래 금색 줄 판 위에 보여 잘 읽히게 한다. */}
-        <div data-phase={shown} style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".3em", color: colors.soft, marginBottom: 8 }}>{"STEP " + String(Math.min(shown, 3) + 1).padStart(2, "0") + " / 04"}</div>
-          <div style={{ borderTop: "1px solid " + colors.brass, borderBottom: "1px solid " + colors.brass, background: "linear-gradient(90deg,transparent,rgba(196,154,80,.14),transparent)", padding: "10px 6px" }}>
-            <FitBox>
-              <div style={{ fontFamily: MONO, fontSize: 38, fontWeight: 900, letterSpacing: ".1em", whiteSpace: "nowrap", color: colors.text, textShadow: glitch ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : "0 0 18px rgba(236,203,134,.55), 0 2px 0 rgba(0,0,0,.7)" }}>
-                {wordShown}<span style={{ animation: "qr-caret 1s steps(1) infinite", color: colors.brassHi }}>▌</span>
-              </div>
-            </FitBox>
-          </div>
-        </div>
+        {/* (v0.7.4, 사용자 요청) OPEN 위쪽 UI는 모두 없앴다 — 단계 단어는 아래 게이지 이름이 글리치와 함께 바뀌며 보여 준다. */}
         <GlitchLetters glitch={glitch} lit={lit} colors={colors} />
-        <div style={{ display: "flex", gap: 4, margin: "22px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
+        <div data-phase={shown} style={{ display: "flex", gap: 4, margin: "22px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
           {WORDS.map((w, i) => {
-            const fill = finale ? 1 : Math.max(0, Math.min(1, pct * 4 - i));
+            const real = Math.max(0, Math.min(1, pct * 4 - i));
+            const fill = finale ? 1 : i < shown ? 1 : i === shown ? Math.max(frac, real) : 0;
+            const full = fill >= 1;
             return (
               <div key={w.k} style={{ flex: 1 }}>
                 <div style={{ height: 6, background: colors.panel, border: "1px solid " + colors.border, overflow: "hidden", transform: "skewX(-18deg)" }}>
                   <div style={{ height: "100%", width: fill * 100 + "%", background: "linear-gradient(90deg," + colors.brass + "," + colors.brassHi + ")", transition: "width .2s linear" }} />
                 </div>
-                <GaugeLabel text={GAUGE_LABELS[i]} on={fill > 0 || shown >= i} glitch={glitch} colors={colors} />
+                <GaugeLabel idle={GAUGE_LABELS[i]} final={w.w} full={full} on={fill > 0 || shown >= i} glitch={glitch} colors={colors} />
               </div>
             );
           })}

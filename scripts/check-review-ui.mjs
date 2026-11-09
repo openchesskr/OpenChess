@@ -22,14 +22,17 @@ if (/QUICK REVIEW|DEPTH|빠른 리뷰 분석 중\W*\s*·/.test(body.replace(/ari
 if (/▸/.test(body)) fails.push("QuickReviewIntro: 화살표(▸)가 남아 있음");
 if (/\{cur\.k\}|\{w\.k\}<\/div>/.test(body)) fails.push("QuickReviewIntro: 이니셜 표시가 남아 있음");
 if (!/const DWELL_MS = \d+/.test(body)) fails.push("QuickReviewIntro: 단계별 최소 노출 시간(DWELL_MS) 없음");
-if (!/useGlitchFlicker\(base/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: OPEN 글자·단어 모두에 특수문자 깜빡임(useGlitchFlicker)이 필요함");
-if (!/function FitBox/.test(body) || (body.match(/<FitBox>/g) || []).length < 2) fails.push("QuickReviewIntro: OPEN 글자·단어를 FitBox(안전 영역 맞춤)로 감싸야 함");
+if (!/useGlitchFlicker\(base/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: OPEN 글자·게이지 이름 모두에 특수문자 깜빡임(useGlitchFlicker)이 필요함");
+if (!/function FitBox/.test(body) || (body.match(/<FitBox>/g) || []).length < 1) fails.push("QuickReviewIntro: OPEN 글자를 FitBox(안전 영역 맞춤)로 감싸야 함");
 if (!/env\(safe-area-inset-left\)/.test(body)) fails.push("QuickReviewIntro: 뷰포트 안전 영역(env(safe-area-inset-*)) 여백이 없음");
 for (const w of ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"]) if (!body.includes('"' + w + '"')) fails.push("QuickReviewIntro: 게이지 아래 '" + w + "' 이름이 없음");
 if (!/function GaugeLabel/.test(body) || !/useScramble\(text/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: 게이지 이름에 스크램블·특수문자 깜빡임 효과가 필요함");
 if (!/tx\("\{0\} 분석 중 \{1\}"/.test(body)) fails.push("QuickReviewIntro: 하단 '분석 중 n%' 표시가 없음");
 { // 단계가 4개이고 모두 같은 최소 시간을 쓰는지: shown을 한 칸씩만 올린다
   if (!/setShown\(\(v\) => Math\.min\(3, v \+ 1\)\)/.test(body)) fails.push("QuickReviewIntro: 단계를 한 칸씩 올리지 않음(EVALUATE가 건너뛰어질 수 있음)");
+  // (v0.7.4) 게이지 한 칸이 차면 그 아래 이름이 글리치와 함께 바뀐다(OPENING→OBSERVE …), OPEN 위쪽엔 단어 UI가 없다.
+  if (!/final=\{w\.w\}/.test(body) || !/full \? final : idle/.test(body)) fails.push("QuickReviewIntro: 게이지가 차면 아래 이름이 OBSERVE·PRACTICE·EVALUATE·NEXT LEVEL로 바뀌어야 함");
+  if (/STEP \d|fontSize: 38/.test(body)) fails.push("QuickReviewIntro: OPEN 위쪽 단어·STEP UI가 다시 생김(사용자 요청으로 삭제)");
   // (v0.7.4) 글자마다 비슷한 시간: 단계 길이는 예상 전체 시간 ÷ 4, 최소 STAGE_MIN_MS — 진행률로 O만 길어지고 PEN이 몰려 지나가던 문제 방지
   if (!/STAGE_MIN_MS/.test(body) || !/est \/ 4/.test(body) || /Math\.floor\(pct \* 4\)/.test(body)) fails.push("QuickReviewIntro: 글자별 노출 시간이 비슷해야 함(예상 전체 시간 ÷ 4 기준, 진행률 구간 고정 금지)");
 }
