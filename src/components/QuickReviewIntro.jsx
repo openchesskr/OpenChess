@@ -178,8 +178,9 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
             );
           })}
         </div>
+        {/* (v0.7.4, 사용자 요청) 분석 중 n%는 게이지 이름(OPENING…)에서 더 떨어뜨려 아래에 둔다. */}
         {/* (v0.7.3) 예전엔 헤더에 있던 "분석 중 n%"를 진행 막대 아래로 옮겼다. */}
-        <div className="flex items-center justify-center gap-1" style={{ marginTop: 10, fontSize: 11.5, fontWeight: 700, color: colors.soft }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
+        <div className="flex items-center justify-center gap-1" style={{ marginTop: 34, fontSize: 11.5, fontWeight: 700, color: colors.soft }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
       </div>
     </div>
   );
