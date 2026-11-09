@@ -8,13 +8,10 @@ const rd = (f) => fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
 const fails = [];
 const all = ["src/app/social.jsx", "src/app/profile.jsx", "src/App.jsx", "src/app/review.jsx", "src/app/common.jsx"].map(rd).join("\n");
 if (/<LegacyManageModal|function LegacyManageModal/.test(all)) fails.push("유산 마법사(LegacyManageModal)가 다시 생김 — 유산은 /review에서만 만든다");
-const prof = rd("src/app/profile.jsx");
-const reveal = (prof.match(/export function LegacyRevealScreen[\s\S]*?\n}\n/) || [""])[0];
-if (!reveal) fails.push("LegacyRevealScreen을 찾지 못함");
-else {
-  if (!/const phase = "board"/.test(reveal)) fails.push("LegacyRevealScreen: 곧바로 board로 시작해야 함(고유 진입 연출 금지)");
-  if (/"charge"|"typing"|typingStage|LegacyShatterToken/.test(reveal)) fails.push("LegacyRevealScreen: 암석판 확대·기보 타이핑 진입 연출이 다시 들어옴");
-}
+const prof = rd("src/app/profile.jsx"), player = rd("src/components/legacyPlayer.jsx");
+if (!/export function LegacyRevealScreen/.test(player) || !/LegacyRevealScreen[^\n]*legacyPlayer\.jsx/.test(prof)) fails.push("LegacyRevealScreen이 새 재생기(components/legacyPlayer.jsx)에서 다시 내보내지지 않음");
+if (/"charge"|"typing"|typingStage|LegacyShatterToken|LegacyProjectorBlock|LegacyLightBoard|legacyMotionPlan|LegacyMotionLayer/.test(prof + player)) fails.push("예전 진입 연출·영사기·기물별 잡기 연출 코드가 다시 들어옴(v0.7.4에서 재생기를 새로 짬)");
+if (fs.existsSync(new URL("../src/lib/legacyMotion.js", import.meta.url)) || fs.existsSync(new URL("../src/components/legacyMotion.jsx", import.meta.url))) fails.push("옛 legacyMotion 파일이 다시 생김");
 const rv = rd("src/app/review.jsx");
 if (!/onSaveLegacy/.test(rv) || !/legacyAction/.test(rv)) fails.push("ReviewPage: '유산으로 남기기'(onSaveLegacy/legacyAction)가 없음");
 if (!/\["best", "only", "brilliant"\]\.includes\(m\.kind\)/.test(rv)) fails.push("ReviewPage: 유산은 최선·유일·탁월 수에서만 만들 수 있어야 함");

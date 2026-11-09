@@ -9,6 +9,9 @@ import { t, tx } from "../lib/i18n.js";
 // 연출 없이 곧바로 넘어간다. 애니메이션은 기기의 "애니메이션 줄이기"가 아니라 사이트 설정만 따른다.
 // (v0.7.3) 단계는 분석 진행률이 아니라 시간 기준으로 한 칸씩 넘어간다 — 단계마다 최소 DWELL_MS씩 보여 줘서 분석이 빨리 끝나도 EVALUATE가 안 보이는 일이 없다.
 const DWELL_MS = 700;
+// (v0.7.4, 사용자 요청) 글자(O·P·E·N)가 거의 같은 시간씩 보이게 — 예전엔 분석 진행률(처음 25%가 엔진 준비로 가장 오래 걸림)에 맞춰 O가 대부분의 시간을 쓰고
+// P·E·N이 1초 안에 몰려 지나갔다. 이제 단계 길이는 "예상 전체 시간 ÷ 4"(진행률로 계속 보정, MIN~MAX로 제한)로 정하고, 분석이 먼저 끝나면 남은 글자도 MIN씩 보여 준다.
+const STAGE_MIN_MS = 1150, STAGE_MAX_MS = 6000, STAGE_DEFAULT_TOTAL_MS = 5200;
 // (v0.7.3) 게이지 막대 아래에 단계마다 붙는 이름 — 막대가 차기 시작하면 노이즈에서 풀려 나오고, 글리치 중에는 특수문자가 깜빡인다.
 const GAUGE_LABELS = ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"];
 const WORDS = [
@@ -26,73 +29,70 @@ const KEYFRAMES = `
 @keyframes qr-caret{50%{opacity:0}}
 `;
 
-// (v0.7.3) 안전 영역 안에 들어오도록 자식을 비율 유지한 채 줄여서 보여 준다. 블록 글자(█)는 기기·폰트마다 폭이 달라
-// (일부 안드로이드는 █가 전각 폭) 고정 글자 크기로는 모바일에서 OPEN이 잘렸다 — 실제 폭을 재서 필요한 만큼만 줄인다.
-function FitBox({ children }) {
-  const outer = useRef(null), inner = useRef(null);
-  const [fit, setFit] = useState({ s: 1, h: null });
-  useLayoutEffect(() => {
-    const measure = () => {
-      const o = outer.current, i = inner.current;
-      if (!o || !i) return;
-      const natW = i.scrollWidth, natH = i.offsetHeight, avail = o.clientWidth;
-      if (!natW || !avail) return;
-      const s = Math.min(1, avail / natW);
-      setFit((p) => (Math.abs(p.s - s) < 0.003 && p.h === natH * s ? p : { s, h: natH * s }));
-    };
-    measure();
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(measure); ro.observe(outer.current); }
-    window.addEventListener("resize", measure);
-    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
-  }, []);
-  return (
-    <div ref={outer} style={{ width: "100%", height: fit.h == null ? undefined : fit.h, display: "flex", justifyContent: "center" }}>
-      <div ref={inner} style={{ width: "max-content", flex: "0 0 auto", transform: "scale(" + fit.s + ")", transformOrigin: "center top" }}>{children}</div>
-    </div>
-  );
-}
-
-function GlitchLetter({ ch, on, glitch, colors, font }) {
+// (v0.7.4, 사용자 요청 버그 수정) OPEN 글자를 글꼴 글자(블록 문자) 대신 SVG 도형으로 그린다 — 안드로이드 등 기기마다 블록 문자 글꼴의 폭·높이가 달라 글자 높이를 잘못 재면
+// 게이지와 이름이 OPEN 글자 위에 겹쳐 보였다. 이제 글자 칸(0.6×1 단위)을 사각형으로 직접 그리고 viewBox로 폭에 맞춰 늘려, 글꼴과 무관하게 비율이 고정되고 겹칠 수 없다.
+// 글리치 중 깜빡이는 특수문자·적/청 색 번짐·가로 밀림은 그대로 재현한다.
+const CELL_W = 0.6, LETTER_GAP = 1.2;
+function GlitchLetter({ ch, x, on, glitch, colors }) {
   const base = GLYPH[ch].join("\n");
   const art = useGlitchFlicker(base, glitch && on, 70, 0.16);
-  return (
-    <div style={{ position: "relative", color: on ? colors.brassHi : "rgba(143,116,76,.45)", transform: "skewX(-6deg)", filter: on ? "drop-shadow(0 0 8px rgba(196,154,80,.6))" : "none", transition: "color .25s, filter .25s" }}>
-      <pre style={font}>{art}</pre>
-      {glitch && on && (
-        <>
-          <pre aria-hidden="true" style={{ ...font, position: "absolute", left: 0, top: 0, color: "#D9736A", transform: "translateX(-4px)", mixBlendMode: "screen", animation: "qr-slice-a .42s steps(5) 1" }}>{art}</pre>
-          <pre aria-hidden="true" style={{ ...font, position: "absolute", left: 0, top: 0, color: "#6FA8DC", transform: "translateX(4px)", mixBlendMode: "screen", animation: "qr-slice-b .42s steps(5) 1" }}>{art}</pre>
-        </>
-      )}
-    </div>
+  const rows = art.split("\n");
+  const fill = on ? colors.brassHi : "rgba(143,116,76,.45)";
+  const layer = (color, dx, key, blend) => (
+    <g key={key} fill={color} style={blend ? { mixBlendMode: "screen" } : undefined}>
+      {rows.map((row, r) => {
+        const off = dx ? dx + ((((row.charCodeAt(r % Math.max(1, row.length)) || 0) + r * 7) % 5) - 2) * 0.1 : 0;
+        return Array.from(row).map((c, k) => (c === " " ? null : c === "█"
+          ? <rect key={r + "-" + k} x={x + k * CELL_W + off} y={r} width={CELL_W + 0.012} height={1.012} />
+          : <text key={r + "-" + k} x={x + k * CELL_W + off + CELL_W / 2} y={r + 0.82} fontSize="0.9" textAnchor="middle" fontFamily="monospace" fontWeight="700">{c}</text>));
+      })}
+    </g>
   );
+  return <g>{layer(fill, 0, "m", false)}{glitch && on && [layer("#D9736A", -0.35, "r", true), layer("#6FA8DC", 0.35, "b", true)]}</g>;
 }
 
 function GlitchLetters({ glitch, lit, colors }) {
-  const font = { margin: 0, fontFamily: MONO, fontWeight: 700, fontSize: 20, lineHeight: 1, whiteSpace: "pre" };
+  const letters = ["O", "P", "E", "N"];
+  let x = 0; const xs = letters.map((ch, i) => { const cur = x; x += GLYPH[ch][0].length * CELL_W + (i < 3 ? LETTER_GAP * CELL_W : 0); return cur; });
   return (
-    <FitBox>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 14, animation: glitch ? "qr-jit .42s steps(2) 1" : "none" }}>
-        {["O", "P", "E", "N"].map((ch, i) => <GlitchLetter key={ch} ch={ch} on={lit.includes(i)} glitch={glitch} colors={colors} font={font} />)}
-      </div>
-    </FitBox>
+    <svg viewBox={"0 0 " + x.toFixed(2) + " 5"} role="img" aria-label="OPEN" style={{ display: "block", width: "100%", height: "auto", overflow: "visible", transform: "skewX(-6deg)", filter: lit.length ? "drop-shadow(0 0 5px rgba(196,154,80,.6))" : "none", animation: glitch ? "qr-jit .42s steps(2) 1" : "none" }}>
+      {letters.map((ch, i) => <GlitchLetter key={ch} ch={ch} x={xs[i]} on={lit.includes(i)} glitch={glitch} colors={colors} />)}
+    </svg>
   );
 }
 
-function GaugeLabel({ text, on, glitch, colors }) {
-  const word = useScramble(text, on, 28);
-  const shown = useGlitchFlicker(word, glitch && on, 70, 0.22);
+// (v0.7.4, 사용자 요청) 게이지 한 칸이 가득 차는 순간, 그 칸 아래 이름이 글리치와 함께 바뀐다 — OPENING→OBSERVE, PUZZLE→PRACTICE, ENDGAME→EVALUATE, NETWORK→NEXT LEVEL.
+function GaugeLabel({ idle, final, full, on, glitch, colors }) {
+  const [burst, setBurst] = useState(false);
+  const firstRef = useRef(true);
+  useEffect(() => {
+    if (firstRef.current) { firstRef.current = false; return undefined; }
+    if (!full) return undefined;
+    setBurst(true);
+    const id = setTimeout(() => setBurst(false), 750);
+    return () => clearTimeout(id);
+  }, [full]);
+  const text = full ? final : idle;
+  const word = useScramble(text, on || full, 26, full ? 1 : 0);
+  const shown = useGlitchFlicker(word, burst || (glitch && on), 70, burst ? 0.45 : 0.22);
+  const hot = burst || (glitch && on);
   return (
-    <div style={{ marginTop: 5, fontFamily: MONO, fontSize: 9.5, fontWeight: 800, letterSpacing: ".08em", whiteSpace: "nowrap", textAlign: "center", color: on ? colors.brassHi : colors.soft, opacity: on ? 1 : 0.45,
-      textShadow: on && glitch ? "-1px 0 #D9736A, 1px 0 #6FA8DC" : on ? "0 0 8px rgba(196,154,80,.55)" : "none", transition: "color .25s, opacity .25s" }}>{on ? shown : text}</div>
+    <div style={{ marginTop: 6, fontFamily: MONO, fontSize: full ? 10.5 : 9.5, fontWeight: 900, letterSpacing: ".08em", whiteSpace: "nowrap", textAlign: "center", color: full ? colors.text : on ? colors.brassHi : colors.soft, opacity: on || full ? 1 : 0.45,
+      transform: burst ? "translateX(1.5px) skewX(-8deg)" : "none",
+      textShadow: hot ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : full ? "0 0 10px rgba(236,203,134,.7)" : on ? "0 0 8px rgba(196,154,80,.55)" : "none", transition: "color .25s, opacity .25s, font-size .2s" }}>{on || full ? shown : text}</div>
   );
+}
+
+// 한 글자(단계)가 보이는 시간 — 예상 전체 시간 ÷ 4(진행률로 보정), MIN~MAX 제한. 분석이 끝났으면 남은 단계는 MIN씩.
+function stageLen(pct, done, elapsed) {
+  if (done) return STAGE_MIN_MS;
+  const est = pct >= 0.08 ? elapsed / pct : Math.max(STAGE_DEFAULT_TOTAL_MS, elapsed * 2.2);   // 아직 진행률이 없으면(엔진 준비 중) 지금까지 걸린 시간에 비례해 늘린다
+  return Math.max(STAGE_MIN_MS, Math.min(STAGE_MAX_MS, est / 4));
 }
 
 export default function QuickReviewIntro({ done, gradedCount, total, colors, onDone }) {
   const pct = total ? Math.min(1, gradedCount / total) : 0;
-  const target = done ? 3 : Math.min(3, Math.floor(pct * 4));
-  // 화면에 보이는 단계(shown)는 목표(target)를 향해 한 칸씩, 단계마다 최소 DWELL_MS를 채우고 넘어간다.
+    // 화면에 보이는 단계(shown)는 목표(target)를 향해 한 칸씩, 단계마다 최소 DWELL_MS를 채우고 넘어간다.
   const [shown, setShown] = useState(0);
   const [glitch, setGlitch] = useState(true);
   const [finale, setFinale] = useState(false);
@@ -101,11 +101,22 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
   const mountedAt = useRef(Date.now());
   if (!done) waitedRef.current = true;
 
+  const stageStartRef = useRef(Date.now());
+  useEffect(() => { stageStartRef.current = Date.now(); }, [shown]);
+  // 지금 단계의 경과(0~0.96) — 게이지 칸이 단계 시간 동안 차오르다가 다음 단계가 시작될 때 가득 찬다.
+  const [frac, setFrac] = useState(0);
   useEffect(() => {
-    if (shown >= target) return undefined;
-    const id = setTimeout(() => setShown((v) => Math.min(target, v + 1)), DWELL_MS);
+    const id = setInterval(() => setFrac(Math.min(0.96, (Date.now() - stageStartRef.current) / stageLen(pct, done, Date.now() - mountedAt.current))), 90);
+    return () => clearInterval(id);
+  }, [pct, done]);
+  useEffect(() => {
+    if (shown >= 3) return undefined;
+    if (shown >= 2 && !done) return undefined;   // EVALUATE는 분석이 끝날 때까지 머문다(NEXT LEVEL은 끝나야 켜짐)
+    const len = stageLen(pct, done, Date.now() - mountedAt.current);
+    const remaining = Math.max(0, len - (Date.now() - stageStartRef.current));
+    const id = setTimeout(() => setShown((v) => Math.min(3, v + 1)), remaining);
     return () => clearTimeout(id);
-  }, [shown, target]);
+  }, [shown, pct, done]);
 
   // 단계가 바뀔 때마다 글리치 한 번, 그리고 가끔 불규칙하게 잔글리치.
   useEffect(() => {
@@ -128,15 +139,12 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
   useEffect(() => {
     if (!done || !waitedRef.current || shown < 3) return undefined;
     setFinale(true);
-    const t1 = setTimeout(() => setLeaving(true), DWELL_MS);
-    const t2 = setTimeout(onDone, DWELL_MS + 270);
+    const t1 = setTimeout(() => setLeaving(true), STAGE_MIN_MS);
+    const t2 = setTimeout(onDone, STAGE_MIN_MS + 270);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [done, shown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lit = finale ? [0, 1, 2, 3] : Array.from({ length: shown + 1 }, (_, i) => i);
-  const cur = WORDS[shown];
-  const word = useScramble(cur.w, true, 24);
-  const wordShown = useGlitchFlicker(word, glitch, 70, 0.18);
   const pctText = Math.round(pct * 100);
 
   return (
@@ -144,30 +152,26 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
       <style>{KEYFRAMES}</style>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0px, rgba(0,0,0,.35) 1px, transparent 1px, transparent 3px)", animation: "qr-scan .5s linear infinite" }} />
       <div style={{ position: "relative", width: "100%", maxWidth: 340, minWidth: 0, textAlign: "center", animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>
+        {/* (v0.7.4, 사용자 요청) OPEN 위쪽 UI는 모두 없앴다 — 단계 단어는 아래 게이지 이름이 글리치와 함께 바뀌며 보여 준다. */}
         <GlitchLetters glitch={glitch} lit={lit} colors={colors} />
-        <div data-phase={shown} style={{ marginTop: 20, minHeight: 34 }}>
-          <FitBox>
-            <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: ".06em", whiteSpace: "nowrap", color: colors.brassHi, textShadow: glitch ? "-2px 0 #D9736A, 2px 0 #6FA8DC" : "0 0 14px rgba(196,154,80,.5)" }}>
-              {wordShown}<span style={{ animation: "qr-caret 1s steps(1) infinite", color: colors.brass }}>▌</span>
-            </div>
-          </FitBox>
-        </div>
-        <div style={{ display: "flex", gap: 4, margin: "18px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
+        <div data-phase={shown} style={{ display: "flex", gap: 4, margin: "40px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
           {WORDS.map((w, i) => {
-            const fill = finale ? 1 : Math.max(0, Math.min(1, pct * 4 - i));
+            const real = Math.max(0, Math.min(1, pct * 4 - i));
+            const fill = finale ? 1 : i < shown ? 1 : i === shown ? Math.max(frac, real) : 0;
+            const full = fill >= 1;
             return (
               <div key={w.k} style={{ flex: 1 }}>
                 <div style={{ height: 6, background: colors.panel, border: "1px solid " + colors.border, overflow: "hidden", transform: "skewX(-18deg)" }}>
                   <div style={{ height: "100%", width: fill * 100 + "%", background: "linear-gradient(90deg," + colors.brass + "," + colors.brassHi + ")", transition: "width .2s linear" }} />
                 </div>
-                <GaugeLabel text={GAUGE_LABELS[i]} on={fill > 0 || shown >= i} glitch={glitch} colors={colors} />
+                <GaugeLabel idle={GAUGE_LABELS[i]} final={w.w} full={full} on={fill > 0 || shown >= i} glitch={glitch} colors={colors} />
               </div>
             );
           })}
         </div>
-        {/* (v0.7.3) 예전엔 헤더에 있던 "분석 중 n%"를 진행 막대 아래로 옮겼다. */}
-        <div className="flex items-center justify-center gap-1" style={{ marginTop: 10, fontSize: 11.5, fontWeight: 700, color: colors.soft }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
       </div>
+      {/* (v0.7.4, 사용자 요청) "분석 중 n%"는 가운데 묶음에서 완전히 분리해 화면 맨 아래에 고정한다. */}
+      <div className="flex items-center justify-center gap-1" style={{ position: "absolute", left: 0, right: 0, bottom: "max(28px, calc(env(safe-area-inset-bottom) + 20px))", fontSize: 12, fontWeight: 700, color: colors.soft, animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
     </div>
   );
 }

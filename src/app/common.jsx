@@ -1615,6 +1615,7 @@ export function poolWorker(pool, idx, engine) {
 // 정확히 반영한다 — "유일한 수" 강등 같은 부가 등급 보정도 이제 fenRoot 리뷰에서 정확히 걸린다.
 // isBookMoveAt(이론 수 판정)만은 표준 시작 위치 전제 DB 자체가 임의 FEN에 대응되지 않아 fenRoot일
 // 때 건너뛴다.
+const REVIEW_ALTS_KINDS = ["inaccuracy", "mistake", "blunder", "miss"];   // (v0.7.4) moves[].alts를 저장하는 등급
 export async function analyzeGame(fullSans, engine, depth, onProgress, movetime = 250, onMove, fenRoot) {
   // (20차) 분석 결과의 수 표기가 항상 체크(+)/체크메이트(#) 기호를 갖도록 수순을 보정해 둔다.
   fullSans = decorateLine(fullSans);
@@ -1799,7 +1800,14 @@ export async function analyzeGame(fullSans, engine, depth, onProgress, movetime 
     // (v0.2.0 기능) /review 페이지가 "최선의 수는 Xx였어요" 코멘트·"수 보기" 화살표를 보여주려면
     // 실제로 둔 수와 다른 최선수만 있으면 된다 — 이미 최선수를 뒀다면(matched) 굳이 같은 수를
     // 다시 "더 나은 수"로 제안할 필요가 없어 null로 둔다.
-    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp });
+    // (v0.7.4, 사용자 요청) 부정확·실수·놓친 수·블런더에는 엔진 상위 후보 수와 그 수를 뒀을 때의 승률(둔 사람 관점, 평가치를 로지스틱 곡선으로 바꾼 값)을 저장한다
+    // — 성장 분석의 "대신 둘 수 있는 수". 크기를 줄이려고 나쁜 등급에만 두고, 이 수 자신은 뺀다. 옛 결과에는 없다(그 경우 best만 보여 준다).
+    let alts;
+    if (REVIEW_ALTS_KINDS.includes(kind) && posEval[i].cands) {
+      alts = posEval[i].cands.map((c) => ({ san: uciToSan(brd, c.uci, color), win: Math.round(winPctFromCp(c.cp) * 10) / 10 })).filter((a) => a.san && stripSuffix(a.san) !== playedSan);
+      if (!alts.length) alts = undefined;
+    }
+    moves.push({ ply: i, san: fullSans[i], white: moverWhite, kind, acc, lossWinPct, sharp, best: matched ? null : bestSan, beforeCp: moveBeforeCp, ...(alts ? { alts } : null) });
     if (moverWhite) { wLoss.push(lossWinPct); wSharp.push(sharp); wKind.push(kind); } else { bLoss.push(lossWinPct); bSharp.push(sharp); bKind.push(kind); }
     gradeBoard = applySan(gradeBoard, fullSans[i], color);
   }
@@ -1907,7 +1915,9 @@ export async function analyzeGame(fullSans, engine, depth, onProgress, movetime 
       // "M5"/"#" 대신 "+1000.00"을 표시했다 — mate 여부를 따로 보존해 표시용 변환(posEvalToWhite)이
       // 다시 M수로 되돌릴 수 있게 한다. 그래프용 graphCp는 여전히 cpOfLine의 큰 수를 그대로 쓴다(그래프는
       // 승률로만 변환되므로 문제없다).
-      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, third: p2 ? cpOfLine(p2) : null, ok: !!p0 };
+      posEval[i] = { cp: cpOfLine(p0), mate: p0 && p0.mate != null ? p0.mate : null, best: p0 && p0.uci, second: p1 ? cpOfLine(p1) : null, third: p2 ? cpOfLine(p2) : null, ok: !!p0,
+        // (v0.7.4) 상위 후보 수(UCI)와 평가 — 나쁜 등급의 수에서 "대신 둘 수 있는 수"를 보여 주려고 이 수 채점 때 SAN·승률로 바꿔 함께 저장한다(moves[].alts).
+        cands: [p0, p1, p2].filter((l) => l && l.uci).map((l) => ({ uci: l.uci, cp: cpOfLine(l) })) };
       doneCount++;
       onProgress && onProgress(doneCount / (N + 1));
       tryFlush();
@@ -3104,17 +3114,7 @@ export function Mascot({ name = "milku", emotion = "great", size = 44, style }) 
 }
 // (v0.7.1 디자인) 탭 상단 제목 — 퍼즐·학습·설정이 각자 다른 크기·여백으로 쓰던 제목을 한 곳으로 모은다. 제목 아래 짧은 브라스 막대가 탭의 시작점을
 // 알려 준다. lead는 제목 앞에 놓는 그림(퍼즐 탭의 마스코트). 새 문구가 없어 번역 추가는 필요 없다.
-export function PageTitle({ children, lead = null, style }) {
-  return (
-    <div className="flex items-center gap-2" style={{ margin: lead ? "0 0 6px" : "6px 0 14px", ...style }}>
-      {lead}
-      <div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em", color: T.ivoryHi, margin: 0 }}>{children}</h2>
-        <span aria-hidden="true" className="oc-title-bar" style={{ display: "block", width: 28, height: 3, borderRadius: 2, marginTop: 6, background: "linear-gradient(90deg," + T.brassHi + "," + T.brass + ")" }} />
-      </div>
-    </div>
-  );
-}
+// (v0.7.4, 사용자 요청) 탭 상단의 제목(퍼즐·학습·설정)과 장식은 모든 화면에서 없앴다 — 하단 탭바·상단 메뉴에 이미 이름이 있다.
 export function MascotBubble({ text, ply, mascot = "milku", emotion = "great", stacked = false }) {
   const label = mascot === "kokoa" ? "KOKOA" : "MILKU";
   // (사용자 요청) stacked — 설명이 길어질 걸 대비해, 마스코트를 작게 줄여 좌상단에 라벨과 나란히
@@ -4523,17 +4523,43 @@ export function reviewStorageKey(game) {
 }
 // (v0.7.3) 이 기기에 저장된 게임 리뷰 결과(oc-review-result:*)에서 내 정확도·수 등급 개수만 읽는다 — 학습 탭의 최근 대국 박스가 "리뷰한 대국"에 요약을 보여 준다.
 // 엔진·네트워크를 쓰지 않는 동기 조회라 카드마다 불러도 가볍다. 리뷰한 적 없으면 null. game.color가 내 진영.
+// (v0.7.4, 사용자 요청) 리뷰 결과(수십 KB)와 별개로 "정확도·수 등급 개수"만 작은 기록(oc-review-summary-v1)으로 남긴다.
+// 리뷰 결과가 용량 부족 등으로 지워져도 최근 대국 박스의 탁월·유일 개수는 계속 보이고, 자동 리뷰한 대국도 바로 채워진다. 흰·검 양쪽을 다 저장해 진영만 골라 읽는다.
+const SUMMARY_KEY = "oc-review-summary-v1", SUMMARY_MAX = 600;
+function summaryOfResult(result) {
+  if (!result || !Array.isArray(result.moves)) return null;
+  const w = {}, b = {};
+  for (const m of result.moves) if (m && m.kind) { const o = m.white ? w : b; o[m.kind] = (o[m.kind] || 0) + 1; }
+  const num = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
+  return { wa: num(result.whiteAcc), ba: num(result.blackAcc), w, b };
+}
+function readSummaries() { try { return JSON.parse(window.localStorage.getItem(SUMMARY_KEY)) || {}; } catch { return {}; } }
+export function recordReviewSummary(storageKey, result) {
+  try {
+    if (!storageKey || typeof window === "undefined") return;
+    const sm = summaryOfResult(result); if (!sm) return;
+    const all = readSummaries(); all[storageKey] = sm;
+    const keys = Object.keys(all);
+    if (keys.length > SUMMARY_MAX) for (const k of keys.slice(0, keys.length - SUMMARY_MAX)) delete all[k]; // 오래된 것부터(삽입 순서)
+    window.localStorage.setItem(SUMMARY_KEY, JSON.stringify(all));
+  } catch { }
+}
 export function cachedReviewSummary(game) {
   try {
     const k = reviewStorageKey(game); if (!k || typeof window === "undefined") return null;
-    const raw = window.localStorage.getItem(k.replace("oc-review-pos:", "oc-review-result:")); if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (!p || p.v !== REVIEW_RESULT_CACHE_VERSION || !p.result || !Array.isArray(p.result.moves)) return null;
+    const rk = k.replace("oc-review-pos:", "oc-review-result:");
     const mineWhite = game.color === "w";
-    const acc = mineWhite ? p.result.whiteAcc : p.result.blackAcc;
-    const counts = {};
-    for (const m of p.result.moves) if (m && m.kind && !!m.white === mineWhite) counts[m.kind] = (counts[m.kind] || 0) + 1;
-    return { acc: Number.isFinite(acc) ? acc : null, counts };
+    const pick = (sm) => { const acc = mineWhite ? sm.wa : sm.ba; return { acc: Number.isFinite(acc) ? acc : null, counts: mineWhite ? sm.w || {} : sm.b || {} }; };
+    const raw = window.localStorage.getItem(rk);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.v === REVIEW_RESULT_CACHE_VERSION && p.result && Array.isArray(p.result.moves)) {
+        const sm = summaryOfResult(p.result);
+        if (sm) { if (!readSummaries()[rk]) recordReviewSummary(rk, p.result); return pick(sm); }
+      }
+    }
+    const saved = readSummaries()[rk];
+    return saved ? pick(saved) : null;
   } catch { return null; }
 }
 // (v0.3.4 기능) 사용자 요청 — 리뷰 페이지 고유 URL(openchess.kr/review/(식별자))의 "PGN 분석" 쪽

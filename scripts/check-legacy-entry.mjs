@@ -10,7 +10,7 @@ import { normalizeLegacyEntry, normalizeLegacies, normalizeLegacyHistory, LEGACY
 
 const fails = [];
 const ok = (label, cond) => { if (!cond) fails.push(label); };
-const good = { sans: ["e4", "e5", "Nf3", "Nc6", "Bb5"], moveIndex: 4, playCount: 1, beforeCount: 2, kinds: ["book", "book", "book", "book", "best"], side: "b", savedAt: 1 };
+const good = { sans: ["e4", "e5", "Nf3", "Nc6", "Bb5"], moveIndex: 4, playCount: 1, beforeCount: 2, kinds: ["book", "book", "book", "book", "best"], side: "b", savedAt: 1, kind: null };
 const safe = (label, v) => { try { ok(label + " → null", normalizeLegacyEntry(v) === null); } catch (e) { fails.push(label + " 에서 throw: " + e.message); } };
 
 ok("정상 항목 통과", JSON.stringify(normalizeLegacyEntry(good)) === JSON.stringify(good));
@@ -34,7 +34,13 @@ ok("이력: 잘못된 항목은 뺌", (() => { const r = normalizeLegacyHistory(
 // 화면 연결 — 남의 데이터가 들어오는 두 곳
 const profile = readFileSync(new URL("../src/app/profile.jsx", import.meta.url), "utf8");
 const social = readFileSync(new URL("../src/app/social.jsx", import.meta.url), "utf8");
-ok("프로필 유산 줄(LegacyStoneRow)이 legacies·history를 검증", /function LegacyStoneRow\(\{ legacies: rawLegacies, history: rawHistory[\s\S]{0,400}normalizeLegacies\(rawLegacies\)[\s\S]{0,200}normalizeLegacyHistory\(rawHistory\)/.test(profile));
+{ // (v0.7.4) 프로필 유산은 피드(legacyFeed.jsx)가 listPosts·normalizeSaved(둘 다 normalizeLegacyEntry로 검증)를 거쳐 그린다.
+  const feed = readFileSync(new URL("../src/app/legacyFeed.jsx", import.meta.url), "utf8");
+  const posts = readFileSync(new URL("../src/lib/legacyPosts.js", import.meta.url), "utf8");
+  ok("유산 피드가 listPosts·normalizeSaved로 검증한 항목만 그림", /listPosts\(legacies\)/.test(feed) && /normalizeSaved\(/.test(feed));
+  ok("listPosts·normalizeSaved가 normalizeLegacyEntry로 검증", (posts.match(/normalizeLegacyEntry\(/g) || []).length >= 3);
+  ok("프로필 유산 줄(LegacyStoneRow)이 피드를 쓴다", /function LegacyStoneRow\([\s\S]{0,600}LegacyFeedLazy/.test(profile));
+}
 ok("채팅 유산 공유 미리보기가 검증", /normalizeLegacyEntry\(pub\.legacies && pub\.legacies\[slot\]\)/.test(social));
 
 if (fails.length) { console.error("✗ 유산 항목 검증 검사 실패(src/lib/legacyEntry.js):"); fails.forEach((x) => console.error("  · " + x)); process.exit(1); }

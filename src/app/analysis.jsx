@@ -2,6 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
 import { LOOP } from "../lib/perfMode.js";
+import CustomScroll from "../components/CustomScroll.jsx";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
 import { fullPlayerName } from "../lib/masterFullName.js";
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
@@ -1785,15 +1786,31 @@ function FocusPages({ labels, pages, wide }) {
   }, [pages, n]);
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
   const scrollParentOf = (el) => { for (let q = el && el.parentElement; q; q = q.parentElement) { const o = getComputedStyle(q).overflowY; if (o === "auto" || o === "scroll") return q; } return null; };
+  // (v0.7.4 버그 수정) 버튼으로 다른 페이지(예: 마스터 통계 → 해설)로 넘길 때 중간에 멈추던 문제 — 부드러운 이동 도중 ① 스냅(mandatory)이 다시 가까운 지점으로 끌어당기고
+  // ② onScroll이 지나가는 페이지로 idx를 계속 바꿔 칸 높이(transition)가 흔들리며 재스냅을 불렀다. 프로그램으로 이동하는 동안은 스냅을 끄고 idx 갱신을 막은 뒤,
+  // 끝나면(또는 안전 시간 뒤) 스냅을 되돌리고 정확한 위치로 한 번 맞춘다.
+  const progRef = useRef(0);
   const goTo = (i) => {
     setIdx(i);
     const tr = trackRef.current; if (!tr) return;
+    const token = ++progRef.current;
+    tr.style.scrollSnapType = "none";
     tr.scrollTo({ left: i * tr.clientWidth, behavior: "smooth" });
+    const finish = () => {
+      if (progRef.current !== token) return;
+      progRef.current = 0;
+      const t2 = trackRef.current; if (!t2) return;
+      t2.scrollTo({ left: i * t2.clientWidth, behavior: "auto" });
+      t2.style.scrollSnapType = "x mandatory";
+    };
+    if ("onscrollend" in window) tr.addEventListener("scrollend", finish, { once: true });
+    setTimeout(finish, 900);
     const sec = sectionRef.current, sc = wide ? null : scrollParentOf(sec);   // 2단에서는 버튼 줄이 이미 위에 있어 세로 이동 없음
     if (sc && sec) { const top = sc.scrollTop + (sec.getBoundingClientRect().top - sc.getBoundingClientRect().top); if (Math.abs(top - sc.scrollTop) > 1) sc.scrollTo({ top, behavior: "smooth" }); }
   };
   // 손가락·휠로 좌우 스크롤이 멈추면 가장 가까운 페이지를 현재 페이지로 맞춘다.
   const onScroll = () => {
+    if (progRef.current) return;   // 버튼으로 이동하는 중에는 지나가는 페이지로 idx를 바꾸지 않는다
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => { const tr = trackRef.current; if (tr && tr.clientWidth) setIdx(Math.max(0, Math.min(n - 1, Math.round(tr.scrollLeft / tr.clientWidth)))); });
   };
@@ -1805,11 +1822,11 @@ function FocusPages({ labels, pages, wide }) {
           <button key={i} onClick={() => goTo(i)} aria-pressed={idx === i} className="press" style={{ flex: 1, minWidth: 0, padding: "9px 4px", borderRadius: 10, border: "1px solid " + (idx === i ? T.brass : "#5A4630"), background: idx === i ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "rgba(0,0,0,.3)", color: idx === i ? "#241509" : T.ivory, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "background .2s ease, color .2s ease" }}>{lab}</button>
         ))}
       </div>
-      <div style={wide ? { flex: 1, minHeight: 0, overflowY: "auto", scrollbarWidth: "thin", paddingBottom: 24 } : undefined}>
+      <CustomScroll enabled={wide} style={wide ? { flex: 1, minHeight: 0 } : undefined} contentStyle={wide ? { paddingBottom: 24, paddingRight: 12 } : undefined}>
       <div ref={trackRef} onScroll={onScroll} style={{ display: "flex", alignItems: "flex-start", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", height: heights[idx] != null && heights[idx] > 0 ? Math.max(heights[idx], minPageH) : "auto", transition: "height .25s ease" }}>
         {pages.map((p, i) => <div key={i} data-fp-page="" ref={(el) => { pageRefs.current[i] = el; }} style={{ flex: "0 0 100%", minWidth: 0, scrollSnapAlign: "start", boxSizing: "border-box", paddingTop: i === 0 ? 12 : anchorTop }}>{p}</div>)}
       </div>
-      </div>
+      </CustomScroll>
     </div>
   );
 }
@@ -2534,7 +2551,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   };
   return (
     <div style={wide ? { display: "grid", gridTemplateColumns: "minmax(0," + Math.max(focusBoardPx, 420) + "px) minmax(0,1fr)", gap: 28, alignItems: "stretch", height: "calc(100vh - 78px)" } : undefined}>
-      <div style={wide ? { overflowY: "auto", minHeight: 0, scrollbarWidth: "none" } : undefined}>
+      <CustomScroll enabled={wide} style={wide ? { minHeight: 0 } : undefined} contentStyle={wide ? { paddingRight: 12 } : undefined}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10, gap: 8 }}>
         <button onClick={onBack} className="press" title={t("집중 분석 종료")} style={{ width: 36, height: 36, borderRadius: 10, background: T.ebony2, color: T.ivoryHi, border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><ArrowLeft size={18} /></button>
         {/* (v0.6.6, 사용자 요청) 분석 탭 메인의 기보를 가져와 집중 분석 안에서 지나온 경로를 기록하고, 수를 눌러 그 시점으로 자유롭게 이동한다. */}
@@ -2566,7 +2583,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
       </div>
       {/* (v0.6.6, 사용자 요청) 보드는 분석 탭 메인 보드와 같은 크기 */}
       <div style={{ display: "flex", justifyContent: "center" }}><AnimatedMove sans={sans} san={san} size={focusBoardPx} extraArrows={extraArrows} /></div>
-      </div>
+      </CustomScroll>
       <FocusPages wide={wide} labels={[t("탐색"), t("유저 통계"), t("마스터 통계"), t("해설")]} pages={[
         <div>{nextMovesPanel}</div>,
         <>
@@ -3613,11 +3630,11 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
         </div>
         {/* (18차 UX8) 집중분석은 전체 화면을 차지하는 별도 창(오버레이)으로 표시한다. */}
         {focus && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+          <CustomScroll style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)" }}>
             <div style={{ maxWidth: focusWide ? 1180 : 620, margin: "0 auto", padding: "18px 16px 60px" }}>
               <FocusPanel boardSize={boardSize} onOpenTournament={onOpenTournament} fa={fa} onBack={exitFocus} onOpenPuzzleWizard={onOpenPuzzleWizard} onJump={enterFocusAt} onOpenMasterGame={onOpenMasterGame} onOpenMasterGameReview={onOpenMasterGameReview} onOpenMyGame={onOpenMyGame} onOpenMyGameAnalyze={onOpenMyGameAnalyze} nextMovesPanel={nextMovesContent} uid={uid} username={user} noteCap={noteCap} />
             </div>
-          </div>
+          </CustomScroll>
         )}
         <div style={{ marginTop: 16 }}>
           {focus ? null : (

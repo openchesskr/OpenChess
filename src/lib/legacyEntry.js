@@ -5,6 +5,7 @@ import { startBoard, sanSrc, applySan, stripSuffix } from "./chessRules.js";
 
 export const LEGACY_MAX_PLIES = 600;
 const KIND_RE = /^[a-z]{1,16}$/;
+export const POST_ID_RE = /^[a-z][a-z0-9]{0,23}$/;
 const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 
 export function normalizeLegacyEntry(e) {
@@ -32,6 +33,7 @@ export function normalizeLegacyEntry(e) {
     kinds,
     side: e.side === "b" ? "b" : "w",
     savedAt: Number.isFinite(e.savedAt) ? e.savedAt : 0,
+    kind: e.kind === "best" || e.kind === "only" || e.kind === "brilliant" ? e.kind : null,   // (v0.7.4) 게시물 종류 태그 — 옛 슬롯 유산엔 없어 키(best/only/brilliant)로 알아낸다
   };
 }
 
@@ -39,7 +41,8 @@ export function normalizeLegacyEntry(e) {
 export function normalizeLegacies(map) {
   if (!map || typeof map !== "object" || Array.isArray(map)) return null;
   const out = {};
-  for (const k of Object.keys(map)) { if (/^[a-z]{1,16}2?$/.test(k)) out[k] = normalizeLegacyEntry(map[k]); }
+  // (v0.7.4) 키는 게시물 아이디 — 옛 슬롯 키(best, only2 …)도 그대로 유효한 아이디다(좋아요·채팅 공유가 키로 묶여 있어 바꾸지 않는다).
+  for (const k of Object.keys(map).slice(0, 400)) { if (POST_ID_RE.test(k)) out[k] = normalizeLegacyEntry(map[k]); }
   return out;
 }
 export function normalizeLegacyHistory(list) {
@@ -47,7 +50,7 @@ export function normalizeLegacyHistory(list) {
   // 검사한 필드만 새로 담는다(펼치기 금지 — 검사 안 한 값이 화면까지 따라오지 않게).
   const out = [];
   for (const h of list.slice(-200)) {
-    if (!h || typeof h !== "object" || typeof h.slotKey !== "string" || !/^[a-z]{1,16}2?$/.test(h.slotKey)) continue;
+    if (!h || typeof h !== "object" || typeof h.slotKey !== "string" || !POST_ID_RE.test(h.slotKey)) continue;
     const entry = normalizeLegacyEntry(h.entry);
     if (entry) out.push({ slotKey: h.slotKey, entry, replacedAt: Number.isFinite(h.replacedAt) ? h.replacedAt : null });
   }

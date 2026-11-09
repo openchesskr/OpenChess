@@ -82,6 +82,32 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.4 - 2026/11/09
+
+테마: 성장 분석 개편과 유산의 게시물화, 플레이 퀘스트, 창 UI 확대·티어 연출 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`chat_messages.legacy_owner`, `legacy_reposts`·`legacy_repost_counts`, `legacy_repost_toggle` RPC).
+
+**기능**
+- 성장 분석(`growth.jsx`): 테마별 재구성, 요약 타일, 이동 칩, 처방 카드, 실수 기록(수 번호·검색·리뷰 버튼). 정확도·탁월한 수·유일한 수 요약을 리뷰 시 저장하고 "미들게임" 표기로 통일.
+- 최근 대국(`gameHistory.jsx`): `/play` 시간 제한 표기, 흑/백 필터, 플랫폼 토글 줄 분리.
+- 유산 개편(`legacyPosts.js`, `legacyFeed.jsx`, `legacyPlayer.jsx`, `legacyFrame.jsx`): 최대 200개 게시물, 좋아요·리포스트·채팅 전송·공유 링크 `/legacy/<MID>-<id>`, 푸른 바탕 금 윤곽 카드를 한 줄 가로 스크롤로 표시, 새 HUD 재생 화면. 유산은 /user 페이지에서만 표시. 리뷰 "다음" 버튼 옆에 남기기 버튼.
+- 플레이 퀘스트(`playQuest.js`, `PlayQuestCard`): 일반 대국·미니 게임 조건 달성 시 클리어(보상 없음). 이벤트 버스 `emitPlayEvent`.
+
+**UI**
+- 칭호를 이름 아래 별도 한 줄로 배치(학습 탭은 미표시), 탭 상단 제목 삭제(모바일·데스크톱), 모바일 페이저 정리(플레이 탭 2페이지, 점·1/2 삭제).
+- 일일 퀘스트 크림색 블록, 도감 허브 포스터 카드, 집중 분석 전용 스크롤바(`CustomScroll.jsx`), 티어 승급 오버레이·티어 여정 재설계, 빠른 리뷰 인트로 재설계(OPEN SVG, 게이지 연동 글리치, 하단 진행률).
+- 창(검색·프로필·친구·채팅)에 확대 버튼과 휠 가로 스크롤, 프로필 카드는 내 /user로 연결하고 ⋮ 메뉴에서 편집.
+- /about 외부 서비스 명칭 제거, 버전 설명·업데이트 팝업·개발자 기록 합니다체 통일.
+
+**UX**
+- 프로필 사진 위치 조정, 유산 공유·전송 흐름 통일.
+
+**버그 수정**
+- BUG-107(P3), BUG-109(P3), BUG-110(P2, 집중 분석 해설 이동), BUG-111(P2, 창 가로 스크롤), BUG-112(P2, Android 빠른 리뷰 OPEN 겹침). BUG-108(P3, /about 학습 탭 스크린샷 낡음)은 미결.
+
+**시스템**
+- prebuild 검사 추가: `check-legacy-posts`, `check-legacy-player`, `check-play-quest`. `check-economy-constants`가 `applyEconomy` 블록을 동적으로 찾도록 수정.
+- `package.json` 0.7.4, 새 문구 23개 5개 언어 번역.
+
 ### OpenChess v0.7.3 - 2026/11/07
 
 테마: 학습 탭·레슨·유산 개편과 사이트 전반 모션 보강, 수 등급·퍼즐 생성 재검토. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`economy_params()`의 `questBonus.coins` 20→100).

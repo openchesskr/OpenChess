@@ -7,7 +7,9 @@ import { drawKindLabel, boardFromSans } from "../lib/chessRules.js";
 import { chessTcCategory } from "../lib/chessRating.js";
 import { SB_ON, sbRpc } from "../lib/supabaseClient.js";
 import { BestMoveJumpButton, ListPager } from "../components/uiPrimitives.jsx";
-import { TIME_CLASS_LABEL, fmtFull, openingNameOf, Board, cachedReviewSummary } from "./common.jsx";
+import { TIME_CLASS_LABEL, timeControlFromKey, fmtFull, openingNameOf, Board, cachedReviewSummary, reviewStorageKey, useNarrow } from "./common.jsx";
+import { recordAround } from "../lib/ccGameToast.js";
+import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { t, tx } from "../lib/i18n.js";
@@ -280,11 +282,12 @@ export function RatingHistoryChart({ games, timeFilter, stillFetching }) {
   );
 }
 // 알약 모양 필터 버튼 묶음 — options: [[값, 라벨], ...]
-export function GameFilterPills({ options, value, onChange }) {
+// height를 주면(v0.7.4, 학습 탭 대국 열: 플랫폼 토글과 같은 높이로 한 줄에 맞춤) 바깥 높이를 그 값으로 고정하고 버튼이 안쪽을 채운다.
+export function GameFilterPills({ options, value, onChange, height }) {
   return (
-    <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2 }}>
+    <div className="inline-flex" style={{ borderRadius: 9, background: "rgba(0,0,0,.06)", padding: 3, gap: 2, ...(height ? { height, boxSizing: "border-box", alignItems: "stretch", flexShrink: 0 } : null) }}>
       {options.map(([k, lab]) => (
-        <button key={k} onClick={() => onChange(k)} className="press" style={{ padding: "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, background: value === k ? T.ebony2 : "transparent", color: value === k ? T.brassHi : T.inkSoft }}>{lab}</button>
+        <button key={k} onClick={() => onChange(k)} className="press" style={{ padding: height ? "0 9px" : "5px 9px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap", background: value === k ? T.ebony2 : "transparent", color: value === k ? T.brassHi : T.inkSoft }}>{lab}</button>
       ))}
     </div>
   );
@@ -370,19 +373,34 @@ export function RecentGamesList({ games, ratingChanges, username, resetKey, onOp
 }
 
 // (v0.7.3, 사용자 요청) 학습 탭의 "최근 대국" — 한 줄 목록 대신 큰 박스로 대국마다 결과·레이팅 변화·상대·오프닝·시간 규정·수 수·날짜와 최종 포지션 미니 보드를 보여 준다.
-// 이 기기에서 리뷰한 대국이면 정확도·수 등급 요약을, 아니면 "리뷰하기" 버튼을 둔다. games는 chess.com 대국 객체(OpenChess 대국도 profileGameRowToGame으로 같은 모양).
-const BOX_PAGE_SIZE = 6;
-const REVIEW_SUMMARY_KINDS = ["brilliant", "best", "inaccuracy", "mistake", "blunder"];
-function GameBox({ g, rc, username, onOpenGame, onOpenGameAnalyze, index }) {
+// (v0.7.4, 사용자 요청) 박스 정보 확장. ① 오프닝 줄은 chess.com 최근 대국 알림과 같은 디자인(오프닝 이름 + 이 오프닝의 이 대국까지 전적 칩) ② 성장 분석 연계: 이 대국 리뷰에서 기록된
+// 실수 개수와 가장 많은 유형 ③ 좌하단에 탁월한 수·유일한 수 개수(리뷰한 대국만) ④ 대국 보기·리뷰하기는 기존 사이트의 검색 아이콘 버튼과 연두색 리뷰 아이콘 버튼.
+// games는 chess.com 대국 객체(OpenChess 대국도 profileGameRowToGame으로 같은 모양).
+const BOX_PAGE_SIZE = 8;
+// (v0.7.4, 사용자 요청) 최근 대국의 시간 규정은 /play와 같은 표기("10분, 래피드" · "5분+2초, 블리츠")로 쓴다.
+// chess.com 원본("600", "180+2")과 OpenChess 키("600-0")를 같은 키로 맞춘 뒤 play의 timeControlFromKey 표기를 그대로 쓴다. 해석할 수 없으면(일일 "1/86400" 등) 분류 이름만 보인다.
+export function playTimeText(g) {
+  const cls = g.timeClass ? (TIME_CLASS_LABEL[g.timeClass] || g.timeClass) : "";
+  const m = /^(\d+)(?:[+-](\d+))?$/.exec(String(g.timeControl || ""));
+  if (!m || g.timeClass === "daily") return cls;
+  const sec = parseInt(m[1], 10), inc = parseInt(m[2] || "0", 10);
+  const lab = sec < 60 ? t("{0}초", sec) + (inc ? t("+{0}초", inc) : "") : timeControlFromKey(sec + "-" + inc).label;
+  return cls ? lab + ", " + cls : lab;
+}
+const iconBtnStyle = { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
+const pillStyle = (strong) => ({ fontSize: 10.5, fontWeight: strong ? 800 : 700, color: strong ? T.ink : T.inkSoft, background: strong ? "rgba(90,58,34,.1)" : "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px", whiteSpace: "nowrap" });
+function GameBox({ g, rc, username, allGames, noBoard, onOpenGame, onOpenGameAnalyze, index }) {
   const won = g.result === "win", lost = g.result === "loss";
   const accent = won ? T.best : lost ? T.blunder : T.inkSoft;
   const oppSide = g.color === "w" ? g.black : g.white;
-  const board = useMemo(() => { try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves]);
+  const board = useMemo(() => { if (noBoard) return null; try { return boardFromSans(g.moves || []); } catch { return null; } }, [g.moves, noBoard]);
   const summary = useMemo(() => cachedReviewSummary(g), [g]);
+  const rec = useMemo(() => { try { return g.opening ? recordAround(allGames, g) : null; } catch { return null; } }, [allGames, g]);
   const d = g.endTime ? new Date(g.endTime * 1000) : null;
   const date = d ? d.getFullYear() + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + String(d.getDate()).padStart(2, "0") : "";
   const plies = (g.moves || []).length, moveNo = Math.ceil(plies / 2);
   const analyze = () => onOpenGameAnalyze && onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username, white: g.white, black: g.black, id: g.id });
+  const cnt = summary ? summary.counts : null;
   return (
     <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: Math.min(index, 6) * 0.05, ease: [0.22, 0.9, 0.32, 1] }}
       className="oc-lift" style={{ position: "relative", borderRadius: 16, overflow: "hidden", border: "1px solid #C9B58C", background: "linear-gradient(180deg,#F7EFDF,#E8D9B8)", boxShadow: "0 8px 18px -12px rgba(0,0,0,.55)", display: "flex", flexDirection: "column" }}>
@@ -395,41 +413,59 @@ function GameBox({ g, rc, username, onOpenGame, onOpenGameAnalyze, index }) {
         <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}>{date}</span>
       </div>
       <div className="flex" style={{ gap: 14, padding: "10px 14px 8px 18px", alignItems: "stretch" }}>
-        <div style={{ width: 116, flexShrink: 0, pointerEvents: "none", borderRadius: 6, overflow: "hidden", alignSelf: "flex-start" }}>
-          {board ? <Board board={board} flip={g.color === "b"} size={116} interactive={false} showCoords={false} showEval={false} /> : <div style={{ width: 116, height: 116, background: "rgba(0,0,0,.08)" }} />}
-        </div>
-        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+        {/* (v0.7.4, 사용자 요청) 모바일에서는 체스보드 미리보기를 없앤다 */}
+        {!noBoard && (
+          <div style={{ width: 116, flexShrink: 0, pointerEvents: "none", borderRadius: 6, overflow: "hidden", alignSelf: "flex-start" }}>
+            {board ? <Board board={board} flip={g.color === "b"} size={116} interactive={false} showCoords={false} showEval={false} /> : <div style={{ width: 116, height: 116, background: "rgba(0,0,0,.08)" }} />}
+          </div>
+        )}
+        <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>vs {oppSide && oppSide.username ? oppSide.username : "?"}
             {oppSide && oppSide.rating != null && <span style={{ fontWeight: 700, fontFamily: SITE_FONT, color: T.inkSoft, marginLeft: 5 }}>({oppSide.rating})</span>}</div>
-          <div style={{ fontSize: 12, color: T.ink, lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: 32 }}>{g.opening || t("오프닝 정보 없음")}</div>
-          <div className="flex items-center" style={{ gap: 5, flexWrap: "wrap", marginTop: "auto" }}>
-            {g.timeClass && <span style={{ fontSize: 10.5, fontWeight: 800, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 6, padding: "2px 7px" }}>{TIME_CLASS_LABEL[g.timeClass] || g.timeClass}{g.timeControl ? " " + g.timeControl : ""}</span>}
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, background: "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px" }}>{tx("{0}수", moveNo)}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, background: "rgba(90,58,34,.07)", borderRadius: 6, padding: "2px 7px" }}>{g.color === "w" ? t("백") : t("흑")}</span>
+          {/* 오프닝 줄 — chess.com 최근 대국 알림(ChesscomGameToast)과 같은 디자인: 오프닝 이름(세리프, 책 갈색) + 이 오프닝의 전적 칩(이 대국 포함). */}
+          <div className="flex items-center" style={{ gap: 6, minHeight: 22 }}>
+            <span title={g.opening || undefined} style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: g.opening ? CC_TOAST_LABEL_FONT : undefined, fontSize: g.opening ? 12.5 : 11, fontWeight: 700, color: T.book }}>{g.opening || t("오프닝 정보 없음")}</span>
+            {rec && rec.next.n > 0 && (
+              <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 21, padding: "0 8px", borderRadius: 11, background: "#FFFDF6", border: "1.5px solid " + ccWrColor(rec.next.n, rec.next.wr), boxShadow: "0 1px 3px rgba(0,0,0,.25)", whiteSpace: "nowrap", fontFamily: SITE_FONT, fontSize: 10.5, fontWeight: 800, color: T.ink }}>
+                <span>{tx("{0}승 {1}무 {2}패", rec.next.w, rec.next.d, rec.next.l)}</span>
+                <span style={{ color: ccWrColor(rec.next.n, rec.next.wr) }}>{rec.next.wr != null ? rec.next.wr + "%" : "–"}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center" style={{ gap: 5, flexWrap: "wrap" }}>
+            {g.timeClass && <span style={pillStyle(true)}>{playTimeText(g)}</span>}
+            <span style={pillStyle()}>{tx("{0}수", moveNo)}</span>
+            <span style={pillStyle()}>{g.color === "w" ? t("백") : t("흑")}</span>
             {rc == null && g.rating != null && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft, fontFamily: SITE_FONT }}>{g.rating}</span>}
             {won === false && lost === false && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkSoft }}>{drawKindLabel(g.moves)}</span>}
           </div>
+          {/* 정확도(리뷰한 대국만). 성장 분석 연계 정보는 성장 분석을 새로 설계하면서 다시 붙인다. */}
+          {summary && summary.acc != null && (
+            <div className="flex items-center" style={{ gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
+              <span style={{ fontSize: 12, fontWeight: 900, color: T.ink, whiteSpace: "nowrap" }}>{t("정확도")} <span style={{ fontFamily: SITE_FONT, color: T.best }}>{summary.acc.toFixed(1)}%</span></span>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex items-center" style={{ gap: 8, padding: "8px 14px 12px 18px", borderTop: "1px solid rgba(90,58,34,.14)", marginTop: "auto" }}>
-        {summary ? (
-          <div className="flex items-center" style={{ gap: 10, minWidth: 0, flex: 1, flexWrap: "wrap" }}>
-            {summary.acc != null && <span style={{ fontSize: 13, fontWeight: 900, color: T.ink, whiteSpace: "nowrap" }}>{t("정확도")} <span style={{ fontFamily: SITE_FONT, color: T.best }}>{summary.acc.toFixed(1)}%</span></span>}
-            {REVIEW_SUMMARY_KINDS.filter((k) => summary.counts[k]).map((k) => (
-              <span key={k} title={QLABEL[k]} className="flex items-center" style={{ gap: 3, fontSize: 12, fontWeight: 800, color: T.ink }}>{badgeIcon(k, 15)}{summary.counts[k]}</span>
-            ))}
-          </div>
-        ) : (
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, flex: 1 }}>{t("아직 리뷰하지 않은 대국")}</span>
-        )}
-        <button onClick={() => onOpenGame && onOpenGame(g.moves)} className="press" style={{ flexShrink: 0, padding: "7px 11px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{t("대국 보기")}</button>
-        {onOpenGameAnalyze && <button onClick={analyze} className="press" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{summary ? t("리뷰 보기") : t("리뷰하기")}</button>}
+        {/* 좌하단: 탁월한 수·유일한 수 개수(리뷰한 대국만) */}
+        <div className="flex items-center" style={{ gap: 12, minWidth: 0, flex: 1 }}>
+          {cnt ? (
+            <>
+              <span title={QLABEL.brilliant} className="flex items-center" style={{ gap: 4, fontSize: 13, fontWeight: 900, color: T.ink }}>{badgeIcon("brilliant", 17)}{cnt.brilliant || 0}</span>
+              <span title={QLABEL.only} className="flex items-center" style={{ gap: 4, fontSize: 13, fontWeight: 900, color: T.ink }}>{badgeIcon("only", 17)}{cnt.only || 0}</span>
+            </>
+          ) : <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}>{t("아직 리뷰하지 않은 대국")}</span>}
+        </div>
+        <button onClick={() => onOpenGame && onOpenGame(g.moves)} aria-label={t("대국 보기")} title={t("대국 보기")} className="press" style={iconBtnStyle}><Search size={13} /></button>
+        {onOpenGameAnalyze && <BestMoveJumpButton title={summary ? t("리뷰 보기") : t("리뷰하기")} onClick={analyze} />}
       </div>
     </motion.div>
   );
 }
 export function RecentGameBoxes({ games, ratingChanges, username, resetKey, onOpenGame, onOpenGameAnalyze }) {
   const [page, setPage] = useState(0);
+  const narrow = useNarrow(720);
   useEffect(() => { setPage(0); }, [resetKey]);
   const all = useMemo(() => [...(games || [])].sort((a, b) => (b.endTime || 0) - (a.endTime || 0)), [games]);
   if (!all.length) return null;
@@ -440,7 +476,7 @@ export function RecentGameBoxes({ games, ratingChanges, username, resetKey, onOp
     <div>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}><span style={{ fontSize: 15, fontWeight: 800, color: T.ivoryHi }}>{t("최근 대국")}</span><span style={{ fontSize: 11.5, color: "#C9B58C" }}>{tx("{0}판", all.length)}</span></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 330px), 1fr))", gap: 12 }}>
-        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
+        {shown.map((g, i) => <GameBox key={(g.id != null ? g.id : g.endTime) + "-" + i} g={g} rc={ratingChanges ? ratingChanges.get(g) : null} username={username} allGames={all} noBoard={narrow} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} index={i} />)}
       </div>
       <ListPager page={cur} setPage={setPage} pageCount={pageCount} />
     </div>

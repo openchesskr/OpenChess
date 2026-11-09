@@ -1,17 +1,44 @@
-// (v0.6.4) 마스터 스타일 매칭 — 대국 기보(SAN)만으로 계산하는 13개 스타일 특징(엔진 없음)과, 내 특징을 마스터 900명의 특징과 견주는 함수.
+// (v0.6.4) 마스터 스타일 매칭 — 대국 기보(SAN)만으로 계산하는 14개 스타일 특징(엔진 없음)과, 내 특징을 마스터 900명의 특징과 견주는 함수.
 // 마스터 쪽 특징은 scripts/build-master-styles.mjs가 대국 DB에서 같은 함수(styleFeatures)로 미리 계산해 src/data/masterStyles.json에 둔다.
 //  각 특징은 0~1 비율이고, 분모가 되는 대국이 없으면 null(비교에서 뺀다).
+import { Chess } from "chess.js";
 import { t } from "./i18n.js";
 
-export const STYLE_KEYS = ["w_e4", "w_d4", "w_flank", "b_e5", "b_c5", "b_d5", "b_nf6", "castleQ", "capRate", "checkRate", "length", "queenTrade", "drawRate"];
+export const STYLE_KEYS = ["w_e4", "w_d4", "w_flank", "b_e5", "b_c5", "b_d5", "b_nf6", "castleQ", "capRate", "checkRate", "length", "queenTrade", "drawRate", "retreatRate"];
+const N_KEYS = STYLE_KEYS.length;
+// 닮은꼴 거리에는 앞의 13개 기준만 쓴다 — 후퇴 수 비율(14번째)은 마스터끼리 거의 차이가 없어(표준편차 0.007) 표준점수가 크게 부풀어 이 한 기준이 순위를 좌우하므로 비교 표시 전용이다.
+const N_MATCH = 13;
+// (v0.7.4, 사용자 요청) 후퇴 수 비율은 출발 칸이 필요해 chess.js로 수순을 재생해야 하므로(수당 약 90µs) 앞쪽 일부 대국만 센다 — 앱(내 대국)은 RETREAT_GAMES_APP판, 마스터 데이터 생성은 선수당 RETREAT_GAMES_BUILD판. 표본이 적으면 shrinkVec이 평균 쪽으로 당긴다.
+export const RETREAT_GAMES_APP = 60, RETREAT_GAMES_BUILD = 150;
 // 표본이 적은 비율을 평균 쪽으로 당기는 값(분모 + SHRINK) — 몇 판 안 둔 사람이 극단으로 나오지 않게.
 export const STYLE_SHRINK = 6;
 export const MIN_STYLE_GAMES = 15;
 
 const clean = (s) => String(s || "").replace(/[+#!?]+$/g, "");
-/* games: [{ moves: ["e4","e5",…], color: "w"|"b", result: "win"|"loss"|"draw" }]. 반환: { vec: (number|null)[13], den: number[13], n }. */
-export function styleFeatures(games) {
-  const c = new Array(13).fill(0), d = new Array(13).fill(0);
+/* 후퇴 수 비율 — 내 수 중 나이트·비숍·룩·퀸이 자기 진영 쪽(백은 숫자가 작아지는 쪽, 흑은 커지는 쪽)으로 물러나는 수의 비율. 폰은 후퇴가 없고 킹·캐슬링은 제외한다.
+   앞쪽 maxGames판만 재생하고 한 판은 120플라이까지(대국 길이 특징과 같은 상한). 분모는 그 대국들에서 센 내 수. 해석 불가한 수에서 그 판은 멈춘다. */
+export function retreatStats(games, maxGames) {
+  let moves = 0, retreats = 0, used = 0;
+  for (const g of games || []) {
+    if (used >= maxGames) break;
+    const raw = g.moves || []; if (raw.length < 6 || !g.color) continue;
+    used++;
+    const c = new Chess(), white = g.color === "w";
+    for (let i = 0; i < Math.min(raw.length, 120); i++) {
+      let mv = null; try { mv = c.move(raw[i]); } catch { break; }
+      if (!mv) break;
+      if ((i % 2 === 0) !== white) continue;
+      moves++;
+      if (mv.piece !== "p" && mv.piece !== "k" && (white ? +mv.to[1] < +mv.from[1] : +mv.to[1] > +mv.from[1])) retreats++;
+    }
+  }
+  return { rate: moves ? retreats / moves : null, den: moves };
+}
+
+/* games: [{ moves: ["e4","e5",…], color: "w"|"b", result: "win"|"loss"|"draw" }]. 반환: { vec: (number|null)[14], den: number[14], n }.
+   opts.retreatGames: 후퇴 수 비율에 쓸 대국 수(기본 0 = 계산하지 않음 → vec[13]=null. 화면은 먼저 0으로 그린 뒤 이어서 채운다). */
+export function styleFeatures(games, opts = {}) {
+  const c = new Array(N_KEYS).fill(0), d = new Array(N_KEYS).fill(0);
   let caps = 0, checks = 0, plies = 0, lenSum = 0, n = 0;
   for (const g of games || []) {
     const mv = (g.moves || []).map(clean); if (mv.length < 6 || !g.color) continue;
@@ -41,15 +68,16 @@ export function styleFeatures(games) {
     d[11]++; if (trade) c[11]++;
     d[12]++; if (g.result === "draw") c[12]++;
   }
-  const vec = new Array(13).fill(null);
+  const vec = new Array(N_KEYS).fill(null);
   for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 11, 12]) vec[i] = d[i] ? c[i] / d[i] : null;
   vec[8] = plies ? caps / plies : null; vec[9] = plies ? checks / plies : null; vec[10] = n ? lenSum / n : null;
   d[8] = d[9] = plies; d[10] = n;
+  if (opts.retreatGames > 0) { const r = retreatStats(games, opts.retreatGames); vec[13] = r.rate; d[13] = r.den; }
   return { vec, den: d, n };
 }
 
 /* 사용자의 비율을 모집단 평균 쪽으로 당긴다. */
-export function shrinkVec(vec, den, mean) { return vec.map((v, i) => (v == null ? null : (v * den[i] + mean[i] * STYLE_SHRINK) / (den[i] + STYLE_SHRINK))); }
+export function shrinkVec(vec, den, mean) { return vec.map((v, i) => (v == null || mean[i] == null ? null : (v * den[i] + mean[i] * STYLE_SHRINK) / (den[i] + STYLE_SHRINK))); }   // 모집단 평균이 없는 기준(옛 데이터)은 비교에서 뺀다
 
 /* data: masterStyles.json({mean, std, masters:[[이름, 대국 수, 엘로, 특징 벡터]]}). 반환: 가까운 순 최대 k명 [{name, games, elo, sim, dist}] 과 내 특징의 표준점수. */
 export function matchMasters(userFeat, data, k = 3) {
@@ -59,7 +87,7 @@ export function matchMasters(userFeat, data, k = 3) {
   const list = [];
   for (const [name, games, elo, vec] of data.masters) {
     let s = 0, dims = 0;
-    for (let i = 0; i < 13; i++) { if (z[i] == null || vec[i] == null) continue; const mz = (vec[i] - data.mean[i]) / (data.std[i] || 1); s += (z[i] - mz) ** 2; dims++; }
+    for (let i = 0; i < N_MATCH; i++) { if (z[i] == null || vec[i] == null) continue; const mz = (vec[i] - data.mean[i]) / (data.std[i] || 1); s += (z[i] - mz) ** 2; dims++; }
     if (dims < 8) continue;
     const dist = Math.sqrt(s / dims);
     list.push({ name, games, elo, dist, sim: 1 / (1 + dist) });
@@ -98,16 +126,17 @@ export function traitLabel(key, high) {
 /* (v0.6.4) 기준 하나씩의 이름·값 표기·비교. 화면(app/growth.jsx)의 "어떤 점이 비슷한가" 표가 쓴다. */
 export const CRITERIA_GROUPS = [
   { id: "open", keys: ["w_e4", "w_d4", "w_flank", "b_e5", "b_c5", "b_d5", "b_nf6"] },
-  { id: "mid", keys: ["capRate", "checkRate", "queenTrade", "castleQ"] },
+  { id: "mid", keys: ["capRate", "checkRate", "retreatRate", "queenTrade", "castleQ"] },
   { id: "game", keys: ["length", "drawRate"] },
 ];
 export const criterionLabel = (key) => ({
   w_e4: t("백 1.e4 선택"), w_d4: t("백 1.d4 선택"), w_flank: t("백 측면 오프닝(1.c4·1.Nf3 등)"),
   b_e5: t("1.e4에 …e5 응수"), b_c5: t("1.e4에 …c5(시실리안) 응수"), b_d5: t("1.d4에 …d5 응수"), b_nf6: t("1.d4에 …Nf6 응수"),
   castleQ: t("퀸사이드 캐슬링(캐슬링한 대국 중)"), capRate: t("기물을 잡는 수의 비율"), checkRate: t("체크를 거는 수의 비율"),
-  length: t("평균 대국 길이"), queenTrade: t("퀸 교환이 나온 대국"), drawRate: t("무승부 비율"),
+  length: t("평균 대국 길이"), queenTrade: t("퀸 교환이 나온 대국"), drawRate: t("무승부 비율"), retreatRate: t("기물을 후퇴시키는 수의 비율"),
 }[key] || key);
-export const criterionGroupLabel = (id) => ({ open: t("오프닝 선택"), mid: t("중반 성향"), game: t("대국 흐름") }[id] || id);
+// (v0.7.4, 사용자 요청) 묶음 이름을 성장 분석의 구간(오프닝·미들게임·엔드게임)과 맞췄다. 엔드게임 성향은 대국 길이·무승부 비율(끝까지 가는 정도)로 본다.
+export const criterionGroupLabel = (id) => ({ open: t("오프닝 성향"), mid: t("미들게임 성향"), game: t("엔드게임 성향") }[id] || id);
 /* 값 표기: 비율은 %, 대국 길이는 평균 수(한 수 = 백·흑 한 쌍; 특징값은 최대 120 plies = 60수 기준으로 0~1). */
 export function formatCriterion(key, v) {
   if (v == null) return "-";
@@ -119,7 +148,7 @@ export function formatCriterion(key, v) {
   , share(선택·응수·캐슬링·교환·무승부 비율): 두 값의 %p 차이 — 7%p 이하 거의 같음, 15%p 이하 비슷함, 30%p 이하 다름, 그 이상 많이 다름
   , intensity(체크·기물 잡기 빈도): 큰 값 ÷ 작은 값 — 1.3배 이하 거의 같음, 1.7배 이하 비슷함, 2.5배 이하 다름, 그 이상 많이 다름(둘 다 2% 미만이면 거의 같음)
   , length(평균 대국 길이): 큰 값 ÷ 작은 값 — 1.15배 이하 거의 같음, 1.35배 이하 비슷함, 1.8배 이하 다름, 그 이상 많이 다름 */
-export const CRITERION_KIND = { w_e4: "share", w_d4: "share", w_flank: "share", b_e5: "share", b_c5: "share", b_d5: "share", b_nf6: "share", castleQ: "share", queenTrade: "share", drawRate: "share", capRate: "intensity", checkRate: "intensity", length: "length" };
+export const CRITERION_KIND = { w_e4: "share", w_d4: "share", w_flank: "share", b_e5: "share", b_c5: "share", b_d5: "share", b_nf6: "share", castleQ: "share", queenTrade: "share", drawRate: "share", capRate: "intensity", checkRate: "intensity", retreatRate: "intensity", length: "length" };
 export const LEVEL_RULES = { share: [0.07, 0.15, 0.30], intensity: [1.3, 1.7, 2.5], length: [1.15, 1.35, 1.8] };
 export const LEVELS = ["same", "close", "far", "veryFar"];
 export const levelLabel = (lv) => ({ same: t("거의 같음"), close: t("비슷함"), far: t("다름"), veryFar: t("많이 다름"), na: t("비교 불가") }[lv] || lv);
@@ -137,7 +166,7 @@ export function formatDiff(key, diff) {
   if (diff == null) return "-";
   return (CRITERION_KIND[key] || "share") === "share" ? t("±{0}%p", Math.round(diff * 100)) : t("{0}배", (Math.round(diff * 10) / 10).toFixed(1));
 }
-/* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 13개 모두 비교한다. 반환: [{key, mine, theirs, diff, level}] (STYLE_KEYS 순서). */
+/* userVec(표본 보정된 내 값 u)과 마스터 벡터를 기준 14개 모두 비교한다. 반환: [{key, mine, theirs, diff, level}] (STYLE_KEYS 순서). */
 export function compareCriteria(u, masterVec) {
   return STYLE_KEYS.map((key, i) => ({ key, mine: u[i], theirs: masterVec[i], ...criterionDiff(key, u[i], masterVec[i]) }));
 }

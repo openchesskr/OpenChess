@@ -15,10 +15,9 @@ import { badgeIcon } from "../components/badges.jsx";
 import { PieceGlyph, TierPieceGlyph } from "../components/pieces.jsx";
 import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tierSystem.js";
 import { createPortal } from "react-dom";
-import { legacyMotionPlan, STAMP_MS } from "../lib/legacyMotion.js";
-import { LegacyMotionLayer, LegacyStampBadge, legacyMotionHidden } from "../components/legacyMotion.jsx";
 import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import TierJourney from "../components/tierJourney.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
 import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
@@ -180,21 +179,21 @@ function hexAlpha(hex, a) {
 // (사용자 요청) 유산 블록 좋아요 — puzzle_like_toggle과 완전히 같은 토글 패턴이지만, 유산은 전역
 // 번호가 없어 (등록한 유저 ownerUid, 슬롯 키)로 식별한다. ownerUid의 유산 좋아요 수 전체와, 지금
 // 보는 사람(uid)이 그중 어느 슬롯을 좋아요했는지를 각각 한 번의 조회로 가져온다.
-async function legacyLikeCounts(ownerUid) {
+export async function legacyLikeCounts(ownerUid) {
   if (!SB_ON || !ownerUid) return {};
   try {
     const rows = await sbSelect("legacy_like_counts?owner_uid=eq." + encodeURIComponent(ownerUid) + "&select=slot_key,likes");
     const m = {}; (rows || []).forEach((x) => { m[x.slot_key] = x.likes; }); return m;
   } catch { return {}; }
 }
-async function legacyLikedSlots(ownerUid, uid) {
+export async function legacyLikedSlots(ownerUid, uid) {
   if (!SB_ON || !ownerUid || !uid) return new Set();
   try {
     const rows = await sbSelect("legacy_likes?owner_uid=eq." + encodeURIComponent(ownerUid) + "&uid=eq." + encodeURIComponent(uid) + "&select=slot_key");
     return new Set((rows || []).map((x) => x.slot_key));
   } catch { return new Set(); }
 }
-async function legacyLikeToggle(ownerUid, slotKey, uid) {
+export async function legacyLikeToggle(ownerUid, slotKey, uid) {
   // (보안 수정) 서버(legacy_like_toggle RPC)가 auth.uid()로 행위자를 직접 판별하므로 p_uid는 더 이상
   // 보내지 않는다 — uid 인자는 "로그인 여부"만 클라이언트에서 미리 확인하는 용도로 남겨 둔다.
   if (!SB_ON || !ownerUid || !uid) return null;
@@ -685,367 +684,18 @@ function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
     </div>
   );
 }
-// 빛으로 만든 체스보드 — 나무 질감의 실제 Board 대신, 반투명 격자선 + 발광하는 기물로 "허공에 뜬
-// 빛의 보드"를 표현한다. (사용자 요청) 전체 빛깔을 사이트 전반의 금색·갈색(브래스) 톤으로 맞춰,
-// 보드 아래 놓인 유산 블록(LegacyProjectorBlock)에서 빛이 뿜어져 올라오는 것처럼 보이게 한다.
-// halo는 방금 둔 수의 도착 칸([r,c])에 그 수의 등급 색으로 발광 하이라이트를 씌우고, haloKind가
-// 있으면 실제 체스보드(Board, 3656줄 부근)와 똑같은 위치·크기·흰 테두리로 수 체계 아이콘을 띄운다.
-// 밝은/어두운 칸은 색이 아니라 (r+c) 홀짝에 따른 배경 불투명도 차이(=빛의 밝기 차이)로 구분한다.
-// (사용자 요청) flip — 사용자가 지정한 진영(entry.side)이 항상 아래에 오도록, 실제 Board 컴포넌트와
-// 같은 방식(행·열 모두 뒤집기)으로 반전한다.
-// (사용자 요청) heroActive — 유산으로 지정한 수가 두어지는 바로 그 순간(부모의 boardHeroActive)만
-// true인 값. animation-name을 "none"에서 실제 키프레임으로 바꾸는 것만으로 브라우저가 그 순간에
-// 애니메이션을 새로 시작하므로, 그 이전/이후 수에는 전혀 흔들림이 남지 않는다(별도 key remount 불필요).
-// (v0.7.1, 사용자 요청) motionPlan이 있으면(수를 두는 연출 중) 기물을 움직이는 연출 층(LegacyMotionLayer)을 겹치고, 그 층이 대신 그리는 칸(hidden)의
-// 기물은 정적 보드에서 비운다. stamp({ sq, kind, stage })는 도착 칸 우상단 수 아이콘 — "stamp"면 윤곽선을 그린 뒤 도장처럼 찍고, "fx"면 그 자리에서
-// 수 등급 이펙트(MoveClassFx, 설정 탭 "시각 효과")를 이어서 재생하며(이펙트가 끝 모습으로 같은 자리 배지를 그리므로 그동안 배지는 숨긴다), "static"이면 배지만.
-function LegacyLightBoard({ board, size = 320, stamp, flip, heroActive, motionPlan, motionKey, hidden }) {
-  const cell = Math.max(1, Math.floor(size / 8));
-  const rows = flip ? [...board].reverse().map((r) => [...r].reverse()) : board;
-  // (사용자 요청) 보드가 처음 나타날 때, 아래(영사기 블록이 있는 하단 중앙)에서 나온 빛이 격자를
-  // 한 칸씩 그리듯 빠르게 퍼져나가는 연출 — LegacyLightBoard 인스턴스는 수가 진행돼도 다시 마운트
-  // 되지 않으므로(appliedCount는 board prop만 바꾼다) motion의 initial→animate는 이 최초 등장에만 재생된다.
-  const originR = 7, originC = 3.5;
-  const halo = stamp ? stamp.sq : null;
-  const haloDisplay = halo ? (flip ? [7 - halo[0], 7 - halo[1]] : halo) : null;
-  const glowFilter = (c) => "drop-shadow(0 0 3px " + (c === "w" ? "#FFF6DE" : "#E9C98A") + ") drop-shadow(0 0 10px " + (c === "w" ? T.brassHi : "#8A6A2F") + "cc)";
-  const renderPiece = (pc, scale = 1) => <PieceGlyph type={pc.t} color={pc.c} size={cell * 0.72 * scale} pieceSkin="classic" style={{ filter: glowFilter(pc.c) }} />;
-  return (
-    <div style={{ position: "relative", width: cell * 8, height: cell * 8, display: "grid", gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", filter: "drop-shadow(0 0 26px rgba(196,154,80,.28))" }}>
-      {rows.map((row, r) => row.map((p, c) => {
-        const [br, bc] = flip ? [7 - r, 7 - c] : [r, c];
-        const isHalo = halo && halo[0] === br && halo[1] === bc;
-        if (hidden && hidden.has(br + "," + bc)) p = null;
-        const isLight = (r + c) % 2 === 0;
-        const dist = Math.hypot(r - originR, c - originC);
-        // (사용자 요청) 영사기가 쏘는 빛처럼, 칸마다 밝기가 조금씩 다르게·계속(무한 반복) 미세하게
-        // 흔들리도록 한다 — 모든 칸이 똑같이 맞춰 숨쉬면 인위적으로 보이므로, r/c로부터 결정적으로
-        // (매 렌더 동일하게) 뽑아낸 의사난수로 칸마다 주기·시작 지연을 어긋나게 한다.
-        const flickerDur = 2.4 + ((r * 7 + c * 3) % 5) * 0.35;
-        const flickerDelay = ((r * 5 + c * 11) % 9) * 0.17;
-        return (
-          <motion.div key={r + "_" + c} initial={{ opacity: 0, scale: 0.15 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: dist * 0.045, duration: 0.22, ease: "easeOut" }}
-            style={{ position: "relative", boxSizing: "border-box", border: "1px solid rgba(196,154,80,.22)",
-            background: isLight ? "rgba(236,203,134,.16)" : "rgba(61,38,22,.42)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            animationName: "legacyBoardFlicker", animationDuration: flickerDur + "s", animationDelay: flickerDelay + "s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }}>
-            {isHalo && stamp && stamp.kind && stamp.stage === "fx" && <MoveClassFx kind={stamp.kind} cell={cell} vc={c} vr={r} />}
-            {isHalo && stamp && stamp.kind && (stamp.stage === "stamp" || stamp.stage === "static") && (
-              // 실제 체스보드가 칸 우상단에 띄우는 수 체계 배지와 같은 위치·크기(Board 참고). 하단 아이콘 줄 대신 여기서만 보여 준다(v0.7.1).
-              <div aria-hidden="true" style={{ position: "absolute", top: -cell * 0.18, right: -cell * 0.18, zIndex: 6 }}>
-                <LegacyStampBadge stage={stamp.stage} color={QCOLOR[stamp.kind]} icon={badgeIcon(stamp.kind, cell * 0.38)} size={cell * 0.44} />
-              </div>
-            )}
-            {p && (
-              // (사용자 요청) 유산 수를 둔 순간엔 더 크게 흔들리는(legacyPieceShake) 전용 키프레임을 쓴다.
-              <span style={{ display: "inline-flex", animationName: heroActive ? "legacyPieceShake" : "none", animationDuration: "0.55s", animationTimingFunction: "ease-out", animationFillMode: "backwards",
-                animationDelay: (haloDisplay ? Math.hypot(r - haloDisplay[0], c - haloDisplay[1]) : 0) * 0.03 + "s" }}>
-                {renderPiece(p)}
-              </span>
-            )}
-          </motion.div>
-        );
-      }))}
-      {motionPlan && <LegacyMotionLayer key={motionKey} plan={motionPlan} cell={cell} flip={flip} renderPiece={renderPiece} />}
-    </div>
-  );
-}
-// 유산 재생 화면 하단의 "영사기" 블록 — 프로필의 유산 타일과 같은 재질(어보니+브래스)로 만든 작은
-// 사각 블록. 스스로 은은하게 금빛으로 발광해(box-shadow), 위에 뜬 빛의 체스보드가 이 블록에서
-// 뿜어져 나오는 빛으로 만들어진 것처럼 보이도록 하는 광원 역할을 한다.
-// (사용자 요청) "다시 보기" 버튼을 없애는 대신, 이 블록 자체를 눌러 언제든 처음부터 다시 재생한다.
-function LegacyProjectorBlock({ entry, size = 76, onClick }) {
-  return (
-    <button onClick={onClick} title={t("다시 재생")} className="press" style={{ width: size, height: size, borderRadius: 5, position: "relative", overflow: "hidden", flexShrink: 0,
-      background: "linear-gradient(160deg, #20324D 0%, #14213A 55%, #0C1424 100%)",
-      border: "2px solid #D4AF5F", cursor: onClick ? "pointer" : "default",
-      boxShadow: "inset 0 0 0 3px #0C1424, inset 0 0 0 4px rgba(212,175,95,.55), 0 0 26px 6px rgba(212,175,95,.45), 0 6px 14px -6px rgba(0,0,0,.7)",
-      display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <LegacyBlockDecor />
-      <span style={{ position: "relative", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: size * 0.15, lineHeight: 1.1, color: "#ECCB86", textAlign: "center", padding: "6px 4px 0" }}>
-        {legacyMoveLabel(entry)}
-      </span>
-    </button>
-  );
-}
-// 유산 재생 화면 — 열리면 곧바로 빛의 체스보드가 등장해 지정된 수 앞(beforeCount)부터
-// playCount만큼 자동 재생한다. board 단계에서는 보드 아래 유산 블록(LegacyProjectorBlock)을 놓고,
-// 그 블록에서 보드로 금빛 광선이 뻗어 올라가는 영사기 연출을 함께 보여준다.
-export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
-  const { sans, moveIndex, playCount, kinds, side } = entry;
-  // (사용자 요청) 사용자가 지정한 진영이 항상 아래에 오도록 보드를 뒤집는다(구버전 항목은 side가
-  // 없어 기본 백 기준으로 표시).
-  const flip = side === "b";
-  // (v0.7.3) 고유 진입 연출(암석판 확대·기보 타이핑)을 없앴다 — 열리면 곧바로 보드 재생이 시작된다.
-  const phase = "board";
-  // (사용자 요청) 지정한 수보다 beforeCount수만큼 앞당겨 시작해, 그 수까지 이어지는 흐름을 먼저
-  // 보여준다(구버전 항목은 beforeCount가 없어 0 = 기존처럼 지정한 수부터 시작).
-  const startCount = Math.max(0, moveIndex - (entry.beforeCount || 0));
-  const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount));
-  const [appliedCount, setAppliedCount] = useState(startCount);
-  // (사용자 요청) 유산 수 차례가 되면 곧장 그 수를 두지 않고, 먼저 확대(HERO_PRE_MS만큼 대기)한
-  // 뒤에야 그 수가 놓이도록 한다 — 아래 boardHeroActive/heroWindowOpen과 짝을 이룬다.
-  const HERO_PRE_MS = 900;
-  const board = useMemo(() => boardFromSans(sans.slice(0, appliedCount)), [sans, appliedCount]);
-  const prevBoard = useMemo(() => boardFromSans(sans.slice(0, Math.max(0, appliedCount - 1))), [sans, appliedCount]);
-  const lastSan = appliedCount > 0 ? sans[appliedCount - 1] : null;
-  const lastMover = appliedCount > 0 && (appliedCount - 1) % 2 === 0 ? "w" : "b";
-  const haloInfo = lastSan ? sanSrc(prevBoard, stripSuffix(lastSan), lastMover) : null;
-  // (버그 수정) entry.kinds는 구버전 유산(이 필드가 생기기 전에 저장됨)이거나, 분석 결과에서 그
-  // ply를 못 찾으면 "pending"으로 채워져 있을 수 있어, 이 경우 그대로면 아이콘이 영영 안 뜬다.
-  // 다만 유산을 저장할 때 "지정한 수(moveIndex)는 반드시 그 유산 등급(typeInfo.kind)으로 채점된
-  // 수"라는 게 이미 검증돼 있으므로, kinds가 없거나 못 믿을 때도 지정한 수 차례에는 그 등급으로
-  // 확실하게 표시할 수 있다(그 외의 수는 실제로 몰라 아이콘을 생략한다).
-  // (사용자 요청) 이번 재생에서 나올 모든 수의 등급 아이콘 자리를 처음부터 고정해 둔다 — 아직 두지
-  // 않은 수도 자리를 미리 차지해, 수가 진행될 때 아이콘이 하나씩 늘어나며 레이아웃이 밀리지 않는다.
-  const kindAt = (i) => {
-    const k = kinds && kinds[i];
-    if (k && k !== "pending") return k;
-    return i === moveIndex ? typeInfo.kind : null;
-  };
-  const haloKind = appliedCount > 0 ? kindAt(appliedCount - 1) : null;
-  // (v0.7.1, 사용자 요청) 수 하나의 연출 단계 — "motion"(기물 잡기·이동, LegacyMotionLayer) → "stamp"(도착 칸 우상단에 윤곽선이 한 바퀴 그려지고 아이콘이
-  // 도장처럼 찍힘) → "fx"(설정 탭 "시각 효과"가 그 등급을 켜 두었으면 수 등급 이펙트를 바로 이어서) → "done". 재생 구간의 첫 포지션(startCount)은 연출 없이 시작한다.
-  const { moveFx: moveFxOn, moveFxMode } = useContext(VisualPrefsContext);
-  const motionPlan = useMemo(() => (appliedCount > startCount && lastSan ? legacyMotionPlan(prevBoard, lastSan, lastMover) : null), [appliedCount, startCount, lastSan, prevBoard, lastMover]);
-  const [stage, setStage] = useState("done"); // "motion" | "stamp" | "fx" | "done"
-  const [stepId, setStepId] = useState(0);
-  useEffect(() => {
-    if (phase !== "board" || appliedCount <= startCount) { setStage("done"); return undefined; }
-    const kind = haloKind;
-    const fxOn = !!(kind && MOVE_FX[kind] && moveFxOn && moveFxKindOn(moveFxMode, kind));
-    const tMotion = motionPlan ? motionPlan.total + 80 : 0, tStamp = kind ? STAMP_MS + 80 : 0, tFx = fxOn ? MOVE_FX_MS : 0;
-    setStepId((n) => n + 1);
-    setStage(motionPlan ? "motion" : kind ? "stamp" : "done");
-    const ts = [];
-    if (motionPlan) ts.push(setTimeout(() => setStage(kind ? "stamp" : "done"), tMotion));
-    if (kind) ts.push(setTimeout(() => setStage(fxOn ? "fx" : "done"), tMotion + tStamp));
-    if (fxOn) ts.push(setTimeout(() => setStage("done"), tMotion + tStamp + tFx));
-    return () => ts.forEach(clearTimeout);
-  }, [phase, appliedCount]); // eslint-disable-line react-hooks/exhaustive-deps
-  const moving = stage === "motion" && !!motionPlan;
-  const motionHidden = useMemo(() => (moving ? legacyMotionHidden(motionPlan) : null), [moving, motionPlan]);
-  const stamp = haloInfo && haloKind && !moving ? { sq: haloInfo.to, kind: haloKind, stage: stage === "stamp" ? "stamp" : stage === "fx" ? "fx" : "static" } : null;
-  // (v0.7.1) 수 하나의 연출(기물 이동·잡기 → 수 아이콘 도장 → 수 등급 이펙트)이 모두 끝난(stage === "done") 뒤 잠깐 쉬고 다음 수로 넘어간다 —
-  // 예전엔 1.45초 고정 간격이라 긴 연출(퀸 파동·이펙트)이 다음 수에 잘렸다. 유산 수 직전만 먼저 확대할 시간(HERO_PRE_MS)을 준다.
-  const STEP_PAUSE_MS = 550;
-  useEffect(() => {
-    if (phase !== "board" || appliedCount >= endCount || stage !== "done") return;
-    const isPreHero = appliedCount === moveIndex;
-    const t = setTimeout(() => setAppliedCount((n) => Math.min(endCount, n + 1)), isPreHero ? HERO_PRE_MS : STEP_PAUSE_MS);
-    return () => clearTimeout(t);
-  }, [phase, appliedCount, endCount, moveIndex, stage]);
-  const color = QCOLOR[typeInfo.kind];
-  // (사용자 요청) 체스보드에서도 유산으로 지정한 수가 두어지는 순간, 타이핑 단계와 같은 느낌으로 확대·어둡게·기물 흔들림 연출을 준다(heroActive가 CSS animation-name을
-  // 바꿔 그 순간에만 한 번 흔들린다).
-  // (v0.7.1) 유산 수 확대는 그 수 직전(appliedCount === moveIndex)부터 그 수의 연출이 모두 끝나고 잠깐(450ms) 뒤까지 — 예전엔 2.3초 고정이라 긴 연출이
-  // 확대가 풀린 뒤에 이어졌다. 유산 수가 재생 구간의 마지막 수여도 연출이 끝나면 반드시 풀린다(heroRelease).
-  const [heroRelease, setHeroRelease] = useState(false);
-  useEffect(() => {
-    if (appliedCount !== moveIndex + 1) { setHeroRelease(false); return undefined; }
-    if (stage !== "done") return undefined;
-    const t = setTimeout(() => setHeroRelease(true), 450);
-    return () => clearTimeout(t);
-  }, [appliedCount, stage, moveIndex]);
-  const boardHeroActive = phase === "board" && (appliedCount === moveIndex || (appliedCount === moveIndex + 1 && !heroRelease));
-  // (사용자 요청) 재생 화면의 체스보드를 더 크게(최대 360→440).
-  const [lightBoardSize, boardWrapRef] = useBoardSize(440);
-  const blockSize = Math.max(60, Math.round(lightBoardSize * 0.22));
-  const beamHeight = Math.max(36, Math.round(lightBoardSize * 0.16));
-  const beamNarrow = Math.min(46, (blockSize / Math.max(1, lightBoardSize)) * 50);
-  // (사용자 요청) 유산 수를 둘 때 체스보드가 뷰포트를 벗어나지 않는 선에서 최대로 확대되고, 그 동안
-  // 보드 자신을 뷰포트 정중앙으로 옮겼다가 끝나면 원래 자리로 되돌아온다 — boardHeroActive가 켜지는
-  // 순간 boardWrapRef의 현재 화면 좌표를 재서, 뷰포트 중심까지 필요한 이동량(dx,dy)과 뷰포트 안에
-  // 들어오는 한도 안에서의 최대 배율을 계산해 둔다(꺼지면 0,0,1로 그대로 복귀).
-  const [heroBoardXform, setHeroBoardXform] = useState({ x: 0, y: 0, scale: 1 });
-  useEffect(() => {
-    if (!boardHeroActive) { setHeroBoardXform({ x: 0, y: 0, scale: 1 }); return; }
-    const el = boardWrapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
-    const dx = window.innerWidth / 2 - cx, dy = window.innerHeight / 2 - cy;
-    const maxScale = Math.max(1, Math.min((window.innerWidth * 0.94) / lightBoardSize, (window.innerHeight * 0.8) / lightBoardSize));
-    setHeroBoardXform({ x: dx, y: dy, scale: maxScale });
-  }, [boardHeroActive, lightBoardSize]);
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
-      style={{ position: "fixed", inset: 0, zIndex: 210, background: "#000", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 20, boxSizing: "border-box" }}>
-      {/* 배경 별 입자(순수 CSS 장식) */}
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: 0.55, backgroundImage: "radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 65%, #fff, transparent), radial-gradient(1.5px 1.5px at 85% 20%, #fff, transparent), radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 55% 45%, #fff, transparent), radial-gradient(1px 1px at 12% 68%, #fff, transparent), radial-gradient(1.5px 1.5px at 92% 55%, #fff, transparent)" }} />
-      <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 16, right: 16, zIndex: 5, width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.2)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={17} /></button>
-      {phase === "board" && (
-        <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} style={{ position: "relative", zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-          {/* (사용자 요청) 유산으로 지정한 수가 체스보드에 두어지는 순간에도 주변이 어두워진다. */}
-          <motion.div aria-hidden="true" animate={{ opacity: boardHeroActive ? 1 : 0 }} transition={{ duration: 0.4 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", pointerEvents: "none" }} />
-          {/* (v0.7.1) 하단 아이콘 줄(width 100%)을 없애면서 이 열의 너비 기준이 사라져 보드가 내용 폭만큼 쪼그라들었다 — 너비를 직접 준다. */}
-          <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-            {/* (사용자 요청) 재생 화면 체스보드를 더 크게 키우고(useBoardSize(440)), "탁월한 유산" 같은
-                유산 등급 라벨은 없앤다. */}
-            <motion.div ref={boardWrapRef} animate={{ x: heroBoardXform.x, y: heroBoardXform.y, scale: heroBoardXform.scale }} transition={{ duration: 0.5, ease: "easeInOut" }}
-              style={{ width: "100%", maxWidth: 440, display: "flex", justifyContent: "center", position: "relative", zIndex: 2 }}>
-              <LegacyLightBoard board={moving ? prevBoard : board} size={lightBoardSize} stamp={stamp} flip={flip} heroActive={boardHeroActive}
-                motionPlan={moving ? motionPlan : null} motionKey={stepId} hidden={motionHidden} />
-            </motion.div>
-            {/* (버그 수정) 체스보드가 boardHeroActive 동안 최대 배율로 확대되면(위 motion.div가
-                z-index:2로 자기 레이아웃 박스보다 훨씬 크게 그려짐) 바로 아래 있는 이 블록(아이콘
-                트레일·광선·영사기)이 확대된 보드 밑에 깔려 겹쳐 보이고, 금테 두른 유산 수 아이콘도
-                그 사이에 파묻혀 좌표가 뒤틀린 것처럼 보였다 — 확대가 켜져 있는 동안은 이 블록 전체를
-                투명하게 감춰(pointer-events도 함께 꺼서 숨은 상태에서 클릭되지 않게) 겹침 자체를
-                없앤다. 확대가 끝나면(그 사이 유산 수 아이콘도 이미 appliedCount가 넘어가 채워진
-                뒤이므로) 다시 페이드인되며 정상적으로 보인다. */}
-            <motion.div animate={{ opacity: boardHeroActive ? 0 : 1 }} transition={{ duration: 0.35 }}
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", pointerEvents: boardHeroActive ? "none" : "auto" }}>
-              {/* (v0.7.1, 사용자 요청) 보드 아래 수 아이콘 줄은 없앴다 — 수 아이콘은 도착 칸 우상단에 도장처럼 찍힌다(LegacyLightBoard stamp). */}
-              {/* (사용자 요청) 영사기 연출 — 아래 유산 블록에서 보드 밑면까지 뻗는 사다리꼴 금빛 광선(순수 CSS). */}
-              <motion.div aria-hidden="true" animate={{ opacity: [0.75, 1, 0.85, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-                style={{ width: lightBoardSize, height: beamHeight,
-                  clipPath: "polygon(0% 0%, 100% 0%, " + (50 + beamNarrow) + "% 100%, " + (50 - beamNarrow) + "% 100%)",
-                  background: "linear-gradient(180deg, rgba(196,154,80,.04) 0%, rgba(196,154,80,.3) 55%, rgba(236,203,134,.75) 100%)",
-                  filter: "blur(1.5px)", marginTop: -4, marginBottom: -4, pointerEvents: "none" }} />
-              {/* (사용자 요청) "다시 보기" 버튼 대신, 유산 블록을 클릭할 때마다 처음부터 다시 재생된다. */}
-              <LegacyProjectorBlock entry={entry} size={blockSize} onClick={() => setAppliedCount(startCount)} />
-            </motion.div>
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
-  );
-}
-// 유산 칸 — 프로필의 "푼 퍼즐" 바로 위에 표시. onManageLegacy가 있으면(=내 프로필) 빈 칸에 추가
-// 버튼·채워진 칸에 편집 버튼이 뜨고, 없으면(=남의 프로필) 채워진 칸만 읽기 전용으로 보여준다
-// (유산이 하나도 없으면 섹션 자체를 감춘다).
-// (사용자 요청) 그랜드마스터 티어(isGM)면 종류(최선/유일/탁월)마다 칸을 하나씩 더(총 6칸) 쓸 수
-// 있다 — 기존 슬롯 키(best/only/brilliant)는 그대로 두고, 추가 슬롯은 "2"를 붙인 별도 키
-// (best2/only2/brilliant2)로 완전히 독립 저장해 기존 데이터 마이그레이션이 필요 없게 했다.
-// (사용자 요청) 유산 타일을 종류(최선/유일/탁월)별로 세로 한 열에 묶어 보여준다 — 세 종류가
-// 나란히 열로 놓이고, 그랜드마스터 보너스 칸이 있으면 그 종류의 열 안에서 아래로 쌓인다.
-// LegacyStoneRow(카드 인라인)와 LegacyAllModal(더보기 전체 보기) 둘 다 이 렌더러를 공유한다.
-function LegacyGrid({ slots, legacies, onManageLegacy, onOpen, showDate, onShare, likeCounts, likedSlots, onToggleLike }) {
-  // (v0.7.3) 포지션이 잘 보이도록 3열 대신 칸이 최소 150px인 자동 열(대개 2열)로 크게 — 종류(최선·유일·탁월) 순서는 그대로.
-  // 남의 프로필(onManageLegacy 없음)에서는 채워진 칸만 그린다.
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, padding: "2px 2px 6px" }}>
-      {slots.map(({ slotKey, typeInfo }) => {
-        const bonus = slotKey.endsWith("2");
-        const entry = legacies && legacies[slotKey];
-        if (entry) return (
-          <div key={slotKey}>
-            <LegacyStoneTile typeInfo={typeInfo} entry={entry} onOpen={() => onOpen(slotKey)} onEdit={onManageLegacy ? () => onManageLegacy(slotKey) : null} onShare={onShare ? () => onShare(slotKey) : null}
-              likeCount={likeCounts ? likeCounts[slotKey] : 0} isLiked={likedSlots ? likedSlots.has(slotKey) : false} onToggleLike={onToggleLike ? () => onToggleLike(slotKey) : null} />
-            {showDate && entry.savedAt && <div style={{ fontSize: 9.5, color: T.inkSoft, textAlign: "center", marginTop: 3 }}>{fmtDateOnly(entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" })}</div>}
-          </div>
-        );
-        return onManageLegacy ? <div key={slotKey}><LegacyEmptySlot typeInfo={typeInfo} bonus={bonus} onClick={() => onManageLegacy(slotKey)} /></div> : null;
-      })}
-    </div>
-  );
-}
-// (사용자 요청) "더보기" — 프로필 카드 인라인 행과 별개로, 그 사용자가 등록해 둔 유산을 종류별로
-// 언제 등록했는지(savedAt)와 함께 더 크게 볼 수 있는 전체 화면. (사용자 요청) 지워진 유산까지 다시
-// 볼 수 있는 이력(history) — 새로 저장하거나 삭제해서 그 칸에서 밀려난 옛 유산들을 "지난 유산"
-// 섹션에 최신순으로 나열한다(클릭하면 그대로 재생해 볼 수 있다. 편집·복원은 지원하지 않는다).
-function LegacyAllModal({ slots, legacies, history, onManageLegacy, onClose, onShare, likeCounts, likedSlots, onToggleLike }) {
-  const [openTarget, setOpenTarget] = useState(null); // { typeInfo, entry } | null
-  const histItems = useMemo(() => (history || []).map((h, idx) => ({ ...h, idx, typeInfo: LEGACY_TYPES.find((t) => t.key === legacyBaseKey(h.slotKey)) })).filter((h) => h.typeInfo).reverse(), [history]);
-  // (v0.3.4 UI) 채팅·프로필·검색·친구 창(v0.3.2~v0.3.3)과 같은 모바일 전체 화면 패턴을 유산 관련
-  // 모달에도 맞춘다 — 이 창만 빠져 있었다.
-  const narrow = useNarrow(640);
-  return (
-    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 200, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "40px 16px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(720px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)", overflow: "hidden" }}>
-        <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{t("유산 전체 보기")}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        </div>
-        <div style={{ padding: 18, flex: "1 1 auto", overflowY: "auto" }}>
-          <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={(slotKey) => { const s = slots.find((x) => x.slotKey === slotKey); const e = legacies && legacies[slotKey]; if (s && e) setOpenTarget({ typeInfo: s.typeInfo, entry: e }); }} showDate onShare={onShare} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
-          {histItems.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px dashed #C9B58C" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("지난 유산")}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
-                {histItems.map((h) => (
-                  <button key={h.idx} onClick={() => setOpenTarget({ typeInfo: h.typeInfo, entry: h.entry })} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 9, border: "1px solid #E4D5B6", background: "#FBF5E8", cursor: "pointer", textAlign: "left" }}>
-                    <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: QCOLOR[h.typeInfo.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(h.typeInfo.kind, 16)}</span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(h.entry)}</div>
-                      <div style={{ fontSize: 10, color: T.inkSoft }}>{h.typeInfo.label}{h.replacedAt ? t(", {0} 교체/삭제됨", fmtDateOnly(h.replacedAt, { year: "numeric", month: "2-digit", day: "2-digit" })) : ""}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      <AnimatePresence>
-        {openTarget && <LegacyRevealScreen typeInfo={openTarget.typeInfo} entry={openTarget.entry} onClose={() => setOpenTarget(null)} />}
-      </AnimatePresence>
-    </div>
-  );
-}
-// (사용자 요청) 유산 블록 좋아요 — 프로필 주인(ownerUid)의 유산 슬롯별 좋아요 수와, 지금 보는 사람
-// (viewerUid)이 좋아요했는지를 이 행이 직접 조회·토글해서 아래 LegacyGrid/LegacyAllModal에 물려준다.
-// 퍼즐 좋아요(likedPuzzles/likeCounts/onToggleLike)와 달리 App 최상단 state가 아니라 이 행 스코프의
-// 로컬 state로 두는 이유 — 프로필 주인이 바뀔 때마다(다른 유저 프로필을 열 때마다) 새로 조회해야
-// 하는 값이라, 전역에 계속 들고 있을 이유가 없다.
-function LegacyStoneRow({ legacies: rawLegacies, history: rawHistory, onManageLegacy, isGM, onShareLegacy, ownerUid, viewerUid }) {
-  // (BUG-130) 남의 공개 프로필 값은 누구나 쓸 수 있다 — 검증을 통과한 유산만 화면에 넘긴다(잘못된 칸은 빈 칸).
-  const legacies = useMemo(() => normalizeLegacies(rawLegacies), [rawLegacies]);
-  const history = useMemo(() => normalizeLegacyHistory(rawHistory), [rawHistory]);
-  const [openKey, setOpenKey] = useState(null);
-  const [showAll, setShowAll] = useState(false);
-  const [likeCounts, setLikeCounts] = useState({});
-  const [likedSlots, setLikedSlots] = useState(new Set());
-  const likeInFlightRef = useRef(new Set());
-  useEffect(() => {
-    let cc = false;
-    setLikeCounts({}); setLikedSlots(new Set());
-    if (!ownerUid) return;
-    (async () => {
-      const [counts, liked] = await Promise.all([legacyLikeCounts(ownerUid), legacyLikedSlots(ownerUid, viewerUid)]);
-      if (!cc) { setLikeCounts(counts); setLikedSlots(liked); }
-    })();
-    return () => { cc = true; };
-  }, [ownerUid, viewerUid]);
-  const onToggleLike = viewerUid ? (slotKey) => {
-    if (likeInFlightRef.current.has(slotKey)) return;
-    likeInFlightRef.current.add(slotKey);
-    const wasLiked = likedSlots.has(slotKey);
-    setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.delete(slotKey); else n.add(slotKey); return n; });
-    setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? -1 : 1)) }));
-    legacyLikeToggle(ownerUid, slotKey, viewerUid).then((r) => {
-      if (!r) {
-        setLikedSlots((s) => { const n = new Set(s); if (wasLiked) n.add(slotKey); else n.delete(slotKey); return n; });
-        setLikeCounts((m) => ({ ...m, [slotKey]: Math.max(0, (m[slotKey] || 0) + (wasLiked ? 1 : -1)) }));
-        return;
-      }
-      setLikeCounts((m) => ({ ...m, [slotKey]: r.likes }));
-      setLikedSlots((s) => { if (s.has(slotKey) === r.liked) return s; const n = new Set(s); if (r.liked) n.add(slotKey); else n.delete(slotKey); return n; });
-    }).finally(() => { likeInFlightRef.current.delete(slotKey); });
-  } : null;
-  const slots = useMemo(() => {
-    const out = [];
-    for (const t of LEGACY_TYPES) { out.push({ slotKey: t.key, typeInfo: t }); if (isGM) out.push({ slotKey: t.key + "2", typeInfo: t }); }
-    return out;
-  }, [isGM]);
-  const any = slots.some((s) => legacies && legacies[s.slotKey]) || !!onManageLegacy;
+// (v0.7.4, 사용자 요청) 유산 재생 화면은 처음부터 다시 짠 새 재생기(components/legacyPlayer.jsx) — 예전 빛의 보드·영사기·기물별 잡기 연출은 없어졌다. 기존 호출부를 위해 같은 이름으로 다시 내보낸다.
+export { LegacyRevealScreen } from "../components/legacyPlayer.jsx";
+// (v0.7.4, 사용자 요청) 유산 — 최선·유일·탁월 3칸 슬롯 대신 인스타그램 게시물 같은 피드(legacyFeed.jsx, 최대 200개).
+// 피드는 profile.jsx·social.jsx를 다시 가져오므로 순환 참조를 피하려고 늦게(lazy) 불러온다.
+const LegacyFeedLazy = React.lazy(() => import("./legacyFeed.jsx"));
+function LegacyStoneRow({ legacies, ownerUid, viewerUid, ownerName, isOwn }) {
+  const any = isOwn || (legacies && typeof legacies === "object" && Object.keys(legacies).length > 0);
   if (!any) return null;
-  const openSlot = openKey ? slots.find((s) => s.slotKey === openKey) : null;
-  const openEntry = openSlot && legacies ? legacies[openSlot.slotKey] : null;
   return (
     <div style={{ marginBottom: 12 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{t("유산")}</span>
-        {/* (사용자 요청) "유산" 텍스트와 같은 줄에 더보기 버튼 — 눌러 등록된 모든 유산을 등록 시점과 함께 크게 본다. */}
-        <button onClick={() => setShowAll(true)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 1, background: "none", border: "none", cursor: "pointer", color: T.brass, fontSize: 11, fontWeight: 800 }}>{tx("더보기 {0}", <ChevronRight size={12} />)}</button>
-      </div>
-      <LegacyGrid slots={slots} legacies={legacies} onManageLegacy={onManageLegacy} onOpen={setOpenKey} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />
-      <AnimatePresence>
-        {openSlot && openEntry && <LegacyRevealScreen typeInfo={openSlot.typeInfo} entry={openEntry} onClose={() => setOpenKey(null)} />}
-      </AnimatePresence>
-      {showAll && <LegacyAllModal slots={slots} legacies={legacies} history={history} onManageLegacy={onManageLegacy} onClose={() => setShowAll(false)} onShare={onShareLegacy} likeCounts={likeCounts} likedSlots={likedSlots} onToggleLike={onToggleLike} />}
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("유산")}</div>
+      <React.Suspense fallback={null}><LegacyFeedLazy legacies={legacies} ownerUid={ownerUid} ownerName={ownerName} viewerUid={viewerUid} isOwn={isOwn} flush /></React.Suspense>
     </div>
   );
 }
@@ -1077,7 +727,7 @@ export function TierRatingRow({ pub }) {
     </div>
   );
 }
-export function PublicProfileStats({ hideRecentGames, pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+export function PublicProfileStats({ showLegacy, hideRecentGames, pub, onOpenOpening, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, hideChesscom, hideTierRow, mySolved, myLineSolves, actions, onManageLegacy, onShareLegacy, ownerUid, viewerUid, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const chesscom = useChessCom(pub.chesscom);
   const mq = pub.mainQuestSummary;
   return (
@@ -1087,8 +737,8 @@ export function PublicProfileStats({ hideRecentGames, pub, onOpenOpening, onOpen
       <FirstMovesDisplay firstMoves={pub.firstMoves} />
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
       <AchievementDashboard hideRecentGames={hideRecentGames} pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
-      {/* (사용자 요청) 유산 — "푼 퍼즐" 바로 위에 표시. 그랜드마스터 티어면 종류별로 칸을 하나씩 더 쓸 수 있다. */}
-      <LegacyStoneRow legacies={pub.legacies} history={pub.legacyHistory} onManageLegacy={onManageLegacy} isGM={tierFromXp(pub.xp || 0).tier.key === "grandmaster"} onShareLegacy={onShareLegacy} ownerUid={ownerUid} viewerUid={viewerUid} />
+      {/* (v0.7.4, 사용자 요청) 유산은 /user 페이지(ProfileStatsPanel이 showLegacy를 켬)에서만 보인다 — 성장 분석·내 프로필 창 등 다른 곳에는 없다. */}
+      {showLegacy && <LegacyStoneRow legacies={pub.legacies} ownerUid={ownerUid} viewerUid={viewerUid} ownerName={pub.nickname || pub.displayId || ""} isOwn={!!onManageLegacy || (!!ownerUid && ownerUid === viewerUid)} />}
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>
@@ -1106,7 +756,7 @@ export function ProfileStatsPanel({ hideRecentGames, pub, statsView, onOpenOpeni
     <div style={{ marginBottom: 12 }}>
       {actions && <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>{actions}</div>}
       {statsView === "oc" ? (
-        <PublicProfileStats hideRecentGames={hideRecentGames} pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
+        <PublicProfileStats showLegacy hideRecentGames={hideRecentGames} pub={pub} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} hideChesscom hideTierRow={hideTierRow} mySolved={mySolved} myLineSolves={myLineSolves} ownerUid={ownerUid} viewerUid={viewerUid} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />
       ) : pub.chesscom ? (
         <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} hideRecent={hideRecentGames} compact />
       ) : (
@@ -1142,21 +792,6 @@ function useSettledInView(delay = 130) {
   return { settled, onViewportEnter: () => commit(true), onViewportLeave: () => commit(false) };
 }
 // 여정 지도 연결선 하나 — pathLength/opacity를 whileInView 대신 위 훅으로 디바운스된 animate로 몬다.
-function TierPathLine({ x1, y1, x2, y2, lineStyle, glow, transition, amount = 0.6 }) {
-  const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
-  const hidden = { pathLength: 0, opacity: 0 };
-  const shown = { pathLength: 1, opacity: 1 };
-  return (
-    <motion.line x1={x1} y1={y1} x2={x2} y2={y2} {...lineStyle}
-      initial={hidden}
-      animate={settled ? shown : hidden}
-      viewport={{ once: false, amount }}
-      onViewportEnter={onViewportEnter}
-      onViewportLeave={onViewportLeave}
-      transition={transition}
-      style={glow} />
-  );
-}
 // 여정 지도 정거장 등장(등장 시 살짝 튀어오르며 회전이 풀리는 연출) — 위와 동일한 디바운스 적용.
 function TierStationReveal({ tilt, children }) {
   const { settled, onViewportEnter, onViewportLeave } = useSettledInView();
@@ -1175,255 +810,17 @@ function TierStationReveal({ tilt, children }) {
     </motion.div>
   );
 }
-function TierJourneyPath({ totalXp, scrollContainerRef, onColorChange }) {
-  const info = useMemo(() => tierFromXp(totalXp), [totalXp]);
-  // (사용자 요청) 여정 지도 전체를 조금씩 더 크게 — 정거장 원·간격·기물 이미지를 전부 비례해서 키운다.
-  const STATION_H = 116, STATION_GAP = 62;
-  // (v0.1.4 기능) "그랜드마스터는 마지막 단계라는 걸 보여주기 위해 선을 더 길게, 중앙 직선으로
-  // 이어지게" — 그랜드마스터 직전 간격만 크게 벌리고(GM_EXTRA_GAP), 맨 위(그랜드마스터 자신) 위로도
-  // 여백(GM_TOP_PAD)을 더 둬 오로라 배경 밴드가 위로 넉넉히 확장될 공간을 만든다.
-  const GM_EXTRA_GAP = 230, GM_TOP_PAD = 180;
-  // (버그 수정) 높은 티어가 위쪽에 오도록 뒤집으면서, 대부분(낮은 티어) 유저는 지금 위치가 맨 아래로
-  // 밀려나 열 때마다 스크롤을 내려야 했다 — 마운트되자마자 지금 구간이 화면 가운데 오도록 자동으로 스크롤한다.
-  const currentRef = useRef(null);
-  useEffect(() => { if (currentRef.current) currentRef.current.scrollIntoView({ block: "center" }); }, []);
-  // 시각적 세로 위치를 뒤집으면서(진행 순서 i는 그대로), 그랜드마스터 직전 구간의 간격만 예외적으로
-  // 크게 준다 — 나머지 정거장 사이 간격은 기존과 동일.
-  const lastIdx = TIER_STATIONS.length - 1;
-  const stationTops = useMemo(() => {
-    const tops = new Array(TIER_STATIONS.length);
-    tops[lastIdx] = GM_TOP_PAD;
-    for (let i = lastIdx - 1; i >= 0; i--) {
-      const gap = i === lastIdx - 1 ? STATION_GAP + GM_EXTRA_GAP : STATION_GAP;
-      tops[i] = tops[i + 1] + STATION_H + gap;
-    }
-    return tops;
-  }, [lastIdx]);
-  const topOf = (i) => stationTops[i];
-  // 지금 내가 서 있는 자리를 TIER_STATIONS 안에서 찾는다 — 그 인덱스보다 앞(작음)이면 이미 지난
-  // 구간, 뒤(큼)면 아직 안 온 구간이다. 그랜드마스터는 구간이 없어(division:null) info.division도
-  // maxed일 때 null로 맞춰 둔 값과 그대로 비교된다.
-  const currentIdx = useMemo(() => TIER_STATIONS.findIndex((s) => s.tierIdx === info.tierIndex && s.division === (info.maxed ? null : info.division)), [info]);
-  const totalHeight = stationTops[0] + STATION_H;
-  // (v0.1.3 기능) TIER_STATIONS는 티어별로 이미 뭉쳐서(아이언 5~1, 브론즈 5~1…) 순서대로 나열돼
-  // 있으므로, 같은 tier.key가 연속되는 구간을 하나의 "밴드"로 묶어 그 구간의 세로 픽셀 범위를 구한다
-  // — 이 범위에 그 티어 전용 배경 이미지를 깔면, 스크롤해서 그 티어 구간을 지날 때만 자연스럽게
-  // 그 배경이 보인다.
-  // (v0.1.4 버그 수정) "티어 배경이 끊어져 보인다" — 예전엔 밴드마다 자기 영역 안에서만 위아래
-  // 70px을 검은색으로 페이드시켰다. 밴드끼리 서로 안 겹치니 경계에서는 두 배경이 섞이는 대신
-  // 양쪽 다 같은 어두운 배경으로 각자 사라졌다가 다시 나타나는 것처럼 보여, 이어지는 배경이 아니라
-  // 뚝뚝 끊어진 조각들처럼 읽혔다. 이제 각 밴드를 이웃 티어 영역까지 BG_FADE만큼 겹쳐 그리고, 그
-  // 겹친 구간에서 양쪽이 함께 반투명해지도록(한쪽은 옅어지고 다른 쪽은 짙어지며) 해 실제로 두
-  // 배경이 서로 섞여 이어지도록 한다(맨 처음 아이언의 아래쪽·맨 끝 그랜드마스터의 위쪽은 겹칠
-  // 이웃이 없으므로 확장하지 않는다).
-  const BG_FADE = 130;
-  const tierBands = useMemo(() => {
-    const bands = [];
-    let i = 0;
-    while (i < TIER_STATIONS.length) {
-      const key = TIER_STATIONS[i].tier.key;
-      let j = i;
-      while (j < TIER_STATIONS.length && TIER_STATIONS[j].tier.key === key) j++;
-      const startIdx = i, endIdx = j - 1;
-      const isFirst = i === 0, isLast = j === TIER_STATIONS.length;
-      let top = Math.min(topOf(startIdx), topOf(endIdx));
-      let bottom = Math.max(topOf(startIdx), topOf(endIdx)) + STATION_H;
-      top = isLast ? 0 : top - BG_FADE;       // 그랜드마스터는 컨테이너 맨 위까지 그대로 채운다
-      if (!isFirst) bottom += BG_FADE;         // 아이언 아래쪽은 겹칠 이웃이 없어 확장하지 않는다
-      bands.push({ key, top, height: bottom - top });
-      i = j;
-    }
-    return bands;
-  }, []);
-  // (사용자 요청) 닫기 버튼 색이 지금 화면에 보이는 티어 배경에 따라 하늘색→보라색처럼 바로 바뀌지
-  // 않고, y좌표 스크롤을 따라 인접한 두 티어 색 사이를 서서히 섞으며 바뀌도록 한다. 각 티어 밴드의
-  // 세로 중앙 지점을 "색상 정지점"으로 삼아(색 자체는 TIER_COLORS — 실제 티어 이미지에서 뽑아낸
-  // 대표색, 그랜드마스터만 프로필 테두리에 쓰는 홀로그램 그러데이션의 첫 색을 그대로 씀), 지금
-  // 스크롤 위치가 그 두 지점 사이 어디쯤인지 비율로 계산해 hexLerp로 선형 보간한다.
-  const colorStops = useMemo(() => (
-    tierBands.map((b) => ({
-      y: b.top + b.height / 2,
-      hex: b.key === "grandmaster" ? TIER_COLORS.grandmaster.stops[0] : tierGlowHex(b.key),
-    })).sort((a, c) => a.y - c.y)
-  ), [tierBands]);
-  useEffect(() => {
-    const el = scrollContainerRef && scrollContainerRef.current;
-    if (!el || !colorStops.length || !onColorChange) return;
-    // 닫기 버튼이 뷰포트 상단 근처(top:18)에 고정돼 있으므로, "지금 버튼 자리에 어떤 배경이
-    // 보이는지"를 스크롤 위치 + 이 오프셋으로 근사한다.
-    const REF_OFFSET = 80;
-    const compute = () => {
-      const y = el.scrollTop + REF_OFFSET;
-      let hex = colorStops[0].hex;
-      if (y <= colorStops[0].y) hex = colorStops[0].hex;
-      else if (y >= colorStops[colorStops.length - 1].y) hex = colorStops[colorStops.length - 1].hex;
-      else {
-        for (let i = 0; i < colorStops.length - 1; i++) {
-          const a = colorStops[i], b = colorStops[i + 1];
-          if (y >= a.y && y <= b.y) { hex = hexLerp(a.hex, b.hex, (y - a.y) / (b.y - a.y)); break; }
-        }
-      }
-      onColorChange(hex);
-    };
-    compute();
-    el.addEventListener("scroll", compute, { passive: true });
-    return () => el.removeEventListener("scroll", compute);
-  }, [colorStops, scrollContainerRef, onColorChange]);
-  return (
-    // (기능) 노드·연결선이 전부 같은 "left:22%/78% + translateX(-50%)" 좌표계를 공유해, 컨테이너
-    // 폭이 얼마든(반응형) 원 중심과 SVG 선 끝점이 항상 정확히 겹친다.
-    <div style={{ position: "relative", paddingBottom: 20, height: totalHeight }}>
-      {/* (v0.1.3 기능) 티어별 배경 — 각 밴드 높이에 꽉 채우고(object-fit:cover), 원본 색감 그대로
-          쓰되(보정 없음) 천천히 확대·이동하는 카메라 무브(켄 번즈)를 반복 재생해 정지 이미지도
-          계속 살아있는 느낌을 준다. 위아래 가장자리는 mask로 옅게 흐려 다음 티어 배경과 부드럽게
-          이어지고, 어두운 그러데이션을 한 겹 덮어 그 위 흰 정거장 도형이 항상 잘 읽히게 한다. */}
-      {tierBands.map((b) => (
-        <div key={b.key} style={{ position: "absolute", left: 0, top: b.top, width: "100%", height: b.height, overflow: "hidden", zIndex: 0, WebkitMaskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)", maskImage: "linear-gradient(to bottom, transparent 0, black " + BG_FADE + "px, black calc(100% - " + BG_FADE + "px), transparent 100%)" }}>
-          <motion.img
-            src={TIER_BG_IMAGE[b.key]} alt=""
-            animate={{ scale: [1, 1.14, 1], x: ["0%", "-3%", "0%"], y: ["0%", "-2%", "0%"] }}
-            transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(15,9,5,.6), rgba(15,9,5,.72))" }} />
-        </div>
-      ))}
-      <svg width="100%" height={totalHeight} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-        {TIER_STATIONS.slice(0, -1).map((_, i) => {
-          const x1 = i % 2 ? "78%" : "22%";
-          const y1 = topOf(i) + STATION_H / 2, y2 = topOf(i + 1) + STATION_H / 2;
-          const lit = i < currentIdx;
-          const lineStyle = { stroke: lit ? "#F5C542" : "rgba(255,255,255,.18)", strokeWidth: lit ? 3.5 : 3, strokeDasharray: lit ? undefined : "3 7", strokeLinecap: "round" };
-          const glow = lit ? { filter: "drop-shadow(0 0 3px rgba(245,197,66,.7))" } : undefined;
-          // (v0.1.4 기능) 그랜드마스터로 이어지는 마지막 구간은 "여기가 끝"이라는 인상을 주기 위해
-          // 지그재그 대각선 대신, 중앙으로 꺾여 들어가 그대로 수직으로 길게 뻗는 꺾은선(엘보)으로
-          // 그린다 — 직전 정거장 위치(22%/78%)에서 수평으로 중앙까지 이동한 뒤, 그 중앙 직선을 타고
-          // 위로 길게 올라가 그랜드마스터 정거장 정중앙에 닿는다.
-          if (i === lastIdx - 1) {
-            const elbowY = y1 - (y1 - y2) * 0.28;
-            return (
-              <React.Fragment key={i}>
-                <TierPathLine x1={x1} y1={y1} x2="50%" y2={elbowY} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.5, ease: "easeOut" }} />
-                <TierPathLine x1="50%" y1={elbowY} x2="50%" y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }} />
-              </React.Fragment>
-            );
-          }
-          const x2 = (i + 1) % 2 ? "78%" : "22%";
-          // (버그 수정) 이미 지나온 구간은 점선이 아니라 뚜렷한 노란색 실선으로 — 스크롤해서 이
-          // 구간이 화면에 들어올 때마다(once:false) 선이 그어지는 애니메이션이 반복 재생된다.
-          // 가느다란 대각선은 바운딩 박스가 얇아 노출 비율이 스크롤 몇 픽셀 차이에도 크게 출렁여,
-          // 스크롤이 딱 60% 노출 경계에 걸친 좌표에서 멈추면 그 떨림만으로 무한히 깜빡이던 문제가
-          // 있었다 — TierPathLine이 그 신호를 130ms 디바운스해서 걸러낸다(위 useSettledInView 참고).
-          return <TierPathLine key={i} x1={x1} y1={y1} x2={x2} y2={y2} lineStyle={lineStyle} glow={glow} transition={{ duration: 0.7, ease: "easeOut" }} />;
-        })}
-      </svg>
-      {TIER_STATIONS.map((s, i) => {
-        const state = i < currentIdx ? "done" : i === currentIdx ? "current" : "locked";
-        // (v0.1.4 기능) 그랜드마스터는 마지막 단계라는 것을 강조하기 위해 지그재그 대신 중앙(50%)에
-        // 배치 — 위 연결선 엘보도 이 중앙 지점을 향해 그려진다.
-        const cx = i === lastIdx ? "50%" : (i % 2 ? "78%" : "22%");
-        const top = topOf(i);
-        // (v0.1.1) 로고 뒤에 배경을 둬 어두운 톤의 티어도 잘 보이게 하고, "현재 구간"만 그 티어
-        // 색으로 은은하게 빛나는 글로우를 준다.
-        // (v0.1.1 버그 수정) 잠긴 구간을 표시할 때 배경 전체의 불투명도를 낮췄더니, 배경 뒤로
-        // 지나가는 점선 연결선이 옅게 비쳐 보였다(반투명 배경을 통과해 뒤의 선이 섞여 보임) — 배경은
-        // 항상 완전히 불투명하게 유지해 선을 확실히 가리고, "아직 안 왔다"는 표시는 기물 이미지
-        // 쪽만 옅게 낮춘다(TierPieceGlyph의 muted).
-        // (v0.1.3 UI) TierLogoDisc와 동일하게 원 대신 십각형으로, 배경은 브라스 골드 대신 흰색으로.
-        // box-shadow의 원형 글로우 대신, 실제 도형(SVG 폴리곤) 알파를 따라가는 drop-shadow 필터로
-        // "현재 구간" 링 글로우를 낸다.
-        const tc = TIER_COLORS[s.tier.key];
-        const ringColor = tc.stops ? tc.stops[1] : tc.hi;
-        // (버그 수정) 잠금 아이콘은 없애고, 이미지는 항상 원래 색 그대로 보여준다(muted 제거) —
-        // "아직 안 온 구간"이라는 표시는 이제 점선 연결선·현재 위치 표시만으로 충분하다.
-        return (
-          <React.Fragment key={s.tier.key + "-" + (s.division ?? "gm")}>
-            {/* (v0.1.4 버그 수정) "모바일에서 여정 지도가 왜곡된다"는 신고 원인 — framer-motion은
-                scale/rotate처럼 transform 계열 모션 값을 다루는 순간 그 엘리먼트의 transform CSS를
-                통째로 자기가 계산한 값으로 덮어써, style로 준 정적인 translateX(-50%) 중앙 정렬이
-                애니메이션이 끝나자마자 조용히 사라졌다 — 78% 자리 정거장이 중앙 정렬 없이 그대로
-                오른쪽으로 반 칸(48px)어치 더 밀려나, 화면이 좁은 모바일에서 오른쪽 끝이 뷰포트
-                밖으로 잘려나갔다. 정적 중앙 정렬(translateX(-50%))은 애니메이션이 없는 바깥 div가
-                전담하고, scale/rotate 애니메이션은 그 안쪽(inset:0)의 별도 motion.div로 분리한다. */}
-            <div style={{ position: "absolute", left: cx, top, width: STATION_H, height: STATION_H, transform: "translateX(-50%)" }}>
-              {/* (버그 수정) 정거장 등장 애니메이션도 연결선과 같은 이유로 깜빡였다 — TierStationReveal이
-                  onViewportEnter/Leave 신호를 130ms 디바운스해서 걸러내므로, once:false로 스크롤마다
-                  반복 재생되는 연출은 그대로 유지하면서 스크롤이 노출 경계에 멈췄을 때의 떨림만 없앤다. */}
-              <TierStationReveal tilt={i % 2 ? 10 : -10}>
-              <motion.div
-                ref={state === "current" ? currentRef : undefined}
-                animate={state === "current" ? { scale: [1, 1.06, 1] } : {}}
-                transition={state === "current" ? { repeat: Infinity, duration: 2 } : {}}
-                style={{ position: "absolute", inset: 0 }}>
-                <div style={{
-                  position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                  filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" + (state === "current" ? " drop-shadow(0 0 8px " + ringColor + ")" : ""),
-                }}>
-                  <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
-                    <path d={TIER_DECAGON_PATH} fill="#FFFFFF" stroke="#D8CFB8" strokeWidth="2" strokeLinejoin="round" />
-                  </svg>
-                  {/* (v0.1.1) "아이언 V" 같은 이름+구간 텍스트 라벨을 없애고, 구간 전용 이미지(로마 숫자가
-                      이미지 안에 이미 그려져 있음) 하나로 그 자리를 대신한다. 도형 정중앙에 오도록 배치한다. */}
-                  <div style={{ position: "relative", zIndex: 1 }}>
-                    <TierPieceGlyph tierKey={s.tier.key} division={s.division} size={112} />
-                  </div>
-                </div>
-                {/* (버그 수정) "이미 지나온 티어" 초록 체크 배지가 정적이라 눈에 잘 안 띄었다 —
-                    은은하게 커졌다 작아지는 펄스를 반복해 완료됐다는 느낌을 계속 상기시킨다. */}
-                {state === "done" && (
-                  <motion.span
-                    animate={{ scale: [1, 1.18, 1], boxShadow: ["0 0 0 0 rgba(63,122,58,.55)", "0 0 0 5px rgba(63,122,58,0)", "0 0 0 0 rgba(63,122,58,0)"] }}
-                    transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-                    style={{ position: "absolute", right: -2, bottom: -2, width: 26, height: 26, borderRadius: "50%", background: T.best, border: "2px solid " + T.ebony, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Check size={14} color="#fff" />
-                  </motion.span>
-                )}
-              </motion.div>
-              </TierStationReveal>
-            </div>
-            {state === "current" && (
-              <div style={{ position: "absolute", left: cx, top: top + STATION_H + 5, width: 140, transform: "translateX(-50%)", textAlign: "center" }}>
-                <div style={{ fontSize: 12, color: T.ivory, opacity: .8 }}>{info.xpInDivision}/{info.xpForNextDivision} XP</div>
-              </div>
-            )}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
 // (v0.0.6 개편) 티어 배지를 누르면 열리는 전체 화면 여정 지도 모달 — 위 TierJourneyPath를
 // "집중분석"(App.jsx 상단부) 전체화면 오버레이와 같은 몰입형 레이아웃(어두운 방사형 그러데이션
 // 배경)으로 감싼다.
 export function TierJourneyMap({ totalXp, onClose }) {
   const scrollRef = useRef(null);
-  // (사용자 요청) 닫기 버튼 색이 지금 스크롤로 보고 있는 티어 배경에 반응한다 — 처음 계산되기 전
-  // (마운트 직후 1프레임)에는 기존 금색 테두리로 시작해, 계산되는 즉시 그 색으로 자연스럽게 바뀐다.
-  const [btnColor, setBtnColor] = useState(null);
-  const bc = btnColor || T.brass;
-  // (버그 수정, 사용자 제보) /user 페이지 왼쪽 열처럼 framer-motion의 motion.div(항상 인라인
-  // transform을 갖는다) 안에서 이 화면을 열면, position:fixed가 뷰포트가 아니라 그 transform을
-  // 가진 조상을 기준으로 계산돼 — 여정 화면이 전체 화면을 덮지 못하고 그 조상 박스 안에만 갇혀,
-  // 그 조상 바깥의 /user 페이지 요소(헤더 등)가 오히려 위에 보이는 것처럼 나타났다. document.body로
-  // 포털을 띄우면 어떤 조상의 transform과도 무관하게 항상 실제 뷰포트 기준 최상단에 그려진다.
-  // (버그 수정, 사용자 재제보) portal은 DOM 트리 위치는 body 최상위로 옮기지만 zIndex 자체는 그대로
-  // 옮겨 오지 않는다 — 예전 zIndex(83)는 /user 페이지(UserProfilePage, zIndex 300)보다 한참 낮아서,
-  // /user 페이지 안에서 티어 아이콘을 눌러 이 화면을 열어도 실제로는 열리긴 하지만 /user 페이지의
-  // 불투명한 배경 "뒤"에 그려져 화면엔 아무 변화가 없는 것처럼 보였다("표시되지 않는다"). 이 화면은
-  // 앱에서 가장 위에 뜨는 전체화면 오버레이로 의도된 것이므로, 지금까지 쓰인 어떤 모달·페이지
-  // zIndex(최대 500)보다도 확실히 높은 값으로 올려 어디서 열든 항상 맨 위에 그려지게 한다.
+  // (v0.7.4, 사용자 요청) 티어 여정 개편 — 티어 한 장씩의 챕터 연대기(components/tierJourney.jsx). 어떤 조상의 transform과도 무관하게 항상 맨 위에 그려지도록 body로 포털하고,
+  // 앱의 모든 모달·페이지(최대 500)보다 높은 zIndex(950)를 쓴다(/user 페이지 안에서 열어도 가려지지 않게).
+  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
   return createPortal((
-    <div ref={scrollRef} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
-      {/* (v0.2.3 버그 수정) 닫기 버튼이 스크롤되는 콘텐츠 안에 있어, 아래로 스크롤해 특정 티어를 보고
-          있을 때는 맨 위로 다시 올라와야만 닫을 수 있었다 — 뷰포트 우상단에 고정해 어느 스크롤
-          위치에서도 항상 누를 수 있게 한다.
-          (사용자 요청) 하늘색→보라색처럼 뚝 끊기지 않고 스크롤을 따라 서서히 바뀌는 색(bc, y좌표
-          기준 인접 티어 색 사이 보간값)으로 테두리·은은한 배경·글로우를 물들인다. */}
-      <button onClick={onClose} className="press" style={{ position: "fixed", top: 18, right: 16, zIndex: 951, width: 38, height: 38, borderRadius: 11, border: "2px solid " + bc, background: hexAlpha(bc, .22), color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 0 16px " + hexAlpha(bc, .5), transition: "background .2s linear, border-color .2s linear, box-shadow .2s linear" }}>
-        <X size={18} />
-      </button>
-      <div style={{ maxWidth: "min(94vw, 760px)", margin: "0 auto", padding: "18px 16px 60px" }}>
-        <TierJourneyPath totalXp={totalXp} scrollContainerRef={scrollRef} onColorChange={setBtnColor} />
-      </div>
+    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+      <TierJourney totalXp={totalXp} onClose={onClose} scrollRef={scrollRef} />
     </div>
   ), document.body);
 }

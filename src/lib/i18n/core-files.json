@@ -3,6 +3,8 @@
   "FaqPage.jsx",
   "LegalPage.jsx",
   "app/common.jsx",
+  "app/dailyQuest.jsx",
+  "app/legacyFeed.jsx",
   "app/dex.jsx",
   "app/dexMasters.jsx",
   "app/growth.jsx",
@@ -15,6 +17,9 @@
   "app/settings.jsx",
   "app/shell.jsx",
   "app/social.jsx",
+  "components/legacyPlayer.jsx",
+  "components/dexHub.jsx",
+  "components/tierJourney.jsx",
   "components/DockWindows.jsx",
   "components/Dropdown.jsx",
   "components/UgcText.jsx",
@@ -44,5 +49,10 @@
   "lib/tournamentData.js",
   "lib/tournamentView.js",
   "lib/ugcTranslate.js",
-  "lib/weakness.js"
+  "lib/playQuest.js",
+  "lib/growthAnalysis.js",
+  "app/gameHistory.jsx",
+  "lib/mistakeWhy.js",
+  "app/autoReview.js",
+  "lib/recentGames.js"
 ]

@@ -26,9 +26,9 @@ else {
   eq(P.gachaPool.map((x) => x.rarity), GACHA_POOL.map((x) => x.rarity), "뽑기 등급");
   eq(P.pieces, GACHA_PIECES, "기물 종류");
   // (v0.7.3) 일일 퀘스트 전체 완료 보상(코인) — 서버 economy_params().questBonus와 학습 탭·소개 페이지가 보여 주는 숫자가 같아야 한다.
-  { const learnSrc = rd("src/app/learn.jsx"), aboutSrc = rd("src/AboutPage.jsx");
+  { const learnSrc = rd("src/app/dailyQuest.jsx"), aboutSrc = rd("src/AboutPage.jsx");
     const shown = /모든 퀘스트 완료 보상[\s\S]{0,600}?t\("(\d+)개"\)/.exec(learnSrc);
-    if (!shown || +shown[1] !== P.questBonus.coins) problems.push("일일 퀘스트 전체 완료 보상: 서버 " + P.questBonus.coins + "코인 ≠ 학습 탭 표시 " + (shown ? shown[1] : "없음"));
+    if (!shown || +shown[1] !== P.questBonus.coins) problems.push("일일 퀘스트 전체 완료 보상: 서버 " + P.questBonus.coins + "코인 ≠ 일일 퀘스트 카드 표시 " + (shown ? shown[1] : "없음"));
     const about = /OC 나이트 코인 \{0\}개, \{1\}\/\{2\} 완료", (\d+),/.exec(aboutSrc);
     if (!about || +about[1] !== P.questBonus.coins) problems.push("일일 퀘스트 전체 완료 보상: 서버 " + P.questBonus.coins + "코인 ≠ 소개 페이지 표시 " + (about ? about[1] : "없음")); }
   const app = rd("src/App.jsx");
@@ -51,7 +51,12 @@ else {
 // 클라이언트는 서버 응답으로만 XP·코인·스킨을 바꾼다.
 const app = rd("src/App.jsx");
 const outside = app.split("\n").map((l, i) => [l, i + 1]).filter(([l]) => /\b(setTotalXp|setOcCoins)\(/.test(l) && !/const \[totalXp, setTotalXp\]|const \[ocCoins, setOcCoins\]/.test(l));
-const allowed = (ln) => ln >= 150 && ln <= 160;   // applyEconomy 안
+// applyEconomy 안 — 줄 번호를 고정하지 않고 정의(const applyEconomy)부터 닫는 줄(}, [)까지를 직접 찾는다(App.jsx 위쪽에 줄이 늘어도 오탐하지 않게).
+const lines = app.split("\n");
+const aStart = lines.findIndex((l) => /const applyEconomy = useCallback/.test(l)) + 1;
+const aEnd = aStart > 0 ? aStart + lines.slice(aStart).findIndex((l) => /^\s*\}, \[/.test(l)) + 1 : 0;
+if (!aStart || aEnd < aStart) problems.push("src/App.jsx: applyEconomy 정의를 찾지 못함");
+const allowed = (ln) => ln >= aStart && ln <= aEnd;
 for (const [l, n] of outside) if (!allowed(n) && !/setTotalXp\(0\); setOcCoins\(0\)/.test(l)) problems.push("src/App.jsx:" + n + " — setTotalXp/setOcCoins를 서버 응답(applyEconomy) 밖에서 호출한다(BUG-113)");
 if (/progressSave\([^)]*(xp:|coins:|ownedSkins)/.test(app.replace(/\n/g, " "))) problems.push("progressSave에 xp·coins·ownedSkins를 싣고 있다(서버가 무시하지만 보내지 않는다)");
 if (problems.length) { console.error("✗ check-economy-constants 실패:\n - " + problems.join("\n - ")); process.exit(1); }

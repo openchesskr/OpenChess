@@ -90,6 +90,7 @@ for (const g of games) {
     region(review, "const REVIEW_COACH_COPY", "\n};"),                  // 말풍선 본문
     region(review, "async function brilliantExplain", "\n}\n"),        // 탁월한 수 설명
     region(review, "function reviewCoachCopy", "\n}\n"),               // 응징 수순 등
+    (() => { const w = rd("src/lib/mistakeWhy.js"); return w.slice(w.indexOf("export function explainMistake")); })(),   // (v0.7.4) — 전술 이름 라벨은 문장이 아니라 제외, 설명 문장만 성장 분석 실수 기록의 "승률이 떨어진 이유" 설명기도 같은 문체(합니다체·무기호)
   ];
   let count = 0;
   for (const src of regions) for (const m of src.matchAll(lit)) {

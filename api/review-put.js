@@ -29,15 +29,21 @@ function sanitizeGame(d, ccId) {
     white: side(d.white), black: side(d.black), id: String(ccId), ...(d.fenRoot ? { fenRoot: d.fenRoot } : {}),
   };
 }
+// (v0.7.4) moves[].alts: [{ san, win }] — 나쁜 등급의 수에서 엔진이 권한 대안 수(최대 3개)와 그 수를 뒀을 때의 승률. 남의 분석이 내 화면에 그려지므로 형식을 엄격히 본다.
+const SAN_RE = /^[KQRBNa-hxO0-9=+#!?\-]{2,16}$/;
+export function validAlts(alts) {
+  return Array.isArray(alts) && alts.length <= 3 && alts.every((x) => x && typeof x === "object" && typeof x.san === "string" && SAN_RE.test(x.san) && typeof x.win === "number" && Number.isFinite(x.win) && x.win >= 0 && x.win <= 100);
+}
 // 분석 결과 형식 검사. 버전(v)은 src/app/common.jsx의 REVIEW_RESULT_CACHE_VERSION과 같아야 한다(scripts/check-sql-function-acl.mjs가 둘의 일치를 검사).
 export const ANALYSIS_VERSION = 1;
-function sanitizeAnalysis(a) {
+export function sanitizeAnalysis(a) {
   if (!a || typeof a !== "object" || a.v !== ANALYSIS_VERSION || !Number.isInteger(a.d) || a.d < 1 || a.d > 60) return null;
   const r = a.result;
   if (!r || typeof r !== "object" || !Array.isArray(r.moves) || !r.moves.length || r.moves.length > 1000) return null;
   const ok = r.moves.every((m) => m && typeof m === "object" && Number.isInteger(m.ply) && typeof m.san === "string" && m.san.length <= 16 && typeof m.white === "boolean"
     && typeof m.kind === "string" && /^[a-z_]{2,24}$/.test(m.kind) && ["acc", "lossWinPct", "sharp", "beforeCp"].every((k) => m[k] == null || num(m[k]) !== null)
-    && (m.best == null || (typeof m.best === "string" && m.best.length <= 16)));
+    && (m.best == null || (typeof m.best === "string" && m.best.length <= 16))
+    && (m.alts == null || validAlts(m.alts)));   // (v0.7.4) 대안 수 — 최대 3개, SAN 문자열과 승률(0~100)만
   return ok ? a : null;
 }
 

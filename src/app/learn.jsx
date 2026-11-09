@@ -2,169 +2,24 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { useState, useEffect, useMemo, useRef } from "react";
 import { T, FILES } from "../lib/theme.js";
-import { Check, RotateCcw, Lock, Play, Settings, X, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, Puzzle, CalendarCheck, BookMarked, Timer, Gem, Sparkles, ListChecks, Swords, ChevronsRight, TrendingUp, ScrollText, User } from "lucide-react";
+import { Check, Lock, Play, Settings, X, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Trash2, ScrollText, User } from "lucide-react";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { boardFromSans, liveLegalDests, buildSan, stripSuffix } from "../lib/chessRules.js";
 import { playMoveSfx } from "../lib/prefs.js";
-import { PageTitle, Board, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, questLabelNode, questOpeningMovesText, useBoardSize, useNarrow } from "./common.jsx";
+import { Board, CONTENT, CoinIcon, FadeIn, Mascot, isLessonClaimed, lessonProgress, mainQuestOverallProgress, useBoardSize, useNarrow } from "./common.jsx";
 
 import { GrowthPanel } from "./growth.jsx";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
-import { isLite, LOOP } from "../lib/perfMode.js";
+import { LOOP } from "../lib/perfMode.js";
 import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { LoadingRows } from "../components/motionKit.jsx";
+import { pickRecentGames } from "../lib/recentGames.js";
 import { t, tx } from "../lib/i18n.js";
-// 다음 KST 자정까지 남은 밀리초
-function msUntilKstMidnight(now) {
-  now = now || new Date();
-  const kst = now.getTime() + 9 * 3600e3;
-  const nextMid = (Math.floor(kst / 86400e3) + 1) * 86400e3;
-  return nextMid - kst;
-}
-// (버그) 각 활동 퀘스트를 개별적으로 하루 1회씩 리롤 — 다른 오프닝 플레이 퀘스트로 교체.
-// 이미 완료(claimed)한 퀘스트나 이미 리롤한 퀘스트는 교체할 수 없다. 바꿀 오프닝이 없으면 그대로 둔다.
-function rerollQuestOpening(dq, idx, recentOpenings) {
-  if (!dq || !dq.quests) return dq;
-  const rerolled = dq.rerolled || {};
-  if (rerolled[idx]) return dq;                        // 이 퀘스트는 이미 리롤함
-  if (dq.claimed && dq.claimed["cc_" + idx]) return dq; // 이미 완료한 퀘스트는 리롤 불가
-  const q = dq.quests[idx];
-  if (!q) return dq;
-  const usedOpenings = dq.quests.filter((x) => x.type === "opening").map((x) => x.opening);
-  const exclude = new Set([...(dq.banned || []), ...usedOpenings]);
-  const pool = [...new Set([...(recentOpenings || []), ...DEFAULT_QUEST_OPENINGS])].filter(Boolean).filter((n) => !exclude.has(n));
-  if (!pool.length) return dq;
-  const next = pool[Math.floor(Math.random() * pool.length)];
-  const quests = dq.quests.map((x, i) => (i === idx ? { type: "opening", opening: next } : x));
-  const banned = q.type === "opening" ? [...(dq.banned || []), q.opening] : (dq.banned || []);
-  return { ...dq, quests, banned, rerolled: { ...rerolled, [idx]: true } };
-}
-// (17차→18차) 일일 퀘스트 카드 — 학습 탭으로 분리. KST 자정 갱신 카운트다운, 오프닝 퀘스트 1회 리셋,
-// 완료 표기는 학습 탭에 최초 진입할 때 애니메이션으로 공개(seen 플래그).
-function fmtRemainHMS(ms) {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return String(Math.floor(s / 3600)).padStart(2, "0") + ":" + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
-}
-function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight }) {
-  const dq = dailyQuest;
-  const [remain, setRemain] = useState(msUntilKstMidnight());
-  useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
-  // (버그 수정) questOpeningMovesText는 표에 없는 이름이면 오프닝 트리를 처음부터 훑는(BFS) 탐색을
-  // 한다 — 이 카드는 갱신 카운트다운 때문에 1초마다 리렌더되므로, 매 렌더마다 다시 돌리지 않도록
-  // 퀘스트 목록이 실제로 바뀔 때만(리롤·자정 갱신) 계산해 둔다.
-  const openingMovesTexts = useMemo(() => (dq && dq.quests ? dq.quests.map((q) => q.type === "opening" ? questOpeningMovesText(q.opening) : null) : []), [dq && dq.quests]);
-  // (UX1) 완료됐지만 아직 확인(seen)하지 않은 퀘스트 — 진입 직후엔 미완료처럼 보여주다가 잠시 후
-  // 클리어 애니메이션과 함께 완료 상태로 전환하고, 애니메이션이 끝나면 seen으로 기록한다.
-  const [revealed, setRevealed] = useState({});
-  useEffect(() => {
-    if (!dq) return;
-    const keys = ["puzzle", "dailypuzzle", "cc_0", "cc_1", "cc_2"].filter((k) => dq.claimed[k] && !(dq.seen || {})[k]);
-    if (!keys.length) return;
-    const t1 = setTimeout(() => setRevealed((r) => ({ ...r, ...Object.fromEntries(keys.map((k) => [k, true])) })), 400);
-    const t2 = setTimeout(() => setDailyQuest((d) => d ? { ...d, seen: { ...(d.seen || {}), ...Object.fromEntries(keys.map((k) => [k, true])) } } : d), 2100);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [dq && dq.date, dq && JSON.stringify(dq.claimed)]);
-  if (!dq) return null;
-  const seen = dq.seen || {};
-  const shownDone = (k) => dq.claimed[k] && (seen[k] || revealed[k]);
-  const clearing = (k) => revealed[k] && !seen[k];
-  const allDone = dq.claimed.puzzle && dq.claimed.dailypuzzle && [0, 1, 2].every((i) => dq.claimed["cc_" + i]);
-  const doneCount = (dq.claimed.puzzle ? 1 : 0) + (dq.claimed.dailypuzzle ? 1 : 0) + [0, 1, 2].filter((i) => dq.claimed["cc_" + i]).length;
-  // (v0.7.3, 사용자 요청) 일일 퀘스트 보드 — 그라데이션 없이 단색 면과 얇은 테두리로만 구성하고, 아이콘은 가는 선(1.75) 하나로 통일, 색은 채도를 낮춘 4색(강청·호박·세이지·황동)만 쓴다.
-  // 퀘스트마다 아이콘 칸은 "그 색 14% 면 + 40% 테두리 + 같은 색 선 아이콘"이고, 완료하면 세이지 초록 면과 체크로 바뀐다. 로직(공개 연출·하이라이트·리롤)은 그대로다.
-  // (사용자 요청) 분석 탭 퀘스트 배지를 눌러 들어왔을 때, 해당 오프닝 퀘스트 줄에 눈에 띄는 하이라이트 애니메이션을 재생하고 화면에 보이도록 스크롤한다.
-  const INK = "#1F1611", SURFACE = "#2A1F16", LINE = "#3E2F21", BRASS = "#C9A45C", SAGE = "#7DB68A", MUTED = "#A8987C";
-  const row = ({ k, Icon, title, sub, progress, extras, highlighted, hue }) => {
-    const done = shownDone(k), flash = clearing(k);
-    const tone = done ? SAGE : hue;
-    return (
-      <motion.div ref={highlighted ? (el) => el && el.scrollIntoView({ behavior: "smooth", block: "center" }) : undefined}
-        layout={false} animate={flash ? { scale: [1, 1.03, 1] } : { scale: 1 }} transition={{ duration: 0.45 }}
-        className={highlighted ? "dq-hi" : undefined}
-        style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12,
-          background: done ? "#1E2A21" : SURFACE, border: "1px solid " + (highlighted ? BRASS : done ? "#355540" : LINE) }}>
-        <span style={{ position: "relative", width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
-          {done ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Icon size={20} color={tone} strokeWidth={1.75} />}
-          {flash && <Sparkles size={15} color={BRASS} className="dq-spark" style={{ position: "absolute", top: -7, right: -7 }} />}
-        </span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: done ? "#BFD9C6" : "#F1E6D0", lineHeight: 1.3 }}>{title}</div>
-          {sub && <div style={{ fontSize: 11.5, color: done ? "#87A590" : MUTED, marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
-          {progress != null && !done && (
-            <div style={{ height: 5, borderRadius: 3, background: INK, marginTop: 8, overflow: "hidden" }}>
-              <motion.div initial={{ width: 0 }} animate={{ width: Math.round(progress * 100) + "%" }} transition={{ duration: 0.7, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: "100%", background: hue, borderRadius: 3 }} />
-            </div>
-          )}
-        </div>
-        {extras}
-        {/* (v0.1.2) 개별 퀘스트 클리어 보상을 XP에서 OC 나이트 코인으로 바꿈. */}
-        <span className="flex items-center gap-1" style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: done ? "#87A590" : "#E3CC93", background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 9px 3px 10px" }}>+10 <CoinIcon size={14} /></span>
-      </motion.div>
-    );
-  };
-  return (
-    <div style={{ marginBottom: 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: INK }}>
-      <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqHi{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 5px rgba(201,164,92,.4)}} .dq-hi{animation:dqHi 1.1s ease-in-out 3} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
-      {/* 머리띠 */}
-      <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: SURFACE, borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
-        <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
-          <span style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><ListChecks size={19} color={BRASS} strokeWidth={1.75} /></span>
-          <div>
-            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".24em", color: BRASS }}>DAILY QUEST</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#F7EFDF", lineHeight: 1.15 }}>{t("일일 퀘스트")}</div>
-          </div>
-        </div>
-        <div className="flex items-center" style={{ gap: 7, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: allDone ? SAGE : "#E3CC93", background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}>{doneCount}/5{allDone ? " · " + t("모두 완료") : ""}</span>
-          {/* (UX2) 갱신은 한국 시간(KST) 자정 기준 */}
-          <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 600, fontFamily: SITE_FONT, color: MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}><Timer size={12} strokeWidth={1.9} />{fmtRemainHMS(remain)}</span>
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
-        {row({ k: "puzzle", Icon: Puzzle, hue: "#7FA9D1", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
-        {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#E0A862", title: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
-        {(dq.quests || []).map((q, i) => {
-          const isOpening = q.type === "opening";
-          // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
-          const canReroll = !((dq.rerolled || {})[i]) && !dq.claimed["cc_" + i];
-          const highlighted = isOpening && !!highlight && highlight.opening === q.opening;
-          return (
-            // (사용자 요청) key에 highlight.nonce를 섞어, 같은 오프닝을 배지로 연달아 눌러도 매번 새로 마운트되어 하이라이트 애니메이션이 다시 재생되게 한다.
-            <div key={i + (highlighted ? "-" + highlight.nonce : "")} onClick={() => isOpening && onOpenOpening && onOpenOpening(q.opening)} className={isOpening ? "press" : undefined} style={{ cursor: isOpening ? "pointer" : "default" }}>
-              {row({ k: "cc_" + i, Icon: isOpening ? BookMarked : Swords, hue: "#8FBF9A", title: questLabelNode(q), sub: !hasChesscom ? t("설정에서 chess.com 계정 연동 필요") : (isOpening ? openingMovesTexts[i] : null), highlighted,
-                /* 이 퀘스트만 다른 오프닝 플레이 퀘스트로 교체(퀘스트당 1회) — 교체된 오프닝은 그날 다시 안 나옴 */
-                extras: canReroll ? (
-                  <button onClick={(e) => { e.stopPropagation(); setDailyQuest((d) => rerollQuestOpening(d, i, recentOpenings)); }} className="press" title={t("이 퀘스트만 교체 (퀘스트당 1회)")} aria-label={t("이 퀘스트만 교체 (퀘스트당 1회)")}
-                    style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 9, border: "1px solid " + LINE, background: INK, color: MUTED, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><RotateCcw size={14} strokeWidth={1.9} /></button>
-                ) : null })}
-            </div>
-          );
-        })}
-      </div>
-      {/* (버그) 모든 퀘스트 완료 보상 — 일일 퀘스트 목록 아래 별도 블록으로 시각화(OC 나이트 코인 100) */}
-      <div className={allDone ? "dq-glow" : undefined} style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 12,
-        border: "1px solid " + (allDone ? BRASS : LINE), background: SURFACE }}>
-        <span style={{ position: "relative", flexShrink: 0, width: 48, height: 48, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}>
-          <Gem size={24} color={BRASS} strokeWidth={1.6} />
-          <span style={{ position: "absolute", right: -6, bottom: -6 }}><CoinIcon size={22} /></span>
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: allDone ? "#E3CC93" : "#F1E6D0" }}>{t("모든 퀘스트 완료 보상")}</div>
-          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{tx("OC 나이트 코인 {0}, {1}/5 완료", <b style={{ color: "#E3CC93" }}>{t("100개")}</b>, doneCount)}</div>
-          <div style={{ display: "flex", gap: 4, marginTop: 8 }} aria-hidden="true">
-            {[0, 1, 2, 3, 4].map((i) => <motion.span key={i} initial={false} animate={{ backgroundColor: i < doneCount ? BRASS : INK }} style={{ flex: 1, height: 6, borderRadius: 3 }} />)}
-          </div>
-        </div>
-        <span style={{ fontSize: 12.5, fontWeight: 800, flexShrink: 0, color: allDone ? "#E3CC93" : "#7C6B52" }}>{allDone ? (dq.bonusClaimed ? t("획득 완료") : t("획득")) : t("잠김")}</span>
-      </div>
-    </div>
-  );
-}
+import { SwipePager } from "../components/swipePager.jsx";
 /* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
 // (사용자 요청) 메인 퀘스트(사지선다 챕터 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된 학습
 // 콘텐츠 "레슨"으로 전면 개편 — 레슨은 CONTENT.lessons(seedLessons 참고)에 parent로 서로 연결되어
@@ -1050,9 +905,8 @@ function useLearnFold(id, forceOpen) {
 }
 // (v0.7.3, 사용자 요청) 학습 탭 상단 — 왼쪽: /user 프로필 페이지 그대로(대국 목록만 뺀 나머지 전부, 세로 한 열) · 오른쪽: 최근 대국을 큰 박스로 모아서.
 // 좁은 화면에서는 프로필 → 대국 순서로 세로로 쌓는다. 그 페이지가 내 MID로 서버 프로필을 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 로그인 안내만 보여 준다.
-function LearnGamesColumn({ view, setView, user, uid, chesscom, ccName, onOpenGame, onOpenGameAnalyze, loginCard }) {
-  const [timeFilter, setTimeFilter] = useState("all");
-  useEffect(() => { setTimeFilter("all"); }, [view]);
+// (v0.7.4) 대국 출처(OpenChess 기록·chess.com)를 한곳에서 불러와, 최근 대국 열과 성장 분석(최근 5판 자동 리뷰)이 함께 쓴다.
+function useRecentSources({ user, uid, chesscom, ccName }) {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     if (!SB_ON || !uid) { setRows([]); return undefined; }
@@ -1063,89 +917,45 @@ function LearnGamesColumn({ view, setView, user, uid, chesscom, ccName, onOpenGa
   const ocGames = useMemo(() => (rows || []).map((r) => profileGameRowToGame(r, user)), [rows, user]);
   const ccReady = !!(chesscom && chesscom.status === "ready");
   const ccGames = useMemo(() => (ccReady ? chesscom.games : []).filter((g) => g.timeClass !== "daily" && (g.rules || "chess") === "chess"), [ccReady, chesscom && chesscom.games]);
+  const loading = rows == null || !!(chesscom && chesscom.status === "loading");
+  const recent = useMemo(() => pickRecentGames([...ocGames.map((g) => ({ game: g, owner: user })), ...(ccName ? ccGames.map((g) => ({ game: g, owner: ccName })) : [])]), [ocGames, ccGames, user, ccName]);
+  return { ocGames, ccGames, ccReady, ocLoading: rows == null, ccLoading: !!(chesscom && chesscom.status === "loading"), loading, recent };
+}
+function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpenGameAnalyze, loginCard }) {
+  const [timeFilter, setTimeFilter] = useState("all"), [colorFilter, setColorFilter] = useState("all");
+  useEffect(() => { setTimeFilter("all"); setColorFilter("all"); }, [view]);
+  const { ocGames, ccGames, ccReady } = src;
   const base = view === "oc" ? ocGames : ccGames;
-  const games = useMemo(() => (timeFilter === "all" ? base : base.filter((g) => g.timeClass === timeFilter)), [base, timeFilter]);
+  const games = useMemo(() => base.filter((g) => (timeFilter === "all" || g.timeClass === timeFilter) && (colorFilter === "all" || g.color === colorFilter)), [base, timeFilter, colorFilter]);
   const ratingChanges = useMemo(() => {
     if (view === "oc") { const m = new Map(); games.forEach((g) => { if (g._delta != null) m.set(g, g._delta); }); return m; }
     return ccReady ? computeRatingChanges(ccGames.filter((g) => timeFilter === "all" || g.timeClass === timeFilter)) : new Map();
   }, [view, games, ccGames, ccReady, timeFilter]);
-  const loading = view === "oc" ? rows == null : !!(chesscom && chesscom.status === "loading");
+  const loading = view === "oc" ? src.ocLoading : src.ccLoading;
   return (
     <div style={{ minWidth: 0 }}>
-      {/* (v0.7.3) 프로필 페이지의 OpenChess / chess.com 토글이 없어져 이 열 맨 위로 옮겼다. */}
-      <div className="flex items-center" style={{ gap: 10, marginBottom: 12, flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 800, color: "#C9B58C" }}>{t("대국 출처")}</span><span style={{ display: "inline-flex", background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span></div>
-      <div style={{ marginBottom: 12 }}>
-        <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
+      {/* (v0.7.3) 프로필 페이지의 OpenChess / chess.com 토글이 없어져 이 열 맨 위로 옮겼다.
+          (v0.7.4, 사용자 요청) "대국 출처" 글자를 없애고, 플랫폼 토글과 시간 규정 토글을 같은 높이(32px)로 한 줄에 둔다. 좁은 화면에서는 줄바꿈 대신 가로로 밀어 본다. */}
+      {/* (v0.7.4, 사용자 요청) 플랫폼 토글은 한 줄 위로 올리고, 아래 줄에 시간 규정 · 흑/백 필터를 같은 디자인(같은 높이)으로 나란히 둔다. 좁은 화면에서는 줄바꿈 대신 가로로 밀어 본다. */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ display: "inline-flex", background: "#EADBBB", borderRadius: 11 }}><StatsViewToggle value={view} onChange={setView} scale={1} /></span>
+      </div>
+      <div className="learn-games-toggles" style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 8, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+        <GameFilterPills height={32} options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
+        <GameFilterPills height={32} options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
       </div>
       {view === "oc" && !user ? loginCard : loading ? <LoadingRows lines={4} height={22} gap={12} label={t("불러오는 중…")} />
         : view === "cc" && !ccName ? <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("설정 탭에서 chess.com 계정을 연동하면 최근 대국이 표시됨")}</p>
-        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
+        : games.length ? <RecentGameBoxes games={games} ratingChanges={ratingChanges} username={view === "oc" ? user : ccName} resetKey={view + "|" + timeFilter + "|" + colorFilter} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
         : <p style={{ fontSize: 13, color: "#C9B58C" }}>{t("표시할 대국 없음")}</p>}
     </div>
   );
 }
 // (v0.7.3, 사용자 요청) 모바일에서는 프로필·일일 퀘스트·최근 대국을 가로로 넘기는 3개의 페이지로 보여 준다. 눈에 잘 띄도록: ① 위에 붙는(sticky) 탭 줄(아이콘+이름, 지금 페이지는 금색으로 채워지고
 // 밑줄이 미끄러져 이동) ② 다음 페이지가 오른쪽에 살짝 보이게(peek) 페이지 폭을 줄임 ③ "옆으로 밀어서 이동" 안내 화살표(처음 한 번 넘기면 사라지고 이 기기에 기억) ④ n/N 표시.
-const PAGER_SEEN_KEY = "oc_learn_pager_seen";
-function LearnPager({ pages }) {
-  const scRef = useRef(null), pageRefs = useRef([]);
-  const [idx, setIdx] = useState(0);
-  const [hint, setHint] = useState(() => { try { return window.localStorage.getItem(PAGER_SEEN_KEY) !== "1"; } catch { return true; } });
-  const raf = useRef(0);
-  const onScroll = () => {
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => {
-      const sc = scRef.current; if (!sc) return;
-      const mid = sc.scrollLeft + sc.clientWidth / 2;
-      let best = 0, bd = Infinity;
-      pageRefs.current.forEach((el, i) => { if (!el) return; const d = Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid); if (d < bd) { bd = d; best = i; } });
-      setIdx(best);
-      if (best > 0 || sc.scrollLeft > 24) { setHint(false); try { window.localStorage.setItem(PAGER_SEEN_KEY, "1"); } catch { } }
-    });
-  };
-  useEffect(() => () => cancelAnimationFrame(raf.current), []);
-  const go = (i) => { const el = pageRefs.current[i]; if (el && scRef.current) scRef.current.scrollTo({ left: el.offsetLeft - (scRef.current.clientWidth - el.offsetWidth) / 2, behavior: isLite() ? "auto" : "smooth" }); };
-  return (
-    <div>
-      <div style={{ position: "sticky", top: 0, zIndex: 30, margin: "0 -18px 10px", padding: "8px 18px", background: "rgba(21,12,6,.94)", borderBottom: "1px solid rgba(196,154,80,.3)" }}>
-        <div role="tablist" style={{ display: "flex", gap: 6, padding: 4, borderRadius: 14, background: "rgba(0,0,0,.4)", border: "1px solid rgba(196,154,80,.3)" }}>
-          {pages.map((pg, i) => {
-            const on = i === idx;
-            return (
-              <button key={pg.key} role="tab" aria-selected={on} onClick={() => go(i)} className="press"
-                style={{ position: "relative", flex: 1, minWidth: 0, padding: "8px 4px 7px", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: on ? "#241509" : T.brassHi, fontFamily: "inherit" }}>
-                {on && <motion.span layoutId="learn-pager-hi" transition={{ type: "spring", stiffness: 380, damping: 32 }} style={{ position: "absolute", inset: 0, borderRadius: 10, background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", boxShadow: "0 3px 10px -2px rgba(196,154,80,.6)", zIndex: 0 }} />}
-                <span style={{ position: "relative", zIndex: 1, display: "flex" }}><pg.Icon size={18} strokeWidth={2.4} /></span>
-                <span style={{ position: "relative", zIndex: 1, fontSize: 11.5, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{pg.label}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 7 }} aria-hidden="true">
-          {pages.map((pg, i) => <motion.span key={pg.key} animate={{ width: i === idx ? 22 : 7, opacity: i === idx ? 1 : 0.45 }} style={{ height: 7, borderRadius: 4, background: T.brassHi, display: "block" }} />)}
-          <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: "#C9B58C", fontFamily: SITE_FONT }}>{idx + 1}/{pages.length}</span>
-        </div>
-      </div>
-      <div style={{ position: "relative" }}>
-        <div ref={scRef} onScroll={onScroll} style={{ display: "flex", gap: 12, overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", margin: "0 -18px", padding: "2px 18px 6px", scrollPaddingLeft: 18, alignItems: "flex-start" }}>
-          {pages.map((pg, i) => (
-            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 30px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>{pg.node}</div>
-          ))}
-        </div>
-        {hint && pages.length > 1 && (
-          <motion.div aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-            style={{ position: "absolute", right: 0, top: 96, zIndex: 5, pointerEvents: "none", display: "flex", alignItems: "center", gap: 2, padding: "9px 10px 9px 14px", borderRadius: "999px 0 0 999px", background: "linear-gradient(90deg,rgba(21,12,6,.0),rgba(21,12,6,.92) 35%)", color: T.brassHi, fontSize: 11.5, fontWeight: 900 }}>
-            {t("옆으로 밀어서 이동")}
-            <motion.span animate={{ x: [0, 6, 0] }} transition={{ duration: 1.1, repeat: LOOP(), ease: "easeInOut" }} style={{ display: "flex" }}><ChevronsRight size={18} /></motion.span>
-          </motion.div>
-        )}
-      </div>
-    </div>
-  );
-}
 // (v0.7.3, 사용자 요청) 학습 탭 상단 — 데스크톱: 왼쪽 /user 프로필(대국 목록만 뺀 나머지 전부) · 오른쪽 맨 위 일일 퀘스트 박스, 그 아래 최근 대국 큰 박스. 태블릿: 세로로 쌓기.
-// 모바일: 프로필·일일 퀘스트·최근 대국 3페이지(LearnPager). 프로필은 내 MID로 서버에서 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 프로필 자리에 로그인 안내.
-function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, questNode, growthNode, uid }) {
+// 모바일: 프로필·일일 퀘스트·최근 대국 3페이지(SwipePager). 프로필은 내 MID로 서버에서 읽으므로 MID를 먼저 찾는다. 로그인하지 않았으면 프로필 자리에 로그인 안내.
+function LearnProfileHome({ user, openAuth, ccName, src, onOpenGame, onOpenGameAnalyze, growthNode }) {
   const wideLayout = !useNarrow(1000);
   const mobile = useNarrow(720);
   const [view, setView] = useState("oc");
@@ -1158,32 +968,36 @@ function LearnProfileHome({ user, openAuth, chesscom, ccName, onOpenGame, onOpen
       </div>
     </div>
   );
-  const gamesNode = <LearnGamesColumn view={view} setView={setView} user={user} uid={uid} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} loginCard={loginCard} />;
+  const gamesNode = <LearnGamesColumn view={view} setView={setView} user={user} ccName={ccName} src={src} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} loginCard={loginCard} />;
   if (mobile) {
-    const pages = [{ key: "growth", label: t("성장 분석"), Icon: TrendingUp, node: growthNode }, { key: "quest", label: t("일일 퀘스트"), Icon: ListChecks, node: questNode }, { key: "games", label: t("최근 대국"), Icon: Swords, node: gamesNode }].filter((pg) => pg.node);
-    return <LearnPager pages={pages} />;
+    // (v0.7.4, 사용자 요청) 일일 퀘스트는 플레이 탭으로 옮겨 갔다 — 성장 분석·최근 대국 2페이지.
+    const pages = [{ key: "growth", node: growthNode }, { key: "games", node: gamesNode }].filter((pg) => pg.node);
+    return <SwipePager pages={pages} />;
   }
   if (!wideLayout) {
-    return <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{growthNode}{questNode}{gamesNode}</div>;
+    return <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{growthNode}{gamesNode}</div>;
   }
+  // (v0.7.4, 사용자 요청) 데스크톱: 화면 높이를 기준으로 한 2열 대시보드 — 왼쪽은 프로필(성장 분석), 오른쪽은 최근 대국만(각각 안쪽 스크롤). 높이 = 화면 − 머리글·제목·하단 탭 여백.
+  // 일일 퀘스트는 플레이 탭으로 옮겼다.
+  const H = "calc(100dvh - 236px)";
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-      <div style={{ width: 500, flexShrink: 0, minWidth: 0 }}>{growthNode}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>{questNode}{gamesNode}</div>
+    <div className="learn-dash" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 20, height: H, minHeight: 520 }}>
+      <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{growthNode}</div>
+      <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{gamesNode}</div>
     </div>
   );
 }
-export function LearnTab({ growthUid, growthGames, engine, onOpenReview, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer, questHighlight,
-  user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze }) {
+export function LearnTab({ growthUid, growthGames, mainQuest, onAnswerChapter, onClaimChapter, canEdit, canEditLessons, bumpContent, contentVer,
+  user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, me, onOpenTitle, engine, reviewSpeed, quickReview }) {
+  const src = useRecentSources({ user, uid, chesscom, ccName });
   const [lOpen, setLOpen] = useLearnFold("lessons", false);
-  const questNode = dailyQuest ? <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} /> : null;
   // (v0.7.3, 사용자 요청) 예전 프로필 자리에 성장 분석(실수 통계·약점 지도·복습 카드·오프닝 실수·마스터 스타일)을 그대로 펼쳐 보여 준다.
-  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} engine={engine} onOpenReview={onOpenReview} hasChesscom={hasChesscom} />;
+  // (v0.7.4, 사용자 요청) 성장 분석은 직접 리뷰하지 않아도 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰해 분석한다(항상 최신).
+  const growthNode = <GrowthPanel uid={growthUid || null} games={growthGames} me={me} onOpenTitle={onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={engine} reviewSpeed={reviewSpeed} quick={quickReview} onOpenGameAnalyze={onOpenGameAnalyze} onOpenGame={onOpenGame} />;
   return (
     <div>
-      <PageTitle>{t("학습")}</PageTitle>
       <FadeIn index={0} layout={false}>
-        <LearnProfileHome user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={ccName} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} questNode={questNode} growthNode={growthNode} />
+        <LearnProfileHome user={user} openAuth={openAuth} ccName={ccName} src={src} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} growthNode={growthNode} />
       </FadeIn>
       {/* (v0.7.3) 레슨은 접어서 유지(펼침 상태는 이 기기에 기억). */}
       <LearnFold id="lessons" title={t("레슨")} open={lOpen} setOpen={setLOpen}>

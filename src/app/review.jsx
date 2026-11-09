@@ -18,10 +18,11 @@ import { SITE_URL } from "../lib/siteConfig.js";
 import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/shareCard.js";
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
 import { pickHighlights } from "../lib/highlights.js";
-import { recordReviewMistakes } from "../lib/growthStore.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
 import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
+import { findPost, LEGACY_MAX_POSTS } from "../lib/legacyPosts.js";
+import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult, reviewedAnalysisFetch, reviewedAnalysisShare, ocAnalysisShare } from "./reviewCache.js";
 import { t, tx, lcLatin } from "../lib/i18n.js";
 /* 실수/블런더 이후 N수 응징 라인 생성 (엔진 best 연쇄) */
 // (버그 수정) movetime 없이 "go depth 14"만 보내면 워커 큐의 기본 워치독(15000ms)에 걸릴 때까지
@@ -765,21 +766,24 @@ function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLi
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
           )}
-          {/* (v0.7.3) 내 대국에서 등급이 최선·유일·탁월인 내 수는 여기서 바로 프로필 유산으로 남긴다(유산 마법사를 대체). */}
-          {legacyAction && (
-            <button type="button" onClick={legacyAction.onClick} disabled={legacyAction.state === "saved"} className={legacyAction.state === "saved" ? "" : "press"}
-              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: narrow ? "5px 10px" : "7px 12px", borderRadius: 9, cursor: legacyAction.state === "saved" ? "default" : "pointer",
-                border: "1px solid " + (legacyAction.state === "saved" ? "rgba(125,182,138,.6)" : QCOLOR[legacyAction.kind]), background: legacyAction.state === "saved" ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
-                color: legacyAction.state === "saved" ? "#9ED3A8" : RV.text, fontSize: narrow ? 11 : 12, fontWeight: 800 }}>
-              {legacyAction.state === "saved" ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
-              {legacyAction.state === "saved" ? t("유산으로 저장됨") : legacyAction.state === "confirm" ? t("기존 유산을 교체하려면 한 번 더 누르세요") : t("유산으로 남기기")}
-            </button>
-          )}
         </div>
       </div>
       <div className="flex items-center" style={{ borderTop: "1px solid " + RV.border, padding: narrow ? "5px 8px" : "8px 10px", gap: 6 }}>
         <button onClick={onShowLine} disabled={!hasBetter} className="press" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: narrow ? "4px 8px" : "6px 10px", borderRadius: 8, border: "none", background: showingLine ? "rgba(255,255,255,.16)" : "transparent", color: hasBetter ? RV.text : RV.dim, cursor: hasBetter ? "pointer" : "default", fontSize: 10 }}><Star size={narrow ? 13 : 16} /> {t("보기")}</button>
-        <button onClick={onNext} className="press" style={{ flex: 1, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : t("다음")}</button>
+        {/* (v0.7.4, 사용자 요청) 유산으로 남기기 — 내 대국에서 등급이 최선·유일·탁월인 내 수에서만. 다음 버튼 길이를 줄인 자리(같은 줄)에 둔다. */}
+        {legacyAction && (() => {
+          const st = legacyAction.state, done = st === "saved", full = st === "full", disabled = done || full;
+          return (
+            <button type="button" onClick={legacyAction.onClick} disabled={disabled} className={disabled ? "" : "press"} title={full ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : undefined}
+              style={{ flex: 1, minWidth: 0, marginLeft: 4, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: narrow ? "7px 8px" : "10px 10px", borderRadius: 9, cursor: disabled ? "default" : "pointer", whiteSpace: "nowrap",
+                border: "1px solid " + (done ? "rgba(125,182,138,.6)" : full ? RV.border : QCOLOR[legacyAction.kind]), background: done ? "rgba(125,182,138,.12)" : "rgba(255,255,255,.06)",
+                color: done ? "#9ED3A8" : full ? RV.dim : RV.text, fontSize: narrow ? 11.5 : 12.5, fontWeight: 800 }}>
+              {done ? <Check size={13} strokeWidth={3} /> : <Star size={13} />}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{done ? t("유산으로 저장됨") : full ? t("유산이 가득 참 (최대 {0}개)", LEGACY_MAX_POSTS) : t("유산으로 남기기")}</span>
+            </button>
+          );
+        })()}
+        <button onClick={onNext} className="press" style={{ flex: legacyAction ? "0 0 auto" : 1, minWidth: legacyAction ? (narrow ? 64 : 76) : undefined, marginLeft: 4, padding: narrow ? "7px 12px" : "10px 14px", borderRadius: 9, border: "none", background: "linear-gradient(180deg,#8FB55E,#5C8A52)", color: "#fff", fontWeight: 800, fontSize: narrow ? 12.5 : 13.5, cursor: "pointer" }}>{isLast ? t("완료") : t("다음")}</button>
       </div>
     </div>
   );
@@ -798,61 +802,6 @@ const RV = {
   table: "rgba(20,12,6,.4)",
   active: "rgba(236,203,134,.18)",
 };
-// 로컬(이 기기·브라우저) 캐시 — sessionStorage(탭 닫으면 사라짐)가 아니라 localStorage(브라우저를
-// 껐다 켜도 남음)를 쓴다, "다시 열 때마다"라는 신고가 새로고침뿐 아니라 다른 날 다시 들어와도
-// 재현되므로. reviewStorageKey와 같은 식별 방식(선수+종료 시각 / id / fenRoot+sans)을 재사용한다.
-function reviewResultStorageKey(game) {
-  const posKey = reviewStorageKey(game);
-  return posKey ? posKey.replace("oc-review-pos:", "oc-review-result:") : null;
-}
-// (v0.3.9 기능) "더 빠르게"/"더 정확하게"(depth 20/25)가 서로 다른 분석 결과를 만들어내므로, 캐시된
-// 결과가 지금 선택된 속도와 다른 depth로 분석된 것이면(예: depth 20으로 캐시돼 있는데 방금 "더
-// 정확하게"로 바꿈) 재사용하지 않고 새로 분석한다 — depth는 저장된 값에 함께 실어(`d`) 대조한다.
-// (포지션 변동성 보정 on/off는 여기 영향을 안 준다 — 분석 자체가 아니라 이미 저장된 손실·날카로움
-// 값을 최종 정확도로 변환하는 단계에서만 갈리므로, 캐시된 원본 그대로 재사용해도 무방하다.)
-function loadCachedReviewResult(storageKey, expectedLen, depth) {
-  if (!storageKey) return null;
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== REVIEW_RESULT_CACHE_VERSION || !parsed.result) return null;
-    if (depth != null && parsed.d !== depth) return null;
-    if (expectedLen != null && (!parsed.result.moves || parsed.result.moves.length !== expectedLen)) return null;
-    return parsed.result;
-  } catch { return null; }
-}
-function saveCachedReviewResult(storageKey, result, depth) {
-  if (!storageKey || !result) return;
-  try { window.localStorage.setItem(storageKey, JSON.stringify({ v: REVIEW_RESULT_CACHE_VERSION, d: depth, result })); } catch { }
-}
-// chess.com 대국(game.id 있음)은 크라우드소싱 캐시(reviewed_games, puzzles 테이블과 같은 패턴)에도
-// 함께 올려 둔다 — 다른 기기·다른 유저가 같은 대국을 리뷰로 열어도 항상 같은 값을 보게 하기 위함
-// (이것도 "재현성" 신고를 해결하는 데 필요하다 — 로컬 캐시만으로는 이 기기에서만 일관될 뿐이다).
-async function reviewedAnalysisFetch(ccId, expectedLen, depth) {
-  if (!SB_ON || !ccId) return null;
-  try {
-    const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=analysis&limit=1");
-    const a = rows && rows[0] ? rows[0].analysis : null;
-    if (!a || a.v !== REVIEW_RESULT_CACHE_VERSION || !a.result) return null;
-    if (depth != null && a.d !== depth) return null;
-    if (expectedLen != null && (!a.result.moves || a.result.moves.length !== expectedLen)) return null;
-    return a.result;
-  } catch { return null; }
-}
-async function reviewedAnalysisShare(ccId, result, depth) {
-  if (!SB_ON || !ccId || !result) return;
-  // (v0.5.7 BUG-023) reviewed_analysis_put RPC로 — 비어 있거나 더 새 버전·더 깊은 분석일 때만 바뀐다.
-  const analysis = { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result };
-  // (v0.7.0 보안 BUG-115) 서버 API(/api/review-put)를 거친다 — 로그인 필요, 호출 제한, 크기·형식 검증.
-  await reviewPut("analysis", ccId, analysis);
-}
-// (v0.6.7) OpenChess 대국(실시간·봇)의 분석도 서버에 올려 둔다, 프로필의 "최근 N판 퍼포먼스 레이팅"이 읽는다. 서버(game_analysis_put)가 기보로 "내가 참가한 같은 대국"을 찾아 묶고,
-// 내 OpenChess 대국이 아니면(PGN 붙여넣기·남의 대국) 아무 일도 하지 않는다. 실패는 조용히 무시.
-async function ocAnalysisShare(sans, result, depth) {
-  if (!SB_ON || !Array.isArray(sans) || !sans.length || !result) return;
-  try { await sbRpc("game_analysis_put", { p_sans: sans, p_analysis: { v: REVIEW_RESULT_CACHE_VERSION, d: depth, result } }); } catch { }
-}
 // (v0.3.5 버그 수정 → 통합) 예전엔 게임 리뷰가 항상 고정된 프로필("full", Stockfish 16)이라 이
 // 자리에 전용 훅(useReviewEngine)을 따로 두고 세기까지 사람 최상급 수준으로 제한했다. 사용자 요청으로
 // 게임 리뷰도 설정 탭에서 고른 분석 엔진(useEngine(enginePref))을 그대로 쓰도록 통합해, 이 전용
@@ -1559,8 +1508,8 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // useState 지연 초기화로 동기 복원한다(game은 prop이라 이 시점에 이미 확정돼 있다).
   const reviewPosKey = useMemo(() => reviewStorageKey(game), [game]);
   const savedPos = useMemo(() => loadReviewPos(reviewPosKey), [reviewPosKey]);
-  // (v0.7.1) 빠른 리뷰는 요약 화면을 건너뛰고 곧장 리뷰 화면(첫 수)으로 들어간다.
-  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || (quick ? "review" : "summary")); // "summary" | "review"
+  // (v0.7.1) 빠른 리뷰는 요약 화면을 건너뛰고 곧장 리뷰 화면(첫 수)으로 들어간다. (v0.7.4) 단 모바일은 정확도 화면이 먼저다.
+  const [phase, setPhase] = useState(() => (savedPos && savedPos.phase) || (quick && !narrow ? "review" : "summary")); // "summary" | "review" — (v0.7.4) 빠른 리뷰도 모바일에서는 정확도(summary) 화면으로 먼저 들어간다
   const [tab, setTab] = useState("review"); // 데스크톱 사이드 탭 — review|analysis|details|openings
   const [result, setResult] = useState(null);
   // (v0.3.0 성능) analyzeGame이 이제 수 하나씩 채점되는 대로 onMove로 흘려보낸다 — result는 첫 수가
@@ -1741,29 +1690,22 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // 선언돼야 해 위 exploreMove state 선언 바로 다음이 아니라 여기(curMove 정의 직후)에 둔다.
   const activeMove = exploring ? exploreMove : curMove;
   // (v0.7.3) 유산 만들기 — 내 대국(game.color 있음)에서 내가 둔, 등급이 최선·유일·탁월인 수만. 자유 탐색 수·FEN 시작 대국은 제외.
-  const [legacyArm, setLegacyArm] = useState(null);
+  // (v0.7.4) 유산은 게시물 — 칸 제한 없이 최대 LEGACY_MAX_POSTS개까지 쌓인다. 같은 수는 "저장됨", 가득 차면 막는다(기존 교체 확인 단계는 없어졌다).
   const legacyAction = useMemo(() => {
     const m = activeMove;
     if (!onSaveLegacy || !myUid || !game.color || fenRoot || exploring || !m || !result) return null;
     if (!["best", "only", "brilliant"].includes(m.kind) || m.ply == null) return null;
     if ((m.ply % 2 === 0) !== (game.color === "w")) return null;
-    const keys = legacyGM ? [m.kind, m.kind + "2"] : [m.kind];
-    const same = (e) => e && e.moveIndex === m.ply && e.sans && e.sans.length === sans.length && e.sans.join(" ") === sans.join(" ");
-    if (keys.some((k) => same(legacies && legacies[k]))) return { kind: m.kind, state: "saved" };
-    const empty = keys.find((k) => !(legacies && legacies[k]));
-    const target = empty || keys.slice().sort((a, b) => ((legacies[a] && legacies[a].savedAt) || 0) - ((legacies[b] && legacies[b].savedAt) || 0))[0];
-    const occupied = !empty;
-    const armed = legacyArm === m.ply;
+    if (findPost(legacies, sans, m.ply)) return { kind: m.kind, state: "saved" };
+    if (legacies && Object.keys(legacies).filter((k) => legacies[k]).length >= LEGACY_MAX_POSTS) return { kind: m.kind, state: "full" };
     return {
-      kind: m.kind, state: occupied && armed ? "confirm" : "ready",
+      kind: m.kind, state: "ready",
       onClick: () => {
-        if (occupied && !armed) { setLegacyArm(m.ply); return; }
         const kinds = sans.map((_, i) => { const mm = result.moves.find((x) => x.ply === i); return mm ? mm.kind : "pending"; });
-        onSaveLegacy(target, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
-        setLegacyArm(null);
+        onSaveLegacy(m.kind, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
       },
     };
-  }, [activeMove, result, legacies, legacyGM, onSaveLegacy, myUid, game.color, fenRoot, exploring, legacyArm, sans]);
+  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, fenRoot, exploring, sans]);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -2335,11 +2277,6 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
     // (카드와 무관한 다른 상태 변화로 리렌더될 때마다) 아바타 URL이 안 바뀌었는데도 카드를 새로
     // 그리게 만든다 — 실제로 값이 바뀔 때만 다시 계산되도록 아바타 URL(원시값)만 deps로 쓴다.
   }, [hasPlayerData, game, result, resultDone, sharpOn, whitePInfo && whitePInfo.avatar, blackPInfo && blackPInfo.avatar]);
-  // (v0.6.4) 분석이 끝난 리뷰에서 내 실수를 성장 센터(약점 지도·복습 카드)에 기록한다. 같은 대국을 다시 열어도 같은 id라 중복·진도 초기화 없음.
-  useEffect(() => {
-    if (!resultDone || !result || !game.color || fenRoot) return;
-    try { recordReviewMistakes(myUid, result, { color: game.color, gameKey: reviewPosKey, fenRoot }); } catch { /* 기록 실패는 리뷰에 영향 없음 */ }
-  }, [resultDone, result, game.color, myUid, reviewPosKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.6.4) 하이라이트 카드 데이터 — 가장 극적인 수 최대 3개. 깨끗한 대국이면 비어 있어 시트에서 구획을 숨긴다.
   const highlightData = useMemo(() => {
     if (!resultDone || !result || fenRoot || !shareCardData) return null;
