@@ -18,7 +18,7 @@ import { moveNumber } from "../lib/chessRules.js";
 import { buildFrames } from "../lib/legacyFrames.js";
 import { isLite } from "../lib/perfMode.js";
 import { LegacyFrame, LEGACY_GOLD, LEGACY_GOLD_HI } from "./legacyFrame.jsx";
-import { K, KIT_CSS, CutPanel, Sys, Tag, EqBars, AmbientLayer, para } from "./AboutKit.jsx";
+import { K, KIT_CSS, CutPanel, Sys, Tag, EqBars, AmbientLayer, Brackets, AsciiRule, para } from "./AboutKit.jsx";
 import { useScramble, MONO } from "./OpenTextArt.jsx";
 
 const SPRING = { type: "spring", stiffness: 240, damping: 27, mass: 0.8 };
@@ -26,7 +26,7 @@ const HERO_SPRING = { type: "spring", stiffness: 120, damping: 20, mass: 1 };   
 const LIGHT = "#C9A86E", DARK = "#6E4B2A";
 const RAYS = [0, 45, 90, 135, 180, 225, 270, 315];
 
-function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch, isHeroStep }) {
+function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch, isHeroStep, step, introDone }) {
   const ref = useRef(null); const [w, setW] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current; if (!el) return undefined;
@@ -49,6 +49,25 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         <motion.span key={"ls" + epoch + r + c} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: lite ? 0 : 0.35 }}
           style={{ position: "absolute", left: sx(c) + "%", top: sy(r) + "%", width: "12.5%", height: "12.5%", background: landed && i === 1 ? heroColor : LEGACY_GOLD_HI, mixBlendMode: "soft-light", opacity: landed && i === 1 ? 0.95 : 0.7 }} />
       ))}
+      {/* 이동 궤적 — 방금 둔 수의 출발 칸에서 도착 칸까지 빛나는 선이 그려진 뒤 천천히 옅어진다(유산 수는 등급 색) */}
+      {move && !lite && (
+        <svg key={"tr" + epoch + "-" + (move.from[0] * 8 + move.from[1]) + "-" + (move.to[0] * 8 + move.to[1])} aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1 }}>
+          <defs><linearGradient id={"trg" + epoch} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor={landed ? heroColor : LEGACY_GOLD_HI} stopOpacity="0" /><stop offset="1" stopColor={landed ? heroColor : LEGACY_GOLD_HI} stopOpacity="1" /></linearGradient></defs>
+          <motion.line x1={sx(move.from[1]) + 6.25} y1={sy(move.from[0]) + 6.25} x2={sx(move.to[1]) + 6.25} y2={sy(move.to[0]) + 6.25} stroke={landed ? heroColor : LEGACY_GOLD_HI} strokeWidth="1.6" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+            style={{ filter: "drop-shadow(0 0 3px " + (landed ? heroColor : LEGACY_GOLD_HI) + ")" }} initial={{ pathLength: 0, opacity: 0.95 }} animate={{ pathLength: 1, opacity: [0.95, 0.95, 0.15] }} transition={{ pathLength: { duration: 0.5, ease: "easeOut" }, opacity: { duration: 1.6, times: [0, 0.4, 1] } }} />
+        </svg>
+      )}
+      {/* 잡기 — 도착 칸에서 파편이 사방으로 */}
+      {move && move.capture && !lite && Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2, d = cell * (0.9 + (i % 3) * 0.35); return (
+        <motion.span key={"cap" + epoch + step + "-" + i} aria-hidden="true" initial={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }} animate={{ opacity: 0, x: Math.cos(a) * d, y: Math.sin(a) * d, scale: 0.3, rotate: 180 }} transition={{ duration: 0.7, ease: "easeOut" }}
+          style={{ position: "absolute", left: sx(move.to[1]) + 6.25 + "%", top: sy(move.to[0]) + 6.25 + "%", width: 5, height: 5, marginLeft: -2.5, marginTop: -2.5, background: i % 2 ? LEGACY_GOLD_HI : "#fff", zIndex: 6, pointerEvents: "none" }} />
+      ); })}
+      {/* 비네트 — 주목·도착 순간엔 표적 칸 주변만 밝고 가장자리가 어두워진다 */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 3, pointerEvents: "none", opacity: spotlight || landed ? 1 : 0, transition: "opacity .7s", background: heroMove ? "radial-gradient(circle at " + (sx(heroMove.to[1]) + 6.25) + "% " + (sy(heroMove.to[0]) + 6.25) + "%, transparent 18%, rgba(0,0,0,.5) 80%)" : "none" }} />
+      {/* 열릴 때 스캔인 — 어두운 덮개가 위로 걷히며 밝은 선이 훑고 지나간다 */}
+      {!lite && !introDone && (
+        <motion.div aria-hidden="true" initial={{ scaleY: 1 }} animate={{ scaleY: 0 }} transition={{ duration: 1, delay: 0.25, ease: [0.65, 0, 0.35, 1] }} style={{ position: "absolute", inset: 0, zIndex: 8, transformOrigin: "50% 100%", background: "#0A0603", borderTop: "2px solid " + LEGACY_GOLD_HI, boxShadow: "0 -6px 18px " + LEGACY_GOLD_HI + "99" }} />
+      )}
       {/* 표적 고정: 십자선 + 코너 브래킷 + 스캔 라인 */}
       {heroPiece && !lite && (
         <>
@@ -126,6 +145,8 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
   const go = useCallback((n) => { setPlaying(false); setStep(Math.max(startCount, Math.min(endCount, n))); setEpoch((e) => e + 1); }, [startCount, endCount]);
   const replay = () => { setStep(startCount); setEpoch((e) => e + 1); setPlaying(true); };
   const toggle = () => { if (step >= endCount) replay(); else setPlaying((p) => !p); };
+  const hm = moves[moveIndex];
+  const heroOrigin = hm ? (((flip ? 7 - hm.to[1] : hm.to[1]) + 0.5) * 12.5) + "% " + (((flip ? 7 - hm.to[0] : hm.to[0]) + 0.5) * 12.5) + "%" : "50% 50%";
   const frame = frames[Math.min(step, frames.length - 1)];
   const move = step > startCount ? moves[step - 1] : null;
   const spotlight = step === moveIndex && introDone, landed = step === moveIndex + 1, finished = step >= endCount;
@@ -154,11 +175,31 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
         <Sys color={K.brass} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</Sys>
         {playing && <EqBars n={4} />}
       </div>
-      <motion.div initial={lite ? false : { opacity: 0, y: 16, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: spotlight && !lite ? 1.018 : 1 }} transition={{ duration: spotlight ? 0.9 : 0.7, ease: [0.22, 0.9, 0.32, 1], delay: lite || introDone ? 0 : 0.15 }}
-        style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)", filter: spotlight && !lite ? "drop-shadow(0 0 22px " + color + "55)" : "none", transition: "filter .6s" }}>
-        <LegacyFrame draw />
-        <Board frame={frame} move={move} flip={flip} heroMove={moves[moveIndex]} heroKind={kind} spotlight={spotlight} landed={landed} epoch={epoch} isHeroStep={landed} />
+      {/* 데이터 칩 — 이 유산이 어떤 수인지(등급·수·진영·재생 길이) */}
+      <motion.div initial={lite ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: lite ? 0 : 0.5, duration: 0.5 }} style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <Tag solid color={color} style={{ background: "linear-gradient(180deg," + color + "," + color + "CC)", color: "#10161F" }}>{kindName}</Tag>
+        <Tag color={K.brassHi}>{"KEY ▸ " + moveNumber(moveIndex) + sans[moveIndex]}</Tag>
+        <Tag color={K.soft}>{"SIDE ▸ " + (flip ? "BLACK" : "WHITE")}</Tag>
       </motion.div>
+      <div style={{ position: "relative" }}>
+        <motion.div initial={lite ? false : { opacity: 0, y: 16, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: lite ? 1 : spotlight ? 1.1 : landed ? 1.05 : 1 }}
+          transition={{ opacity: { duration: 0.7, delay: lite || introDone ? 0 : 0.15 }, y: { duration: 0.7, delay: lite || introDone ? 0 : 0.15, ease: [0.22, 0.9, 0.32, 1] }, scale: { type: "spring", stiffness: spotlight ? 55 : 90, damping: 18 } }}
+          style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)", transformOrigin: heroOrigin, filter: (spotlight || landed) && !lite ? "drop-shadow(0 0 24px " + color + "66)" : "none", transition: "filter .6s" }}>
+          <LegacyFrame draw />
+          <Board frame={frame} move={move} flip={flip} heroMove={moves[moveIndex]} heroKind={kind} spotlight={spotlight} landed={landed} epoch={epoch} isHeroStep={landed} step={step} introDone={introDone} />
+        </motion.div>
+        {!lite && <Brackets color={color} size={14} inset={2} pulse />}
+        {/* 키 무브 배너 — 도착하면 대각선 띠가 보드를 가로질러 지나간다 */}
+        <AnimatePresence>
+          {landed && !lite && (
+            <motion.div key={"bn" + epoch} aria-hidden="true" initial={{ x: "-110%", opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: "110%", opacity: 0 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ position: "absolute", left: 0, right: 0, top: "42%", height: 56, zIndex: 12, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(90deg,transparent,rgba(8,5,3,.82) 12%,rgba(8,5,3,.82) 88%,transparent)", borderTop: "1px solid " + color, borderBottom: "1px solid " + color, boxShadow: "0 0 24px " + color + "55" }}>
+              <span className="ab-burst-glow" style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 24, letterSpacing: ".18em", color, textShadow: "0 2px 0 rgba(0,0,0,.8), 0 0 18px " + color + "88" }}>{kindName}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
       {/* 지금 수 */}
       <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 8 }} aria-live="polite">
         <AnimatePresence mode="wait" initial={false}>
