@@ -38,16 +38,18 @@ function FitBox({ children }) {
     const measure = () => {
       const o = outer.current, i = inner.current;
       if (!o || !i) return;
-      const natW = i.scrollWidth, natH = i.offsetHeight, avail = o.clientWidth;
+      const natW = i.scrollWidth, natH = Math.max(i.offsetHeight, i.scrollHeight), avail = o.clientWidth;
       if (!natW || !avail) return;
       const s = Math.min(1, avail / natW);
       setFit((p) => (Math.abs(p.s - s) < 0.003 && p.h === natH * s ? p : { s, h: natH * s }));
     };
     measure();
     let ro = null;
-    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(measure); ro.observe(outer.current); }
+    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(measure); ro.observe(outer.current); ro.observe(inner.current); }
     window.addEventListener("resize", measure);
-    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
+    let off = false;
+    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!off) measure(); }); } catch { /* 글꼴 API 없음 */ }
+    return () => { off = true; if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
   return (
     <div ref={outer} style={{ width: "100%", height: fit.h == null ? undefined : fit.h, display: "flex", justifyContent: "center" }}>
@@ -176,7 +178,7 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
       <div style={{ position: "relative", width: "100%", maxWidth: 340, minWidth: 0, textAlign: "center", animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>
         {/* (v0.7.4, 사용자 요청) OPEN 위쪽 UI는 모두 없앴다 — 단계 단어는 아래 게이지 이름이 글리치와 함께 바뀌며 보여 준다. */}
         <GlitchLetters glitch={glitch} lit={lit} colors={colors} />
-        <div data-phase={shown} style={{ display: "flex", gap: 4, margin: "22px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
+        <div data-phase={shown} style={{ display: "flex", gap: 4, margin: "40px 0 0" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pctText} aria-label={t("빠른 리뷰 분석 중")}>
           {WORDS.map((w, i) => {
             const real = Math.max(0, Math.min(1, pct * 4 - i));
             const fill = finale ? 1 : i < shown ? 1 : i === shown ? Math.max(frac, real) : 0;
@@ -191,10 +193,9 @@ export default function QuickReviewIntro({ done, gradedCount, total, colors, onD
             );
           })}
         </div>
-        {/* (v0.7.4, 사용자 요청) 분석 중 n%는 게이지 이름(OPENING…)에서 더 떨어뜨려 아래에 둔다. */}
-        {/* (v0.7.3) 예전엔 헤더에 있던 "분석 중 n%"를 진행 막대 아래로 옮겼다. */}
-        <div className="flex items-center justify-center gap-1" style={{ marginTop: 34, fontSize: 11.5, fontWeight: 700, color: colors.soft }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
       </div>
+      {/* (v0.7.4, 사용자 요청) "분석 중 n%"는 가운데 묶음에서 완전히 분리해 화면 맨 아래에 고정한다. */}
+      <div className="flex items-center justify-center gap-1" style={{ position: "absolute", left: 0, right: 0, bottom: "max(28px, calc(env(safe-area-inset-bottom) + 20px))", fontSize: 12, fontWeight: 700, color: colors.soft, animation: leaving ? "qr-out .27s ease-in forwards" : "none" }}>{tx("{0} 분석 중 {1}", <Cpu size={12} />, pctText)}%</div>
     </div>
   );
 }
