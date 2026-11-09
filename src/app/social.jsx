@@ -274,8 +274,9 @@ function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
     </div>
   );
 }
-function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine }) {
-  const [editOpen, setEditOpen] = useState(false);
+function MyProfileCard({ editOnly, onEditClose, card, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine }) {
+  const [editOpen, setEditOpen] = useState(!!editOnly);   // (v0.7.4) editOnly면 열자마자 편집 창부터
+  const closeEdit = () => { setEditOpen(false); if (editOnly && onEditClose) onEditClose(); };
   // (사용자 요청) 최상단 선택 박스 — OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 한 카드에
   // 같이 쌓아 보여주던 것을 분리해, 아이콘 두 개(검은 나이트=OpenChess, 초록 폰=chess.com)로 어느
   // 쪽을 볼지 고르게 한다.
@@ -397,9 +398,9 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
         </div>
       )}
       {editOpen && (
-        <div onClick={() => setEditOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+        <div onClick={closeEdit} style={{ visibility: "visible", position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 85, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, background: T.paper, borderRadius: 16, border: "1px solid #DCCBA8", padding: 18, boxShadow: "0 20px 50px -12px rgba(0,0,0,.6)", marginBottom: 40 }}>
-            <button onClick={() => setEditOpen(false)} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
+            <button onClick={closeEdit} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
             {profileEditor}
             {/* chess.com 연동 — 기존 설정 탭 블록에서 모달로 이동 */}
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #E4D5B6" }}>
@@ -433,7 +434,7 @@ function MyProfileCard({ card, profile, setProfile, user, myUid, currentTitle, t
 // 쓸 데가 없어져 이 컴포넌트로 그대로 옮겨왔다 — SettingsTab에는 더 이상 이 상태가 필요 없다.
 // z-index는 MyProfileCard 자신의 "프로필 편집" 모달(85)보다 낮고, 그 안에서 다시 뜨는 chess.com
 // 계정 확인 모달(90)보다도 낮게(80) 잡아, 세 겹이 항상 이 순서로 쌓이게 한다.
-export function ProfileWindow({ onClose, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine, earnedTitles, onEquipTitle, isDev, isCodev, devOn, codevOn, chesscomStatus, chesscom }) {
+export function ProfileWindow({ editOnly, onClose, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine, earnedTitles, onEquipTitle, isDev, isCodev, devOn, codevOn, chesscomStatus, chesscom }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [ccState, setCcState] = useState("idle");   // idle | checking | failed
   const [pending, setPending] = useState(null);
@@ -451,17 +452,17 @@ export function ProfileWindow({ onClose, profile, setProfile, user, myUid, curre
   const changeChesscom = () => { if (chesscomDaysLeft > 0) return; setProfile({ ...profile, chesscom: "" }); setCc(""); setCcState("idle"); };
   const card = { background: T.paper, borderRadius: 12, padding: 16, border: "1px solid #DCCBA8" };
   return (
-    <div className="oc-modal-bg" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 95, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+    <div className="oc-modal-bg" onClick={onClose} style={{ visibility: editOnly ? "hidden" : undefined, position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 95, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 460, marginBottom: 40 }}>
         <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: -12, right: -12, zIndex: 10, width: 32, height: 32, borderRadius: "50%", border: "1px solid #DCCBA8", background: T.paper, color: T.ink, cursor: "pointer", boxShadow: "0 4px 10px rgba(0,0,0,.35)" }}>✕</button>
-        <MyProfileCard card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
+        <MyProfileCard editOnly={editOnly} onEditClose={onClose} card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
           chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
           mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
           profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />
       </div>
       {/* chess.com 계정 확인 모달 */}
       {pending && (
-        <div onClick={(e) => { e.stopPropagation(); setPending(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+        <div onClick={(e) => { e.stopPropagation(); setPending(null); }} style={{ visibility: "visible", position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 320, width: "100%", background: "linear-gradient(180deg,#F2E8D5,#E2D2B2)", borderRadius: 16, padding: 20, border: "1px solid #CDB98E", boxShadow: "0 20px 50px -10px rgba(0,0,0,.7)" }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
               {pending.avatar ? <img src={pending.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 10 }} /> : <span style={{ width: 46, height: 46, borderRadius: 10, background: T.brass, color: "#241509", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20 }}>{pending.username[0].toUpperCase()}</span>}
@@ -617,7 +618,26 @@ function renderMentionText(body) {
 // 배치해 한 화면에 더 많이 보이도록 한다 — 좁은 화면(모바일)에서는 세로로 쌓인다.
 // (v0.7.3, 사용자 요청) embedded — 학습 탭 안에 /user 페이지 레이아웃 그대로 끼워 넣는 모드. 전체 화면 오버레이(position:fixed)가 아니라 일반 흐름 안의 카드로 그리고, 뒤로가기 버튼·고정(sticky) 헤더는 쓰지 않는다.
 // compact — 좁은 열(학습 탭 왼쪽)에 넣을 때 화면 폭과 무관하게 세로 한 열 배치 · hideRecentGames — 최근 대국 목록은 빼고(옆 열에 따로 표시) · onViewChange(statsView) — OpenChess/chess.com 토글이 바뀔 때 알림.
-export function UserProfilePage({ docked, embedded, compact, hideRecentGames, onViewChange, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
+// (v0.7.4, 사용자 요청) 내 /user 페이지의 설정(세로 점 세 개) 버튼 — 눌러서 프로필 편집을 연다. 프로필 카드를 따로 띄우던 화면은 모두 이 페이지로 이어진다.
+function SelfMenu({ onEdit }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const off = (e) => { if (!e.target.closest("[data-selfmenu]")) setOpen(false); };
+    window.addEventListener("pointerdown", off); return () => window.removeEventListener("pointerdown", off);
+  }, [open]);
+  return (
+    <div data-selfmenu style={{ position: "relative", display: "inline-block" }}>
+      <button onClick={() => setOpen((v) => !v)} aria-label={t("설정")} aria-haspopup="menu" aria-expanded={open} title={t("설정")} className="press" style={{ width: 34, height: 34, borderRadius: 10, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.55)", color: T.ink, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MoreVertical size={18} /></button>
+      {open && (
+        <div role="menu" style={{ position: "absolute", right: 0, top: 40, zIndex: 30, minWidth: 140, padding: 4, borderRadius: 10, background: T.paper, border: "1px solid #CDB98E", boxShadow: "0 10px 24px -8px rgba(0,0,0,.45)" }}>
+          <button role="menuitem" onClick={() => { setOpen(false); onEdit(); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", borderRadius: 8, border: "none", background: "transparent", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" }}><User size={15} />{t("프로필 편집")}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+export function UserProfilePage({ onEditProfile, docked, embedded, compact, hideRecentGames, onViewChange, mid, autoInvite, onClose, me, myUid, onOpenOpening, onOpenTitle, onOpenGame, onOpenGameAnalyze, onOpenPuzzle, mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare }) {
   const [pub, setPub] = useState(null);
   const [pubUid, setPubUid] = useState(null);
   const [pubUsername, setPubUsername] = useState(null);
@@ -836,6 +856,7 @@ export function UserProfilePage({ docked, embedded, compact, hideRecentGames, on
                     줄바꿈되곤 했다 — 이 칸에 항상 같은 최대 폭을 주고, 그 폭 안에서는 문구가 줄바꿈
                     되도록(whiteSpace:nowrap 제거) 바꿔 어떤 상태가 떠도 옆 블록을 밀어내지 않는다. */}
                 <div style={{ flexShrink: 0, maxWidth: 132, textAlign: "right" }}>
+                  {isSelf && onEditProfile && <SelfMenu onEdit={onEditProfile} />}
                   {!isSelf && (
                     me ? (
                       reqState === "accepted" ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: T.ink }}><UserCheck size={14} style={{ flexShrink: 0 }} /></span>

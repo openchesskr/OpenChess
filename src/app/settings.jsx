@@ -16,7 +16,6 @@ import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
 import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
 import { ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
-import { ProfileWindow } from "./social.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang, fmtDateOnly } from "../lib/i18n.js";
 import Dropdown from "../components/Dropdown.jsx";
@@ -684,7 +683,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
     </div>
   );
 }
-export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
+export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
@@ -729,7 +728,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
   // 정확히 같은 모달이라, 이 탭에서도 같은 방식으로 연다(ProfileWindow가 필요로 하는 prop은 이미 이
   // 컴포넌트 호출부가 다 넘겨주고 있었다 — v0.3.8에서 상시 표시 MyProfileCard를 뺄 때 구조 분해에서만
   // 빠졌던 것들을 다시 받는다).
-  const [profileWinOpen, setProfileWinOpen] = useState(false);
   // (v0.4.6 기능, 사용자 요청) 로그아웃 상태에서 친구 초대 링크를 열면 이 탭으로 넘어오면서
   // loginShakeTick이 바뀐다 — 그 순간에만 잠깐(lineShake 3회, 약 1.7초) 아래 계정 박스를 흔들어
   // "로그인이 필요하다"는 신호를 준다.
@@ -800,7 +798,7 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
                   1px solid이고 다른 하나는 none이라, border-box 기준으로 실제 렌더 높이가 2px
                   차이났다 — height를 똑같이 고정해 border 유무와 무관하게 항상 같은 높이가 되게 한다. */}
               <button onClick={onOpenAccountCenter} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>{t("계정 센터")}</button>
-              <button onClick={() => setProfileWinOpen(true)} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("자세히 보기")}</button>
+              <button onClick={() => onOpenMyProfile && onOpenMyProfile()} className="press" style={{ flexShrink: 0, height: 30, padding: "0 13px", borderRadius: 8, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>{t("자세히 보기")}</button>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -812,12 +810,6 @@ export function SettingsTab({ profile, setProfile, engine, engineStatus, liveOn,
             </div>
           </div>
         </div>
-      )}
-      {profileWinOpen && user && (
-        <ProfileWindow onClose={() => setProfileWinOpen(false)} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount}
-          onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts}
-          onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine} earnedTitles={earnedTitles} onEquipTitle={onEquipTitle} isDev={isDev} isCodev={isCodev}
-          devOn={devOn} codevOn={codevOn} chesscomStatus={chesscomStatus} chesscom={chesscom} />
       )}
       {/* (v0.6.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
       <div style={card}>
