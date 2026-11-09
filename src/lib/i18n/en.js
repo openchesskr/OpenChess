@@ -2068,6 +2068,7 @@ export default {
   "{0}와(과) 기준별 비교": "Criterion-by-criterion comparison with {0}",
   "비슷한 기준 {0}/{1}": "Similar criteria {0}/{1}",
   "성장 분석": "Growth analysis",
+  "최근 변화": "Recent change",
   "티어 여정": "Tier journey",
   "구간": "Division",
   "지금": "NOW",

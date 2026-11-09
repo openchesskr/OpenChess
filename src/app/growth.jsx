@@ -54,7 +54,7 @@ function ThemeSection({ id, no, title, desc, right, children }) {
     <div id={id} style={{ borderTop: "1px solid #E4D5B6", padding: "16px 0 4px", scrollMarginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, padding: "0 16px 12px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#A8842F", fontFamily: "Georgia, serif" }}>{"0" + no}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#A8842F", fontFamily: SITE_FONT }}>{"0" + no}</div>
           <h3 style={{ ...h3, fontSize: 17, marginTop: 1 }}>{title}</h3>
           <div style={{ ...sub, fontSize: 11.5, marginTop: 2 }}>{desc}</div>
         </div>
@@ -71,7 +71,7 @@ function SectionNav({ items }) {
     <div role="navigation" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 16px 12px", scrollbarWidth: "none" }}>
       {items.map(([id, label], i) => (
         <button key={id} className="press" onClick={() => go(id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "6px 12px", borderRadius: 999, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>
-          <span style={{ fontSize: 10, fontWeight: 900, color: "#A8842F", fontFamily: "Georgia, serif" }}>{"0" + (i + 1)}</span>{label}
+          <span style={{ fontSize: 10, fontWeight: 900, color: "#A8842F", fontFamily: SITE_FONT }}>{"0" + (i + 1)}</span>{label}
         </button>
       ))}
     </div>
@@ -108,7 +108,7 @@ function SimRing({ pct, size = 66 }) {
     <svg width={size} height={size} viewBox={"0 0 " + size + " " + size} aria-hidden style={{ flexShrink: 0 }}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="6" />
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={T.brassHi} strokeWidth="6" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - Math.max(0, Math.min(1, pct / 100)))} transform={"rotate(-90 " + size / 2 + " " + size / 2 + ")"} style={{ transition: "stroke-dashoffset .6s ease" }} />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill={T.ivoryHi} style={{ fontSize: size * 0.27, fontWeight: 900, fontFamily: "Georgia, serif" }}>{pct}%</text>
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill={T.ivoryHi} style={{ fontSize: size * 0.27, fontWeight: 900, fontFamily: SITE_FONT }}>{pct}%</text>
     </svg>
   );
 }
@@ -227,7 +227,7 @@ function MasterStyle({ games, bare }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SimRing pct={Math.round(picked.sim * 100)} size={50} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: "Georgia, serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
             <div style={{ fontSize: 11, color: "#CDBA98", marginTop: 2, lineHeight: 1.4 }}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)}</div>
             <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginTop: 1 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
           </div>
@@ -333,7 +333,7 @@ function AutoReviewGate({ phase, count, need, engineStatus }) {
     : engineStatus !== "ready" ? t("분석 엔진 준비 중…") : t("리뷰하지 않아도 최근 {0}판을 자동으로 분석하는 중", need);
   return (
     <div style={card}>
-      <SectionHead Icon={Lock} title={t("성장 분석")} right={<span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{n}/{need}</span>} />
+      <SectionHead Icon={Lock} title={t("성장 분석")} right={<span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{n}/{need}</span>} />
       <p style={{ fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 12px", lineHeight: 1.5 }}>{msg}</p>
       <div role="progressbar" aria-valuemin={0} aria-valuemax={need} aria-valuenow={n} aria-label={t("성장 분석")} style={{ display: "flex", gap: 5 }}>
         {Array.from({ length: need }, (_, i) => (
@@ -413,7 +413,7 @@ function MoveCard({ m, onReview, noBoard }) {
       <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {badgeIcon(m.kind, 16)}
-          <span style={{ fontSize: 14, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{moveNumber(m.ply)}{m.san}</span>
+          <span style={{ fontSize: 14, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{moveNumber(m.ply)}{m.san}</span>
           <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 900, color: T.blunder, whiteSpace: "nowrap" }}>−{Math.round(m.loss)}%p</span>
         </div>
         <div style={{ ...sub, fontSize: 11.5 }}>{QLABEL[m.kind] || m.kind}{m.best ? " · " + t("최선의 수") + ": " : ""}{m.best && <b style={{ color: T.ink }}>{m.best}</b>}</div>
@@ -431,27 +431,35 @@ function MoveCard({ m, onReview, noBoard }) {
 function Overview({ g, onReview }) {
   const d = g.trend.delta, up = d != null && d >= 0.5, down = d != null && d <= -0.5;
   const wk = g.weakPhase ? g.phases.find((p) => p.key === g.weakPhase.key) : null;
-  const tile = { borderRadius: 12, background: "rgba(255,255,255,.05)", border: "1px solid rgba(236,203,134,.14)", padding: "10px 11px", minWidth: 0 };
-  const lab = { fontSize: 10.5, fontWeight: 700, color: "#CDBA98", lineHeight: 1.3, minHeight: 27 };
-  const big = { fontSize: 24, fontWeight: 900, fontFamily: "Georgia, serif", lineHeight: 1.15, marginTop: 3, whiteSpace: "nowrap" };
-  const note = { fontSize: 10.5, color: "#A8987C", marginTop: 2, lineHeight: 1.3 };
+  // (v0.7.4, 사용자 요청: UI·폰트 정리) 세 타일 모두 같은 구조 — 한 줄 라벨 · 숫자(굵은 기본 글꼴, 같은 높이·밑줄 정렬) · 보조 문구. 숫자 글꼴은 세리프를 버리고 사이트 기본 글꼴의 고정폭 숫자.
+  const tile = { borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(236,203,134,.16)", padding: "11px 11px 10px", minWidth: 0, minHeight: 116, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 6 };
+  const lab = { fontSize: 11, fontWeight: 800, color: "#CDBA98", lineHeight: 1.25, minHeight: 27, letterSpacing: "-.01em" };
+  const row = { display: "flex", alignItems: "baseline", gap: 2, minHeight: 30, whiteSpace: "nowrap", fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" };
+  const big = { fontSize: 25, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1 };
+  const unit = { fontSize: 12, fontWeight: 800, opacity: 0.85 };
+  const note = { fontSize: 10.5, color: "#A8987C", lineHeight: 1.3, minHeight: 27 };
+  const dc = up ? "#7DB68A" : down ? "#FF8A7A" : "#E3CC93";
   return (
     <div style={{ padding: "0 16px 14px" }}>
       <div style={{ ...darkPanel, marginBottom: 0, padding: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr)", gap: 8 }}>
           <div style={tile}>
             <div style={lab}>{t("평균 정확도")}</div>
-            <div style={{ ...big, color: T.ivoryHi }}>{g.avgAcc != null ? g.avgAcc.toFixed(1) : "–"}<span style={{ fontSize: 13 }}>%</span></div>
+            <div style={{ ...row, color: T.ivoryHi }}><span style={big}>{g.avgAcc != null ? g.avgAcc.toFixed(1) : "–"}</span><span style={unit}>%</span></div>
             <div style={note}>{t("최근 {0}판 기준", g.n)}</div>
           </div>
           <div style={tile}>
-            <div style={lab}>{t("최근 {0}판 기준 변화", g.trend.k)}</div>
-            <div style={{ ...big, color: up ? "#7DB68A" : down ? "#FF8A7A" : "#E3CC93" }}>{d == null ? "–" : <>{up ? "▲" : down ? "▼" : "±"}{Math.abs(d).toFixed(1)}<span style={{ fontSize: 13 }}>%p</span></>}</div>
+            <div style={lab}>{t("최근 변화")}</div>
+            <div style={{ ...row, color: dc }}>
+              {d != null && <span style={{ fontSize: 11, marginRight: 3, alignSelf: "center" }}>{up ? "▲" : down ? "▼" : "±"}</span>}
+              <span style={big}>{d == null ? "–" : Math.abs(d).toFixed(1)}</span>{d != null && <span style={unit}>%p</span>}
+            </div>
+            <div style={note}>{t("최근 {0}판 기준", g.trend.k)}</div>
           </div>
           <div style={tile}>
             <div style={lab}>{t("가장 약한 구간")}</div>
-            <div style={{ ...big, fontSize: 17, paddingTop: 5, color: g.weakPhase ? "#FFB066" : T.ivoryHi }}>{g.weakPhase ? phaseLabel(g.weakPhase.key) : "–"}</div>
-            {wk && wk.acc != null && <div style={note}>{t("정확도 {0}%", wk.acc.toFixed(1))}</div>}
+            <div style={{ ...row, whiteSpace: "normal", color: g.weakPhase ? "#FFB066" : T.ivoryHi }}><span style={{ ...big, fontSize: g.weakPhase && phaseLabel(g.weakPhase.key).length > 7 ? 14 : 18, letterSpacing: "-.02em", lineHeight: 1.1, wordBreak: "keep-all" }}>{g.weakPhase ? phaseLabel(g.weakPhase.key) : "–"}</span></div>
+            <div style={note}>{wk && wk.acc != null ? t("정확도 {0}%", wk.acc.toFixed(1)) : "\u00A0"}</div>
           </div>
         </div>
         <GrowthCurve g={g} onReview={onReview} bare dark />
@@ -676,7 +684,7 @@ function WinDrop({ before, after }) {
     <div title={t("승률은 평가치를 로지스틱 곡선으로 바꾼 값")}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft }}>{t("승률")}</span>
-        <span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{Math.round(before)}% → {Math.round(after)}%</span>
+        <span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{Math.round(before)}% → {Math.round(after)}%</span>
         <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 900, color: T.blunder }}>{delta > 0 ? "+" : delta < 0 ? "−" : ""}{Math.abs(Math.round(delta))}%p</span>
       </div>
       <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(0,0,0,.09)" }} aria-hidden>
@@ -695,7 +703,7 @@ function MistakeBlock({ m, onReview, noBoard }) {
         <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             {badgeIcon(m.kind, 16)}
-            <span style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: "Georgia, serif" }}>{moveNumber(m.ply)}{m.san}</span>
+            <span style={{ fontSize: 15, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{moveNumber(m.ply)}{m.san}</span>
             <span style={{ fontSize: 10.5, fontWeight: 900, color: "#fff", background: PHASE_TINT[m.phase], borderRadius: 999, padding: "1px 8px" }}>{phaseLabel(m.phase)}</span>
             <span style={{ ...sub, fontSize: 11 }}>{QLABEL[m.kind] || m.kind}</span>
             <span style={{ marginLeft: "auto" }}><GameActions g={g} onReview={onReview} /></span>
@@ -721,7 +729,7 @@ function MistakeBlock({ m, onReview, noBoard }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {better.map((b) => (
               <span key={b.san} title={b.best ? t("최선의 수") : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 10, border: "1px solid " + (b.best ? T.best : "#DCCBA8"), background: b.best ? "rgba(63,122,58,.1)" : "rgba(0,0,0,.03)", fontSize: 12, fontWeight: 800, color: T.ink }}>
-                <span style={{ fontFamily: "Georgia, serif" }}>{moveNumber(m.ply)}{b.san}</span>
+                <span style={{ fontFamily: SITE_FONT }}>{moveNumber(m.ply)}{b.san}</span>
                 {b.win != null && <span style={{ fontSize: 11, fontWeight: 800, color: b.best ? T.best : T.inkSoft }}>{Math.round(b.win)}%</span>}
               </span>
             ))}

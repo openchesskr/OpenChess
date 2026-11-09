@@ -2068,6 +2068,7 @@ export default {
   "{0}와(과) 기준별 비교": "Comparación criterio por criterio con {0}",
   "비슷한 기준 {0}/{1}": "Criterios parecidos {0}/{1}",
   "성장 분석": "Análisis de crecimiento",
+  "최근 변화": "Cambio reciente",
   "티어 여정": "Camino de niveles",
   "구간": "División",
   "지금": "AHORA",
