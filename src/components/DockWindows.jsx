@@ -5,7 +5,7 @@
 //  · 모바일·좁은 화면(900px 미만)·터치 기기에서는 enabled=false — 기존 전체 화면 모달을 그대로 쓴다.
 //  창 안 내용은 호출부가 renderBody(win)로 그리므로 항상 최신 props를 쓴다(이 파일은 창 틀·배치·상태만 맡는다).
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { X, Minus, ChevronUp } from "lucide-react";
+import { X, Minus, ChevronUp, Maximize2, Minimize2 } from "lucide-react";
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 
@@ -22,12 +22,12 @@ const clampPos = (p, w, vh, vwid) => ({ x: Math.max(0, Math.min(p.x, vwid - W_FU
 /** 도킹된 창들의 가로 폭 합이 화면에 안 들어가면 가장 오래된 펼친 창부터 접고, 그래도 안 되면 가장 오래된 도킹 창을 닫는다(방금 연 창은 보호). */
 export function fitDock(list, vw, protectId) {
   let out = list.map((w) => ({ ...w }));
-  const width = () => { const d = out.filter((w) => !w.float); return d.reduce((a, w) => a + (w.min ? W_MIN : W_FULL), 0) + GAP * Math.max(0, d.length - 1); };
+  const width = () => { const d = out.filter((w) => !w.float && !w.full); return d.reduce((a, w) => a + (w.min ? W_MIN : W_FULL), 0) + GAP * Math.max(0, d.length - 1); };
   const limit = vw - EDGE * 2;
   while (width() > limit) {
-    const k = out.findIndex((w) => !w.float && !w.min && w.id !== protectId);
+    const k = out.findIndex((w) => !w.float && !w.full && !w.min && w.id !== protectId);
     if (k >= 0) { out[k].min = true; continue; }
-    const c = out.findIndex((w) => !w.float && w.id !== protectId);
+    const c = out.findIndex((w) => !w.float && !w.full && w.id !== protectId);
     if (c < 0) break;
     out.splice(c, 1);
   }
@@ -51,16 +51,36 @@ export function useDockWindows() {
   const focus = useCallback((id) => upd(id, () => ({ z: ++zRef.current })), [upd]);
   const setFloat = useCallback((id, pos) => upd(id, () => ({ float: pos, z: ++zRef.current })), [upd]);
   const redock = useCallback((id) => setWins((l) => fitDock(l.map((w) => (w.id === id ? { ...w, float: null, min: false, z: ++zRef.current } : w)), window.innerWidth, id)), []);
+  // (v0.7.4, 사용자 요청) 확대 — 창을 화면 거의 전체 크기로(다시 누르면 원래 도킹/띄운 자리로). 확대한 창은 도킹 폭 계산에서 빠진다.
+  const toggleFull = useCallback((id) => setWins((l) => fitDock(l.map((w) => (w.id === id ? { ...w, full: !w.full, min: false, z: ++zRef.current } : w)), window.innerWidth, id)), []);
   const has = useCallback((id) => wins.some((w) => w.id === id), [wins]);
-  return { enabled, wins, open, close, toggleMin, focus, setFloat, redock, has };
+  return { enabled, wins, open, close, toggleMin, toggleFull, focus, setFloat, redock, has };
 }
 
+/* (v0.7.4 버그 수정) 마우스 휠로는 창 안의 가로 스크롤 줄(푼 퍼즐·유산·미니게임 카드 등)을 넘길 수 없었다 — 세로 휠 입력을, 그 자리에 있는 가로로 넘칠 수 있는 줄의 가로 스크롤로 바꿔 준다.
+   (줄이 끝에 닿았거나 가로 입력이 주가 되면 건드리지 않아 창 자체의 세로 스크롤·트랙패드 가로 스와이프는 그대로다.) */
+export function wheelToHorizontal(e, root) {
+  if (Math.abs(e.deltaX) >= Math.abs(e.deltaY) || e.ctrlKey) return;
+  let el = e.target;
+  for (; el && el !== root; el = el.parentElement) {
+    if (!(el instanceof HTMLElement)) continue;
+    const st = window.getComputedStyle(el);
+    if ((st.overflowX === "auto" || st.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1) {
+      const atStart = el.scrollLeft <= 0 && e.deltaY < 0, atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1 && e.deltaY > 0;
+      if (atStart || atEnd) return;
+      el.scrollLeft += e.deltaY; e.preventDefault(); return;
+    }
+  }
+}
 function Frame({ win, title, children, dock, right }) {
   const ref = useRef(null), drag = useRef(null);
   const vh = typeof window !== "undefined" ? window.innerHeight : 800, vwid = typeof window !== "undefined" ? window.innerWidth : 1200;
-  const floating = !!win.float;
+  const floating = !!win.float, full = !!win.full;
+  const bodyRef = useRef(null);
+  // React의 onWheel은 수동(passive) 리스너라 preventDefault가 안 먹는다 — 직접 비수동 리스너로 단다.
+  useEffect(() => { const el = bodyRef.current; if (!el) return undefined; const h = (e) => wheelToHorizontal(e, el); el.addEventListener("wheel", h, { passive: false }); return () => el.removeEventListener("wheel", h); }, []);
   const onDown = (e) => {
-    if (e.button !== 0 || e.target.closest("[data-nodrag]")) return;
+    if (full || e.button !== 0 || e.target.closest("[data-nodrag]")) return;
     const r = ref.current.getBoundingClientRect();
     drag.current = { sx: e.clientX, sy: e.clientY, ox: r.left, oy: r.top, moved: false };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 일부 환경에서 지원 안 함 */ }
@@ -79,27 +99,29 @@ function Frame({ win, title, children, dock, right }) {
   };
   const onUp = () => {
     const d = drag.current; drag.current = null; if (!d) return;
-    if (!d.moved) { dock.toggleMin(win.id); return; }
+    if (!d.moved) { if (!full) dock.toggleMin(win.id); return; }
     if (ref.current) ref.current.style.transition = TRANS;
     if (d.pos) dock.setFloat(win.id, d.pos);
   };
-  const h = heightOf(win, vh);
-  const pos = floating ? { left: win.float.x, top: win.float.y } : { right, bottom: 0 };
+  const h = full ? vh - 24 : heightOf(win, vh);
+  const pos = full ? { left: 12, top: 12 } : floating ? { left: win.float.x, top: win.float.y } : { right, bottom: 0 };
   return (
     <section ref={ref} role="dialog" aria-label={title} onPointerDown={() => dock.focus(win.id)}
-      style={{ position: "fixed", ...pos, zIndex: floating ? Math.min(79, Z0 + 1 + (win.z % 18)) : Z0, transition: TRANS, width: win.min && !floating ? W_MIN : W_FULL, height: h, display: "flex", flexDirection: "column",
-        background: T.paper, border: "1px solid #5A4630", borderBottom: floating ? "1px solid #5A4630" : "none", borderRadius: floating ? 12 : "12px 12px 0 0", overflow: "hidden", boxShadow: "0 10px 34px -8px rgba(0,0,0,.55)" }}>
+      style={{ position: "fixed", ...pos, zIndex: full ? 79 : floating ? Math.min(79, Z0 + 1 + (win.z % 18)) : Z0, transition: full ? "none" : TRANS, width: full ? vwid - 24 : win.min && !floating ? W_MIN : W_FULL, height: h, display: "flex", flexDirection: "column",
+        background: T.paper, border: "1px solid #5A4630", borderBottom: floating || full ? "1px solid #5A4630" : "none", borderRadius: floating || full ? 12 : "12px 12px 0 0", overflow: "hidden", boxShadow: "0 10px 34px -8px rgba(0,0,0,.55)" }}>
       <div onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={(e) => { if (!e.target.closest("[data-nodrag]")) dock.redock(win.id); }}
         title={floating ? t("두 번 누르면 아래에 다시 붙음") : undefined}
         style={{ height: TITLE_H, flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "0 6px 0 12px", background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, cursor: "grab", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-        <button data-nodrag onClick={() => dock.toggleMin(win.id)} aria-label={win.min ? t("창 펼치기") : t("창 접기")} title={win.min ? t("창 펼치기") : t("창 접기")} className="press"
-          style={{ width: 26, height: 26, borderRadius: 7, border: "none", background: "transparent", color: T.ivory, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{win.min ? <ChevronUp size={15} /> : <Minus size={15} />}</button>
+        <button data-nodrag onClick={() => dock.toggleFull(win.id)} aria-label={full ? t("원래 크기") : t("확대")} title={full ? t("원래 크기") : t("확대")} className="press"
+          style={{ width: 26, height: 26, borderRadius: 7, border: "none", background: "transparent", color: T.ivory, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+        {!full && <button data-nodrag onClick={() => dock.toggleMin(win.id)} aria-label={win.min ? t("창 펼치기") : t("창 접기")} title={win.min ? t("창 펼치기") : t("창 접기")} className="press"
+          style={{ width: 26, height: 26, borderRadius: 7, border: "none", background: "transparent", color: T.ivory, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{win.min ? <ChevronUp size={15} /> : <Minus size={15} />}</button>}
         <button data-nodrag onClick={() => dock.close(win.id)} aria-label={t("닫기")} title={t("닫기")} className="press"
           style={{ width: 26, height: 26, borderRadius: 7, border: "none", background: "transparent", color: T.ivory, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
       </div>
       {/* 접어도 내용은 지우지 않는다 — 쓰던 입력·스크롤·실시간 구독이 그대로 남는다. */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: win.min ? "none" : "flex", flexDirection: "column" }}>{children}</div>
+      <div ref={bodyRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: win.min ? "none" : "flex", flexDirection: "column", alignItems: full ? "center" : undefined }}>{full ? <div style={{ width: "100%", maxWidth: 1100, flex: "1 1 auto", display: "flex", flexDirection: "column", minHeight: 0 }}>{children}</div> : children}</div>
     </section>
   );
 }
@@ -109,6 +131,6 @@ function Frame({ win, title, children, dock, right }) {
 export function DockHost({ dock, renderBody, titleOf }) {
   if (!dock.enabled || !dock.wins.length) return null;
   let acc = EDGE; const rightOf = {};
-  for (const w of dock.wins) if (!w.float) { rightOf[w.id] = acc; acc += (w.min ? W_MIN : W_FULL) + GAP; }
+  for (const w of dock.wins) if (!w.float && !w.full) { rightOf[w.id] = acc; acc += (w.min ? W_MIN : W_FULL) + GAP; }
   return <>{dock.wins.map((w) => <Frame key={w.id} win={w} title={titleOf(w)} dock={dock} right={rightOf[w.id]}>{renderBody(w)}</Frame>)}</>;
 }

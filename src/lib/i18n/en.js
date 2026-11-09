@@ -2061,6 +2061,8 @@ export default {
   "{0}와(과) 기준별 비교": "Criterion-by-criterion comparison with {0}",
   "비슷한 기준 {0}/{1}": "Similar criteria {0}/{1}",
   "성장 분석": "Growth analysis",
+  "열기": "Open",
+  "원래 크기": "Original size",
   "플레이 퀘스트": "Play quests",
   "일반 대국 1판 끝까지 두기": "Finish a standard game",
   "일반 대국에서 승리하기": "Win a standard game",
