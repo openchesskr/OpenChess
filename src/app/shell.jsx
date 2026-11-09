@@ -6,6 +6,9 @@ import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken,
 import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
+import { K, KIT_CSS, CutPanel, Sys, Tag, AmbientLayer } from "../components/AboutKit.jsx";
+import { useScramble, MONO } from "../components/OpenTextArt.jsx";
+import { isLite } from "../lib/perfMode.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
 import { DEX_VIEW_PATH, DEX_PATHS } from "../lib/dexRoutes.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
@@ -1596,102 +1599,102 @@ function fireworkColorsFor(tierKey) {
 // 퀘스트 팝업의 반짝임·컨페티(QUEST_CLEAR_SPARKLES/CONFETTI)는 그대로 재사용해 "이 앱의 축하 연출"
 // 이라는 공통 언어는 유지한다. 예전엔 승급 보상(+N 코인)이 이 오버레이(zIndex 200)에 완전히 가려진
 // 별도 토스트(zIndex 65)로만 표시돼 사실상 안 보였는데, 이제 카드 안에 직접 보여준다.
+// (v0.7.4, 사용자 요청) 티어 승급 연출 개편 — /about의 HUD 시각 언어(자른 모서리 패널·도는 테두리빛·스크램블 상태 줄·평행사변형 라벨)로 처음부터 다시 짠 4단계 연출.
+//  ① CHARGE   이전 티어 기물이 숨 쉬듯 떨리며 에너지가 안쪽으로 모인다(링이 줄어듦).
+//  ② BREAK    섬광 → 기물이 글리치로 부서지고, 새 티어 색의 충격파 세 겹과 사방으로 튀는 불꽃이 퍼진다.
+//  ③ RISE     새 티어 기물이 아래에서 떠오르며(블러가 풀림) 뒤에서 광선이 돌고, 상태 줄이 NEW RANK ▸ 이름으로 풀려 나온다.
+//  ④ SETTLED  티어 이름·구간(I~V)·보상이 차례로 나타나고 확인 버튼이 켜진다. 기물 이미지·색·props는 예전과 같다.
+const ROMAN = ["", "I", "II", "III", "IV", "V"];
+const TU_SPARKS = Array.from({ length: 18 }, (_, i) => { const a = (i / 18) * Math.PI * 2 + (i % 3) * 0.17, d = 96 + (i % 4) * 26; return { dx: Math.round(Math.cos(a) * d), dy: Math.round(Math.sin(a) * d), s: 3 + (i % 3) * 2, delay: (i % 6) * 0.03 }; });
 export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, onDone }) {
-  const [phase, setPhase] = useState("shake"); // shake(흔들림) -> exit(퇴장) -> enter(새 티어 등장)
-  // (v0.2.9 디자인) 사용자 요청 — 폭죽이 처음부터 다 같이 뜨지 않고, 기물 교체 애니메이션(흔들림→
-  // 퇴장→등장, 등장 슬라이드 자체도 0.5초 걸림)이 완전히 끝난 뒤에야 터지기 시작해야 한다. enter로
-  // phase가 바뀌는 1050ms에 그 슬라이드가 막 시작되므로, 슬라이드가 끝나는 시점(+0.5s)보다 살짝
-  // 뒤인 1650ms에 켠다.
-  const [fireworksOn, setFireworksOn] = useState(false);
-  // (v0.2.9 기능) 사용자 요청 — 자동으로 닫히거나 배경을 눌러 실수로 닫히지 않고, 우측 상단 X 버튼을
-  // 눌러야만 닫히도록 바꿨다. 기존엔 4초 뒤 자동으로 닫히는 타이머(onDone)와 배경 전체를 덮는
-  // onClick={onDone}이 있었는데 둘 다 없앴다 — 폭죽이 다 터지는 데 시간이 걸려도(마지막 폭죽이
-  // 1650+1600=3250ms에 시작) 사용자가 직접 닫기 전까지 서두르지 않고 계속 볼 수 있다.
+  const lite = isLite();
+  const [phase, setPhase] = useState("charge");   // charge → break → rise → settled
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase("exit"), 650);
-    const t2 = setTimeout(() => setPhase("enter"), 1050);
-    const t3 = setTimeout(() => setFireworksOn(true), 1650);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const glowHex = tierGlowHex(toTierKey);
-  const toLabel = (TIERS.find((t) => t.key === toTierKey) || {}).label || "";
-  const fireColors = fireworkColorsFor(toTierKey);
+    const k = lite ? 0.4 : 1;
+    const ts = [setTimeout(() => setPhase("break"), 1100 * k), setTimeout(() => setPhase("rise"), 1650 * k), setTimeout(() => setPhase("settled"), 2800 * k)];
+    return () => ts.forEach(clearTimeout);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const h = (e) => { if (e.key === "Escape" && phase === "settled") onDone(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [phase, onDone]);
+  const glow = tierGlowHex(toTierKey), fromGlow = tierGlowHex(fromTierKey);
+  const toLabel = (TIERS.find((x) => x.key === toTierKey) || {}).label || "", fromLabel = (TIERS.find((x) => x.key === fromTierKey) || {}).label || "";
+  const roman = toDivision ? ROMAN[toDivision] || String(toDivision) : "";
+  const statusText = phase === "charge" ? "PROMOTION SEQUENCE ▸ CHARGING" : phase === "break" ? "RANK UP ▸ BREAKTHROUGH" : "NEW RANK ▸ " + String(toLabel).toUpperCase() + (roman ? " " + roman : "");
+  const status = useScramble(statusText, true, 22, phase === "charge" ? 0 : phase === "break" ? 1 : 2);
+  const risen = phase === "rise" || phase === "settled", broke = phase !== "charge";
+  const stageSize = 230;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,3,1,.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      {/* (v0.2.9 디자인) 사용자 요청 — 어두운 카드 대신 MILKU 마스코트 톤의 밝은 종이색(T.paper·T.ivoryHi
-          계열)으로 바꿨다. 어두운 배경 전제로 골랐던 글자·장식 색(T.ivory 계열, 옅은 tier hi색 등)도
-          전부 밝은 카드에서 읽히도록 다시 골랐다 — tierGlowHex가 이제 더 짙고 채도 높은 tier .lo색을
-          돌려주도록 바꿔, 실버처럼 거의 흰색인 .hi색이 밝은 카드 위에서 안 보이는 문제도 함께 없앴다. */}
-      <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: "spring", stiffness: 320, damping: 22 }}
-        style={{ position: "relative", width: "100%", maxWidth: 340, borderRadius: 22, overflow: "hidden", padding: "30px 20px 26px", display: "flex", flexDirection: "column", alignItems: "center", background: "radial-gradient(130% 120% at 50% -10%,#FFFDF7 0%,#F1E6D0 70%)", border: "1px solid #DCCBA8", boxShadow: "0 20px 50px -10px rgba(0,0,0,.6)" }}>
-        <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: 10, right: 10, zIndex: 10, width: 28, height: 28, borderRadius: 8, border: "1px solid #000", background: T.ebony2, color: T.ivory, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
-        {/* (v0.2.9 디자인) 사용자 피드백 — 뒤에서 돌아가던 부채꼴 햇살이 "풍차 같다"는 지적으로 제거했다.
-            위에서 떨어지는 색종이 컨페티도 이 카드와 안 어울린다는 이전 피드백으로 이미 뺐고, 대신
-            기물 교체가 다 끝난 뒤(fireworksOn) 카드 곳곳에서 하나씩 순서대로 터지는 진짜 "폭죽"만
-            남긴다. 각 지점(TIER_FIREWORK_SPOTS)의 파티클(TIER_FIREWORK_PARTICLES)은 CSS 커스텀
-            프로퍼티(--dx/--dy)로 각자 다른 방향·거리로 튀어나가고, animationFillMode:"both"라 자기
-            차례(그 지점의 delay)가 오기 전에는 완전히 숨어 있다가 터진 뒤엔 다시 사라진 채로 남는다. */}
-        {fireworksOn && TIER_FIREWORK_SPOTS.map((spot, si) => (
-          <div key={si} aria-hidden="true" style={{ position: "absolute", left: spot.left, top: spot.top, width: 0, height: 0 }}>
-            {TIER_FIREWORK_PARTICLES.map((p, pi) => {
-              const rad = (p.angle * Math.PI) / 180;
-              const dx = Math.round(Math.cos(rad) * p.radius);
-              const dy = Math.round(Math.sin(rad) * p.radius);
-              return (
-                <span key={pi} style={{ position: "absolute", left: 0, top: 0, width: p.size, height: p.size, borderRadius: "50%", background: fireColors[(si + pi) % fireColors.length], "--dx": dx + "px", "--dy": dy + "px", animationName: "tierFirework", animationDuration: ".7s", animationTimingFunction: "ease-out", animationDelay: spot.delay + "ms", animationIterationCount: 1, animationFillMode: "both" }} />
-              );
-            })}
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} role="dialog" aria-modal="true" aria-label={t("티어 승급")}
+      style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto", background: "radial-gradient(120% 90% at 50% 30%, " + (risen ? glow + "55" : fromGlow + "33") + " 0%, rgba(8,5,3,.97) 62%)", transition: "background .9s" }}>
+      <style>{KIT_CSS}</style>
+      {!lite && <AmbientLayer />}
+      <div style={{ position: "relative", zIndex: 5, width: "100%", maxWidth: 360, margin: "auto" }}>
+        <CutPanel cutSize={18} accent={risen ? glow : fromGlow} chase={!lite} bodyStyle={{ padding: "16px 18px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 18 }}>
+            <span className="ab-caret" aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: risen ? "#8FB55E" : K.brass, boxShadow: "0 0 8px " + (risen ? "#8FB55E" : K.brass) }} />
+            <Sys color={K.brass} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</Sys>
+            {phase === "settled" && <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid rgba(196,154,80,.4)", background: "rgba(255,255,255,.05)", color: K.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}><X size={15} /></button>}
           </div>
-        ))}
-        {QUEST_CLEAR_SPARKLES.map((p, i) => (
-          <Sparkles key={i} size={p.size} style={{ position: "absolute", left: p.left, top: p.top, color: glowHex, animationName: "xpStarPop", animationDuration: "1.3s", animationTimingFunction: "ease", animationDelay: p.delay, animationIterationCount: 1, animationFillMode: "forwards" }} />
-        ))}
-        <div style={{ position: "relative", fontFamily: GAME_FONT, fontSize: 21, fontWeight: 400, letterSpacing: ".01em", marginBottom: 10, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }}>{t("티어 승급")}</div>
-        {/* (버그 수정) 기물 이미지 자체가 흰색/밝은 선화라 카드를 밝은 색으로 바꾸자 거의 안 보이게
-            됐다(그랜드마스터만 홀로그램 다색이라 그나마 보임) — 사이트 전역 배경과 같은 톤의 짙은
-            원판을 기물 전용 "무대"로 깔아, 카드는 밝게 유지하면서 기물만 원래처럼 잘 보이게 한다. */}
-        <div style={{ position: "relative", width: 220, height: 220, borderRadius: "50%", background: "radial-gradient(130% 130% at 50% 35%,#3A2610 0%,#150C06 75%)", border: "1px solid rgba(196,154,80,.35)", boxShadow: "inset 0 2px 8px rgba(0,0,0,.4), 0 8px 20px -6px rgba(0,0,0,.35)" }}>
-          <div style={{ position: "absolute", inset: 10 }}>
-            {/* 숨쉬듯 부풀었다 가라앉는 발광 — 기물 이미지 뒤에서 도달한 티어 색으로. */}
-            <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 190, height: 190, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "radial-gradient(circle," + glowHex + "77 0%, transparent 72%)", animationName: "tierGlowPulse", animationDuration: "1.8s", animationTimingFunction: "ease-in-out", animationIterationCount: "infinite" }} />
-            <AnimatePresence>
-              {phase !== "enter" && (
-                <motion.img
-                  key="from"
-                  src={tierPieceSrc(fromTierKey, fromDivision)}
-                  alt=""
-                  initial={{ x: 0, opacity: 1 }}
-                  animate={phase === "shake" ? { x: [0, -16, 16, -12, 12, -5, 5, 0] } : { x: -260, opacity: 0 }}
-                  transition={phase === "shake" ? { duration: 0.6, ease: "easeInOut" } : { duration: 0.4, ease: "easeIn" }}
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-                />
-              )}
-              {phase === "enter" && (
-                <motion.img
-                  key="to"
-                  src={tierPieceSrc(toTierKey, toDivision)}
-                  alt=""
-                  initial={{ x: 260, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-                />
-              )}
-            </AnimatePresence>
+          {/* 무대 — 기물 원판 + 충격파·광선·불꽃 */}
+          <div style={{ position: "relative", width: stageSize, height: stageSize, margin: "14px auto 6px" }}>
+            {!lite && risen && (
+              <motion.div aria-hidden="true" initial={{ opacity: 0, rotate: 0 }} animate={{ opacity: 0.85, rotate: 360 }} transition={{ opacity: { duration: 0.8 }, rotate: { duration: 22, repeat: Infinity, ease: "linear" } }}
+                style={{ position: "absolute", inset: -40, borderRadius: "50%", background: "repeating-conic-gradient(from 0deg, " + glow + "55 0deg 5deg, transparent 5deg 20deg)", WebkitMaskImage: "radial-gradient(circle, transparent 38%, #000 52%, transparent 74%)", maskImage: "radial-gradient(circle, transparent 38%, #000 52%, transparent 74%)" }} />
+            )}
+            {!lite && phase === "charge" && [0, 1, 2].map((i) => (
+              <motion.span key={"ch" + i} aria-hidden="true" initial={{ opacity: 0, scale: 1.9 }} animate={{ opacity: [0, 0.8, 0], scale: 0.9 }} transition={{ duration: 0.95, delay: i * 0.28, repeat: Infinity, ease: "easeIn" }}
+                style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid " + fromGlow }} />
+            ))}
+            <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(130% 130% at 50% 35%,#3A2610 0%,#150C06 75%)", border: "1px solid " + (risen ? glow + "AA" : "rgba(196,154,80,.35)"), boxShadow: "inset 0 2px 14px rgba(0,0,0,.6), 0 0 " + (risen ? 38 : 14) + "px " + (risen ? glow + "88" : fromGlow + "44"), transition: "box-shadow .8s, border-color .8s" }} />
+            <div style={{ position: "absolute", inset: 14 }}>
+              <AnimatePresence>
+                {!broke && (
+                  <motion.img key="from" src={tierPieceSrc(fromTierKey, fromDivision)} alt="" initial={{ scale: 1, x: 0 }}
+                    animate={lite ? { scale: 1 } : { scale: [1, 1.04, 1], x: [0, -2, 2, -3, 3, -1, 1, 0] }} transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+                    exit={{ opacity: 0, scale: 1.35, filter: "blur(6px) brightness(2.2)", transition: { duration: 0.35 } }}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }} />
+                )}
+                {risen && (
+                  <motion.img key="to" src={tierPieceSrc(toTierKey, toDivision)} alt="" initial={lite ? false : { opacity: 0, y: 46, scale: 0.55, filter: "blur(10px) brightness(2.4)" }} animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px) brightness(1)" }}
+                    transition={{ type: "spring", stiffness: 120, damping: 16, mass: 1, filter: { duration: 0.7 } }}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", filter: "drop-shadow(0 0 16px " + glow + "AA)" }} />
+                )}
+              </AnimatePresence>
+            </div>
+            {/* 섬광 + 충격파 세 겹 + 불꽃 */}
+            {!lite && phase === "break" && (
+              <>
+                <motion.span aria-hidden="true" initial={{ opacity: 0.95 }} animate={{ opacity: 0 }} transition={{ duration: 0.7, ease: "easeOut" }} style={{ position: "absolute", inset: -60, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,244,214,.95), transparent 62%)", pointerEvents: "none" }} />
+                {[0, 1, 2].map((i) => <motion.span key={"sw" + i} aria-hidden="true" initial={{ opacity: 0.9, scale: 0.4 }} animate={{ opacity: 0, scale: 2.2 }} transition={{ duration: 1.1, delay: i * 0.18, ease: "easeOut" }} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "3px solid " + glow }} />)}
+                {TU_SPARKS.map((p, i) => <motion.span key={"sp" + i} aria-hidden="true" initial={{ opacity: 1, x: 0, y: 0, scale: 1 }} animate={{ opacity: 0, x: p.dx, y: p.dy, scale: 0.3 }} transition={{ duration: 0.9, delay: p.delay, ease: "easeOut" }}
+                  style={{ position: "absolute", left: "50%", top: "50%", width: p.s, height: p.s, marginLeft: -p.s / 2, marginTop: -p.s / 2, borderRadius: i % 2 ? "50%" : 1, transform: i % 2 ? undefined : "rotate(45deg)", background: i % 3 ? glow : K.brassHi, boxShadow: "0 0 8px " + glow }} />)}
+              </>
+            )}
           </div>
-        </div>
-        {toLabel && <div style={{ position: "relative", fontSize: 13.5, fontWeight: 800, color: T.ink, marginTop: 6 }}>{tx("{0} 티어 도달", toLabel)}</div>}
-        {reward > 0 && (
-          <div className="flex items-center justify-center flex-wrap" style={{ gap: 8, marginTop: 12 }}>
-            <span className="flex items-center gap-1" style={{ position: "relative", fontSize: 13, fontWeight: 800, color: T.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.12)", border: "1px solid " + T.brass, animationName: "questBadgePop", animationDuration: ".5s", animationTimingFunction: "cubic-bezier(.34,1.56,.64,1)", animationDelay: ".55s", animationFillMode: "backwards" }}><CoinIcon size={19} />+{tx("{0} OC 나이트 코인", <AnimatedCountUp to={reward} />)}</span>
+          {/* 이름·구간·보상 */}
+          <div style={{ minHeight: 96, textAlign: "center" }}>
+            {phase === "settled" ? (
+              <>
+                <motion.div initial={{ opacity: 0, y: 8, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} transition={{ duration: 0.5 }}
+                  style={{ fontFamily: GAME_FONT, fontSize: 26, fontWeight: 400, lineHeight: 1.15, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(0 2px 0 rgba(0,0,0,.6))" }}>{toLabel}{roman ? " " + roman : ""}</motion.div>
+                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <Tag color={K.soft}>{fromLabel}{fromDivision ? " " + (ROMAN[fromDivision] || fromDivision) : ""}</Tag>
+                  <span aria-hidden="true" style={{ color: K.brassHi, fontSize: 13 }}>▸</span>
+                  <Tag solid>{toLabel}{roman ? " " + roman : ""}</Tag>
+                </motion.div>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }} style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi, marginTop: 10 }}>{tx("{0} 티어 도달", toLabel)}</motion.div>
+                {reward > 0 && (
+                  <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.35, type: "spring", stiffness: 300, damping: 18 }} className="flex items-center justify-center" style={{ gap: 8, marginTop: 10 }}>
+                    <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: K.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.14)", border: "1px solid rgba(196,154,80,.4)" }}><CoinIcon size={16} />{tx("{0} OC 나이트 코인", "+" + reward)}</span>
+                  </motion.div>
+                )}
+              </>
+            ) : null}
           </div>
-        )}
-        {/* (v0.2.9 기능) 우측 상단 X와 같은 역할의 확인 버튼 — 일일 퀘스트 클리어 팝업과 같은 스타일로,
-            눌러야만 닫히는 걸 명확한 CTA로도 한 번 더 보여준다. */}
-        <button onClick={onDone} className="press" style={{ position: "relative", width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 18, padding: "11px 0", borderRadius: 11, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontWeight: 800, fontSize: 13.5, border: "none", cursor: "pointer" }}>{tx("{0}확인", <Check size={14} strokeWidth={3} />)}</button>
-      </motion.div>
-    </div>
+          <button onClick={onDone} disabled={phase !== "settled"} className="press ab-glint" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, padding: "12px 0", border: "none", cursor: phase === "settled" ? "pointer" : "default", opacity: phase === "settled" ? 1 : 0.35, transition: "opacity .4s",
+            clipPath: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)", background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509", fontFamily: MONO, fontWeight: 900, fontSize: 13, letterSpacing: ".12em" }}>{t("확인")}</button>
+        </CutPanel>
+      </div>
+    </motion.div>
   );
 }
 // (v0.4.3 기능) OAuth 시작 — Google 전용이던 것을 provider 인자로 일반화(구글/애플/페이스북 공통).
