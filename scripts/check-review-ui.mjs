@@ -23,7 +23,7 @@ if (/▸/.test(body)) fails.push("QuickReviewIntro: 화살표(▸)가 남아 있
 if (/\{cur\.k\}|\{w\.k\}<\/div>/.test(body)) fails.push("QuickReviewIntro: 이니셜 표시가 남아 있음");
 if (!/const DWELL_MS = \d+/.test(body)) fails.push("QuickReviewIntro: 단계별 최소 노출 시간(DWELL_MS) 없음");
 if (!/useGlitchFlicker\(base/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: OPEN 글자·게이지 이름 모두에 특수문자 깜빡임(useGlitchFlicker)이 필요함");
-if (!/function FitBox/.test(body) || (body.match(/<FitBox>/g) || []).length < 1) fails.push("QuickReviewIntro: OPEN 글자를 FitBox(안전 영역 맞춤)로 감싸야 함");
+if (!/function GlitchLetters/.test(body) || !/<svg viewBox=/.test(body) || /<pre/.test(body)) fails.push("QuickReviewIntro: OPEN 글자는 글꼴 글자(pre)가 아니라 SVG(viewBox)로 그려야 함, 기기별 블록 글꼴 높이 차이로 게이지가 겹침");
 if (!/env\(safe-area-inset-left\)/.test(body)) fails.push("QuickReviewIntro: 뷰포트 안전 영역(env(safe-area-inset-*)) 여백이 없음");
 for (const w of ["OPENING", "PUZZLE", "ENDGAME", "NETWORK"]) if (!body.includes('"' + w + '"')) fails.push("QuickReviewIntro: 게이지 아래 '" + w + "' 이름이 없음");
 if (!/function GaugeLabel/.test(body) || !/useScramble\(text/.test(body) || !/useGlitchFlicker\(word/.test(body)) fails.push("QuickReviewIntro: 게이지 이름에 스크램블·특수문자 깜빡임 효과가 필요함");

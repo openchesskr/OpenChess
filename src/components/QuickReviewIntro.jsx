@@ -29,59 +29,35 @@ const KEYFRAMES = `
 @keyframes qr-caret{50%{opacity:0}}
 `;
 
-// (v0.7.3) 안전 영역 안에 들어오도록 자식을 비율 유지한 채 줄여서 보여 준다. 블록 글자(█)는 기기·폰트마다 폭이 달라
-// (일부 안드로이드는 █가 전각 폭) 고정 글자 크기로는 모바일에서 OPEN이 잘렸다 — 실제 폭을 재서 필요한 만큼만 줄인다.
-function FitBox({ children }) {
-  const outer = useRef(null), inner = useRef(null);
-  const [fit, setFit] = useState({ s: 1, h: null });
-  useLayoutEffect(() => {
-    const measure = () => {
-      const o = outer.current, i = inner.current;
-      if (!o || !i) return;
-      const natW = i.scrollWidth, natH = Math.max(i.offsetHeight, i.scrollHeight), avail = o.clientWidth;
-      if (!natW || !avail) return;
-      const s = Math.min(1, avail / natW);
-      setFit((p) => (Math.abs(p.s - s) < 0.003 && p.h === natH * s ? p : { s, h: natH * s }));
-    };
-    measure();
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(measure); ro.observe(outer.current); ro.observe(inner.current); }
-    window.addEventListener("resize", measure);
-    let off = false;
-    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!off) measure(); }); } catch { /* 글꼴 API 없음 */ }
-    return () => { off = true; if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
-  }, []);
-  return (
-    <div ref={outer} style={{ width: "100%", height: fit.h == null ? undefined : fit.h, display: "flex", justifyContent: "center" }}>
-      <div ref={inner} style={{ width: "max-content", flex: "0 0 auto", transform: "scale(" + fit.s + ")", transformOrigin: "center top" }}>{children}</div>
-    </div>
-  );
-}
-
-function GlitchLetter({ ch, on, glitch, colors, font }) {
+// (v0.7.4, 사용자 요청 버그 수정) OPEN 글자를 글꼴 글자(블록 문자) 대신 SVG 도형으로 그린다 — 안드로이드 등 기기마다 블록 문자 글꼴의 폭·높이가 달라 글자 높이를 잘못 재면
+// 게이지와 이름이 OPEN 글자 위에 겹쳐 보였다. 이제 글자 칸(0.6×1 단위)을 사각형으로 직접 그리고 viewBox로 폭에 맞춰 늘려, 글꼴과 무관하게 비율이 고정되고 겹칠 수 없다.
+// 글리치 중 깜빡이는 특수문자·적/청 색 번짐·가로 밀림은 그대로 재현한다.
+const CELL_W = 0.6, LETTER_GAP = 1.2;
+function GlitchLetter({ ch, x, on, glitch, colors }) {
   const base = GLYPH[ch].join("\n");
   const art = useGlitchFlicker(base, glitch && on, 70, 0.16);
-  return (
-    <div style={{ position: "relative", color: on ? colors.brassHi : "rgba(143,116,76,.45)", transform: "skewX(-6deg)", filter: on ? "drop-shadow(0 0 8px rgba(196,154,80,.6))" : "none", transition: "color .25s, filter .25s" }}>
-      <pre style={font}>{art}</pre>
-      {glitch && on && (
-        <>
-          <pre aria-hidden="true" style={{ ...font, position: "absolute", left: 0, top: 0, color: "#D9736A", transform: "translateX(-4px)", mixBlendMode: "screen", animation: "qr-slice-a .42s steps(5) 1" }}>{art}</pre>
-          <pre aria-hidden="true" style={{ ...font, position: "absolute", left: 0, top: 0, color: "#6FA8DC", transform: "translateX(4px)", mixBlendMode: "screen", animation: "qr-slice-b .42s steps(5) 1" }}>{art}</pre>
-        </>
-      )}
-    </div>
+  const rows = art.split("\n");
+  const fill = on ? colors.brassHi : "rgba(143,116,76,.45)";
+  const layer = (color, dx, key, blend) => (
+    <g key={key} fill={color} style={blend ? { mixBlendMode: "screen" } : undefined}>
+      {rows.map((row, r) => {
+        const off = dx ? dx + ((((row.charCodeAt(r % Math.max(1, row.length)) || 0) + r * 7) % 5) - 2) * 0.1 : 0;
+        return Array.from(row).map((c, k) => (c === " " ? null : c === "█"
+          ? <rect key={r + "-" + k} x={x + k * CELL_W + off} y={r} width={CELL_W + 0.012} height={1.012} />
+          : <text key={r + "-" + k} x={x + k * CELL_W + off + CELL_W / 2} y={r + 0.82} fontSize="0.9" textAnchor="middle" fontFamily="monospace" fontWeight="700">{c}</text>));
+      })}
+    </g>
   );
+  return <g>{layer(fill, 0, "m", false)}{glitch && on && [layer("#D9736A", -0.35, "r", true), layer("#6FA8DC", 0.35, "b", true)]}</g>;
 }
 
 function GlitchLetters({ glitch, lit, colors }) {
-  const font = { margin: 0, fontFamily: MONO, fontWeight: 700, fontSize: 20, lineHeight: 1, whiteSpace: "pre" };
+  const letters = ["O", "P", "E", "N"];
+  let x = 0; const xs = letters.map((ch, i) => { const cur = x; x += GLYPH[ch][0].length * CELL_W + (i < 3 ? LETTER_GAP * CELL_W : 0); return cur; });
   return (
-    <FitBox>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 14, animation: glitch ? "qr-jit .42s steps(2) 1" : "none" }}>
-        {["O", "P", "E", "N"].map((ch, i) => <GlitchLetter key={ch} ch={ch} on={lit.includes(i)} glitch={glitch} colors={colors} font={font} />)}
-      </div>
-    </FitBox>
+    <svg viewBox={"0 0 " + x.toFixed(2) + " 5"} role="img" aria-label="OPEN" style={{ display: "block", width: "100%", height: "auto", overflow: "visible", transform: "skewX(-6deg)", filter: lit.length ? "drop-shadow(0 0 5px rgba(196,154,80,.6))" : "none", animation: glitch ? "qr-jit .42s steps(2) 1" : "none" }}>
+      {letters.map((ch, i) => <GlitchLetter key={ch} ch={ch} x={xs[i]} on={lit.includes(i)} glitch={glitch} colors={colors} />)}
+    </svg>
   );
 }
 
