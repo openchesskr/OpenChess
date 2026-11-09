@@ -6,7 +6,7 @@ import { SB_ON, sbUpsert, sbRpc, sbSelect, sbInsert, SB_URL, SB_KEY, setSbToken,
 import { oauthRedirectUrl, startOAuthNavigation } from "../lib/nativeApp.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
-import { K, KIT_CSS, CutPanel, Sys, Tag, AmbientLayer } from "../components/AboutKit.jsx";
+import { K, KIT_CSS, Sys, Tag, AmbientLayer, Brackets } from "../components/AboutKit.jsx";
 import { useScramble, MONO } from "../components/OpenTextArt.jsx";
 import { isLite } from "../lib/perfMode.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
@@ -1599,101 +1599,172 @@ function fireworkColorsFor(tierKey) {
 // 퀘스트 팝업의 반짝임·컨페티(QUEST_CLEAR_SPARKLES/CONFETTI)는 그대로 재사용해 "이 앱의 축하 연출"
 // 이라는 공통 언어는 유지한다. 예전엔 승급 보상(+N 코인)이 이 오버레이(zIndex 200)에 완전히 가려진
 // 별도 토스트(zIndex 65)로만 표시돼 사실상 안 보였는데, 이제 카드 안에 직접 보여준다.
-// (v0.7.4, 사용자 요청) 티어 승급 연출 개편 — /about의 HUD 시각 언어(자른 모서리 패널·도는 테두리빛·스크램블 상태 줄·평행사변형 라벨)로 처음부터 다시 짠 4단계 연출.
-//  ① CHARGE   이전 티어 기물이 숨 쉬듯 떨리며 에너지가 안쪽으로 모인다(링이 줄어듦).
-//  ② BREAK    섬광 → 기물이 글리치로 부서지고, 새 티어 색의 충격파 세 겹과 사방으로 튀는 불꽃이 퍼진다.
-//  ③ RISE     새 티어 기물이 아래에서 떠오르며(블러가 풀림) 뒤에서 광선이 돌고, 상태 줄이 NEW RANK ▸ 이름으로 풀려 나온다.
-//  ④ SETTLED  티어 이름·구간(I~V)·보상이 차례로 나타나고 확인 버튼이 켜진다. 기물 이미지·색·props는 예전과 같다.
+// (v0.7.4, 사용자 요청) 티어 승급 연출 — 기존 카드·폰트·원판 디자인을 모두 걷어내고 /about 수준으로 처음부터 다시 설계했다. 카드 없이 화면 전체가 무대다.
+//  무대: 바닥에서 시청자 쪽으로 흘러오는 원근 격자 · 티어 색 광원 · 떠오르는 마름모 입자 · 필름 그레인·비네트(AmbientLayer). 화면 모서리에는 코너 브래킷.
+//  엠블럼(SVG): 눈금 링·끊어진 호 링·육각 틀이 서로 반대로 돌고, 충전 동안 바깥 호가 0→100%로 차오른다. 중앙에 티어 기물(이미지).
+//  ① CHARGE  호가 차오르고 기물이 떨리며 격자가 빨라진다(XP 게이지 숫자가 올라감).
+//  ② BREAK   섬광 + 화면 흔들림. 링이 조각나 바깥으로 흩어지고 옛 기물은 글리치로 사라지며 충격파가 퍼진다.
+//  ③ RISE    새 기물이 크게 내리꽂히며 안착(블러가 풀림) · 새 티어 색으로 링이 다시 짜이고 광기둥이 솟는다 · 이름이 글자마다 떨어지며 켜지고 구간(I~V)이 도장처럼 찍힌다.
+//  ④ SETTLED 이전 → 새 티어 줄, 보상 코인이 세어 올라가고, 확인 버튼이 켜진다. 링·입자·빛줄기는 계속 움직인다.
+// 글꼴은 이 사이트의 /about HUD와 같은 고정폭 이탤릭(MONO)과 사이트 기본 글꼴만 쓴다(예전 Bagel Fat One 제거).
 const ROMAN = ["", "I", "II", "III", "IV", "V"];
-const TU_SPARKS = Array.from({ length: 18 }, (_, i) => { const a = (i / 18) * Math.PI * 2 + (i % 3) * 0.17, d = 96 + (i % 4) * 26; return { dx: Math.round(Math.cos(a) * d), dy: Math.round(Math.sin(a) * d), s: 3 + (i % 3) * 2, delay: (i % 6) * 0.03 }; });
+const TU_RING_TICKS = Array.from({ length: 60 }, (_, i) => i);
+const TU_SHARDS = Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2 + 0.2; return { dx: Math.round(Math.cos(a) * (150 + (i % 3) * 40)), dy: Math.round(Math.sin(a) * (150 + (i % 3) * 40)), r: (i % 2 ? 1 : -1) * (90 + i * 20), w: 18 + (i % 4) * 8 }; });
+const TU_MOTES = Array.from({ length: 22 }, (_, i) => ({ x: (i * 47) % 100, d: 5 + (i % 5) * 1.6, s: 3 + (i % 3) * 2, delay: (i % 7) * 0.7 }));
+function TuCount({ to, run, ms = 900 }) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (!run) return undefined;
+    let raf = 0; const t0 = performance.now();
+    const tick = (now) => { const k = Math.min(1, (now - t0) / ms); setV(Math.round(to * (1 - Math.pow(1 - k, 3)))); if (k < 1) raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
+  }, [to, run, ms]);
+  return <>{v.toLocaleString()}</>;
+}
 export function TierUpOverlay({ fromTierKey, fromDivision, toTierKey, toDivision, reward, onDone }) {
   const lite = isLite();
   const [phase, setPhase] = useState("charge");   // charge → break → rise → settled
   useEffect(() => {
     const k = lite ? 0.4 : 1;
-    const ts = [setTimeout(() => setPhase("break"), 1100 * k), setTimeout(() => setPhase("rise"), 1650 * k), setTimeout(() => setPhase("settled"), 2800 * k)];
+    const ts = [setTimeout(() => setPhase("break"), 1500 * k), setTimeout(() => setPhase("rise"), 2000 * k), setTimeout(() => setPhase("settled"), 3600 * k)];
     return () => ts.forEach(clearTimeout);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const h = (e) => { if (e.key === "Escape" && phase === "settled") onDone(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [phase, onDone]);
+  useEffect(() => { const h = (e) => { if ((e.key === "Escape" || e.key === "Enter") && phase === "settled") onDone(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [phase, onDone]);
   const glow = tierGlowHex(toTierKey), fromGlow = tierGlowHex(fromTierKey);
   const toLabel = (TIERS.find((x) => x.key === toTierKey) || {}).label || "", fromLabel = (TIERS.find((x) => x.key === fromTierKey) || {}).label || "";
   const roman = toDivision ? ROMAN[toDivision] || String(toDivision) : "";
+  const risen = phase === "rise" || phase === "settled", broke = phase !== "charge";
+  const col = risen ? glow : fromGlow;
   const statusText = phase === "charge" ? "PROMOTION SEQUENCE ▸ CHARGING" : phase === "break" ? "RANK UP ▸ BREAKTHROUGH" : "NEW RANK ▸ " + String(toLabel).toUpperCase() + (roman ? " " + roman : "");
   const status = useScramble(statusText, true, 22, phase === "charge" ? 0 : phase === "break" ? 1 : 2);
-  const risen = phase === "rise" || phase === "settled", broke = phase !== "charge";
-  const stageSize = 230;
+  const E = 300;   // 엠블럼 SVG 한 변
+  const letters = Array.from(String(toLabel));
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} role="dialog" aria-modal="true" aria-label={t("티어 승급")}
-      style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto", background: "radial-gradient(120% 90% at 50% 30%, " + (risen ? glow + "55" : fromGlow + "33") + " 0%, rgba(8,5,3,.97) 62%)", transition: "background .9s" }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }} role="dialog" aria-modal="true" aria-label={t("티어 승급")}
+      style={{ position: "fixed", inset: 0, zIndex: 200, overflow: "hidden", background: "#07040A" }}>
       <style>{KIT_CSS}</style>
+      {/* 광원 */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 50% 42%, " + col + (risen ? "66" : "33") + " 0%, transparent 70%), radial-gradient(120% 80% at 50% 110%, " + col + "22 0%, transparent 60%)", transition: "background 1s" }} />
+      {/* 원근 격자 바닥 */}
+      {!lite && (
+        <div aria-hidden="true" style={{ position: "absolute", left: "-40%", right: "-40%", bottom: 0, height: "55%", transform: "perspective(520px) rotateX(64deg)", transformOrigin: "50% 100%", WebkitMaskImage: "linear-gradient(to top, #000 10%, transparent 90%)", maskImage: "linear-gradient(to top, #000 10%, transparent 90%)" }}>
+          <motion.div animate={{ backgroundPositionY: ["0px", "64px"] }} transition={{ duration: phase === "charge" ? 0.9 : 2.2, repeat: Infinity, ease: "linear" }}
+            style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(" + col + "88 1px, transparent 1px), linear-gradient(90deg," + col + "66 1px, transparent 1px)", backgroundSize: "64px 64px" }} />
+        </div>
+      )}
+      {/* 입자 */}
+      {!lite && TU_MOTES.map((m, i) => (
+        <motion.span key={i} aria-hidden="true" animate={{ y: ["105vh", "-8vh"], opacity: [0, 0.8, 0] }} transition={{ duration: m.d, repeat: Infinity, delay: m.delay, ease: "linear" }}
+          style={{ position: "absolute", left: m.x + "%", top: 0, width: m.s, height: m.s, background: i % 3 ? col : "#fff", transform: "rotate(45deg)", boxShadow: "0 0 8px " + col, pointerEvents: "none" }} />
+      ))}
       {!lite && <AmbientLayer />}
-      <div style={{ position: "relative", zIndex: 5, width: "100%", maxWidth: 360, margin: "auto" }}>
-        <CutPanel cutSize={18} accent={risen ? glow : fromGlow} chase={!lite} bodyStyle={{ padding: "16px 18px 18px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 18 }}>
-            <span className="ab-caret" aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: risen ? "#8FB55E" : K.brass, boxShadow: "0 0 8px " + (risen ? "#8FB55E" : K.brass) }} />
-            <Sys color={K.brass} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</Sys>
-            {phase === "settled" && <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid rgba(196,154,80,.4)", background: "rgba(255,255,255,.05)", color: K.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}><X size={15} /></button>}
-          </div>
-          {/* 무대 — 기물 원판 + 충격파·광선·불꽃 */}
-          <div style={{ position: "relative", width: stageSize, height: stageSize, margin: "14px auto 6px" }}>
-            {!lite && risen && (
-              <motion.div aria-hidden="true" initial={{ opacity: 0, rotate: 0 }} animate={{ opacity: 0.85, rotate: 360 }} transition={{ opacity: { duration: 0.8 }, rotate: { duration: 22, repeat: Infinity, ease: "linear" } }}
-                style={{ position: "absolute", inset: -40, borderRadius: "50%", background: "repeating-conic-gradient(from 0deg, " + glow + "55 0deg 5deg, transparent 5deg 20deg)", WebkitMaskImage: "radial-gradient(circle, transparent 38%, #000 52%, transparent 74%)", maskImage: "radial-gradient(circle, transparent 38%, #000 52%, transparent 74%)" }} />
+      <Brackets color={col} size={22} inset={14} pulse />
+      {/* 화면 흔들림 래퍼 */}
+      <motion.div animate={phase === "break" && !lite ? { x: [0, -9, 8, -6, 5, -2, 0], y: [0, 5, -6, 4, -3, 1, 0] } : { x: 0, y: 0 }} transition={{ duration: 0.5 }}
+        style={{ position: "relative", zIndex: 5, height: "100%", overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 16px 24px" }}>
+        {/* 상단 HUD */}
+        <div style={{ width: "100%", maxWidth: 460, display: "flex", alignItems: "center", gap: 8, minHeight: 28 }}>
+          <span className="ab-caret" aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: risen ? "#8FB55E" : K.brass, boxShadow: "0 0 8px " + (risen ? "#8FB55E" : K.brass) }} />
+          <Sys color={col} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "color .8s" }}>{status}</Sys>
+          {phase === "settled" && <button onClick={onDone} aria-label={t("닫기")} className="press" style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + col + "88", background: "rgba(255,255,255,.05)", color: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}><X size={16} /></button>}
+        </div>
+        <div style={{ flex: "1 1 0", minHeight: 8 }} />
+        {/* 엠블럼 */}
+        <div style={{ position: "relative", width: "min(64vw, 38vh, 300px)", aspectRatio: "1 / 1" }}>
+          {/* 광기둥 */}
+          {!lite && risen && [-2, -1, 0, 1, 2].map((k) => (
+            <motion.span key={"pl" + k} aria-hidden="true" initial={{ scaleY: 0, opacity: 0 }} animate={{ scaleY: 1, opacity: [0, 0.8, 0.25] }} transition={{ duration: 1.1, delay: Math.abs(k) * 0.08 }}
+              style={{ position: "absolute", left: "calc(50% + " + k * 15 + "%)", bottom: "50%", width: 3 + (2 - Math.abs(k)) * 3, height: "260%", marginLeft: -2, transformOrigin: "50% 100%", background: "linear-gradient(to top, " + glow + ", transparent)", filter: "blur(1px)" }} />
+          ))}
+          <svg viewBox={"0 0 " + E + " " + E} width="100%" height="100%" aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+            {/* 옛 링(충전 → 조각나 흩어짐) */}
+            {!broke && (
+              <g>
+                <motion.g style={{ transformOrigin: "150px 150px" }} animate={{ rotate: 360 }} transition={{ duration: phase === "charge" ? 5 : 14, repeat: Infinity, ease: "linear" }}>
+                  {TU_RING_TICKS.map((i) => <line key={i} x1="150" y1="6" x2="150" y2={i % 5 === 0 ? 20 : 13} stroke={fromGlow} strokeWidth={i % 5 === 0 ? 2.2 : 1} opacity={i % 5 === 0 ? 1 : 0.55} transform={"rotate(" + i * 6 + " 150 150)"} />)}
+                </motion.g>
+                <motion.circle cx="150" cy="150" r="124" fill="none" stroke={fromGlow} strokeWidth="2" strokeDasharray="60 22 18 22" strokeLinecap="round" style={{ transformOrigin: "150px 150px" }} animate={{ rotate: -360 }} transition={{ duration: 8, repeat: Infinity, ease: "linear" }} />
+                <circle cx="150" cy="150" r="106" fill="none" stroke={fromGlow} strokeOpacity=".25" strokeWidth="6" />
+                <motion.circle cx="150" cy="150" r="106" fill="none" stroke={fromGlow} strokeWidth="6" strokeLinecap="round" pathLength={1} strokeDasharray="1 1" initial={{ strokeDashoffset: 1 }} animate={{ strokeDashoffset: 0 }} transition={{ duration: 1.4, ease: "easeInOut" }} style={{ transformOrigin: "150px 150px", rotate: -90, filter: "drop-shadow(0 0 6px " + fromGlow + ")" }} />
+              </g>
             )}
-            {!lite && phase === "charge" && [0, 1, 2].map((i) => (
-              <motion.span key={"ch" + i} aria-hidden="true" initial={{ opacity: 0, scale: 1.9 }} animate={{ opacity: [0, 0.8, 0], scale: 0.9 }} transition={{ duration: 0.95, delay: i * 0.28, repeat: Infinity, ease: "easeIn" }}
-                style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid " + fromGlow }} />
+            {/* 파편 — 링 조각이 바깥으로 */}
+            {!lite && phase === "break" && TU_SHARDS.map((sh, i) => (
+              <motion.rect key={"sh" + i} x={150 - sh.w / 2} y="20" width={sh.w} height="4" fill={i % 2 ? fromGlow : "#fff"} initial={{ opacity: 1, x: 0, y: 0, rotate: 0 }} animate={{ opacity: 0, x: sh.dx, y: sh.dy, rotate: sh.r }} transition={{ duration: 0.95, ease: "easeOut" }} style={{ transformOrigin: "150px 150px" }} />
             ))}
-            <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(130% 130% at 50% 35%,#3A2610 0%,#150C06 75%)", border: "1px solid " + (risen ? glow + "AA" : "rgba(196,154,80,.35)"), boxShadow: "inset 0 2px 14px rgba(0,0,0,.6), 0 0 " + (risen ? 38 : 14) + "px " + (risen ? glow + "88" : fromGlow + "44"), transition: "box-shadow .8s, border-color .8s" }} />
-            <div style={{ position: "absolute", inset: 14 }}>
-              <AnimatePresence>
-                {!broke && (
-                  <motion.img key="from" src={tierPieceSrc(fromTierKey, fromDivision)} alt="" initial={{ scale: 1, x: 0 }}
-                    animate={lite ? { scale: 1 } : { scale: [1, 1.04, 1], x: [0, -2, 2, -3, 3, -1, 1, 0] }} transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
-                    exit={{ opacity: 0, scale: 1.35, filter: "blur(6px) brightness(2.2)", transition: { duration: 0.35 } }}
-                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }} />
-                )}
-                {risen && (
-                  <motion.img key="to" src={tierPieceSrc(toTierKey, toDivision)} alt="" initial={lite ? false : { opacity: 0, y: 46, scale: 0.55, filter: "blur(10px) brightness(2.4)" }} animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px) brightness(1)" }}
-                    transition={{ type: "spring", stiffness: 120, damping: 16, mass: 1, filter: { duration: 0.7 } }}
-                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", filter: "drop-shadow(0 0 16px " + glow + "AA)" }} />
-                )}
-              </AnimatePresence>
-            </div>
-            {/* 섬광 + 충격파 세 겹 + 불꽃 */}
-            {!lite && phase === "break" && (
-              <>
-                <motion.span aria-hidden="true" initial={{ opacity: 0.95 }} animate={{ opacity: 0 }} transition={{ duration: 0.7, ease: "easeOut" }} style={{ position: "absolute", inset: -60, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,244,214,.95), transparent 62%)", pointerEvents: "none" }} />
-                {[0, 1, 2].map((i) => <motion.span key={"sw" + i} aria-hidden="true" initial={{ opacity: 0.9, scale: 0.4 }} animate={{ opacity: 0, scale: 2.2 }} transition={{ duration: 1.1, delay: i * 0.18, ease: "easeOut" }} style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "3px solid " + glow }} />)}
-                {TU_SPARKS.map((p, i) => <motion.span key={"sp" + i} aria-hidden="true" initial={{ opacity: 1, x: 0, y: 0, scale: 1 }} animate={{ opacity: 0, x: p.dx, y: p.dy, scale: 0.3 }} transition={{ duration: 0.9, delay: p.delay, ease: "easeOut" }}
-                  style={{ position: "absolute", left: "50%", top: "50%", width: p.s, height: p.s, marginLeft: -p.s / 2, marginTop: -p.s / 2, borderRadius: i % 2 ? "50%" : 1, transform: i % 2 ? undefined : "rotate(45deg)", background: i % 3 ? glow : K.brassHi, boxShadow: "0 0 8px " + glow }} />)}
-              </>
+            {/* 새 링(티어 색으로 다시 짜임) */}
+            {risen && (
+              <g>
+                <motion.g style={{ transformOrigin: "150px 150px" }} initial={{ scale: 0.55, opacity: 0 }} animate={{ scale: 1, opacity: 1, rotate: 360 }} transition={{ scale: { type: "spring", stiffness: 90, damping: 14 }, opacity: { duration: 0.4 }, rotate: { duration: 22, repeat: Infinity, ease: "linear" } }}>
+                  {TU_RING_TICKS.map((i) => <line key={i} x1="150" y1="6" x2="150" y2={i % 5 === 0 ? 20 : 13} stroke={glow} strokeWidth={i % 5 === 0 ? 2.4 : 1} opacity={i % 5 === 0 ? 1 : 0.55} transform={"rotate(" + i * 6 + " 150 150)"} />)}
+                </motion.g>
+                <motion.circle cx="150" cy="150" r="124" fill="none" stroke={glow} strokeWidth="2.2" strokeDasharray="60 22 18 22" strokeLinecap="round" style={{ transformOrigin: "150px 150px" }} initial={{ opacity: 0 }} animate={{ opacity: 1, rotate: -360 }} transition={{ opacity: { duration: 0.5 }, rotate: { duration: 12, repeat: Infinity, ease: "linear" } }} />
+                <motion.polygon points="150,34 250,92 250,208 150,266 50,208 50,92" fill="none" stroke={glow} strokeWidth="1.6" strokeOpacity=".7" strokeLinejoin="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1.1, ease: "easeOut" }} style={{ filter: "drop-shadow(0 0 8px " + glow + ")" }} />
+                <motion.circle cx="150" cy="150" r="106" fill="none" stroke={glow} strokeWidth="5" strokeLinecap="round" strokeDasharray="14 86" pathLength={100} animate={{ strokeDashoffset: [0, -100] }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }} style={{ filter: "drop-shadow(0 0 8px " + glow + ")" }} />
+              </g>
             )}
+          </svg>
+          {/* 충격파 + 섬광 */}
+          {!lite && phase === "break" && (
+            <>
+              <motion.span aria-hidden="true" initial={{ opacity: 0.95 }} animate={{ opacity: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} style={{ position: "fixed", inset: 0, background: "radial-gradient(circle at 50% 42%, rgba(255,250,235,.95), transparent 55%)", pointerEvents: "none", zIndex: 1 }} />
+              {[0, 1, 2].map((i) => <motion.span key={"sw" + i} aria-hidden="true" initial={{ opacity: 0.9, scale: 0.4 }} animate={{ opacity: 0, scale: 3 }} transition={{ duration: 1.2, delay: i * 0.16, ease: "easeOut" }} style={{ position: "absolute", inset: "12%", borderRadius: "50%", border: "3px solid " + glow }} />)}
+            </>
+          )}
+          {/* 기물 */}
+          <div style={{ position: "absolute", inset: "20%" }}>
+            <AnimatePresence>
+              {!broke && (
+                <motion.img key="from" src={tierPieceSrc(fromTierKey, fromDivision)} alt="" initial={{ scale: 1 }} animate={lite ? { scale: 1 } : { scale: [1, 1.05, 1], x: [0, -2, 2, -3, 3, -1, 1, 0] }} transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
+                  exit={{ opacity: 0, scale: 1.4, filter: "blur(8px) brightness(2.6)", transition: { duration: 0.3 } }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", filter: "drop-shadow(0 0 14px " + fromGlow + "99)" }} />
+              )}
+              {risen && (
+                <motion.img key="to" src={tierPieceSrc(toTierKey, toDivision)} alt="" initial={lite ? false : { opacity: 0, scale: 2.2, y: -30, filter: "blur(14px) brightness(2.8)" }} animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px) brightness(1)" }}
+                  transition={{ type: "spring", stiffness: 140, damping: 13, mass: 0.9, filter: { duration: 0.6 } }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", filter: "drop-shadow(0 0 20px " + glow + "BB)" }} />
+              )}
+            </AnimatePresence>
           </div>
-          {/* 이름·구간·보상 */}
-          <div style={{ minHeight: 96, textAlign: "center" }}>
-            {phase === "settled" ? (
-              <>
-                <motion.div initial={{ opacity: 0, y: 8, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} transition={{ duration: 0.5 }}
-                  style={{ fontFamily: GAME_FONT, fontSize: 26, fontWeight: 400, lineHeight: 1.15, background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(0 2px 0 rgba(0,0,0,.6))" }}>{toLabel}{roman ? " " + roman : ""}</motion.div>
-                <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                  <Tag color={K.soft}>{fromLabel}{fromDivision ? " " + (ROMAN[fromDivision] || fromDivision) : ""}</Tag>
-                  <span aria-hidden="true" style={{ color: K.brassHi, fontSize: 13 }}>▸</span>
-                  <Tag solid>{toLabel}{roman ? " " + roman : ""}</Tag>
+          {/* 충전 중 XP 게이지 숫자 */}
+          {phase === "charge" && <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: "-4%", textAlign: "center", fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 15, letterSpacing: ".2em", color: fromGlow }}>XP <TuCount to={100} run ms={1400} />%</div>}
+        </div>
+        <div style={{ flex: "0 0 14px" }} />
+        {/* 이름 — 글자마다 떨어지며 켜진다 */}
+        <div style={{ minHeight: 66, textAlign: "center", maxWidth: 460, width: "100%" }}>
+          {risen && (
+            <>
+              <div aria-label={toLabel} style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "0 1px", fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: "clamp(30px, 9vw, 46px)", lineHeight: 1.1, letterSpacing: ".04em", textTransform: "uppercase" }}>
+                {letters.map((ch, i) => (
+                  <motion.span key={i} initial={lite ? false : { opacity: 0, y: -36, filter: "blur(8px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} transition={{ delay: 0.25 + i * 0.07, type: "spring", stiffness: 260, damping: 16 }}
+                    style={{ display: "inline-block", whiteSpace: "pre", background: tierGradientCss(toTierKey), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(0 0 12px " + glow + "88) drop-shadow(0 2px 0 rgba(0,0,0,.7))" }}>{ch}</motion.span>
+                ))}
+                {roman && <motion.span initial={lite ? false : { opacity: 0, scale: 3.2 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 + letters.length * 0.07, type: "spring", stiffness: 380, damping: 14 }} style={{ display: "inline-block", marginLeft: 12, padding: "0 12px", clipPath: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)", background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509", WebkitTextFillColor: "#241509" }}>{roman}</motion.span>}
+              </div>
+              {!lite && <motion.span aria-hidden="true" initial={{ left: "-20%" }} animate={{ left: "120%" }} transition={{ duration: 1.4, delay: 0.9, ease: "easeInOut" }} style={{ position: "relative", display: "block", height: 0 }} />}
+            </>
+          )}
+        </div>
+        {/* 이전 → 새 티어, 보상 */}
+        <div style={{ minHeight: 100, width: "100%", maxWidth: 460, textAlign: "center", marginTop: 6 }}>
+          {phase === "settled" && (
+            <>
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+                <Tag color={K.soft}>{fromLabel}{fromDivision ? " " + (ROMAN[fromDivision] || fromDivision) : ""}</Tag>
+                <motion.span aria-hidden="true" animate={{ x: [0, 5, 0] }} transition={{ duration: 1.2, repeat: Infinity }} style={{ color: glow, fontFamily: MONO, fontWeight: 900 }}>▸▸</motion.span>
+                <Tag solid style={{ background: "linear-gradient(180deg," + glow + "," + glow + "CC)", color: "#0A0612" }}>{toLabel}{roman ? " " + roman : ""}</Tag>
+              </motion.div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi, marginTop: 10 }}>{tx("{0} 티어 도달", toLabel)}</motion.div>
+              {reward > 0 && (
+                <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.35, type: "spring", stiffness: 300, damping: 18 }} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 18px", clipPath: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)", background: "rgba(196,154,80,.16)", boxShadow: "inset 0 0 0 1px rgba(196,154,80,.5)" }}>
+                  <CoinIcon size={18} /><span style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 18, letterSpacing: ".06em", color: K.brassHi }}>+<TuCount to={reward} run /></span><span style={{ fontSize: 11.5, fontWeight: 800, color: K.soft }}>{tx("{0} OC 나이트 코인", "")}</span>
                 </motion.div>
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }} style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi, marginTop: 10 }}>{tx("{0} 티어 도달", toLabel)}</motion.div>
-                {reward > 0 && (
-                  <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.35, type: "spring", stiffness: 300, damping: 18 }} className="flex items-center justify-center" style={{ gap: 8, marginTop: 10 }}>
-                    <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: K.brassHi, padding: "6px 14px", borderRadius: 999, background: "rgba(196,154,80,.14)", border: "1px solid rgba(196,154,80,.4)" }}><CoinIcon size={16} />{tx("{0} OC 나이트 코인", "+" + reward)}</span>
-                  </motion.div>
-                )}
-              </>
-            ) : null}
-          </div>
-          <button onClick={onDone} disabled={phase !== "settled"} className="press ab-glint" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, padding: "12px 0", border: "none", cursor: phase === "settled" ? "pointer" : "default", opacity: phase === "settled" ? 1 : 0.35, transition: "opacity .4s",
-            clipPath: "polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%)", background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509", fontFamily: MONO, fontWeight: 900, fontSize: 13, letterSpacing: ".12em" }}>{t("확인")}</button>
-        </CutPanel>
-      </div>
+              )}
+            </>
+          )}
+        </div>
+        <div style={{ flex: "1 1 0", minHeight: 8 }} />
+        <button onClick={onDone} disabled={phase !== "settled"} className="press ab-glint" style={{ width: "100%", maxWidth: 360, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "13px 0", border: "none", cursor: phase === "settled" ? "pointer" : "default", opacity: phase === "settled" ? 1 : 0.3, transition: "opacity .5s",
+          clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509", fontFamily: MONO, fontWeight: 900, fontSize: 13, letterSpacing: ".14em" }}>{t("확인")}</button>
+      </motion.div>
     </motion.div>
   );
 }
