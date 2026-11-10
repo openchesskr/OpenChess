@@ -54,5 +54,7 @@
   "app/gameHistory.jsx",
   "lib/mistakeWhy.js",
   "app/autoReview.js",
-  "lib/recentGames.js"
+  "lib/recentGames.js",
+  "lib/mecOpenings.js",
+  "lib/mecStructureText.js"
 ]

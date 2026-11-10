@@ -19,7 +19,7 @@ import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/share
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
 import { pickHighlights } from "../lib/highlights.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
-import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
+import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecBookFacts, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
 import { findPost, LEGACY_MAX_POSTS } from "../lib/legacyPosts.js";
 import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult, reviewedAnalysisFetch, reviewedAnalysisShare, ocAnalysisShare } from "./reviewCache.js";
@@ -349,7 +349,7 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   // (R7 기능) MEC의 마지막 한 줄(mecFactsArr[0])은 body 문자열에 그냥 이어붙이지 않고 mecLine으로
   // 따로 돌려준다 — "위협" 사실이면 ReviewCoachCard가 이 줄만 밑줄+클릭 가능하게 렌더링해서, 눌렀을
   // 때 공격자→수비자 화살표 애니메이션을 재생할 수 있게 하기 위함이다.
-  const mecLine = (m.kind !== "book" && mecFactsArr && mecFactsArr.length) ? mecFactsArr[0] : null;
+  const mecLine = (mecFactsArr && mecFactsArr.length) ? mecFactsArr[0] : null; // (v0.7.5) 정석 수도 오프닝 레파토리 설명을 보여 준다
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -1958,13 +1958,16 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   const mecThreatOut = useRef({});
   const mecNotes = useMemo(() => {
     mecThreatOut.current = {};
-    if (!activeMove || activeMove.kind === "book") return [];
+    if (!activeMove) return [];
+    // (v0.7.5) 정석 수는 오프닝 레파토리 설명(그 수의 의도·이론을 벗어날 때의 계획·새 폰 구조)으로 대신한다. 다음 수는 실제 기보 수를 볼 때만 넘긴다.
+    const futureSans = exploring ? [] : sans.slice(curPly, curPly + 2);
+    if (activeMove.kind === "book") { try { return mecBookFacts(effSans.slice(0, -1), activeMove.san, futureSans, fenRoot); } catch { return []; } }
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
       return [mecPick([t("체크메이트로 몰아가는 강제 수순이며, 메이트까지 {0}수 남았다.", n), t("이제부터는 체크메이트 수순이다. {0}수 뒤에 체크메이트이다.", n), t("메이트 {0}수 전이며, 체크메이트로 끝나는 강제 수순이다.", n)], effSans.length)];
     }
-    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
-  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot, futureSans); } catch { return []; }
+  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot, exploring, sans, curPly]);
   const threatDetail = mecThreatOut.current.detail || null;
   // (기능) 예방 수(R4/R9)의 시각화 데이터 — mecThreatOut.current.prevent에 방어 대상 칸·상대 진입
   // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를

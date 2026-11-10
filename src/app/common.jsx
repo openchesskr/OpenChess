@@ -12,6 +12,9 @@ import { sbClient, SB_ON, SB_TOKEN, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic, checkmateInfo } from "../lib/mecTactics.js";
 import { strategicFact } from "../lib/mecStrategy.js";
+import { structureFactInGame } from "../lib/mecPawnStructure.js";
+import { structurePhrase } from "../lib/mecStructureText.js";
+import { openingMoveFact } from "../lib/mecOpenings.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
 import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
@@ -4207,8 +4210,24 @@ const MEC_PHRASES = {
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
 // 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
 // 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
-const capSentences = (x) => x.replace(/(^|[.!?]\s+)([a-záéíóúñ])(?![1-8])/g, (m, pre, ch) => pre + ch.toLocaleUpperCase());
-export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot) {
+// (v0.7.5 BUG-151) 칸 이름(c4)뿐 아니라 한글이 바로 붙은 파일 문자("c폰"·"e파일")도 대문자로 바꾸지 않는다 — 한국어 문장의 둘째 문장이 "e폰과 d폰을…"으로 시작하면 "E폰"이 됐다.
+const capSentences = (x) => x.replace(/(^|[.!?]\s+)([a-záéíóúñ])(?![1-8가-힣])/g, (m, pre, ch) => pre + ch.toLocaleUpperCase());
+// (v0.7.5) 정석 수(book) 설명 — 일반 MEC(mecFacts)는 정석 수에 쓰지 않는다(이론 수에 "위협·과보호" 같은 사실은 어울리지 않음).
+// 오프닝 레파토리(lib/mecOpenings.js)의 그 수의 의도 + 이론을 벗어나는 수면 그 오프닝의 중반 계획 + 이 수로 새로 생긴 폰 구조를 한 글로 잇는다.
+// futureSans = 그 대국의 이어지는 실제 수(자유 탐색·마지막 수면 빈 배열). 첫 수는 "이론을 벗어나는지", 두 수는 "구조가 곧 사라지는지" 판단에 쓴다.
+export function mecBookFacts(sansBeforeMove, san, futureSans, fenRoot) {
+  const parts = [], nextSan = futureSans && futureSans[0];
+  try {
+    const of = openingMoveFact(sansBeforeMove.map(stripSuffix), stripSuffix(san), nextSan ? stripSuffix(nextSan) : null, fenRoot);
+    if (of) { parts.push(of.idea); if (of.plan) parts.push(of.plan); }
+  } catch { /* 레파토리 조회 실패 */ }
+  try {
+    const sp = structurePhrase(structureFactInGame(sansBeforeMove, san, fenRoot, futureSans));
+    if (sp) parts.push(sp);
+  } catch { /* 구조 탐지 실패 */ }
+  return parts.length ? [capSentences(parts.join(" "))] : [];
+}
+export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot, futureSans) {
   const seed = sansBeforeMove.length;
   const beforeBoard = boardOfRoot(fenRoot, sansBeforeMove);
   const board = boardOfRoot(fenRoot, [...sansBeforeMove, san]);
@@ -4419,9 +4438,18 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       if (extra.length) { if (facts.length) facts[0] = facts[0] + " " + extra.join(" "); else facts.push(extra.join(" ")); }
     }
   } catch { /* 전술 탐지 실패는 기존 설명만 보여 준다 */ }
-  // (v0.7.2) 전략·구조(D) — 위에서 아무 사실도 못 찾은 조용한 수에만 적용한다(src/lib/mecStrategy.js).
+  // (v0.7.5) 폰 구조(E) — 이 수로 이름 있는 폰 구조(IQP·칼스바드·마로치 등)가 새로 생기면 그 구조와 양쪽의 일반적인 계획을 알려 준다.
+  //  전술·메이트 위협이 대표 사실이면 문장이 길어지지 않게 붙이지 않는다. 구조 문장을 붙인 수에는 아래 전략(D)의 고립폰·겹폰 문장을 겹쳐 쓰지 않는다.
   const isCapMove = !!(moveInfo && moveInfo.isCap);
-  if (!facts.length || isCapMove) {
+  let structureSaid = false;
+  try {
+    const tacticLead = !!(threatOut && threatOut.tactic && !String(threatOut.tactic.kind).startsWith("reply:"));
+    const sf = tacticLead ? null : structureFactInGame(sansBeforeMove, san, fenRoot, futureSans);
+    const sp = sf ? structurePhrase(sf) : null;
+    if (sp) { if (facts.length) facts[0] = facts[0] + " " + sp; else facts.push(sp); structureSaid = true; if (threatOut) threatOut.structure = { kind: sf.kind, side: sf.side, squares: sf.squares }; }
+  } catch { /* 구조 탐지 실패는 기존 설명만 보여 준다 */ }
+  // (v0.7.2) 전략·구조(D) — 위에서 아무 사실도 못 찾은 조용한 수에만 적용한다(src/lib/mecStrategy.js).
+  if (!structureSaid && (!facts.length || isCapMove)) {
     try {
       const good = MEC_GOOD_KINDS.includes(kind), poor = MEC_POOR_KINDS.includes(kind);
       const st = strategicFact(fenOfRoot(fenRoot, sansBeforeMove), san, good ? "good" : poor ? "poor" : "neutral");
