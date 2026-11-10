@@ -102,7 +102,7 @@
 - 프로필 사진 위치 조정, 유산 공유·전송 흐름 통일.
 
 **버그 수정**
-- BUG-107(P3), BUG-109(P3), BUG-110(P2, 집중 분석 해설 이동), BUG-111(P2, 창 가로 스크롤), BUG-112(P2, Android 빠른 리뷰 OPEN 겹침). BUG-108(P3, /about 학습 탭 스크린샷 낡음)은 미결.
+- BUG-144(P3), BUG-146(P3), BUG-147(P2, 집중 분석 해설 이동), BUG-148(P2, 창 가로 스크롤), BUG-149(P2, Android 빠른 리뷰 OPEN 겹침). BUG-145(P3, /about 학습 탭 스크린샷 낡음)은 미결. (v0.7.5에서 번호 정정: 처음엔 BUG-107~112로 잘못 기록 — BUG-150)
 
 **시스템**
 - prebuild 검사 추가: `check-legacy-posts`, `check-legacy-player`, `check-play-quest`. `check-economy-constants`가 `applyEconomy` 블록을 동적으로 찾도록 수정.
