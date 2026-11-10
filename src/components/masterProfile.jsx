@@ -58,6 +58,8 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
     <div>
       {p && <>
         {head(t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1))}
+        {/* (v0.7.5) 저장소의 마스터 대국 DB·대회 데이터로 보충한 프로필(build-master-profiles-db) — 선수의 전체 경력이 아니라 수록된 대국만 센 통계임을 밝힌다 */}
+        {p.src === "db" && <div style={{ ...small, marginBottom: 4 }}>{t("OpenChess 마스터 대국 DB 수록 대국 기준 통계")}</div>}
         <WdlBar w={p.wdl[0]} d={p.wdl[1]} l={p.wdl[2]} />
         <div style={{ ...row, marginTop: 4 }}>{t("백")} {pct(p.w[0] + p.w[1] / 2, p.w[0] + p.w[1] + p.w[2])}%, {t("흑")} {pct(p.b[0] + p.b[1] / 2, p.b[0] + p.b[1] + p.b[2])}% <span style={{ color: T.inkSoft, fontSize: 11 }}>({t("점수율")})</span></div>
         <div style={row}>{t("평균 {0}수, 무승부 {1}%", p.len, p.draw)}</div>

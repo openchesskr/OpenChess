@@ -3436,4 +3436,5 @@ export default {
   "{0}의 스톤월 구조입니다. {0:은/는} {1}에 나이트를 두고 킹사이드 공격을 노리지만, {2} 칸은 약점이 됩니다.": "Estructura Stonewall de {0}. {0} busca un ataque en el flanco de rey con un caballo en {1}, pero la casilla {2} se convierte en una debilidad.",
   "c6·d5·e6 폰의 삼각형 구조입니다. 흑은 ...dxc4 뒤 ...b5나 ...c5·...e5 돌파로 풀어 가고, 백은 e4 전진으로 중앙을 넓힙니다.": "Triángulo de peones c6–d5–e6. Las negras liberan el juego con ...dxc4 seguido de ...b5, o con la ruptura ...c5 o ...e5, mientras las blancas amplían el centro con e4.",
   "d·e파일의 폰이 모두 사라진 열린 중앙입니다. 기물 활동성과 열린 파일을 먼저 장악하는 쪽이 유리합니다.": "Un centro abierto sin peones en las columnas d y e. Tiene ventaja quien domine antes la actividad de las piezas y las columnas abiertas.",
+  "OpenChess 마스터 대국 DB 수록 대국 기준 통계": "Estadísticas basadas en las partidas de la base de datos de maestros de OpenChess",
 };
