@@ -3437,4 +3437,9 @@ export default {
   "c6·d5·e6 폰의 삼각형 구조입니다. 흑은 ...dxc4 뒤 ...b5나 ...c5·...e5 돌파로 풀어 가고, 백은 e4 전진으로 중앙을 넓힙니다.": "Triángulo de peones c6–d5–e6. Las negras liberan el juego con ...dxc4 seguido de ...b5, o con la ruptura ...c5 o ...e5, mientras las blancas amplían el centro con e4.",
   "d·e파일의 폰이 모두 사라진 열린 중앙입니다. 기물 활동성과 열린 파일을 먼저 장악하는 쪽이 유리합니다.": "Un centro abierto sin peones en las columnas d y e. Tiene ventaja quien domine antes la actividad de las piezas y las columnas abiertas.",
   "OpenChess 마스터 대국 DB 수록 대국 기준 통계": "Estadísticas basadas en las partidas de la base de datos de maestros de OpenChess",
+  // (v0.7.5) 도감 첫 화면 카드 설명
+  "오프닝 수순 탐색과 해금": "Explora y desbloquea líneas de apertura",
+  "명인 대국과 선수 프로필": "Partidas de maestros y perfiles de jugadores",
+  "모은 칭호와 다음 목표": "Títulos conseguidos y próximos objetivos",
+  "기물·보드 세트 수집": "Colecciona juegos de piezas y tableros",
 };

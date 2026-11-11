@@ -3437,4 +3437,9 @@ export default {
   "c6·d5·e6 폰의 삼각형 구조입니다. 흑은 ...dxc4 뒤 ...b5나 ...c5·...e5 돌파로 풀어 가고, 백은 e4 전진으로 중앙을 넓힙니다.": "A c6–d5–e6 pawn triangle. Black frees the game with ...dxc4 followed by ...b5, or with the ...c5 or ...e5 break, while White widens the center with e4.",
   "d·e파일의 폰이 모두 사라진 열린 중앙입니다. 기물 활동성과 열린 파일을 먼저 장악하는 쪽이 유리합니다.": "An open center with no pawns left on the d- and e-files. Whoever first takes over piece activity and the open files has the edge.",
   "OpenChess 마스터 대국 DB 수록 대국 기준 통계": "Stats based on games in the OpenChess master database",
+  // (v0.7.5) 도감 첫 화면 카드 설명
+  "오프닝 수순 탐색과 해금": "Explore and unlock opening lines",
+  "명인 대국과 선수 프로필": "Master games and player profiles",
+  "모은 칭호와 다음 목표": "Titles earned and what's next",
+  "기물·보드 세트 수집": "Collect piece and board sets",
 };
