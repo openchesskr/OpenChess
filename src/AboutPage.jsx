@@ -955,11 +955,10 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
 
         <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
           lead={t("학습 탭은 내 성장을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }, { n: "learn-3", cap: t("레슨 로드맵") }]}
+          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }]}
           blocks={[
             [t("성장 분석"), t("리뷰하지 않아도 최근 대국 5판을 자동으로 분석해 보여 줍니다. 분석하는 동안에는 게이지 바로 진행 상황을 알려 줍니다.")],
             [t("최근 대국"), t("대국마다 오프닝, 전적, 탁월한 수와 유일한 수의 개수가 보입니다. 연두색 버튼으로 바로 리뷰할 수 있습니다.")],
-            [t("레슨"), t("레슨은 갈래를 따라 순서대로 열리고, 오프닝 원칙부터 시작합니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>
@@ -967,7 +966,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           </div>} />
 
         <TabChapter id="dex" no="05" Icon={Library} label={t("도감")} title={t("모으고 키우는 곳입니다")}
-          lead={t("도감 탭에는 오프닝, 마스터, 업적, 스킨이 들어 있습니다.")}
+          lead={t("도감 탭에는 오프닝, 마스터, 업적, 스킨과 레슨이 들어 있습니다.")}
           shots={[{ n: "dex-tree", cap: t("오프닝 트리") }, { n: "dex-ach", cap: t("업적과 칭호") }, { n: "dex-skin", cap: t("스킨 뽑기 상자") }]}
           blocks={[
             [t("오프닝 트리"), t("1.e4, 1.d4, 1.c4, 1.Nf3 네 갈래로 뻗는 트리입니다. 각 수의 채택률, 평가, 이름을 볼 수 있고, 실전에서 둔 만큼 해금됩니다.")],
@@ -975,6 +974,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             [t("업적과 칭호"), t("칭호는 258개입니다. 이탈리안 게임, 루이 로페즈처럼 오프닝마다 단계가 있고, 못 얻은 칭호는 조건과 진행도가 보입니다. 히든 칭호는 얻기 전까지 ???로 나옵니다.")],
             [t("스킨 뽑기"), t("상자에서 1회 500코인, 5회 2,400코인으로 기물을 뽑습니다. 이미 가진 기물이 나오면 150코인이 돌아오고, 한 세트의 6종을 다 모으면 그 세트의 보드가 열립니다. 추첨은 서버가 합니다.")],
             [t("티어"), t("퍼즐을 풀어 쌓은 경험치로 아이언부터 그랜드마스터까지 일곱 단계를 오릅니다.")],
+            [t("레슨"), t("체스 기초를 여섯 단계, 29개 레슨으로 배웁니다. 단계마다 색과 장식이 다르고, 보드에서 직접 두면서 익힙니다.")],
           ]}
           extra={<div>
             <div className="flex items-center justify-center flex-wrap" style={{ gap: 20, marginBottom: 44 }}>

@@ -17,6 +17,8 @@ import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
+import { LessonPath } from "./lessons.jsx";
+import { SwipePager } from "../components/swipePager.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -1386,7 +1388,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ lessonState, onLessonComplete, lessonCoins, unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
@@ -1409,6 +1411,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // 통째로 언마운트되어 지금까지 쌓인 트리 깊이가 매번 사라졌다.
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
+  const hubMobile = useNarrow(640);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
   // (v0.4.0 기능) 사용자 요청 — 도감 카드(openKey)도 브라우저 뒤로가기로 닫히게 한다. LessonMap과
   // 같은 방식(자체 popstate 리스너 + history.state.screens 배열의 "dexcard" 마커)을 쓴다. openKey는
@@ -1455,7 +1458,15 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   return (
     <div style={{ isolation: "isolate" }}>
             {dexView === "hub" ? (
-        <DexHub items={hubItems} onOpen={selectDexView} />
+        // (v0.7.5, 사용자 요청) 레슨(lib/lessons·app/lessons.jsx)은 도감 첫 화면에 — 데스크톱은 카드 4개 아래 남는 자리, 모바일은 옆으로 넘기는 별도 페이지.
+        hubMobile ? (
+          <SwipePager pages={[{ key: "cards", node: <DexHub items={hubItems} onOpen={selectDexView} /> }, { key: "lessons", node: <LessonPath lessonState={lessonState} onComplete={onLessonComplete} coins={lessonCoins} height="calc(100dvh - 196px)" /> }]} />
+        ) : (
+          <>
+            <DexHub items={hubItems} onOpen={selectDexView} />
+            <div style={{ maxWidth: 1060, margin: "14px auto 0" }}><LessonPath lessonState={lessonState} onComplete={onLessonComplete} coins={lessonCoins} height="max(340px, calc(100dvh - 540px))" /></div>
+          </>
+        )
       ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (

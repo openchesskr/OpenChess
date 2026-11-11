@@ -712,7 +712,7 @@ export function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
+export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
 let CONTENT_SEEDED = false;
 // 외부 대국 데이터베이스의 "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
 // 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
@@ -762,209 +762,19 @@ function seedContent() {
       posKey = posKey ? posKey + " " + san : san;
     });
   }
-  seedLessons();
 }
-/* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
-// (사용자 요청) "메인 퀘스트"(사지선다 챕터 퀴즈 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된
-// 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parents(선행 레슨 key
-// 배열)로 연결해 갈래를 갖는 그래프(DAG) 구조를 이루고, 선행 레슨을 모두 완료(보상 수령)해야 다음
-// 레슨이 열린다(도감 오프닝 모식도와 같은 "순차 해금" 원리) — 서로 다른 갈래가 하나의 레슨으로 다시
-// 합류할 수도 있다(예: 두 오프닝 라인 모두 끝내야 열리는 "엔드게임 기초"). 레슨 하나 =
-// { title, desc, parents:[...], reward, pages:[...] } (parents가 빈 배열이면 최상위 레슨). 옛
-// 콘텐츠가 여전히 parent(단수) 하나만 갖고 있을 수도 있어, 실제로 읽을 때는 항상 이 필드를 직접
-// 읽지 않고 lessonParents(lesson) 헬퍼(정규화해서 배열로 반환)를 통해서만 다룬다.
-//
-// (사용자 요청) 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서 다시
-// 볼 수 있다. 페이지 하나 = { startSans?, flip?, beats:[...] } — beats는 정해진 스크립트로, 순서대로
-// 재생되며 사용자와 상호작용한다. beat 종류(자세한 재생 로직은 LessonScreen 참고):
-//   say        { speaker:"milku"|"kokoa", text, sans? }        코치 대사 한 줄(타이핑 애니메이션, 눌러서 다음)
-//   principles { lines:[...] }                                 목록이 한 줄씩 떠올랐다 사라지는 자동 연출
-//   mc         { prompt, opts:[...], answer, note, sans? }      객관식 — 정답을 고르면 통과
-//   move       { prompt, answers:[...], note, sans? }           주관식 — 보드에 직접 수를 두면 통과
-//   play       { moves:[...], stepMs? }                         현재 위치에서 이어서 수순을 빠르게 재생(자동)
-//   pause      { ms }                                           잠시 대기(자동)
-//   board      { squares:[...], dim?, glow?, siren?, arrows?, sans? }  보드 연출(칸 강조/음영/사이렌/화살표), 자동으로 다음 진행
-//              arrows:[{ from, to, type:"attacker"|"defender" }, ...] — from/to는 칸 이름("e4") 문자열.
-//              공격 기물→피격 기물 방향 화살표를 그린다. "attacker"는 빨간 화살표(위협하는 기물), "defender"는
-//              초록 화살표(방어하는 기물) — Board의 threatAttacker/threatDefender 화살표 스타일을 그대로 재사용.
-//   clear      { }                                               보드 연출 상태(화살표 포함)를 초기화
-// 어떤 beat든 sans를 지정하면 그 자리에서 즉시(재생 없이) 그 위치로 전환된다.
-// 모든 필드는 개발자가 CMS(LessonEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.lessons에 저장되어
-// 전 유저에 반영된다.
-// (기능) 파일(a~h) 전체 + 랭크(1~8) 전체를 합친 "십자" 모양 칸 목록 — d·e 파일과 4·5 랭크를 함께
-// 강조하는 것처럼, 특정 열·행 전체를 하이라이트하는 레슨 연출에 쓴다.
-function lessonCross(files, ranks) {
-  const out = new Set();
-  for (const f of files) for (let r = 1; r <= 8; r++) out.add(f + r);
-  for (const r of ranks) for (const f of FILES) out.add(f + r);
-  return [...out];
-}
-function seedLessons() {
-  if (Object.keys(CONTENT.lessons).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
-  const L = CONTENT.lessons;
-  // (기존 steps 방식 콘텐츠를 pages 방식으로 옮길 때 쓰는 작은 변환 헬퍼 — 옛 스텝 하나 = 새 페이지 하나.)
-  const explainPage = (sans, coach) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "say", speaker: "milku", text: coach }] });
-  const mcPage = (sans, prompt, opts, answer, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "mc", prompt, opts, answer, note }] });
-  const movePage = (sans, prompt, answers, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "move", prompt, answers, note }] });
-
-  // ------------------------------------------------------------ 오프닝 원칙(모식도 시작점) ------------------------------------------------------------
-  const PRINCIPLES = [
-    "1. 최대한 빠르게 기물 전개",
-    "2. 비숍보다 나이트 먼저 전개",
-    "3. 오프닝에서 같은 기물을 두 번 움직이지 않기",
-    "4. 오프닝에서 폰을 불필요하게 움직이지 않기",
-    "5. 필요 없으면 체크하지 않기",
-    "6. 전개가 느리면 포지션을 열지 않기",
-    "7. 퀸은 폰 뒤에 배치",
-    "8. 내 전개된 기물과 상대 미전개 기물의 교환 피하기",
-    "9. 되도록 빠르게 캐슬링",
-    "10. 킹사이드 캐슬링이 퀸사이드보다 안전",
-    "11. 가능한 한 영역 넓히기",
-    "12. 공간 지배를 위해 폰 밀기",
-    "13. 기물을 중앙 가까이 유지",
-    "14. 폰 교환은 사이드에서 중앙 쪽으로",
-    "15. 공격 전에 중앙 제어",
-    "16. 룩으로 오픈·세미 오픈 파일 빠르게 장악",
-    "17. 자주 나오는 폰 구조 숙지",
-    "18. 늘 예외를 생각하고, 필요하면 원칙을 어기기",
-  ];
-  L.l_intro = {
-    title: t("오프닝 원칙"), desc: t("원칙의 목적 세 가지: 중앙 차지, 기물 전개, 킹의 안전"), reward: 40, parent: null,
-    pages: [
-      { // 1페이지 — 도입 + 원칙 목록 + 세 가지 목적
-        beats: [
-          { kind: "say", speaker: "milku", text: t("첫 번째 레슨") },
-          { kind: "say", speaker: "milku", text: t("코치 MILKU") },
-          { kind: "say", speaker: "milku", text: t("오프닝 실력을 함께 키우기") },
-          { kind: "say", speaker: "milku", text: t("오프닝에는 지켜야 할 원칙이 여러 개 있음") },
-          { kind: "principles", lines: PRINCIPLES },
-          { kind: "say", speaker: "milku", text: t("원칙은 결국 세 가지 목적으로 모임") },
-          { kind: "say", speaker: "milku", text: t("중앙 차지, 기물 전개, 킹의 안전") },
-          { kind: "say", speaker: "milku", text: t("하나씩 확인") },
-        ],
-      },
-      { // 2페이지 — 중앙 차지
-        beats: [
-          { kind: "say", speaker: "milku", text: t("거의 모든 오프닝은 중앙을 차지하려는 백과 흑의 수가 부딪히며 만들어짐") },
-          { kind: "say", speaker: "milku", text: t("중앙은 주로 d열과 e열. 오프닝에서 양쪽이 맞붙는 곳은 주로 4행과 5행") },
-          { kind: "board", dim: true, squares: lessonCross(["d", "e"], [4, 5]) },
-          { kind: "say", speaker: "milku", text: t("중앙 차지는 정중앙 4칸(e4, e5, d4, d5)을 장악하는 것") },
-          { kind: "board", glow: true, squares: ["e4", "e5", "d4", "d5"] },
-          { kind: "say", speaker: "milku", text: t("이 목표를 두고 선수들이 수를 연구했고, 그 결과가 오늘날의 오프닝 이론") },
-        ],
-      },
-      { // 3페이지 — 기물의 전개
-        beats: [
-          { kind: "say", speaker: "milku", text: t("오프닝에서 기물 전개는 매우 중요") },
-          { kind: "say", speaker: "milku", text: t("중앙 차지도 기물 전개와 균형이 필요") },
-          { kind: "say", speaker: "milku", text: t("오프닝에서 같은 기물을 두 번 움직이는 건 보통 손해") },
-          { kind: "say", speaker: "milku", text: t("가능한 한 많은 기물을 전개한 뒤 계획 실행") },
-          { kind: "play", stepMs: 320, moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6", "Bc4", "Bd7", "O-O-O"] },
-        ],
-      },
-      { // 4페이지 — 킹의 안전
-        beats: [
-          { kind: "say", speaker: "milku", text: t("체스는 상대 킹을 공격하는 게임. 내 킹의 안전도 그만큼 중요") },
-          { kind: "say", speaker: "milku", text: t("킹이 중앙에 남아 있으면 공격받기 쉬움") },
-          { kind: "say", speaker: "milku", text: t("캐슬링으로 한 수에 킹을 구석에 숨길 수 있음") },
-          { kind: "play", stepMs: 350, moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"] },
-          { kind: "pause", ms: 2000 },
-          { kind: "board", dim: true, squares: ["e1", "h1"] },
-          { kind: "play", stepMs: 500, moves: ["O-O"] },
-          { kind: "clear" },
-          { kind: "say", speaker: "milku", text: t("캐슬링 조건: 킹과 룩 사이에 기물 없음, 상대가 경로를 공격하지 않음, 킹과 룩 모두 이동한 적 없음") },
-          { kind: "say", speaker: "milku", text: t("교환으로 킹 앞 폰이 끌려가면 킹 주변이 급격히 약해지니 주의") },
-          { kind: "play", stepMs: 350, moves: ["d6", "Qe1", "Bg4", "Nc3", "Bxf3"] },
-          { kind: "pause", ms: 2000 },
-          { kind: "board", dim: true, squares: ["g2"] },
-          { kind: "play", stepMs: 500, moves: ["gxf3"] },
-          { kind: "clear" },
-          { kind: "board", siren: true, squares: ["g1"] },
-        ],
-      },
-    ],
-  };
-  L.l_e4 = {
-    title: t("1.e4 킹스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수"), reward: 60, parent: "l_intro",
-    pages: [
-      explainPage([], "폰을 두 칸 전진시켜 중앙을 장악하고 비숍과 퀸의 대각선도 연다. 직접 두기"),
-      movePage([], "중앙 폰을 두 칸 전진", ["e4"], "1.e4 킹스 폰 오프닝. 비숍(f1)과 퀸(d1) 대각선이 바로 열려 빠른 전개와 이른 전술전"),
-      mcPage(["e4"], "1.e4 뒤 흑이 둘 수 없는 수는?", ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 두 칸 전진 뒤 재전진)", "1...c6 (카로칸 디펜스)"], 2, "흑 폰은 d7에서 d5나 d6까지만 이동 가능. d4는 닿지 않음"),
-    ],
-  };
-  L.l_e4_e5 = {
-    title: t("1...e5 오픈 게임"), desc: t("중앙에서 폰을 맞세워 대칭으로 공간을 나누는 가장 고전적인 응수"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭으로 공간을 나누고 오픈된 전술전 준비. 이런 시작을 오픈 게임이라 부름"),
-      mcPage(["e4", "e5"], "1.e4 e5에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 기물을 자연스럽게 전개하는 가장 흔한 수"),
-      movePage(["e4", "e5"], "나이트를 전개하며 e5 폰 위협", ["Nf3"], "2.Nf3! e5를 위협하면서 킹사이드 캐슬링 준비"),
-    ],
-  };
-  L.l_e4_e5_open = {
-    title: t("이탈리안 게임으로"), desc: t("2.Nf3 Nc6 뒤 비숍을 전개해 이탈리안 게임으로"), reward: 70, parent: "l_e4_e5",
-    pages: [
-      explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5를 지킴. 백은 비숍을 f7을 겨누는 대각선으로 전개"),
-      movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨누는 자리로 전개", ["Bc4"], "3.Bc4! 이탈리안 게임. 비숍이 약점인 f7 폰을 직접 겨눔"),
-      mcPage(["e4", "e5", "Nf3", "Nc6", "Bc4"], "이탈리안 게임(3.Bc4)의 핵심 아이디어는?", ["비숍으로 f7 폰을 겨누며 빠르게 킹사이드 공략", "폰을 희생해서라도 퀸사이드를 빠르게 개방", "킹을 일부러 중앙에 오래 남겨 둠", "나이트를 교환해 무승부 유도"], 0, "이탈리안 게임은 비숍의 활발한 대각선으로 빠르게 공격 기회를 노리는 오프닝"),
-    ],
-  };
-  L.l_e4_c5 = {
-    title: t("1...c5 시칠리안 디펜스"), desc: t("중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적으로 반격"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 반격하는 대표 오프닝. 시칠리안 디펜스"),
-      mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 알맞은 것은?", ["대칭 구조로 무승부를 지향", "비대칭 구조로 양쪽 모두 승부 기회를 남김", "중앙 폰을 최대한 빨리 전부 교환", "킹사이드 캐슬링을 절대 안 함"], 1, "시칠리안은 통계상 승부(흑 승률 포함)가 가장 많이 나는 오프닝 중 하나"),
-    ],
-  };
-  L.l_e4_e6 = {
-    title: t("1...e6 프렌치 디펜스"), desc: t("d5를 다음 수에 밀어 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "e6"], "d5를 다음 수에 밀어 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격. 프렌치 디펜스"),
-      movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬 세우기", ["d5"], "2...d5! 중앙에서 폰이 맞부딪힘. 백이 e5로 전진하면 흑은 c5로 퀸사이드 반격 준비"),
-    ],
-  };
-  L.l_e4_c6 = {
-    title: t("1...c6 카로칸 디펜스"), desc: t("d5를 다음 수에 밀되 나이트 전개에 유연하게 대비하는 견고한 응수"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍 길을 막지 않음) 나이트 전개(Nc3 대응)에 유연하게 대비. 카로칸 디펜스"),
-      mcPage(["e4", "c6"], "프렌치(1...e6)와 비교한 카로칸(1...c6)의 장점은?", ["퀸을 바로 교환 가능", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있음", "킹사이드 캐슬링 금지", "중앙 폰을 절대 교환하지 않음"], 1, "프렌치는 1...e6로 c8 비숍의 길을 스스로 막지만 카로칸은 이 문제를 피함"),
-    ],
-  };
-  L.l_d4 = {
-    title: t("1.d4 퀸스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 장악하되 e4보다 견고하고 점진적인 구조 싸움"), reward: 60, parent: "l_intro",
-    pages: [
-      explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진. e4보다 견고하고 점진적인 구조 싸움"),
-      movePage([], "퀸 쪽 중앙 폰을 두 칸 전진", ["d4"], "1.d4 퀸스 폰 오프닝. 폰을 잃을 위험 없이 견고하게 중앙 장악"),
-      mcPage(["d4"], "1.d4 뒤 흑의 응수는 크게 어떤 두 갈래?", ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], 0, "1...d5는 퀸스 갬빗 계열, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열"),
-    ],
-  };
-  L.l_d4_d5 = {
-    title: t("1...d5 퀸스 갬빗"), desc: t("중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응"), reward: 60, parent: "l_d4",
-    pages: [
-      explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응. 백이 c4를 두면 퀸스 갬빗 시작"),
-      movePage(["d4", "d5"], "폰을 내줄 각오로 c4를 두어 퀸스 갬빗 시작", ["c4"], "2.c4! 퀸스 갬빗. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾아 실질 손해 거의 없음(이름은 갬빗이지만 진짜 희생은 아님)"),
-    ],
-  };
-  L.l_d4_nf6 = {
-    title: t("1...Nf6 인디언 디펜스"), desc: t("중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응"), reward: 60, parent: "l_d4",
-    pages: [
-      explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 대응 방향을 정하는 계열. 인디언 디펜스"),
-      mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제", "폰을 절대 전진시키지 않음", "킹을 캐슬링 없이 중앙에 둠", "나이트를 절대 f6에 두지 않음"], 0, "보통 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 멀리서 견제"),
-    ],
-  };
-  // (기획) 이 레슨 콘텐츠는 시드일 뿐이다 — 실제 서비스에서는 개발자가 LessonEditor(CMS)로 자유롭게
-  // 레슨을 추가·수정하며 나무를 계속 넓혀 나간다(parent만 지정하면 자동으로 그 레슨 아래 갈래가 된다).
-}
+// (v0.7.5) 예전 레슨 시드(seedLessons, CONTENT.lessons)는 지웠다 — 새 레슨은 코드에 고정된 커리큘럼(src/lib/lessons/curriculum.js)이다.
 seedContent();
 export async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
   try {
     if (SB_ON) {
-      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
+      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
     }
     let raw = null;
     if (typeof window !== "undefined" && window.storage) { const r = await window.storage.get("occ_content", true); raw = r && r.value; }
     if (!raw) { try { raw = window.localStorage.getItem("occ_content"); } catch { } }
-    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; CONTENT_SEEDED = false; seedContent(); }
+    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); }
   } catch { }
 }
 // (v0.5.6 버그 수정 BUG-015) 강제 등급(forceKind)은 개발자가 입력한 표기 그대로("Qh5") 저장되는데, 실제 수 표기에는 체크·메이트 기호가
@@ -6483,27 +6293,6 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
       </div>
     </div>
   );
-}
-export function lessonProgress(mainQuest, key) {
-  const l = CONTENT.lessons[key];
-  if (!l) return { done: 0, total: 0, complete: false };
-  const answered = ((mainQuest && mainQuest.answered) || {})[key] || {};
-  const total = l.pages.length;
-  const done = l.pages.filter((_, i) => answered[i]).length;
-  return { done, total, complete: total > 0 && done >= total };
-}
-export function isLessonClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
-// (기능6) 프로필 카드에 보여줄 레슨 전체 진척도 — 모든 레슨을 통틀어 완료(보상 수령)한 레슨 수와,
-// 통과한 단계 수를 합산한다. 이름은 기존 프로필·검색 API 호환을 위해 그대로 둔다.
-export function mainQuestOverallProgress(mainQuest) {
-  const keys = Object.keys(CONTENT.lessons);
-  let claimed = 0, doneItems = 0, totalItems = 0;
-  for (const k of keys) {
-    if (isLessonClaimed(mainQuest, k)) claimed++;
-    const p = lessonProgress(mainQuest, k);
-    doneItems += p.done; totalItems += p.total;
-  }
-  return { claimed, totalChapters: keys.length, doneItems, totalItems };
 }
 // (20차 UI4 보충) 일일 퀘스트는 "London System"처럼 짧은 이름을 쓰지만 트리의 실제 오프닝 이름은
 // 더 세부적일 수 있어(예: "Queen's Pawn Game: Accelerated London System"), findOpeningPathByName의

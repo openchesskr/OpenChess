@@ -684,7 +684,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
   );
 }
 export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
-  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
+  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, lessonState, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
   const bumpEngineUi = useCallback(() => setEngineUiTick((n) => n + 1), []);

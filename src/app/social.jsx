@@ -21,13 +21,14 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, mainQuestOverallProgress, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { kindOfPost } from "../lib/legacyPosts.js";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import UgcText from "../components/UgcText.jsx";
+import { lessonSummary } from "../lib/lessons/progress.js";
 // (v0.2.6 버그 수정) 수 체계 설명 말풍선·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리 근처의 기준
 // 요소에서 열리면, 원래 자리(중앙 정렬 또는 좌우 끝 맞춤) 그대로 뜨면서 팝업 폭만큼 화면 밖으로
 // 잘려 나갔다. 기준 요소의 화면상 위치(anchorRect)를 이용해, 팝업이 그 자리 그대로(정렬 방식에
@@ -274,7 +275,7 @@ function ChesscomHeaderIdentity({ ccHeaderProf, fallbackUsername, noMargin }) {
     </div>
   );
 }
-function MyProfileCard({ editOnly, onEditClose, card, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine }) {
+function MyProfileCard({ editOnly, onEditClose, card, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, chesscomUi, profileEditor, lessonState, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine }) {
   const [editOpen, setEditOpen] = useState(!!editOnly);   // (v0.7.4) editOnly면 열자마자 편집 창부터
   const closeEdit = () => { setEditOpen(false); if (editOnly && onEditClose) onEditClose(); };
   // (사용자 요청) 최상단 선택 박스 — OpenChess 자체 통계(퀘스트·퍼즐)와 chess.com 통계를 한 카드에
@@ -298,7 +299,7 @@ function MyProfileCard({ editOnly, onEditClose, card, profile, setProfile, user,
     return () => { cancelled = true; };
   }, [myPub.chesscom]);
   // (기능6) 프로필에서 메인 퀘스트 진척도·푼 퍼즐을 한눈에 볼 수 있게 표시.
-  const mq = useMemo(() => mainQuestOverallProgress(mainQuest), [mainQuest]);
+  const mq = useMemo(() => lessonSummary(lessonState), [lessonState]);   // (v0.7.5) 새 레슨 진척도
   const mqPct = mq.totalChapters ? Math.round((100 * mq.claimed) / mq.totalChapters) : 0;
   const solvedPuzzles = useMemo(() => {
     if (!puzzles || !solved) return [];
@@ -434,7 +435,7 @@ function MyProfileCard({ editOnly, onEditClose, card, profile, setProfile, user,
 // 쓸 데가 없어져 이 컴포넌트로 그대로 옮겨왔다 — SettingsTab에는 더 이상 이 상태가 필요 없다.
 // z-index는 MyProfileCard 자신의 "프로필 편집" 모달(85)보다 낮고, 그 안에서 다시 뜨는 chess.com
 // 계정 확인 모달(90)보다도 낮게(80) 잡아, 세 겹이 항상 이 순서로 쌓이게 한다.
-export function ProfileWindow({ editOnly, onClose, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine, earnedTitles, onEquipTitle, isDev, isCodev, devOn, codevOn, chesscomStatus, chesscom }) {
+export function ProfileWindow({ editOnly, onClose, profile, setProfile, user, myUid, currentTitle, totalXp, puzzleRating, solvedCount, onOpenOpening, onOpenGame, onOpenGameAnalyze, lessonState, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, engine, earnedTitles, onEquipTitle, isDev, isCodev, devOn, codevOn, chesscomStatus, chesscom }) {
   const [cc, setCc] = useState(profile.chesscom || "");
   const [ccState, setCcState] = useState("idle");   // idle | checking | failed
   const [pending, setPending] = useState(null);
@@ -457,7 +458,7 @@ export function ProfileWindow({ editOnly, onClose, profile, setProfile, user, my
         <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ position: "absolute", top: -12, right: -12, zIndex: 10, width: 32, height: 32, borderRadius: "50%", border: "1px solid #DCCBA8", background: T.paper, color: T.ink, cursor: "pointer", boxShadow: "0 4px 10px rgba(0,0,0,.35)" }}>✕</button>
         <MyProfileCard editOnly={editOnly} onEditClose={onClose} card={card} profile={profile} setProfile={setProfile} user={user} myUid={myUid} currentTitle={currentTitle} totalXp={totalXp} puzzleRating={puzzleRating} solvedCount={solvedCount} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze}
           chesscomUi={{ cc, setCc, ccState, verifyChesscom, linked, changeChesscom, chesscomStatus, chesscom, chesscomDaysLeft }}
-          mainQuest={mainQuest} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
+          lessonState={lessonState} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} reviewUnlocked={reviewUnlocked} engine={engine}
           profileEditor={<ProfileEditor profile={profile} setProfile={setProfile} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={onEquipTitle} card={{ background: "transparent", padding: 0, marginTop: 0 }} user={user} isDev={isDev} isCodev={isCodev} totalXp={totalXp} solvedCount={solvedCount} chesscom={chesscom} />} />
       </div>
       {/* chess.com 계정 확인 모달 */}
