@@ -21,7 +21,7 @@ import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introR
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
-import { MastersSchematic } from "./dexMasters.jsx";
+import { MastersSchematic, masterPlayerCount } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
 import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
@@ -1443,7 +1443,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   const ownedSkinN = ownedSetCount(ownedSkins);
   const hubItems = [
     { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : 0, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : "0%" },
-    { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: "" },
+    { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: t("선수 {0}명", fmtFull(masterPlayerCount())) },   // (v0.7.5) 수록 선수 수
     { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
   ];

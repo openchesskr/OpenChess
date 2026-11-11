@@ -394,6 +394,17 @@ function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash, int
 const elbowH = (x1, y1, x2, y2) => { const mx = (x1 + x2) / 2; return "M" + x1 + " " + y1 + " H" + mx + " V" + y2 + " H" + x2; };   // 가로로 나왔다가 꺾이는 ㄱ자(위성 연결)
 const elbowV = (x1, y1, x2, y2) => { const my = (y1 + y2) / 2; return "M" + x1 + " " + y1 + " V" + my + " H" + x2 + " V" + y2; };   // 세로로 나왔다가 꺾이는 ㄱ자(챔피언 사이)
 
+// (v0.7.5, 사용자 요청) 도감 첫 화면 마스터 카드의 "수록 선수 수" — 마스터 모식도에 실제로 그려지는 선수 노드(세계 챔피언·도전자·대국 DB 선수·FIDE 순위)를
+// 같은 사람은 한 번만(프로필 키 규칙 candidateKeys의 첫 키) 센다. 모식도와 같은 layoutMasters를 쓰므로 노드 구성이 바뀌어도 숫자가 따라간다. 한 번만 계산해 둔다.
+let _playerCount = null;
+export function masterPlayerCount() {
+  if (_playerCount != null) return _playerCount;
+  const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, {}, null, FIDE, DBM.masters);
+  const keys = new Set();
+  for (const n of L.nodes) { const x = n.champ || n.sat || n.dbm || n.fide; if (x && x.name && ["champ", "sat", "dbm", "fide"].includes(n.kind)) keys.add(candidateKeys(x.name)[0] || x.name); }
+  _playerCount = keys.size;
+  return _playerCount;
+}
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const [idx, setIdx] = useState(null);

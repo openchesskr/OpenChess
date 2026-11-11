@@ -10,7 +10,7 @@ import {
 import { t, tx } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
-import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
+import { AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -909,8 +909,6 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <section style={{ maxWidth: 640, margin: "20px auto 72px" }}>
           <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("그냥 두기만 해서는 실력이 늘지 않습니다. 그 수가 왜 좋았고 왜 나빴는지까지 같이 봐야 합니다. 앱의 탭 여섯 개를 차례로 소개합니다.")}</SpeechBubble>
         </section>
-
-        <OpenSection />
 
         <WhatsNew version={version} />
 
