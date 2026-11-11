@@ -1,206 +1,282 @@
 // (v0.7.5, 사용자 요청) 새 레슨 화면 — 도감 탭에 들어가는 "레슨 경로"(LessonPath)와 전체 화면 학습 화면(LessonPlayer).
-//  경로: 마름모 칸이 대각선으로 이어지는 길(아래에서 위로 올라간다). 단계(코스)마다 배경·칸 색·장식 기물 스킨이 다르다(curriculum.js STAGES의 theme).
-//        위에는 코치 말풍선(다음 레슨), 아래에는 지금 보이는 단계 이름 + 단계 목록·다음 레슨 버튼. 처음 열면 지금 할 레슨으로 스크롤한다.
-//  학습 화면: 보드 + 코치 + 스텝 진행 막대. 스텝 = 읽기 / 칸 누르기 / 수 두기(상대 응수 포함) / 객관식. 판정은 lib/lessons/engine.js(검사 스크립트와 같은 코드).
+//  단계 색·상징 = 수 등급(좋음 → 우수 → 최선 → 유일 → 탁월)의 색과 아이콘(lib/moveKinds.js QCOLOR, /move-fx/*.png). 등급이 오를수록 단계도 오른다.
+//  경로: 입체 마름모 타일이 점선 길로 이어지며 아래에서 위로 올라간다(끝낸 구간은 등급 색으로 채워진다). 단계가 바뀌는 곳에는 등급 배지가 있는 장 제목.
+//        배경은 보이는 단계의 색으로 부드럽게 바뀌고, 은은한 체스판 결·기물 실루엣이 깔린다. 위는 코치 말풍선·진행 링, 아래는 단계 정보·다음 레슨(반투명 유리 막대).
+//  학습 화면: 보드 + 코치 + 진행 막대 + 하단 피드백 시트(정답은 등급 배지, 오답은 붉은 시트). 판정은 lib/lessons/engine.js(검사 스크립트와 같은 코드).
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag } from "lucide-react";
+import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag } from "lucide-react";
 // 레슨 아이콘(curriculum.js의 icon 이름) — 아이콘 전체를 번들에 싣지 않도록 쓰는 것만 가져온다(check-lessons가 빠진 이름을 막는다)
 export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag };
-import { T, PIECE_IMG_SETS } from "../lib/theme.js";
+import { PIECE_IMG_SETS } from "../lib/theme.js";
+import { QCOLOR } from "../lib/moveKinds.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
-import { Board, Mascot, useBoardSize, useNarrow } from "./common.jsx";
+import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
 
+/* ── 색: 등급 색 하나에서 단계 팔레트를 만든다(사이트 흑단 바탕 #0B0704 쪽으로 섞어 어둡게) ── */
+const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const hex = (a) => "#" + a.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, k) => { const A = rgb(a), B = rgb(b); return hex(A.map((v, i) => v + (B[i] - v) * k)); };
+const alpha = (h, a) => "rgba(" + rgb(h).join(",") + "," + a + ")";
+const PAPER = "#F1E6D0", INK = "#2A1B0E";
+const themeCache = {};
+export function stageTheme(stage) {
+  if (themeCache[stage.id]) return themeCache[stage.id];
+  const c = QCOLOR[stage.grade] || "#8FB55E";
+  return (themeCache[stage.id] = { c, hi: mix(c, "#FFFFFF", 0.42), lo: mix(c, "#000000", 0.32), edge: mix(c, "#000000", 0.58), bg: mix(c, "#0B0704", 0.88), bg2: mix(c, "#0B0704", 0.76), icon: "/move-fx/" + stage.grade + ".png" });
+}
+const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
+const CHECKER = { backgroundImage: "repeating-conic-gradient(rgba(255,255,255,.035) 0 25%, transparent 0 50%)", backgroundSize: "64px 64px",
+  WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)", maskImage: "radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 80%)" };
+
 const pieceImg = (set, p, color = "w") => { const s = (PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[p]; return s && s[color] ? s[color].src : ""; };
 function LessonIcon({ icon, size, color }) {
-  if (String(icon).startsWith("piece:")) return <img src={pieceImg("classic", icon.slice(6), "w")} alt="" draggable={false} style={{ width: size * 1.25, height: size * 1.25, objectFit: "contain", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.4))" }} />;
+  if (String(icon).startsWith("piece:")) return <img src={pieceImg("classic", icon.slice(6), "w")} alt="" draggable={false} style={{ width: size * 1.3, height: size * 1.3, objectFit: "contain", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }} />;
   const I = LESSON_ICONS[icon] || Circle;
-  return <I size={size} strokeWidth={2.1} color={color} />;
+  return <I size={size} strokeWidth={2.2} color={color} style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />;
 }
-
-/* ============================================================ 레슨 경로 ============================================================ */
-// 스크롤 영역 안에서의 세로 위치(offsetTop은 가장 가까운 position 부모 기준이라 쓰지 않는다)
-const topIn = (sc, el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
-const PATTERN = [2, 3, 2, 1];        // 레슨 칸의 가로 위치(반 칸 단위, 격자 가운데 기준 오프셋 전) — 이웃 칸끼리 대각선으로 맞닿는다
-// 경로 한 줄(row)씩: 맨 아래가 첫 레슨. 단계가 바뀌는 곳에는 단계 이름 줄을 넣는다.
-function buildRows(lessons, shift) {
-  const rows = []; let prevStage = null;
-  lessons.forEach((l, i) => {
-    if (l.stage !== prevStage) { rows.push({ kind: "stage", stage: l.stage }); prevStage = l.stage; }
-    rows.push({ kind: "lesson", lesson: l, xu: PATTERN[i % PATTERN.length] + shift, stage: l.stage, i });
-  });
-  return rows.reverse();   // 화면 위쪽 = 마지막 레슨
-}
-
-function LessonTile({ lesson, status, theme, D, onOpen, flashLock }) {
-  const side = D / Math.SQRT2 * 0.9;
-  const cur = status === "current", done = status === "done", locked = status === "locked";
-  const bg = locked ? "rgba(255,255,255,.07)" : cur ? theme.tileHi : theme.tile;
+/** 수 등급 배지(원 + 흰 글리프) — 단계의 상징. */
+export function GradeBadge({ stage, size = 36, glow = false }) {
+  const th = stageTheme(stage);
   return (
-    <button type="button" onClick={() => onOpen(lesson)} title={lesson.title()} aria-label={lesson.title() + (locked ? ", " + t("잠김") : done ? ", " + t("완료") : "")} className="press lesson-tile"
-      style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, padding: 0, border: "none", cursor: "pointer", background: "transparent" }}>
-      {cur && <span aria-hidden="true" className="lesson-pulse" style={{ position: "absolute", inset: -6, borderRadius: "22%", transform: "rotate(45deg)", border: "2px solid " + theme.tileHi }} />}
-      <motion.span initial={false} animate={flashLock ? { x: [0, -5, 5, -3, 3, 0], rotate: 45 } : { x: 0, rotate: 45 }} transition={{ duration: 0.35 }}
-        style={{ position: "absolute", inset: 0, borderRadius: "22%", background: bg,
-          boxShadow: locked ? "inset 0 0 0 1px rgba(255,255,255,.08)" : "0 6px 0 " + (cur ? theme.tile : "rgba(0,0,0,.35)") + ", 0 10px 18px -6px rgba(0,0,0,.55)" + (cur ? ", 0 0 24px " + theme.tileHi + "88" : "") }} />
-      <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", opacity: locked ? 0.45 : 1 }}>
-        {locked ? <Lock size={D * 0.2} color="rgba(255,255,255,.6)" /> : <LessonIcon icon={lesson.icon} size={D * 0.24} color={theme.ink} />}
-      </span>
-      {done && <span aria-hidden="true" style={{ position: "absolute", right: -4, top: -4, width: 20, height: 20, borderRadius: "50%", background: "#3F7A3A", border: "2px solid " + theme.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Check size={12} strokeWidth={3} color="#fff" /></span>}
-      {cur && <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: -26, transform: "translateX(-50%)", padding: "3px 10px", borderRadius: 8, background: "#FFF6E2", color: theme.ink, fontFamily: SITE_FONT, fontSize: 12, fontWeight: 900, whiteSpace: "nowrap", boxShadow: "0 3px 8px rgba(0,0,0,.35)" }}>{t("시작")}</span>}
-    </button>
+    <span aria-hidden="true" style={{ position: "relative", width: size, height: size, flexShrink: 0, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+      background: "radial-gradient(circle at 35% 30%, " + th.hi + ", " + th.c + " 62%, " + th.lo + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 " + Math.max(2, size / 14) + "px 0 " + th.edge + (glow ? ", 0 0 " + size * 0.6 + "px " + alpha(th.c, 0.55) : "") }}>
+      <img src={th.icon} alt="" draggable={false} style={{ width: size * 0.58, height: size * 0.58, objectFit: "contain" }} />
+    </span>
+  );
+}
+function ProgressRing({ done, total, color, size = 46 }) {
+  const r = size / 2 - 4, C = 2 * Math.PI * r, f = total ? done / total : 0;
+  return (
+    <span style={{ position: "relative", width: size, height: size, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-label={t("레슨 {0}/{1} 완료", done, total)}>
+      <svg width={size} height={size} style={{ position: "absolute", inset: 0, transform: "rotate(-90deg)" }} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="4" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - f)} style={{ transition: "stroke-dashoffset .6s, stroke .6s" }} />
+      </svg>
+      <span style={{ fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 900, color: "#FFF6E2", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{done}<span style={{ opacity: 0.55 }}>/{total}</span></span>
+    </span>
   );
 }
 
-/** 도감 탭의 레슨 경로. height: 이 판의 높이(CSS 값). */
+/* ============================================================ 레슨 경로 ============================================================ */
+const PAT = [0, 1, 0, -1];      // 레슨 칸의 가로 위치(가운데 기준, dx 배수) — 지그재그로 이어진다
+const topIn = (sc, el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+
+function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
+  const th = stageTheme(stage);
+  const cur = status === "current", done = status === "done", locked = status === "locked";
+  const side = size / Math.SQRT2;
+  const face = locked ? "rgba(255,255,255,.05)" : "linear-gradient(155deg, " + th.hi + " 0%, " + th.c + " 48%, " + th.lo + " 100%)";
+  return (
+    <motion.button type="button" onClick={() => onOpen(lesson)} title={lesson.title()} aria-label={lesson.title() + (locked ? ", " + t("잠김") : done ? ", " + t("완료") : "")} className={"lesson-tile" + (locked ? " is-locked" : "")}
+      animate={flashLock ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }} transition={{ duration: 0.36 }}
+      style={{ position: "relative", width: size, height: size, padding: 0, border: "none", background: "transparent", cursor: "pointer" }}>
+      {cur && <>
+        <span aria-hidden="true" className="lesson-halo" style={{ "--c": alpha(th.hi, 0.55), position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, borderRadius: "24%", transform: "rotate(45deg)" }} />
+        <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side * 1.9, height: side * 1.9, marginLeft: -side * 0.95, marginTop: -side * 0.95, borderRadius: "50%", background: "radial-gradient(circle, " + alpha(th.c, 0.45) + ", transparent 65%)", pointerEvents: "none" }} />
+      </>}
+      {/* 두께(아래 모서리) */}
+      {!locked && <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2 + 7, borderRadius: "24%", transform: "rotate(45deg)", background: th.edge, boxShadow: "0 10px 18px -6px rgba(0,0,0,.6)" }} />}
+      {/* 윗면 */}
+      <span className="lesson-face" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, borderRadius: "24%", transform: "rotate(45deg)", background: face,
+        boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
+      <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
+        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+      </span>
+      {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, right: size * 0.06, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
+      {cur && (
+        <span aria-hidden="true" style={{ position: "absolute", zIndex: 3, left: "50%", bottom: "100%", transform: "translate(-50%, 2px)", display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px 6px 9px", borderRadius: 10, background: PAPER, color: INK, fontFamily: SITE_FONT, whiteSpace: "nowrap", boxShadow: "0 6px 14px rgba(0,0,0,.45)" }}>
+            <Play size={11} fill={th.lo} color={th.lo} />
+            <span style={{ fontSize: 12.5, fontWeight: 900 }}>{lesson.title()}</span>
+          </span>
+          <span style={{ width: 10, height: 10, marginTop: -5, background: PAPER, transform: "rotate(45deg)" }} />
+        </span>
+      )}
+    </motion.button>
+  );
+}
+
+function ChapterMark({ stage, done, total }) {
+  const th = stageTheme(stage);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "0 18px", boxSizing: "border-box" }}>
+      <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, " + alpha(th.hi, 0.5) + ")" }} />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <GradeBadge stage={stage} size={44} glow />
+        <span style={{ fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: alpha(th.hi, 0.85), letterSpacing: ".04em" }}>{t("{0}단계", stageNo(stage.id))}</span>
+        <span style={{ fontFamily: SITE_FONT, fontSize: 18, fontWeight: 900, letterSpacing: "-.02em", color: "#FFF6E2", lineHeight: 1.1, textAlign: "center" }}>{stage.title()}</span>
+        <span style={{ fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, color: "rgba(255,246,226,.6)", textAlign: "center" }}>{stage.desc()} <b style={{ color: th.hi, fontVariantNumeric: "tabular-nums" }}>{done}/{total}</b></span>
+      </div>
+      <span aria-hidden="true" style={{ flex: 1, height: 1, background: "linear-gradient(90deg, " + alpha(th.hi, 0.5) + ", transparent)" }} />
+    </div>
+  );
+}
+
+/** 도감 탭의 레슨 경로. height: 이 판의 높이(CSS 값). coins: 로그인해 코인을 받을 수 있는지. */
 export function LessonPath({ lessonState, onComplete, height, coins }) {
   const lessons = allLessons();
   const narrow = useNarrow(640);
-  // 격자 폭(반 칸 단위): 모바일 0~4, 데스크톱 0~8(가운데 경로 양옆에 장식·빈 칸이 더 보인다)
-  const COLS_HALF = narrow ? 4 : 8, SHIFT = narrow ? 0 : 2;
-  const rows = useMemo(() => buildRows(lessons, SHIFT), [lessons, SHIFT]);
-  const D = narrow ? 92 : 104;           // 마름모 대각선 길이(px)
-  const ROW = D / 2;                      // 대각선으로 맞닿게 반 칸씩 내려간다
-  const W = COLS_HALF * (D / 2) + D;      // 마름모 격자 폭
-  const scRef = useRef(null), tileRefs = useRef({}), stageRefs = useRef({});
+  const D = narrow ? 84 : 96;                    // 타일 크기
+  const DX = D * 0.62, ROW = D * 0.78, CH = 170;  // 지그재그 가로 폭 · 레슨 줄 높이 · 장 제목 높이
+  const TOP = narrow ? 128 : 132, BOTTOM = narrow ? 168 : 120;
+  // 위에서 아래로의 배치(맨 아래가 첫 레슨): 단계마다 [그 단계의 레슨(마지막→처음)], 그 아래 장 제목
+  const layout = useMemo(() => {
+    const items = []; let y = TOP;
+    for (const st of [...STAGES].reverse()) {
+      const ls = lessons.filter((l) => l.stage === st.id).reverse();
+      for (const l of ls) { items.push({ kind: "lesson", lesson: l, stage: st, x: PAT[l.index % PAT.length] * DX, y: y + ROW / 2 }); y += ROW; }
+      items.push({ kind: "stage", stage: st, y: y + 14 }); y += CH;
+    }
+    return { items, height: y + BOTTOM };
+  }, [lessons, DX, ROW, TOP, BOTTOM]);
+  const scRef = useRef(null), tileRefs = useRef({});
   const nxt = nextLesson(lessonState);
-  const [open, setOpen] = useState(null);           // 열린 레슨
+  const [open, setOpen] = useState(null);
   const [lockFlash, setLockFlash] = useState(null);
   const [viewStage, setViewStage] = useState(nxt ? nxt.stage : STAGES[STAGES.length - 1].id);
   const [listOpen, setListOpen] = useState(false);
-  const [curDir, setCurDir] = useState(0);            // 지금 할 레슨이 화면 위(-1)/아래(1)/안(0)
+  const [curDir, setCurDir] = useState(0);
   const [coachMsg, setCoachMsg] = useState(null);
-  const theme = stageOf(viewStage).theme;
+  const vStage = stageOf(viewStage), vth = stageTheme(vStage);
 
   const scrollToLesson = useCallback((id, smooth = true) => {
     const sc = scRef.current, el = tileRefs.current[id]; if (!sc || !el) return;
-    sc.scrollTo({ top: topIn(sc, el) - sc.clientHeight / 2 + D / 2, behavior: smooth ? "smooth" : "auto" });
+    sc.scrollTo({ top: topIn(sc, el) - sc.clientHeight / 2 + D / 2 + 10, behavior: smooth ? "smooth" : "auto" });
   }, [D]);
-  useLayoutEffect(() => { if (nxt) scrollToLesson(nxt.id, false); else if (scRef.current) scRef.current.scrollTop = 0; /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // 지금 할 레슨이 바뀌면(처음 열 때 · 진행 기록을 늦게 불러왔을 때 · 레슨을 끝냈을 때) 그 칸으로 스크롤한다
+  const nxtId = nxt ? nxt.id : null;
+  useLayoutEffect(() => { if (nxtId) scrollToLesson(nxtId, false); }, [nxtId, scrollToLesson]);
   const onScroll = () => {
     const sc = scRef.current; if (!sc) return;
-    const mid = sc.scrollTop + sc.clientHeight * 0.6;
-    // 화면 가운데 아래쪽에 걸친 레슨 줄의 단계
+    const mid = sc.scrollTop + sc.clientHeight * 0.55;
     let best = null, bd = Infinity;
-    for (const l of lessons) { const el = tileRefs.current[l.id]; if (!el) continue; const d = Math.abs(topIn(sc, el) - mid); if (d < bd) { bd = d; best = l.stage; } }
+    for (const it of layout.items) if (it.kind === "lesson") { const d = Math.abs(it.y - mid); if (d < bd) { bd = d; best = it.stage.id; } }
     if (best && best !== viewStage) setViewStage(best);
-    if (nxt) { const el = tileRefs.current[nxt.id]; if (el) { const y = topIn(sc, el) - sc.scrollTop; setCurDir(y < 40 ? -1 : y > sc.clientHeight - 150 ? 1 : 0); } }
+    if (nxt) { const it = layout.items.find((x) => x.lesson && x.lesson.id === nxt.id); if (it) { const y = it.y - sc.scrollTop; setCurDir(y < TOP - 20 ? -1 : y > sc.clientHeight - BOTTOM + 10 ? 1 : 0); } }
   };
-  useEffect(() => { onScroll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { onScroll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [layout]);
 
   const openLesson = (l) => {
-    const st = lessonStatus(lessonState, l.id);
-    if (st === "locked") { setLockFlash(l.id); setCoachMsg(t("앞 레슨을 먼저 끝내면 열립니다.")); setTimeout(() => setLockFlash(null), 400); return; }
+    if (lessonStatus(lessonState, l.id) === "locked") { setLockFlash(l.id); setCoachMsg(t("앞 레슨을 먼저 끝내면 열립니다.")); setTimeout(() => setLockFlash(null), 420); return; }
     setCoachMsg(null); setOpen(l);
-  };
-  // 장식 기물: 단계마다 비어 있는 격자 칸 몇 곳에 그 단계 스킨의 큰 기물을 세운다(레슨 칸과 겹치지 않는 가장자리 칸)
-  const decoFor = (row, idx) => {
-    if (row.kind !== "lesson" || idx % 3 !== 1) return null;
-    const st = stageOf(row.stage).theme; const side = row.xu >= COLS_HALF / 2 ? (narrow ? 0 : 1) : (narrow ? COLS_HALF : COLS_HALF - 1);
-    return { xu: side, src: pieceImg(st.skin, st.deco[(row.i) % st.deco.length], "w") };
   };
   const doneN = lessons.filter((l) => isLessonDone(lessonState, l.id)).length;
   const coach = coachMsg || (nxt ? t("다음 레슨은 {0}입니다. {1}.", nxt.title(), nxt.sub()) : t("모든 레슨을 끝냈습니다. 원하는 레슨을 다시 복습해 보세요."));
+  const vLs = lessonsOfStage(viewStage), vDone = vLs.filter((l) => isLessonDone(lessonState, l.id)).length;
+  // 경로 선: 레슨 순서대로 이웃한 두 칸을 잇는다(끝낸 레슨까지는 등급 색 실선, 그 뒤는 옅은 점선)
+  const pts = layout.items.filter((x) => x.kind === "lesson").sort((a, b) => a.lesson.index - b.lesson.index);
+  const SW = DX * 2 + D * 2;
+  const segs = pts.slice(1).map((p, i) => { const a = pts[i]; return { a, b: p, lit: isLessonDone(lessonState, a.lesson.id) }; });
+  // 기물 실루엣: 단계마다 두 개, 그 단계 구간 양옆에
+  const ghosts = [];
+  for (const st of STAGES) {
+    const ys = layout.items.filter((x) => x.kind === "lesson" && x.stage.id === st.id).map((x) => x.y);
+    if (!ys.length) continue;
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    ghosts.push({ key: st.id + "a", src: pieceImg("classic", st.deco[0]), y: y0 + (y1 - y0) * 0.25, side: -1 }, { key: st.id + "b", src: pieceImg("classic", st.deco[1]), y: y0 + (y1 - y0) * 0.78, side: 1 });
+  }
 
   return (
-    <div className="lesson-path" style={{ position: "relative", height, minHeight: 380, borderRadius: 16, overflow: "hidden", border: "1px solid rgba(255,255,255,.08)",
-      background: "linear-gradient(180deg," + theme.bg2 + "," + theme.bg + ")", transition: "background .6s", fontFamily: SITE_FONT }}>
+    <div className="lesson-path" style={{ position: "relative", height, minHeight: 360, borderRadius: 18, overflow: "hidden", isolation: "isolate", fontFamily: SITE_FONT, border: "1px solid " + alpha(vth.hi, 0.18), transition: "border-color .6s", background: "#0B0704" }}>
       <style>{`
-        @keyframes lessonPulse{0%{opacity:.9;transform:rotate(45deg) scale(1)}100%{opacity:0;transform:rotate(45deg) scale(1.35)}}
-        .lesson-pulse{animation:lessonPulse 1.6s ease-out infinite}
-        .lesson-tile:focus-visible{outline:2px solid #FFF6E2;outline-offset:6px;border-radius:12px}
+        @keyframes lessonHalo{0%{opacity:.85;transform:rotate(45deg) scale(1)}100%{opacity:0;transform:rotate(45deg) scale(1.55)}}
+        .lesson-halo{border:2px solid var(--c);animation:lessonHalo 1.8s ease-out infinite}
+        .lesson-tile .lesson-face{transition:transform .18s, filter .18s}
+        .lesson-tile:not(.is-locked):hover .lesson-face{filter:brightness(1.08)}
+        .lesson-tile:focus-visible{outline:2px solid #FFF6E2;outline-offset:4px;border-radius:14px}
         .lesson-scroll{scrollbar-width:none}.lesson-scroll::-webkit-scrollbar{display:none}
+        .lesson-glass{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
       `}</style>
-      {/* 코치 말풍선 */}
-      <div style={{ position: "absolute", left: 0, right: 0, top: 0, zIndex: 3, display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 12px 18px",
-        background: "linear-gradient(180deg," + theme.bg2 + " 60%,transparent)" }}>
-        <Mascot name="milku" emotion={coachMsg ? "think" : "great"} size={narrow ? 46 : 52} />
-        <div aria-live="polite" style={{ position: "relative", flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 12, background: "#FFF8EA", color: "#2A1B0E", fontSize: 13.5, fontWeight: 700, lineHeight: 1.4, boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
-          <span aria-hidden="true" style={{ position: "absolute", left: -6, top: 16, width: 12, height: 12, background: "#FFF8EA", transform: "rotate(45deg)" }} />
-          <span style={{ position: "relative" }}>{coach}</span>
-          <span style={{ display: "block", marginTop: 4, fontSize: 11, fontWeight: 800, color: "#8A6C2F", fontVariantNumeric: "tabular-nums" }}>{t("레슨 {0}/{1} 완료", doneN, lessons.length)}</span>
-        </div>
-      </div>
+      {/* 배경: 단계마다 한 장씩 겹쳐 두고 보이는 단계만 드러낸다(부드럽게 바뀜) */}
+      {STAGES.map((s) => { const th = stageTheme(s); return <div key={s.id} aria-hidden="true" style={{ position: "absolute", inset: 0, opacity: s.id === viewStage ? 1 : 0, transition: "opacity .7s", background: "radial-gradient(120% 70% at 50% 40%, " + th.bg2 + " 0%, " + th.bg + " 62%, #0B0704 100%)" }} />; })}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, ...CHECKER }} />
       {/* 경로 */}
-      <div ref={scRef} onScroll={onScroll} className="lesson-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", padding: (narrow ? 120 : 128) + "px 0 " + (narrow ? 96 : 104) + "px" }}>
-        {rows.map((row, idx) => {
-          const th = stageOf(row.stage).theme;
-          if (row.kind === "stage") {
-            const sd = STAGES.find((s) => s.id === row.stage); const sl = lessonsOfStage(row.stage); const sdone = sl.filter((l) => isLessonDone(lessonState, l.id)).length;
+      <div ref={scRef} onScroll={onScroll} className="lesson-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
+        <div style={{ position: "relative", height: layout.height }}>
+          {ghosts.map((g) => <img key={g.key} src={g.src} alt="" aria-hidden="true" draggable={false} loading="lazy" style={{ position: "absolute", left: "50%", top: g.y - D * 0.9, marginLeft: g.side * (DX + D * (narrow ? 0.95 : 1.6)) - D * 0.6, width: D * 1.2, height: D * 1.8, objectFit: "contain", filter: "brightness(0) invert(1)", opacity: 0.06, pointerEvents: "none" }} />)}
+          <svg aria-hidden="true" width={SW} height={layout.height} style={{ position: "absolute", left: "50%", top: 0, marginLeft: -SW / 2, pointerEvents: "none" }}>
+            {segs.map((s, i) => {
+              const th = stageTheme(s.b.stage);
+              return <line key={i} x1={SW / 2 + s.a.x} y1={s.a.y} x2={SW / 2 + s.b.x} y2={s.b.y} stroke={s.lit ? th.hi : "rgba(255,255,255,.16)"} strokeWidth={s.lit ? 5 : 3} strokeLinecap="round" strokeDasharray={s.lit ? undefined : "1 10"} opacity={s.lit ? 0.8 : 1} />;
+            })}
+          </svg>
+          {layout.items.map((it) => {
+            if (it.kind === "stage") {
+              const sl = lessonsOfStage(it.stage.id);
+              return <div key={"st" + it.stage.id} style={{ position: "absolute", left: 0, right: 0, top: it.y }}><ChapterMark stage={it.stage} done={sl.filter((l) => isLessonDone(lessonState, l.id)).length} total={sl.length} /></div>;
+            }
             return (
-              <div key={"st" + row.stage} ref={(el) => { stageRefs.current[row.stage] = el; }} style={{ position: "relative", margin: "18px auto 14px", maxWidth: W + 40, padding: "10px 14px", borderRadius: 12,
-                background: th.bg, border: "1px solid " + th.tile + "55", display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, transform: "rotate(45deg) scale(.78)", background: th.tile }} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 15, fontWeight: 900, color: th.tileHi }}>{sd.title()}</span>
-                  <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,.62)" }}>{sd.desc()}</span>
-                </span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: th.tileHi, fontVariantNumeric: "tabular-nums" }}>{sdone}/{sl.length}</span>
+              <div key={it.lesson.id} ref={(el) => { tileRefs.current[it.lesson.id] = el; }} style={{ position: "absolute", left: "50%", top: it.y - D / 2, marginLeft: it.x - D / 2, width: D, height: D, zIndex: lessonStatus(lessonState, it.lesson.id) === "current" ? 2 : 1 }}>
+                <LessonTile lesson={it.lesson} status={lessonStatus(lessonState, it.lesson.id)} stage={it.stage} size={D} onOpen={openLesson} flashLock={lockFlash === it.lesson.id} />
               </div>
             );
-          }
-          const deco = decoFor(row, idx);
-          const status = lessonStatus(lessonState, row.lesson.id);
-          // 이 줄의 빈 격자 칸(옅은 마름모) — 레슨 칸의 홀짝에 맞춘다
-          const empties = []; for (let xu = 0; xu <= COLS_HALF; xu++) if ((xu + row.xu) % 2 === 0 && xu !== row.xu && (!deco || xu !== deco.xu)) empties.push(xu);
-          const xOf = (xu) => xu * (D / 2) + D / 2 - W / 2;
-          return (
-            <div key={row.lesson.id} style={{ position: "relative", height: ROW, margin: "0 auto", width: W }}>
-              {empties.map((xu) => <span key={xu} aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: D / Math.SQRT2 * 0.86, height: D / Math.SQRT2 * 0.86, marginLeft: xOf(xu) - D / Math.SQRT2 * 0.43, marginTop: -D / Math.SQRT2 * 0.43, borderRadius: "22%", transform: "rotate(45deg)", background: th.tile, opacity: 0.09 }} />)}
-              {deco && <img src={deco.src} alt="" aria-hidden="true" draggable={false} loading="lazy" style={{ position: "absolute", left: "50%", bottom: ROW * 0.1, width: D * 0.62, height: D * 0.9, marginLeft: xOf(deco.xu) - D * 0.31, objectFit: "contain", objectPosition: "bottom", opacity: 0.92, filter: "drop-shadow(0 8px 10px rgba(0,0,0,.45))", pointerEvents: "none" }} />}
-              <div ref={(el) => { tileRefs.current[row.lesson.id] = el; }} style={{ position: "absolute", left: "50%", top: "50%", width: D, height: D, marginLeft: xOf(row.xu) - D / 2, marginTop: -D / 2, zIndex: 1 }}>
-                <LessonTile lesson={row.lesson} status={status} theme={th} D={D} onOpen={openLesson} flashLock={lockFlash === row.lesson.id} />
-              </div>
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
-      {/* 아래 막대: 보이는 단계 이름 + 단계 목록·다음 레슨 */}
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 3, padding: "22px 12px 12px", background: "linear-gradient(0deg," + theme.bg + " 62%,transparent)" }}>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-          <AnimatePresence mode="wait">
-            <motion.span key={viewStage} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}
-              style={{ fontSize: narrow ? 19 : 22, fontWeight: 900, letterSpacing: "-.02em", color: "#FFF6E2" }}>{stageOf(viewStage).title()}</motion.span>
-          </AnimatePresence>
+      {/* 위: 코치 */}
+      <div className="lesson-glass" style={{ position: "absolute", left: 10, right: 10, top: 10, zIndex: 3, display: "flex", alignItems: "center", gap: 10, padding: "8px 10px 8px 8px", borderRadius: 14,
+        background: alpha(vth.bg, 0.62), border: "1px solid rgba(255,255,255,.08)", boxShadow: "0 10px 24px -12px rgba(0,0,0,.7)" }}>
+        <Mascot name="milku" emotion={coachMsg ? "think" : "great"} size={narrow ? 42 : 48} />
+        <div aria-live="polite" style={{ position: "relative", flex: "0 1 auto", maxWidth: 560, minWidth: 0, padding: "9px 12px", borderRadius: 11, background: PAPER, color: INK, fontSize: narrow ? 13 : 13.5, fontWeight: 700, lineHeight: 1.4 }}>
+          <span aria-hidden="true" style={{ position: "absolute", left: -5, top: "50%", marginTop: -5, width: 10, height: 10, background: PAPER, transform: "rotate(45deg)" }} />
+          <span style={{ position: "relative" }}>{coach}</span>
+        </div>
+        <span style={{ flex: 1 }} />
+        <ProgressRing done={doneN} total={lessons.length} color={vth.hi} size={narrow ? 42 : 48} />
+      </div>
+      {/* 아래: 단계 정보 + 다음 레슨 */}
+      <div className="lesson-glass" style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 3, padding: 10, borderRadius: 16, background: alpha(vth.bg, 0.7), border: "1px solid rgba(255,255,255,.08)", boxShadow: "0 -6px 24px -12px rgba(0,0,0,.7)",
+        display: "flex", flexDirection: narrow ? "column" : "row", alignItems: narrow ? "stretch" : "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+          <button type="button" onClick={() => setListOpen(true)} aria-label={t("단계 목록")} className="press"
+            style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><List size={19} /></button>
+          <GradeBadge stage={vStage} size={34} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div key={viewStage} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: vth.hi }}>{t("{0}단계", stageNo(viewStage))}</div>
+                <div style={{ fontSize: narrow ? 16 : 17, fontWeight: 900, color: "#FFF6E2", letterSpacing: "-.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{vStage.title()}</div>
+              </motion.div>
+            </AnimatePresence>
+            <div aria-hidden="true" style={{ marginTop: 5, height: 4, borderRadius: 2, background: "rgba(255,255,255,.1)", overflow: "hidden" }}>
+              <div style={{ width: (100 * vDone) / Math.max(1, vLs.length) + "%", height: "100%", background: vth.hi, transition: "width .5s, background .6s" }} />
+            </div>
+          </div>
           {nxt && curDir !== 0 && (
             <button type="button" onClick={() => scrollToLesson(nxt.id)} aria-label={t("지금 할 레슨으로 이동")} className="press"
-              style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: "rgba(255,255,255,.14)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-              {curDir < 0 ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {curDir < 0 ? <ChevronUp size={19} /> : <ChevronDown size={19} />}
             </button>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setListOpen(true)} aria-label={t("단계 목록")} className="press"
-            style={{ width: 46, height: 44, flexShrink: 0, borderRadius: 12, border: "none", background: "rgba(255,255,255,.12)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><List size={20} /></button>
-          <button type="button" onClick={() => (nxt ? openLesson(nxt) : openLesson(lessons[0]))} className="press"
-            style={{ flex: 1, height: 44, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 15, fontWeight: 900, color: theme.ink,
-              background: theme.tileHi, boxShadow: "0 4px 0 " + theme.tile }}>{nxt ? t("다음 레슨") : t("처음부터 복습")}</button>
-        </div>
+        <CtaButton theme={nxt ? stageTheme(stageOf(nxt.stage)) : vth} onClick={() => openLesson(nxt || lessons[0])} wide={narrow}>{nxt ? t("다음 레슨") : t("처음부터 복습")}</CtaButton>
       </div>
       {/* 단계 목록 */}
       <AnimatePresence>
         {listOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setListOpen(false)}
-            style={{ position: "absolute", inset: 0, zIndex: 5, background: "rgba(10,6,3,.62)", display: "flex", alignItems: "flex-end" }}>
-            <motion.div initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={t("단계 목록")}
-              style={{ width: "100%", maxHeight: "80%", overflowY: "auto", padding: 12, borderRadius: "16px 16px 0 0", background: "#1E140C", display: "flex", flexDirection: "column", gap: 8 }}>
+            style={{ position: "absolute", inset: 0, zIndex: 5, background: "rgba(8,5,3,.6)", display: "flex", alignItems: "flex-end", padding: 10 }}>
+            <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }} transition={{ duration: 0.22 }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={t("단계 목록")} className="lesson-glass"
+              style={{ width: "100%", maxHeight: "86%", overflowY: "auto", padding: 8, borderRadius: 18, background: "rgba(22,15,10,.88)", border: "1px solid rgba(255,255,255,.08)", display: "flex", flexDirection: "column", gap: 6 }}>
               {STAGES.map((s) => {
-                const sl = lessonsOfStage(s.id), sd = sl.filter((l) => isLessonDone(lessonState, l.id)).length;
+                const th = stageTheme(s), sl = lessonsOfStage(s.id), sd = sl.filter((l) => isLessonDone(lessonState, l.id)).length;
                 return (
                   <button key={s.id} type="button" className="press" onClick={() => { setListOpen(false); scrollToLesson((sl.find((l) => !isLessonDone(lessonState, l.id)) || sl[0]).id); }}
-                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 12, border: "none", cursor: "pointer", textAlign: "left", background: "linear-gradient(90deg," + s.theme.bg2 + "," + s.theme.bg + ")" }}>
-                    <span style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 7, transform: "rotate(45deg) scale(.8)", background: s.theme.tile }} />
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 14, border: "1px solid " + alpha(th.hi, 0.18), cursor: "pointer", textAlign: "left", background: "linear-gradient(100deg, " + th.bg2 + ", " + th.bg + ")" }}>
+                    <GradeBadge stage={s} size={36} />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", fontFamily: SITE_FONT, fontSize: 14.5, fontWeight: 900, color: s.theme.tileHi }}>{s.title()}</span>
-                      <span style={{ display: "block", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,.62)" }}>{s.desc()}</span>
+                      <span style={{ display: "block", fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: th.hi }}>{t("{0}단계", stageNo(s.id))}</span>
+                      <span style={{ display: "block", fontFamily: SITE_FONT, fontSize: 15, fontWeight: 900, color: "#FFF6E2" }}>{s.title()}</span>
+                      <span style={{ display: "block", fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, color: "rgba(255,246,226,.6)" }}>{s.desc()}</span>
                     </span>
-                    <span style={{ fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: s.theme.tileHi }}>{sd}/{sl.length}</span>
+                    <ProgressRing done={sd} total={sl.length} color={th.hi} size={40} />
                   </button>
                 );
               })}
@@ -214,10 +290,22 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
   );
 }
 
+/** 등급 색 입체 버튼(아래 모서리 두께). */
+function CtaButton({ theme, onClick, disabled, children, wide, minWidth = 168 }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className="press"
+      style={{ flexShrink: 0, width: wide ? "100%" : undefined, minWidth: wide ? undefined : minWidth, height: 46, padding: "0 22px", borderRadius: 13, border: "none", cursor: disabled ? "default" : "pointer",
+        fontFamily: SITE_FONT, fontSize: 15, fontWeight: 900, letterSpacing: "-.01em", transition: "background .25s, box-shadow .25s, color .25s",
+        color: disabled ? "rgba(255,246,226,.38)" : "#FFFFFF", textShadow: disabled ? "none" : "0 1px 1px rgba(0,0,0,.35)",
+        background: disabled ? "rgba(255,255,255,.08)" : "linear-gradient(180deg, " + theme.hi + " -40%, " + theme.c + " 70%)",
+        boxShadow: disabled ? "none" : "inset 0 1px 0 rgba(255,255,255,.35), 0 4px 0 " + theme.edge + ", 0 10px 18px -8px " + alpha(theme.c, 0.7) }}>{children}</button>
+  );
+}
+
 /* ============================================================ 학습 화면 ============================================================ */
 const sqList = (arr) => (arr || []).map(sqToRc);
 export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext, coins }) {
-  const stage = stageOf(lesson.stage), th = stage.theme;
+  const stage = stageOf(lesson.stage), th = stageTheme(stage);
   const steps = useMemo(() => lesson.steps(), [lesson]);
   // 열었을 때 이미 끝낸 레슨이었는지 — 완료 순간 진행 기록이 바뀌어도 "복습"으로 잘못 바뀌지 않게 처음 값을 고정한다(BUG-154)
   const [wasDone] = useState(() => isLessonDone(lessonState, lesson.id));
@@ -225,25 +313,30 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
   const [si, setSi] = useState(0);
   const step = steps[si] || null;
   const finished = si >= steps.length;
-  // 스텝 진행 상태
   const [fen, setFen] = useState(null);
   const [goalIdx, setGoalIdx] = useState(0);
   const [solved, setSolved] = useState(false);
   const [wrong, setWrong] = useState(0);
   const [wrongAt, setWrongAt] = useState(null);
+  const [badFlash, setBadFlash] = useState(false);   // 오답 시트(잠깐)
   const [sel, setSel] = useState(null);
   const [tapped, setTapped] = useState([]);
   const [picked, setPicked] = useState(null);
   const [lastTo, setLastTo] = useState(null);
   const [say, setSay] = useState("");
-  const busy = useRef(false);
+  const busy = useRef(false), badTimer = useRef(0);
   useEffect(() => {
     if (!step) return;
-    setFen(step.fen || null); setGoalIdx(0); setSolved(step.kind === "read"); setWrong(0); setWrongAt(null); setSel(null); setTapped([]); setPicked(null); setLastTo(null); setSay(step.say); busy.current = false;
+    setFen(step.fen || null); setGoalIdx(0); setSolved(step.kind === "read"); setWrong(0); setWrongAt(null); setBadFlash(false); setSel(null); setTapped([]); setPicked(null); setLastTo(null); setSay(step.say); busy.current = false;
   }, [si, step]);
   useEffect(() => { if (finished && onComplete) onComplete(lesson.id); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [finished]);
   useEffect(() => { const k = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
-  const flashWrong = (rc) => { setWrongAt(rc); setTimeout(() => setWrongAt(null), 650); setWrong((w) => w + 1); };
+  useEffect(() => () => clearTimeout(badTimer.current), []);
+  const markWrong = (rc) => {
+    if (rc) { setWrongAt(rc); setTimeout(() => setWrongAt(null), 650); }
+    setWrong((w) => w + 1); setBadFlash(true); clearTimeout(badTimer.current); badTimer.current = setTimeout(() => setBadFlash(false), 1400);
+  };
+  const markRight = () => { setSolved(true); setBadFlash(false); playSfx("click"); };
 
   const board = useMemo(() => (fen ? boardOf(fen) : null), [fen]);
   const flip = fen ? (step && step.kind === "move" ? turnOf(step.fen) === "b" : turnOf(fen) === "b" && step && step.kind !== "tap") : false;
@@ -257,11 +350,10 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     const played = playMove(fen, rcToSq(from[0], from[1]), rcToSq(to[0], to[1]));
     setSel(null);
     if (!played) return;
-    if (!goalMet(g.goal, played)) { flashWrong(to); setSay(t("다시 해 보세요.") + " " + (step.line[goalIdx].say || step.say)); return; }
+    if (!goalMet(g.goal, played)) { markWrong(to); return; }
     playSfx(played.mv.captured ? "capture" : "move");
     setFen(played.fen); setLastTo(to);
-    const last = goalIdx >= step.line.length - 1;
-    if (last) { setSolved(true); setSay(t("정답입니다.")); playSfx("click"); return; }
+    if (goalIdx >= step.line.length - 1) { markRight(); return; }
     busy.current = true;
     setTimeout(() => {
       const r = playUci(played.fen, g.reply);
@@ -274,10 +366,10 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     if (step.kind === "tap") {
       const sq = rcToSq(rc[0], rc[1]), ans = tapAnswer(step);
       if (tapped.includes(sq)) return;
-      if (!ans.has(sq)) { flashWrong(rc); return; }
+      if (!ans.has(sq)) { markWrong(rc); return; }
       const nt = [...tapped, sq]; setTapped(nt); playSfx("move");
-      if (nt.length >= ans.size) { setSolved(true); setSay(t("정답입니다.")); playSfx("click"); }
-      else if (ans.size > 1) setSay(step.say + " " + t("{0}칸 남았습니다.", ans.size - nt.length));
+      if (nt.length >= ans.size) markRight();
+      else setSay(step.say + " " + t("{0}칸 남았습니다.", ans.size - nt.length));
       return;
     }
     if (!canMove) return;
@@ -285,102 +377,138 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     if (sel && targets.some(([r, c]) => r === rc[0] && c === rc[1])) { attempt(sel, rc); return; }
     if (p && p.c === myColor) setSel(rc); else setSel(null);
   };
-  const choose = (i) => {
-    if (solved) return;
-    setPicked(i);
-    if (i === step.answer) { setSolved(true); setSay(t("정답입니다.")); playSfx("click"); }
-    else { setWrong((w) => w + 1); setSay(t("다시 생각해 보세요.")); }
-  };
-  const hintArrow = step && step.kind === "move" && !solved && goalIdx === 0 && wrong >= 2 && step.hint ? [{ from: sqToRc(step.hint.slice(0, 2)), to: sqToRc(step.hint.slice(2, 4)), kind: "tactic", color: th.tileHi, width: 0.12 }] : [];
+  const choose = (i) => { if (solved) return; setPicked(i); if (i === step.answer) markRight(); else markWrong(null); };
+  const hintArrow = step && step.kind === "move" && !solved && goalIdx === 0 && wrong >= 2 && step.hint ? [{ from: sqToRc(step.hint.slice(0, 2)), to: sqToRc(step.hint.slice(2, 4)), kind: "tactic", color: th.hi, width: 0.13 }] : [];
   const marks = step && step.kind === "read" ? sqList(readMarks(step)) : step && step.kind === "tap" ? sqList(tapped) : [];
-  const readArrows = step && step.kind === "read" && step.arrows ? step.arrows.map(([a, b]) => ({ from: sqToRc(a), to: sqToRc(b), kind: "tactic", color: th.tileHi })) : [];
+  const readArrows = step && step.kind === "read" && step.arrows ? step.arrows.map(([a, b]) => ({ from: sqToRc(a), to: sqToRc(b), kind: "tactic", color: th.hi })) : [];
   const resetStep = () => { setFen(step.fen || null); setGoalIdx(0); setSel(null); setLastTo(null); setSay(step.say); busy.current = false; };
 
   const [boardSize, setBoardRef] = useBoardSize(narrow ? 460 : 600, 24);
-  const emotion = finished ? "great" : solved ? "great" : wrongAt || (picked != null && picked !== (step && step.answer)) ? "surprise" : "think";
+  const emotion = finished || (solved && step && step.kind !== "read") ? "great" : badFlash ? "surprise" : "think";
   const nextL = useMemo(() => { const all = allLessons(); const i = all.findIndex((l) => l.id === lesson.id); return all[i + 1] || null; }, [lesson]);
+  const progress = finished ? 1 : (si + (solved && step && step.kind !== "read" ? 1 : 0)) / steps.length;
+  const sheet = finished ? null : solved && step && step.kind !== "read" ? "ok" : badFlash ? "bad" : "idle";
 
   const coachPanel = (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-      <Mascot name="milku" emotion={emotion} size={narrow ? 48 : 64} />
-      <div aria-live="polite" style={{ flex: 1, minWidth: 0, padding: "12px 14px", borderRadius: 14, background: "#FFF8EA", color: "#2A1B0E", fontSize: narrow ? 14 : 15.5, fontWeight: 700, lineHeight: 1.5, boxShadow: "0 4px 14px rgba(0,0,0,.3)" }}>
-        {finished ? t("레슨을 끝냈습니다.") : say}
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <Mascot name="milku" emotion={emotion} size={narrow ? 50 : 68} />
+      <div aria-live="polite" style={{ position: "relative", flex: 1, minWidth: 0, padding: narrow ? "12px 14px" : "16px 18px", borderRadius: 16, background: PAPER, color: INK, fontSize: narrow ? 14.5 : 16, fontWeight: 700, lineHeight: 1.55, boxShadow: "0 12px 28px -14px rgba(0,0,0,.8)" }}>
+        <span aria-hidden="true" style={{ position: "absolute", left: -6, top: narrow ? 18 : 24, width: 12, height: 12, background: PAPER, transform: "rotate(45deg)" }} />
+        <span style={{ position: "relative" }}>{say}</span>
       </div>
     </div>
   );
   const choicePanel = step && step.kind === "choice" && !finished ? (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+    <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
       {step.options.map((o, i) => {
-        const right = solved && i === step.answer, bad = picked === i && i !== step.answer;
-        return <button key={i} type="button" onClick={() => choose(i)} className="press" disabled={solved}
-          style={{ textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: solved ? "default" : "pointer", fontFamily: SITE_FONT, fontSize: 14, fontWeight: 800,
-            border: "2px solid " + (right ? "#5E9E6E" : bad ? "#C8453B" : "rgba(255,255,255,.14)"), background: right ? "rgba(94,158,110,.25)" : bad ? "rgba(200,69,59,.2)" : "rgba(255,255,255,.06)", color: "#FFF6E2" }}>{o}</button>;
+        const right = solved && i === step.answer, bad = picked === i && !solved;
+        const bc = right ? th.hi : bad ? "#E0675C" : "rgba(255,255,255,.14)";
+        return (
+          <button key={i} type="button" role="radio" aria-checked={picked === i} onClick={() => choose(i)} className="press" disabled={solved}
+            style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "13px 14px", borderRadius: 14, cursor: solved ? "default" : "pointer", fontFamily: SITE_FONT, fontSize: 14.5, fontWeight: 800,
+              border: "1.5px solid " + bc, background: right ? alpha(th.c, 0.28) : bad ? "rgba(224,103,92,.16)" : "rgba(255,255,255,.05)", color: "#FFF6E2", boxShadow: right ? "0 0 0 3px " + alpha(th.c, 0.25) : "none", transition: "background .2s, border-color .2s" }}>
+            <span aria-hidden="true" style={{ width: 22, height: 22, flexShrink: 0, borderRadius: "50%", border: "2px solid " + (right ? th.hi : bad ? "#E0675C" : "rgba(255,255,255,.35)"), display: "flex", alignItems: "center", justifyContent: "center", background: right ? th.hi : "transparent" }}>
+              {right && <Check size={13} strokeWidth={3.4} color={th.edge} />}{bad && <X size={13} strokeWidth={3.4} color="#E0675C" />}
+            </span>
+            <span style={{ flex: 1 }}>{o}</span>
+          </button>
+        );
       })}
     </div>
   ) : null;
-  const actionBar = (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      {step && step.kind === "move" && !solved && goalIdx === 0 && (
-        <button type="button" onClick={resetStep} aria-label={t("처음 포지션으로")} className="press" style={{ width: 46, height: 46, flexShrink: 0, borderRadius: 12, border: "none", background: "rgba(255,255,255,.12)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RotateCcw size={18} /></button>
-      )}
-      {step && step.kind === "move" && !solved && wrong >= 2 && step.hint && goalIdx === 0 && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, fontWeight: 800, color: th.tileHi }}><Lightbulb size={15} />{t("화살표를 참고하세요")}</span>
-      )}
-      <button type="button" disabled={!solved && !finished} onClick={() => { if (finished) onClose(); else setSi((i) => i + 1); }} className="press"
-        style={{ marginLeft: "auto", minWidth: 150, height: 46, padding: "0 20px", borderRadius: 12, border: "none", cursor: solved || finished ? "pointer" : "default", fontFamily: SITE_FONT, fontSize: 15, fontWeight: 900,
-          background: solved || finished ? th.tileHi : "rgba(255,255,255,.1)", color: solved || finished ? th.ink : "rgba(255,255,255,.4)", boxShadow: solved || finished ? "0 4px 0 " + th.tile : "none", transition: "background .2s" }}>
-        {finished ? t("닫기") : step && step.kind === "read" ? t("다음") : t("계속")}
-      </button>
+  const doneView = (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 14px" }}>
+      <div style={{ textAlign: "center", maxWidth: 420 }}>
+        <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 240, damping: 16 }} style={{ position: "relative", display: "inline-block", marginBottom: 22 }}>
+          <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 260, height: 260, marginLeft: -130, marginTop: -130, borderRadius: "50%", background: "radial-gradient(circle, " + alpha(th.c, 0.45) + ", transparent 62%)" }} />
+          <span aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: 200, height: 200, marginLeft: -100, marginTop: -100, borderRadius: "50%", background: "repeating-conic-gradient(" + alpha(th.hi, 0.22) + " 0 6deg, transparent 6deg 30deg)", WebkitMaskImage: "radial-gradient(circle, transparent 36%, #000 37%, transparent 70%)", maskImage: "radial-gradient(circle, transparent 36%, #000 37%, transparent 70%)" }} />
+          <GradeBadge stage={stage} size={112} glow />
+        </motion.div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: th.hi }}>{t("{0}단계", stageNo(stage.id))} · {stage.title()}</div>
+        <div style={{ marginTop: 4, fontSize: 28, fontWeight: 900, letterSpacing: "-.03em", color: "#FFF6E2" }}>{lesson.title()}</div>
+        <div style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 999, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.1)", fontSize: 14, fontWeight: 800, color: "#FFF6E2" }}>
+          {wasDone ? t("복습 완료") : coins ? <><CoinIcon size={17} />{t("레슨 완료, 코인 {0}개", LESSON_REWARD)}</> : t("레슨 완료")}
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 26, flexWrap: "wrap" }}>
+          <button type="button" onClick={onClose} className="press" style={{ height: 46, padding: "0 20px", borderRadius: 13, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", fontFamily: SITE_FONT, fontSize: 14.5, fontWeight: 800, cursor: "pointer" }}>{t("레슨 목록")}</button>
+          {nextL && <CtaButton theme={stageTheme(stageOf(nextL.stage))} onClick={() => onNext(nextL)}>{t("다음 레슨: {0}", nextL.title())}</CtaButton>}
+        </div>
+      </div>
     </div>
   );
-  const doneView = (
-    <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} style={{ textAlign: "center", padding: "24px 12px" }}>
-      <div style={{ width: 96, height: 96, margin: "0 auto 18px", borderRadius: "22%", transform: "rotate(45deg)", background: th.tileHi, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 0 " + th.tile }}>
-        <span style={{ transform: "rotate(-45deg)" }}><Check size={44} strokeWidth={3} color={th.ink} /></span>
-      </div>
-      <div style={{ fontSize: 24, fontWeight: 900, color: "#FFF6E2" }}>{lesson.title()}</div>
-      <div style={{ marginTop: 6, fontSize: 14, fontWeight: 700, color: th.tileHi }}>{wasDone ? t("복습 완료") : coins ? t("레슨 완료, 코인 {0}개", LESSON_REWARD) : t("레슨 완료")}   {/* 코인은 로그인했을 때만 서버가 준다 */}</div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 22, flexWrap: "wrap" }}>
-        <button type="button" onClick={onClose} className="press" style={{ height: 44, padding: "0 18px", borderRadius: 12, border: "none", background: "rgba(255,255,255,.12)", color: "#FFF6E2", fontFamily: SITE_FONT, fontSize: 14, fontWeight: 800, cursor: "pointer" }}>{t("레슨 목록")}</button>
-        {nextL && <button type="button" onClick={() => onNext(nextL)} className="press" style={{ height: 44, padding: "0 22px", borderRadius: 12, border: "none", background: stageOf(nextL.stage).theme.tileHi, color: stageOf(nextL.stage).theme.ink, fontFamily: SITE_FONT, fontSize: 14, fontWeight: 900, cursor: "pointer", boxShadow: "0 4px 0 " + stageOf(nextL.stage).theme.tile }}>{t("다음 레슨: {0}", nextL.title())}</button>}
-      </div>
-    </motion.div>
-  );
   const boardBox = board ? (
-    <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? 460 : "min(600px, calc(100dvh - 190px))", margin: "0 auto" }}>
+    <div ref={setBoardRef} style={{ width: "100%", maxWidth: narrow ? 460 : "min(600px, calc(100dvh - 210px))", margin: "0 auto", filter: "drop-shadow(0 24px 40px rgba(0,0,0,.55))" }}>
       <Board board={board} flip={flip} size={boardSize} showEval={false} interactive={!!(canMove || (step && step.kind === "tap" && !solved))}
         selected={sel} legalTargets={targets} onSquareClick={onSquareClick}
         onPieceDrag={(rc) => { if (canMove) { const p = board[rc[0]][rc[1]]; if (p && p.c === myColor) setSel(rc); } }}
         onDrop={(rc) => { if (sel) attempt(sel, rc); }} onMove={(from, to) => attempt(from, to)}
-        haloSquares={marks} arrows={[...readArrows, ...hintArrow]} wrongAt={wrongAt} lastQ={lastTo && step && step.kind === "move" ? { to: lastTo, kind: solved ? "best" : "good" } : null} />
+        haloSquares={lastTo && step && step.kind === "move" ? [...marks, lastTo] : marks} arrows={[...readArrows, ...hintArrow]} wrongAt={wrongAt} />
     </div>
   ) : null;
+  // 하단 피드백 시트: 대기(유리) / 정답(등급 배지 + 등급 색) / 오답(붉은색, 잠깐)
+  const sheetBg = sheet === "ok" ? "linear-gradient(180deg, " + alpha(th.c, 0.32) + ", " + alpha(th.c, 0.18) + ")" : sheet === "bad" ? "linear-gradient(180deg, rgba(200,69,59,.3), rgba(200,69,59,.16))" : "rgba(255,255,255,.035)";
+  const sheetBar = !finished && (
+    <div className="lesson-glass" style={{ flexShrink: 0, borderTop: "1px solid " + (sheet === "ok" ? alpha(th.hi, 0.35) : sheet === "bad" ? "rgba(224,103,92,.4)" : "rgba(255,255,255,.07)"), background: sheetBg, transition: "background .25s, border-color .25s",
+      padding: "12px max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))" }}>
+      <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", alignItems: "center", gap: 12, flexWrap: narrow ? "wrap" : "nowrap" }}>
+        <div aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, minHeight: 46 }}>
+          <AnimatePresence mode="wait" initial={false}>
+            {sheet === "ok" ? (
+              <motion.div key="ok" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <GradeBadge stage={stage} size={38} glow />
+                <span style={{ fontSize: 17, fontWeight: 900, color: th.hi }}>{t("정답입니다.")}</span>
+              </motion.div>
+            ) : sheet === "bad" ? (
+              <motion.div key="bad" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: [0, -5, 5, 0] }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: "50%", background: "#C8453B", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 0 #7E2A23" }}><X size={20} strokeWidth={3} color="#fff" /></span>
+                <span style={{ fontSize: 16, fontWeight: 900, color: "#F2A39B" }}>{step && step.kind === "choice" ? t("다시 생각해 보세요.") : t("다시 해 보세요.")}</span>
+              </motion.div>
+            ) : (
+              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {step && step.kind === "move" && goalIdx === 0 && (
+                  <button type="button" onClick={resetStep} aria-label={t("처음 포지션으로")} title={t("처음 포지션으로")} className="press" style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RotateCcw size={18} /></button>
+                )}
+                {hintArrow.length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 800, color: th.hi }}><Lightbulb size={16} />{t("화살표를 참고하세요")}</span>}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        <CtaButton theme={th} disabled={!solved} onClick={() => setSi((i) => i + 1)} wide={narrow}>{step && step.kind === "read" ? t("다음") : t("계속")}</CtaButton>
+      </div>
+    </div>
+  );
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={lesson.title()} style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", flexDirection: "column", fontFamily: SITE_FONT, color: "#FFF6E2",
-      background: "radial-gradient(120% 80% at 50% 0%," + th.bg2 + "," + th.bg + " 70%)" }}>
-      {/* 머리: 닫기 · 단계/레슨 이름 · 스텝 진행 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "max(12px, env(safe-area-inset-top)) 14px 10px" }}>
-        <button type="button" onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 10, border: "none", background: "rgba(255,255,255,.1)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={20} /></button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: th.tileHi }}>{stage.title()}</div>
-          <div style={{ fontSize: 16, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title()}</div>
-        </div>
-        <div aria-hidden="true" style={{ display: "flex", gap: 4, width: narrow ? 110 : 220 }}>
-          {steps.map((_, i) => <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < si || finished ? th.tileHi : i === si ? th.tile : "rgba(255,255,255,.14)", transition: "background .3s" }} />)}
+    <div role="dialog" aria-modal="true" aria-label={lesson.title()} style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", flexDirection: "column", fontFamily: SITE_FONT, color: "#FFF6E2", isolation: "isolate",
+      background: "radial-gradient(110% 80% at 50% 0%, " + th.bg2 + " 0%, " + th.bg + " 55%, #0B0704 100%)" }}>
+      <style>{".lesson-glass{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}"}</style>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, ...CHECKER }} />
+      {/* 머리: 닫기 · 단계 배지·이름 · 레슨 이름 · 진행 막대 */}
+      <div style={{ flexShrink: 0, padding: "max(12px, env(safe-area-inset-top)) 16px 10px" }}>
+        <div style={{ maxWidth: 1080, margin: "0 auto", display: "flex", alignItems: "center", gap: 12 }}>
+          <button type="button" onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={20} /></button>
+          <GradeBadge stage={stage} size={32} />
+          <div style={{ minWidth: 0, flexShrink: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: th.hi, whiteSpace: "nowrap" }}>{t("{0}단계", stageNo(stage.id))} · {stage.title()}</div>
+            <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: "-.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lesson.title()}</div>
+          </div>
+          <div aria-hidden="true" style={{ flex: 1, minWidth: 60, height: 10, marginLeft: 8, borderRadius: 6, background: "rgba(255,255,255,.1)", overflow: "hidden", boxShadow: "inset 0 1px 2px rgba(0,0,0,.4)" }}>
+            <motion.div initial={false} animate={{ width: progress * 100 + "%" }} transition={{ duration: 0.45, ease: [0.22, 0.9, 0.32, 1] }}
+              style={{ height: "100%", borderRadius: 6, background: "linear-gradient(90deg, " + th.c + ", " + th.hi + ")", boxShadow: "0 0 12px " + alpha(th.c, 0.6) }} />
+          </div>
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 12 : 28, padding: narrow ? "4px 14px 14px" : "10px 28px 24px", alignItems: narrow ? "stretch" : "center", justifyContent: narrow ? "flex-start" : "center", maxWidth: 1180, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        {finished ? <div style={{ flex: 1 }}>{doneView}</div> : narrow ? (
-          <>{coachPanel}{boardBox}{choicePanel}</>
-        ) : (
-          <>
-            {boardBox && <div style={{ flex: "0 1 600px", minWidth: 0 }}>{boardBox}</div>}
-            <div style={{ flex: "1 1 340px", maxWidth: boardBox ? 420 : 560, minWidth: 0 }}>{coachPanel}{choicePanel}<div style={{ marginTop: 18 }}>{actionBar}</div></div>
-          </>
-        )}
-      </div>
-      {(narrow || finished) && !finished && <div style={{ padding: "10px 14px max(14px, env(safe-area-inset-bottom))", borderTop: "1px solid rgba(255,255,255,.08)" }}>{actionBar}</div>}
+      {finished ? doneView : (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <div style={{ maxWidth: 1080, margin: "0 auto", minHeight: "100%", boxSizing: "border-box", display: "flex", flexDirection: narrow ? "column" : "row", gap: narrow ? 14 : 36, padding: narrow ? "4px 16px 16px" : "16px 24px 24px", alignItems: narrow ? "stretch" : "center" }}>
+            {narrow ? <>{coachPanel}{boardBox}{choicePanel}</> : <>
+              {boardBox && <div style={{ flex: "0 1 600px", minWidth: 0 }}>{boardBox}</div>}
+              <div style={{ flex: "1 1 360px", maxWidth: boardBox ? 420 : 600, minWidth: 0, margin: boardBox ? 0 : "0 auto" }}>{coachPanel}{choicePanel}</div>
+            </>}
+          </div>
+        </div>
+      )}
+      {sheetBar}
     </div>,
     document.body
   );

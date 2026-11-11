@@ -72,6 +72,8 @@ for (const l of lessons) {
   const sum = lessonSummary(st); if (sum.claimed !== 1 || sum.totalChapters !== lessons.length) fails.push("진행: 요약 수치 오류");
   if (normalizeLessonState({ done: { x: 5, ["y".repeat(50)]: 1 } }).done["y".repeat(50)]) fails.push("진행: 너무 긴 id를 걸러야 함");
 }
+// (v0.7.5, 사용자 요청) 단계 색·아이콘은 수 등급 좋음 → 우수 → 최선 → 유일 → 탁월 순서 그대로
+{ const want = ["good", "excellent", "best", "only", "brilliant"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월이 아님: " + STAGES.map((s) => s.grade).join()); }
 // 레슨 아이콘: 화면(app/lessons.jsx)이 아이콘 전체가 아니라 쓰는 것만 가져오므로, 커리큘럼의 아이콘 이름이 LESSON_ICONS에 있어야 한다(없으면 빈 동그라미로 보인다)
 {
   const ui = readFileSync(new URL("../src/app/lessons.jsx", import.meta.url), "utf8");
