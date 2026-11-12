@@ -58,5 +58,6 @@
   "lib/mecOpenings.js",
   "lib/mecStructureText.js",
   "app/lessons.jsx",
-  "lib/lessons/curriculum.js"
+  "lib/lessons/curriculum.js",
+  "app/profileEdit.jsx"
 ]

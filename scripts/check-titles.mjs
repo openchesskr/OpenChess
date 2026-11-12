@@ -43,7 +43,9 @@ if (/@\{\(pub && pub\.displayId\) \|\| pubUsername\}\{roleIcon/.test(socialSrc))
 const titleNavSrc = fs.readFileSync(new URL("../src/lib/titleNav.js", import.meta.url), "utf8");
 if (!/export const takeTitleNav/.test(titleNavSrc) || !/setTitleNav\(id\); switchTab\("dex"/.test(appSrc0())) fail("칭호 이동 요청(titleNav)이 App과 연결되지 않음");
 if (!/spot=\{spot === id\}/.test(dexSrc) || !/data-title-id=\{id\}/.test(common)) fail("업적 화면이 칭호를 흔들어 보여 주지 않음(spot)");
-if (!/onClick=\{onOpenTitle \? \(\) => onOpenTitle\(pub\.title\)/.test(socialSrc)) fail("/user 페이지의 장착 칭호를 눌러도 도감으로 이동하지 않음");
+// (v0.7.5) /user 페이지 "업적" 섹션의 대표 칭호 2개 — 누르면 도감 업적 화면으로 이동하고, 업적 수(달성/전체)를 보여 준다
+if (!/onClick=\{onOpenTitle \? \(\) => onOpenTitle\(id\)/.test(socialSrc) || !/<ProfileAchievements pub=\{pub\} onOpenTitle=\{onOpenTitle\} \/>/.test(socialSrc)) fail("/user 페이지의 대표 칭호를 눌러도 도감으로 이동하지 않음");
+if (!/featuredTitles: featuredTitlesFor\(profile\.featuredTitles, earnedTitles\)/.test(appSrc0()) || !/achv: \{ earned: earnedTitles\.size, total: ALL_TITLE_IDS\.length \}/.test(appSrc0())) fail("공개 프로필에 대표 칭호·업적 수가 올라가지 않음");
 function appSrc0() { return fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"); }
 // 배너 연출(업적 달성·기물 움직임)이 쓰는 CSS 키프레임이 App.jsx 스타일에 모두 있어야 한다
 const appSrc = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");

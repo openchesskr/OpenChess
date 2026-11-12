@@ -170,3 +170,19 @@ export function seriesProgress(s, m, earnedCount) {
   if (s.metric === "titlesEarned") return earnedCount || 0;
   return m[s.metric] || 0;
 }
+// (v0.7.5, 사용자 요청) 프로필 "업적" 섹션의 대표 칭호 2개.
+//  · 등급: 희귀 칭호가 가장 높고, 그다음 단계(tier)가 높은 순. 같은 등급이면 계열 목록 순서로(항상 같은 결과).
+//  · 사용자가 프로필 편집에서 고른 칭호(획득한 것만, 최대 2개)를 쓰고, 고르지 않았거나 모자라면 등급 높은 순으로 채운다.
+export const FEATURED_TITLE_COUNT = 2;
+const SERIES_INDEX = new Map(TITLE_SERIES.map((s, i) => [s.key, i]));
+export function titleRank(id) { const d = titleDef(id); return d ? (d.rare ? 100 : d.tier) : -1; }
+export function sortTitlesByRank(ids) {
+  return [...ids].filter(validTitleId).sort((a, b) => titleRank(b) - titleRank(a) || (SERIES_INDEX.get(titleDef(a).series.key) - SERIES_INDEX.get(titleDef(b).series.key)));
+}
+export function featuredTitlesFor(chosen, earned) {
+  const has = earned instanceof Set ? earned : new Set(earned || []);
+  const out = [];
+  for (const id of Array.isArray(chosen) ? chosen : []) if (has.has(id) && validTitleId(id) && !out.includes(id) && out.length < FEATURED_TITLE_COUNT) out.push(id);
+  for (const id of sortTitlesByRank(has)) { if (out.length >= FEATURED_TITLE_COUNT) break; if (!out.includes(id)) out.push(id); }
+  return out;
+}

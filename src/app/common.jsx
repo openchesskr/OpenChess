@@ -5527,7 +5527,7 @@ export function openingNameOf(moves) {
 // (v0.6.8) 칭호 시스템 개편 — 정의·판정은 src/lib/titles.js(순수 모듈), 여기는 배너 디자인과 조건 문구만 맡는다.
 //  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
 //  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계(1~5)가 오를수록 금이 밝아지고, 계열마다 아이콘이 다르다.
-export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
+export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress, featuredTitlesFor, sortTitlesByRank, titleRank, FEATURED_TITLE_COUNT } from "../lib/titles.js";
 const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star, Timer, Clock, ChevronsUp };
 // 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
 function titleCondText(def) {
