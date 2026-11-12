@@ -132,5 +132,12 @@ if (!/rateLimited\(user\.id, texts\.length\)/.test(api)) fails.push("api/transla
   for (let i = 0; i < 14; i++) { const res = { status(c) { codes.push(c); return this; }, json() { } }; await scanHandler(h.post, res); }
   eq([codes.filter((c) => c === 429).length > 0, codes[0] !== 429], [true, true], "scan-board가 같은 IP의 연속 호출을 제한하지 않음"); }
 
+// ⑥ (v0.7.5, 사용자 요청) 분석 탭의 주요 분기점·편집자가 쓴 수 추천 이유도 번역 범위("content")
+{
+  const an = rd("src/app/analysis.jsx");
+  if (!/<UgcText text=\{branch\} kind="content"/.test(an)) fails.push("분석 탭 주요 분기점 글이 자동 번역(UgcText kind content)을 거치지 않음");
+  if (!/recommendReasonFor\(key\) \? <UgcText text=\{reason\} kind="content"/.test(an)) fails.push("분석 탭 수 추천 이유(편집자 글)가 자동 번역을 거치지 않음");
+  if (!/<UgcText text=\{n\.body\} kind="note"/.test(an)) fails.push("분석 탭 수 설명(사용자 글)이 자동 번역을 거치지 않음");
+}
 if (fails.length) { console.error("✖ check-ugc-translate 실패:\n  " + fails.join("\n  ")); process.exit(1); }
-console.log("✔ check-ugc-translate: 번역은 수 설명·소개글만(채팅 거부·격리), 서버 로그인·수순 표지 보호·저장 재사용, 설정 토글 연결이 유지된다");
+console.log("✔ check-ugc-translate: 번역은 수 설명·소개글·분석 탭 주요 분기점/추천 이유만(채팅 거부·격리), 서버 로그인·수순 표지 보호·저장 재사용, 설정 토글 연결이 유지된다");

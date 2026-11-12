@@ -3640,4 +3640,5 @@ export default {
   "유저·오프닝·마스터·퍼즐·업적 검색": "Search users, openings, masters, puzzles, achievements",
   "일치하는 업적 없음": "No matching achievements",
   "일치하는 퍼즐 없음": "No matching puzzles",
+  "수 설명·주요 분기점·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음": "Shows move notes, key branch points and profile bios in your language. Chat messages aren't translated",
 };

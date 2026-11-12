@@ -1,6 +1,7 @@
 // (v0.6.5) 사용자 글 번역의 순수 로직(브라우저·네트워크 없이 도는 부분) — scripts/check-ugc-translate.mjs가 Node에서 그대로 검사한다.
 //  · UGC_KINDS: 번역하는 글의 종류. 수 설명("note")·프로필 소개글("bio")뿐이고 채팅은 없다(서버 api/translate.js의 KINDS와 같아야 함).
-export const UGC_KINDS = ["note", "bio"];
+// (v0.7.5, 사용자 요청) "content": 분석 탭의 주요 분기점·수 추천 이유처럼 편집자가 직접 쓴 글(다른 언어 사용자에게 자동 번역)
+export const UGC_KINDS = ["note", "bio", "content"];
 export const UGC_MAX_CHARS = 400;
 const BRACKET = /\[\[[^\]]*\]\]/g;
 

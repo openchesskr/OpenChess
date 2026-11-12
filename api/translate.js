@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 
 const LANG_NAMES = { ko: "Korean", en: "English", es: "Spanish", hi: "Hindi", ja: "Japanese", zh: "Simplified Chinese" };
-const KINDS = new Set(["note", "bio"]);
+const KINDS = new Set(["note", "bio", "content"]);   // (v0.7.5) content: 분석 탭 주요 분기점·수 추천 이유(편집자가 쓴 글)
 const MAX_ITEMS = 12, MAX_CHARS = 400;
 const CACHE_DAYS = 30;
 const RATE_PER_MIN = 40;

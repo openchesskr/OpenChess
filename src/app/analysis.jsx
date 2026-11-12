@@ -3670,13 +3670,20 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
-                        <ClampText resetKey={key}>{branch}</ClampText>
+                        {/* (v0.7.5, 사용자 요청) 주요 분기점 글도 다른 언어로 쓰였으면 내 언어로 자동 번역(설정 > 언어에서 끔) */}
+                        <UgcText text={branch} kind="content" render={(shown) => <ClampText resetKey={key}>{shown}</ClampText>} />
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
                         {rec ? (
-                          <ClampText resetKey={key}>
+                          // (v0.7.5) 편집자가 직접 쓴 추천 이유(수 설명)는 자동 번역 대상 — 자동 문구(autoReason)는 이미 t()로 번역된다
+                          recommendReasonFor(key) ? <UgcText text={reason} kind="content" render={(shown) => (
+                            <ClampText resetKey={key}>
+                              <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
+                              {shown ? ", " + shown : null}
+                            </ClampText>)} />
+                          : <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
                             {reason ? ", " + reason : null}
                           </ClampText>

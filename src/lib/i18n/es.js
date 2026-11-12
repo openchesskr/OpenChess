@@ -3640,4 +3640,5 @@ export default {
   "유저·오프닝·마스터·퍼즐·업적 검색": "Busca usuarios, aperturas, maestros, puzzles y logros",
   "일치하는 업적 없음": "No hay logros que coincidan",
   "일치하는 퍼즐 없음": "No hay puzzles que coincidan",
+  "수 설명·주요 분기점·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음": "Muestra las notas de jugadas, los puntos de bifurcación clave y las biografías de perfil en tu idioma. Los mensajes del chat no se traducen",
 };
