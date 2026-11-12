@@ -4489,10 +4489,11 @@ export async function reviewGameIdentifier(game) {
   if (game.id != null && /^\d+$/.test(String(game.id))) return String(game.id);
   return null;
 }
-// (v0.7.5 BUG-162) 리뷰 링크에 담는 대국 정보 — 진영(내가 둔 쪽, 보드 방향)·선수 이름·종료 시각(같은 기기 캐시 키)·대국 ID(공유 분석)·결과 등.
+// (v0.7.5 BUG-162) 리뷰 링크에 담는 대국 정보 — 화면 표시용만: 진영(보드 방향)·선수 이름·레이팅·결과·시간 규정·오프닝.
 //  링크는 누구나 만들 수 있는 입력이므로 되돌릴 때(reviewMetaFromPgn) 값마다 모양을 다시 검사한다.
+//  (보안 검토) 대국 ID·종료 시각은 담지도 복원하지도 않는다 — ID는 서버 공유 캐시(reviewed_games·game_analysis)의 키라 가짜 수순으로 남의 대국 캐시를
+//  오염시킬 수 있고, 선수+종료 시각은 이 기기 리뷰 캐시 키(reviewGameKey)라 실제 대국의 저장된 리뷰를 덮어쓸 수 있다. 링크로 연 대국은 수순 기준 키(pgn:)만 쓴다.
 const META_SAFE = (v, n = 60) => String(v == null ? "" : v).replace(/[\u0000-\u001F"\\\]\[]/g, "").slice(0, n);
-const REVIEW_ID_RE = /^(\d{1,15}|(pvp|bot)-[\w-]{1,40})$/;
 function reviewMetaTags(game) {
   const tags = [];
   const w = game.white && game.white.username, b = game.black && game.black.username;
@@ -4501,8 +4502,6 @@ function reviewMetaTags(game) {
   if (game.white && Number.isFinite(+game.white.rating) && game.white.rating) tags.push(["WhiteElo", String(Math.round(+game.white.rating))]);
   if (game.black && Number.isFinite(+game.black.rating) && game.black.rating) tags.push(["BlackElo", String(Math.round(+game.black.rating))]);
   if (game.color === "w" || game.color === "b") tags.push(["OCSide", game.color]);
-  if (game.id != null && REVIEW_ID_RE.test(String(game.id))) tags.push(["OCId", String(game.id)]);
-  if (Number.isFinite(+game.endTime) && game.endTime) tags.push(["OCEnd", String(Math.round(+game.endTime))]);
   if (game.username) tags.push(["OCUser", META_SAFE(game.username, 40)]);
   if (game.result) tags.push(["OCResult", META_SAFE(game.result, 20)]);
   if (game.timeClass) tags.push(["OCTime", META_SAFE(game.timeClass, 12)]);
@@ -4519,8 +4518,6 @@ export function reviewMetaFromPgn(pgnText) {
   if (out.white && /^\d{1,4}$/.test(we || "")) out.white.rating = +we;
   if (out.black && /^\d{1,4}$/.test(be || "")) out.black.rating = +be;
   const side = tag("OCSide"); if (side === "w" || side === "b") out.color = side;
-  const id = tag("OCId"); if (id && REVIEW_ID_RE.test(id)) out.id = id;
-  const end = tag("OCEnd"); if (/^\d{1,13}$/.test(end || "")) out.endTime = +end;
   const user = tag("OCUser"); if (user) out.username = META_SAFE(user, 40);
   const res = tag("OCResult"); if (res) out.result = META_SAFE(res, 20);
   const tc = tag("OCTime"); if (tc && /^[a-z]{1,12}$/.test(tc)) out.timeClass = tc;
@@ -4541,7 +4538,8 @@ export async function resolveReviewIdentifier(raw) {
   const fenMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
   const sans = parsePgnSans(pgnText);
   if (!sans.length) return null;
-  return { kind: "game", game: { ...reviewMetaFromPgn(pgnText), sans, fenRoot: fenMatch ? fenMatch[1] : null } };
+  // fromLink: 링크에서 복원한 정보는 화면 표시용 — "내 대국" 판정(유산 만들기 등)에는 쓰지 않는다(링크는 누구나 만든다).
+  return { kind: "game", game: { ...reviewMetaFromPgn(pgnText), sans, fenRoot: fenMatch ? fenMatch[1] : null, fromLink: true } };
 }
 // (v0.3.4 기능) chess.com 대국 리뷰 딥링크(/review/(숫자 ID))용 캐시 — supabase-setup.sql 21번
 // 섹션 참고. puzzleShare/puzzleFetch와 같은 패턴: 리뷰를 여는 모든 유저가 최선을 다해(실패해도

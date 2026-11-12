@@ -72,10 +72,13 @@ else {
     const f = new Function(common.slice(a, b).replace(/export function/g, "function") + "; return { reviewMetaTags, reviewMetaFromPgn };")();
     const g = { white: { username: "kim\"]x", rating: 1500 }, black: { username: "이순신" }, color: "b", id: "pvp-77", endTime: 1760000000, username: "이순신" };
     const back = f.reviewMetaFromPgn(f.reviewMetaTags(g) + "\n\n1. e4 e5");
-    if (back.color !== "b" || back.id !== "pvp-77" || back.endTime !== 1760000000 || !back.black || back.black.username !== "이순신" || back.white.username !== "kimx") fails.push("리뷰 링크 메타 태그 왕복 실패: " + JSON.stringify(back));
-    const evil = f.reviewMetaFromPgn('[OCSide "x"]\n[OCId "javascript:alert(1)"]\n[OCEnd "abc"]');
-    if (evil.color || evil.id || evil.endTime) fails.push("리뷰 링크 메타 태그: 모양이 틀린 값을 받아들임");
+    if (back.color !== "b" || !back.black || back.black.username !== "이순신" || back.white.username !== "kimx") fails.push("리뷰 링크 메타 태그 왕복 실패: " + JSON.stringify(back));
+    // (보안 검토) 링크는 누구나 만든다 — 공유 캐시 키(id)·기기 캐시 키(endTime)는 링크에서 절대 복원하지 않는다
+    if ("id" in back || "endTime" in back) fails.push("리뷰 링크가 대국 ID·종료 시각(캐시 키)을 복원함 — 가짜 수순으로 공유·기기 캐시를 오염시킬 수 있음");
+    const forged = f.reviewMetaFromPgn('[OCSide "x"]\n[OCId "123456"]\n[OCEnd "1760000000"]\n[Site "https://www.chess.com/game/live/123456"]');
+    if (forged.color || forged.id || forged.endTime) fails.push("리뷰 링크 메타 태그: 모양이 틀리거나 허용하지 않은 값을 받아들임");
   }
+  if (!/fromLink: true/.test(common) || !/game\.fromLink/.test(review)) fails.push("링크로 연 대국(fromLink)의 진영으로 유산을 만들 수 있음 — 링크 정보는 표시용");
   if (!/resolved\.game|reviewMetaFromPgn\(pgnText\)/.test(common) || !/\.\.\.reviewMetaFromPgn\(pgnText\)/.test(common)) fails.push("resolveReviewIdentifier가 링크의 대국 정보(진영 등)를 복원하지 않음");
 }
 

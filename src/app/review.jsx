@@ -1700,7 +1700,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // (v0.7.4) 유산은 게시물 — 칸 제한 없이 최대 LEGACY_MAX_POSTS개까지 쌓인다. 같은 수는 "저장됨", 가득 차면 막는다(기존 교체 확인 단계는 없어졌다).
   const legacyAction = useMemo(() => {
     const m = activeMove;
-    if (!onSaveLegacy || !myUid || !game.color || fenRoot || exploring || !m || !result) return null;
+    if (!onSaveLegacy || !myUid || !game.color || game.fromLink || fenRoot || exploring || !m || !result) return null;   // (보안 검토) 링크로 연 대국의 진영은 표시용일 뿐 — 유산으로 남기지 않는다
     if (!["best", "only", "brilliant"].includes(m.kind) || m.ply == null) return null;
     if ((m.ply % 2 === 0) !== (game.color === "w")) return null;
     if (findPost(legacies, sans, m.ply)) return { kind: m.kind, state: "saved" };
@@ -1712,7 +1712,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
         onSaveLegacy(m.kind, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
       },
     };
-  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, fenRoot, exploring, sans]);
+  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, game.fromLink, fenRoot, exploring, sans]);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
