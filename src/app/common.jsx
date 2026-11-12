@@ -1153,7 +1153,9 @@ function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
     const c = await ev(fenOfRoot(fenRoot, [...prevSans, san, capSan]));              // ② 따 간 포지션(다시 둔 쪽 차례)
     if (!c || (c.cp == null && c.mate == null)) return undefined;
     const afterCap = applySan(after, capSan, enemy);
-    return sacPoisonVerdict(a, c, () => !!(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color)));   // ② 독이 든 희생인가(순수 함수 — moveQuality.js)
+    // ② 독이 든 희생인가(순수 함수 — moveQuality.js). (v0.7.5 BUG-160) 되찾는 첫 수가 체크(강제 전술)인지도 넘긴다.
+    const firstIsCheck = () => { try { return !!(c.pv && c.pv[0] && /\+|#/.test(uciToSan(afterCap, c.pv[0], color) || "")); } catch { return false; } };
+    return sacPoisonVerdict(a, c, () => !!(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color)), firstIsCheck);
   })().catch(() => undefined).then((v) => {
     if (typeof v === "boolean") { sacConfirmCache.set(key, v); sacConfirmListeners.forEach((f) => { try { f(); } catch { } }); }
     else sacConfirmCache.delete(key);   // 엔진이 답하지 못함 — 다음에 다시 시도

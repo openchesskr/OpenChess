@@ -194,6 +194,31 @@ export function hasSaferSquare(board, fr, fc, piece, color) {
   }
   return false;
 }
+// (v0.7.5, 사용자 제보 — 33.Rb2) 이 포지션에서 color가 "아무것도 내주지 않는" 수를 둘 수 있었는지 — 움직인 기물이 잡혀 손해 보지 않고(net ≥ 0),
+//  다른 내 기물도 2점 이상 방치되지 않는 합법 수가 하나라도 있으면 true. 포크·위협을 받은 기물을 옮기며 다른 기물을 내준 수라도, 모두 지키는 수가
+//  따로 있었다면 "어쩔 수 없이 내준 것"이 아니라 스스로 고른 희생이다(예: 32...Bh4로 Rf2가 위협받을 때 33.Re2는 룩과 e3 비숍을 다 지키는데 33.Rb2로 비숍을 내줌).
+export function couldKeepEverything(board, color) {
+  const enemy = color === "w" ? "b" : "w";
+  for (let fr = 0; fr < 8; fr++) for (let fc = 0; fc < 8; fc++) {
+    const pc = board[fr][fc]; if (!pc || pc.c !== color) continue;
+    for (const d of legalDests(board, fr, fc, color, null)) {
+      const promo = pc.t === "P" && (d[0] === 0 || d[0] === 7) ? "Q" : undefined;
+      const san = buildSan(board, fr, fc, d[0], d[1], color, null, promo);
+      if (!san) continue;
+      const info = sanSrc(board, san, color); if (!info) continue;
+      const after = applySan(board, san, color);
+      const [tr, tc] = info.to;
+      const capturedVal = info.isCap ? (board[tr][tc] ? VAL[board[tr][tc].t] : 1) : 0;
+      let oppGain = info.castle ? 0 : seeSquare(after, tr, tc, enemy);
+      const ekp = kingPos(after, enemy);
+      if (oppGain > 0 && ekp && isAttacked(after, ekp[0], ekp[1], color) && !canCaptureSquareLegally(after, tr, tc, enemy)) oppGain = 0;
+      if (capturedVal - oppGain < 0) continue;
+      if (hangingLossSq(after, color, info.castle ? null : [tr, tc]).loss >= 2) continue;
+      return true;
+    }
+  }
+  return false;
+}
 // (v0.4.0 기능) side 진영 기물 p(er,ec에 위치)가 (tr,tc)를 공격하는지 — 기하학적 공격 패턴만 보고
 // (체크 노출 등 합법성은 따지지 않는다) 포크 판정에 쓴다.
 export function attacksSquare(board, p, side, er, ec, tr, tc) {
@@ -252,6 +277,7 @@ export function isSacrifice(board, sanRaw, color) {
   // 그냥 내주는 수지만 체크로 상대 응수를 강제해 뒤이은 콤비네이션의 발판이 됨) 이는 그냥 예정된
   // 손실을 수동적으로 받아들이는 것이 아니라 능동적으로 그 손실을 이용하는 수이므로 예외로 둔다.
   const givesCheck = /[+#]/.test(sanRaw);
+  let _keepAll; const keepAll = () => (_keepAll === undefined ? (_keepAll = couldKeepEverything(board, color)) : _keepAll);   // (v0.7.5) 필요할 때만 계산
   // (버그 수정) 예전엔 캐슬링·폰 이동이면 이 함수 맨 위에서 곧장 false를 반환해, 아래 "방치 희생"
   // (이동한 기물과는 무관하게, 상대가 이미 공격 중인 다른 내 기물을 그대로 두고 다른 수를 두는 것)
   // 판정까지 통째로 막고 있었다. 예: "1.e4 e5 2.Nf3 Nc6 3.Bc4 h6 4.d4 d6 5.dxe5 dxe5 6.Qxd8+ Nxd8
@@ -279,7 +305,8 @@ export function isSacrifice(board, sanRaw, color) {
     // 피신. 겉보기엔 또 잡히는 자리 같지만 실제로 Rxe1을 받아주면 백랭크 메이트 함정이라 안전함)
     // 이는 몰려서 어쩔 수 없이 둔 게 아니라 스스로 위험해 보이는 자리로 걸어 들어간 것이므로, 정말
     // 안전한 대안이 하나도 없었을 때만(포크 등으로 진짜 궁지에 몰린 경우) 희생 판정에서 제외한다.
-    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck && !hasSaferSquare(board, fr, fc, info.piece, color)) return false;
+    // (v0.7.5) 다만 모두 지키는 다른 수가 있었다면 몰린 게 아니다(couldKeepEverything)
+    if (movedThreatLoss >= 1 && net >= -movedThreatLoss && !givesCheck && !hasSaferSquare(board, fr, fc, info.piece, color) && !keepAll()) return false;
     // (신규) 도착 칸이 아군 폰에게 보호받고 있어 net이 정확히 -1로만 떨어지는 경우 — 이는 seeSquare가
     // 이미 그 폰의 되잡기까지 반영해 계산한 결과이므로, 실제로 벌어지는 일은 "동가 이상 상대 기물과
     // 맞바꾼 뒤(순손익 0), 그 되잡은 폰마저 결국 내주는" 흐름뿐이다. 최종적으로 잡히는 내 기물이
@@ -303,7 +330,8 @@ export function isSacrifice(board, sanRaw, color) {
     // 체크당하며 함께 위협받던 경우도 포함)과 함께 포크당한 것이었고, 이 수가 그 "다른 쪽" 기물을
     // 구해낸 것뿐이라면 — 둘 다 지킬 수 없던 포크의 당연한 귀결이지 스스로 찾아낸 희생이 아니므로
     // 탁월한 수로 치지 않는다.
-    if (forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, afterHangSq[0], afterHangSq[1])) return false;
+    // (v0.7.5) 포크에 걸렸어도 둘 다 지키는 수가 따로 있었다면(couldKeepEverything) 한쪽을 내준 것은 스스로 고른 희생이다.
+    if (forkForcedTheOtherSide(board, after, color, fr, fc, tr, tc, afterHangSq[0], afterHangSq[1]) && !keepAll()) return false;
     // (22차, 사용자 요청) 사잇수(zwischenzug) 예외 — 이 수 자체가 방치된 기물(afterHang)과 같거나
     // 더 비싼 상대 기물을 잡는 수라면, 방금 움직인 내 기물이 곧바로 되잡혀 net이 깎이더라도 희생이
     // 아니다: 상대가 그 되잡기에 응수를 쓰면 그 사이 나는 다음 수에 원래 걸려 있던 기물을 그대로
@@ -318,7 +346,8 @@ export function isSacrifice(board, sanRaw, color) {
     // (18차) 두 기물이 동시에 공격받는(포크) 상황에서 위협받던 기물 자신을 움직여 다른 기물을 내주는 것은,
     // 살린 기물이 내준 기물보다 가치가 "낮을" 때만 비직관적 선택으로 보고 탁월로 인정한다(동가·상위 구출은 당연한 수).
     // (21차) 살린 기물 쪽이 더 비싸더라도, 그 대신 상대의 더 비싼 기물을 반격으로 위협했다면 역시 탁월.
-    if (movedThreatLoss >= 1) {
+    // (v0.7.5, 사용자 제보 33.Rb2) 위협받던 기물을 옮겨 다른 기물을 내준 수라도 모두 지키는 수가 따로 있었다면 이 "몰린 선택" 규칙을 쓰지 않고 일반 희생 판정으로 간다.
+    if (movedThreatLoss >= 1 && !keepAll()) {
       // (v0.2.3 버그 수정) 포크에 걸린 기물을 옮겨 위험을 "줄이기만" 했을 뿐(방치된 기물의 손실이 원래
       // 포크 손실보다 작음, 예: 22.Qe3 — 나이트 포크(6점 위험)를 피해 물러났더니 우연히 무관한 비숍(2점)이
       // 방치돼 있었을 뿐)이라면 진짜 궁지에 몰린 트레이드오프가 아니라 그냥 좋은 수이므로 탁월이 아니다.
@@ -358,23 +387,31 @@ export function isSacrifice(board, sanRaw, color) {
       좋아지고, 그 뒤 엔진 수순으로 기물을 그대로 되찾지 못하는가(pvRegainsMaterial — 되찾으면 희생이 아니라 지켜진 기물. 단
       SAC_POISON_BIG_GAIN_CP 이상·메이트면 받는 순간 무너지는 함정이라 희생으로 인정). 둘 다 아니면 가짜 희생이라 탁월이 아니다.
    마스터 대국 1,500판 실측(수정 전 규칙): 탁월 후보 866개 중 ①이 374개, 나머지 중 약 절반이 ②의 독이 든 희생. */
-export const SAC_POISON_MIN_GAIN_CP = 100;
-// ②에서 따 간 뒤 엔진 수순으로 기물을 그대로 되찾으면(예: 14.Kf1 …Bxe5 Qxd5 Nxd5 Rxe5) 희생이 아니라 "지켜진 기물"이다 — 다만 이득이
-// 이만큼 크면(메이트 포함) 되찾더라도 받는 순간 크게 무너지는 함정이라 희생으로 인정한다.
-export const SAC_POISON_BIG_GAIN_CP = 300;
+export const SAC_POISON_MIN_GAIN_CP = 100;   // (v0.7.5부터 판정에는 쓰지 않음 — 아래 규칙 참고. 호환용으로 남김)
+// (v0.7.5, 사용자 제보·BUG-160) 따 간 뒤 기물을 되찾는 "전술로 지켜진" 기물이라도, 따 가면 이만큼 이상 손해면(2점) 희생으로 인정한다(예전 3점).
+export const SAC_POISON_BIG_GAIN_CP = 200;
+// (v0.7.5, BUG-160) 되찾는 첫 수가 체크(포크·연속 체크 같은 강제 전술)이면 이만큼(0.5점)만 손해여도 희생으로 인정한다.
+//  평범한 교환으로 되찾는 기물(예: 14.Kf1 …Bxe5 Qxd5 Nxd5 Rxe5)은 눈에 보이게 지켜진 기물이라 여기에 해당하지 않는다.
+export const SAC_TACTIC_MIN_GAIN_CP = 50;
 // 엔진 평가({cp|mate})를 평가한 쪽(둘 차례) 관점의 cp로 — 메이트는 ±1e5로 뭉갠다(수 순서 정보는 사라진다).
 export const sacEvalCp = (x) => (x.mate != null ? (x.mate > 0 ? 1e5 : -1e5) : (x.cp || 0));
 /* ②의 판정(순수 함수) — a: 희생 수를 둔 직후 평가(상대 차례 관점), c: 상대가 그 기물을 가장 싼 기물로 따 간 포지션 평가(다시 둔 쪽 차례 관점),
-   pvRegains: c의 엔진 수순으로 따 간 기물을 되찾는가(호출부가 pvRegainsMaterial로 계산해 함수로 넘긴다). true면 "독이 든(진짜) 희생".
-   (v0.6.3 BUG-060) 예전엔 이득(gain = c − (−a))만 봤다. 메이트 점수는 ±1e5로 뭉개져, 이미 메이트가 보이는 포지션에서 따 가도 메이트면
-   gain이 0이 되어 "따 가도 그만 — 가짜 희생"으로 잘못 판정됐다. 예: 22.Bg8+ (Kg7로 받지 않으면 Kxg8 Qg6! 로 2수 메이트) — 따 가면 곧장 메이트 당하는
-   명백한 독이 든 희생인데 탁월로 인정되지 않았다. 따 간 포지션에서 둔 쪽이 메이트면 이득 크기와 무관하게 독이 든 희생이다. */
-export function sacPoisonVerdict(a, c, pvRegains) {
+   pvRegains: c의 엔진 수순으로 따 간 기물을 되찾는가(pvRegainsMaterial), firstIsCheck: 그 수순의 첫 수(둔 쪽)가 체크인가. true면 진짜 희생.
+   (v0.6.3 BUG-060) 따 간 포지션에서 둔 쪽이 메이트면 이득 크기와 무관하게 희생.
+   (v0.7.5 BUG-160, 사용자 제보 "32.a5·33.Rb2가 몇 버전째 탁월로 안 뜸") 예전엔 "따 가면 1점 이상 손해(gain ≥ 1.0)"를 먼저 요구했다. 그래서
+     ㉠ 따 가도 평가가 비슷하고 기물을 되찾지 못하는 "보상이 있는 진짜 희생"(예: 21...Bxf2+ — 비숍을 폰과 바꾸고 공격)이 오히려 빠졌고,
+     ㉡ 체크 전술로만 지켜지는 기물(예: 32.a5 — e3 비숍을 …Rxe3로 따 가면 Qb8+ Kf7 Qa7+로 되찾음)은 엔진·깊이에 따라 이득이 0.65~1.21점으로 흔들려
+        1점 문턱을 넘나들며 탁월이 됐다 안 됐다 했다(Stockfish 18 Lite depth 20: 0.70점 → 탁월 아님, Stockfish 19 Lite: 1.21점 → 탁월).
+   새 규칙(실측: chess.com 대국 200판, 탁월 SF18 37→47·SF19 29→36):
+     · 따 간 뒤 기물을 되찾지 못하면 — 실제로 기물을 내준 희생이다(이득 ≥ 0, 즉 둔 쪽이 따 간 뒤에도 둔 직후보다 나빠지지 않음).
+     · 되찾으면 — 따 가는 순간 2점 이상 손해이거나, 되찾는 첫 수가 체크(강제 전술)이고 0.5점 이상 손해일 때만 희생. */
+export function sacPoisonVerdict(a, c, pvRegains, firstIsCheck) {
   if (c.mate != null && c.mate > 0) return true;                       // 따 가면 곧장 메이트 — 이미 메이트 중이어도 같다
   const gain = sacEvalCp(c) - (-sacEvalCp(a));
-  if (gain < SAC_POISON_MIN_GAIN_CP) return false;                      // 따 가도 그만 — 가짜 희생
+  const regains = !!(pvRegains && pvRegains());
+  if (!regains) return gain >= 0;                                       // 기물을 실제로 내준 채 보상으로 버팀 — 진짜 희생
   if (gain >= SAC_POISON_BIG_GAIN_CP) return true;                      // 받으면 크게 무너지는 함정
-  return !(pvRegains && pvRegains());                                   // 따 간 뒤 그대로 되찾으면 희생이 아님
+  return gain >= SAC_TACTIC_MIN_GAIN_CP && !!(firstIsCheck && firstIsCheck());   // 체크 전술로만 지켜지는 기물
 }
 // UCI 한 수를 보드에 그대로 적용한다(합법성 검사 없음 — 엔진 수순 재생용). 캐슬링 룩 이동·앙파상·승진을 반영한다.
 export function applyUciRaw(board, uci) {
