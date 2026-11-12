@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할 · v0.7.3 quest.jsx → learn.jsx) 'learn'(학습 탭) 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { useTabMemory } from "../lib/tabMemory.js";
 import { useState, useEffect, useMemo } from "react";
 import { T } from "../lib/theme.js";
 import { FadeIn, useNarrow } from "./common.jsx";
@@ -33,7 +34,7 @@ function useRecentSources({ user, uid, chesscom, ccName }) {
   return { ocGames, ccGames, ccReady, ocLoading: rows == null, ccLoading: !!(chesscom && chesscom.status === "loading"), loading, recent };
 }
 function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpenGameAnalyze, loginCard }) {
-  const [timeFilter, setTimeFilter] = useState("all"), [colorFilter, setColorFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useTabMemory("learn.timeFilter", "all"), [colorFilter, setColorFilter] = useTabMemory("learn.colorFilter", "all");   // (v0.7.5) 탭을 오가도 유지
   useEffect(() => { setTimeFilter("all"); setColorFilter("all"); }, [view]);
   const { ocGames, ccGames, ccReady } = src;
   const base = view === "oc" ? ocGames : ccGames;
@@ -69,7 +70,7 @@ function LearnGamesColumn({ view, setView, user, ccName, src, onOpenGame, onOpen
 function LearnProfileHome({ user, openAuth, ccName, src, onOpenGame, onOpenGameAnalyze, growthNode }) {
   const wideLayout = !useNarrow(1000);
   const mobile = useNarrow(720);
-  const [view, setView] = useState("oc");
+  const [view, setView] = useTabMemory("learn.view", "oc");
   const loginCard = (
     <div style={{ borderRadius: 14, border: "1px solid #3E2F21", background: "#2A1F16", padding: "20px 16px", textAlign: "center" }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "#F1E6D0" }}>{t("로그인하면 내 프로필과 최근 대국을 볼 수 있음")}</div>

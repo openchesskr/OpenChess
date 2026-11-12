@@ -1162,6 +1162,25 @@ export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key:
 export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", learn: "/learn", store: "/play", set: "/setting" };
 const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
 export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
+// (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 화면부터 맞는 탭을 그린다. 예전엔 탭 주소가 아닌 곳(/, /puzzle/번호-라인, /review…, /user/…)이면
+//  일단 분석 탭을 그렸다가, 저장된 상태·서버 응답이 온 뒤(몇 초 뒤)에 원래 탭으로 바꿔 "다른 탭이 잠깐 보였다 돌아오는" 깜빡임이 생겼다.
+//  ① 탭 주소면 그 탭 ② 퍼즐 딥링크면 퍼즐 탭 ③ 그 밖에는 마지막으로 보던 탭(LAST_TAB_KEY, 탭이 바뀔 때마다 동기 저장) ④ 처음이면 분석 탭.
+export const LAST_TAB_KEY = "oc_last_tab";
+const TAB_KEYS = new Set(Object.keys(TAB_PATH));
+export function lastTabStored() { try { const v = window.localStorage.getItem(LAST_TAB_KEY); return TAB_KEYS.has(v) ? v : null; } catch { return null; } }
+export function rememberLastTab(tab) { try { if (TAB_KEYS.has(tab)) window.localStorage.setItem(LAST_TAB_KEY, tab); } catch { } }
+export function initialTabForPath(pathname) {
+  const direct = tabFromPath(pathname);
+  if (direct) return direct;
+  if (/^\/puzzle\/\d{6}-\d+$/.test(pathname || "")) return "puzzle";
+  return lastTabStored() || "analysis";
+}
+/** 처음 주소가 서버 응답을 기다려야 화면이 정해지는 딥링크인지(그동안 엉뚱한 화면 대신 불러오는 중 화면을 덮는다). */
+export function isPendingDeepLink(pathname, search) {
+  const p = pathname || "";
+  if (/^\/puzzle\/\d{6}-\d+$/.test(p) || p === "/review" || p.startsWith("/review/")) return true;
+  return /^\/user\/[A-Za-z]{5}[0-9]{4}$/.test(p) && /[?&]invite=friend\b/.test(search || "");
+}
 // (UX7) 로컬 캐시를 계정(uid) 단위로 분리 — 이걸 안 하면 같은 기기에서 다른 계정으로 로그인할 때
 // 퍼즐·프로필·칭호·chess.com 연동 등이 이전 계정 것을 그대로 물려받는 사고가 남(실제로 있었음).
 // 로그인 안 한 상태(게스트)는 별도로 "guest" 버킷에 담아 계정 데이터와 절대 섞이지 않게 한다.
