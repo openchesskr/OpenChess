@@ -2,13 +2,13 @@
 //  · 경로: 구간(V → I)마다 입체 마름모 타일 하나가 지그재그로 이어지며 아래(아이언 V)에서 위(그랜드마스터)로 올라간다. 지나온 구간은 티어 색 실선, 앞으로 갈 구간은 점선.
 //    타일 안에는 그 구간의 티어 기물 그림, 지금 구간에는 맥동 후광과 말풍선(남은 XP). 티어가 바뀌는 곳에는 장 표지(기물 배지·이름·필요 XP·진행).
 //  · 위: 코치 말풍선(타일을 누르면 그 구간 설명) + 진행 링 + 닫기. 아래: 보고 있는 티어 정보·진행 막대·티어 목록·"내 위치".
-//  · 배경: 예전 티어 챕터의 재질(아이언 강판·브론즈 두드린 구리·실버 금속결·골드 햇살·다이아몬드 결정면·마스터 성운·그랜드마스터 오로라)을
-//    선 없이 채운 면으로 다시 그리고, 그 위에 원근 체스판 바닥과 그 티어 기물의 실루엣을 깔았다. 보이는 티어가 바뀌면 배경이 부드럽게 바뀐다.
+//  · 배경(재설계): 어두운 전시실 — 위에서 떨어지는 티어 색 조명, 윤곽광을 받은 큰 티어 기물, 대리석 체스판 바닥, 빛 먼지, 필름 질감.
+//    티어마다 고유 요소 하나(강철 결·녹청 온기·금속 광택·빛줄기·굴절광·성운·오로라). 보이는 티어가 바뀌면 배경이 부드럽게 바뀐다.
 //  · 티어 이름은 사이트 기본 글꼴로 쓴다(티어 여정 전용이던 Bagel Fat One 글꼴은 삭제).
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Lock, Check, List, ChevronUp, ChevronDown, Crosshair } from "./ocIcons.jsx";
-import { PIECE_IMG_SETS, tierPieceSrc } from "../lib/theme.js";
+import { tierPieceSrc } from "../lib/theme.js";
 import { t, tx } from "../lib/i18n.js";
 import { TIERS, TIER_COLORS, TIER_XP_REQ, GM_STAR_XP, DIVISIONS_PER_TIER, DIVISION_ROMAN, tierFromXp, tierGradientCss, xpForTierDivision } from "../lib/tierSystem.js";
 import { isLite } from "../lib/perfMode.js";
@@ -32,68 +32,63 @@ function tierTheme(key) {
   const lo = c0.stops ? mix(c0.stops[0], "#000000", 0.35) : mix(c0.lo, "#000000", 0.2);
   return (themeCache[key] = { c, hi, lo, edge: mix(lo, "#000000", 0.45), bg: mix(c, "#0B0704", 0.86), bg2: mix(c, "#0B0704", 0.72), grad: tierGradientCss(key) });
 }
-const pieceImg = (p) => { const s = PIECE_IMG_SETS.classic.images[p]; return s && s.w ? s.w.src : ""; };
-const TIER_PIECE = { iron: "P", bronze: "N", silver: "B", gold: "R", diamond: "Q", master: "K", grandmaster: "K" };
 
-/* ── 배경: 티어 재질(선 없이 채운 면) + 원근 체스판 바닥 + 기물 실루엣 ── */
-function TierBackdrop({ tierKey, on }) {
+/* ── 배경 (v0.7.5 재설계, 사용자 요청: "고급지게") — 어두운 전시실 ──
+   거의 검은 바탕 위에 위에서 떨어지는 티어 색 조명 하나, 필름 질감, 천천히 떠오르는 빛 먼지, 윤곽에 빛이 맺힌 큰 티어 기물,
+   광택이 비치는 대리석 체스판 바닥. 티어마다 고유 요소는 하나씩만(아이언 강철 결 · 브론즈 녹청 온기 · 실버 금속 광택 · 골드 빛줄기 ·
+   다이아몬드 굴절광 · 마스터 성운 · 그랜드마스터 오로라) 낮은 대비로 둔다. 모두 채운 면·그러데이션(선 없음). */
+const GRAIN = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
+const DUST = Array.from({ length: 16 }, (_, i) => ({ x: (i * 37 + 11) % 100, s: 1.5 + ((i * 7) % 5) * 0.7, d: 16 + ((i * 13) % 14), delay: -((i * 29) % 30), o: 0.25 + ((i * 3) % 5) * 0.12 }));
+function TierSignature({ tierKey, th, lite }) {
+  const L = { position: "absolute", pointerEvents: "none" };
+  const st = TIER_COLORS.grandmaster.stops;
+  switch (tierKey) {
+    case "iron": return <div style={{ ...L, inset: 0, opacity: 0.5, backgroundImage: "repeating-linear-gradient(180deg, rgba(255,255,255,.035) 0 1px, transparent 1px 3px), linear-gradient(100deg, transparent 20%, rgba(190,200,212,.08) 45%, transparent 70%)" }} />;
+    case "bronze": return <div style={{ ...L, inset: 0, background: "radial-gradient(40% 30% at 18% 70%, rgba(80,160,140,.10), transparent 70%), radial-gradient(50% 40% at 85% 35%, rgba(241,169,121,.12), transparent 70%)" }} />;
+    case "silver": return !lite ? <div className="tj-sheen" style={{ ...L, top: 0, bottom: 0, width: "40%", background: "linear-gradient(100deg, transparent, rgba(255,255,255,.07) 45%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.07) 55%, transparent)" }} /> : null;
+    case "gold": return <div className={lite ? undefined : "tj-rays"} style={{ ...L, left: "50%", top: "-30%", width: "140%", height: "110%", marginLeft: "-70%", transformOrigin: "50% 0%",
+      background: "repeating-conic-gradient(from 180deg at 50% 0%, rgba(253,219,130,.07) 0deg 3deg, transparent 3deg 11deg)", WebkitMaskImage: "radial-gradient(70% 80% at 50% 0%, #000 10%, transparent 75%)", maskImage: "radial-gradient(70% 80% at 50% 0%, #000 10%, transparent 75%)" }} />;
+    case "diamond": return <>
+      <div style={{ ...L, inset: 0, background: "conic-gradient(from 210deg at 70% 30%, transparent 0deg, rgba(79,232,255,.10) 30deg, transparent 60deg, rgba(185,140,255,.07) 110deg, transparent 150deg, rgba(110,231,200,.08) 220deg, transparent 260deg)", filter: "blur(30px)" }} />
+      {!lite && [0, 1, 2, 3].map((i) => <span key={i} className="tj-glint" style={{ ...L, left: 14 + i * 22 + "%", top: 16 + ((i * 41) % 50) + "%", width: 10, height: 10, animationDelay: i * 1.3 + "s", background: "radial-gradient(circle, #FFFFFF 0 18%, rgba(233,253,255,.6) 30%, transparent 70%)", clipPath: "polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%)" }} />)}
+    </>;
+    case "master": return <>
+      <div style={{ ...L, inset: 0, background: "radial-gradient(45% 35% at 25% 35%, rgba(120,60,200,.22), transparent 70%), radial-gradient(40% 35% at 78% 62%, rgba(60,40,150,.20), transparent 70%)", filter: "blur(10px)" }} />
+      <svg width="100%" height="100%" style={{ ...L, inset: 0 }} aria-hidden="true">{Array.from({ length: 46 }, (_, i) => <circle key={i} cx={((i * 53) % 100) + "%"} cy={((i * 31) % 70) + "%"} r={0.5 + (i % 3) * 0.35} fill="#EDE2FF" opacity={0.18 + (i % 4) * 0.1} />)}</svg>
+    </>;
+    default: return <>
+      {st.map((c, i) => <div key={i} className={lite ? undefined : "tj-aurora"} style={{ ...L, left: "-25%", right: "-25%", top: 6 + i * 14 + "%", height: "26%", animationDelay: -i * 4 + "s", animationDuration: 16 + i * 4 + "s", background: "linear-gradient(90deg, transparent, " + alpha(c, 0.22) + " 40%, " + alpha(c, 0.12) + " 60%, transparent)", filter: "blur(34px)", transform: "skewY(" + (i % 2 ? 6 : -6) + "deg)" }} />)}
+      <svg width="100%" height="100%" style={{ ...L, inset: 0 }} aria-hidden="true">{Array.from({ length: 40 }, (_, i) => <circle key={i} cx={((i * 47) % 100) + "%"} cy={((i * 23) % 60) + "%"} r={0.5 + (i % 3) * 0.35} fill="#FFFFFF" opacity={0.2 + (i % 4) * 0.1} />)}</svg>
+    </>;
+  }
+}
+function TierBackdrop({ tierKey, on, narrow }) {
   const th = tierTheme(tierKey), lite = isLite();
   const c0 = TIER_COLORS[tierKey] || {};
-  const acc = c0.hi || (c0.stops && c0.stops[1]) || th.hi;
-  const layer = { position: "absolute", inset: 0, pointerEvents: "none" };
-  let mat = null;
-  if (tierKey === "iron") mat = <>
-    <div style={{ ...layer, background: "linear-gradient(160deg,#4A5058 0%,#23272C 60%,#121417 100%)" }} />
-    {/* 강판 이음매(채운 띠)와 리벳(채운 점) */}
-    <div style={{ ...layer, opacity: 0.5, backgroundImage: "linear-gradient(90deg, rgba(0,0,0,.45) 0 2px, transparent 2px), linear-gradient(180deg, rgba(0,0,0,.45) 0 2px, transparent 2px), radial-gradient(circle at 12px 12px, #A9B0B8 0 2.6px, transparent 3px), radial-gradient(circle at 108px 12px, #A9B0B8 0 2.6px, transparent 3px), radial-gradient(circle at 12px 78px, #A9B0B8 0 2.6px, transparent 3px), radial-gradient(circle at 108px 78px, #A9B0B8 0 2.6px, transparent 3px)", backgroundSize: "120px 90px" }} />
-  </>;
-  else if (tierKey === "bronze") mat = <>
-    <div style={{ ...layer, background: "radial-gradient(120% 90% at 20% 0%, #8A4A24 0%, #4A2412 45%, #1E0E06 100%)" }} />
-    {/* 두드린 자국: 밝은 쪽(왼쪽 위)과 그림자(오른쪽 아래)가 있는 둥근 면 */}
-    <div style={{ ...layer, opacity: 0.45, backgroundImage: "radial-gradient(circle at 10px 10px, rgba(241,169,121,.55) 0 3px, rgba(241,169,121,.12) 6px, rgba(0,0,0,.25) 9px, transparent 11px), radial-gradient(circle at 33px 29px, rgba(241,169,121,.4) 0 4px, rgba(241,169,121,.1) 8px, rgba(0,0,0,.25) 12px, transparent 14px)", backgroundSize: "46px 46px" }} />
-  </>;
-  else if (tierKey === "silver") mat = <>
-    <div style={{ ...layer, background: "linear-gradient(100deg,#3A4046 0%,#6B737B 22%,#2D3237 40%,#7B848C 62%,#2B3035 82%,#555D65 100%)" }} />
-    <div style={{ ...layer, backgroundImage: "repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 1px, transparent 1px 4px)" }} />
-    {!lite && on && <motion.div animate={{ x: ["-30%", "130%"] }} transition={{ duration: 9, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", top: 0, bottom: 0, width: "30%", background: "linear-gradient(100deg,transparent,rgba(255,255,255,.16),transparent)", transform: "skewX(-18deg)" }} />}
-  </>;
-  else if (tierKey === "gold") mat = <>
-    <div style={{ ...layer, background: "radial-gradient(90% 70% at 50% 0%, #B8862F 0%, #5A3D12 50%, #1E1405 100%)" }} />
-    <motion.div animate={lite || !on ? undefined : { rotate: 360 }} transition={{ duration: 120, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", left: "50%", top: -260, width: 760, height: 760, marginLeft: -380, background: "repeating-conic-gradient(from 0deg, rgba(253,219,130,.14) 0deg 6deg, transparent 6deg 18deg)", WebkitMaskImage: "radial-gradient(circle, #000 20%, transparent 70%)", maskImage: "radial-gradient(circle, #000 20%, transparent 70%)" }} />
-    {/* 마름모 격자 — 채운 작은 마름모 */}
-    <div style={{ ...layer, opacity: 0.22, backgroundImage: "linear-gradient(45deg, transparent 46%, " + acc + " 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, " + acc + " 46% 54%, transparent 54%)", backgroundSize: "40px 40px" }} />
-  </>;
-  else if (tierKey === "diamond") mat = <>
-    <div style={{ ...layer, background: "linear-gradient(160deg,#04364A 0%,#02506E 40%,#021A26 100%)" }} />
-    <svg width="100%" height="100%" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" style={{ ...layer, opacity: 0.6 }}>
-      {[[0, 300, 120, 80, 200, 300, 0.1], [120, 80, 200, 300, 280, 60, 0.05], [200, 300, 280, 60, 400, 260, 0.13], [0, 0, 120, 80, 0, 300, 0.07], [280, 60, 400, 0, 400, 260, 0.04], [120, 80, 280, 60, 200, 0, 0.16]].map((p, i) => <polygon key={i} points={p.slice(0, 6).join(" ")} fill={acc} opacity={p[6]} />)}
-    </svg>
-    {!lite && on && [0, 1, 2, 3, 4, 5].map((i) => <motion.span key={i} animate={{ opacity: [0, 1, 0], scale: [0.4, 1, 0.4] }} transition={{ duration: 3 + (i % 3), repeat: Infinity, delay: i * 0.6 }} style={{ position: "absolute", left: 8 + i * 15 + "%", top: 10 + ((i * 37) % 60) + "%", width: 6, height: 6, background: "#E9FDFF", transform: "rotate(45deg)", boxShadow: "0 0 10px " + acc }} />)}
-  </>;
-  else if (tierKey === "master") mat = <>
-    <div style={{ ...layer, background: "radial-gradient(70% 60% at 25% 30%, #5A2A98 0%, transparent 60%), radial-gradient(60% 60% at 80% 70%, #2D1B6E 0%, transparent 62%), #12081F" }} />
-    <svg width="100%" height="100%" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" style={{ ...layer, opacity: 0.6 }}>
-      {Array.from({ length: 40 }, (_, i) => <circle key={i} cx={(i * 97) % 400} cy={(i * 61) % 300} r={0.6 + (i % 3) * 0.5} fill="#E6D2FF" opacity={0.3 + (i % 4) * 0.15} />)}
-    </svg>
-  </>;
-  else mat = <>
-    <div style={{ ...layer, background: "linear-gradient(180deg,#05040D 0%,#0B0818 100%)" }} />
-    {(TIER_COLORS.grandmaster.stops).map((s, i) => (
-      <motion.div key={i} animate={lite || !on ? undefined : { x: ["-8%", "8%", "-8%"], opacity: [0.5, 0.85, 0.5] }} transition={{ duration: 11 + i * 3, repeat: Infinity, ease: "easeInOut", delay: i * 1.4 }}
-        style={{ position: "absolute", left: "-20%", right: "-20%", top: 4 + i * 20 + "%", height: "30%", background: "linear-gradient(90deg,transparent," + s + "55,transparent)", filter: "blur(26px)", transform: "skewY(" + (i % 2 ? 5 : -5) + "deg)" }} />
-    ))}
-    <svg width="100%" height="100%" style={layer}>{Array.from({ length: 40 }, (_, i) => <circle key={i} cx={((i * 53) % 100) + "%"} cy={((i * 29) % 100) + "%"} r={0.7 + (i % 3) * 0.5} fill="#fff" opacity={0.35 + (i % 4) * 0.15} />)}</svg>
-  </>;
+  const light = c0.stops ? c0.stops[0] : c0.hi;      // 조명 색
+  const L = { position: "absolute", pointerEvents: "none" };
   return (
-    <div aria-hidden="true" style={{ ...layer, overflow: "hidden", opacity: on ? 1 : 0, transition: "opacity .7s" }}>
-      {mat}
-      <div style={{ ...layer, background: "radial-gradient(120% 70% at 50% 40%, transparent 0%, rgba(8,5,3,.45) 60%, rgba(8,5,3,.82) 100%)" }} />
-      {/* 원근 체스판 바닥 — 화면 아래쪽에서 멀어지며 사라진다 */}
-      <div style={{ position: "absolute", left: "-40%", right: "-40%", bottom: "-6%", height: "62%", transform: "perspective(520px) rotateX(62deg)", transformOrigin: "50% 100%",
-        backgroundImage: "repeating-conic-gradient(" + alpha(th.hi, 0.16) + " 0 25%, rgba(0,0,0,.18) 0 50%)", backgroundSize: "86px 86px", backgroundPosition: "center bottom",
-        WebkitMaskImage: "linear-gradient(0deg, #000 0%, rgba(0,0,0,.6) 45%, transparent 100%)", maskImage: "linear-gradient(0deg, #000 0%, rgba(0,0,0,.6) 45%, transparent 100%)" }} />
-      {/* 그 티어 기물의 큰 실루엣 */}
-      <img src={pieceImg(TIER_PIECE[tierKey])} alt="" draggable={false} style={{ position: "absolute", right: "-6%", bottom: "8%", height: "56%", maxHeight: 520, objectFit: "contain", filter: "brightness(0) invert(1)", opacity: 0.05 }} />
+    <div aria-hidden="true" style={{ ...L, inset: 0, overflow: "hidden", opacity: on ? 1 : 0, transition: "opacity .9s ease" }}>
+      {/* 바탕: 티어 색이 아주 조금 섞인 흑단 */}
+      <div style={{ ...L, inset: 0, background: "linear-gradient(180deg, " + mix(th.c, "#050302", 0.9) + " 0%, " + mix(th.c, "#050302", 0.94) + " 55%, #040302 100%)" }} />
+      {/* 위에서 떨어지는 조명(원뿔) */}
+      <div style={{ ...L, left: "50%", top: "-20%", width: "130%", height: "95%", marginLeft: "-65%", background: "radial-gradient(50% 60% at 50% 0%, " + alpha(light, 0.26) + " 0%, " + alpha(light, 0.08) + " 45%, transparent 75%)" }} />
+      {on && <TierSignature tierKey={tierKey} th={th} lite={lite} />}
+      {/* 큰 티어 기물 — 어둠 속 조각상처럼 검은 실루엣에 티어 색 윤곽광 */}
+      <img src={tierPieceSrc(tierKey, null)} alt="" draggable={false} style={{ ...L, right: narrow ? "-24%" : "-9%", bottom: narrow ? "16%" : "13%", height: narrow ? "46%" : "58%", maxHeight: 560, objectFit: "contain",
+        filter: "brightness(0) drop-shadow(0 0 1.5px " + alpha(light, 0.9) + ") drop-shadow(0 0 18px " + alpha(light, 0.35) + ")", opacity: narrow ? 0.4 : 0.55,
+        WebkitMaskImage: "linear-gradient(180deg, #000 30%, transparent 92%)", maskImage: "linear-gradient(180deg, #000 30%, transparent 92%)" }} />
+      {/* 대리석 체스판 바닥 — 낮은 대비의 칸 + 위쪽 조명이 비친 광택, 멀어질수록 사라진다 */}
+      <div style={{ ...L, left: "-50%", right: "-50%", bottom: 0, height: "46%", transform: "perspective(600px) rotateX(64deg)", transformOrigin: "50% 100%",
+        backgroundImage: "radial-gradient(40% 60% at 50% 0%, " + alpha(light, 0.16) + ", transparent 70%), repeating-conic-gradient(rgba(255,255,255,.045) 0 25%, rgba(0,0,0,.25) 0 50%)", backgroundSize: "100% 100%, 110px 110px", backgroundPosition: "center, center bottom",
+        WebkitMaskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)", maskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)" }} />
+      {/* 지평선의 은은한 빛 띠 */}
+      <div style={{ ...L, left: 0, right: 0, bottom: "44%", height: 60, marginBottom: -30, background: "radial-gradient(50% 50% at 50% 50%, " + alpha(light, 0.05) + ", transparent 70%)" }} />
+      {/* 빛 먼지 */}
+      {on && !lite && DUST.map((p, i) => <span key={i} className="tj-dust" style={{ ...L, left: p.x + "%", bottom: -10, width: p.s, height: p.s, borderRadius: "50%", background: light, boxShadow: "0 0 " + p.s * 3 + "px " + alpha(light, 0.8), "--o": p.o, animationDuration: p.d + "s", animationDelay: p.delay + "s" }} />)}
+      {/* 필름 질감 + 비네트 */}
+      <div style={{ ...L, inset: 0, backgroundImage: GRAIN, opacity: 0.05, mixBlendMode: "overlay" }} />
+      <div style={{ ...L, inset: 0, background: "radial-gradient(120% 85% at 50% 38%, transparent 45%, rgba(0,0,0,.55) 100%)" }} />
     </div>
   );
 }
@@ -268,8 +263,18 @@ export default function TierJourney({ totalXp, onClose }) {
         .tier-tile:focus-visible{outline:2px solid #FFF6E2;outline-offset:4px;border-radius:14px}
         .tier-scroll{scrollbar-width:none}.tier-scroll::-webkit-scrollbar{display:none}
         .tier-glass{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+        @keyframes tjDust{0%{transform:translate(0,0);opacity:0}10%{opacity:var(--o,.5)}85%{opacity:var(--o,.5)}100%{transform:translate(24px,-105vh);opacity:0}}
+        .tj-dust{animation:tjDust linear infinite}
+        @keyframes tjSheen{from{left:-45%}to{left:110%}}
+        .tj-sheen{animation:tjSheen 14s ease-in-out infinite}
+        @keyframes tjRays{0%,100%{transform:rotate(-4deg);opacity:.8}50%{transform:rotate(4deg);opacity:1}}
+        .tj-rays{animation:tjRays 18s ease-in-out infinite}
+        @keyframes tjGlint{0%,70%,100%{transform:scale(0) rotate(0);opacity:0}80%{transform:scale(1.4) rotate(45deg);opacity:1}90%{transform:scale(.6) rotate(90deg);opacity:.6}}
+        .tj-glint{animation:tjGlint 5.2s ease-in-out infinite}
+        @keyframes tjAurora{0%,100%{translate:-6% 0;opacity:.75}50%{translate:6% 0;opacity:1}}
+        .tj-aurora{animation:tjAurora 18s ease-in-out infinite}
       `}</style>
-      {TIERS.map((tier) => <TierBackdrop key={tier.key} tierKey={tier.key} on={tier.key === viewTier} />)}
+      {TIERS.map((tier) => <TierBackdrop key={tier.key} tierKey={tier.key} on={tier.key === viewTier} narrow={narrow} />)}
       {/* 경로 */}
       <div ref={scRef} onScroll={onScroll} className="tier-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
         <div style={{ position: "relative", height: layout.height, maxWidth: 900, margin: "0 auto" }}>
