@@ -6,7 +6,7 @@
 import { isNativeApp, nativePlugin } from "./nativeApp.js";
 import { SITE_URL } from "./siteConfig.js";
 
-export const HEAVY_ENGINE_IDS = ["full17", "full18"];
+export const HEAVY_ENGINE_IDS = ["full17", "full18", "full19"];
 const REMOTE_BASE = (((typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_ENGINE_REMOTE_BASE) || SITE_URL).replace(/\/+$/, "")) + "/";
 const STORE_DIR = "engine";
 const DONE_KEY = "occ_engine_dl_v1";   // { full18: { total, at } } — 내려받기가 끝나 파일을 검증한 엔진
@@ -113,10 +113,10 @@ export function cancelEngineDownload(id) { abortFlags[id] = true; }
 /* 내려받은 엔진 지우기(저장 공간 확보). 지우면 다시 "내려받기 필요" 상태가 된다. */
 export async function deleteDownloadedEngine(id) {
   if (!isNativeApp() || !fs() || !HEAVY_ENGINE_IDS.includes(id)) return false;
-  const dir = id === "full17" ? "17" : "18";
+  const dir = id === "full17" ? "17" : id === "full19" ? "19" : "18";
   try { await fs().rmdir({ path: STORE_DIR + "/" + dir, directory: "DATA", recursive: true }); } catch { }
   const m = doneMap(); delete m[id]; saveDone(m);
   setState(id, { status: "none", progress: 0 });
   return true;
 }
-export function engineDownloadSizeLabel(id) { return id === "full17" ? "75MB" : id === "full18" ? "108MB" : ""; }
+export function engineDownloadSizeLabel(id) { return id === "full17" ? "75MB" : id === "full18" ? "108MB" : id === "full19" ? "99MB" : ""; }

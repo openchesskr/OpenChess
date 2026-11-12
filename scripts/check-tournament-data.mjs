@@ -94,6 +94,18 @@ for (const t of search.t) if (!ids.has(t)) fails.push("검색 색인의 대회�
     if (p.w.reduce((a, b) => a + b, 0) + p.b.reduce((a, b) => a + b, 0) !== p.n) fails.push(key + ": 백·흑 전적 합 ≠ 대국 수");
     for (const b of p.best.slice(0, 1)) { try { const c = new Chess(); for (const m of decodeMoves(b[5])) c.move(m); } catch { fails.push(key + ": 대표 대국이 합법이 아님"); } }
   }
+  // (v0.7.5) 저장소 DB로 보충한 프로필(build-master-profiles-db, src: "db"): 150판 이상, 동명이인이 섞이지 않게 8년 이상 비는 구간이 없고,
+  // 도감 목록의 이름으로 앱이 바로 그 프로필을 찾는다(키 규칙이 어긋나면 상세 카드가 빈다).
+  const dexNames = JSON.parse(readFileSync(url("src/data/dbMasters.json"), "utf8")).masters.map((m) => m[0]);
+  let dbN = 0;
+  for (const [key, p] of Object.entries(prof.p)) {
+    if (p.src !== "db") continue; dbN++;
+    if (p.n < 150) fails.push(key + ": DB 보충 프로필인데 대국이 150판 미만(" + p.n + ")");
+    const ys = p.elo.map((e) => e[0]); for (let i = 1; i < ys.length; i++) if (ys[i] - ys[i - 1] >= 8) { fails.push(key + ": 레이팅 기록에 " + (ys[i] - ys[i - 1]) + "년 공백 — 동명이인이 섞였을 수 있음"); break; }
+    const dn = dexNames.find((n) => n === p.name); if (!dn) fails.push(key + ": 도감 목록에 없는 이름(" + p.name + ")");
+    else if (findProfile(prof, dn) !== p) fails.push(key + ": 도감 이름 '" + dn + "'으로 이 프로필을 찾지 못함");
+  }
+  if (dbN && dbN < 50) fails.push("DB 보충 프로필이 너무 적음(" + dbN + ")");
   const search2 = search; let found = 0, tf = 0;
   for (const c of CHAMPIONS.filter((x) => x.id !== "steinitz")) { if (findProfile(prof, c.name)) found++; if (playedTournaments(search2, c.name, 3).length) tf++; }
   if (found < 15) fails.push("챔피언 중 프로필이 찾아지는 사람이 너무 적음(" + found + ")");

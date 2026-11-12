@@ -2,6 +2,7 @@
 // 로컬(이 기기) 캐시 → chess.com 대국이면 서버 공유 캐시(reviewed_games) → 없으면 분석. 같은 키를 쓰므로 자동으로 한 리뷰를 리뷰 화면에서 열면 바로 보인다.
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import { REVIEW_RESULT_CACHE_VERSION, reviewStorageKey, reviewPut, recordReviewSummary } from "./common.jsx";
+import { fixForcedOnlyMoves } from "../lib/moveQuality.js";
 
 // 로컬(이 기기·브라우저) 캐시 — sessionStorage(탭 닫으면 사라짐)가 아니라 localStorage(브라우저를
 // 껐다 켜도 남음)를 쓴다, "다시 열 때마다"라는 신고가 새로고침뿐 아니라 다른 날 다시 들어와도
@@ -24,7 +25,7 @@ export function loadCachedReviewResult(storageKey, expectedLen, depth) {
     if (!parsed || parsed.v !== REVIEW_RESULT_CACHE_VERSION || !parsed.result) return null;
     if (depth != null && parsed.d !== depth) return null;
     if (expectedLen != null && (!parsed.result.moves || parsed.result.moves.length !== expectedLen)) return null;
-    return parsed.result;
+    return fixForcedOnlyMoves(parsed.result);   // (v0.7.5) 강제 수를 유일한 수로 매긴 예전 결과 바로잡기
   } catch { return null; }
 }
 export function saveCachedReviewResult(storageKey, result, depth) {
@@ -43,7 +44,7 @@ export async function reviewedAnalysisFetch(ccId, expectedLen, depth) {
     if (!a || a.v !== REVIEW_RESULT_CACHE_VERSION || !a.result) return null;
     if (depth != null && a.d !== depth) return null;
     if (expectedLen != null && (!a.result.moves || a.result.moves.length !== expectedLen)) return null;
-    return a.result;
+    return fixForcedOnlyMoves(a.result);
   } catch { return null; }
 }
 export async function reviewedAnalysisShare(ccId, result, depth) {

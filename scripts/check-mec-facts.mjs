@@ -21,7 +21,7 @@ const dir = mkdtempSync(join(ROOT, "node_modules/.mec-check-"));   // 번들이 
 const out = join(dir, "common.mjs");
 await build({ entryPoints: [join(ROOT, "src/app/common.jsx")], bundle: true, platform: "node", format: "esm", outfile: out, jsx: "automatic", logLevel: "error",
   loader: { ".jsx": "jsx", ".js": "jsx", ".png": "dataurl", ".json": "json", ".svg": "dataurl" }, external: ["react", "react-dom", "@supabase/*", "lucide-react", "chess.js"], define: { "import.meta.env": "{}" } });
-const { mecFacts } = await import(out);
+const { mecFacts, mecBookFacts } = await import(out);
 rmSync(dir, { recursive: true, force: true });
 
 const fails = [];
@@ -36,7 +36,7 @@ for (const f of ["norway", "candidates", "dortmund"]) {
   const d = JSON.parse(readFileSync(join(ROOT, "src/data/tournaments/" + f + ".json"), "utf8"));
   games.push(...d.eds.flatMap((e) => e.g).filter((g) => typeof g[5] === "string" && g[5].length > 60).slice(0, 25));
 }
-let n = 0;
+let n = 0, bookN = 0;
 for (const g of games) {
   const sans = decodeMoves(g[5]).slice(0, 70);
   for (let p = 0; p < sans.length; p++) {
@@ -56,6 +56,17 @@ for (const g of games) {
     if (text && !/[.]$/.test(text)) fails.push("코치 문장이 마침표로 끝나지 않음(문장 형태가 아님): " + text);
     if (PLAIN_END.test(text)) fails.push("코치 문장에 평서형(~다) 어미 — 존댓말(~습니다·~입니다)이어야 함: " + text);
     if (OLD_TERMS.test(text)) fails.push("코치 문장에 옛 표기(겹폰·마지막 줄 등): " + text);
+    // (v0.7.5 BUG-151) 한국어 문장 속 파일 문자는 소문자("c폰"·"e파일") — 문장 첫 글자 대문자 처리가 "C폰"으로 바꾸면 안 된다
+    if (/[A-H](?:폰|파일|열|랭크)/.test(text)) fails.push("파일 문자가 대문자로 바뀜: " + text);
+    // (v0.7.5) 정석 수 설명(오프닝 레파토리·폰 구조)도 같은 문체 규칙을 지킨다 — 처음 16수만(이론 구간)
+    if (p < 16) {
+      const bt = mecBookFacts(sans.slice(0, p), san, sans.slice(p + 1, p + 3), null)[0] || "";
+      if (bt) { bookN++;
+        if (/[—!?…()~→:;]/.test(bt)) fails.push("정석 수 설명에 특수 기호: " + bt);
+        if (/[A-H](?:폰|파일|열|랭크)/.test(bt)) fails.push("정석 수 설명의 파일 문자가 대문자: " + bt);
+        if (!/[.]$/.test(bt) || PLAIN_END.test(bt) || OLD_TERMS.test(bt)) fails.push("정석 수 설명 문체(합니다체·마침표·옛 표기): " + bt);
+      }
+    }
     const tag = (p % 2 ? Math.floor(p / 2) + 1 + "..." : Math.floor(p / 2) + 1 + ".") + san + " → " + text;
     if (mv.captured && /안 잡았|잡을 수도 있었지만|잡을 수 있었다|잡지 않았|안 잡아도/.test(text)) fails.push("잡는 수에 '안 잡았다' 문장: " + tag);
     if (mv.captured && /수비자 제거/.test(text)) {
@@ -90,6 +101,9 @@ for (const g of games) {
     region(review, "const REVIEW_COACH_COPY", "\n};"),                  // 말풍선 본문
     region(review, "async function brilliantExplain", "\n}\n"),        // 탁월한 수 설명
     region(review, "function reviewCoachCopy", "\n}\n"),               // 응징 수순 등
+    // (v0.7.5) 오프닝 레파토리 설명·계획(이름 라벨 제외)과 폰 구조 문장
+    (() => { const w = rd("src/lib/mecOpenings.js"); return w.slice(w.indexOf("const FAMILY = {")).replace(/name: \(\) => t\("[^"]*"\)/g, ""); })(),
+    region(rd("src/lib/mecStructureText.js"), "export function structurePhrase", "\n}\n"),
     (() => { const w = rd("src/lib/mistakeWhy.js"); return w.slice(w.indexOf("export function explainMistake")); })(),   // (v0.7.4) — 전술 이름 라벨은 문장이 아니라 제외, 설명 문장만 성장 분석 실수 기록의 "승률이 떨어진 이유" 설명기도 같은 문체(합니다체·무기호)
   ];
   let count = 0;
@@ -132,4 +146,4 @@ for (const g of games) {
   }
 }
 if (fails.length) { console.error("✗ MEC 문장 모순 " + fails.length + "건 (표본 " + n + "수)\n" + fails.slice(0, 12).map((x) => "  - " + x).join("\n")); process.exit(1); }
-console.log("✓ MEC 문장 일관성 (표본 " + n + "수, 모순 0건)");
+console.log("✓ MEC 문장 일관성 (표본 " + n + "수, 정석 수 설명 " + bookN + "개, 모순 0건)");

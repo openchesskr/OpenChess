@@ -2,7 +2,7 @@
 // 디자인: 어두운 유리 패널 + 등급색 포인트(왼쪽 띠·테두리·은은한 조명). 등급 이름은 언어와 상관없이 영어(Common·Rare·Epic·Legendary)로 쓴다.
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Lock } from "lucide-react";
+import { Check, Lock } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T, BOARD_SKINS, SKIN_SETS, boardSquareBg, BOARD_GLOSS } from "../lib/theme.js";
 import { PieceGlyph } from "../components/pieces.jsx";
 import { GACHA_POOL, GACHA_RARITY, ownsPiece, ownsBoard, ownedPieceTypes } from "../lib/gacha.js";

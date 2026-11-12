@@ -5,7 +5,7 @@
 //  · 모바일·좁은 화면(900px 미만)·터치 기기에서는 enabled=false — 기존 전체 화면 모달을 그대로 쓴다.
 //  창 안 내용은 호출부가 renderBody(win)로 그리므로 항상 최신 props를 쓴다(이 파일은 창 틀·배치·상태만 맡는다).
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { X, Minus, ChevronUp, Maximize2, Minimize2 } from "lucide-react";
+import { X, Minus, ChevronUp, Maximize2, Minimize2 } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 

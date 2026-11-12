@@ -91,13 +91,44 @@ writeFileSync(join(out18, "boot-single.js"),
   "importScripts(" + JSON.stringify("./" + SF18_LOADER) + ");})();\n");
 console.log("wrote boot-single.js (18 같은 출처 조각 이어붙이기)");
 
+// (v0.7.5, 사용자 요청) Stockfish 19 — Lite(단일 파일, 엔진 목록 맨 위·빠른 리뷰 전용)와 정식(대형 신경망 ~99MB).
+//  정식은 18과 같은 방식으로 90MB 미만 조각으로 나누고, boot-single.js가 self.fetch를 가로채 같은 폴더의 조각을 이어 붙인다.
+{
+  const bin19 = dirname(require.resolve("stockfish19/package.json")) + "/bin";
+  const outLite19 = "public/engine/lite19"; mkdirSync(outLite19, { recursive: true });
+  for (const f of ["stockfish-19-lite-single.js", "stockfish-19-lite-single.wasm", "stockfish-19-lite.js", "stockfish-19-lite.wasm"]) {
+    const src = join(bin19, f);
+    if (existsSync(src)) { copyFileSync(src, join(outLite19, f)); console.log("copied", f); }
+    else console.warn("missing", f, "(node_modules/stockfish19/bin 확인)");
+  }
+  const out19 = "public/engine/19"; mkdirSync(out19, { recursive: true });
+  const L19 = "stockfish-19-single.js", W19 = "stockfish-19-single.wasm";
+  if (existsSync(join(bin19, L19))) copyFileSync(join(bin19, L19), join(out19, L19));
+  const parts19 = [];
+  if (existsSync(join(bin19, W19))) {
+    const buf = readFileSync(join(bin19, W19));
+    const n = Math.max(1, Math.ceil(buf.length / SF18_PART_CAP)), size = Math.ceil(buf.length / n);
+    for (let i = 0; i < n; i++) { const name = W19.replace(/\.wasm$/, "-part-" + i + ".wasm"); writeFileSync(join(out19, name), buf.subarray(i * size, Math.min(buf.length, (i + 1) * size))); parts19.push(name); }
+    console.log("split", W19, "(" + buf.length + " bytes) into", n, "part(s)");
+  } else console.warn("missing", W19);
+  writeFileSync(join(out19, "boot-single.js"),
+    "(function(){" +
+    "var parts=" + JSON.stringify(parts19) + ".map(function(n){return new URL(n,self.location).href;});" +
+    "var f=self.fetch.bind(self);" +
+    "var merged=Promise.all(parts.map(function(u){return f(u).then(function(r){return r.arrayBuffer();});}))" +
+    "  .then(function(bufs){var total=bufs.reduce(function(n,b){return n+b.byteLength;},0);var out=new Uint8Array(total);var off=0;bufs.forEach(function(b){out.set(new Uint8Array(b),off);off+=b.byteLength;});return out;});" +
+    "self.fetch=function(u,o){if(typeof u===\"string\"&&u.indexOf(\".wasm\")!==-1)return merged.then(function(m){return new Response(m,{headers:{\"Content-Type\":\"application/wasm\"}});});return f(u,o);};" +
+    "importScripts(" + JSON.stringify("./" + L19) + ");})();\n");
+  console.log("wrote boot-single.js (19 같은 출처 조각 이어붙이기)");
+}
+
 // (v0.6.3, 앱 출시 준비) 앱 빌드는 큰 엔진(17.1·18)을 번들에 넣지 않고(Google Play 기본 한도 200MB) 설정에서 고를 때
 // 내려받는다(src/lib/engineDownload.js). 내려받을 파일 목록·크기를 public/engine/manifest.json에 적어 둔다.
 {
   // 앱 웹뷰는 교차 출처 격리가 안 돼 멀티스레드 빌드(boot-mt.js·8e4d048 조각)를 못 쓰므로 목록에서 뺀다(약 80MB 절약).
   const listDir = (dir) => readdirSync(dir).filter((f) => !f.startsWith(".") && f !== "boot-mt.js" && !f.includes("8e4d048")).sort().map((name) => ({ name, size: statSync(join(dir, name)).size }));
   const manifest = {};
-  for (const [id, dir] of [["full17", "17"], ["full18", "18"]]) {
+  for (const [id, dir] of [["full17", "17"], ["full18", "18"], ["full19", "19"]]) {
     const path = join("public/engine", dir);
     if (existsSync(path)) manifest[id] = { dir, files: listDir(path) };
   }

@@ -126,31 +126,29 @@ export default [
       const bonus = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_quest('bonus');`));
       const bonus2 = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_quest('bonus');`));
       const e = eco(sb, U.mallory);
-      const bad = noSolve.ok || bonusEarly.ok || badSlot.ok || !p1 || p1.duplicate !== false || !p2 || p2.duplicate !== true || slots.some((x) => !x) || !bonus || bonus.gainXp !== 20 || !bonus2 || bonus2.duplicate !== true || e.coins !== 50 + 50 || e.xp !== before.xp + 20;
+      // (v0.7.5 BUG-153) 전체 완료 보너스 코인은 서버 설정값(questBonus.coins, v0.7.3부터 100)을 읽어 쓴다 — 예전엔 50으로 고정돼 있어 정상인데도 "뚫림"으로 나왔다.
+      const bonusCoins = Number(sb.psql("select (public.economy_params() -> 'questBonus' ->> 'coins')").out.trim());
+      const bad = noSolve.ok || bonusEarly.ok || badSlot.ok || !p1 || p1.duplicate !== false || !p2 || p2.duplicate !== true || slots.some((x) => !x) || !bonus || bonus.gainXp !== 20 || !bonus2 || bonus2.duplicate !== true || e.coins !== 50 + bonusCoins || e.xp !== before.xp + 20;
       return { breached: bad, evidence: `푼 적 없는 퀘스트·조기 보너스·가짜 슬롯 거부 · 5슬롯 ${p1 && p1.gainCoins}코인×5 + 보너스(XP ${bonus && bonus.gainXp}, 코인 ${bonus && bonus.gainCoins}) = 합계 ${e.coins}코인 · 중복 청구는 지급 0` };
     } },
-  { id: "BUG-113k", kind: "attack", title: "챕터 보상: 같은 챕터 반복 · 이름을 지어낸 챕터로 코인 생성 · 거액 설정은 상한 · 서버 콘텐츠가 없을 때는 기본 레슨 목록만 · 시간당 제한",
+  { id: "BUG-113k", kind: "attack", title: "레슨 보상: 같은 레슨 반복 · 이름을 지어낸 레슨으로 코인 생성 · 서버 콘텐츠(app_content)에 레슨 목록을 심어 금액 조작 · 시간당 제한",
     async run({ sb, U }) {
-      // (1) 서버 콘텐츠에 레슨이 있을 때: 그 목록만
-      sb.admin(`insert into public.app_content(key,value) values ('global','{"lessons":{"ch1":{"reward":250},"chHuge":{"reward":99999999},"chNone":{}}}')`);
-      const a = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('ch1');`));
-      const again = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('ch1');`));
-      const huge = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('chHuge');`));
-      const dflt = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('chNone');`));
+      // (v0.7.5) 레슨은 코드에 고정된 커리큘럼 — 서버는 economy_params의 seedChapters(레슨 id → 20코인)만 쓴다. app_content에 레슨 목록을 넣어도 무시해야 한다.
+      sb.admin(`insert into public.app_content(key,value) values ('global','{"lessons":{"ch1":{"reward":250},"b_rook":{"reward":99999999}}}')`);
+      const a = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('b_board');`));
+      const again = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('b_board');`));
+      const planted = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('b_rook');`));
+      const contentOnly = call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('ch1');`);
       const invented = Array.from({ length: 5 }, (_, i) => call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('made_up_${i}');`));
       const bad = call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('x; drop table y');`);
       const e1 = eco(sb, U.mallory);
-      // (2) 서버 콘텐츠에 레슨이 없을 때: 코드의 기본 레슨 목록(l_intro=40 …)만
       sb.admin(`delete from public.app_content`);
-      const seed = J(call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('l_intro');`));
-      const inventedSeed = call(sb, "authenticated", U.mallory, `select public.economy_claim_chapter('ch1');`);
-      const e2 = eco(sb, U.mallory);
-      // (3) 시간당 제한: 지어낸 이름을 계속 보내도 제한에 걸린다
+      // 시간당 제한: 지어낸 이름을 계속 보내도 제한에 걸린다
       const flood = Array.from({ length: 40 }, (_, i) => call(sb, "authenticated", U.bob, `select public.economy_claim_chapter('zz_${i}');`));
       const limited = flood.filter((r) => J(r) && J(r).error === "rate limited").length;
-      const bad2 = !(a && a.gainCoins === 250 && again && again.duplicate && huge && huge.gainCoins === 1000 && dflt && dflt.gainCoins === 100) || invented.some((r) => !(J(r) && J(r).error)) || bad.ok
-        || e1.coins !== 250 + 1000 + 100 || !(seed && seed.gainCoins === 40) || !(J(inventedSeed) && J(inventedSeed).error) || e2.coins !== e1.coins + 40 || limited < 5 || flood.some((r) => J(r) && !J(r).error);
-      return { breached: bad2, evidence: `서버 콘텐츠 챕터 ch1 ${a && a.gainCoins}·반복 지급 0·거액 설정 상한 ${huge && huge.gainCoins}·reward 없는 챕터 기본 ${dflt && dflt.gainCoins} · 지어낸 이름 5개·잘못된 이름 거부 · 콘텐츠 없을 때 기본 레슨 l_intro ${seed && seed.gainCoins}(지어낸 이름 거부) · 지어낸 이름 40개 중 제한 ${limited}건, 지급 0` };
+      const bad2 = !(a && a.gainCoins === 20 && again && again.duplicate && planted && planted.gainCoins === 20) || !(J(contentOnly) && J(contentOnly).error) || invented.some((r) => !(J(r) && J(r).error)) || bad.ok
+        || e1.coins !== 20 + 20 || limited < 5 || flood.some((r) => J(r) && !J(r).error);
+      return { breached: bad2, evidence: `레슨 b_board ${a && a.gainCoins}코인·반복 지급 0 · app_content에 심은 금액 무시(b_rook ${planted && planted.gainCoins}) · 콘텐츠에만 있는 레슨·지어낸 이름 5개·잘못된 이름 거부 · 합계 ${e1.coins}코인 · 지어낸 이름 40회 중 ${limited}회 제한` };
     } },
   { id: "BUG-113l", kind: "attack", title: "알림 보상 위조: payload의 reward를 고쳐 청구 · reward_amount 컬럼 수정 · 같은 알림 반복 · 남의 알림 청구",
     async run({ sb, U }) {

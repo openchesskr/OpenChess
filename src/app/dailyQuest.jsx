@@ -1,7 +1,7 @@
 // (v0.7.4, 사용자 요청) 일일 퀘스트 카드 — 학습 탭에서 플레이 탭으로 옮기면서 학습 탭 전용 파일(learn.jsx)에서 분리했다.
 // KST 자정 갱신 카운트다운, 오프닝 퀘스트 개별 리롤, 완료 표기는 이 카드가 화면에 나타날 때 애니메이션으로 공개(seen 플래그). 로직·디자인은 v0.7.3 그대로.
 import { useState, useEffect, useMemo } from "react";
-import { Check, RotateCcw, Puzzle, CalendarCheck, BookMarked, Timer, Gem, Sparkles, ListChecks, Swords } from "lucide-react";
+import { Check, RotateCcw, Puzzle, CalendarCheck, BookMarked, Timer, Gem, Sparkles, ListChecks, Swords } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { motion } from "framer-motion";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { CoinIcon, DEFAULT_QUEST_OPENINGS, questLabelNode, questOpeningMovesText } from "./common.jsx";

@@ -8,6 +8,7 @@
   "app/dex.jsx",
   "app/dexMasters.jsx",
   "app/growth.jsx",
+  "app/growthMotion.jsx",
   "app/analysis.jsx",
   "app/play.jsx",
   "app/profile.jsx",
@@ -54,5 +55,10 @@
   "app/gameHistory.jsx",
   "lib/mistakeWhy.js",
   "app/autoReview.js",
-  "lib/recentGames.js"
+  "lib/recentGames.js",
+  "lib/mecOpenings.js",
+  "lib/mecStructureText.js",
+  "app/lessons.jsx",
+  "lib/lessons/curriculum.js",
+  "app/profileEdit.jsx"
 ]

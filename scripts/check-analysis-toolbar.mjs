@@ -18,8 +18,8 @@ const ed = learn.slice(learn.indexOf("function BoardEditorModal("));
 if (!/const loadImport = /.test(ed) || !/pushSnap\(\{ board: p\.board, turn: p\.turn, rights: p\.rights, ep: p\.ep \|\| null \}\); setImportErr\(""\)/.test(ed) || !/onLoadPgn\(moves\)/.test(ed)) fails.push("보드 편집 화면에 FEN/PGN 불러오기(loadImport)가 없음");
 if (!/onLoadPgn=\{\(moves\) => \{ onLoadPgn\(moves\); setEditorOpen\(false\); \}\}/.test(learn)) fails.push("편집 화면의 PGN 불러오기가 분석 탭 기보로 연결되지 않음");
 // ③
-const hdr = social.match(/flexWrap: "wrap", gap: "8px 10px" \}\}>[\s\S]{0,900}?flex: "1 1 150px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"/g) || [];
-// (v0.6.9) 친구 창 프로필은 @아이디를 창 헤더로 옮기고 이 줄에는 칭호·토글만 두므로 내 프로필 헤더 1곳만 검사한다.
-if (hdr.length < 1) fails.push("프로필 카드 헤더(내 프로필)가 줄바꿈·말줄임 규칙을 따르지 않음: " + hdr.length);
+// (v0.7.5) 내 프로필 카드(MyProfileCard)는 새 프로필 편집 화면으로 대체돼 없어졌다 — 남은 프로필 헤더(/user 페이지의 @아이디 줄)가 같은 말줄임 규칙을 지키는지 본다.
+const hdr = social.match(/minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" \}\}>\{pub \|\| pubUsername \? <>@/g) || [];
+if (hdr.length < 1) fails.push("/user 페이지 헤더(@아이디)가 말줄임 규칙을 따르지 않음: " + hdr.length);
 if (fails.length) { console.error("✖ check-analysis-toolbar 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-analysis-toolbar: 복사·편집·리뷰 순서와 편집 화면 불러오기 통합, 프로필 헤더 줄바꿈 규칙이 유지된다");

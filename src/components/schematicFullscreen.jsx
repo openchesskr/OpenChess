@@ -6,7 +6,7 @@
 //    전체 화면 동안만 그런 조상에 .schematic-fs-unx(index.css)를 붙여 변형을 풀고, 닫으면 되돌린다.
 //  · 전체 화면 중에는 뒤쪽 페이지가 스크롤되지 않게 body 스크롤을 잠근다.
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
-import { Maximize2, X } from "lucide-react";
+import { Maximize2, X } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 

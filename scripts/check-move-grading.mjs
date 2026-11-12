@@ -25,6 +25,10 @@ const SAC_CASES = [
   ["6...h5 폰 이동으로 비숍 방치", null, "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 O-O Bg4 h3 h5", true],
   ["진짜 포크(체크+룩) — 킹을 피해 룩을 내줌은 희생 아님", "r3k3/2N5/8/8/8/8/8/4K3 b - - 0 1", "Kd7", false],
   ["진짜 포크(체크+룩) — 반대쪽으로 피해도 희생 아님", "r3k3/2N5/8/8/8/8/8/4K3 b - - 0 1", "Kf7", false],
+  // (v0.7.5 BUG-160, 사용자 제보 openchess.kr/review/187046570186) 32.a5 — Rd3가 노리는 e3 비숍을 그대로 두고 퀸사이드 폰을 민다
+  ["BUG-160 32.a5 — e3 비숍을 방치(희생)", null, "e4 c5 Nf3 e6 d4 cxd4 Nxd4 Nc6 Nc3 Qc7 Be3 a6 g3 Nf6 Bg2 Be7 O-O O-O f4 d6 Kh1 Nxd4 Bxd4 e5 Be3 Bg4 Qd2 Rac8 h3 Be6 f5 Bc4 Rf2 b5 b3 Bxb3 Nxb5 axb5 cxb3 Rfd8 Rc1 Qb7 Rxc8 Rxc8 g4 Nxe4 Kg1 d5 Bxe4 dxe4 g5 f6 gxf6 Bxf6 Qd6 Qc6 Qb4 Rd8 a4 bxa4 bxa4 Rd3 a5", true],
+  // 33.Rb2 — 32...Bh4가 Rf2를 노릴 때 Re2면 룩과 e3 비숍을 다 지키는데, Rb2로 비숍을 내준다(포크의 당연한 귀결이 아니라 스스로 고른 희생)
+  ["BUG-160 33.Rb2 — 모두 지키는 수(Re2)가 있는데 비숍을 내줌", null, "e4 c5 Nf3 e6 d4 cxd4 Nxd4 Nc6 Nc3 Qc7 Be3 a6 g3 Nf6 Bg2 Be7 O-O O-O f4 d6 Kh1 Nxd4 Bxd4 e5 Be3 Bg4 Qd2 Rac8 h3 Be6 f5 Bc4 Rf2 b5 b3 Bxb3 Nxb5 axb5 cxb3 Rfd8 Rc1 Qb7 Rxc8 Rxc8 g4 Nxe4 Kg1 d5 Bxe4 dxe4 g5 f6 gxf6 Bxf6 Qd6 Qc6 Qb4 Rd8 a4 bxa4 bxa4 Rd3 a5 Bh4 Rb2", true],
 ];
 for (const [name, fen, line, want] of SAC_CASES) {
   const sans = line.split(" ");
@@ -69,9 +73,16 @@ const POISON = [
   ["중간 이득이라도 따 간 뒤 기물을 되찾으면 희생이 아니다", { cp: -50 }, { cp: 180 }, true, false],
   ["중간 이득이고 되찾지 못하면 희생", { cp: -50 }, { cp: 180 }, false, true],
   ["이미 메이트(상대 메이트 5)인데 따 간 뒤 평범한 +9점이면 따 가는 쪽이 낫다 → 희생 아님", { mate: -5 }, { cp: 900 }, false, false],
+  // (v0.7.5 BUG-160) 새 규칙 — [이름, a, c, 되찾음, 기대, 되찾는 첫 수가 체크]
+  ["BUG-160 되찾지 못하면 이득이 작아도(+0.2) 보상이 있는 진짜 희생(예: 21...Bxf2+)", { cp: 30 }, { cp: -8 }, false, true],
+  ["BUG-160 되찾지 못해도 따 간 뒤 둔 쪽이 더 나빠지면 희생 아님(이득 < 0)", { cp: 30 }, { cp: -60 }, false, false],
+  ["BUG-160 32.a5(SF18 Lite d20) — 체크 전술(Qb8+)로 되찾고 따 가면 0.7점 손해 → 희생", { cp: 70 }, { cp: 0 }, true, true, true],
+  ["BUG-160 14.Kf1 유형 — 평범한 교환(Qxd5)으로 되찾고 0.8점 손해 → 지켜진 기물(희생 아님)", { cp: -35 }, { cp: 117 }, true, false, false],
+  ["BUG-160 체크 전술로 되찾아도 손해가 0.5점 미만이면 희생 아님(예: 17...Nxb2 Bxb2 Bxc3+)", { cp: 0 }, { cp: 20 }, true, false, true],
+  ["BUG-160 되찾더라도 따 가면 2점 이상 손해면 희생(예: 22...Nxf4)", { cp: -30 }, { cp: 250 }, true, true, false],
 ];
-for (const [name, a, c, regains, want] of POISON) {
-  const got = sacPoisonVerdict(a, c, () => regains);
+for (const [name, a, c, regains, want, firstCheck] of POISON) {
+  const got = sacPoisonVerdict(a, c, () => regains, () => !!firstCheck);
   if (got !== want) fails.push("sacPoisonVerdict — " + name + ": 기대 " + want + ", 실제 " + got);
 }
 // BUG-060 전 과정(정적 판정 → 엔진 수순 → 독이 든 희생 → 등급) — 실제 Stockfish 18 기록값으로 22.Bg8+가 탁월로 매겨지는지
@@ -90,6 +101,17 @@ for (const [name, a, c, regains, want] of POISON) {
   const kind = gradeMoveKind({ loss: Math.max(0, bestCp - playedCp), matched: false, bestCp, playedCp, secondCp: undefined, isSac: () => verdict, priorSac: ownPriorMoveWasSacrifice([...line, san], "w", null), san });
   if (kind !== "brilliant") fails.push("22.Bg8+ — 탁월한 수여야 하는데 " + kind);
 }
+// (v0.7.5 BUG-160) 실제 Stockfish 19 Lite(depth 18) 기록값 — 33.Rb2 뒤 엔진 수순에서 흑이 e3 비숍을 실제로 가져간다(①), 32.a5는 Rxe3 Qb8+로 되찾는 체크 전술(②)
+{
+  const g = "e4 c5 Nf3 e6 d4 cxd4 Nxd4 Nc6 Nc3 Qc7 Be3 a6 g3 Nf6 Bg2 Be7 O-O O-O f4 d6 Kh1 Nxd4 Bxd4 e5 Be3 Bg4 Qd2 Rac8 h3 Be6 f5 Bc4 Rf2 b5 b3 Bxb3 Nxb5 axb5 cxb3 Rfd8 Rc1 Qb7 Rxc8 Rxc8 g4 Nxe4 Kg1 d5 Bxe4 dxe4 g5 f6 gxf6 Bxf6 Qd6 Qc6 Qb4 Rd8 a4 bxa4 bxa4 Rd3".split(" ");
+  const b32 = boardOfRoot(null, g), a32 = applySan(b32, "a5", "w");
+  if (sacrificeCaptureUci(b32, "a5", "w") !== "d3e3") fails.push("32.a5 — 따 가는 수가 Rxe3(d3e3)이 아님: " + sacrificeCaptureUci(b32, "a5", "w"));
+  if (pvLosesMaterial(b32, a32, "h7h5 f2e2 g8h7 g1h2 d3c3 h2g2 f6d8 g2g1".split(" "), "w")) fails.push("32.a5 — 흑이 받지 않는 기록 수순을 기물 손실로 봤다");
+  const b33 = boardOfRoot(null, [...g, "a5", "Bh4"]), a33 = applySan(b33, "Rb2", "w");
+  if (!pvLosesMaterial(b33, a33, "h7h6 b4b6 c6d7 b6g6 d3e3 b2b8 h4d8 g6e6".split(" "), "w")) fails.push("33.Rb2 — 기록 수순(…Rxe3)에서 비숍을 내주는 것을 못 봤다");
+  const kind = gradeMoveKind({ loss: 20, matched: false, bestCp: -17, playedCp: -37, secondCp: -27, isSac: () => true, san: "Rb2" });
+  if (kind !== "brilliant") fails.push("33.Rb2 — 희생 확인 뒤 탁월이어야 하는데 " + kind);
+}
 // 평범한 퀸 교환(상대가 먼저 잡고 내가 곧바로 되잡음)의 순간적인 차이는 손해가 아니다
 {
   const sans = "e4 e5 Nf3 Nc6 d4 exd4 Nxd4 Nxd4 Qxd4".split(" ");
@@ -103,6 +125,9 @@ const G = [
   ["2순위와 1.5점 차이 → 유일", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -120, isSac: no }, "only"],
   ["BUG-037 승부가 기운 위치(+3)에서도 2순위와 차이가 크면 유일", { loss: 0, matched: true, bestCp: 300, playedCp: 300, secondCp: 150, isSac: no }, "only"],
   ["2순위 평가를 모르면(undefined) 유일 판정 안 함", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: undefined, isSac: no }, "best"],
+  // (v0.7.5, 사용자 요청) 강제 수(합법 수 하나뿐 → 2순위 수 없음 = null)는 유일한 수가 아니다
+  ["강제 수(2순위 수 없음, null)는 유일한 수 아님 → 최선", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: null, isSac: no }, "best"],
+  ["강제 수는 지고 있는 위치(-1.5)에서도 유일한 수 아님", { loss: 0, matched: true, bestCp: -150, playedCp: -150, secondCp: null, isSac: no }, "best"],
   ["2순위와 차이가 작으면 최선", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -50, isSac: no }, "best"],
   ["단순 되잡기는 유일 아님", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -200, isSac: no, singleRecapture: yes }, "best"],
   ["6점 이상 이긴 위치는 유일 아님", { loss: 0, matched: true, bestCp: 700, playedCp: 700, secondCp: 400, isSac: no }, "best"],
@@ -151,6 +176,18 @@ app.forEach((l, i) => {
 const rawSac = app.filter((l) => { const c = l.replace(/\/\/.*$/, ""); return /isSac:\s*\(\)\s*=>\s*isSacrifice\(/.test(c) && !/sacVerdict\(/.test(c); }).length;
 if (rawSac !== 1) fails.push("src/App.jsx — 엔진 확인 없이 isSacrifice로 탁월을 매기는 곳이 " + rawSac + "곳(허용 1곳: gradeMoveKindConfirmed). gradeMoveKindConfirmed·sacCheckSync를 쓸 것");
 
+// (v0.7.5, 사용자 요청) 강제 수는 유일한 수가 아니다 — 저장된 예전 결과도 읽을 때 바로잡는다(fixForcedOnlyMoves)
+{
+  const { fixForcedOnlyMoves } = await import("../src/lib/moveQuality.js");
+  // 1.e4 f5 2.Qh5+ g6 — 2...g6는 흑의 유일한 합법 수(f7이 비었지만 h5 퀸이 g6을 거쳐 f7을 겨눠 Kf7도 불가)라 강제 수다.
+  const r = { moves: [{ san: "e4", kind: "book" }, { san: "f5", kind: "mistake" }, { san: "Qh5+", kind: "best" }, { san: "g6", kind: "only" }, { san: "Qxg6+", kind: "only" }] };
+  fixForcedOnlyMoves(r);
+  if (r.moves[3].kind !== "best") fails.push("fixForcedOnlyMoves — 강제 수 2...g6(합법 수 하나)이 유일한 수로 남음");
+  if (r.moves[4].kind !== "only") fails.push("fixForcedOnlyMoves — 합법 수가 여럿인 3.Qxg6+까지 바꿈");
+  const fen = { moves: [{ san: "Ke2", kind: "only" }] }; fixForcedOnlyMoves(fen);
+  if (fen.moves[0].kind !== "only") fails.push("fixForcedOnlyMoves — 시작 포지션이 아닌 결과를 건드림");
+  for (const f of ["src/app/reviewCache.js", "src/app/profile.jsx", "src/app/recentPerf.jsx", "src/app/common.jsx"]) if (!/fixForcedOnlyMoves\(/.test(readFileSync(new URL("../" + f, import.meta.url), "utf8"))) fails.push(f + " — 저장된 리뷰 결과를 읽을 때 fixForcedOnlyMoves를 거치지 않음");
+}
 if (fails.length) {
   console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038 재발 방지):\n  " + fails.join("\n  "));
   process.exit(1);

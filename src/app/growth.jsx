@@ -2,8 +2,11 @@
 // 약점 지도·복습 카드·오프닝 실수·실수 요약은 "리뷰하는 대로 약점을 분석하고 성장 가능성을 찾는다"는 방향으로 처음부터 다시 설계하려고 모두 삭제했다(전용 라이브러리 3개 포함).
 // 마스터 스타일 로직은 lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사).
 import { useState, useEffect, useMemo, Fragment, createContext, useContext } from "react";
+import { motion } from "framer-motion";
+import { OC_EASE } from "../components/motionKit.jsx";
 import { isLite } from "../lib/perfMode.js";
-import { Lock, Search } from "lucide-react";
+import { Search } from "../components/ocIcons.jsx";
+import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, ReportStrip } from "./growthMotion.jsx";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { OnlineDot, Board, useNarrow } from "./common.jsx";
@@ -50,17 +53,20 @@ function SectionHead({ Icon, title, right }) {
 /* ── 테마 묶음 (v0.7.4, 사용자 요청: 중구난방 나열 → 합칠 수 있는 건 한 테마로, 정보를 체계적으로 구분) ──
    성장 분석은 네 테마로 나뉜다: ① 성장 요약(평균·변화·곡선) ② 약점 진단(구간·원인·유형 탭 + 지금 고칠 한 가지) ③ 실수 기록 ④ 마스터 스타일. 각 테마는 번호·제목·한 줄 설명 머리말 하나만 갖는다. */
 function ThemeSection({ id, no, title, desc, right, children }) {
+  // (v0.7.5, 사용자 요청) 테마마다 화면에 들어올 때 한 번 떠오르고(Reveal), 번호 표지는 계속 은은하게 빛난다(ab-textglow).
   return (
     <div id={id} style={{ borderTop: "1px solid #E4D5B6", padding: "16px 0 4px", scrollMarginTop: 8 }}>
+      <Reveal>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, padding: "0 16px 12px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#A8842F", fontFamily: SITE_FONT }}>{"0" + no}</div>
+          <div className="ab-textglow" style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: ".14em", color: "#A8842F", fontFamily: SITE_FONT, animationDelay: (no * 0.7) + "s" }}>{"0" + no}</div>
           <h3 style={{ ...h3, fontSize: 17, marginTop: 1 }}>{title}</h3>
           <div style={{ ...sub, fontSize: 11.5, marginTop: 2 }}>{desc}</div>
         </div>
         {right}
       </div>
-      {children}
+      </Reveal>
+      <Reveal delay={0.12}>{children}</Reveal>
     </div>
   );
 }
@@ -70,9 +76,9 @@ function SectionNav({ items }) {
   return (
     <div role="navigation" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 16px 12px", scrollbarWidth: "none" }}>
       {items.map(([id, label], i) => (
-        <button key={id} className="press" onClick={() => go(id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "6px 12px", borderRadius: 999, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>
+        <motion.button key={id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.08, ease: OC_EASE }} className="press" onClick={() => go(id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "6px 12px", borderRadius: 999, border: "1px solid #DCCBA8", background: "rgba(255,255,255,.45)", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 12, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>
           <span style={{ fontSize: 10, fontWeight: 900, color: "#A8842F", fontFamily: SITE_FONT }}>{"0" + (i + 1)}</span>{label}
-        </button>
+        </motion.button>
       ))}
     </div>
   );
@@ -324,26 +330,6 @@ function ProfileBlock({ uid, me, onOpenTitle, children }) {
   );
 }
 
-/* ── 자동 분석 게이트 ──
-   성장 분석은 직접 리뷰하지 않아도 가장 최근 대국 GROWTH_RECENT_GAMES(5)판을 엔진이 백그라운드에서 자동으로 리뷰해 보여 준다. 최근 대국이 5판 미만이거나 분석이 끝나기 전에는 게이지 바로 진행 상황을 알린다. */
-function AutoReviewGate({ phase, count, need, engineStatus }) {
-  const n = Math.min(count, need);
-  const msg = phase === "need" ? t("최근 대국이 {0}판 이상 쌓이면 성장 분석이 자동으로 시작됨", need)
-    : engineStatus === "off" ? t("분석 엔진을 쓸 수 없어 자동 분석을 할 수 없음")
-    : engineStatus !== "ready" ? t("분석 엔진 준비 중…") : t("리뷰하지 않아도 최근 {0}판을 자동으로 분석하는 중", need);
-  return (
-    <div style={card}>
-      <SectionHead Icon={Lock} title={t("성장 분석")} right={<span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink, fontFamily: SITE_FONT }}>{n}/{need}</span>} />
-      <p style={{ fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 12px", lineHeight: 1.5 }}>{msg}</p>
-      <div role="progressbar" aria-valuemin={0} aria-valuemax={need} aria-valuenow={n} aria-label={t("성장 분석")} style={{ display: "flex", gap: 5 }}>
-        {Array.from({ length: need }, (_, i) => (
-          <span key={i} style={{ flex: 1, height: 12, borderRadius: 6, background: i < n ? "linear-gradient(90deg,#C49A50,#ECCB86)" : "rgba(0,0,0,.1)", border: "1px solid " + (i < n ? "#A8842F" : "rgba(0,0,0,.06)"), transition: "background .4s ease" }} />
-        ))}
-      </div>
-      {phase === "analyze" && <p style={{ ...sub, margin: "10px 0 0" }}>{t("분석이 끝나면 여기에 결과가 나타남")}</p>}
-    </div>
-  );
-}
 // 예전 성장 분석(실수 기록·복습 카드)이 이 기기에 남긴 저장 데이터(occ_growth_v1:*)를 한 번 정리한다.
 function purgeLegacyGrowthData() {
   try {
@@ -443,24 +429,24 @@ function Overview({ g, onReview }) {
     <div style={{ padding: "0 16px 14px" }}>
       <div style={{ ...darkPanel, marginBottom: 0, padding: 12 }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr)", gap: 8 }}>
-          <div style={tile}>
+          <StatPop i={0} style={tile}>
             <div style={lab}>{t("평균 정확도")}</div>
-            <div style={{ ...row, color: T.ivoryHi }}><span style={big}>{g.avgAcc != null ? g.avgAcc.toFixed(1) : "–"}</span><span style={unit}>%</span></div>
+            <div style={{ ...row, color: T.ivoryHi }}><span style={big}><CountDec value={g.avgAcc} /></span><span style={unit}>%</span></div>
             <div style={note}>{t("최근 {0}판 기준", g.n)}</div>
-          </div>
-          <div style={tile}>
+          </StatPop>
+          <StatPop i={1} style={tile}>
             <div style={lab}>{t("최근 변화")}</div>
             <div style={{ ...row, color: dc }}>
               {d != null && <span style={{ fontSize: 11, marginRight: 3, alignSelf: "center" }}>{up ? "▲" : down ? "▼" : "±"}</span>}
-              <span style={big}>{d == null ? "–" : Math.abs(d).toFixed(1)}</span>{d != null && <span style={unit}>%p</span>}
+              <span style={big}>{d == null ? "–" : <CountDec value={Math.abs(d)} />}</span>{d != null && <span style={unit}>%p</span>}
             </div>
             <div style={note}>{t("최근 {0}판 기준", g.trend.k)}</div>
-          </div>
-          <div style={tile}>
+          </StatPop>
+          <StatPop i={2} style={tile}>
             <div style={lab}>{t("가장 약한 구간")}</div>
             <div style={{ ...row, whiteSpace: "normal", color: g.weakPhase ? "#FFB066" : T.ivoryHi }}><span style={{ ...big, fontSize: g.weakPhase && phaseLabel(g.weakPhase.key).length > 7 ? 14 : 18, letterSpacing: "-.02em", lineHeight: 1.1, wordBreak: "keep-all" }}>{g.weakPhase ? phaseLabel(g.weakPhase.key) : "–"}</span></div>
             <div style={note}>{wk && wk.acc != null ? t("정확도 {0}%", wk.acc.toFixed(1)) : "\u00A0"}</div>
-          </div>
+          </StatPop>
         </div>
         <GrowthCurve g={g} onReview={onReview} bare dark />
       </div>
@@ -482,6 +468,7 @@ function GrowthCurve({ g, onReview, bare, dark }) {
   const y = (v) => PY + (H - 2 * PY) * (1 - (v - lo) / Math.max(1, hi - lo));
   const cur = pts[idx];
   const recentFrom = pts.length - g.trend.k;
+  const ptsAttr = pts.map((p, i) => x(i) + "," + y(p.acc).toFixed(1)).join(" ");
   return (
     <div style={dark ? { marginTop: 12 } : wrap(bare)}>
       <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={t("성장 곡선")} style={{ display: "block", overflow: "visible" }}>
@@ -489,12 +476,15 @@ function GrowthCurve({ g, onReview, bare, dark }) {
         {g.avgAcc != null && <line x1={PX} x2={W - PX} y1={y(g.avgAcc)} y2={y(g.avgAcc)} stroke={dark ? "#9A8B72" : "#8A6C2F"} strokeWidth="1" strokeDasharray="4 4" opacity=".7" />}
         <text x={PX} y={y(hi) - 2} fontSize="9" fill={ink}>{hi}</text>
         <text x={PX} y={y(lo) + 10} fontSize="9" fill={ink}>{lo}</text>
-        <polyline points={pts.map((p, i) => x(i) + "," + y(p.acc).toFixed(1)).join(" ")} fill="none" stroke={line} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {/* (v0.7.5, 사용자 요청) 곡선이 화면에 들어올 때 왼쪽부터 그려지고, 그 위를 빛 한 점이 계속 흘러간다. 점은 차례로 튀어나오고 선택한 점은 맥동한다. */}
+        <motion.polyline points={ptsAttr} fill="none" stroke={line} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" initial={{ pathLength: 0 }} whileInView={{ pathLength: 1 }} viewport={{ once: true }} transition={{ duration: 1.1, ease: OC_EASE }} />
+        <polyline points={ptsAttr} fill="none" stroke={dark ? "#FFF7DC" : "#FFF1B8"} strokeWidth="3" strokeLinecap="round" pathLength="100" strokeDasharray="6 94" className="gx-flow" style={{ filter: "drop-shadow(0 0 4px rgba(236,203,134,.9))" }} />
         {pts.map((p, i) => (
-          <g key={p.key} onClick={() => setSel(i)} style={{ cursor: "pointer" }}>
+          <motion.g key={p.key} onClick={() => setSel(i)} style={{ cursor: "pointer", transformBox: "fill-box", transformOrigin: "center" }} initial={{ opacity: 0, scale: 0 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.35, delay: 0.3 + (i / Math.max(1, pts.length)) * 0.8, ease: OC_EASE }}>
             <circle cx={x(i)} cy={y(p.acc)} r="11" fill="transparent" />
+            {i === idx && <circle cx={x(i)} cy={y(p.acc)} r="6" fill={p.acc >= g.avgAcc ? T.best : T.mistake} className="gx-ping" />}
             <circle cx={x(i)} cy={y(p.acc)} r={i === idx ? 6 : 4} fill={p.acc >= g.avgAcc ? T.best : T.mistake} stroke={i === idx ? (dark ? T.ivoryHi : T.ink) : ring} strokeWidth={i === idx ? 2 : 1.5} />
-          </g>
+          </motion.g>
         ))}
       </svg>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 10, background: dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)", border: dark ? "1px solid rgba(236,203,134,.14)" : "1px solid #DCCBA8" }}>
@@ -563,12 +553,19 @@ function FocusCard({ g, onReview }) {
 }
 const chipStyle = { fontSize: 11, fontWeight: 800, color: T.ink, background: "rgba(90,58,34,.1)", borderRadius: 999, padding: "3px 10px" };
 
+/* (v0.7.5, 사용자 요청) 통계 막대 — 화면에 들어오면 차례로 차오르고(등장), 빛줄기가 주기적으로 훑는다(반복, ab-glint). */
+function GrowBar({ width, bg, radius = 5, i = 0 }) {
+  return (
+    <motion.div className="ab-glint" initial={{ width: 0 }} whileInView={{ width: width + "%" }} viewport={{ once: true, amount: 0.5 }} transition={{ duration: 0.8, delay: 0.1 + i * 0.1, ease: OC_EASE }}
+      style={{ height: "100%", borderRadius: radius, background: bg, animationDelay: (i * 0.6) + "s" }} />
+  );
+}
 /* ③ 구간 진단 */
 function PhaseCard({ g, bare }) {
   return (
     <div style={wrap(bare)}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {g.phases.map((p) => {
+        {g.phases.map((p, pi) => {
           const weak = g.weakPhase && g.weakPhase.key === p.key, ok = p.acc != null && p.games >= MIN_PHASE_GAMES;
           return (
             <div key={p.key}>
@@ -578,7 +575,7 @@ function PhaseCard({ g, bare }) {
                 <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: T.ink }}>{ok ? t("정확도 {0}%", p.acc.toFixed(1)) : t("표본 부족")}</span>
               </div>
               <div style={{ height: 10, borderRadius: 5, background: "rgba(0,0,0,.08)", overflow: "hidden" }}>
-                {ok && <div style={{ width: Math.max(2, Math.min(100, p.acc)) + "%", height: "100%", borderRadius: 5, background: weak ? "#D9822B" : "linear-gradient(90deg,#C49A50,#ECCB86)", transition: "width .5s ease" }} />}
+                {ok && <GrowBar i={pi} width={Math.max(2, Math.min(100, p.acc))} radius={5} bg={weak ? "#D9822B" : "linear-gradient(90deg,#C49A50,#ECCB86)"} />}
               </div>
               {p.total > 0 && <div style={{ ...sub, fontSize: 11, marginTop: 3 }}>{t("실수 {0}%", pct(p.badRate))}</div>}
             </div>
@@ -597,11 +594,11 @@ function CauseCard({ g, bare }) {
   return (
     <div style={wrap(bare)}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {rows.map((c) => (
+        {rows.map((c, ci) => (
           <div key={c.key}>
             <button className="press" onClick={() => setOpen(open === c.key ? null : c.key)} aria-expanded={open === c.key} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "6px 0", background: "none", border: "none", cursor: "pointer", fontFamily: SITE_FONT, textAlign: "left" }}>
               <span style={{ flex: "0 0 38%", minWidth: 0, fontSize: 12, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{causeLabel(c.key)}</span>
-              <div style={{ flex: 1, minWidth: 0, height: 12, borderRadius: 6, background: "rgba(0,0,0,.07)", overflow: "hidden" }}><div style={{ width: Math.round(100 * c.share / max) + "%", height: "100%", background: "#D9822B", borderRadius: 6 }} /></div>
+              <div style={{ flex: 1, minWidth: 0, height: 12, borderRadius: 6, background: "rgba(0,0,0,.07)", overflow: "hidden" }}><GrowBar i={ci} width={Math.round(100 * c.share / max)} radius={6} bg="#D9822B" /></div>
               <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{t("{0}회", c.n)} · {pct(c.share)}%</span>
             </button>
             {open === c.key && <p style={{ ...sub, margin: "0 0 6px", padding: "6px 10px", borderRadius: 8, background: "rgba(0,0,0,.04)" }}>{causeAdvice(c.key)}</p>}
@@ -760,7 +757,7 @@ function MistakeLog({ g, onReview, bare }) {
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         {[["recent", t("최신순")], ["big", t("큰 실수순")]].map(([k, label]) => <button key={k} className="press" onClick={() => pick(setSort)(k)} aria-pressed={sort === k} style={{ ...pill(sort === k), padding: "3px 10px", fontSize: 11 }}>{label}</button>)}
       </div>
-      {list.slice(0, shown).map((m) => <MistakeBlock key={m.game.key + ":" + m.ply} m={m} onReview={onReview} noBoard={narrow} />)}
+      {list.slice(0, shown).map((m, i) => <Reveal key={m.game.key + ":" + m.ply} delay={(i % PAGE) * 0.08}><MistakeBlock m={m} onReview={onReview} noBoard={narrow} /></Reveal>)}
       {list.length > shown && <button className="press" onClick={() => setShown((n) => n + PAGE)} style={{ ...pill(false), width: "100%", justifyContent: "center", padding: "8px 11px" }}>{t("더 보기")} <span style={{ opacity: 0.65, fontWeight: 700 }}>{list.length - shown}</span></button>}
     </div>
   );
@@ -770,7 +767,7 @@ function MistakeLog({ g, onReview, bare }) {
 /* 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰한다 — 캐시·서버 공유 캐시에 있으면 엔진 없이, 없으면 한 판씩 분석(리뷰 화면과 같은 캐시라 나중에 열면 바로 보임).
    새 대국이 생겨 최근 5판이 바뀌면 새 판만 분석한다(항상 최신). 반환: 분석이 끝난 판의 기록 목록과 진행 상황. */
 function useAutoReview({ recent, engine, reviewSpeed, quick }) {
-  const [tick, setTick] = useState(0), [failed, setFailed] = useState(() => new Set());
+  const [tick, setTick] = useState(0), [failed, setFailed] = useState(() => new Set()), [activeKey, setActiveKey] = useState(null);
   const sig = recent.map((g) => reviewKeyOf(g)).join("|");
   const ready = !!engine && engine.status === "ready";
   useEffect(() => {
@@ -780,17 +777,22 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
         if (cancelled) return;
         const key = reviewKeyOf(game);
         if (!key || cachedReviewOf(game)) continue;
+        setActiveKey(key);                        // (v0.7.5) 진행 화면이 지금 분석 중인 판을 보여 준다
         if (!ready) return;                       // 엔진이 준비되면 이 효과가 다시 돈다
         const r = await ensureReview(game, { engine, reviewSpeed, quick });
         if (cancelled) return;
         if (r) setTick((n) => n + 1); else setFailed((prev) => new Set(prev).add(key));
       }
+      if (!cancelled) setActiveKey(null);
     })();
     return () => { cancelled = true; };
   }, [sig, ready, reviewSpeed, quick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const records = useMemo(() => recent.map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const failedN = recent.filter((game) => failed.has(reviewKeyOf(game)) && !cachedReviewOf(game)).length;
-  return { records, done: records.length, total: recent.length, settled: recent.length > 0 && records.length + failedN >= recent.length };
+  const states = {};
+  for (const r of records) states[r.key] = "done";
+  for (const key of failed) if (!states[key]) states[key] = "fail";
+  const failedN = recent.filter((game) => states[reviewKeyOf(game)] === "fail").length;
+  return { records, done: records.length, total: recent.length, settled: recent.length > 0 && records.length + failedN >= recent.length, states, activeKey };
 }
 
 /* 학습 탭의 성장 분석 — 프로필의 크림색 블록 하나 안에 헤더(칭호·사진·이름·소개)와 분석 구획이 모두 들어간다. 최근 5판이 자동 분석되기 전에는 게이지 바 안내만 보인다. */
@@ -803,17 +805,16 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
   const g = useGrowthData(showResults ? auto.records : []);
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
+      <GrowthFxStyle />
       <OpenGameCtx.Provider value={onOpenGame || null}>
       <ProfileBlock uid={uid} me={me} onOpenTitle={onOpenTitle}>
         {!showResults ? (
-          <>
-            {gamesLoading && !enough ? <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>
-              : <AutoReviewGate phase={enough ? "analyze" : "need"} count={enough ? auto.done : recent.length} need={need} engineStatus={engine ? engine.status : "off"} />}
-          </>
+          <AnalysisScanner phase={gamesLoading && !enough ? "loading" : !enough ? "need" : "analyze"} games={recent.slice(0, need)} states={auto.states} activeKey={auto.activeKey} need={need} engineStatus={engine ? engine.status : "off"} />
         ) : (
           <>
             {g ? (
               <>
+                <ReportStrip n={auto.done} />
                 <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")]]} />
                 <ThemeSection id="gp-sum" no="1" title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
                   <Overview g={g} onReview={onOpenGameAnalyze} />
@@ -828,7 +829,7 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
                   </ThemeSection>
                 )}
               </>
-            ) : <div style={card}><p style={{ ...sub, margin: 0 }}>{t("불러오는 중…")}</p></div>}
+            ) : <AnalysisScanner phase="analyze" games={recent.slice(0, need)} states={auto.states} activeKey={null} need={need} engineStatus={engine ? engine.status : "off"} />}
             <ThemeSection id="gp-style" no="4" title={t("마스터 스타일")} desc={t("내 플레이를 마스터들과 비교")}>
               <MasterStyle games={games} bare />
             </ThemeSection>

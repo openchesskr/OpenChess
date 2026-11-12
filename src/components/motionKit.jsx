@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronUp } from "lucide-react";
+import { ChevronUp } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { isLite } from "../lib/perfMode.js";
 
 // (v0.7.3) 사이트 전체에 쓰는 공용 모션 묶음. 원칙은 /about과 같다:

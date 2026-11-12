@@ -17,7 +17,7 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "lucide-react";
+import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
@@ -33,6 +33,7 @@ import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 import { YoutubeVideosBlock } from "../components/youtubeVideos.jsx";
 import UgcText from "../components/UgcText.jsx";
+import { useTabMemory } from "../lib/tabMemory.js";
 async function lichessFetchText(url) {
   const hit = _lichessCache.get(url);
   if (hit && Date.now() - hit.t < 10 * 60 * 1000) return hit.data;
@@ -498,14 +499,24 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
   // 않는다).
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [scanNote, setScanNote] = useState("");
   const onScanFile = async (file) => {
-    setScanning(true); setScanProgress(0); setFenErr("");
+    setScanning(true); setScanProgress(0); setFenErr(""); setScanNote("");
     try {
       const data = await scanImageFile(file, setScanProgress);
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
         if (!p) { setFenErr(t("인식된 배치를 적용할 수 없음")); return; }
         pushSnap({ board: p.board, ep: null });
+        return;
+      }
+      // (v0.7.5, 사용자 요청) 기보 용지(chess.com 기보 용지 등) — 서버가 체스 규칙으로 바로잡은 PGN을 불러오기 칸에 채우고,
+      //  몇 수를 읽었는지·고쳤는지·어디서 멈췄는지 알려 준다. 사용자가 확인한 뒤 "불러오기"로 분석 탭에 올린다.
+      if (data.type === "text" && data.recognized_text && data.sheet) {
+        const sh = data.sheet;
+        setImportText(data.recognized_text.trim()); setImportErr("");
+        setScanNote(t("기보 용지에서 {0}수 인식", Math.ceil(sh.moves / 2)) + (sh.fixed ? " · " + t("판독이 애매한 {0}개 칸을 규칙에 맞게 보정", sh.fixed) : "")
+          + (sh.stoppedAt != null ? " · " + t("{0}수째 칸을 읽지 못해 그 앞까지만 채움", Math.floor(sh.stoppedAt / 2) + 1) : "") + ". " + t("확인 후 불러오기를 누르세요."));
         return;
       }
       if (data.type === "text" && data.recognized_text) {
@@ -639,6 +650,7 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
       <textarea value={importText} onChange={(e) => { setImportText(e.target.value); setImportErr(""); }} rows={3} placeholder={t("예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: 9, borderRadius: 9, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, resize: "vertical" }} />
       {importErr && <div style={{ fontSize: 11, color: T.blunder, marginTop: 5 }}>{importErr}</div>}
+      {scanNote && !importErr && <div role="status" style={{ fontSize: 11, color: T.brassHi, marginTop: 5, lineHeight: 1.5 }}>{scanNote}</div>}
       <div className="flex" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         <button onClick={pasteClipboard} className="press" style={{ ...edBtn(false), flex: "1 1 120px" }}><ClipboardPaste size={13} />{t("클립보드에서 붙여넣기")}</button>
         <button onClick={() => loadImport()} className="press" style={{ ...edBtn(false), flex: "1 1 80px", background: T.ebony2, color: T.brassHi, borderColor: "#000" }}>{t("불러오기")}</button>
@@ -2839,7 +2851,7 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
-export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
+export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -2854,7 +2866,8 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
   // (UI) 사용자 요청 — 퀘스트 배지를 눌렀을 때 학습 탭에서 정확히 어느 퀘스트를 가리키는지 알 수
   // 있도록, 매칭된 퀘스트의 오프닝 이름까지 함께 돌려준다.
   const matchedQuestOpeningName = (path) => { const hit = questPaths.find((qp) => qp.path.length >= path.length && path.every((s, i) => qp.path[i] === s)); return hit ? hit.name : null; };
-  const [flip, setFlip] = useState(false);
+  // (v0.7.5, 사용자 요청) 보드 방향·수 목록 보기·정렬은 탭을 오가도 유지(lib/tabMemory.js)
+  const [flip, setFlip] = useTabMemory("analysis.flip", false);
   // (디자인) 분석 탭 메인 보드를 조금 더 키운다.
   // (사용자 요청) 보드 컨테이너의 CSS 상한(360px, 데스크톱 2단 레이아웃에서만 유지)을 모바일에서는
   // 풀어 카드 폭 그대로 커지게 했으므로, 이 훅 내부 상한도 그만큼 넉넉히 올려 실제 측정된 폭을
@@ -2888,7 +2901,7 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
   // 캐슬링 권리·앙파상까지)에서부터 이어서 둘 수 있다. fenRoot가 있는 동안 sans는 "표준 시작 위치부터의
   // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
   // replaySans/boardFromSans(모듈 전역 캐시)는 건드리지 않고, 이 컴포넌트 안에서만 로컬로 재생한다.
-  const [fenRoot, setFenRoot] = useState(null);
+  // (v0.7.5, BUG-158) fenRoot는 App이 수순과 함께 들고 있다(탭을 오가거나 새로고침해도 수순과 짝이 맞게).
   const [fenCopied, setFenCopied] = useState(null); // "fen" | "pgn" | null — 복사 버튼 체크 표시용
   const key = sans.join(" ");
   const stdBoard = useMemo(() => boardFromSans(sans), [key]);
@@ -2929,8 +2942,8 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
   // 둔 수순"이라 gameEndState(sans, fenRoot)에 그대로 넘기면 된다.
   const drawState = useMemo(() => gameEndState(sans, fenRoot), [key, fenRoot]);
   const gameDrawn = drawState.end === "stalemate" || drawState.end === "threefold";
-  const [mode, setMode] = useState("normal");
-  const [sortBy, setSortBy] = useState("eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
+  const [mode, setMode] = useTabMemory("analysis.mode", "normal");
+  const [sortBy, setSortBy] = useTabMemory("analysis.sortBy", "eval");   // 비이론 수 정렬 기준: "eval"(평가치순) | "adopt"(채택률순)
   // (버그) 분석 모달이 열려 있는 동안엔 분석 탭의 실시간 평가를 멈춰 엔진을 분석에 양보한다(분석 멈춤/지연 방지).
   // (사용자 요청) FEN 모드에서는 sans가 표준 시작 위치 기준이 아니므로, 이 훅이 내부적으로 만드는 FEN·
   // 후보 수 조회가 전부 엉뚱한 포지션을 가리킨다 — liveOn을 꺼서 실시간 엔진 평가(와 그 계산 비용)만
@@ -3609,7 +3622,7 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
               키워 균형을 맞춘다 — NavBtn 기본 40px 대신 46px, 아이콘도 한 단계씩 키운다. */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <NavBtn size={46} onClick={() => setFlip((v) => !v)} active={flip}><ArrowUpDown size={19} /></NavBtn>
+              <NavBtn size={46} onClick={() => setFlip((v) => !v)} active={flip} label={t("보드 뒤집기")}><ArrowUpDown size={19} /></NavBtn>
               <NavBtn size={46} onClick={reset} disabled={!sans.length || !!focus}><RotateCcw size={18} /></NavBtn>
             </div>
             {/* (사용자 요청) 봇과 직접 대국을 시작하는 PLAY 버튼 — 별도 줄 대신 나머지 네 버튼(뒤집기·
@@ -3659,13 +3672,20 @@ export function AnalysisTab({ onOpenTournament, engine, liveOn, onFocusActive, u
                     {branch ? (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 주요 분기점", <Cpu size={12} />)}</span>
-                        <ClampText resetKey={key}>{branch}</ClampText>
+                        {/* (v0.7.5, 사용자 요청) 주요 분기점 글도 다른 언어로 쓰였으면 내 언어로 자동 번역(설정 > 언어에서 끔) */}
+                        <UgcText text={branch} kind="content" render={(shown) => <ClampText resetKey={key}>{shown}</ClampText>} />
                       </>
                     ) : (
                       <>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.brassHi, fontSize: 11, fontWeight: 800, letterSpacing: ".02em", padding: "3px 9px", borderRadius: 8, marginBottom: 8 }}>{tx("{0} 수 추천", <ThumbsUp size={12} />)}</span>
                         {rec ? (
-                          <ClampText resetKey={key}>
+                          // (v0.7.5) 편집자가 직접 쓴 추천 이유(수 설명)는 자동 번역 대상 — 자동 문구(autoReason)는 이미 t()로 번역된다
+                          recommendReasonFor(key) ? <UgcText text={reason} kind="content" render={(shown) => (
+                            <ClampText resetKey={key}>
+                              <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
+                              {shown ? ", " + shown : null}
+                            </ClampText>)} />
+                          : <ClampText resetKey={key}>
                             <b style={{ fontSize: 13.5 }}>{moveNumber(ply, startColor)}{recSan}</b>
                             {reason ? ", " + reason : null}
                           </ClampText>

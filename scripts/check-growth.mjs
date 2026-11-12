@@ -247,8 +247,11 @@ ok(!/GROWTH_MIN_REVIEWS|collectMyReviews|countMyReviewedGames|touchReviewMeta/.t
   ok(/explainMistake\(/.test(growth) && /explainQueue/.test(growth) && !/mecFacts/.test(growth), "실수 기록은 코치(mecFacts)를 재사용하지 않고 승률 하락 원인 설명기(explainMistake)를 한 번에 하나씩 대기열로 계산해야 함"); }
 for (const sec of ["Overview", "GrowthCurve", "FocusCard", "PhaseCard", "CauseCard", "TypeCard", "MistakeLog"]) ok(new RegExp("<" + sec + " ").test(growth), "성장 분석 본문에 " + sec + " 구획이 없음");
 ok(/classifyPending\(/.test(growth) && /saveCauseCache\(/.test(growth), "원인 분류는 시간 예산으로 나눠 돌리고 캐시를 저장해야 함(전술 탐색이 느려 한꺼번에 돌리면 화면이 멈춤)");
-ok(/<AutoReviewGate /.test(growth) && /<MasterStyle /.test(growth) && /showResults/.test(growth), "최근 5판 분석이 끝나기 전에는 AutoReviewGate(게이지 바)만 보이고, 끝나면 분석 본문과 마스터 스타일을 보여야 함");
-{ const gate = (growth.match(/function AutoReviewGate[\s\S]*?\n}\n/) || [""])[0]; ok(/role="progressbar"/.test(gate) && /Array\.from\(\{ length: need \}/.test(gate) && /자동으로/.test(gate), "AutoReviewGate: 게이지 바(칸 수 = 필요한 판 수)와 자동 분석 안내가 있어야 함"); }
+// (v0.7.5, 사용자 요청) 게이지 바 → 자동 분석 진행 애니메이션(app/growthMotion.jsx AnalysisScanner): 판마다 한 줄(칸 수 = 필요한 판 수), 전체 진행 막대, 분석 중인 판의 수 단위 진행.
+ok(/<AnalysisScanner /.test(growth) && /<MasterStyle /.test(growth) && /showResults/.test(growth), "최근 5판 분석이 끝나기 전에는 AnalysisScanner(자동 분석 진행 화면)만 보이고, 끝나면 분석 본문과 마스터 스타일을 보여야 함");
+{ const gm = rd("src/app/growthMotion.jsx"), sc = (gm.match(/export function AnalysisScanner[\s\S]*?\n}\n/) || [""])[0];
+  ok(/role="progressbar"/.test(sc) && /Array\.from\(\{ length: need \}/.test(sc) && /자동으로/.test(sc), "AnalysisScanner: 전체 진행 막대·판별 줄(칸 수 = 필요한 판 수)·자동 분석 안내가 있어야 함");
+  ok(/subscribeReviewProgress/.test(gm) && /onMove/.test(rd("src/app/autoReview.js")), "자동 분석 진행 화면이 분석 중인 판의 수 단위 진행(autoReview.js 진행 스트림)을 받지 않음"); }
 // 마스터 스타일
 ok(/matchMasters\(/.test(growth) && /compareCriteria\(/.test(growth), "성장 분석이 마스터 스타일 로직(기준별 비교 포함)을 쓰지 않음");
 ok(/aria-label=\{t\("마스터 이름으로 검색"\)\}/.test(growth) && /const suggestions = useMemo/.test(growth), "마스터 비교 헤더의 마스터 자리가 이름 검색창이 아님");

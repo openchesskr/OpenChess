@@ -1,7 +1,8 @@
 // (v0.7.1, 사용자 요청) 집중 분석 해설 화면 하단 "영상" 블록 — 그 수까지의 PGN 수순으로 YouTube를 검색해 나온 영상을 나열한다.
 // 누르면 YouTube(앱에서는 YouTube 앱 우선)로 연다 — 사이트 안에 동영상을 끼워 넣지 않으므로 CSP의 frame 제한은 그대로다.
 import React, { useEffect, useState } from "react";
-import { Youtube, RefreshCw } from "lucide-react";
+import { RefreshCw } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Youtube } from "lucide-react";   // 브랜드 로고는 원형 그대로
 import { T } from "../lib/theme.js";
 import { t, tx, fmtDateOnly } from "../lib/i18n.js";
 import { searchYoutube, youtubeWatchUrl, YT_MAX_PLIES } from "../lib/youtubeSearch.js";

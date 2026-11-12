@@ -1,10 +1,11 @@
 // (v0.6.0, App.jsx 분할) 'dex' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { FacetSpark } from "../components/facetIcons.jsx";
 import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRules.js";
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
 import { T, BOARD_SKINS, PIECE_SKINS, SKIN_SETS } from "../lib/theme.js";
-import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "lucide-react";
+import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";
@@ -17,11 +18,13 @@ import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexHub } from "../components/dexHub.jsx";
+import { LessonPath } from "./lessons.jsx";
+import { SwipePager } from "../components/swipePager.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
-import { MastersSchematic } from "./dexMasters.jsx";
+import { MastersSchematic, masterPlayerCount } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
 import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, deriveKeywords, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
@@ -1172,9 +1175,9 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
         {culledGroups.map((g) => (
           <div key={"grouplabel-" + g.key} className={introAt(g.left, g.top) == null ? undefined : "dex-intro-fade"} style={{ position: "absolute", left: g.left, top: g.top, display: "flex", alignItems: "center", gap: 3, pointerEvents: "none", zIndex: 3, ...(introAt(g.left, g.top) == null ? null : { animationDelay: introAt(g.left, g.top) + "s" }) }}>
             {/* (사용자 요청) 이름을 자르지 않고 풀네임을 그대로 다 보여준다 — maxWidth·ellipsis 제거. */}
-            <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
-              ✦ {g.name} ✦
-            </span>
+            <FacetSpark size={11} style={{ marginRight: 6 }} /><span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: 13, letterSpacing: .2, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+              {g.name}
+            </span><FacetSpark size={11} style={{ marginLeft: 6 }} />
             <ChevronRight size={13} strokeWidth={2.5} style={{ color: T.brass, transform: "rotate(45deg)", flexShrink: 0, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.3))" }} />
           </div>
         ))}
@@ -1386,7 +1389,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
     </div>
   );
 }
-export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
+export function CollectionTab({ lessonState, onLessonComplete, lessonCoins, unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
   const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
@@ -1409,6 +1412,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // 통째로 언마운트되어 지금까지 쌓인 트리 깊이가 매번 사라졌다.
   const [openKey, setOpenKey] = useState(null);
   const vertical = useNarrow(768);
+  const hubMobile = useNarrow(640);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
   // (v0.4.0 기능) 사용자 요청 — 도감 카드(openKey)도 브라우저 뒤로가기로 닫히게 한다. LessonMap과
   // 같은 방식(자체 popstate 리스너 + history.state.screens 배열의 "dexcard" 마커)을 쓴다. openKey는
@@ -1443,7 +1447,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   const ownedSkinN = ownedSetCount(ownedSkins);
   const hubItems = [
     { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : 0, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : "0%" },
-    { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: "" },
+    { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: t("선수 {0}명", fmtFull(masterPlayerCount())) },   // (v0.7.5) 수록 선수 수
     { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
   ];
@@ -1455,7 +1459,15 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   return (
     <div style={{ isolation: "isolate" }}>
             {dexView === "hub" ? (
-        <DexHub items={hubItems} onOpen={selectDexView} />
+        // (v0.7.5, 사용자 요청) 레슨(lib/lessons·app/lessons.jsx)은 도감 첫 화면에 — 데스크톱은 카드 4개 아래 남는 자리, 모바일은 옆으로 넘기는 별도 페이지.
+        hubMobile ? (
+          <SwipePager pages={[{ key: "cards", node: <DexHub items={hubItems} onOpen={selectDexView} /> }, { key: "lessons", node: <LessonPath lessonState={lessonState} onComplete={onLessonComplete} coins={lessonCoins} height="calc(100dvh - 196px)" /> }]} />
+        ) : (
+          <>
+            <DexHub items={hubItems} onOpen={selectDexView} />
+            <div style={{ maxWidth: 1060, margin: "14px auto 0" }}><LessonPath lessonState={lessonState} onComplete={onLessonComplete} coins={lessonCoins} height="max(340px, calc(100dvh - 540px))" /></div>
+          </>
+        )
       ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (

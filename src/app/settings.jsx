@@ -6,7 +6,8 @@ import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from 
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { Zap, Instagram, Youtube, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
+import { Zap, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Instagram, Youtube } from "lucide-react";   // 브랜드 로고는 원형 그대로
 import LangPicker from "../components/LangPicker.jsx";
 import { loadUgcTranslatePref, saveUgcTranslatePref, REVIEW_SPEED_DEPTH, QUICK_REVIEW_ENGINE } from "../lib/prefs.js";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
@@ -645,7 +646,7 @@ function UgcTranslateToggle() {
       <div className="flex items-center justify-between" style={{ gap: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("다른 언어로 쓴 글 자동 번역")}</div>
-          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
+          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·주요 분기점·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
         </div>
         <button onClick={flip} role="switch" aria-checked={on} aria-label={t("다른 언어로 쓴 글 자동 번역")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
       </div>
@@ -684,7 +685,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
   );
 }
 export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
-  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, mainQuest, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
+  myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, lessonState, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
   const bumpEngineUi = useCallback(() => setEngineUiTick((n) => n + 1), []);
@@ -837,12 +838,12 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
         </div>
-        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 18 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
+        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 19 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
             고정된 동안 아래 엔진·속도 선택은 잠기지만, 원래 고른 값은 그대로 저장돼 있어 끄면 돌아온다. */}
         <div className="flex items-center justify-between" style={{ gap: 10, padding: "10px 12px", marginBottom: 14, borderRadius: 10, border: "1.5px solid " + (quickReview ? T.brass : "#DCCBA8"), background: quickReview ? "rgba(196,154,80,.14)" : "#fff" }}>
           <div style={{ minWidth: 0 }}>
             <div className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><Zap size={14} style={{ color: T.brass }} />{t("빠른 리뷰")}</div>
-            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 18 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 19 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
           </div>
           <button onClick={() => setQuickReview(!quickReview)} role="switch" aria-checked={!!quickReview} aria-label={t("빠른 리뷰")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: quickReview ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: quickReview ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>

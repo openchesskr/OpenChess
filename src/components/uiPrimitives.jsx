@@ -1,5 +1,5 @@
 import React from "react";
-import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 
@@ -42,6 +42,6 @@ export function ListPager({ page, setPage, pageCount, jump = 5 }) {
     </div>
   );
 }
-export function NavBtn({ children, onClick, disabled, active, size = 40 }) {
-  return <button onClick={onClick} disabled={disabled} className="press" style={{ width: size, height: size, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: active ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "linear-gradient(180deg,#3A2516,#241509)", color: disabled ? "#6A5A45" : T.ivoryHi, border: "1px solid #000", boxShadow: disabled ? "none" : "0 3px 0 #000", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1 }}>{children}</button>;
+export function NavBtn({ children, onClick, disabled, active, size = 40, label }) {
+  return <button onClick={onClick} disabled={disabled} aria-label={label} title={label} aria-pressed={active == null ? undefined : !!active} className="press" style={{ width: size, height: size, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: active ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "linear-gradient(180deg,#3A2516,#241509)", color: disabled ? "#6A5A45" : T.ivoryHi, border: "1px solid #000", boxShadow: disabled ? "none" : "0 3px 0 #000", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.55 : 1 }}>{children}</button>;
 }

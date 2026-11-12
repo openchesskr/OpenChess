@@ -29,7 +29,8 @@ const sug = sql.indexOf("create or replace function public.friend_suggestions");
 if (sug < 0 || !/user_blocks/.test(sql.slice(sug, sql.indexOf("$$;", sug)))) fails.push("friend_suggestions가 차단 관계를 제외하지 않음");
 // 클라이언트: 설정에 차단 목록, 프로필에 신고·차단 메뉴(스토어 심사 요건).
 const app = readAppSource();
-if (!/<UserSafetyMenu\b/.test(app)) fails.push("프로필 화면에 UserSafetyMenu(신고·차단) 없음");
+// (v0.7.5) 프로필의 신고·차단은 내 페이지와 같은 점 세 개 메뉴(ProfileMoreMenu)에 들어 있다
+if (!/<ProfileMoreMenu\b[\s\S]{0,900}setReportOpen\(true\)[\s\S]{0,400}setBlocked\(/.test(app)) fails.push("프로필 화면의 점 세 개 메뉴(ProfileMoreMenu)에 신고·차단 없음");
 if (!/<BlockListSheet\b/.test(app)) fails.push("설정에 BlockListSheet(차단 목록) 없음");
 if (fails.length) { console.error("check-block-enforcement 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-block-enforcement: 연락 경로 4곳 + 친구 추천이 차단을 서버에서 강제, 프로필 신고·차단과 차단 목록 UI 있음");

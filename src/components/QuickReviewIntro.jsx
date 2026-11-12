@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Cpu } from "lucide-react";
+import { Cpu } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { GLYPH, MONO, useScramble, useGlitchFlicker } from "./OpenTextArt.jsx";
 import { t, tx } from "../lib/i18n.js";
 

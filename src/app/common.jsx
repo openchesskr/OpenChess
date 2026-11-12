@@ -1,5 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { engineLineGapMs, isLite } from "../lib/perfMode.js";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
@@ -12,8 +14,11 @@ import { sbClient, SB_ON, SB_TOKEN, sbSelect, sbRpc, sbUpsert, sbInsert, sbPatch
 import { apiUrl, SITE_URL } from "../lib/siteConfig.js";
 import { moveTactics, replyTactics, pinnedMoveFact, bestMoveTactic, checkmateInfo } from "../lib/mecTactics.js";
 import { strategicFact } from "../lib/mecStrategy.js";
+import { structureFactInGame } from "../lib/mecPawnStructure.js";
+import { structurePhrase } from "../lib/mecStructureText.js";
+import { openingMoveFact } from "../lib/mecOpenings.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva } from "../lib/moveQuality.js";
+import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva, fixForcedOnlyMoves } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -23,7 +28,7 @@ import { mateWhiteWins, SITE_FONT, EvalBar, SEQ_FONT } from "../components/engin
 import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles, Timer, Clock, ChevronsUp } from "lucide-react";
+import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles, Timer, Clock, ChevronsUp } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { TITLE_OPENINGS, titleDef, seriesAccent, openingSide } from "../lib/titles.js";
 import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
@@ -58,6 +63,19 @@ const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && im
    가장 강력함 — 약 108MB, 마찬가지로 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는
    그 선택을 기억한다. */
 export const ENGINE_PROFILES = {
+  // (v0.7.5, 사용자 요청) Stockfish 19 — 엔진 목록 맨 위. Lite는 빠른 리뷰 전용 엔진이기도 하다(lib/prefs.js QUICK_REVIEW_ENGINE).
+  lite19: {
+    id: "lite19", label: "Stockfish 19 Lite",
+    urls: [ENGINE_BASE + "engine/lite19/stockfish-19-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/stockfish-19-lite-single.js"],
+    mtUrl: ENGINE_BASE + "engine/lite19/stockfish-19-lite.js",
+  },
+  // 정식 대형 신경망(~99MB) — 18 정식과 같은 방식(같은 출처 조각 이어붙이기, scripts/copy-engine.mjs)
+  full19: {
+    id: "full19", label: "Stockfish 19",
+    urls: [ENGINE_BASE + "engine/19/boot-single.js"],
+    bootTimeoutMs: 240000,
+    parts: 2,
+  },
   lite: {
     id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
@@ -112,7 +130,8 @@ export const ENGINE_PROFILES = {
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
 // (v0.3.9 재조정) 사용자 요청 — Stockfish 18(정식, 셋 중 가장 강력함)을 목록 맨 위로.
-export const ANALYSIS_ENGINE_IDS = ["full18", "lite", "full17"];
+// (v0.7.5, 사용자 요청) Stockfish 19 Lite·19를 목록 맨 위에.
+export const ANALYSIS_ENGINE_IDS = ["lite19", "full19", "full18", "lite", "full17"];
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 
@@ -709,7 +728,7 @@ export function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
+export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
 let CONTENT_SEEDED = false;
 // 외부 대국 데이터베이스의 "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
 // 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
@@ -759,209 +778,19 @@ function seedContent() {
       posKey = posKey ? posKey + " " + san : san;
     });
   }
-  seedLessons();
 }
-/* ============================================================ 레슨 (v0.4.0 메인 퀘스트 전면 개편) ============================================================ */
-// (사용자 요청) "메인 퀘스트"(사지선다 챕터 퀴즈 나열)를 체스 개념·오프닝 하나하나를 다루는 독립된
-// 학습 콘텐츠 "레슨"으로 전면 개편한다. 레슨은 서로 유기적으로 이어지도록 parents(선행 레슨 key
-// 배열)로 연결해 갈래를 갖는 그래프(DAG) 구조를 이루고, 선행 레슨을 모두 완료(보상 수령)해야 다음
-// 레슨이 열린다(도감 오프닝 모식도와 같은 "순차 해금" 원리) — 서로 다른 갈래가 하나의 레슨으로 다시
-// 합류할 수도 있다(예: 두 오프닝 라인 모두 끝내야 열리는 "엔드게임 기초"). 레슨 하나 =
-// { title, desc, parents:[...], reward, pages:[...] } (parents가 빈 배열이면 최상위 레슨). 옛
-// 콘텐츠가 여전히 parent(단수) 하나만 갖고 있을 수도 있어, 실제로 읽을 때는 항상 이 필드를 직접
-// 읽지 않고 lessonParents(lesson) 헬퍼(정규화해서 배열로 반환)를 통해서만 다룬다.
-//
-// (사용자 요청) 레슨은 여러 개의 "페이지"를 순서대로 진행하며, 이미 지나온 페이지는 뒤로 가서 다시
-// 볼 수 있다. 페이지 하나 = { startSans?, flip?, beats:[...] } — beats는 정해진 스크립트로, 순서대로
-// 재생되며 사용자와 상호작용한다. beat 종류(자세한 재생 로직은 LessonScreen 참고):
-//   say        { speaker:"milku"|"kokoa", text, sans? }        코치 대사 한 줄(타이핑 애니메이션, 눌러서 다음)
-//   principles { lines:[...] }                                 목록이 한 줄씩 떠올랐다 사라지는 자동 연출
-//   mc         { prompt, opts:[...], answer, note, sans? }      객관식 — 정답을 고르면 통과
-//   move       { prompt, answers:[...], note, sans? }           주관식 — 보드에 직접 수를 두면 통과
-//   play       { moves:[...], stepMs? }                         현재 위치에서 이어서 수순을 빠르게 재생(자동)
-//   pause      { ms }                                           잠시 대기(자동)
-//   board      { squares:[...], dim?, glow?, siren?, arrows?, sans? }  보드 연출(칸 강조/음영/사이렌/화살표), 자동으로 다음 진행
-//              arrows:[{ from, to, type:"attacker"|"defender" }, ...] — from/to는 칸 이름("e4") 문자열.
-//              공격 기물→피격 기물 방향 화살표를 그린다. "attacker"는 빨간 화살표(위협하는 기물), "defender"는
-//              초록 화살표(방어하는 기물) — Board의 threatAttacker/threatDefender 화살표 스타일을 그대로 재사용.
-//   clear      { }                                               보드 연출 상태(화살표 포함)를 초기화
-// 어떤 beat든 sans를 지정하면 그 자리에서 즉시(재생 없이) 그 위치로 전환된다.
-// 모든 필드는 개발자가 CMS(LessonEditor)로 직접 입력·수정·삭제할 수 있고, CONTENT.lessons에 저장되어
-// 전 유저에 반영된다.
-// (기능) 파일(a~h) 전체 + 랭크(1~8) 전체를 합친 "십자" 모양 칸 목록 — d·e 파일과 4·5 랭크를 함께
-// 강조하는 것처럼, 특정 열·행 전체를 하이라이트하는 레슨 연출에 쓴다.
-function lessonCross(files, ranks) {
-  const out = new Set();
-  for (const f of files) for (let r = 1; r <= 8; r++) out.add(f + r);
-  for (const r of ranks) for (const f of FILES) out.add(f + r);
-  return [...out];
-}
-function seedLessons() {
-  if (Object.keys(CONTENT.lessons).length) return;   // 이미 콘텐츠가 있으면(서버에서 불러온 경우 등) 시드로 덮어쓰지 않음
-  const L = CONTENT.lessons;
-  // (기존 steps 방식 콘텐츠를 pages 방식으로 옮길 때 쓰는 작은 변환 헬퍼 — 옛 스텝 하나 = 새 페이지 하나.)
-  const explainPage = (sans, coach) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "say", speaker: "milku", text: coach }] });
-  const mcPage = (sans, prompt, opts, answer, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "mc", prompt, opts, answer, note }] });
-  const movePage = (sans, prompt, answers, note) => ({ startSans: sans, flip: sans.length % 2 === 1, beats: [{ kind: "move", prompt, answers, note }] });
-
-  // ------------------------------------------------------------ 오프닝 원칙(모식도 시작점) ------------------------------------------------------------
-  const PRINCIPLES = [
-    "1. 최대한 빠르게 기물 전개",
-    "2. 비숍보다 나이트 먼저 전개",
-    "3. 오프닝에서 같은 기물을 두 번 움직이지 않기",
-    "4. 오프닝에서 폰을 불필요하게 움직이지 않기",
-    "5. 필요 없으면 체크하지 않기",
-    "6. 전개가 느리면 포지션을 열지 않기",
-    "7. 퀸은 폰 뒤에 배치",
-    "8. 내 전개된 기물과 상대 미전개 기물의 교환 피하기",
-    "9. 되도록 빠르게 캐슬링",
-    "10. 킹사이드 캐슬링이 퀸사이드보다 안전",
-    "11. 가능한 한 영역 넓히기",
-    "12. 공간 지배를 위해 폰 밀기",
-    "13. 기물을 중앙 가까이 유지",
-    "14. 폰 교환은 사이드에서 중앙 쪽으로",
-    "15. 공격 전에 중앙 제어",
-    "16. 룩으로 오픈·세미 오픈 파일 빠르게 장악",
-    "17. 자주 나오는 폰 구조 숙지",
-    "18. 늘 예외를 생각하고, 필요하면 원칙을 어기기",
-  ];
-  L.l_intro = {
-    title: t("오프닝 원칙"), desc: t("원칙의 목적 세 가지: 중앙 차지, 기물 전개, 킹의 안전"), reward: 40, parent: null,
-    pages: [
-      { // 1페이지 — 도입 + 원칙 목록 + 세 가지 목적
-        beats: [
-          { kind: "say", speaker: "milku", text: t("첫 번째 레슨") },
-          { kind: "say", speaker: "milku", text: t("코치 MILKU") },
-          { kind: "say", speaker: "milku", text: t("오프닝 실력을 함께 키우기") },
-          { kind: "say", speaker: "milku", text: t("오프닝에는 지켜야 할 원칙이 여러 개 있음") },
-          { kind: "principles", lines: PRINCIPLES },
-          { kind: "say", speaker: "milku", text: t("원칙은 결국 세 가지 목적으로 모임") },
-          { kind: "say", speaker: "milku", text: t("중앙 차지, 기물 전개, 킹의 안전") },
-          { kind: "say", speaker: "milku", text: t("하나씩 확인") },
-        ],
-      },
-      { // 2페이지 — 중앙 차지
-        beats: [
-          { kind: "say", speaker: "milku", text: t("거의 모든 오프닝은 중앙을 차지하려는 백과 흑의 수가 부딪히며 만들어짐") },
-          { kind: "say", speaker: "milku", text: t("중앙은 주로 d열과 e열. 오프닝에서 양쪽이 맞붙는 곳은 주로 4행과 5행") },
-          { kind: "board", dim: true, squares: lessonCross(["d", "e"], [4, 5]) },
-          { kind: "say", speaker: "milku", text: t("중앙 차지는 정중앙 4칸(e4, e5, d4, d5)을 장악하는 것") },
-          { kind: "board", glow: true, squares: ["e4", "e5", "d4", "d5"] },
-          { kind: "say", speaker: "milku", text: t("이 목표를 두고 선수들이 수를 연구했고, 그 결과가 오늘날의 오프닝 이론") },
-        ],
-      },
-      { // 3페이지 — 기물의 전개
-        beats: [
-          { kind: "say", speaker: "milku", text: t("오프닝에서 기물 전개는 매우 중요") },
-          { kind: "say", speaker: "milku", text: t("중앙 차지도 기물 전개와 균형이 필요") },
-          { kind: "say", speaker: "milku", text: t("오프닝에서 같은 기물을 두 번 움직이는 건 보통 손해") },
-          { kind: "say", speaker: "milku", text: t("가능한 한 많은 기물을 전개한 뒤 계획 실행") },
-          { kind: "play", stepMs: 320, moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6", "Bc4", "Bd7", "O-O-O"] },
-        ],
-      },
-      { // 4페이지 — 킹의 안전
-        beats: [
-          { kind: "say", speaker: "milku", text: t("체스는 상대 킹을 공격하는 게임. 내 킹의 안전도 그만큼 중요") },
-          { kind: "say", speaker: "milku", text: t("킹이 중앙에 남아 있으면 공격받기 쉬움") },
-          { kind: "say", speaker: "milku", text: t("캐슬링으로 한 수에 킹을 구석에 숨길 수 있음") },
-          { kind: "play", stepMs: 350, moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6"] },
-          { kind: "pause", ms: 2000 },
-          { kind: "board", dim: true, squares: ["e1", "h1"] },
-          { kind: "play", stepMs: 500, moves: ["O-O"] },
-          { kind: "clear" },
-          { kind: "say", speaker: "milku", text: t("캐슬링 조건: 킹과 룩 사이에 기물 없음, 상대가 경로를 공격하지 않음, 킹과 룩 모두 이동한 적 없음") },
-          { kind: "say", speaker: "milku", text: t("교환으로 킹 앞 폰이 끌려가면 킹 주변이 급격히 약해지니 주의") },
-          { kind: "play", stepMs: 350, moves: ["d6", "Qe1", "Bg4", "Nc3", "Bxf3"] },
-          { kind: "pause", ms: 2000 },
-          { kind: "board", dim: true, squares: ["g2"] },
-          { kind: "play", stepMs: 500, moves: ["gxf3"] },
-          { kind: "clear" },
-          { kind: "board", siren: true, squares: ["g1"] },
-        ],
-      },
-    ],
-  };
-  L.l_e4 = {
-    title: t("1.e4 킹스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 가장 빠르고 직접적으로 장악하는 첫 수"), reward: 60, parent: "l_intro",
-    pages: [
-      explainPage([], "폰을 두 칸 전진시켜 중앙을 장악하고 비숍과 퀸의 대각선도 연다. 직접 두기"),
-      movePage([], "중앙 폰을 두 칸 전진", ["e4"], "1.e4 킹스 폰 오프닝. 비숍(f1)과 퀸(d1) 대각선이 바로 열려 빠른 전개와 이른 전술전"),
-      mcPage(["e4"], "1.e4 뒤 흑이 둘 수 없는 수는?", ["1...e5 (오픈 게임)", "1...c5 (시칠리안 디펜스)", "1...d4 (폰 두 칸 전진 뒤 재전진)", "1...c6 (카로칸 디펜스)"], 2, "흑 폰은 d7에서 d5나 d6까지만 이동 가능. d4는 닿지 않음"),
-    ],
-  };
-  L.l_e4_e5 = {
-    title: t("1...e5 오픈 게임"), desc: t("중앙에서 폰을 맞세워 대칭으로 공간을 나누는 가장 고전적인 응수"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "e5"], "흑이 폰을 맞세워 대칭으로 공간을 나누고 오픈된 전술전 준비. 이런 시작을 오픈 게임이라 부름"),
-      mcPage(["e4", "e5"], "1.e4 e5에서 백이 흔히 두는 다음 수는?", ["2.Nf3 (나이트로 e5 폰 위협)", "2.Qh5 (초반 퀸 출동)", "2.a4 (사이드 폰 전진)", "2.h4 (킹사이드 룩폰 전진)"], 0, "2.Nf3는 e5 폰을 위협하며 기물을 자연스럽게 전개하는 가장 흔한 수"),
-      movePage(["e4", "e5"], "나이트를 전개하며 e5 폰 위협", ["Nf3"], "2.Nf3! e5를 위협하면서 킹사이드 캐슬링 준비"),
-    ],
-  };
-  L.l_e4_e5_open = {
-    title: t("이탈리안 게임으로"), desc: t("2.Nf3 Nc6 뒤 비숍을 전개해 이탈리안 게임으로"), reward: 70, parent: "l_e4_e5",
-    pages: [
-      explainPage(["e4", "e5", "Nf3", "Nc6"], "흑도 나이트로 e5를 지킴. 백은 비숍을 f7을 겨누는 대각선으로 전개"),
-      movePage(["e4", "e5", "Nf3", "Nc6"], "비숍을 f7 폰을 겨누는 자리로 전개", ["Bc4"], "3.Bc4! 이탈리안 게임. 비숍이 약점인 f7 폰을 직접 겨눔"),
-      mcPage(["e4", "e5", "Nf3", "Nc6", "Bc4"], "이탈리안 게임(3.Bc4)의 핵심 아이디어는?", ["비숍으로 f7 폰을 겨누며 빠르게 킹사이드 공략", "폰을 희생해서라도 퀸사이드를 빠르게 개방", "킹을 일부러 중앙에 오래 남겨 둠", "나이트를 교환해 무승부 유도"], 0, "이탈리안 게임은 비숍의 활발한 대각선으로 빠르게 공격 기회를 노리는 오프닝"),
-    ],
-  };
-  L.l_e4_c5 = {
-    title: t("1...c5 시칠리안 디펜스"), desc: t("중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어 능동적으로 반격"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "c5"], "중앙을 폰으로 맞받지 않고 비대칭 구조를 만들어, 흑이 퀸사이드에서 반격하는 대표 오프닝. 시칠리안 디펜스"),
-      mcPage(["e4", "c5"], "시칠리안 디펜스의 성격으로 알맞은 것은?", ["대칭 구조로 무승부를 지향", "비대칭 구조로 양쪽 모두 승부 기회를 남김", "중앙 폰을 최대한 빨리 전부 교환", "킹사이드 캐슬링을 절대 안 함"], 1, "시칠리안은 통계상 승부(흑 승률 포함)가 가장 많이 나는 오프닝 중 하나"),
-    ],
-  };
-  L.l_e4_e6 = {
-    title: t("1...e6 프렌치 디펜스"), desc: t("d5를 다음 수에 밀어 폰 사슬을 세우고, 백의 e5 전진을 유도해 반격"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "e6"], "d5를 다음 수에 밀어 중앙에 폰 사슬을 세우고, 백의 e5 전진을 유도해 나중에 반격. 프렌치 디펜스"),
-      movePage(["e4", "e6"], "다음 수로 중앙에 폰 사슬 세우기", ["d5"], "2...d5! 중앙에서 폰이 맞부딪힘. 백이 e5로 전진하면 흑은 c5로 퀸사이드 반격 준비"),
-    ],
-  };
-  L.l_e4_c6 = {
-    title: t("1...c6 카로칸 디펜스"), desc: t("d5를 다음 수에 밀되 나이트 전개에 유연하게 대비하는 견고한 응수"), reward: 60, parent: "l_e4",
-    pages: [
-      explainPage(["e4", "c6"], "d5를 다음 수에 밀되(프렌치와 달리 c8 비숍 길을 막지 않음) 나이트 전개(Nc3 대응)에 유연하게 대비. 카로칸 디펜스"),
-      mcPage(["e4", "c6"], "프렌치(1...e6)와 비교한 카로칸(1...c6)의 장점은?", ["퀸을 바로 교환 가능", "c8 비숍이 e6에 막히지 않고 밖으로 나갈 길이 열려 있음", "킹사이드 캐슬링 금지", "중앙 폰을 절대 교환하지 않음"], 1, "프렌치는 1...e6로 c8 비숍의 길을 스스로 막지만 카로칸은 이 문제를 피함"),
-    ],
-  };
-  L.l_d4 = {
-    title: t("1.d4 퀸스 폰 오프닝"), desc: t("폰을 두 칸 전진시켜 중앙을 장악하되 e4보다 견고하고 점진적인 구조 싸움"), reward: 60, parent: "l_intro",
-    pages: [
-      explainPage([], "이번엔 퀸 쪽 폰을 두 칸 전진. e4보다 견고하고 점진적인 구조 싸움"),
-      movePage([], "퀸 쪽 중앙 폰을 두 칸 전진", ["d4"], "1.d4 퀸스 폰 오프닝. 폰을 잃을 위험 없이 견고하게 중앙 장악"),
-      mcPage(["d4"], "1.d4 뒤 흑의 응수는 크게 어떤 두 갈래?", ["1...d5(폐쇄형) 또는 1...Nf6(인디언 계열)", "1...e5(오픈 게임) 또는 1...c5(시칠리안)", "캐슬링 직후 항복 둘 중 하나", "폰을 전혀 안 움직이는 두 가지 방식"], 0, "1...d5는 퀸스 갬빗 계열, 1...Nf6는 킹스 인디언·그륀펠트 등 인디언 디펜스 계열"),
-    ],
-  };
-  L.l_d4_d5 = {
-    title: t("1...d5 퀸스 갬빗"), desc: t("중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응"), reward: 60, parent: "l_d4",
-    pages: [
-      explainPage(["d4", "d5"], "중앙에서 폰을 맞세워 견고한 구조를 만드는 정통 대응. 백이 c4를 두면 퀸스 갬빗 시작"),
-      movePage(["d4", "d5"], "폰을 내줄 각오로 c4를 두어 퀸스 갬빗 시작", ["c4"], "2.c4! 퀸스 갬빗. 흑이 dxc4로 잡아도 백은 곧 e4나 e3로 중앙을 되찾아 실질 손해 거의 없음(이름은 갬빗이지만 진짜 희생은 아님)"),
-    ],
-  };
-  L.l_d4_nf6 = {
-    title: t("1...Nf6 인디언 디펜스"), desc: t("중앙 폰을 바로 맞세우지 않고 나이트로 견제하며 유연하게 대응"), reward: 60, parent: "l_d4",
-    pages: [
-      explainPage(["d4", "Nf6"], "중앙 폰을 바로 맞세우지 않고 나이트로 e4·d5를 견제하며, 상대의 다음 수를 보고 대응 방향을 정하는 계열. 인디언 디펜스"),
-      mcPage(["d4", "Nf6"], "인디언 디펜스 계열(킹스 인디언·그륀펠트 등)의 공통 특징은?", ["비숍을 피앙케토(대각선 배치)해 중앙을 기물로 견제", "폰을 절대 전진시키지 않음", "킹을 캐슬링 없이 중앙에 둠", "나이트를 절대 f6에 두지 않음"], 0, "보통 g6·Bg7로 비숍을 피앙케토해 긴 대각선에서 중앙을 멀리서 견제"),
-    ],
-  };
-  // (기획) 이 레슨 콘텐츠는 시드일 뿐이다 — 실제 서비스에서는 개발자가 LessonEditor(CMS)로 자유롭게
-  // 레슨을 추가·수정하며 나무를 계속 넓혀 나간다(parent만 지정하면 자동으로 그 레슨 아래 갈래가 된다).
-}
+// (v0.7.5) 예전 레슨 시드(seedLessons, CONTENT.lessons)는 지웠다 — 새 레슨은 코드에 고정된 커리큘럼(src/lib/lessons/curriculum.js)이다.
 seedContent();
 export async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {}, lessons: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
   try {
     if (SB_ON) {
-      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
+      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
     }
     let raw = null;
     if (typeof window !== "undefined" && window.storage) { const r = await window.storage.get("occ_content", true); raw = r && r.value; }
     if (!raw) { try { raw = window.localStorage.getItem("occ_content"); } catch { } }
-    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; CONTENT_SEEDED = false; seedContent(); }
+    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); }
   } catch { }
 }
 // (v0.5.6 버그 수정 BUG-015) 강제 등급(forceKind)은 개발자가 입력한 표기 그대로("Qh5") 저장되는데, 실제 수 표기에는 체크·메이트 기호가
@@ -1324,7 +1153,9 @@ function confirmSacrifice({ fenRoot, prevSans, san, color, evaluate }) {
     const c = await ev(fenOfRoot(fenRoot, [...prevSans, san, capSan]));              // ② 따 간 포지션(다시 둔 쪽 차례)
     if (!c || (c.cp == null && c.mate == null)) return undefined;
     const afterCap = applySan(after, capSan, enemy);
-    return sacPoisonVerdict(a, c, () => !!(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color)));   // ② 독이 든 희생인가(순수 함수 — moveQuality.js)
+    // ② 독이 든 희생인가(순수 함수 — moveQuality.js). (v0.7.5 BUG-160) 되찾는 첫 수가 체크(강제 전술)인지도 넘긴다.
+    const firstIsCheck = () => { try { return !!(c.pv && c.pv[0] && /\+|#/.test(uciToSan(afterCap, c.pv[0], color) || "")); } catch { return false; } };
+    return sacPoisonVerdict(a, c, () => !!(c.pv && pvRegainsMaterial(board, afterCap, c.pv, color)), firstIsCheck);
   })().catch(() => undefined).then((v) => {
     if (typeof v === "boolean") { sacConfirmCache.set(key, v); sacConfirmListeners.forEach((f) => { try { f(); } catch { } }); }
     else sacConfirmCache.delete(key);   // 엔진이 답하지 못함 — 다음에 다시 시도
@@ -4207,8 +4038,24 @@ const MEC_PHRASES = {
 // 만든 구체적 위협/방어, 마지막이 일반적인 캐슬링/템포 정보다. 호출부(ReviewCoachCard)는 이 중
 // 맨 앞 하나만 코멘트에 붙인다. kind·bestSan은 declinedCaptureFact(공짜 기물을 안 잡고도 좋은 수)
 // 판정에만 쓰이며, 넘기지 않으면(다른 호출부) 그 판정만 자연히 건너뛴다.
-const capSentences = (x) => x.replace(/(^|[.!?]\s+)([a-záéíóúñ])(?![1-8])/g, (m, pre, ch) => pre + ch.toLocaleUpperCase());
-export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot) {
+// (v0.7.5 BUG-151) 칸 이름(c4)뿐 아니라 한글이 바로 붙은 파일 문자("c폰"·"e파일")도 대문자로 바꾸지 않는다 — 한국어 문장의 둘째 문장이 "e폰과 d폰을…"으로 시작하면 "E폰"이 됐다.
+const capSentences = (x) => x.replace(/(^|[.!?]\s+)([a-záéíóúñ])(?![1-8가-힣])/g, (m, pre, ch) => pre + ch.toLocaleUpperCase());
+// (v0.7.5) 정석 수(book) 설명 — 일반 MEC(mecFacts)는 정석 수에 쓰지 않는다(이론 수에 "위협·과보호" 같은 사실은 어울리지 않음).
+// 오프닝 레파토리(lib/mecOpenings.js)의 그 수의 의도 + 이론을 벗어나는 수면 그 오프닝의 중반 계획 + 이 수로 새로 생긴 폰 구조를 한 글로 잇는다.
+// futureSans = 그 대국의 이어지는 실제 수(자유 탐색·마지막 수면 빈 배열). 첫 수는 "이론을 벗어나는지", 두 수는 "구조가 곧 사라지는지" 판단에 쓴다.
+export function mecBookFacts(sansBeforeMove, san, futureSans, fenRoot) {
+  const parts = [], nextSan = futureSans && futureSans[0];
+  try {
+    const of = openingMoveFact(sansBeforeMove.map(stripSuffix), stripSuffix(san), nextSan ? stripSuffix(nextSan) : null, fenRoot);
+    if (of) { parts.push(of.idea); if (of.plan) parts.push(of.plan); }
+  } catch { /* 레파토리 조회 실패 */ }
+  try {
+    const sp = structurePhrase(structureFactInGame(sansBeforeMove, san, fenRoot, futureSans));
+    if (sp) parts.push(sp);
+  } catch { /* 구조 탐지 실패 */ }
+  return parts.length ? [capSentences(parts.join(" "))] : [];
+}
+export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, threatOut, fenRoot, futureSans) {
   const seed = sansBeforeMove.length;
   const beforeBoard = boardOfRoot(fenRoot, sansBeforeMove);
   const board = boardOfRoot(fenRoot, [...sansBeforeMove, san]);
@@ -4419,9 +4266,18 @@ export function mecFacts(sansBeforeMove, san, color, kind, bestSan, beforeCp, th
       if (extra.length) { if (facts.length) facts[0] = facts[0] + " " + extra.join(" "); else facts.push(extra.join(" ")); }
     }
   } catch { /* 전술 탐지 실패는 기존 설명만 보여 준다 */ }
-  // (v0.7.2) 전략·구조(D) — 위에서 아무 사실도 못 찾은 조용한 수에만 적용한다(src/lib/mecStrategy.js).
+  // (v0.7.5) 폰 구조(E) — 이 수로 이름 있는 폰 구조(IQP·칼스바드·마로치 등)가 새로 생기면 그 구조와 양쪽의 일반적인 계획을 알려 준다.
+  //  전술·메이트 위협이 대표 사실이면 문장이 길어지지 않게 붙이지 않는다. 구조 문장을 붙인 수에는 아래 전략(D)의 고립폰·겹폰 문장을 겹쳐 쓰지 않는다.
   const isCapMove = !!(moveInfo && moveInfo.isCap);
-  if (!facts.length || isCapMove) {
+  let structureSaid = false;
+  try {
+    const tacticLead = !!(threatOut && threatOut.tactic && !String(threatOut.tactic.kind).startsWith("reply:"));
+    const sf = tacticLead ? null : structureFactInGame(sansBeforeMove, san, fenRoot, futureSans);
+    const sp = sf ? structurePhrase(sf) : null;
+    if (sp) { if (facts.length) facts[0] = facts[0] + " " + sp; else facts.push(sp); structureSaid = true; if (threatOut) threatOut.structure = { kind: sf.kind, side: sf.side, squares: sf.squares }; }
+  } catch { /* 구조 탐지 실패는 기존 설명만 보여 준다 */ }
+  // (v0.7.2) 전략·구조(D) — 위에서 아무 사실도 못 찾은 조용한 수에만 적용한다(src/lib/mecStrategy.js).
+  if (!structureSaid && (!facts.length || isCapMove)) {
     try {
       const good = MEC_GOOD_KINDS.includes(kind), poor = MEC_POOR_KINDS.includes(kind);
       const st = strategicFact(fenOfRoot(fenRoot, sansBeforeMove), san, good ? "good" : poor ? "poor" : "neutral");
@@ -4554,7 +4410,7 @@ export function cachedReviewSummary(game) {
     if (raw) {
       const p = JSON.parse(raw);
       if (p && p.v === REVIEW_RESULT_CACHE_VERSION && p.result && Array.isArray(p.result.moves)) {
-        const sm = summaryOfResult(p.result);
+        const sm = summaryOfResult(fixForcedOnlyMoves(p.result));
         if (sm) { if (!readSummaries()[rk]) recordReviewSummary(rk, p.result); return pick(sm); }
       }
     }
@@ -4608,7 +4464,9 @@ async function decryptPgnId(id) {
   } catch { return null; }
 }
 // (v0.3.4 기능) 사용자 요청 — 리뷰의 "대국 식별자". 소스별로 분기한다:
-// · chess.com 대국(game.id 있음) — chess.com이 이미 발급한 숫자 게임 ID를 그대로 쓴다.
+// · (v0.7.5 BUG-162) 수순이 있는 대국은 모두 아래 PGN 암호화 방식 — 예전엔 game.id가 있으면 그 ID를 그대로 썼는데, OpenChess 대국 ID(pvp-123·bot-45)는
+//   되돌릴 방법이 없어 링크가 열리지 않았고, chess.com 숫자 ID도 서버 공유 캐시(로그인한 사람이 연 적 있는 대국)에 없으면 열리지 않았다.
+//   이제 진영·선수·ID 등은 PGN 머리 태그로 함께 담는다(reviewMetaTags). 예전 숫자 ID 링크는 그대로 열린다.
 // · FEN 분석(fenRoot는 있지만 그 위치에서 아직 한 수도 안 뒀음) — 그 FEN 코드 자체를 그대로 쓴다
 //   (경로 세그먼트라 URL 인코딩은 하되, 디코딩하면 정확히 원래 FEN 문자열이다 — "그대로 쓰고").
 // · 그 외(직접 둔 수순·PGN 붙여넣기·마스터 대국 리뷰, 또는 FEN에서 시작해 수를 더 둔 경우) — PGN으로
@@ -4618,17 +4476,53 @@ async function decryptPgnId(id) {
 // 이미 걸러냄) FEN 특유의 "/"로 8칸씩 나뉘는 형태(looksLikeFen)와 구조적으로 겹치지 않는다.
 export async function reviewGameIdentifier(game) {
   if (!game) return null;
-  if (game.id) return String(game.id);
   if (game.fenRoot && (!game.sans || !game.sans.length)) return encodeURIComponent(game.fenRoot);
   if (game.sans && game.sans.length) {
     try {
       const parsed = game.fenRoot ? parseFenFull(game.fenRoot) : null;
       const body = sansToPgnText(game.sans, parsed ? parsed.turn : undefined);
-      const pgnText = parsed ? "[FEN \"" + game.fenRoot + "\"]\n[SetUp \"1\"]\n\n" + body : body;
-      return await encryptPgnId(pgnText);
+      const head = (parsed ? "[FEN \"" + game.fenRoot + "\"]\n[SetUp \"1\"]\n" : "") + reviewMetaTags(game);
+      return await encryptPgnId(head ? head + "\n" + body : body);
     } catch { return null; }
   }
+  // (v0.7.5) 수순이 없는 chess.com 대국 객체는 예전처럼 숫자 ID(서버 공유 캐시로 복원)
+  if (game.id != null && /^\d+$/.test(String(game.id))) return String(game.id);
   return null;
+}
+// (v0.7.5 BUG-162) 리뷰 링크에 담는 대국 정보 — 화면 표시용만: 진영(보드 방향)·선수 이름·레이팅·결과·시간 규정·오프닝.
+//  링크는 누구나 만들 수 있는 입력이므로 되돌릴 때(reviewMetaFromPgn) 값마다 모양을 다시 검사한다.
+//  (보안 검토) 대국 ID·종료 시각은 담지도 복원하지도 않는다 — ID는 서버 공유 캐시(reviewed_games·game_analysis)의 키라 가짜 수순으로 남의 대국 캐시를
+//  오염시킬 수 있고, 선수+종료 시각은 이 기기 리뷰 캐시 키(reviewGameKey)라 실제 대국의 저장된 리뷰를 덮어쓸 수 있다. 링크로 연 대국은 수순 기준 키(pgn:)만 쓴다.
+const META_SAFE = (v, n = 60) => String(v == null ? "" : v).replace(/[\u0000-\u001F"\\\]\[]/g, "").slice(0, n);
+function reviewMetaTags(game) {
+  const tags = [];
+  const w = game.white && game.white.username, b = game.black && game.black.username;
+  if (w) tags.push(["White", META_SAFE(w, 40)]);
+  if (b) tags.push(["Black", META_SAFE(b, 40)]);
+  if (game.white && Number.isFinite(+game.white.rating) && game.white.rating) tags.push(["WhiteElo", String(Math.round(+game.white.rating))]);
+  if (game.black && Number.isFinite(+game.black.rating) && game.black.rating) tags.push(["BlackElo", String(Math.round(+game.black.rating))]);
+  if (game.color === "w" || game.color === "b") tags.push(["OCSide", game.color]);
+  if (game.username) tags.push(["OCUser", META_SAFE(game.username, 40)]);
+  if (game.result) tags.push(["OCResult", META_SAFE(game.result, 20)]);
+  if (game.timeClass) tags.push(["OCTime", META_SAFE(game.timeClass, 12)]);
+  if (game.opening) tags.push(["Opening", META_SAFE(game.opening, 80)]);
+  return tags.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
+}
+/** PGN 머리 태그 → 리뷰 대국 정보(모양이 맞는 값만). scripts/check-review-ui.mjs가 왕복을 검사한다. */
+export function reviewMetaFromPgn(pgnText) {
+  const tag = (k) => { const m = new RegExp("\\[" + k + "\\s+\"([^\"]*)\"\\]").exec(pgnText); return m ? m[1] : null; };
+  const out = {};
+  const w = tag("White"), b = tag("Black");
+  if (w || b) { out.white = { username: META_SAFE(w || "?", 40) }; out.black = { username: META_SAFE(b || "?", 40) }; }
+  const we = tag("WhiteElo"), be = tag("BlackElo");
+  if (out.white && /^\d{1,4}$/.test(we || "")) out.white.rating = +we;
+  if (out.black && /^\d{1,4}$/.test(be || "")) out.black.rating = +be;
+  const side = tag("OCSide"); if (side === "w" || side === "b") out.color = side;
+  const user = tag("OCUser"); if (user) out.username = META_SAFE(user, 40);
+  const res = tag("OCResult"); if (res) out.result = META_SAFE(res, 20);
+  const tc = tag("OCTime"); if (tc && /^[a-z]{1,12}$/.test(tc)) out.timeClass = tc;
+  const op = tag("Opening"); if (op) out.opening = META_SAFE(op, 80);
+  return out;
 }
 // 위 reviewGameIdentifier의 역변환 — 딥링크(openchess.kr/review/(식별자))로 들어왔을 때 그 식별자
 // 하나만으로 다시 리뷰를 열 수 있는 만큼을 복원한다. chess.com 식별자는 여기서 대국 전체를 복원할
@@ -4644,7 +4538,8 @@ export async function resolveReviewIdentifier(raw) {
   const fenMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
   const sans = parsePgnSans(pgnText);
   if (!sans.length) return null;
-  return { kind: "game", game: { sans, fenRoot: fenMatch ? fenMatch[1] : null } };
+  // fromLink: 링크에서 복원한 정보는 화면 표시용 — "내 대국" 판정(유산 만들기 등)에는 쓰지 않는다(링크는 누구나 만든다).
+  return { kind: "game", game: { ...reviewMetaFromPgn(pgnText), sans, fenRoot: fenMatch ? fenMatch[1] : null, fromLink: true } };
 }
 // (v0.3.4 기능) chess.com 대국 리뷰 딥링크(/review/(숫자 ID))용 캐시 — supabase-setup.sql 21번
 // 섹션 참고. puzzleShare/puzzleFetch와 같은 패턴: 리뷰를 여는 모든 유저가 최선을 다해(실패해도
@@ -5673,7 +5568,7 @@ export function openingNameOf(moves) {
 // (v0.6.8) 칭호 시스템 개편 — 정의·판정은 src/lib/titles.js(순수 모듈), 여기는 배너 디자인과 조건 문구만 맡는다.
 //  · 칭호 id는 "계열:단계번호"(예 "solve:3"). 계열은 오프닝 숙련·활동·대국/레이팅·희귀 네 갈래.
 //  · 배너는 이미지 파일 없이 코드(SVG·CSS)로 그린다: 에보니 바탕 + 금색 기하 장식 + 이탤릭 세리프. 단계(1~5)가 오를수록 금이 밝아지고, 계열마다 아이콘이 다르다.
-export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress } from "../lib/titles.js";
+export { TITLE_OPENINGS, OPENING_FAMILIES, openingSide, TITLE_SERIES, TITLE_CATEGORIES, titleId, titleDef, seriesOf, validTitleId, sanitizeTitleSet, ALL_TITLE_IDS, titleLabel, achievableTitles, computeTitleMetrics, ccTitleStats, seriesProgress, featuredTitlesFor, sortTitlesByRank, titleRank, FEATURED_TITLE_COUNT } from "../lib/titles.js";
 const TITLE_ICONS = { Puzzle, Flame, BookOpen, Heart, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Crown, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Star, Timer, Clock, ChevronsUp };
 // 조건 문구 — 지표마다 한 줄. 오프닝은 퍼즐 해결과 chess.com 플레이를 함께 요구하므로 따로 처리한다.
 function titleCondText(def) {
@@ -5716,8 +5611,11 @@ export function SeriesGlyph({ series, size = 30, masked = false }) {
   return (
     <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
       <svg width={size} height={size} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }}>
-        <defs><linearGradient id={"sg" + rid} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F3DFAE" /><stop offset="1" stopColor="#C49A50" /></linearGradient></defs>
-        <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
+        {/* (v0.7.5, 사용자 요청) 파셋 규칙: 윤곽선 대신 네 면의 금테(왼쪽 위가 밝고 오른쪽 아래가 어둡다) */}
+        <path d="M50 12 L88 50 L50 88 L12 50 Z" fill={isOp ? FACET_GOLD.l2 : "rgba(0,0,0,.35)"} />
+        <path d="M6 50 L50 6 L50 12.5 L12.5 50Z" fill={FACET_GOLD.l1} /><path d="M50 6 L94 50 L87.5 50 L50 12.5Z" fill={FACET_GOLD.l3} />
+        <path d="M94 50 L50 94 L50 87.5 L87.5 50Z" fill={FACET_GOLD.base} /><path d="M50 94 L6 50 L12.5 50 L50 87.5Z" fill={FACET_GOLD.l4} />
+        <path d="M14 47 L47 14 L47 17 L17 47Z" fill={FACET_GOLD.hi} opacity=".8" />
         {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
       </svg>
       {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />)}
@@ -5963,7 +5861,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   for (let i = 0; i < nb; i++) { const x = 118 - i * 15; bars.push(<path key={"b" + i} d={`M${x} ${H} L${x + 22} 0 L${x + 28} 0 L${x + 6} ${H} Z`} fill={`url(#${uid}g)`} opacity={0.14 + i * 0.07} />); }
   const lattice = [];
   [16, 28, 40, 52].forEach((r, i) => lattice.push(<circle key={"c" + i} cx="146" cy={H / 2} r={r} fill="none" stroke={g0} strokeWidth="1" opacity={0.3 - i * 0.05} />));
-  const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? `url(#${uid}g)` : "none"} stroke={g0} strokeWidth="1" opacity={i <= tierIdx ? 1 : 0.4} />); }
+  const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<g key={"p" + i} opacity={i <= tierIdx ? 1 : 0.32}><FacetDiamond cx={px + 3} cy={py + 3} r={4.2} R={facetRamp(i <= tierIdx ? mixHex(g0, g1, 0.4) : "#6E5A3A")} gem={i <= tierIdx} /></g>); }   // (v0.7.5) 파셋 마름모 — 빈 단계는 어둡고 흐리게
   const pieceSz = Math.round(H * 0.95);
   const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
@@ -6027,11 +5925,18 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
       {decoTier >= 4 && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : 0.5 }}>
           {/* 양옆 끝 마름모 */}
-          {[0, 1].map((r) => <span key={"f" + r} style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: 0, width: decoTier === 5 ? 9 : 7, height: decoTier === 5 ? 9 : 7, marginTop: decoTier === 5 ? -4.5 : -3.5, transform: "rotate(45deg)", background: `linear-gradient(135deg,${g0},${g1})`, boxShadow: "0 0 0 1px rgba(20,11,5,.6)" }} />)}
+          {/* (v0.7.5, 사용자 요청) 파셋 규칙: 네 면 마름모(components/facetIcons.jsx) */}
+          {[0, 1].map((r) => { const z = decoTier === 5 ? 13 : 10; return <svg key={"f" + r} width={z} height={z} viewBox="0 0 20 20" style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: -z * 0.18, marginTop: -z / 2, filter: "drop-shadow(0 0 1px rgba(20,11,5,.8))" }}><FacetDiamond cx={10} cy={10} r={9} R={facetRamp(mixHex(g0, g1, 0.4))} /></svg>; })}
           {decoTier === 5 && (<>
             {/* 위쪽 가운데 왕관 + 아래쪽 가운데 마름모 */}
-            <svg width="34" height="9" viewBox="0 0 34 9" style={{ position: "absolute", top: -1, left: "50%", marginLeft: -17 }}><path d="M1 8 L5 2 L11 6 L17 0 L23 6 L29 2 L33 8 Z" fill={`url(#${uid}g)`} stroke="rgba(20,11,5,.55)" strokeWidth=".8" /></svg>
-            <span style={{ position: "absolute", bottom: 0, left: "50%", marginLeft: -3, width: 6, height: 6, transform: "rotate(45deg)", background: g0 }} />
+            {(() => { const R = facetRamp(mixHex(g0, g1, 0.4)); return (
+              <svg width="34" height="10" viewBox="0 0 34 10" style={{ position: "absolute", top: -2, left: "50%", marginLeft: -17, filter: "drop-shadow(0 0 1px rgba(20,11,5,.85))" }}>
+                {/* 승자 왕관과 같은 짜임: 왼쪽 위에서 빛을 받는 네 면 + 밑단 + 꼭대기 구슬 */}
+                <path d="M1 8 L5 2 L11 6 V8Z" fill={R.l2} /><path d="M11 8 V6 L17 0 V8Z" fill={R.l1} /><path d="M17 0 L23 6 V8 H17Z" fill={R.l3} /><path d="M23 8 V6 L29 2 L33 8Z" fill={R.l4} />
+                <path d="M1 8 H33 L32.4 10 H1.6Z" fill={R.base} /><path d="M17 3.2 L18.2 5 L17 6.8 L15.8 5Z" fill={R.hi} />
+                <circle cx="5" cy="2" r="1.1" fill={R.gem} /><circle cx="17" cy="0.9" r="1.2" fill={R.gem} /><circle cx="29" cy="2" r="1.1" fill={R.gem} />
+              </svg>); })()}
+            <svg width="9" height="9" viewBox="0 0 20 20" style={{ position: "absolute", bottom: -2, left: "50%", marginLeft: -4.5 }}><FacetDiamond cx={10} cy={10} r={9} R={facetRamp(mixHex(g0, g1, 0.4))} gem={false} /></svg>
           </>)}
         </div>
       )}
@@ -6456,27 +6361,6 @@ export function PuzzleCard({ p, isSolved, onClick, onDelete, solveCount, solvedT
     </div>
   );
 }
-export function lessonProgress(mainQuest, key) {
-  const l = CONTENT.lessons[key];
-  if (!l) return { done: 0, total: 0, complete: false };
-  const answered = ((mainQuest && mainQuest.answered) || {})[key] || {};
-  const total = l.pages.length;
-  const done = l.pages.filter((_, i) => answered[i]).length;
-  return { done, total, complete: total > 0 && done >= total };
-}
-export function isLessonClaimed(mainQuest, key) { return !!((mainQuest && mainQuest.claimed) || {})[key]; }
-// (기능6) 프로필 카드에 보여줄 레슨 전체 진척도 — 모든 레슨을 통틀어 완료(보상 수령)한 레슨 수와,
-// 통과한 단계 수를 합산한다. 이름은 기존 프로필·검색 API 호환을 위해 그대로 둔다.
-export function mainQuestOverallProgress(mainQuest) {
-  const keys = Object.keys(CONTENT.lessons);
-  let claimed = 0, doneItems = 0, totalItems = 0;
-  for (const k of keys) {
-    if (isLessonClaimed(mainQuest, k)) claimed++;
-    const p = lessonProgress(mainQuest, k);
-    doneItems += p.done; totalItems += p.total;
-  }
-  return { claimed, totalChapters: keys.length, doneItems, totalItems };
-}
 // (20차 UI4 보충) 일일 퀘스트는 "London System"처럼 짧은 이름을 쓰지만 트리의 실제 오프닝 이름은
 // 더 세부적일 수 있어(예: "Queen's Pawn Game: Accelerated London System"), findOpeningPathByName의
 // 정확 일치 대신 부분 일치로 첫 경로를 찾는다.
@@ -6504,18 +6388,10 @@ export function findOpeningPathByFuzzyName(name) {
 // (20차 UI4) Google Fonts의 Material Symbols "Assignment" 계열 아이콘 — 외부 웹폰트 CDN에 매 로드마다
 // 의존하면(느린/막힌 네트워크에서) 텍스트만 깨져 보이므로, 같은 글리프의 공식 SVG 패스 데이터를 그대로
 // 가져와 이 앱의 다른 아이콘(lucide-react)들과 동일하게 번들 SVG로 렌더링한다.
-const ASSIGNMENT_ICON_PATHS = {
-  assignment: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
-  assignment_late: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm1 15h-2v-2h2v2zm0-4h-2V8h2v6z",
-  assignment_turned_in: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-1.06 14L7.4 12.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z",
-  extension: "M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z",
-  analytics: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14H8v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z",
-};
+// (v0.7.5, 사용자 요청) 머티리얼 패스 대신 OpenChess 파셋 아이콘(components/ocIcons.jsx materialIcon)으로 그린다 — 이름·속성은 그대로.
 export function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
-  const d = ASSIGNMENT_ICON_PATHS[name] || ASSIGNMENT_ICON_PATHS.assignment;
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "inline-block", flexShrink: 0, ...style }}><path d={d} fill={color} /></svg>
-  );
+  const Icon = materialIcon(name);
+  return <Icon size={size} color={color} style={{ display: "inline-block", flexShrink: 0, ...style }} />;
 }
 export function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);
@@ -6729,14 +6605,17 @@ export const LEGACY_BLOCK_BTN_STYLE = {
 };
 // 그리스 키(메안더) 무늬 — 금색 선, 가로로 반복.
 const GREEK_KEY_URL = "url(\"data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><g fill='none' stroke='#D4AF5F' stroke-width='1.1' stroke-linecap='square'><path d='M0 7H3V1H9V7H12'/><path d='M5 7V4H7V7'/></g></svg>") + "\")";
-/** 월계수 가지(좌우 대칭으로 쓴다) — 수 이름 양옆 장식. */
+/** 월계수 가지(좌우 대칭으로 쓴다) — 수 이름 양옆 장식. (v0.7.5, 사용자 요청) 파셋 규칙: 잎은 밝은 반·어두운 반, 줄기는 가늘어지는 채운 면. */
 export function LaurelBranch({ flip, size = 16, color = "#D4AF5F" }) {
+  const R = facetRamp(color);
   return (
     <svg aria-hidden="true" width={size} height={size * 1.3} viewBox="0 0 16 21" style={{ transform: flip ? "scaleX(-1)" : "none", flexShrink: 0 }}>
-      <path d="M12 20C6 17 3 11 4 2" fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-      {[[4.5, 4.5, -25], [8, 7.5, 10], [4, 9.5, -30], [8.5, 12.5, 15], [5, 14.5, -25], [9.5, 17, 20]].map(([x, y, r], i) => (
-        <ellipse key={i} cx={x} cy={y} rx="2.6" ry="1.2" transform={"rotate(" + r + " " + x + " " + y + ")"} fill={color} opacity=".92" />
-      ))}
+      <path d={taperedStem(12, 20, 2.6, 12.5, 4, 2, 1.5, 0.5)} fill={R.l4} />
+      {[[4.5, 4.5, -25], [8, 7.5, 10], [4, 9.5, -30], [8.5, 12.5, 15], [5, 14.5, -25], [9.5, 17, 20]].map(([x, y, a], i) => {
+        // 예전 타원 잎과 같은 자리·각도. 잎 끝은 위쪽(가지 끝 방향)을 향하게 a 또는 a+180 중 위를 향하는 쪽을 고른다
+        const d = Math.sin((a * Math.PI) / 180) < 0 ? a : a + 180, r = (d * Math.PI) / 180, L = 5.4;
+        return <FacetLeaf key={i} x={x - Math.cos(r) * L / 2} y={y - Math.sin(r) * L / 2} rot={d} sz={L / 1.35} R={R} mirror={!!flip} />;
+      })}
     </svg>
   );
 }

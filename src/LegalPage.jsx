@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { CONTACT_EMAIL } from "./lib/siteConfig.js";
 
 import { t, tx, fmtDateOnly } from "./lib/i18n.js";

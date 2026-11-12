@@ -3,7 +3,7 @@
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
-import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "lucide-react";
+import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t, lang } from "../lib/i18n.js";
@@ -20,7 +20,8 @@ import { candidateKeys } from "../lib/masterProfile.js";
 import { masterInfoLine, champNumText } from "../lib/masterSearchInfo.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { flagEmoji } from "../lib/flags.js";
-import { laurelBranch, leafPath } from "../lib/laurel.js";
+import { laurelBranch } from "../lib/laurel.js";
+import { FacetLeaf, FacetSpark, taperedStem, GOLD } from "../components/facetIcons.jsx";
 import { MT, championAt, clampMasterPan, flightPoints, layoutMasters, polyLength, polyPointAt, transferPath } from "../lib/masterTreeLayout.js";
 import { takeMasterNav } from "../lib/masterNav.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
@@ -77,21 +78,16 @@ const FlagE = ({ emoji, size = 16 }) => (emoji ? <span aria-hidden="true" style=
 const fxClass = (fx) => (fx ? (fx.intro ? " dex-intro-node" : " dex-surge-node") : "");
 const fxDelay = (fx) => (fx ? { animationDelay: fx.delay + "s" } : null);
 
-/* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
+/* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). */
+// (v0.7.5, 사용자 요청) 파셋 규칙으로 다시 그림 — 잎은 잎맥을 기준으로 밝은 반·어두운 반, 줄기는 끝으로 갈수록 가늘어지는 채운 면(윤곽선 없음).
 function Laurel({ side, h = 60 }) {
   const b = React.useMemo(() => laurelBranch({ side, len: 36, leaves: 7, leaf: 7.5 }), [side]);
+  const stem = React.useMemo(() => { const n = b.stem.match(/-?[\d.]+/g).map(Number); return taperedStem(n[0], n[1], n[2], n[3], n[4], n[5], 2.2, 0.6); }, [b]);
   const k = h / b.height;
   return (
     <svg width={b.width * k} height={h} viewBox={"0 0 " + b.width + " " + b.height} style={{ overflow: "visible", display: "block" }} aria-hidden="true">
-      <path d={b.stem} fill="none" stroke="#8f6a22" strokeWidth="1.4" strokeLinecap="round" />
-      {b.leaves.map((l, i) => <path key={i} transform={"translate(" + l.x + " " + l.y + ") rotate(" + l.rot + ")"} d={leafPath(l.sz)} fill="url(#mt-laurel-gold)" stroke="#8f6a22" strokeWidth=".5" />)}
-    </svg>
-  );
-}
-function MasterDefs() {
-  return (
-    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-      <defs><linearGradient id="mt-laurel-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F6DE97" /><stop offset="1" stopColor="#B98A34" /></linearGradient></defs>
+      <path d={stem} fill={GOLD.l4} />
+      {b.leaves.map((l, i) => <FacetLeaf key={i} x={l.x} y={l.y} rot={l.rot} sz={l.sz} />)}
     </svg>
   );
 }
@@ -394,6 +390,49 @@ function Wire({ d, lit, surge, delay, stroke = T.brass, opacity = 0.9, dash, int
 const elbowH = (x1, y1, x2, y2) => { const mx = (x1 + x2) / 2; return "M" + x1 + " " + y1 + " H" + mx + " V" + y2 + " H" + x2; };   // 가로로 나왔다가 꺾이는 ㄱ자(위성 연결)
 const elbowV = (x1, y1, x2, y2) => { const my = (y1 + y2) / 2; return "M" + x1 + " " + y1 + " V" + my + " H" + x2 + " V" + y2; };   // 세로로 나왔다가 꺾이는 ㄱ자(챔피언 사이)
 
+// (v0.7.5, 사용자 요청) 도감 첫 화면 마스터 카드의 "수록 선수 수" — 마스터 모식도에 실제로 그려지는 선수 노드(세계 챔피언·도전자·대국 DB 선수·FIDE 순위)를
+// 같은 사람은 한 번만(프로필 키 규칙 candidateKeys의 첫 키) 센다. 모식도와 같은 layoutMasters를 쓰므로 노드 구성이 바뀌어도 숫자가 따라간다. 한 번만 계산해 둔다.
+let _playerCount = null;
+export function masterPlayerCount() {
+  if (_playerCount != null) return _playerCount;
+  const L = layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, {}, null, FIDE, DBM.masters);
+  const keys = new Set();
+  for (const n of L.nodes) { const x = n.champ || n.sat || n.dbm || n.fide; if (x && x.name && ["champ", "sat", "dbm", "fide"].includes(n.kind)) keys.add(candidateKeys(x.name)[0] || x.name); }
+  _playerCount = keys.size;
+  return _playerCount;
+}
+// (v0.7.5) 마스터 트리 검색 — 화면(MastersSchematic)과 통합 검색(app/social.jsx SearchModal)이 같은 규칙을 쓴다.
+function buildMasterKeys(LAYOUT) {
+  const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
+  for (const n of LAYOUT.nodes) {
+    let names = null, title = "", flag = "", nm = "";
+    if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
+    else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
+    else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
+    else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
+    if (!names) continue;
+    const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
+    const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
+    if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
+    else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
+  }
+  return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
+}
+function matchMasters(q, psearch, masterKeys) {
+  const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
+  if (!raw) return null;
+  const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
+    .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
+  const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
+  return [...masters, ...tours];
+}
+// 통합 검색용: 배치(대회 연도 펼침 없음)를 한 번만 만들어 두고 같은 규칙으로 찾는다. 결과 { id(트리 노드), tourId?, title, sub, flag, tag }.
+let _globalKeys = null;
+export function searchMastersGlobal(q, psearch) {
+  if (!_globalKeys) _globalKeys = buildMasterKeys(layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, {}, null, FIDE, DBM.masters));
+  return matchMasters(q, psearch || null, _globalKeys) || [];
+}
+export { loadTournamentSearch };
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const [idx, setIdx] = useState(null);
@@ -411,30 +450,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
   //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
   // (v0.6.6, 사용자 요청) 같은 사람은 한 번만 나온다(챔피언 > 챔피언 도전자 > FIDE 순위 > 대국 DB 선수 순으로 노드를 고른다). 이름 아래에는 조건에 맞는 정보만(챔피언 대수, 챔피언 도전자, FIDE 부문 순위) 쉼표로 이어 보인다(masterInfoLine).
-  const masterKeys = React.useMemo(() => {
-    const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
-    for (const n of LAYOUT.nodes) {
-      let names = null, title = "", flag = "", nm = "";
-      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
-      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
-      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
-      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
-      if (!names) continue;
-      const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
-      const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
-      if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
-      else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
-    }
-    return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
-  }, [LAYOUT]);
-  const matches = React.useMemo(() => {
-    const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
-    if (!raw) return null;
-    const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
-      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
-    return [...masters, ...tours];
-  }, [q, psearch, masterKeys]);
+  const masterKeys = React.useMemo(() => buildMasterKeys(LAYOUT), [LAYOUT]);
+  const matches = React.useMemo(() => matchMasters(q, psearch, masterKeys), [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
   const matchTourIds = React.useMemo(() => (matches ? new Set(matches.filter((x) => x.tourId).map((x) => x.tourId)) : null), [matches]);
   const dimOn = !!matches && matches.length > 0;
@@ -621,6 +638,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const navFiredRef = useRef(false);
   useEffect(() => {
     if (!navTarget || navFiredRef.current || introOn) return;
+    // (v0.7.5) 통합 검색에서 고른 마스터·대회 — 화면 안 검색 결과를 고를 때와 같이 그 노드로 찾아간다
+    if (navTarget.focusId) { if (!LAYOUT.byNodeId.get(navTarget.focusId)) return; navFiredRef.current = true; setFocusId(navTarget.focusId); return; }
     const ed = LAYOUT.byNodeId.get("ed:" + navTarget.tourId + ":" + navTarget.year), hub = LAYOUT.byNodeId.get("tour:" + navTarget.tourId);
     if (!(ed || hub) || (!ed && !idx)) return;   // 연도 블록은 색인(idx)이 올 때 생긴다 — 기다린다
     navFiredRef.current = true;
@@ -720,7 +739,6 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
         </div>
         <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || flying} />
         <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
-          <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
@@ -763,9 +781,9 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             </div>
           ) : (
             <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
-              <span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
-                ✦ {LABEL_TEXT()[l.key]} ✦
-              </span>
+              <FacetSpark size={15} style={{ marginRight: 6 }} /><span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+                {LABEL_TEXT()[l.key]}
+              </span><FacetSpark size={15} style={{ marginLeft: 6 }} />
             </div>
           )); })}
           {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}

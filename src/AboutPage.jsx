@@ -1,16 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
-import {
-  GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
-  Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy,
-  Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check,
-} from "lucide-react";
+import { GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
 import { t, tx } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
-import { OpenSection, AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
+import { AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -910,8 +905,6 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("그냥 두기만 해서는 실력이 늘지 않습니다. 그 수가 왜 좋았고 왜 나빴는지까지 같이 봐야 합니다. 앱의 탭 여섯 개를 차례로 소개합니다.")}</SpeechBubble>
         </section>
 
-        <OpenSection />
-
         <WhatsNew version={version} />
 
         <div style={{ height: 72 }} />
@@ -957,11 +950,10 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
 
         <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
           lead={t("학습 탭은 내 성장을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }, { n: "learn-3", cap: t("레슨 로드맵") }]}
+          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }]}
           blocks={[
             [t("성장 분석"), t("리뷰하지 않아도 최근 대국 5판을 자동으로 분석해 보여 줍니다. 분석하는 동안에는 게이지 바로 진행 상황을 알려 줍니다.")],
             [t("최근 대국"), t("대국마다 오프닝, 전적, 탁월한 수와 유일한 수의 개수가 보입니다. 연두색 버튼으로 바로 리뷰할 수 있습니다.")],
-            [t("레슨"), t("레슨은 갈래를 따라 순서대로 열리고, 오프닝 원칙부터 시작합니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>
@@ -969,7 +961,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           </div>} />
 
         <TabChapter id="dex" no="05" Icon={Library} label={t("도감")} title={t("모으고 키우는 곳입니다")}
-          lead={t("도감 탭에는 오프닝, 마스터, 업적, 스킨이 들어 있습니다.")}
+          lead={t("도감 탭에는 오프닝, 마스터, 업적, 스킨과 레슨이 들어 있습니다.")}
           shots={[{ n: "dex-tree", cap: t("오프닝 트리") }, { n: "dex-ach", cap: t("업적과 칭호") }, { n: "dex-skin", cap: t("스킨 뽑기 상자") }]}
           blocks={[
             [t("오프닝 트리"), t("1.e4, 1.d4, 1.c4, 1.Nf3 네 갈래로 뻗는 트리입니다. 각 수의 채택률, 평가, 이름을 볼 수 있고, 실전에서 둔 만큼 해금됩니다.")],
@@ -977,6 +969,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             [t("업적과 칭호"), t("칭호는 258개입니다. 이탈리안 게임, 루이 로페즈처럼 오프닝마다 단계가 있고, 못 얻은 칭호는 조건과 진행도가 보입니다. 히든 칭호는 얻기 전까지 ???로 나옵니다.")],
             [t("스킨 뽑기"), t("상자에서 1회 500코인, 5회 2,400코인으로 기물을 뽑습니다. 이미 가진 기물이 나오면 150코인이 돌아오고, 한 세트의 6종을 다 모으면 그 세트의 보드가 열립니다. 추첨은 서버가 합니다.")],
             [t("티어"), t("퍼즐을 풀어 쌓은 경험치로 아이언부터 그랜드마스터까지 일곱 단계를 오릅니다.")],
+            [t("레슨"), t("체스 기초를 다섯 단계, 29개 레슨으로 배웁니다. 단계마다 수 등급(좋음부터 탁월까지)의 색과 아이콘을 쓰고, 보드에서 직접 두면서 익힙니다.")],
           ]}
           extra={<div>
             <div className="flex items-center justify-center flex-wrap" style={{ gap: 20, marginBottom: 44 }}>
@@ -1059,6 +1052,40 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.7.5", date: "2026.11.12",
+    summary: t("도감 탭에 새 레슨과 오프닝 레파토리가 생기고, 사이트의 모든 아이콘을 OpenChess 고유 디자인으로 다시 그렸습니다. Stockfish 19와 통합 검색, 업적이 더해지고 리뷰와 티어 여정, 학습 탭도 새로워졌습니다."),
+    highlight: { kind: "icon", Icon: GraduationCap, color: T.brassHi, label: t("도감 탭에서 레슨을 끝낼 때마다 코인을 받습니다.") },
+    sections: [
+      { cat: "feature", items: [
+        t("도감 탭에 레슨을 새로 만들었습니다. 수 등급 색으로 꾸민 6단계 42개 레슨이 마름모 경로로 이어지고, 레슨을 하나 끝낼 때마다 코인 20개를 받습니다."),
+        t("레슨 6단계에 오프닝 레파토리 13개를 넣었습니다. 블록에는 오프닝 이름이, 배경에는 그 오프닝의 기보와 대표 기물이 흐릅니다."),
+        t("리뷰 코치가 정석 수의 의도와 이론을 벗어난 뒤의 계획, 아이솔레이티드 폰 같은 14가지 폰 구조를 알려 줍니다."),
+        t("마스터 상세 프로필을 117명 더 채워 모두 366명이 됐습니다."),
+        t("분석 엔진에 Stockfish 19 Lite와 Stockfish 19를 추가했고, 빠른 리뷰는 Stockfish 19 Lite로 합니다."),
+        t("기보 용지 사진을 스캔해 수순을 불러옵니다. 손글씨를 잘못 읽은 수는 체스 규칙에 맞게 바로잡습니다."),
+        t("검색에서 유저, 오프닝, 마스터, 퍼즐, 업적을 한 번에 찾습니다. 검색 바 아래 분류 버튼으로 하나만 골라 찾을 수도 있습니다."),
+        t("프로필에 업적 섹션이 생겼습니다. 달성한 업적 수와 직접 고른 대표 칭호 2개를 보여 주고, 프로필 편집 화면도 새로 디자인했습니다."),
+        t("분석 탭의 주요 분기점과 수 추천 이유도 내 언어로 자동 번역합니다."),
+      ] },
+      { cat: "ui", items: [
+        t("사이트의 모든 아이콘을 면을 나눠 빛을 표현한 OpenChess 고유 아이콘으로 다시 그렸습니다."),
+        t("학습 탭 첫 페이지가 자동 분석 과정을 실제 포지션과 수 판정으로 보여 주고, 분석 통계는 차례로 나타나며 은은하게 움직입니다."),
+        t("티어 여정을 레슨과 같은 길 형태로 다시 만들었습니다. 구간마다 기물 타일이 이어지고, 어두운 전시실 같은 배경에 티어마다 고유한 빛이 들어옵니다."),
+        t("도감 첫 화면 카드 네 장을 사이트 공통 재질로 다시 디자인하고, 마스터 카드에 수록 선수 수를 표시합니다."),
+      ] },
+      { cat: "ux", items: [
+        t("새로고침하면 처음부터 원래 있던 탭이 열리고, 탭을 옮겨 다녀도 보드 방향과 필터, 보던 화면과 스크롤 위치가 그대로 남습니다."),
+        t("내 대국을 리뷰하면 내가 둔 진영이 항상 아래에 옵니다. 리뷰 코치 말풍선은 높이가 고정돼 수를 넘겨도 보드와 버튼이 흔들리지 않습니다."),
+      ] },
+      { cat: "fix", items: [
+        t("프로필 편집이 저장되지 않던 문제를 고쳤습니다."),
+        t("기물을 희생하는 뛰어난 수가 탁월한 수로 표시되지 않던 문제를 고쳤습니다."),
+        t("둘 수 있는 수가 하나뿐인 강제 수는 유일한 수로 표시하지 않습니다."),
+        t("/review 링크를 열면 리뷰 대신 다른 화면으로 넘어가던 문제를 고쳤습니다."),
+      ] },
+    ],
+  },
   {
     version: "0.7.4", date: "2026.11.09",
     summary: t("성장 분석을 새로 만들고, 유산을 게시물로 바꿨습니다. 플레이 퀘스트가 생기고 티어 승급과 티어 여정, 도감도 새 디자인이 됐습니다."),

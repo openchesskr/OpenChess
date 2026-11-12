@@ -82,6 +82,39 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.5 - 2026/11/12
+
+테마: 도감 레슨 재구축과 오프닝 레파토리, 파셋 아이콘 세트, Stockfish 19, 통합 검색·업적, 리뷰·학습 탭·티어 여정 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(레슨 보상 `seedChapters` 갱신·op_* 오프닝 레슨, app_content 분기 제거).
+
+**기능**
+- 레슨 전면 개편(`lessons.jsx`, `lib/lessons/curriculum.js`·`engine.js`·`progress.js`): 예전 레슨(학습 탭 지도·편집기·mainQuest·seedLessons) 삭제. 도감 탭에 수 등급 색 단계별 마름모 경로 + 전체 화면 학습 화면, 6단계 42개 레슨(chess.js 판정), 레슨당 20코인(서버 `seedChapters`). 6단계는 오프닝 MEC 기반 13개 오프닝 레파토리(블록에 오프닝 이름, 배경에 흐르는 기보·대표 기물 실루엣).
+- MEC 오프닝 레파토리(정석 수 의도·이론 이탈 후 중반 계획 107항목, 트랜스포지션 대응)와 폰 구조 인식 14종(IQP·칼스바드·마로치 등), `check-mec-repertoire`.
+- 마스터 상세 프로필 117명 보충(249→366명, 저장소 마스터 대국 DB·대회 데이터), 프로필 계산·선수 이름 묶기 공용화, 동명이인 분리.
+- 엔진: `ENGINE_PROFILES`에 lite19·full19 추가(분석 엔진 목록 맨 앞), 빠른 리뷰 엔진 `QUICK_REVIEW_ENGINE`=lite19, `copy-engine.mjs`가 19 Lite·19(2조각) 생성.
+- 기보 용지 스캔(`api/_lib/scoresheet.js`, `api/scan-board.js` kind "scoresheet"): 판독 칸을 합법 수와 대조해 혼동 글자 가중 편집 거리로 교정, 못 고치면 그 수에서 멈춤. `check-scoresheet`.
+- 통합 검색(`SearchModal`, `searchResultRow.jsx`): 유저·오프닝·마스터·퍼즐·업적 동시 검색 + 분류 토글, 외부 블록 디자인 통일.
+- 프로필: 편집 시트(`profileEdit.jsx`) 신설, 업적 섹션(달성 수/전체 + 대표 칭호 2개, 기본값 등급순), `/user` 세로 점 세 개 메뉴 통일(`ProfileMoreMenu`).
+- 자동 번역 범위에 분석 탭 주요 분기점·수 추천 이유(UGC kind "content") 추가.
+- 학습 탭 자동 분석 진행 화면(`growthMotion.jsx` AnalysisScanner): `autoReview.js` 진행 스트림(`subscribeReviewProgress`)으로 채점 중인 판의 포지션·수 판정·승률 파형을 실시간 표시.
+
+**UI**
+- 파셋 아이콘 세트(`components/ocIcons.jsx`, lucide와 같은 이름) — lucide 전면 교체(브랜드 로고 제외), 직접 그린 아이콘·장식 재작업, CLAUDE.md "아이콘·디자인 요소 규칙" + `check-facet-icons`.
+- 학습 탭 첫 페이지: 기존 게이지 삭제, /about 시각 언어의 진행 화면, 분석 통계 등장(Reveal·StatPop·GrowBar)·반복(광택·흐르는 빛·맥동) 연출.
+- 티어 여정(`tierJourney.jsx`) 레슨 경로 구조로 재구성: 구간 마름모 타일·흰 십각형 티어 로고 장 표지·코치 말풍선·하단 정보 막대·티어 목록, 배경은 어두운 전시실(조명·윤곽광 기물·대리석 체스판 바닥·빛 먼지). Bagel Fat One 글꼴 삭제(퀘스트 완료 팝업 제목 포함).
+- 도감 첫 화면 카드 4장 재디자인, 마스터 카드에 수록 선수 수. /about '네 글자' 구간 삭제.
+
+**UX**
+- 새로고침 첫 렌더부터 맞는 탭(`initialTabForPath`, 딥링크 덮개), 탭별 화면 상태·마지막 주소·스크롤 유지(`lib/tabMemory.js`).
+- 리뷰: 내 대국(game.color)은 내 진영 아래(보드·시작 연출·평가 막대·선수 줄), 코치 말풍선 본문 고정 높이(오프닝 이름을 말풍선 안으로).
+
+**버그 수정**
+- BUG-150(P3, BUGS.md 번호 중복), BUG-151(P3, 문장 대문자 처리), BUG-153(P2, 모의 공격 기대값), BUG-154(P3, 첫 완료가 "복습 완료"로 표시), BUG-155(P3, 레슨 경로 선이 장 제목을 가림), BUG-156(P2, 프로필 편집 창이 열리지 않음), BUG-157(P1, 세션 복원 때 소개 미복원), BUG-158(P1, 분석 탭 FEN 시작 포지션 유실), BUG-159(P2, 새로고침 때 다른 탭이 잠깐 보임), BUG-160(P1, 방치 희생 탁월 판정 — `couldKeepEverything`·`sacPoisonVerdict` 재정의), BUG-162(P1, /review 링크 — PGN 암호화 링크 + 표시용 메타 태그, 캐시 키는 링크에서 복원하지 않음), BUG-163(P3, CSP에 SF19 Lite 예비 경로). BUG-152(P2, 동명이인 합산)·BUG-161(P3, 성장 곡선 축 숫자 크기)은 미결.
+- 수 등급: 강제 수(2순위 수 없음)는 유일한 수에서 제외, 저장된 예전 결과도 읽을 때 바로잡음(`fixForcedOnlyMoves`).
+
+**시스템**
+- prebuild 검사 추가: `check-bug-ids`, `check-mec-repertoire`, `check-lessons`, `check-facet-icons`, `check-scoresheet`, `check-profile-roundtrip`, `check-tab-memory`. `check-move-grading`·`check-review-ui`·`check-growth`·`check-learn-tab` 등 갱신.
+- `package.json` 0.7.5, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.4 - 2026/11/09
 
 테마: 성장 분석 개편과 유산의 게시물화, 플레이 퀘스트, 창 UI 확대·티어 연출 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`chat_messages.legacy_owner`, `legacy_reposts`·`legacy_repost_counts`, `legacy_repost_toggle` RPC).
@@ -102,7 +135,7 @@
 - 프로필 사진 위치 조정, 유산 공유·전송 흐름 통일.
 
 **버그 수정**
-- BUG-107(P3), BUG-109(P3), BUG-110(P2, 집중 분석 해설 이동), BUG-111(P2, 창 가로 스크롤), BUG-112(P2, Android 빠른 리뷰 OPEN 겹침). BUG-108(P3, /about 학습 탭 스크린샷 낡음)은 미결.
+- BUG-144(P3), BUG-146(P3), BUG-147(P2, 집중 분석 해설 이동), BUG-148(P2, 창 가로 스크롤), BUG-149(P2, Android 빠른 리뷰 OPEN 겹침). BUG-145(P3, /about 학습 탭 스크린샷 낡음)은 미결. (v0.7.5에서 번호 정정: 처음엔 BUG-107~112로 잘못 기록 — BUG-150)
 
 **시스템**
 - prebuild 검사 추가: `check-legacy-posts`, `check-legacy-player`, `check-play-quest`. `check-economy-constants`가 `applyEconomy` 블록을 동적으로 찾도록 수정.

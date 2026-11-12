@@ -11,8 +11,9 @@ const learn = rd("src/app/learn.jsx"), app = rd("src/App.jsx");
 const fails = [];
 const tab = (learn.match(/export function LearnTab[\s\S]*$/) || [""])[0];
 if (/DailyQuestCard|questNode|dailyQuest/.test(learn)) fails.push("learn.jsx: 일일 퀘스트는 플레이 탭으로 옮겼으므로 학습 탭에 남기지 않음");
-if (!/<LearnFold[^>]*id="lessons"/.test(tab)) fails.push("LearnTab: 레슨은 접어서 유지해야 함");
-if (/<LearnFold[^>]*id="growth"/.test(tab) || !/growthNode=\{growthNode\}/.test(tab) || !/<GrowthPanel /.test(tab)) fails.push("LearnTab: 성장 분석(GrowthPanel)은 접지 않고 프로필 자리(growthNode)에 펼쳐 보여야 함");
+// (v0.7.5, 사용자 요청) 레슨은 도감 탭으로 옮겼다 — 학습 탭에 예전 레슨(LessonMap·LearnFold·mainQuest)이 남으면 안 된다.
+if (/LessonMap|LessonScreen|LessonEditor|LearnFold|mainQuest/.test(learn)) fails.push("learn.jsx: 레슨은 도감 탭으로 옮겼으므로 학습 탭에 예전 레슨 코드가 남으면 안 됨");
+if (!/growthNode=\{growthNode\}/.test(tab) || !/<GrowthPanel /.test(tab)) fails.push("LearnTab: 성장 분석(GrowthPanel)은 접지 않고 프로필 자리(growthNode)에 펼쳐 보여야 함");
 { // (v0.7.4) 모바일 가로 스와이프 2페이지는 공용 SwipePager 하나(학습 탭 · 플레이 탭이 같은 디자인). 탭 줄·점·n/N 표시는 없다.
   const pager = rd("src/components/swipePager.jsx"), play = rd("src/app/play.jsx");
   if (!/export function SwipePager/.test(pager)) fails.push("SwipePager 없음");
@@ -30,25 +31,16 @@ if (!/useNarrow\(720\)/.test(home)) fails.push("LearnProfileHome: 모바일 기�
 if (/<UserProfilePage embedded/.test(app)) fails.push("App: 학습 탭에 /user 프로필 페이지가 다시 들어옴(프로필 정보는 성장 분석으로 대체됨)");
 { const dqs = rd("src/app/dailyQuest.jsx"), dq = (dqs.match(/export function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0]; if (!dq) fails.push("DailyQuestCard(dailyQuest.jsx)를 찾지 못함"); else if (/gradient\(/.test(dq)) fails.push("DailyQuestCard: 그라데이션(linear/radial-gradient)을 쓰면 안 됨(단색 면 + 얇은 테두리)"); }
 if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박스(RecentGameBoxes)를 쓰지 않음");
-{ // (v0.7.3) 레슨은 듀오링고식 세로 경로(원형 노드 + 굽이치는 길 + "시작" 말풍선) — 가로 카드 지도·그라데이션으로 되돌리지 않는다.
-  const ln = (learn.match(/const LESSON_NODE_D[\s\S]*?\nfunction LessonMap[\s\S]*?\n}\n/) || [""])[0];
-  if (!ln) fails.push("레슨 경로(LESSON_NODE_D ~ LessonMap)를 찾지 못함");
-  else {
-    if (!/borderRadius: "50%"/.test(ln)) fails.push("LessonNode: 원형 노드가 아님");
-    if (!/lessonPathPositions/.test(ln) || !/LESSON_WAVE/.test(ln)) fails.push("LessonMap: 굽이치는 세로 경로 배치(lessonPathPositions/LESSON_WAVE)가 없음");
-    if (!/t\("시작"\)/.test(ln)) fails.push("LessonNode: 지금 할 레슨 '시작' 말풍선이 없음");
-    if (/gradient\(/.test(ln.replace(/\/\/.*$/gm, ""))) fails.push("레슨 경로: 그라데이션을 쓰면 안 됨");
-    if (/overflowX: "auto"/.test(ln)) fails.push("LessonMap: 가로 스크롤 지도로 되돌아감");
-  }
-}
 { // (v0.7.4) 성장 분석: 맨 위 /user 프로필 상단 정보(칭호·사진·이름·소개·MID·티어/퍼즐 레이팅) → 리뷰 5판 게이트(게이지 바) 또는 마스터 스타일. 나머지 분석 요소는 삭제했다.
   const gr = rd("src/app/growth.jsx");
   const gp = (gr.match(/export function GrowthPanel[\s\S]*$/) || [""])[0];
   if (!gp) fails.push("GrowthPanel을 찾지 못함");
   else {
     if (!/<ProfileBlock /.test(gp)) fails.push("GrowthPanel: 프로필 크림 블록(ProfileBlock) 안에 모든 구획이 들어가야 함");
-    if (!/<AutoReviewGate /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 자동 분석 게이지(AutoReviewGate)와 마스터 스타일(MasterStyle)이 필요함");
-    if (!/<ProfileBlock[\s\S]*<AutoReviewGate[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
+    // (v0.7.5, 사용자 요청) 자동 분석 게이지는 /about 수준의 진행 애니메이션(app/growthMotion.jsx AnalysisScanner)으로 바뀌었다
+    if (!/<AnalysisScanner /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 자동 분석 진행 화면(AnalysisScanner)과 마스터 스타일(MasterStyle)이 필요함");
+    if (!/<ProfileBlock[\s\S]*<AnalysisScanner[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
+    if (/function AutoReviewGate|<AutoReviewGate /.test(gr)) fails.push("growth.jsx: 예전 게이지(AutoReviewGate)는 삭제됨(v0.7.5 사용자 요청) — AnalysisScanner를 쓸 것");
   }
   const gh = (gr.match(/function ProfileBlock[\s\S]*?\n}\n/) || [""])[0];
   if (/EquippedTitleFit/.test(gh)) fails.push("ProfileBlock: 학습 탭에는 칭호를 표시하지 않음(v0.7.4 사용자 요청)");

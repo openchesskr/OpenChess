@@ -14,9 +14,9 @@ export function loadReviewSpeedPref() {
   } catch { return "normal"; }
 }
 export function saveReviewSpeedPref(v) { try { window.localStorage.setItem(REVIEW_SPEED_PREF_KEY, REVIEW_SPEEDS.includes(v) ? v : "normal"); } catch { } }
-// (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜면 엔진을 Stockfish 18 Lite, 리뷰 depth를 15로 고정하고, 리뷰 진입 연출(보드 연출·정확도 그래프)을 건너뛰어
+// (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜면 엔진을 Stockfish 19 Lite(v0.7.5부터, 예전 18 Lite), 리뷰 depth를 15로 고정하고, 리뷰 진입 연출(보드 연출·정확도 그래프)을 건너뛰어
 //  분석이 끝나는 즉시 리뷰 화면을 연다. 기본은 꺼짐. 고정된 동안에도 원래 고른 엔진·속도는 그대로 저장돼 있어 끄면 돌아온다.
-export const QUICK_REVIEW_ENGINE = "lite";
+export const QUICK_REVIEW_ENGINE = "lite19";   // (v0.7.5, 사용자 요청) Stockfish 19 Lite
 // (v0.7.2) 빠른 리뷰는 포지션당 탐색 시간 상한도 줄인다(표준 REVIEW_MOVETIME_MS=1500). depth 15는 Lite에서 대개 이 안에 끝나고, 느린 기기에서만 상한이 걸린다.
 export const QUICK_REVIEW_MOVETIME_MS = 600;
 export const REVIEW_QUICK_PREF_KEY = "occ_review_quick_pref";

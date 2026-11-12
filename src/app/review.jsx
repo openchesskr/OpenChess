@@ -7,7 +7,7 @@ import { T, DRAG_SCROLL_MULT, BOARD_SKINS, boardSquareBg } from "../lib/theme.js
 import { QCOLOR, ANALYSIS_KIND_ROWS } from "../lib/moveKinds.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { SITE_FONT, EvalBadge, dedupeEngineLines, EvalBar, EngineLines } from "../components/engineLines.jsx";
-import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Check, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Check, Image as ImageIcon } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";
@@ -19,7 +19,7 @@ import { loadReviewShareCardAssets, drawReviewShareCardSync } from "../lib/share
 import { loadHighlightCardAssets, drawHighlightCard } from "../lib/highlightCard.js";
 import { pickHighlights } from "../lib/highlights.js";
 import { canWebShareFiles, downloadBlob, webShare } from "../lib/share.js";
-import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
+import { BoardWithMaterial, CONTENT, CircleBadge, ExternalShareRow, FriendSendList, ShareSection, ShareSheetFrame, shareBtnStyles, Mascot, PIECE_KOR, REVIEW_DEPTH, REVIEW_MOVETIME_MS, REVIEW_RESULT_CACHE_VERSION, reviewPut, ReviewAvatar, ReviewPromoPrompt, TIME_CLASS_LABEL, analyzeGame, callEvaluateMulti, fetchChesscomProfile, getAnalysisPool, gradeMoveKindConfirmed, hangingPieceArrows, isBookMoveAt, josaGwaWa, mecBookFacts, mecFacts, mecPick, nameOverride, poolWorker, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewStorageKey, singleRecaptureCheck, snapNode, useBoardSize, useNarrow } from "./common.jsx";
 
 import { findPost, LEGACY_MAX_POSTS } from "../lib/legacyPosts.js";
 import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult, reviewedAnalysisFetch, reviewedAnalysisShare, ocAnalysisShare } from "./reviewCache.js";
@@ -349,7 +349,7 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
   // (R7 기능) MEC의 마지막 한 줄(mecFactsArr[0])은 body 문자열에 그냥 이어붙이지 않고 mecLine으로
   // 따로 돌려준다 — "위협" 사실이면 ReviewCoachCard가 이 줄만 밑줄+클릭 가능하게 렌더링해서, 눌렀을
   // 때 공격자→수비자 화살표 애니메이션을 재생할 수 있게 하기 위함이다.
-  const mecLine = (m.kind !== "book" && mecFactsArr && mecFactsArr.length) ? mecFactsArr[0] : null;
+  const mecLine = (mecFactsArr && mecFactsArr.length) ? mecFactsArr[0] : null; // (v0.7.5) 정석 수도 오프닝 레파토리 설명을 보여 준다
   // (v0.2.1) 마스코트는 등급에 따라 랜덤/고정으로 정하지 않고, 그 수를 둔 진영으로 정한다 —
   // 백이 둔 수는 MILKU, 흑이 둔 수는 KOKOA. 표정(emotion)만 등급별 기본값을 그대로 쓴다.
   const emo = (c.mascot && c.mascot[1]) || "great";
@@ -362,6 +362,8 @@ function reviewCoachCopy(m, brilliantNote, punishLine, mecFactsArr, onlyRefutati
 // 문구로 채워지므로, chess.com 아바타를 조회할 진짜 아이디는 이 함수로 따로 뽑는다 — game.white/black에
 // 실제 username이 있으면 그걸, 옛 형태(내 진영만 저장된 대국)면 game.username을 쓰고, 그마저 없으면
 // (분석 탭 임의 수순 분석) null — 이 경우 아바타 조회 자체를 하지 않는다.
+/** 리뷰 보드를 뒤집을지 — 내가 흑으로 둔 대국이면 true(scripts/check-review-ui.mjs가 검사). */
+export function reviewBoardFlip(game) { return !!game && game.color === "b"; }
 function avatarUsernameFor(game, side) {
   const p = side === "w" ? game.white : game.black;
   if (p && p.username) return p.username;
@@ -699,16 +701,7 @@ function ReviewMoveTable({ sans, moves, curPly, onJump, drawn }) {
     </div>
   );
 }
-// (v0.2.1) 예전 Openings 탭 내용(오프닝 이름·해설)을 평가치 그래프 위에 얹는 얇은 배너.
-function ReviewOpeningBanner({ text }) {
-  if (!text) return null;
-  return (
-    <div className="flex items-center" style={{ gap: 6, marginBottom: 10, padding: "7px 11px", borderRadius: 9, background: RV.panel, border: "1px solid " + RV.border }}>
-      <BookOpen size={13} style={{ color: T.brassHi, flexShrink: 0 }} />
-      <span style={{ fontSize: 12, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
-    </div>
-  );
-}
+// (v0.7.5) 오프닝 이름은 코치 말풍선 안 맨 아래에 표시한다(예전 별도 배너 ReviewOpeningBanner는 나타났다 사라지며 보드를 밀어 삭제).
 // (기능) 코치 카드 — 등급 아이콘·헤드라인·평가치 배지·설명, Show(최선수 화살표 토글)·Next(다음 수로) 컨트롤.
 // (v0.2.1) 예전엔 Show(화살표)·Best(텍스트로 "최선의 수는 X였어요") 두 버튼이 같은 정보를 서로
 // 다른 형태로 중복 노출했다 — chess.com처럼 최선의 수는 보드 위 화살표 하나로만 보여주고, 더 나은
@@ -730,7 +723,9 @@ function MecKeywordLine({ text, keyword, onClick, style }) {
     </p>
   );
 }
-function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
+// 코치 말풍선 본문의 고정 높이(px) — scripts/check-review-ui.mjs가 고정 여부를 검사한다.
+const REVIEW_COACH_BODY_H = { narrow: 128, wide: 148 };
+function ReviewCoachCard({ openingText, legacyAction, move, evalDisp, brilliantNote, punishLine, mecNotes, onlyRefutation, threatDetail, onThreatClick, preventDetail, onPreventClick, connectDetail, onConnectClick, removeDefenderDetail, onRemoveDefenderClick, tacticDetail, onTacticClick, mecKeyword, onShowLine, showingLine, onNext, isLast, narrow }) {
   if (!move) return null;
   const copy = reviewCoachCopy(move, brilliantNote, punishLine, mecNotes, onlyRefutation);
   const [mascotName, mascotEmo] = copy.mascot;
@@ -739,9 +734,11 @@ function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLi
   // 그래프를 리뷰 기보와 엔진 라인 사이에 끼워 넣을 자리를 만든다.
   return (
     <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", borderRadius: 14, border: "1px solid " + RV.border, overflow: "hidden" }}>
-      <div className="flex items-start gap-2" style={{ padding: narrow ? "9px 10px 5px" : "12px 13px 6px" }}>
+      {/* (v0.7.5, 사용자 요청) 말풍선 본문 높이 고정 — 설명이 짧아도 여백을 남겨, 아래 보드·그래프·버튼의 위치가 수마다 흔들리지 않는다.
+          설명이 아주 길면 이 안에서만 스크롤한다. 오프닝 이름(예전엔 말풍선 아래 별도 배너라 나타났다 사라지며 보드를 밀었다)도 이 안 맨 아래에 둔다. */}
+      <div className="flex items-start gap-2 rv-coach-body" style={{ padding: narrow ? "9px 10px 5px" : "12px 13px 6px", height: narrow ? REVIEW_COACH_BODY_H.narrow : REVIEW_COACH_BODY_H.wide, boxSizing: "border-box", overflowY: "auto", scrollbarWidth: "thin" }}>
         <Mascot name={mascotName} emotion={mascotEmo} size={narrow ? 32 : 40} />
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ minWidth: 0, flex: 1, minHeight: "100%", display: "flex", flexDirection: "column" }}>
           <div className="flex items-center justify-between" style={{ gap: 8 }}>
             <span className="flex items-center gap-2" style={{ minWidth: 0 }}><CircleBadge kind={move.kind} /><span style={{ fontSize: narrow ? 12.5 : 13.5, fontWeight: 800, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{copy.headline}</span></span>
             {/* (v0.2.2 기능) 평가치 박스를 흰색/검은색(EvalBadge, 유리한 쪽 색으로 반전)으로 통일 —
@@ -765,6 +762,12 @@ function ReviewCoachCard({ legacyAction, move, evalDisp, brilliantNote, punishLi
                 : null}
               style={{ fontSize: narrow ? 11 : 12, color: RV.soft, marginTop: 5, lineHeight: 1.4 }}
             />
+          )}
+          {openingText && (
+            <div className="flex items-center" style={{ gap: 6, marginTop: "auto", paddingTop: 6, minWidth: 0 }}>
+              <BookOpen size={12} style={{ color: T.brassHi, flexShrink: 0 }} />
+              <span style={{ fontSize: narrow ? 11 : 11.5, fontWeight: 700, color: RV.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{openingText}</span>
+            </div>
           )}
         </div>
       </div>
@@ -859,7 +862,7 @@ const REVIEW_BOARD_INTRO_REPLAY_HEAD = 4;
 const REVIEW_BOARD_INTRO_REPLAY_TAIL = 10;
 const REVIEW_BOARD_INTRO_REPLAY_JUMP_MS = 260; // 중간을 건너뛴 직후 눈에 띄도록 살짝 더 머무는 시간
 const REVIEW_BOARD_INTRO_HOLD_MS = 260;   // 다 끝난 뒤 사라지기 전 짧게 멈추는 시간
-function ReviewBoardIntroAnim({ sans, onDone }) {
+function ReviewBoardIntroAnim({ sans, onDone, flip = false }) {
   const skCtx = useContext(SkinContext);
   const sk = BOARD_SKINS[skCtx.boardSkin] || BOARD_SKINS.classic;
   const onDoneRef = useRef(onDone);
@@ -991,10 +994,12 @@ function ReviewBoardIntroAnim({ sans, onDone }) {
             const order = squareOrder[sqIdx];
             const light = (r + c) % 2 === 0;
             const shown = stage !== "suck" && (stage !== "squares" || order < squaresShown);
-            const p = board[r][c];
-            const showPiece = shown && p && pieceVisible(r, c);
-            const isFrom = lastMoveInfo && lastMoveInfo.from && lastMoveInfo.from[0] === r && lastMoveInfo.from[1] === c;
-            const isTo = lastMoveInfo && lastMoveInfo.to && lastMoveInfo.to[0] === r && lastMoveInfo.to[1] === c;
+            // (v0.7.5, 사용자 요청) 내가 흑으로 둔 대국은 흑이 아래 — 화면 칸(r, c)에 놓일 보드 칸(R, C)
+            const R = flip ? 7 - r : r, C = flip ? 7 - c : c;
+            const p = board[R][C];
+            const showPiece = shown && p && pieceVisible(R, C);
+            const isFrom = lastMoveInfo && lastMoveInfo.from && lastMoveInfo.from[0] === R && lastMoveInfo.from[1] === C;
+            const isTo = lastMoveInfo && lastMoveInfo.to && lastMoveInfo.to[0] === R && lastMoveInfo.to[1] === C;
             // (버그 방지) 이 바깥 칸 자체에는 배경을 미리 깔지 않는다 — 배경을 여기서부터 항상
             // 보여주면 안쪽 motion.div의 opacity 애니메이션과 무관하게 칸이 처음부터 다 보이는 꼴이
             // 돼(둘 다 같은 색이라 구분이 안 됨) "무작위로 하나씩 나타나는" 연출 자체가 무력화된다 —
@@ -1557,6 +1562,8 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   const [exploreMove, setExploreMove] = useState(null); // {san, white, kind, best} — result.moves 항목과 같은 형태
   const [sel, setSel] = useState(null);
   const [drag, setDrag] = useState(null);
+  // (v0.7.5, 사용자 요청) 내 대국(OpenChess·chess.com — game.color = 내가 둔 진영)은 항상 내 진영이 아래. 진영 정보가 없는 리뷰(PGN·FEN·분석 탭)는 백이 아래.
+  const boardFlip = reviewBoardFlip(game);
   const [promoPrompt, setPromoPrompt] = useState(null); // 프로모션 선택 대기 {from,to}
   // (v0.5.1 UI, 사용자 요청) 승격 선택 오버레이를 실제 8x8 그리드 안으로 포털하기 위한 참조 — Board의
   // gridRef 콜백 prop으로 채워진다(모바일/데스크톱 두 렌더 분기가 서로 배타적이라 하나로 공유해도 안전).
@@ -1693,7 +1700,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // (v0.7.4) 유산은 게시물 — 칸 제한 없이 최대 LEGACY_MAX_POSTS개까지 쌓인다. 같은 수는 "저장됨", 가득 차면 막는다(기존 교체 확인 단계는 없어졌다).
   const legacyAction = useMemo(() => {
     const m = activeMove;
-    if (!onSaveLegacy || !myUid || !game.color || fenRoot || exploring || !m || !result) return null;
+    if (!onSaveLegacy || !myUid || !game.color || game.fromLink || fenRoot || exploring || !m || !result) return null;   // (보안 검토) 링크로 연 대국의 진영은 표시용일 뿐 — 유산으로 남기지 않는다
     if (!["best", "only", "brilliant"].includes(m.kind) || m.ply == null) return null;
     if ((m.ply % 2 === 0) !== (game.color === "w")) return null;
     if (findPost(legacies, sans, m.ply)) return { kind: m.kind, state: "saved" };
@@ -1705,7 +1712,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
         onSaveLegacy(m.kind, { sans, moveIndex: m.ply, playCount: Math.max(1, Math.min(5, sans.length - m.ply)), beforeCount: Math.min(3, m.ply), kinds, side: game.color, savedAt: Date.now() });
       },
     };
-  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, fenRoot, exploring, sans]);
+  }, [activeMove, result, legacies, onSaveLegacy, myUid, game.color, game.fromLink, fenRoot, exploring, sans]);
   // (v0.2.1) 모바일 이동 스트립에서 색·아이콘을 입힐 수(그래프에 원이 찍히는 수)의 ply 집합.
   const dotPlies = useMemo(() => new Set(result ? pickEvalGraphDots(result.moves).map((m) => m.ply) : []), [result]);
   // (v0.2.1) 이 대국의 오프닝 이름 — 예전 Openings 탭 내용을 평가치 그래프 위로 옮겨 상시 표시한다.
@@ -1958,13 +1965,16 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   const mecThreatOut = useRef({});
   const mecNotes = useMemo(() => {
     mecThreatOut.current = {};
-    if (!activeMove || activeMove.kind === "book") return [];
+    if (!activeMove) return [];
+    // (v0.7.5) 정석 수는 오프닝 레파토리 설명(그 수의 의도·이론을 벗어날 때의 계획·새 폰 구조)으로 대신한다. 다음 수는 실제 기보 수를 볼 때만 넘긴다.
+    const futureSans = exploring ? [] : sans.slice(curPly, curPly + 2);
+    if (activeMove.kind === "book") { try { return mecBookFacts(effSans.slice(0, -1), activeMove.san, futureSans, fenRoot); } catch { return []; } }
     if (inMateSequence) {
       const n = Math.abs(activeEvalDisp.mate);
       return [mecPick([t("체크메이트로 몰아가는 강제 수순이며, 메이트까지 {0}수 남았다.", n), t("이제부터는 체크메이트 수순이다. {0}수 뒤에 체크메이트이다.", n), t("메이트 {0}수 전이며, 체크메이트로 끝나는 강제 수순이다.", n)], effSans.length)];
     }
-    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot); } catch { return []; }
-  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot]);
+    try { return mecFacts(effSans.slice(0, -1), activeMove.san, activeMove.white ? "w" : "b", activeMove.kind, activeMove.best, activeMove.beforeCp, mecThreatOut.current, fenRoot, futureSans); } catch { return []; }
+  }, [activeMove, effSans, inMateSequence, activeEvalDisp && activeEvalDisp.mate, fenRoot, exploring, sans, curPly]);
   const threatDetail = mecThreatOut.current.detail || null;
   // (기능) 예방 수(R4/R9)의 시각화 데이터 — mecThreatOut.current.prevent에 방어 대상 칸·상대 진입
   // 경로·내 응수 경로가 채워져 있으면(그 사실이 facts[0]으로 뽑혔을 때만), 그 칸에 금색 테두리를
@@ -2340,7 +2350,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           숨어 있는 동안에도 실제 데이터를 그대로 이어받아 조용히 진행되고 있다가, 이 오버레이가
           끝나며 사라지면 바로 그 상태 그대로 자연스럽게 드러난다. */}
       <AnimatePresence>
-        {!boardIntroDone && <ReviewBoardIntroAnim sans={sans} onDone={() => setBoardIntroDone(true)} />}
+        {!boardIntroDone && <ReviewBoardIntroAnim sans={sans} flip={boardFlip} onDone={() => setBoardIntroDone(true)} />}
       </AnimatePresence>
       {/* (v0.5.7, 사용자 요청) 삽화·상태 문구·그래프·진행 막대를 모두 ReviewAccuracyRevealAnim이 헤더 아래 남은 영역에 맞춰 한 번에 배치한다
           (reviewIntroLayout). 진행 막대는 예전처럼 채점된 수(gradedCount — 순서대로 채점, 애니메이션과 같은 속도) 기준. */}
@@ -2358,14 +2368,13 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           ? <ReviewSummary game={game} result={result} onStart={() => { setPhase("review"); setCurPly(1); }} onPickMove={(p) => { setPhase("review"); jump(p); }} narrow sharpOn={sharpOn} />
           : (
             <div style={{ padding: "0 12px 24px" }}>
-              <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} narrow />
-              {openingText && <div style={{ marginTop: 10 }}><ReviewOpeningBanner text={openingText} /></div>}
+              <ReviewCoachCard openingText={openingText} move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} narrow />
               {/* (v0.2.1 기능) 세로 평가치 막대(백 아래) — leftOfBoard로 Board 바로 옆(잡힌 기물 줄 제외)에
                   놓고, boardRef(mobileBoardSizeRef)를 그 보드 칸에 붙여 useBoardSize가 막대·기물 줄을 뺀
                   보드 몫의 폭만 재도록 한다(0.0이 정확히 4·5행 사이에 오도록 막대가 보드 높이에만 맞춰짐). */}
               <div style={{ marginTop: 12, position: "relative" }}>
-                <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-                  boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+                <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={boardFlip} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={boardFlip ? whitePInfo : blackPInfo} bottomInfo={boardFlip ? blackPInfo : whitePInfo}
+                  boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical flip={boardFlip} cp={activeEvalDisp} font={SITE_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
               <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
@@ -2400,8 +2409,8 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               동일하게 그 보드 칸(막대 제외)에 붙어 실제 렌더된 폭을 재고, useBoardSize가 8px 격자에
               맞춰 떨어지는 크기로 환산해 돌려준다. */}
           <div style={{ position: "relative" }}>
-            <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={false} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={blackPInfo} bottomInfo={whitePInfo}
-              boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical cp={activeEvalDisp} font={SITE_FONT} />} />
+            <BoardWithMaterial slideMove={slideMove} board={rdBoardOverride || board} endFx={!rdBoardOverride && drawState.end ? { kind: drawState.end, loser: drawState.color } : null} flip={boardFlip} textColor={RV.soft} size={boardSize} arrows={arrows} haloSquares={haloSquares} legalTargets={legalTargets} selected={sel} onSquareClick={onSquareClick} onPieceDrag={onPieceDrag} onDrop={onDrop} lastQ={lastQ} showEval={false} topInfo={boardFlip ? whitePInfo : blackPInfo} bottomInfo={boardFlip ? blackPInfo : whitePInfo}
+              boardRef={desktopBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical flip={boardFlip} cp={activeEvalDisp} font={SITE_FONT} />} />
             {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
           </div>
           <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 10 }}>
@@ -2421,7 +2430,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               820)을 그대로 활용하는 편이 한 줄에 더 많은 글자가 들어가 덜 답답해 보인다. 탭
               전환과 무관하게(예전 왼쪽 열에 있을 때와 마찬가지로) 항상 보이도록 탭 스위처보다도 위에 둔다. */}
           <div style={{ marginBottom: 12 }}>
-            <ReviewCoachCard move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} />
+            <ReviewCoachCard openingText={openingText} move={activeMove} evalDisp={activeEvalDisp} brilliantNote={brilliantNote} punishLine={punishLine} mecNotes={mecNotes} onlyRefutation={onlyRefutation} threatDetail={threatDetail} onThreatClick={playThreatAnimation} preventDetail={preventDetail} onPreventClick={playPreventAnimation} connectDetail={connectDetail} onConnectClick={playConnectAnimation} removeDefenderDetail={removeDefenderDetail} onRemoveDefenderClick={playRemoveDefenderAnimation} tacticDetail={tacticDetail} onTacticClick={playTacticAnimation} mecKeyword={mecKeyword} onShowLine={() => setShowingLine((v) => !v)} showingLine={showingLine} onNext={goNext} isLast={curPly >= sans.length} legacyAction={legacyAction} />
           </div>
           <div className="flex items-center" style={{ gap: 4, marginBottom: 12, borderBottom: "1px solid " + RV.border }}>
             {[["review", "Review"], ["analysis", "Analysis"]].map(([k, label]) => (
@@ -2431,7 +2440,6 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
           {tab === "review" && (
             <>
               {/* (v0.2.1) 예전 Openings 탭에 뜨던 오프닝 정보 — 평가치 그래프 위에 상시 표시한다. */}
-              {openingText && <ReviewOpeningBanner text={openingText} />}
               {/* (사용자 요청) 데스크톱 그래프 크기를 한 번 더 줄인다 — 오른쪽 열 전체(최대 820)를
                   그대로 채우던 것을 이 폭으로만 한정해(SVG는 width:100%라 이 컨테이너를 그대로
                   따라간다) 세로 높이도 종횡비(320:92)에 맞춰 함께 줄어든다. 아래 엔진 라인·기보

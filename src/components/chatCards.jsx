@@ -4,7 +4,7 @@
 // 계산(선택지 고르기·입력 해석·룰렛 뽑기·payload 검증)은 src/lib/chatQuiz.js·openingRoulette.js — scripts/check-chat-quiz-roulette.mjs가 검사한다.
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, Dices, Check, X, Cpu, ExternalLink, RotateCcw } from "lucide-react";
+import { Brain, Dices, Check, X, Cpu, ExternalLink, RotateCcw } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { parseFenFull } from "../lib/chessRules.js";
 import { sansToPgnText } from "../lib/pgn.js";

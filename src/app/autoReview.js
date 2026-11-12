@@ -7,6 +7,13 @@ import { reviewResultStorageKey, loadCachedReviewResult, saveCachedReviewResult,
 
 const isOcId = (id) => /^(pvp|bot)-/.test(String(id || ""));
 const inflight = new Map();
+// (v0.7.5, 사용자 요청) 학습 탭 자동 분석 애니메이션용 — 분석 중인 판의 수 단위 진행(채점된 수까지의 부분 결과)을 키별로 흘려보낸다.
+//  분석은 같은 키에 한 번만 돌므로(inflight) 화면이 나중에 붙어도 마지막 진행을 바로 받는다.
+const progress = new Map(), listeners = new Set();
+const emit = () => listeners.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+/** { done, total, moves, evalWin } 또는 null. */
+export const reviewProgressOf = (key) => progress.get(key) || null;
+export function subscribeReviewProgress(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
 export const reviewKeyOf = (game) => reviewResultStorageKey(game);
 /* 이미 캐시에 있는 이 대국의 리뷰 결과(없으면 null). */
@@ -30,7 +37,10 @@ export function ensureReview(game, { engine, reviewSpeed, quick }) {
     if (!engine || engine.status !== "ready") return null;
     const depth = reviewDepthFor(reviewSpeed, quick);
     const movetime = quick ? QUICK_REVIEW_MOVETIME_MS : reviewSpeed === "accurate" ? Math.round(REVIEW_MOVETIME_MS * 2.5) : REVIEW_MOVETIME_MS;
-    const r = await analyzeGame(game.sans, engine, depth, undefined, movetime, undefined, null);
+    progress.set(key, { done: 0, total: len, moves: [], evalWin: [] }); emit();
+    const onMove = (partial, idx, total) => { progress.set(key, { done: idx, total, moves: partial.moves || [], evalWin: partial.evalWin || [] }); emit(); };
+    const r = await analyzeGame(game.sans, engine, depth, undefined, movetime, onMove, null);
+    progress.delete(key); emit();
     if (!r) return null;
     saveCachedReviewResult(key, r, depth);
     // depth가 낮은 결과(더 빠르게)는 다른 사람과 공유하는 분석에 올리지 않는다(리뷰 화면과 같은 규칙, BUG-095).

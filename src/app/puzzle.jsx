@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'puzzle' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { useTabMemory } from "../lib/tabMemory.js";
 import { fenOfRoot, plyIsWhite, uciToSan, boardOfRoot, stripSuffix, decorateLine, plyMoveNum, parseFenFull, boardFromSans, sanSrc, decorateSan, moveNumber, kingPos, isAttacked, replayFromFen, epTarget, fenLegalDests, liveLegalDests, buildSan, applySan, looksLikeFen, startBoard } from "../lib/chessRules.js";
 import { ownPriorMoveWasSacrifice, materialDiff, posEvalToWhite, isSacrifice } from "../lib/moveQuality.js";
 import { useRef, useMemo, useState, useEffect, useContext, useLayoutEffect } from "react";
@@ -12,7 +13,7 @@ import { tierFromXp, tierDisplayLabelArabic, tierGradientCss } from "../lib/tier
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "lucide-react";
+import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
@@ -2496,7 +2497,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // (v0.4.1 기능, item 3) 사용자 요청 — "내가 만든 퍼즐"·"풀고 있는 중"을 직관적으로 찾을 수 있게
   // 테마 칩과 별개의 빠른 접근 칩을 둔다. quickFilter는 테마 필터와 AND로 함께 적용된다(다중 선택
   // 대상에서는 명시적으로 제외 — "내가 만든 퍼즐"과 "풀고 있는 중"을 동시에 켜면 뜻이 모호해진다).
-  const [quickFilter, setQuickFilter] = useState("all"); // "all" | "mine" | "inprogress"
+  const [quickFilter, setQuickFilter] = useTabMemory("puzzle.quickFilter", "all");   // (v0.7.5) 탭을 오가도 유지 // "all" | "mine" | "inprogress"
   // (사용자 요청) 정렬·필터 드롭다운에 전체/PGN/FEN 구분 추가 — PGN은 setupSans(대국 기보)가 있는
   // 퍼즐, FEN은 fen 필드가 있는 퍼즐(둘 다 있는 퍼즐이 대부분이다, 카드 배지와 같은 기준).
   const [selectedSources, setSelectedSources] = useState([]); // 예: ["pgn","fen"]
@@ -2511,7 +2512,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // (사용자 요청) 퍼즐 만들기 기능을 학습 탭(분석 화면 보드 편집기) 대신 이 탭 안에서 — "퍼즐 풀기"/
   // "퍼즐 만들기" 선택 박스로 모드를 전환한다. 만들기 모드는 PGN/FEN 입력 → 퍼즐 유형 선택 → 생성된
   // 라인 미리보기(생성자 권한 박스) 세 단계를 차례로 보여주고, 셋 다 끝나야 "퍼즐 만들기" 버튼이 켜진다.
-  const [puzzleMode, setPuzzleMode] = useState("solve"); // "solve" | "create"
+  const [puzzleMode, setPuzzleMode] = useTabMemory("puzzle.mode", "solve"); // "solve" | "create"
   // (사용자 요청) 만들기 화면을 보고 있는 도중 로그아웃되는 경우까지 대비 — 로그인 상태가 아니면
   // 항상 풀기 모드로 되돌린다.
   useEffect(() => { if (!myUid && puzzleMode === "create") setPuzzleMode("solve"); }, [myUid, puzzleMode]);
@@ -2559,7 +2560,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       const data = await scanImageFile(file, setPcScanProgress);
       let text = null;
       if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
-      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
+      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();   // (v0.7.5) 기보 용지도 서버가 바로잡은 PGN으로 온다
       if (!text) { setPcErr(t("이미지에서 체스판이나 기보를 인식하지 못함")); return; }
       setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
     } catch (e) { setPcErr((e && e.message) || t("이미지 스캔 실패")); }
@@ -2750,8 +2751,8 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // (사용자 요청) 퍼즐 탭 필터 — 오프닝/생성자를 여러 개 골라(다중 태그) 미해결/해결됨 목록을 그
   // 자리에서 좁혀 본다. 자동완성 후보는 지금 목록에 실제로 있는 값만(없는 값을 검색해 봐야 결과가
   // 0개인 게 뻔하므로) 보여준다.
-  const [selectedOpenings, setSelectedOpenings] = useState([]);
-  const [selectedCreators, setSelectedCreators] = useState([]);
+  const [selectedOpenings, setSelectedOpenings] = useTabMemory("puzzle.openings", []);
+  const [selectedCreators, setSelectedCreators] = useTabMemory("puzzle.creators", []);
   // (사용자 요청) 오프닝 검색창 + 생성자 검색창 2개를 하나로 합친다 — 검색어 하나로 오프닝 이름과
   // 생성자 아이디를 동시에 찾고, 결과 드롭다운 안에서 무엇이 오프닝이고 무엇이 생성자인지만
   // 태그 색(브론즈=오프닝/초록=생성자)과 접두사(@)로 구분해 보여준다.
@@ -2761,7 +2762,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   // 정렬과 무관한 별도 기능이라 건드리지 않고, 그 아래 미해결/해결됨 목록에만 적용한다.
   // (v0.4.1 기능, item 3) 기본 정렬을 "추천순"(난이도 적합도·약점 보완도·테마 적합도 3요소 점수)으로
   // 바꾼다 — 최신순/레이팅순은 여전히 수동으로 고를 수 있게 남겨 둔다.
-  const [puzzleSortBy, setPuzzleSortBy] = useState("score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순) | "popular"(인기순)
+  const [puzzleSortBy, setPuzzleSortBy] = useTabMemory("puzzle.sortBy", "score"); // "score"(추천순) | "recent"(최신순) | "rating"(레이팅순) | "popular"(인기순)
   // (사용자 요청) 정렬 UI가 산만하다는 피드백 — 3분할 세그먼트 박스 대신, 오프닝/생성자 검색창 폭을
   // 줄여 생긴 우측 여백에 깔때기(Filter) 아이콘 버튼 하나만 두고, 누르면 드롭다운으로 정렬 기준을 고른다.
   const [sortMenuOpen, setSortMenuOpen] = useState(false);

@@ -1,8 +1,9 @@
 // (v0.6.5 기능, 사용자 요청) 다른 사람이 쓴 글(수 설명 "note"·프로필 소개글 "bio")을 내 언어로 번역해 보여 주는 래퍼.
 // 번역이 없거나 꺼져 있으면(설정 > 언어) 원문을 그대로 그린다. 번역됐을 때만 "원문 보기" 토글이 붙는다.
-// 채팅 메시지에는 쓰지 않는다 — kind는 "note"·"bio"뿐이고 scripts/check-ugc-translate.mjs가 채팅 화면의 사용을 막는다.
+// (v0.7.5) 분석 탭의 주요 분기점·편집자가 쓴 수 추천 이유("content")도 번역한다.
+// 채팅 메시지에는 쓰지 않는다 — kind는 "note"·"bio"·"content"뿐이고 scripts/check-ugc-translate.mjs가 채팅 화면의 사용을 막는다.
 import { useState, useEffect, useSyncExternalStore } from "react";
-import { Languages } from "lucide-react";
+import { Languages } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 import { loadUgcTranslatePref } from "../lib/prefs.js";

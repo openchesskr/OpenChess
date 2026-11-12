@@ -1,12 +1,12 @@
 {
   "name": "opening-lab",
   "private": true,
-  "version": "0.7.4",
+  "version": "0.7.5",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/copy-engine.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-motion-kit.mjs && node scripts/check-review-ui.mjs && node scripts/check-puzzle-gen.mjs && node scripts/check-learn-tab.mjs && node scripts/check-legacy-flow.mjs && node scripts/check-legacy-posts.mjs && node scripts/check-legacy-player.mjs && node scripts/check-play-quest.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs && node scripts/check-chat-commands.mjs && node scripts/check-chat-quiz-roulette.mjs && node scripts/check-review-speed.mjs && node scripts/check-legacy-entry.mjs && node scripts/check-youtube-search.mjs && node scripts/check-pvp-entry.mjs && node scripts/check-sql-order.mjs && node scripts/check-review-intro-layout.mjs && node scripts/check-coord-finish.mjs && node scripts/check-sql-table-columns.mjs && node scripts/check-move-grading.mjs && node scripts/check-book-transposition.mjs && node scripts/check-site-config.mjs && node scripts/check-block-enforcement.mjs && node scripts/check-app-split.mjs && node scripts/check-i18n.mjs && node scripts/test-i18n-runtime.mjs && node scripts/check-chess-rating.mjs && node scripts/check-board-overlay.mjs && node scripts/check-attack-positions.mjs && node scripts/check-sacrifice-puzzle.mjs && node scripts/check-lang-scale.mjs && node scripts/check-app-links.mjs && node scripts/check-share-ui.mjs && node scripts/check-move-fx.mjs && node scripts/check-masters.mjs && node scripts/check-account-deletion.mjs && node scripts/check-pvp-finish.mjs && node scripts/check-growth.mjs && node scripts/check-skins.mjs && node scripts/check-gacha.mjs && node scripts/check-schematic-fs.mjs && node scripts/check-analysis-toolbar.mjs && node scripts/check-lang-leaks.mjs && node scripts/check-ugc-translate.mjs && node scripts/check-tournament-data.mjs && node scripts/check-master-prefix.mjs && node scripts/check-masters-pan-perf.mjs && node scripts/check-mec-facts.mjs && node scripts/check-mec-tactics.mjs && node scripts/check-mec-strategy.mjs && node scripts/check-dock-windows.mjs && node scripts/check-performance-rating.mjs && node scripts/check-boot-guard.mjs && node scripts/check-titles.mjs && node scripts/check-undefined-refs.mjs && node scripts/check-modal-layers.mjs && node scripts/check-sql-function-acl.mjs && node scripts/check-economy-constants.mjs && node scripts/check-security-headers.mjs",
+    "prebuild": "node scripts/check-bug-ids.mjs && node scripts/check-rpc-null-rows.mjs && node scripts/check-reduced-motion.mjs && node scripts/check-motion-kit.mjs && node scripts/check-review-ui.mjs && node scripts/check-puzzle-gen.mjs && node scripts/check-learn-tab.mjs && node scripts/check-legacy-flow.mjs && node scripts/check-legacy-posts.mjs && node scripts/check-legacy-player.mjs && node scripts/check-play-quest.mjs && node scripts/check-dex-tree-layout.mjs && node scripts/check-theory-merge.mjs && node scripts/check-cc-game-toast.mjs && node scripts/check-inline-assets.mjs && node scripts/check-latest-rows.mjs && node scripts/check-knight-rounds.mjs && node scripts/check-sql-grants.mjs && node scripts/check-chat-commands.mjs && node scripts/check-chat-quiz-roulette.mjs && node scripts/check-review-speed.mjs && node scripts/check-legacy-entry.mjs && node scripts/check-youtube-search.mjs && node scripts/check-pvp-entry.mjs && node scripts/check-sql-order.mjs && node scripts/check-review-intro-layout.mjs && node scripts/check-coord-finish.mjs && node scripts/check-sql-table-columns.mjs && node scripts/check-move-grading.mjs && node scripts/check-book-transposition.mjs && node scripts/check-site-config.mjs && node scripts/check-block-enforcement.mjs && node scripts/check-app-split.mjs && node scripts/check-i18n.mjs && node scripts/test-i18n-runtime.mjs && node scripts/check-chess-rating.mjs && node scripts/check-board-overlay.mjs && node scripts/check-attack-positions.mjs && node scripts/check-sacrifice-puzzle.mjs && node scripts/check-lang-scale.mjs && node scripts/check-app-links.mjs && node scripts/check-share-ui.mjs && node scripts/check-move-fx.mjs && node scripts/check-masters.mjs && node scripts/check-account-deletion.mjs && node scripts/check-pvp-finish.mjs && node scripts/check-growth.mjs && node scripts/check-skins.mjs && node scripts/check-gacha.mjs && node scripts/check-schematic-fs.mjs && node scripts/check-analysis-toolbar.mjs && node scripts/check-lang-leaks.mjs && node scripts/check-ugc-translate.mjs && node scripts/check-tournament-data.mjs && node scripts/check-master-prefix.mjs && node scripts/check-masters-pan-perf.mjs && node scripts/check-mec-facts.mjs && node scripts/check-mec-tactics.mjs && node scripts/check-mec-strategy.mjs && node scripts/check-mec-repertoire.mjs && node scripts/check-lessons.mjs && node scripts/check-facet-icons.mjs && node scripts/check-scoresheet.mjs && node scripts/check-profile-roundtrip.mjs && node scripts/check-tab-memory.mjs && node scripts/check-dock-windows.mjs && node scripts/check-performance-rating.mjs && node scripts/check-boot-guard.mjs && node scripts/check-titles.mjs && node scripts/check-undefined-refs.mjs && node scripts/check-modal-layers.mjs && node scripts/check-sql-function-acl.mjs && node scripts/check-economy-constants.mjs && node scripts/check-security-headers.mjs",
     "attack": "node scripts/attack/run.mjs",
     "build": "vite build",
     "build:app": "vite build && node scripts/prune-app-engines.mjs",
@@ -15,6 +15,13 @@
     "list-external-game-urls": "node scripts/list-external-game-urls.mjs",
     "fetch-external-games": "node scripts/fetch-external-games.mjs",
     "build-daily-puzzles": "node scripts/build-daily-puzzles.mjs",
+    "check:bug-ids": "node scripts/check-bug-ids.mjs",
+    "check:mec-repertoire": "node scripts/check-mec-repertoire.mjs",
+    "check:lessons": "node scripts/check-lessons.mjs",
+    "check:facet-icons": "node scripts/check-facet-icons.mjs",
+    "check:scoresheet": "node scripts/check-scoresheet.mjs",
+    "check:profile-roundtrip": "node scripts/check-profile-roundtrip.mjs",
+    "check:tab-memory": "node scripts/check-tab-memory.mjs",
     "check:assets": "node scripts/check-unused-public-assets.mjs",
     "build-rush-levels": "node scripts/build-rush-levels.mjs",
     "build-attack-positions": "node scripts/build-attack-positions.mjs",
@@ -89,7 +96,8 @@
     "framer-motion": "^12.42.2",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "stockfish19": "npm:stockfish@^19.0.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

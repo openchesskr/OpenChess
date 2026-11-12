@@ -1,10 +1,11 @@
 // (v0.6.0, App.jsx 분할) 'profile' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { normalizeLegacies, normalizeLegacyHistory } from "../lib/legacyEntry.js";
+import { fixForcedOnlyMoves } from "../lib/moveQuality.js";   // (v0.7.5) 강제 수를 유일한 수로 매긴 예전 저장 결과 바로잡기
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
-import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
+import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { computeRatingChanges, countryFlag } from "../lib/chesscom.js";
@@ -36,7 +37,7 @@ async function reviewedAnalysesBatch(ccIds) {
     const map = {};
     for (const r of rows || []) {
       const a = r.analysis;
-      if (a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && a.result.moves) map[r.cc_id] = a.result;
+      if (a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && a.result.moves) map[r.cc_id] = fixForcedOnlyMoves(a.result);
     }
     return map;
   } catch { return {}; }
@@ -817,9 +818,9 @@ export function TierJourneyMap({ totalXp, onClose }) {
   const scrollRef = useRef(null);
   // (v0.7.4, 사용자 요청) 티어 여정 개편 — 티어 한 장씩의 챕터 연대기(components/tierJourney.jsx). 어떤 조상의 transform과도 무관하게 항상 맨 위에 그려지도록 body로 포털하고,
   // 앱의 모든 모달·페이지(최대 500)보다 높은 zIndex(950)를 쓴다(/user 페이지 안에서 열어도 가려지지 않게).
-  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
+  // (v0.7.5) 레슨 경로와 같은 구조로 바뀌어 스크롤·Esc 닫기는 TierJourney 안에서 처리한다(경로가 자체 스크롤 영역을 가진다).
   return createPortal((
-    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "#0B0704", overflow: "hidden" }}>
       <TierJourney totalXp={totalXp} onClose={onClose} scrollRef={scrollRef} />
     </div>
   ), document.body);
