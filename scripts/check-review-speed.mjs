@@ -18,7 +18,7 @@ eq("속도별 depth", P.REVIEW_SPEED_DEPTH, { fast: 15, normal: 20, accurate: 25
 eq("빠른 리뷰는 15 고정", P.REVIEW_SPEEDS.map((s) => P.reviewDepthFor(s, true)), [15, 15, 15]);
 eq("빠른 리뷰 끄면 선택한 속도", P.REVIEW_SPEEDS.map((s) => P.reviewDepthFor(s, false)), [15, 20, 25]);
 eq("모르는 값은 평균", P.reviewDepthFor("weird", false), 20);
-eq("빠른 리뷰 엔진", P.QUICK_REVIEW_ENGINE, "lite");
+eq("빠른 리뷰 엔진", P.QUICK_REVIEW_ENGINE, "lite19");   // (v0.7.5, 사용자 요청) Stockfish 19 Lite
 // (v0.7.2) 빠른 리뷰는 포지션당 시간 상한도 표준(REVIEW_MOVETIME_MS)보다 짧아야 하고, 너무 짧아 depth 15를 못 채우지 않도록 하한을 둔다
 const mt = /export const REVIEW_MOVETIME_MS = (\d+);/.exec(common0);
 eq("빠른 리뷰 시간 상한 < 표준", P.QUICK_REVIEW_MOVETIME_MS < (mt ? Number(mt[1]) : 0) && P.QUICK_REVIEW_MOVETIME_MS >= 400, true);

@@ -63,6 +63,19 @@ const ENGINE_BASE = (typeof import.meta !== "undefined" && import.meta.env && im
    가장 강력함 — 약 108MB, 마찬가지로 조각으로 나눠 받는다) 중에서 설정 탭에서 고를 수 있고, 이후에는
    그 선택을 기억한다. */
 export const ENGINE_PROFILES = {
+  // (v0.7.5, 사용자 요청) Stockfish 19 — 엔진 목록 맨 위. Lite는 빠른 리뷰 전용 엔진이기도 하다(lib/prefs.js QUICK_REVIEW_ENGINE).
+  lite19: {
+    id: "lite19", label: "Stockfish 19 Lite",
+    urls: [ENGINE_BASE + "engine/lite19/stockfish-19-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/stockfish-19-lite-single.js"],
+    mtUrl: ENGINE_BASE + "engine/lite19/stockfish-19-lite.js",
+  },
+  // 정식 대형 신경망(~99MB) — 18 정식과 같은 방식(같은 출처 조각 이어붙이기, scripts/copy-engine.mjs)
+  full19: {
+    id: "full19", label: "Stockfish 19",
+    urls: [ENGINE_BASE + "engine/19/boot-single.js"],
+    bootTimeoutMs: 240000,
+    parts: 2,
+  },
   lite: {
     id: "lite", label: "Stockfish 18 Lite",
     urls: [ENGINE_BASE + "engine/lite/stockfish-18-lite-single.js", "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js"],
@@ -117,7 +130,8 @@ export const ENGINE_PROFILES = {
 };
 // (v0.2.4) 설정 탭에서 고를 수 있는 분석 엔진 — v0.3.5부터 게임 리뷰도 이 중에서 고른 엔진을 그대로 쓴다.
 // (v0.3.9 재조정) 사용자 요청 — Stockfish 18(정식, 셋 중 가장 강력함)을 목록 맨 위로.
-export const ANALYSIS_ENGINE_IDS = ["full18", "lite", "full17"];
+// (v0.7.5, 사용자 요청) Stockfish 19 Lite·19를 목록 맨 위에.
+export const ANALYSIS_ENGINE_IDS = ["lite19", "full19", "full18", "lite", "full17"];
 // Lichess Explorer가 로그인(OAuth 토큰)을 요구하므로, 토큰을 서버에만 보관하는
 // /api/lichess 프록시(Vercel 서버리스 함수, api/lichess.js)를 거쳐 호출한다.
 

@@ -424,7 +424,7 @@ export default function App() {
   const setEnginePref = useCallback((v) => { if (engineNeedsDownload(v)) return; setEnginePrefState(v); saveEnginePref(v); }, []);
   // (v0.6.3) 앱: 이미 내려받은 큰 엔진을 연결하고, 저장해 둔 엔진 선택을 되살린다(웹은 즉시 끝나 아무 일도 안 함).
   useEffect(() => { let off = false; initDownloadedEngines(ENGINE_PROFILES).then(() => { if (!off) setEnginePrefState(loadEnginePref()); }).catch(() => { }); return () => { off = true; }; }, []);
-  // (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜져 있는 동안은 엔진을 Stockfish 18 Lite로 고정한다(설정 탭 엔진 목록도 잠긴다). 사용자가 고른 엔진(enginePref)은
+  // (v0.7.1, 사용자 요청) 빠른 리뷰 — 켜져 있는 동안은 엔진을 Stockfish 19 Lite(v0.7.5부터)로 고정한다(설정 탭 엔진 목록도 잠긴다). 사용자가 고른 엔진(enginePref)은
   // 그대로 저장돼 있어 끄면 원래 엔진으로 돌아간다. 리뷰 depth 15 고정·진입 연출 생략은 ReviewPage가 quick prop으로 처리한다.
   const [quickReview, setQuickReviewState] = useState(loadQuickReviewPref);
   const setQuickReview = useCallback((v) => { setQuickReviewState(v); saveQuickReviewPref(v); }, []);

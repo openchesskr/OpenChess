@@ -838,12 +838,12 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
             {engineStatus === "ready" ? t("연결됨") : engineStatus === "off" ? t("연결 실패") : t("불러오는 중…")}
           </span>
         </div>
-        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 18 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
+        {/* (v0.7.1, 사용자 요청) 빠른 리뷰 — 카드 맨 위. 켜면 엔진(Stockfish 19 Lite)·리뷰 depth(15)를 고정하고 리뷰 진입 연출 없이 분석이 끝나는 즉시 리뷰 화면을 연다.
             고정된 동안 아래 엔진·속도 선택은 잠기지만, 원래 고른 값은 그대로 저장돼 있어 끄면 돌아온다. */}
         <div className="flex items-center justify-between" style={{ gap: 10, padding: "10px 12px", marginBottom: 14, borderRadius: 10, border: "1.5px solid " + (quickReview ? T.brass : "#DCCBA8"), background: quickReview ? "rgba(196,154,80,.14)" : "#fff" }}>
           <div style={{ minWidth: 0 }}>
             <div className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><Zap size={14} style={{ color: T.brass }} />{t("빠른 리뷰")}</div>
-            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 18 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
+            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 19 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
           </div>
           <button onClick={() => setQuickReview(!quickReview)} role="switch" aria-checked={!!quickReview} aria-label={t("빠른 리뷰")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: quickReview ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: quickReview ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
