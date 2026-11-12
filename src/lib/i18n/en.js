@@ -3619,4 +3619,8 @@ export default {
   "지금 둔 오프닝의 이름은?": "What is the name of the opening you just played?",
   "d5 폰으로 e4를 잡아 중앙의 긴장을 풉니다. 백 나이트를 e4로 끌어낸 뒤 비숍을 f5로 전개해 템포를 얻습니다.": "Capture on e4 with the d5 pawn to release the central tension. Once White's knight lands on e4, develop the bishop to f5 with tempo.",
   "나이트를 전개해 d5를 한 번 더 지키고 백의 e4 진출을 막습니다.": "Develop the knight to defend d5 once more and stop White from playing e4.",
+  "기보 용지에서 {0}수 인식": "Read {0} moves from the scoresheet",
+  "판독이 애매한 {0}개 칸을 규칙에 맞게 보정": "Corrected {0} unclear entries by the rules",
+  "{0}수째 칸을 읽지 못해 그 앞까지만 채움": "Couldn't read move {0}, filled in up to it",
+  "확인 후 불러오기를 누르세요.": "Check it, then press Load.",
 };

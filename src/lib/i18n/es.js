@@ -3619,4 +3619,8 @@ export default {
   "지금 둔 오프닝의 이름은?": "¿Cómo se llama la apertura que acabas de jugar?",
   "d5 폰으로 e4를 잡아 중앙의 긴장을 풉니다. 백 나이트를 e4로 끌어낸 뒤 비숍을 f5로 전개해 템포를 얻습니다.": "Captura en e4 con el peón de d5 para liberar la tensión central. Cuando el caballo blanco llegue a e4, desarrolla el alfil a f5 ganando tiempo.",
   "나이트를 전개해 d5를 한 번 더 지키고 백의 e4 진출을 막습니다.": "Desarrolla el caballo para defender d5 una vez más e impedir e4 de las blancas.",
+  "기보 용지에서 {0}수 인식": "Se leyeron {0} jugadas de la planilla",
+  "판독이 애매한 {0}개 칸을 규칙에 맞게 보정": "Se corrigieron {0} anotaciones dudosas según las reglas",
+  "{0}수째 칸을 읽지 못해 그 앞까지만 채움": "No se pudo leer la jugada {0}, se completó hasta ahí",
+  "확인 후 불러오기를 누르세요.": "Revísalo y pulsa Cargar.",
 };

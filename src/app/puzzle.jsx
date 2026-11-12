@@ -2559,7 +2559,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       const data = await scanImageFile(file, setPcScanProgress);
       let text = null;
       if (data.type === "board" && data.fen_board) text = data.fen_board + " w KQkq - 0 1";
-      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();
+      else if (data.type === "text" && data.recognized_text) text = data.recognized_text.trim();   // (v0.7.5) 기보 용지도 서버가 바로잡은 PGN으로 온다
       if (!text) { setPcErr(t("이미지에서 체스판이나 기보를 인식하지 못함")); return; }
       setPcInput(text); setPcParsed(null); setPcTheme(null); setPcAnalyzeResult(null); setPcAnalyzeErr(""); setPcSelectedMove(null); setPcGen(null); setPcGenErr(""); setPcSelectedGameId(null);
     } catch (e) { setPcErr((e && e.message) || t("이미지 스캔 실패")); }

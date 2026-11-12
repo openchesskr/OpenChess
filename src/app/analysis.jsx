@@ -498,14 +498,24 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
   // 않는다).
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [scanNote, setScanNote] = useState("");
   const onScanFile = async (file) => {
-    setScanning(true); setScanProgress(0); setFenErr("");
+    setScanning(true); setScanProgress(0); setFenErr(""); setScanNote("");
     try {
       const data = await scanImageFile(file, setScanProgress);
       if (data.type === "board" && data.fen_board) {
         const p = parseFenFull(data.fen_board + " " + turn + " " + castleRightsStr(rights) + " - 0 1");
         if (!p) { setFenErr(t("인식된 배치를 적용할 수 없음")); return; }
         pushSnap({ board: p.board, ep: null });
+        return;
+      }
+      // (v0.7.5, 사용자 요청) 기보 용지(chess.com 기보 용지 등) — 서버가 체스 규칙으로 바로잡은 PGN을 불러오기 칸에 채우고,
+      //  몇 수를 읽었는지·고쳤는지·어디서 멈췄는지 알려 준다. 사용자가 확인한 뒤 "불러오기"로 분석 탭에 올린다.
+      if (data.type === "text" && data.recognized_text && data.sheet) {
+        const sh = data.sheet;
+        setImportText(data.recognized_text.trim()); setImportErr("");
+        setScanNote(t("기보 용지에서 {0}수 인식", Math.ceil(sh.moves / 2)) + (sh.fixed ? " · " + t("판독이 애매한 {0}개 칸을 규칙에 맞게 보정", sh.fixed) : "")
+          + (sh.stoppedAt != null ? " · " + t("{0}수째 칸을 읽지 못해 그 앞까지만 채움", Math.floor(sh.stoppedAt / 2) + 1) : "") + ". " + t("확인 후 불러오기를 누르세요."));
         return;
       }
       if (data.type === "text" && data.recognized_text) {
@@ -639,6 +649,7 @@ function BoardEditorModal({ initialFen, onClose, onApply, onLoadPgn }) {
       <textarea value={importText} onChange={(e) => { setImportText(e.target.value); setImportErr(""); }} rows={3} placeholder={t("예: 1. e4 e5 2. Nf3 Nc6\n또는 FEN: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 12, padding: 9, borderRadius: 9, border: "1px solid #000", background: "rgba(0,0,0,.35)", color: T.ivoryHi, fontFamily: SITE_FONT, resize: "vertical" }} />
       {importErr && <div style={{ fontSize: 11, color: T.blunder, marginTop: 5 }}>{importErr}</div>}
+      {scanNote && !importErr && <div role="status" style={{ fontSize: 11, color: T.brassHi, marginTop: 5, lineHeight: 1.5 }}>{scanNote}</div>}
       <div className="flex" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         <button onClick={pasteClipboard} className="press" style={{ ...edBtn(false), flex: "1 1 120px" }}><ClipboardPaste size={13} />{t("클립보드에서 붙여넣기")}</button>
         <button onClick={() => loadImport()} className="press" style={{ ...edBtn(false), flex: "1 1 80px", background: T.ebony2, color: T.brassHi, borderColor: "#000" }}>{t("불러오기")}</button>
