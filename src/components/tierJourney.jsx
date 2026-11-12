@@ -1,13 +1,13 @@
 // (v0.7.5, 사용자 요청) 티어 여정 재구성 — 도감의 레슨 경로(app/lessons.jsx LessonPath)와 같은 구조로 다시 짰다.
 //  · 경로: 구간(V → I)마다 입체 마름모 타일 하나가 지그재그로 이어지며 아래(아이언 V)에서 위(그랜드마스터)로 올라간다. 지나온 구간은 티어 색 실선, 앞으로 갈 구간은 점선.
 //    타일 안에는 그 구간의 티어 기물 그림, 지금 구간에는 맥동 후광과 말풍선(남은 XP). 티어가 바뀌는 곳에는 장 표지(기물 배지·이름·필요 XP·진행).
-//  · 위: 코치 말풍선(타일을 누르면 그 구간 설명) + 진행 링 + 닫기. 아래: 보고 있는 티어 정보·진행 막대·티어 목록·"내 위치".
+//  · 위: 코치 말풍선(타일을 누르면 그 구간 설명) + 진행 링 + 닫기. 아래: 보고 있는 티어 정보·진행 막대·티어 목록(지금 구간이 화면 밖이면 그쪽 화살표). (v0.7.5 사용자 요청: 큰 "내 위치" 버튼은 뺐다)
 //  · 배경(재설계): 어두운 전시실 — 위에서 떨어지는 티어 색 조명, 윤곽광을 받은 큰 티어 기물, 대리석 체스판 바닥, 빛 먼지, 필름 질감.
 //    티어마다 고유 요소 하나(강철 결·녹청 온기·금속 광택·빛줄기·굴절광·성운·오로라). 보이는 티어가 바뀌면 배경이 부드럽게 바뀐다.
 //  · 티어 이름은 사이트 기본 글꼴로 쓴다(티어 여정 전용이던 Bagel Fat One 글꼴은 삭제).
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Lock, Check, List, ChevronUp, ChevronDown, Crosshair } from "./ocIcons.jsx";
+import { X, Lock, Check, List, ChevronUp, ChevronDown } from "./ocIcons.jsx";
 import { tierPieceSrc } from "../lib/theme.js";
 import { t, tx } from "../lib/i18n.js";
 import { TIERS, TIER_COLORS, TIER_XP_REQ, GM_STAR_XP, DIVISIONS_PER_TIER, DIVISION_ROMAN, tierFromXp, tierGradientCss, xpForTierDivision } from "../lib/tierSystem.js";
@@ -193,7 +193,7 @@ export default function TierJourney({ totalXp, onClose }) {
   const narrow = useNarrow(640);
   const D = narrow ? 86 : 98;
   const DX = D * 0.62, ROW = D * 0.8, CH = 190;
-  const TOP = narrow ? 132 : 136, BOTTOM = narrow ? 176 : 128;
+  const TOP = narrow ? 132 : 136, BOTTOM = narrow ? 120 : 120;
   // 위에서 아래로: 그랜드마스터 → … → 아이언. 티어마다 [구간 I … V], 그 아래 장 표지. 맨 아래가 아이언 V(출발).
   const layout = useMemo(() => {
     const items = []; let y = TOP, seq = 0;
@@ -309,9 +309,9 @@ export default function TierJourney({ totalXp, onClose }) {
         <ProgressRing done={curPct} total={100} color={tierTheme(info.tier.key).hi} size={narrow ? 42 : 48}>{Math.round(curPct)}<span style={{ opacity: 0.55, fontSize: 9 }}>%</span></ProgressRing>
         <button type="button" onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.07)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={18} /></button>
       </div>
-      {/* 아래: 보고 있는 티어 + 내 위치 */}
+      {/* 아래: 보고 있는 티어 */}
       <div className="tier-glass" style={{ position: "absolute", left: 10, right: 10, bottom: "calc(10px + env(safe-area-inset-bottom, 0px))", zIndex: 3, padding: 10, borderRadius: 16, background: alpha(vth.bg, 0.72), border: "1px solid rgba(255,255,255,.08)", boxShadow: "0 -6px 24px -12px rgba(0,0,0,.7)",
-        display: "flex", flexDirection: narrow ? "column" : "row", alignItems: narrow ? "stretch" : "center", gap: 10, maxWidth: 880, marginLeft: "auto", marginRight: "auto" }}>
+        display: "flex", alignItems: "center", gap: 10, maxWidth: 880, marginLeft: "auto", marginRight: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
           <button type="button" onClick={() => setListOpen(true)} aria-label={t("티어 목록")} className="press"
             style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.06)", color: "#FFF6E2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><List size={19} /></button>
@@ -334,12 +334,6 @@ export default function TierJourney({ totalXp, onClose }) {
             </button>
           )}
         </div>
-        {(() => { const ct = tierTheme(info.tier.key); return (
-          <button type="button" onClick={() => { setCoachMsg(null); scrollToNode(curNode.id); }} className="press"
-            style={{ position: "relative", minWidth: narrow ? 0 : 168, width: narrow ? "100%" : "auto", padding: "12px 18px", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: SITE_FONT, fontSize: 15, fontWeight: 900, color: "#1A1006",
-              background: "linear-gradient(180deg, " + ct.hi + ", " + ct.c + ")", boxShadow: "0 4px 0 " + ct.edge + ", 0 10px 20px -8px rgba(0,0,0,.6)", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <Crosshair size={16} />{t("내 위치")}
-          </button>); })()}
       </div>
       {/* 티어 목록 */}
       <AnimatePresence>
