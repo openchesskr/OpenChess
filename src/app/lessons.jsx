@@ -15,7 +15,6 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { OpeningBand } from "./lessonMotifs.jsx";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -69,6 +68,75 @@ function ProgressRing({ done, total, color, size = 46 }) {
 const PAT = [0, 1, 0, -1];      // 레슨 칸의 가로 위치(가운데 기준, dx 배수) — 지그재그로 이어진다
 const topIn = (sc, el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
 
+// (v0.7.5, 사용자 요청) 오프닝 레슨 블록에는 아이콘 대신 오프닝 이름을 쓴다. 마름모는 가운데가 가장 넓고 위아래로 좁아지므로,
+//  단어를 1~3줄로 나누는 모든 경우 중 각 줄이 그 높이의 마름모 폭 안에 들어가면서 글자가 가장 커지는 배치를 고른다(언어마다 이름 길이가 달라도 맞는다).
+const emWidth = (str) => [...str].reduce((w, ch) => w + (/[\u1100-\u11FF\u3040-\u30FF\u3130-\u318F\u3400-\u9FFF\uAC00-\uD7AF\uFF00-\uFFEF]/.test(ch) ? 1 : ch === " " ? 0.3 : /[\u0900-\u097F]/.test(ch) ? 0.62 : 0.56), 0);
+function fitTileName(name, size) {
+  const words = name.split(/\s+/).filter(Boolean), LH = 1.12, maxFs = size * 0.155;
+  const splits = [];
+  const rec = (i, cur) => { if (i === words.length) { splits.push(cur); return; } if (cur.length) rec(i + 1, [...cur.slice(0, -1), cur[cur.length - 1] + " " + words[i]]); if (cur.length < 3) rec(i + 1, [...cur, words[i]]); };
+  rec(1, [words[0] || ""]);
+  let best = { lines: [name], fs: 7 };
+  for (const lines of splits) {
+    let lo = 6, hi = maxFs;
+    const fits = (fs) => lines.every((ln, k) => { const yc = (k - (lines.length - 1) / 2) * fs * LH, yEdge = Math.abs(yc) + fs * 0.55; return emWidth(ln) * fs <= (size - 2 * yEdge) * 0.88; });
+    if (!fits(lo)) continue;
+    for (let n = 0; n < 12; n++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+    if (lo > best.fs + 0.3 || (Math.abs(lo - best.fs) <= 0.3 && lines.length < best.lines.length)) best = { lines, fs: lo };
+  }
+  return best;
+}
+// (v0.7.5, 사용자 요청) 오프닝 레파토리 구간의 레슨 경로 배경 — 레슨 줄마다 체스판 칸 무늬 띠를 깔고,
+//  블록 반대쪽에 그 오프닝의 실제 포지션(레슨에서 두는 주요 수순의 끝)을 작은 체스판 도표로 보여 준다. 마지막에 둔 수는 강조.
+//  판은 학습자 진영 쪽에서 본다(흑으로 두는 오프닝은 뒤집힘). 포지션은 레슨 데이터에서 바로 만들므로 수순을 고치면 그림도 따라 바뀐다.
+const BAND_FADE_X = "linear-gradient(90deg, transparent 0%, #000 10%, rgba(0,0,0,.35) 34%, rgba(0,0,0,.35) 66%, #000 90%, transparent 100%)";
+const BAND_FADE_Y = "linear-gradient(180deg, transparent 0%, #000 26%, #000 74%, transparent 100%)";
+const DIA_LIGHT = "#EAD8B6", DIA_DARK = "#A9774B", DIA_MOVE = "rgba(246,200,80,.62)";
+function openingDiagram(lesson) {
+  const st = lesson.steps(), mv = st.find((x) => x.kind === "move"), end = st.find((x) => x.kind === "choice") || st[st.length - 1];
+  const fen = end.fen, last = mv && mv.line.length ? mv.line[mv.line.length - 1].hint : null;
+  return { board: boardOf(fen), flip: turnOf(fen) === "w", last };   // 마지막 수를 둔 쪽(학습자) = 지금 차례가 아닌 쪽
+}
+function OpeningDiagram({ lesson, size }) {
+  const { board, flip, last } = useMemo(() => openingDiagram(lesson), [lesson]);
+  const q = size / 8, hl = last ? [last.slice(0, 2), last.slice(2, 4)] : [];
+  const cells = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const vr = flip ? 7 - r : r, vc = flip ? 7 - c : c, sq = rcToSq(r, c), p = board[r][c];
+    cells.push(<rect key={"s" + sq} x={vc * q} y={vr * q} width={q} height={q} fill={(r + c) % 2 ? DIA_DARK : DIA_LIGHT} />);
+    if (hl.includes(sq)) cells.push(<rect key={"h" + sq} x={vc * q} y={vr * q} width={q} height={q} fill={DIA_MOVE} />);
+    if (p) cells.push(<image key={"p" + sq} href={pieceImg("classic", p.t, p.c)} x={vc * q} y={vr * q} width={q} height={q} />);
+  }
+  return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>{cells}</svg>;
+}
+// 도표는 좌우를 번갈아(같은 쪽 도표는 두 줄 간격이라 줄 높이보다 크게 그려도 겹치지 않는다) 지그재그 경로 바로 바깥에 둔다.
+function OpeningBand({ lesson, top, height, side, reach, narrow, dim }) {
+  const dia = Math.round(height * (narrow ? 1.0 : 1.5));
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top, height, pointerEvents: "none" }}>
+      <div style={{ position: "absolute", inset: 0, WebkitMaskImage: BAND_FADE_Y, maskImage: BAND_FADE_Y }}>
+        <div style={{ position: "absolute", inset: 0, WebkitMaskImage: BAND_FADE_X, maskImage: BAND_FADE_X, opacity: dim ? 0.5 : 1,
+          backgroundImage: "repeating-conic-gradient(rgba(234,216,182,.085) 0 25%, rgba(0,0,0,.12) 0 50%)", backgroundSize: (height / 2) + "px " + (height / 2) + "px", backgroundPosition: "center " + (height / 4) + "px" }} />
+      </div>
+      <div style={{ position: "absolute", top: "50%", left: "50%", marginLeft: side === "left" ? -(reach + dia + 6) : reach, transform: "translateY(-50%)", padding: 3, zIndex: 1, borderRadius: 5, background: "linear-gradient(160deg, #5A3A20, #2A1A0D)",
+        boxShadow: "0 8px 18px -6px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.12)", opacity: dim ? 0.32 : 0.92, filter: dim ? "grayscale(.6)" : "none" }}>
+        <div style={{ borderRadius: 2, overflow: "hidden" }}><OpeningDiagram lesson={lesson} size={dia} /></div>
+      </div>
+    </div>
+  );
+}
+
+function TileName({ name, size, locked, edge }) {
+  const { lines, fs } = useMemo(() => fitTileName(name, size), [name, size]);
+  return (
+    <span style={{ display: "flex", flexDirection: "column", alignItems: "center", fontFamily: SITE_FONT, fontWeight: 900, fontSize: fs, lineHeight: 1.12, letterSpacing: "-.03em", textAlign: "center", whiteSpace: "nowrap",
+      color: locked ? "rgba(255,255,255,.4)" : "#FFFFFF", textShadow: locked ? "none" : "0 1px 0 " + edge + ", 0 2px 5px rgba(0,0,0,.35)" }}>
+      {locked && <Lock size={Math.max(9, fs * 0.9)} color="rgba(255,255,255,.38)" style={{ marginBottom: 2 }} />}
+      {lines.map((ln, i) => <span key={i}>{ln}</span>)}
+    </span>
+  );
+}
+
 function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
   const th = stageTheme(stage);
   const cur = status === "current", done = status === "done", locked = status === "locked";
@@ -88,7 +156,8 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
       <span className="lesson-face" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, borderRadius: "24%", transform: "rotate(45deg)", background: face,
         boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
       <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
-        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+        {lesson.motif ? <TileName name={lesson.title()} size={size} locked={locked} edge={th.edge} />
+          : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
       </span>
       {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, right: size * 0.06, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
       {cur && (
@@ -204,7 +273,7 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
         <div style={{ position: "relative", height: layout.height }}>
           {/* (v0.7.5, 사용자 요청) 오프닝 레파토리 구간 배경: 레슨 줄마다 그 오프닝을 상징하는 문양 띠와 이름 */}
           {layout.items.filter((it) => it.kind === "lesson" && it.lesson.motif).map((it) => (
-            <OpeningBand key={"band" + it.lesson.id} motif={it.lesson.motif} name={it.lesson.title()} top={it.y - ROW / 2} height={ROW} labelSide={it.x > 0 ? "left" : "right"} narrow={narrow}
+            <OpeningBand key={"band" + it.lesson.id} lesson={it.lesson} top={it.y - ROW / 2} height={ROW} side={it.lesson.index % 2 ? "right" : "left"} reach={DX + D * 0.5 + (narrow ? 10 : 22)} narrow={narrow}
               dim={lessonStatus(lessonState, it.lesson.id) === "locked"} />
           ))}
           {ghosts.map((g) => <img key={g.key} src={g.src} alt="" aria-hidden="true" draggable={false} loading="lazy" style={{ position: "absolute", left: "50%", top: g.y - D * 0.9, marginLeft: g.side * (DX + D * (narrow ? 0.95 : 1.6)) - D * 0.6, width: D * 1.2, height: D * 1.8, objectFit: "contain", filter: "brightness(0) invert(1)", opacity: 0.06, pointerEvents: "none" }} />)}
