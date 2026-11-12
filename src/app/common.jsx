@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { engineLineGapMs, isLite } from "../lib/perfMode.js";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
@@ -5554,8 +5555,11 @@ export function SeriesGlyph({ series, size = 30, masked = false }) {
   return (
     <span style={{ position: "relative", flexShrink: 0, width: size, height: size, display: "inline-flex", alignItems: "center", justifyContent: "center" }} aria-hidden="true">
       <svg width={size} height={size} viewBox="0 0 100 100" style={{ position: "absolute", inset: 0 }}>
-        <defs><linearGradient id={"sg" + rid} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F3DFAE" /><stop offset="1" stopColor="#C49A50" /></linearGradient></defs>
-        <path d="M50 6 L94 50 L50 94 L6 50 Z" fill={isOp ? "url(#sg" + rid + ")" : "rgba(0,0,0,.35)"} stroke={"url(#sg" + rid + ")"} strokeWidth="5" />
+        {/* (v0.7.5, 사용자 요청) 파셋 규칙: 윤곽선 대신 네 면의 금테(왼쪽 위가 밝고 오른쪽 아래가 어둡다) */}
+        <path d="M50 12 L88 50 L50 88 L12 50 Z" fill={isOp ? FACET_GOLD.l2 : "rgba(0,0,0,.35)"} />
+        <path d="M6 50 L50 6 L50 12.5 L12.5 50Z" fill={FACET_GOLD.l1} /><path d="M50 6 L94 50 L87.5 50 L50 12.5Z" fill={FACET_GOLD.l3} />
+        <path d="M94 50 L50 94 L50 87.5 L87.5 50Z" fill={FACET_GOLD.base} /><path d="M50 94 L6 50 L12.5 50 L50 87.5Z" fill={FACET_GOLD.l4} />
+        <path d="M14 47 L47 14 L47 17 L17 47Z" fill={FACET_GOLD.hi} opacity=".8" />
         {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
       </svg>
       {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />)}
@@ -5801,7 +5805,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
   for (let i = 0; i < nb; i++) { const x = 118 - i * 15; bars.push(<path key={"b" + i} d={`M${x} ${H} L${x + 22} 0 L${x + 28} 0 L${x + 6} ${H} Z`} fill={`url(#${uid}g)`} opacity={0.14 + i * 0.07} />); }
   const lattice = [];
   [16, 28, 40, 52].forEach((r, i) => lattice.push(<circle key={"c" + i} cx="146" cy={H / 2} r={r} fill="none" stroke={g0} strokeWidth="1" opacity={0.3 - i * 0.05} />));
-  const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<rect key={"p" + i} x={px} y={py} width="6" height="6" transform={`rotate(45 ${px + 3} ${py + 3})`} fill={i <= tierIdx ? `url(#${uid}g)` : "none"} stroke={g0} strokeWidth="1" opacity={i <= tierIdx ? 1 : 0.4} />); }
+  const pips = []; if (many) for (let i = 0; i < def.series.mins.length; i++) { const px = 82 + i * 11, py = 9; pips.push(<g key={"p" + i} opacity={i <= tierIdx ? 1 : 0.32}><FacetDiamond cx={px + 3} cy={py + 3} r={4.2} R={facetRamp(i <= tierIdx ? mixHex(g0, g1, 0.4) : "#6E5A3A")} gem={i <= tierIdx} /></g>); }   // (v0.7.5) 파셋 마름모 — 빈 단계는 어둡고 흐리게
   const pieceSz = Math.round(H * 0.95);
   const pieceColor = isOpening ? openingSide(def.series.key) : "w";   // 오프닝을 두는 진영의 기물 색
   const sparks = [[-14, -22], [18, -26], [34, 8], [-30, 12], [6, 26], [26, -8]];
@@ -5865,11 +5869,18 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
       {decoTier >= 4 && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", filter: lookEarned ? "none" : "grayscale(1)", opacity: lookEarned ? 1 : 0.5 }}>
           {/* 양옆 끝 마름모 */}
-          {[0, 1].map((r) => <span key={"f" + r} style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: 0, width: decoTier === 5 ? 9 : 7, height: decoTier === 5 ? 9 : 7, marginTop: decoTier === 5 ? -4.5 : -3.5, transform: "rotate(45deg)", background: `linear-gradient(135deg,${g0},${g1})`, boxShadow: "0 0 0 1px rgba(20,11,5,.6)" }} />)}
+          {/* (v0.7.5, 사용자 요청) 파셋 규칙: 네 면 마름모(components/facetIcons.jsx) */}
+          {[0, 1].map((r) => { const z = decoTier === 5 ? 13 : 10; return <svg key={"f" + r} width={z} height={z} viewBox="0 0 20 20" style={{ position: "absolute", top: "50%", [r ? "right" : "left"]: -z * 0.18, marginTop: -z / 2, filter: "drop-shadow(0 0 1px rgba(20,11,5,.8))" }}><FacetDiamond cx={10} cy={10} r={9} R={facetRamp(mixHex(g0, g1, 0.4))} /></svg>; })}
           {decoTier === 5 && (<>
             {/* 위쪽 가운데 왕관 + 아래쪽 가운데 마름모 */}
-            <svg width="34" height="9" viewBox="0 0 34 9" style={{ position: "absolute", top: -1, left: "50%", marginLeft: -17 }}><path d="M1 8 L5 2 L11 6 L17 0 L23 6 L29 2 L33 8 Z" fill={`url(#${uid}g)`} stroke="rgba(20,11,5,.55)" strokeWidth=".8" /></svg>
-            <span style={{ position: "absolute", bottom: 0, left: "50%", marginLeft: -3, width: 6, height: 6, transform: "rotate(45deg)", background: g0 }} />
+            {(() => { const R = facetRamp(mixHex(g0, g1, 0.4)); return (
+              <svg width="34" height="10" viewBox="0 0 34 10" style={{ position: "absolute", top: -2, left: "50%", marginLeft: -17, filter: "drop-shadow(0 0 1px rgba(20,11,5,.85))" }}>
+                {/* 승자 왕관과 같은 짜임: 왼쪽 위에서 빛을 받는 네 면 + 밑단 + 꼭대기 구슬 */}
+                <path d="M1 8 L5 2 L11 6 V8Z" fill={R.l2} /><path d="M11 8 V6 L17 0 V8Z" fill={R.l1} /><path d="M17 0 L23 6 V8 H17Z" fill={R.l3} /><path d="M23 8 V6 L29 2 L33 8Z" fill={R.l4} />
+                <path d="M1 8 H33 L32.4 10 H1.6Z" fill={R.base} /><path d="M17 3.2 L18.2 5 L17 6.8 L15.8 5Z" fill={R.hi} />
+                <circle cx="5" cy="2" r="1.1" fill={R.gem} /><circle cx="17" cy="0.9" r="1.2" fill={R.gem} /><circle cx="29" cy="2" r="1.1" fill={R.gem} />
+              </svg>); })()}
+            <svg width="9" height="9" viewBox="0 0 20 20" style={{ position: "absolute", bottom: -2, left: "50%", marginLeft: -4.5 }}><FacetDiamond cx={10} cy={10} r={9} R={facetRamp(mixHex(g0, g1, 0.4))} gem={false} /></svg>
           </>)}
         </div>
       )}
@@ -6546,14 +6557,17 @@ export const LEGACY_BLOCK_BTN_STYLE = {
 };
 // 그리스 키(메안더) 무늬 — 금색 선, 가로로 반복.
 const GREEK_KEY_URL = "url(\"data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><g fill='none' stroke='#D4AF5F' stroke-width='1.1' stroke-linecap='square'><path d='M0 7H3V1H9V7H12'/><path d='M5 7V4H7V7'/></g></svg>") + "\")";
-/** 월계수 가지(좌우 대칭으로 쓴다) — 수 이름 양옆 장식. */
+/** 월계수 가지(좌우 대칭으로 쓴다) — 수 이름 양옆 장식. (v0.7.5, 사용자 요청) 파셋 규칙: 잎은 밝은 반·어두운 반, 줄기는 가늘어지는 채운 면. */
 export function LaurelBranch({ flip, size = 16, color = "#D4AF5F" }) {
+  const R = facetRamp(color);
   return (
     <svg aria-hidden="true" width={size} height={size * 1.3} viewBox="0 0 16 21" style={{ transform: flip ? "scaleX(-1)" : "none", flexShrink: 0 }}>
-      <path d="M12 20C6 17 3 11 4 2" fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
-      {[[4.5, 4.5, -25], [8, 7.5, 10], [4, 9.5, -30], [8.5, 12.5, 15], [5, 14.5, -25], [9.5, 17, 20]].map(([x, y, r], i) => (
-        <ellipse key={i} cx={x} cy={y} rx="2.6" ry="1.2" transform={"rotate(" + r + " " + x + " " + y + ")"} fill={color} opacity=".92" />
-      ))}
+      <path d={taperedStem(12, 20, 2.6, 12.5, 4, 2, 1.5, 0.5)} fill={R.l4} />
+      {[[4.5, 4.5, -25], [8, 7.5, 10], [4, 9.5, -30], [8.5, 12.5, 15], [5, 14.5, -25], [9.5, 17, 20]].map(([x, y, a], i) => {
+        // 예전 타원 잎과 같은 자리·각도. 잎 끝은 위쪽(가지 끝 방향)을 향하게 a 또는 a+180 중 위를 향하는 쪽을 고른다
+        const d = Math.sin((a * Math.PI) / 180) < 0 ? a : a + 180, r = (d * Math.PI) / 180, L = 5.4;
+        return <FacetLeaf key={i} x={x - Math.cos(r) * L / 2} y={y - Math.sin(r) * L / 2} rot={d} sz={L / 1.35} R={R} mirror={!!flip} />;
+      })}
     </svg>
   );
 }

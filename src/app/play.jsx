@@ -1,5 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
+import { FacetCrosshair } from "../components/facetIcons.jsx";
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { DailyQuestCard, PlayQuestCard } from "./dailyQuest.jsx";
 import { SwipePager } from "../components/swipePager.jsx";
@@ -868,14 +869,9 @@ function MgBoardPiece({ rows, cols, colOffset = 0, rowOffset = 0, cellPx, pieceA
 // 띄운다(띠 왼쪽 절반을 a–g 파일 × 8–5랭크로 본다). 다섯 칸이 시차를 두고 돌아 늘 한두 개가 떠 있다.
 const MG_PINGS = [{ c: 2, r: 1 }, { c: 5, r: 0 }, { c: 1, r: 3 }, { c: 4, r: 2 }, { c: 5, r: 3 }];
 const MG_PING_MS = 4000;
+// (v0.7.5, 사용자 요청) 파셋 규칙으로 다시 그림 — 고리 네 면·쐐기 눈금·가운데 보석(components/facetIcons.jsx FacetCrosshair).
 function MgCrosshair({ size, color = "#fff", flat }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }}>
-      <circle cx="12" cy="12" r="7" fill="none" stroke={color} strokeWidth="2.2" />
-      <path d="M12 1.5v5.2M12 17.3v5.2M1.5 12h5.2M17.3 12h5.2" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="12" cy="12" r="1.8" fill={color} />
-    </svg>
-  );
+  return <FacetCrosshair size={size} color={color} style={{ filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }} />;
 }
 // (v0.7.1) 좌표 인지 게임의 얼굴 아이콘 — 허브 카드·게임 보드에서 쓰던 조준경 그대로. lucide 아이콘과 같은 규격(size·color)이라 PLAY_SPECIAL_GAMES의
 // Icon 자리(로비 배너·모드 행·프로필 전적)에 그대로 들어간다. 글자색(currentColor)을 따르고 그림자는 뺀다.

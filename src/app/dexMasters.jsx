@@ -20,7 +20,8 @@ import { candidateKeys } from "../lib/masterProfile.js";
 import { masterInfoLine, champNumText } from "../lib/masterSearchInfo.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
 import { flagEmoji } from "../lib/flags.js";
-import { laurelBranch, leafPath } from "../lib/laurel.js";
+import { laurelBranch } from "../lib/laurel.js";
+import { FacetLeaf, FacetSpark, taperedStem, GOLD } from "../components/facetIcons.jsx";
 import { MT, championAt, clampMasterPan, flightPoints, layoutMasters, polyLength, polyPointAt, transferPath } from "../lib/masterTreeLayout.js";
 import { takeMasterNav } from "../lib/masterNav.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
@@ -77,21 +78,16 @@ const FlagE = ({ emoji, size = 16 }) => (emoji ? <span aria-hidden="true" style=
 const fxClass = (fx) => (fx ? (fx.intro ? " dex-intro-node" : " dex-surge-node") : "");
 const fxDelay = (fx) => (fx ? { animationDelay: fx.delay + "s" } : null);
 
-/* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). 그라데이션은 캔버스의 <MasterDefs/> 한 곳에 있다. */
+/* 월계수 가지 한 쪽 — 양쪽 모두 잎 끝이 안쪽(이름 쪽)을 향하게 그린다(왼쪽은 side=+1, 오른쪽은 side=-1). */
+// (v0.7.5, 사용자 요청) 파셋 규칙으로 다시 그림 — 잎은 잎맥을 기준으로 밝은 반·어두운 반, 줄기는 끝으로 갈수록 가늘어지는 채운 면(윤곽선 없음).
 function Laurel({ side, h = 60 }) {
   const b = React.useMemo(() => laurelBranch({ side, len: 36, leaves: 7, leaf: 7.5 }), [side]);
+  const stem = React.useMemo(() => { const n = b.stem.match(/-?[\d.]+/g).map(Number); return taperedStem(n[0], n[1], n[2], n[3], n[4], n[5], 2.2, 0.6); }, [b]);
   const k = h / b.height;
   return (
     <svg width={b.width * k} height={h} viewBox={"0 0 " + b.width + " " + b.height} style={{ overflow: "visible", display: "block" }} aria-hidden="true">
-      <path d={b.stem} fill="none" stroke="#8f6a22" strokeWidth="1.4" strokeLinecap="round" />
-      {b.leaves.map((l, i) => <path key={i} transform={"translate(" + l.x + " " + l.y + ") rotate(" + l.rot + ")"} d={leafPath(l.sz)} fill="url(#mt-laurel-gold)" stroke="#8f6a22" strokeWidth=".5" />)}
-    </svg>
-  );
-}
-function MasterDefs() {
-  return (
-    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-      <defs><linearGradient id="mt-laurel-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F6DE97" /><stop offset="1" stopColor="#B98A34" /></linearGradient></defs>
+      <path d={stem} fill={GOLD.l4} />
+      {b.leaves.map((l, i) => <FacetLeaf key={i} x={l.x} y={l.y} rot={l.rot} sz={l.sz} />)}
     </svg>
   );
 }
@@ -731,7 +727,6 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
         </div>
         <SchematicFsButton fs={fsv.fs} onToggle={fsv.toggle} hidden={introOn || flying} />
         <div ref={canvasRef} style={{ position: "absolute", left: 0, top: 0, width, height, transform: "translate(" + viewRef.current.x + "px," + viewRef.current.y + "px) scale(" + viewRef.current.z + ")", transformOrigin: "0 0", willChange: "transform" }}>
-          <MasterDefs />
           <style>{".mt-card{transition:transform .12s ease, box-shadow .12s ease}.mt-card:hover{transform:translateY(-2px)}"}</style>
           <svg width={width} height={height} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
             {/* 중심 칩에서 뻗는 동서남북 회로선 — 남: 역대 세계 챔피언, 동: 주요 대회(세로선 꼭대기까지), 북·서: 아직 비어 있는 단자 */}
@@ -774,9 +769,9 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
             </div>
           ) : (
             <div key={"label-" + l.key} className={lc} style={{ ...lx, position: "absolute", left: l.x, top: l.y, width: l.w, height: l.h, display: "flex", alignItems: "center", justifyContent: l.align === "left" ? "flex-start" : "center", pointerEvents: "none", zIndex: 3 }}>
-              <span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
-                ✦ {LABEL_TEXT()[l.key]} ✦
-              </span>
+              <FacetSpark size={15} style={{ marginRight: 6 }} /><span style={{ fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 700, fontSize: 20, letterSpacing: .3, whiteSpace: "nowrap", background: "linear-gradient(180deg,#F3DFAE,#C49A50 55%,#8A6C2F)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+                {LABEL_TEXT()[l.key]}
+              </span><FacetSpark size={15} style={{ marginLeft: 6 }} />
             </div>
           )); })}
           {LAYOUT.panels.map((p) => <BracketPanel key={p.id} p={p} />)}

@@ -6,6 +6,7 @@
 //  · 왼쪽 = 황동 아이콘 칩(퀘스트 패널과 같은 칩) + 굵은 제목(일반 대국과 같은 900 굵기) + 한 줄 설명 + 얇은 진행 게이지(퀘스트 진행 막대와 같은 모양).
 //  · 데스크톱 2×2(플레이 탭과 같은 폭), 모바일은 한 줄에 하나. 올리면 플레이 탭 카드처럼 테두리가 황동으로, 바탕이 한 단계 밝아진다.
 //  items: [{ key, label, Icon, percent(0~100|null), detail }]
+import { FacetLeaf, taperedStem, facetRamp } from "./facetIcons.jsx";
 import React from "react";
 import { ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
@@ -28,6 +29,7 @@ const SCENES = {
 const DESC = () => ({ openings: t("오프닝 수순 탐색과 해금"), masters: t("명인 대국과 선수 프로필"), titles: t("모은 칭호와 다음 목표"), skins: t("기물·보드 세트 수집") });
 
 /** 카드 오른쪽 나무 체스판 조각 — 높이는 카드에 맞추고 폭은 칸 비율로 정한다. */
+const LAUREL = facetRamp(T.brassHi);
 function BoardPlate({ scene }) {
   const pct = (v, n) => (v / n) * 100 + "%";
   return (
@@ -38,10 +40,14 @@ function BoardPlate({ scene }) {
       {(scene.moved || []).map(([r, c], i) => <span key={"m" + i} style={{ position: "absolute", left: pct(c, COLS), top: pct(r, ROWS), width: pct(1, COLS), height: pct(1, ROWS), background: "rgba(236,203,134,.55)", boxShadow: "inset 0 0 0 2px rgba(168,132,47,.55)" }} />)}
       {scene.laurel && (
         <svg viewBox="0 0 60 80" style={{ position: "absolute", left: pct(scene.laurel - 0.45, COLS), top: pct(0.95, ROWS), width: pct(1.9, COLS), height: pct(2.05, ROWS), filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
+          {/* (v0.7.5, 사용자 요청) 파셋 규칙: 잎은 밝은 반·어두운 반, 줄기는 가늘어지는 채운 면 */}
           {[-1, 1].map((s) => (
-            <g key={s} transform={s < 0 ? "translate(60 0) scale(-1 1)" : undefined} fill={T.brassHi} stroke="#6B4A1E" strokeWidth=".6">
-              <path d="M30 76 C12 68 5 48 9 20" fill="none" stroke="#6B4A1E" strokeWidth="1.4" />
-              {[[9, 24], [7.5, 35], [8.5, 46], [12, 57], [18, 66]].map(([x, y], i) => <ellipse key={i} cx={x} cy={y} rx="2.1" ry="4.6" transform={"rotate(" + (-30 + i * 14) + " " + x + " " + y + ")"} />)}
+            <g key={s} transform={s < 0 ? "translate(60 0) scale(-1 1)" : undefined}>
+              <path d={taperedStem(30, 76, 3, 52, 9, 20, 2.4, 0.8)} fill={LAUREL.l4} />
+              {[[9, 24], [7.5, 35], [8.5, 46], [12, 57], [18, 66]].map(([x, y], i) => {
+                const d = -120 + i * 14, r = (d * Math.PI) / 180, L = 9.6;   // 예전 타원 잎 자리·각도, 잎 끝은 위로
+                return <FacetLeaf key={i} x={x - Math.cos(r) * L / 2} y={y - Math.sin(r) * L / 2} rot={d} sz={L / 1.35} R={LAUREL} mirror={s < 0} />;
+              })}
             </g>
           ))}
         </svg>

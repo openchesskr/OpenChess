@@ -15,6 +15,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
+import { FacetDiamond } from "../components/facetIcons.jsx";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -140,11 +141,11 @@ function OpeningBand({ lesson, top, height, side, reach, narrow, dim }) {
         <span style={{ position: "absolute", left: -pieceH * 0.75, top: -pieceH * 0.75, width: pieceH * 1.5, height: pieceH * 1.5, borderRadius: "50%", background: "radial-gradient(circle, rgba(226,180,90,.16), transparent 62%)" }} />
         <img src={pieceImg("classic", hero.piece, "w")} alt="" draggable={false} style={{ position: "absolute", left: -pieceH * 0.5, top: -pieceH * 0.56, width: pieceH, height: pieceH, objectFit: "contain",
           filter: "brightness(0) invert(.9) sepia(.5) drop-shadow(0 0 10px rgba(226,180,90,.35))", opacity: 0.16 }} />
-        {/* 노리는 칸: 기물 머리 위에서 경로 바깥쪽으로 짧게 뻗는 금색 점선 + 마름모 + 칸 이름(좁은 화면에서도 판 밖으로 나가지 않게 짧게) */}
+        {/* 노리는 칸: 기물 머리 위에서 경로 바깥쪽으로 짧게 뻗는 금색 보석 점선 + 마름모 + 칸 이름(좁은 화면에서도 판 밖으로 나가지 않게 짧게) */}
         <svg width="1" height="1" style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
           {(() => { const y0 = -pieceH * 0.36, x1 = out * pieceH * (narrow ? 0.16 : 0.34), y1 = -pieceH * (narrow ? 0.66 : 0.62);
-            return <g><path d={`M0 ${y0}L${x1} ${y1}`} stroke={GOLD} strokeWidth="1.6" strokeDasharray="2 4" strokeLinecap="round" opacity=".75" />
-              <rect x={x1 - 4} y={y1 - 4} width="8" height="8" transform={`rotate(45 ${x1} ${y1})`} fill={GOLD} opacity=".9" />
+            return <g>{[0.22, 0.44, 0.66].map((k) => <FacetDiamond key={k} cx={x1 * k} cy={y0 + (y1 - y0) * k} r={1.7} gem={false} />)}
+              <FacetDiamond cx={x1} cy={y1} r={5} />
               <text x={x1 - out * 8} y={y1 + 4.5} textAnchor={out > 0 ? "end" : "start"} fill={GOLD} fontFamily="Georgia,serif" fontStyle="italic" fontWeight="700" fontSize={narrow ? 12 : 14} opacity=".95">{hero.aim}</text></g>; })()}
         </svg>
       </div>
