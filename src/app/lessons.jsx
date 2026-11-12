@@ -86,41 +86,67 @@ function fitTileName(name, size) {
   }
   return best;
 }
-// (v0.7.5, 사용자 요청) 오프닝 레파토리 구간의 레슨 경로 배경 — 레슨 줄마다 체스판 칸 무늬 띠를 깔고,
-//  블록 반대쪽에 그 오프닝의 실제 포지션(레슨에서 두는 주요 수순의 끝)을 작은 체스판 도표로 보여 준다. 마지막에 둔 수는 강조.
-//  판은 학습자 진영 쪽에서 본다(흑으로 두는 오프닝은 뒤집힘). 포지션은 레슨 데이터에서 바로 만들므로 수순을 고치면 그림도 따라 바뀐다.
-const BAND_FADE_X = "linear-gradient(90deg, transparent 0%, #000 10%, rgba(0,0,0,.35) 34%, rgba(0,0,0,.35) 66%, #000 90%, transparent 100%)";
-const BAND_FADE_Y = "linear-gradient(180deg, transparent 0%, #000 26%, #000 74%, transparent 100%)";
-const DIA_LIGHT = "#EAD8B6", DIA_DARK = "#A9774B", DIA_MOVE = "rgba(246,200,80,.62)";
-function openingDiagram(lesson) {
-  const st = lesson.steps(), mv = st.find((x) => x.kind === "move"), end = st.find((x) => x.kind === "choice") || st[st.length - 1];
-  const fen = end.fen, last = mv && mv.line.length ? mv.line[mv.line.length - 1].hint : null;
-  return { board: boardOf(fen), flip: turnOf(fen) === "w", last };   // 마지막 수를 둔 쪽(학습자) = 지금 차례가 아닌 쪽
+// (v0.7.5, 사용자 요청) 오프닝 레파토리 구간의 레슨 경로 배경 — 두 겹으로 그 오프닝을 상징한다.
+//  ① 기보: 레슨 줄 뒤로 그 오프닝의 주요 수순(1.e4 e5 2.Nf3 …)이 큰 세리프 글씨로 은은하게 흐르고, 그 오프닝을 정하는 대표 수만 금색으로 빛난다.
+//  ② 대표 기물: 블록 옆에 그 오프닝의 주인공 기물을 크게 흐린 실루엣으로 두고, 그 기물이 노리는 칸을 금색 점선과 칸 이름으로 표시한다.
+//  수순은 레슨 데이터(line)에서 바로 만들므로 수순을 고치면 배경도 따라 바뀐다. 새 오프닝을 추가하면 OPENING_HERO에 넣을 것(check-lessons가 검사).
+export const OPENING_HERO = {
+  italian: { piece: "B", color: "w", sig: "Bc4", aim: "f7" },
+  ruy: { piece: "B", color: "w", sig: "Bb5", aim: "c6" },
+  scotch: { piece: "P", color: "w", sig: "d4", aim: "e5" },
+  qgd: { piece: "P", color: "b", sig: "e6", aim: "d5" },
+  london: { piece: "B", color: "w", sig: "Bf4", aim: "c7" },
+  najdorf: { piece: "P", color: "b", sig: "a6", aim: "b5" },
+  french: { piece: "P", color: "b", sig: "e6", aim: "d5" },
+  caro: { piece: "P", color: "b", sig: "c6", aim: "d5" },
+  scandi: { piece: "P", color: "b", sig: "d5", aim: "e4" },
+  slav: { piece: "P", color: "b", sig: "c6", aim: "d5" },
+  kid: { piece: "B", color: "b", sig: "Bg7", aim: "a1" },
+  nimzo: { piece: "B", color: "b", sig: "Bb4", aim: "c3" },
+  grunfeld: { piece: "P", color: "b", sig: "d5", aim: "d4" },
+};
+const GOLD = "#E2B45A";
+const BAND_FADE_X = "linear-gradient(90deg, transparent 0%, #000 12%, rgba(0,0,0,.45) 36%, rgba(0,0,0,.45) 64%, #000 88%, transparent 100%)";
+const BAND_FADE_Y = "linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%)";
+/** 수순 → [{ text: "1.e4", sig }] (흑 수 앞에는 번호를 쓰지 않는 기보 표기). 대표 수는 그 진영의 첫 sig 수. */
+function pgnTokens(line, hero) {
+  const sans = String(line || "").split(" ").filter(Boolean); let hit = false;
+  return sans.map((san, i) => {
+    const mine = hero && !hit && san.replace(/[+#]/g, "") === hero.sig && (i % 2 === 0 ? "w" : "b") === hero.color;
+    if (mine) hit = true;
+    return { text: (i % 2 === 0 ? (i / 2 + 1) + "." : "") + san, sig: mine };
+  });
 }
-function OpeningDiagram({ lesson, size }) {
-  const { board, flip, last } = useMemo(() => openingDiagram(lesson), [lesson]);
-  const q = size / 8, hl = last ? [last.slice(0, 2), last.slice(2, 4)] : [];
-  const cells = [];
-  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-    const vr = flip ? 7 - r : r, vc = flip ? 7 - c : c, sq = rcToSq(r, c), p = board[r][c];
-    cells.push(<rect key={"s" + sq} x={vc * q} y={vr * q} width={q} height={q} fill={(r + c) % 2 ? DIA_DARK : DIA_LIGHT} />);
-    if (hl.includes(sq)) cells.push(<rect key={"h" + sq} x={vc * q} y={vr * q} width={q} height={q} fill={DIA_MOVE} />);
-    if (p) cells.push(<image key={"p" + sq} href={pieceImg("classic", p.t, p.c)} x={vc * q} y={vr * q} width={q} height={q} />);
-  }
-  return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>{cells}</svg>;
-}
-// 도표는 좌우를 번갈아(같은 쪽 도표는 두 줄 간격이라 줄 높이보다 크게 그려도 겹치지 않는다) 지그재그 경로 바로 바깥에 둔다.
 function OpeningBand({ lesson, top, height, side, reach, narrow, dim }) {
-  const dia = Math.round(height * (narrow ? 1.0 : 1.5));
+  const hero = OPENING_HERO[lesson.motif];
+  const toks = useMemo(() => pgnTokens(lesson.line, hero), [lesson.line, hero]);
+  if (!hero) return null;
+  const fs = Math.round(height * (narrow ? 0.3 : 0.34)), pieceH = Math.round(height * (narrow ? 1.25 : 1.6));
+  const shift = (lesson.index % 3) * -fs * 2.2;   // 줄마다 기보 시작 위치를 엇갈려 흐르는 느낌
+  const run = (k) => toks.map((tk, i) => <span key={k + i} style={{ marginRight: fs * 0.55, color: tk.sig ? GOLD : "rgba(234,216,182,.16)", textShadow: tk.sig ? "0 0 " + fs * 0.6 + "px rgba(226,180,90,.55)" : "none", fontWeight: tk.sig ? 700 : 400 }}>{tk.text}</span>);
+  const out = side === "left" ? -1 : 1;   // 기물이 놓이는 쪽(경로 바깥 방향)
+  const px = reach + pieceH * 0.28;       // 경로 중심에서 기물 중심까지
   return (
     <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top, height, pointerEvents: "none" }}>
-      <div style={{ position: "absolute", inset: 0, WebkitMaskImage: BAND_FADE_Y, maskImage: BAND_FADE_Y }}>
-        <div style={{ position: "absolute", inset: 0, WebkitMaskImage: BAND_FADE_X, maskImage: BAND_FADE_X, opacity: dim ? 0.5 : 1,
-          backgroundImage: "repeating-conic-gradient(rgba(234,216,182,.085) 0 25%, rgba(0,0,0,.12) 0 50%)", backgroundSize: (height / 2) + "px " + (height / 2) + "px", backgroundPosition: "center " + (height / 4) + "px" }} />
+      {/* ① 흐르는 기보 */}
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden", WebkitMaskImage: BAND_FADE_Y, maskImage: BAND_FADE_Y, opacity: dim ? 0.45 : 1 }}>
+        <div style={{ position: "absolute", inset: 0, WebkitMaskImage: BAND_FADE_X, maskImage: BAND_FADE_X, display: "flex", alignItems: "center", whiteSpace: "nowrap",
+          fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontSize: fs, letterSpacing: ".01em", transform: "translateX(" + shift + "px)" }}>
+          <span>{run("a")}{run("b")}{run("c")}{run("d")}</span>
+        </div>
       </div>
-      <div style={{ position: "absolute", top: "50%", left: "50%", marginLeft: side === "left" ? -(reach + dia + 6) : reach, transform: "translateY(-50%)", padding: 3, zIndex: 1, borderRadius: 5, background: "linear-gradient(160deg, #5A3A20, #2A1A0D)",
-        boxShadow: "0 8px 18px -6px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.12)", opacity: dim ? 0.32 : 0.92, filter: dim ? "grayscale(.6)" : "none" }}>
-        <div style={{ borderRadius: 2, overflow: "hidden" }}><OpeningDiagram lesson={lesson} size={dia} /></div>
+      {/* ② 대표 기물 실루엣 + 노리는 칸 */}
+      <div style={{ position: "absolute", top: "50%", left: "50%", width: 0, height: 0, marginLeft: out * px, opacity: dim ? 0.35 : 1 }}>
+        <span style={{ position: "absolute", left: -pieceH * 0.75, top: -pieceH * 0.75, width: pieceH * 1.5, height: pieceH * 1.5, borderRadius: "50%", background: "radial-gradient(circle, rgba(226,180,90,.16), transparent 62%)" }} />
+        <img src={pieceImg("classic", hero.piece, "w")} alt="" draggable={false} style={{ position: "absolute", left: -pieceH * 0.5, top: -pieceH * 0.56, width: pieceH, height: pieceH, objectFit: "contain",
+          filter: "brightness(0) invert(.9) sepia(.5) drop-shadow(0 0 10px rgba(226,180,90,.35))", opacity: 0.16 }} />
+        {/* 노리는 칸: 기물 머리 위에서 경로 바깥쪽으로 짧게 뻗는 금색 점선 + 마름모 + 칸 이름(좁은 화면에서도 판 밖으로 나가지 않게 짧게) */}
+        <svg width="1" height="1" style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+          {(() => { const y0 = -pieceH * 0.36, x1 = out * pieceH * (narrow ? 0.16 : 0.34), y1 = -pieceH * (narrow ? 0.66 : 0.62);
+            return <g><path d={`M0 ${y0}L${x1} ${y1}`} stroke={GOLD} strokeWidth="1.6" strokeDasharray="2 4" strokeLinecap="round" opacity=".75" />
+              <rect x={x1 - 4} y={y1 - 4} width="8" height="8" transform={`rotate(45 ${x1} ${y1})`} fill={GOLD} opacity=".9" />
+              <text x={x1 - out * 8} y={y1 + 4.5} textAnchor={out > 0 ? "end" : "start"} fill={GOLD} fontFamily="Georgia,serif" fontStyle="italic" fontWeight="700" fontSize={narrow ? 12 : 14} opacity=".95">{hero.aim}</text></g>; })()}
+        </svg>
       </div>
     </div>
   );
@@ -273,7 +299,7 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
         <div style={{ position: "relative", height: layout.height }}>
           {/* (v0.7.5, 사용자 요청) 오프닝 레파토리 구간 배경: 레슨 줄마다 그 오프닝을 상징하는 문양 띠와 이름 */}
           {layout.items.filter((it) => it.kind === "lesson" && it.lesson.motif).map((it) => (
-            <OpeningBand key={"band" + it.lesson.id} lesson={it.lesson} top={it.y - ROW / 2} height={ROW} side={it.lesson.index % 2 ? "right" : "left"} reach={DX + D * 0.5 + (narrow ? 10 : 22)} narrow={narrow}
+            <OpeningBand key={"band" + it.lesson.id} lesson={it.lesson} top={it.y - ROW / 2} height={ROW} side={it.lesson.index % 2 ? "right" : "left"} reach={DX + D * 0.5 + (narrow ? 4 : 18)} narrow={narrow}
               dim={lessonStatus(lessonState, it.lesson.id) === "locked"} />
           ))}
           {ghosts.map((g) => <img key={g.key} src={g.src} alt="" aria-hidden="true" draggable={false} loading="lazy" style={{ position: "absolute", left: "50%", top: g.y - D * 0.9, marginLeft: g.side * (DX + D * (narrow ? 0.95 : 1.6)) - D * 0.6, width: D * 1.2, height: D * 1.8, objectFit: "contain", filter: "brightness(0) invert(1)", opacity: 0.06, pointerEvents: "none" }} />)}

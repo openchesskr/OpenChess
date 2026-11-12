@@ -97,6 +97,17 @@ for (const l of lessons.filter((x) => x.stage === "s6")) {
     else if (!have.has(l.icon)) fails.push(l.id + ": 아이콘 " + l.icon + "을 app/lessons.jsx LESSON_ICONS에 추가할 것");
   }
 }
+// (v0.7.5) 오프닝 레슨은 레슨 경로 배경의 대표 기물·대표 수(app/lessons.jsx OPENING_HERO)가 있어야 하고, 대표 수가 실제 수순에 그 진영의 수로 들어 있어야 한다(금색 강조가 빠지지 않게)
+{
+  const ui = readFileSync(new URL("../src/app/lessons.jsx", import.meta.url), "utf8");
+  const m = /export const OPENING_HERO = \{([\s\S]*?)\n\};/.exec(ui);
+  if (!m) fails.push("app/lessons.jsx에서 OPENING_HERO를 찾지 못함");
+  const hero = {}; if (m) for (const x of m[1].matchAll(/(\w+): \{ piece: "([PNBRQK])", color: "([wb])", sig: "([^"]+)", aim: "([a-h][1-8])" \}/g)) hero[x[1]] = { color: x[3], sig: x[4] };
+  for (const l of lessons.filter((x) => x.stage === "s6")) {
+    const h = hero[l.motif]; if (!h) { fails.push(l.id + ": OPENING_HERO에 " + l.motif + " 없음"); continue; }
+    if (!String(l.line).split(" ").some((san, i) => san.replace(/[+#]/g, "") === h.sig && (i % 2 ? "b" : "w") === h.color)) fails.push(l.id + ": 대표 수 " + h.sig + "가 수순에 없음");
+  }
+}
 // 서버 보상 목록과 대조
 {
   const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
