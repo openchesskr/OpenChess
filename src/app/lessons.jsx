@@ -15,6 +15,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
+import { OpeningMotif, OPENING_MOTIFS } from "./lessonMotifs.jsx";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -30,6 +31,12 @@ export function stageTheme(stage) {
   if (themeCache[stage.id]) return themeCache[stage.id];
   const c = QCOLOR[stage.grade] || "#8FB55E";
   return (themeCache[stage.id] = { c, hi: mix(c, "#FFFFFF", 0.42), lo: mix(c, "#000000", 0.32), edge: mix(c, "#000000", 0.58), bg: mix(c, "#0B0704", 0.88), bg2: mix(c, "#0B0704", 0.76), icon: "/move-fx/" + stage.grade + ".png" });
+}
+const motifCache = {};
+function motifTheme(fam, th) {
+  if (motifCache[fam]) return motifCache[fam];
+  const c = mix(OPENING_MOTIFS[fam].acc, th.c, 0.3);
+  return (motifCache[fam] = { ...th, c, hi: mix(c, "#FFFFFF", 0.36), lo: mix(c, "#000000", 0.34), edge: mix(c, "#000000", 0.6) });
 }
 const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
 const CHECKER = { backgroundImage: "repeating-conic-gradient(rgba(255,255,255,.035) 0 25%, transparent 0 50%)", backgroundSize: "64px 64px",
@@ -69,7 +76,10 @@ const PAT = [0, 1, 0, -1];      // 레슨 칸의 가로 위치(가운데 기준,
 const topIn = (sc, el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
 
 function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
-  const th = stageTheme(stage);
+  const th0 = stageTheme(stage);
+  // (v0.7.5) 오프닝 레슨: 그 오프닝의 고유 색을 단계 색에 섞고, 상징 문양을 배경에, 대표 수를 가운데에 둔다
+  const mo = lesson.motif && OPENING_MOTIFS[lesson.motif];
+  const th = mo ? motifTheme(lesson.motif, th0) : th0;
   const cur = status === "current", done = status === "done", locked = status === "locked";
   const side = size / Math.SQRT2;
   const face = locked ? "rgba(255,255,255,.05)" : "linear-gradient(155deg, " + th.hi + " 0%, " + th.c + " 48%, " + th.lo + " 100%)";
@@ -86,8 +96,11 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
       {/* 윗면 */}
       <span className="lesson-face" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, borderRadius: "24%", transform: "rotate(45deg)", background: face,
         boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
+      {mo && <OpeningMotif motif={lesson.motif} size={size} dim={locked} />}
       <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
-        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" />
+          : mo ? <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: size * (mo.sig.length > 4 ? 0.19 : 0.23), color: "#FFFFFF", letterSpacing: "-.01em", textShadow: "0 1px 0 " + th.edge + ", 0 2px 6px rgba(0,0,0,.45)" }}>{mo.sig}</span>
+          : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
       </span>
       {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, right: size * 0.06, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
       {cur && (
@@ -173,7 +186,8 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
   // 경로 선: 레슨 순서대로 이웃한 두 칸을 잇는다(끝낸 레슨까지는 등급 색 실선, 그 뒤는 옅은 점선)
   const pts = layout.items.filter((x) => x.kind === "lesson").sort((a, b) => a.lesson.index - b.lesson.index);
   const SW = DX * 2 + D * 2;
-  const segs = pts.slice(1).map((p, i) => { const a = pts[i]; return { a, b: p, lit: isLessonDone(lessonState, a.lesson.id) }; });
+  // 단계가 바뀌는 구간은 잇지 않는다 — 그 사이의 장 제목(배지·이름·설명)을 선이 가로질러 글자를 가리기 때문(BUG-155). 장 배지가 두 단계를 잇는 역할을 한다.
+  const segs = pts.slice(1).map((p, i) => { const a = pts[i]; return { a, b: p, lit: isLessonDone(lessonState, a.lesson.id) }; }).filter((s) => s.a.stage.id === s.b.stage.id);
   // 기물 실루엣: 단계마다 두 개, 그 단계 구간 양옆에
   const ghosts = [];
   for (const st of STAGES) {

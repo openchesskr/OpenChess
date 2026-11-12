@@ -192,7 +192,7 @@ const OPENINGS = [
 ];
 function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
   const famName = () => (openingFamily(fam) || {}).name || fam;
-  return L(id, "s6", "BookOpen", famName, () => (side === "w" ? t("백으로 두기") : t("흑으로 두기")), () => {
+  return { motif: fam, ...L(id, "s6", "BookOpen", famName, () => (side === "w" ? t("백으로 두기") : t("흑으로 두기")), () => {
     const sans = line.split(" "), c = new Chess(), ucis = [];
     for (const s of sans) { const m = c.move(s); ucis.push(m.from + m.to + (m.promotion || "")); }
     const first = side === "w" ? 0 : 1;   // 학습자의 첫 수 번호
@@ -218,7 +218,7 @@ function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
       { kind: "read", fen: endC.fen(), say: fam0.plan || t("주요 수순을 끝까지 두었습니다.") },
       { kind: "choice", fen: endC.fen(), say: t("지금 둔 오프닝의 이름은?"), options, answer: ans },
     ];
-  });
+  }) };   // motif: 레슨 타일 배경 문양(app/lessonMotifs.jsx)
 }
 LESSONS.push(...OPENINGS.map(openingLesson));
 
@@ -226,7 +226,7 @@ let _cache = null;
 /** 모든 레슨(순서대로) — 단계 정보 포함. steps는 처음 열 때 만든다(번역 반영). */
 export function allLessons() {
   if (_cache) return _cache;
-  _cache = LESSONS.map((l, i) => ({ id: l.id, stage: l.stage, icon: l.icon, index: i, title: l.title, sub: l.sub, steps: l.steps }));
+  _cache = LESSONS.map((l, i) => ({ id: l.id, stage: l.stage, icon: l.icon, motif: l.motif || null, index: i, title: l.title, sub: l.sub, steps: l.steps }));
   return _cache;
 }
 export const stageOf = (id) => STAGES.find((s) => s.id === id) || STAGES[0];

@@ -97,6 +97,14 @@ for (const l of lessons.filter((x) => x.stage === "s6")) {
     else if (!have.has(l.icon)) fails.push(l.id + ": 아이콘 " + l.icon + "을 app/lessons.jsx LESSON_ICONS에 추가할 것");
   }
 }
+// (v0.7.5) 오프닝 레슨은 타일 배경 문양(app/lessonMotifs.jsx OPENING_MOTIFS)이 있어야 한다 — 없으면 단계 색만의 밋밋한 타일로 보인다
+{
+  const src = readFileSync(new URL("../src/app/lessonMotifs.jsx", import.meta.url), "utf8");
+  const m = /export const OPENING_MOTIFS = \{([\s\S]*?)\n\};/.exec(src);
+  const have = new Set(m ? [...m[1].matchAll(/^\s*(\w+):/gm)].map((x) => x[1]) : []);
+  if (!m) fails.push("app/lessonMotifs.jsx에서 OPENING_MOTIFS를 찾지 못함");
+  for (const l of lessons.filter((x) => x.stage === "s6")) if (!l.motif || !have.has(l.motif)) fails.push(l.id + ": 오프닝 문양 " + l.motif + "을 app/lessonMotifs.jsx OPENING_MOTIFS에 추가할 것");
+}
 // 서버 보상 목록과 대조
 {
   const sql = readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
