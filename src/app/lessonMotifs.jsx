@@ -1,6 +1,6 @@
-// (v0.7.5, 사용자 요청) 오프닝 레파토리 레슨 타일의 배경 문양 — 오프닝마다 그 이름·역사·핵심 아이디어를 상징하는 무늬.
-//  타일(마름모) 안쪽만 보이도록 잘라 그린다. 좌표는 타일 상자 100×100 기준(마름모 꼭짓점: 위 50,0 · 오른쪽 100,50 …).
-//  acc: 그 오프닝의 고유 색. 단계 색(이론·갈색)과 섞어 써서 같은 단계로 읽히면서도 레슨마다 구별된다.
+// (v0.7.5, 사용자 요청) 오프닝 레파토리 구간의 레슨 경로 배경 — 레슨 줄마다 그 오프닝의 이름·역사·핵심 아이디어를 상징하는 문양 띠.
+//  레슨 타일(블록)은 단계 색(갈색) 그대로 두고, 그 뒤 배경만 오프닝마다 달라진다.
+//  문양 좌표는 100×100 한 장 기준이고, 띠의 높이에 맞춰 가로로 반복한다. acc: 그 오프닝의 고유 색(배경 물들임).
 //  새 오프닝 레슨을 추가하면 여기에 문양을 넣어야 한다(check-lessons가 검사).
 import { useId } from "react";
 
@@ -120,38 +120,47 @@ function Grunfeld() {
   </g>;
 }
 
-/** 오프닝 계열 → { acc: 고유 색, sig: 이 오프닝을 정하는 대표 수, Art: 배경 문양 }. */
+/** 오프닝 계열 → { acc: 고유 색, Art: 배경 문양 }. */
 export const OPENING_MOTIFS = {
-  italian: { acc: "#2F7D4F", sig: "Bc4", Art: Italian },
-  ruy: { acc: "#A3322A", sig: "Bb5", Art: Ruy },
-  scotch: { acc: "#2D5B73", sig: "d4", Art: Scotch },
-  qgd: { acc: "#5E4A8C", sig: "…e6", Art: Qgd },
-  london: { acc: "#56606E", sig: "Bf4", Art: London },
-  najdorf: { acc: "#C2552B", sig: "…a6", Art: Najdorf },
-  french: { acc: "#2C478F", sig: "…e6", Art: French },
-  caro: { acc: "#2D6B66", sig: "…c6", Art: Caro },
-  scandi: { acc: "#3F7FAE", sig: "…d5", Art: Scandi },
-  slav: { acc: "#8E2433", sig: "…c6", Art: Slav },
-  kid: { acc: "#C7791C", sig: "…g6", Art: Kid },
-  nimzo: { acc: "#6B3A6E", sig: "…Bb4", Art: Nimzo },
-  grunfeld: { acc: "#B08A1E", sig: "…d5", Art: Grunfeld },
+  italian: { acc: "#2F7D4F", Art: Italian },
+  ruy: { acc: "#A3322A", Art: Ruy },
+  scotch: { acc: "#2D5B73", Art: Scotch },
+  qgd: { acc: "#5E4A8C", Art: Qgd },
+  london: { acc: "#56606E", Art: London },
+  najdorf: { acc: "#C2552B", Art: Najdorf },
+  french: { acc: "#2C478F", Art: French },
+  caro: { acc: "#2D6B66", Art: Caro },
+  scandi: { acc: "#3F7FAE", Art: Scandi },
+  slav: { acc: "#8E2433", Art: Slav },
+  kid: { acc: "#C7791C", Art: Kid },
+  nimzo: { acc: "#6B3A6E", Art: Nimzo },
+  grunfeld: { acc: "#B08A1E", Art: Grunfeld },
 };
 
-/** 마름모 타일 안쪽(둥근 모서리 정사각형을 45° 돌린 모양)에만 문양을 그린다. dim: 잠긴 레슨은 흐리게 미리 보여 준다. */
-export function OpeningMotif({ motif, size, dim = false }) {
-  const id = "lm" + useId().replace(/[^a-zA-Z0-9]/g, "");
+const rgba = (h, a) => "rgba(" + [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16)).join(",") + "," + a + ")";
+const FADE_X = "linear-gradient(90deg, transparent 0%, #000 14%, rgba(0,0,0,.5) 38%, rgba(0,0,0,.5) 62%, #000 86%, transparent 100%)";
+const FADE_Y = "linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%)";
+
+/** 레슨 경로의 한 줄(레슨 하나) 뒤에 까는 오프닝 문양 띠. 가운데(타일·연결선 자리)는 옅게, 양옆은 진하게, 위아래는 이웃 줄과 부드럽게 이어진다.
+ *  name: 오프닝 이름(타일 반대쪽 가장자리에 작게). dim: 잠긴 레슨은 흐리게 미리 보여 준다. */
+export function OpeningBand({ motif, name, top, height, labelSide = "right", narrow = false, dim = false }) {
+  const id = "ob" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const M = OPENING_MOTIFS[motif]; if (!M) return null;
-  const s = 100 / Math.SQRT2, o = (100 - s) / 2;
+  const k = height / 100;
   return (
-    <svg aria-hidden="true" viewBox="0 0 100 100" width={size} height={size} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", opacity: dim ? 0.3 : 1 }}>
-      <defs>
-        <clipPath id={id}><rect x={o} y={o} width={s} height={s} rx={s * 0.24} transform="rotate(45 50 50)" /></clipPath>
-        <radialGradient id={id + "g"} cx="50%" cy="38%" r="62%"><stop offset="0" stopColor="#FFFFFF" stopOpacity=".16" /><stop offset=".55" stopColor="#FFFFFF" stopOpacity="0" /><stop offset="1" stopColor="#000000" stopOpacity=".28" /></radialGradient>
-      </defs>
-      <g clipPath={`url(#${id})`}>
-        <M.Art />
-        <rect width="100" height="100" fill={`url(#${id}g)`} />
-      </g>
-    </svg>
+    <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top, height, pointerEvents: "none", WebkitMaskImage: FADE_Y, maskImage: FADE_Y }}>
+      <div style={{ position: "absolute", inset: 0, opacity: dim ? 0.4 : 1, WebkitMaskImage: FADE_X, maskImage: FADE_X,
+        background: "linear-gradient(90deg, " + rgba(M.acc, 0.34) + ", " + rgba(M.acc, 0.12) + " 50%, " + rgba(M.acc, 0.34) + ")" }}>
+        <svg width="100%" height={height} style={{ display: "block", opacity: 0.62 }}>
+          <defs><pattern id={id} width="100" height="100" patternUnits="userSpaceOnUse" patternTransform={`scale(${k})`}><M.Art /></pattern></defs>
+          <rect width="100%" height="100%" fill={`url(#${id})`} />
+        </svg>
+      </div>
+      {name && <span style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", [labelSide]: narrow ? 12 : 22, maxWidth: narrow ? "27%" : "30%", display: "flex", alignItems: "center", gap: 7,
+        flexDirection: labelSide === "left" ? "row" : "row-reverse", textAlign: labelSide, opacity: dim ? 0.45 : 1 }}>
+        <span style={{ width: 3, alignSelf: "stretch", minHeight: 16, borderRadius: 2, background: rgba(M.acc, 0.95), boxShadow: "0 0 8px " + rgba(M.acc, 0.8), flexShrink: 0 }} />
+        <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: narrow ? 11.5 : 13.5, lineHeight: 1.25, color: "rgba(255,246,226,.82)", textShadow: "0 1px 4px rgba(0,0,0,.7)", wordBreak: "keep-all" }}>{name}</span>
+      </span>}
+    </div>
   );
 }

@@ -15,7 +15,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { OpeningMotif, OPENING_MOTIFS } from "./lessonMotifs.jsx";
+import { OpeningBand } from "./lessonMotifs.jsx";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -31,12 +31,6 @@ export function stageTheme(stage) {
   if (themeCache[stage.id]) return themeCache[stage.id];
   const c = QCOLOR[stage.grade] || "#8FB55E";
   return (themeCache[stage.id] = { c, hi: mix(c, "#FFFFFF", 0.42), lo: mix(c, "#000000", 0.32), edge: mix(c, "#000000", 0.58), bg: mix(c, "#0B0704", 0.88), bg2: mix(c, "#0B0704", 0.76), icon: "/move-fx/" + stage.grade + ".png" });
-}
-const motifCache = {};
-function motifTheme(fam, th) {
-  if (motifCache[fam]) return motifCache[fam];
-  const c = mix(OPENING_MOTIFS[fam].acc, th.c, 0.3);
-  return (motifCache[fam] = { ...th, c, hi: mix(c, "#FFFFFF", 0.36), lo: mix(c, "#000000", 0.34), edge: mix(c, "#000000", 0.6) });
 }
 const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
 const CHECKER = { backgroundImage: "repeating-conic-gradient(rgba(255,255,255,.035) 0 25%, transparent 0 50%)", backgroundSize: "64px 64px",
@@ -76,10 +70,7 @@ const PAT = [0, 1, 0, -1];      // 레슨 칸의 가로 위치(가운데 기준,
 const topIn = (sc, el) => el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
 
 function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
-  const th0 = stageTheme(stage);
-  // (v0.7.5) 오프닝 레슨: 그 오프닝의 고유 색을 단계 색에 섞고, 상징 문양을 배경에, 대표 수를 가운데에 둔다
-  const mo = lesson.motif && OPENING_MOTIFS[lesson.motif];
-  const th = mo ? motifTheme(lesson.motif, th0) : th0;
+  const th = stageTheme(stage);
   const cur = status === "current", done = status === "done", locked = status === "locked";
   const side = size / Math.SQRT2;
   const face = locked ? "rgba(255,255,255,.05)" : "linear-gradient(155deg, " + th.hi + " 0%, " + th.c + " 48%, " + th.lo + " 100%)";
@@ -96,11 +87,8 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
       {/* 윗면 */}
       <span className="lesson-face" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "50%", width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2, borderRadius: "24%", transform: "rotate(45deg)", background: face,
         boxShadow: locked ? "inset 0 0 0 1.5px rgba(255,255,255,.12)" : "inset 0 2px 0 rgba(255,255,255,.45), inset 0 -2px 0 rgba(0,0,0,.18)" }} />
-      {mo && <OpeningMotif motif={lesson.motif} size={size} dim={locked} />}
       <span style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }}>
-        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" />
-          : mo ? <span style={{ fontFamily: "Georgia,'Noto Serif KR',serif", fontStyle: "italic", fontWeight: 700, fontSize: size * (mo.sig.length > 4 ? 0.19 : 0.23), color: "#FFFFFF", letterSpacing: "-.01em", textShadow: "0 1px 0 " + th.edge + ", 0 2px 6px rgba(0,0,0,.45)" }}>{mo.sig}</span>
-          : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
+        {locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
       </span>
       {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, right: size * 0.06, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
       {cur && (
@@ -192,7 +180,7 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
   const ghosts = [];
   for (const st of STAGES) {
     const ys = layout.items.filter((x) => x.kind === "lesson" && x.stage.id === st.id).map((x) => x.y);
-    if (!ys.length) continue;
+    if (!ys.length || lessonsOfStage(st.id).some((l) => l.motif)) continue;   // 오프닝 문양 띠가 있는 단계는 기물 실루엣을 두지 않는다(이름표·문양과 겹침)
     const y0 = Math.min(...ys), y1 = Math.max(...ys);
     ghosts.push({ key: st.id + "a", src: pieceImg("classic", st.deco[0]), y: y0 + (y1 - y0) * 0.25, side: -1 }, { key: st.id + "b", src: pieceImg("classic", st.deco[1]), y: y0 + (y1 - y0) * 0.78, side: 1 });
   }
@@ -214,6 +202,11 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
       {/* 경로 */}
       <div ref={scRef} onScroll={onScroll} className="lesson-scroll" style={{ position: "absolute", inset: 0, overflowY: "auto", overflowX: "hidden" }}>
         <div style={{ position: "relative", height: layout.height }}>
+          {/* (v0.7.5, 사용자 요청) 오프닝 레파토리 구간 배경: 레슨 줄마다 그 오프닝을 상징하는 문양 띠와 이름 */}
+          {layout.items.filter((it) => it.kind === "lesson" && it.lesson.motif).map((it) => (
+            <OpeningBand key={"band" + it.lesson.id} motif={it.lesson.motif} name={it.lesson.title()} top={it.y - ROW / 2} height={ROW} labelSide={it.x > 0 ? "left" : "right"} narrow={narrow}
+              dim={lessonStatus(lessonState, it.lesson.id) === "locked"} />
+          ))}
           {ghosts.map((g) => <img key={g.key} src={g.src} alt="" aria-hidden="true" draggable={false} loading="lazy" style={{ position: "absolute", left: "50%", top: g.y - D * 0.9, marginLeft: g.side * (DX + D * (narrow ? 0.95 : 1.6)) - D * 0.6, width: D * 1.2, height: D * 1.8, objectFit: "contain", filter: "brightness(0) invert(1)", opacity: 0.06, pointerEvents: "none" }} />)}
           <svg aria-hidden="true" width={SW} height={layout.height} style={{ position: "absolute", left: "50%", top: 0, marginLeft: -SW / 2, pointerEvents: "none" }}>
             {segs.map((s, i) => {

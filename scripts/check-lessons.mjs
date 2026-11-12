@@ -97,7 +97,7 @@ for (const l of lessons.filter((x) => x.stage === "s6")) {
     else if (!have.has(l.icon)) fails.push(l.id + ": 아이콘 " + l.icon + "을 app/lessons.jsx LESSON_ICONS에 추가할 것");
   }
 }
-// (v0.7.5) 오프닝 레슨은 타일 배경 문양(app/lessonMotifs.jsx OPENING_MOTIFS)이 있어야 한다 — 없으면 단계 색만의 밋밋한 타일로 보인다
+// (v0.7.5) 오프닝 레슨은 레슨 경로 배경 문양(app/lessonMotifs.jsx OPENING_MOTIFS)이 있어야 한다 — 없으면 그 줄 배경이 비어 보인다
 {
   const src = readFileSync(new URL("../src/app/lessonMotifs.jsx", import.meta.url), "utf8");
   const m = /export const OPENING_MOTIFS = \{([\s\S]*?)\n\};/.exec(src);

@@ -218,7 +218,7 @@ function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
       { kind: "read", fen: endC.fen(), say: fam0.plan || t("주요 수순을 끝까지 두었습니다.") },
       { kind: "choice", fen: endC.fen(), say: t("지금 둔 오프닝의 이름은?"), options, answer: ans },
     ];
-  }) };   // motif: 레슨 타일 배경 문양(app/lessonMotifs.jsx)
+  }) };   // motif: 레슨 경로 배경의 오프닝 문양(app/lessonMotifs.jsx)
 }
 LESSONS.push(...OPENINGS.map(openingLesson));
 
