@@ -3,6 +3,7 @@
 // 한 판의 값은 오차가 ±1000점 안팎이라 보여주지 않고, 분석된 최근 N판의 수를 합쳐서 계산한다(src/lib/recentPerformance.js).
 import React, { useEffect, useMemo, useState } from "react";
 import { T } from "../lib/theme.js";
+import { fixForcedOnlyMoves } from "../lib/moveQuality.js";   // (v0.7.5) 강제 수를 유일한 수로 매긴 예전 저장 결과 바로잡기
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import { REVIEW_RESULT_CACHE_VERSION, fmtFull } from "./common.jsx";
@@ -12,7 +13,7 @@ import { t, tx } from "../lib/i18n.js";
 const CHUNK = 10, MAX_CANDIDATES = 40;   // 최신 대국부터 10판씩 분석을 물어 N판이 찰 때까지, 분석 JSON이 커서 한 번에 많이 가져오지 않는다
 const memo = new Map();                   // "cc:<id>" | "oc:<kind>-<id>" → 분석된 수 목록 | null(분석 없음). 필터를 바꿔도 다시 묻지 않는다(세션 동안만)
 
-const okAnalysis = (a) => a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && Array.isArray(a.result.moves) ? a.result.moves : null;
+const okAnalysis = (a) => a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && Array.isArray(a.result.moves) ? fixForcedOnlyMoves(a.result).moves : null;
 
 async function fetchChunk(source, chunk, ownerUid) {
   const need = chunk.filter((g) => !memo.has(keyOf(source, g, ownerUid)));

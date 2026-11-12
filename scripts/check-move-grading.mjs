@@ -125,6 +125,9 @@ const G = [
   ["2순위와 1.5점 차이 → 유일", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -120, isSac: no }, "only"],
   ["BUG-037 승부가 기운 위치(+3)에서도 2순위와 차이가 크면 유일", { loss: 0, matched: true, bestCp: 300, playedCp: 300, secondCp: 150, isSac: no }, "only"],
   ["2순위 평가를 모르면(undefined) 유일 판정 안 함", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: undefined, isSac: no }, "best"],
+  // (v0.7.5, 사용자 요청) 강제 수(합법 수 하나뿐 → 2순위 수 없음 = null)는 유일한 수가 아니다
+  ["강제 수(2순위 수 없음, null)는 유일한 수 아님 → 최선", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: null, isSac: no }, "best"],
+  ["강제 수는 지고 있는 위치(-1.5)에서도 유일한 수 아님", { loss: 0, matched: true, bestCp: -150, playedCp: -150, secondCp: null, isSac: no }, "best"],
   ["2순위와 차이가 작으면 최선", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -50, isSac: no }, "best"],
   ["단순 되잡기는 유일 아님", { loss: 0, matched: true, bestCp: 30, playedCp: 30, secondCp: -200, isSac: no, singleRecapture: yes }, "best"],
   ["6점 이상 이긴 위치는 유일 아님", { loss: 0, matched: true, bestCp: 700, playedCp: 700, secondCp: 400, isSac: no }, "best"],
@@ -173,6 +176,18 @@ app.forEach((l, i) => {
 const rawSac = app.filter((l) => { const c = l.replace(/\/\/.*$/, ""); return /isSac:\s*\(\)\s*=>\s*isSacrifice\(/.test(c) && !/sacVerdict\(/.test(c); }).length;
 if (rawSac !== 1) fails.push("src/App.jsx — 엔진 확인 없이 isSacrifice로 탁월을 매기는 곳이 " + rawSac + "곳(허용 1곳: gradeMoveKindConfirmed). gradeMoveKindConfirmed·sacCheckSync를 쓸 것");
 
+// (v0.7.5, 사용자 요청) 강제 수는 유일한 수가 아니다 — 저장된 예전 결과도 읽을 때 바로잡는다(fixForcedOnlyMoves)
+{
+  const { fixForcedOnlyMoves } = await import("../src/lib/moveQuality.js");
+  // 1.e4 f5 2.Qh5+ g6 — 2...g6는 흑의 유일한 합법 수(f7이 비었지만 h5 퀸이 g6을 거쳐 f7을 겨눠 Kf7도 불가)라 강제 수다.
+  const r = { moves: [{ san: "e4", kind: "book" }, { san: "f5", kind: "mistake" }, { san: "Qh5+", kind: "best" }, { san: "g6", kind: "only" }, { san: "Qxg6+", kind: "only" }] };
+  fixForcedOnlyMoves(r);
+  if (r.moves[3].kind !== "best") fails.push("fixForcedOnlyMoves — 강제 수 2...g6(합법 수 하나)이 유일한 수로 남음");
+  if (r.moves[4].kind !== "only") fails.push("fixForcedOnlyMoves — 합법 수가 여럿인 3.Qxg6+까지 바꿈");
+  const fen = { moves: [{ san: "Ke2", kind: "only" }] }; fixForcedOnlyMoves(fen);
+  if (fen.moves[0].kind !== "only") fails.push("fixForcedOnlyMoves — 시작 포지션이 아닌 결과를 건드림");
+  for (const f of ["src/app/reviewCache.js", "src/app/profile.jsx", "src/app/recentPerf.jsx", "src/app/common.jsx"]) if (!/fixForcedOnlyMoves\(/.test(readFileSync(new URL("../" + f, import.meta.url), "utf8"))) fails.push(f + " — 저장된 리뷰 결과를 읽을 때 fixForcedOnlyMoves를 거치지 않음");
+}
 if (fails.length) {
   console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038 재발 방지):\n  " + fails.join("\n  "));
   process.exit(1);

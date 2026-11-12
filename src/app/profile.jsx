@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 'profile' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { normalizeLegacies, normalizeLegacyHistory } from "../lib/legacyEntry.js";
+import { fixForcedOnlyMoves } from "../lib/moveQuality.js";   // (v0.7.5) 강제 수를 유일한 수로 매긴 예전 저장 결과 바로잡기
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
@@ -36,7 +37,7 @@ async function reviewedAnalysesBatch(ccIds) {
     const map = {};
     for (const r of rows || []) {
       const a = r.analysis;
-      if (a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && a.result.moves) map[r.cc_id] = a.result;
+      if (a && a.v === REVIEW_RESULT_CACHE_VERSION && a.result && a.result.moves) map[r.cc_id] = fixForcedOnlyMoves(a.result);
     }
     return map;
   } catch { return {}; }

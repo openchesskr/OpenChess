@@ -1,5 +1,6 @@
 import {
   canMove, exposesKing, sanSrc, applySan, kingPos, isAttacked, plyIsWhite, boardOfRoot, legalDests, buildSan,
+  startBoard, epTargetFromMoveInfo, countLegalMoves,
 } from "./chessRules.js";
 
 export const PIECE_VAL_MAT = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
@@ -492,7 +493,7 @@ export function ownPriorMoveWasSacrifice(prevSans, color, fenRoot) {
 // scripts/check-move-grading.mjs가 App.jsx에 이 규칙이 다시 복사되면(isSacrifice·tierOf를 직접 조합하면) 빌드를 막는다.
 //   loss      최선 대비 손실(cp, ≥0) · matched  엔진 1순위 수를 그대로 뒀는지
 //   bestCp    두기 전 최선 평가(둔 쪽 관점, 메이트는 ±1e5) · playedCp  둔 뒤 평가(둔 쪽 관점)
-//   secondCp  2순위 수 평가(둔 쪽 관점). undefined = 모름(유일한 수 판정 안 함), null = 2순위 수가 없음
+//   secondCp  2순위 수 평가(둔 쪽 관점). undefined = 모름(유일한 수 판정 안 함), null = 2순위 수가 없음 = 강제 수(유일한 수 아님)
 //   isSac()   isSacrifice 결과(필요할 때만 계산) · priorSac  직전 자신의 수가 이미 희생(콤보 연결 수)
 //   singleRecapture()  대안 없는 단순 되잡기 · oppJustErred  상대 직전 수가 실수·블런더(놓친 수 판정) · san  언더프로모션 판정용
 // (v0.6.2 BUG-055) 이 포지션에서 color가 둘 수 있는 합법 수 중 isSacrifice(정적 판정)가 참인 수의 SAN 목록. 엔진 MultiPV 상위권에 안 잡히는 희생
@@ -536,9 +537,11 @@ export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac
   // 그 아래 구간(|bestCp| 2~4점)은 예전처럼 한 단계씩만 완화
   else if (Math.abs(bestCp) > 200) { if (kind === "blunder") kind = "mistake"; else if (kind === "mistake") kind = "inaccuracy"; else if (kind === "inaccuracy") kind = "good"; }
   // 유일한 수 — 1순위를 뒀고 2순위가 1.2점 이상 나쁘다(단순 되잡기·승부가 난 위치·2순위도 크게 이기는 위치 제외)
-  if (kind === "best" && matched && secondCp !== undefined) {
-    const gap = secondCp == null ? 9999 : bestCp - secondCp;
-    const secondStillWinningBig = secondCp != null && secondCp >= 200;
+  // (v0.7.5, 사용자 요청) 강제 수(둘 수 있는 합법 수가 하나뿐 — 2순위 수가 없음, secondCp === null)는 유일한 수가 아니다. 고를 것이 없었으니 "찾아낸 수"가 아니다.
+  //   예전엔 2순위가 없으면 차이를 무한대로 보아 강제 수가 오히려 항상 유일한 수가 됐다. 강제 수는 1순위 그대로 "최선의 수"로 남는다.
+  if (kind === "best" && matched && secondCp !== undefined && secondCp !== null) {
+    const gap = bestCp - secondCp;
+    const secondStillWinningBig = secondCp >= 200;
     if (gap >= 120 && bestCp < ONLY_MAX_BEST_CP && !badlyLosing && !secondStillWinningBig) {
       let rc = false; try { rc = !!(singleRecapture && singleRecapture()); } catch { rc = false; }
       if (!rc) kind = "only";
@@ -549,6 +552,31 @@ export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac
   // 언더프로모션은 탁월
   if (/=/.test(san) && !/=Q/.test(san) && !["inaccuracy", "mistake", "blunder"].includes(kind)) kind = "brilliant";
   return kind;
+}
+
+/* (v0.7.5, 사용자 요청) 저장된 리뷰 결과 바로잡기 — 강제 수(합법 수 하나뿐)를 "유일한 수"로 매긴 예전 결과.
+   gradeMoveKind가 바뀌기 전에 분석돼 이 기기 캐시·서버 공유 캐시에 남은 결과는 다시 분석하지 않고(캐시 버전을 올리면 프로필 퍼포먼스 레이팅 등
+   모든 저장 분석이 한꺼번에 무효가 된다), 읽을 때 기보를 다시 두어 보며 그 수 직전의 합법 수가 하나뿐이었던 "only"만 "best"로 고친다.
+   표준 시작 포지션에서 둔 대국만 대상이다(첫 수가 시작 포지션에서 성립하지 않으면 손대지 않는다). 같은 결과 객체는 한 번만 검사한다. */
+const forcedChecked = new WeakSet();
+export function fixForcedOnlyMoves(result) {
+  if (!result || typeof result !== "object" || !Array.isArray(result.moves) || forcedChecked.has(result)) return result;
+  forcedChecked.add(result);
+  const moves = result.moves;
+  if (!moves.some((m) => m && m.kind === "only")) return result;
+  try {
+    let board = startBoard(), ep = null;
+    for (let i = 0; i < moves.length; i++) {
+      const m = moves[i]; if (!m || typeof m.san !== "string") return result;
+      const color = i % 2 === 0 ? "w" : "b";
+      const info = sanSrc(board, m.san, color);
+      if (!info) return result;                                   // 시작 포지션 대국이 아니거나 기보가 어긋남 — 그대로 둔다
+      if (m.kind === "only" && !/=/.test(m.san) && countLegalMoves(board, color, ep) <= 1) m.kind = "best";
+      ep = epTargetFromMoveInfo(info);
+      board = applySan(board, m.san, color);
+    }
+  } catch { /* 재생 실패 — 그대로 둔다 */ }
+  return result;
 }
 
 /* ============================================================ 품질·키워드 ============================================================ */
