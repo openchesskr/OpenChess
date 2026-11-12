@@ -14,6 +14,7 @@ import { TIERS, TIER_COLORS, TIER_XP_REQ, GM_STAR_XP, DIVISIONS_PER_TIER, DIVISI
 import { isLite } from "../lib/perfMode.js";
 import { SITE_FONT } from "./engineLines.jsx";
 import { Mascot, useNarrow } from "../app/common.jsx";
+import { TierLogoDisc } from "./pieces.jsx";
 
 const PAPER = "#F1E6D0", INK = "#2A1B0E";
 const fmt = (n) => Math.round(n).toLocaleString();
@@ -152,7 +153,8 @@ function TierMark({ tier, idx, done, total, status }) {
     <div style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "0 18px", boxSizing: "border-box" }}>
       <span aria-hidden="true" style={{ flex: 1, height: 2, background: "linear-gradient(90deg, transparent, " + alpha(th.hi, 0.5) + ")" }} />
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, minWidth: 0 }}>
-        <TierBadge tierKey={tier.key} size={48} glow={status !== "locked"} />
+        {/* (v0.7.5, 사용자 요청) 장 표지는 사이트 공용 티어 로고(흰 십각형, components/pieces.jsx TierLogoDisc)로 */}
+        <TierLogoDisc tierKey={tier.key} division={null} size={52} discSize={58} muted={status === "locked"} />
         <span style={{ fontFamily: SITE_FONT, fontSize: 11, fontWeight: 800, color: alpha(th.hi, 0.9), letterSpacing: ".04em" }}>{t("{0}번째 티어", idx + 1)}</span>
         <span style={{ fontFamily: SITE_FONT, fontSize: 21, fontWeight: 900, letterSpacing: "-.02em", lineHeight: 1.1, textAlign: "center", background: th.grad, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(0 2px 0 rgba(0,0,0,.55))" }}>{tier.label}</span>
         <span style={{ fontFamily: SITE_FONT, fontSize: 11.5, fontWeight: 600, color: "rgba(255,246,226,.62)", textAlign: "center" }}>
