@@ -4347,7 +4347,7 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
-    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20},
+    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20},
     "devBonusCoins": 10000
   }'::jsonb;
 $$;

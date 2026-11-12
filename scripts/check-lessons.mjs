@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { Chess } from "chess.js";
 import { allLessons, STAGES, LESSON_REWARD } from "../src/lib/lessons/curriculum.js";
+import { t } from "../src/lib/i18n.js";
 import { playUci, goalMet, tapAnswer, readMarks, legalTargets } from "../src/lib/lessons/engine.js";
 import { normalizeLessonState, markLessonDone, lessonStatus, nextLesson, lessonSummary } from "../src/lib/lessons/progress.js";
 
@@ -42,8 +43,10 @@ for (const l of lessons) {
         if (g.goal.uci) for (const u of g.goal.uci) if (!playUci(fen, u)) fails.push(wj + ": 정답 수 " + u + "가 합법이 아님");
         // 이 목표를 만족하는 수(첫 목표는 힌트, 이후는 아무 수)를 찾는다
         let pick = null;
-        if (j === 0) { pick = s.hint ? playUci(fen, s.hint) : null; if (!pick || !goalMet(g.goal, pick)) fails.push(wj + ": 힌트 " + s.hint + "가 목표를 만족하지 않음"); }
-        else { const c = new Chess(fen); for (const m of c.moves({ verbose: true })) { const p = playUci(fen, m.from + m.to + (m.promotion || "")); if (p && goalMet(g.goal, p)) { pick = p; break; } } if (!pick) fails.push(wj + ": 목표를 만족하는 수가 없음"); }
+        const h = g.hint || (j === 0 ? s.hint : null);   // 목표별 힌트(오프닝 레슨) 또는 첫 목표의 스텝 힌트
+        if (h) { pick = playUci(fen, h); if (!pick || !goalMet(g.goal, pick)) { fails.push(wj + ": 힌트 " + h + "가 목표를 만족하지 않음"); pick = null; } }
+        else if (j === 0) fails.push(wj + ": 첫 목표에 힌트가 없음");
+        if (!pick && !h && j > 0) { const c = new Chess(fen); for (const m of c.moves({ verbose: true })) { const p = playUci(fen, m.from + m.to + (m.promotion || "")); if (p && goalMet(g.goal, p)) { pick = p; break; } } if (!pick) fails.push(wj + ": 목표를 만족하는 수가 없음"); }
         if (!pick) return;
         moves++;
         fen = pick.fen;
@@ -73,7 +76,16 @@ for (const l of lessons) {
   if (normalizeLessonState({ done: { x: 5, ["y".repeat(50)]: 1 } }).done["y".repeat(50)]) fails.push("진행: 너무 긴 id를 걸러야 함");
 }
 // (v0.7.5, 사용자 요청) 단계 색·아이콘은 수 등급 좋음 → 우수 → 최선 → 유일 → 탁월 순서 그대로
-{ const want = ["good", "excellent", "best", "only", "brilliant"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월이 아님: " + STAGES.map((s) => s.grade).join()); }
+//  (v0.7.5) 그 다음 6단계 오프닝 레파토리는 수 등급 "이론(책)"
+{ const want = ["good", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월·이론이 아님: " + STAGES.map((s) => s.grade).join()); }
+// 오프닝 레슨: 수마다 설명이 있고(MEC 또는 보충), 이름 맞히기 보기가 서로 다르며 정답이 그 오프닝 이름이다
+for (const l of lessons.filter((x) => x.stage === "s6")) {
+  const st = l.steps(), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");
+  if (!mv || !ch) { fails.push(l.id + ": 오프닝 레슨에 수 두기·이름 맞히기 스텝이 없음"); continue; }
+  mv.line.forEach((g, j) => { if (!g.hint) fails.push(l.id + " 목표" + (j + 1) + ": 힌트 없음"); if (g.say.includes(t("이 오프닝의 다음 수를 두세요."))) fails.push(l.id + " 목표" + (j + 1) + ": MEC 설명이 없는 수 — 수순을 바꾸거나 보충 설명을 넣을 것"); });
+  if (new Set(ch.options).size !== ch.options.length) fails.push(l.id + ": 이름 보기 중복");
+  if (ch.options[ch.answer] !== l.title()) fails.push(l.id + ": 이름 맞히기 정답이 레슨 이름과 다름");
+}
 // 레슨 아이콘: 화면(app/lessons.jsx)이 아이콘 전체가 아니라 쓰는 것만 가져오므로, 커리큘럼의 아이콘 이름이 LESSON_ICONS에 있어야 한다(없으면 빈 동그라미로 보인다)
 {
   const ui = readFileSync(new URL("../src/app/lessons.jsx", import.meta.url), "utf8");

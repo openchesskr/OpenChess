@@ -1,7 +1,9 @@
-// (v0.7.5, 사용자 요청) 새 레슨 커리큘럼 — 체스 기초를 5단계로. 단계마다 수 등급(좋음~탁월)의 색과 아이콘을 쓴다(레슨 경로 화면).
+// (v0.7.5, 사용자 요청) 새 레슨 커리큘럼 — 체스 기초 5단계 + 오프닝 레파토리 6단계. 단계마다 수 등급(좋음~탁월, 6단계는 이론)의 색과 아이콘을 쓴다(레슨 경로 화면).
 //  레슨 id는 서버 코인 보상(economy_claim_chapter의 seedChapters)과 같아야 한다 — 바꾸면 supabase-setup.sql도 함께(check-lessons가 대조).
 //  스텝 형식은 engine.js 머리말. 모든 포지션·정답은 scripts/check-lessons.mjs가 chess.js로 검증한다(합법·정답이 목표를 만족·힌트가 정답).
 import { t } from "../i18n.js";
+import { Chess } from "chess.js";
+import { openingFamily, openingIdeaAt } from "../mecOpenings.js";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const KK = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
@@ -15,6 +17,8 @@ export const STAGES = [
   { id: "s3", grade: "best", deco: ["P", "N", "B"], title: () => t("오프닝 원칙"), desc: () => t("첫 수부터 좋은 습관") },
   { id: "s4", grade: "only", deco: ["N", "B", "Q"], title: () => t("전술 기초"), desc: () => t("기물을 얻는 기본 전술") },
   { id: "s5", grade: "brilliant", deco: ["Q", "R", "K"], title: () => t("마무리 기술"), desc: () => t("체크메이트 패턴과 엔드게임") },
+  // (v0.7.5, 사용자 요청) 6단계: 주요 오프닝을 직접 두며 익힌다 — 다섯 등급 다음에 수 등급 "이론(책)"의 색·아이콘
+  { id: "s6", grade: "book", deco: ["N", "B", "P"], title: () => t("오프닝 레파토리"), desc: () => t("주요 오프닝을 직접 두며 익히기") },
 ];
 
 // 레슨: { id, stage, icon(lucide 이름 또는 "piece:R"), title, sub, steps }
@@ -168,6 +172,55 @@ const LESSONS = [
     { kind: "move", fen: "6k1/8/6K1/8/8/8/8/R7 w - - 0 1", say: t("룩으로 체크메이트하세요."), line: [{ goal: { mate: true } }], hint: "a1a8" },
   ]),
 ];
+
+// ── 6. 오프닝 레파토리 ── 오프닝 MEC(lib/mecOpenings.js)의 수마다의 의도·계열 이름·중반 계획을 그대로 문장으로 쓴다(새 번역 없이 MEC와 항상 같은 내용).
+//  [id, MEC 계열, 학습자 진영, 주요 수순(SAN), 이름 맞히기의 오답 계열 2개, (선택) MEC에 설명이 없는 수의 보충 설명 {수 번호(0부터): 문장}]. 수순은 레파토리 항목을 지나가도록 골랐다(check-lessons가 합법·설명 유무 검사).
+const OPENINGS = [
+  ["op_italian", "italian", "w", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d3", ["ruy", "scotch"]],
+  ["op_ruy", "ruy", "w", "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3", ["italian", "scotch"]],
+  ["op_scotch", "scotch", "w", "e4 e5 Nf3 Nc6 d4 exd4 Nxd4", ["italian", "petrov"]],
+  ["op_qgd", "qgd", "w", "d4 d5 c4 e6 Nc3 Nf6 Bg5", ["london", "slav"]],
+  ["op_london", "london", "w", "d4 d5 Bf4", ["qgd", "catalan"]],
+  ["op_najdorf", "najdorf", "b", "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6", ["dragon", "french"]],
+  ["op_french", "french", "b", "e4 e6 d4 d5 e5 c5", ["caro", "sicilian"]],
+  ["op_caro", "caro", "b", "e4 c6 d4 d5 Nc3 dxe4 Nxe4 Bf5", ["french", "scandi"], { 5: () => t("d5 폰으로 e4를 잡아 중앙의 긴장을 풉니다. 백 나이트를 e4로 끌어낸 뒤 비숍을 f5로 전개해 템포를 얻습니다.") }],
+  ["op_scandi", "scandi", "b", "e4 d5 exd5 Qxd5 Nc3 Qa5", ["caro", "alekhine"]],
+  ["op_slav", "slav", "b", "d4 d5 c4 c6 Nf3 Nf6 Nc3 dxc4", ["qgd", "semiSlav"], { 5: () => t("나이트를 전개해 d5를 한 번 더 지키고 백의 e4 진출을 막습니다.") }],
+  ["op_kid", "kid", "b", "d4 Nf6 c4 g6 Nc3 Bg7 e4 d6", ["grunfeld", "nimzo"]],
+  ["op_nimzo", "nimzo", "b", "d4 Nf6 c4 e6 Nc3 Bb4", ["qid", "kid"]],
+  ["op_grunfeld", "grunfeld", "b", "d4 Nf6 c4 g6 Nc3 d5", ["kid", "benoni"]],
+];
+function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
+  const famName = () => (openingFamily(fam) || {}).name || fam;
+  return L(id, "s6", "BookOpen", famName, () => (side === "w" ? t("백으로 두기") : t("흑으로 두기")), () => {
+    const sans = line.split(" "), c = new Chess(), ucis = [];
+    for (const s of sans) { const m = c.move(s); ucis.push(m.from + m.to + (m.promotion || "")); }
+    const first = side === "w" ? 0 : 1;   // 학습자의 첫 수 번호
+    const startC = new Chess(); if (first) startC.move(sans[0]);
+    const goals = [];
+    for (let i = first; i < sans.length; i += 2) {
+      const idea = (j) => (extra[j] ? extra[j]() : openingIdeaAt(sans.slice(0, j + 1)));
+      const mine = idea(i) || t("이 오프닝의 다음 수를 두세요.");
+      // 바로 앞 상대 수(백의 첫 수 또는 응수)의 의도를 먼저 알려 주고, 이어서 둘 수의 의도를 알려 준다
+      const before = i > 0 ? idea(i - 1) : null;
+      const say = before ? t("상대의 수는 {0}입니다.", sans[i - 1]) + " " + before + " " + t("다음 수의 의도는 이렇습니다.") + " " + mine : mine;
+      goals.push({ goal: { uci: [ucis[i]] }, hint: ucis[i], reply: ucis[i + 1], say });
+    }
+    goals[goals.length - 1].reply = undefined;
+    const endC = new Chess(); for (const s of sans) endC.move(s);   // 수순은 항상 학습자의 수로 끝난다(check-lessons)
+    const fam0 = openingFamily(fam) || {};
+    const opts = [famName(), ...wrong.map((w) => (openingFamily(w) || {}).name || w)];
+    const ans = k % 3;   // 정답 위치를 레슨마다 바꾼다
+    const options = [...opts.slice(1)]; options.splice(ans, 0, opts[0]);
+    return [
+      { kind: "read", fen: startC.fen(), say: t("{0}의 주요 수순을 {1}으로 직접 두어 봅니다. 수마다 코치가 그 수의 의도를 알려 줍니다.", famName(), side === "w" ? t("백") : t("흑")) },
+      { kind: "move", fen: startC.fen(), say: goals[0].say, line: goals, hint: goals[0].hint },
+      { kind: "read", fen: endC.fen(), say: fam0.plan || t("주요 수순을 끝까지 두었습니다.") },
+      { kind: "choice", fen: endC.fen(), say: t("지금 둔 오프닝의 이름은?"), options, answer: ans },
+    ];
+  });
+}
+LESSONS.push(...OPENINGS.map(openingLesson));
 
 let _cache = null;
 /** 모든 레슨(순서대로) — 단계 정보 포함. steps는 처음 열 때 만든다(번역 반영). */

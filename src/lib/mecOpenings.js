@@ -229,3 +229,13 @@ export function openingOfGame(sans, fenRoot) {
   }
   return best;
 }
+/** (v0.7.5) 계열 이름·중반 계획(레슨의 오프닝 레파토리 단계가 쓴다). 없는 계열이면 null. */
+export function openingFamily(fam) {
+  const F = FAMILY[fam]; if (!F) return null;
+  return { name: F.name ? F.name() : null, plan: F.plan ? F.plan() : null };
+}
+/** (v0.7.5) 그 포지션(시작 포지션에서 sans를 둔 뒤)의 레파토리 설명(그 마지막 수의 의도). 없으면 null. */
+export function openingIdeaAt(sans) {
+  if (!sans.length) return null;
+  try { const f = openingMoveFact(sans.slice(0, -1), sans[sans.length - 1], null, null); return f ? f.idea : null; } catch { return null; }
+}

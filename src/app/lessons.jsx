@@ -6,9 +6,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag } from "lucide-react";
+import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen } from "lucide-react";
 // 레슨 아이콘(curriculum.js의 icon 이름) — 아이콘 전체를 번들에 싣지 않도록 쓰는 것만 가져온다(check-lessons가 빠진 이름을 막는다)
-export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag };
+export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen };
 import { PIECE_IMG_SETS } from "../lib/theme.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
@@ -378,7 +378,9 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
     if (p && p.c === myColor) setSel(rc); else setSel(null);
   };
   const choose = (i) => { if (solved) return; setPicked(i); if (i === step.answer) markRight(); else markWrong(null); };
-  const hintArrow = step && step.kind === "move" && !solved && goalIdx === 0 && wrong >= 2 && step.hint ? [{ from: sqToRc(step.hint.slice(0, 2)), to: sqToRc(step.hint.slice(2, 4)), kind: "tactic", color: th.hi, width: 0.13 }] : [];
+  // 힌트 화살표: 목표마다 hint가 있으면 그것을, 없으면 첫 목표에 한해 스텝의 hint를 쓴다(오프닝 레슨은 수마다 힌트가 있다)
+  const hintUci = step && step.kind === "move" ? ((step.line[goalIdx] || {}).hint || (goalIdx === 0 ? step.hint : null)) : null;
+  const hintArrow = hintUci && !solved && wrong >= 2 ? [{ from: sqToRc(hintUci.slice(0, 2)), to: sqToRc(hintUci.slice(2, 4)), kind: "tactic", color: th.hi, width: 0.13 }] : [];
   const marks = step && step.kind === "read" ? sqList(readMarks(step)) : step && step.kind === "tap" ? sqList(tapped) : [];
   const readArrows = step && step.kind === "read" && step.arrows ? step.arrows.map(([a, b]) => ({ from: sqToRc(a), to: sqToRc(b), kind: "tactic", color: th.hi })) : [];
   const resetStep = () => { setFen(step.fen || null); setGoalIdx(0); setSel(null); setLastTo(null); setSay(step.say); busy.current = false; };
