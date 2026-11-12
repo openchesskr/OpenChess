@@ -37,8 +37,10 @@ if (!/RecentGameBoxes/.test(learn)) fails.push("learn.jsx: 최근 대국 큰 박
   if (!gp) fails.push("GrowthPanel을 찾지 못함");
   else {
     if (!/<ProfileBlock /.test(gp)) fails.push("GrowthPanel: 프로필 크림 블록(ProfileBlock) 안에 모든 구획이 들어가야 함");
-    if (!/<AutoReviewGate /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 자동 분석 게이지(AutoReviewGate)와 마스터 스타일(MasterStyle)이 필요함");
-    if (!/<ProfileBlock[\s\S]*<AutoReviewGate[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
+    // (v0.7.5, 사용자 요청) 자동 분석 게이지는 /about 수준의 진행 애니메이션(app/growthMotion.jsx AnalysisScanner)으로 바뀌었다
+    if (!/<AnalysisScanner /.test(gp) || !/<MasterStyle /.test(gp)) fails.push("GrowthPanel: 자동 분석 진행 화면(AnalysisScanner)과 마스터 스타일(MasterStyle)이 필요함");
+    if (!/<ProfileBlock[\s\S]*<AnalysisScanner[\s\S]*<\/ProfileBlock>/.test(gp)) fails.push("GrowthPanel: 분석 구획이 ProfileBlock 안에 있어야 함");
+    if (/function AutoReviewGate|<AutoReviewGate /.test(gr)) fails.push("growth.jsx: 예전 게이지(AutoReviewGate)는 삭제됨(v0.7.5 사용자 요청) — AnalysisScanner를 쓸 것");
   }
   const gh = (gr.match(/function ProfileBlock[\s\S]*?\n}\n/) || [""])[0];
   if (/EquippedTitleFit/.test(gh)) fails.push("ProfileBlock: 학습 탭에는 칭호를 표시하지 않음(v0.7.4 사용자 요청)");

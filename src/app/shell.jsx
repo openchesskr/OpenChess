@@ -338,8 +338,7 @@ export async function saveContent() {
 export const CC_LIVE = { live: true };
 // (v0.2.9 디자인 → v0.3.3 폰트 교체) 퀘스트 클리어·티어 승급 같은 "게임 보상 화면" 팝업의 큰
 // 제목에만 적용하는 디스플레이 폰트 — 문단 본문에 쓰기엔 너무 두꺼워 가독성이 떨어진다.
-// (사용자 요청) 알림 창·팝업에 등장하는 한글 Title 텍스트는 Google Fonts의 Bagel Fat One으로.
-const GAME_FONT = "'Bagel Fat One', 'Noto Sans KR', cursive";
+// (v0.7.5, 사용자 요청) 티어 표시 전용 글꼴(Bagel Fat One)을 사이트에서 삭제했다 — 팝업 제목도 사이트 기본 글꼴의 가장 굵은 굵기로 쓴다.
 let mascotPreloaded = false;
 export function preloadMascotArt() {
   if (mascotPreloaded || typeof window === "undefined") return;
@@ -926,7 +925,7 @@ export function DailyQuestClearedModal({ dailyQuest, chesscom, onOpenGameAnalyze
           <div className="flex items-center justify-center gap-2" style={{ marginBottom: 6 }}>
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg,transparent," + T.brass + ")", flexShrink: 0 }} />
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
-            <span style={{ fontFamily: GAME_FONT, fontSize: 19, fontWeight: 400, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("오늘의 퀘스트 클리어")}</span>
+            <span style={{ fontFamily: SITE_FONT, fontSize: 19, fontWeight: 900, letterSpacing: ".01em", background: "linear-gradient(180deg,#FFF6DE,#F3DFAE 45%,#C49A50 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 2px 1px rgba(0,0,0,.55))" }}>{t("오늘의 퀘스트 클리어")}</span>
             <Target size={14} style={{ color: T.brassHi, flexShrink: 0 }} />
             <span style={{ width: 22, height: 1, background: "linear-gradient(90deg," + T.brass + ",transparent)", flexShrink: 0 }} />
           </div>

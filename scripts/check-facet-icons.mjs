@@ -23,6 +23,7 @@ const ZONES = [
   ["src/app/common.jsx", "{/* 양옆 끝 마름모", "</div>\n      )}"],
   ["src/components/dexHub.jsx", "{scene.laurel && (", "</svg>"],
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
+  ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];
 let n = 0;
 for (const [file, from, to] of ZONES) {

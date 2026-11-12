@@ -8,6 +8,7 @@
   "app/dex.jsx",
   "app/dexMasters.jsx",
   "app/growth.jsx",
+  "app/growthMotion.jsx",
   "app/analysis.jsx",
   "app/play.jsx",
   "app/profile.jsx",

@@ -817,9 +817,9 @@ export function TierJourneyMap({ totalXp, onClose }) {
   const scrollRef = useRef(null);
   // (v0.7.4, 사용자 요청) 티어 여정 개편 — 티어 한 장씩의 챕터 연대기(components/tierJourney.jsx). 어떤 조상의 transform과도 무관하게 항상 맨 위에 그려지도록 body로 포털하고,
   // 앱의 모든 모달·페이지(최대 500)보다 높은 zIndex(950)를 쓴다(/user 페이지 안에서 열어도 가려지지 않게).
-  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
+  // (v0.7.5) 레슨 경로와 같은 구조로 바뀌어 스크롤·Esc 닫기는 TierJourney 안에서 처리한다(경로가 자체 스크롤 영역을 가진다).
   return createPortal((
-    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "radial-gradient(130% 120% at 50% -10%, #34230F 0%, #150C06 65%)", overflowY: "auto" }}>
+    <div ref={scrollRef} role="dialog" aria-modal="true" aria-label={t("티어 여정")} style={{ position: "fixed", inset: 0, zIndex: 950, background: "#0B0704", overflow: "hidden" }}>
       <TierJourney totalXp={totalXp} onClose={onClose} scrollRef={scrollRef} />
     </div>
   ), document.body);
