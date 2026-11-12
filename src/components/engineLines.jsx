@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T, MOTION_EASE } from "../lib/theme.js";
 import { matePliesOf, fmtEvalCp } from "../lib/moveQuality.js";
 import { moveNumber, plyIsWhite } from "../lib/chessRules.js";

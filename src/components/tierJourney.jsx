@@ -6,7 +6,7 @@
 //  · 달성한 챕터는 왼쪽 레일의 마디가 금빛으로 이어지고, 열리자마자 내 챕터로 스크롤한다.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Crosshair, X, Lock, Check } from "lucide-react";
+import { Crosshair, X, Lock, Check } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T, tierPieceSrc } from "../lib/theme.js";
 import { t, tx } from "../lib/i18n.js";
 import { TIERS, TIER_COLORS, TIER_XP_REQ, GM_STAR_XP, DIVISIONS_PER_TIER, DIVISION_ROMAN, tierFromXp, tierGlowHex, tierGradientCss } from "../lib/tierSystem.js";

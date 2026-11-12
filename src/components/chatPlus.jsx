@@ -4,7 +4,7 @@
 // 체스 보드는 앱의 Board(스킨·드래그 포함)를 그대로 쓰도록 prop(Board)으로 받는다 — App.jsx를 되부르는 순환 import를 피하려는 것.
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus, MoreVertical, Send, Brain, Dices } from "lucide-react";
+import { Reply, Copy, Flag, Search, X, Pencil, Trash2, Ban, BarChart3, Users, Cpu, ExternalLink, RotateCcw, Undo2, Plus, MoreVertical, Send, Brain, Dices } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { parseFenFull, replayFromFen, replaySans, boardFromSans, epTarget, fenLegalDests, buildSan, colorOfRoot, fenOfRoot } from "../lib/chessRules.js";
 import { parsePgnSans, sanSequenceValid } from "../lib/pgn.js";

@@ -13,7 +13,7 @@ import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
-import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "lucide-react";
+import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";

@@ -3,7 +3,7 @@
 // pages: [{ key, node }]. 바깥 여백(18px)에 맞춰 좌우로 -18px 넓혀 그린다.
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ChevronsRight } from "lucide-react";
+import { ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 import { LOOP } from "../lib/perfMode.js";

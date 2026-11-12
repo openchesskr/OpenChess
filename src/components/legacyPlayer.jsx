@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Play, Pause, SkipBack, SkipForward, RotateCcw } from "lucide-react";
+import { X, Play, Pause, SkipBack, SkipForward, RotateCcw } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { t } from "../lib/i18n.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "./badges.jsx";

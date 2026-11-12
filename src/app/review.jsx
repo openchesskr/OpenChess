@@ -7,7 +7,7 @@ import { T, DRAG_SCROLL_MULT, BOARD_SKINS, boardSquareBg } from "../lib/theme.js
 import { QCOLOR, ANALYSIS_KIND_ROWS } from "../lib/moveKinds.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { SITE_FONT, EvalBadge, dedupeEngineLines, EvalBar, EngineLines } from "../components/engineLines.jsx";
-import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Check, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, Star, Route, ArrowLeft, Cpu, Share2, ChevronsLeft, ChevronsRight, Send, X, Check, Image as ImageIcon } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { badgeIcon, QLABEL, PendingDots } from "../components/badges.jsx";
 import { SB_ON, sbSelect, sbRpc, sbUpsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph } from "../components/pieces.jsx";

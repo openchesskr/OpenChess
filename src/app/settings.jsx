@@ -6,7 +6,8 @@ import { isNativeApp, oauthRedirectUrl, openMailto, startOAuthNavigation } from 
 import { HEAVY_ENGINE_IDS, cancelEngineDownload, deleteDownloadedEngine, downloadEngine, engineDownloadSizeLabel, engineDownloadState, engineNeedsDownload, engineUsable, subscribeEngineDownloads } from "../lib/engineDownload.js";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { T } from "../lib/theme.js";
-import { Zap, Instagram, Youtube, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "lucide-react";
+import { Zap, ChevronDown, HelpCircle, MessageCircle, Star, Crown, Wifi, WifiOff, Cpu, Volume2, VolumeX, ChevronUp, Users, Copy, Lock, Globe, User, SlidersHorizontal, Puzzle, Sparkles } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Instagram, Youtube } from "lucide-react";   // 브랜드 로고는 원형 그대로
 import LangPicker from "../components/LangPicker.jsx";
 import { loadUgcTranslatePref, saveUgcTranslatePref, REVIEW_SPEED_DEPTH, QUICK_REVIEW_ENGINE } from "../lib/prefs.js";
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";

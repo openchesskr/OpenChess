@@ -8,7 +8,7 @@
 //  items: [{ key, label, Icon, percent(0~100|null), detail }]
 import { FacetLeaf, taperedStem, facetRamp } from "./facetIcons.jsx";
 import React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { motion } from "framer-motion";
 import { T, MOTION_EASE, PIECE_IMG_SETS } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
@@ -72,7 +72,7 @@ function HubCard({ item, onOpen, index, desc }) {
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10, padding: "14px 14px 13px 16px" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span aria-hidden="true" style={{ alignSelf: "flex-start", width: 34, height: 34, flexShrink: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66", color: BRASS }}>
-            <Icon size={18} strokeWidth={1.9} />
+            <Icon size={24} />
           </span>
           <span style={{ minWidth: 0 }}>
             <span className="dexhub-title" style={{ display: "block", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{label}</span>

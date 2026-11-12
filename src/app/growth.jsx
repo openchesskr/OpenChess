@@ -3,7 +3,7 @@
 // 마스터 스타일 로직은 lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사).
 import { useState, useEffect, useMemo, Fragment, createContext, useContext } from "react";
 import { isLite } from "../lib/perfMode.js";
-import { Lock, Search } from "lucide-react";
+import { Lock, Search } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { OnlineDot, Board, useNarrow } from "./common.jsx";

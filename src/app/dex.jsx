@@ -5,7 +5,7 @@ import { stripSuffix, boardFromSans, moveNumber, sanSrc } from "../lib/chessRule
 import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { fmtEvalCp } from "../lib/moveQuality.js";
 import { T, BOARD_SKINS, PIECE_SKINS, SKIN_SETS } from "../lib/theme.js";
-import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "lucide-react";
+import { Lock, Check, X, RotateCcw, ChevronRight, ChevronLeft, Cpu, Save, BookOpen, Crown, Trophy, Palette } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { KeywordChip } from "../components/keywordScroll.jsx";

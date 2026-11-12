@@ -1,11 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
-import {
-  GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles,
-  Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight,
-  Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy,
-  Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check,
-} from "lucide-react";
+import { GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
 import { t, tx } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";

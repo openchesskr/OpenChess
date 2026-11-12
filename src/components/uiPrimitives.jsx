@@ -1,5 +1,5 @@
 import React from "react";
-import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 

@@ -3,7 +3,7 @@
 //  대국 목록 탭: 라운드·선수 이름·결과·단계로 거르고, 눌러서 보드(수순 따라 두기)나 리뷰로 연다. 수순은 열 때 복원한다(src/lib/moveCodec.js).
 //  데이터: src/data/tournaments/<id>.json(대회를 열 때만 지연 로드, src/lib/tournamentData.js). 계산: src/lib/tournamentView.js(순수 함수).
 import React, { useEffect, useMemo, useState } from "react";
-import { X, ChevronLeft, ChevronRight, Trophy, Swords } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Trophy, Swords } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 import { t } from "../lib/i18n.js";

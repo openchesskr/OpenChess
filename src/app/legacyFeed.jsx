@@ -3,7 +3,7 @@
 // 내 리포스트함·삭제·공유는 LegacyActionsCtx(App이 제공)로 받는다 — 프로필·성장 분석·친구 창 어디서든 같은 피드를 쓴다.
 import React, { useState, useEffect, useMemo, useRef, useContext, createContext, useLayoutEffect } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Heart, Send, Repeat2, Trash2, X } from "lucide-react";
+import { Heart, Send, Repeat2, Trash2, X } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import { LegacyPlayer } from "../components/legacyPlayer.jsx";
 import { SITE_URL } from "../lib/siteConfig.js";

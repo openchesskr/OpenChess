@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { engineLineGapMs, isLite } from "../lib/perfMode.js";
 import { isSameOriginUrl } from "../lib/engineDownload.js";
@@ -27,7 +28,7 @@ import { mateWhiteWins, SITE_FONT, EvalBar, SEQ_FONT } from "../components/engin
 import { PieceGlyph, SkinContext, TierLogoDisc } from "../components/pieces.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles, Timer, Clock, ChevronsUp } from "lucide-react";
+import { Crown, X, Camera, Image as ImageIcon, FolderOpen, Cloud, ScanLine, Cpu, Check, ThumbsUp, Star, Lock, Share2, Copy, Send, Heart, Repeat2, Puzzle, Flame, BookOpen, Users, Coins, Trophy, Target, Swords, TrendingUp, Zap, Rocket, Hourglass, Sun, Moon, Sword, Handshake, MoonStar, Compass, Library, Medal, Gem, Sparkles, Timer, Clock, ChevronsUp } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { TITLE_OPENINGS, titleDef, seriesAccent, openingSide } from "../lib/titles.js";
 import { OpeningEmblem } from "../components/titleEmblems.jsx";
 import { createPortal } from "react-dom";
@@ -6332,18 +6333,10 @@ export function findOpeningPathByFuzzyName(name) {
 // (20차 UI4) Google Fonts의 Material Symbols "Assignment" 계열 아이콘 — 외부 웹폰트 CDN에 매 로드마다
 // 의존하면(느린/막힌 네트워크에서) 텍스트만 깨져 보이므로, 같은 글리프의 공식 SVG 패스 데이터를 그대로
 // 가져와 이 앱의 다른 아이콘(lucide-react)들과 동일하게 번들 SVG로 렌더링한다.
-const ASSIGNMENT_ICON_PATHS = {
-  assignment: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
-  assignment_late: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm1 15h-2v-2h2v2zm0-4h-2V8h2v6z",
-  assignment_turned_in: "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-1.06 14L7.4 12.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z",
-  extension: "M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z",
-  analytics: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14H8v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z",
-};
+// (v0.7.5, 사용자 요청) 머티리얼 패스 대신 OpenChess 파셋 아이콘(components/ocIcons.jsx materialIcon)으로 그린다 — 이름·속성은 그대로.
 export function MaterialIcon({ name, size = 20, color = "currentColor", style }) {
-  const d = ASSIGNMENT_ICON_PATHS[name] || ASSIGNMENT_ICON_PATHS.assignment;
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "inline-block", flexShrink: 0, ...style }}><path d={d} fill={color} /></svg>
-  );
+  const Icon = materialIcon(name);
+  return <Icon size={size} color={color} style={{ display: "inline-block", flexShrink: 0, ...style }} />;
 }
 export function CoinIcon({ size = 16 }) {
   const [err, setErr] = useState(false);

@@ -12,7 +12,7 @@ import { tierFromXp, tierDisplayLabelArabic, tierGradientCss } from "../lib/tier
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "lucide-react";
+import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";

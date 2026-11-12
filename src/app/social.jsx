@@ -7,7 +7,7 @@ import { sanSrc, stripSuffix, startBoard, boardFromSans, sansToFen, MAX_SEARCH_D
 import { T, MOTION_EASE } from "../lib/theme.js";
 import { gmPhotoRingStyle, tierFromXp } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User, FileText, ChevronRight, Minus, Plus, Globe } from "lucide-react";
+import { Check, UserPlus, ArrowLeft, X, UserCheck, Clock, Sparkles, Search, Send, Smile, Gem, Crown, Wrench, Pin, BellOff, PinOff, Bell, Trash2, Eye, Users, MessageCircle, MoreVertical, User, FileText, ChevronRight, Minus, Plus, Globe } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { chesscomChangeDaysLeft } from "../lib/chesscom.js";
 import { chatBlocksFetch, chatBlockSet, userReport, chatFetchPage, CHAT_PAGE, chatFetchByIds, chatReactionsFetch, chatPollVotesFetch, chatReactToggle, chatPollVote, chatQuizAnswersFetch, chatQuizAnswer, chatSendMessage, chatSearch, chatRoomsFetch } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";

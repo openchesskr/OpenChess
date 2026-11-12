@@ -13,7 +13,7 @@ import { gachaPull, ownedPieceTypes, ownsBoard } from "./lib/gacha.js";
 import { isPuzzleSequenceValid, puzzleEloUpdate } from "./lib/puzzleRating.js";
 import { SkinContext } from "./components/pieces.jsx";
 import { SITE_FONT } from "./components/engineLines.jsx";
-import { Search, Users, MessageCircle, Star, Send, Check } from "lucide-react";
+import { Search, Users, MessageCircle, Star, Send, Check } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { AnimatePresence, motion } from "framer-motion";
 import { useTabFade, ScrollTopButton } from "./components/motionKit.jsx";
 import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, EngineContext, MaterialIcon, MinigamePrefsContext, PuzzleShareSheet, VisualPrefsContext, achievableTitles, ccTitleStats, computeTitleMetrics, sanitizeTitleSet, titleDef, validTitleId, chatConvPrefsFetch, chatFetchAll, chatMarkRead, computeDexLayout, friendAccept, friendEdges, friendRemove, getAnalysisPool, invalidateBookIndex, loadContent, moveFxModeFromSaved, notifyCreate, puzzleDeleteRemote, puzzleFetch, puzzleNo, puzzleShare, puzzleTreeOf, resolveReviewIdentifier, reviewGameIdentifier, reviewGameKey, reviewStorageKey, reviewedGameFetch, reviewedGameShare, setSacConfirmEvaluator, snapNode, solvedLineTagsOf, starsOf, themesOf, todayStr, treeLinesOf, useChessCom, useNarrow, useRealtimeTable, userProfile, usersProfiles } from "./app/common.jsx";

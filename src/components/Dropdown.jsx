@@ -2,7 +2,7 @@
 //  · options: [{ value, label }]  · size: "md"(설정 탭 전폭) | "sm"(대회 머리글 등 좁은 자리)
 //  · 눌러서 펼치고, 바깥을 누르거나 Esc로 닫는다. ↑↓/Home/End로 항목을 옮기고 Enter로 고른다. 펼치면 선택 항목이 보이도록 스크롤한다.
 import React, { useState, useEffect, useRef } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
 export default function Dropdown({ value, options, onChange, ariaLabel, id, size = "md", align = "left", minListWidth, style }) {
   const [open, setOpen] = useState(false);

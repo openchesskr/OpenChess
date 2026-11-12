@@ -46,16 +46,17 @@ Claude는 체스 플랫폼을 개발하는 스타트업 **OpenChess**의 **개�
 
 ## 아이콘·디자인 요소 규칙
 
-Claude가 직접 그리는 **모든 아이콘과 장식 요소**(SVG 아이콘, 엠블럼, 배지 장식, 마커, 월계수 같은 장식)는 마스터 대국 승자 왕관(`src/app/analysis.jsx` `CrownIcon`) 수준의 **파셋(면 분할) 디자인**으로 만든다. 지금 있는 것뿐 아니라 앞으로 새로 만드는 것도 모두 해당한다.
+사이트의 **모든 아이콘과 장식 요소**(버튼·탭·카드의 UI 아이콘, SVG 아이콘, 엠블럼, 배지 장식, 마커, 월계수 같은 장식)는 마스터 대국 승자 왕관(`src/app/analysis.jsx` `CrownIcon`) 수준의 **파셋(면 분할) 디자인**으로 만든다. 지금 있는 것뿐 아니라 앞으로 새로 만드는 것도 모두 해당한다.
 
 1. **윤곽선 금지**: 모양은 채운 면(fill)으로만 만든다. stroke로 외곽을 따거나 선으로 그리지 않는다(줄기·선도 끝이 가늘어지는 채운 면으로).
 2. **면 분할 + 고정 광원**: 모양을 2~5개 면으로 나누고, 빛은 항상 **왼쪽 위**에서 온다. 왼쪽·위 면이 밝고 오른쪽·아래 면이 어둡다.
 3. **톤 체계**: 색은 6단계 ramp(밝음 → 어두움)에서만 고른다. 금색은 `GOLD`, 다른 색은 `facetRamp(기준색)`. 받침·밑단은 가장 어두운 톤.
 4. **하이라이트 하나**: 보석·구슬·짧은 반사면 같은 가장 밝은 점 하나로 시선을 모은다.
 5. **작은 크기 대응**: 12~16px에서도 면이 뭉개지지 않게 면 수를 줄이고, 면 사이에 틈 없이 맞닿게 그린다.
-6. **공용 부품 사용**: `src/components/facetIcons.jsx`의 부품(FacetDiamond·FacetCrown·FacetPawn·FacetRook·FacetBishop·FacetShield·FacetArrow·FacetCrosshair·FacetLeaf·taperedStem)을 먼저 쓰고, 새 모양이 필요하면 같은 규칙으로 부품을 추가한다.
-7. **검사 등록**: 새 아이콘을 다른 파일에 그렸다면 `scripts/check-facet-icons.mjs`의 ZONES에 등록한다(빌드 전에 윤곽선·면 분할 여부를 검사).
-8. **예외**: lucide 같은 라이브러리 아이콘, 국기, 브랜드 로고, 사용자가 준 이미지, 차트·그래프 선은 대상이 아니다(원형 그대로 쓴다).
+6. **UI 아이콘은 OpenChess 세트만**: 버튼·탭·카드 등의 아이콘은 `src/components/ocIcons.jsx`(lucide와 같은 이름·속성으로 쓰는 파셋 아이콘 세트)에서 가져온다. lucide 같은 범용 선 아이콘 라이브러리는 새로 들이지 않는다. 필요한 아이콘이 없으면 ocIcons.jsx에 같은 규칙으로 그려 넣는다. 단색 아이콘은 바탕색(currentColor) 위에 흰/검정 반투명 면을 겹쳐 명암을 만든다.
+7. **공용 부품 사용**: `src/components/facetIcons.jsx`의 부품(FacetDiamond·FacetCrown·FacetPawn·FacetRook·FacetBishop·FacetShield·FacetArrow·FacetCrosshair·FacetLeaf·taperedStem)을 먼저 쓰고, 새 모양이 필요하면 같은 규칙으로 부품을 추가한다.
+8. **검사 등록**: 새 아이콘을 다른 파일에 그렸다면 `scripts/check-facet-icons.mjs`의 ZONES에 등록한다(빌드 전에 윤곽선·면 분할 여부와 lucide 사용 여부를 검사).
+9. **예외**: 국기, 브랜드 로고, 사용자가 준 이미지, 차트·그래프 선은 대상이 아니다(원형 그대로 쓴다).
 
 ## 버전 종료 프로토콜 (README 참고)
 

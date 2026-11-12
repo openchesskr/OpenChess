@@ -4,7 +4,7 @@ import { normalizeLegacies, normalizeLegacyHistory } from "../lib/legacyEntry.js
 import { SB_ON, sbSelect, sbRpc } from "../lib/supabaseClient.js";
 import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { T, MOTION_EASE, TIER_BG_IMAGE, TIER_DECAGON_PATH } from "../lib/theme.js";
-import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "lucide-react";
+import { Swords, Trophy, Lock, ChevronDown, Search, Target, X, ChevronRight, Check } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SITE_FONT, SEQ_FONT } from "../components/engineLines.jsx";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { computeRatingChanges, countryFlag } from "../lib/chesscom.js";

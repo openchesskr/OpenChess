@@ -13,7 +13,7 @@ import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGrad
 import { DEX_VIEW_PATH, DEX_PATHS } from "../lib/dexRoutes.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
 import { T, MOTION_EASE, tierPieceSrc } from "../lib/theme.js";
-import { Sparkles, ChevronRight, Bell, Play, Search, Check, X, Target, Star, Crown, Library, Settings, Users, Info, ChevronDown, EyeOff, Eye } from "lucide-react";
+import { Sparkles, ChevronRight, Bell, Play, Search, Check, X, Target, Star, Crown, Library, Settings, Users, Info, ChevronDown, EyeOff, Eye } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
