@@ -5609,7 +5609,7 @@ export function PlayPage({ seed, playQuest, onClose, engine, onOpenReview, profi
                 <PlayResultModal result={result} activeColor={activeColor} mode={mode} botTier={botTier} opponentPub={opponentPub}
                   myPhoto={myPhoto} myName={myName} oppName={oppName} timeControl={clock ? timeControl : null} moveCount={Math.ceil(sans.length / 2)}
                   onClose={() => setResultModalOpen(false)}
-                  onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot }); setResultModalOpen(false); } : null}
+                  onReview={onOpenReview ? () => { onOpenReview({ sans, fenRoot, color: activeColor }); setResultModalOpen(false); } : null}
                   onRematch={requestRematch} rematchOfferedByMe={rematchOfferedByMe} rematchOfferedByOpp={rematchOfferedByOpp} />
               )}
             </AnimatePresence>
@@ -5629,7 +5629,7 @@ export function PlayPage({ seed, playQuest, onClose, engine, onOpenReview, profi
                         </button>
                       )}
                       {!result && <button onClick={resign} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: "#F4A0A0", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("기권")}</button>}
-                      {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("대국 리뷰")}</button>}
+                      {result && onOpenReview && <button onClick={() => { onOpenReview({ sans, fenRoot, color: activeColor }); setOptionsOpen(false); }} className="press" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, background: "transparent", border: "none", color: T.brassHi, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>{t("대국 리뷰")}</button>}
                       {/* (사용자 요청) 봇이 아닌 실시간 상대와 대국을 하는 도중에는 "다시 설정"이 뜨지 않게
                           한다 — 상대는 그대로 둔 채 설정만 바꿔 새로 시작할 방법이 없어(재도전은 별도
                           흐름) 대국 중엔 이 버튼이 의미가 없고, 실수로 눌러 진행 중인 대국을 잃을 위험만

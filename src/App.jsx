@@ -1400,7 +1400,7 @@ export default function App() {
     // 뒤로가기/닫기가 곧바로 동작하게 하고, 식별자가 준비되면 그 자리를 실제 주소로 바꿔치기한다
     // (replaceState — 이 열기 동작 하나가 히스토리 항목 두 개를 만들지 않도록).
     try { if (window.location.pathname !== "/review") window.history.pushState({ review: true }, "", "/review"); } catch { }
-    if (game.id) reviewedGameShare(game.id, game).catch(() => { });
+    if (game.id && /^\d+$/.test(String(game.id))) reviewedGameShare(game.id, game).catch(() => { });   // chess.com 대국만(OpenChess 대국 ID pvp-·bot-는 이 공유 캐시 대상이 아님)
     reviewGameIdentifier(game).then((id) => {
       if (!id) return;
       try { window.history.replaceState({ review: true }, "", "/review/" + id); } catch { }

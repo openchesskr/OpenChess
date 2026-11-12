@@ -87,7 +87,7 @@ const BOARD_FRAME_INSET = 11;
 // 딱 맞춘다 — 그러면 막대 위끝=8행 위, 아래끝=1행 아래, 세로 중앙(0.0)=4·5행 사이가 된다. 한 칸당
 // 1점, 최대 ±4점(그 밖은 e를 ±4로 클램프하므로 막대가 유리한 쪽 한 색으로 통일됨). 가로 막대(기존
 // 분석 탭 등)는 vertical 없이 그대로 동작한다.
-export function EvalBar({ cp, width, depth, vertical, font }) {
+export function EvalBar({ cp, width, depth, vertical, font, flip = false }) {
   // (20차) cp는 숫자(cp) 또는 {cp}|{mate,win} 객체 — 메이트 수순에서 +10.00이 아니라 M수로 표기한다.
   const ev = cp == null ? null : (typeof cp === "number" ? { cp } : cp);
   const num = ev == null ? 0 : (ev.mate != null ? (mateWhiteWins(ev.mate, ev.win) ? 1000 : -1000) : ev.cp);
@@ -103,11 +103,12 @@ export function EvalBar({ cp, width, depth, vertical, font }) {
         {/* fill은 stretch된 막대에서 위아래로 프레임 두께만큼 들여, 격자(8~1행) 높이에 정확히 맞춘다. */}
         <div style={{ position: "absolute", top: BOARD_FRAME_INSET, bottom: BOARD_FRAME_INSET, left: 0, right: 0, borderRadius: 5, overflow: "hidden", border: "1px solid #000" }}>
           {/* 백이 항상 아래쪽 — whitePct는 백이 유리할수록 커지는 값이라 bottom 기준 높이로 그대로 쓴다. */}
-          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: whitePct + "%", background: "#FFFFFF" }} />
-          <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
+          {/* (v0.7.5) flip이면(보드가 흑 아래) 막대도 뒤집어 백이 위 — 보드와 같은 쪽에 같은 색이 오게 한다. */}
+          <div style={{ position: "absolute", left: 0, right: 0, [flip ? "top" : "bottom"]: 0, height: whitePct + "%", background: "#FFFFFF" }} />
+          <div style={{ position: "absolute", left: 0, right: 0, [flip ? "bottom" : "top"]: 0, height: (100 - whitePct) + "%", background: "#140C07" }} />
         </div>
         {/* 부호 없이 크기만 — 위치(아래=백/위=흑)로 유불리를 구분한다. 폭(22px)에 다 들어오도록 글자를 줄인다. */}
-        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: font || SITE_FONT, lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { bottom: BOARD_FRAME_INSET + 3, color: "#140C07" } : { top: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
+        <span style={{ position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 7.5, fontWeight: 800, fontFamily: font || SITE_FONT, lineHeight: 1, letterSpacing: "-.02em", ...(num >= 0 ? { [flip ? "top" : "bottom"]: BOARD_FRAME_INSET + 3, color: "#140C07" } : { [flip ? "bottom" : "top"]: BOARD_FRAME_INSET + 3, color: "#FFFFFF" }) }}>{evalBarText(ev)}</span>
       </div>
     );
   }

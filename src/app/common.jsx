@@ -4464,7 +4464,9 @@ async function decryptPgnId(id) {
   } catch { return null; }
 }
 // (v0.3.4 기능) 사용자 요청 — 리뷰의 "대국 식별자". 소스별로 분기한다:
-// · chess.com 대국(game.id 있음) — chess.com이 이미 발급한 숫자 게임 ID를 그대로 쓴다.
+// · (v0.7.5 BUG-162) 수순이 있는 대국은 모두 아래 PGN 암호화 방식 — 예전엔 game.id가 있으면 그 ID를 그대로 썼는데, OpenChess 대국 ID(pvp-123·bot-45)는
+//   되돌릴 방법이 없어 링크가 열리지 않았고, chess.com 숫자 ID도 서버 공유 캐시(로그인한 사람이 연 적 있는 대국)에 없으면 열리지 않았다.
+//   이제 진영·선수·ID 등은 PGN 머리 태그로 함께 담는다(reviewMetaTags). 예전 숫자 ID 링크는 그대로 열린다.
 // · FEN 분석(fenRoot는 있지만 그 위치에서 아직 한 수도 안 뒀음) — 그 FEN 코드 자체를 그대로 쓴다
 //   (경로 세그먼트라 URL 인코딩은 하되, 디코딩하면 정확히 원래 FEN 문자열이다 — "그대로 쓰고").
 // · 그 외(직접 둔 수순·PGN 붙여넣기·마스터 대국 리뷰, 또는 FEN에서 시작해 수를 더 둔 경우) — PGN으로
@@ -4474,17 +4476,56 @@ async function decryptPgnId(id) {
 // 이미 걸러냄) FEN 특유의 "/"로 8칸씩 나뉘는 형태(looksLikeFen)와 구조적으로 겹치지 않는다.
 export async function reviewGameIdentifier(game) {
   if (!game) return null;
-  if (game.id) return String(game.id);
   if (game.fenRoot && (!game.sans || !game.sans.length)) return encodeURIComponent(game.fenRoot);
   if (game.sans && game.sans.length) {
     try {
       const parsed = game.fenRoot ? parseFenFull(game.fenRoot) : null;
       const body = sansToPgnText(game.sans, parsed ? parsed.turn : undefined);
-      const pgnText = parsed ? "[FEN \"" + game.fenRoot + "\"]\n[SetUp \"1\"]\n\n" + body : body;
-      return await encryptPgnId(pgnText);
+      const head = (parsed ? "[FEN \"" + game.fenRoot + "\"]\n[SetUp \"1\"]\n" : "") + reviewMetaTags(game);
+      return await encryptPgnId(head ? head + "\n" + body : body);
     } catch { return null; }
   }
+  // (v0.7.5) 수순이 없는 chess.com 대국 객체는 예전처럼 숫자 ID(서버 공유 캐시로 복원)
+  if (game.id != null && /^\d+$/.test(String(game.id))) return String(game.id);
   return null;
+}
+// (v0.7.5 BUG-162) 리뷰 링크에 담는 대국 정보 — 진영(내가 둔 쪽, 보드 방향)·선수 이름·종료 시각(같은 기기 캐시 키)·대국 ID(공유 분석)·결과 등.
+//  링크는 누구나 만들 수 있는 입력이므로 되돌릴 때(reviewMetaFromPgn) 값마다 모양을 다시 검사한다.
+const META_SAFE = (v, n = 60) => String(v == null ? "" : v).replace(/[\u0000-\u001F"\\\]\[]/g, "").slice(0, n);
+const REVIEW_ID_RE = /^(\d{1,15}|(pvp|bot)-[\w-]{1,40})$/;
+function reviewMetaTags(game) {
+  const tags = [];
+  const w = game.white && game.white.username, b = game.black && game.black.username;
+  if (w) tags.push(["White", META_SAFE(w, 40)]);
+  if (b) tags.push(["Black", META_SAFE(b, 40)]);
+  if (game.white && Number.isFinite(+game.white.rating) && game.white.rating) tags.push(["WhiteElo", String(Math.round(+game.white.rating))]);
+  if (game.black && Number.isFinite(+game.black.rating) && game.black.rating) tags.push(["BlackElo", String(Math.round(+game.black.rating))]);
+  if (game.color === "w" || game.color === "b") tags.push(["OCSide", game.color]);
+  if (game.id != null && REVIEW_ID_RE.test(String(game.id))) tags.push(["OCId", String(game.id)]);
+  if (Number.isFinite(+game.endTime) && game.endTime) tags.push(["OCEnd", String(Math.round(+game.endTime))]);
+  if (game.username) tags.push(["OCUser", META_SAFE(game.username, 40)]);
+  if (game.result) tags.push(["OCResult", META_SAFE(game.result, 20)]);
+  if (game.timeClass) tags.push(["OCTime", META_SAFE(game.timeClass, 12)]);
+  if (game.opening) tags.push(["Opening", META_SAFE(game.opening, 80)]);
+  return tags.map(([k, v]) => "[" + k + " \"" + v + "\"]").join("\n");
+}
+/** PGN 머리 태그 → 리뷰 대국 정보(모양이 맞는 값만). scripts/check-review-ui.mjs가 왕복을 검사한다. */
+export function reviewMetaFromPgn(pgnText) {
+  const tag = (k) => { const m = new RegExp("\\[" + k + "\\s+\"([^\"]*)\"\\]").exec(pgnText); return m ? m[1] : null; };
+  const out = {};
+  const w = tag("White"), b = tag("Black");
+  if (w || b) { out.white = { username: META_SAFE(w || "?", 40) }; out.black = { username: META_SAFE(b || "?", 40) }; }
+  const we = tag("WhiteElo"), be = tag("BlackElo");
+  if (out.white && /^\d{1,4}$/.test(we || "")) out.white.rating = +we;
+  if (out.black && /^\d{1,4}$/.test(be || "")) out.black.rating = +be;
+  const side = tag("OCSide"); if (side === "w" || side === "b") out.color = side;
+  const id = tag("OCId"); if (id && REVIEW_ID_RE.test(id)) out.id = id;
+  const end = tag("OCEnd"); if (/^\d{1,13}$/.test(end || "")) out.endTime = +end;
+  const user = tag("OCUser"); if (user) out.username = META_SAFE(user, 40);
+  const res = tag("OCResult"); if (res) out.result = META_SAFE(res, 20);
+  const tc = tag("OCTime"); if (tc && /^[a-z]{1,12}$/.test(tc)) out.timeClass = tc;
+  const op = tag("Opening"); if (op) out.opening = META_SAFE(op, 80);
+  return out;
 }
 // 위 reviewGameIdentifier의 역변환 — 딥링크(openchess.kr/review/(식별자))로 들어왔을 때 그 식별자
 // 하나만으로 다시 리뷰를 열 수 있는 만큼을 복원한다. chess.com 식별자는 여기서 대국 전체를 복원할
@@ -4500,7 +4541,7 @@ export async function resolveReviewIdentifier(raw) {
   const fenMatch = /\[FEN\s+"([^"]+)"\]/.exec(pgnText);
   const sans = parsePgnSans(pgnText);
   if (!sans.length) return null;
-  return { kind: "game", game: { sans, fenRoot: fenMatch ? fenMatch[1] : null } };
+  return { kind: "game", game: { ...reviewMetaFromPgn(pgnText), sans, fenRoot: fenMatch ? fenMatch[1] : null } };
 }
 // (v0.3.4 기능) chess.com 대국 리뷰 딥링크(/review/(숫자 ID))용 캐시 — supabase-setup.sql 21번
 // 섹션 참고. puzzleShare/puzzleFetch와 같은 패턴: 리뷰를 여는 모든 유저가 최선을 다해(실패해도

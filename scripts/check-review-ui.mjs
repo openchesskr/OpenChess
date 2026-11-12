@@ -46,5 +46,38 @@ else {
   if (!/pieceSize/.test(slide) || !/pieceSize=\{cell \* 0\.74\}/.test(common)) fails.push("SlidePiece: 일반 기물과 같은 크기(cell * 0.74)를 pieceSize로 받아야 함");
 }
 
+// (v0.7.5, 사용자 요청) 내 대국 리뷰는 내 진영이 아래 — 보드·시작 연출·평가 막대·선수 줄이 모두 같은 boardFlip을 따른다.
+{
+  if (!/export function reviewBoardFlip\(game\) \{ return !!game && game\.color === "b"; \}/.test(review)) fails.push("review.jsx: reviewBoardFlip(game.color === \"b\")가 없음");
+  const boards = review.match(/<BoardWithMaterial [^\n]*/g) || [];
+  if (!boards.length || boards.some((b) => !/flip=\{boardFlip\}/.test(b) || !/topInfo=\{boardFlip \? whitePInfo : blackPInfo\}/.test(b))) fails.push("review.jsx: 리뷰 보드가 boardFlip을 따르지 않음(flip·위아래 선수 줄)");
+  if (!/<EvalBar vertical flip=\{boardFlip\}/.test(review)) fails.push("review.jsx: 세로 평가 막대가 보드 방향을 따르지 않음");
+  if (!/<ReviewBoardIntroAnim sans=\{sans\} flip=\{boardFlip\}/.test(review)) fails.push("review.jsx: 보드 시작 연출이 보드 방향을 따르지 않음");
+  const play = rd("src/app/play.jsx");
+  if (/onOpenReview\(\{ sans, fenRoot \}\)/.test(play)) fails.push("play.jsx: 대국 후 리뷰를 열 때 내 진영(color)을 넘기지 않음");
+}
+// (v0.7.5) 코치 말풍선 본문은 고정 높이 — 설명 길이에 따라 아래 보드·그래프 위치가 흔들리지 않게(오프닝 이름도 그 안에)
+{
+  const card = (review.match(/function ReviewCoachCard[\s\S]*?\n}\n/) || [""])[0];
+  if (!/height: narrow \? REVIEW_COACH_BODY_H\.narrow : REVIEW_COACH_BODY_H\.wide/.test(card) || !/overflowY: "auto"/.test(card)) fails.push("ReviewCoachCard: 본문 높이가 고정이 아님");
+  if (/ReviewOpeningBanner text=/.test(review)) fails.push("review.jsx: 오프닝 배너가 말풍선 밖에서 나타났다 사라짐(보드 위치가 흔들림)");
+}
+// (v0.7.5 BUG-162) /review 링크 — 되돌릴 수 없는 ID(OpenChess 대국 pvp-·bot-)를 식별자로 쓰지 않고, 진영·선수 등은 PGN 태그로 왕복된다
+{
+  const idf = (common.match(/export async function reviewGameIdentifier[\s\S]*?\n}\n/) || [""])[0];
+  if (/if \(game\.id\) return String\(game\.id\)/.test(idf)) fails.push("reviewGameIdentifier: game.id를 그대로 식별자로 쓰면 OpenChess 대국 링크가 열리지 않음(BUG-162)");
+  const a = common.indexOf("const META_SAFE"), b = common.indexOf("// 위 reviewGameIdentifier의 역변환");
+  if (a < 0 || b < 0) fails.push("common.jsx: 리뷰 링크 메타 태그 함수를 찾지 못함");
+  else {
+    const f = new Function(common.slice(a, b).replace(/export function/g, "function") + "; return { reviewMetaTags, reviewMetaFromPgn };")();
+    const g = { white: { username: "kim\"]x", rating: 1500 }, black: { username: "이순신" }, color: "b", id: "pvp-77", endTime: 1760000000, username: "이순신" };
+    const back = f.reviewMetaFromPgn(f.reviewMetaTags(g) + "\n\n1. e4 e5");
+    if (back.color !== "b" || back.id !== "pvp-77" || back.endTime !== 1760000000 || !back.black || back.black.username !== "이순신" || back.white.username !== "kimx") fails.push("리뷰 링크 메타 태그 왕복 실패: " + JSON.stringify(back));
+    const evil = f.reviewMetaFromPgn('[OCSide "x"]\n[OCId "javascript:alert(1)"]\n[OCEnd "abc"]');
+    if (evil.color || evil.id || evil.endTime) fails.push("리뷰 링크 메타 태그: 모양이 틀린 값을 받아들임");
+  }
+  if (!/resolved\.game|reviewMetaFromPgn\(pgnText\)/.test(common) || !/\.\.\.reviewMetaFromPgn\(pgnText\)/.test(common)) fails.push("resolveReviewIdentifier가 링크의 대국 정보(진영 등)를 복원하지 않음");
+}
+
 if (fails.length) { console.error("✗ review-ui check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
-console.log("✓ review-ui check: 자유 탐색 ply·빠른 리뷰 연출 구성·전술 기물 칸 중앙 배치 유지");
+console.log("✓ review-ui check: 자유 탐색 ply·빠른 리뷰 연출 구성·전술 기물 칸 중앙 배치·내 진영 아래·코치 말풍선 고정 높이·리뷰 링크 왕복 유지");
