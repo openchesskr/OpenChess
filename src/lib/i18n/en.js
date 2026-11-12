@@ -3634,4 +3634,10 @@ export default {
   "자동으로": "Auto pick",
   "칭호 {0}": "Title {0}",
   "프로필 업적 섹션에 보일 칭호 2개. 고르지 않으면 등급 높은 칭호로 채움": "Two titles shown in your profile's Achievements section. Unpicked slots use your highest-ranked titles",
+  "{0} 검색": "Search {0}",
+  "검색 분류": "Search category",
+  "유저": "Users",
+  "유저·오프닝·마스터·퍼즐·업적 검색": "Search users, openings, masters, puzzles, achievements",
+  "일치하는 업적 없음": "No matching achievements",
+  "일치하는 퍼즐 없음": "No matching puzzles",
 };

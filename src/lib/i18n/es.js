@@ -3634,4 +3634,10 @@ export default {
   "자동으로": "Automático",
   "칭호 {0}": "Título {0}",
   "프로필 업적 섹션에 보일 칭호 2개. 고르지 않으면 등급 높은 칭호로 채움": "Dos títulos que se muestran en la sección Logros de tu perfil. Los huecos sin elegir usan tus títulos de mayor rango",
+  "{0} 검색": "Buscar {0}",
+  "검색 분류": "Categoría de búsqueda",
+  "유저": "Usuarios",
+  "유저·오프닝·마스터·퍼즐·업적 검색": "Busca usuarios, aperturas, maestros, puzzles y logros",
+  "일치하는 업적 없음": "No hay logros que coincidan",
+  "일치하는 퍼즐 없음": "No hay puzzles que coincidan",
 };

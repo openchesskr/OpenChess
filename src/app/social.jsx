@@ -18,10 +18,11 @@ import { PieceGlyph } from "../components/pieces.jsx";
 import { deriveBlindGame, parseChatCommand, blindMoveToken, chatCommandSuggestions, CHAT_COMMANDS as CHAT_CMD_LIST, chatCommandAvailable } from "../lib/chatCommands.js";
 import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "../lib/pgn.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
+import { SEARCH_BLOCK, SearchBlock, MasterResultInner } from "../components/searchResultRow.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { SeriesGlyph, livePuzzleName, ALL_TITLE_IDS, seriesLabelText, titleNameText, ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { kindOfPost } from "../lib/legacyPosts.js";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -2075,7 +2076,7 @@ function userSearchRow(r, onClick, right, opts) {
   const slotW = compact ? 52 : 58, slotH = compact ? 48 : 54;
   const medalH = (RANK_MEDAL_H[compact ? "compact" : "normal"])[rank];
   return (
-    <button key={r.id} onClick={onClick} className="press" style={{ width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, borderRadius: 10, border: isMe ? "2px solid " + T.brass : isGM ? "1.5px solid #C9A6FF" : "1px solid #E4D5B6", background: isMe ? "linear-gradient(180deg,#FFFBF0,#F3E7CB)" : "#FBF5E8", boxShadow: isMe ? "0 0 0 2px rgba(196,154,80,.3)" : isGM ? "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" : "none", cursor: "pointer", textAlign: "left" }}>
+    <button key={r.id} onClick={onClick} className="press" style={{ ...SEARCH_BLOCK, gap: compact ? 8 : 10, padding: compact ? "4px 8px" : 9, ...(isMe ? { border: "2px solid " + T.brass, background: "linear-gradient(180deg,#FFFBF0,#F3E7CB)", boxShadow: "0 0 0 2px rgba(196,154,80,.3)" } : isGM ? { border: "1.5px solid #C9A6FF", boxShadow: "0 0 0 1px rgba(185,131,255,.35), 0 0 10px rgba(110,231,200,.25)" } : null) }}>
       {rank != null && (
         <span style={{ width: slotW, height: slotH, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           {rank <= 3
@@ -2103,20 +2104,82 @@ function userSearchRow(r, onClick, right, opts) {
 // 창 틀이 주는 제목 줄·닫기 버튼을 쓴다. 창의 높이·스크롤은 틀이 맡으므로 카드는 내용만큼 늘어난다.
 const dockedOuter = { position: "static", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 };
 const dockedCard = { width: "100%", maxWidth: "none", maxHeight: "none", height: "auto", minHeight: "100%", display: "flex", flexDirection: "column", background: T.paper, border: "none", borderRadius: 0, boxShadow: "none" };
-export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked }) {
+// (v0.7.5, 사용자 요청) "유저 검색" → "검색": 유저·오프닝·마스터·퍼즐·업적을 한 번에 찾는다.
+//  · 검색 바 바로 아래의 분류 토글로 한 종류만 고를 수 있다(전체면 종류마다 몇 개씩, 한 종류면 전부).
+//  · 결과는 종류와 상관없이 같은 바깥 블록(components/searchResultRow.jsx SEARCH_BLOCK — 유저 행 모양이 기준)에 담고, 안쪽 요소는 원래 각 검색 화면의 모양을 그대로 쓴다.
+//  · 고르면: 유저 → /user 페이지, 오프닝 → 집중 분석, 마스터·대회 → 도감 마스터 트리에서 그 노드로 이동, 퍼즐 → 그 퍼즐, 업적 → 도감 업적 화면에서 그 칭호.
+const SEARCH_KINDS = ["all", "user", "opening", "master", "puzzle", "title"];   // 표시 이름은 kindLabel(번역)
+const kindLabel = (k) => ({ all: t("전체"), user: t("유저"), opening: t("오프닝"), master: t("마스터"), puzzle: t("퍼즐"), title: t("업적") })[k];
+let _openingIndex = null;
+/** 오프닝 이름 색인(SNAP 이론 트리) — 같은 이름은 가장 짧은 수순 하나만. */
+function openingIndex() {
+  if (_openingIndex) return _openingIndex;
+  const byName = new Map();
+  for (const [key, node] of Object.entries(SNAP.tree || {})) {
+    const base = key ? key.split(" ") : [];
+    for (const m of (node && node.moves) || []) {
+      if (!m.name) continue;
+      const path = [...base, m.san], cur = byName.get(m.name);
+      if (!cur || path.length < cur.path.length || (path.length === cur.path.length && (m.adopt || 0) > (cur.adopt || 0))) byName.set(m.name, { name: m.name, path, adopt: m.adopt || 0 });
+    }
+  }
+  return (_openingIndex = [...byName.values()]);
+}
+// 도감 오프닝 트리 검색과 같은 순서: 이름 맨 앞 일치 → 중간 포함, 그 안에서 짧은 수순·높은 채택률
+function searchOpenings(q) {
+  const cmp = (a, b) => (a.path.length - b.path.length) || (b.adopt - a.adopt) || a.name.localeCompare(b.name);
+  const hit = openingIndex().filter((it) => it.name.toLowerCase().includes(q));
+  return [...hit.filter((it) => it.name.toLowerCase().startsWith(q)).sort(cmp), ...hit.filter((it) => !it.name.toLowerCase().startsWith(q)).sort(cmp)];
+}
+function searchTitles(q, earned) {
+  const out = [];
+  for (const id of ALL_TITLE_IDS) {
+    const d = titleDef(id); if (!d) continue;
+    if (d.series.cat === "rare" && !earned.has(id)) continue;   // 아직 못 받은 희귀 칭호는 이름을 드러내지 않는다(도감과 같은 규칙)
+    const hay = [seriesLabelText(d.series), titleNameText(d), d.label, d.name].filter(Boolean).map((x) => String(x).toLowerCase());
+    if (hay.some((h) => h.includes(q))) out.push({ id, d, earned: earned.has(id) });
+  }
+  return out.sort((a, b) => (b.earned - a.earned) || (b.d.tier - a.d.tier));
+}
+function searchPuzzles(q, puzzles) {
+  const out = [];
+  for (const p of puzzles || []) {
+    const name = livePuzzleName(p) || p.name || "", no = String(puzzleNo(p.id));
+    if ([name, p.opening, "#" + no, no].some((x) => x && String(x).toLowerCase().includes(q))) out.push({ p, name, no });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+export function SearchModal({ onClose, me, myUid, onOpenUserProfile, docked, puzzles, earnedTitles, onOpenOpening, onOpenMaster, onOpenPuzzle, onOpenTitle, onPicked }) {
   const [q, setQ] = useState(""); const [results, setResults] = useState([]); const [busy, setBusy] = useState(false); const [searched, setSearched] = useState(false);
+  const [kind, setKind] = useState("all");
   const run = async () => { if (!q.trim()) return; setBusy(true); setSearched(true); const r = await userSearch(q.trim()); setResults(r); setBusy(false); };
-  // (버그 수정) 검색 버튼을 눌러야만 검색되던 것 — 입력할 때마다(살짝 debounce해) 자동으로
-  // 실시간 검색되도록 한다. 검색 버튼은 그대로 두어 즉시 재검색하고 싶을 때도 쓸 수 있게 한다.
   useEffect(() => {
     if (!q.trim()) { setResults([]); setSearched(false); return; }
     setBusy(true);
     const id = setTimeout(() => { run(); }, 300);
     return () => clearTimeout(id);
-  }, [q]);
-  // (기능) 아직 아무것도 검색하지 않은 기본 화면에 빈 목록만 보여주지 않고, 먼저 둘러볼 만한
-  // 후보를 미리 띄워 둔다 — 내 친구의 친구(친구가 될 법한 사람)와 지금 티어가 높은 플레이어
-  // (리더보드) 두 갈래. 로그인하지 않았거나 둘 다 비었으면 그 섹션은 그냥 렌더링하지 않는다.
+  }, [q]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 마스터·대회: 무거운 자료라 처음 검색할 때 도감 마스터 모듈을 불러온다(선수 → 출전 대회 색인도 함께)
+  const [mastersMod, setMastersMod] = useState(null), [psearch, setPsearch] = useState(null);
+  useEffect(() => {
+    if (!q.trim() || (kind !== "all" && kind !== "master") || mastersMod) return;
+    let off = false;
+    import("./dexMasters.jsx").then((m) => { if (off) return; setMastersMod(m); m.loadTournamentSearch().then((x) => { if (!off) setPsearch(x); }).catch(() => { }); }).catch(() => { });
+    return () => { off = true; };
+  }, [q, kind, mastersMod]);
+  const ql = q.trim().toLowerCase();
+  const earned = useMemo(() => (earnedTitles instanceof Set ? earnedTitles : new Set(earnedTitles || [])), [earnedTitles]);
+  const hits = useMemo(() => {
+    if (!ql) return null;
+    return {
+      opening: kind === "all" || kind === "opening" ? searchOpenings(ql) : [],
+      master: (kind === "all" || kind === "master") && mastersMod ? mastersMod.searchMastersGlobal(ql, psearch) : [],
+      puzzle: kind === "all" || kind === "puzzle" ? searchPuzzles(ql, puzzles) : [],
+      title: kind === "all" || kind === "title" ? searchTitles(ql, earned) : [],
+    };
+  }, [ql, kind, mastersMod, psearch, puzzles, earned]);
+  // 아무것도 입력하지 않았을 때의 추천(알 수도 있는 사람·리더보드) — 예전 유저 검색 그대로
   const [sugFriends, setSugFriends] = useState([]);
   const [sugTop, setSugTop] = useState([]);
   const [sugLoading, setSugLoading] = useState(true);
@@ -2126,45 +2189,98 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked 
     (async () => {
       const [fr, top] = await Promise.all([me ? friendSuggestions(8) : Promise.resolve([]), leaderboardTop(100)]);
       if (cancelled) return;
-      setSugFriends(fr);
-      // (v0.2.2 UI#7) 리더보드에 나 자신도 그대로 표시한다(내 행은 금색 윤곽선으로 강조).
-      setSugTop(top || []);
-      setSugLoading(false);
+      setSugFriends(fr); setSugTop(top || []); setSugLoading(false);
     })();
     return () => { cancelled = true; };
   }, [me, myUid]);
-  // (v0.4.4 개편, 사용자 요청) 검색 결과를 누르면 이 모달 안에 자체 프로필 서브뷰를 그리는 대신,
-  // openchess.kr/user/<MID> 고유 페이지(UserProfilePage)로 이동한다 — App 루트의
-  // openUserProfileByUsername이 mid를 조회해 그 경로로 넘어간다.
   const open = (username) => onOpenUserProfile && onOpenUserProfile(username);
-  // (사용자 요청) 모바일에서는 이 검색 창을 카드가 아니라 전체 화면으로 띄운다.
+  // 결과를 고르면 검색 창을 기록(history) 건드리지 않고 닫은 뒤 이동한다(onClose는 뒤로가기를 부르므로 곧이어 바뀐 주소를 되돌릴 수 있다). 유저는 예전처럼 창을 둔 채 프로필로.
+  const done = (fn) => () => { if (onPicked) onPicked(); fn(); };
   const narrow = useNarrow(640);
+  const LIMIT = kind === "all" ? 4 : 60;
+  const section = (k, list, render, emptyText) => {
+    if (kind !== "all" && kind !== k) return null;
+    if (kind === "all" && !list.length) return null;
+    return (
+      <div key={k}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft }}>{kindLabel(k)} <span style={{ fontFamily: SITE_FONT }}>{list.length}</span></span>
+          {kind === "all" && list.length > LIMIT && <button onClick={() => setKind(k)} className="press" style={{ background: "none", border: "none", color: T.brass, fontSize: 11.5, fontWeight: 800, cursor: "pointer", padding: 0 }}>{t("더 보기")}</button>}
+        </div>
+        {list.length === 0 ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{emptyText}</div>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{list.slice(0, LIMIT).map(render)}</div>}
+      </div>
+    );
+  };
+  const userList = ql ? results : [];
+  const anyHit = !!hits && (userList.length + hits.opening.length + hits.master.length + hits.puzzle.length + hits.title.length) > 0;
+  const placeholder = kind === "user" ? t("아이디 또는 #MID로 검색") : kind === "all" ? t("유저·오프닝·마스터·퍼즐·업적 검색") : t("{0} 검색", kindLabel(kind));
   return (
     <div className={docked ? undefined : "oc-modal-bg"} onClick={docked ? undefined : onClose} style={docked ? dockedOuter : { position: "fixed", inset: 0, background: "rgba(10,6,3,.6)", zIndex: 80, display: "flex", alignItems: narrow ? "stretch" : "flex-start", justifyContent: "center", padding: narrow ? 0 : "60px 16px" }}>
-      {/* (버그 수정) 모달 카드에 높이 제한·스크롤이 없어, 프로필 내용이 화면보다 길면 카드가 뷰포트
-          밖으로 그냥 넘쳐 하단 내용을 볼 수 없었고, 스크롤하면 카드 뒤의 탭 본문이 대신 스크롤됐다 —
-          카드 자체에 최대 높이와 세로 스크롤을 줘서 모달 안에서 스크롤이 끝나도록 한다. */}
-      <div onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 420, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(640px, 85vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 16, border: narrow ? "none" : "1px solid #DCCBA8", overflow: "hidden", boxShadow: narrow ? "none" : "0 20px 50px -12px rgba(0,0,0,.6)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={docked ? dockedCard : { width: "100%", maxWidth: narrow ? "100%" : 460, height: narrow ? "100%" : undefined, maxHeight: narrow ? "100%" : "min(680px, 86vh)", display: "flex", flexDirection: "column", background: T.paper, borderRadius: narrow ? 0 : 14, border: narrow ? "none" : "1px solid #DCCBA8", boxShadow: narrow ? "none" : "0 20px 50px -10px rgba(0,0,0,.7)", overflow: "hidden" }}>
         {!docked && <div className="flex items-center justify-between" style={{ padding: "14px 16px", borderBottom: "1px solid #E4D5B6", gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t("유저 검색")}</span>
-          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><X size={15} /></button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t("검색")}</span>
+          <button onClick={onClose} aria-label={t("닫기")} className="press" style={{ width: 28, height: 28, borderRadius: 8, background: T.ebony2, color: T.ivory, border: "1px solid #000", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={15} /></button>
         </div>}
-        <div style={{ padding: 16, overflowY: "auto" }}>
-          <div className="flex items-center gap-2" style={{ marginBottom: 12 }}>
-            {/* (v0.4.4 기능, 사용자 요청) "#ABCDE1234"처럼 MID로도 검색할 수 있다 — userSearch가 이
-                입력 형태를 인식해 mid로 곧장 조회한다. */}
-            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder={t("아이디 또는 #MID로 검색")} autoFocus style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13 }} />
+        <div style={{ padding: "14px 16px 10px", flexShrink: 0, borderBottom: "1px solid #EFE3C8" }}>
+          <div className="flex items-center gap-2">
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()} placeholder={placeholder} aria-label={t("검색")} autoFocus
+              style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 9, border: "1px solid #C9B58C", background: "#fff", color: T.ink, fontSize: 13, boxSizing: "border-box" }} />
             <button onClick={run} className="press" style={{ padding: "9px 14px", borderRadius: 9, background: "linear-gradient(180deg,#3A2516,#241509)", color: T.ivoryHi, fontWeight: 800, border: "none", cursor: "pointer", fontSize: 12 }}>{t("검색")}</button>
           </div>
-          {q.trim() ? (
-            busy ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 중…")}</div>
-              : results.length === 0 ? (searched ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("일치하는 유저 없음")}</div> : null)
-                // (사용자 요청) 검색어로 찾은 결과도 기본(추천) 목록과 완전히 같은 블록 UI를 쓴다 —
-              // 리더보드 행과 똑같이 우측에 티어 십각형 아이콘을, isMe 옵션으로 "나" 표시까지 그대로 준다.
-              : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><AnimatePresence>{results.map((r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username),
-                  <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
-                  { isMe: r.id === myUid })}</FadeIn>)}</AnimatePresence></div>
-          ) : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
+          {/* 검색 요소 분류 토글 — 검색 바 바로 아래 */}
+          <div role="radiogroup" aria-label={t("검색 분류")} style={{ display: "flex", gap: 5, marginTop: 9, overflowX: "auto", scrollbarWidth: "none" }}>
+            {SEARCH_KINDS.map((k) => { const on = kind === k; return (
+              <button key={k} role="radio" aria-checked={on} onClick={() => setKind(k)} className="press"
+                style={{ flexShrink: 0, padding: "5px 11px", borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", fontFamily: SITE_FONT,
+                  border: "1px solid " + (on ? "#000" : "#D6C39C"), background: on ? "linear-gradient(180deg,#3A2516,#241509)" : "#FBF5E8", color: on ? T.brassHi : T.ink }}>{kindLabel(k)}</button>
+            ); })}
+          </div>
+        </div>
+        <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+          {ql ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {(kind === "all" || kind === "user") && (busy && !userList.length
+                ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 중…")}</div>
+                : section("user", userList, (r, i) => <FadeIn key={r.id} index={i}>{userSearchRow(r, () => open(r.username), <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>, { isMe: r.id === myUid })}</FadeIn>, searched ? t("일치하는 유저 없음") : ""))}
+              {hits && section("opening", hits.opening, (it) => (
+                <SearchBlock key={it.name} onClick={done(() => onOpenOpening && onOpenOpening(it.name))}>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ flexShrink: 0, fontFamily: SITE_FONT, fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>{it.path[0]}</span>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span></span>
+                    <span style={{ display: "block", fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sansToPgnText(it.path)}</span>
+                  </span>
+                </SearchBlock>
+              ), t("일치하는 오프닝 없음"))}
+              {hits && section("master", hits.master, (it) => (
+                <SearchBlock key={it.id} onClick={done(() => onOpenMaster && onOpenMaster(it.id))} style={{ gap: 6 }}>
+                  <MasterResultInner tag={it.tag} tagLabel={it.tag === "tour" ? t("대회") : t("마스터")} flag={it.flag} title={it.title} sub={it.sub} />
+                </SearchBlock>
+              ), mastersMod ? t("일치하는 마스터·대회 없음") : t("불러오는 중…"))}
+              {hits && section("puzzle", hits.puzzle, ({ p, name, no }) => (
+                <SearchBlock key={p.id} onClick={done(() => onOpenPuzzle && onOpenPuzzle(p.id))} style={{ gap: 6 }}>
+                  <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 999, color: "#8A6A2F", background: "rgba(196,154,80,.22)" }}>#{no}</span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name || p.opening}</span>
+                    {p.opening && name && <span style={{ display: "block", fontSize: 10, color: T.inkSoft, fontFamily: SITE_FONT, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.opening}</span>}
+                  </span>
+                </SearchBlock>
+              ), t("일치하는 퍼즐 없음"))}
+              {hits && section("title", hits.title, ({ id, d, earned: got }) => (
+                <SearchBlock key={id} onClick={done(() => onOpenTitle && onOpenTitle(id))}>
+                  <SeriesGlyph series={d.series} size={26} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titleNameText(d)}</span>
+                    <span style={{ display: "block", fontSize: 10.5, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{seriesLabelText(d.series)}{d.rare ? " · " + t("희귀") : " · " + t("{0}단계", d.tier)}</span>
+                  </span>
+                  {got && <Check size={15} color="#3F7A3A" aria-label={t("획득")} />}
+                </SearchBlock>
+              ), t("일치하는 업적 없음"))}
+              {kind === "all" && !busy && hits && !anyHit && <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("검색 결과 없음")}</div>}
+            </div>
+          ) : kind !== "all" && kind !== "user" ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8, textAlign: "center" }}>{t("{0} 검색", kindLabel(kind))}</div>
+            : sugLoading ? <div style={{ fontSize: 12.5, color: T.inkSoft, padding: 8 }}>{t("불러오는 중…")}</div>
             : (sugFriends.length === 0 && sugTop.length === 0) ? null
               : <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                   {sugFriends.length > 0 && (
@@ -2177,12 +2293,10 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked 
                     </div>
                   )}
                   {sugTop.length > 0 && (
-                    <div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
-                          <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
-                          { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
-                      </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      {sugTop.map((r, i) => <FadeIn key={r.id} index={i} style={{ width: "100%" }}>{userSearchRow(r, () => open(r.username),
+                        <span style={{ flexShrink: 0 }}><TierStatPill totalXp={(r.pub && r.pub.xp) || 0} size={40} gauge={false} /></span>,
+                        { rank: i + 1, isMe: r.id === myUid, compact: true })}</FadeIn>)}
                     </div>
                   )}
                 </div>}
@@ -2191,6 +2305,7 @@ export function UserSearchModal({ onClose, me, myUid, onOpenUserProfile, docked 
     </div>
   );
 }
+export const UserSearchModal = SearchModal;   // 예전 이름(도킹 창 등)
 // (v0.6.9, 사용자 요청) 친구 목록 줄 맨 오른쪽의 세로 점 3개 메뉴 — 프로필 보기·친구 삭제 같은 부가 기능. 목록이 스크롤 영역이라 메뉴는 fixed로 띄운다.
 function FriendMenu({ onProfile, onRemove, disabled }) {
   const [pos, setPos] = useState(null);

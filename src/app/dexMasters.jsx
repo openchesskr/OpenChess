@@ -401,6 +401,38 @@ export function masterPlayerCount() {
   _playerCount = keys.size;
   return _playerCount;
 }
+// (v0.7.5) 마스터 트리 검색 — 화면(MastersSchematic)과 통합 검색(app/social.jsx SearchModal)이 같은 규칙을 쓴다.
+function buildMasterKeys(LAYOUT) {
+  const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
+  for (const n of LAYOUT.nodes) {
+    let names = null, title = "", flag = "", nm = "";
+    if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
+    else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
+    else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
+    else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
+    if (!names) continue;
+    const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
+    const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
+    if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
+    else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
+  }
+  return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
+}
+function matchMasters(q, psearch, masterKeys) {
+  const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
+  if (!raw) return null;
+  const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
+    .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
+  const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
+  return [...masters, ...tours];
+}
+// 통합 검색용: 배치(대회 연도 펼침 없음)를 한 번만 만들어 두고 같은 규칙으로 찾는다. 결과 { id(트리 노드), tourId?, title, sub, flag, tag }.
+let _globalKeys = null;
+export function searchMastersGlobal(q, psearch) {
+  if (!_globalKeys) _globalKeys = buildMasterKeys(layoutMasters(CHAMPIONS, TRANSFERS, SPLIT_ROWS, null, TOURNAMENTS, {}, null, FIDE, DBM.masters));
+  return matchMasters(q, psearch || null, _globalKeys) || [];
+}
+export { loadTournamentSearch };
 export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAnalyze }) {
   const fsv = useSchematicFullscreen();   // (v0.6.4) 전체 화면 보기
   const [idx, setIdx] = useState(null);
@@ -418,30 +450,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // (BUG-080) 마스터(세계 챔피언·도전자·FIDE 순위·대국 DB 선수) 이름도 같은 방식으로 찾는다 — 예전엔 대회만 찾아서 선수 이름을 쳐도 마스터 노드가 안 잡혔다.
   //  이름은 원문·영어 표기·한국어 표기를 모두 대상으로 한다(대소문자·악센트·쉼표 무시). 결과 항목은 { id: 트리 노드 id, tourId? }.
   // (v0.6.6, 사용자 요청) 같은 사람은 한 번만 나온다(챔피언 > 챔피언 도전자 > FIDE 순위 > 대국 DB 선수 순으로 노드를 고른다). 이름 아래에는 조건에 맞는 정보만(챔피언 대수, 챔피언 도전자, FIDE 부문 순위) 쉼표로 이어 보인다(masterInfoLine).
-  const masterKeys = React.useMemo(() => {
-    const seen = new Map(), PRI = { champ: 0, sat: 1, fide: 2, dbm: 3 };
-    for (const n of LAYOUT.nodes) {
-      let names = null, title = "", flag = "", nm = "";
-      if (n.kind === "champ") { names = [n.champ.name, n.champ.ko]; nm = n.champ.name; title = personName(n.champ); flag = flagEmoji(n.champ.cc); }
-      else if (n.kind === "sat") { names = [n.sat.opp, n.sat.ko]; nm = n.sat.opp; title = personName(n.sat); flag = flagEmoji(n.sat.cc); }
-      else if (n.kind === "fide") { names = [n.fide.name, masterName(n.fide.name, "ko"), masterName(n.fide.name, "en")]; nm = n.fide.name; title = masterName(n.fide.name, "en"); flag = masterFlag(n.fide.name) || ""; }
-      else if (n.kind === "dbm") { names = [n.dbm.name, masterName(n.dbm.name, "ko"), masterName(n.dbm.name, "en")]; nm = n.dbm.name; title = masterName(n.dbm.name, "en"); flag = masterFlag(n.dbm.name) || ""; }
-      if (!names) continue;
-      const pk = candidateKeys(nm)[0] || norm(nm), cur = seen.get(pk), pri = PRI[n.kind];
-      const hay = names.filter(Boolean).map((x) => String(x).toLowerCase()), keys = names.filter(Boolean).map(norm);
-      if (!cur) seen.set(pk, { id: n.id, pri, title, flag, nm, hay, keys });
-      else { cur.hay.push(...hay); cur.keys.push(...keys); if (pri < cur.pri) Object.assign(cur, { id: n.id, pri, title, flag, nm }); }
-    }
-    return [...seen.values()].map((m) => ({ ...m, sub: masterInfoLine(m.nm) }));
-  }, [LAYOUT]);
-  const matches = React.useMemo(() => {
-    const raw = q.trim().toLowerCase(), key = norm(raw), byPlayer = psearch ? tournamentsOfPlayerQuery(psearch, raw) : new Set();
-    if (!raw) return null;
-    const tours = TOURNAMENTS.filter((tr) => [tr.name, tr.ko, tr.place, tr.placeKo].some((x) => x && (String(x).toLowerCase().includes(raw) || (key.length >= 2 && norm(x).includes(key)))) || byPlayer.has(tr.id))
-      .sort((a, b) => a.from - b.from).map((tr) => ({ id: "tour:" + tr.id, tourId: tr.id, title: personName(tr), sub: tourPeriod(tr) + ", " + tourPlace(tr), flag: "", tag: "tour" }));
-    const masters = masterKeys.filter((m) => m.hay.some((h) => h.includes(raw)) || (key.length >= 2 && m.keys.some((k) => k.includes(key)))).map((m) => ({ id: m.id, title: m.title, sub: m.sub, flag: m.flag, tag: "master" }));
-    return [...masters, ...tours];
-  }, [q, psearch, masterKeys]);
+  const masterKeys = React.useMemo(() => buildMasterKeys(LAYOUT), [LAYOUT]);
+  const matches = React.useMemo(() => matchMasters(q, psearch, masterKeys), [q, psearch, masterKeys]);
   const matchIds = React.useMemo(() => (matches ? new Set(matches.map((x) => x.id)) : null), [matches]);
   const matchTourIds = React.useMemo(() => (matches ? new Set(matches.filter((x) => x.tourId).map((x) => x.tourId)) : null), [matches]);
   const dimOn = !!matches && matches.length > 0;
@@ -628,6 +638,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   const navFiredRef = useRef(false);
   useEffect(() => {
     if (!navTarget || navFiredRef.current || introOn) return;
+    // (v0.7.5) 통합 검색에서 고른 마스터·대회 — 화면 안 검색 결과를 고를 때와 같이 그 노드로 찾아간다
+    if (navTarget.focusId) { if (!LAYOUT.byNodeId.get(navTarget.focusId)) return; navFiredRef.current = true; setFocusId(navTarget.focusId); return; }
     const ed = LAYOUT.byNodeId.get("ed:" + navTarget.tourId + ":" + navTarget.year), hub = LAYOUT.byNodeId.get("tour:" + navTarget.tourId);
     if (!(ed || hub) || (!ed && !idx)) return;   // 연도 블록은 색인(idx)이 올 때 생긴다 — 기다린다
     navFiredRef.current = true;

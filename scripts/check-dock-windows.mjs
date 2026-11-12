@@ -21,7 +21,7 @@ const widthOf = (l) => { const d = l.filter((w) => !w.float); return d.reduce((a
 const app = readFileSync(join(ROOT, "src/App.jsx"), "utf8"), soc = readFileSync(join(ROOT, "src/app/social.jsx"), "utf8");
 for (const k of ["search", "friends", "chats"]) if (!new RegExp('dock\\.enabled\\) dock\\.open\\(\\{ id: "' + k + '"').test(app)) fails.push("헤더 버튼(" + k + ")이 데스크톱에서 도킹 창을 열지 않음");
 if (!/<DockHost dock=\{dock\}/.test(app)) fails.push("App에 DockHost 없음");
-for (const [name, re] of [["UserSearchModal", /export function UserSearchModal\(\{[^)]*docked/], ["ChatsModal", /export function ChatsModal\(\{ docked, onOpenChat/], ["FriendsModal", /export function FriendsModal\(\{ docked, onOpenChat/], ["ChatWindow", /export function ChatWindow\(/]]) if (!re.test(soc)) fails.push(name + " docked 지원 누락");
+for (const [name, re] of [["SearchModal(통합 검색, 예전 UserSearchModal)", /export function SearchModal\(\{[^)]*docked/], ["ChatsModal", /export function ChatsModal\(\{ docked, onOpenChat/], ["FriendsModal", /export function FriendsModal\(\{ docked, onOpenChat/], ["ChatWindow", /export function ChatWindow\(/]]) if (!re.test(soc)) fails.push(name + " docked 지원 누락");
 if (!/dock\.enabled[^\n]*\) \{ dock\.open\(\{ id: "profile:"/.test(app) || !/<UserProfilePage[\s\S]{0,200}\bdocked\b/.test(app)) fails.push("데스크톱에서 다른 유저 프로필이 도킹 창으로 열리지 않음");
 if (!/export function UserProfilePage\(\{[^}]*\bdocked\b/.test(soc)) fails.push("UserProfilePage docked 지원 누락");
 if ((soc.match(/style=\{docked \? dockedOuter/g) || []).length < 3) fails.push("모달 3종의 docked 바깥 틀(백드롭 제거) 누락");
