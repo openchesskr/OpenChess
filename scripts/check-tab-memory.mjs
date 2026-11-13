@@ -7,7 +7,7 @@
  *  실행: node scripts/check-tab-memory.mjs (prebuild) */
 import { readFileSync } from "node:fs";
 const rd = (p) => readFileSync(new URL("../src/" + p, import.meta.url), "utf8");
-const app = rd("App.jsx"), shell = rd("app/shell.jsx"), an = rd("app/analysis.jsx"), pz = rd("app/puzzle.jsx"), lr = rd("app/learn.jsx");
+const app = rd("App.jsx"), shell = rd("app/shell.jsx"), an = rd("app/analysis.jsx"), pz = rd("app/puzzle.jsx"), lr = rd("app/growthHome.jsx");   // (v0.7.6) 최근 대국 필터는 분석 탭 성장 분석 영역으로 옮김
 const fails = [];
 const need = (cond, msg) => { if (!cond) fails.push(msg); };
 // ①
@@ -28,7 +28,7 @@ need(/analysisSans, analysisFenRoot, analysisExtra, tab, analysisFuture/.test(ap
 const bad = app.split("\n").filter((l) => /\bsetAnalysisSans\(/.test(l) && !/useState|d\.analysisSans|setAnalysisSansStd = /.test(l));
 need(bad.length === 0, "App.jsx: 분석 탭 밖에서 setAnalysisSans를 직접 부름(FEN 시작 포지션이 남아 보드가 어긋남) — setAnalysisSansStd를 쓸 것: " + bad.map((l) => l.trim().slice(0, 60)).join(" | "));
 // ④
-for (const [src, keys, name] of [[an, ["analysis.flip", "analysis.mode", "analysis.sortBy"], "분석"], [pz, ["puzzle.quickFilter", "puzzle.mode", "puzzle.openings", "puzzle.creators", "puzzle.sortBy"], "퍼즐"], [lr, ["learn.view", "learn.timeFilter", "learn.colorFilter"], "학습"]])
+for (const [src, keys, name] of [[an, ["analysis.flip", "analysis.mode", "analysis.sortBy"], "분석"], [pz, ["puzzle.quickFilter", "puzzle.mode", "puzzle.openings", "puzzle.creators", "puzzle.sortBy"], "퍼즐"], [lr, ["growth.view", "growth.timeFilter", "growth.colorFilter"], "분석 탭 최근 대국"]])
   for (const k of keys) need(src.includes('useTabMemory("' + k + '"'), name + " 탭: " + k + " 상태가 탭 이동 때 유지되지 않음(useTabMemory)");
 if (fails.length) { console.error("✗ check-tab-memory 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-tab-memory: 새로고침 첫 탭·딥링크 덮개, 탭별 주소·스크롤 기억, FEN 시작 포지션 저장, 분석·퍼즐·학습 화면 상태 유지 규칙이 지켜진다");

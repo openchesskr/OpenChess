@@ -789,7 +789,7 @@ function MistakeLog({ g, onReview, bare }) {
 /* 학습 탭의 성장 분석 — 맨 위 프로필 헤더, 그 아래는 리뷰 5판 게이트(미달) 또는 분석 본문(달성: 요약·성장 곡선·고칠 한 가지·구간 진단·실수 원인·수 유형·아쉬운 수·마스터 스타일). */
 /* 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰한다 — 캐시·서버 공유 캐시에 있으면 엔진 없이, 없으면 한 판씩 분석(리뷰 화면과 같은 캐시라 나중에 열면 바로 보임).
    새 대국이 생겨 최근 5판이 바뀌면 새 판만 분석한다(항상 최신). 반환: 분석이 끝난 판의 기록 목록과 진행 상황. */
-function useAutoReview({ recent, engine, reviewSpeed, quick }) {
+function useAutoReview({ recent, engine, reviewSpeed, quick, paused }) {
   const [tick, setTick] = useState(0), [failed, setFailed] = useState(() => new Set()), [activeKey, setActiveKey] = useState(null);
   const sig = recent.map((g) => reviewKeyOf(g)).join("|");
   const ready = !!engine && engine.status === "ready";
@@ -801,7 +801,7 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
         const key = reviewKeyOf(game);
         if (!key || cachedReviewOf(game)) continue;
         setActiveKey(key);                        // (v0.7.5) 진행 화면이 지금 분석 중인 판을 보여 준다
-        if (!ready) return;                       // 엔진이 준비되면 이 효과가 다시 돈다
+        if (!ready || paused) return;             // 엔진이 준비되면(또는 화면에 보이면) 이 효과가 다시 돈다
         const r = await ensureReview(game, { engine, reviewSpeed, quick });
         if (cancelled) return;
         if (r) setTick((n) => n + 1); else setFailed((prev) => new Set(prev).add(key));
@@ -809,7 +809,7 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
       if (!cancelled) setActiveKey(null);
     })();
     return () => { cancelled = true; };
-  }, [sig, ready, reviewSpeed, quick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sig, ready, reviewSpeed, quick, paused]);   // eslint-disable-line react-hooks/exhaustive-deps
   const records = useMemo(() => recent.map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const states = {};
   for (const r of records) states[r.key] = "done";
@@ -818,12 +818,22 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
   return { records, done: records.length, total: recent.length, settled: recent.length > 0 && records.length + failedN >= recent.length, states, activeKey };
 }
 
+/* (v0.7.6) 학습 탭 맞춤 학습(복습·추천 레슨)용 — 엔진을 돌리지 않고, 성장 분석이 이미 리뷰해 둔(캐시) 최근 판만 모아 같은 분석(useGrowthData)을 만든다. */
+export function useCachedGrowth(recent) {
+  const sig = (recent || []).map((g) => reviewKeyOf(g)).join("|");
+  const records = useMemo(() => (recent || []).map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return { g: useGrowthData(records), reviewed: records.length };
+}
+export { MiniBoard, tacLabel, reviewGameOf };
+
 /* 학습 탭의 성장 분석 — 프로필의 크림색 블록 하나 안에 헤더(칭호·사진·이름·소개)와 분석 구획이 모두 들어간다. 최근 5판이 자동 분석되기 전에는 게이지 바 안내만 보인다. */
-export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, reviewSpeed, quick, onOpenGameAnalyze, onOpenGame }) {
+// (v0.7.6, 사용자 요청) 학습 탭에서 분석 탭(데스크톱: 아래쪽, 모바일: 옆으로 넘기는 2페이지)으로 옮겼다. active=false면(아직 화면에 안 보임) 엔진 자동 리뷰를 미뤄,
+// 분석 탭의 실시간 평가와 엔진 대기열을 다투지 않게 한다. 캐시에 있는 판은 그대로 보인다.
+export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, reviewSpeed, quick, onOpenGameAnalyze, onOpenGame, active = true }) {
   useEffect(() => { purgeLegacyGrowthData(); }, []);
   const need = GROWTH_RECENT_GAMES;
   const enough = recent.length >= need;
-  const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick });
+  const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick, paused: !active });
   const showResults = enough && auto.settled && auto.done >= 1;
   const g = useGrowthData(showResults ? auto.records : []);
   // (v0.7.6) 퍼포먼스 레이팅: 자동 리뷰가 끝난 최근 5판(기록)을 원래 대국 객체(진영·시간 규정·레이팅)와 짝지어 합산한다.
