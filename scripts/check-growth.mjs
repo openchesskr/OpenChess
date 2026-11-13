@@ -272,5 +272,9 @@ ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(gr
 // 삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록)가 되살아나지 않게 — 새 설계가 확정되기 전에는 넣지 않는다.
 { const all = [review, growth, app, quest, common, rd("src/app/gameHistory.jsx")].join("\n");
   ok(!/lib\/weakness\.js|growthStore|openingMistakes|recordReviewMistakes|WeaknessMap|ReviewCards|OpeningMistakes|occ-growth/.test(all.replace(/occ_growth_v1/g, "")), "삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록) 참조가 다시 생김"); }
+// (v0.7.6, 사용자 요청) 퍼포먼스 레이팅은 성장 분석 맨 위 섹션(성장 요약)에서 최근 5판 기준으로만 보여 준다 — /user 프로필로 되돌아가거나 기준이 어긋나지 않게.
+{ ok(/export const RECENT_PERF_N = GROWTH_RECENT_GAMES;/.test(rd("src/lib/recentPerformance.js")), "퍼포먼스 레이팅 합산 판 수가 성장 분석 판 수(GROWTH_RECENT_GAMES, 5판)와 다름");
+  ok(/<PerfHero\b/.test(growth) && /recentPerformance\(items, GROWTH_RECENT_GAMES\)/.test(growth) && /<Overview g=\{g\}[^>]*perf=\{perf\}/.test(growth), "성장 요약 섹션에 퍼포먼스 레이팅(PerfHero, 최근 5판)이 없음");
+  ok(!/RecentPerformanceRow|recentPerf\.jsx|recentPerformance\(/.test(rd("src/app/profile.jsx") + rd("src/app/gameHistory.jsx")), "/user 프로필에 퍼포먼스 레이팅이 다시 들어감"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 최근 5판 자동 리뷰(대국 선택·엔진 분석 연결·게이지), 승률 하락 원인 설명기, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

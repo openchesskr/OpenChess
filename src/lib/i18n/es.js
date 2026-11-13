@@ -3672,4 +3672,6 @@ export default {
   "기물을 희생하는 뛰어난 수가 탁월한 수로 표시되지 않던 문제를 고쳤습니다.": "Se corrigió que los buenos Sacrificios de Pieza no se marcaran como jugadas Brillantes.",
   "둘 수 있는 수가 하나뿐인 강제 수는 유일한 수로 표시하지 않습니다.": "Las jugadas forzadas, cuando solo existe una jugada legal, ya no se marcan como Única jugada.",
   "/review 링크를 열면 리뷰 대신 다른 화면으로 넘어가던 문제를 고쳤습니다.": "Se corrigió que los enlaces /review abrieran otra pantalla en lugar de la Revisión.",
+  "퍼포먼스 레이팅": "Rating de rendimiento",
+  "상대 레이팅과 무관하게 둔 수의 질만으로 계산": "Calculado solo con la calidad de las jugadas, sin importar el rating del rival",
 };

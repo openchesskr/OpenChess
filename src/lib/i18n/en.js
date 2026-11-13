@@ -3672,4 +3672,6 @@ export default {
   "기물을 희생하는 뛰어난 수가 탁월한 수로 표시되지 않던 문제를 고쳤습니다.": "Fixed strong Piece Sacrifices not being marked as Brilliant moves.",
   "둘 수 있는 수가 하나뿐인 강제 수는 유일한 수로 표시하지 않습니다.": "Forced moves, where only one legal move exists, are no longer marked as Only move.",
   "/review 링크를 열면 리뷰 대신 다른 화면으로 넘어가던 문제를 고쳤습니다.": "Fixed /review links opening another screen instead of the Review.",
+  "퍼포먼스 레이팅": "Performance rating",
+  "상대 레이팅과 무관하게 둔 수의 질만으로 계산": "Calculated from move quality alone, regardless of opponent rating",
 };

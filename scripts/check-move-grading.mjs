@@ -186,7 +186,7 @@ if (rawSac !== 1) fails.push("src/App.jsx — 엔진 확인 없이 isSacrifice�
   if (r.moves[4].kind !== "only") fails.push("fixForcedOnlyMoves — 합법 수가 여럿인 3.Qxg6+까지 바꿈");
   const fen = { moves: [{ san: "Ke2", kind: "only" }] }; fixForcedOnlyMoves(fen);
   if (fen.moves[0].kind !== "only") fails.push("fixForcedOnlyMoves — 시작 포지션이 아닌 결과를 건드림");
-  for (const f of ["src/app/reviewCache.js", "src/app/profile.jsx", "src/app/recentPerf.jsx", "src/app/common.jsx"]) if (!/fixForcedOnlyMoves\(/.test(readFileSync(new URL("../" + f, import.meta.url), "utf8"))) fails.push(f + " — 저장된 리뷰 결과를 읽을 때 fixForcedOnlyMoves를 거치지 않음");
+  for (const f of ["src/app/reviewCache.js", "src/app/profile.jsx", "src/app/common.jsx"]) if (!/fixForcedOnlyMoves\(/.test(readFileSync(new URL("../" + f, import.meta.url), "utf8"))) fails.push(f + " — 저장된 리뷰 결과를 읽을 때 fixForcedOnlyMoves를 거치지 않음");
 }
 if (fails.length) {
   console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038 재발 방지):\n  " + fails.join("\n  "));

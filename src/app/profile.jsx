@@ -20,7 +20,6 @@ import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, Che
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 import TierJourney from "../components/tierJourney.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
-import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
@@ -533,7 +532,7 @@ export function AccountChessStats({ hideRecent, chesscom, username, onOpenOpenin
       </div>
       {/* 전적 */}
       {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
-      {!recentOnly && overall && <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="cc" />} />}
+      {!recentOnly && overall && <GameRecordSummary overall={overall} />}
       {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
