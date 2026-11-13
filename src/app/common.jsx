@@ -1,7 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
-import { autoMoveKeyword } from "../lib/moveKeywords.js";
+import { autoMoveKeyword, placementKey } from "../lib/moveKeywords.js";
 import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
@@ -1797,6 +1797,22 @@ export function moverEval(m, ply) {
   return null;
 }
 function hasRealEval(m) { return !!m.live || m.evalCp != null || m.mate != null; }
+// (v0.7.6) 수 키워드의 반복 판정용 — 수순(sans)에서 나온 모든 포지션의 배치 키. 표준 시작에서 재생한 마지막 보드가 지금 보드와 다르면(FEN 시작 등) 판정하지 않는다(null).
+const _kwHistCache = new Map();
+function keywordHistory(sans, board) {
+  if (!sans || !sans.length || !board) return null;
+  const key = sans.join(" ");
+  if (_kwHistCache.has(key)) return _kwHistCache.get(key);
+  let out = null;
+  try {
+    let b = startBoard(); const set = new Set([placementKey(b, "w")]);
+    sans.forEach((s, i) => { const c = i % 2 === 0 ? "w" : "b"; b = applySan(b, s, c); set.add(placementKey(b, c === "w" ? "b" : "w")); });
+    out = placementKey(b, sans.length % 2 === 0 ? "w" : "b") === placementKey(board, sans.length % 2 === 0 ? "w" : "b") ? set : null;
+  } catch { out = null; }
+  if (_kwHistCache.size > 64) _kwHistCache.clear();
+  _kwHistCache.set(key, out);
+  return out;
+}
 export function assignTiers(moves, ply, board, keyStr, sans) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
@@ -1815,7 +1831,19 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
   // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드 하나(kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
-  const withKw = (m, i, out) => { const mv = moverEval(m, ply); return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book }) }; };
+  //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
+  const evs = moves.map((m) => moverEval(m, ply));
+  const allEval = evs.every((v) => v != null);
+  const nearBest = best == null ? null : evs.filter((v) => v != null && best - v <= 30).length;
+  const history = keywordHistory(sans, board);
+  const prevSan = sans && sans.length ? sans[sans.length - 1] : null;
+  const withKw = (m, i, out) => {
+    const mv = evs[i];
+    const others = evs.filter((v, k) => k !== i && v != null);
+    const gapCp = allEval && others.length ? mv - Math.max(...others) : null;
+    return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
+      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history }) };
+  };
   return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
   function gradeTier(m, i) {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;

@@ -52,6 +52,9 @@ for (const [file, from, to] of ZONES) {
     if (/from\s*"lucide-react\/|import\s*\*\s*as\s*\w+\s*from\s*"lucide-react"/.test(src)) fails.push(f.slice(root.length - 3) + ": lucide 아이콘을 통째로/경로로 가져옴");
   }
 }
+// (v0.7.6, 사용자 요청) 연두색 리뷰 버튼은 예외 — chess.com 리뷰 버튼을 벤치마킹한 예전 모양(둥근 단색 별)을 유지한다. 파셋 Star로 다시 바꾸지 말 것.
+{ const ui = read("src/components/uiPrimitives.jsx"), bj = (ui.match(/export function BestMoveJumpButton[\s\S]*?\n\}\n/) || [""])[0];
+  if (!/<ReviewStar /.test(bj) || /<Star /.test(bj) || !/strokeLinejoin="round"/.test(ui)) fails.push("BestMoveJumpButton: 연두색 리뷰 버튼은 예전 모양(ReviewStar: 둥근 단색 별)이어야 함 — 아이콘 규칙 예외(사용자 요청)"); }
 if (!/## 아이콘·디자인 요소 규칙/.test(read("CLAUDE.md"))) fails.push("CLAUDE.md에 '아이콘·디자인 요소 규칙' 절이 없음");
 if (fails.length) { console.error("✗ check-facet-icons 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-facet-icons: 아이콘 구역 " + n + "곳이 윤곽선 없이 면 분할 명암으로 그려져 있고, UI 아이콘은 모두 OpenChess 세트(lucide는 브랜드 로고만)");
