@@ -485,6 +485,8 @@ export const economyGet = () => ecoCall("economy_get");
 export const economyLineSolved = (no, tag, shareMsgId) => ecoCall("economy_line_solved", { p_no: no, p_tag: String(tag), p_share_msg: shareMsgId == null ? null : shareMsgId });
 export const economyClaimQuest = (slot) => ecoCall("economy_claim_quest", { p_slot: slot });
 export const economyClaimChapter = (key) => ecoCall("economy_claim_chapter", { p_key: key });
+export const economyClaimPlayQuest = (key) => ecoCall("economy_claim_play_quest", { p_key: key });   // (v0.7.6) 플레이 퀘스트 보상(서버가 진행을 다시 확인)
+export const playQuestStatus = () => ecoCall("play_quest_status");
 export const economyClaimNotification = (id) => ecoCall("economy_claim_notification", { p_id: id });
 export const economyGacha = (count) => ecoCall("gacha_pull", { p_count: count });
 export const economyDevSet = (xp, coins) => ecoCall("economy_dev_set", { p_xp: xp == null ? null : xp, p_coins: coins == null ? null : coins });

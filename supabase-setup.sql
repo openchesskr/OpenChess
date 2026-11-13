@@ -4348,6 +4348,7 @@ returns jsonb language sql immutable as $$
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
     "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20},
+    "playQuests": {"game": {"target": 1, "coins": 50}, "win": {"target": 1, "coins": 50}, "long": {"target": 1, "coins": 50}, "mg": {"target": 2, "coins": 50}, "kinds": {"target": 2, "coins": 50}},
     "devBonusCoins": 10000
   }'::jsonb;
 $$;
@@ -4553,6 +4554,60 @@ begin
   return public._economy_apply(v_uid, 0, v_amount, 'chapter', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', v_amount);
 end; $$;
 
+-- (v0.7.6, 사용자 요청) 플레이 퀘스트 — 날마다 초기화하지 않는 한 번짜리 목표, 달성하면 퀘스트당 1회 코인 보상(economy_params의 playQuests).
+-- 진행 값은 브라우저가 세지 않고 서버가 직접 센다: 일반 대국 = 서버가 검증해 저장한 끝난 대국(pvp_games game_type 'chess' + bot_games, 20수(양쪽 합) 이상),
+-- 미니게임 = 끝난 미니게임 대전(pvp_games game_type coord·knight·rush·attack, 중단 제외). 그래서 보상을 받으려고 숫자를 꾸며 보낼 수 없다.
+-- 반환: { game, win, long, mg, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
+create or replace function public._play_quest_counts(p_uid uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  with chess as (
+    select jsonb_array_length(g.sans) as plies,
+      ((g.status = 'white_won' and g.white_uid = p_uid) or (g.status = 'black_won' and g.black_uid = p_uid)) as won
+    from public.pvp_games g
+    where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
+    union all
+    select coalesce(array_length(b.sans, 1), 0), b.result = 'win' from public.bot_games b where b.uid = p_uid
+  ), ok as (select * from chess where plies >= 20),
+  mg as (
+    select g.game_type from public.pvp_games g
+    where g.game_type in ('coord', 'knight', 'rush', 'attack') and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
+  )
+  select jsonb_build_object(
+    'game', least(99, (select count(*) from ok)),
+    'win', least(99, (select count(*) from ok where won)),
+    'long', least(99, (select count(*) from ok where plies >= 80)),
+    'mg', least(99, (select count(*) from mg)),
+    'kinds', (select count(distinct game_type) from mg));
+$$;
+create or replace function public.play_quest_status()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  return public._play_quest_counts(v_uid) || jsonb_build_object('claimed',
+    coalesce((select jsonb_agg(ref order by ref) from public.economy_claims where uid = v_uid and kind = 'playquest'), '[]'::jsonb));
+end; $$;
+create or replace function public.economy_claim_play_quest(p_key text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_key is null or p_key !~ '^[a-z]{1,16}$' then raise exception 'invalid quest'; end if;
+  v_q := public.economy_params() -> 'playQuests' -> p_key;
+  if v_q is null then return jsonb_build_object('error', 'unknown quest'); end if;
+  if public.rate_limit_hit('playquest:' || v_uid, 30, 3600) then return jsonb_build_object('error', 'rate limited'); end if;
+  v_have := (public._play_quest_counts(v_uid) ->> p_key)::bigint;
+  if coalesce(v_have, 0) < (v_q ->> 'target')::bigint then return jsonb_build_object('error', 'not complete'); end if;
+  perform public._economy_ensure(v_uid);
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'playquest', p_key) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  return public._economy_apply(v_uid, 0, (v_q ->> 'coins')::bigint, 'playquest', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', (v_q ->> 'coins')::bigint);
+end; $$;
+
 -- 오늘의 퍼즐 선정 알림 보상 수령. 금액은 서버가 알림을 만들 때 정한 reward_amount(수정 불가 컬럼) — payload는 사용자가 고칠 수 있어 쓰지 않는다. 알림당 1회.
 create or replace function public.economy_claim_notification(p_id bigint)
 returns jsonb language plpgsql security definer set search_path = public as $$
@@ -4735,7 +4790,7 @@ declare
     'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
     'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
     'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc',
-    'economy_claim_chapter', 'economy_claim_notification', 'economy_claim_quest', 'economy_dev_bonus', 'economy_dev_set', 'economy_get', 'economy_line_solved', 'gacha_pull', 'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
+    'economy_claim_chapter', 'economy_claim_play_quest', 'play_quest_status', 'economy_claim_notification', 'economy_claim_quest', 'economy_dev_bonus', 'economy_dev_set', 'economy_get', 'economy_line_solved', 'gacha_pull', 'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
     'pvp_finish', 'pvp_invite_cancel', 'pvp_invite_friend', 'pvp_invite_respond',
     'pvp_move', 'pvp_queue_join', 'pvp_queue_leave', 'pvp_rematch_decline',
     'pvp_rematch_offer', 'report_set_status', 'reports_for_dev', 'rush_forfeit',

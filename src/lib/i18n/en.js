@@ -2104,7 +2104,6 @@ export default {
   "미니게임 2판 플레이하기": "Play 2 minigames",
   "서로 다른 미니게임 2종 플레이하기": "Play 2 different minigames",
   "클리어": "Cleared",
-  "일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨, 한국 시간 자정에 새로 시작": "A standard game counts only if it lasts 10 moves (20 plies) or more and ends. Resets at midnight Korea time",
   "OpenChess 유산": "OpenChess Legacy",
   "OpenChess 유산: {0}": "OpenChess Legacy: {0}",
   "로그인하면 친구에게 보낼 수 있음": "Log in to send to friends",
@@ -3418,7 +3417,7 @@ export default {
   "OpenChess 마스터 대국 DB 수록 대국 기준 통계": "Stats based on games in the OpenChess master database",
   // (v0.7.5) 도감 첫 화면 카드 설명
   "오프닝 수순 탐색과 해금": "Explore and unlock opening lines",
-  "명인 대국과 선수 프로필": "Master games and player profiles",
+  "체스의 정점에 달한 선수들": "Players who reached the summit of chess",
   "모은 칭호와 다음 목표": "Titles earned and what's next",
   "기물·보드 세트 수집": "Collect piece and board sets",
   "선수 {0}명": "Players: {0}",
@@ -3674,4 +3673,7 @@ export default {
   "/review 링크를 열면 리뷰 대신 다른 화면으로 넘어가던 문제를 고쳤습니다.": "Fixed /review links opening another screen instead of the Review.",
   "퍼포먼스 레이팅": "Performance rating",
   "상대 레이팅과 무관하게 둔 수의 질만으로 계산": "Calculated from move quality alone, regardless of opponent rating",
+  "한 번 달성하면 끝나는 목표, 퀘스트마다 코인 보상. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨": "A one-time goal with a coin reward for each quest. A standard game counts only if it lasts 10 moves (20 plies) or more and ends",
+  "보상 받음": "Reward received",
+  "보상은 로그인 후 지급": "Rewards are given after login",
 };

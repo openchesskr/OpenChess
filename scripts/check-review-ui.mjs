@@ -82,5 +82,29 @@ else {
   if (!/resolved\.game|reviewMetaFromPgn\(pgnText\)/.test(common) || !/\.\.\.reviewMetaFromPgn\(pgnText\)/.test(common)) fails.push("resolveReviewIdentifier가 링크의 대국 정보(진영 등)를 복원하지 않음");
 }
 
+// (v0.7.6, BUG-164) 리뷰 기보(데스크톱 표·모바일 줄)는 체크·체크메이트 기호를 지우지 않는다 — 원본에 없으면 포지션에서 붙인다.
+{
+  const { displaySans, parseFenFull } = await import("../src/lib/chessRules.js");
+  const got = displaySans(null, ["e4", "f5", "Qh5", "g6"]);
+  if (got[2] !== "Qh5+") fails.push("displaySans — 체크 수 Qh5에 +가 붙지 않음(" + got[2] + ")");
+  const mate = displaySans(null, ["f3", "e5", "g4", "Qh4#"]);
+  if (mate[3] !== "Qh4#") fails.push("displaySans — 체크메이트 기호 #가 사라짐(" + mate[3] + ")");
+  const fen = displaySans(parseFenFull("4k3/8/8/8/8/8/8/R3K3 w - - 0 1"), ["Ra8"]);
+  if (fen[0] !== "Ra8+") fails.push("displaySans — FEN 시작 대국의 체크 기호 누락(" + fen[0] + ")");
+  const rv = fs.readFileSync(new URL("../src/app/review.jsx", import.meta.url), "utf8");
+  if (/stripSuffix\((s|san)\)<\/(button|span)>/.test(rv)) fails.push("review.jsx — 기보 칸이 stripSuffix로 체크 기호를 지움");
+  if (!/<ReviewMoveTable sans=\{shownSans\}/.test(rv) || !/<ReviewMoveStrip sans=\{shownSans\}/.test(rv)) fails.push("review.jsx — 기보 표·줄이 displaySans 결과(shownSans)를 쓰지 않음");
+}
+// (v0.7.6, BUG-165) 서버 공유 캐시의 대국(수 목록이 moves)도 리뷰 화면이 여는 sans 모양으로 맞춘다 — 채팅 "리뷰 보기"·/review/(숫자) 링크.
+{
+  const { normalizeReviewGame } = await import("../src/lib/reviewGame.js");
+  const g = normalizeReviewGame({ moves: ["e4", "e5"], id: "1" });
+  if (!g || !Array.isArray(g.sans) || g.sans.length !== 2) fails.push("normalizeReviewGame — moves만 있는 대국에 sans를 만들지 않음");
+  const keep = normalizeReviewGame({ sans: ["d4"], moves: [{ ply: 1 }] });
+  if (keep.sans[0] !== "d4") fails.push("normalizeReviewGame — 이미 있는 sans를 바꿈");
+  const cm = fs.readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8"), app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  if (!/normalizeReviewGame\(rows\[0\]\.data\)/.test(cm)) fails.push("common.jsx reviewedGameFetch — 서버 대국을 normalizeReviewGame으로 맞추지 않음");
+  if (!/const openReview = useCallback\(\(rawGame\) => \{\s*const game = normalizeReviewGame\(rawGame\)/.test(app)) fails.push("App.jsx openReview — 받은 대국을 normalizeReviewGame으로 맞추지 않음");
+}
 if (fails.length) { console.error("✗ review-ui check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ review-ui check: 자유 탐색 ply·빠른 리뷰 연출 구성·전술 기물 칸 중앙 배치·내 진영 아래·코치 말풍선 고정 높이·리뷰 링크 왕복 유지");

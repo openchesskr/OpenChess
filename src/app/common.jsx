@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { engineLineGapMs, isLite } from "../lib/perfMode.js";
@@ -4558,7 +4559,7 @@ export async function reviewPut(kind, ccId, payload) {
 }
 export async function reviewedGameFetch(ccId) {
   if (!SB_ON || !ccId) return null;
-  try { const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; }
+  try { const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=data&limit=1"); return rows && rows[0] ? normalizeReviewGame(rows[0].data) : null; } catch { return null; }   // (v0.7.6, BUG-165) 서버는 수 목록을 moves에 저장한다 — 리뷰 화면이 읽는 sans로 맞춘다
 }
 // (v0.2.1 기능) 리뷰 페이지 전용 프로필 이미지 — 실제 아바타가 있으면 그대로, 없으면 파비콘(검은
 // 나이트)과 그 색 반전판(흰 나이트, /favicon-white.png)을 진영별 기본값으로 쓴다.

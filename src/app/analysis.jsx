@@ -2851,7 +2851,46 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
+// (v0.7.6, 사용자 요청) 데스크톱(두 칼럼, 1024px 이상)에서는 다음 수 블록을 위에서 6개만 보이는 높이로 자르고, 나머지는 그 영역 안에서만 도는 세로 스크롤로 본다.
+// 높이는 7번째 블록의 위치(= 블록 6개 + 사이 간격)를 재서 정한다 — 블록 높이가 바뀌어도(평가치·키워드 로딩) ResizeObserver가 다시 잰다. 6개 이하면 자르지 않는다.
+// 포지션이 바뀌면(resetKey) 맨 위로 되돌린다. 안쪽 스크롤이 끝나도 페이지가 대신 스크롤되지 않게 overscroll-behavior: contain. scripts/check-analysis-tiles.mjs가 검사한다.
+export const MOVE_TILE_WINDOW = 6;
+function MoveTileWindow({ enabled, resetKey, children }) {
+  const ref = useRef(null);
+  const [maxH, setMaxH] = useState(null);
+  const [atEnd, setAtEnd] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!enabled || !el) { setMaxH(null); return undefined; }
+    const measure = () => {
+      const kids = el.children;
+      if (kids.length <= MOVE_TILE_WINDOW) { setMaxH(null); setAtEnd(true); return; }
+      const h = kids[MOVE_TILE_WINDOW].offsetTop - kids[0].offsetTop;
+      setMaxH(h > 0 ? h : null);
+      setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(el); for (const k of el.children) ro.observe(k); }
+    const mo = typeof MutationObserver !== "undefined" ? new MutationObserver(() => { measure(); if (ro) for (const k of el.children) ro.observe(k); }) : null;
+    if (mo) mo.observe(el, { childList: true });
+    return () => { if (ro) ro.disconnect(); if (mo) mo.disconnect(); };
+  }, [enabled]);
+  useEffect(() => { if (ref.current) ref.current.scrollTop = 0; }, [resetKey]);
+  if (!enabled) return <>{children}</>;
+  return (
+    <div style={{ position: "relative" }}>
+      <div ref={ref} className="oc-tile-window" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
+        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "rgba(236,203,134,.45) transparent", marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
+        {children}
+      </div>
+      {maxH != null && !atEnd && <div aria-hidden style={{ position: "absolute", left: "50%", bottom: -11, transform: "translateX(-50%)", width: 44, height: 4, borderRadius: 2, pointerEvents: "none", background: "rgba(236,203,134,.45)" }} />}
+    </div>
+  );
+}
+
 export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
+  const tileWindowOn = !useNarrow(1023);   // (v0.7.6) 데스크톱 두 칼럼 배치에서만 다음 수 블록 6개 창(MoveTileWindow)
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -3529,7 +3568,9 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
             {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
             <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
+            <MoveTileWindow enabled={tileWindowOn} resetKey={sans.join(" ") + "|" + (fenRoot ? "fen" : "")}>
             {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            </MoveTileWindow>
           </>
         );
       })()}

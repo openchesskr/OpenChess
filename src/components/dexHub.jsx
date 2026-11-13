@@ -26,7 +26,7 @@ const SCENES = {
   titles: { pieces: [{ at: [1.45, 3], src: img("classic", "Q", "w") }, { at: [3, 0], src: img("classic", "P", "w") }, { at: [0, 1], src: img("classic", "B", "b") }], laurel: 3 },
   skins: { pieces: [{ at: [2, 2], src: img("classic", "N", "w") }, { at: [1, 3], src: img("crystal", "N", "w") }, { at: [2, 4], src: img("coral", "N", "w") }, { at: [1, 1], src: img("deco", "N", "w") }, { at: [3, 0], src: img("forest", "N", "w") }] },
 };
-const DESC = () => ({ openings: t("오프닝 수순 탐색과 해금"), masters: t("명인 대국과 선수 프로필"), titles: t("모은 칭호와 다음 목표"), skins: t("기물·보드 세트 수집") });
+const DESC = () => ({ openings: t("오프닝 수순 탐색과 해금"), masters: t("체스의 정점에 달한 선수들"), titles: t("모은 칭호와 다음 목표"), skins: t("기물·보드 세트 수집") });
 
 /** 카드 오른쪽 나무 체스판 조각 — 높이는 카드에 맞추고 폭은 칸 비율로 정한다. */
 const LAUREL = facetRamp(T.brassHi);

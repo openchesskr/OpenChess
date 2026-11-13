@@ -489,6 +489,22 @@ export function decorateSan(boardBefore, sanRaw, color) {
   if (!info) return bare;
   return bare + checkSuffix(boardBefore, bare, color);
 }
+// (v0.7.6, BUG-164) 리뷰 기보 줄·표에 보일 SAN 목록 — stripSuffix로 체크 기호까지 지우던 것을 바로잡는다. 원본 SAN에 +/#가 없으면 그 포지션에서 계산해 붙이고,
+// 수를 재현하지 못하면(손상된 기보) 그 수부터는 원본 그대로 둔다. scripts/check-review-ui.mjs가 시험한다.
+export function displaySans(fenRoot, sans) {
+  const out = [];
+  let ok = true;
+  for (let i = 0; i < (sans || []).length; i++) {
+    const s = sans[i];
+    if (!ok || !s) { out.push(s); continue; }
+    try {
+      const b = boardOfRoot(fenRoot, sans.slice(0, i)), c = colorOfRoot(fenRoot, i);
+      if (!sanSrc(b, s, c)) { ok = false; out.push(s); continue; }
+      out.push(decorateSan(b, s, c));
+    } catch { ok = false; out.push(s); }
+  }
+  return out;
+}
 export function buildSan(board, fr, fc, tr, tc, color, ep, promo) {
   const bare = buildSanBare(board, fr, fc, tr, tc, color, ep, promo);
   if (!bare) return null;

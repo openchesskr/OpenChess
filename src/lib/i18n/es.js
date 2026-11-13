@@ -2104,7 +2104,6 @@ export default {
   "미니게임 2판 플레이하기": "Jugar 2 minijuegos",
   "서로 다른 미니게임 2종 플레이하기": "Jugar 2 minijuegos distintos",
   "클리어": "Completada",
-  "일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨, 한국 시간 자정에 새로 시작": "Una partida normal cuenta si dura 10 jugadas (20 semijugadas) o más y termina. Se reinicia a medianoche (hora de Corea)",
   "OpenChess 유산": "Legado de OpenChess",
   "OpenChess 유산: {0}": "Legado de OpenChess: {0}",
   "로그인하면 친구에게 보낼 수 있음": "Inicia sesión para enviar a amigos",
@@ -3418,7 +3417,7 @@ export default {
   "OpenChess 마스터 대국 DB 수록 대국 기준 통계": "Estadísticas basadas en las partidas de la base de datos de maestros de OpenChess",
   // (v0.7.5) 도감 첫 화면 카드 설명
   "오프닝 수순 탐색과 해금": "Explora y desbloquea líneas de apertura",
-  "명인 대국과 선수 프로필": "Partidas de maestros y perfiles de jugadores",
+  "체스의 정점에 달한 선수들": "Jugadores que alcanzaron la cima del ajedrez",
   "모은 칭호와 다음 목표": "Títulos conseguidos y próximos objetivos",
   "기물·보드 세트 수집": "Colecciona juegos de piezas y tableros",
   "선수 {0}명": "Jugadores: {0}",
@@ -3674,4 +3673,7 @@ export default {
   "/review 링크를 열면 리뷰 대신 다른 화면으로 넘어가던 문제를 고쳤습니다.": "Se corrigió que los enlaces /review abrieran otra pantalla en lugar de la Revisión.",
   "퍼포먼스 레이팅": "Rating de rendimiento",
   "상대 레이팅과 무관하게 둔 수의 질만으로 계산": "Calculado solo con la calidad de las jugadas, sin importar el rating del rival",
+  "한 번 달성하면 끝나는 목표, 퀘스트마다 코인 보상. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨": "Objetivo único con recompensa de monedas por cada misión. Una partida normal cuenta si dura 10 jugadas (20 semijugadas) o más y termina",
+  "보상 받음": "Recompensa recibida",
+  "보상은 로그인 후 지급": "Las recompensas se entregan tras iniciar sesión",
 };
