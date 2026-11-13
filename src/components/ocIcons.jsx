@@ -376,6 +376,7 @@ const MATERIAL = {
   assignment_late: () => [...CLIP(), ...bar([[12, 9.6], [12, 15]], 2.2, { tone: "e" }), ...tint(disc(12, 18.2, 1.3, 6), "e")],
   assignment_turned_in: () => [...CLIP(), ...bar([[8.2, 14], [11, 16.8], [16, 11.2]], 2.1, { tone: "e" })],
   school: () => DEF.GraduationCap(),
+  groups: () => DEF.Users(),   // (v0.7.6) 소셜 탭
 };
 
 const made = {};

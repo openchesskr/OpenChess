@@ -3698,4 +3698,13 @@ export default {
   "최근 대국에 복습할 실수 없음": "No hay errores que repasar en tus partidas recientes",
   "추가 학습": "Más estudio",
   "화살표 힌트를 참고해 다시 두어 보세요.": "Usa la flecha de pista e inténtalo de nuevo.",
+  "게시물 종류": "Tipo de publicación",
+  "공유 {0}회": "Compartido {0} veces",
+  "리포스트 {0}회": "Reposts: {0}",
+  "소셜": "Social",
+  "유산 {0}": "Legado {0}",
+  "좋아요 {0}개": "Me gusta: {0}",
+  "표시할 게시물 없음": "No hay publicaciones",
+  "공개 퍼즐은 소셜 탭 피드에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능": "Cualquiera puede resolver los puzzles públicos desde el feed de la pestaña Social, y se pueden dar me gusta, repostear y compartir",
+  "소셜 탭 맨 위 ‘일일 퍼즐’ 풀기": "Resuelve el ‘Puzzle diario’ en la parte superior de la pestaña Social",
 };

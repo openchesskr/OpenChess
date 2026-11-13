@@ -1156,12 +1156,13 @@ export const store = {
 // 라벨·아이콘만 바꾼다(아래 TAB_PATH/PATH_TAB에서 경로도 /store → /play로 함께 바뀐다).
 // (사용자 요청) 하단 탭 순서를 분석/플레이/퍼즐/학습/도감/설정으로 재배치 — 내부 키·경로 매핑은
 // 그대로 두고 배열 순서만 바꾼다(렌더링이 이 배열을 그대로 순회하므로 그 외 변경 불필요).
-export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key: "store", label: t("플레이"), Icon: Play }, { key: "puzzle", label: t("퍼즐"), Icon: null }, { key: "learn", label: t("학습"), Icon: null }, { key: "dex", label: t("도감"), Icon: Library }, { key: "set", label: t("설정"), Icon: Settings }];
+export const TABS = [{ key: "analysis", label: t("분석"), Icon: null }, { key: "store", label: t("플레이"), Icon: Play }, { key: "puzzle", label: t("소셜"), Icon: null }, { key: "learn", label: t("학습"), Icon: null }, { key: "dex", label: t("도감"), Icon: Library }, { key: "set", label: t("설정"), Icon: Settings }];
+// (v0.7.6, 사용자 요청) 퍼즐 탭 → 소셜 탭: 주소는 /social(내부 탭 키는 그대로 "puzzle"). 예전 /puzzle 주소도 소셜 탭으로 연다. 퍼즐 풀이 고유 주소(/puzzle/번호-라인)는 그대로.
 // (16차) 탭 ↔ 서브패스 라우팅. openchess.kr/analysis, /book, /puzzle, /learn, /play, /setting 으로 각 탭에 직접 접근 가능하도록 한다.
 // (v0.7.3, 사용자 요청) 탭 내부 키를 화면에 보이는 이름·URL 경로와 일치시켰다: 분석 = "analysis"(/analysis), 학습 = "learn"(/learn).
 // 예전엔 분석이 "learn", 학습이 "quest"라는 키를 써서 경로(/analysis·/learn)와 코드가 엇갈렸다.
-export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/puzzle", learn: "/learn", store: "/play", set: "/setting" };
-const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
+export const TAB_PATH = { analysis: "/analysis", dex: DEX_VIEW_PATH.openings, puzzle: "/social", learn: "/learn", store: "/play", set: "/setting" };
+const PATH_TAB = { "/analysis": "analysis", ...Object.fromEntries(DEX_PATHS.map((x) => [x, "dex"])), "/social": "puzzle", "/puzzle": "puzzle", "/learn": "learn", "/play": "store", "/setting": "set" };
 export function tabFromPath(pathname) { return PATH_TAB[(pathname || "").replace(/\/$/, "") || "/"] || null; }
 // (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 화면부터 맞는 탭을 그린다. 예전엔 탭 주소가 아닌 곳(/, /puzzle/번호-라인, /review…, /user/…)이면
 //  일단 분석 탭을 그렸다가, 저장된 상태·서버 응답이 온 뒤(몇 초 뒤)에 원래 탭으로 바꿔 "다른 탭이 잠깐 보였다 돌아오는" 깜빡임이 생겼다.

@@ -62,5 +62,6 @@
   "lib/lessons/curriculum.js",
   "app/profileEdit.jsx",
   "app/practice.jsx",
-  "app/growthHome.jsx"
+  "app/growthHome.jsx",
+  "app/socialFeed.jsx"
 ]

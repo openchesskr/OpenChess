@@ -28,7 +28,7 @@ import { ProfileEditSheet } from "./app/profileEdit.jsx";   // (v0.7.5) 새 프�
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
 import { LegacyActionsCtx, LegacyPostPage } from "./app/legacyFeed.jsx";
-import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath } from "./lib/legacyPosts.js";
+import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath, legacyPath } from "./lib/legacyPosts.js";
 import { applyPlayEvent, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, onPlayEvent } from "./lib/playQuest.js";
 import { ReviewPage } from "./app/review.jsx";
 import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
@@ -273,9 +273,18 @@ export default function App() {
     setViewedProfileMid(null); setViewedProfileAutoInvite(false);
     try { if (window.location.pathname.startsWith("/user/")) window.history.back(); } catch { }
   }, []);
+  // (v0.7.6) 소셜 피드에서 연 유산 게시물은 닫으면 그 피드 주소(/social)로 돌아간다(링크로 직접 연 경우는 예전처럼 "/").
+  const legacyReturnRef = useRef(null);
   const closeLegacyLink = useCallback(() => {
     setLegacyLink(null);
-    try { if (parseLegacyPath(window.location.pathname)) window.history.replaceState(null, "", "/"); } catch { }
+    const back = legacyReturnRef.current; legacyReturnRef.current = null;
+    try { if (parseLegacyPath(window.location.pathname)) window.history.replaceState(null, "", back || "/"); } catch { }
+  }, []);
+  const openLegacyPost = useCallback(({ mid, id }) => {
+    const path = legacyPath(mid, id);
+    legacyReturnRef.current = window.location.pathname;
+    try { window.history.pushState({ ...(window.history.state || {}), legacy: true }, "", path); } catch { }
+    setLegacyLink(parseLegacyPath(path));
   }, []);
   const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
@@ -1954,7 +1963,7 @@ export default function App() {
             (onOpenAnalysis → PuzzleSolver의 pickToLearn이 onClose도 함께 부름), App.jsx의
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
-        {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenAnalysis={(sans) => onOpenAnalysisFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenAnalysisFen={onOpenAnalysisFen} dailyPuzzleStreak={dailyPuzzleStreak} puzzleMomentum={puzzleMomentum} />}
+        {tab === "puzzle" && <PuzzleTab onOpenLegacy={openLegacyPost} puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenAnalysis={(sans) => onOpenAnalysisFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenAnalysisFen={onOpenAnalysisFen} dailyPuzzleStreak={dailyPuzzleStreak} puzzleMomentum={puzzleMomentum} />}
         {tab === "learn" && <LearnTab user={user} uid={uid} chesscom={chesscom} ccName={profile.chesscom} lessonState={lessonState} onLessonComplete={onLessonComplete} lessonCoins={!!uid} onOpenReview={onOpenGameAnalyze} onGoAnalysis={() => setTab("analysis")} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
@@ -1981,7 +1990,7 @@ export default function App() {
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; const questDot = key === "store" && questIconName === "assignment_late"; return (
               <button key={key} onClick={() => switchTab(key, key === "dex" && tab === "dex" ? DEX_HUB_PATH : undefined)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <motion.span layoutId="oc-tab-ind" transition={{ type: "spring", stiffness: 420, damping: 32 }} style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass, boxShadow: "0 0 10px 1px rgba(236,203,134,.55)" }} />}
-                <span key={on ? "on" : "off"} className={on ? "oc-tab-pop" : undefined} style={{ position: "relative" }}>{key === "learn" ? <MaterialIcon name="school" size={20} /> : key === "puzzle" ? <MaterialIcon name="extension" size={20} /> : key === "analysis" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}{questDot && <span aria-hidden="true" style={{ position: "absolute", top: -3, right: -6, width: 9, height: 9, borderRadius: "50%", background: T.brassHi, border: "1.5px solid #160C06" }} />}</span>
+                <span key={on ? "on" : "off"} className={on ? "oc-tab-pop" : undefined} style={{ position: "relative" }}>{key === "learn" ? <MaterialIcon name="school" size={20} /> : key === "puzzle" ? <MaterialIcon name="groups" size={20} /> : key === "analysis" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}{questDot && <span aria-hidden="true" style={{ position: "absolute", top: -3, right: -6, width: 9, height: 9, borderRadius: "50%", background: T.brassHi, border: "1.5px solid #160C06" }} />}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
               </button>); })}
           </div>

@@ -115,7 +115,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
       <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
         {row({ k: "puzzle", Icon: Puzzle, hue: "#3E7CC4", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
+        {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("소셜 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.

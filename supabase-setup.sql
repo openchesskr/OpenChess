@@ -4554,6 +4554,28 @@ begin
   return public._economy_apply(v_uid, 0, v_amount, 'chapter', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', v_amount);
 end; $$;
 
+-- (v0.7.6, 사용자 요청) 소셜 탭(예전 퍼즐 탭) 피드의 유산 게시물 — 모든 사용자의 공개 유산(profiles.pub.legacies)을 최신순으로 모아 준다.
+-- 반환: { posts: [{ owner, id, entry, savedAt, likes }], owners: { uid: { username, nickname, mid, photo } } }. 사진은 게시물마다가 아니라 주인당 한 번만 싣는다(사진은 최대 20만 자).
+-- 탈퇴 유예 중인 계정은 빼고(profiles select 정책과 같은 기준), p_before(savedAt, ms)보다 오래된 것만 주어 이어 읽는다. 한 번에 최대 40개. 저장 시각이 없는 옛 유산은 0으로 보고 맨 뒤.
+-- 항목 모양 검증은 화면(lib/legacyEntry.js normalizeLegacyEntry)이 한다 — 공개 프로필 값이라 누구나 쓸 수 있으므로 여기서는 객체·savedAt 숫자만 거른다.
+create or replace function public.social_legacy_feed(p_limit int default 24, p_before bigint default null)
+returns jsonb language sql stable security definer set search_path = public as $$
+  with lim as (select least(greatest(coalesce(p_limit, 24), 1), 40) as n),
+  posts as (
+    select pr.id as owner, e.key as id, e.value as entry,
+      case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint else 0 end as saved_at   -- 옛 슬롯 유산은 저장 시각이 없을 수 있다(맨 뒤로)
+    from public.profiles pr, jsonb_each(case when jsonb_typeof(pr.pub -> 'legacies') = 'object' then pr.pub -> 'legacies' else '{}'::jsonb end) e
+    where pr.deletion_scheduled_at is null and jsonb_typeof(e.value) = 'object'
+      and (p_before is null or (case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint else 0 end) < p_before)
+    order by saved_at desc limit (select n from lim)
+  ),
+  liked as (select p.*, coalesce(lc.likes, 0) as likes from posts p left join public.legacy_like_counts lc on lc.owner_uid = p.owner and lc.slot_key = p.id)
+  select jsonb_build_object(
+    'posts', coalesce((select jsonb_agg(jsonb_build_object('owner', owner, 'id', id, 'entry', entry, 'savedAt', nullif(saved_at, 0), 'likes', likes) order by saved_at desc) from liked), '[]'::jsonb),
+    'owners', coalesce((select jsonb_object_agg(pr.id, jsonb_build_object('username', pr.username, 'nickname', nullif(pr.pub ->> 'nickname', ''), 'mid', pr.mid, 'photo', nullif(pr.pub ->> 'photo', '')))
+                        from public.profiles pr where pr.id in (select owner from posts)), '{}'::jsonb));
+$$;
+
 -- (v0.7.6, 사용자 요청) 플레이 퀘스트 — 날마다 초기화하지 않는 한 번짜리 목표, 달성하면 퀘스트당 1회 코인 보상(economy_params의 playQuests).
 -- 진행 값은 브라우저가 세지 않고 서버가 직접 센다: 일반 대국 = 서버가 검증해 저장한 끝난 대국(pvp_games game_type 'chess' + bot_games, 20수(양쪽 합) 이상),
 -- 미니게임 = 끝난 미니게임 대전(pvp_games game_type coord·knight·rush·attack, 중단 제외). 그래서 보상을 받으려고 숫자를 꾸며 보낼 수 없다.
@@ -4774,7 +4796,7 @@ declare
   v_anon text[] := array[
     'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
-    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve',
+    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve', 'social_legacy_feed',
     'search_puzzles_prefix', 'username_available'
   ];
   v_auth text[] := array[

@@ -3698,4 +3698,13 @@ export default {
   "최근 대국에 복습할 실수 없음": "No mistakes to review in recent games",
   "추가 학습": "More study",
   "화살표 힌트를 참고해 다시 두어 보세요.": "Use the arrow hint and try again.",
+  "게시물 종류": "Post type",
+  "공유 {0}회": "Shared {0} times",
+  "리포스트 {0}회": "Reposted {0} times",
+  "소셜": "Social",
+  "유산 {0}": "Legacy {0}",
+  "좋아요 {0}개": "Likes: {0}",
+  "표시할 게시물 없음": "No posts to show",
+  "공개 퍼즐은 소셜 탭 피드에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능": "Public puzzles can be solved by anyone from the Social tab feed, and can be liked, reposted and shared",
+  "소셜 탭 맨 위 ‘일일 퍼즐’ 풀기": "Solve the ‘Daily puzzle’ at the top of the Social tab",
 };
