@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { autoMoveKeyword } from "../lib/moveKeywords.js";
 import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
@@ -729,7 +730,7 @@ export function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
 let CONTENT_SEEDED = false;
 // 외부 대국 데이터베이스의 "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
 // 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
@@ -783,15 +784,15 @@ function seedContent() {
 // (v0.7.5) 예전 레슨 시드(seedLessons, CONTENT.lessons)는 지웠다 — 새 레슨은 코드에 고정된 커리큘럼(src/lib/lessons/curriculum.js)이다.
 seedContent();
 export async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
   try {
     if (SB_ON) {
-      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
+      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; delete CONTENT.keywords; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
     }
     let raw = null;
     if (typeof window !== "undefined" && window.storage) { const r = await window.storage.get("occ_content", true); raw = r && r.value; }
     if (!raw) { try { raw = window.localStorage.getItem("occ_content"); } catch { } }
-    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); }
+    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; delete CONTENT.keywords; CONTENT_SEEDED = false; seedContent(); }
   } catch { }
 }
 // (v0.5.6 버그 수정 BUG-015) 강제 등급(forceKind)은 개발자가 입력한 표기 그대로("Qh5") 저장되는데, 실제 수 표기에는 체크·메이트 기호가
@@ -1787,19 +1788,6 @@ const QDESC = {
 };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중분석의 대국 목록에서 공용.
 export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), standard: t("스탠다드"), daily: t("일일") };
-export function deriveKeywords(m) {
-  if (m.kw && m.kw.length) return m.kw;
-  const ks = []; const a = m.adopt || 0; const ma = m.masterAdopt; const nm = m.name || "";
-  // TOP LEVEL: 마스터 통계 기준 상위권(상위 3수) 또는 마스터 채택률 25% 이상일 때만
-  if (m.masterTop || (ma != null && ma >= 25)) ks.push("TOP LEVEL");
-  if (a >= 12 || (ma != null && ma >= 12)) { if (!ks.includes("NORMAL")) ks.push("NORMAL"); }
-  else if (!ks.length) ks.push("SIDESTEPPING");
-  if (/Gambit|Attack|Countergambit|Traxler|Wing|Sacrifice/.test(nm) && !ks.includes("TRICKY")) ks.push("TRICKY");
-  if (/^[NB]/.test(m.san) && !m.san.includes("x") && !ks.includes("INTUITIVE")) ks.push("INTUITIVE");
-  if (m.san.includes("x") && !ks.includes("STRAIGHT-LINE")) ks.push("STRAIGHT-LINE");
-  if (!ks.length) ks.push("NORMAL");
-  return ks.slice(0, 3);
-}
 export function fmtFull(n) { return n == null ? "-" : Number(n).toLocaleString("en-US"); }
 export function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
@@ -1826,7 +1814,10 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   const pendingSibling = moves.some((m) => moverEval(m, ply) == null);
   const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
-  return moves.map((m, i) => {
+  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드 하나(kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
+  const withKw = (m, i, out) => { const mv = moverEval(m, ply); return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book }) }; };
+  return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
+  function gradeTier(m, i) {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
     // (v0.5.6 버그 수정 BUG-015) 이론 판정은 isBookMoveAt 하나로 — 예전엔 여기만 스냅샷의 book 플래그만 봐서, 개발자가 추가한 이론 수
@@ -1843,7 +1834,7 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
       singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
     });
     return { ...m, kind, book: false };
-  });
+  }
 }
 /* (UI2) 화면 폭에 맞춰 보드 크기를 산출 — 모바일에서 보드가 잘리지 않게 함 */
 // (UI1) 세로로 긴 모바일 화면 여부 — 상단 헤더 크기/여백을 줄이는 데 사용

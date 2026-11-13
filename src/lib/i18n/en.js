@@ -3676,4 +3676,5 @@ export default {
   "한 번 달성하면 끝나는 목표, 퀘스트마다 코인 보상. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨": "A one-time goal with a coin reward for each quest. A standard game counts only if it lasts 10 moves (20 plies) or more and ends",
   "보상 받음": "Reward received",
   "보상은 로그인 후 지급": "Rewards are given after login",
+  "이름 변경": "Rename",
 };
