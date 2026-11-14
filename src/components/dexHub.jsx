@@ -1,14 +1,13 @@
 // 도감 첫 화면 — 오프닝·마스터·업적·스킨 네 구획으로 들어가는 같은 크기의 카드 네 장(2×2).
-// (v0.7.6, 사용자 요청 — 여러 차례 다듬음) 게임 느낌:
-//  · 프레임: 모서리를 비스듬히 깎은 황동 테두리(게임 선택 카드). 머리 글자·요약 알약·스테이지 꼬리표·월계관은 사용자 요청으로 뺐다.
-//  · 카드 안 "문장(紋章) 무대": 구획마다 등급색(오프닝 초록 · 마스터 파랑 · 업적 보라 · 스킨 주황)의 면 분할 마름모 문장이 뒤에 서고,
-//    천천히 도는 빛살과 아래 바닥 빛 위에 대표 기물이 둥실 떠 있다. 빛 알갱이(작은 마름모)가 올라간다. 문장 마름모는 facetIcons의 FacetDiamond(왼쪽 위 빛).
-//  · 아래 명판: 제목(등급색 밑줄 빛) · 설명 · 10칸 경험치 막대 · 입장 버튼.
-//  · 데스크톱은 2×2 카드가 화면 높이를 채운다(4열 세로 카드는 너무 길쭉해져 바꿈) — 아래 여백이 크게 남지 않게. 문장 장면은 무대 크기(container size)에 맞춰 커진다.
+// (v0.7.6, 사용자 요청 — 여러 차례 다듬음) 5차: 게임풍(등급색 문장·빛살)을 걷어내고, 사이트 색(흑단·황동·상아)만 쓰는 "메종 진열장"으로.
+//  · 카드: 흑단 그러데이션 + 황동 가는 테두리 + 안쪽 머리카락 굵기 액자, 네 모서리에 작은 금 보석(면 분할 마름모).
+//  · 무대: 위에서 떨어지는 조명 원뿔 아래, 금 띠를 두른 흑단 받침대(면 분할, 왼쪽 위 빛) 위에 대표 기물이 선다.
+//  · 명판: 일련번호(Bodoni) · 제목(Playfair, 금빛 글자) · 보석 박힌 금 구분선 · 설명(Cormorant 이탤릭) · 머리카락 굵기 진행선 · 입장 글자 링크.
+//  · 데스크톱은 2×2 카드가 화면 높이를 채운다 — 아래 여백이 크게 남지 않게. 장면은 무대 크기(container size)에 맞춰 커진다.
 //  items: [{ key, label, Icon, percent(0~100|null), detail }]
-import { FacetDiamond, facetRamp } from "./facetIcons.jsx";
 import React from "react";
-import { ChevronRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { FacetDiamond, facetRamp, GOLD } from "./facetIcons.jsx";
+import { ChevronRight } from "./ocIcons.jsx";
 import { motion } from "framer-motion";
 import { T, MOTION_EASE, PIECE_IMG_SETS } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
@@ -16,73 +15,83 @@ import { t } from "../lib/i18n.js";
 
 const img = (set, piece, color) => ((PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[piece][color] || {}).src;
 const DESC = () => ({ openings: t("오프닝 수순 탐색과 해금"), masters: t("체스의 정점에 달한 선수들"), titles: t("모은 칭호와 다음 목표"), skins: t("기물·보드 세트 수집") });
-// 구획별 등급색과 무대 위 기물: [세트, 기물, 색, 가로 위치(%), 높이(무대 높이 대비 %), 겹침 순서, 밝기]
-const THEME = {
-  openings: { color: "#3FA35F", pieces: [["classic", "P", "b", 64, 34, 1, 0.8], ["classic", "P", "w", 42, 48, 2, 1]] },
-  masters: { color: "#3E78D6", pieces: [["classic", "K", "b", 66, 40, 1, 0.8], ["classic", "K", "w", 41, 52, 2, 1]] },
-  titles: { color: "#A35AD6", pieces: [["classic", "Q", "w", 50, 54, 2, 1]] },
-  skins: { color: "#E08A2E", pieces: [["crystal", "N", "w", 27, 36, 1, 0.92], ["coral", "N", "w", 73, 36, 1, 0.92], ["classic", "N", "w", 50, 48, 2, 1]] },
+const FONT_DISPLAY = "'Playfair Display','Noto Serif KR',serif", FONT_NUM = "'Bodoni Moda','Playfair Display',serif", FONT_SERIF = "'Cormorant Garamond','Noto Serif KR',serif";
+// 받침대 위 기물: [세트, 기물, 색, 가로 위치(%), 높이(장면 높이 대비 %), 겹침 순서, 밝기]
+const SHOWCASE = {
+  openings: [["classic", "P", "b", 63, 36, 1, 0.85], ["classic", "P", "w", 42, 48, 2, 1]],
+  masters: [["classic", "K", "b", 64, 46, 1, 0.85], ["classic", "K", "w", 40, 60, 2, 1]],
+  titles: [["classic", "Q", "w", 50, 62, 2, 1]],
+  skins: [["crystal", "N", "w", 27, 40, 1, 0.95], ["coral", "N", "w", 73, 40, 1, 0.95], ["classic", "N", "w", 50, 54, 2, 1]],
 };
-// 깎은 모서리 크기는 px로 — clip-path의 cqw는 자기 자신이 아니라 바깥 컨테이너를 기준으로 잡혀 데스크톱에서 모서리가 지나치게 커졌다
-const chamfer = (c) => "polygon(" + c + "px 0, calc(100% - " + c + "px) 0, 100% " + c + "px, 100% calc(100% - " + c + "px), calc(100% - " + c + "px) 100%, " + c + "px 100%, 0 calc(100% - " + c + "px), 0 " + c + "px)";
-const CHAMFER = chamfer(16), CHAMFER_IN = chamfer(15);
-const alpha = (hex, a) => { const n = parseInt(hex.slice(1), 16); return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; };
+const D = facetRamp("#3D2616");
 
-/* 문장 — 등급색 면 분할 마름모 두 겹(바깥 테두리 + 안쪽 어두운 창) + 위아래 작은 보석. 왼쪽 위에서 빛(FacetDiamond 규칙). */
-function Crest({ color }) {
-  const R = facetRamp(color), D = facetRamp("#2A1A0F");
+/* 받침대 — 흑단 윗면 · 금 띠 · 앞면, 각 면을 둘로 나눠 왼쪽이 밝다(왼쪽 위 빛). 금 띠 왼쪽에 짧은 반사면 하나. */
+function Plinth() {
   return (
-    <svg viewBox="0 0 100 100" aria-hidden="true" className="dexv-crest" style={{ position: "absolute", left: "50%", top: "46%", width: "78%", height: "78%", transform: "translate(-50%,-50%)", overflow: "visible" }}>
-      <FacetDiamond cx={50} cy={50} r={46} R={R} gem={false} />
-      <FacetDiamond cx={50} cy={50} r={37} R={D} gem={false} />
-      <FacetDiamond cx={50} cy={4} r={5} R={R} />
-      <FacetDiamond cx={50} cy={96} r={5} R={R} />
+    <svg viewBox="0 0 100 30" aria-hidden="true" preserveAspectRatio="none" style={{ position: "absolute", left: "8%", bottom: "5%", width: "84%", aspectRatio: "100 / 30", display: "block" }}>
+      <path d="M6 6 L50 6 L50 11 L0 11 Z" fill={D.l1} /><path d="M50 6 L94 6 L100 11 L50 11 Z" fill={D.l2} />
+      <path d="M0 11 L50 11 L50 14.5 L0 14.5 Z" fill={GOLD.l2} /><path d="M50 11 L100 11 L100 14.5 L50 14.5 Z" fill={GOLD.l4} />
+      <path d="M0 14.5 L50 14.5 L50 30 L4 30 Z" fill={D.l4} /><path d="M50 14.5 L100 14.5 L96 30 L50 30 Z" fill={D.base} />
+      <path d="M5 11.6 L22 11.6 L21 13.4 L4 13.4 Z" fill={GOLD.hi} />
     </svg>
   );
 }
 
-function GameCard({ item, onOpen, index, desc }) {
+/* 작은 금 보석(모서리·구분선) — FacetDiamond 한 개. */
+function CornerGem({ size = 9, style }) {
+  return (
+    <svg viewBox="0 0 20 20" width={size} height={size} aria-hidden="true" style={{ display: "block", flexShrink: 0, ...style }}>
+      <FacetDiamond cx={10} cy={10} r={9.5} R={GOLD} />
+    </svg>
+  );
+}
+
+function VitrineCard({ item, onOpen, index, desc }) {
   const { label, percent, detail } = item;
   const pct = percent == null ? null : Math.max(0, Math.min(100, percent));
-  const th = THEME[item.key] || THEME.openings;
+  const pieces = SHOWCASE[item.key] || SHOWCASE.openings;
+  const corner = { position: "absolute", width: 9, height: 9 };
   return (
-    <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.08 * index, ease: MOTION_EASE }}
+    <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.08 * index, ease: MOTION_EASE }}
       onClick={() => onOpen(item.key)} className="press dexv" aria-label={label + ", " + desc + (detail ? ", " + detail : "")}
-      style={{ position: "relative", display: "flex", width: "100%", minWidth: 0, padding: 2, border: "none", cursor: "pointer", textAlign: "left", fontFamily: SITE_FONT, containerType: "inline-size", clipPath: CHAMFER, background: "linear-gradient(160deg," + T.brassHi + " 0%, #7A5A20 38%, #3A2516 62%, " + T.brass + " 100%)" }}>
-      <span className="dexv-inner" style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", flexDirection: "column", clipPath: CHAMFER_IN, overflow: "hidden" }}>
-        {/* 문장 무대 */}
-        <span aria-hidden="true" className="dexv-stage" style={{ position: "relative", display: "block", flex: "0 0 auto", height: "92cqw", overflow: "hidden", containerType: "size",
-          background: "radial-gradient(85% 70% at 50% 40%, " + alpha(th.color, 0.32) + " 0%, " + alpha(th.color, 0.08) + " 45%, rgba(0,0,0,0) 72%), linear-gradient(180deg, #24160C, #120A05)" }}>
-          <span className="dexv-rays" style={{ position: "absolute", left: "50%", top: "48%", width: "max(170cqw, 170cqh)", height: "max(170cqw, 170cqh)", transform: "translate(-50%,-50%)",
-            background: "repeating-conic-gradient(from 0deg, " + alpha(th.color, 0.16) + " 0 8deg, transparent 8deg 22deg)", maskImage: "radial-gradient(circle, #000 18%, transparent 62%)", WebkitMaskImage: "radial-gradient(circle, #000 18%, transparent 62%)" }} />
-          {/* 장면 상자 — 모바일은 무대 높이를 92cqw로 못박는다(size 컨테이너가 min-height만 가지면 cqh가 0으로 잡혀 장면이 사라졌다). 장면은 무대 세로 가운데에 둔다. 데스크톱처럼 무대가 길어져도 문장·기물 크기와 위치가 그대로이고, 남는 높이는 빛살·빛으로 채워진다 */}
-          <span style={{ position: "absolute", left: "50%", top: "50%", width: "min(100cqw, 108cqh)", aspectRatio: "1 / 0.92", transform: "translate(-50%,-50%)" }}>
-            <Crest color={th.color} />
-            {/* 바닥 빛 */}
-            <span style={{ position: "absolute", left: "50%", bottom: "11%", width: "76%", height: "13%", transform: "translateX(-50%)", borderRadius: "50%", background: "radial-gradient(closest-side, " + alpha(th.color, 0.55) + ", transparent)" }} />
-            <span className="dexv-pieces" style={{ position: "absolute", inset: 0, animationDelay: (index * 0.35) + "s" }}>
-              {th.pieces.map(([set, pc, color, x, h, z, b], k) => (
-                <img key={k} src={img(set, pc, color)} alt="" draggable={false} loading="lazy"
-                  style={{ position: "absolute", left: x + "%", bottom: "15%", height: h + "%", transform: "translateX(-50%)", zIndex: z, filter: "brightness(" + b + ") drop-shadow(0 6px 8px rgba(0,0,0,.6))", objectFit: "contain" }} />
-              ))}
-            </span>
-            {[18, 46, 74, 62, 30].map((x, k) => <span key={k} className="dexv-spark" style={{ position: "absolute", left: x + "%", bottom: "20%", width: "2%", aspectRatio: "1", background: k % 2 ? th.color : "#FFF1C4", clipPath: "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)", animationDelay: (k * 0.7 + index * 0.3) + "s" }} />)}
+      style={{ position: "relative", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, padding: 0, cursor: "pointer", textAlign: "center", fontFamily: SITE_FONT, containerType: "inline-size", overflow: "hidden", borderRadius: 16 }}>
+      {/* 안쪽 액자 + 네 모서리 보석 */}
+      <span aria-hidden="true" className="dexv-frame" style={{ position: "absolute", inset: 7, borderRadius: 11, pointerEvents: "none", zIndex: 3 }}>
+        <CornerGem style={{ ...corner, left: -4.5, top: -4.5 }} /><CornerGem style={{ ...corner, right: -4.5, top: -4.5 }} />
+        <CornerGem style={{ ...corner, left: -4.5, bottom: -4.5 }} /><CornerGem style={{ ...corner, right: -4.5, bottom: -4.5 }} />
+      </span>
+      {/* 무대 — 모바일은 높이를 cqw로 못박는다(size 컨테이너가 min-height만 가지면 cqh가 0이 되는 문제, BUG-169) */}
+      <span aria-hidden="true" className="dexv-stage" style={{ position: "relative", display: "block", flex: "0 0 auto", height: "84cqw", overflow: "hidden", containerType: "size" }}>
+        <span className="dexv-cone" style={{ position: "absolute", left: "50%", top: 0, width: "78%", height: "100%", transform: "translateX(-50%)", clipPath: "polygon(38% 0, 62% 0, 100% 100%, 0 100%)", background: "linear-gradient(180deg, rgba(255,236,190,.20), rgba(255,236,190,.05) 70%, rgba(255,236,190,0))" }} />
+        <span style={{ position: "absolute", left: "50%", top: "48%", width: "min(100cqw, 125cqh)", aspectRatio: "1 / 0.8", transform: "translate(-50%,-50%)" }}>
+          <span style={{ position: "absolute", left: "50%", bottom: "20%", width: "70%", height: "16%", transform: "translateX(-50%)", borderRadius: "50%", background: "radial-gradient(closest-side, rgba(236,203,134,.32), transparent)" }} />
+          <Plinth />
+          <span className="dexv-pieces" style={{ position: "absolute", inset: 0 }}>
+            {pieces.map(([set, pc, color, x, h, z, b], k) => (
+              <img key={k} src={img(set, pc, color)} alt="" draggable={false} loading="lazy"
+                style={{ position: "absolute", left: x + "%", bottom: "26%", height: h + "%", transform: "translateX(-50%)", zIndex: z, filter: "brightness(" + b + ") drop-shadow(0 5px 6px rgba(0,0,0,.55))", objectFit: "contain" }} />
+            ))}
           </span>
-          <span className="dexv-glint" />
         </span>
-        {/* 명판 */}
-        <span className="dexv-plate" style={{ display: "block", flex: "0 0 auto", padding: "clamp(10px, 3.6cqw, 16px) clamp(12px, 5cqw, 22px) clamp(12px, 4.6cqw, 18px)", borderTop: "1px solid " + alpha(th.color, 0.55), boxShadow: "inset 0 1px 0 " + alpha(th.color, 0.25) }}>
-          <span style={{ display: "block", fontWeight: 900, fontSize: "clamp(17px, 9cqw, 30px)", lineHeight: 1.05, color: "#FFF4D6", letterSpacing: "-.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textShadow: "0 0 12px " + alpha(th.color, 0.65) + ", 0 2px 0 rgba(0,0,0,.6)" }}>{label}</span>
-          <span className="dexv-desc" style={{ display: "block", marginTop: 4, fontSize: "clamp(11px, 4.6cqw, 14px)", fontWeight: 600, color: "#CDBA98", lineHeight: 1.35, minHeight: "2.7em" }}>{desc}</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <span aria-hidden="true" style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 3, height: 7 }}>
-              {Array.from({ length: 10 }, (_, k) => { const on = pct != null && pct >= (k + 1) * 10 - 5; return <span key={k} style={{ clipPath: "polygon(18% 0, 100% 0, 82% 100%, 0 100%)", background: on ? "linear-gradient(180deg,#FFE7A6," + T.brass + ")" : "rgba(236,203,134,.14)", boxShadow: on ? "0 0 6px rgba(236,203,134,.6)" : "none" }} />; })}
-            </span>
-            <span style={{ fontSize: "clamp(11px, 4.4cqw, 14px)", fontWeight: 900, color: T.brassHi, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{detail || ""}</span>
+        <span style={{ position: "absolute", left: "clamp(14px, 6cqw, 24px)", top: "clamp(12px, 5cqw, 20px)", fontFamily: FONT_NUM, fontSize: "clamp(11px, 4.6cqw, 15px)", fontWeight: 700, color: T.brass, letterSpacing: ".08em", fontVariantNumeric: "lining-nums" }}>{String(index + 1).padStart(2, "0")}</span>
+        <span className="dexv-sheen" />
+      </span>
+      {/* 명판 */}
+      <span className="dexv-plate" style={{ display: "block", flex: "0 0 auto", padding: "0 clamp(14px, 7cqw, 30px) clamp(16px, 6cqw, 26px)" }}>
+        <span style={{ display: "block", fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: "clamp(18px, 9.5cqw, 32px)", lineHeight: 1.1, letterSpacing: ".01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          background: "linear-gradient(180deg, #FFF4D6 0%, " + T.brassHi + " 55%, " + T.brass + " 100%)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", paddingBottom: 2 }}>{label}</span>
+        <span aria-hidden="true" style={{ display: "flex", alignItems: "center", gap: 6, margin: "clamp(6px, 2.4cqw, 10px) auto", width: "62%" }}>
+          <span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, " + T.brass + ")" }} /><CornerGem size={8} /><span style={{ flex: 1, height: 1, background: "linear-gradient(90deg, " + T.brass + ", transparent)" }} />
+        </span>
+        <span className="dexv-desc" style={{ display: "block", fontFamily: FONT_SERIF, fontStyle: "italic", fontWeight: 600, fontSize: "clamp(13px, 5.4cqw, 18px)", color: "#CDBA98", lineHeight: 1.25, minHeight: "2.5em" }}>{desc}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "clamp(8px, 3cqw, 14px)" }}>
+          <span aria-hidden="true" style={{ position: "relative", flex: 1, height: 2, background: "rgba(236,203,134,.16)" }}>
+            <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: (pct || 0) + "%", background: "linear-gradient(90deg, " + T.brass + ", " + T.brassHi + ")", boxShadow: pct ? "0 0 6px rgba(236,203,134,.5)" : "none" }} />
           </span>
-          <span className="dexv-cta" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 10, height: "clamp(32px, 11cqw, 42px)", clipPath: "polygon(4% 0, 96% 0, 100% 50%, 96% 100%, 4% 100%, 0 50%)", background: "linear-gradient(180deg,#F6D98A 0%," + T.brass + " 55%,#7A5A20 100%)", color: "#241509", fontSize: "clamp(12px, 4.8cqw, 15px)", fontWeight: 900, letterSpacing: ".12em" }}>
-            {t("입장")}<ChevronRight className="dexv-chev" size={15} color="#241509" aria-hidden="true" />
-          </span>
+          <span style={{ fontFamily: FONT_NUM, fontSize: "clamp(11px, 4.4cqw, 14px)", fontWeight: 700, color: T.brassHi, fontVariantNumeric: "lining-nums tabular-nums", whiteSpace: "nowrap" }}>{detail || ""}</span>
+        </span>
+        <span className="dexv-cta" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: "clamp(10px, 3.6cqw, 16px)", fontSize: "clamp(11px, 4.4cqw, 13px)", fontWeight: 800, letterSpacing: ".3em", color: T.brassHi, paddingBottom: 3 }}>
+          {t("입장")}<ChevronRight className="dexv-chev" size={13} color={T.brassHi} aria-hidden="true" />
         </span>
       </span>
     </motion.button>
@@ -95,26 +104,23 @@ export function DexHub({ items, onOpen }) {
   return (
     <div className="dexhub" style={{ maxWidth: 1180, margin: "0 auto", paddingTop: 8 }}>
       <style>{`
-        .dexv { filter: drop-shadow(0 14px 18px rgba(0,0,0,.7)); transition: transform .3s cubic-bezier(.2,.8,.2,1), filter .3s; }
-        .dexv .dexv-inner { background: #120A05; }
-        .dexv:hover { transform: translateY(-6px) scale(1.02); filter: drop-shadow(0 18px 22px rgba(0,0,0,.8)) drop-shadow(0 0 14px rgba(236,203,134,.45)); }
+        .dexv { border: 1px solid rgba(196,154,80,.55); background: radial-gradient(120% 60% at 50% 0%, #3A2516 0%, rgba(58,37,22,0) 60%), linear-gradient(180deg, #24160C 0%, #1B1009 55%, #120A05 100%);
+          box-shadow: inset 0 1px 0 rgba(255,236,190,.10), 0 22px 34px -22px #000; transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s, box-shadow .35s; }
+        .dexv .dexv-frame { border: 1px solid rgba(236,203,134,.20); transition: border-color .35s; }
+        .dexv:hover { transform: translateY(-4px); border-color: rgba(236,203,134,.85); box-shadow: inset 0 1px 0 rgba(255,236,190,.14), 0 28px 40px -22px #000, 0 0 22px -6px rgba(236,203,134,.35); }
+        .dexv:hover .dexv-frame { border-color: rgba(236,203,134,.40); }
         .dexv:focus-visible { outline: 2px solid ${T.brassHi}; outline-offset: 3px; }
-        .dexv .dexv-pieces { animation: dexvBob 3.4s ease-in-out infinite alternate; }
-        @keyframes dexvBob { from { transform: translateY(0); } to { transform: translateY(-2.2%); } }
-        .dexv .dexv-rays { animation: dexvSpin 40s linear infinite; }
-        @keyframes dexvSpin { from { transform: translate(-50%,-50%) rotate(0deg); } to { transform: translate(-50%,-50%) rotate(360deg); } }
-        .dexv .dexv-crest { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
-        .dexv:hover .dexv-crest { transform: translate(-50%,-50%) scale(1.06) rotate(4deg); }
-        .dexv .dexv-spark { opacity: 0; animation: dexvSpark 3.6s ease-out infinite; }
-        @keyframes dexvSpark { 0% { opacity: 0; transform: translateY(0) scale(.6); } 25% { opacity: .9; } 100% { opacity: 0; transform: translateY(-34cqh) scale(1); } }
-        .dexv .dexv-plate { background: linear-gradient(180deg, rgba(58,36,20,.96), rgba(26,15,8,.98)); }
-        .dexv .dexv-cta { transition: filter .25s; }
-        .dexv:hover .dexv-cta { filter: brightness(1.12); }
+        .dexv .dexv-cone { opacity: .75; transition: opacity .4s; }
+        .dexv:hover .dexv-cone { opacity: 1; }
+        .dexv .dexv-pieces { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+        .dexv:hover .dexv-pieces { transform: translateY(-2.5%); }
+        .dexv .dexv-cta { background: linear-gradient(${T.brassHi}, ${T.brassHi}) left bottom / 0 1px no-repeat; transition: background-size .35s; }
+        .dexv:hover .dexv-cta { background-size: 100% 1px; }
         .dexv .dexv-chev { transition: transform .25s; }
         .dexv:hover .dexv-chev { transform: translateX(3px); }
-        .dexv .dexv-glint { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 40%, rgba(255,240,200,.16) 50%, transparent 60%); transform: translateX(-120%); }
-        .dexv:hover .dexv-glint { animation: dexvGlint 1.1s ease-out 1; }
-        @keyframes dexvGlint { to { transform: translateX(120%); } }
+        .dexv .dexv-sheen { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 42%, rgba(255,240,200,.10) 50%, transparent 58%); transform: translateX(-120%); }
+        .dexv:hover .dexv-sheen { animation: dexvSheen 1.2s ease-out 1; }
+        @keyframes dexvSheen { to { transform: translateX(120%); } }
         .dexhub-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
         @media (min-width: 900px) {
           .dexhub-grid { grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 18px; height: clamp(560px, calc(100dvh - 205px), 980px); }
@@ -124,7 +130,7 @@ export function DexHub({ items, onOpen }) {
         }
       `}</style>
       <div className="dexhub-grid">
-        {items.map((it, i) => <GameCard key={it.key} item={it} onOpen={onOpen} index={i} desc={desc[it.key] || ""} />)}
+        {items.map((it, i) => <VitrineCard key={it.key} item={it} onOpen={onOpen} index={i} desc={desc[it.key] || ""} />)}
       </div>
     </div>
   );

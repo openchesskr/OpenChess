@@ -21,7 +21,8 @@ const ZONES = [
   ["src/app/common.jsx", "export function LaurelBranch(", "\n}\n"],
   ["src/app/common.jsx", "export function SeriesGlyph(", "</svg>"],   // 뒤따르는 lucide 아이콘은 예외
   ["src/app/common.jsx", "{/* 양옆 끝 마름모", "</div>\n      )}"],
-  ["src/components/dexHub.jsx", "function Crest(", "</svg>"],   // (v0.7.6) 도감 카드의 등급색 문장(면 분할 마름모)
+  ["src/components/dexHub.jsx", "function Plinth(", "</svg>"],   // (v0.7.6) 도감 카드 받침대(면 분할)
+  ["src/components/dexHub.jsx", "function CornerGem(", "</svg>"],   // (v0.7.6) 도감 카드 모서리·구분선 금 보석
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
   ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];
