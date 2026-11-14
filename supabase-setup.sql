@@ -2262,13 +2262,23 @@ create policy "puzzles read" on public.puzzles for select using (
 drop function if exists public.puzzle_set_visibility(bigint, boolean) cascade;
 create or replace function public.puzzle_set_visibility(p_no bigint, p_public boolean)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_creator uuid;
+declare v_creator uuid; v_data jsonb; v_key text; v_len int; v_cnt int; v_max int;
 begin
   if auth.uid() is null then raise exception 'auth required'; end if;
-  select creator_uid into v_creator from public.puzzles where no = p_no for update;
+  select creator_uid, data into v_creator, v_data from public.puzzles where no = p_no for update;
   if not found then raise exception 'puzzle not found'; end if;
   if v_creator is distinct from auth.uid() and not public.is_content_editor(auth.uid()) then
     raise exception 'not authorized';
+  end if;
+  -- (v0.7.7 보안) 게임 끝내기 퍼즐을 공개로 바꿀 때 중복 방지 규칙(api/puzzle-share.js·src/lib/matePuzzle.js)을 다시 적용한다 —
+  --  비공개로 올렸다가 공개로 바꿔 같은 체크메이트 장면의 상한(2개)·"더 긴 퍼즐만" 규칙을 우회하지 못하게. 같은 장면의 다른 공개 퍼즐을 잠그고 센다.
+  v_key := v_data ->> 'mateKey';
+  if p_public and v_key is not null and v_key <> '' then
+    v_len := coalesce(nullif(v_data ->> 'mateLen', '')::int, 0);
+    perform 1 from public.puzzles where data ->> 'mateKey' = v_key and no <> p_no and is_public for update;
+    select count(*), coalesce(max(nullif(data ->> 'mateLen', '')::int), 0) into v_cnt, v_max
+      from public.puzzles where data ->> 'mateKey' = v_key and no <> p_no and is_public;
+    if v_cnt > 0 and (v_max >= v_len or v_cnt >= 2) then raise exception 'duplicate_mate'; end if;
   end if;
   update public.puzzles set is_public = p_public where no = p_no;
 end; $$;

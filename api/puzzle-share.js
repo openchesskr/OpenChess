@@ -127,8 +127,9 @@ export default async function handler(req, res) {
     // (v0.7.7 보안) 게임 끝내기 퍼즐은 로그인한 사용자만 올린다 — 게스트가 같은 장면을 대량으로 선점해 남의 생성을 막지 못하게.
     if (!user) { res.status(401).json({ error: "login_required" }); return; }
     try {
-      // (보안) 같은 장면의 모든 퍼즐(공개·비공개 모두)을 센다 — 비공개로 올렸다 공개로 바꾸는 우회를 막는다. 비공개 퍼즐의 id는 응답에 담지 않는다.
-      const q = await fetch(env.url + "/rest/v1/puzzles?select=data->>id,data->>mateLen&data->>mateKey=eq." + encodeURIComponent(data.mateKey) + "&limit=20", { headers: { apikey: env.service, Authorization: "Bearer " + env.service } });
+      // (보안) 공개 퍼즐 + 올리는 사람 자신의 비공개 퍼즐만 센다 — 남의 비공개 퍼즐의 존재가 드러나거나 그것으로 선점되지 않게.
+      //  비공개로 올렸다가 공개로 바꾸는 우회는 SQL puzzle_set_visibility가 같은 규칙을 다시 적용해 막는다. 기존 퍼즐 id는 응답에 담지 않는다.
+      const q = await fetch(env.url + "/rest/v1/puzzles?select=data->>id,data->>mateLen&or=(is_public.eq.true,creator_uid.eq." + encodeURIComponent(user.id) + ")&data->>mateKey=eq." + encodeURIComponent(data.mateKey) + "&limit=20", { headers: { apikey: env.service, Authorization: "Bearer " + env.service } });
       const rows = q.ok ? await q.json() : [];
       const others = (Array.isArray(rows) ? rows : []).filter((r) => r && r.id !== data.id).map((r) => ({ id: r.id, mateLen: Number(r.mateLen) }));
       const v = mateDuplicateVerdict(others, data.mateLen);

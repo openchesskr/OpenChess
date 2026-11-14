@@ -99,4 +99,18 @@ export default [
       const ok = Number(kept) >= 1 && Number(listed) >= 1 && Number(visible) >= 1 && !insertNull.ok && orphan === "0";
       return { breached: !ok, evidence: ok ? `탈퇴 후 상대 대국 ${kept}건 보존·목록 ${listed}건 표시, 빈 칸 진행 대국 생성 거부(${first(insertNull)}), 양쪽 탈퇴 대국은 삭제` : `기대와 다름: 보존 ${kept}, 목록 ${listed}, 조회 ${visible}, 빈 칸 생성 ${insertNull.ok ? "허용됨" : "거부"}, 양쪽 탈퇴 잔여 ${orphan} ${both.ok ? "" : first(both)}` };
     } },
+  { id: "MATE-1", kind: "attack", title: "(v0.7.7) 게임 끝내기 중복 규칙 우회: 비공개로 올린 같은 장면 퍼즐을 공개로 바꾸기",
+    async run({ sb, U }) {
+      const key = "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b";
+      sb.admin(`insert into public.puzzles(no,data,is_public,creator_uid) values
+        (700001, jsonb_build_object('id','m1','mateKey','${key}','mateLen',5,'themes','["checkmate"]'::jsonb), true, '${U.bob}'),
+        (700002, jsonb_build_object('id','m2','mateKey','${key}','mateLen',3,'themes','["checkmate"]'::jsonb), false, '${U.mallory}'),
+        (700003, jsonb_build_object('id','m3','mateKey','other','mateLen',3,'themes','["checkmate"]'::jsonb), false, '${U.mallory}')`);
+      const dup = sb.as("authenticated", U.mallory, `select public.puzzle_set_visibility(700002, true);`);
+      const okOther = sb.as("authenticated", U.mallory, `select public.puzzle_set_visibility(700003, true);`);
+      const pub = sb.admin(`select is_public from public.puzzles where no = 700002`).out.trim();
+      sb.admin(`delete from public.puzzles where no in (700001,700002,700003)`);
+      const breached = dup.ok || pub === "t" || !okOther.ok;
+      return { breached, evidence: breached ? `같은 장면 공개 전환 ${dup.ok ? "허용됨" : "거부"}, 다른 장면 공개 ${okOther.ok ? "정상" : "실패: " + (okOther.err || "").split("\n")[0]}` : "같은 장면(더 긴 공개 퍼즐 있음)은 공개 전환 거부(duplicate_mate), 다른 장면은 정상 공개" };
+    } },
 ];
