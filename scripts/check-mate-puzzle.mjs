@@ -48,6 +48,7 @@ ok(lib.MATE_PUZZLE_MIN_PLIES === api.MATE_PUZZLE_MIN_PLIES && lib.MATE_KEY_MAX_P
   ok(/checkmate/.test(api.validatePuzzle(api.puzzleNoOf("g2"), notMate) || ""), "체크메이트로 끝나지 않는 게임 끝내기 퍼즐이 통과");
   const oneMove = mk("g3", { setupSans: ["e4", "e5", "Bc4", "Nc6", "Qh5"], mistakeSan: "Nf6", tree: { children: [{ san: "Qxf7#", children: [] }] } });
   ok(/too short/.test(api.validatePuzzle(api.puzzleNoOf("g3"), oneMove) || ""), "메이트 인 1 퍼즐이 통과");
+  ok(api.MATE_PUZZLE_MAX_PLIES === lib.MATE_PUZZLE_MAX_PLIES, "클라이언트·서버의 최대 반수가 다름");
   const other = { id: "g4", themes: ["punish"], setupSans: ["e4"], tree: { children: [{ san: "e5", children: [] }] }, mateKey: "x", mateLen: 3 };
   api.validatePuzzle(api.puzzleNoOf("g4"), other);
   ok(other.mateKey === undefined && other.mateLen === undefined, "게임 끝내기가 아닌 퍼즐의 mateKey가 남음(다른 테마로 중복 상한을 막을 수 있다)");
@@ -90,7 +91,8 @@ ok(/if \(requireMate && children\)[\s\S]{0,300}\/#\$\/\.test\(n\.san\)/.test(com
 ok(/mateCandidates\(pcAnalyzeResult, pcParsed\.sans\)/.test(puzzle), "퍼즐 만들기 화면이 체크메이트 수순 후보를 보여 주지 않음");
 ok(/mateDuplicateVerdict\(await mateKeyPuzzles\(info\.mateKey\), info\.mateLen\)[\s\S]{0,400}setPcExisting/.test(puzzle), "퍼즐 만들기 화면이 같은 체크메이트 장면의 기존 퍼즐을 확인하지 않음");
 ok(/if \(data\.mateKey\)[\s\S]{0,700}duplicate_mate/.test(share), "서버가 같은 체크메이트 장면의 중복을 거부하지 않음");
-ok(/t in \('punish', 'advantage', 'sacrifice', 'checkmate'\)/.test(sql), "SQL 테마 허용 목록에 checkmate가 없음(테마 합치기에서 사라짐)");
+ok(/t in \('punish', 'advantage', 'sacrifice'\);/.test(sql) && !/t in \([^)]*'checkmate'/.test(sql), "SQL 테마 합치기가 checkmate를 붙일 수 있음(체크메이트 확인 없이 테마 추가 — 보안)");
+ok(/is_public=eq\.true&creator_uid=not\.is\.null&data->>mateKey/.test(share) && !/existingId/.test(share), "서버 중복 조회가 비공개·게스트 퍼즐을 세거나 기존 퍼즐 id를 돌려줌(보안)");
 ok(/create index if not exists idx_puzzles_mate_key/.test(sql), "mateKey 색인이 없음");
 
 if (fails.length) { console.error("✖ check-mate-puzzle 실패:\n  " + fails.join("\n  ")); process.exit(1); }

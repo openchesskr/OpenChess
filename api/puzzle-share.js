@@ -60,7 +60,7 @@ function linesLegal(root, lines) {
 // (v0.7.7) 게임 끝내기(checkmate) 퍼즐 — 정답 트리의 모든 끝이 실제 체크메이트인지 다시 두어 확인하고, 주 라인(맨 앞 가지)이 끝나는 체크메이트 장면의
 //  키(mateKey = FEN 기물 배치 + 차례)와 길이(mateLen = 반수)를 서버가 직접 계산해 덮어쓴다(브라우저 값은 믿지 않는다). 같은 키의 기존 퍼즐과 중복 판정은 handler에서.
 //  규칙은 src/lib/matePuzzle.js와 같다(MATE_* 상수·판정 — scripts/check-mate-puzzle.mjs가 두 곳이 같은지 검사).
-export const MATE_PUZZLE_MIN_PLIES = 3, MATE_KEY_MAX_PUZZLES = 2;
+export const MATE_PUZZLE_MIN_PLIES = 3, MATE_PUZZLE_MAX_PLIES = 15, MATE_KEY_MAX_PUZZLES = 2;
 export function mateInfo(root, tree) {
   if (!tree || typeof tree !== "object") return null;
   let ok = true, main = null;
@@ -104,6 +104,7 @@ export function validatePuzzle(no, d) {
     const mi = d.tree ? mateInfo(root, d.tree) : null;
     if (!mi) return "checkmate puzzle must end in checkmate";
     if (mi.mateLen < MATE_PUZZLE_MIN_PLIES) return "checkmate puzzle too short";
+    if (mi.mateLen > MATE_PUZZLE_MAX_PLIES) return "checkmate puzzle too long";   // (보안) 일부러 늘인 수순으로 같은 장면을 선점하지 못하게 상한
     d.mateKey = mi.mateKey; d.mateLen = mi.mateLen;   // 서버 계산값으로 덮어쓴다
   } else { delete d.mateKey; delete d.mateLen; }
   return null;
@@ -124,11 +125,12 @@ export default async function handler(req, res) {
   // (v0.7.7) 게임 끝내기 중복 방지 — 같은 체크메이트 장면의 기존 퍼즐이 같거나 더 길면, 또는 이미 상한(2개)이면 거부(409 duplicate_mate)
   if (data.mateKey) {
     try {
-      const q = await fetch(env.url + "/rest/v1/puzzles?select=data->>id,data->>mateLen&data->>mateKey=eq." + encodeURIComponent(data.mateKey) + "&limit=20", { headers: { apikey: env.service, Authorization: "Bearer " + env.service } });
+      // (보안) 공개 + 로그인 사용자가 만든 퍼즐만 센다 — 비공개 퍼즐의 존재를 드러내지 않고, 게스트가 올린 퍼즐로 남의 생성을 막지(선점) 못하게.
+      const q = await fetch(env.url + "/rest/v1/puzzles?select=data->>id,data->>mateLen&is_public=eq.true&creator_uid=not.is.null&data->>mateKey=eq." + encodeURIComponent(data.mateKey) + "&limit=20", { headers: { apikey: env.service, Authorization: "Bearer " + env.service } });
       const rows = q.ok ? await q.json() : [];
       const others = (Array.isArray(rows) ? rows : []).filter((r) => r && r.id !== data.id).map((r) => ({ id: r.id, mateLen: Number(r.mateLen) }));
       const v = mateDuplicateVerdict(others, data.mateLen);
-      if (!v.ok) { res.status(409).json({ error: "duplicate_mate", reason: v.reason, existingId: v.existing && v.existing.id }); return; }
+      if (!v.ok) { res.status(409).json({ error: "duplicate_mate", reason: v.reason }); return; }   // 기존 퍼즐 id는 돌려주지 않는다
     } catch { res.status(502).json({ error: "unavailable" }); return; }
   }
   try {

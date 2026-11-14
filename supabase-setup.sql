@@ -2323,7 +2323,7 @@ begin
   else
     select coalesce(jsonb_agg(distinct t), '[]'::jsonb) into v_themes from (
       select jsonb_array_elements_text(coalesce(v_old -> 'themes', '[]'::jsonb) || coalesce(p_data -> 'themes', '[]'::jsonb)) as t
-    ) x where t in ('punish', 'advantage', 'sacrifice', 'checkmate');   -- (v0.7.7) 게임 끝내기
+    ) x where t in ('punish', 'advantage', 'sacrifice');   -- (v0.7.7 보안) 'checkmate'는 합치기로 붙일 수 없다 — 서버가 체크메이트를 확인한 첫 저장(새 행)에서만 붙는다
     if jsonb_array_length(v_themes) > 0 then
       update public.puzzles set data = data || jsonb_build_object('themes', v_themes) where no = p_no;
     end if;
