@@ -9,7 +9,8 @@ import { Search } from "../components/ocIcons.jsx";
 import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, CountUpFrom0, ReportStrip } from "./growthMotion.jsx";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { OnlineDot, Board, useNarrow, fmtFull, REVIEW_DEPTH } from "./common.jsx";
+import { OnlineDot, Board, useNarrow, fmtFull, REVIEW_DEPTH, ENGINE_PROFILES, isConstrainedDevice } from "./common.jsx";
+import { QUICK_REVIEW_ENGINE } from "../lib/prefs.js";
 import { loadCachedReviewDepth } from "./reviewCache.js";
 import { explainMistake } from "../lib/mistakeWhy.js";
 import { GROWTH_RECENT_GAMES, recordOf } from "../lib/recentGames.js";
@@ -838,7 +839,15 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
   useEffect(() => { purgeLegacyGrowthData(); }, []);
   const need = GROWTH_RECENT_GAMES;
   const enough = recent.length >= need;
-  const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick, paused: !active });
+  // (v0.7.7 모바일 성장 분석 수정) 휴대폰·메모리 적은 기기에서 정식 대형 신경망(17·18·19, 워커 하나 약 580MB)을 고른 경우, 보조 워커 풀을 띄울 수 없어
+  //  메인 엔진 하나로 5판을 차례로 분석하느라 판마다 몇 분씩 걸려 "아예 안 되는" 것처럼 보였다. 자동 리뷰만 Lite(빠른 리뷰 엔진, 워커 2개)로 돌린다.
+  const reviewEngine = useMemo(() => {
+    const prof = engine && ENGINE_PROFILES[engine.profile];
+    if (!engine || !prof || !prof.parts || !isConstrainedDevice()) return engine;
+    const lite = ENGINE_PROFILES[QUICK_REVIEW_ENGINE];
+    return lite ? { ...engine, profile: lite.id, urls: lite.urls } : engine;
+  }, [engine]);
+  const auto = useAutoReview({ recent: enough ? recent : [], engine: reviewEngine, reviewSpeed, quick, paused: !active });
   const showResults = enough && auto.settled && auto.done >= 1;
   const g = useGrowthData(showResults ? auto.records : []);
   // (v0.7.6) 퍼포먼스 레이팅: 자동 리뷰가 끝난 최근 5판(기록)을 원래 대국 객체(진영·시간 규정·레이팅)와 짝지어 합산한다.

@@ -285,7 +285,8 @@ export function EngineLineRow({ l, startPly, slotIdx, posKeyBase, pending, onPla
     // motion.div layout을 쓴다 — 아래 EngineLines에서 이 줄의 key를 슬롯 번호가 아니라 이 줄의 첫
     // 수(수의 정체성)로 잡아야, 순위가 바뀌어도 같은 컴포넌트 인스턴스가 유지되며 framer-motion이
     // 옛 위치→새 위치로의 이동을 자동으로(FLIP) 애니메이션할 수 있다.
-    <motion.div layout transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
+    // (v0.7.7 렉 수정) layoutDependency — 평가치가 갱신될 때마다(초당 10번) 위치를 다시 재지 않고, 이 줄의 순위(slotIdx)가 바뀔 때만 잰다.
+    <motion.div layout layoutDependency={slotIdx} transition={{ duration: 0.32, ease: MOTION_EASE }} className="no-pan" onPointerDown={onPointerDownCap} onPointerMove={onPointerMoveCap}
       style={{ height: large ? ENGINE_LINE_ROW_H.large : ENGINE_LINE_ROW_H.small, boxSizing: "border-box", display: "flex", alignItems: "center", gap: large ? 6 : 5, minWidth: 0, padding: large ? "4px 6px" : "1.5px 4px", borderRadius: 6, background: "rgba(0,0,0,.28)", border: "1px solid #3A2516", opacity: pending ? 0.5 : 1, transition: "opacity .25s ease", position: "relative" }}>
       <EvalBadge ev={l.ev} small={!large} font={font} />
       <div ref={outerRef} onScroll={recompute} onClick={onClick} className="press"

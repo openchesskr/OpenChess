@@ -7,6 +7,7 @@ import { ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 �
 import { T } from "../lib/theme.js";
 import { t } from "../lib/i18n.js";
 import { LOOP } from "../lib/perfMode.js";
+import { OffscreenPause } from "./offscreenPause.jsx";
 
 const PAGER_SEEN_KEY = "oc_learn_pager_seen";
 export function SwipePager({ pages, onIndexChange }) {   // (v0.7.6) onIndexChange(i): 지금 보이는 페이지가 바뀔 때(분석 탭 성장 분석이 보일 때만 자동 리뷰를 돌리려고)
@@ -32,7 +33,10 @@ export function SwipePager({ pages, onIndexChange }) {   // (v0.7.6) onIndexChan
       <div style={{ position: "relative" }}>
         <div ref={scRef} onScroll={onScroll} style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", margin: "0 -18px", padding: "2px 18px 6px", scrollPaddingLeft: 18, alignItems: "flex-start" }}>
           {pages.map((pg, i) => (
-            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 14px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>{pg.node}</div>
+            <div key={pg.key} ref={(el) => { pageRefs.current[i] = el; }} role="tabpanel" style={{ flex: "0 0 calc(100% - 14px)", minWidth: 0, scrollSnapAlign: "center", opacity: i === idx ? 1 : 0.55, transform: i === idx ? "none" : "scale(.985)", transition: "opacity .25s, transform .25s", transformOrigin: "center top" }}>
+              {/* (v0.7.7 렉 수정) 지금 보이지 않는 옆 페이지는 장식 애니메이션·반복 타이머를 멈춘다 */}
+              <OffscreenPause visible={i === idx}>{pg.node}</OffscreenPause>
+            </div>
           ))}
         </div>
         {hint && pages.length > 1 && (

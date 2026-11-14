@@ -24,6 +24,7 @@ const ZONES = [
   ["src/components/dexHub.jsx", "function Plinth(", "</svg>"],   // (v0.7.6) 도감 카드 받침대(면 분할)
   ["src/components/dexHub.jsx", "function CornerGem(", "</svg>"],   // (v0.7.6) 도감 카드 모서리·구분선 금 보석
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
+  ["src/app/growthHome.jsx", "function GoldDivider(", "</svg>"],   // (v0.7.7) 분석 탭 보드 분석·성장 분석 사이 금색 구분선의 보석
   ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];
 let n = 0;

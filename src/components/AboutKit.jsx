@@ -43,7 +43,7 @@ export const KIT_CSS = `
 @keyframes ab-bracket{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
 .ab-bracket{animation:ab-bracket 2.8s ease-in-out infinite}
 @keyframes ab-textglow{0%,100%{text-shadow:none}50%{text-shadow:0 0 14px rgba(236,203,134,.45)}}
-.ab-textglow{animation:ab-textglow 4s ease-in-out infinite}
+.ab-textglow{text-shadow:0 0 12px rgba(236,203,134,.3)}
 .ab-burst-glow{display:inline-block;animation:ab-burst 7s steps(1,end) infinite,ab-textglow 4s ease-in-out infinite}
 @keyframes ab-float{0%{transform:translateY(0) rotate(-7deg)}100%{transform:translateY(-12px) rotate(7deg)}}
 .ab-float{position:absolute;font-family:ui-monospace,monospace;font-weight:900;color:#C49A50;opacity:.22;pointer-events:none;animation:ab-float 5s ease-in-out infinite alternate}

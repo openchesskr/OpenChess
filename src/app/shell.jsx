@@ -8,7 +8,7 @@ import { apiUrl } from "../lib/siteConfig.js";
 import { engineUsable, isSameOriginUrl } from "../lib/engineDownload.js";
 import { K, KIT_CSS, Sys, Tag, AmbientLayer, Brackets } from "../components/AboutKit.jsx";
 import { useScramble, MONO } from "../components/OpenTextArt.jsx";
-import { isLite } from "../lib/perfMode.js";
+import { isLite, engineLineGapMs } from "../lib/perfMode.js";
 import { tierFromXp, gmPhotoRingStyle, TIER_COLORS, tierGlowHex, TIERS, tierGradientCss } from "../lib/tierSystem.js";
 import { DEX_VIEW_PATH, DEX_PATHS } from "../lib/dexRoutes.js";
 import { TierLogoDisc } from "../components/pieces.jsx";
@@ -18,7 +18,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { motion, AnimatePresence, useMotionValue, useTransform, animate as animateMv } from "framer-motion";
 import { drawKindLabel } from "../lib/chessRules.js";
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
-import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, isConstrainedDevice, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -138,6 +138,7 @@ export function useEngine(enginePref) {
   const [bootNonce, setBootNonce] = useState(0);
   const statusRef = useRef("loading"); statusRef.current = status;
   const loadingSinceRef = useRef(Date.now()), lastMsgRef = useRef(Date.now()), pingAtRef = useRef(0), lastRebootRef = useRef(0), rebootCountRef = useRef(0);
+  const missRef = useRef(0), bootBudgetRef = useRef(20000);   // (v0.7.7) 연속으로 readyok가 없었던 횟수, 이번 부팅에 허용할 시간(프로필 부팅 제한 + 여유)
   const queue = useRef([]);
   const running = useRef(false);
   const offRef = useRef(false);
@@ -218,8 +219,9 @@ export function useEngine(enginePref) {
     ref.current = null; offRef.current = false; running.current = false; setStatus("loading");
     loadingSinceRef.current = Date.now(); lastMsgRef.current = Date.now(); pingAtRef.current = 0;
     const bootList = engineBootList(enginePref, mainEngineThreads());
+    bootBudgetRef.current = bootList.reduce((a, b) => a + (b.bootTimeoutMs || 4000), 0) + 10000;   // (v0.7.7) 후보를 모두 시도할 시간 + 여유 — 큰 신경망을 받는 중에 재시작하지 않는다
     function handleLine(line) {
-      lastMsgRef.current = Date.now(); if (line.startsWith("readyok")) { pingAtRef.current = 0; rebootCountRef.current = 0; }   // 안전장치: 워커가 살아 있음
+      lastMsgRef.current = Date.now(); if (line.startsWith("readyok")) { pingAtRef.current = 0; missRef.current = 0; rebootCountRef.current = 0; }   // 안전장치: 워커가 살아 있음
       const cb = queue.current[0]; if (!cb) return;
       const sc = line.match(/score (cp|mate) (-?\d+)/);
       if (line.startsWith("info") && cb.multi) {
@@ -236,10 +238,11 @@ export function useEngine(enginePref) {
           // (성능) MultiPV 탐색도 1순위 줄(가장 좋은 수)만큼은 단일PV 탐색과 똑같이 depth가 점점
           // 깊어지며 갱신된다 — 평가치 바처럼 "이 포지션 자체의 평가"가 필요한 곳은 굳이 별도의
           // 단일PV 탐색을 또 돌리지 않고 이 진행 상황을 그대로 재사용할 수 있다.
-          if (cb.onProgress && parseInt(mp[1], 10) === 1) cb.onProgress(entry);
+          // (v0.7.7 렉 수정) 1순위 진행 보고도 depth가 깊어질 때나 일정 간격(engineLineGapMs)마다만 — info 줄마다(초당 수십 번) 평가치 바를 다시 그리던 것을 줄인다.
+          if (cb.onProgress && parseInt(mp[1], 10) === 1) { const now = Date.now(); if (entry.depth !== cb.lastProgDepth || !cb.lastProgEmit || now - cb.lastProgEmit >= engineLineGapMs()) { cb.lastProgDepth = entry.depth; cb.lastProgEmit = now; cb.onProgress(entry); } }
           // (v0.2.1) 엔진 라인을 최종 결과 한 번이 아니라 depth가 깊어질 때마다 실시간으로 흘려보낸다
           // (throttle ~90ms) — 평가치가 살아 움직이고 수순도 점점 길어져 "한꺼번에 팝업"되는 끊김이 사라진다.
-          if (cb.onLines) { const now = Date.now(); if (!cb.lastLinesEmit || now - cb.lastLinesEmit >= 90) { cb.lastLinesEmit = now; cb.onLines(Object.keys(cb.lines).sort((a, b) => a - b).map((k) => cb.lines[k])); } }
+          if (cb.onLines) { const now = Date.now(); if (!cb.lastLinesEmit || now - cb.lastLinesEmit >= engineLineGapMs()) { cb.lastLinesEmit = now; cb.onLines(Object.keys(cb.lines).sort((a, b) => a - b).map((k) => cb.lines[k])); } }
         }
       } else if (sc && !cb.multi) {
         cb.last = sc[1] === "mate" ? { mate: parseInt(sc[2], 10) } : { cp: parseInt(sc[2], 10) };
@@ -269,7 +272,13 @@ export function useEngine(enginePref) {
         // (v0.5.1 버그 수정) 부팅 실패 경로(여기·아래 타임아웃·바깥 catch) 전부가 지금까지 아무 로그도
         // 남기지 않고 조용히 다음 후보로 넘어갔다 — 그래서 "엔진이 연결 실패로 멈춘다"는 제보가 와도
         // 콘솔에서 원인(어떤 URL이, 왜 — 404/CORS 에러였는지 타임아웃이었는지)을 전혀 구분할 수 없었다.
-        w.onerror = (e) => { console.warn("[engine] boot failed:", url, e && e.message); try { w.terminate(); } catch (_) {} if (!booted && !killed) tryNext(); };
+        w.onerror = (e) => {
+          console.warn("[engine] " + (booted ? "crashed" : "boot failed") + ":", url, e && e.message); try { w.terminate(); } catch (_) {}
+          if (killed) return;
+          if (!booted) { tryNext(); return; }
+          // (v0.7.7) 부팅 뒤에 워커가 죽으면(메모리 부족 등) 예전엔 감시가 알아챌 때까지(수십 초) 모든 요청이 멈춰 있었다 — 곧바로 다시 띄운다.
+          ref.current = null; lastRebootRef.current = Date.now(); rebootCountRef.current++; setBootNonce((n) => n + 1);
+        };
         w.postMessage("uci");
         if (threads > 1) w.postMessage("setoption name Threads value " + threads);   // 멀티스레드 빌드에서만 의미 있음
         // (성능) 스톡피시 WASM 빌드의 기본 Hash(치환 테이블)는 보통 16MB로 아주 작다 — 같은 국면을
@@ -277,7 +286,7 @@ export function useEngine(enginePref) {
         // depth 자체가 눈에 띄게 줄어든다. 64MB로 올리면 같은 700ms 안에서도 치환 테이블 적중률이
         // 높아져 실질적으로 더 깊이 탐색할 수 있다 — 이 엔진 인스턴스는 워커 1개뿐이라 메모리 부담도
         // 작다(태블릿·저사양 기기에서도 64MB는 안전한 수준).
-        w.postMessage("setoption name Hash value 64");
+        w.postMessage("setoption name Hash value " + (isConstrainedDevice() ? 32 : 64));   // (v0.7.7) 휴대폰·메모리 적은 기기는 32MB
         w.postMessage("isready"); worker = w;
         setTimeout(() => { if (!booted && !killed) { console.warn("[engine] boot timeout(" + (bootTimeoutMs || 4000) + "ms):", url); try { w.terminate(); } catch (_) {} tryNext(); } }, bootTimeoutMs || 4000);
       } catch (e) { console.warn("[engine] boot threw:", url, e); tryNext(); }
@@ -291,22 +300,41 @@ export function useEngine(enginePref) {
       running.current = false; swallowBest.current = 0;
     };
   }, [pump, enginePref, bootNonce]);
+  // (v0.7.7 엔진 끊김 수정) 엔진 감시(워치독). 예전 감시는 정상 엔진을 스스로 죽이는 경우가 많았다 — 사용자가 본 "엔진 연결이 수시로 끊겨 새로고침"의 주된 원인.
+  //  ① 큰 신경망(Stockfish 17·18·19, 약 100MB)은 받는 데·컴파일하는 데 15초 넘게 걸리는데 "부팅 15초 초과 = 멈춤"으로 보고 재시작해 받던 파일을 버렸다
+  //     → 6번 반복 뒤 영구 "꺼짐". 이제 그 프로필의 부팅 제한 시간(bootTimeoutMs)만큼 기다린다.
+  //  ② 탭을 다른 데로 옮기거나 휴대폰 화면이 꺼지면 브라우저가 워커와 타이머를 멈추는데, 돌아오는 순간 "6초 동안 readyok 없음"으로 판정해 재시작했다.
+  //     이제 탭이 숨겨진 동안은 판정하지 않고, 다시 보이거나 타이머가 크게 밀렸으면(기기가 잠들었다 깸) 시계를 새로 시작한다.
+  //  ③ 무거운 탐색 중이거나 기기가 바쁠 때 응답이 늦는 것을 고장으로 보지 않도록 기준을 넉넉히(응답 6초 → 15초, 멈춤 20초 → 45초) 하고 두 번 연속일 때만 재시작한다.
+  //  ④ 재시작 횟수 상한(6번)에 걸리면 영구히 꺼진 채 새로고침해야 했다 — 이제 1분 쉬었다 다시 시도한다.
   useEffect(() => {
     const reboot = (why) => {
-      const now = Date.now(); if (now - lastRebootRef.current < 10000 || rebootCountRef.current >= 6) return;   // 정말 못 켜는 환경이면 6번까지만 다시 시도
-      lastRebootRef.current = now; rebootCountRef.current++; console.warn("[engine] watchdog restart:", why);
+      const now = Date.now();
+      if (now - lastRebootRef.current < 10000) return;
+      if (rebootCountRef.current >= 6) { if (now - lastRebootRef.current < 60000) return; rebootCountRef.current = 0; }
+      lastRebootRef.current = now; rebootCountRef.current++; missRef.current = 0; console.warn("[engine] watchdog restart:", why);
       setBootNonce((n) => n + 1);
     };
+    const resetClocks = () => { const now = Date.now(); lastMsgRef.current = now; pingAtRef.current = 0; missRef.current = 0; if (statusRef.current === "loading") loadingSinceRef.current = now; };
+    const onVis = () => { if (document.visibilityState === "visible") resetClocks(); };
+    document.addEventListener("visibilitychange", onVis);
+    let lastTick = Date.now();
     const iv = setInterval(() => {
       const st = statusRef.current, now = Date.now();
+      const gap = now - lastTick; lastTick = now;
+      if (document.visibilityState === "hidden") return;           // 숨긴 탭: 브라우저가 워커를 멈췄을 수 있어 판정하지 않는다
+      if (gap > 12000) { resetClocks(); return; }                  // 타이머가 크게 밀림(기기 잠듦·탭 동결에서 깸): 시계만 새로 시작
       if (st === "off") { reboot("off"); return; }
-      if (st === "loading") { if (now - loadingSinceRef.current > 15000) reboot("boot-stuck"); return; }
+      if (st === "loading") { if (now - loadingSinceRef.current > bootBudgetRef.current) reboot("boot-stuck"); return; }
       if (!ref.current) { reboot("no-worker"); return; }
-      if (pingAtRef.current && now - pingAtRef.current > 6000) { pingAtRef.current = 0; reboot("no-readyok"); return; }
-      if (queue.current.length && now - lastMsgRef.current > 20000) { reboot("stalled"); return; }
+      if (pingAtRef.current && now - pingAtRef.current > 15000) {
+        pingAtRef.current = 0; missRef.current++;
+        if (missRef.current >= 2) { reboot("no-readyok"); return; }
+      }
+      if (queue.current.length && now - lastMsgRef.current > 45000) { reboot("stalled"); return; }
       if (!pingAtRef.current) { pingAtRef.current = now; try { ref.current.postMessage("isready"); } catch (_) { } }
     }, 5000);
-    return () => clearInterval(iv);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
   }, []);
   // (분석 최적화) movetime(ms)을 주면 `go depth N movetime M`으로 보내 depth·시간 중 먼저 도달하는 쪽에서 멈춘다.
   // 쉬운 포지션은 목표 depth까지 깊게, 복잡한 포지션은 movetime 상한에서 끊어 전체 분석 시간을 예측 가능하게 만든다.

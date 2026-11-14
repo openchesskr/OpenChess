@@ -19,3 +19,18 @@ export function poolFallbackWorker(engine) {
   }
   return a;
 }
+
+// (v0.7.7 렉·엔진 끊김·모바일 성장 분석 수정) 분석 풀 크기 — 설명은 src/app/common.jsx analyzePoolSize 위 주석.
+export const POOL_WORKER_MB = { light: 90, heavy: 600 };
+export function isConstrainedDevice() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const mobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));   // iPadOS는 Mac처럼 보고한다
+  const mem = navigator.deviceMemory;
+  return mobileUA || (typeof mem === "number" && mem <= 4);
+}
+export function poolSizeFor({ cores = 4, heavy = false, constrained = false, memGB = null } = {}) {
+  let n = heavy ? (constrained ? 0 : 2) : (constrained ? 2 : Math.max(2, Math.min(cores - 2, 8)));
+  if (typeof memGB === "number" && memGB > 0) n = Math.min(n, Math.floor((memGB * 1024 * 0.25) / (heavy ? POOL_WORKER_MB.heavy : POOL_WORKER_MB.light)));
+  return Math.max(heavy ? 0 : 1, n);
+}

@@ -28,7 +28,8 @@ export const isLite = () => lite;
 /** 무한 반복 모션(framer-motion repeat)용: 가벼운 모드에선 한 번만 재생한다. */
 export const LOOP = () => (lite ? 0 : Infinity);
 /** 실시간 엔진 라인 화면 갱신 최소 간격(ms) */
-export const engineLineGapMs = () => (lite ? 280 : 90);
+// (v0.7.7 렉 수정) 보통 모드 90 → 150ms — 엔진 라인 갱신마다 분석 탭 전체가 다시 그려져, 초당 11번은 메인 스레드를 꾸준히 점유했다. 초당 6~7번이면 충분히 살아 움직인다.
+export const engineLineGapMs = () => (lite ? 280 : 150);
 export function usePerfLite() {
   return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => lite, () => false);
 }

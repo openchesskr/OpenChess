@@ -38,16 +38,19 @@ import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZO
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
 import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
-import { poolFallbackWorker } from "../lib/enginePool.js";
+import { poolFallbackWorker, isConstrainedDevice, poolSizeFor } from "../lib/enginePool.js";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
 // 냈다(분석 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
-export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, lift = false, className, style }, ref) {
+// (v0.7.7 렉 수정) layout 기본값을 끔 — framer-motion의 layout은 감싼 컴포넌트가 다시 그려질 때마다 위치를 재려고 강제 레이아웃(getBoundingClientRect)을
+//  일으킨다. 엔진 평가가 초당 10번씩 분석 탭을 다시 그리면서 FadeIn마다 매번 레이아웃을 재 분석 탭이 초당 70번 레이아웃을 계산했다(메인 스레드 70~80% 점유).
+//  순위 이동 애니메이션이 필요한 곳만 layout과 layoutDependency(순서가 바뀔 때만 재라는 값)를 함께 넘긴다.
+export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = false, layoutDependency, lift = false, className, style }, ref) {
   return (
-    <motion.div ref={ref} layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+    <motion.div ref={ref} layout={layout} layoutDependency={layoutDependency} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
       whileHover={lift && !isLite() ? { y: -3, transition: { duration: 0.18, ease: MOTION_EASE } } : undefined}
       transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
       {children}
@@ -1207,9 +1210,9 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 분석 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-export function bootAnalysisWorker(urls) {
+export function bootAnalysisWorker(urls, bootTimeoutMs = 4000) {
   return new Promise((resolve) => {
-    let idx = 0, booted = false, worker = null;
+    let idx = 0, booted = false, worker = null, handle = null;
     const queue = []; let running = false, swallowBest = 0;
     // (버그 수정) analyzeGame(게임 리뷰)는 배치 하나가 끝나면 풀을 바로 버려서, 작업 하나가 응답 없이
     // 멈춰도(엔진 hiccup 등) 그 배치만 늦어질 뿐이었다 — 분석 탭 실시간 평가(useMergedMoves)는 같은
@@ -1324,7 +1327,8 @@ export function bootAnalysisWorker(urls) {
           const line = typeof e.data === "string" ? e.data : "";
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
-            resolve({
+            resolve(handle = {
+              dead: false,   // (v0.7.7) 부팅 뒤 워커가 죽으면(메모리 부족 등) true — getAnalysisPool이 빼고 새로 띄운다
               evaluate(fen, d, onProgress, mt, slot) {
                 return new Promise((res) => {
                   supersede(slot);
@@ -1341,19 +1345,28 @@ export function bootAnalysisWorker(urls) {
                   pump();
                 });
               },
-              terminate() { try { w.terminate(); } catch (_) { } },
+              terminate() { handle.dead = true; try { w.terminate(); } catch (_) { } while (queue.length) { const j = queue.shift(); settle(j, j.multi ? [] : null); } running = false; },   // (v0.7.7) 기다리던 작업이 영영 멈추지 않게
             });
           }
           handleLine(line);
         };
-        w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
+        // (v0.7.7 엔진 끊김 수정) 부팅이 끝난 뒤 죽은 워커(모바일 메모리 부족으로 브라우저가 종료 등)는 예전엔 풀에 그대로 남아,
+        //  그 워커로 가는 작업이 전부 워치독 시간(수 초)을 기다렸다 빈 결과로 끝났다 — 자동 리뷰·실시간 분석이 멈춘 것처럼 보였다.
+        //  죽었다고 표시하고 대기 중 작업을 즉시 빈 결과로 돌려준다(getAnalysisPool이 이 워커를 빼고 새로 띄운다).
+        w.onerror = () => {
+          try { w.terminate(); } catch (_) { }
+          if (!booted) { tryNext(); return; }
+          if (handle) handle.dead = true;
+          while (queue.length) { const j = queue.shift(); settle(j, j.multi ? [] : null); }
+          running = false;
+        };
         w.postMessage("uci");
         // (성능) useEngine 싱글턴과 동일한 이유(위 Hash 주석 참고) — 다만 이 풀은 기기 코어 수만큼
         // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
         // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
         w.postMessage("setoption name Hash value 32");
         w.postMessage("isready");
-        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
+        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, bootTimeoutMs);
       } catch (_) { tryNext(); }
     }
     tryNext();
@@ -1393,31 +1406,58 @@ const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // 있다. 부팅 경합(동시에 몇 개나 100MB급 파일을 받고 컴파일하는지)과 최종 처리량(풀 크기)을 분리해,
 // 최종 풀은 좀 더 키우되(4) 실제 부팅은 한 번에 HEAVY_ENGINE_BOOT_BATCH개씩만 순차적으로 진행한다 —
 // 동시 경합은 예전 2워커 수준으로 낮게 유지하면서, 다 부팅된 뒤의 처리량은 2배로 키운 절충안이다.
-const HEAVY_ENGINE_POOL_SIZE = 4;
 const HEAVY_ENGINE_BOOT_BATCH = 2;
+// (v0.7.7 렉·엔진 끊김·모바일 성장 분석 수정) 풀 크기를 기기에 맞춘다.
+//  실측(Chromium): Lite 워커 하나가 약 75~95MB, 정식 대형 신경망(17·18·19) 워커 하나가 약 580MB를 쓴다. 예전엔 Lite를 코어 수만큼(휴대폰 8개 = 약 600MB,
+//  16코어 데스크톱 16개), 대형을 4개(약 2.3GB) 띄웠고 앱 시작 직후 미리 부팅까지 했다. 휴대폰에서는 메모리 부족으로 브라우저가 워커나 탭 자체를 강제로
+//  종료해 "엔진 연결 끊김 → 새로고침"과 "모바일 성장 분석이 아예 안 됨"이 됐고, 데스크톱에서는 모든 코어가 동시에 탐색해 화면(메인 스레드)이 밀렸다.
+//  · 화면과 메인 엔진 몫으로 코어 2개를 남긴다(데스크톱 Lite 최대 8).
+//  · 휴대폰·메모리 4GB 이하: Lite 2개, 대형 신경망은 풀 없이 메인 엔진 하나로(0 → 호출부가 메인 엔진으로 대신한다).
+//  · 기기 메모리(navigator.deviceMemory)의 1/4을 풀 전체 상한으로 둔다.
+// poolSizeFor·isConstrainedDevice는 순수 함수라 src/lib/enginePool.js에 둔다(scripts/check-engine-health.mjs가 검사).
+export { isConstrainedDevice, poolSizeFor };
 export function analyzePoolSize(profile) {
-  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
   const prof = ENGINE_PROFILES[profile];
-  if (prof && prof.parts) return HEAVY_ENGINE_POOL_SIZE;
-  return Math.max(2, Math.min(cores, 32));
+  return poolSizeFor({
+    cores: (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4,
+    heavy: !!(prof && prof.parts),
+    constrained: isConstrainedDevice(),
+    memGB: typeof navigator !== "undefined" && typeof navigator.deviceMemory === "number" ? navigator.deviceMemory : null,
+  });
 }
-async function bootWorkersStaggered(urls, size, batch) {
+const poolBootTimeout = (prof) => (prof && prof.bootTimeoutMs) || (prof && prof.parts ? 45000 : 4000);   // (v0.7.7) 대형 신경망은 4초 안에 부팅이 안 돼 늘 실패했다
+async function bootWorkersStaggered(urls, size, batch, timeoutMs) {
   const out = [];
   for (let i = 0; i < size; i += batch) {
     const n = Math.min(batch, size - i);
-    const group = await Promise.all(Array.from({ length: n }, () => bootAnalysisWorker(urls)));
+    const group = await Promise.all(Array.from({ length: n }, () => bootAnalysisWorker(urls, timeoutMs)));
     out.push(...group);
   }
   return out.filter(Boolean);
 }
 export function getAnalysisPool(profile, urls) {
   const cached = analysisPoolCache.get(profile);
-  if (cached) return cached;
+  if (cached) {
+    // (v0.7.7) 죽은 워커는 빼고, 빈자리는 뒤에서 새로 띄워 채운다. 모두 죽었으면 풀을 처음부터 다시 만든다.
+    return cached.then((ws) => {
+      const alive = ws.filter((w) => w && !w.dead);
+      if (alive.length === ws.length) return ws;
+      if (!alive.length) { analysisPoolCache.delete(profile); return getAnalysisPool(profile, urls); }
+      const missing = ws.length - alive.length, prof = ENGINE_PROFILES[profile];
+      ws.splice(0, ws.length, ...alive);
+      Promise.all(Array.from({ length: missing }, () => bootAnalysisWorker(urls, poolBootTimeout(prof)))).then((nw) => { for (const w of nw) if (w) ws.push(w); });
+      return ws;
+    });
+  }
+  // (v0.7.7) 메모리가 빠듯한 기기에서는 다른 프로필의 풀(엔진을 바꾸기 전 것)을 정리해 두 벌이 동시에 메모리를 차지하지 않게 한다.
+  //  풀이 없는 프로필(휴대폰의 대형 신경망 = 크기 0)을 부를 때는 다른 풀을 건드리지 않는다(자동 리뷰가 쓰는 Lite 풀을 죽이지 않게).
   const size = analyzePoolSize(profile);
+  if (size > 0 && isConstrainedDevice()) for (const [k, pr] of analysisPoolCache) if (k !== profile) pr.then((ws) => { if (!ws.length) return; analysisPoolCache.delete(k); ws.forEach((w) => w && w.terminate && w.terminate()); }).catch(() => {});
   const prof = ENGINE_PROFILES[profile];
-  const promise = (prof && prof.parts)
-    ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH)
-    : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
+  const promise = size <= 0 ? Promise.resolve([])
+    : (prof && prof.parts)
+      ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH, poolBootTimeout(prof))
+      : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, poolBootTimeout(prof)))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
 }
