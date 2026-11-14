@@ -53,6 +53,13 @@ ok(lib.MATE_PUZZLE_MIN_PLIES === api.MATE_PUZZLE_MIN_PLIES && lib.MATE_KEY_MAX_P
   ok(other.mateKey === undefined && other.mateLen === undefined, "게임 끝내기가 아닌 퍼즐의 mateKey가 남음(다른 테마로 중복 상한을 막을 수 있다)");
 }
 
+// ③-1 (보안) mateKey·checkmate 테마를 붙여도 lines·solution 합법성 검사를 건너뛸 수 없다
+{
+  const ill = { id: "b1", themes: ["punish"], setupSans: ["e4"], lines: [{ solution: ["Ke2", "Qh4"] }], mateKey: "x", mateLen: 9 };   // 흑 차례에 Ke2는 불법
+  ok(api.validatePuzzle(api.puzzleNoOf("b1"), ill) === "illegal lines", "mateKey를 붙인 불법 lines 퍼즐이 통과(합법성 검사 우회)");
+  const ill2 = { id: "b2", setupSans: ["e4"], solution: ["Ke2"], mateLen: 3 };
+  ok(api.validatePuzzle(api.puzzleNoOf("b2"), ill2) === "illegal solution", "mateLen을 붙인 불법 solution 퍼즐이 통과(합법성 검사 우회)");
+}
 // ③-2 서버 핸들러: 같은 체크메이트 장면의 더 긴 퍼즐이 있으면 409 duplicate_mate, 없으면 저장
 {
   Object.assign(process.env, { VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });

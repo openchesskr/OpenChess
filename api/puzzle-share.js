@@ -95,15 +95,17 @@ export function validatePuzzle(no, d) {
   if (JSON.stringify(d).length > 300000) return "too large";
   const root = rootPosition(d);
   if (!root) return "illegal start";
+  // 합법성 검사 사슬(tree → lines → solution)은 그대로 한 덩어리로 두고, 게임 끝내기 검사는 그 뒤에 따로 돈다.
+  // (v0.7.7 보안 수정) 처음엔 게임 끝내기 블록을 이 사슬 한가운데 끼워 넣어 else-if가 이어져 버려, mateKey 필드나 checkmate 테마를 붙이면 lines·solution 합법성 검사를 건너뛸 수 있었다.
   if (d.tree != null) { if (typeof d.tree !== "object" || !treeLegal(root, d.tree)) return "illegal tree"; }
+  else if (d.lines != null) { if (!linesLegal(root, d.lines)) return "illegal lines"; }
+  else if (d.solution != null) { if (!linesLegal(root, [{ solution: d.solution }])) return "illegal solution"; }
   if (Array.isArray(d.themes) && d.themes.includes("checkmate")) {
     const mi = d.tree ? mateInfo(root, d.tree) : null;
     if (!mi) return "checkmate puzzle must end in checkmate";
     if (mi.mateLen < MATE_PUZZLE_MIN_PLIES) return "checkmate puzzle too short";
     d.mateKey = mi.mateKey; d.mateLen = mi.mateLen;   // 서버 계산값으로 덮어쓴다
-  } else if (d.mateKey != null || d.mateLen != null) { delete d.mateKey; delete d.mateLen; }
-  else if (d.lines != null) { if (!linesLegal(root, d.lines)) return "illegal lines"; }
-  else if (d.solution != null) { if (!linesLegal(root, [{ solution: d.solution }])) return "illegal solution"; }
+  } else { delete d.mateKey; delete d.mateLen; }
   return null;
 }
 
