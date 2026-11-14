@@ -18,7 +18,7 @@ import { GachaSection } from "./gacha.jsx";
 import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
 import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
-import { DexHub } from "../components/dexHub.jsx";
+import { DexHub, DexSectionNav } from "../components/dexHub.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -1444,7 +1444,8 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   const totalSkins = bookSets().length;   // (v0.6.9) 스킨은 세트 단위로 센다(기본 세트 포함)
   const ownedSkinN = ownedSetCount(ownedSkins);
   const hubItems = [
-    { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : 0, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : "0%" },
+    // (v0.7.6, BUG-168) 해금률은 오프닝 모식도가 한 번 계산해야 알 수 있다 — 아직 모르면 0% 대신 "탐색 전"으로(예전엔 첫 화면에서 늘 0%로 보였다)
+    { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : null, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : t("탐색 전") },
     { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: t("선수 {0}명", fmtFull(masterPlayerCount())) },   // (v0.7.5) 수록 선수 수
     { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
@@ -1456,9 +1457,16 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation).
   return (
     <div style={{ isolation: "isolate" }}>
+      {/* (v0.7.6, 사용자 요청) 안쪽 화면 위에 구획 전환 줄 — 첫 화면에 돌아가지 않고 다른 구획으로 */}
+      {dexView !== "hub" && <DexSectionNav items={hubItems} current={dexView} onOpen={selectDexView} />}
             {dexView === "hub" ? (
         // (v0.7.6, 사용자 요청) 레슨은 학습 탭으로 옮겼다 — 도감 첫 화면은 카드만.
-        <DexHub items={hubItems} onOpen={selectDexView} />
+        <DexHub items={hubItems} onOpen={selectDexView} summary={[
+          ...(unlockStats && unlockStats.total ? [{ key: "op", label: t("오프닝 해금"), value: ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" }] : []),
+          { key: "ti", label: t("칭호"), value: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
+          { key: "sk", label: t("스킨"), value: ownedSkinN + "/" + totalSkins },
+          { key: "ma", label: t("마스터"), value: fmtFull(masterPlayerCount()) },
+        ]} />
       ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (

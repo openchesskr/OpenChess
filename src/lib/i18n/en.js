@@ -3715,4 +3715,9 @@ export default {
   "수록 대국": "Games in database",
   "없는 마스터 페이지": "No such Master page",
   "활동 기간": "Active years",
+  "도감 구획": "Collection sections",
+  "모은 것": "Collected",
+  "오프닝 해금": "Openings unlocked",
+  "오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳": "Unlock Openings, meet Masters, and collect titles and skins",
+  "탐색 전": "Not explored",
 };

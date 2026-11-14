@@ -3715,4 +3715,9 @@ export default {
   "수록 대국": "Partidas registradas",
   "없는 마스터 페이지": "Esta página de Maestro no existe",
   "활동 기간": "Años en activo",
+  "도감 구획": "Secciones de la colección",
+  "모은 것": "Colección",
+  "오프닝 해금": "Aperturas desbloqueadas",
+  "오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳": "Desbloquea aperturas, conoce a los maestros y colecciona títulos y skins",
+  "탐색 전": "Sin explorar",
 };
