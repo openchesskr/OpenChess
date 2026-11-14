@@ -2322,23 +2322,26 @@ begin
   v_exists := found;
   -- (BUG-121) 같은 번호에 이미 다른 id의 퍼즐이 있으면(번호 충돌) 합치지도 덮어쓰지도 않고 거부한다 — 충돌을 일부러 만들어 남의 퍼즐 테마를 오염시키지 못하게.
   if v_exists and v_old is not null and v_old ? 'id' and (v_old ->> 'id') is distinct from (p_data ->> 'id') then raise exception 'collision'; end if;
+  -- (v0.7.7 보안) 게임 끝내기 중복 규칙을 DB 안에서도 잠금 아래 다시 판정한다(api/puzzle-share.js의 사전 조회와 같은 규칙: 공개 + 올리는 사람 본인 비공개 기준,
+  --  같은 장면에 같거나 더 긴 퍼즐이 있거나 이미 2개면 거부). p_data를 실제로 쓰는 모든 경로(새 행·빈 행 채우기·개발자 교체) 앞에서 한 번 판정한다 — 테마 합치기만 하는 경로는 본문을 쓰지 않는다.
+  --  장면별 advisory lock으로 동시에 올리는 경쟁을 막는다. 같은 번호(자기 자신)는 세지 않는다.
+  if coalesce(p_data ->> 'mateKey', '') <> ''
+     and (not v_exists or v_old is null or v_old = '{}'::jsonb or (p_actor is not null and public.is_content_editor(p_actor))) then
+    perform pg_advisory_xact_lock(hashtext('mate:' || (p_data ->> 'mateKey')));
+    if exists (
+      select 1 from (select count(*) as n, coalesce(max(nullif(data ->> 'mateLen', '')::int), 0) as mx
+                     from public.puzzles where data ->> 'mateKey' = p_data ->> 'mateKey' and no <> p_no and (is_public or creator_uid = p_actor)) x
+      where x.n > 0 and (x.mx >= coalesce(nullif(p_data ->> 'mateLen', '')::int, 0) or x.n >= 2)
+    ) then raise exception 'duplicate_mate'; end if;
+  end if;
   if not v_exists then
-    -- (v0.7.7 보안) 게임 끝내기 중복 규칙을 DB 안에서도 잠금 아래 다시 판정한다(api/puzzle-share.js의 사전 조회와 같은 규칙: 공개 + 올리는 사람 본인 비공개 기준,
-    --  같은 장면에 같거나 더 긴 퍼즐이 있거나 이미 2개면 거부). 장면별 advisory lock으로 동시에 올리는 경쟁을 막는다.
-    if coalesce(p_data ->> 'mateKey', '') <> '' then
-      perform pg_advisory_xact_lock(hashtext('mate:' || (p_data ->> 'mateKey')));
-      if exists (
-        select 1 from (select count(*) as n, coalesce(max(nullif(data ->> 'mateLen', '')::int), 0) as mx
-                       from public.puzzles where data ->> 'mateKey' = p_data ->> 'mateKey' and (is_public or creator_uid = p_actor)) x
-        where x.n > 0 and (x.mx >= coalesce(nullif(p_data ->> 'mateLen', '')::int, 0) or x.n >= 2)
-      ) then raise exception 'duplicate_mate'; end if;
-    end if;
     -- (v0.7.7 보안) 로그인 사용자가 올리면 생성자를 같은 문장에서 기록한다(나중에 따로 선점하던 사이 빈틈을 줄임)
     insert into public.puzzles(no, data, is_public, creator_uid) values (p_no, p_data, coalesce(p_public, true), p_actor) on conflict (no) do nothing;
     return;
   end if;
   if v_old is null or v_old = '{}'::jsonb then
-    update public.puzzles set data = p_data where no = p_no;
+    -- (v0.7.7 보안) 카운터만 먼저 생긴 빈 행을 채울 때도 생성자·공개 여부를 새 행과 같게 기록한다
+    update public.puzzles set data = p_data, creator_uid = coalesce(creator_uid, p_actor), is_public = coalesce(p_public, true) where no = p_no;
   elsif p_actor is not null and public.is_content_editor(p_actor) then
     update public.puzzles set data = p_data where no = p_no;
   else
@@ -4436,7 +4439,7 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
-    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20},
+    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20},
     "playQuests": {"game": {"target": 1, "coins": 50}, "win": {"target": 1, "coins": 50}, "long": {"target": 1, "coins": 50}, "mg": {"target": 2, "coins": 50}, "kinds": {"target": 2, "coins": 50}},
     "devBonusCoins": 10000
   }'::jsonb;

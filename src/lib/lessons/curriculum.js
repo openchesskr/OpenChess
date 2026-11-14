@@ -19,6 +19,10 @@ export const STAGES = [
   { id: "s5", grade: "brilliant", deco: ["Q", "R", "K"], title: () => t("마무리 기술"), desc: () => t("체크메이트 패턴과 엔드게임") },
   // (v0.7.5, 사용자 요청) 6단계: 주요 오프닝을 직접 두며 익힌다 — 다섯 등급 다음에 수 등급 "이론(책)"의 색·아이콘
   { id: "s6", grade: "book", deco: ["N", "B", "P"], title: () => t("오프닝 레파토리"), desc: () => t("주요 오프닝을 직접 두며 익히기") },
+  // (v0.7.7, 사용자 요청) 테마 확장 — 전술 심화·중반 전략·엔드게임 심화. 색·아이콘은 남은 수 등급(놓친 수·부정확·실수)을 쓴다.
+  { id: "s7", grade: "miss", deco: ["Q", "N", "B"], title: () => t("전술 심화"), desc: () => t("이중 공격·수비수 제거·더블 체크") },
+  { id: "s8", grade: "inaccuracy", deco: ["R", "N", "P"], title: () => t("중반 전략"), desc: () => t("열린 파일·아웃포스트·통과한 폰") },
+  { id: "s9", grade: "mistake", deco: ["K", "R", "P"], title: () => t("엔드게임 심화"), desc: () => t("활동적인 킹과 룩 엔드게임") },
 ];
 
 // 레슨: { id, stage, icon(lucide 이름 또는 "piece:R"), title, sub, steps }
@@ -222,11 +226,218 @@ function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
 }
 LESSONS.push(...OPENINGS.map(openingLesson));
 
+// (v0.7.7, 사용자 요청) 레슨 분량 보강 — 기존 레슨 끝에 덧붙이는 연습·설명·확인 문제(레슨 id → 스텝). 정답·포지션은 check-lessons가 chess.js로 검증한다.
+const EXTRA = {
+  b_board: () => [
+    { kind: "choice", fen: KK, say: t("a1 칸은 밝은 칸일까요, 어두운 칸일까요? 체스판은 오른쪽 아래 칸이 항상 밝은 칸이 되도록 놓습니다."), options: [t("밝은 칸"), t("어두운 칸")], answer: 1 },
+    { kind: "tap", fen: KK, tap: ["h8"], say: t("마지막으로 h8 칸을 눌러 보세요. 흑 진영의 오른쪽 위 구석입니다.") },
+  ],
+  b_rook: () => [
+    { kind: "read", fen: "4k3/8/8/3p4/8/1P1R4/8/4K3 w - - 0 1", marksFrom: "d3", say: t("룩의 길에 기물이 있으면 그 너머로는 가지 못합니다. 같은 편 기물 앞에서 멈추고, 상대 기물이면 잡으면서 그 칸에 멈춥니다.") },
+    { kind: "move", fen: "4k3/8/8/8/8/n2R3p/8/4K3 w - - 0 1", say: t("룩은 같은 랭크의 양쪽 기물을 모두 노립니다. 폰보다 가치 있는 나이트를 잡으세요."), line: [{ goal: { uci: ["d3a3"] } }], hint: "d3a3" },
+  ],
+  b_bishop: () => [
+    { kind: "move", fen: "4k3/1r6/8/8/8/8/6B1/4K3 w - - 0 1", say: t("긴 대각선을 따라 흑 룩을 잡으세요. 비숍은 멀리서도 한 번에 닿습니다."), line: [{ goal: { uci: ["g2b7"] } }], hint: "g2b7" },
+    { kind: "read", fen: "4k3/8/8/8/2BB4/8/8/4K3 w - - 0 1", say: t("두 비숍은 서로 다른 색의 칸을 맡습니다. 함께 있으면 체스판 전체를 덮을 수 있어 강력합니다.") },
+  ],
+  b_queen: () => [
+    { kind: "move", fen: "4k3/8/8/8/8/8/8/3QK3 w - - 0 1", say: t("퀸으로 흑 킹에게 체크를 거세요. 가로·세로·대각선 중 어느 길이든 좋습니다."), line: [{ goal: { check: true } }], hint: "d1a4" },
+    { kind: "choice", say: t("퀸을 잃지 않으려면 어떻게 해야 할까요?"), options: [t("상대 폰이나 기물이 공격하는 칸에 함부로 두지 않는다"), t("항상 상대 진영 깊숙이 둔다"), t("움직이지 않는다")], answer: 0 },
+  ],
+  b_knight: () => [
+    { kind: "move", fen: "4k3/8/8/2r5/8/3N4/8/4K3 w - - 0 1", say: t("나이트로 흑 룩을 잡으세요. d3에서 L자로 닿는 칸입니다."), line: [{ goal: { uci: ["d3c5"] } }], hint: "d3c5" },
+    { kind: "choice", say: t("나이트가 한 번 움직이면 서 있는 칸의 색은 어떻게 될까요?"), options: [t("항상 바뀐다"), t("그대로다"), t("가끔 바뀐다")], answer: 0 },
+  ],
+  b_pawn: () => [
+    { kind: "choice", say: t("폰은 뒤로 물러날 수 있을까요?"), options: [t("물러날 수 있다"), t("앞으로만 갈 수 있다")], answer: 1 },
+    { kind: "move", fen: "4k3/8/8/2p1p3/3P4/8/8/4K3 w - - 0 1", say: t("폰은 대각선 양쪽을 모두 잡을 수 있습니다. d4 폰으로 흑 폰 하나를 잡으세요."), line: [{ goal: { uci: ["d4c5", "d4e5"] } }], hint: "d4e5" },
+  ],
+  b_king: () => [
+    { kind: "move", fen: "4k3/8/8/8/3p4/3K4/8/8 w - - 0 1", say: t("아무도 지키지 않는 폰은 킹도 잡을 수 있습니다. 킹으로 d4 폰을 잡으세요."), line: [{ goal: { uci: ["d3d4"] } }], hint: "d3d4" },
+    { kind: "choice", say: t("두 킹이 바로 옆 칸에 붙어 설 수 있을까요?"), options: [t("붙을 수 있다"), t("서로 공격하는 칸이라 붙을 수 없다")], answer: 1 },
+  ],
+  r_check: () => [
+    { kind: "move", fen: "4k3/4r3/8/8/8/2B5/8/4K3 w - - 0 1", say: t("흑 룩의 체크를 비숍으로 사이를 막아 벗어나세요."), line: [{ goal: { uci: ["c3e5"] } }], hint: "c3e5" },
+    { kind: "read", fen: "4k3/4r3/8/4B3/8/8/8/4K3 b - - 0 1", say: t("사이를 막은 비숍은 이제 킹을 지키는 방패입니다. 체크를 벗어나는 세 가지 방법인 피하기·막기·잡기를 늘 함께 떠올리세요.") },
+  ],
+  r_mate: () => [
+    { kind: "move", fen: "k7/7R/8/8/8/8/8/6RK w - - 0 1", say: t("두 룩이 함께하면 쉽게 끝납니다. 한 룩이 7랭크를 막고 있으니 다른 룩으로 체크메이트하세요."), line: [{ goal: { mate: true } }], hint: "g1g8" },
+    { kind: "choice", say: t("체크메이트가 되면 어떻게 될까요?"), options: [t("그 수로 게임이 끝나고 체크메이트한 쪽이 이긴다"), t("체크를 받은 쪽이 한 수 더 둔다"), t("무승부가 된다")], answer: 0 },
+  ],
+  r_stalemate: () => [
+    { kind: "read", fen: "7k/8/6K1/8/8/8/8/5Q2 w - - 0 1", say: t("크게 앞설수록 스테일메이트를 조심해야 합니다. 상대 킹에게 움직일 칸이 하나도 없는데 체크가 아니면 무승부가 됩니다.") },
+    { kind: "move", fen: "7k/8/6K1/8/8/8/8/5Q2 w - - 0 1", say: t("퀸으로 체크메이트하세요. 상대 킹의 칸을 모두 막으면서 체크를 거는 수입니다."), line: [{ goal: { mate: true } }], hint: "f1f8" },
+  ],
+  r_castle: () => [
+    { kind: "move", fen: "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1", say: t("이번에는 퀸사이드로 캐슬링하세요. 킹을 c1으로 옮기면 룩이 d1으로 넘어옵니다."), line: [{ goal: { castle: "q" } }], hint: "e1c1" },
+    { kind: "choice", say: t("킹이 지나가는 칸이 상대 기물에게 공격받고 있으면 캐슬링할 수 있을까요?"), options: [t("할 수 있다"), t("할 수 없다")], answer: 1 },
+  ],
+  r_enpassant: () => [
+    { kind: "move", fen: "4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", say: t("흑도 앙파상을 할 수 있습니다. 방금 두 칸 전진한 d4 폰을 앙파상으로 잡으세요."), line: [{ goal: { uci: ["e4d3"] } }], hint: "e4d3" },
+    { kind: "choice", say: t("앙파상은 언제 할 수 있을까요?"), options: [t("상대 폰이 두 칸 전진한 바로 다음 수에만"), t("언제든 원할 때"), t("상대 폰이 한 칸 전진했을 때")], answer: 0 },
+  ],
+  r_values: () => [
+    { kind: "choice", say: t("점수로 셈하면 어느 쪽이 더 많을까요?"), options: [t("퀸 하나"), t("룩 두 개")], answer: 1 },
+    { kind: "read", fen: START, say: t("기물을 바꿀 때는 내가 주는 점수와 받는 점수를 비교하세요. 나이트를 주고 룩을 받으면 이득이고, 퀸을 주고 룩을 받으면 손해입니다.") },
+  ],
+  o_center: () => [
+    { kind: "move", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", say: t("흑도 중앙에서 맞서야 합니다. 중앙 폰 하나를 두 칸 전진시키세요."), line: [{ goal: { uci: ["e7e5", "d7d5"] } }], hint: "e7e5" },
+    { kind: "choice", say: t("중앙에 폰을 세우는 가장 큰 이유는?"), options: [t("기물이 나올 길을 열고 중요한 칸을 지배한다"), t("폰을 빨리 잃기 위해"), t("킹을 앞으로 보내기 위해")], answer: 0 },
+  ],
+  o_develop: () => [
+    { kind: "choice", say: t("오프닝에서 피해야 할 습관은?"), options: [t("같은 기물을 여러 번 움직인다"), t("나이트와 비숍을 꺼낸다"), t("중앙을 차지한다")], answer: 0 },
+    { kind: "read", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3", say: t("나이트와 비숍이 나오면 킹과 룩 사이가 비어 캐슬링할 준비가 됩니다. 전개는 다음 단계인 킹 안전으로 이어집니다.") },
+  ],
+  o_safety: () => [
+    { kind: "read", fen: "r1bq1rk1/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQ1RK1 w - - 0 6", say: t("캐슬링한 킹 앞의 폰 세 개는 방패입니다. 꼭 필요하지 않으면 이 폰들을 함부로 움직이지 않는 것이 좋습니다.") },
+    { kind: "choice", say: t("캐슬링한 뒤 킹 앞 폰을 마구 전진시키면?"), options: [t("킹 주변에 구멍이 생겨 공격받기 쉽다"), t("킹이 더 안전해진다"), t("아무 영향이 없다")], answer: 0 },
+  ],
+  o_trap: () => [
+    { kind: "choice", fen: "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3", say: t("이 포지션에서 흑이 두면 안 되는 수는?"), options: ["g6", "Qe7", "Nf6"], answer: 2 },
+    { kind: "read", fen: "r1bqkbnr/pppp1ppp/2n3p1/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 4", say: t("g6으로 퀸을 쫓아내면 위협이 사라지고 템포까지 얻습니다. 빠른 공격은 침착하게 막고 전개를 이어 가세요.") },
+  ],
+  t_hanging: () => [
+    { kind: "move", fen: "4k3/8/2n5/3p4/8/8/8/3QK3 w - - 0 1", say: t("c6의 나이트는 d5 폰을 지키지 못합니다. 지켜지지 않는 폰을 퀸으로 잡으세요."), line: [{ goal: { uci: ["d1d5"] } }], hint: "d1d5" },
+    { kind: "choice", say: t("상대 기물을 잡기 전에 먼저 확인할 것은?"), options: [t("그 기물을 지키는 상대 기물이 있는지"), t("잡는 기물의 색"), t("몇 수째인지")], answer: 0 },
+  ],
+  t_fork: () => [
+    { kind: "move", fen: "4k3/8/8/2n1b3/8/3P4/8/4K3 w - - 0 1", say: t("폰도 포크를 할 수 있습니다. 폰 하나를 전진시켜 흑 나이트와 비숍을 동시에 공격하세요."), line: [{ goal: { uci: ["d3d4"] } }], hint: "d3d4" },
+    { kind: "read", fen: "4k3/8/8/2n1b3/3P4/8/8/4K3 b - - 0 1", say: t("두 기물이 한꺼번에 공격받으면 하나만 피할 수 있습니다. 가치가 낮은 폰으로 포크를 걸면 더 큰 이득을 봅니다.") },
+  ],
+  t_pin: () => [
+    { kind: "move", fen: "3k4/3n4/8/8/8/8/8/R5K1 w - - 0 1", say: t("룩으로도 핀을 걸 수 있습니다. d파일로 옮겨 d7 나이트를 흑 킹 앞에 묶으세요."), line: [{ goal: { uci: ["a1d1"] } }], hint: "a1d1" },
+    { kind: "choice", say: t("핀에 걸린 기물을 공략하는 좋은 방법은?"), options: [t("그 기물을 다른 기물로 한 번 더 공격한다"), t("핀을 바로 풀어 준다"), t("모른 척한다")], answer: 0 },
+  ],
+  t_skewer: () => [
+    { kind: "move", fen: "q3k3/8/8/8/8/8/8/6KR w - - 0 1", say: t("룩으로 8랭크에서 체크를 걸어 킹 뒤의 퀸을 노리세요."),
+      line: [{ goal: { uci: ["h1h8"] }, reply: "e8d7" }, { goal: { uci: ["h8a8"] }, say: t("킹이 비켰습니다. 뒤에 있던 퀸을 잡으세요.") }], hint: "h1h8" },
+  ],
+  t_discovered: () => [
+    { kind: "choice", say: t("디스커버드 체크가 특히 강한 이유는?"), options: [t("상대가 체크에 대응하는 사이 움직인 기물이 다른 것을 잡을 수 있다"), t("체크가 두 번 걸리기 때문에 무조건 메이트다"), t("상대 차례를 건너뛰기 때문이다")], answer: 0 },
+  ],
+  m_backrank: () => [
+    { kind: "move", fen: "6k1/5ppp/8/8/8/8/8/3R2K1 b - - 0 1", say: t("흑 차례입니다. 백랭크 메이트를 미리 막도록 킹이 숨 쉴 칸을 만드세요."), line: [{ goal: { safe: true } }], hint: "h7h6" },
+  ],
+  m_queen: () => [
+    { kind: "choice", say: t("퀸으로 체크메이트할 때 가장 조심할 것은?"), options: [t("상대 킹에게 칸을 하나도 남기지 않아 스테일메이트를 만드는 것"), t("퀸을 너무 멀리 두는 것"), t("킹을 쓰는 것")], answer: 0 },
+  ],
+  m_ladder: () => [
+    { kind: "read", fen: "4k3/R7/8/8/8/8/8/1R4K1 b - - 0 1", say: t("한 룩이 7랭크를 막아 두면 상대 킹은 8랭크에 갇힙니다. 남은 룩이 8랭크에서 체크를 걸면 끝입니다.") },
+    { kind: "move", fen: "8/8/8/8/3k4/8/R7/1R4K1 w - - 0 1", say: t("가운데의 킹도 사다리로 밀어냅니다. 먼저 룩 하나로 킹이 있는 랭크 바로 아래를 막으세요."), line: [{ goal: { uci: ["a2a3", "b1b3"] } }], hint: "b1b3" },
+  ],
+  m_smothered: () => [
+    { kind: "choice", say: t("질식 메이트가 잘 나오는 상황은?"), options: [t("상대 킹이 구석에서 자기 기물에 둘러싸였을 때"), t("상대 킹이 중앙에 있을 때"), t("기물이 거의 없을 때")], answer: 0 },
+  ],
+  e_square: () => [
+    { kind: "choice", fen: "8/8/8/8/4k3/8/1P6/7K w - - 0 1", say: t("이번에는 흑 킹이 e4에 있습니다. b폰이 전진해도 흑 킹이 따라잡을 수 있을까요?"), options: [t("따라잡을 수 있다"), t("따라잡을 수 없다")], answer: 0 },
+  ],
+  e_opposition: () => [
+    { kind: "choice", say: t("오퍼지션을 잡으면 어떤 이득이 있을까요?"), options: [t("상대 킹이 비켜야 해 내 킹이 앞으로 나아갈 수 있다"), t("폰이 저절로 승격한다"), t("무조건 무승부가 된다")], answer: 0 },
+  ],
+  e_rookmate: () => [
+    { kind: "move", fen: "k7/8/1K6/8/8/8/8/7R w - - 0 1", say: t("구석의 킹도 같습니다. 내 킹이 도망칠 칸을 막고 있으니 룩으로 체크메이트하세요."), line: [{ goal: { mate: true } }], hint: "h1h8" },
+  ],
+};
+
+// (v0.7.7) 분량 보강 2 — 모든 레슨이 설명·연습·확인 문제를 고루 갖추도록(스텝 4개 이상, check-lessons)
+Object.assign(EXTRA, {
+  t_skewer: ((prev) => () => [...prev(), { kind: "choice", say: t("스큐어와 핀의 차이는?"), options: [t("스큐어는 앞에 더 가치 있는 기물이 있고, 핀은 뒤에 더 가치 있는 기물이 있다"), t("둘은 같은 전술이다"), t("스큐어는 나이트만 할 수 있다")], answer: 0 }])(EXTRA.t_skewer),
+  t_discovered: ((prev) => () => [...prev(), { kind: "move", fen: "4k3/8/8/8/4N3/8/8/4RK2 w - - 0 1", say: t("나이트를 움직여 룩의 체크를 여세요. 이것을 디스커버드 체크라고 합니다."), line: [{ goal: { check: true } }], hint: "e4c5" }])(EXTRA.t_discovered),
+  m_smothered: ((prev) => () => [...prev(), { kind: "read", fen: "6rk/5Npp/8/8/8/8/8/6K1 b - - 0 1", say: t("흑 킹은 g8의 룩과 g7·h7의 폰에 막혀 움직일 수 없고, f7의 나이트를 잡을 기물도 없습니다. 나이트의 체크는 사이를 막을 수도 없습니다.") }])(EXTRA.m_smothered),
+  e_opposition: ((prev) => () => [...prev(), { kind: "read", fen: "8/8/4k3/8/4K3/8/4P3/8 b - - 0 1", say: t("흑 차례인데 킹끼리 마주 보고 있습니다. 흑 킹이 옆으로 비키면 백 킹이 앞으로 나아가 폰의 길을 엽니다.") }])(EXTRA.e_opposition),
+  e_rookmate: ((prev) => () => [...prev(), { kind: "choice", say: t("킹과 룩으로 체크메이트할 때 상대 킹은 어디로 몰아야 할까요?"), options: [t("체스판의 끝 랭크나 끝 파일"), t("체스판 한가운데"), t("내 킹 뒤")], answer: 0 }])(EXTRA.e_rookmate),
+  t_double: () => [{ kind: "read", fen: "4k3/8/8/r7/Q7/8/8/4K3 b - - 0 1", say: t("Qa4는 체크이면서 a5의 룩을 동시에 공격합니다. 흑은 체크부터 벗어나야 하므로 룩을 지킬 여유가 없습니다.") }],
+  t_removal: () => [{ kind: "read", fen: "r1b2rk1/pp3p1p/5p2/7Q/8/3B4/PPP2PPP/R4RK1 w - - 0 2", marks: ["h7"], say: t("나이트가 사라지자 h7을 지키는 흑 기물이 없습니다. 비숍이 지키는 퀸이 h7로 들어가면 체크메이트입니다.") }],
+  t_doublecheck: () => [{ kind: "read", fen: "4k3/8/2B5/8/8/8/8/4RK2 b - - 0 1", say: t("비숍은 c6에서, 룩은 e1에서 동시에 체크를 겁니다. 흑은 킹을 움직이는 수밖에 없습니다.") }],
+  m_arabian: () => [
+    { kind: "read", fen: "7k/7R/5N2/8/8/8/8/6K1 b - - 0 1", say: t("룩은 나이트가 지켜 잡을 수 없고, g8은 나이트가, g7은 룩이 막습니다. 흑 킹은 갈 곳이 없습니다.") },
+    { kind: "choice", say: t("아라비안 메이트에서 나이트가 하는 일은?"), options: [t("룩을 지키고 킹의 도망칠 칸을 막는다"), t("체크를 건다"), t("아무 일도 하지 않는다")], answer: 0 },
+  ],
+  st_openfile: () => [{ kind: "read", fen: "r4rk1/pp3ppp/2p5/8/8/2P5/PP3PPP/3R1RK1 b - - 0 1", say: t("두 룩을 같은 파일에 겹쳐 세우면 서로 지키며 힘이 두 배가 됩니다. 다음에는 남은 룩도 d파일로 옮기는 것이 좋습니다.") }],
+  st_outpost: () => [{ kind: "read", fen: "r1bq1rk1/pp3ppp/3p4/2pNp3/4P3/8/PPP2PPP/R2Q1RK1 b - - 0 1", say: t("d5의 나이트는 흑 폰에게 쫓겨나지 않아 오래 자리를 지킵니다. 여러 칸을 공격하며 흑 진영을 압박합니다.") }],
+  st_passed: () => [{ kind: "read", fen: "6k1/5ppp/3P4/8/8/8/5PPP/6K1 b - - 0 1", say: t("폰이 앞으로 갈수록 승격이 가까워져 상대는 더 많은 힘을 써서 막아야 합니다.") }],
+  st_badbishop: () => [
+    { kind: "read", fen: "4k3/8/8/2p1p3/2P1P3/4B3/8/4K3 w - - 0 1", say: t("백 폰은 c4·e4의 밝은 칸에, 비숍은 어두운 칸에 있습니다. 폰이 비숍의 길을 막지 않아 좋은 비숍입니다.") },
+    { kind: "move", fen: "4k3/8/8/2p1p3/2P1P3/4B3/8/4K3 w - - 0 1", say: t("좋은 비숍으로 흑 폰을 잡으세요."), line: [{ goal: { uci: ["e3c5"] } }], hint: "e3c5" },
+  ],
+  e_activeking: () => [{ kind: "read", fen: "8/5k2/8/8/8/4K3/8/8 b - - 0 1", say: t("한가운데의 킹은 어느 쪽으로든 빨리 갈 수 있습니다. 엔드게임에서는 킹이 한 칸 먼저 도착하는 것이 승부를 가릅니다.") }],
+  e_rookbehind: () => [{ kind: "read", fen: "r5k1/8/8/8/P7/8/5PK1/R7 b - - 0 1", say: t("백 룩은 a폰 뒤에서 폰과 함께 전진하고, 흑 룩은 폰 앞에서 막느라 수동적입니다.") }],
+  e_keysquare: () => [
+    { kind: "read", fen: "8/8/3k4/8/4K3/8/3P4/8 b - - 0 1", say: t("킹이 폰보다 앞에 섰습니다. 이제 상대 킹을 밀어내며 폰이 지나갈 길을 만들 수 있습니다.") },
+    { kind: "choice", say: t("킹과 폰 하나의 엔드게임에서 먼저 할 일은?"), options: [t("킹을 폰 앞으로 보낸다"), t("폰을 끝까지 민다"), t("킹을 구석에 둔다")], answer: 0 },
+  ],
+});
+
+// ── 7. 전술 심화 ──
+LESSONS.push(
+  L("t_double", "s7", "Zap", () => t("이중 공격"), () => t("체크와 함께 기물 노리기"), () => [
+    { kind: "read", fen: "4k3/8/8/r7/8/8/8/3QK3 w - - 0 1", say: t("한 수로 두 가지를 동시에 노리는 것이 이중 공격입니다. 체크와 함께 다른 기물을 노리면 상대는 킹부터 지켜야 합니다.") },
+    { kind: "move", fen: "4k3/8/8/r7/8/8/8/3QK3 w - - 0 1", say: t("퀸으로 체크를 걸면서 a5의 룩도 노리세요."),
+      line: [{ goal: { uci: ["d1a4"] }, reply: "e8f8" }, { goal: { uci: ["a4a5"] }, say: t("킹이 피했습니다. 이제 룩을 잡으세요.") }], hint: "d1a4" },
+    { kind: "choice", say: t("이중 공격에 가장 잘 쓰이는 기물은?"), options: [t("여러 방향으로 움직이는 퀸"), t("앞으로만 가는 폰"), t("킹")], answer: 0 },
+  ]),
+  L("t_removal", "s7", "Target", () => t("수비수 제거"), () => t("지키는 기물을 먼저 없애기"), () => [
+    { kind: "read", fen: "r1b2rk1/pp3ppp/5n2/6BQ/8/3B4/PPP2PPP/R4RK1 w - - 0 1", marks: ["h7", "f6"], say: t("f6의 나이트가 h7을 지키고 있어 Qxh7 메이트가 막혀 있습니다. 지키는 기물을 먼저 없애면 길이 열립니다.") },
+    { kind: "move", fen: "r1b2rk1/pp3ppp/5n2/6BQ/8/3B4/PPP2PPP/R4RK1 w - - 0 1", say: t("비숍으로 수비수인 나이트를 잡으세요."),
+      line: [{ goal: { uci: ["g5f6"] }, reply: "g7f6" }, { goal: { mate: true }, say: t("수비수가 사라졌습니다. 이제 체크메이트하세요.") }], hint: "g5f6" },
+    { kind: "choice", say: t("수비수 제거 전술의 순서는?"), options: [t("지키는 기물을 먼저 없애고 목표를 공격한다"), t("목표를 먼저 공격한다"), t("킹부터 움직인다")], answer: 0 },
+  ]),
+  L("t_doublecheck", "s7", "Eye", () => t("더블 체크"), () => t("막을 수 없는 두 개의 체크"), () => [
+    { kind: "read", fen: "4k3/8/8/8/4B3/8/8/4RK2 w - - 0 1", say: t("움직인 기물도 체크를 걸고, 그 뒤에서 열린 기물도 체크를 걸면 더블 체크입니다. 두 체크를 한 번에 막거나 잡을 수 없어 킹이 움직일 수밖에 없습니다.") },
+    { kind: "move", fen: "4k3/8/8/8/4B3/8/8/4RK2 w - - 0 1", say: t("비숍을 움직여 비숍과 룩이 동시에 체크를 거는 더블 체크를 만드세요."), line: [{ goal: { uci: ["e4c6"] } }], hint: "e4c6" },
+    { kind: "choice", say: t("더블 체크를 받으면 할 수 있는 일은?"), options: [t("킹을 움직이는 것뿐이다"), t("사이를 막는다"), t("체크한 기물 하나를 잡는다")], answer: 0 },
+  ]),
+  L("m_arabian", "s7", "Crown", () => t("아라비안 메이트"), () => t("룩과 나이트의 협력"), () => [
+    { kind: "read", fen: "7k/8/5N2/8/8/8/8/6KR w - - 0 1", marks: ["h7", "g8"], say: t("나이트가 h7과 g8을 지키면, 구석의 킹은 룩 하나의 체크로 끝납니다. 오래된 체크메이트 패턴인 아라비안 메이트입니다.") },
+    { kind: "move", fen: "7k/8/5N2/8/8/8/8/6KR w - - 0 1", say: t("룩으로 아라비안 메이트를 완성하세요."), line: [{ goal: { mate: true } }], hint: "h1h7" },
+  ]),
+);
+// ── 8. 중반 전략 ──
+LESSONS.push(
+  L("st_openfile", "s8", "Rows3", () => t("열린 파일"), () => t("룩이 달릴 길"), () => [
+    { kind: "read", fen: "r4rk1/pp3ppp/2p5/8/8/2P5/PP3PPP/R4RK1 w - - 0 1", marks: ["d1", "d8", "e1", "e8"], say: t("폰이 하나도 없는 파일을 열린 파일이라고 합니다. 룩은 열린 파일에서 가장 활발해 상대 진영 깊숙이 들어갈 수 있습니다.") },
+    { kind: "move", fen: "r4rk1/pp3ppp/2p5/8/8/2P5/PP3PPP/R4RK1 w - - 0 1", say: t("룩 하나를 열린 d파일로 옮기세요."), line: [{ goal: { uci: ["a1d1", "f1d1"] } }], hint: "f1d1" },
+    { kind: "choice", say: t("열린 파일을 먼저 차지하면 좋은 이유는?"), options: [t("룩이 상대 진영 7랭크까지 들어갈 수 있다"), t("폰이 빨리 승격한다"), t("킹이 안전해진다")], answer: 0 },
+  ]),
+  L("st_outpost", "s8", "Shield", () => t("아웃포스트"), () => t("쫓겨나지 않는 칸"), () => [
+    { kind: "read", fen: "r1bq1rk1/pp3ppp/3p4/2p1p3/4P3/2N5/PPP2PPP/R2Q1RK1 w - - 0 1", marks: ["d5"], say: t("상대 폰이 공격할 수 없는 칸을 아웃포스트라고 합니다. 흑 c폰과 e폰이 이미 앞으로 나가 d5를 공격할 수 없습니다.") },
+    { kind: "move", fen: "r1bq1rk1/pp3ppp/3p4/2p1p3/4P3/2N5/PPP2PPP/R2Q1RK1 w - - 0 1", say: t("나이트를 아웃포스트 d5로 보내세요."), line: [{ goal: { uci: ["c3d5"] } }], hint: "c3d5" },
+    { kind: "choice", say: t("아웃포스트에 가장 잘 어울리는 기물은?"), options: [t("나이트"), t("킹"), t("폰")], answer: 0 },
+  ]),
+  L("st_passed", "s8", "Rocket", () => t("통과한 폰"), () => t("막을 폰이 없는 폰"), () => [
+    { kind: "read", fen: "6k1/5ppp/8/3P4/8/8/5PPP/6K1 w - - 0 1", marks: ["d6", "d7", "d8"], say: t("앞길과 옆 파일에 상대 폰이 없는 폰을 통과한 폰이라고 합니다. 상대 기물이 막아야 하므로 큰 무기가 됩니다.") },
+    { kind: "move", fen: "6k1/5ppp/8/3P4/8/8/5PPP/6K1 w - - 0 1", say: t("통과한 폰은 밀어야 합니다. d폰을 전진시키세요."), line: [{ goal: { uci: ["d5d6"] } }], hint: "d5d6" },
+    { kind: "choice", say: t("상대의 통과한 폰은 어떻게 막는 것이 좋을까요?"), options: [t("폰 바로 앞 칸에 기물을 세워 막는다"), t("그냥 둔다"), t("폰 옆에서 기다린다")], answer: 0 },
+  ]),
+  L("st_badbishop", "s8", "Scale", () => t("좋은 비숍과 나쁜 비숍"), () => t("폰의 색과 비숍의 색"), () => [
+    { kind: "read", fen: "4k3/8/8/2p1p3/2P1P3/8/4B3/4K3 w - - 0 1", say: t("내 폰이 비숍과 같은 색 칸에 서 있으면 비숍의 길을 막습니다. 이런 비숍을 나쁜 비숍이라고 합니다. 백의 e2 비숍은 c4·e4 폰과 같은 밝은 칸에 있어 앞길이 막혀 있습니다.") },
+    { kind: "choice", say: t("비숍을 좋게 만들려면 폰을 어떤 색 칸에 두는 것이 좋을까요?"), options: [t("비숍과 다른 색 칸"), t("비숍과 같은 색 칸"), t("상관없다")], answer: 0 },
+  ]),
+);
+// ── 9. 엔드게임 심화 ──
+LESSONS.push(
+  L("e_activeking", "s9", "Crown", () => t("킹을 앞으로"), () => t("엔드게임의 킹은 싸우는 기물"), () => [
+    { kind: "read", fen: "8/5k2/8/8/8/8/5K2/8 w - - 0 1", say: t("기물이 줄어든 엔드게임에서는 킹이 위험하지 않습니다. 킹을 중앙으로 보내 폰을 지키고 상대 폰을 공격하게 하세요.") },
+    { kind: "move", fen: "8/5k2/8/8/8/8/5K2/8 w - - 0 1", say: t("킹을 중앙 쪽으로 한 칸 옮기세요."), line: [{ goal: { uci: ["f2e3", "f2e2", "f2f3"] } }], hint: "f2e3" },
+    { kind: "choice", say: t("엔드게임에서 킹을 구석에 두면?"), options: [t("싸움에 참여하지 못해 불리해진다"), t("가장 안전하다"), t("이긴다")], answer: 0 },
+  ]),
+  L("e_rookbehind", "s9", "Flag", () => t("통과한 폰 뒤의 룩"), () => t("룩의 자리"), () => [
+    { kind: "read", fen: "r5k1/8/8/8/P7/8/5PK1/7R w - - 0 1", say: t("룩은 통과한 폰의 뒤에 두는 것이 좋습니다. 폰이 전진할수록 룩이 지키는 거리가 늘어나 더 활발해집니다.") },
+    { kind: "move", fen: "r5k1/8/8/8/P7/8/5PK1/7R w - - 0 1", say: t("룩을 a폰 뒤로 옮기세요."), line: [{ goal: { uci: ["h1a1"] } }], hint: "h1a1" },
+    { kind: "choice", say: t("상대의 통과한 폰을 막을 때 룩은 어디에 두는 것이 좋을까요?"), options: [t("그 폰의 뒤"), t("그 폰의 바로 옆"), t("반대쪽 구석")], answer: 0 },
+  ]),
+  L("e_keysquare", "s9", "Square", () => t("핵심 칸"), () => t("폰보다 킹이 먼저"), () => [
+    { kind: "read", fen: "8/8/3k4/8/8/3K4/3P4/8 w - - 0 1", say: t("킹과 폰 하나로 이기려면 킹이 폰보다 앞에 서야 합니다. 폰만 혼자 밀면 상대 킹이 앞을 막아 무승부가 되기 쉽습니다.") },
+    { kind: "move", fen: "8/8/3k4/8/8/3K4/3P4/8 w - - 0 1", say: t("폰을 밀기 전에 킹을 앞으로 보내세요."), line: [{ goal: { uci: ["d3e4", "d3c4", "d3d4"] } }], hint: "d3e4" },
+  ]),
+);
+
 let _cache = null;
 /** 모든 레슨(순서대로) — 단계 정보 포함. steps는 처음 열 때 만든다(번역 반영). */
 export function allLessons() {
   if (_cache) return _cache;
-  _cache = LESSONS.map((l, i) => ({ id: l.id, stage: l.stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub, steps: l.steps }));
+  // (v0.7.7) EXTRA: 기존 레슨에 덧붙인 연습·확인 문제
+  _cache = LESSONS.map((l, i) => ({ id: l.id, stage: l.stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub, steps: EXTRA[l.id] ? () => [...l.steps(), ...EXTRA[l.id]()] : l.steps }));
   return _cache;
 }
 export const stageOf = (id) => STAGES.find((s) => s.id === id) || STAGES[0];

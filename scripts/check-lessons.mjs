@@ -77,7 +77,10 @@ for (const l of lessons) {
 }
 // (v0.7.5, 사용자 요청) 단계 색·아이콘은 수 등급 좋음 → 우수 → 최선 → 유일 → 탁월 순서 그대로
 //  (v0.7.5) 그 다음 6단계 오프닝 레파토리는 수 등급 "이론(책)"
-{ const want = ["good", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월·이론이 아님: " + STAGES.map((s) => s.grade).join()); }
+//  (v0.7.7, 사용자 요청) 7~9단계(전술 심화·중반 전략·엔드게임 심화)는 남은 등급 놓친 수·부정확·실수
+{ const want = ["good", "excellent", "best", "only", "brilliant", "book", "miss", "inaccuracy", "mistake"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월·이론·놓친 수·부정확·실수가 아님: " + STAGES.map((s) => s.grade).join()); }
+// (v0.7.7, 사용자 요청) 레슨 분량 — 6단계(오프닝, 자동 생성) 밖의 레슨은 스텝이 4개 이상
+for (const l of lessons.filter((x) => x.stage !== "s6")) { const n = l.steps().length; if (n < 4) fails.push(l.id + ": 스텝 " + n + "개 — 레슨 분량이 너무 짧음(4개 이상)"); }
 // 오프닝 레슨: 수마다 설명이 있고(MEC 또는 보충), 이름 맞히기 보기가 서로 다르며 정답이 그 오프닝 이름이다
 for (const l of lessons.filter((x) => x.stage === "s6")) {
   const st = l.steps(), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");
