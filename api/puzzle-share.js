@@ -142,7 +142,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({ p_actor: user ? user.id : null, p_no: no, p_data: data, p_public: isPublic !== false }),
     });
     const text = await r.text();
-    if (!r.ok) { res.status(r.status === 400 ? 409 : 502).json({ error: /collision/.test(text) ? "collision" : "rejected" }); return; }
+    if (!r.ok) { res.status(r.status === 400 ? 409 : 502).json({ error: /collision/.test(text) ? "collision" : /duplicate_mate/.test(text) ? "duplicate_mate" : "rejected" }); return; }
     res.status(200).json({ ok: true });
   } catch { res.status(502).json({ error: "unavailable" }); }
 }

@@ -1,3 +1,4 @@
+import { idForNo } from "../ids.mjs";
 // (v0.7.7) 탈퇴 관련 모의 공격·정상 기능 확인 — BUG-136(유예 중 계정), BUG-064(신고 보관), BUG-065(상대 기보 보존).
 // breached=true면 공격 성공(취약) 또는 정상 기능이 깨짐(kind: hold).
 const pend = (sb, uid) => sb.admin(`select set_config('oc.allow_deletion_flag','1',false); update public.profiles set deletion_scheduled_at = now() + interval '7 days' where id='${uid}';`);
@@ -112,5 +113,16 @@ export default [
       sb.admin(`delete from public.puzzles where no in (700001,700002,700003)`);
       const breached = dup.ok || pub === "t" || !okOther.ok;
       return { breached, evidence: breached ? `같은 장면 공개 전환 ${dup.ok ? "허용됨" : "거부"}, 다른 장면 공개 ${okOther.ok ? "정상" : "실패: " + (okOther.err || "").split("\n")[0]}` : "같은 장면(더 긴 공개 퍼즐 있음)은 공개 전환 거부(duplicate_mate), 다른 장면은 정상 공개" };
+    } },
+  { id: "MATE-2", kind: "attack", title: "(v0.7.7) 게임 끝내기 중복 규칙: 서버 저장 경로(puzzle_share_put_verified)에서도 같은 장면의 더 짧은 퍼즐 거부",
+    async run({ sb, U }) {
+      const key = "8/8/8/8/8/8/8/k1K4R b";
+      sb.admin(`insert into public.puzzles(no,data,is_public,creator_uid) values (700011, jsonb_build_object('id','n1','mateKey','${key}','mateLen',5), true, '${U.bob}')`);
+      const dup = sb.as("service_role", null, `select public.puzzle_share_put_verified('${U.mallory}', 700012, jsonb_build_object('id','${idForNo(700012)}','mateKey','${key}','mateLen',3), true);`);
+      const longer = sb.as("service_role", null, `select public.puzzle_share_put_verified('${U.mallory}', 700013, jsonb_build_object('id','${idForNo(700013)}','mateKey','${key}','mateLen',7), true);`);
+      const n = sb.admin(`select count(*) from public.puzzles where no in (700012, 700013)`).out.trim();
+      sb.admin(`delete from public.puzzles where no in (700011,700012,700013)`);
+      const breached = dup.ok || n !== "1";
+      return { breached, evidence: breached ? `짧은 중복 저장 ${dup.ok ? "허용됨" : "거부"}, 저장된 수 ${n}${longer.ok ? "" : " (긴 퍼즐 실패: " + (longer.err || "").split("\n")[0] + ")"}` : "같은 장면의 더 짧은 퍼즐은 거부(duplicate_mate), 더 긴 퍼즐은 저장" };
     } },
 ];

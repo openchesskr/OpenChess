@@ -2275,7 +2275,7 @@ begin
   v_key := v_data ->> 'mateKey';
   if p_public and v_key is not null and v_key <> '' then
     v_len := coalesce(nullif(v_data ->> 'mateLen', '')::int, 0);
-    perform 1 from public.puzzles where data ->> 'mateKey' = v_key and no <> p_no and is_public for update;
+    perform pg_advisory_xact_lock(hashtext('mate:' || v_key));   -- 같은 장면의 판정을 한 번에 하나씩(동시 요청 경쟁 방지)
     select count(*), coalesce(max(nullif(data ->> 'mateLen', '')::int), 0) into v_cnt, v_max
       from public.puzzles where data ->> 'mateKey' = v_key and no <> p_no and is_public;
     if v_cnt > 0 and (v_max >= v_len or v_cnt >= 2) then raise exception 'duplicate_mate'; end if;
@@ -2323,6 +2323,16 @@ begin
   -- (BUG-121) 같은 번호에 이미 다른 id의 퍼즐이 있으면(번호 충돌) 합치지도 덮어쓰지도 않고 거부한다 — 충돌을 일부러 만들어 남의 퍼즐 테마를 오염시키지 못하게.
   if v_exists and v_old is not null and v_old ? 'id' and (v_old ->> 'id') is distinct from (p_data ->> 'id') then raise exception 'collision'; end if;
   if not v_exists then
+    -- (v0.7.7 보안) 게임 끝내기 중복 규칙을 DB 안에서도 잠금 아래 다시 판정한다(api/puzzle-share.js의 사전 조회와 같은 규칙: 공개 + 올리는 사람 본인 비공개 기준,
+    --  같은 장면에 같거나 더 긴 퍼즐이 있거나 이미 2개면 거부). 장면별 advisory lock으로 동시에 올리는 경쟁을 막는다.
+    if coalesce(p_data ->> 'mateKey', '') <> '' then
+      perform pg_advisory_xact_lock(hashtext('mate:' || (p_data ->> 'mateKey')));
+      if exists (
+        select 1 from (select count(*) as n, coalesce(max(nullif(data ->> 'mateLen', '')::int), 0) as mx
+                       from public.puzzles where data ->> 'mateKey' = p_data ->> 'mateKey' and (is_public or creator_uid = p_actor)) x
+        where x.n > 0 and (x.mx >= coalesce(nullif(p_data ->> 'mateLen', '')::int, 0) or x.n >= 2)
+      ) then raise exception 'duplicate_mate'; end if;
+    end if;
     -- (v0.7.7 보안) 로그인 사용자가 올리면 생성자를 같은 문장에서 기록한다(나중에 따로 선점하던 사이 빈틈을 줄임)
     insert into public.puzzles(no, data, is_public, creator_uid) values (p_no, p_data, coalesce(p_public, true), p_actor) on conflict (no) do nothing;
     return;
