@@ -2313,7 +2313,8 @@ begin
   -- (BUG-121) 같은 번호에 이미 다른 id의 퍼즐이 있으면(번호 충돌) 합치지도 덮어쓰지도 않고 거부한다 — 충돌을 일부러 만들어 남의 퍼즐 테마를 오염시키지 못하게.
   if v_exists and v_old is not null and v_old ? 'id' and (v_old ->> 'id') is distinct from (p_data ->> 'id') then raise exception 'collision'; end if;
   if not v_exists then
-    insert into public.puzzles(no, data, is_public) values (p_no, p_data, coalesce(p_public, true)) on conflict (no) do nothing;
+    -- (v0.7.7 보안) 로그인 사용자가 올리면 생성자를 같은 문장에서 기록한다(나중에 따로 선점하던 사이 빈틈을 줄임)
+    insert into public.puzzles(no, data, is_public, creator_uid) values (p_no, p_data, coalesce(p_public, true), p_actor) on conflict (no) do nothing;
     return;
   end if;
   if v_old is null or v_old = '{}'::jsonb then
@@ -2321,9 +2322,13 @@ begin
   elsif p_actor is not null and public.is_content_editor(p_actor) then
     update public.puzzles set data = p_data where no = p_no;
   else
+    -- (v0.7.7 보안) 이미 저장된 테마는 그대로 두고(서버가 확인한 'checkmate' 포함), 새로 들어온 테마는 합칠 수 있는 세 가지만 받는다.
+    --  'checkmate'는 합치기로 새로 붙일 수 없다 — 서버가 체크메이트를 확인한 첫 저장(새 행)에서만 붙는다.
     select coalesce(jsonb_agg(distinct t), '[]'::jsonb) into v_themes from (
-      select jsonb_array_elements_text(coalesce(v_old -> 'themes', '[]'::jsonb) || coalesce(p_data -> 'themes', '[]'::jsonb)) as t
-    ) x where t in ('punish', 'advantage', 'sacrifice');   -- (v0.7.7 보안) 'checkmate'는 합치기로 붙일 수 없다 — 서버가 체크메이트를 확인한 첫 저장(새 행)에서만 붙는다
+      select t from jsonb_array_elements_text(coalesce(v_old -> 'themes', '[]'::jsonb)) as t where t in ('punish', 'advantage', 'sacrifice', 'checkmate')
+      union
+      select t from jsonb_array_elements_text(coalesce(p_data -> 'themes', '[]'::jsonb)) as t where t in ('punish', 'advantage', 'sacrifice')
+    ) x;
     if jsonb_array_length(v_themes) > 0 then
       update public.puzzles set data = data || jsonb_build_object('themes', v_themes) where no = p_no;
     end if;

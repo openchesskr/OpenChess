@@ -69,14 +69,17 @@ ok(lib.MATE_PUZZLE_MIN_PLIES === api.MATE_PUZZLE_MIN_PLIES && lib.MATE_KEY_MAX_P
     u = String(u);
     const j = (b) => ({ ok: true, status: 200, json: async () => b, text: async () => JSON.stringify(b) });
     if (u.includes("/rpc/rate_limit_hit")) return j(false);
+    if (u.includes("/auth/v1/user")) return j({ id: "u1" });
     if (u.includes("/rest/v1/puzzles?") && u.includes("mateKey")) return j(existing);
     if (u.includes("/rpc/puzzle_share_put_verified")) { saved++; return j(null); }
     return j({});
   };
   const body = () => ({ id: "h1", themes: ["checkmate"], setupSans: ["e4", "e5", "Bc4", "Nc6"], tree: { children: [{ san: "Qh5", children: [{ san: "Nf6", children: [{ san: "Qxf7#", children: [] }] }] }] } });
-  const call = async () => { const out = { code: 0, body: null }; const res = { status(c) { out.code = c; return this; }, json(b) { out.body = b; }, setHeader() { } }; await api.default({ method: "POST", headers: {}, body: { no: api.puzzleNoOf("h1"), data: body() } }, res); return out; };
+  const call = async (auth = true) => { const out = { code: 0, body: null }; const res = { status(c) { out.code = c; return this; }, json(b) { out.body = b; }, setHeader() { } }; await api.default({ method: "POST", headers: auth ? { authorization: "Bearer tok" } : {}, body: { no: api.puzzleNoOf("h1"), data: body() } }, res); return out; };
+  let r = await call(false);
+  ok(r.code === 401 && saved === 0, "게스트가 게임 끝내기 퍼즐을 올릴 수 있음: " + JSON.stringify(r));
   existing = [{ id: "other", mateLen: "5" }];
-  let r = await call();
+  r = await call();
   ok(r.code === 409 && r.body && r.body.error === "duplicate_mate" && saved === 0, "더 긴 같은 장면 퍼즐이 있는데 서버가 저장함: " + JSON.stringify(r));
   existing = [{ id: "h1", mateLen: "3" }];   // 자기 자신(같은 id)은 중복으로 세지 않는다
   r = await call();
@@ -90,9 +93,10 @@ ok(/checkmate: \{[^}]*requireMate: true/.test(common), "게임 끝내기 생성 
 ok(/if \(requireMate && children\)[\s\S]{0,300}\/#\$\/\.test\(n\.san\)/.test(common), "genPuzzleTree가 체크메이트로 끝나지 않는 가지를 잘라 내지 않음");
 ok(/mateCandidates\(pcAnalyzeResult, pcParsed\.sans\)/.test(puzzle), "퍼즐 만들기 화면이 체크메이트 수순 후보를 보여 주지 않음");
 ok(/mateDuplicateVerdict\(await mateKeyPuzzles\(info\.mateKey\), info\.mateLen\)[\s\S]{0,400}setPcExisting/.test(puzzle), "퍼즐 만들기 화면이 같은 체크메이트 장면의 기존 퍼즐을 확인하지 않음");
-ok(/if \(data\.mateKey\)[\s\S]{0,700}duplicate_mate/.test(share), "서버가 같은 체크메이트 장면의 중복을 거부하지 않음");
-ok(/t in \('punish', 'advantage', 'sacrifice'\);/.test(sql) && !/t in \([^)]*'checkmate'/.test(sql), "SQL 테마 합치기가 checkmate를 붙일 수 있음(체크메이트 확인 없이 테마 추가 — 보안)");
-ok(/is_public=eq\.true&creator_uid=not\.is\.null&data->>mateKey/.test(share) && !/existingId/.test(share), "서버 중복 조회가 비공개·게스트 퍼즐을 세거나 기존 퍼즐 id를 돌려줌(보안)");
+ok(/if \(data\.mateKey\)[\s\S]{0,2000}duplicate_mate/.test(share), "서버가 같은 체크메이트 장면의 중복을 거부하지 않음");
+ok(/jsonb_array_elements_text\(coalesce\(v_old -> 'themes'[^\n]*'checkmate'\)\s*union\s*select t from jsonb_array_elements_text\(coalesce\(p_data -> 'themes', '\[\]'::jsonb\)\) as t where t in \('punish', 'advantage', 'sacrifice'\)\s*\) x;/.test(sql), "SQL 테마 합치기: 저장된 checkmate를 지우거나, 들어온 checkmate를 확인 없이 붙임(보안)");
+ok(/select=data->>id,data->>mateLen&data->>mateKey=/.test(share) && !/existingId/.test(share) && /if \(!user\) \{ res\.status\(401\)\.json\(\{ error: "login_required" \}\)/.test(share), "서버 중복 조회가 일부만 세거나 기존 id를 돌려주거나 게스트 업로드를 받음(보안)");
+ok(/insert into public\.puzzles\(no, data, is_public, creator_uid\) values \(p_no, p_data, coalesce\(p_public, true\), p_actor\)/.test(sql), "새 퍼즐 저장 때 생성자를 함께 기록하지 않음");
 ok(/create index if not exists idx_puzzles_mate_key/.test(sql), "mateKey 색인이 없음");
 
 if (fails.length) { console.error("✖ check-mate-puzzle 실패:\n  " + fails.join("\n  ")); process.exit(1); }
