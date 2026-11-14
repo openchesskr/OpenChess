@@ -225,6 +225,8 @@ async function downscaleImageFile(file, maxSide = 768, quality = 0.72) {
 // 실제 응답이 오면 그제서야 100%로 점프) — 업로드 구간까지는 실측값, 그 뒤는 추정치라는 걸 분명히
 // 해 둔다.
 export async function scanImageFile(file, onProgress) {
+  // (v0.7.7 BUG-072) 이미지 인식은 로그인 사용자 전용(서버가 401로 거절) — 보내기 전에 안내한다.
+  if (!SB_TOKEN) throw new Error(t("이미지 인식은 로그인 후 사용 가능"));
   const report = (p) => onProgress && onProgress(Math.max(0, Math.min(100, Math.round(p))));
   report(2);
   const shrunk = await downscaleImageFile(file);
@@ -245,7 +247,7 @@ export async function scanImageFile(file, onProgress) {
     let simTimer = null;
     xhr.open("POST", apiUrl("/api/scan-board"));
     xhr.setRequestHeader("content-type", "application/json");
-    if (SB_TOKEN) xhr.setRequestHeader("Authorization", "Bearer " + SB_TOKEN);   // (v0.7.0 BUG-116) 로그인하면 더 넉넉한 호출 한도
+    xhr.setRequestHeader("Authorization", "Bearer " + SB_TOKEN);   // (v0.7.7 BUG-072) 로그인 필수
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
       report(14 + (e.loaded / e.total) * 36); // 업로드 구간: 14~50% (실측)
@@ -260,7 +262,7 @@ export async function scanImageFile(file, onProgress) {
       if (simTimer) clearInterval(simTimer);
       let parsed = null;
       try { parsed = JSON.parse(xhr.responseText); } catch { }
-      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식 실패")); return; }
+      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error(xhr.status === 401 ? t("이미지 인식은 로그인 후 사용 가능") : (parsed && parsed.error) || t("이미지 인식 실패"))); return; }
       report(100);
       resolve(parsed);
     };

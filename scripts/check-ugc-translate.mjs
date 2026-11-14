@@ -124,13 +124,21 @@ const tr = rd("src/lib/ugcTranslate.js"), uses = /export function requestTransla
 if (!uses) fails.push("ugcTranslate.js: 번역 요청이 설정(loadUgcTranslatePref)을 거치지 않음");
 if (!/UGC_TRANSLATE_PREF_KEY\) !== "0"/.test(rd("src/lib/prefs.js"))) fails.push("prefs.js: 자동 번역 기본값이 켬이 아님");
 
-// ⑥ Gemini 쿼터 남용 방지(BUG-072) — 로그인 없이 쓰는 scan-board도 호출 제한이 있고, translate는 로그인과 호출 제한이 있다.
+// ⑥ Gemini 쿼터 남용 방지(BUG-072) — (v0.7.7 근본 대책) scan-board는 로그인 필수 + DB 카운터 호출 제한, translate도 DB 카운터.
 const scan = rd("api/scan-board.js");
 if (!/scanLimited\(/.test(scan) || !/res\.status\(429\)/.test(scan)) fails.push("api/scan-board.js: 호출 제한이 없음 — 누구나 공유 Gemini 쿼터를 소진시킬 수 있다");
-if (!/rateLimited\(user\.id, texts\.length\)/.test(api)) fails.push("api/translate.js: 사용자별 호출 제한이 없음");
-{ const h = { post: { method: "POST", headers: { "x-forwarded-for": "9.9.9.9" }, body: {} } }; const { default: scanHandler } = await import("../api/scan-board.js"); const codes = [];
-  for (let i = 0; i < 14; i++) { const res = { status(c) { codes.push(c); return this; }, json() { } }; await scanHandler(h.post, res); }
-  eq([codes.filter((c) => c === 429).length > 0, codes[0] !== 429], [true, true], "scan-board가 같은 IP의 연속 호출을 제한하지 않음"); }
+if (!/if \(!user\) return "auth"/.test(scan) || !/res\.status\(401\)/.test(scan)) fails.push("api/scan-board.js: 비로그인 호출을 거절하지 않음(BUG-072) — IP를 바꿔 가며 전체 한도를 소진시킬 수 있다");
+if (/scan:ip:/.test(scan)) fails.push("api/scan-board.js: 비로그인 IP 한도 경로가 되살아남(BUG-072)");
+if (!/rateLimited\(\{[^)]*\}, \[\["tr:u:" \+ user\.id, RATE_PER_MIN, 60, texts\.length\]/.test(api)) fails.push("api/translate.js: 사용자별 호출 제한이 DB 카운터(rateLimited)를 거치지 않음");
+if (/const hits = new Map\(\)/.test(api)) fails.push("api/translate.js: 인스턴스 메모리 전용 호출 제한이 남아 있음(BUG-072)");
+{ const cm = rd("src/app/common.jsx");
+  if (!/export async function scanImageFile[\s\S]{0,200}if \(!SB_TOKEN\) throw/.test(cm)) fails.push("common.jsx scanImageFile: 비로그인 상태에서 서버로 보내기 전에 안내하지 않음"); }
+{ const { default: scanHandler } = await import("../api/scan-board.js"); const codes = []; const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (u) => { if (String(u).includes("/auth/v1/user")) return { ok: false, status: 401, json: async () => ({}) }; throw new Error("로그인 확인 전에 외부 호출: " + u); };
+  const reqs = [{ method: "POST", headers: { "x-forwarded-for": "9.9.9.9" }, body: { image: "AAAA" } }, { method: "POST", headers: { "x-forwarded-for": "9.9.9.8", authorization: "Bearer fake" }, body: { image: "AAAA" } }];
+  for (let i = 0; i < 6; i++) { const res = { status(c) { codes.push(c); return this; }, json() { } }; await scanHandler(reqs[i % 2], res); }
+  globalThis.fetch = prevFetch;
+  eq(codes.every((c) => c === 401), true, "scan-board가 로그인하지 않은(또는 가짜 토큰) 호출을 401로 거절하지 않음: " + codes.join(",")); }
 
 // ⑥ (v0.7.5, 사용자 요청) 분석 탭의 주요 분기점·편집자가 쓴 수 추천 이유도 번역 범위("content")
 {

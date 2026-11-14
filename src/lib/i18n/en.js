@@ -3738,4 +3738,11 @@ export default {
   "도감 첫 화면의 오프닝 해금률이 늘 0%로 보이던 문제를 고쳤습니다.": "Fixed the opening unlock rate on the Openings tab home always showing 0%.",
   "퍼즐 탭이 유산까지 함께 보는 소셜 탭이 되고, 학습 탭에 맞춤 학습이, 그랜드마스터마다 마스터 페이지가 생겼습니다. 분석 탭의 수 블록에는 키워드가 자동으로 붙고 도감 첫 화면도 새로 디자인했습니다.": "The Puzzles tab became a Social tab that also shows Legacies, the Learn tab gained personal training, and every grandmaster got a Master page. Move blocks in the Analysis tab get keywords automatically, and the Openings tab home was redesigned.",
   "퍼즐과 유산을 소셜 탭 한 피드에서 봅니다.": "See puzzles and Legacies in one feed on the Social tab.",
+  "이미지 인식 실패": "Image recognition failed",
+  "이미지 인식은 로그인 후 사용 가능": "Log in to use image recognition",
+  "탈퇴한 사용자": "Deleted user",
+  "신고 내역은 부정 이용 대응을 위해 처리 완료 후 1년(처리 전이면 접수 후 2년) 보관 후 삭제. 탈퇴해도 이 기간 동안 보관": "Reports are kept for 1 year after they are resolved (2 years after submission if unresolved) to deal with abuse, then deleted. They are kept for this period even if the account is deleted",
+  "친구 관계, 채팅 메시지, 알림, 차단 내역": "Friendships, chat messages, notifications and block list",
+  "상대와 둔 끝난 대국의 수순은 상대의 대국 기록에 남지만 탈퇴한 이용자의 아이디·닉네임은 표시하지 않음": "The moves of finished games remain in the opponent's game history, but the deleted user's username and nickname are not shown",
+  "신고 내역(본인이 접수한 신고와 본인에 대한 신고)은 처리 완료 후 1년(처리 전이면 접수 후 2년)까지 보관 후 삭제": "Reports (those you submitted and those about you) are kept for up to 1 year after they are resolved (2 years after submission if unresolved), then deleted",
 };

@@ -48,6 +48,16 @@ create policy "profiles insert self" on public.profiles for insert with check (a
 create policy "profiles update self" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
 grant select on public.profiles to anon, authenticated;
 grant insert, update on public.profiles to authenticated;
+-- (v0.7.7 BUG-136) 탈퇴 유예 표시 컬럼을 여기서 먼저 만든다 — 아래 연락 경로 함수(chat_blocked_between 등)와 정책이 이 컬럼을 쓴다(자세한 설명은 "계정 탈퇴" 절).
+alter table public.profiles add column if not exists deletion_scheduled_at timestamptz;
+-- (v0.7.7 BUG-136) 내 계정이 탈퇴 유예 중인지 — 정책(with check)에서 쓰려고 인자 없이 auth.uid()만 본다(남의 유예 여부는 알려 주지 않는다).
+--  유예 중에는 연락·대국·게시 같은 새 행동을 서버가 막는다(예전엔 앱 팝업으로만 막아 API를 직접 부르면 그대로 됐다).
+create or replace function public.my_deletion_pending()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select pr.deletion_scheduled_at is not null from public.profiles pr where pr.id = auth.uid()), false);
+$$;
+-- 비로그인(anon)은 늘 false — 정책이 이 함수를 부르므로 anon에게도 실행 권한을 준다(남의 정보는 다루지 않는다).
+grant execute on function public.my_deletion_pending() to anon, authenticated;
 
 -- 이메일/비밀번호로 가입할 때(user_metadata.username 포함) auth.users insert와 같은 트랜잭션에서
 -- profiles 행을 원자적으로 생성 — username이 이미 있으면(UNIQUE 위반) 가입 전체가 롤백됨(레이스 방지).
@@ -221,7 +231,9 @@ create policy "blocks own" on public.user_blocks for all using (auth.uid() = blo
 grant select, insert, delete on public.user_blocks to authenticated;
 create or replace function public.chat_blocked_between(p_a uuid, p_b uuid)
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a));
+  select exists (select 1 from public.user_blocks where (blocker = p_a and blocked = p_b) or (blocker = p_b and blocked = p_a))
+    -- (v0.7.7 BUG-136) 둘 중 한쪽이 탈퇴 유예 중이어도 연락 불가(친구 요청·도전장·채팅 모두 이 함수를 거친다). 차단과 같은 응답이라 유예 여부는 드러나지 않는다.
+    or exists (select 1 from public.profiles pr where pr.id in (p_a, p_b) and pr.deletion_scheduled_at is not null);
 $$;
 revoke all on function public.chat_blocked_between(uuid, uuid) from public, anon;
 grant execute on function public.chat_blocked_between(uuid, uuid) to authenticated;
@@ -288,6 +300,7 @@ drop function if exists public.friend_accept(uuid) cascade;
 create or replace function public.friend_accept(p_other_uid uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 begin
+  if public.chat_blocked_between(auth.uid(), p_other_uid) then return false; end if;   -- (v0.7.7 BUG-136) 유예·차단 관계면 수락 불가
   update public.friend_edges set status = 'accepted'
   where from_uid = p_other_uid and to_uid = auth.uid() and status = 'pending';
   return found;
@@ -605,7 +618,7 @@ drop policy if exists "likes read"   on public.puzzle_likes;
 drop policy if exists "likes insert" on public.puzzle_likes;
 drop policy if exists "likes delete" on public.puzzle_likes;
 create policy "likes read"   on public.puzzle_likes for select using (true);
-create policy "likes insert" on public.puzzle_likes for insert with check (auth.uid() = uid);
+create policy "likes insert" on public.puzzle_likes for insert with check (auth.uid() = uid and not public.my_deletion_pending());
 create policy "likes delete" on public.puzzle_likes for delete using (auth.uid() = uid);
 grant select on public.puzzle_likes to anon, authenticated;
 grant insert, delete on public.puzzle_likes to authenticated;
@@ -621,6 +634,7 @@ returns table(liked boolean, likes bigint) language plpgsql security definer set
 declare v_likes bigint; v_liked boolean; p_uid uuid := auth.uid();
 begin
   if p_uid is null then raise exception 'auth required'; end if;
+  if public.my_deletion_pending() then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   if exists (select 1 from public.puzzle_likes where no = p_no and uid = p_uid) then
     delete from public.puzzle_likes where no = p_no and uid = p_uid;
     -- (v0.1.1 버그 수정) 아래 우변의 likes를 테이블 한정 없이 그냥 쓰면, 이 함수의 반환값
@@ -663,7 +677,7 @@ drop policy if exists "reposts read"   on public.puzzle_reposts;
 drop policy if exists "reposts insert" on public.puzzle_reposts;
 drop policy if exists "reposts delete" on public.puzzle_reposts;
 create policy "reposts read"   on public.puzzle_reposts for select using (true);
-create policy "reposts insert" on public.puzzle_reposts for insert with check (auth.uid() = uid);
+create policy "reposts insert" on public.puzzle_reposts for insert with check (auth.uid() = uid and not public.my_deletion_pending());
 create policy "reposts delete" on public.puzzle_reposts for delete using (auth.uid() = uid);
 grant select on public.puzzle_reposts to anon, authenticated;
 grant insert, delete on public.puzzle_reposts to authenticated;
@@ -690,6 +704,7 @@ returns table(reposted boolean, reposts bigint) language plpgsql security define
 declare v_reposts bigint; v_reposted boolean; p_uid uuid := auth.uid();
 begin
   if p_uid is null then raise exception 'auth required'; end if;
+  if public.my_deletion_pending() then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   if exists (select 1 from public.puzzle_reposts where no = p_no and uid = p_uid) then
     delete from public.puzzle_reposts where no = p_no and uid = p_uid;
     -- (v0.1.1 버그 수정) puzzle_like_toggle과 동일한 원인의 버그 — 아래 우변의 reposts가 이 함수의
@@ -842,7 +857,7 @@ language sql stable security definer set search_path = public as $$
     group by 1
   )
   select p.id, p.username, p.pub, c.mutual
-  from candidates c join public.profiles p on p.id = c.uid
+  from candidates c join public.profiles p on p.id = c.uid and p.deletion_scheduled_at is null   -- (v0.7.7 BUG-136) 탈퇴 유예 계정은 추천하지 않는다
   order by c.mutual desc, p.username asc
   limit p_limit;
 $$;
@@ -1065,7 +1080,7 @@ drop policy if exists "move notes delete" on public.move_notes;
 -- 수정·삭제는 작성자 본인(auth.uid() = uid, 자기 글만) 또는 개발자/공동개발자(app_content·
 -- master_games_dev와 동일한 is_content_editor 재사용, 모든 글) 둘 중 하나만 만족하면 된다.
 create policy "move notes read"   on public.move_notes for select using (true);
-create policy "move notes insert" on public.move_notes for insert with check (auth.uid() = uid);
+create policy "move notes insert" on public.move_notes for insert with check (auth.uid() = uid and not public.my_deletion_pending());
 create policy "move notes update" on public.move_notes for update using (auth.uid() = uid or public.am_content_editor()) with check (auth.uid() = uid or public.am_content_editor());
 create policy "move notes delete" on public.move_notes for delete using (auth.uid() = uid or public.am_content_editor());
 grant select on public.move_notes to anon, authenticated;
@@ -1594,7 +1609,7 @@ drop policy if exists "legacy likes read"   on public.legacy_likes;
 drop policy if exists "legacy likes insert" on public.legacy_likes;
 drop policy if exists "legacy likes delete" on public.legacy_likes;
 create policy "legacy likes read"   on public.legacy_likes for select using (true);
-create policy "legacy likes insert" on public.legacy_likes for insert with check (auth.uid() = uid);
+create policy "legacy likes insert" on public.legacy_likes for insert with check (auth.uid() = uid and not public.my_deletion_pending());
 create policy "legacy likes delete" on public.legacy_likes for delete using (auth.uid() = uid);
 grant select on public.legacy_likes to anon, authenticated;
 grant insert, delete on public.legacy_likes to authenticated;
@@ -1623,6 +1638,7 @@ returns table(liked boolean, likes bigint) language plpgsql security definer set
 declare v_likes bigint; v_liked boolean; v_uid uuid := auth.uid();
 begin
   if v_uid is null then raise exception 'auth required'; end if;
+  if public.my_deletion_pending() then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   if exists (select 1 from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid) then
     delete from public.legacy_likes where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid;
     update public.legacy_like_counts set likes = greatest(0, public.legacy_like_counts.likes - 1)
@@ -1675,6 +1691,7 @@ returns table(reposted boolean, reposts bigint) language plpgsql security define
 declare v_count bigint; v_on boolean; v_uid uuid := auth.uid();
 begin
   if v_uid is null then raise exception 'auth required'; end if;
+  if public.my_deletion_pending() then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   if p_owner_uid is null or p_slot_key is null or p_slot_key !~ '^[a-z][a-z0-9]{0,23}$' then raise exception 'bad legacy'; end if;
   if p_owner_uid = v_uid then raise exception 'cannot repost own legacy'; end if;
   if exists (select 1 from public.legacy_reposts where owner_uid = p_owner_uid and slot_key = p_slot_key and uid = v_uid) then
@@ -1799,14 +1816,25 @@ alter table public.pvp_queue add column if not exists game_type text not null de
 -- Realtime(postgres_changes) 구독도 이 RLS를 그대로 따르므로, 남의 대국 이벤트는 애초에 전달되지 않는다.
 create table if not exists public.pvp_games (
   id bigserial primary key,
-  white_uid uuid not null references auth.users(id) on delete cascade,
-  black_uid uuid not null references auth.users(id) on delete cascade,
+  white_uid uuid references auth.users(id) on delete set null,
+  black_uid uuid references auth.users(id) on delete set null,
   sans jsonb not null default '[]'::jsonb,
   status text not null default 'active' check (status in ('active','white_won','black_won','draw','aborted')),
   result_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- (v0.7.7 BUG-065) 한 사람이 탈퇴해도 상대의 대국 기록(기보)은 남긴다 — 참가자 칸은 cascade(행 삭제)가 아니라 set null(탈퇴한 쪽 칸만 비움).
+--  진행 중인 대국은 탈퇴 말소(_erase_account) 직전에 기권 처리되므로, 칸이 빈 대국은 늘 끝난 대국이다. 아래 check가 이를 못 박아 재대결·매칭이
+--  빈 칸으로 새 대국을 만들지 못하게 한다. 두 사람 모두 탈퇴해 양쪽이 다 빈 대국은 _erase_account가 지운다.
+alter table public.pvp_games alter column white_uid drop not null;
+alter table public.pvp_games alter column black_uid drop not null;
+alter table public.pvp_games drop constraint if exists pvp_games_white_uid_fkey;
+alter table public.pvp_games add constraint pvp_games_white_uid_fkey foreign key (white_uid) references auth.users(id) on delete set null;
+alter table public.pvp_games drop constraint if exists pvp_games_black_uid_fkey;
+alter table public.pvp_games add constraint pvp_games_black_uid_fkey foreign key (black_uid) references auth.users(id) on delete set null;
+alter table public.pvp_games drop constraint if exists pvp_games_active_has_players;
+alter table public.pvp_games add constraint pvp_games_active_has_players check (status <> 'active' or (white_uid is not null and black_uid is not null));
 alter table public.pvp_games enable row level security;
 drop policy if exists "pvp games select own" on public.pvp_games;
 create policy "pvp games select own" on public.pvp_games for select using (auth.uid() = white_uid or auth.uid() = black_uid);
@@ -1960,6 +1988,7 @@ returns public.pvp_games language plpgsql security definer set search_path = pub
 declare v_me uuid := auth.uid(); v_other uuid; v_game public.pvp_games; v_w uuid; v_b uuid;
 begin
   if v_me is null then raise exception 'auth required'; end if;
+  if public.my_deletion_pending() then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   select * into v_game from public.pvp_games
     where status = 'active' and (white_uid = v_me or black_uid = v_me)
     order by created_at desc limit 1;
@@ -2022,7 +2051,7 @@ begin
   if v_pre.status <> 'active' then raise exception 'game not active'; end if;
   v_game := public._pvp_resolve_timeout(p_game_id);
   if v_game.status <> 'active' then return v_game; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   v_ply := jsonb_array_length(v_game.sans);
   v_white_turn := (v_ply % 2) = 0;
   v_expected := case when v_white_turn then v_game.white_uid else v_game.black_uid end;
@@ -2075,7 +2104,7 @@ begin
   if p_status not in ('white_won','black_won','draw','aborted') then raise exception 'invalid status'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   v_my_win_status := case when v_me = v_game.white_uid then 'white_won' else 'black_won' end;
   if p_status = v_my_win_status then raise exception 'cannot self-declare victory'; end if;
   if v_game.status <> 'active' then return v_game; end if;
@@ -2096,7 +2125,7 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set draw_offered_by = v_me, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
@@ -2112,7 +2141,7 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   if v_game.draw_offered_by is null or v_game.draw_offered_by = v_me then raise exception 'no pending draw offer from opponent'; end if;
   update public.pvp_games set status = 'draw', draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
@@ -2130,7 +2159,7 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   update public.pvp_games set draw_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
@@ -2155,7 +2184,7 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status = 'active' then raise exception 'game still active'; end if;
   if v_game.rematch_game_id is not null then
     select * into v_new from public.pvp_games where id = v_game.rematch_game_id;
@@ -2184,7 +2213,7 @@ begin
   if v_me is null then raise exception 'auth required'; end if;
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   update public.pvp_games set rematch_offered_by = null, updated_at = now() where id = p_game_id returning * into v_game;
   return v_game;
 end; $$;
@@ -2272,6 +2301,7 @@ returns void language plpgsql security definer set search_path = public as $$
 declare v_old jsonb; v_exists boolean; v_themes jsonb;
 begin
   if p_no is null or p_no <= 0 then raise exception 'invalid puzzle'; end if;
+  if p_actor is not null and exists (select 1 from public.profiles pr where pr.id = p_actor and pr.deletion_scheduled_at is not null) then raise exception 'account deletion pending'; end if;   -- (v0.7.7 BUG-136)
   if p_data is null or jsonb_typeof(p_data) <> 'object' then raise exception 'invalid data'; end if;
   if length(p_data::text) > 300000 then raise exception 'data too large'; end if;
   if public.puzzle_no_of(p_data ->> 'id') is distinct from p_no then raise exception 'puzzle number does not match id'; end if;
@@ -2420,6 +2450,7 @@ begin
   if not found then raise exception 'invite not found'; end if;
   if v_me <> v_inv.to_uid then raise exception 'not authorized'; end if;
   if v_inv.status <> 'pending' then return v_inv; end if;
+  if p_accept and public.chat_blocked_between(v_inv.from_uid, v_me) then raise exception 'blocked'; end if;   -- (v0.7.7 BUG-136) 한쪽이 탈퇴 유예·차단이면 수락 불가
   if not p_accept then
     update public.pvp_invites set status = 'declined', updated_at = now() where id = p_invite_id returning * into v_inv;
     return v_inv;
@@ -2477,7 +2508,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   if jsonb_array_length(v_rounds) > 0 then
@@ -2559,7 +2590,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   if jsonb_array_length(v_rounds) < v_total_rounds then raise exception 'not finished yet'; end if;
@@ -2586,7 +2617,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'coord' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set
     status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
@@ -2919,7 +2950,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   if jsonb_array_length(v_rounds) > 0 then
@@ -3060,7 +3091,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   if jsonb_array_length(v_rounds) = 0 then return v_game; end if;
@@ -3134,7 +3165,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'knight' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set
     status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
@@ -3166,7 +3197,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   v_n := jsonb_array_length(v_rounds);
@@ -3246,7 +3277,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   v_rounds := v_game.sans;
   if jsonb_array_length(v_rounds) = 0 then return v_game; end if;
@@ -3296,7 +3327,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'rush' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set
     status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
@@ -3366,7 +3397,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' or jsonb_array_length(v_game.sans) > 0 then return v_game; end if;
   select coalesce((pub ->> 'puzzleRating')::int, 800) into v_wr from public.profiles where id = v_game.white_uid;
   select coalesce((pub ->> 'puzzleRating')::int, 800) into v_br from public.profiles where id = v_game.black_uid;
@@ -3459,7 +3490,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' or jsonb_array_length(v_game.sans) = 0 then return v_game; end if;
   v_h := v_game.sans -> 0;
   if now() < (v_h ->> 'endAt')::timestamptz + interval '3 seconds' then return v_game; end if;
@@ -3497,7 +3528,7 @@ begin
   select * into v_game from public.pvp_games where id = p_game_id for update;
   if not found then raise exception 'game not found'; end if;
   if v_game.game_type <> 'attack' then raise exception 'wrong game type'; end if;
-  if v_me <> v_game.white_uid and v_me <> v_game.black_uid then raise exception 'not a participant'; end if;
+  if v_me is distinct from v_game.white_uid and v_me is distinct from v_game.black_uid then raise exception 'not a participant'; end if;
   if v_game.status <> 'active' then return v_game; end if;
   update public.pvp_games set
     status = case when v_me = v_game.white_uid then 'black_won' else 'white_won' end,
@@ -3666,6 +3697,7 @@ language sql stable security definer set search_path = public as $$
     select s.* from public.minigame_stats s
     where s.game = p_game
       and s.rated_games >= 3
+      and not exists (select 1 from public.profiles d where d.id = s.uid and d.deletion_scheduled_at is not null and d.id is distinct from auth.uid())   -- (v0.7.7 BUG-136) 순위 번호에서도 뺀다
       and (p_scope <> 'friends' or s.uid = auth.uid() or s.uid in (
         select case when e.from_uid = auth.uid() then e.to_uid else e.from_uid end
         from public.friend_edges e
@@ -3677,7 +3709,7 @@ language sql stable security definer set search_path = public as $$
   select r.rank, r.uid, pr.username,
     jsonb_build_object('nickname', pr.pub -> 'nickname', 'photo', pr.pub -> 'photo', 'displayId', pr.pub -> 'displayId', 'xp', pr.pub -> 'xp'),
     r.rating, r.rated_games, r.wins, r.losses, r.draws, null::numeric, null::jsonb, r.uid = auth.uid()
-  from ranked r join public.profiles pr on pr.id = r.uid
+  from ranked r join public.profiles pr on pr.id = r.uid and (pr.deletion_scheduled_at is null or pr.id = auth.uid())   -- (v0.7.7 BUG-136)
   where r.rank <= least(greatest(p_limit, 1), 100) or r.uid = auth.uid()
   order by r.rank;
 $$;
@@ -3744,13 +3776,16 @@ language sql stable security definer set search_path = public as $$
       g.sans, g.time_control, g.rated, g.rating_delta, null::int as bot_elo,
       coalesce(nullif(pr.pub ->> 'nickname', ''), pr.username) as opp_name, g.updated_at as ended_at
     from public.pvp_games g
-    left join public.profiles pr on pr.id = case when g.white_uid = p_uid then g.black_uid else g.white_uid end
+    left join public.profiles pr on pr.id = case when g.white_uid = p_uid then g.black_uid else g.white_uid end and pr.deletion_scheduled_at is null   -- (v0.7.7 BUG-136) 유예 중인 상대 이름은 숨긴다
     where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw')
+      and not exists (select 1 from public.profiles d where d.id = p_uid and d.deletion_scheduled_at is not null and d.id is distinct from auth.uid())   -- 유예 중인 계정의 대국 목록은 본인만
       and (g.white_uid = p_uid or g.black_uid = p_uid) and jsonb_array_length(g.sans) > 0
     order by g.updated_at desc limit (select n + off from lim)
   ), bots as (
     select 'bot'::text, b.id, b.color, b.result, to_jsonb(b.sans), b.time_control, false, null::jsonb, b.bot_elo, null::text, b.created_at
-    from public.bot_games b where b.uid = p_uid order by b.created_at desc limit (select n + off from lim)
+    from public.bot_games b where b.uid = p_uid
+      and not exists (select 1 from public.profiles d where d.id = p_uid and d.deletion_scheduled_at is not null and d.id is distinct from auth.uid())
+    order by b.created_at desc limit (select n + off from lim)
   )
   select * from (select * from pvp union all select * from bots) x order by x.ended_at desc offset (select off from lim) limit (select n from lim);
 $$;
@@ -3801,7 +3836,7 @@ declare v_me uuid := p_uid;
 begin
   if v_me is null then raise exception 'uid required'; end if;
   -- (v0.6.4, BUG-061) 진행 중인 대국은 지우기 전에 기권 처리한다 — 그대로 지우면 상대 화면에서 대국이 아무 결과 없이 사라지고 레이팅·전적에도 반영되지 않는다.
-  -- 상태를 바꾸는 update가 결과 집계 트리거(_minigame_on_game_end)를 거치므로 상대는 정상적인 승리로 기록된다. (대국 행 자체는 아래 삭제의 cascade로 지워진다.)
+  -- 상태를 바꾸는 update가 결과 집계 트리거(_minigame_on_game_end)를 거치므로 상대는 정상적인 승리로 기록된다. (v0.7.7 BUG-065) 대국 행은 남고 내 칸만 비워진다.
   update public.pvp_games
      set status = case when white_uid = v_me then 'black_won' else 'white_won' end, updated_at = now()
    where status = 'active' and (white_uid = v_me or black_uid = v_me);
@@ -3809,6 +3844,8 @@ begin
   -- creator_uid가 비어 "생성자 선점"(위 puzzle_claim_creator) 대상이 돼 아무나 그 퍼즐의 작성자가 될 수 있었다. 방침("퍼즐 등 모든 데이터 영구 삭제")과도 맞지 않았다.
   delete from public.puzzles where creator_uid = v_me;
   delete from auth.users where id = v_me;
+  -- (v0.7.7 BUG-065) 대국 행은 참가자 칸만 비워 상대 기록으로 남긴다(set null). 두 사람 모두 탈퇴해 아무도 볼 수 없게 된 대국은 여기서 지운다.
+  delete from public.pvp_games where white_uid is null and black_uid is null;
 end; $$;
 -- 탈퇴 요청 — 유예 기한(지금 + 7일)을 돌려준다. 이미 요청했다면 처음 기한을 그대로 돌려준다(다시 눌러도 기한이 늘어나지 않는다).
 create or replace function public.request_account_deletion()
@@ -4042,7 +4079,7 @@ drop policy if exists "reactions insert" on public.chat_reactions;
 drop policy if exists "reactions delete" on public.chat_reactions;
 -- chat_messages의 select 정책이 그 대화의 두 사람에게만 행을 보여 주므로, exists가 참이면 곧 대화 당사자다.
 create policy "reactions read" on public.chat_reactions for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
-create policy "reactions insert" on public.chat_reactions for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id));
+create policy "reactions insert" on public.chat_reactions for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id) and not public.my_deletion_pending());
 create policy "reactions delete" on public.chat_reactions for delete using (auth.uid() = uid);
 grant select, insert, delete on public.chat_reactions to authenticated;
 
@@ -4059,7 +4096,7 @@ drop policy if exists "poll votes read" on public.chat_poll_votes;
 drop policy if exists "poll votes insert" on public.chat_poll_votes;
 drop policy if exists "poll votes update" on public.chat_poll_votes;
 create policy "poll votes read" on public.chat_poll_votes for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
-create policy "poll votes insert" on public.chat_poll_votes for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
+create policy "poll votes insert" on public.chat_poll_votes for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null) and not public.my_deletion_pending());
 -- 표를 바꿀 땐 upsert(merge-duplicates)가 모든 컬럼을 다시 쓰므로, 본인 표(uid)를 투표 카드(poll) 메시지 안에서만 바꿀 수 있게 with check로 묶는다.
 create policy "poll votes update" on public.chat_poll_votes for update using (auth.uid() = uid)
   with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.poll is not null));
@@ -4078,7 +4115,7 @@ alter table public.chat_quiz_answers enable row level security;
 drop policy if exists "quiz answers read" on public.chat_quiz_answers;
 drop policy if exists "quiz answers insert" on public.chat_quiz_answers;
 create policy "quiz answers read" on public.chat_quiz_answers for select using (exists (select 1 from public.chat_messages m where m.id = message_id));
-create policy "quiz answers insert" on public.chat_quiz_answers for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.quiz is not null and m.to_uid = auth.uid()));
+create policy "quiz answers insert" on public.chat_quiz_answers for insert with check (auth.uid() = uid and exists (select 1 from public.chat_messages m where m.id = message_id and m.quiz is not null and m.to_uid = auth.uid()) and not public.my_deletion_pending());
 grant select, insert on public.chat_quiz_answers to authenticated;
 do $quizrt$ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_quiz_answers') then
@@ -4090,8 +4127,8 @@ end $quizrt$;
 -- 신고한 사람은 자기 신고만 볼 수 있고, 검토는 대시보드(service role)에서 한다.
 create table if not exists public.user_reports (
   id bigint generated always as identity primary key,
-  reporter uuid not null references auth.users(id) on delete cascade,
-  target_uid uuid not null references auth.users(id) on delete cascade,
+  reporter uuid not null,     -- (v0.7.7 BUG-064) 외래키 없음: 탈퇴해도 신고는 보관 기간 동안 남는다(아래 설명)
+  target_uid uuid not null,
   message_id bigint references public.chat_messages(id) on delete set null,
   message_snapshot jsonb,
   reason text not null check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$'),
@@ -4104,6 +4141,18 @@ create table if not exists public.user_reports (
 alter table public.user_reports drop constraint if exists user_reports_reason_check;
 alter table public.user_reports add constraint user_reports_reason_check check (reason ~ '^(spam|abuse|sexual|cheating|other)(,(spam|abuse|sexual|cheating|other))*$');
 alter table public.user_reports add column if not exists context jsonb;
+-- (v0.7.7 BUG-064) 신고 보관 — 예전엔 신고자·피신고자 칸이 사용자 cascade라, 신고당한 사람이 탈퇴하면 증거(메시지 사본 포함)가 즉시 사라져
+--  개인정보처리방침("처리 완료 후 일정 기간 보관 후 삭제")과 달랐다. 이제 두 칸은 값으로만 남기고(외래키 해제), 신고 순간의 아이디를 함께 복사해 둔다.
+--  처리 완료(done)된 신고는 1년 뒤, 처리되지 않은 신고도 2년 뒤에는 purge_old_reports(매일 cron)가 지운다.
+alter table public.user_reports drop constraint if exists user_reports_reporter_fkey;
+alter table public.user_reports drop constraint if exists user_reports_target_uid_fkey;
+alter table public.user_reports add column if not exists reporter_username text;
+alter table public.user_reports add column if not exists target_username text;
+alter table public.user_reports add column if not exists resolved_at timestamptz;
+update public.user_reports r set reporter_username = pr.username from public.profiles pr where pr.id = r.reporter and r.reporter_username is null;
+update public.user_reports r set target_username = pr.username from public.profiles pr where pr.id = r.target_uid and r.target_username is null;
+update public.user_reports set resolved_at = created_at where status = 'done' and resolved_at is null;
+create index if not exists idx_user_reports_reporter_created on public.user_reports (reporter, created_at desc);
 alter table public.user_reports enable row level security;
 drop policy if exists "reports read own" on public.user_reports;
 create policy "reports read own" on public.user_reports for select using (auth.uid() = reporter);
@@ -4136,8 +4185,9 @@ begin
   if (select count(*) from public.user_reports where reporter = v_me and created_at > now() - interval '1 day') >= 20 then
     raise exception 'too many reports';
   end if;
-  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, context, reason, detail)
-  values (v_me, p_target, p_message_id, v_snap, v_ctx, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''))
+  insert into public.user_reports(reporter, target_uid, message_id, message_snapshot, context, reason, detail, reporter_username, target_username)
+  values (v_me, p_target, p_message_id, v_snap, v_ctx, p_reason, nullif(left(coalesce(p_detail, ''), 500), ''),
+          (select username from public.profiles where id = v_me), (select username from public.profiles where id = p_target))
   returning id into v_id;
   return v_id;
 end; $$;
@@ -4152,10 +4202,11 @@ $$;
 create or replace function public.reports_for_dev(p_limit int default 100)
 returns table (id bigint, reporter_username text, target_username text, reason text, detail text, message_id bigint, message_snapshot jsonb, context jsonb, status text, created_at timestamptz)
 language sql stable security definer set search_path = public as $$
-  select r.id, rp.username, tp.username, r.reason, r.detail, r.message_id, r.message_snapshot, r.context, r.status, r.created_at
+  -- (v0.7.7 BUG-064) 탈퇴한 사람의 신고도 보이게 left join + 신고 순간 아이디 사본
+  select r.id, coalesce(rp.username, r.reporter_username, '(탈퇴)'), coalesce(tp.username, r.target_username, '(탈퇴)'), r.reason, r.detail, r.message_id, r.message_snapshot, r.context, r.status, r.created_at
   from public.user_reports r
-  join public.profiles rp on rp.id = r.reporter
-  join public.profiles tp on tp.id = r.target_uid
+  left join public.profiles rp on rp.id = r.reporter
+  left join public.profiles tp on tp.id = r.target_uid
   where public._is_dev_account(auth.uid())
   order by r.created_at desc
   limit least(greatest(coalesce(p_limit, 100), 1), 300);
@@ -4166,7 +4217,18 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public._is_dev_account(auth.uid()) then raise exception 'dev only'; end if;
   if p_status not in ('open', 'done') then raise exception 'bad status'; end if;
-  update public.user_reports set status = p_status where id = p_id;
+  update public.user_reports set status = p_status, resolved_at = case when p_status = 'done' then coalesce(resolved_at, now()) else null end where id = p_id;
+end; $$;
+-- (v0.7.7 BUG-064) 보관 기간이 지난 신고 삭제 — 처리 완료 후 1년, 처리되지 않은 신고는 접수 후 2년. 서버 전용(cron).
+create or replace function public.purge_old_reports()
+returns int language plpgsql security definer set search_path = public as $$
+declare v_n int;
+begin
+  delete from public.user_reports
+   where (status = 'done' and resolved_at < now() - interval '1 year')
+      or created_at < now() - interval '2 years';
+  get diagnostics v_n = row_count;
+  return v_n;
 end; $$;
 grant execute on function public.report_set_status(bigint, text) to authenticated;
 
@@ -4845,7 +4907,7 @@ declare
     'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
     'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve', 'social_legacy_feed', 'social_profile',
-    'search_puzzles_prefix', 'username_available'
+    'search_puzzles_prefix', 'username_available', 'my_deletion_pending'
   ];
   v_auth text[] := array[
     'gen_mid',
@@ -4907,4 +4969,10 @@ select cron.schedule(
   'account_deletion_purge_hourly',
   '10 * * * *',
   $$ select public.purge_due_account_deletions(); $$
+);
+-- (v0.7.7 BUG-064) 보관 기간(처리 완료 후 1년, 미처리 2년)이 지난 신고를 매일 지운다.
+select cron.schedule(
+  'user_reports_purge_daily',
+  '20 18 * * *', -- UTC 18:20 = KST 03:20
+  $$ select public.purge_old_reports(); $$
 );

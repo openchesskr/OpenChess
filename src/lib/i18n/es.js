@@ -3738,4 +3738,11 @@ export default {
   "도감 첫 화면의 오프닝 해금률이 늘 0%로 보이던 문제를 고쳤습니다.": "Se corrigió que el porcentaje de aperturas desbloqueadas en el inicio de Aperturas mostrara siempre 0%.",
   "퍼즐 탭이 유산까지 함께 보는 소셜 탭이 되고, 학습 탭에 맞춤 학습이, 그랜드마스터마다 마스터 페이지가 생겼습니다. 분석 탭의 수 블록에는 키워드가 자동으로 붙고 도감 첫 화면도 새로 디자인했습니다.": "La pestaña Problemas se convirtió en una pestaña Social que también muestra legados, la pestaña Aprender suma entrenamiento personal y cada gran maestro tiene su página de Maestro. Los bloques de jugada de Análisis reciben palabras clave automáticas y el inicio de Aperturas se rediseñó.",
   "퍼즐과 유산을 소셜 탭 한 피드에서 봅니다.": "Mira problemas y legados en un mismo feed de la pestaña Social.",
+  "이미지 인식 실패": "Error en el reconocimiento de la imagen",
+  "이미지 인식은 로그인 후 사용 가능": "Inicia sesión para usar el reconocimiento de imágenes",
+  "탈퇴한 사용자": "Usuario eliminado",
+  "신고 내역은 부정 이용 대응을 위해 처리 완료 후 1년(처리 전이면 접수 후 2년) 보관 후 삭제. 탈퇴해도 이 기간 동안 보관": "Los reportes se conservan 1 año tras su resolución (2 años desde el envío si no se resuelven) para combatir el abuso y luego se eliminan. Se conservan durante este período aunque se elimine la cuenta",
+  "친구 관계, 채팅 메시지, 알림, 차단 내역": "Amistades, mensajes de chat, notificaciones y lista de bloqueos",
+  "상대와 둔 끝난 대국의 수순은 상대의 대국 기록에 남지만 탈퇴한 이용자의 아이디·닉네임은 표시하지 않음": "Las jugadas de las partidas terminadas permanecen en el historial del rival, pero no se muestran el nombre de usuario ni el apodo del usuario eliminado",
+  "신고 내역(본인이 접수한 신고와 본인에 대한 신고)은 처리 완료 후 1년(처리 전이면 접수 후 2년)까지 보관 후 삭제": "Los reportes (los que enviaste y los que te mencionan) se conservan hasta 1 año tras su resolución (2 años desde el envío si no se resuelven) y luego se eliminan",
 };

@@ -11,6 +11,7 @@
 //    그대로 남았는지 확인해 하나라도 빠지면 번역을 버리고 원문을 돌려준다.
 //  · 사용자 글은 "번역할 데이터"일 뿐 지시문이 아니다 — 프롬프트에서 그렇게 못 박고, 출력은 구조화 JSON(responseSchema)으로만 받으며 길이 상한을 둔다.
 import { createHash } from "node:crypto";
+import { rateLimited } from "./_lib/server.js";
 
 const LANG_NAMES = { ko: "Korean", en: "English", es: "Spanish", hi: "Hindi", ja: "Japanese", zh: "Simplified Chinese" };
 const KINDS = new Set(["note", "bio", "content"]);   // (v0.7.5) content: 분석 탭 주요 분기점·수 추천 이유(편집자가 쓴 글)
@@ -19,7 +20,6 @@ const CACHE_DAYS = 30;
 const RATE_PER_MIN = 40;
 const GEMINI_MODEL_CANDIDATES = ["gemini-3.6-flash", "gemini-2.5-flash"];
 let cachedWorkingModel = null;
-const hits = new Map(); // uid -> [시각…] (인스턴스가 재사용되는 동안만 유지)
 
 const isModelUnavailableError = (e) => /not found|not supported|is not available|deprecated|invalid model|unknown model|no longer|unrecognized model/.test(String((e && e.message) || "").toLowerCase());
 const isTransientError = (e) => /high demand|overloaded|rate limit|too many requests|quota exceeded|resource_exhausted|try again later|503|429/.test(String((e && e.message) || "").toLowerCase());
@@ -29,13 +29,6 @@ const sha = (s) => createHash("sha256").update(s).digest("hex").slice(0, 40);
 const extras = (s) => (String(s).match(/https?:\/\/\S+|www\.\S+|@\w+/gi) || []).map((x) => x.toLowerCase()).sort().join("|");
 const tokens = (s) => (String(s).match(/⟦\d+⟧/g) || []).sort().join("");
 
-function rateLimited(uid, n = 1) {
-  const now = Date.now(), arr = (hits.get(uid) || []).filter((t) => now - t < 60000);
-  for (let i = 0; i < n; i++) arr.push(now);
-  hits.set(uid, arr);
-  if (hits.size > 2000) for (const [k, v] of hits) if (!v.some((t) => now - t < 60000)) hits.delete(k);
-  return arr.length > RATE_PER_MIN;
-}
 
 const SCHEMA = {
   type: "OBJECT",
@@ -110,7 +103,8 @@ export default async function handler(req, res) {
     if (!userRes.ok) { res.status(401).json({ error: "로그인이 만료됐어요." }); return; }
     const user = await userRes.json();
     if (!user || !user.id) { res.status(401).json({ error: "로그인이 만료됐어요." }); return; }
-    if (rateLimited(user.id, texts.length)) { res.status(429).json({ error: "잠시 후 다시 시도해 주세요." }); return; }
+    // (v0.7.7 BUG-072) 호출 제한을 인스턴스 메모리에서 DB 카운터(rate_limit_hit)로 옮겼다 — 인스턴스가 여럿이어도 함께 센다. 하루 한도도 둔다.
+    if (await rateLimited({ url: SUPABASE_URL, anon: ANON_KEY, service: SERVICE_KEY }, [["tr:u:" + user.id, RATE_PER_MIN, 60, texts.length], ["tr:ud:" + user.id, 1500, 86400, texts.length]])) { res.status(429).json({ error: "잠시 후 다시 시도해 주세요." }); return; }
 
     const sb = { apikey: SERVICE_KEY, Authorization: "Bearer " + SERVICE_KEY, "Content-Type": "application/json" };
     const hashes = texts.map((x) => sha(x.trim()));
