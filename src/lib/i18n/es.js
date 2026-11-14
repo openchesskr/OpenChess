@@ -3720,4 +3720,5 @@ export default {
   "오프닝 해금": "Aperturas desbloqueadas",
   "오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳": "Desbloquea aperturas, conoce a los maestros y colecciona títulos y skins",
   "탐색 전": "Sin explorar",
+  "입장": "Entrar",
 };

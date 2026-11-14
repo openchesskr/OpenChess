@@ -3720,4 +3720,5 @@ export default {
   "오프닝 해금": "Openings unlocked",
   "오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳": "Unlock Openings, meet Masters, and collect titles and skins",
   "탐색 전": "Not explored",
+  "입장": "Enter",
 };
