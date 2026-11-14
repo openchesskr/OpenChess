@@ -1,10 +1,6 @@
 // (v0.7.5, 사용자 요청) 도감 첫 화면 네 카드(오프닝·마스터·업적·스킨) — 사이트 공통 재료(흑단 바탕 위 아이보리 종이 패널, 갈색 잉크, 황동 칩·게이지, 나무 체스판).
 //  테마 구분은 색이 아니라 카드 속 나무 체스판 조각 위의 장면으로 한다(오프닝: 방금 둔 첫 수 · 마스터: 마주 선 두 킹 · 업적: 월계관을 쓴 퀸 · 스킨: 스킨이 다른 나이트들).
-// (v0.7.6, 사용자 요청) 레이아웃 재설계 — 레슨이 학습 탭으로 옮겨 가며 비어 버린 첫 화면을 "컬렉션 홀"로 다시 짰다.
-//  · 머리: 큰 제목 "도감" + 한 줄 설명 + 모은 것 요약 칩(오프닝 해금률·칭호·스킨·마스터 수)
-//  · 데스크톱(900px 이상): 벤토 격자 — 왼쪽 큰 오프닝 카드(두 줄 높이, 체스판이 위쪽을 채움), 오른쪽 위 넓은 마스터 카드(글 왼쪽·판 오른쪽), 오른쪽 아래 업적·스킨 타일 둘. 화면 높이에 맞춘다.
-//  · 태블릿(640~899px): 오프닝·마스터가 한 줄씩, 업적·스킨이 나란히. · 모바일: 같은 순서에 크기만 줄인다(업적·스킨은 두 칸 타일).
-//  · 카드 모양 세 가지: feature(판 위 + 글 아래, 큰 제목) · wide(글 왼쪽 + 판 오른쪽) · tile(판 위 + 글 아래, 작은 제목)
+// (v0.7.6, 사용자 요청 2차) 네 구획을 동등하게 — 같은 크기의 "진열장" 네 개(아래 Vitrine 설명). 1차안(크기가 다른 벤토 격자)은 되돌렸다.
 //  items: [{ key, label, Icon, percent(0~100|null), detail }] · summary: [{ key, label, value }]
 import { FacetLeaf, taperedStem, facetRamp } from "./facetIcons.jsx";
 import React from "react";
@@ -14,142 +10,123 @@ import { T, MOTION_EASE, PIECE_IMG_SETS } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 import { t } from "../lib/i18n.js";
 
-const LINE = "#DCCBA8", INK = "#2A1B0E", MUTED = "#7A6648", BRASS = "#A8842F", TRACK = "rgba(90,58,34,.12)";
-// 체스판 조각: 4랭크 × 5파일을 그리고, 모바일은 오른쪽 3파일만 보인다(카드 높이에 맞춰 칸 크기가 정해진다). 장면 좌표의 열 2~4가 항상 보이는 칸.
-const ROWS = 4, COLS = 5;
+const BRASS = "#A8842F";
 const img = (set, piece, color) => ((PIECE_IMG_SETS[set] || PIECE_IMG_SETS.classic).images[piece][color] || {}).src;
 
-// 테마별 장면 — 칸 좌표는 [행(위→아래), 열(왼→오)]
-const SCENES = {
-  openings: { pieces: [{ at: [1, 3], src: img("classic", "P", "w") }, { at: [0, 4], src: img("classic", "N", "b") }, { at: [0, 0], src: img("classic", "P", "b") }, { at: [3, 1], src: img("classic", "N", "w") }], moved: [[3, 3], [1, 3]] },
-  masters: { pieces: [{ at: [0, 3], src: img("classic", "K", "b") }, { at: [2, 3], src: img("classic", "K", "w") }, { at: [1, 0], src: img("classic", "P", "b") }, { at: [3, 1], src: img("classic", "R", "w") }] },
-  titles: { pieces: [{ at: [1.45, 3], src: img("classic", "Q", "w") }, { at: [3, 0], src: img("classic", "P", "w") }, { at: [0, 1], src: img("classic", "B", "b") }], laurel: 3 },
-  skins: { pieces: [{ at: [2, 2], src: img("classic", "N", "w") }, { at: [1, 3], src: img("crystal", "N", "w") }, { at: [2, 4], src: img("coral", "N", "w") }, { at: [1, 1], src: img("deco", "N", "w") }, { at: [3, 0], src: img("forest", "N", "w") }] },
-};
 const DESC = () => ({ openings: t("오프닝 수순 탐색과 해금"), masters: t("체스의 정점에 달한 선수들"), titles: t("모은 칭호와 다음 목표"), skins: t("기물·보드 세트 수집") });
 
-/** 카드 속 나무 체스판 조각. side: 카드 오른쪽에 붙고 높이를 카드에 맞춤(폭은 칸 비율). top: 카드 위쪽을 가로로 채우고 가운데를 기준으로 위아래를 잘라 보인다. */
 const LAUREL = facetRamp(T.brassHi);
-function BoardPlate({ scene, mode = "side" }) {
-  const top = mode === "top";
-  // top 모드는 판을 더 크게(8랭크 × 7파일) 깔고 장면을 가운데로 옮긴다 — 세로로 긴 칸(데스크톱 오프닝 카드)을 덮어도 칸이 지나치게 커지지 않게.
-  const R = top ? 8 : ROWS, C = top ? 7 : COLS, dr = top ? 2 : 0, dc = top ? 1 : 0;
-  const pct = (v, n) => (v / n) * 100 + "%";
-  const X = (c) => pct(c + dc, C), Y = (r) => pct(r + dr, R);
+/* ── (v0.7.6, 사용자 요청 2차) "전시실" — 네 구획을 똑같은 크기의 진열장 네 개로 나란히 세운다(데스크톱 4열 · 태블릿/모바일 2×2).
+   진열장 하나 = 위에서 내려오는 조명 · 원근 체스판 바닥 · 면 분할 받침대(왼쪽 위 빛: 윗면 밝음 · 앞면 중간 · 옆면 어두움) 위의 대표 기물 · 받침대 앞면의 로마 숫자 · 아래 황동 명판(제목·설명·진행).
+   구획마다 다른 것은 받침대 위 장면뿐이다: 오프닝 = 한 칸 나아간 백 폰과 마주 선 흑 폰 · 마스터 = 백 킹과 뒤에 선 흑 킹 · 업적 = 월계관 안의 퀸 · 스킨 = 재질이 다른 나이트 셋.
+   올리면 기물이 떠오르고 조명이 밝아지며 바닥 칸이 한 번 반짝인다(움직임 줄이기 설정이면 멈춤). 크기는 진열장 폭 기준(container query)이라 어떤 폭에서도 같은 비율. */
+const FONT_DISPLAY = "'Playfair Display','Noto Serif KR',serif";
+const NUMERAL = { openings: "I", masters: "II", titles: "III", skins: "IV" };
+// 기물: [세트, 기물, 색, 가로 위치(%), 높이(진열장 폭 대비 %), 겹침 순서, 밝기]
+const EXHIBIT = {
+  openings: [["classic", "P", "b", 66, 30, 1, 0.82], ["classic", "P", "w", 42, 44, 2, 1]],
+  masters: [["classic", "K", "b", 67, 36, 1, 0.82], ["classic", "K", "w", 41, 44, 2, 1]],
+  titles: [["classic", "Q", "w", 50, 40, 2, 1]],
+  skins: [["crystal", "N", "w", 28, 34, 1, 0.9], ["coral", "N", "w", 72, 34, 1, 0.9], ["classic", "N", "w", 50, 44, 2, 1]],
+};
+const PLINTH = facetRamp("#8A6A3E");
+function Laurel() {
   return (
-    <span aria-hidden="true" className={top ? "dexhub-plate-top" : "dexhub-plate"} style={top ? { position: "relative", display: "block", flex: 1, minHeight: 0, width: "100%", overflow: "hidden", borderBottom: "1px solid " + LINE, containerType: "size" } : { position: "relative", height: "100%", flexShrink: 0, overflow: "hidden", borderLeft: "1px solid " + LINE }}>
-    <span style={{ position: "absolute", ...(top ? { left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: "max(100cqw, " + (100 * C / R) + "cqh)" } : { top: 0, right: 0, height: "100%" }), aspectRatio: C + " / " + R, display: "grid", gridTemplateColumns: "repeat(" + C + ",1fr)", gridTemplateRows: "repeat(" + R + ",1fr)" }}>
-      {Array.from({ length: R * C }, (_, i) => <span key={i} style={{ background: (Math.floor(i / C) + (i % C) + dr + dc) % 2 === 0 ? T.boardLight : T.boardDark }} />)}
-      {/* 방금 둔 수의 출발·도착 칸 강조(황동 반투명) */}
-      {(scene.moved || []).map(([r, c], i) => <span key={"m" + i} style={{ position: "absolute", left: X(c), top: Y(r), width: pct(1, C), height: pct(1, R), background: "rgba(236,203,134,.55)", boxShadow: "inset 0 0 0 2px rgba(168,132,47,.55)" }} />)}
-      {scene.laurel && (
-        <svg viewBox="0 0 60 80" style={{ position: "absolute", left: X(scene.laurel - 0.45), top: Y(0.95), width: pct(1.9, C), height: pct(2.05, R), filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" }}>
-          {/* (v0.7.5, 사용자 요청) 파셋 규칙: 잎은 밝은 반·어두운 반, 줄기는 가늘어지는 채운 면 */}
-          {[-1, 1].map((s) => (
-            <g key={s} transform={s < 0 ? "translate(60 0) scale(-1 1)" : undefined}>
-              <path d={taperedStem(30, 76, 3, 52, 9, 20, 2.4, 0.8)} fill={LAUREL.l4} />
-              {[[9, 24], [7.5, 35], [8.5, 46], [12, 57], [18, 66]].map(([x, y], i) => {
-                const d = -120 + i * 14, r = (d * Math.PI) / 180, L = 9.6;   // 예전 타원 잎 자리·각도, 잎 끝은 위로
-                return <FacetLeaf key={i} x={x - Math.cos(r) * L / 2} y={y - Math.sin(r) * L / 2} rot={d} sz={L / 1.35} R={LAUREL} mirror={s < 0} />;
-              })}
-            </g>
-          ))}
-        </svg>
-      )}
-      {scene.pieces.map((p, i) => (
-        <img key={i} src={p.src} alt="" draggable={false} loading="lazy"
-          style={{ position: "absolute", left: X(p.at[1] + 0.12), top: Y(p.at[0] + 0.1), width: pct(0.76, C), height: pct(0.82, R), objectFit: "contain", objectPosition: "center bottom", filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))" }} />
+    <svg viewBox="0 0 60 80" aria-hidden="true" style={{ position: "absolute", left: "50%", bottom: "27cqw", width: "66cqw", transform: "translateX(-50%)", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.45))" }}>
+      {[-1, 1].map((sd) => (
+        <g key={sd} transform={sd < 0 ? "translate(60 0) scale(-1 1)" : undefined}>
+          <path d={taperedStem(30, 76, 3, 52, 9, 20, 2.4, 0.8)} fill={LAUREL.l4} />
+          {[[9, 24], [7.5, 35], [8.5, 46], [12, 57], [18, 66]].map(([x, y], k) => {
+            const d = -120 + k * 14, r = (d * Math.PI) / 180, L = 9.6;
+            return <FacetLeaf key={k} x={x - Math.cos(r) * L / 2} y={y - Math.sin(r) * L / 2} rot={d} sz={L / 1.35} R={LAUREL} mirror={sd < 0} />;
+          })}
+        </g>
       ))}
-    </span>
-    </span>
+    </svg>
   );
 }
-
-function Progress({ pct, detail }) {
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {pct != null ? (
-        <span aria-hidden="true" style={{ flex: 1, height: 5, borderRadius: 3, background: TRACK, overflow: "hidden" }}>
-          <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 3, background: "linear-gradient(90deg," + BRASS + "," + T.brassHi + ")" }} />
-        </span>
-      ) : <span style={{ flex: 1 }} />}
-      <span style={{ fontSize: 12, fontWeight: 800, color: BRASS, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{detail || ""}</span>
-      <ChevronRight className="dexhub-chev" size={16} strokeWidth={2.2} color={MUTED} aria-hidden="true" />
-    </span>
-  );
-}
-/* variant: feature(판 위·큰 제목) · wide(글 왼쪽·판 오른쪽) · tile(판 위·작은 제목) */
-function HubCard({ item, onOpen, index, desc, variant, area }) {
-  const { Icon, label, percent, detail } = item;
+function Vitrine({ item, onOpen, index, desc }) {
+  const { label, percent, detail } = item;
   const pct = percent == null ? null : Math.max(0, Math.min(100, percent));
-  const scene = SCENES[item.key] || SCENES.openings;
-  const stacked = variant !== "wide";
-  const text = (
-    <span className={"dexhub-text dexhub-text-" + variant} style={{ flex: stacked ? "0 0 auto" : 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 10 }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span aria-hidden="true" className="dexhub-chip" style={{ alignSelf: "flex-start", flexShrink: 0, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66", color: BRASS }}>
-          <Icon size={variant === "tile" ? 20 : 24} />
+  const pieces = EXHIBIT[item.key] || EXHIBIT.openings;
+  return (
+    <motion.button initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.08 * index, ease: MOTION_EASE }}
+      onClick={() => onOpen(item.key)} className="press dexv" aria-label={label + ", " + desc + (detail ? ", " + detail : "")}
+      style={{ position: "relative", display: "block", width: "100%", minWidth: 0, padding: 0, border: "none", borderRadius: 18, overflow: "hidden", cursor: "pointer", textAlign: "left", fontFamily: SITE_FONT, containerType: "inline-size" }}>
+      {/* 무대: 조명·바닥·받침대·기물 */}
+      <span aria-hidden="true" className="dexv-stage" style={{ position: "relative", display: "block", width: "100%", aspectRatio: "1 / 1.08", overflow: "hidden" }}>
+        <span className="dexv-light" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 55% at 50% 22%, rgba(255,226,160,.30), rgba(255,226,160,.06) 55%, transparent 75%)" }} />
+        <span style={{ position: "absolute", left: "18%", right: "18%", top: 0, height: "62%", background: "linear-gradient(180deg, rgba(255,230,170,.16), rgba(255,230,170,0))", clipPath: "polygon(30% 0, 70% 0, 100% 100%, 0 100%)" }} />
+        {/* 원근 체스판 바닥 */}
+        <span style={{ position: "absolute", left: "-40%", right: "-40%", bottom: "-6%", height: "52%", perspective: "60cqw", overflow: "hidden" }}>
+          <span className="dexv-floor" style={{ position: "absolute", inset: 0, transformOrigin: "50% 100%", transform: "rotateX(62deg)", backgroundImage: "repeating-conic-gradient(" + T.boardDark + " 0 25%, " + T.boardLight + " 0 50%)", backgroundSize: "18cqw 18cqw", backgroundPosition: "center bottom", opacity: 0.9,
+            maskImage: "linear-gradient(180deg, transparent, #000 45%)", WebkitMaskImage: "linear-gradient(180deg, transparent, #000 45%)" }} />
         </span>
-        <span style={{ minWidth: 0 }}>
-          <span className={"dexhub-title dexhub-title-" + variant} style={{ display: "block", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{label}</span>
-          <span className={"dexhub-desc dexhub-desc-" + variant} style={{ display: "block", marginTop: 4, fontWeight: 600, color: MUTED, lineHeight: 1.35 }}>{desc}</span>
+        {/* 받침대(면 분할: 윗면 밝음 · 앞면 · 오른쪽 옆면 어두움 · 밑단 가장 어두움) */}
+        <span style={{ position: "absolute", left: "50%", bottom: "9cqw", width: "58cqw", height: "22cqw", transform: "translateX(-50%)" }}>
+          <span style={{ position: "absolute", left: 0, right: 0, top: 0, height: "26%", background: PLINTH.l1, clipPath: "polygon(6% 0, 94% 0, 100% 100%, 0 100%)" }} />
+          <span style={{ position: "absolute", left: 0, right: "10%", top: "26%", bottom: "14%", background: "linear-gradient(180deg," + PLINTH.l2 + "," + PLINTH.l3 + ")" }} />
+          <span style={{ position: "absolute", right: 0, width: "10%", top: "26%", bottom: "14%", background: PLINTH.l4 }} />
+          <span style={{ position: "absolute", left: "-3%", right: "-3%", bottom: 0, height: "14%", background: PLINTH.base }} />
+          <span style={{ position: "absolute", left: 0, right: "10%", top: "26%", bottom: "14%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: "8cqw", letterSpacing: ".08em", color: "rgba(255,236,190,.82)", textShadow: "0 1px 0 rgba(0,0,0,.45)" }}>{NUMERAL[item.key]}</span>
+        </span>
+        {item.key === "titles" && <Laurel />}
+        <span className="dexv-pieces" style={{ position: "absolute", inset: 0 }}>
+          {pieces.map(([set, pc, color, x, h, z, b], k) => (
+            <img key={k} src={img(set, pc, color)} alt="" draggable={false} loading="lazy"
+              style={{ position: "absolute", left: x + "%", bottom: "29cqw", height: h + "cqw", transform: "translateX(-50%)", zIndex: z, filter: "brightness(" + b + ") drop-shadow(0 6px 6px rgba(0,0,0,.55))", objectFit: "contain" }} />
+          ))}
+        </span>
+        <span style={{ position: "absolute", left: "5cqw", top: "4.5cqw", fontFamily: FONT_DISPLAY, fontStyle: "italic", fontSize: "4cqw", fontWeight: 700, color: "rgba(236,203,134,.75)", letterSpacing: ".04em" }}>No. {NUMERAL[item.key]}</span>
+        <span className="dexv-glint" />
+      </span>
+      {/* 황동 명판 */}
+      <span className="dexv-plate" style={{ display: "block", padding: "3.6cqw 5cqw 4.4cqw", borderTop: "1px solid rgba(236,203,134,.35)" }}>
+        <span style={{ display: "block", fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: "max(17px, 9cqw)", lineHeight: 1.05, color: T.ivoryHi, letterSpacing: "-.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        <span style={{ display: "block", marginTop: "1.2cqw", fontSize: "max(11px, 4.6cqw)", fontWeight: 600, color: "#CDBA98", lineHeight: 1.35, minHeight: "2.7em" }}>{desc}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "2.4cqw" }}>
+          <span aria-hidden="true" style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(236,203,134,.16)", overflow: "hidden" }}>
+            {pct != null && <span style={{ display: "block", width: pct + "%", height: "100%", borderRadius: 2, background: "linear-gradient(90deg," + BRASS + "," + T.brassHi + ")" }} />}
+          </span>
+          <span style={{ fontSize: "max(11px, 4.4cqw)", fontWeight: 800, color: T.brassHi, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{detail || ""}</span>
+          <ChevronRight className="dexv-chev" size={15} color={T.brassHi} aria-hidden="true" />
         </span>
       </span>
-      <Progress pct={pct} detail={detail} />
-    </span>
-  );
-  return (
-    <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 * index, ease: MOTION_EASE }}
-      onClick={() => onOpen(item.key)} className={"press dexhub-card dexhub-" + variant} aria-label={label}
-      style={{ gridArea: area, display: "flex", flexDirection: stacked ? "column" : "row", alignItems: "stretch", width: "100%", minWidth: 0, padding: 0, textAlign: "left", borderRadius: 16, overflow: "hidden", cursor: "pointer", fontFamily: SITE_FONT, color: INK }}>
-      {stacked ? <><BoardPlate scene={scene} mode="top" />{text}</> : <>{text}<BoardPlate scene={scene} /></>}
     </motion.button>
   );
 }
 
-const VARIANT = { openings: "feature", masters: "wide", titles: "tile", skins: "tile" };
 /** items: [{ key, label, Icon, percent(0~100|null), detail }] · summary: [{ key, label, value }](머리의 요약 칩) */
 export function DexHub({ items, onOpen, summary = [] }) {
   const desc = DESC();
   return (
-    <div className="dexhub" style={{ maxWidth: 1120, margin: "0 auto" }}>
+    <div className="dexhub" style={{ maxWidth: 1180, margin: "0 auto" }}>
       <style>{`
-        .dexhub-card { background: ${T.paper}; border: 1px solid ${LINE}; box-shadow: 0 6px 18px -8px rgba(0,0,0,.55); transition: background .2s, border-color .2s, transform .2s, box-shadow .2s; }
-        .dexhub-card:hover { background: #F7EEDC; border-color: ${T.brass}; transform: translateY(-2px); box-shadow: 0 12px 26px -10px rgba(0,0,0,.6); }
-        .dexhub-card:focus-visible { outline: 2px solid ${T.brassHi}; outline-offset: 2px; }
-        .dexhub-card .dexhub-chev { transition: transform .2s; }
-        .dexhub-card:hover .dexhub-chev { transform: translateX(3px); }
-        .dexhub-grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; grid-template-areas: "openings openings" "masters masters" "titles skins"; }
-        .dexhub-feature { height: 360px; } .dexhub-wide { height: 132px; } .dexhub-tile { height: 236px; }
-        .dexhub-text { padding: 13px 14px 12px 14px; } .dexhub-text-tile { padding: 11px 12px 11px; }
-        .dexhub-chip { width: 34px; height: 34px; } .dexhub-tile .dexhub-chip { width: 30px; height: 30px; }
-        .dexhub-title-feature { font-size: 28px; } .dexhub-title-wide { font-size: 22px; } .dexhub-title-tile { font-size: 18px; }
-        .dexhub-desc { font-size: 12.5px; } .dexhub-desc-tile { font-size: 11.5px; }
-        .dexhub-plate { aspect-ratio: 3 / 4; }
-        .dexhub-sum { display: flex; gap: 8px; flex-wrap: wrap; }
-        @media (min-width: 640px) {
-          .dexhub-grid { gap: 14px; }
-          .dexhub-feature { height: 400px; } .dexhub-wide { height: 160px; } .dexhub-tile { height: 270px; }
-          .dexhub-title-feature { font-size: 32px; } .dexhub-title-wide { font-size: 28px; } .dexhub-title-tile { font-size: 22px; }
-          .dexhub-text { padding: 16px 18px 14px; } .dexhub-plate { aspect-ratio: 5 / 4; }
-        }
-        @media (min-width: 900px) {
-          .dexhub-grid { grid-template-columns: 1.2fr 1fr 1fr; grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr); grid-template-areas: "openings masters masters" "openings titles skins"; height: max(520px, calc(100dvh - 300px)); }
-          .dexhub-feature, .dexhub-wide, .dexhub-tile { height: auto; min-height: 0; }
-          .dexhub-title-feature { font-size: 38px; }
-          .dexhub-desc-feature { font-size: 14px; }
-        }
+        .dexv { background: linear-gradient(180deg, #2A1A0F 0%, #1A0F08 62%, #24160C 100%); box-shadow: 0 14px 30px -14px rgba(0,0,0,.8), inset 0 0 0 1px rgba(236,203,134,.22); transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s; }
+        .dexv:hover { transform: translateY(-4px); box-shadow: 0 22px 40px -16px rgba(0,0,0,.9), inset 0 0 0 1px rgba(236,203,134,.6); }
+        .dexv:focus-visible { outline: 2px solid ${T.brassHi}; outline-offset: 3px; }
+        .dexv .dexv-pieces { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+        .dexv:hover .dexv-pieces { transform: translateY(-2.5cqw); }
+        .dexv .dexv-light { transition: opacity .35s; opacity: .75; }
+        .dexv:hover .dexv-light { opacity: 1; }
+        .dexv .dexv-plate { background: linear-gradient(180deg, rgba(168,132,47,.16), rgba(168,132,47,.05)); }
+        .dexv .dexv-chev { transition: transform .25s; }
+        .dexv:hover .dexv-chev { transform: translateX(3px); }
+        .dexv .dexv-glint { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 40%, rgba(255,240,200,.16) 50%, transparent 60%); transform: translateX(-120%); }
+        .dexv:hover .dexv-glint { animation: dexvGlint 1.1s ease-out 1; }
+        @keyframes dexvGlint { to { transform: translateX(120%); } }
+        @media (prefers-reduced-motion: reduce) { .dexv, .dexv .dexv-pieces { transition: none; } .dexv:hover .dexv-glint { animation: none; } }
+        .dexhub-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        @media (min-width: 900px) { .dexhub-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; } }
       `}</style>
-      <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 14, flexWrap: "wrap", margin: "2px 2px 14px" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".26em", color: T.brassHi }}>COLLECTION</div>
-          <h1 style={{ margin: "2px 0 0", fontSize: 30, fontWeight: 900, color: T.ivoryHi, letterSpacing: "-.03em", lineHeight: 1.1 }}>{t("도감")}</h1>
-          <div style={{ fontSize: 12.5, color: "#C9B58C", marginTop: 4 }}>{t("오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳")}</div>
-        </div>
+      <header style={{ textAlign: "center", margin: "6px 0 18px" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontStyle: "italic", fontSize: 13, color: T.brassHi, letterSpacing: ".14em" }}>— The OpenChess Collection —</div>
+        <h1 style={{ margin: "4px 0 0", fontFamily: FONT_DISPLAY, fontSize: 34, fontWeight: 800, color: T.ivoryHi, letterSpacing: "-.01em", lineHeight: 1.1 }}>{t("도감")}</h1>
+        <div style={{ fontSize: 12.5, color: "#C9B58C", marginTop: 6 }}>{t("오프닝을 해금하고 마스터를 만나고 칭호와 스킨을 모으는 곳")}</div>
         {summary.length > 0 && (
-          <div className="dexhub-sum" role="list" aria-label={t("모은 것")}>
+          <div role="list" aria-label={t("모은 것")} style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>
             {summary.map((x) => (
-              <span key={x.key} role="listitem" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, padding: "6px 11px", borderRadius: 999, background: "rgba(236,203,134,.08)", border: "1px solid rgba(236,203,134,.28)" }}>
+              <span key={x.key} role="listitem" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, padding: "5px 11px", borderRadius: 999, background: "rgba(236,203,134,.08)", border: "1px solid rgba(236,203,134,.28)" }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#C9B58C" }}>{x.label}</span>
                 <span style={{ fontSize: 13.5, fontWeight: 900, color: T.brassHi, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{x.value}</span>
               </span>
@@ -158,7 +135,7 @@ export function DexHub({ items, onOpen, summary = [] }) {
         )}
       </header>
       <div className="dexhub-grid">
-        {items.map((it, i) => <HubCard key={it.key} item={it} onOpen={onOpen} index={i} desc={desc[it.key] || ""} variant={VARIANT[it.key] || "tile"} area={it.key} />)}
+        {items.map((it, i) => <Vitrine key={it.key} item={it} onOpen={onOpen} index={i} desc={desc[it.key] || ""} />)}
       </div>
     </div>
   );
