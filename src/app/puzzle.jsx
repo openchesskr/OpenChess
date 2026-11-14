@@ -2490,7 +2490,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-export function PuzzleTab({ onOpenLegacy, puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum }) {
+export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -3451,7 +3451,7 @@ export function PuzzleTab({ onOpenLegacy, puzzles, archivedPuzzles, solved, line
   ) : null;
   const feedNode = puzzleMode === "solve" ? (
     <SocialFeed puzzles={feed} cardProps={puzzleCardProps} creatorOf={(p) => (creatorUsernames || {})[puzzleNo(p.id)] || null} solved={solved}
-      onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenLegacy={onOpenLegacy} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
+      onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
   ) : null;
   if (socialWide) {
     return (

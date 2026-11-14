@@ -3707,4 +3707,7 @@ export default {
   "표시할 게시물 없음": "No hay publicaciones",
   "공개 퍼즐은 소셜 탭 피드에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능": "Cualquiera puede resolver los puzzles públicos desde el feed de la pestaña Social, y se pueden dar me gusta, repostear y compartir",
   "소셜 탭 맨 위 ‘일일 퍼즐’ 풀기": "Resuelve el ‘Puzzle diario’ en la parte superior de la pestaña Social",
+  "내 게시물은 리포스트할 수 없음": "No puedes repostear tu propia publicación",
+  "아직 리포스트한 게시물 없음": "Aún no hay reposts",
+  "아직 올린 게시물 없음": "Aún no hay publicaciones",
 };

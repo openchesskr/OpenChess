@@ -3707,4 +3707,7 @@ export default {
   "표시할 게시물 없음": "No posts to show",
   "공개 퍼즐은 소셜 탭 피드에서 누구나 풀 수 있고, 좋아요·리포스트·공유 가능": "Public puzzles can be solved by anyone from the Social tab feed, and can be liked, reposted and shared",
   "소셜 탭 맨 위 ‘일일 퍼즐’ 풀기": "Solve the ‘Daily puzzle’ at the top of the Social tab",
+  "내 게시물은 리포스트할 수 없음": "You can't repost your own post",
+  "아직 리포스트한 게시물 없음": "No reposts yet",
+  "아직 올린 게시물 없음": "No posts yet",
 };

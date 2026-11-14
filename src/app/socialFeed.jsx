@@ -3,16 +3,17 @@
 //  · 섞는 규칙(mixFeed, lib/socialMix.js): 퍼즐 2개마다 유산 1개. 종류 토글(전체·퍼즐·유산)로 하나만 볼 수도 있다.
 //  · 게시물 구성: 머리(프로필 원 + 이름 + 부제 + 종류 표시) → 정사각 미리보기 보드(가장자리까지) → 동작 줄(좋아요·리포스트·공유 / 오른쪽 풀기·재생) → 좋아요 수·캡션·날짜.
 //  · 화면 아래에 닿으면 10개씩 더 그린다(IntersectionObserver). 유산은 다 그리면 서버에서 다음 묶음(p_before)을 읽는다.
-import { useState, useEffect, useMemo, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useLayoutEffect, useContext } from "react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { Heart, Repeat2, Send, Play, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
+import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
 import { badgeIcon } from "../components/badges.jsx";
-import { AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, themeAccentBg, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
-import { kindOfPost } from "../lib/legacyPosts.js";
+import { kindOfPost, isSaved } from "../lib/legacyPosts.js";
+import { LegacyActionsCtx } from "./legacyFeed.jsx";
 import { LegacyFrame } from "../components/legacyFrame.jsx";
 import { legacyLikeToggle } from "./profile.jsx";
 import { mixFeed, FEED_KINDS } from "../lib/socialMix.js";
@@ -23,46 +24,74 @@ const INK = "#2A1B0E", SOFT = "#7A6648", LINE = "#D6C29A";
 const THEME_LABEL = () => ({ sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") });
 const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }) : "");
 
-/* 서버의 유산 피드(최신순) — { posts: [{ owner, id, entry, savedAt, likes, ownerInfo }], more, loadMore, liked:Set("owner|id"), setLiked, setLikes } */
-function useLegacyFeed(viewerUid, enabled) {
-  const [posts, setPosts] = useState([]), [more, setMore] = useState(true), [loading, setLoading] = useState(false);
+/* 서버 응답 한 줄 → 유산 게시물 { owner, id, entry, kind, likes, reposts, at, ownerInfo } (모양이 틀리면 null). 피드·프로필 소셜 섹션이 같이 쓴다. */
+export function legacyItemFrom(x, owners, at) {
+  if (!x || !x.owner || !x.id) return null;
+  const entry = normalizeLegacyEntry(x.entry);
+  const kind = entry ? kindOfPost(x.id, entry) : null;
+  if (!entry || !kind) return null;
+  const when = at != null ? at : (x.savedAt || entry.savedAt || null);
+  return { owner: x.owner, id: x.id, entry: { ...entry, savedAt: x.savedAt || entry.savedAt || null }, kind, likes: x.likes || 0, reposts: x.reposts || 0, at: when, savedAt: x.savedAt || entry.savedAt || null, ownerInfo: (owners && owners[x.owner]) || {} };
+}
+const keyOf = (p) => p.owner + "|" + p.id;
+/* 유산 게시물의 좋아요·리포스트 상태 — 내가 누른 좋아요(서버 legacy_likes), 리포스트(내 리포스트함 = LegacyActionsCtx.saved), 숫자는 서버 값 + 이번에 바꾼 값.
+   리포스트는 내 리포스트함과 서버 집계(legacy_repost_toggle)를 함께 바꾼다(legacyFeed.jsx doRepost와 같은 순서). 내 게시물은 리포스트할 수 없다. */
+export function useLegacyActions(viewerUid, posts) {
+  const ctx = useContext(LegacyActionsCtx);
   const [liked, setLiked] = useState(() => new Set());
+  const [likes, setLikes] = useState({}), [reposts, setReposts] = useState({});
+  const ownersKey = [...new Set((posts || []).map((p) => p.owner))].sort().join(",");
+  useEffect(() => {
+    if (!SB_ON || !viewerUid || !ownersKey) return undefined;
+    let off = false;
+    const ids = ownersKey.split(",").slice(0, 60);
+    sbSelect("legacy_likes?uid=eq." + encodeURIComponent(viewerUid) + "&owner_uid=in.(" + ids.map(encodeURIComponent).join(",") + ")&select=owner_uid,slot_key")
+      .then((rows) => { if (!off) setLiked((s) => { const n = new Set(s); (rows || []).forEach((x) => n.add(x.owner_uid + "|" + x.slot_key)); return n; }); }).catch(() => {});
+    return () => { off = true; };
+  }, [viewerUid, ownersKey]);
+  const likeCount = (p) => (keyOf(p) in likes ? likes[keyOf(p)] : p.likes || 0);
+  const repostCount = (p) => (keyOf(p) in reposts ? reposts[keyOf(p)] : p.reposts || 0);
+  const isReposted = (p) => !!(ctx && isSaved(ctx.saved, p.owner, p.id));
+  const toggleLike = viewerUid ? async (p) => {
+    const k = keyOf(p), was = liked.has(k), base = likeCount(p);
+    setLiked((s) => { const n = new Set(s); if (was) n.delete(k); else n.add(k); return n; });
+    setLikes((m) => ({ ...m, [k]: Math.max(0, base + (was ? -1 : 1)) }));
+    const r = await legacyLikeToggle(p.owner, p.id, viewerUid);
+    if (!r) { setLiked((s) => { const n = new Set(s); if (was) n.add(k); else n.delete(k); return n; }); setLikes((m) => ({ ...m, [k]: base })); return; }
+    setLiked((s) => { const n = new Set(s); if (r.liked) n.add(k); else n.delete(k); return n; });
+    setLikes((m) => ({ ...m, [k]: r.likes }));
+  } : null;
+  const canRepost = (p) => !!(viewerUid && ctx && ctx.toggleSave && p.owner !== viewerUid);
+  const toggleRepost = async (p) => {
+    if (!canRepost(p)) return;
+    const k = keyOf(p), was = isReposted(p), base = repostCount(p);
+    ctx.toggleSave({ owner: p.owner, ownerName: p.ownerInfo.username || "", id: p.id, entry: p.entry });
+    setReposts((m) => ({ ...m, [k]: Math.max(0, base + (was ? -1 : 1)) }));
+    const call = async () => { try { const r = await sbRpc("legacy_repost_toggle", { p_owner_uid: p.owner, p_slot_key: p.id }); const row = Array.isArray(r) ? r[0] : r; return row ? { reposted: !!row.reposted, reposts: row.reposts || 0 } : null; } catch { return null; } };
+    let r = await call();
+    if (r && r.reposted === was) r = await call();   // 서버와 어긋나 있었으면 한 번 더 눌러 맞춘다
+    if (r) setReposts((m) => ({ ...m, [k]: r.reposts }));
+  };
+  return { liked, likeCount, repostCount, isReposted, canRepost, toggleLike, toggleRepost, openPost: ctx && ctx.openPost, removeMine: ctx && ctx.removeMine };
+}
+/* 서버의 유산 피드(최신순) — { posts, more, loading, loadMore } */
+function useLegacyFeed(enabled) {
+  const [posts, setPosts] = useState([]), [more, setMore] = useState(true), [loading, setLoading] = useState(false);
   const busy = useRef(false);
   const load = async (before) => {
     if (!SB_ON || busy.current) return;
     busy.current = true; setLoading(true);
     try {
       const r = await sbRpc("social_legacy_feed", { p_limit: 24, p_before: before == null ? null : before });
-      const owners = (r && r.owners) || {};
-      const got = ((r && r.posts) || []).map((x) => {
-        const entry = normalizeLegacyEntry(x.entry);
-        const kind = entry ? kindOfPost(x.id, entry) : null;
-        return entry && kind ? { owner: x.owner, id: x.id, entry: { ...entry, savedAt: x.savedAt || entry.savedAt || null }, kind, likes: x.likes || 0, savedAt: x.savedAt || null, ownerInfo: owners[x.owner] || {} } : null;
-      }).filter(Boolean);
-      setPosts((prev) => { const seen = new Set(prev.map((p) => p.owner + "|" + p.id)); return [...prev, ...got.filter((p) => !seen.has(p.owner + "|" + p.id))]; });
+      const got = ((r && r.posts) || []).map((x) => legacyItemFrom(x, r && r.owners)).filter(Boolean);
+      setPosts((prev) => { const seen = new Set(prev.map(keyOf)); return [...prev, ...got.filter((p) => !seen.has(keyOf(p)))]; });
       setMore(((r && r.posts) || []).length >= 24);
-      if (viewerUid && got.length) {
-        const ownersIn = [...new Set(got.map((p) => p.owner))].slice(0, 40);
-        try {
-          const rows = await sbSelect("legacy_likes?uid=eq." + encodeURIComponent(viewerUid) + "&owner_uid=in.(" + ownersIn.map(encodeURIComponent).join(",") + ")&select=owner_uid,slot_key");
-          setLiked((s) => { const n = new Set(s); (rows || []).forEach((x) => n.add(x.owner_uid + "|" + x.slot_key)); return n; });
-        } catch { /* 좋아요 표시 없이 진행 */ }
-      }
     } catch { setMore(false); }
     busy.current = false; setLoading(false);
   };
-  useEffect(() => { setPosts([]); setMore(true); setLiked(new Set()); if (enabled) load(null); }, [viewerUid, enabled]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPosts([]); setMore(true); if (enabled) load(null); }, [enabled]);   // eslint-disable-line react-hooks/exhaustive-deps
   const loadMore = () => { if (!more || loading || !posts.length) return; const last = posts[posts.length - 1].savedAt; if (!last) { setMore(false); return; } load(last); };   // 저장 시각이 없는 옛 유산까지 왔으면 끝
-  const toggleLike = viewerUid ? async (post) => {
-    const k = post.owner + "|" + post.id, was = liked.has(k);
-    setLiked((s) => { const n = new Set(s); if (was) n.delete(k); else n.add(k); return n; });
-    setPosts((ps) => ps.map((p) => (p.owner === post.owner && p.id === post.id ? { ...p, likes: Math.max(0, p.likes + (was ? -1 : 1)) } : p)));
-    const r = await legacyLikeToggle(post.owner, post.id, viewerUid);
-    if (!r) { setLiked((s) => { const n = new Set(s); if (was) n.add(k); else n.delete(k); return n; }); setPosts((ps) => ps.map((p) => (p.owner === post.owner && p.id === post.id ? { ...p, likes: Math.max(0, p.likes + (was ? 1 : -1)) } : p))); return; }
-    setLiked((s) => { const n = new Set(s); if (r.liked) n.add(k); else n.delete(k); return n; });
-    setPosts((ps) => ps.map((p) => (p.owner === post.owner && p.id === post.id ? { ...p, likes: r.likes } : p)));
-  } : null;
-  return { posts, more, loading, loadMore, liked, toggleLike };
+  return { posts, more, loading, loadMore };
 }
 
 function useSquareWidth() {
@@ -77,23 +106,23 @@ function useSquareWidth() {
   return [ref, w];
 }
 
-/* 프로필 원 — 사진이 있으면 사진, 없으면 첫 글자. ring: 게시물 종류 색 고리(인스타그램 스토리 고리처럼) */
-function Avatar({ name, photo, ring }) {
+/* 프로필 원 — 사진이 있으면 사진, 없으면 아이디 첫 글자. (v0.7.6 사용자 요청) 바깥 색 고리는 없앴다. */
+function Avatar({ name, photo }) {
   return (
-    <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: "50%", padding: 2, background: ring, flexShrink: 0, display: "inline-flex" }}>
-      <span style={{ width: "100%", height: "100%", borderRadius: "50%", border: "2px solid " + T.ivoryHi, overflow: "hidden", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#241509", fontSize: 13, fontWeight: 900 }}>
-        {photo ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (name || "?").slice(0, 1).toUpperCase()}
-      </span>
+    <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: "linear-gradient(180deg," + T.brass + ",#A8842F)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#241509", fontSize: 13, fontWeight: 900 }}>
+      {photo ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (name || "?").slice(0, 1).toUpperCase()}
     </span>
   );
 }
-const actBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minWidth: 36, height: 36, background: "none", border: "none", cursor: "pointer", padding: 0 };
+const actBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minWidth: 36, height: 36, padding: "0 6px", background: "none", border: "none", cursor: "pointer" };
+// (v0.7.6 사용자 요청) 숫자는 따로 줄을 두지 않고 아이콘 바로 옆에 숫자만
+const Num = ({ n, color }) => <span style={{ fontSize: 13, fontWeight: 800, color: color || INK, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{n || 0}</span>;
 const ctaBtn = { display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 10, border: "none", background: T.ebony2, color: T.brassHi, fontSize: 12.5, fontWeight: 800, fontFamily: SITE_FONT, cursor: "pointer" };
 
 /* 게시물 틀(공용) */
 function PostShell({ head, media, actions, children, onOpen, label }) {
   return (
-    <article aria-label={label} style={{ background: T.ivoryHi, borderRadius: 16, border: "1px solid " + LINE, boxShadow: "0 3px 0 #B59A6E", overflow: "hidden" }}>
+    <article aria-label={label} style={{ contain: "inline-size", minWidth: 0, background: T.ivoryHi, borderRadius: 16, border: "1px solid " + LINE, boxShadow: "0 3px 0 #B59A6E", overflow: "hidden" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>{head}</header>
       <div onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} className="press" style={{ cursor: "pointer" }}>{media}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 8px 0" }}>{actions}</div>
@@ -117,7 +146,7 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
   return (
     <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen}
       head={<>
-        <button type="button" onClick={() => creator && onOpenProfile && onOpenProfile(creator)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: creator ? "pointer" : "default", display: "inline-flex" }}><Avatar name={creator || "O"} ring={themeAccentBg(themes)} /></button>
+        <button type="button" onClick={() => creator && onOpenProfile && onOpenProfile(creator)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: creator ? "pointer" : "default", display: "inline-flex" }}><Avatar name={creator || "O"} /></button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creator || "OpenChess"}</div>
           <div style={{ fontSize: 11, color: SOFT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opening}</div>
@@ -129,14 +158,13 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
           : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
       </div>}
       actions={<>
-        {onToggleLike && <button type="button" onClick={() => onToggleLike(p.id)} aria-label={t("좋아요")} aria-pressed={!!isLiked} className="press" style={actBtn}><Heart size={24} color={isLiked ? "#D9534F" : INK} fill={isLiked ? "#D9534F" : "none"} /></button>}
-        {onToggleRepost && <button type="button" onClick={() => onToggleRepost(p.id)} aria-label={t("리포스트")} aria-pressed={!!isReposted} className="press" style={actBtn}><Repeat2 size={25} color={isReposted ? T.brilliant : INK} /></button>}
-        {onShare && <button type="button" onClick={() => onShare(p)} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /></button>}
+        <button type="button" onClick={onToggleLike ? () => onToggleLike(p.id) : undefined} disabled={!onToggleLike} aria-label={t("좋아요")} aria-pressed={!!isLiked} className="press" style={actBtn}><Heart size={24} color={isLiked ? "#D9534F" : INK} fill={isLiked ? "#D9534F" : "none"} /><Num n={likeCount} color={isLiked ? "#D9534F" : INK} /></button>
+        <button type="button" onClick={onToggleRepost ? () => onToggleRepost(p.id) : undefined} disabled={!onToggleRepost} aria-label={t("리포스트")} aria-pressed={!!isReposted} className="press" style={actBtn}><Repeat2 size={25} color={isReposted ? T.brilliant : INK} /><Num n={repostCount} color={isReposted ? T.brilliant : INK} /></button>
+        <button type="button" onClick={onShare ? () => onShare(p) : undefined} disabled={!onShare} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /><Num n={shareCount} /></button>
         <span style={{ flex: 1 }} />
         <LineStars total={3} solved={stars} />
         <button type="button" onClick={onOpen} className="press" style={{ ...ctaBtn, marginLeft: 8 }}>{isSolved ? t("다시 풀기") : t("풀기")}</button>
       </>}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: INK }}>{t("좋아요 {0}개", likeCount || 0)}{repostCount ? " · " + t("리포스트 {0}회", repostCount) : ""}{shareCount ? " · " + t("공유 {0}회", shareCount) : ""}</div>
       <div style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}><b style={{ fontWeight: 900 }}>{creator || "OpenChess"}</b> {livePuzzleName(p) || opening}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
         <GamePhaseBadge p={p} compact />
@@ -147,16 +175,19 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
   );
 }
 
-export function LegacyPost({ post, liked, onLike, onOpen, onOpenProfile }) {
+export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const [ref, w] = useSquareWidth();
   const { entry, kind, ownerInfo } = post;
   const info = LEGACY_TYPES.find((x) => x.key === kind);
-  const name = ownerInfo.nickname || ownerInfo.username || "";
+  const name = ownerInfo.username || "";   // (v0.7.6 사용자 요청) 닉네임 대신 아이디
   const before = useMemo(() => entry.sans.slice(0, entry.moveIndex), [entry]);
+  const open = () => { if (ownerInfo.mid && A.openPost) A.openPost({ mid: ownerInfo.mid, id: post.id }); };
+  const liked = A.liked.has(post.owner + "|" + post.id), reposted = A.isReposted(post), canRepost = A.canRepost(post);
+  const [armed, setArmed] = useState(false);
   return (
-    <PostShell label={t("유산 {0}", legacyMoveLabel(entry))} onOpen={onOpen}
+    <PostShell label={t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
       head={<>
-        <button type="button" onClick={() => ownerInfo.username && onOpenProfile && onOpenProfile(ownerInfo.username)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}><Avatar name={name} photo={ownerInfo.photo} ring="linear-gradient(135deg,#F3D27A,#B8862E 55%,#20324D)" /></button>
+        <button type="button" onClick={() => ownerInfo.username && onOpenProfile && onOpenProfile(ownerInfo.username)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}><Avatar name={name} photo={ownerInfo.photo} /></button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
           <div style={{ fontSize: 11, color: SOFT }}>{t("유산")} · {info ? info.label : ""}</div>
@@ -172,12 +203,13 @@ export function LegacyPost({ post, liked, onLike, onOpen, onOpenProfile }) {
         </div>
       </div>}
       actions={<>
-        {onLike && <button type="button" onClick={onLike} aria-label={t("좋아요")} aria-pressed={!!liked} className="press" style={actBtn}><Heart size={24} color={liked ? "#D9534F" : INK} fill={liked ? "#D9534F" : "none"} /></button>}
-        <button type="button" onClick={onOpen} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /></button>
+        <button type="button" onClick={A.toggleLike ? () => A.toggleLike(post) : undefined} disabled={!A.toggleLike} aria-label={t("좋아요")} aria-pressed={liked} className="press" style={actBtn}><Heart size={24} color={liked ? "#D9534F" : INK} fill={liked ? "#D9534F" : "none"} /><Num n={A.likeCount(post)} color={liked ? "#D9534F" : INK} /></button>
+        <button type="button" onClick={canRepost ? () => A.toggleRepost(post) : undefined} disabled={!canRepost} title={!canRepost && post.owner && isOwn ? t("내 게시물은 리포스트할 수 없음") : undefined} aria-label={t("리포스트")} aria-pressed={reposted} className="press" style={actBtn}><Repeat2 size={25} color={reposted ? T.brilliant : INK} /><Num n={A.repostCount(post)} color={reposted ? T.brilliant : INK} /></button>
+        <button type="button" onClick={open} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /></button>
         <span style={{ flex: 1 }} />
-        <button type="button" onClick={onOpen} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
+        {isOwn && A.removeMine && <button type="button" onClick={() => { if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 2600); return; } A.removeMine(post.id); }} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ ...actBtn, color: armed ? T.blunder : SOFT, fontSize: 11.5, fontWeight: 800 }}><Trash2 size={18} color={armed ? T.blunder : SOFT} />{armed ? t("한 번 더 누르면 삭제") : null}</button>}
+        <button type="button" onClick={open} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
       </>}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: INK }}>{t("좋아요 {0}개", post.likes || 0)}</div>
       <div style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}><b style={{ fontWeight: 900 }}>{name}</b> <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</div>
       <div style={{ fontSize: 11, color: SOFT }}>{fmtDate(post.savedAt)}</div>
     </PostShell>
@@ -185,9 +217,10 @@ export function LegacyPost({ post, liked, onLike, onOpen, onOpenProfile }) {
 }
 
 /* puzzles: 정렬·필터가 끝난 퍼즐 목록, cardProps(p): PuzzleCard와 같은 좋아요·리포스트·공유 속성, creatorOf(p): 만든 사람 아이디
-   onOpenPuzzle(p), onOpenLegacy({ mid, id }), onOpenProfile(username) */
-export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle, viewerUid, onOpenLegacy, onOpenProfile, kind, setKind }) {
-  const lf = useLegacyFeed(viewerUid, kind !== "puzzle");
+   onOpenPuzzle(p), onOpenProfile(username). 유산 열기·리포스트함은 LegacyActionsCtx(App)에서 받는다. */
+export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle, viewerUid, onOpenProfile, kind, setKind }) {
+  const lf = useLegacyFeed(kind !== "puzzle");
+  const la = useLegacyActions(viewerUid, lf.posts);
   const items = useMemo(() => mixFeed(puzzles, lf.posts, kind), [puzzles, lf.posts, kind]);
   const [shown, setShown] = useState(PAGE);
   useEffect(() => { setShown(PAGE); }, [kind]);
@@ -221,8 +254,7 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
             <FadeIn key={it.key} index={i % PAGE} lift>
               {it.type === "puzzle"
                 ? <PuzzlePost p={it.p} creator={creatorOf(it.p)} isSolved={solved.has(it.p.id)} onOpen={() => onOpenPuzzle(it.p)} onOpenProfile={onOpenProfile} {...cardProps(it.p)} />
-                : <LegacyPost post={it.post} liked={lf.liked.has(it.post.owner + "|" + it.post.id)} onLike={lf.toggleLike ? () => lf.toggleLike(it.post) : null}
-                    onOpen={() => it.post.ownerInfo.mid && onOpenLegacy && onOpenLegacy({ mid: it.post.ownerInfo.mid, id: it.post.id })} onOpenProfile={onOpenProfile} />}
+                : <LegacyPost post={it.post} actions={la} onOpenProfile={onOpenProfile} isOwn={!!viewerUid && it.post.owner === viewerUid} />}
             </FadeIn>
           ))}
         </div>
@@ -230,5 +262,56 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
       <div ref={sentinel} style={{ height: 1 }} />
       {lf.loading && list.length > 0 && <div style={{ textAlign: "center", color: T.inkSoft, fontSize: 12, padding: 12 }}>{t("불러오는 중…")}</div>}
     </div>
+  );
+}
+
+/* (v0.7.6, 사용자 요청) /user 프로필의 "소셜" 섹션 — "게시물"(그 사람이 만든 퍼즐 + 유산, 종류 구분 없이 최신순)과 "리포스트"(퍼즐·유산, 리포스트한 최신순).
+   서버 social_profile(p_uid) 한 번으로 두 목록을 받는다. 카드는 소셜 탭 피드와 같은 게시물 카드를 가로로 넘겨 본다.
+   pz: 퍼즐 카드 속성 묶음 { mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle } */
+export function ProfileSocial({ ownerUid, viewerUid, onOpenProfile, pz = {} }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    if (!SB_ON || !ownerUid) { setData({ posts: [], reposts: [] }); return undefined; }
+    let off = false; setData(null);
+    sbRpc("social_profile", { p_uid: ownerUid }).then((r) => {
+      if (off) return;
+      const owners = (r && r.owners) || {};
+      const conv = (x) => (x && x.type === "puzzle" && x.puzzle && x.puzzle.id ? { type: "puzzle", key: "p:" + x.puzzle.id, p: x.puzzle, creator: x.creator || null, at: x.at, likes: x.likes || 0, reposts: x.reposts || 0, shares: x.shares || 0 }
+        : x && x.type === "legacy" ? (() => { const post = legacyItemFrom(x, owners, x.at); return post ? { type: "legacy", key: "l:" + post.owner + ":" + post.id, post } : null; })() : null);
+      setData({ posts: ((r && r.posts) || []).map(conv).filter(Boolean), reposts: ((r && r.reposts) || []).map(conv).filter(Boolean) });
+    }).catch(() => { if (!off) setData({ posts: [], reposts: [] }); });
+    return () => { off = true; };
+  }, [ownerUid]);
+  const legacyPosts = useMemo(() => (data ? [...data.posts, ...data.reposts].filter((x) => x.type === "legacy").map((x) => x.post) : []), [data]);
+  const la = useLegacyActions(viewerUid, legacyPosts);
+  const card = (it) => {
+    if (it.type === "legacy") return <LegacyPost post={it.post} actions={la} onOpenProfile={onOpenProfile} isOwn={!!viewerUid && it.post.owner === viewerUid} />;
+    const p = it.p, no = puzzleNo(p.id);
+    const num = (map, fb) => (map && map[no] != null ? map[no] : fb);
+    return <PuzzlePost p={p} creator={it.creator} isSolved={pz.mySolved ? pz.mySolved.has(p.id) : false} solvedTags={pz.myLineSolves ? pz.myLineSolves[p.id] : null}
+      onOpen={() => pz.onOpenPuzzle && pz.onOpenPuzzle(p)} onOpenProfile={onOpenProfile}
+      isLiked={pz.likedPuzzles ? pz.likedPuzzles.has(p.id) : false} likeCount={num(pz.likeCounts, it.likes)} onToggleLike={pz.onToggleLike}
+      isReposted={pz.repostedPuzzles ? pz.repostedPuzzles.has(p.id) : false} repostCount={num(pz.repostCounts, it.reposts)} onToggleRepost={pz.onToggleRepost}
+      shareCount={num(pz.shareCounts, it.shares)} onShare={pz.onShare} />;
+  };
+  const row = (title, list, empty) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 900, color: T.ink }}>{title}</span>
+        {list && <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkSoft, fontFamily: SITE_FONT }}>{list.length}</span>}
+      </div>
+      {!list ? <div style={{ fontSize: 12, color: T.inkSoft }}>{t("불러오는 중…")}</div>
+        : !list.length ? <div style={{ fontSize: 12, color: T.inkSoft, padding: "14px 12px", borderRadius: 12, border: "1px dashed #C9B58C" }}>{empty}</div>
+        : <div className="profile-social-row" style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, scrollSnapType: "x proximity", WebkitOverflowScrolling: "touch" }}>
+            {list.map((it) => <div key={it.key} style={{ flex: "0 0 min(300px, 82%)", minWidth: 0, scrollSnapAlign: "start" }}>{card(it)}</div>)}
+          </div>}
+    </div>
+  );
+  return (
+    <section aria-label={t("소셜")} style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 900, color: T.ink, marginBottom: 10 }}>{t("소셜")}</div>
+      {row(t("게시물"), data && data.posts, t("아직 올린 게시물 없음"))}
+      {row(t("리포스트"), data && data.reposts, t("아직 리포스트한 게시물 없음"))}
+    </section>
   );
 }

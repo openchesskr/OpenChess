@@ -36,7 +36,7 @@ else {
     if (/^_/.test(n) || ["pvp_finish_verified", "email_for_username", "rate_limit_hit", "handle_new_user"].includes(n)) problems.push("`" + n + "`는 서버 전용·내부 함수인데 브라우저 허용 목록에 있다");
   }
   // 4) 행위자 uid 인자 금지 — 대상 uid를 받는 읽기 함수만 예외
-  const TARGET_READ_OK = new Set(["profile_recent_games", "profile_rank", "is_content_editor"]);
+  const TARGET_READ_OK = new Set(["profile_recent_games", "profile_rank", "is_content_editor", "social_profile"]);   // (v0.7.6) social_profile: 대상 프로필의 공개 게시물·리포스트 읽기(stable, 쓰기 없음, 비공개 퍼즐은 auth.uid() 본인만)
   for (const n of allowed) {
     const d = defs.get(n);
     if (d && d.definer && /\bp_(uid|user_uid|user_id|actor|actor_uid|me)\b/.test(d.args) && !TARGET_READ_OK.has(n))

@@ -138,7 +138,7 @@ function useRepostCounts(ownerUids) {
   return [counts, setCounts];
 }
 /* 리포스트 토글 — 내 리포스트함(로컬 목록)을 바꾸고 서버 집계도 맞춘다. 서버와 어긋나 있었으면 한 번 더 눌러 맞춘다. */
-async function doRepost(ctx, { owner, ownerName, id, entry }, was, setCounts) {
+export async function doRepost(ctx, { owner, ownerName, id, entry }, was, setCounts) {
   ctx.toggleSave({ owner, ownerName, id, entry });
   let r = await legacyRepostToggle(owner, id);
   if (r && r.reposted === was) r = await legacyRepostToggle(owner, id);
