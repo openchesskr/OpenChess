@@ -1461,12 +1461,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
       {dexView !== "hub" && <DexSectionNav items={hubItems} current={dexView} onOpen={selectDexView} />}
             {dexView === "hub" ? (
         // (v0.7.6, 사용자 요청) 레슨은 학습 탭으로 옮겼다 — 도감 첫 화면은 카드만.
-        <DexHub items={hubItems} onOpen={selectDexView} summary={[
-          ...(unlockStats && unlockStats.total ? [{ key: "op", label: t("오프닝 해금"), value: ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" }] : []),
-          { key: "ti", label: t("칭호"), value: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
-          { key: "sk", label: t("스킨"), value: ownedSkinN + "/" + totalSkins },
-          { key: "ma", label: t("마스터"), value: fmtFull(masterPlayerCount()) },
-        ]} />
+        <DexHub items={hubItems} onOpen={selectDexView} />
       ) : dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (
