@@ -6,12 +6,13 @@ import { motion } from "framer-motion";
 import { OC_EASE } from "../components/motionKit.jsx";
 import { isLite } from "../lib/perfMode.js";
 import { Search } from "../components/ocIcons.jsx";
-import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, ReportStrip } from "./growthMotion.jsx";
+import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, CountUpFrom0, ReportStrip } from "./growthMotion.jsx";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { OnlineDot, Board, useNarrow } from "./common.jsx";
+import { OnlineDot, Board, useNarrow, fmtFull } from "./common.jsx";
 import { explainMistake } from "../lib/mistakeWhy.js";
 import { GROWTH_RECENT_GAMES, recordOf } from "../lib/recentGames.js";
+import { recentPerformance, RECENT_PERF_MIN_GAMES } from "../lib/recentPerformance.js";
 import { ensureReview, cachedReviewOf, reviewKeyOf } from "./autoReview.js";
 import { analyzeGame, buildGrowth, classifyPending, loadCauseCache, saveCauseCache, betterMoves, phaseLabel, causeLabel, causeAdvice, causeWhat, causeWhy, causeFix, splitSteps, pieceLabel, actionLabel, PHASES, MIN_PHASE_GAMES, MIN_TYPE_MOVES } from "../lib/growthAnalysis.js";
 import { boardFromSans, moveNumber } from "../lib/chessRules.js";
@@ -22,6 +23,7 @@ import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import UgcText from "../components/UgcText.jsx";
 import { styleFeatures, retreatStats, RETREAT_GAMES_APP, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
@@ -233,7 +235,7 @@ function MasterStyle({ games, bare }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SimRing pct={Math.round(picked.sim * 100)} size={50} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} <MasterNameLink name={picked.name}>{masterName(picked.name, "en")}</MasterNameLink></div>
             <div style={{ fontSize: 11, color: "#CDBA98", marginTop: 2, lineHeight: 1.4 }}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)}</div>
             <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginTop: 1 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
           </div>
@@ -413,8 +415,29 @@ function MoveCard({ m, onReview, noBoard }) {
   );
 }
 
-/* 요약 히어로 — 핵심 숫자 세 개(평균 정확도·최근 변화·가장 약한 구간)를 타일로, 그 아래에 성장 곡선을 한 패널에 담는다. */
-function Overview({ g, onReview }) {
+/* (v0.7.6, 사용자 요청) 퍼포먼스 레이팅 — /user 프로필(최근 10판)에서 옮겨 와, 성장 분석이 자동 리뷰한 최근 5판의 수를 합산한다(src/lib/recentPerformance.js).
+   한 판의 값은 오차가 커서 보여 주지 않는다. 합산할 판이 RECENT_PERF_MIN_GAMES보다 적으면(짧은 대국·분석 실패) "–"와 안내만. */
+function PerfHero({ perf, games }) {
+  const lab = { fontSize: 11, fontWeight: 800, color: "#CDBA98", lineHeight: 1.25, letterSpacing: "-.01em" };
+  const note = { fontSize: 10.5, color: "#A8987C", lineHeight: 1.35, marginTop: 3 };
+  return (
+    <StatPop i={0} style={{ borderRadius: 14, background: "linear-gradient(100deg,rgba(236,203,134,.14),rgba(236,203,134,.04) 70%)", border: "1px solid rgba(236,203,134,.28)", padding: "12px 13px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={lab}>{t("퍼포먼스 레이팅")}</div>
+        <div style={note}>
+          {perf ? <>{t("최근 {0}판 기준", perf.games)}{perf.provisional ? " · " + t("보정 전 임시 수치") : ""}</> : t("리뷰한 대국이 {0}판 이상 쌓이면 표시 (현재 {1}판)", RECENT_PERF_MIN_GAMES, games)}
+        </div>
+        <div style={{ ...note, marginTop: 2 }}>{t("상대 레이팅과 무관하게 둔 수의 질만으로 계산")}</div>
+      </div>
+      <div style={{ flexShrink: 0, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums", fontSize: 32, fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1, color: perf ? T.brassHi : "#A8987C" }}>
+        {perf ? <CountUpFrom0 value={Math.round(perf.rating)} format={(n) => fmtFull(Math.round(n))} /> : "–"}
+      </div>
+    </StatPop>
+  );
+}
+
+/* 요약 히어로 — 퍼포먼스 레이팅 한 줄(v0.7.6), 핵심 숫자 세 개(평균 정확도·최근 변화·가장 약한 구간)를 타일로, 그 아래에 성장 곡선을 한 패널에 담는다. */
+function Overview({ g, onReview, perf }) {
   const d = g.trend.delta, up = d != null && d >= 0.5, down = d != null && d <= -0.5;
   const wk = g.weakPhase ? g.phases.find((p) => p.key === g.weakPhase.key) : null;
   // (v0.7.4, 사용자 요청: UI·폰트 정리) 세 타일 모두 같은 구조 — 한 줄 라벨 · 숫자(굵은 기본 글꼴, 같은 높이·밑줄 정렬) · 보조 문구. 숫자 글꼴은 세리프를 버리고 사이트 기본 글꼴의 고정폭 숫자.
@@ -428,13 +451,14 @@ function Overview({ g, onReview }) {
   return (
     <div style={{ padding: "0 16px 14px" }}>
       <div style={{ ...darkPanel, marginBottom: 0, padding: 12 }}>
+        <PerfHero perf={perf ? perf.value : null} games={perf ? perf.games : 0} />
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr)", gap: 8 }}>
-          <StatPop i={0} style={tile}>
+          <StatPop i={1} style={tile}>
             <div style={lab}>{t("평균 정확도")}</div>
             <div style={{ ...row, color: T.ivoryHi }}><span style={big}><CountDec value={g.avgAcc} /></span><span style={unit}>%</span></div>
             <div style={note}>{t("최근 {0}판 기준", g.n)}</div>
           </StatPop>
-          <StatPop i={1} style={tile}>
+          <StatPop i={2} style={tile}>
             <div style={lab}>{t("최근 변화")}</div>
             <div style={{ ...row, color: dc }}>
               {d != null && <span style={{ fontSize: 11, marginRight: 3, alignSelf: "center" }}>{up ? "▲" : down ? "▼" : "±"}</span>}
@@ -442,7 +466,7 @@ function Overview({ g, onReview }) {
             </div>
             <div style={note}>{t("최근 {0}판 기준", g.trend.k)}</div>
           </StatPop>
-          <StatPop i={2} style={tile}>
+          <StatPop i={3} style={tile}>
             <div style={lab}>{t("가장 약한 구간")}</div>
             <div style={{ ...row, whiteSpace: "normal", color: g.weakPhase ? "#FFB066" : T.ivoryHi }}><span style={{ ...big, fontSize: g.weakPhase && phaseLabel(g.weakPhase.key).length > 7 ? 14 : 18, letterSpacing: "-.02em", lineHeight: 1.1, wordBreak: "keep-all" }}>{g.weakPhase ? phaseLabel(g.weakPhase.key) : "–"}</span></div>
             <div style={note}>{wk && wk.acc != null ? t("정확도 {0}%", wk.acc.toFixed(1)) : "\u00A0"}</div>
@@ -766,7 +790,7 @@ function MistakeLog({ g, onReview, bare }) {
 /* 학습 탭의 성장 분석 — 맨 위 프로필 헤더, 그 아래는 리뷰 5판 게이트(미달) 또는 분석 본문(달성: 요약·성장 곡선·고칠 한 가지·구간 진단·실수 원인·수 유형·아쉬운 수·마스터 스타일). */
 /* 최근 대국 5판을 엔진이 백그라운드에서 자동 리뷰한다 — 캐시·서버 공유 캐시에 있으면 엔진 없이, 없으면 한 판씩 분석(리뷰 화면과 같은 캐시라 나중에 열면 바로 보임).
    새 대국이 생겨 최근 5판이 바뀌면 새 판만 분석한다(항상 최신). 반환: 분석이 끝난 판의 기록 목록과 진행 상황. */
-function useAutoReview({ recent, engine, reviewSpeed, quick }) {
+function useAutoReview({ recent, engine, reviewSpeed, quick, paused }) {
   const [tick, setTick] = useState(0), [failed, setFailed] = useState(() => new Set()), [activeKey, setActiveKey] = useState(null);
   const sig = recent.map((g) => reviewKeyOf(g)).join("|");
   const ready = !!engine && engine.status === "ready";
@@ -778,7 +802,7 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
         const key = reviewKeyOf(game);
         if (!key || cachedReviewOf(game)) continue;
         setActiveKey(key);                        // (v0.7.5) 진행 화면이 지금 분석 중인 판을 보여 준다
-        if (!ready) return;                       // 엔진이 준비되면 이 효과가 다시 돈다
+        if (!ready || paused) return;             // 엔진이 준비되면(또는 화면에 보이면) 이 효과가 다시 돈다
         const r = await ensureReview(game, { engine, reviewSpeed, quick });
         if (cancelled) return;
         if (r) setTick((n) => n + 1); else setFailed((prev) => new Set(prev).add(key));
@@ -786,7 +810,7 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
       if (!cancelled) setActiveKey(null);
     })();
     return () => { cancelled = true; };
-  }, [sig, ready, reviewSpeed, quick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sig, ready, reviewSpeed, quick, paused]);   // eslint-disable-line react-hooks/exhaustive-deps
   const records = useMemo(() => recent.map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const states = {};
   for (const r of records) states[r.key] = "done";
@@ -795,14 +819,31 @@ function useAutoReview({ recent, engine, reviewSpeed, quick }) {
   return { records, done: records.length, total: recent.length, settled: recent.length > 0 && records.length + failedN >= recent.length, states, activeKey };
 }
 
+/* (v0.7.6) 학습 탭 맞춤 학습(복습·추천 레슨)용 — 엔진을 돌리지 않고, 성장 분석이 이미 리뷰해 둔(캐시) 최근 판만 모아 같은 분석(useGrowthData)을 만든다. */
+export function useCachedGrowth(recent) {
+  const sig = (recent || []).map((g) => reviewKeyOf(g)).join("|");
+  const records = useMemo(() => (recent || []).map((game) => { const key = reviewKeyOf(game), result = key ? cachedReviewOf(game) : null; return result ? recordOf(game, key, result) : null; }).filter(Boolean), [sig]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return { g: useGrowthData(records), reviewed: records.length };
+}
+export { MiniBoard, tacLabel, reviewGameOf };
+
 /* 학습 탭의 성장 분석 — 프로필의 크림색 블록 하나 안에 헤더(칭호·사진·이름·소개)와 분석 구획이 모두 들어간다. 최근 5판이 자동 분석되기 전에는 게이지 바 안내만 보인다. */
-export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, reviewSpeed, quick, onOpenGameAnalyze, onOpenGame }) {
+// (v0.7.6, 사용자 요청) 학습 탭에서 분석 탭(데스크톱: 아래쪽, 모바일: 옆으로 넘기는 2페이지)으로 옮겼다. active=false면(아직 화면에 안 보임) 엔진 자동 리뷰를 미뤄,
+// 분석 탭의 실시간 평가와 엔진 대기열을 다투지 않게 한다. 캐시에 있는 판은 그대로 보인다.
+export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, reviewSpeed, quick, onOpenGameAnalyze, onOpenGame, active = true }) {
   useEffect(() => { purgeLegacyGrowthData(); }, []);
   const need = GROWTH_RECENT_GAMES;
   const enough = recent.length >= need;
-  const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick });
+  const auto = useAutoReview({ recent: enough ? recent : [], engine, reviewSpeed, quick, paused: !active });
   const showResults = enough && auto.settled && auto.done >= 1;
   const g = useGrowthData(showResults ? auto.records : []);
+  // (v0.7.6) 퍼포먼스 레이팅: 자동 리뷰가 끝난 최근 5판(기록)을 원래 대국 객체(진영·시간 규정·레이팅)와 짝지어 합산한다.
+  const perf = useMemo(() => {
+    if (!showResults) return null;
+    const byKey = new Map(recent.map((game) => [reviewKeyOf(game), game]));
+    const items = auto.records.map((r) => ({ game: byKey.get(r.key), moves: r.result && r.result.moves })).filter((x) => x.game && Array.isArray(x.moves));
+    return { value: recentPerformance(items, GROWTH_RECENT_GAMES), games: items.length };
+  }, [showResults, auto.records]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <section aria-label={t("성장 분석")} style={{ marginBottom: 8 }}>
       <GrowthFxStyle />
@@ -817,7 +858,7 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
                 <ReportStrip n={auto.done} />
                 <SectionNav items={[["gp-sum", t("성장 요약")], ["gp-diag", t("약점 진단")], ...(g.badMoves.length ? [["gp-log", t("실수 기록")]] : []), ["gp-style", t("마스터 스타일")]]} />
                 <ThemeSection id="gp-sum" no="1" title={t("성장 요약")} desc={t("최근 대국의 정확도와 변화 흐름")}>
-                  <Overview g={g} onReview={onOpenGameAnalyze} />
+                  <Overview g={g} onReview={onOpenGameAnalyze} perf={perf} />
                 </ThemeSection>
                 <ThemeSection id="gp-diag" no="2" title={t("약점 진단")} desc={t("어느 구간에서, 어떤 원인으로, 어떤 수에서 승률을 잃는지")}>
                   <DiagnosisTabs g={g} />

@@ -82,6 +82,33 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.6 - 2026/11/14
+
+테마: 퍼즐 탭의 소셜 탭 전환(유산 포함), 학습·분석 탭 재배치와 맞춤 학습, 마스터 페이지, 수 키워드 자동 부여, 도감 첫 화면 재설계. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`play_quest_status`·`economy_claim_play_quest` 플레이 퀘스트 보상, `social_legacy_feed`, `social_profile` RPC).
+
+**기능**
+- 소셜 탭(`/social`, `socialFeed.jsx`, `lib/socialMix.js`): 퍼즐 탭을 인스타그램 피드형으로 개편, 퍼즐과 유산(`social_legacy_feed`)을 한 피드에 섞어 표시. 카드에 아이디 표시·아바타 링 제거, 좋아요·리포스트·공유 숫자를 아이콘 옆에 표시, 유산 리포스트 지원.
+- /user 소셜 섹션: "게시물"(퍼즐·유산 구분 없이 최신순)과 "리포스트"(리포스트한 시각 순) 분리, 서버 `social_profile`.
+- 마스터 페이지 `/master/<slug>`(`masterPage.jsx`, `lib/masterPages.js`, `data/masterSlugs.json`, `scripts/build-master-slugs.mjs`): 마스터마다 고유 주소(예: `magnus-carlsen`), 핵심 숫자 + 상세 통계. 마스터 통계·대국·스타일·도감 카드 이름에서 `masterLink.jsx`로 연결.
+- 탭 재배치: 레슨 → 학습 탭(`learn.jsx`), 성장 분석 → 분석 탭(데스크톱 보드 아래, 모바일 2·3페이지, `analysis.jsx`·`swipePager.jsx`). 학습 탭 "맞춤 학습"(`practice.jsx`, `lib/practicePlan.js`): 실수 포지션 복습(엔진 최선수 + 버금가는 좋은 수 정답 인정, 두 번 틀리면 힌트 화살표)과 약점 기반 레슨 추천. 엔진을 돌리지 않고 성장 분석 캐시만 사용.
+- 퍼포먼스 레이팅(`lib/recentPerformance.js`)을 /user에서 성장 요약 맨 위로 이전, 성장 분석과 같은 최근 5판 기준.
+- 수 키워드 자동 부여(`lib/moveKeywords.js` `autoMoveKeyword`): 개발자 수동 키워드 지정(이름 편집·이론 수 지정은 유지) 삭제, 수 블록마다 포지션을 분석해 18종 중 하나. SHARP는 "날카로운 수"(최선 0.2 이내 + 다른 수 모두 0.8 이상 나쁨 또는 유일한 수).
+- 플레이 퀘스트(`lib/playQuest.js`): 날마다 초기화하지 않는 한 번짜리 목표, 클리어 시 코인 보상. 진행·보상 모두 서버 검증(`play_quest_status`, `economy_claim_play_quest`).
+
+**UI**
+- 도감 첫 화면(`components/dexHub.jsx`) 재설계: 같은 크기의 카드 네 장, 사이트 색(흑단·황동·상아)의 진열장 디자인(조명 아래 면 분할 받침대 위의 대표 기물, Playfair·Cormorant·Bodoni 명판, 모서리 금 보석). 데스크톱은 2×2로 화면 높이를 채움. 머리 글자·요약 알약 제거.
+- 데스크톱 분석 탭 다음 수 블록 6개 + 내부 스크롤. 연두색 리뷰 버튼(`BestMoveJumpButton`) 예전 모양 복원(아이콘 규칙 예외로 CLAUDE.md 9항에 명시). 도감 마스터 버튼 문구 "체스의 정점에 달한 선수들".
+
+**UX**
+- 도감 안쪽 화면 위 구획 전환 줄(`DexSectionNav`).
+
+**버그 수정**
+- BUG-164(P2, 리뷰 기보 체크 기호 — `displaySans`), BUG-165(P1, 채팅 리뷰 보기·`/review/(숫자)` 링크 — `normalizeReviewGame`으로 공유 캐시 모양 일원화), BUG-166(P3, 마스터 수 목록 넘침), BUG-167(P3, 마스터 상대 이름 합쳐짐 — 표시 수정, 데이터 재생성은 미결), BUG-168(P3, 도감 오프닝 해금률 늘 0% → "탐색 전"), BUG-169(P2, 모바일 도감 카드 장면 사라짐 — size 컨테이너 높이 고정).
+
+**시스템**
+- prebuild 검사 추가: `check-analysis-tiles`, `check-move-keywords`, `check-practice`, `check-social-feed`, `check-master-pages`, `check-dex-hub`, `check-play-quest`. `check-review-ui`·`check-growth`·`check-learn-tab`·`check-tab-memory`·`check-legacy-entry`·`check-sql-function-acl`·`check-facet-icons` 갱신.
+- `package.json` 0.7.6, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.5 - 2026/11/12
 
 테마: 도감 레슨 재구축과 오프닝 레파토리, 파셋 아이콘 세트, Stockfish 19, 통합 검색·업적, 리뷰·학습 탭·티어 여정 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(레슨 보상 `seedChapters` 갱신·op_* 오프닝 레슨, app_content 분기 제거).

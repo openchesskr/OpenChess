@@ -39,7 +39,7 @@ const social = readFileSync(new URL("../src/app/social.jsx", import.meta.url), "
   const posts = readFileSync(new URL("../src/lib/legacyPosts.js", import.meta.url), "utf8");
   ok("유산 피드가 listPosts·normalizeSaved로 검증한 항목만 그림", /listPosts\(legacies\)/.test(feed) && /normalizeSaved\(/.test(feed));
   ok("listPosts·normalizeSaved가 normalizeLegacyEntry로 검증", (posts.match(/normalizeLegacyEntry\(/g) || []).length >= 3);
-  ok("프로필 유산 줄(LegacyStoneRow)이 피드를 쓴다", /function LegacyStoneRow\([\s\S]{0,600}LegacyFeedLazy/.test(profile));
+  ok("(v0.7.6) /user 유산은 소셜 섹션(ProfileSocial: 게시물·리포스트)으로 보인다", /ProfileSocialLazy = React\.lazy/.test(profile) && /\{showLegacy && <React\.Suspense fallback=\{null\}><ProfileSocialLazy /.test(profile));
 }
 ok("채팅 유산 공유 미리보기가 검증", /normalizeLegacyEntry\(pub\.legacies && pub\.legacies\[slot\]\)/.test(social));
 

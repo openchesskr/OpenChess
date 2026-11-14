@@ -1,4 +1,8 @@
 import { setMasterNav } from "./lib/masterNav.js";
+import { normalizeReviewGame } from "./lib/reviewGame.js";
+import { AnalysisWithGrowth } from "./app/growthHome.jsx";
+import { MasterPage } from "./app/masterPage.jsx";
+import { parseMasterPath, masterPath, setMasterPageHandler } from "./lib/masterPages.js";
 import { setTitleNav } from "./lib/titleNav.js";
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
 import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
@@ -18,7 +22,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useTabFade, ScrollTopButton } from "./components/motionKit.jsx";
 import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, EngineContext, MaterialIcon, MinigamePrefsContext, PuzzleShareSheet, VisualPrefsContext, achievableTitles, featuredTitlesFor, ccTitleStats, computeTitleMetrics, sanitizeTitleSet, titleDef, validTitleId, chatConvPrefsFetch, chatFetchAll, chatMarkRead, computeDexLayout, friendAccept, friendEdges, friendRemove, getAnalysisPool, invalidateBookIndex, loadContent, moveFxModeFromSaved, notifyCreate, puzzleDeleteRemote, puzzleFetch, puzzleNo, puzzleShare, puzzleTreeOf, resolveReviewIdentifier, reviewGameIdentifier, reviewGameKey, reviewStorageKey, reviewedGameFetch, reviewedGameShare, setSacConfirmEvaluator, snapNode, solvedLineTagsOf, starsOf, themesOf, todayStr, treeLinesOf, useChessCom, useNarrow, useRealtimeTable, userProfile, usersProfiles } from "./app/common.jsx";
 import { rememberTabPlace, tabLastPath, tabLastScroll } from "./lib/tabMemory.js";
-import { initialTabForPath, lastTabStored, rememberLastTab, isPendingDeepLink, ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto, economyGet, economyLineSolved, economyClaimQuest, economyClaimChapter, economyClaimNotification, economyGacha, economyDevSet, economyDevBonus } from "./app/shell.jsx";
+import { initialTabForPath, lastTabStored, rememberLastTab, isPendingDeepLink, ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto, economyGet, economyLineSolved, economyClaimQuest, economyClaimChapter, economyClaimPlayQuest, playQuestStatus, economyClaimNotification, economyGacha, economyDevSet, economyDevBonus } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
 import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
 import { ChatsModal, ChatWindow, FriendsModal, UserProfilePage, UserSearchModal } from "./app/social.jsx";
@@ -26,8 +30,8 @@ import { ProfileEditSheet } from "./app/profileEdit.jsx";   // (v0.7.5) 새 프�
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
 import { LegacyActionsCtx, LegacyPostPage } from "./app/legacyFeed.jsx";
-import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath } from "./lib/legacyPosts.js";
-import { applyPlayEvent, normalizePlayQuest, onPlayEvent } from "./lib/playQuest.js";
+import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath, legacyPath } from "./lib/legacyPosts.js";
+import { applyPlayEvent, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, onPlayEvent } from "./lib/playQuest.js";
 import { ReviewPage } from "./app/review.jsx";
 import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
 import { AnalysisTab } from "./app/analysis.jsx";
@@ -133,8 +137,13 @@ export default function App() {
   const [pieceSkin, setPieceSkin] = useState("classic");
   const [profile, setProfile] = useState({ nickname: "", chesscom: "" });
   const [legacyLink, setLegacyLink] = useState(() => (typeof window !== "undefined" ? parseLegacyPath(window.location.pathname) : null));   // (v0.7.4) 공유 링크 /legacy/<MID>-<아이디>로 연 게시물 페이지
-  const [playQuest, setPlayQuest] = useState(() => normalizePlayQuest(null));   // (v0.7.4) 플레이 퀘스트 진행(하루 단위) — 비공개, 진행 정보에 저장
-  useEffect(() => onPlayEvent((ev) => setPlayQuest((s) => applyPlayEvent(s, ev))), []);
+  const [playQuest, setPlayQuest] = useState(() => normalizePlayQuest(null));   // (v0.7.4) 플레이 퀘스트 진행(이 기기, v0.7.6부터 초기화 없음) — 비공개, 진행 정보에 저장
+  const [playQuestSrv, setPlayQuestSrv] = useState(null);   // (v0.7.6) 로그인 상태의 진행·보상 수령 — 서버가 센 값(play_quest_status)
+  const [playQuestTick, setPlayQuestTick] = useState(0);
+  useEffect(() => onPlayEvent((ev) => {
+    setPlayQuest((s) => applyPlayEvent(s, ev));
+    setTimeout(() => setPlayQuestTick((n) => n + 1), 1500);   // 서버가 대국 결과를 저장할 틈을 두고 다시 센다
+  }), []);
   const [savedLegacies, setSavedLegacies] = useState([]);   // (v0.7.4) 남의 유산 게시물 저장함 — 비공개, 진행 정보(progress)에 저장
   const [loaded, setLoaded] = useState(false);
   const [liveOn, setLiveOn] = useState(true);
@@ -266,9 +275,39 @@ export default function App() {
     setViewedProfileMid(null); setViewedProfileAutoInvite(false);
     try { if (window.location.pathname.startsWith("/user/")) window.history.back(); } catch { }
   }, []);
+  // (v0.7.6, 사용자 요청) 마스터 페이지 /master/<slug> — 마스터 이름 링크(components/masterLink.jsx)가 openMasterPage(slug)로 연다. 주소로 바로 들어와도 열린다.
+  const [masterSlug, setMasterSlug] = useState(() => (typeof window !== "undefined" ? parseMasterPath(window.location.pathname) : null));
+  const masterPushedRef = useRef(false);
+  useEffect(() => {
+    setMasterPageHandler((slug) => {
+      setSearchOpen(false); setFriendsOpen(false); setChatsOpen(false);
+      try { if (window.location.pathname !== masterPath(slug)) { window.history.pushState({ master: true }, "", masterPath(slug)); masterPushedRef.current = true; } } catch { }
+      setMasterSlug(slug);
+    });
+    return () => setMasterPageHandler(null);
+  }, []);
+  const closeMasterPage = useCallback(() => {
+    setMasterSlug(null);
+    try { if (parseMasterPath(window.location.pathname)) { if (masterPushedRef.current) window.history.back(); else window.history.replaceState(null, "", "/analysis"); } } catch { }
+    masterPushedRef.current = false;
+  }, []);
+  // 페이지 안에서 다른 화면(분석 보드·리뷰·도감 대회)으로 넘어갈 때는 뒤로 가기 대신 주소만 바꾼다(뒤로 가기는 비동기라 다음 화면의 주소 기록을 되돌릴 수 있다).
+  const dismissMasterPage = useCallback(() => {
+    setMasterSlug(null); masterPushedRef.current = false;
+    try { if (parseMasterPath(window.location.pathname)) window.history.replaceState(null, "", "/analysis"); } catch { }
+  }, []);
+  // (v0.7.6) 소셜 피드에서 연 유산 게시물은 닫으면 그 피드 주소(/social)로 돌아간다(링크로 직접 연 경우는 예전처럼 "/").
+  const legacyReturnRef = useRef(null);
   const closeLegacyLink = useCallback(() => {
     setLegacyLink(null);
-    try { if (parseLegacyPath(window.location.pathname)) window.history.replaceState(null, "", "/"); } catch { }
+    const back = legacyReturnRef.current; legacyReturnRef.current = null;
+    try { if (parseLegacyPath(window.location.pathname)) window.history.replaceState(null, "", back || "/"); } catch { }
+  }, []);
+  const openLegacyPost = useCallback(({ mid, id }) => {
+    const path = legacyPath(mid, id);
+    legacyReturnRef.current = window.location.pathname;
+    try { window.history.pushState({ ...(window.history.state || {}), legacy: true }, "", path); } catch { }
+    setLegacyLink(parseLegacyPath(path));
   }, []);
   const [tierMapOpen, setTierMapOpen] = useState(false); // (v0.0.6 개편) 티어 배지를 누르면 여는 여정 지도
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
@@ -1076,6 +1115,33 @@ export default function App() {
       }
     }).catch(() => { }).finally(() => { lessonClaimInflight.current.delete(lessonId); });
   }, [uid]);
+  // (v0.7.6, 사용자 요청) 플레이 퀘스트 보상 — 로그인했으면 서버가 센 진행값을 받아, 클리어했지만 아직 안 받은 퀘스트를 퀘스트당 1회 수령한다.
+  //  서버(economy_claim_play_quest)가 진행값을 다시 확인하므로 여기서 금액·조건을 정하지 않는다. 이미 받은 보상은 duplicate(토스트 없음).
+  const playQuestClaimInflight = useRef(new Set());
+  useEffect(() => {
+    if (!uid) { setPlayQuestSrv(null); return undefined; }
+    let cancelled = false;
+    playQuestStatus().then(async (r) => {
+      const st = normalizeServerPlayQuest(r);
+      if (cancelled || !st) return;
+      setPlayQuestSrv(st);
+      for (const key of unclaimedKeys(st)) {
+        if (playQuestClaimInflight.current.has(key)) continue;
+        playQuestClaimInflight.current.add(key);
+        try {
+          const e = await economyClaimPlayQuest(key);
+          if (!e || e.error) continue;
+          applyEconomyRef.current(e);
+          if (!cancelled) setPlayQuestSrv((p) => (p ? { ...p, claimed: [...new Set([...p.claimed, key])] } : p));
+          if (!e.duplicate) {
+            setToast({ type: "coins", amount: e.gainCoins });
+            setTimeout(() => setToast((t) => (t && t.type === "coins" ? null : t)), 1800);
+          }
+        } catch { /* 다음에 다시 시도 */ } finally { playQuestClaimInflight.current.delete(key); }
+      }
+    }).catch(() => { });
+    return () => { cancelled = true; };
+  }, [uid, playQuestTick]);
   // 퍼즐 퀘스트 목표 달성 시 지급
   useEffect(() => {
     if (!dailyQuest || dailyQuest.puzzleCount < dailyQuest.puzzleTarget) return;
@@ -1270,6 +1336,7 @@ export default function App() {
       // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
       // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
       setLegacyLink(parseLegacyPath(p));
+      setMasterSlug(parseMasterPath(p));   // (v0.7.6) 마스터 페이지도 뒤로/앞으로 가기에 반응
       const userMatch = /^\/user\/([A-Za-z]{5}[0-9]{4})$/.exec(p);
       setViewedProfileMid(userMatch ? userMatch[1].toUpperCase() : null);
       if (!userMatch) setViewedProfileAutoInvite(false);
@@ -1368,6 +1435,7 @@ export default function App() {
     saved: savedLegacies,
     toggleSave: (item) => setSavedLegacies((l) => toggleSaved(l, item)),
     removeMine: (id) => setProfile((p) => ({ ...p, legacies: removePost(p.legacies, id) })),
+    openPost: (link) => openLegacyPost(link),   // (v0.7.6) 소셜 피드·/user 소셜 섹션에서 유산 게시물 페이지 열기
   };
   // (v0.3.9 기능) 사용자 요청 — 내 프로필 카드가 더는 설정 탭에 상시 표시되지 않고, 헤더 드롭다운의
   // 화살표 버튼으로 여는 별도 "프로필 창"(ProfileWindow)이 됐다.
@@ -1382,7 +1450,8 @@ export default function App() {
   // (v0.2.9 기능 → v0.3.5 리뷰 티켓 제거) 게임 리뷰는 이제 제한 없이 몇 번이든 열 수 있다. 다만
   // "리뷰한 대국만" 필터(AccountChessStats)가 여전히 reviewUnlocked를 쓰므로, 리뷰를 열 때마다
   // reviewGameKey로 그 대국을 계속 기록은 해 둔다(순수 이력, 더는 아무것도 막거나 소비하지 않는다).
-  const openReview = useCallback((game) => {
+  const openReview = useCallback((rawGame) => {
+    const game = normalizeReviewGame(rawGame);   // (v0.7.6, BUG-165) 수 목록이 moves에만 있는 대국(서버 공유 캐시·chess.com)도 연다
     // (v0.3.4 기능) FEN 모드 분석은 아직 한 수도 안 뒀어도(그 위치 자체를 분석) 열 수 있게 허용한다
     // — fenRoot가 있으면 sans가 비어 있어도 통과시킨다.
     if (!game || (!game.fenRoot && (!game.sans || !game.sans.length))) return;
@@ -1789,6 +1858,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {masterSlug && <MasterPage key={masterSlug} slug={masterSlug} onClose={closeMasterPage}
+        onOpenGame={(sans) => { dismissMasterPage(); onOpenGame(sans); }} onOpenGameAnalyze={(g) => { dismissMasterPage(); onOpenGameAnalyze(g); }} onOpenTour={(id) => { dismissMasterPage(); onOpenTournament({ tourId: id }); }} />}
       {legacyLink && <LegacyPostPage key={legacyLink.mid + legacyLink.id} mid={legacyLink.mid} id={legacyLink.id} viewerUid={uid} onClose={closeLegacyLink} onOpenProfile={(mid) => { closeLegacyLink(); openUserProfile(mid); }} />}
       {viewedProfileMid && <UserProfilePage onEditProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }} mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenTitle={onOpenTitle} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {profileWinOpen && user && (
@@ -1852,7 +1923,7 @@ export default function App() {
           {ccCur && ccCurInfo && !reviewGame && !playGame && !announceOpen && !puzzleNoticeOpen && !questClearOpen && !(toast && toast.type !== "xp" && toast.type !== "coins") && (
             <ChesscomGameToast key={ccGameKey(ccCur)} game={ccCur} rec={ccCurInfo.rec} ratingDelta={ccCurInfo.ratingDelta} more={ccQueue.length - 1}
               onClose={dismissCcToast}
-              onOpen={() => { dismissCcToast(); switchTab("learn"); }}
+              onOpen={() => { dismissCcToast(); switchTab("analysis"); }}
               onSearch={() => { dismissCcToast(); onOpenGame(ccCur.moves); }}
               onReview={() => { const g = ccCur; dismissCcToast(); onOpenGameAnalyze({ sans: g.moves, color: g.color, result: g.result, rating: g.rating, timeClass: g.timeClass, opening: g.opening, endTime: g.endTime, username: profile.chesscom, white: g.white, black: g.black, id: g.id }); }} />
           )}
@@ -1903,14 +1974,16 @@ export default function App() {
             언마운트되지 않고 계속 liveOn 실시간 평가를 돌려, useEngine의 단일 공유 워커 큐를 끝없이
             채워 넣는 바람에 PlayPage의 봉 수 요청(engine.evaluateMulti)이 차례를 영영 못 받고 무한정
             "생각하는 중..."에 멈춰 있던 문제(사용자 제보)의 원인이었다. */}
-        {tab === "analysis" && <AnalysisTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={analysisSans} setSans={setAnalysisSans} fenRoot={analysisFenRoot} setFenRoot={setAnalysisFenRoot} future={analysisFuture} setFuture={setAnalysisFuture} extra={analysisExtra} setExtra={setAnalysisExtra} focus={analysisFocus} setFocus={setAnalysisFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} onOpenTournament={onOpenTournament} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={analysisFenSeed} onConsumeFenSeed={() => setAnalysisFenSeed(null)} />}
+        {/* (v0.7.6, 사용자 요청) 학습 탭의 성장 분석·최근 대국을 분석 탭으로 — 데스크톱은 아래쪽, 모바일은 옆으로 넘기는 2·3페이지(growthHome.jsx). 집중 분석 중에는 숨긴다. */}
+        {tab === "analysis" && <AnalysisWithGrowth focusActive={focusActive} analysisNode={<AnalysisTab engine={engine} liveOn={liveOn && !reviewGame && !playGame} onFocusActive={setFocusActive} unlockOpening={unlockOpening} chesscom={chesscom} contentVer={contentVer} canEdit={canEdit} canAdd={canAdd} bumpContent={bumpContent} sans={analysisSans} setSans={setAnalysisSans} fenRoot={analysisFenRoot} setFenRoot={setAnalysisFenRoot} future={analysisFuture} setFuture={setAnalysisFuture} extra={analysisExtra} setExtra={setAnalysisExtra} focus={analysisFocus} setFocus={setAnalysisFocus} puzzles={puzzles} onOpenPuzzle={onOpenPuzzle} onOpenPuzzleWizard={onOpenPuzzleWizard} onOpenFocusBranch={setTab} onOpenReview={openReview} onOpenPlay={goToPlayTab} onOpenTournament={onOpenTournament} dailyQuest={dailyQuest} uid={uid} user={user} noteCap={moveNoteCap} onQuestBadgeClick={onQuestBadgeClick} fenSeed={analysisFenSeed} onConsumeFenSeed={() => setAnalysisFenSeed(null)} />}
+          user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={profile.chesscom} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} growthUid={uid} growthGames={chesscom.games} me={user ? { username: user, nickname: profile.nickname, displayId: profile.displayId, bio: profile.bio, photo: profile.photo, xp: totalXp, puzzleRating, title: currentTitle, legacies: profile.legacies } : null} onOpenTitle={onOpenTitle} engine={engine} reviewSpeed={reviewSpeed} quickReview={quickReview} />}
         {/* (사용자 요청) 도감 탭에서 오프닝 이름을 눌러 집중 분석으로 이동한 경우(focusReturnTab === "dex"),
             집중 분석이 열려 있는 동안에도 이 탭을 언마운트하지 않고 화면에서만 숨긴다 — 그래야 집중
             분석을 닫고 돌아왔을 때 모식도의 팬·줌·펼친 카드가 떠나기 전 그대로 남아 있다(언마운트했다
             재마운트하면 이 상태가 전부 초기화되고, 트리 로딩 연출도 처음부터 다시 재생된다). */}
         {(tab === "dex" || focusReturnTab === "dex") && (
           <div style={tab === "dex" ? undefined : { display: "none" }}>
-            <CollectionTab lessonState={lessonState} onLessonComplete={onLessonComplete} lessonCoins={!!uid} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkinOk} pieceSkin={pieceSkinOk} onPullGacha={pullGacha} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenAnalysis={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
+            <CollectionTab onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} key={"dex-" + navNonce} unlockAll={devUnlockAll} liveOn={liveOn} contentVer={contentVer} chesscom={chesscom} earnedTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : earnedTitles} seenTitles={devUnlockAll ? new Set(ALL_TITLE_IDS) : seenTitles} onSeeTitle={markTitleSeen} titleMetrics={titleMetrics} currentTitle={currentTitle} onEquipTitle={equipTitle} coins={ocCoins} ownedSkins={ownedSkins} boardSkin={boardSkinOk} pieceSkin={pieceSkinOk} onPullGacha={pullGacha} onEquipSkinSet={equipSkinSet} canAdd={canAdd} bumpContent={bumpContent} onOpenOpening={onOpenOpening} onOpenAnalysis={onOpenGame} treeData={dexTreeData} treeVersion={dexTreeVersion} genPriorityRef={dexGenPriorityRef} />
           </div>
         )}
         {/* (사용자 요청) 퍼즐 풀이 카드의 기보를 눌러 집중 분석으로 이동하면 이 화면은 닫히지만
@@ -1918,7 +1991,7 @@ export default function App() {
             onOpenLearnFocus가 닫히기 전 puzzleActive를 기억해 뒀다가 집중 분석을 나가면 그 퍼즐을
             같은 라인 그대로 다시 열어준다. */}
         {tab === "puzzle" && <PuzzleTab puzzles={puzzles} archivedPuzzles={archivedPuzzles} solved={solved} lineSolves={lineSolves} onLineSolved={onLineSolved} onPuzzleSolveEvent={onPuzzleSolveEvent} onPuzzleRatingEvent={onPuzzleRatingEvent} onSavePuzzle={onSavePuzzle} onDeletePuzzle={onDeletePuzzle} onPuzzleRenamed={onPuzzleRenamed} solveCounts={solveCounts} puzzleSolvers={puzzleSolvers} friendUids={friendUids} solverNames={solverNames} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} popularityScores={popularityScores} myUid={uid} myUsername={user} puzzleRating={puzzleRating} chesscom={chesscom} chesscomUsername={profile.chesscom} active={puzzleActive} setActive={setPuzzleActive} engine={engine} liveOn={liveOn && !reviewGame && !playGame} canEdit={canEdit} bumpContent={bumpContent} totalXp={totalXp} onOpenTierMap={() => setTierMapOpen(true)} targetLineNo={puzzleTargetLineNo} onLineChange={onPuzzleLineChange} onOpenAnalysis={(sans) => onOpenAnalysisFocus(sans, "puzzle")} creatorUsernames={creatorUsernames} lineClearOn={lineClearOn} puzzleClearOn={puzzleClearOn} coachBubbleOn={coachBubbleOn} contentVer={contentVer} createSeed={puzzleWizardSeed} onConsumeCreateSeed={() => setPuzzleWizardSeed(null)} onOpenProfile={openUserProfileByUsername} onOpenAnalysisFen={onOpenAnalysisFen} dailyPuzzleStreak={dailyPuzzleStreak} puzzleMomentum={puzzleMomentum} />}
-        {tab === "learn" && <LearnTab user={user} uid={uid} openAuth={openAuth} chesscom={chesscom} ccName={profile.chesscom} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} growthUid={uid} growthGames={chesscom.games} me={user ? { username: user, nickname: profile.nickname, displayId: profile.displayId, bio: profile.bio, photo: profile.photo, xp: totalXp, puzzleRating, title: currentTitle, legacies: profile.legacies } : null} onOpenTitle={onOpenTitle} engine={engine} reviewSpeed={reviewSpeed} quickReview={quickReview} />}
+        {tab === "learn" && <LearnTab user={user} uid={uid} chesscom={chesscom} ccName={profile.chesscom} lessonState={lessonState} onLessonComplete={onLessonComplete} lessonCoins={!!uid} onOpenReview={onOpenGameAnalyze} onGoAnalysis={() => setTab("analysis")} />}
         {/* (v0.5.0 리디자인, 사용자 요청) 플레이 탭도 다른 탭처럼 상단 헤더·하단 탭바가 보이도록,
             화면을 통째로 덮는 오버레이 대신 <main> 안에서 그려지는 평범한 탭 콘텐츠로 바꿨다. 도감
             탭과 같은 이유(위 CollectionTab 주석 참고)로 언마운트는 하지 않고 display:none으로만
@@ -1927,7 +2000,7 @@ export default function App() {
             않는다(위 openPlay/useLayoutEffect가 이 탭으로 자동 전환해 곧장 보여준다). */}
         {playGame && (
           <div style={tab === "store" ? undefined : { display: "none" }}>
-            <PlayPage seed={playGame} playQuest={playQuest} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} questActive={tab === "store"} dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} questHighlight={questHighlight} />
+            <PlayPage seed={playGame} playQuest={playQuestSrv || playQuest} loggedIn={!!uid} onClose={requestClosePlay} engine={engine} onOpenReview={openReview} profile={profile} username={user} myUid={uid} onOpenProfile={openUserProfileByUsername} onPvpActiveChange={onPvpActiveChange} specialResume={specialResume} onConsumeSpecialResume={() => setSpecialResume(null)} onResumeSpecial={(g) => setSpecialResume({ gameType: g.game_type, game: g })} myPuzzleRating={puzzleRating} canEditContent={isDev || isCodev} questActive={tab === "store"} dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={!!profile.chesscom} questHighlight={questHighlight} />
           </div>
         )}
         {tab === "set" && <SettingsTab onOpenMyProfile={openMyProfilePage} key={"set-" + navNonce} profile={profile} setProfile={setProfile} engine={engine} engineStatus={engine.status} liveOn={liveOn} setLiveOn={setLiveOn} enginePref={enginePref} setEnginePref={setEnginePref} reviewSpeed={reviewSpeed} setReviewSpeed={setReviewSpeed} quickReview={quickReview} setQuickReview={setQuickReview} sharpOn={reviewSharpOn} setSharpOn={setReviewSharpOn} chesscomStatus={chesscom.status} chesscom={chesscom} user={user} myUid={uid} isDev={isDev} isCodev={isCodev} devOn={devOn} setDevOn={setDevOn} codevOn={codevOn} setCodevOn={setCodevOn} canManageCodev={canManageCodev} canEdit={canEdit} bumpContent={bumpContent} contentVer={contentVer} openAuth={openAuth} earnedTitles={earnedTitles} currentTitle={currentTitle} onEquipTitle={equipTitle} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} totalXp={totalXp} setTotalXp={(v) => economyDevSet(v, null).then((e) => e && applyEconomy(e)).catch(() => { })} puzzleRating={puzzleRating} ocCoins={ocCoins} setOcCoins={(v) => economyDevSet(null, v).then((e) => e && applyEconomy(e)).catch(() => { })} solvedCount={solved.size} lessonState={lessonState} puzzles={puzzles} solved={solved} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} onOpenPuzzle={onOpenPuzzle} bgmOn={bgmOn} bgmVolume={bgmVolume} onToggleBgm={toggleBgm} onBgmVolumeChange={onBgmVolumeChange} sfxOn={sfxOn} sfxVolume={sfxVolume} onToggleSfx={toggleSfx} onSfxVolumeChange={onSfxVolumeChange} reviewUnlocked={reviewUnlocked} lineClearOn={lineClearOn} setLineClearOn={setLineClearOn} puzzleClearOn={puzzleClearOn} setPuzzleClearOn={setPuzzleClearOn} coachBubbleOn={coachBubbleOn} setCoachBubbleOn={setCoachBubbleOn} mgDangerOn={mgDangerOn} setMgDangerOn={setMgDangerOn} moveFxMode={moveFxMode} setMoveFxMode={setMoveFxMode} onOpenAccountCenter={() => { setAccountCenterOpen(true); pushScreen("account-center"); }} loginShakeTick={loginShakeTick} onOpenUserProfile={openUserProfileByUsername} />}
@@ -1944,7 +2017,7 @@ export default function App() {
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; const questDot = key === "store" && questIconName === "assignment_late"; return (
               <button key={key} onClick={() => switchTab(key, key === "dex" && tab === "dex" ? DEX_HUB_PATH : undefined)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <motion.span layoutId="oc-tab-ind" transition={{ type: "spring", stiffness: 420, damping: 32 }} style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass, boxShadow: "0 0 10px 1px rgba(236,203,134,.55)" }} />}
-                <span key={on ? "on" : "off"} className={on ? "oc-tab-pop" : undefined} style={{ position: "relative" }}>{key === "learn" ? <MaterialIcon name="school" size={20} /> : key === "puzzle" ? <MaterialIcon name="extension" size={20} /> : key === "analysis" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}{questDot && <span aria-hidden="true" style={{ position: "absolute", top: -3, right: -6, width: 9, height: 9, borderRadius: "50%", background: T.brassHi, border: "1.5px solid #160C06" }} />}</span>
+                <span key={on ? "on" : "off"} className={on ? "oc-tab-pop" : undefined} style={{ position: "relative" }}>{key === "learn" ? <MaterialIcon name="school" size={20} /> : key === "puzzle" ? <MaterialIcon name="groups" size={20} /> : key === "analysis" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}{questDot && <span aria-hidden="true" style={{ position: "absolute", top: -3, right: -6, width: 9, height: 9, borderRadius: "50%", background: T.brassHi, border: "1.5px solid #160C06" }} />}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
               </button>); })}
           </div>

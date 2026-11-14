@@ -4764,7 +4764,7 @@ function AttackModeGame({ myUid, onExit, onOpenProfile, initialGame, myRating, c
       renderSolo={(p) => <AttackBotBoard key={p.runKey} bot={null} myRating={myRating || 800} onExit={p.onExit} onStatusChange={p.onStatusChange} onRematch={p.onRematch} />} />
   );
 }
-export function PlayPage({ seed, playQuest, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent, questActive, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, questHighlight }) {
+export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenReview, profile, username, myUid, onOpenProfile, onPvpActiveChange, specialResume, onConsumeSpecialResume, onResumeSpecial, myPuzzleRating, canEditContent, questActive, dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, questHighlight }) {
   const fenRoot = (seed && seed.fenRoot) || null;
   const seedSans = (seed && seed.sans) || [];
   // (v0.5.0 기능, 사용자 요청) 플레이 페이지 최상단 "일반/스페셜" 토글 — "일반"은 지금까지의 봇/실시간
@@ -5656,7 +5656,7 @@ export function PlayPage({ seed, playQuest, onClose, engine, onOpenReview, profi
         <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
           <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
           {/* (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래. 일반 대국·미니게임 조건을 달성하면 클리어 */}
-          <PlayQuestCard playQuest={playQuest} />
+          <PlayQuestCard playQuest={playQuest} loggedIn={loggedIn} />
         </div>
   ) : null;
   return (

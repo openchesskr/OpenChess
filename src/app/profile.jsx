@@ -20,7 +20,6 @@ import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, Che
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
 import TierJourney from "../components/tierJourney.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
-import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";
 
 import { fmtDate, fmtDateOnly, t, tx } from "../lib/i18n.js";
@@ -533,7 +532,7 @@ export function AccountChessStats({ hideRecent, chesscom, username, onOpenOpenin
       </div>
       {/* 전적 */}
       {!recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
-      {!recentOnly && overall && <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="cc" />} />}
+      {!recentOnly && overall && <GameRecordSummary overall={overall} />}
       {recentOnly && !overall && <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{onlyReviewed ? t("조건에 맞는 리뷰 대국 없음") : t("이 시간 규정의 대국 없음")}</p>}
       {/* (v0.2.6 기능) "전체 기간 전적"과 "최근 대국" 사이에 기간별 레이팅 변동 그래프를 표시. */}
       {!recentOnly && <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={!!(chesscom && chesscom.stillFetching)} />}
@@ -687,19 +686,9 @@ function LegacyEmptySlot({ typeInfo, onClick, bonus }) {
 }
 // (v0.7.4, 사용자 요청) 유산 재생 화면은 처음부터 다시 짠 새 재생기(components/legacyPlayer.jsx) — 예전 빛의 보드·영사기·기물별 잡기 연출은 없어졌다. 기존 호출부를 위해 같은 이름으로 다시 내보낸다.
 export { LegacyRevealScreen } from "../components/legacyPlayer.jsx";
-// (v0.7.4, 사용자 요청) 유산 — 최선·유일·탁월 3칸 슬롯 대신 인스타그램 게시물 같은 피드(legacyFeed.jsx, 최대 200개).
-// 피드는 profile.jsx·social.jsx를 다시 가져오므로 순환 참조를 피하려고 늦게(lazy) 불러온다.
-const LegacyFeedLazy = React.lazy(() => import("./legacyFeed.jsx"));
-function LegacyStoneRow({ legacies, ownerUid, viewerUid, ownerName, isOwn }) {
-  const any = isOwn || (legacies && typeof legacies === "object" && Object.keys(legacies).length > 0);
-  if (!any) return null;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 8 }}>{t("유산")}</div>
-      <React.Suspense fallback={null}><LegacyFeedLazy legacies={legacies} ownerUid={ownerUid} ownerName={ownerName} viewerUid={viewerUid} isOwn={isOwn} flush /></React.Suspense>
-    </div>
-  );
-}
+// (v0.7.6, 사용자 요청) /user의 유산 줄을 "소셜" 섹션(게시물·리포스트, socialFeed.jsx ProfileSocial)으로 바꿨다 — 퍼즐과 유산을 구분 없이 최신순으로 보여 준다.
+// socialFeed.jsx는 profile.jsx·legacyFeed.jsx를 다시 가져오므로 순환 참조를 피하려고 늦게(lazy) 불러온다.
+const ProfileSocialLazy = React.lazy(() => import("./socialFeed.jsx").then((m) => ({ default: m.ProfileSocial })));
 // (17차→v0.1.0) 프로필 정보 확장 — 티어/XP, 해결한 퍼즐 수, chess.com 전적까지 한 곳에서 보여주는
 // 공용 컴포넌트. UserSearchModal/FriendsModal 양쪽에서 같은 형태로 재사용한다. (v0.1.0) 설정 탭
 // "내 프로필"에서만 보이던 메인 퀘스트 진척도·푼 퍼즐 목록도 pub에 실려 있으면(publishProfile이
@@ -739,7 +728,7 @@ export function PublicProfileStats({ showLegacy, hideRecentGames, pub, onOpenOpe
       {/* (v0.6.2, 사용자 요청) XP·퍼즐·레슨·일반 대국·미니게임 기록을 한 카드 묶음으로 */}
       <AchievementDashboard hideRecentGames={hideRecentGames} pub={pub} uid={ownerUid} mq={mq} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       {/* (v0.7.4, 사용자 요청) 유산은 /user 페이지(ProfileStatsPanel이 showLegacy를 켬)에서만 보인다 — 성장 분석·내 프로필 창 등 다른 곳에는 없다. */}
-      {showLegacy && <LegacyStoneRow legacies={pub.legacies} ownerUid={ownerUid} viewerUid={viewerUid} ownerName={pub.nickname || pub.displayId || ""} isOwn={!!onManageLegacy || (!!ownerUid && ownerUid === viewerUid)} />}
+      {showLegacy && <React.Suspense fallback={null}><ProfileSocialLazy ownerUid={ownerUid} viewerUid={viewerUid} pz={{ mySolved, myLineSolves, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle }} /></React.Suspense>}
       {Array.isArray(pub.solvedNos) && pub.solvedNos.length > 0 && <PublicSolvedPuzzles solvedNos={pub.solvedNos} onOpenPuzzle={onOpenPuzzle} mySolved={mySolved} myLineSolves={myLineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {!hideChesscom && pub.chesscom && <AccountChessStats chesscom={chesscom} username={pub.chesscom} onOpenOpening={onOpenOpening} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}
     </div>

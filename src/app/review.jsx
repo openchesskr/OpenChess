@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'review' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
+import { sansToFen, uciToSan, boardFromSans, sanSrc, canMove, applySan, kingPos, isAttacked, hasAnyLegalMove, isInCheck, gameEndState, boardOfRoot, stripSuffix, displaySans, colorOfRoot, sqName, startBoard, decorateLine, moveNumber, parseFenFull, replayFromFen, plyIsWhite, epTarget, boardToFen, castleRightsStr, fenLegalDests, liveLegalDests, buildSan, pvUciToSans, MAX_SEARCH_DEPTH, fenOfRoot } from "../lib/chessRules.js";
 import { seeSquare, canCaptureSquareLegally, VAL, hangingLossSq, lva, newCumulativeAccuracy, matePliesOf, ownPriorMoveWasSacrifice } from "../lib/moveQuality.js";
 import React, { useRef, useState, useEffect, useLayoutEffect, useMemo, useContext, useCallback } from "react";
 import { T, DRAG_SCROLL_MULT, BOARD_SKINS, boardSquareBg } from "../lib/theme.js";
@@ -659,7 +659,7 @@ function ReviewMoveStrip({ sans, moves, dotPlies, curPly, onJump, onPrev, onNext
           return (
             <span key={ply} ref={isCur ? curRef : undefined} className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
               {showNum && <span style={{ fontSize: 12, color: RV.soft, fontWeight: 700 }}>{ply / 2 + 1}.</span>}
-              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{stripSuffix(s)}</button>
+              <button onClick={() => onJump(ply + 1)} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "4px 8px", borderRadius: 6, border: "none", background: isCur ? T.brassHi : "transparent", color: txtColor, fontWeight: (isCur || isDot) ? 800 : 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>{isDot && badgeIcon(m.kind, 13)}{s}</button>
             </span>
           );
         })}
@@ -679,7 +679,7 @@ function ReviewMoveCell({ san, move, active, onClick }) {
   return (
     <button onClick={onClick} className="press" style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 5, textAlign: "left", padding: "6px 8px", border: "none", background: active ? RV.active : "transparent", color: kind && QCOLOR[kind] ? QCOLOR[kind] : RV.text, fontWeight: active ? 800 : 600, cursor: "pointer" }}>
       {kind && QCOLOR[kind] && <span style={{ width: 15, height: 15, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(kind, 15)}</span>}
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stripSuffix(san)}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{san}</span>
     </button>
   );
 }
@@ -1586,6 +1586,8 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
   // game.fenRoot(원본 FEN 문자열)에서부터 시작한다. parseFenFull로 다시 파싱해 {board,turn,rights,ep}를
   // 얻고, LearnTab의 FEN 모드와 똑같이 replayFromFen으로 그 위치부터 effSans만큼 재생한다.
   const fenRoot = useMemo(() => (game.fenRoot ? parseFenFull(game.fenRoot) : null), [game.fenRoot]);
+  // (v0.7.6, BUG-164) 기보 표시용 SAN — 체크(+)·체크메이트(#)를 지우지 않고, 원본에 빠져 있으면 포지션에서 다시 붙인다(수 등급 계산 등 다른 곳은 sans 그대로).
+  const shownSans = useMemo(() => displaySans(fenRoot, sans), [fenRoot, sans]);   // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.3.5 버그 수정) engine이 항상 "ready"로 고정된 전용 훅(useReviewEngine)을 쓰던 시절엔 이
   // effect가 deps=[]로 마운트 시 딱 한 번만 돌아도 문제가 없었다 — 이제 실제 useEngine(enginePref)을
   // 받으므로 마운트 시점엔 아직 "loading"인 경우가 흔한데, deps=[]로 두면 그 순간의 상태로 영영
@@ -2377,7 +2379,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
                   boardRef={mobileBoardSizeRef} gridRef={setPromoGridEl} leftOfBoard={<EvalBar vertical flip={boardFlip} cp={activeEvalDisp} font={SITE_FONT} />} />
                 {promoPrompt && <ReviewPromoPrompt onPick={completePromo} onCancel={() => { setPromoPrompt(null); setSel(null); setDrag(null); }} color={promoPrompt.to[0] === 0 ? "w" : "b"} portalTo={promoGridEl} />}
               </div>
-              <ReviewMoveStrip sans={sans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
+              <ReviewMoveStrip sans={shownSans} moves={result.moves} dotPlies={dotPlies} curPly={curPly} onJump={jump} onPrev={stepBack} onNext={stepForward} canPrev={canBack} canNext={canFwd} drawn={gameDrawn} />
               {/* (UI) 사용자 요청 — 코치 블록을 줄여 만든 여백으로, 모바일에서도 평가치 그래프를
                   리뷰 기보와 엔진 라인 사이에 표시한다(데스크톱의 배치 순서와 동일). */}
               <div style={{ marginTop: 10 }}><EvalGraph evalWin={result.evalWin} moves={result.moves} curPly={curPly} onJump={jump} /></div>
@@ -2449,7 +2451,7 @@ export function ReviewPage({ game, onClose, myUid, engine, reviewSpeed, quick, s
               </div>
               {/* (v0.2.1 기능) 엔진 라인 — 컴퓨터 환경은 평가치 그래프 바로 아래에 표시한다. */}
               <div style={{ marginTop: 8 }}><EngineLines lines={engineLines} pending={linesPending} sans={effSans} startColor={fenRoot ? fenRoot.turn : undefined} width="100%" onPlayFirst={playFree} font={SITE_FONT} /></div>
-              <div style={{ marginTop: 12 }}><ReviewMoveTable sans={sans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
+              <div style={{ marginTop: 12 }}><ReviewMoveTable sans={shownSans} moves={result.moves} curPly={curPly} onJump={jump} drawn={gameDrawn} /></div>
             </>
           )}
           {tab === "analysis" && (

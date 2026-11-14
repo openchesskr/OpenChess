@@ -4348,6 +4348,7 @@ returns jsonb language sql immutable as $$
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
     "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20},
+    "playQuests": {"game": {"target": 1, "coins": 50}, "win": {"target": 1, "coins": 50}, "long": {"target": 1, "coins": 50}, "mg": {"target": 2, "coins": 50}, "kinds": {"target": 2, "coins": 50}},
     "devBonusCoins": 10000
   }'::jsonb;
 $$;
@@ -4553,6 +4554,130 @@ begin
   return public._economy_apply(v_uid, 0, v_amount, 'chapter', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', v_amount);
 end; $$;
 
+-- (v0.7.6, 사용자 요청) 소셜 탭(예전 퍼즐 탭) 피드의 유산 게시물 — 모든 사용자의 공개 유산(profiles.pub.legacies)을 최신순으로 모아 준다.
+-- 반환: { posts: [{ owner, id, entry, savedAt, likes, reposts }], owners: { uid: { username, nickname, mid, photo } } }. 사진은 게시물마다가 아니라 주인당 한 번만 싣는다(사진은 최대 20만 자).
+-- 탈퇴 유예 중인 계정은 빼고(profiles select 정책과 같은 기준), p_before(savedAt, ms)보다 오래된 것만 주어 이어 읽는다. 한 번에 최대 40개. 저장 시각이 없는 옛 유산은 0으로 보고 맨 뒤.
+-- 항목 모양 검증은 화면(lib/legacyEntry.js normalizeLegacyEntry)이 한다 — 공개 프로필 값이라 누구나 쓸 수 있으므로 여기서는 객체·savedAt 숫자만 거른다.
+create or replace function public.social_legacy_feed(p_limit int default 24, p_before bigint default null)
+returns jsonb language sql stable security definer set search_path = public as $$
+  with lim as (select least(greatest(coalesce(p_limit, 24), 1), 40) as n),
+  posts as (
+    select pr.id as owner, e.key as id, e.value as entry,
+      case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint else 0 end as saved_at   -- 옛 슬롯 유산은 저장 시각이 없을 수 있다(맨 뒤로)
+    from public.profiles pr, jsonb_each(case when jsonb_typeof(pr.pub -> 'legacies') = 'object' then pr.pub -> 'legacies' else '{}'::jsonb end) e
+    where pr.deletion_scheduled_at is null and jsonb_typeof(e.value) = 'object'
+      and (p_before is null or (case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint else 0 end) < p_before)
+    order by saved_at desc limit (select n from lim)
+  ),
+  liked as (select p.*, coalesce(lc.likes, 0) as likes, coalesce(rc.reposts, 0) as reposts from posts p
+    left join public.legacy_like_counts lc on lc.owner_uid = p.owner and lc.slot_key = p.id
+    left join public.legacy_repost_counts rc on rc.owner_uid = p.owner and rc.slot_key = p.id)
+  select jsonb_build_object(
+    'posts', coalesce((select jsonb_agg(jsonb_build_object('owner', owner, 'id', id, 'entry', entry, 'savedAt', nullif(saved_at, 0), 'likes', likes, 'reposts', reposts) order by saved_at desc) from liked), '[]'::jsonb),
+    'owners', coalesce((select jsonb_object_agg(pr.id, jsonb_build_object('username', pr.username, 'nickname', nullif(pr.pub ->> 'nickname', ''), 'mid', pr.mid, 'photo', nullif(pr.pub ->> 'photo', '')))
+                        from public.profiles pr where pr.id in (select owner from posts)), '{}'::jsonb));
+$$;
+
+-- (v0.7.6, 사용자 요청) /user 프로필의 "소셜" 섹션 — 그 사람의 게시물(만든 퍼즐 + 유산, 종류 구분 없이 최신순)과 리포스트(퍼즐·유산, 리포스트한 최신순).
+-- 반환: { posts: [{ type: "puzzle", no, puzzle, at, likes, reposts, shares, creator } | { type: "legacy", owner, id, entry, at, likes, reposts }],
+--         reposts: [같은 모양, at = 리포스트한 시각], owners: { uid: { username, mid, photo } } (유산 주인 정보) }. at은 밀리초. 각 목록 최대 60개.
+-- 비공개 퍼즐은 주인 본인이 볼 때만 싣는다. 탈퇴 유예 중인 계정의 프로필은 비어 있다(profiles select 정책과 같은 기준).
+create or replace function public.social_profile(p_uid uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  with me as (select pr.* from public.profiles pr where pr.id = p_uid and (pr.deletion_scheduled_at is null or pr.id = auth.uid())),
+  my_puzzles as (
+    select jsonb_build_object('type', 'puzzle', 'no', z.no, 'puzzle', z.data || jsonb_build_object('public', z.is_public), 'at', (extract(epoch from z.created_at) * 1000)::bigint,
+      'likes', z.likes, 'reposts', z.reposts, 'shares', z.shares, 'creator', z.creator_username) as item, z.created_at as t
+    from public.puzzles z where exists (select 1 from me) and z.creator_uid = p_uid and (z.is_public or p_uid = auth.uid())
+    order by z.created_at desc limit 60
+  ),
+  my_legacies as (
+    select jsonb_build_object('type', 'legacy', 'owner', p_uid, 'id', e.key, 'entry', e.value,
+      'at', case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint else null end,
+      'likes', coalesce(lc.likes, 0), 'reposts', coalesce(rc.reposts, 0)) as item,
+      to_timestamp(case when (e.value ->> 'savedAt') ~ '^[0-9]{10,14}$' then (e.value ->> 'savedAt')::bigint / 1000.0 else 0 end) as t
+    from me, jsonb_each(case when jsonb_typeof(me.pub -> 'legacies') = 'object' then me.pub -> 'legacies' else '{}'::jsonb end) e
+    left join public.legacy_like_counts lc on lc.owner_uid = p_uid and lc.slot_key = e.key
+    left join public.legacy_repost_counts rc on rc.owner_uid = p_uid and rc.slot_key = e.key
+    where jsonb_typeof(e.value) = 'object'
+  ),
+  posts as (select item, t from my_puzzles union all select item, t from my_legacies order by t desc limit 60),
+  rp_puzzles as (
+    select jsonb_build_object('type', 'puzzle', 'no', z.no, 'puzzle', z.data || jsonb_build_object('public', z.is_public), 'at', (extract(epoch from r.reposted_at) * 1000)::bigint,
+      'likes', z.likes, 'reposts', z.reposts, 'shares', z.shares, 'creator', z.creator_username) as item, r.reposted_at as t
+    from public.puzzle_reposts r join public.puzzles z on z.no = r.no
+    where exists (select 1 from me) and r.uid = p_uid and z.is_public
+  ),
+  rp_legacies as (
+    select jsonb_build_object('type', 'legacy', 'owner', r.owner_uid, 'id', r.slot_key, 'entry', o.pub -> 'legacies' -> r.slot_key, 'at', (extract(epoch from r.reposted_at) * 1000)::bigint,
+      'likes', coalesce(lc.likes, 0), 'reposts', coalesce(rc.reposts, 0)) as item, r.reposted_at as t, r.owner_uid as owner
+    from public.legacy_reposts r join public.profiles o on o.id = r.owner_uid and o.deletion_scheduled_at is null
+    left join public.legacy_like_counts lc on lc.owner_uid = r.owner_uid and lc.slot_key = r.slot_key
+    left join public.legacy_repost_counts rc on rc.owner_uid = r.owner_uid and rc.slot_key = r.slot_key
+    where exists (select 1 from me) and r.uid = p_uid and jsonb_typeof(o.pub -> 'legacies' -> r.slot_key) = 'object'
+  ),
+  reposts as (select item, t from rp_puzzles union all select item, t from rp_legacies order by t desc limit 60)
+  select jsonb_build_object(
+    'posts', coalesce((select jsonb_agg(item order by t desc) from posts), '[]'::jsonb),
+    'reposts', coalesce((select jsonb_agg(item order by t desc) from reposts), '[]'::jsonb),
+    'owners', coalesce((select jsonb_object_agg(pr.id, jsonb_build_object('username', pr.username, 'mid', pr.mid, 'photo', nullif(pr.pub ->> 'photo', '')))
+                        from public.profiles pr where pr.id = p_uid or pr.id in (select owner from rp_legacies)), '{}'::jsonb));
+$$;
+
+-- (v0.7.6, 사용자 요청) 플레이 퀘스트 — 날마다 초기화하지 않는 한 번짜리 목표, 달성하면 퀘스트당 1회 코인 보상(economy_params의 playQuests).
+-- 진행 값은 브라우저가 세지 않고 서버가 직접 센다: 일반 대국 = 서버가 검증해 저장한 끝난 대국(pvp_games game_type 'chess' + bot_games, 20수(양쪽 합) 이상),
+-- 미니게임 = 끝난 미니게임 대전(pvp_games game_type coord·knight·rush·attack, 중단 제외). 그래서 보상을 받으려고 숫자를 꾸며 보낼 수 없다.
+-- 반환: { game, win, long, mg, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
+create or replace function public._play_quest_counts(p_uid uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  with chess as (
+    select jsonb_array_length(g.sans) as plies,
+      ((g.status = 'white_won' and g.white_uid = p_uid) or (g.status = 'black_won' and g.black_uid = p_uid)) as won
+    from public.pvp_games g
+    where g.game_type = 'chess' and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
+    union all
+    select coalesce(array_length(b.sans, 1), 0), b.result = 'win' from public.bot_games b where b.uid = p_uid
+  ), ok as (select * from chess where plies >= 20),
+  mg as (
+    select g.game_type from public.pvp_games g
+    where g.game_type in ('coord', 'knight', 'rush', 'attack') and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
+  )
+  select jsonb_build_object(
+    'game', least(99, (select count(*) from ok)),
+    'win', least(99, (select count(*) from ok where won)),
+    'long', least(99, (select count(*) from ok where plies >= 80)),
+    'mg', least(99, (select count(*) from mg)),
+    'kinds', (select count(distinct game_type) from mg));
+$$;
+create or replace function public.play_quest_status()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  return public._play_quest_counts(v_uid) || jsonb_build_object('claimed',
+    coalesce((select jsonb_agg(ref order by ref) from public.economy_claims where uid = v_uid and kind = 'playquest'), '[]'::jsonb));
+end; $$;
+create or replace function public.economy_claim_play_quest(p_key text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy;
+begin
+  if v_uid is null then raise exception 'auth required'; end if;
+  if p_key is null or p_key !~ '^[a-z]{1,16}$' then raise exception 'invalid quest'; end if;
+  v_q := public.economy_params() -> 'playQuests' -> p_key;
+  if v_q is null then return jsonb_build_object('error', 'unknown quest'); end if;
+  if public.rate_limit_hit('playquest:' || v_uid, 30, 3600) then return jsonb_build_object('error', 'rate limited'); end if;
+  v_have := (public._play_quest_counts(v_uid) ->> p_key)::bigint;
+  if coalesce(v_have, 0) < (v_q ->> 'target')::bigint then return jsonb_build_object('error', 'not complete'); end if;
+  perform public._economy_ensure(v_uid);
+  insert into public.economy_claims(uid, kind, ref) values (v_uid, 'playquest', p_key) on conflict do nothing;
+  get diagnostics v_ins = row_count;
+  if v_ins = 0 then
+    select * into v_cur from public.economy where uid = v_uid;
+    return jsonb_build_object('xp', v_cur.xp, 'coins', v_cur.coins, 'owned', to_jsonb(v_cur.owned_skins), 'duplicate', true);
+  end if;
+  return public._economy_apply(v_uid, 0, (v_q ->> 'coins')::bigint, 'playquest', p_key) || jsonb_build_object('duplicate', false, 'gainCoins', (v_q ->> 'coins')::bigint);
+end; $$;
+
 -- 오늘의 퍼즐 선정 알림 보상 수령. 금액은 서버가 알림을 만들 때 정한 reward_amount(수정 불가 컬럼) — payload는 사용자가 고칠 수 있어 쓰지 않는다. 알림당 1회.
 create or replace function public.economy_claim_notification(p_id bigint)
 returns jsonb language plpgsql security definer set search_path = public as $$
@@ -4719,7 +4844,7 @@ declare
   v_anon text[] := array[
     'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
-    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve',
+    'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve', 'social_legacy_feed', 'social_profile',
     'search_puzzles_prefix', 'username_available'
   ];
   v_auth text[] := array[
@@ -4735,7 +4860,7 @@ declare
     'move_note_vote', 'move_notes_cap', 'puzzle_claim_creator', 'puzzle_creator_save',
     'puzzle_delete', 'puzzle_like_toggle', 'puzzle_reassign_creator', 'puzzle_repost_toggle',
     'puzzle_set_name', 'puzzle_set_visibility', 'puzzle_share_inc',
-    'economy_claim_chapter', 'economy_claim_notification', 'economy_claim_quest', 'economy_dev_bonus', 'economy_dev_set', 'economy_get', 'economy_line_solved', 'gacha_pull', 'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
+    'economy_claim_chapter', 'economy_claim_play_quest', 'play_quest_status', 'economy_claim_notification', 'economy_claim_quest', 'economy_dev_bonus', 'economy_dev_set', 'economy_get', 'economy_line_solved', 'gacha_pull', 'pvp_check_flag', 'pvp_draw_accept', 'pvp_draw_decline', 'pvp_draw_offer',
     'pvp_finish', 'pvp_invite_cancel', 'pvp_invite_friend', 'pvp_invite_respond',
     'pvp_move', 'pvp_queue_join', 'pvp_queue_leave', 'pvp_rematch_decline',
     'pvp_rematch_offer', 'report_set_status', 'reports_for_dev', 'rush_forfeit',

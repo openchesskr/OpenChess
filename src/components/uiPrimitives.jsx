@@ -1,5 +1,5 @@
 import React from "react";
-import { Star, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "./engineLines.jsx";
 
@@ -13,13 +13,19 @@ export function GameViewButton({ onClick, disabled, title = t("대국 보기"), 
     </button>
   );
 }
+// (v0.7.6, 사용자 요청) 연두색 리뷰 버튼의 별은 파셋 아이콘 규칙의 예외 — chess.com 리뷰 버튼을 벤치마킹한 예전(v0.6.5) 모양 그대로,
+// 모서리가 둥근 단색 별(채움 + 같은 색 둥근 이음 테두리)로 그린다. CLAUDE.md 아이콘 규칙 9번 예외, scripts/check-facet-icons.mjs가 이 모양을 지킨다.
+const REVIEW_STAR_PATH = "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z";
+function ReviewStar({ size, color }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}><path d={REVIEW_STAR_PATH} fill={color} stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /></svg>;
+}
 export function BestMoveJumpButton({ onClick, disabled, title = t("이 대국 분석 모드로 바로 보기"), size = 30 }) {
   const dotSize = Math.round(size * 0.6), starSize = Math.round(size * 0.367);
   return (
     <button onClick={onClick} disabled={disabled} title={title} className="press"
       style={{ flexShrink: 0, width: size, height: size, borderRadius: 8, background: disabled ? "#9CC98A" : "#6EBF4A", border: "none", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1 }}>
       <span style={{ width: dotSize, height: dotSize, borderRadius: "50%", background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-        <Star size={starSize} fill="#6EBF4A" color="#6EBF4A" />
+        <ReviewStar size={starSize} color="#6EBF4A" />
       </span>
     </button>
   );

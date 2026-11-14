@@ -9,7 +9,7 @@ import { t } from "../lib/i18n.js";
 import { LOOP } from "../lib/perfMode.js";
 
 const PAGER_SEEN_KEY = "oc_learn_pager_seen";
-export function SwipePager({ pages }) {
+export function SwipePager({ pages, onIndexChange }) {   // (v0.7.6) onIndexChange(i): 지금 보이는 페이지가 바뀔 때(분석 탭 성장 분석이 보일 때만 자동 리뷰를 돌리려고)
   const scRef = useRef(null), pageRefs = useRef([]);
   const [idx, setIdx] = useState(0);
   const [hint, setHint] = useState(() => { try { return window.localStorage.getItem(PAGER_SEEN_KEY) !== "1"; } catch { return true; } });
@@ -22,6 +22,7 @@ export function SwipePager({ pages }) {
       let best = 0, bd = Infinity;
       pageRefs.current.forEach((el, i) => { if (!el) return; const d = Math.abs(el.offsetLeft + el.offsetWidth / 2 - mid); if (d < bd) { bd = d; best = i; } });
       setIdx(best);
+      if (onIndexChange) onIndexChange(best);
       if (best > 0 || sc.scrollLeft > 24) { setHint(false); try { window.localStorage.setItem(PAGER_SEEN_KEY, "1"); } catch { } }
     });
   };

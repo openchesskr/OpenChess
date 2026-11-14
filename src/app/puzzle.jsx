@@ -23,6 +23,7 @@ import { AccountChessStats } from "./profile.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
+import { SocialFeed } from "./socialFeed.jsx";
 // (기능) 퍼즐 탭 오프닝 검색을 도감(CollectionTab) 트리와 똑같이 "이 게임에 존재하는 모든 개별
 // 오프닝 이름"까지 검색 가능하게 하기 위한 전역 오프닝 이름 목록 — SNAP.tree의 모든 키(=모든
 // 포지션)를 훑어 effectiveOpeningNameAt(오버라이드 우선)으로 각 위치의 '진짜' 이름을 구하고, 같은
@@ -2509,6 +2510,8 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   const [selectedEngagement, setSelectedEngagement] = useState([]); // 예: ["liked","reposted"]
   const toggleEngagement = (k) => setSelectedEngagement((s) => (k === "all" ? [] : s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
   const [hideSolved, setHideSolved] = useState(false);
+  const [feedKind, setFeedKind] = useTabMemory("social.kind", "all");   // (v0.7.6) 소셜 피드 종류: 전체·퍼즐·유산
+  const socialWide = !useNarrow(999);
   // (사용자 요청) 퍼즐 만들기 기능을 학습 탭(분석 화면 보드 편집기) 대신 이 탭 안에서 — "퍼즐 풀기"/
   // "퍼즐 만들기" 선택 박스로 모드를 전환한다. 만들기 모드는 PGN/FEN 입력 → 퍼즐 유형 선택 → 생성된
   // 라인 미리보기(생성자 권한 박스) 세 단계를 차례로 보여주고, 셋 다 끝나야 "퍼즐 만들기" 버튼이 켜진다.
@@ -3091,18 +3094,19 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     if (!hit) { setNumMsg(t("불러오는 중…")); const d = await puzzleFetch(n); if (d) hit = d; }
     if (hit) { setNumMsg(""); setNumInput(""); setActive(hit); } else setNumMsg(t("#{0} 번호의 퍼즐 없음", n));
   };
-  return (
-    <div>
-      {/* (v0.0.6 추가) 퍼즐을 풀 때마다 오르는 티어를 늘 보이게 — 지금 구간은 크게, 다음 몇 단계는
-          작게 미리 보여준다. 누르면 전체 여정 지도가 열린다. */}
+  // (v0.7.6, 사용자 요청) 퍼즐 탭 → 소셜 탭: 인스타그램 피드처럼 게시물(퍼즐·유산)이 한 줄로 내려간다(socialFeed.jsx).
+  //  데스크톱(1000px 이상): 가운데 피드 열(오늘의 퍼즐 캐러셀 = 스토리 자리) + 오른쪽 고정 사이드바(티어·연속 기록·풀기/만들기·검색·필터).
+  //  모바일: 위에서부터 티어 → 오늘의 퍼즐 → 연속 기록 → 풀기/만들기 → 검색·필터 → 피드.
+  const tierNode = (
       <TierProgressStrip totalXp={totalXp} onOpen={onOpenTierMap} puzzleRating={puzzleRating} />
-      {/* (18차 UI5) 안내 문구 삭제, (18차 UI2) 일일 퀘스트는 학습 탭으로 이동 */}
-      {/* (v0.2.7 개편) 오늘의 퍼즐을 오락실 슬롯머신 스타일 캐러셀로 — 좌우로 스크롤해 날짜(오늘부터
-          테마가 처음 배정된 날짜까지 전체 기간)를 고르면 선택된 항목만 커지고 나머지는 어둡게 줄어든다. */}
+  );
+  const storiesNode = (
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
+  );
+  const streakNode = (
       <DailyStreakStrip streak={dailyPuzzleStreak} />
-      {/* (사용자 요청) 퍼즐 만들기 기능을 학습 탭 보드 편집기 대신 이 탭에서 — "번호로 풀기" 검색
-          UI 바로 위 줄에 퍼즐 풀기/퍼즐 만들기 선택 박스를 둔다. */}
+  );
+  const modeNode = (
       <div className="inline-flex items-center" style={{ marginBottom: 10, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }}>
         <button onClick={() => setPuzzleMode("solve")} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "solve" ? T.ebony2 : "transparent", color: puzzleMode === "solve" ? T.brassHi : T.inkSoft }}>{t("퍼즐 풀기")}</button>
         {/* (사용자 요청) 로그인하지 않은 상태에서는 퍼즐 만들기 기능 자체를 쓸 수 없게 막는다 — 만든
@@ -3110,6 +3114,9 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
         <button onClick={() => myUid && setPuzzleMode("create")} disabled={!myUid} title={!myUid ? t("로그인 후 이용 가능") : undefined} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: myUid ? "pointer" : "default", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: !myUid ? "rgba(244,238,226,.35)" : puzzleMode === "create" ? T.brassHi : T.inkSoft }}>{t("퍼즐 만들기")}</button>
         {!myUid && <span style={{ fontSize: 11, color: T.inkSoft, padding: "0 8px" }}>{t("로그인 후 이용 가능")}</span>}
       </div>
+  );
+  const createNode = (
+    <>
       {puzzleMode === "create" && (
         <div style={{ marginBottom: 16 }}>
           {/* 1단계 — PGN 또는 FEN 코드 입력 */}
@@ -3268,8 +3275,10 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
           </div>
         </div>
       )}
-      {puzzleMode === "solve" && (
-      <>
+    </>
+  );
+  const searchNode = puzzleMode === "solve" ? (
+    <>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
           {/* (사용자 요청) 번호로 풀기 검색창·풀기 버튼·오프닝/생성자 검색창·필터 버튼 네 요소의
@@ -3438,22 +3447,35 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
           </div>
         </div>
       </div>
-      {/* (v0.4.1 기능, item 3) 사용자 요청 — 추천/미해결/해결 완료 3분할을 없애고 단일 정렬 피드로
-          통합한다. 기본 정렬("추천순")은 위 puzzleExposureScore(난이도 적합도·약점 보완도·테마
-          적합도 가중합)가 높은 순 — 예전 "🔥 추천 퍼즐" 섹션이 하던 발견 기능(인기·리포스트 퍼즐)은
-          discoveredPuzzles로 이 피드의 후보 풀에 그대로 합류돼 있다. */}
-      {feed.length === 0 ? <div style={{ background: T.paper, border: "1px dashed #C9B58C", borderRadius: 12, padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Mascot name="kokoa" emotion="sleep" size={88} /></div>{t("조건에 맞는 퍼즐 없음")}</div>
-        : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
-            <AnimatePresence mode="popLayout">
-              {/* (버그 수정) 이 카드의 "✕" 삭제 버튼이 소유자 확인·확인 다이얼로그 없이 모든 로그인
-                  유저에게 그대로 노출돼 있었다(누구나 남의 퍼즐을 즉시 지울 수 있었음) — 퍼즐 삭제는
-                  퍼즐 풀이 화면 2페이지의 생성자 전용·확인 다이얼로그 경로로만 하도록 이 카드에서는
-                  onDelete를 넘기지 않는다. */}
-              {feed.map((p, i) => <FadeIn key={p.id} index={i} lift><PuzzleCard p={p} isSolved={solved.has(p.id)} onClick={() => setActive(p)} {...puzzleCardProps(p)} /></FadeIn>)}
-            </AnimatePresence>
-          </div>}
-      </>
-      )}
+    </>
+  ) : null;
+  const feedNode = puzzleMode === "solve" ? (
+    <SocialFeed puzzles={feed} cardProps={puzzleCardProps} creatorOf={(p) => (creatorUsernames || {})[puzzleNo(p.id)] || null} solved={solved}
+      onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
+  ) : null;
+  if (socialWide) {
+    return (
+      <div className="social-tab" style={{ display: "grid", gridTemplateColumns: "minmax(0, 600px) 320px", justifyContent: "center", gap: 28, alignItems: "start" }}>
+        <div style={{ minWidth: 0 }}>
+          {storiesNode}
+          {puzzleMode === "create" ? createNode : feedNode}
+        </div>
+        <aside style={{ position: "sticky", top: 12, minWidth: 0, maxHeight: "calc(100dvh - 120px)", overflowY: "auto", paddingRight: 2 }}>
+          {tierNode}
+          {streakNode}
+          {modeNode}
+          {searchNode}
+        </aside>
+      </div>
+    );
+  }
+  return (
+    <div className="social-tab" style={{ maxWidth: 600, margin: "0 auto" }}>
+      {tierNode}
+      {storiesNode}
+      {streakNode}
+      {modeNode}
+      {puzzleMode === "create" ? createNode : <>{searchNode}{feedNode}</>}
     </div>
   );
 }

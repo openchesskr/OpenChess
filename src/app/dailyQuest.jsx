@@ -115,7 +115,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
       <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
         {row({ k: "puzzle", Icon: Puzzle, hue: "#3E7CC4", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
-        {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("퍼즐 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
+        {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("소셜 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
         {(dq.quests || []).map((q, i) => {
           const isOpening = q.type === "opening";
           // (버그) 각 퀘스트를 개별적으로 1회씩 리롤 — 이미 리롤했거나 이미 완료한 퀘스트는 불가.
@@ -154,12 +154,13 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
   );
 }
 
-// (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래의 같은 크림색 블록. 일반 대국·미니게임에서 조건을 달성하면 클리어된다(하루 단위, KST 자정에 처음부터).
-// 진행은 lib/playQuest.js(대국·미니게임이 끝날 때 play.jsx가 알림). 보상은 없고 클리어 표시만 한다.
-import { PLAY_QUESTS, normalizePlayQuest, questDone, clearedCount } from "../lib/playQuest.js";
-export function PlayQuestCard({ playQuest }) {
+// (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래의 같은 크림색 블록. 일반 대국·미니게임에서 조건을 달성하면 클리어된다.
+// (v0.7.6, 사용자 요청) 초기화 없는 한 번짜리 목표 + 퀘스트당 코인 보상. 로그인했으면 서버가 센 진행값(playQuest.server)과 수령 여부(claimed)를 보여 준다(lib/playQuest.js).
+import { PLAY_QUESTS, PLAY_QUEST_COINS, normalizePlayQuest, questDone, clearedCount } from "../lib/playQuest.js";
+export function PlayQuestCard({ playQuest, loggedIn }) {
   const INK = "rgba(90,58,34,.10)", LINE = "#D6C29A", BRASS = "#A8842F", SAGE = "#3F7A3A", MUTED = "#7A6648";
-  const s = normalizePlayQuest(playQuest);
+  const s = playQuest && playQuest.server ? playQuest : normalizePlayQuest(playQuest);
+  const claimed = new Set((s.server && s.claimed) || []);
   const done = clearedCount(s), all = done === PLAY_QUESTS.length;
   return (
     <div style={{ marginBottom: 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E" }}>
@@ -189,12 +190,15 @@ export function PlayQuestCard({ playQuest }) {
                   </div>
                 )}
               </div>
-              <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: ok ? "#5E8A52" : MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}>{ok ? t("클리어") : cur + "/" + q.target}</span>
+              <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: ok ? "#5E8A52" : MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}>{ok ? (claimed.has(q.key) ? t("보상 받음") : t("클리어")) : cur + "/" + q.target}</span>
+                <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 700, fontFamily: SITE_FONT, color: claimed.has(q.key) ? "#5E8A52" : "#8A6C2F", opacity: claimed.has(q.key) ? 0.75 : 1 }}>+{PLAY_QUEST_COINS} <CoinIcon size={13} /></span>
+              </div>
             </div>
           );
         })}
       </div>
-      <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨, 한국 시간 자정에 새로 시작")}</p>
+      <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("한 번 달성하면 끝나는 목표, 퀘스트마다 코인 보상. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
     </div>
   );
 }

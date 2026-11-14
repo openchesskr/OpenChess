@@ -1,6 +1,8 @@
 // (v0.6.0, App.jsx 분할 · v0.7.3 learn.jsx → analysis.jsx) 'analysis'(분석 탭) 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
+import { autoMoveKeyword, blockKeywords } from "../lib/moveKeywords.js";
+import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { LOOP } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
@@ -27,7 +29,7 @@ import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
 import { BestMoveJumpButton, ListPager, NavBtn } from "../components/uiPrimitives.jsx";
 import { playMoveSfx } from "../lib/prefs.js";
-import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, deriveKeywords, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, FadeIn, ImageSourceMenu, Mascot, MaterialIcon, ReviewPromoPrompt, SNAP, SequenceBar, TIME_CLASS_LABEL, WinBar, _lichessCache, addsFor, analyzePoolSize, assignTiers, bootAnalysisWorker, callEvaluateMulti, containsBannedWord, devAddEntry, fetchLichess, findOpeningPathByFuzzyName, fmtFull, forceKindFor, getAnalysisPool, gradeMoveKindConfirmed, isBookMoveAt, isUnbooked, lichessFetchJson, moverEval, nameOverride, poolWorker, relTime, sacCheckSync, sacConfirmListeners, sacVerdict, scanImageFile, singleRecaptureCheck, snapNode, useBoardSize, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
@@ -201,14 +203,9 @@ function cascadeRenameOpeningDescendants(path, oldName, newName) {
     CONTENT.names[parentKey + "|" + stripSuffix(lastSan)] = newName + cur.slice(oldName.length);
   }
 }
-function kwOverride(key, san) { const v = CONTENT.keywords[key + "|" + stripSuffix(san)]; return Array.isArray(v) ? v : null; }
 // (버그 수정) 대국 목록의 수 체계 아이콘 표시(탁월/유일/실수/블런더 개수)는 목록에 뜨는 모든 대국을
 // 자체 엔진으로 전체 분석해야 해서 계산 시간이 너무 오래 걸려 제거했다 — "게임 리뷰"(/review)의
 // 명시적 분석 버튼을 눌렀을 때만 엔진 분석을 돌린다.
-// 상보쌍: 한 묶음, 동시 선택 불가(둘 다 미선택은 가능)
-const KW_PAIRS = [["MAIN-LINE", "SIDESTEPPING"], ["BALANCE", "IMBALANCE"], ["SHARP", "QUIET"], ["STRAIGHT-LINE", "FLEXIBLE"], ["OPEN", "CLOSED"]];
-const KW_SINGLES = ["NORMAL", "TOP LEVEL", "LOW-LEVEL", "TRICKY", "INTUITIVE", "DRAWING-WEAPON", "ANTI-", "SWITCH"];
-function kwPartner(k) { for (const [a, b] of KW_PAIRS) { if (a === k) return b; if (b === k) return a; } return null; }
 function whiteEval(m) { if (m.live) return m.live.mate != null ? (mateWhiteWins(m.live.mate, m.live.win) ? 1000 : -1000) : m.live.cp; if (m.evalCp != null) return m.evalCp; if (m.mate != null) return m.mate > 0 ? 1000 : -1000; return null; }
 // (20차) 평가치 바 표기용 — 숫자로 뭉개지 않고 {cp}|{mate,win}을 그대로 넘겨 메이트를 M수로 표기할 수 있게 한다.
 function whiteEvalObj(m) {
@@ -805,7 +802,7 @@ function QuestTag({ onClick }) {
 function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
-  const kws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);   // 비이론 수는 개발자가 추가한 키워드만 표기
+  const kws = blockKeywords(m);   // (v0.7.6) 포지션을 분석해 붙인 자동 키워드 하나(lib/moveKeywords.js)
   const evTxt = m.live ? fmtEvalCp(m.live.cp, m.live.mate, m.live.plies) : (m.evalCp != null || m.mate != null ? fmtEvalCp(m.evalCp, m.mate) : null);
   const gamesDisp = useCountUp(m.games, 900);
   const posGamesDisp = useCountUp(posGames, 500);
@@ -1371,8 +1368,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
     let t = assignTiers(uniq, ply, board, key, sans).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
-      const nm = nameOverride(key, m.san); const kwo = kwOverride(key, m.san);
-      return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), ...(kwo ? { kw: kwo } : {}), disp: decorateSan(board, m.san, color) };
+      const nm = nameOverride(key, m.san);
+      return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), disp: decorateSan(board, m.san, color) };
     });
     // (UI6/UX1) 비이론 수 정렬 기준: 평가치(둘 차례 관점 최선이 맨 위) 또는 채택률(가장 많이 둔 순).
     // 라이브 엔진 평가 중에는 아직 자기 차례(live)가 오지 않은 수를 오래된 스냅샷 evalCp로 순위에
@@ -1494,8 +1491,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
     const forced = forceKindFor(sansKey, san);
     const book = !unb && (forced === "book" || (!!base.book && forced == null) || !!(dev && dev.theory));
     const name = nameOverride(sansKey, san) ?? (dev && dev.name) ?? base.name;
-    const kw = kwOverride(sansKey, san) || base.kw;
-    return { ...base, book, name, kw };
+    return { ...base, book, name };
   }, [active, sansKey, san, focus && focus.m, contentVer]);
   const node = active ? snapNode(sans) : null;
   const title = active ? (m.name || (node && node.opening ? node.opening.name : null)) : null;
@@ -1555,31 +1551,29 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   const focusVideoSans = useMemo(() => (active ? [...sans, san] : []), [active, sansKey, san]);
   const [devEdit, setDevEdit] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [kwDraft, setKwDraft] = useState([]);
   const [addedTheory, setAddedTheory] = useState(false);
   // 집중분석 대상 수가 바뀌면(=예전엔 FocusMode가 다시 마운트되던 상황) 이전 수의 편집 UI 상태를 초기화한다.
-  useEffect(() => { if (!active) return; setDevEdit(false); setNameDraft(""); setKwDraft([]); setAddedTheory(false); }, [active, sansKey, san]);
+  useEffect(() => { if (!active) return; setDevEdit(false); setNameDraft(""); setAddedTheory(false); }, [active, sansKey, san]);
   const isPunishable = active && ["mistake", "blunder"].includes(kind);
   const curated = isPunishable ? punishFor(sans, san) : null;
   const stats = active && chesscom && chesscom.status === "ready" ? chesscom.analyze([...sans, san], { excludeBullet: true }) : null;
-  // (UI1) 개발자: 수 이름·키워드 편집 + 이론 수에서 삭제
+  // (UI1) 개발자: 수 이름 변경 + 이론 수 지정·삭제 (v0.7.6: 키워드 수동 지정은 없앴다 — 자동 키워드 lib/moveKeywords.js)
   const editKey = sansKey;
   const openDevEdit = () => {
     let parentName = "";
     if (sans.length) { const pj = sans.slice(0, -1).join(" "); const last = sans[sans.length - 1]; const ov = nameOverride(pj, last); if (ov) parentName = ov; else { const nd = snapNode(sans.slice(0, -1)); const mm = nd && nd.moves.find((x) => stripSuffix(x.san) === stripSuffix(last)); parentName = (mm && mm.name) || ""; } }
-    setNameDraft(nameOverride(editKey, san) ?? (m.name || parentName)); setKwDraft(kwOverride(editKey, san) || deriveKeywords(m)); setDevEdit(true);
+    setNameDraft(nameOverride(editKey, san) ?? (m.name || parentName)); setDevEdit(true);
   };
   const saveMeta = async () => {
     const k = editKey + "|" + stripSuffix(san);
     const newName = nameDraft.trim();
     // (사용자 요청) 이름이 바뀌면 그 이름을 접두사로 쓰던 자손 수들의 오프닝 명칭도 함께 갱신한다.
     const oldName = nameOverride(editKey, san) ?? m.name ?? null;
-    CONTENT.names[k] = newName; CONTENT.keywords[k] = kwDraft;
+    CONTENT.names[k] = newName;
     if (newName) cascadeRenameOpeningDescendants([...sans, san], oldName, newName);
     await bumpContent(); setDevEdit(false);
   };
   const toggleUnbook = async () => { const k = editKey + "|" + stripSuffix(san); if (CONTENT.unbook[k]) delete CONTENT.unbook[k]; else CONTENT.unbook[k] = true; await bumpContent(); };
-  const toggleKw = (kw) => setKwDraft((d) => { if (d.includes(kw)) return d.filter((x) => x !== kw); const p = kwPartner(kw); return [...d.filter((x) => x !== p), kw]; });
   // (v0.4.4 개편, 사용자 요청) "집중 분석에서 퍼즐을 만들 때도 바로 퍼즐 카드로 들어가지 말고 퍼즐
   // 마법사 화면으로 이동해야 한다" — 예전엔 여기서 곧장 엔진으로 트리를 만들어 조용히 저장하고
   // (auto:true), 다 되면 "퍼즐 풀기" 버튼이 바로 PuzzleSolver를 열었다. 이제 이 훅은 더 이상 엔진을
@@ -1633,8 +1627,8 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
   }, [active, sansKey, san, masterRetry]);
   return {
     active, sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey, focusVideoSans,
-    editKey, devEdit, setDevEdit, nameDraft, setNameDraft, kwDraft, setKwDraft,
-    openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated, stats,
+    editKey, devEdit, setDevEdit, nameDraft, setNameDraft,
+    openDevEdit, saveMeta, toggleUnbook, isPunishable, curated, stats,
     expectedPuzzleId, existingPuzzle, wizardSeed, addAsTheory, isTheory, canEdit, canAdd, bumpContent, engine, chesscom,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames: () => setMasterRetry((n) => n + 1),
   };
@@ -2183,7 +2177,7 @@ function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
-      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
+      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : <MasterNameLink name={name}>{fullPlayerName(name)}</MasterNameLink>}</b>
       <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "-"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
       {winner && <CrownIcon />}
     </div>
@@ -2359,7 +2353,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   const {
     sans, san, m, ply, title, kind, evTxt, extraArrows, mkKey, focusVideoSans,
     editKey, devEdit, setDevEdit,
-    nameDraft, setNameDraft, kwDraft, openDevEdit, saveMeta, toggleUnbook, toggleKw, isPunishable, curated,
+    nameDraft, setNameDraft, openDevEdit, saveMeta, toggleUnbook, isPunishable, curated,
     stats, canEdit, canAdd, engine, chesscom, isTheory, addAsTheory, wizardSeed, existingPuzzle,
     masterGames, masterStats, loadingMasterGames, masterGamesError, onRetryMasterGames,
   } = fa;
@@ -2377,7 +2371,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
   const lineSafe = line.length > curIdx && curLine.every((x, i) => line[i] === x) ? line : curLine;
   // 수 이름 — 이 수에 이름이 없으면 오프닝 이름이 있는 가장 가까운 앞 수의 이름
   const dispName = useMemo(() => { if (title) return title; for (let k = curLine.length; k >= 1; k--) { const nd = snapNode(curLine.slice(0, k)); if (nd && nd.opening && nd.opening.name) return nd.opening.name; } return null; }, [curKey, title]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const focusKws = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+  const focusKws = blockKeywords(m);
   const wide = useFocusWide();
   const focusBoardPx = Math.max(200, Math.min(boardSize || 360, (typeof window !== "undefined" ? window.innerWidth : 400) - 32, 588));
   const [openingGameId, setOpeningGameId] = useState(null);
@@ -2728,23 +2722,13 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
           <div className="flex items-center justify-between" style={{ marginBottom: devEdit ? 8 : 0 }}>
             <div className="flex items-center gap-2" style={{ color: T.brassHi, fontWeight: 800, fontSize: 12.5 }}>{tx("{0} 개발자 편집", <Crown size={14} />)}</div>
             {!devEdit && <div className="flex gap-2">
-              <button onClick={openDevEdit} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름·키워드 편집")}</button>
+              <button onClick={openDevEdit} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + T.brass, background: "transparent", color: T.brassHi, cursor: "pointer" }}>{t("이름 변경")}</button>
               {canEdit && (m.book || isUnbooked(editKey, san)) && <button onClick={toggleUnbook} className="press" style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 7, border: "1px solid " + (isUnbooked(editKey, san) ? T.excellent : T.blunder), background: "transparent", color: isUnbooked(editKey, san) ? T.excellent : T.blunder, cursor: "pointer" }}>{isUnbooked(editKey, san) ? t("이론 수로 복구") : t("이론 수에서 삭제")}</button>}
             </div>}
           </div>
           {devEdit && (
             <div>
               <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t("수 이름 (예: 이탈리안 게임)")} style={{ width: "100%", fontSize: 12, padding: 8, borderRadius: 8, border: "1px solid #C9B58C", background: "#fff", color: T.ink, marginBottom: 8, boxSizing: "border-box" }} />
-              <div style={{ marginBottom: 8 }}>
-                {KW_PAIRS.map(([a, b]) => (
-                  <div key={a} className="flex items-center gap-2" style={{ marginBottom: 5 }}>
-                    {[a, b].map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ flex: 1, fontSize: 9.5, fontWeight: 800, padding: "5px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "rgba(255,255,255,.15)"), background: on ? KW[k].bg : "rgba(255,255,255,.06)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
-                  </div>
-                ))}
-                <div className="flex flex-wrap gap-1" style={{ marginTop: 8 }}>
-                  {KW_SINGLES.map((k) => { const on = kwDraft.includes(k); return <button key={k} onClick={() => toggleKw(k)} className="press" style={{ fontSize: 9.5, fontWeight: 800, padding: "3px 7px", borderRadius: 5, border: "1px solid " + (on ? KW[k].fg : "transparent"), background: on ? KW[k].bg : "rgba(255,255,255,.08)", color: on ? KW[k].fg : T.ivory, cursor: "pointer" }}>{k}</button>; })}
-                </div>
-              </div>
               <div className="flex gap-2">
                 <button onClick={saveMeta} className="press" style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 7, border: "none", background: T.brass, color: "#241509", cursor: "pointer" }}>{t("저장")}</button>
                 <button onClick={() => setDevEdit(false)} className="press" style={{ fontSize: 11, padding: "5px 12px", borderRadius: 7, border: "1px solid #C9B58C", background: "transparent", color: T.ivory, cursor: "pointer" }}>{t("취소")}</button>
@@ -2851,7 +2835,46 @@ function BranchBanner({ sentKey, canEdit, canAdd, bumpContent }) {
 // 같은 종류일 뿐 정확도 손실이 아니다). 분석 탭(evalMoveKind)·리뷰 페이지(자유 탐색 판정) 양쪽이 같은
 // 값을 공유해야 같은 위치·같은 수에 항상 같은 등급이 나온다 — 모듈 스코프 상수로 둔다.
 const MOVETIME_MS = 260;
+// (v0.7.6, 사용자 요청) 데스크톱(두 칼럼, 1024px 이상)에서는 다음 수 블록을 위에서 6개만 보이는 높이로 자르고, 나머지는 그 영역 안에서만 도는 세로 스크롤로 본다.
+// 높이는 7번째 블록의 위치(= 블록 6개 + 사이 간격)를 재서 정한다 — 블록 높이가 바뀌어도(평가치·키워드 로딩) ResizeObserver가 다시 잰다. 6개 이하면 자르지 않는다.
+// 포지션이 바뀌면(resetKey) 맨 위로 되돌린다. 안쪽 스크롤이 끝나도 페이지가 대신 스크롤되지 않게 overscroll-behavior: contain. scripts/check-analysis-tiles.mjs가 검사한다.
+export const MOVE_TILE_WINDOW = 6;
+function MoveTileWindow({ enabled, resetKey, children }) {
+  const ref = useRef(null);
+  const [maxH, setMaxH] = useState(null);
+  const [atEnd, setAtEnd] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!enabled || !el) { setMaxH(null); return undefined; }
+    const measure = () => {
+      const kids = el.children;
+      if (kids.length <= MOVE_TILE_WINDOW) { setMaxH(null); setAtEnd(true); return; }
+      const h = kids[MOVE_TILE_WINDOW].offsetTop - kids[0].offsetTop;
+      setMaxH(h > 0 ? h : null);
+      setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(el); for (const k of el.children) ro.observe(k); }
+    const mo = typeof MutationObserver !== "undefined" ? new MutationObserver(() => { measure(); if (ro) for (const k of el.children) ro.observe(k); }) : null;
+    if (mo) mo.observe(el, { childList: true });
+    return () => { if (ro) ro.disconnect(); if (mo) mo.disconnect(); };
+  }, [enabled]);
+  useEffect(() => { if (ref.current) ref.current.scrollTop = 0; }, [resetKey]);
+  if (!enabled) return <>{children}</>;
+  return (
+    <div style={{ position: "relative" }}>
+      <div ref={ref} className="oc-tile-window" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
+        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "rgba(236,203,134,.45) transparent", marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
+        {children}
+      </div>
+      {maxH != null && !atEnd && <div aria-hidden style={{ position: "absolute", left: "50%", bottom: -11, transform: "translateX(-50%)", width: 44, height: 4, borderRadius: 2, pointerEvents: "none", background: "rgba(236,203,134,.45)" }} />}
+    </div>
+  );
+}
+
 export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engine, liveOn, onFocusActive, unlockOpening, chesscom, contentVer, canEdit, canAdd, bumpContent, sans, setSans, future, setFuture, extra, setExtra, focus, setFocus, puzzles, onOpenPuzzle, onOpenPuzzleWizard, onOpenReview, onOpenPlay, dailyQuest, uid, user, noteCap, onQuestBadgeClick, fenSeed, onConsumeFenSeed }) {
+  const tileWindowOn = !useNarrow(1023);   // (v0.7.6) 데스크톱 두 칼럼 배치에서만 다음 수 블록 6개 창(MoveTileWindow)
   // (20차 UI4) 오늘의 일일 퀘스트(오프닝 플레이)에 해당하는 오프닝 이름 집합 — 수 블록 배지 판정용.
   // (20차 UI4) 부분 일치로 비교 — 퀘스트는 "London System" 같은 간단한 이름을 쓰지만 실제 트리의 오프닝
   // 이름은 "Queen's Pawn Game: Accelerated London System"처럼 더 세부적일 수 있어, 정확히 같지 않아도
@@ -2891,8 +2914,8 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   const pinnedKindRef = useRef({});
   // (v0.2.6 버그 수정) 다음 수 블록(MoveTile)에 뜬 수 키워드(TOP LEVEL/SIDESTEPPING 등)를 그 수를
   // 실제로 두면 현재 수 블록이 다시 계산해 다른 결과를 보여주는 문제 — MoveTile은 useMergedMoves가
-  // 만든 "지금 포지션의 다음 수" 객체(마스터/Lichess 채택률이 이미 채워져 있음)로 deriveKeywords를
-  // 부르는데, 현재 수 블록은 그 수를 둔 뒤 한 칸 전 포지션을 snapNode(정적 북 데이터, 채택률 필드
+  // 만든 "지금 포지션의 다음 수" 객체(마스터/Lichess 채택률이 이미 채워져 있음)로 키워드를 계산하는
+  // 데, 현재 수 블록은 그 수를 둔 뒤 한 칸 전 포지션을 snapNode(정적 북 데이터, 채택률 필드
   // 없음)로 다시 조회해 같은 함수를 불러 전혀 다른 입력으로 다른 결과를 냈다. 위 pinnedKindRef와
   // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
   // 현재 수 블록은 그 값을 그대로 재사용한다.
@@ -3071,7 +3094,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     moves.forEach((m) => {
       if (m.kind && m.kind !== "pending") pinnedKindRef.current[key + "|" + stripSuffix(m.san)] = m.kind;
       // MoveTile과 완전히 동일한 식으로 계산해(순서·종류까지) pin — 아래 curKws가 그대로 재사용한다.
-      pinnedKwRef.current[key + "|" + stripSuffix(m.san)] = m.book ? deriveKeywords(m) : (Array.isArray(m.kw) ? m.kw : []);
+      pinnedKwRef.current[key + "|" + stripSuffix(m.san)] = blockKeywords(m);
     });
   }, [key, moves]);
   // (20차 UX4) 스크롤이 많이 내려간 상태(예: 깊은 수 블록 클릭)에서 집중 분석에 들어가면, 페이지
@@ -3448,7 +3471,8 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 실제로 떴던 키워드(pinnedKwRef)가 있으면 그걸 그대로 쓰고, 없을 때만(블록을 거치지 않고 바로
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
-  const curKws = pinnedKw || ((curMove && curMove.book) ? deriveKeywords(curMove) : (kwOverride(parentKey, lastSan) || []));   // 비이론 수는 개발자 키워드만
+  // (v0.7.6) 블록을 거치지 않고 도달했으면(기보 이동 등) 직전 포지션에서 같은 자동 규칙으로 계산한다(평가·채택률을 모르면 그 조건만 건너뜀).
+  const curKws = pinnedKw || (lastSan && !fenRoot ? [autoMoveKeyword({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? curMove.adopt : null })] : []);
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
@@ -3529,7 +3553,9 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
                 전제하므로 숨긴다(hideFocus — 사용자 요청, MoveTile 참고). */}
             {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
             <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
+            <MoveTileWindow enabled={tileWindowOn} resetKey={sans.join(" ") + "|" + (fenRoot ? "fen" : "")}>
             {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            </MoveTileWindow>
           </>
         );
       })()}

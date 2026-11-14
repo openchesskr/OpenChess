@@ -11,7 +11,6 @@ import { TIME_CLASS_LABEL, timeControlFromKey, fmtFull, openingNameOf, Board, ca
 import { recordAround } from "../lib/ccGameToast.js";
 import { CC_TOAST_LABEL_FONT, ccWrColor } from "../lib/ccToastStyle.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { RecentPerformanceRow } from "./recentPerf.jsx";
 import { t, tx } from "../lib/i18n.js";
 
 // (v0.6.2) chess.com 대국 통계(AccountChessStats)의 필터·전적·"최근 대국" UI를 공용으로 뺀 것 — chess.com 통계와 OpenChess 일반 대국 기록이 같은 컴포넌트를 쓴다.
@@ -550,7 +549,7 @@ export function OpenChessGameHistory({ hideRecent, uid, username, onOpenGame, on
         <GameFilterPills options={[["all", t("전체")], ["bullet", t("불릿")], ["blitz", t("블리츠")], ["rapid", t("래피드")], ["standard", t("스탠다드")]]} value={timeFilter} onChange={setTimeFilter} />
         <GameFilterPills options={[["all", t("전체")], ["w", t("백")], ["b", t("흑")]]} value={colorFilter} onChange={setColorFilter} />
       </div>
-      {overall ? <GameRecordSummary overall={overall} footer={<RecentPerformanceRow games={games} source="oc" ownerUid={uid} />} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
+      {overall ? <GameRecordSummary overall={overall} /> : <p style={{ fontSize: 12, color: T.inkSoft, marginBottom: 12 }}>{t("이 시간 규정의 대국 없음")}</p>}
       <RatingHistoryChart games={gamesForRating} timeFilter={timeFilter} stillFetching={false} />
       {!hideRecent && <RecentGamesList games={games} ratingChanges={ratingChanges} username={username} resetKey={timeFilter + "|" + colorFilter}
         onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />}

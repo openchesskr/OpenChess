@@ -1,6 +1,8 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { autoMoveKeyword, placementKey } from "../lib/moveKeywords.js";
+import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
 import { engineLineGapMs, isLite } from "../lib/perfMode.js";
@@ -728,7 +730,7 @@ export function roleIcon(username) {
 }
 const SYM2KIND = [["??", "blunder"], ["?!", "inaccuracy"], ["!!", "brilliant"], ["☆", "best"], ["★", "best"], ["👍", "excellent"], ["✅️", "good"], ["✅", "good"], ["?", "mistake"], ["!", "only"]];
 function splitSym(tok) { for (const [sym, kind] of SYM2KIND) { if (tok.endsWith(sym)) return { san: tok.slice(0, -sym.length), kind }; } return { san: tok, kind: null }; }
-export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+export let CONTENT = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
 let CONTENT_SEEDED = false;
 // 외부 대국 데이터베이스의 "Openings" 카테고리(파일명 자체가 세부 변형 이름인 zip들)에서 뽑아낸 대표
 // 수순 — scripts/build-theory-book.mjs 로 생성. 각 항목 { moves:[san,...], name } 을
@@ -782,15 +784,15 @@ function seedContent() {
 // (v0.7.5) 예전 레슨 시드(seedLessons, CONTENT.lessons)는 지웠다 — 새 레슨은 코드에 고정된 커리큘럼(src/lib/lessons/curriculum.js)이다.
 seedContent();
 export async function loadContent() {
-  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, keywords: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
+  const defaults = { treeAdds: {}, forceKind: {}, branches: {}, branches18: {}, recommends: {}, explains: {}, names: {}, unbook: {}, mainline: {}, codev: [], puzzleOverrides: {} };
   try {
     if (SB_ON) {
-      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
+      try { const rows = await sbSelect("app_content?key=eq.global&select=value"); if (rows && rows.length && rows[0].value) { CONTENT = { ...defaults, ...rows[0].value }; delete CONTENT.lessons; delete CONTENT.keywords; CONTENT_SEEDED = false; seedContent(); try { window.localStorage.setItem("occ_content", JSON.stringify(rows[0].value)); } catch { } return; } } catch { }
     }
     let raw = null;
     if (typeof window !== "undefined" && window.storage) { const r = await window.storage.get("occ_content", true); raw = r && r.value; }
     if (!raw) { try { raw = window.localStorage.getItem("occ_content"); } catch { } }
-    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; CONTENT_SEEDED = false; seedContent(); }
+    if (raw) { const d = JSON.parse(raw); CONTENT = { ...defaults, ...d }; delete CONTENT.lessons; delete CONTENT.keywords; CONTENT_SEEDED = false; seedContent(); }
   } catch { }
 }
 // (v0.5.6 버그 수정 BUG-015) 강제 등급(forceKind)은 개발자가 입력한 표기 그대로("Qh5") 저장되는데, 실제 수 표기에는 체크·메이트 기호가
@@ -1786,19 +1788,6 @@ const QDESC = {
 };
 // (디자인) chess.com 대국의 타임클래스를 한글 표기로 통일 — 프로필/집중분석의 대국 목록에서 공용.
 export const TIME_CLASS_LABEL = { rapid: t("래피드"), blitz: t("블리츠"), bullet: t("불릿"), standard: t("스탠다드"), daily: t("일일") };
-export function deriveKeywords(m) {
-  if (m.kw && m.kw.length) return m.kw;
-  const ks = []; const a = m.adopt || 0; const ma = m.masterAdopt; const nm = m.name || "";
-  // TOP LEVEL: 마스터 통계 기준 상위권(상위 3수) 또는 마스터 채택률 25% 이상일 때만
-  if (m.masterTop || (ma != null && ma >= 25)) ks.push("TOP LEVEL");
-  if (a >= 12 || (ma != null && ma >= 12)) { if (!ks.includes("NORMAL")) ks.push("NORMAL"); }
-  else if (!ks.length) ks.push("SIDESTEPPING");
-  if (/Gambit|Attack|Countergambit|Traxler|Wing|Sacrifice/.test(nm) && !ks.includes("TRICKY")) ks.push("TRICKY");
-  if (/^[NB]/.test(m.san) && !m.san.includes("x") && !ks.includes("INTUITIVE")) ks.push("INTUITIVE");
-  if (m.san.includes("x") && !ks.includes("STRAIGHT-LINE")) ks.push("STRAIGHT-LINE");
-  if (!ks.length) ks.push("NORMAL");
-  return ks.slice(0, 3);
-}
 export function fmtFull(n) { return n == null ? "-" : Number(n).toLocaleString("en-US"); }
 export function moverEval(m, ply) {
   const sgn = ply % 2 === 0 ? 1 : -1;
@@ -1808,6 +1797,22 @@ export function moverEval(m, ply) {
   return null;
 }
 function hasRealEval(m) { return !!m.live || m.evalCp != null || m.mate != null; }
+// (v0.7.6) 수 키워드의 반복 판정용 — 수순(sans)에서 나온 모든 포지션의 배치 키. 표준 시작에서 재생한 마지막 보드가 지금 보드와 다르면(FEN 시작 등) 판정하지 않는다(null).
+const _kwHistCache = new Map();
+function keywordHistory(sans, board) {
+  if (!sans || !sans.length || !board) return null;
+  const key = sans.join(" ");
+  if (_kwHistCache.has(key)) return _kwHistCache.get(key);
+  let out = null;
+  try {
+    let b = startBoard(); const set = new Set([placementKey(b, "w")]);
+    sans.forEach((s, i) => { const c = i % 2 === 0 ? "w" : "b"; b = applySan(b, s, c); set.add(placementKey(b, c === "w" ? "b" : "w")); });
+    out = placementKey(b, sans.length % 2 === 0 ? "w" : "b") === placementKey(board, sans.length % 2 === 0 ? "w" : "b") ? set : null;
+  } catch { out = null; }
+  if (_kwHistCache.size > 64) _kwHistCache.clear();
+  _kwHistCache.set(key, out);
+  return out;
+}
 export function assignTiers(moves, ply, board, keyStr, sans) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
@@ -1825,7 +1830,22 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   const pendingSibling = moves.some((m) => moverEval(m, ply) == null);
   const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
-  return moves.map((m, i) => {
+  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드 하나(kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
+  //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
+  const evs = moves.map((m) => moverEval(m, ply));
+  const allEval = evs.every((v) => v != null);
+  const nearBest = best == null ? null : evs.filter((v) => v != null && best - v <= 30).length;
+  const history = keywordHistory(sans, board);
+  const prevSan = sans && sans.length ? sans[sans.length - 1] : null;
+  const withKw = (m, i, out) => {
+    const mv = evs[i];
+    const others = evs.filter((v, k) => k !== i && v != null);
+    const gapCp = allEval && others.length ? mv - Math.max(...others) : null;
+    return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
+      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history }) };
+  };
+  return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
+  function gradeTier(m, i) {
     const forced = keyStr != null ? forceKindFor(keyStr, m.san) : null;
     if (forced) return { ...m, kind: forced, book: forced === "book", forced: true };
     // (v0.5.6 버그 수정 BUG-015) 이론 판정은 isBookMoveAt 하나로 — 예전엔 여기만 스냅샷의 book 플래그만 봐서, 개발자가 추가한 이론 수
@@ -1842,7 +1862,7 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
       singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
     });
     return { ...m, kind, book: false };
-  });
+  }
 }
 /* (UI2) 화면 폭에 맞춰 보드 크기를 산출 — 모바일에서 보드가 잘리지 않게 함 */
 // (UI1) 세로로 긴 모바일 화면 여부 — 상단 헤더 크기/여백을 줄이는 데 사용
@@ -4558,7 +4578,7 @@ export async function reviewPut(kind, ccId, payload) {
 }
 export async function reviewedGameFetch(ccId) {
   if (!SB_ON || !ccId) return null;
-  try { const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=data&limit=1"); return rows && rows[0] ? rows[0].data : null; } catch { return null; }
+  try { const rows = await sbSelect("reviewed_games?cc_id=eq." + ccId + "&select=data&limit=1"); return rows && rows[0] ? normalizeReviewGame(rows[0].data) : null; } catch { return null; }   // (v0.7.6, BUG-165) 서버는 수 목록을 moves에 저장한다 — 리뷰 화면이 읽는 sans로 맞춘다
 }
 // (v0.2.1 기능) 리뷰 페이지 전용 프로필 이미지 — 실제 아바타가 있으면 그대로, 없으면 파비콘(검은
 // 나이트)과 그 색 반전판(흰 나이트, /favicon-white.png)을 진영별 기본값으로 쓴다.
@@ -4913,8 +4933,8 @@ function blendHex(a, b) {
   return "#" + [16, 8, 0].map((s) => mix(s).toString(16).padStart(2, "0")).join("");
 }
 function themeAccentsOf(themes) { return (themes && themes.length ? themes : ["punish"]).slice(0, 2).map((t) => (PUZZLE_THEME_STYLE[t] || PUZZLE_THEME_STYLE.punish).accent); }
-function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
-function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
+export function themeAccentColor(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? blendHex(c[0], c[1]) : c[0]; }
+export function themeAccentBg(themes) { const c = themeAccentsOf(themes); return c.length > 1 ? "linear-gradient(90deg, " + c[0] + " 50%, " + c[1] + " 50%)" : c[0]; }
 // (UI4) 퍼즐 이름 규칙: 직전 수들 중 '가장 마지막으로 이름이 있는 수'의 오프닝 이름을 기준으로 짓는다.
 function lastNamedOpening(sans) {
   let nm = null;

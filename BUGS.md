@@ -16,6 +16,12 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 | BUG-157 | P1 | 세션 복원 때 프로필 소개(bio)를 서버 값으로 되돌리지 않아, 다른 기기에서 고친 소개가 이 기기의 예전 소개로 다시 덮어써짐 | 수정 완료(v0.7.5, 배포 전) · 복원 경로에 bio 추가, check-profile-roundtrip(prebuild)이 편집 필드의 왕복 복원 검사 | 2026-11-12 |
 | BUG-158 | P1 | 분석 탭 FEN 모드에서 다른 탭에 다녀오거나 새로고침하면 FEN 시작 포지션이 사라지고 수순만 남아, FEN부터 둔 수를 표준 시작 위치에서 다시 두는 잘못된 보드가 됨 | 수정 완료(v0.7.5, 배포 전) · fenRoot를 App으로 올려 수순과 함께 저장·복원, check-tab-memory(prebuild) | 2026-11-12 |
 | BUG-159 | P2 | 새로고침 때 다른 탭(분석)이 잠깐 보였다가 몇 초 뒤 원래 탭으로 바뀜 | 수정 완료(v0.7.5, 배포 전) · 첫 렌더부터 맞는 탭, 딥링크 동안 덮개, check-tab-memory | 2026-11-12 |
+| BUG-169 | P2 | 모바일 도감 첫 화면 카드에서 문장·기물이 사라짐 — 무대(size 컨테이너)가 min-height만 가져 cqh가 0으로 잡힘 | 수정 완료(v0.7.6) · 모바일은 무대 높이를 cqw로 못박음, check-dex-hub 검사 | 2026-11-14 |
+| BUG-168 | P3 | 도감 첫 화면 오프닝 카드가 늘 "0%"로 보임 — 해금률은 오프닝 모식도가 열려야 계산되는데(onUnlockStats) 첫 화면에서는 아직 모르는 값을 0%로 그림 | 수정 완료(v0.7.6) · 모르면 "탐색 전", 요약 칩은 계산된 뒤에만 | 2026-11-14 |
+| BUG-167 | P3 | 마스터 상세 통계의 상대 이름이 옛 데이터 표기 그대로 "Hikaru:Hodgson,Jeremy Nakamura"처럼 두 사람이 붙어 보임 — 프로필 데이터(masterProfiles.json)의 이름 칸에 "성, 이름:다른 사람"이 섞여 있음 | 표시 수정(v0.7.6) · 마스터 페이지 이름 사용·":" 뒤 버림 · `check-master-pages` / 데이터 재생성은 미결 | 2026-11-14 |
+| BUG-166 | P3 | 마스터 상세 통계(`components/masterProfile.jsx` MoveList)의 첫 수·응수 목록이 항목 사이에 줄바꿈할 자리가 없어 좁은 화면에서 오른쪽으로 넘침 | 수정 완료(v0.7.6) · 줄바꿈되는 flex | 2026-11-14 |
+| BUG-165 | P1 | 채팅의 리뷰 공유 카드에서 "리뷰 보기"를 눌러도 아무 반응 없음(chess.com 대국) — 서버 공유 캐시는 수 목록을 `moves`에 저장하는데 리뷰 화면은 `sans`만 읽어 열기 직전에 조용히 멈춤. 같은 원인으로 `/review/(숫자)` 링크도 열리지 않음 | 수정 완료(v0.7.6) · `normalizeReviewGame`으로 모양 일원화 · `check-review-ui` | 2026-11-13 |
+| BUG-164 | P2 | 리뷰 화면 기보(데스크톱 표·모바일 줄)에 체크(+)·체크메이트(#) 기호가 표시되지 않음 — 표시 직전에 `stripSuffix`로 지움 | 수정 완료(v0.7.6) · `displaySans`(원본에 없으면 포지션에서 계산) · `check-review-ui` | 2026-11-13 |
 | BUG-163 | P3 | Stockfish 19 Lite의 예비 경로(jsDelivr stockfish@19.0.1)가 보안 정책(vercel.json CSP script-src)에 없어, 같은 출처 엔진 파일을 못 받을 때 예비 경로도 막힘(18 Lite 예비 경로만 허용돼 있었음) | 수정 완료(v0.7.5) · CSP에 19.0.1 경로 추가 | 2026-11-12 |
 | BUG-162 | P1 | /review 링크가 열리지 않음 — OpenChess 대국(id pvp-·bot-)은 링크 식별자가 그 ID 그대로라 되돌릴 수 없어 분석 탭으로 튕기고, chess.com 대국 숫자 링크도 서버 공유 캐시에 없으면(로그인 안 한 채 열었거나 저장 실패) 열리지 않음 | 수정 완료(v0.7.5) · 수순 있는 대국은 모두 PGN 암호화 링크 + 진영·선수·ID 태그 · `check-review-ui` 왕복 검사 | 2026-11-12 |
 | BUG-161 | P3 | 성장 곡선(학습 탭) 축 숫자(최고·최저 정확도)가 SVG 확대 비율을 그대로 따라 넓은 화면에서 본문보다 커짐(데스크톱 약 20px) | 기록함 | 2026-11-12 |
@@ -1728,3 +1734,56 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **발견일**: 2026-11-12 (/review 링크 점검 중 vercel.json을 보다 발견)
 - **원인**: 엔진 목록에 Stockfish 19 Lite를 추가하며 예비 경로(jsDelivr stockfish@19.0.1)를 넣었지만, CSP script-src에는 18.0.8 경로만 있었다.
 - **수정**: CSP script-src에 `https://cdn.jsdelivr.net/npm/stockfish@19.0.1/bin/` 추가
+
+### BUG-164 · [P2] 리뷰 기보에 체크 기호가 표시되지 않음
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-13 (사용자 제보 "리뷰 페이지 데스크톱 기보에 체크 기호가 표시되지 않는다")
+- **위치**: `src/app/review.jsx` ReviewMoveTable(데스크톱 표)·ReviewMoveStrip(모바일 줄)
+- **근본 원인**: 두 기보 모두 칸에 SAN을 그릴 때 `stripSuffix`(+·# 제거, 원래는 수를 비교할 때 쓰는 함수)를 거쳤다. 데스크톱 표는 수 아이콘 색 글씨라 눈에 띄었다.
+- **수정 내용**: 표시용 SAN 목록을 `displaySans(fenRoot, sans)`(`src/lib/chessRules.js`)로 한 번 만들어 두 기보에 넘긴다. 원본에 +/#가 있으면 그대로, 없으면 그 포지션에서 체크·메이트를 계산해 붙인다. FEN에서 시작한 대국도 같은 규칙. 수 등급 계산 등 다른 곳은 원래 `sans`를 그대로 쓴다.
+- **안전장치**: `scripts/check-review-ui.mjs` — 체크·메이트·FEN 시작 대국의 기호를 실제로 계산해 확인하고, 기보 칸이 `stripSuffix`로 기호를 지우거나 `displaySans` 결과를 쓰지 않으면 실패
+- **검증**: 검사 통과, `npm run build` 통과
+
+### BUG-165 · [P1] 채팅 "리뷰 보기"·/review/(숫자) 링크가 아무 반응 없음
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-13 (사용자 제보 "채팅창에서 리뷰 버튼을 눌러도 작동하지 않는다")
+- **위치**: `src/app/common.jsx` reviewedGameFetch, `src/App.jsx` openReview·onOpenSharedReview·/review 딥링크
+- **근본 원인**: v0.7.0(BUG-115) 보안 보강 때 서버 공유 캐시(`/api/review-put`의 sanitizeGame)는 수 목록을 `moves` 필드로 저장하게 됐다. 그런데 리뷰 화면을 여는 `openReview`는 `game.sans`가 없으면 아무것도 하지 않고 돌아간다. chess.com 대국을 채팅으로 공유하면 받는 쪽은 이 캐시에서 대국을 읽으므로, 미리보기 카드는 정상인데(카드는 `moves`도 읽음) 버튼만 조용히 무시됐다. `/review/(숫자)` 링크도 같은 경로라 열리지 않았다(분석 탭으로도 안 넘어가고 그대로 멈춤). "학습 탭에서 보기" 버튼은 `moves || sans`를 따로 처리해 정상이었다.
+- **수정 내용**: 대국 객체 모양을 맞추는 공용 함수 `normalizeReviewGame`(`src/lib/reviewGame.js`)을 만들어, 서버 캐시를 읽는 `reviewedGameFetch`와 리뷰를 여는 `openReview` 입구 두 곳에서 모두 거친다(`moves`만 있으면 `sans`를 만든다).
+- **안전장치**: `scripts/check-review-ui.mjs` — `moves`만 있는 대국을 `sans`로 맞추는지, 이미 있는 `sans`를 건드리지 않는지 실행해 확인하고, 두 입구가 이 함수를 거치지 않으면 실패
+- **검증**: 수정 전 코드에서는 `moves`만 있는 대국으로 `openReview`가 조기 반환함을 코드로 확인(서버 저장 형식과 대조), 수정 후 검사 통과, `npm run build` 통과. 실제 Supabase 왕복은 이 환경에서 확인 불가
+
+### BUG-166 · [P3] 마스터 상세 통계의 수 목록이 좁은 화면에서 넘침
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-14 (마스터 페이지 /master 신설 중 모바일 화면 확인)
+- **위치**: `src/components/masterProfile.jsx` MoveList(백 첫 수·흑 응수)
+- **원인**: 항목마다 `white-space: nowrap`인 span을 공백 없이 이어 붙여 줄바꿈할 자리가 없었다. 도감 마스터 카드(폭 340px)에서도 같은 구조였다.
+- **수정**: 목록을 `display: flex; flex-wrap: wrap`으로 바꿔 항목 단위로 줄바꿈. 같이 넓은 화면에서 엘로 추이 그래프 폭을 560px로 제한.
+- **검증**: iPhone 13 크기에서 마스터 페이지 스크린샷으로 확인
+
+### BUG-167 · [P3] 마스터 상세 통계에 두 사람 이름이 붙어 보임
+- **상태**: 표시 수정(v0.7.6), 데이터 재생성은 미결
+- **발견일**: 2026-11-14 (마스터 페이지 /master 확인 중)
+- **위치**: `src/data/masterProfiles.json`(프로필 이름·상대 이름), 표시는 `src/components/masterProfile.jsx`
+- **원인**: 프로필을 만든 원본 PGN의 선수 칸에 "Nakamura, Hikaru:Hodgson,Jeremy" 같은 합쳐진 값이 있어, 그대로 영문 이름으로 바꾸면 "Hikaru:Hodgson,Jeremy Nakamura"가 됐다(프로필 이름 "Adams, Michael:Mortazavi,Ali" 등도 같은 형태).
+- **수정**: 이름을 보여 줄 때 ":" 뒤를 버리고, 마스터 페이지가 있는 선수는 주소표의 전체 이름을 쓴다(`masterDisplayName`). 주소 연결(`slugForName`)도 앞사람 기준.
+- **안전장치**: `scripts/check-master-pages.mjs` — 합쳐진 표기가 앞사람의 이름·주소로 이어지는지 검사
+- **남은 일**: 프로필 생성 스크립트에서 원본 이름 칸을 정리해 데이터 자체를 고치는 것(수정 여부 결정 필요)
+
+### BUG-168 · [P3] 도감 첫 화면 오프닝 해금률이 늘 0%
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-14 (도감 탭 레이아웃 재설계 중)
+- **위치**: `src/app/dex.jsx` hubItems(오프닝 카드), `OpeningSchematic` onUnlockStats
+- **원인**: 해금률은 오프닝 모식도가 화면에 그려지며 계산해 올려 주는 값인데, 첫 화면(카드)에서는 아직 계산 전이라 null이었고, 카드는 null을 0%로 바꿔 그렸다. 해금한 오프닝이 있어도 처음에는 0%로 보였다.
+- **수정**: 값을 모르면 진행 막대를 비우고 "탐색 전"이라고 쓴다. 머리 요약 칩의 오프닝 해금률도 계산된 뒤에만 보인다.
+- **남은 점**: 첫 화면에서 바로 정확한 값을 보이려면 모식도 없이 해금률을 계산하는 함수를 따로 만들어야 한다(수정 여부 결정 필요)
+
+
+### BUG-169 · [P2] 모바일 도감 첫 화면 카드에서 문장·기물이 사라짐
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-14 (도감 카드 내부 재설계 확인 중, 배포 전)
+- **위치**: `src/components/dexHub.jsx` GameCard `.dexv-stage`
+- **원인**: 무대가 `container-type: size`이면서 높이를 `min-height`로만 받았다. Chromium은 이때 무대 안의 `cqh`를 0으로 잡아 장면 상자 폭 `min(100cqw, 108cqh)`가 0이 되어 빛살만 보이고 문장·기물이 그려지지 않았다(데스크톱은 그리드 높이로 늘어나 정상).
+- **수정**: 모바일은 무대 높이를 cqw로(현재 `height: 84cqw`) 높이를 못박고, 데스크톱만 `flex: 1; height: auto`로 남는 높이를 채운다.
+- **안전장치**: `scripts/check-dex-hub.mjs` — 무대가 `height: "92cqw"`로 높이를 갖는지 검사
+- **검증**: Playwright로 iPhone 13·1440px 화면 캡처 — 장면 상자 크기 0 → 정상

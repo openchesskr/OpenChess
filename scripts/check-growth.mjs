@@ -221,17 +221,20 @@ ok(S.sharedTraits(mm.z, twin, data).every((tr) => S.STYLE_KEYS.includes(tr.key))
 const rd = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 const review = rd("src/app/review.jsx"), growth = rd("src/app/growth.jsx"), app = rd("src/App.jsx"), quest = rd("src/app/learn.jsx"), common = rd("src/app/common.jsx");
 ok(/pickHighlights\(/.test(review) && /drawHighlightCard/.test(review), "리뷰 공유 시트가 하이라이트 카드를 쓰지 않음");
-ok(/<GrowthPanel /.test(quest) && /growthUid/.test(quest) && /growthGames/.test(quest), "학습 탭(LearnTab)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
+// (v0.7.6, 사용자 요청) 성장 분석은 학습 탭에서 분석 탭(growthHome.jsx AnalysisWithGrowth)으로 옮겼다.
+const ghome = rd("src/app/growthHome.jsx");
+ok(/<GrowthPanel /.test(ghome) && /p\.growthUid/.test(ghome) && /p\.growthGames/.test(ghome), "분석 탭(AnalysisWithGrowth)이 성장 분석(GrowthPanel)을 펼쳐 보이지 않음");
 // renderProfile={(mid) => <UserProfilePage .../>}처럼 prop 안에 ">"가 있어 태그 끝을 정규식으로 못 찾으므로, <LearnTab 뒤 일정 구간 안에서 두 prop을 찾는다.
-{ const i = app.indexOf("<LearnTab "); const seg = i >= 0 ? app.slice(i, i + 4000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 학습 탭에 uid·chess.com 대국을 넘기지 않음"); }
+{ const i = app.indexOf("<AnalysisWithGrowth "); const seg = i >= 0 ? app.slice(i, i + 6000) : ""; ok(/growthUid=\{uid\}/.test(seg) && /growthGames=\{chesscom\.games\}/.test(seg), "App이 분석 탭 성장 분석에 uid·chess.com 대국을 넘기지 않음"); }
 // 자동 리뷰: 직접 리뷰하지 않아도 최근 대국 5판을 엔진이 백그라운드에서 분석한다. 5판 미만이거나 분석 전에는 게이지 바(AutoReviewGate)만 보인다.
-ok(/pickRecentGames\(/.test(rd("src/app/learn.jsx")) && /recent=\{src\.recent\}/.test(rd("src/app/learn.jsx")), "학습 탭이 최근 대국(pickRecentGames)을 성장 분석에 넘기지 않음");
+ok(/pickRecentGames\(/.test(ghome) && /recent=\{src\.recent\}/.test(ghome), "분석 탭이 최근 대국(pickRecentGames)을 성장 분석에 넘기지 않음");
 { const auto = rd("src/app/autoReview.js");
   ok(/ensureReview\(/.test(growth) && /useAutoReview\(/.test(growth) && /cachedReviewOf\(/.test(growth), "성장 분석이 최근 대국을 자동으로 리뷰하지 않음");
   ok(/cachedReviewOf\(game\)/.test(auto) && /reviewedAnalysisFetch\(/.test(auto) && /analyzeGame\(/.test(auto) && /inflight/.test(auto), "자동 리뷰: 캐시 → 서버 공유 캐시 → 엔진 분석 순서, 같은 대국 중복 분석 방지(inflight)");
   ok(/engine\.status !== "ready"/.test(auto), "자동 리뷰: 엔진이 준비되지 않았으면 분석하지 않음");
-  const ti = app.indexOf("<LearnTab ");
-  ok(/engine=\{engine\} reviewSpeed=\{reviewSpeed\} quickReview=\{quickReview\}/.test(app.slice(ti, ti + 4000)), "App이 학습 탭에 엔진·리뷰 속도 설정을 넘기지 않음"); }
+  const ti = app.indexOf("<AnalysisWithGrowth ");
+  ok(/engine=\{engine\} reviewSpeed=\{reviewSpeed\} quickReview=\{quickReview\}/.test(app.slice(ti, ti + 6000)), "App이 분석 탭 성장 분석에 엔진·리뷰 속도 설정을 넘기지 않음");
+  ok(/paused: !active/.test(growth) && /if \(!ready \|\| paused\) return;/.test(growth), "성장 분석: 화면에 보이기 전(active=false)에는 엔진 자동 리뷰를 미뤄야 함(분석 탭 실시간 평가와 대기열 경쟁)"); }
 { const gh2 = rd("src/app/gameHistory.jsx");
   ok(/noBoard=\{narrow\}/.test(gh2) && /\{!noBoard && \(/.test(gh2), "최근 대국 박스: 모바일에서는 체스보드 미리보기를 없애야 함");
   ok(/noBoard=\{narrow\}/.test(growth) && /\{!noBoard && <MiniBoard /.test(growth), "실수 기록·고칠 한 가지 예시: 모바일에서는 체스보드 미리보기를 없애야 함");
@@ -272,5 +275,9 @@ ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(gr
 // 삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록)가 되살아나지 않게 — 새 설계가 확정되기 전에는 넣지 않는다.
 { const all = [review, growth, app, quest, common, rd("src/app/gameHistory.jsx")].join("\n");
   ok(!/lib\/weakness\.js|growthStore|openingMistakes|recordReviewMistakes|WeaknessMap|ReviewCards|OpeningMistakes|occ-growth/.test(all.replace(/occ_growth_v1/g, "")), "삭제한 성장 분석 코드(약점 지도·복습 카드·오프닝 실수·실수 기록) 참조가 다시 생김"); }
+// (v0.7.6, 사용자 요청) 퍼포먼스 레이팅은 성장 분석 맨 위 섹션(성장 요약)에서 최근 5판 기준으로만 보여 준다 — /user 프로필로 되돌아가거나 기준이 어긋나지 않게.
+{ ok(/export const RECENT_PERF_N = GROWTH_RECENT_GAMES;/.test(rd("src/lib/recentPerformance.js")), "퍼포먼스 레이팅 합산 판 수가 성장 분석 판 수(GROWTH_RECENT_GAMES, 5판)와 다름");
+  ok(/<PerfHero\b/.test(growth) && /recentPerformance\(items, GROWTH_RECENT_GAMES\)/.test(growth) && /<Overview g=\{g\}[^>]*perf=\{perf\}/.test(growth), "성장 요약 섹션에 퍼포먼스 레이팅(PerfHero, 최근 5판)이 없음");
+  ok(!/RecentPerformanceRow|recentPerf\.jsx|recentPerformance\(/.test(rd("src/app/profile.jsx") + rd("src/app/gameHistory.jsx")), "/user 프로필에 퍼포먼스 레이팅이 다시 들어감"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 최근 5판 자동 리뷰(대국 선택·엔진 분석 연결·게이지), 승률 하락 원인 설명기, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

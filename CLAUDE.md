@@ -56,7 +56,7 @@ Claude는 체스 플랫폼을 개발하는 스타트업 **OpenChess**의 **개�
 6. **UI 아이콘은 OpenChess 세트만**: 버튼·탭·카드 등의 아이콘은 `src/components/ocIcons.jsx`(lucide와 같은 이름·속성으로 쓰는 파셋 아이콘 세트)에서 가져온다. lucide 같은 범용 선 아이콘 라이브러리는 새로 들이지 않는다. 필요한 아이콘이 없으면 ocIcons.jsx에 같은 규칙으로 그려 넣는다. 단색 아이콘은 바탕색(currentColor) 위에 흰/검정 반투명 면을 겹쳐 명암을 만든다.
 7. **공용 부품 사용**: `src/components/facetIcons.jsx`의 부품(FacetDiamond·FacetCrown·FacetPawn·FacetRook·FacetBishop·FacetShield·FacetArrow·FacetCrosshair·FacetLeaf·taperedStem)을 먼저 쓰고, 새 모양이 필요하면 같은 규칙으로 부품을 추가한다.
 8. **검사 등록**: 새 아이콘을 다른 파일에 그렸다면 `scripts/check-facet-icons.mjs`의 ZONES에 등록한다(빌드 전에 윤곽선·면 분할 여부와 lucide 사용 여부를 검사).
-9. **예외**: 국기, 브랜드 로고, 사용자가 준 이미지, 차트·그래프 선은 대상이 아니다(원형 그대로 쓴다).
+9. **예외**: 국기, 브랜드 로고, 사용자가 준 이미지, 차트·그래프 선, 그리고 **연두색 리뷰 버튼**(`src/components/uiPrimitives.jsx` BestMoveJumpButton — chess.com 리뷰 버튼을 벤치마킹한 둥근 단색 별, 사용자 지정)은 대상이 아니다(원형 그대로 쓴다).
 
 ## 버전 종료 프로토콜 (README 참고)
 
