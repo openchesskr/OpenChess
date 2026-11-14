@@ -16,9 +16,10 @@ import { peekMasterNav } from "../lib/masterNav.js";
 import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
 import { GachaSection } from "./gacha.jsx";
 import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
-import { DEX_VIEW_PATH, dexViewFromPath } from "../lib/dexRoutes.js";
+import { DEX_VIEW_PATH, dexViewFromPath, loadDexView, saveDexView } from "../lib/dexRoutes.js";
+import { useTabMemory, readTabMemory, writeTabMemory } from "../lib/tabMemory.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
-import { DexHub, DexSectionNav } from "../components/dexHub.jsx";
+import { DexSectionNav } from "../components/dexHub.jsx";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import { DEX_LAYOUT } from "../lib/dexTreeLayout.js";
 import { playSfx } from "../lib/prefs.js";
@@ -354,17 +355,20 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // (v0.5.6) 예전엔 로딩 중 블록이 흔들리는 걸 가리려고 트리를 열 때마다 3.2초 동안 "불러오는 중…"만 보여줬다. 이제 좌표가 구조만의
   // 함수라(위 layout) 흔들릴 일이 없고, 구조는 앱 시작 직후 로컬 스냅샷에서 한 번에 만들어지므로 기다리지 않고 곧바로 그린다.
   const ready = items.length > 0;
-  const [pan, setPan] = useState({ x: 16, y: 16 });
+  // (v0.7.7, 사용자 요청) 도감 탭을 떠났다 돌아오면 원래 보던 위치·배율 그대로(탭 메모리 — 같은 탭 세션 동안, 새로고침 포함). 저장된 값이 있으면 시작 연출은 건너뛴다.
+  const savedView = useMemo(() => { const v = readTabMemory("dex.openings.view", null); return v && v.pan && Number.isFinite(v.pan.x) && Number.isFinite(v.pan.y) && Number.isFinite(v.zoom) ? v : null; }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const [pan, setPan] = useState(() => (savedView ? savedView.pan : { x: 16, y: 16 }));
   // (v0.0.6) 다들 첫 화면에서 곧장 75%로 축소해야 편하게 봤다는 피드백 — 그 배율을 새 기준(100%,
   // SCHEMATIC_ZOOM_LABEL_BASE)으로 재정의했으므로, 기본값도 그대로 그 값으로 시작한다.
   // (v0.6.6, 사용자 요청) 시작 연출 — 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대한다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다(stopMotion).
-  const [zoom, setZoom] = useState(SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM);
-  const [introOn, setIntroOn] = useState(true);
-  const introTimerRef = useRef(null), introStartedRef = useRef(false);
+  const [zoom, setZoom] = useState(() => (savedView ? savedView.zoom : SCHEMATIC_ZOOM_LABEL_BASE * INTRO_FROM));
+  const [introOn, setIntroOn] = useState(!savedView);
+  const introTimerRef = useRef(null), introStartedRef = useRef(!!savedView);
+  useEffect(() => { if (!introOn) writeTabMemory("dex.openings.view", { pan, zoom }); }, [pan, zoom, introOn]);
   const endIntro = () => { if (introTimerRef.current) { clearTimeout(introTimerRef.current); introTimerRef.current = null; } introStartedRef.current = true; setIntroOn(false); };
   const dragRef = useRef(null);
   const boxRef = useRef(null);
-  const userPannedRef = useRef(false);
+  const userPannedRef = useRef(!!savedView);   // (v0.7.7) 저장된 위치로 돌아왔으면 가운데로 다시 맞추지 않는다
   // (사용자 요청) 모식도 영역이 스크롤 없이 한 화면에 다 담기도록, 고정 640px 대신 위쪽에 이미 자리한
   // 요소(탭 버튼줄·해금률 문구 등)와 하단 고정 내비게이션을 뺀 실제 남은 뷰포트 높이에 박스 높이를
   // 맞춘다 — 박스 자신의 top은 자기 높이와 무관(그 위 형제 요소들의 높이로만 결정)하므로 되먹임 없이
@@ -1389,10 +1393,12 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
   );
 }
 export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedTitles, seenTitles, onSeeTitle, titleMetrics, currentTitle, onEquipTitle, coins, ownedSkins, boardSkin, pieceSkin, onPullGacha, onEquipSkinSet, canAdd, bumpContent, onOpenOpening, onOpenAnalysis, onOpenGame, onOpenGameAnalyze, treeData, treeVersion, genPriorityRef }) {
-  const [dexView, setDexView] = useState(() => (peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (typeof window !== "undefined" && dexViewFromPath(window.location.pathname)) || "hub"));   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
+  // (v0.7.7, 사용자 요청) 첫 화면(테마 카드)을 없앴다 — 처음엔 오프닝 도감, 그 뒤로는 마지막에 보던 구역(localStorage)으로 연다. 옛 주소 /book도 마지막 구역으로.
+  const [dexView, setDexView] = useState(() => { const fromPath = typeof window !== "undefined" ? dexViewFromPath(window.location.pathname) : null; return peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (fromPath && fromPath !== "hub" ? fromPath : loadDexView()); });   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
   const selectDexView = useCallback((k) => {
-    setDexView(k);
+    if (k === "hub") k = "openings";
+    setDexView(k); saveDexView(k);
     try { const p = DEX_VIEW_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
   }, []);
   useEffect(() => {
@@ -1409,7 +1415,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (버그 수정) treeData/treeVersion/genPriorityRef는 이제 App(항상 마운트)에서 내려오는 props다 —
   // 예전처럼 이 컴포넌트 안에서 useOpeningTreeAuto를 직접 호출하면, 탭을 전환할 때마다 이 컴포넌트가
   // 통째로 언마운트되어 지금까지 쌓인 트리 깊이가 매번 사라졌다.
-  const [openKey, setOpenKey] = useState(null);
+  const [openKey, setOpenKey] = useTabMemory("dex.openKey", null);   // (v0.7.7) 열어 둔 오프닝 블록도 돌아오면 그대로
   const vertical = useNarrow(768);
   const onToggleOpen = useCallback((k) => setOpenKey((prev) => (prev === k ? null : k)), []);
   // (v0.4.0 기능) 사용자 요청 — 도감 카드(openKey)도 브라우저 뒤로가기로 닫히게 한다. LessonMap과
@@ -1463,18 +1469,13 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
   ];
   // (v0.6.8) 위쪽 테마 알약 버튼(오프닝·마스터·업적·스킨)은 없앴다 — 테마는 첫 화면 카드에서 고른다. ‹ 버튼은 각 페이지 검색창 왼쪽에 놓여 첫 화면으로 돌아간다.
-  const backBtn = (
-    <button onClick={() => selectDexView("hub")} aria-label={t("컬렉션")} title={t("컬렉션")} className="press" style={{ width: 30, height: 30, borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.brassHi, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ChevronLeft size={17} /></button>
-  );
+  const backBtn = null;   // (v0.7.7) 첫 화면이 없어져 ‹(첫 화면으로) 버튼도 없앴다 — 구획은 위쪽 전환 줄(DexSectionNav)로 바꾼다
   // (v0.6.8) 도감 안쪽의 z-index(검색 드롭다운 80 등)가 로그인·프로필 같은 팝업 위로 올라오지 않게 이 화면을 하나의 층으로 가둔다(isolation).
   return (
     <div style={{ isolation: "isolate" }}>
       {/* (v0.7.6, 사용자 요청) 안쪽 화면 위에 구획 전환 줄 — 첫 화면에 돌아가지 않고 다른 구획으로 */}
-      {dexView !== "hub" && <DexSectionNav items={hubItems} current={dexView} onOpen={selectDexView} />}
-            {dexView === "hub" ? (
-        // (v0.7.6, 사용자 요청) 레슨은 학습 탭으로 옮겼다 — 도감 첫 화면은 카드만.
-        <DexHub items={hubItems} onOpen={selectDexView} />
-      ) : dexView === "masters" ? (
+      <DexSectionNav items={hubItems} current={dexView} onOpen={selectDexView} />
+      {dexView === "masters" ? (
         <MastersSchematic vertical={vertical} tabsSlot={backBtn} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} />
       ) : dexView === "skins" ? (
         <div>

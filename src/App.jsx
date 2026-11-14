@@ -40,7 +40,7 @@ import { PuzzleTab } from "./app/puzzle.jsx";
 import { LearnTab } from "./app/learn.jsx";
 
 import { t, tx } from "./lib/i18n.js";
-import { DEX_HUB_PATH } from "./lib/dexRoutes.js";
+import { dexEntryPath } from "./lib/dexRoutes.js";
 import { normalizeLessonState, markLessonDone, lessonSummary } from "./lib/lessons/progress.js";
 export default function App() {
   const narrowHeader = useNarrow(480);
@@ -1250,7 +1250,7 @@ export default function App() {
     setTab(k);
     urlTabRef.current = k;
     if (!pathOverride && !same) { const lp = tabLastPath(k); if (lp && tabFromPath(lp) === k) pathOverride = lp; }
-    if (!pathOverride && k === "dex") pathOverride = DEX_HUB_PATH;   // 처음 들어가는 도감은 테마 카드 첫 화면
+    if (!pathOverride && k === "dex") pathOverride = dexEntryPath();   // (v0.7.7) 첫 화면 대신 마지막에 보던 구역(처음엔 오프닝)
     if (!same) { const y = tabLastScroll(k); requestAnimationFrame(() => requestAnimationFrame(() => { try { window.scrollTo(0, y || 0); } catch { } })); }
     try { const p = pathOverride || TAB_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
@@ -2017,7 +2017,7 @@ export default function App() {
           /* (버그·모바일) 6개 탭을 균등 분배 — 고정폭+큰 gap이면 좁은 화면에서 버튼이 찌그러져 라벨이 세로로 깨졌다. */
           <div className="flex" style={{ margin: "0 auto", height: "100%", maxWidth: 560, padding: "0 4px" }}>
             {TABS.map(({ key, label, Icon }) => { const on = tab === key; const badge = key === "dex" ? newUnlocks + newTitles : 0; const questDot = key === "store" && questIconName === "assignment_late"; return (
-              <button key={key} onClick={() => switchTab(key, key === "dex" && tab === "dex" ? DEX_HUB_PATH : undefined)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <button key={key} onClick={() => switchTab(key)} className="flex flex-col items-center justify-center gap-1" style={{ flex: 1, minWidth: 0, maxWidth: 96, color: on ? T.brassHi : "#8A7458", position: "relative", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 {on && <motion.span layoutId="oc-tab-ind" transition={{ type: "spring", stiffness: 420, damping: 32 }} style={{ position: "absolute", top: 0, height: 3, width: 30, borderRadius: 3, background: T.brass, boxShadow: "0 0 10px 1px rgba(236,203,134,.55)" }} />}
                 <span key={on ? "on" : "off"} className={on ? "oc-tab-pop" : undefined} style={{ position: "relative" }}>{key === "learn" ? <MaterialIcon name="school" size={20} /> : key === "puzzle" ? <MaterialIcon name="groups" size={20} /> : key === "analysis" ? <MaterialIcon name="analytics" size={20} /> : <Icon size={20} />}{badge > 0 && <span style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 8, background: "#D33", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}{questDot && <span aria-hidden="true" style={{ position: "absolute", top: -3, right: -6, width: 9, height: 9, borderRadius: "50%", background: T.brassHi, border: "1.5px solid #160C06" }} />}</span>
                 <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
