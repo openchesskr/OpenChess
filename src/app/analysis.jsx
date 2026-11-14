@@ -2,6 +2,7 @@
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
 import { autoMoveKeyword, blockKeywords } from "../lib/moveKeywords.js";
+import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { LOOP } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
 import { sansToUci, stripSuffix, looksLikeFen, parseFenFull, startBoard, sanSrc, applySan, boardToFen, sqName, STANDARD_START_FEN, EDITOR_EMPTY_FEN, castleRightsStr, epTargetFromMoveInfo, moveNumber, pvUciToSans, sansToFen, MAX_SEARCH_DEPTH, boardFromSans, uciToSan, decorateSan, canMove, drawKindLabel, replayFromFen, plyIsWhite, decorateLine, epTarget, countLegalMoves, gameEndState, fenOfRoot, colorOfRoot, boardOfRoot, fenLegalDests, liveLegalDests, buildSan } from "../lib/chessRules.js";
@@ -2176,7 +2177,7 @@ function MasterPlayerLine({ side, name, rating, winner, plain, delta }) {
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0, whiteSpace: "nowrap", fontSize: 12.5 }}>
       <SideSquare side={side} />
-      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : fullPlayerName(name)}</b>
+      <b style={{ color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{plain ? (name || "?") : <MasterNameLink name={name}>{fullPlayerName(name)}</MasterNameLink>}</b>
       <span style={{ flexShrink: 0, color: T.inkSoft, fontFamily: SITE_FONT }}>{rating ?? "-"}{delta != null && <span style={{ fontWeight: 800, color: delta > 0 ? T.best : delta < 0 ? T.blunder : T.inkSoft }}>({delta > 0 ? "+" + delta : delta})</span>}</span>
       {winner && <CrownIcon />}
     </div>

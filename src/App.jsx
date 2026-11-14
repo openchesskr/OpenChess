@@ -1,6 +1,8 @@
 import { setMasterNav } from "./lib/masterNav.js";
 import { normalizeReviewGame } from "./lib/reviewGame.js";
 import { AnalysisWithGrowth } from "./app/growthHome.jsx";
+import { MasterPage } from "./app/masterPage.jsx";
+import { parseMasterPath, masterPath, setMasterPageHandler } from "./lib/masterPages.js";
 import { setTitleNav } from "./lib/titleNav.js";
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
 import { tierFromXp, rollLineXp, TIERS } from "./lib/tierSystem.js";
@@ -272,6 +274,27 @@ export default function App() {
   const closeUserProfile = useCallback(() => {
     setViewedProfileMid(null); setViewedProfileAutoInvite(false);
     try { if (window.location.pathname.startsWith("/user/")) window.history.back(); } catch { }
+  }, []);
+  // (v0.7.6, 사용자 요청) 마스터 페이지 /master/<slug> — 마스터 이름 링크(components/masterLink.jsx)가 openMasterPage(slug)로 연다. 주소로 바로 들어와도 열린다.
+  const [masterSlug, setMasterSlug] = useState(() => (typeof window !== "undefined" ? parseMasterPath(window.location.pathname) : null));
+  const masterPushedRef = useRef(false);
+  useEffect(() => {
+    setMasterPageHandler((slug) => {
+      setSearchOpen(false); setFriendsOpen(false); setChatsOpen(false);
+      try { if (window.location.pathname !== masterPath(slug)) { window.history.pushState({ master: true }, "", masterPath(slug)); masterPushedRef.current = true; } } catch { }
+      setMasterSlug(slug);
+    });
+    return () => setMasterPageHandler(null);
+  }, []);
+  const closeMasterPage = useCallback(() => {
+    setMasterSlug(null);
+    try { if (parseMasterPath(window.location.pathname)) { if (masterPushedRef.current) window.history.back(); else window.history.replaceState(null, "", "/analysis"); } } catch { }
+    masterPushedRef.current = false;
+  }, []);
+  // 페이지 안에서 다른 화면(분석 보드·리뷰·도감 대회)으로 넘어갈 때는 뒤로 가기 대신 주소만 바꾼다(뒤로 가기는 비동기라 다음 화면의 주소 기록을 되돌릴 수 있다).
+  const dismissMasterPage = useCallback(() => {
+    setMasterSlug(null); masterPushedRef.current = false;
+    try { if (parseMasterPath(window.location.pathname)) window.history.replaceState(null, "", "/analysis"); } catch { }
   }, []);
   // (v0.7.6) 소셜 피드에서 연 유산 게시물은 닫으면 그 피드 주소(/social)로 돌아간다(링크로 직접 연 경우는 예전처럼 "/").
   const legacyReturnRef = useRef(null);
@@ -1313,6 +1336,7 @@ export default function App() {
       // (v0.4.4 기능) /user/<MID> 프로필 페이지도 다른 고유 URL(리뷰·퍼즐)과 같은 방식으로 뒤로/앞으로
       // 가기에 반응한다 — 그 경로를 벗어나면 닫고, 다시 그 경로로 돌아오면(앞으로 가기) 되살린다.
       setLegacyLink(parseLegacyPath(p));
+      setMasterSlug(parseMasterPath(p));   // (v0.7.6) 마스터 페이지도 뒤로/앞으로 가기에 반응
       const userMatch = /^\/user\/([A-Za-z]{5}[0-9]{4})$/.exec(p);
       setViewedProfileMid(userMatch ? userMatch[1].toUpperCase() : null);
       if (!userMatch) setViewedProfileAutoInvite(false);
@@ -1834,6 +1858,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      {masterSlug && <MasterPage key={masterSlug} slug={masterSlug} onClose={closeMasterPage}
+        onOpenGame={(sans) => { dismissMasterPage(); onOpenGame(sans); }} onOpenGameAnalyze={(g) => { dismissMasterPage(); onOpenGameAnalyze(g); }} onOpenTour={(id) => { dismissMasterPage(); onOpenTournament({ tourId: id }); }} />}
       {legacyLink && <LegacyPostPage key={legacyLink.mid + legacyLink.id} mid={legacyLink.mid} id={legacyLink.id} viewerUid={uid} onClose={closeLegacyLink} onOpenProfile={(mid) => { closeLegacyLink(); openUserProfile(mid); }} />}
       {viewedProfileMid && <UserProfilePage onEditProfile={() => { setProfileWinOpen(true); pushScreen("profile"); }} mid={viewedProfileMid} autoInvite={viewedProfileAutoInvite} onClose={closeUserProfile} me={user} myUid={uid} onOpenOpening={onOpenOpening} onOpenTitle={onOpenTitle} onOpenGame={onOpenGame} onOpenGameAnalyze={onOpenGameAnalyze} onOpenPuzzle={onOpenPuzzle} mySolved={solved} myLineSolves={lineSolves} likedPuzzles={likedPuzzles} likeCounts={likeCounts} onToggleLike={onToggleLike} repostedPuzzles={repostedPuzzles} repostCounts={repostCounts} onToggleRepost={onToggleRepost} shareCounts={shareCounts} onShare={onShare} />}
       {profileWinOpen && user && (

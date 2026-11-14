@@ -23,6 +23,7 @@ import { SB_ON, sbSelect } from "../lib/supabaseClient.js";
 import UgcText from "../components/UgcText.jsx";
 import { styleFeatures, retreatStats, RETREAT_GAMES_APP, matchMasters, MIN_STYLE_GAMES, CRITERIA_GROUPS, criterionLabel, criterionGroupLabel, formatCriterion, formatDiff, compareCriteria, levelLabel } from "../lib/masterStyle.js";
 import { masterName, masterFlag } from "../data/masterNames.js";
+import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { masterInfoLine } from "../lib/masterSearchInfo.js";
 import { rankMasterMatches } from "../lib/masterNameSearch.js";
 import { SearchResultRow, searchDropStyle } from "../components/searchResultRow.jsx";
@@ -234,7 +235,7 @@ function MasterStyle({ games, bare }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SimRing pct={Math.round(picked.sim * 100)} size={50} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} {masterName(picked.name, "en")}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 900, color: T.ivoryHi, fontFamily: SITE_FONT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{masterFlag(picked.name)} <MasterNameLink name={picked.name}>{masterName(picked.name, "en")}</MasterNameLink></div>
             <div style={{ fontSize: 11, color: "#CDBA98", marginTop: 2, lineHeight: 1.4 }}>{picked.elo ? peakText(picked.elo) + " · " : ""}{t("{0}판 분석", picked.games)}</div>
             <div style={{ fontSize: 11.5, fontWeight: 800, color: T.brassHi, marginTop: 1 }}>{t("비슷한 기준 {0}/{1}", similarN, comparable)}</div>
           </div>

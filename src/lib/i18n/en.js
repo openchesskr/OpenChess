@@ -3710,4 +3710,9 @@ export default {
   "내 게시물은 리포스트할 수 없음": "You can't repost your own post",
   "아직 리포스트한 게시물 없음": "No reposts yet",
   "아직 올린 게시물 없음": "No posts yet",
+  "고유 주소 복사": "Copy page link",
+  "마스터 페이지 보기": "View Master page",
+  "수록 대국": "Games in database",
+  "없는 마스터 페이지": "No such Master page",
+  "활동 기간": "Active years",
 };

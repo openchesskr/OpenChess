@@ -63,5 +63,7 @@
   "app/profileEdit.jsx",
   "app/practice.jsx",
   "app/growthHome.jsx",
-  "app/socialFeed.jsx"
+  "app/socialFeed.jsx",
+  "app/masterPage.jsx",
+  "components/masterLink.jsx"
 ]

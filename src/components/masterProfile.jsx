@@ -11,6 +11,8 @@ import { decodeMoves } from "../lib/moveCodec.js";
 import { GameViewButton, BestMoveJumpButton } from "./uiPrimitives.jsx";
 import { enName } from "../data/playerNames.js";
 import { TOURNAMENTS } from "../data/chessTournaments.js";
+import { MasterNameLink } from "./masterLink.jsx";
+import { masterDisplayName } from "../lib/masterPages.js";
 
 const TOUR_BY_ID = new Map(TOURNAMENTS.map((x) => [x.id, x]));
 const head = (txt) => <div style={{ fontSize: 10.5, fontWeight: 800, color: T.brass, margin: "12px 0 3px" }}>{txt}</div>;
@@ -34,7 +36,7 @@ function Spark({ pts }) {
   const W = 280, H = 56, xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys) - 10, y1 = Math.max(...ys) + 10;
   const X = (x) => 4 + ((x - x0) / (x1 - x0 || 1)) * (W - 8), Y = (y) => H - 4 - ((y - y0) / (y1 - y0 || 1)) * (H - 8);
   return (
-    <div>
+    <div style={{ maxWidth: 560 }}>{/* (v0.7.6) 넓은 마스터 페이지에서 그래프가 지나치게 커지지 않게 */}
       <svg width="100%" viewBox={"0 0 " + W + " " + H} style={{ display: "block" }} role="img" aria-label={t("엘로 추이")}>
         <polyline fill="none" stroke={T.brass} strokeWidth="2" strokeLinejoin="round" points={pts.map((p) => X(p[0]) + "," + Y(p[1])).join(" ")} />
         {pts.map((p, i) => <circle key={i} cx={X(p[0])} cy={Y(p[1])} r="2" fill="#8A6A2F" />)}
@@ -43,21 +45,22 @@ function Spark({ pts }) {
     </div>
   );
 }
-const MoveList = ({ list, prefix }) => <div style={row}>{list.map(([san, n, p]) => <span key={san} style={{ marginRight: 10, whiteSpace: "nowrap" }}>{prefix}{san} <span style={{ color: T.inkSoft }}>{t("{0}판", n)}, {p}%</span></span>)}</div>;
+// (v0.7.6) 항목 사이에 줄바꿈할 자리가 없어 좁은 화면(마스터 페이지 모바일)에서 오른쪽으로 넘쳤다 — 줄바꿈되는 flex로
+const MoveList = ({ list, prefix }) => <div style={{ ...row, display: "flex", flexWrap: "wrap", columnGap: 10 }}>{list.map(([san, n, p]) => <span key={san} style={{ whiteSpace: "nowrap" }}>{prefix}{san} <span style={{ color: T.inkSoft }}>{t("{0}판", n)}, {p}%</span></span>)}</div>;
 const EcoList = ({ list }) => <div>{list.map(([eco, name, n, p]) => <div key={eco} style={row}><b>{eco}</b> {name} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", n)}, {p}%</span></div>)}</div>;
 
-export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onOpenTour }) {
+export default function MasterProfile({ name, profileKey, onOpenGame, onOpenGameAnalyze, onOpenTour, hideHead }) {
   const [prof, setProf] = useState(undefined), [search, setSearch] = useState(null);
   useEffect(() => { let off = false; loadMasterProfiles().then((x) => { if (!off) setProf(x); }); loadTournamentSearch().then((x) => { if (!off) setSearch(x); }); return () => { off = true; }; }, []);
-  const p = useMemo(() => findProfile(prof, name), [prof, name]);
+  const p = useMemo(() => (prof && profileKey && prof.p[profileKey]) || findProfile(prof, name), [prof, name, profileKey]);   // (v0.7.6) 마스터 페이지는 프로필 키로 바로 찾는다
   const played = useMemo(() => playedTournaments(search, p ? p.name : name, 8), [search, p, name]);
   if (prof === undefined) return <div style={{ ...small, marginTop: 10 }}>{t("불러오는 중…")}</div>;
   if (!p && !played.length) return null;
-  const myName = p ? enName(p.name) : enName(name);
+  const myName = enName(String(p ? p.name : name).split(":")[0]);   // (v0.7.6 BUG-167) 이름 칸에 다른 사람이 붙은 옛 데이터는 앞사람만
   return (
     <div>
       {p && <>
-        {head(t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1))}
+        {!hideHead && head(t("전적, {0}판, {1}–{2}", p.n, p.y0, p.y1))}
         {/* (v0.7.5) 저장소의 마스터 대국 DB·대회 데이터로 보충한 프로필(build-master-profiles-db) — 선수의 전체 경력이 아니라 수록된 대국만 센 통계임을 밝힌다 */}
         {p.src === "db" && <div style={{ ...small, marginBottom: 4 }}>{t("OpenChess 마스터 대국 DB 수록 대국 기준 통계")}</div>}
         <WdlBar w={p.wdl[0]} d={p.wdl[1]} l={p.wdl[2]} />
@@ -73,7 +76,7 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
         {p.d4.length > 0 && <>{head(t("흑, 1.d4에 대한 응수"))}<MoveList list={p.d4} prefix="1.d4 " /></>}
         {p.ecoW.length > 0 && <>{head(t("자주 둔 오프닝, 백"))}<EcoList list={p.ecoW} /></>}
         {p.ecoB.length > 0 && <>{head(t("자주 둔 오프닝, 흑"))}<EcoList list={p.ecoB} /></>}
-        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}>{enName(n)} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}, {w}-{d}-{l}</span></div>)}</>}
+        {p.opp.length > 0 && <>{head(t("자주 만난 상대"))}{p.opp.map(([n, c, w, d, l]) => <div key={n} style={row}><MasterNameLink name={n}>{masterDisplayName(n) || enName(n.split(":")[0])}</MasterNameLink> <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}, {w}-{d}-{l}</span></div>)}</>}
         {p.ev.length > 0 && <>{head(t("자주 나온 대회"))}{p.ev.map(([n, c, y0, y1]) => <div key={n} style={row}>{n} <span style={{ color: T.inkSoft, fontSize: 11 }}>{t("{0}판", c)}{y0 ? ", " + y0 + (y1 !== y0 ? "–" + y1 : "") : ""}</span></div>)}</>}
       </>}
       {played.length > 0 && <>
@@ -87,7 +90,8 @@ export default function MasterProfile({ name, onOpenGame, onOpenGameAnalyze, onO
       {p && p.best.length > 0 && <>
         {head(t("강한 상대를 이긴 대표 대국"))}
         {p.best.map(([y, ev, opp, oe, color, code], i) => {
-          const sans = () => decodeMoves(code), w = color === "w" ? myName : enName(opp), b = color === "w" ? enName(opp) : myName;
+          const oppName = masterDisplayName(opp) || enName(String(opp).split(":")[0]);
+          const sans = () => decodeMoves(code), w = color === "w" ? myName : oppName, b = color === "w" ? oppName : myName;
           return (
             <div key={i} className="flex items-center gap-1" style={{ marginBottom: 3 }}>
               <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 8px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{y || ""}, vs {enName(opp)} ({oe}), {color === "w" ? t("백") : t("흑")}, {ev}</div>

@@ -3710,4 +3710,9 @@ export default {
   "내 게시물은 리포스트할 수 없음": "No puedes repostear tu propia publicación",
   "아직 리포스트한 게시물 없음": "Aún no hay reposts",
   "아직 올린 게시물 없음": "Aún no hay publicaciones",
+  "고유 주소 복사": "Copiar enlace de la página",
+  "마스터 페이지 보기": "Ver página del Maestro",
+  "수록 대국": "Partidas registradas",
+  "없는 마스터 페이지": "Esta página de Maestro no existe",
+  "활동 기간": "Años en activo",
 };

@@ -16,6 +16,8 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 | BUG-157 | P1 | 세션 복원 때 프로필 소개(bio)를 서버 값으로 되돌리지 않아, 다른 기기에서 고친 소개가 이 기기의 예전 소개로 다시 덮어써짐 | 수정 완료(v0.7.5, 배포 전) · 복원 경로에 bio 추가, check-profile-roundtrip(prebuild)이 편집 필드의 왕복 복원 검사 | 2026-11-12 |
 | BUG-158 | P1 | 분석 탭 FEN 모드에서 다른 탭에 다녀오거나 새로고침하면 FEN 시작 포지션이 사라지고 수순만 남아, FEN부터 둔 수를 표준 시작 위치에서 다시 두는 잘못된 보드가 됨 | 수정 완료(v0.7.5, 배포 전) · fenRoot를 App으로 올려 수순과 함께 저장·복원, check-tab-memory(prebuild) | 2026-11-12 |
 | BUG-159 | P2 | 새로고침 때 다른 탭(분석)이 잠깐 보였다가 몇 초 뒤 원래 탭으로 바뀜 | 수정 완료(v0.7.5, 배포 전) · 첫 렌더부터 맞는 탭, 딥링크 동안 덮개, check-tab-memory | 2026-11-12 |
+| BUG-167 | P3 | 마스터 상세 통계의 상대 이름이 옛 데이터 표기 그대로 "Hikaru:Hodgson,Jeremy Nakamura"처럼 두 사람이 붙어 보임 — 프로필 데이터(masterProfiles.json)의 이름 칸에 "성, 이름:다른 사람"이 섞여 있음 | 표시 수정(v0.7.6) · 마스터 페이지 이름 사용·":" 뒤 버림 · `check-master-pages` / 데이터 재생성은 미결 | 2026-11-14 |
+| BUG-166 | P3 | 마스터 상세 통계(`components/masterProfile.jsx` MoveList)의 첫 수·응수 목록이 항목 사이에 줄바꿈할 자리가 없어 좁은 화면에서 오른쪽으로 넘침 | 수정 완료(v0.7.6) · 줄바꿈되는 flex | 2026-11-14 |
 | BUG-165 | P1 | 채팅의 리뷰 공유 카드에서 "리뷰 보기"를 눌러도 아무 반응 없음(chess.com 대국) — 서버 공유 캐시는 수 목록을 `moves`에 저장하는데 리뷰 화면은 `sans`만 읽어 열기 직전에 조용히 멈춤. 같은 원인으로 `/review/(숫자)` 링크도 열리지 않음 | 수정 완료(v0.7.6) · `normalizeReviewGame`으로 모양 일원화 · `check-review-ui` | 2026-11-13 |
 | BUG-164 | P2 | 리뷰 화면 기보(데스크톱 표·모바일 줄)에 체크(+)·체크메이트(#) 기호가 표시되지 않음 — 표시 직전에 `stripSuffix`로 지움 | 수정 완료(v0.7.6) · `displaySans`(원본에 없으면 포지션에서 계산) · `check-review-ui` | 2026-11-13 |
 | BUG-163 | P3 | Stockfish 19 Lite의 예비 경로(jsDelivr stockfish@19.0.1)가 보안 정책(vercel.json CSP script-src)에 없어, 같은 출처 엔진 파일을 못 받을 때 예비 경로도 막힘(18 Lite 예비 경로만 허용돼 있었음) | 수정 완료(v0.7.5) · CSP에 19.0.1 경로 추가 | 2026-11-12 |
@@ -1748,3 +1750,21 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **수정 내용**: 대국 객체 모양을 맞추는 공용 함수 `normalizeReviewGame`(`src/lib/reviewGame.js`)을 만들어, 서버 캐시를 읽는 `reviewedGameFetch`와 리뷰를 여는 `openReview` 입구 두 곳에서 모두 거친다(`moves`만 있으면 `sans`를 만든다).
 - **안전장치**: `scripts/check-review-ui.mjs` — `moves`만 있는 대국을 `sans`로 맞추는지, 이미 있는 `sans`를 건드리지 않는지 실행해 확인하고, 두 입구가 이 함수를 거치지 않으면 실패
 - **검증**: 수정 전 코드에서는 `moves`만 있는 대국으로 `openReview`가 조기 반환함을 코드로 확인(서버 저장 형식과 대조), 수정 후 검사 통과, `npm run build` 통과. 실제 Supabase 왕복은 이 환경에서 확인 불가
+
+### BUG-166 · [P3] 마스터 상세 통계의 수 목록이 좁은 화면에서 넘침
+- **상태**: 수정 완료(v0.7.6)
+- **발견일**: 2026-11-14 (마스터 페이지 /master 신설 중 모바일 화면 확인)
+- **위치**: `src/components/masterProfile.jsx` MoveList(백 첫 수·흑 응수)
+- **원인**: 항목마다 `white-space: nowrap`인 span을 공백 없이 이어 붙여 줄바꿈할 자리가 없었다. 도감 마스터 카드(폭 340px)에서도 같은 구조였다.
+- **수정**: 목록을 `display: flex; flex-wrap: wrap`으로 바꿔 항목 단위로 줄바꿈. 같이 넓은 화면에서 엘로 추이 그래프 폭을 560px로 제한.
+- **검증**: iPhone 13 크기에서 마스터 페이지 스크린샷으로 확인
+
+### BUG-167 · [P3] 마스터 상세 통계에 두 사람 이름이 붙어 보임
+- **상태**: 표시 수정(v0.7.6), 데이터 재생성은 미결
+- **발견일**: 2026-11-14 (마스터 페이지 /master 확인 중)
+- **위치**: `src/data/masterProfiles.json`(프로필 이름·상대 이름), 표시는 `src/components/masterProfile.jsx`
+- **원인**: 프로필을 만든 원본 PGN의 선수 칸에 "Nakamura, Hikaru:Hodgson,Jeremy" 같은 합쳐진 값이 있어, 그대로 영문 이름으로 바꾸면 "Hikaru:Hodgson,Jeremy Nakamura"가 됐다(프로필 이름 "Adams, Michael:Mortazavi,Ali" 등도 같은 형태).
+- **수정**: 이름을 보여 줄 때 ":" 뒤를 버리고, 마스터 페이지가 있는 선수는 주소표의 전체 이름을 쓴다(`masterDisplayName`). 주소 연결(`slugForName`)도 앞사람 기준.
+- **안전장치**: `scripts/check-master-pages.mjs` — 합쳐진 표기가 앞사람의 이름·주소로 이어지는지 검사
+- **남은 일**: 프로필 생성 스크립트에서 원본 이름 칸을 정리해 데이터 자체를 고치는 것(수정 여부 결정 필요)
+

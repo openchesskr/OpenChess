@@ -30,6 +30,7 @@ import { playSfx } from "../lib/prefs.js";
 import { INTRO_FROM, INTRO_HOLD_MS, INTRO_ZOOM_MS, introDelay, introEase, introReach } from "../lib/treeIntro.js";
 import EditionView from "../components/tournamentView.jsx";
 import { GameViewButton, BestMoveJumpButton } from "../components/uiPrimitives.jsx";
+import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import MasterProfile from "../components/masterProfile.jsx";
 import { hasTournamentData, loadTournamentSearch } from "../lib/tournamentData.js";
 import { tournamentsOfPlayerQuery } from "../lib/masterProfile.js";
@@ -306,7 +307,7 @@ function TourExtra({ r, onOpenGame, onOpenGameAnalyze }) {
           {info.top.map((g) => (
             <div key={g.id} className="flex items-center gap-1" style={{ ...rowSty, fontSize: 11, marginBottom: 3 }}>
               <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E4D5B6", borderRadius: 8, padding: "6px 7px", color: T.ink, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {g.y}, {enName(g.w)} {g.we ? "(" + g.we + ")" : ""} – {enName(g.b)} {g.be ? "(" + g.be + ")" : ""}, {g.r}
+                {g.y}, <MasterNameLink name={g.w}>{enName(g.w)}</MasterNameLink> {g.we ? "(" + g.we + ")" : ""} – <MasterNameLink name={g.b}>{enName(g.b)}</MasterNameLink> {g.be ? "(" + g.be + ")" : ""}, {g.r}
               </div>
               <GameViewButton onClick={() => onOpenGame && onOpenGame(sansOf(g))} />
               <BestMoveJumpButton onClick={() => openReview(g)} />
@@ -358,7 +359,7 @@ function DetailCard({ pick, onClose, onOpenGame, onOpenGameAnalyze, onOpenTour }
       style={{ position: "absolute", top: 44, right: 8, zIndex: 65, boxSizing: "border-box", width: pick.type === "tour" || profName ? 340 : 290, maxWidth: "calc(100% - 16px)", maxHeight: "calc(100% - 56px)", overflowY: "auto", borderRadius: 14, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 30px -8px rgba(0,0,0,.45)", padding: 14 }}>
       <div className="flex items-start justify-between gap-2" style={{ marginBottom: 8 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{profName ? <MasterNameLink name={profName}>{title}</MasterNameLink> : title}</div>
           {sub && <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: SITE_FONT, marginTop: 1 }}>{sub}</div>}
         </div>
         <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
