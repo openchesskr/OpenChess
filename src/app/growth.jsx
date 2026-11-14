@@ -9,7 +9,8 @@ import { Search } from "../components/ocIcons.jsx";
 import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, CountUpFrom0, ReportStrip } from "./growthMotion.jsx";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { OnlineDot, Board, useNarrow, fmtFull } from "./common.jsx";
+import { OnlineDot, Board, useNarrow, fmtFull, REVIEW_DEPTH } from "./common.jsx";
+import { loadCachedReviewDepth } from "./reviewCache.js";
 import { explainMistake } from "../lib/mistakeWhy.js";
 import { GROWTH_RECENT_GAMES, recordOf } from "../lib/recentGames.js";
 import { recentPerformance, RECENT_PERF_MIN_GAMES } from "../lib/recentPerformance.js";
@@ -495,11 +496,13 @@ function GrowthCurve({ g, onReview, bare, dark }) {
   const ptsAttr = pts.map((p, i) => x(i) + "," + y(p.acc).toFixed(1)).join(" ");
   return (
     <div style={dark ? { marginTop: 12 } : wrap(bare)}>
+      {/* (v0.7.7 BUG-161) 축 숫자는 SVG 밖 HTML로 — SVG 안 글자는 viewBox(320) 확대 비율을 따라 넓은 화면에서 약 20px까지 커졌다. 위치만 % 로 맞춘다. */}
+      <div style={{ position: "relative" }}>
+      <span aria-hidden="true" style={{ position: "absolute", left: (PX / W) * 100 + "%", top: ((y(hi) - 2) / H) * 100 + "%", transform: "translateY(-100%)", fontSize: 10, lineHeight: 1, color: ink, fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>{hi}</span>
+      <span aria-hidden="true" style={{ position: "absolute", left: (PX / W) * 100 + "%", top: ((y(lo) + 3) / H) * 100 + "%", fontSize: 10, lineHeight: 1, color: ink, fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>{lo}</span>
       <svg viewBox={"0 0 " + W + " " + H} width="100%" role="img" aria-label={t("성장 곡선")} style={{ display: "block", overflow: "visible" }}>
         {g.trend.k > 0 && pts.length > g.trend.k && <rect x={x(recentFrom) - 8} y={PY - 8} width={W - x(recentFrom) + 8 - PX + 8} height={H - 2 * PY + 16} rx="8" fill={dark ? "rgba(236,203,134,.1)" : "rgba(196,154,80,.14)"} />}
         {g.avgAcc != null && <line x1={PX} x2={W - PX} y1={y(g.avgAcc)} y2={y(g.avgAcc)} stroke={dark ? "#9A8B72" : "#8A6C2F"} strokeWidth="1" strokeDasharray="4 4" opacity=".7" />}
-        <text x={PX} y={y(hi) - 2} fontSize="9" fill={ink}>{hi}</text>
-        <text x={PX} y={y(lo) + 10} fontSize="9" fill={ink}>{lo}</text>
         {/* (v0.7.5, 사용자 요청) 곡선이 화면에 들어올 때 왼쪽부터 그려지고, 그 위를 빛 한 점이 계속 흘러간다. 점은 차례로 튀어나오고 선택한 점은 맥동한다. */}
         <motion.polyline points={ptsAttr} fill="none" stroke={line} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" initial={{ pathLength: 0 }} whileInView={{ pathLength: 1 }} viewport={{ once: true }} transition={{ duration: 1.1, ease: OC_EASE }} />
         <polyline points={ptsAttr} fill="none" stroke={dark ? "#FFF7DC" : "#FFF1B8"} strokeWidth="3" strokeLinecap="round" pathLength="100" strokeDasharray="6 94" className="gx-flow" style={{ filter: "drop-shadow(0 0 4px rgba(236,203,134,.9))" }} />
@@ -511,6 +514,7 @@ function GrowthCurve({ g, onReview, bare, dark }) {
           </motion.g>
         ))}
       </svg>
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 10, background: dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)", border: dark ? "1px solid rgba(236,203,134,.14)" : "1px solid #DCCBA8" }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: dark ? T.ivoryHi : T.ink }}>{t("정확도")} <span style={{ color: T.best, fontFamily: SITE_FONT }}>{cur.acc.toFixed(1)}%</span></div>
@@ -841,7 +845,9 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
   const perf = useMemo(() => {
     if (!showResults) return null;
     const byKey = new Map(recent.map((game) => [reviewKeyOf(game), game]));
-    const items = auto.records.map((r) => ({ game: byKey.get(r.key), moves: r.result && r.result.moves })).filter((x) => x.game && Array.isArray(x.moves));
+    // (v0.7.7 BUG-095) 퍼포먼스 곡선은 깊이 20(REVIEW_DEPTH) 분석으로 맞췄다 — "더 빠르게" 설정의 얕은 분석 결과까지 섞으면 값이 어긋나므로 그 깊이 이상만 합산한다.
+    const items = auto.records.filter((r) => (loadCachedReviewDepth(r.key) ?? 0) >= REVIEW_DEPTH)
+      .map((r) => ({ game: byKey.get(r.key), moves: r.result && r.result.moves })).filter((x) => x.game && Array.isArray(x.moves));
     return { value: recentPerformance(items, GROWTH_RECENT_GAMES), games: items.length };
   }, [showResults, auto.records]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (

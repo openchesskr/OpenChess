@@ -18,6 +18,8 @@ ok(!/STAGE|Laurel|FacetLeaf/.test(hub), "STAGE 표기·월계관 장식은 사�
 ok(/height: "84cqw"/.test(hub) && /\.dexv-stage \{ flex: 1 1 auto !important; height: auto !important/.test(hub), "BUG-169: 무대(size 컨테이너)는 모바일에서 높이를 cqw로 못박고(min-height만 주면 cqh가 0) 데스크톱에서만 늘어나야 함");
 ok(/height: clamp\(560px, calc\(100dvh - 205px\), 980px\)/.test(hub), "데스크톱 카드(2×2)가 화면 높이를 채우지 않음(아래 여백)");
 ok(/percent: unlockStats && unlockStats\.total \? [^,]+ : null, detail: unlockStats && unlockStats\.total \? [^:]+ : t\("탐색 전"\)/.test(dex), "BUG-168: 해금률을 모르면 0% 대신 '탐색 전'");
+// (v0.7.7 BUG-168 남은 점) 모식도를 열지 않아도 첫 화면에서 같은 배치·같은 해금 판정으로 해금률을 계산한다
+ok(/const hubUnlockStats = useMemo\([\s\S]{0,400}computeDexLayout\(treeData, contentVer\)[\s\S]{0,300}dexIsUnlocked\(chesscom, ccReady, unlockAll, n\.path\)/.test(dex) && /const unlockStats = unlockStats0 \|\| hubUnlockStats;/.test(dex), "BUG-168: 첫 화면 해금률을 모식도 없이 계산하지 않음 — 모식도를 열기 전까지 '탐색 전'으로만 보인다");
 ok(!/<LessonPath /.test(dex), "레슨은 학습 탭에 있음 — 도감 첫 화면에 다시 넣지 말 것");
 if (fails.length) { console.error("✗ check-dex-hub 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-dex-hub: 도감 첫 화면 고급 진열장 카드 4개(동등 배치·화면 높이 채움)·구획 전환 줄 유지");

@@ -949,11 +949,11 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           extra={<PuzzleDemo />} />
 
         <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
-          lead={t("학습 탭은 내 성장을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("성장 분석") }, { n: "learn-2", cap: t("최근 대국") }]}
+          lead={t("학습 탭은 레슨과 맞춤 학습을 모아 둔 곳입니다.")}
+          shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("맞춤 학습") }]}
           blocks={[
-            [t("성장 분석"), t("리뷰하지 않아도 최근 대국 5판을 자동으로 분석해 보여 줍니다. 분석하는 동안에는 게이지 바로 진행 상황을 알려 줍니다.")],
-            [t("최근 대국"), t("대국마다 오프닝, 전적, 탁월한 수와 유일한 수의 개수가 보입니다. 연두색 버튼으로 바로 리뷰할 수 있습니다.")],
+            [t("레슨"), t("체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.")],
+            [t("맞춤 학습"), t("최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>

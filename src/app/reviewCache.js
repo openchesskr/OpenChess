@@ -28,6 +28,11 @@ export function loadCachedReviewResult(storageKey, expectedLen, depth) {
     return fixForcedOnlyMoves(parsed.result);   // (v0.7.5) 강제 수를 유일한 수로 매긴 예전 결과 바로잡기
   } catch { return null; }
 }
+// (v0.7.7 BUG-095) 캐시된 결과가 어떤 깊이로 분석됐는지(없으면 null) — 퍼포먼스 레이팅은 곡선을 맞춘 깊이(REVIEW_DEPTH) 이상만 합산한다.
+export function loadCachedReviewDepth(storageKey) {
+  if (!storageKey) return null;
+  try { const parsed = JSON.parse(window.localStorage.getItem(storageKey) || "null"); return parsed && Number.isFinite(parsed.d) ? parsed.d : null; } catch { return null; }
+}
 export function saveCachedReviewResult(storageKey, result, depth) {
   if (!storageKey || !result) return;
   recordReviewSummary(storageKey, result); // 결과 캐시와 별개로 정확도·탁월·유일 개수 요약을 남긴다(저장 실패해도 요약은 유지)

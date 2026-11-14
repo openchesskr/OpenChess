@@ -35,6 +35,8 @@ for (const z of zips) {
 }
 console.log("zip " + data.length + "개, 대국 " + data.reduce((a, d) => a + d.games.length, 0) + "판");
 
+// (v0.7.7 BUG-167) 원본 PGN의 선수 칸에 두 사람이 붙은 값("Nakamura, Hikaru:Hodgson,Jeremy")이 있다 — 앞사람만 쓴다(그대로 두면 "Hikaru:Hodgson,Jeremy Nakamura"로 보였다).
+for (const d of data) for (const g of d.games) for (const tg of ["White", "Black"]) if (typeof g.tags[tg] === "string" && g.tags[tg].includes(":")) g.tags[tg] = g.tags[tg].split(":")[0].trim();
 // 2) 이름 합치기(전체 상대 포함)
 const counts = new Map();
 for (const d of data) for (const g of d.games) for (const k of [g.tags.White, g.tags.Black]) counts.set(k, (counts.get(k) || 0) + 1);

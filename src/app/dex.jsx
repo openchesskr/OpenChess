@@ -1439,7 +1439,19 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
     return () => window.removeEventListener("popstate", onPop);
   }, []);
   // (사용자 요청) 모식도 위 안내 문구 자리에 표시할 도감 해금률 — { unlocked, total }.
-  const [unlockStats, setUnlockStats] = useState(null);
+  const [unlockStats0, setUnlockStats] = useState(null);
+  // (v0.7.7 BUG-168 남은 점) 첫 화면에서도 정확한 해금률 — 모식도를 그리지 않고 같은 배치 계산(computeDexLayout, 모듈 캐시)과 같은 해금 판정(dexIsUnlocked)으로 센다.
+  //  모식도가 열려 직접 올려 준 값이 있으면 그것을 쓴다(같은 값). 배치가 아직 없으면(트리 데이터 로딩 전) null → "탐색 전".
+  const hubUnlockStats = useMemo(() => {
+    if (unlockStats0 || !treeData) return null;
+    try {
+      const nodes = computeDexLayout(treeData, contentVer).nodes || [];
+      if (!nodes.length) return null;
+      let unlocked = 0; for (const n of nodes) if (dexIsUnlocked(chesscom, ccReady, unlockAll, n.path)) unlocked++;
+      return { unlocked, total: nodes.length };
+    } catch { return null; }
+  }, [unlockStats0, treeData, treeVersion, contentVer, chesscom, ccReady, unlockAll]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const unlockStats = unlockStats0 || hubUnlockStats;
   const totalTitles = TITLE_SERIES.reduce((a, x) => a + x.mins.length, 0);
   const totalSkins = bookSets().length;   // (v0.6.9) 스킨은 세트 단위로 센다(기본 세트 포함)
   const ownedSkinN = ownedSetCount(ownedSkins);

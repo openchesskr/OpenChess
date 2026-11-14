@@ -11,11 +11,20 @@ const TOP_N = 900;
 const db = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8")).games;
 // (v0.7.5) 표기 정리·성 + 이름 첫 글자로 합치기·복합 성 합치기는 scripts/lib/masterNames.mjs(DB 기반 프로필 보충과 공용)
 const ix = peopleIndex();
-for (const g of db) { ix.add(g.white, g.whiteElo); ix.add(g.black, g.blackElo); }
+for (const g of db) { const y = String(g.date || "").slice(0, 4); ix.add(g.white, g.whiteElo, y); ix.add(g.black, g.blackElo, y); }   // (v0.7.7 BUG-152) 연도로 동명이인 구분
 const people = ix.finish();
 const best = bestName;
-const top = [...people.entries()].sort((a, b) => b[1].elo - a[1].elo || b[1].games - a[1].games).slice(0, TOP_N)
-  .map(([key, p]) => ({ key, name: best(p), games: p.games, elo: p.elo || null }));
+// (v0.7.7 BUG-152) 동명이인은 이제 따로 센다. 화면 이름이 같은 두 사람(예: 1997~98년의 "Fedoseev, Vladimir"와 GM "Fedoseev,Vl3")이 목록에 함께 있으면
+//  앱은 이름으로 프로필을 찾으므로 구분할 수 없다 — 엘로(같으면 대국 수)가 높은 한 사람만 남긴다. 남은 사람의 대국 수·최고 엘로는 더 이상 합쳐지지 않는다.
+const ranked = [...people.entries()].sort((a, b) => b[1].elo - a[1].elo || b[1].games - a[1].games);
+const seenName = new Set(), top = [];
+let homonyms = 0;
+for (const [key, p] of ranked) {
+  if (top.length >= TOP_N) break;
+  const name = best(p);
+  if (seenName.has(name)) { homonyms++; continue; }
+  seenName.add(name); top.push({ key: key.replace(/#\d$/, ""), name, games: p.games, elo: p.elo || null });
+}
 // (v0.6.5) 마스터 상세 프로필(src/data/masterProfiles.json — build-master-profiles.mjs)이 있는 선수는 DB 최고 엘로 순위 밖이어도(옛 대가는 엘로 기록이 없다) 목록에 넣는다
 // — 그래야 도감에서 그 선수의 노드를 눌러 상세 프로필을 열 수 있다. 대국 수는 프로필의 대국 수, 엘로는 프로필의 최고 엘로(없으면 null).
 const profPath = new URL("../src/data/masterProfiles.json", import.meta.url);
@@ -27,4 +36,5 @@ if (existsSync(profPath)) {
 const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
 top.sort((a, b) => { const [sa, ga] = a.key.split("|"), [sb, gb] = b.key.split("|"); return cmp(sa, sb) || cmp(ga, gb); });   // 성 → 이름 첫 글자 (성이 짧은 쪽이 먼저: "Le" < "Lenderman")
 writeFileSync(new URL("../src/data/dbMasters.json", import.meta.url), JSON.stringify({ games: db.length, top: TOP_N, masters: top.map((m) => [m.name, m.games, m.elo]) }) + "\n");
+console.log("동명이인으로 뺀 선수", homonyms, "명");
 console.log("선수", people.size, "중 상위", TOP_N, "명 + 프로필 선수", extra, "명 = 총", top.length, "명 · 최고 엘로 하한", Math.min(...top.map((m) => m.elo)), "· 처음", top[0].name, "· 끝", top[top.length - 1].name);
