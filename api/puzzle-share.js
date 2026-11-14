@@ -57,6 +57,37 @@ function linesLegal(root, lines) {
   }
   return true;
 }
+// (v0.7.7) 게임 끝내기(checkmate) 퍼즐 — 정답 트리의 모든 끝이 실제 체크메이트인지 다시 두어 확인하고, 주 라인(맨 앞 가지)이 끝나는 체크메이트 장면의
+//  키(mateKey = FEN 기물 배치 + 차례)와 길이(mateLen = 반수)를 서버가 직접 계산해 덮어쓴다(브라우저 값은 믿지 않는다). 같은 키의 기존 퍼즐과 중복 판정은 handler에서.
+//  규칙은 src/lib/matePuzzle.js와 같다(MATE_* 상수·판정 — scripts/check-mate-puzzle.mjs가 두 곳이 같은지 검사).
+export const MATE_PUZZLE_MIN_PLIES = 3, MATE_KEY_MAX_PUZZLES = 2;
+export function mateInfo(root, tree) {
+  if (!tree || typeof tree !== "object") return null;
+  let ok = true, main = null;
+  const walk = (node, fen, path) => {
+    const kids = (node.children || []).filter((k) => k && k.pass !== false);
+    if (!kids.length) {
+      if (!path.length) { ok = false; return; }
+      const c = new Chess(fen);
+      if (!c.isCheckmate()) ok = false;
+      else if (!main) main = { fen, len: path.length };
+      return;
+    }
+    for (const k of kids) { const c = new Chess(fen); try { c.move(k.san); } catch { ok = false; return; } walk(k, c.fen(), [...path, k.san]); if (!ok) return; }
+  };
+  walk(tree, root.fen(), []);
+  if (!ok || !main) return null;
+  const p = main.fen.split(" ");
+  return { mateKey: p[0] + " " + p[1], mateLen: main.len };
+}
+export function mateDuplicateVerdict(existing, newLen) {
+  const list = (existing || []).filter((x) => x && Number.isFinite(x.mateLen));
+  if (!list.length) return { ok: true };
+  const longest = list.reduce((a, b) => (b.mateLen > a.mateLen ? b : a));
+  if (longest.mateLen >= newLen) return { ok: false, reason: "longer_exists", existing: longest };
+  if (list.length >= MATE_KEY_MAX_PUZZLES) return { ok: false, reason: "cap", existing: longest };
+  return { ok: true };
+}
 export function validatePuzzle(no, d) {
   if (!d || typeof d !== "object" || Array.isArray(d)) return "invalid";
   if (typeof d.id !== "string" || d.id.length > 400 || puzzleNoOf(d.id) !== no) return "number does not match id";
@@ -65,6 +96,12 @@ export function validatePuzzle(no, d) {
   const root = rootPosition(d);
   if (!root) return "illegal start";
   if (d.tree != null) { if (typeof d.tree !== "object" || !treeLegal(root, d.tree)) return "illegal tree"; }
+  if (Array.isArray(d.themes) && d.themes.includes("checkmate")) {
+    const mi = d.tree ? mateInfo(root, d.tree) : null;
+    if (!mi) return "checkmate puzzle must end in checkmate";
+    if (mi.mateLen < MATE_PUZZLE_MIN_PLIES) return "checkmate puzzle too short";
+    d.mateKey = mi.mateKey; d.mateLen = mi.mateLen;   // 서버 계산값으로 덮어쓴다
+  } else if (d.mateKey != null || d.mateLen != null) { delete d.mateKey; delete d.mateLen; }
   else if (d.lines != null) { if (!linesLegal(root, d.lines)) return "illegal lines"; }
   else if (d.solution != null) { if (!linesLegal(root, [{ solution: d.solution }])) return "illegal solution"; }
   return null;
@@ -82,6 +119,16 @@ export default async function handler(req, res) {
   if (!Number.isInteger(no) || no < 100000 || no > 999999) { res.status(400).json({ error: "invalid" }); return; }
   const why = validatePuzzle(no, data);
   if (why) { res.status(400).json({ error: why }); return; }
+  // (v0.7.7) 게임 끝내기 중복 방지 — 같은 체크메이트 장면의 기존 퍼즐이 같거나 더 길면, 또는 이미 상한(2개)이면 거부(409 duplicate_mate)
+  if (data.mateKey) {
+    try {
+      const q = await fetch(env.url + "/rest/v1/puzzles?select=data->>id,data->>mateLen&data->>mateKey=eq." + encodeURIComponent(data.mateKey) + "&limit=20", { headers: { apikey: env.service, Authorization: "Bearer " + env.service } });
+      const rows = q.ok ? await q.json() : [];
+      const others = (Array.isArray(rows) ? rows : []).filter((r) => r && r.id !== data.id).map((r) => ({ id: r.id, mateLen: Number(r.mateLen) }));
+      const v = mateDuplicateVerdict(others, data.mateLen);
+      if (!v.ok) { res.status(409).json({ error: "duplicate_mate", reason: v.reason, existingId: v.existing && v.existing.id }); return; }
+    } catch { res.status(502).json({ error: "unavailable" }); return; }
+  }
   try {
     const r = await fetch(env.url + "/rest/v1/rpc/puzzle_share_put_verified", {
       method: "POST", headers: { apikey: env.service, Authorization: "Bearer " + env.service, "Content-Type": "application/json" },

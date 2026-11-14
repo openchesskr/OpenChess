@@ -3749,4 +3749,10 @@ export default {
   "체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.": "Desbloquea las lecciones una a una siguiendo un camino por etapas, desde el tablero y las coordenadas hasta los principios de apertura. El entrenador te indica la siguiente lección.",
   "최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.": "Vuelve a resolver las posiciones en las que fallaste en tus partidas recientes y recibe lecciones recomendadas para tus debilidades. El análisis de progreso está en la pestaña Análisis.",
   "{0} 프로필": "Perfil de {0}",
+  "게임 끝내기": "Terminar la partida",
+  "이 포지션에는 강제 체크메이트 수순 없음": "No hay una secuencia de jaque mate forzado en esta posición",
+  "메이트 인 1은 퍼즐로 만들지 않음. 더 앞선 포지션으로 시도": "El mate en 1 no se convierte en puzle. Prueba con una posición anterior",
+  "체크메이트까지 이어지는 수순을 만들지 못함. 다른 수로 시도": "No se pudo crear una línea que termine en jaque mate. Prueba otra jugada",
+  "이 기보에는 메이트 인 2 이상의 체크메이트 수순 없음": "Esta partida no tiene una secuencia de jaque mate de mate en 2 o más",
+  "같은 체크메이트 장면으로 끝나는 같거나 더 긴 수순의 퍼즐이 이미 있어 새로 만들지 않음": "Ya existe un puzle con una línea igual o más larga que termina en el mismo jaque mate, así que no se crea uno nuevo",
 };

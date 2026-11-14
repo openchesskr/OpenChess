@@ -8,19 +8,20 @@ import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
 import { badgeIcon } from "../components/badges.jsx";
-import { AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { kindOfPost, isSaved } from "../lib/legacyPosts.js";
 import { LegacyActionsCtx } from "./legacyFeed.jsx";
+import { LegacyFrame } from "../components/legacyFrame.jsx";
 import { legacyLikeToggle } from "./profile.jsx";
 import { mixFeed, FEED_KINDS } from "../lib/socialMix.js";
 import { t, fmtDateOnly } from "../lib/i18n.js";
 
 const PAGE = 10;
 const INK = "#2A1B0E", SOFT = "#7A6648", LINE = "#D6C29A";
-const THEME_LABEL = () => ({ sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") });
+const THEME_LABEL = () => Object.fromEntries(PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]));   // (v0.7.7) 테마 목록 공용
 const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }) : "");
 
 /* 서버 응답 한 줄 → 유산 게시물 { owner, id, entry, kind, likes, reposts, at, ownerInfo } (모양이 틀리면 null). 피드·프로필 소셜 섹션이 같이 쓴다. */
@@ -223,9 +224,14 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   return (
     <PostShell label={t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
       head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={t("유산")} detail={info ? info.label : ""} onOpenProfile={onOpenProfile} right={badgeIcon(kind, 22)} />}
-      media={<div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", background: "rgba(0,0,0,.06)" }}>
-        {/* (v0.7.7, 사용자 요청) 퍼즐 게시물과 같은 정사각 보드(가장자리까지) — 예전엔 남색 액자 안에 작게 들어가 게시물마다 모양이 달랐다 */}
-        <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={kind} />
+      media={<div style={{ background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", padding: 14 }}>
+        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다(머리·캡션·동작 줄은 퍼즐과 같은 형식) */}
+        <div style={{ position: "relative", padding: 12 }}>
+          <LegacyFrame />
+          <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
+            <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={kind} />
+          </div>
+        </div>
       </div>}
       actions={<>
         <button type="button" onClick={A.toggleLike ? () => A.toggleLike(post) : undefined} disabled={!A.toggleLike} aria-label={t("좋아요")} aria-pressed={liked} className="press" style={actBtn}><Heart size={24} color={liked ? "#D9534F" : INK} fill={liked ? "#D9534F" : "none"} /><Num n={A.likeCount(post)} color={liked ? "#D9534F" : INK} /></button>

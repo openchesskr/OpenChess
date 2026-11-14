@@ -3749,4 +3749,10 @@ export default {
   "체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.": "Unlock lessons one by one along a step-by-step path, from the board and coordinates to opening principles. The coach tells you which lesson to do next.",
   "최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.": "Replay positions where you made mistakes in recent games and get lessons recommended for your weaknesses. Growth analysis is in the Analysis tab.",
   "{0} 프로필": "{0}'s profile",
+  "게임 끝내기": "Finish the game",
+  "이 포지션에는 강제 체크메이트 수순 없음": "No forced checkmate sequence in this position",
+  "메이트 인 1은 퍼즐로 만들지 않음. 더 앞선 포지션으로 시도": "Mate in 1 is not made into a puzzle. Try an earlier position",
+  "체크메이트까지 이어지는 수순을 만들지 못함. 다른 수로 시도": "Couldn't build a line that ends in checkmate. Try another move",
+  "이 기보에는 메이트 인 2 이상의 체크메이트 수순 없음": "This game has no checkmate sequence of mate in 2 or longer",
+  "같은 체크메이트 장면으로 끝나는 같거나 더 긴 수순의 퍼즐이 이미 있어 새로 만들지 않음": "A puzzle with the same or a longer line ending in the same checkmate already exists, so no new one is made",
 };

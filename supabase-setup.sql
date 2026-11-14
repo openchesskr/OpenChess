@@ -2323,13 +2323,15 @@ begin
   else
     select coalesce(jsonb_agg(distinct t), '[]'::jsonb) into v_themes from (
       select jsonb_array_elements_text(coalesce(v_old -> 'themes', '[]'::jsonb) || coalesce(p_data -> 'themes', '[]'::jsonb)) as t
-    ) x where t in ('punish', 'advantage', 'sacrifice');
+    ) x where t in ('punish', 'advantage', 'sacrifice', 'checkmate');   -- (v0.7.7) 게임 끝내기
     if jsonb_array_length(v_themes) > 0 then
       update public.puzzles set data = data || jsonb_build_object('themes', v_themes) where no = p_no;
     end if;
   end if;
 end; $$;
 revoke all on function public.puzzle_share_put_verified(uuid, bigint, jsonb, boolean) from public, anon, authenticated;
+-- (v0.7.7) 게임 끝내기 퍼즐 중복 방지 — api/puzzle-share.js와 퍼즐 만들기 화면이 같은 체크메이트 장면(data->>'mateKey')의 기존 퍼즐을 찾는다.
+create index if not exists idx_puzzles_mate_key on public.puzzles ((data ->> 'mateKey')) where data ? 'mateKey';
 grant execute on function public.puzzle_share_put_verified(uuid, bigint, jsonb, boolean) to service_role;
 
 

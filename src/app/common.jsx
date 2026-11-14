@@ -299,6 +299,8 @@ const PUZZLE_THEME_OPTS = {
   punish: { target: 170, maxPlies: 8, requireCapture: true, puzzleType: "positional" },
   advantage: { target: 220, maxPlies: 8, puzzleType: "positional" },
   sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true, puzzleType: "positional" },
+  // (v0.7.7, 사용자 요청) 게임 끝내기 — 체크메이트 수순의 한 수(firstSan)부터 실제 체크메이트(#)까지. 모든 정답 라인이 체크메이트로 끝나야 한다(lib/matePuzzle.js).
+  checkmate: { target: 0, maxPlies: 16, requireMate: true, maxNodes: 60, puzzleType: "mate" },
 };
 export function puzzleThemeOpts(theme, overrideTarget, overridePuzzleType) {
   const base = PUZZLE_THEME_OPTS[theme] || PUZZLE_THEME_OPTS.punish;
@@ -356,7 +358,7 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
     // (v0.5.9 BUG-037) 등급 규칙은 gradeMoveKind 하나로 — 퍼즐 후보는 유일한 수를 따로 매기지 않는다(secondCp 생략).
     const kind = await gradeMoveKindConfirmed({ loss, matched: i === 0, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
-    cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
+    cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci, mate: pv.mate != null ? pv.mate : null });   // (v0.7.7) mate: 둘 차례 관점 메이트 수(게임 끝내기)
   }
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
   const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
@@ -368,7 +370,7 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
         const kind = await gradeMoveKindConfirmed({ loss, matched: false, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
-        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color) });
+        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color), mate: evc.mate != null && evc.mate < 0 ? -evc.mate : null });
       }
     } catch { }
   }
@@ -425,7 +427,9 @@ export async function findSacrificeFirstMove(engine, preSans, fenRoot) {
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
 export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
-    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
+    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional", requireMate = false } = opts || {};
+  // (v0.7.7) 게임 끝내기(requireMate)도 첫 수(체크메이트 수순에서 고른 수)가 있어야 한다.
+  if (requireMate && !firstSan) return null;
   // (v0.6.2 BUG-055) 희생 테마(requireMaterialRecovery)는 첫 수가 탁월한 수로 지정돼야만 의미가 있다 — 지정 없이 부르면 희생이 아닌 최선수로
   // "희생 퍼즐"이 만들어지므로(1.Rg7 사례) 만들지 않는다. 호출부는 findSacrificeFirstMove(FEN) 또는 게임 채점(PGN)으로 firstSan을 넘긴다.
   if (requireMaterialRecovery && !firstSan) return null;
@@ -508,19 +512,21 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
     // 걸러졌다. 남은 후보 중 최상위가 무조건 plausible[0]으로 채택되니, 진짜 최선 응수가
     // 사라지고 훨씬 나쁜(때론 블런더급) 수만 유일한 갈래로 남는 원인이었다 — 이 필터는
     // 사용자 차례에만 적용한다.
-    if (isUserTurn && (depth >= 1 || firstSan) && !settling) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));   // (v0.7.3) 정리 중에는 전개·캐슬링도 필요한 응수일 수 있어 거르지 않는다
+    if (isUserTurn && (depth >= 1 || firstSan) && !settling && !requireMate) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));   // (v0.7.7) 메이트 수순에서는 캐슬링·전개도 메이트 수일 수 있다   // (v0.7.3) 정리 중에는 전개·캐슬링도 필요한 응수일 수 있어 거르지 않는다
     if (!cands.length) return [];
     const canBranch = nodeCount + 2 < maxNodes;
     let chosen;
     if (isUserTurn) {
-      const passables = cands.filter((c) => PUZZLE_PASS_KINDS.includes(c.kind));
+      let passables = cands.filter((c) => PUZZLE_PASS_KINDS.includes(c.kind));
+      // (v0.7.7) 게임 끝내기: 강제 메이트를 이어 가는 수만, 가장 빠른 메이트부터
+      if (requireMate) passables = passables.filter((c) => c.mate != null && c.mate > 0).sort((a, b) => a.mate - b.mate);
       if (!passables.length) return [];
       // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
       // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
       // (버그 수정, 사용자 제보) FEN 기반 사용자 생성 퍼즐은 첫 수에서까지 이렇게 2갈래로 갈라지면
       // "정답이 두 개"인 것처럼 보여 혼란스럽다 — FEN 퍼즐(fenRoot 있음)은 항상 최선 수 1갈래로만
       // 진행하고, 기존 방식(자동 생성 퍼즐, 표준 시작 위치)은 그대로 둔다.
-      chosen = passables.slice(0, canBranch && depth === 0 && !fenRoot ? 2 : 1);
+      chosen = passables.slice(0, canBranch && depth === 0 && !fenRoot && !requireMate ? 2 : 1);
       // (버그 수정) 예전엔 여기서 "유혹 수"(실전에서 자주 두어지지만 통과할 수 없는 수)를 모식도에
       // 막힌 가지로 보여주려고 일부러 끼워 넣었는데, 실제로는 사용자가 그 가지를 시도해 보면(고스트를
       // 눌러 두어 보게 되므로) 어디로도 이어지지 않는 리프가 그대로 모식도에 남아 "풀 수 없는 라인이
@@ -609,6 +615,7 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
             }
           }
         }
+        if (requireMate && !terminal && !childForceMate) return null;   // (v0.7.7) 게임 끝내기: 메이트가 풀린 가지는 버린다
         if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate, pvs2, settleHere);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
         return node;
@@ -626,19 +633,32 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
     const brd = boardOfRoot(fenRoot, preSans);
     const color = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
-    const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
+    const node = { san: firstSan, kind: requireMate ? "best" : "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await nextWorker().evaluate(fenOfRoot(fenRoot, cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2, fenRoot); } catch { }
+    let firstEv = null;
+    try { firstEv = await nextWorker().evaluate(fenOfRoot(fenRoot, cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(firstEv, cur2, fenRoot); } catch { }
+    // (v0.7.7) 게임 끝내기: 고른 수 뒤에 상대가 강제 메이트를 당해야 한다(아니면 만들지 않는다)
+    if (requireMate && !/#$/.test(firstSan) && !(firstEv && firstEv.mate != null && firstEv.mate < 0)) return null;
     try {
       const lc = fenRoot ? null : await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
       if (hit) node.adopt = hit.adopt;
     } catch { }
-    if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"));
+    if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"), requireMate || undefined);
     children = [node];
   } else {
     children = await expand(preSans, 0, false, undefined, rootPvs);
+  }
+  // (v0.7.7) 게임 끝내기: 모든 정답 라인이 체크메이트(#)로 끝나야 한다 — 노드 예산에 걸려 메이트 전에 끊긴 가지는 잘라 낸다.
+  if (requireMate && children) {
+    const keep = (n, userTurn) => {
+      if (n.pass === false) return false;
+      const kids = (n.children || []).filter((k) => keep(k, !userTurn));
+      n.children = kids;
+      return userTurn ? (/#$/.test(n.san) || kids.length > 0) : kids.length > 0;
+    };
+    children = children.filter((n) => keep(n, true));
   }
   if (!children || !children.some((n) => n.pass !== false)) return null;
   const tree = { children };
@@ -4950,7 +4970,10 @@ export const PIECE_KOR = { K: lcLatin(t("킹")), Q: lcLatin(t("퀸")), R: lcLati
 // 포지션+수 하나로만 정해지고(useFocusAnalysis 참고), 같은 포지션에 여러 테마가 동시에 해당하면
 // 퍼즐 하나에 themes 배열로 전부 태그를 얹는다. 구버전 데이터(단일 theme 문자열)도 안전하게 읽도록
 // themesOf가 두 형태를 모두 흡수한다.
-const THEME_PRIORITY = ["sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저
+const THEME_PRIORITY = ["checkmate", "sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저 (v0.7.7 게임 끝내기 추가)
+// (v0.7.7) 퍼즐 테마 목록·이름을 한 곳에 — 필터 칩·만들기 화면·소셜 피드가 같은 목록을 쓴다(테마를 더하면 여기만 고친다).
+export const PUZZLE_THEME_KEYS = ["checkmate", "sacrifice", "advantage", "punish"];
+export function puzzleThemeLabel(k) { return k === "checkmate" ? t("게임 끝내기") : k === "sacrifice" ? t("기물 희생하기") : k === "advantage" ? t("우위 점하기") : k === "punish" ? t("실수 응징하기") : k; }
 export function themesOf(p) {
   if (Array.isArray(p.themes) && p.themes.length) return p.themes;
   if (p.theme) return [p.theme];
@@ -4965,6 +4988,7 @@ const PUZZLE_THEME_STYLE = {
   sacrifice: { accent: T.brilliant },
   advantage: { accent: T.inaccuracy },
   punish: { accent: T.blunder },
+  checkmate: { accent: T.only },   // (v0.7.7) 게임 끝내기
 };
 // (v0.1.1) 태그 2개짜리 퍼즐(예: 실수 응징하기 + 기물 희생하기)의 색을 "반씩 섞어" 표현하기 위한
 // 헬퍼. 두 색의 RGB 평균(#no 텍스트처럼 단일 색이 필요한 자리)과, 절반씩 하드 스플릿한 그라데이션
