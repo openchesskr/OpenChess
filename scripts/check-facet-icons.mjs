@@ -21,7 +21,7 @@ const ZONES = [
   ["src/app/common.jsx", "export function LaurelBranch(", "\n}\n"],
   ["src/app/common.jsx", "export function SeriesGlyph(", "</svg>"],   // 뒤따르는 lucide 아이콘은 예외
   ["src/app/common.jsx", "{/* 양옆 끝 마름모", "</div>\n      )}"],
-  ["src/components/dexHub.jsx", "{scene.laurel && (", "</svg>"],
+  ["src/components/dexHub.jsx", "function Laurel(", "</svg>"],   // (v0.7.6) 업적 진열장의 월계관
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
   ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];

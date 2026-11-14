@@ -19,7 +19,7 @@ const LAUREL = facetRamp(T.brassHi);
 /* ── (v0.7.6, 사용자 요청 2차) "전시실" — 네 구획을 똑같은 크기의 진열장 네 개로 나란히 세운다(데스크톱 4열 · 태블릿/모바일 2×2).
    진열장 하나 = 위에서 내려오는 조명 · 원근 체스판 바닥 · 면 분할 받침대(왼쪽 위 빛: 윗면 밝음 · 앞면 중간 · 옆면 어두움) 위의 대표 기물 · 받침대 앞면의 로마 숫자 · 아래 황동 명판(제목·설명·진행).
    구획마다 다른 것은 받침대 위 장면뿐이다: 오프닝 = 한 칸 나아간 백 폰과 마주 선 흑 폰 · 마스터 = 백 킹과 뒤에 선 흑 킹 · 업적 = 월계관 안의 퀸 · 스킨 = 재질이 다른 나이트 셋.
-   올리면 기물이 떠오르고 조명이 밝아지며 바닥 칸이 한 번 반짝인다(움직임 줄이기 설정이면 멈춤). 크기는 진열장 폭 기준(container query)이라 어떤 폭에서도 같은 비율. */
+   올리면 기물이 떠오르고 조명이 밝아지며 빛이 한 번 지나간다(기기의 움직임 줄이기 설정 대신 사이트 시각 효과 설정을 따른다 — BUG-010). 크기는 진열장 폭 기준(container query)이라 어떤 폭에서도 같은 비율. */
 const FONT_DISPLAY = "'Playfair Display','Noto Serif KR',serif";
 const NUMERAL = { openings: "I", masters: "II", titles: "III", skins: "IV" };
 // 기물: [세트, 기물, 색, 가로 위치(%), 높이(진열장 폭 대비 %), 겹침 순서, 밝기]
@@ -115,7 +115,6 @@ export function DexHub({ items, onOpen, summary = [] }) {
         .dexv .dexv-glint { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 40%, rgba(255,240,200,.16) 50%, transparent 60%); transform: translateX(-120%); }
         .dexv:hover .dexv-glint { animation: dexvGlint 1.1s ease-out 1; }
         @keyframes dexvGlint { to { transform: translateX(120%); } }
-        @media (prefers-reduced-motion: reduce) { .dexv, .dexv .dexv-pieces { transition: none; } .dexv:hover .dexv-glint { animation: none; } }
         .dexhub-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
         @media (min-width: 900px) { .dexhub-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; } }
       `}</style>
