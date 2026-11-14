@@ -61,7 +61,8 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         <motion.div aria-hidden="true" initial={{ scaleY: 1 }} animate={{ scaleY: 0 }} transition={{ duration: 1, delay: 0.25, ease: [0.65, 0, 0.35, 1] }} style={{ position: "absolute", inset: 0, zIndex: 8, transformOrigin: "50% 100%", background: "#0A0603", borderTop: "2px solid " + LEGACY_GOLD_HI, boxShadow: "0 -6px 18px " + LEGACY_GOLD_HI + "99" }} />
       )}
       {/* 표적 고정: 십자선 + 코너 브래킷 + 스캔 라인 */}
-      {heroPiece && !lite && (
+      {/* (v0.7.7 버그 수정, 사용자 제보 "탁월한 수 이펙트가 안 나옴") 표적 고정·도착 연출은 유산의 핵심이라 가벼운 모드에서도 보인다(한 번만 재생되는 짧은 효과). 계속 도는 장식만 가벼운 모드에서 끈다. */}
+      {heroPiece && (
         <>
           <motion.span aria-hidden="true" key={"rowl" + epoch} initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", left: 0, right: 0, top: sy(heroPiece.r) + 6.25 + "%", height: 1, background: "linear-gradient(90deg,transparent," + heroColor + "88,transparent)" }} />
           <motion.span aria-hidden="true" key={"coll" + epoch} initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", top: 0, bottom: 0, left: sx(heroPiece.c) + 6.25 + "%", width: 1, background: "linear-gradient(180deg,transparent," + heroColor + "88,transparent)" }} />
@@ -82,7 +83,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
           const sp = isHeroMover ? HERO_SPRING : SPRING;
           return (
             <motion.div key={p.id} initial={false} animate={{ left: sx(p.c) + "%", top: sy(p.r) + "%", opacity: dim ? 0.38 : 1, scale: 1 }} exit={{ opacity: 0, scale: 0.35 }}
-              transition={lite ? { duration: 0 } : { left: sp, top: sp, opacity: { duration: 0.5 }, scale: { duration: 0.28 } }}
+              transition={lite ? { left: { duration: 0.35, ease: "easeOut" }, top: { duration: 0.35, ease: "easeOut" }, opacity: { duration: 0.3 }, scale: { duration: 0.2 } } : { left: sp, top: sp, opacity: { duration: 0.5 }, scale: { duration: 0.28 } }}   // (v0.7.7) 가벼운 모드도 순간이동 대신 짧게 미끄러진다
               style={{ position: "absolute", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: heroPiece && p.id === heroPiece.id ? 3 : 2 }}>
               <PieceGlyph type={p.t} color={p.col} size={cell * 0.9} pieceSkin="classic" />
             </motion.div>
@@ -90,7 +91,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         })}
       </AnimatePresence>
       {/* 도착: 섬광 → 파문 두 겹 + 8방향 광선 → 등급 배지 */}
-      {landed && move && !lite && (
+      {landed && move && (
         <>
           <motion.span key={"fl" + epoch} aria-hidden="true" initial={{ opacity: 0.7 }} animate={{ opacity: 0 }} transition={{ duration: 0.8, ease: "easeOut" }}
             style={{ position: "absolute", inset: 0, zIndex: 6, pointerEvents: "none", background: "radial-gradient(circle at " + (sx(move.to[1]) + 6.25) + "% " + (sy(move.to[0]) + 6.25) + "%, rgba(255,240,200,.75), transparent 48%)" }} />
@@ -106,7 +107,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
       )}
       {/* 수 아이콘 — 리뷰 보드와 같은 자리(도착 칸 우상단 모서리)·같은 크기(칸의 44%). 유산 수는 도착할 때 한 번 튀어 오른다 */}
       {move && lastKind && (
-        <motion.span key={"bd" + epoch + "-" + step} aria-hidden="true" className={landed ? "ab-glint" : undefined} initial={isLite() || !landed ? false : { opacity: 0, scale: 0.2, rotate: -25 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: landed && !isLite() ? 0.3 : 0 }}
+        <motion.span key={"bd" + epoch + "-" + step} aria-hidden="true" className={landed ? "ab-glint" : undefined} initial={!landed ? false : { opacity: 0, scale: 0.2, rotate: -25 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: landed ? 0.3 : 0 }}
           style={{ position: "absolute", left: "calc(" + (sx(move.to[1]) + 12.5) + "% - " + cell * 0.26 + "px)", top: "calc(" + sy(move.to[0]) + "% - " + cell * 0.18 + "px)", width: cell * 0.44, height: cell * 0.44, zIndex: 7, borderRadius: "50%", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }}>{badgeIcon(lastKind, Math.max(12, cell * 0.44))}</motion.span>
       )}
     </div>
@@ -127,11 +128,12 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
   const [step, setStep] = useState(startCount), [playing, setPlaying] = useState(false), [introDone, setIntroDone] = useState(false), [epoch, setEpoch] = useState(0);
   const flip = entry.side === "b", color = QCOLOR[kind] || LEGACY_GOLD_HI;
   const total = endCount - startCount;
-  useEffect(() => { const id = setTimeout(() => { setIntroDone(true); if (autoPlay) setPlaying(true); }, lite ? 0 : 1300); return () => clearTimeout(id); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const id = setTimeout(() => { setIntroDone(true); if (autoPlay) setPlaying(true); }, lite ? 500 : 1300); return () => clearTimeout(id); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!playing || !introDone) return undefined;
     if (step >= endCount) { setPlaying(false); return undefined; }
-    const delay = lite ? 250 : step === moveIndex ? 1700 : step === moveIndex + 1 ? 2100 : 950;
+    // (v0.7.7 버그 수정, 사용자 제보 "유산 재생이 지나치게 빠름") 가벼운 모드(렉이 감지된 기기)에서 한 수 250ms로 4배 빨리 넘어갔다 — 재생 속도는 장식이 아니라 내용이라 모드와 무관하게 같은 박자.
+    const delay = step === moveIndex ? 1700 : step === moveIndex + 1 ? 2100 : 950;
     const id = setTimeout(() => setStep((s) => Math.min(endCount, s + 1)), delay);
     return () => clearTimeout(id);
   }, [playing, introDone, step, endCount, moveIndex, lite]);
@@ -177,7 +179,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
       </motion.div>
       <div style={{ position: "relative" }}>
         <motion.div initial={lite ? false : { opacity: 0, y: 16, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: lite ? 1 : spotlight ? 1.1 : landed ? 1.05 : 1 }}
+          animate={{ opacity: 1, y: 0, scale: spotlight ? 1.1 : landed ? 1.05 : 1 }}
           transition={{ opacity: { duration: 0.7, delay: lite || introDone ? 0 : 0.15 }, y: { duration: 0.7, delay: lite || introDone ? 0 : 0.15, ease: [0.22, 0.9, 0.32, 1] }, scale: { type: "spring", stiffness: spotlight ? 55 : 90, damping: 18 } }}
           style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)", transformOrigin: heroOrigin, filter: (spotlight || landed) && !lite ? "drop-shadow(0 0 24px " + color + "66)" : "none", transition: "filter .6s" }}>
           <LegacyFrame draw live />
@@ -186,7 +188,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
         {!lite && <Brackets color={color} size={14} inset={2} pulse />}
         {/* 키 무브 배너 — 도착하면 대각선 띠가 보드를 가로질러 지나간다 */}
         <AnimatePresence>
-          {landed && !lite && (
+          {landed && (
             <motion.div key={"bn" + epoch} aria-hidden="true" initial={{ x: "-110%", opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: "110%", opacity: 0 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ position: "absolute", left: 0, right: 0, top: "42%", height: 56, zIndex: 12, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(90deg,transparent,rgba(8,5,3,.82) 12%,rgba(8,5,3,.82) 88%,transparent)", borderTop: "1px solid " + color, borderBottom: "1px solid " + color, boxShadow: "0 0 24px " + color + "55" }}>
               <span className="ab-burst-glow" style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 24, letterSpacing: ".18em", color, textShadow: "0 2px 0 rgba(0,0,0,.8), 0 0 18px " + color + "88" }}>{kindName}</span>
@@ -199,7 +201,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={step + ":" + epoch} initial={lite ? false : { opacity: 0, y: 8, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {landed && badgeIcon(kind, 24)}
-            <span className={landed && !lite ? "ab-burst-glow" : undefined} style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 22, letterSpacing: ".02em", color: landed ? color : K.ivoryHi, textShadow: "0 1px 0 rgba(0,0,0,.8)" }}>{label}</span>
+            <span className={landed ? "ab-burst-glow" : undefined} style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 22, letterSpacing: ".02em", color: landed ? color : K.ivoryHi, textShadow: "0 1px 0 rgba(0,0,0,.8)" }}>{label}</span>
             {landed && <Tag solid color={color} style={{ background: "linear-gradient(180deg," + color + "," + color + "CC)", color: "#10161F" }}>{kindName}</Tag>}
             {spotlight && <Tag color={K.brassHi}>{t("이 수에 주목")}</Tag>}
           </motion.div>

@@ -3748,4 +3748,5 @@ export default {
   "학습 탭은 레슨과 맞춤 학습을 모아 둔 곳입니다.": "The Learn tab brings together lessons and personal training.",
   "체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.": "Unlock lessons one by one along a step-by-step path, from the board and coordinates to opening principles. The coach tells you which lesson to do next.",
   "최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.": "Replay positions where you made mistakes in recent games and get lessons recommended for your weaknesses. Growth analysis is in the Analysis tab.",
+  "{0} 프로필": "{0}'s profile",
 };

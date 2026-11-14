@@ -35,5 +35,12 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   const fn = (sql.match(/function public\.social_profile[\s\S]*?\$\$;/) || [""])[0];
   ok(/order by t desc/.test(fn) && /reposted_at as t/.test(fn) && /'social_profile'/.test(sql), "social_profile: 게시물 최신순·리포스트한 시각순, 공개 권한");
   ok(/z\.is_public or p_uid = auth\.uid\(\)/.test(fn), "social_profile: 비공개 퍼즐은 주인 본인에게만"); }
+// (v0.7.7, 사용자 요청) 퍼즐·유산 게시물 형식 통일 — 같은 머리(PostHead: 프로필 사진·아이디·"종류 · 세부")와 같은 캡션, 같은 정사각 보드
+{ const { readFileSync: rf } = await import("node:fs"); const sf = rf(new URL("../src/app/socialFeed.jsx", import.meta.url), "utf8");
+  ok((sf.match(/head=\{<PostHead /g) || []).length === 2, "퍼즐·유산 게시물이 같은 머리(PostHead)를 쓰지 않음");
+  ok(/const photo = usePhotoOf\(creator\)/.test(sf) && /<PostHead username=\{creator\} photo=\{photo\}/.test(sf), "퍼즐 게시물에 작성자 프로필 사진이 없음");
+  ok(/const name = ownerInfo\.username \|\| ""/.test(sf) && !/ownerInfo\.nickname/.test(sf), "유산 게시물이 아이디 대신 닉네임을 씀");
+  ok((sf.match(/<Caption name=/g) || []).length === 2, "퍼즐·유산 캡션 형식이 다름");
+  ok(!/LegacyFrame/.test(sf), "유산 게시물만 다른 액자 미리보기를 씀(퍼즐과 같은 정사각 보드여야 함)"); }
 if (fails.length) { console.error("✗ check-social-feed 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-social-feed: 소셜 탭(/social) 피드 섞기·종류 토글·유산 피드 RPC 유지");

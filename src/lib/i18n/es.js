@@ -3748,4 +3748,5 @@ export default {
   "학습 탭은 레슨과 맞춤 학습을 모아 둔 곳입니다.": "La pestaña Aprender reúne las lecciones y el entrenamiento personalizado.",
   "체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.": "Desbloquea las lecciones una a una siguiendo un camino por etapas, desde el tablero y las coordenadas hasta los principios de apertura. El entrenador te indica la siguiente lección.",
   "최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.": "Vuelve a resolver las posiciones en las que fallaste en tus partidas recientes y recibe lecciones recomendadas para tus debilidades. El análisis de progreso está en la pestaña Análisis.",
+  "{0} 프로필": "Perfil de {0}",
 };

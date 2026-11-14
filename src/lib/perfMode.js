@@ -44,18 +44,19 @@ export function initPerfMode() {
   apply(false);
   // 프레임 간격 측정: 60프레임씩 묶어 평균을 낸다. 250ms 넘게 벌어진 간격(탭 전환 등)은 건너뛴다.
   let last = 0, sum = 0, n = 0, bad = 0, windows = 0;
-  const stopAt = performance.now() + 20000;
+  const stopAt = performance.now() + 24000;
   const tick = (now) => {
     if (lite || now > stopAt) return;
     if (document.hidden) { last = 0; requestAnimationFrame(tick); return; }
     if (last) {
       const d = now - last;
       if (d < 250) { sum += d; n++; }
-      if (n >= 60) { bad = sum / n > 32 ? bad + 1 : 0; sum = 0; n = 0; windows++; if (bad >= 3) { apply(true); return; } }
+      if (n >= 60) { bad = sum / n > 32 ? bad + 1 : 0; sum = 0; n = 0; windows++; if (bad >= 4) { apply(true); return; } }   // (v0.7.7) 3 → 4구간 연속
     }
     last = now;
     requestAnimationFrame(tick);
   };
   // 첫 화면이 그려지는 동안의 초기 부하는 제외하고 1.2초 뒤부터 잰다.
-  setTimeout(() => requestAnimationFrame(tick), 1200);
+  // (v0.7.7) 1.2초 → 4초 뒤부터 — 시작 직후 엔진 부팅·데이터 로딩의 일시적인 부하를 '느린 기기'로 오판해, 멀쩡한 기기가 가벼운 모드(유산 연출·애니메이션 축소)로 넘어갔다.
+  setTimeout(() => requestAnimationFrame(tick), 4000);
 }

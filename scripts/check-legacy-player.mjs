@@ -32,5 +32,11 @@ const at = (f, r, c) => f.find((p) => p.r === r && p.c === c);
 // 불법 수는 위치를 그대로(throw 금지)
 { let threw = false, out = null; try { out = buildFrames(["e4", "Qh8"]); } catch { threw = true; }
   ok(!threw && out.frames.length === 3 && out.frames[2].length === 32, "불법 수도 throw 없이 위치 유지"); }
+// (v0.7.7 BUG-174·175) 가벼운 모드(렉 감지)에서도 재생 박자는 같고, 유산 수 연출(표적 고정·도착 섬광·파문·광선·배너·배지 튀어 오름)은 보인다
+{ const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/components/legacyPlayer.jsx", import.meta.url), "utf8");
+  ok(/const delay = step === moveIndex \? 1700 : step === moveIndex \+ 1 \? 2100 : 950;/.test(src), "유산 재생 박자가 가벼운 모드에서 달라짐(예전 한 수 250ms로 지나치게 빠름 — BUG-174)");
+  ok(!/\{heroPiece && !lite &&/.test(src) && !/\{landed && move && !lite &&/.test(src) && !/\{landed && !lite &&/.test(src), "유산 수 연출이 가벼운 모드에서 꺼짐(BUG-175)");
+  ok(!/transition=\{lite \? \{ duration: 0 \}/.test(src), "가벼운 모드에서 기물이 미끄러지지 않고 순간이동함"); }
 if (fails.length) { console.error("✗ legacy-player check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ legacy-player check: 수순 → 기물 위치(이동·잡기·캐슬링·앙파상·승급·불법 수) 통과");
