@@ -11,8 +11,8 @@ import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { T } from "../lib/theme.js";
 import { t, tx, fmtDateOnly } from "../lib/i18n.js";
 import { QCOLOR } from "../lib/moveKinds.js";
-import { badgeIcon } from "../components/badges.jsx";
-import { LEGACY_TYPES, AnimatedMove, FadeIn, legacyMoveLabel, LEGACY_FONT } from "./common.jsx";
+import { badgeIcon, postBadge } from "../components/badges.jsx";
+import { LEGACY_TYPES, postTypeInfo, legacyRootOf, gamePostTitle, AnimatedMove, FadeIn, legacyMoveLabel, LEGACY_FONT } from "./common.jsx";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { LegacyRevealScreen, legacyLikeCounts, legacyLikedSlots, legacyLikeToggle } from "./profile.jsx";
 import { LegacyShareSheet } from "./social.jsx";
@@ -63,7 +63,9 @@ const plainBtn = { display: "inline-flex", alignItems: "center", gap: 4, backgro
 /* 유산 카드 — 파란 바탕 + 금색 기하학 외곽선 액자. 배치는 퍼즐 카드(PuzzleCard)와 같다: 정사각 미리보기(AnimatedMove — 퍼즐과 같은 보드·기물 비율) ·
    보드 아래에 생성자명/날짜(따로) · 좋아요/리포스트와 공유 버튼. 퍼즐 블록처럼 한 줄 가로 스크롤(230px)로 놓인다. */
 function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onShare, onRepost, reposted, repostCount, onDelete, armed }) {
-  const info = LEGACY_TYPES.find((x) => x.key === kind);
+  const info = postTypeInfo(kind);
+  const isGame = kind === "game";   // (v0.7.7) 대국 게시물
+  const root = useMemo(() => legacyRootOf(entry), [entry]);
   const wrapRef = useRef(null); const [boardW, setBoardW] = useState(190);
   useLayoutEffect(() => {
     const el = wrapRef.current; if (!el) return undefined;
@@ -82,15 +84,15 @@ function PostCard({ entry, kind, creator, likeCount, liked, onLike, onOpen, onSh
       style={{ borderRadius: 14, padding: "12px 12px 12px", background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", boxShadow: "0 8px 18px -10px rgba(0,0,0,.7), 0 3px 0 #070B14", border: "1px solid rgba(212,175,95,.35)", cursor: "pointer", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", boxSizing: "border-box" }}>
       {onDelete && <button onClick={stop(onDelete)} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ position: "absolute", top: 8, right: 8, zIndex: 10, height: 22, minWidth: 22, padding: armed ? "0 7px" : 0, borderRadius: 7, background: armed ? "#C8453B" : "rgba(0,0,0,.45)", color: armed ? "#fff" : "#FF8A7A", border: armed ? "none" : "1px solid rgba(255,138,122,.4)", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, fontWeight: 800 }}><Trash2 size={12} />{armed ? t("삭제") : null}</button>}
       <div style={{ display: "flex", alignItems: "center", gap: 7, padding: onDelete ? "0 28px 8px 2px" : "0 2px 8px" }}>
-        <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid " + GOLD }}>{badgeIcon(kind, 19)}</span>
-        <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 14, color: "#F3E7C9", textShadow: "0 1px 0 rgba(0,0,0,.8)", whiteSpace: "nowrap" }}>{legacyMoveLabel(entry)}</span>
+        <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.35)", border: "1px solid " + GOLD }}>{postBadge(kind, 19)}</span>
+        <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 14, color: "#F3E7C9", textShadow: "0 1px 0 rgba(0,0,0,.8)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{isGame ? gamePostTitle(entry) : legacyMoveLabel(entry)}</span>
         <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 800, color: mute, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{info ? info.label : ""}</span>
       </div>
       {/* 금색 기하학 액자 안의 미리보기 */}
       <div style={{ position: "relative", padding: 12, marginBottom: 8 }}>
         <LegacyFrame />
         <div ref={wrapRef} style={{ width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, overflow: "hidden" }}>
-          <AnimatedMove sans={before} san={san} size={boardW} loopMs={2400} flip={entry.side === "b"} badge={kind} />
+          <AnimatedMove sans={before} san={san} size={boardW} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
         </div>
       </div>
       {/* 생성자명과 날짜 — 따로, 보드 아래 */}
@@ -147,7 +149,7 @@ export async function doRepost(ctx, { owner, ownerName, id, entry }, was, setCou
 /* 공유 시트 — 주인의 MID를 읽어 공유 링크(openchess.kr/legacy/<MID>-<아이디>)를 함께 보여 준다. */
 function ShareWithLink({ item, viewerUid, zIndex, onClose }) {
   const mid = useOwnerMid(item.owner);
-  return <LegacyShareSheet slotKey={item.id} typeInfo={LEGACY_TYPES.find((x) => x.key === item.kind) || LEGACY_TYPES[0]} entry={item.entry} myUid={viewerUid} ownerUid={item.owner} zIndex={zIndex} link={mid ? SITE_URL + legacyPath(mid, item.id) : null} onClose={onClose} onShared={() => {}} />;
+  return <LegacyShareSheet slotKey={item.id} typeInfo={postTypeInfo(item.kind) || LEGACY_TYPES[0]} entry={item.entry} myUid={viewerUid} ownerUid={item.owner} zIndex={zIndex} link={mid ? SITE_URL + legacyPath(mid, item.id) : null} onClose={onClose} onShared={() => {}} />;
 }
 const PAGE = 12;   // 한 줄 가로 스크롤에서 한 번에 그리는 카드 수 — 카드마다 보드 애니메이션이 있어 처음에는 일부만 그리고 끝의 "더 보기"로 늘린다.
 const kindFromId = (id) => (LEGACY_TYPES.find((x) => x.key === (id.endsWith("2") ? id.slice(0, -1) : id)) || {}).key || "best";
@@ -175,7 +177,7 @@ export default function LegacyFeed({ legacies, ownerUid, ownerName, viewerUid, i
         </div>
       )}
       {!list.length ? (
-        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6, margin: 0 }}>{tab === "reposts" ? t("다른 사람의 유산 게시물을 리포스트하면 여기에 모임") : t("내 대국을 리뷰하다가 최선·유일·탁월 수에서 유산으로 남기기를 누르면 게시물로 쌓임")}</p>
+        <p style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.6, margin: 0 }}>{tab === "reposts" ? t("다른 사람의 유산 게시물을 리포스트하면 여기에 모임") : t("소셜 탭의 + 새 게시물이나 대국 리뷰의 유산으로 남기기로 올린 유산·대국이 게시물로 쌓임")}</p>
       ) : (
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
           {list.slice(0, shown).map((p, i) => tab === "reposts" ? (
@@ -201,7 +203,7 @@ export default function LegacyFeed({ legacies, ownerUid, ownerName, viewerUid, i
         </div>
       )}
       <AnimatePresence>
-        {open && <LegacyRevealScreen typeInfo={LEGACY_TYPES.find((x) => x.key === open.kind) || LEGACY_TYPES[0]} entry={open.entry} onClose={() => setOpen(null)} />}
+        {open && <LegacyRevealScreen typeInfo={postTypeInfo(open.kind) || LEGACY_TYPES[0]} entry={open.entry} onClose={() => setOpen(null)} />}
       </AnimatePresence>
       {sending && <ShareWithLink item={sending} viewerUid={viewerUid} onClose={() => setSending(null)} />}
     </div>
@@ -231,7 +233,7 @@ export function LegacyPostPage({ mid, id, viewerUid, onClose, onOpenProfile }) {
   const [sending, setSending] = useState(false);
   const isOwn = !!(viewerUid && st.owner && viewerUid === st.owner);
   const canSave = !!(ctx && ctx.toggleSave && viewerUid && !isOwn);
-  const info = st.kind ? LEGACY_TYPES.find((x) => x.key === st.kind) : null;
+  const info = st.kind ? postTypeInfo(st.kind) : null;
   useEffect(() => { const h = (e) => { if (e.key === "Escape" && !sending) onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose, sending]);
   return (
     <div role="dialog" aria-modal="true" aria-label={t("유산")} style={{ position: "fixed", inset: 0, zIndex: 300, overflowY: "auto", background: "radial-gradient(120% 90% at 50% 15%, #34230F 0%, #0A0603 72%)", padding: "14px 12px 40px" }}>
@@ -245,7 +247,7 @@ export function LegacyPostPage({ mid, id, viewerUid, onClose, onOpenProfile }) {
           : (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px 4px" }}>
-                <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + GOLD }}>{badgeIcon(st.kind, 22)}</span>
+                <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + GOLD }}>{postBadge(st.kind, 22)}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 800, color: "#F3E7C9" }}>{info ? info.label : ""}</div>
                   <button onClick={() => onOpenProfile && onOpenProfile(mid)} className="press" style={{ border: "none", background: "none", padding: 0, cursor: onOpenProfile ? "pointer" : "default", color: "#B9AC8C", fontSize: 11.5, textAlign: "left" }}>{st.name}{st.entry.savedAt ? " · " + fmtDateOnly(st.entry.savedAt, { year: "numeric", month: "2-digit", day: "2-digit" }) : ""}</button>

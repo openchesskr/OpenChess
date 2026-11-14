@@ -14,7 +14,11 @@ ok(all.length === 9 && new Set(all.map((x) => x.key)).size === 9, "모든 게시
 ok(mixFeed(P, L, "puzzle").every((x) => x.type === "puzzle") && mixFeed(P, L, "legacy").length === 4, "종류 토글(퍼즐만·유산만)");
 ok(mixFeed([], L).length === 4 && mixFeed(P, []).length === 5 && mixFeed(null, null).length === 0, "한쪽이 비어도 동작");
 ok(mixFeed(P, L, "legacy")[0].post.id === "p0" && mixFeed(P, L)[0].p.id === "pz0", "각 목록의 순서(퍼즐 정렬·유산 최신순)를 지킴");
-ok(FEED_KINDS.join() === "all,puzzle,legacy", "종류 토글: 전체·퍼즐·유산");
+ok(FEED_KINDS.join() === "all,puzzle,legacy,game", "종류 토글: 전체·퍼즐·유산·대국");
+{ // (v0.7.7) 대국 게시물은 유산 묶음에서 오지만 "유산"에서는 빠지고 "대국"에서만 보인다
+  const G = [{ owner: "u", id: "g0", kind: "game", entry: { kind: "game" } }, { owner: "u", id: "l0", kind: "best", entry: { kind: "best" } }];
+  ok(mixFeed([], G, "game").map((x) => x.post.id).join() === "g0" && mixFeed([], G, "legacy").map((x) => x.post.id).join() === "l0" && mixFeed([], G).length === 2, "대국 필터: 대국만 / 유산 필터: 대국 제외 / 전체: 모두");
+}
 // 경로
 const rd = (f) => fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
 const shell = rd("src/app/shell.jsx"), app = rd("src/App.jsx"), puz = rd("src/app/puzzle.jsx"), sql = rd("supabase-setup.sql");

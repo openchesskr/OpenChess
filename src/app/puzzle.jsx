@@ -13,13 +13,14 @@ import { tierFromXp, tierDisplayLabelArabic, tierGradientCss } from "../lib/tier
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
 import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, moveFxKindOn, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
 import { AccountChessStats } from "./profile.jsx";
+import { PostComposer, NewPostButton, StreakCount } from "./postComposer.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -2295,46 +2296,7 @@ const DAILY_SLOT_W = DAILY_CARD_W + 28; // 카드 폭 + 여백 28px = 카드 사
 // (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
 // 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
 const DAILY_BOARD_SIZE = 190;
-// (신규 기능, 사용자 요청) 일일 퍼즐 스트릭 배지 — best(역대 최고 연속 일수)가 이 문턱을 넘으면
-// 그 즉시 영구히 "획득"으로 취급한다(count가 나중에 끊겨도 배지는 그대로 남는다 — 별도의 획득
-// 여부 저장이 필요 없는 이유). days는 오름차순으로 정렬돼 있어야 한다.
-const STREAK_BADGES = [
-  { days: 3, label: t("3일 연속") },
-  { days: 7, label: t("일주일 연속") },
-  { days: 14, label: t("2주 연속") },
-  { days: 30, label: t("한 달 연속") },
-  { days: 100, label: t("100일 연속") },
-];
-// 퍼즐 탭 오늘의 퍼즐 캐러셀 바로 아래에 붙는 스트릭 표시줄 — 지금 이어지는 연속 일수(불꽃 아이콘)와
-// 배지 목록(달성한 건 금색, 못한 건 회색)을 한 줄로 보여준다. (버그 수정, 코드 리뷰 지적) dailyPuzzleStreak는
-// useState 초깃값이 이미 { count:0, best:0, lastDate:null }라 절대 null/undefined가 되지 않으므로
-// "streak가 없으면 숨긴다"는 없는 조건이었다 — 일일 퍼즐을 한 번도 안 푼 신규 유저에게 "0일 연속"이
-// 영구히 보이지 않도록, count·best가 둘 다 0인(아직 기록이 전혀 없는) 경우에만 숨긴다.
-function DailyStreakStrip({ streak }) {
-  if (!streak || (!streak.count && !streak.best)) return null;
-  const { count, best } = streak;
-  return (
-    <div className="flex items-center gap-2" style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,.22)", border: "1px solid #5A4630", flexWrap: "wrap" }}>
-      <span className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-        <Flame size={16} color={count > 0 ? "#E8874A" : "rgba(235,221,196,.35)"} fill={count > 0 ? "#E8874A" : "none"} />
-        <span style={{ fontSize: 13, fontWeight: 800, color: count > 0 ? T.ivoryHi : "rgba(235,221,196,.5)" }}>{tx("{0}일 연속", count)}</span>
-      </span>
-      {best > 0 && <span style={{ fontSize: 11.5, color: "rgba(235,221,196,.5)", flexShrink: 0 }}>{tx("최고 {0}일", best)}</span>}
-      <span style={{ width: 1, alignSelf: "stretch", background: "#5A4630", flexShrink: 0 }} />
-      <div className="flex items-center gap-1" style={{ flexWrap: "wrap" }}>
-        {STREAK_BADGES.map((b) => {
-          const earned = best >= b.days;
-          return (
-            <span key={b.days} title={b.label + (earned ? t(" 달성") : t(" ({0}일 필요)", b.days))} className="flex items-center gap-1" style={{ padding: "3px 7px", borderRadius: 999, background: earned ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.05)", border: "1px solid " + (earned ? T.brass : "rgba(255,255,255,.1)") }}>
-              <Medal size={11} color={earned ? T.brassHi : "rgba(235,221,196,.3)"} />
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: earned ? T.brassHi : "rgba(235,221,196,.3)" }}>{tx("{0}일", b.days)}</span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// (v0.7.7, 사용자 요청) 연속 기록 줄(DailyStreakStrip·배지 목록)은 없앴다 — 소셜 탭 머리줄의 StreakCount(불꽃 + 일수)만 남는다.
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(", 오늘") : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
@@ -2467,10 +2429,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const spacer = Math.max(0, containerW / 2 - DAILY_SLOT_W / 2);
   return (
     <div style={{ marginBottom: 16 }}>
-      <div className="flex items-center gap-1" style={{ marginBottom: 6, paddingLeft: 2 }}>
-        <span style={{ fontSize: 13, lineHeight: 1 }}>📅</span>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>{t("일일 퍼즐")}</span>
-      </div>
+      {/* (v0.7.7, 사용자 요청) "일일 퍼즐" 제목 줄은 없앴다 — 그 자리는 PuzzleTab의 머리줄(연속 출석 + 새 게시물). */}
       {/* (v0.2.7 버그 수정) touchAction을 "pan-y"(수직만 브라우저가 처리)로 막아 두고 커스텀 드래그가
           가로를 대신 처리하게 했었는데, 그 커스텀 드래그를 마우스 전용으로 좁히면서 터치에서는 아무도
           가로 스크롤을 처리하지 않게 돼 버렸다 — touchAction을 지정하지 않아(기본값 auto) 터치는
@@ -2491,7 +2450,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum }) {
+export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum, onPublishPost }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -3142,16 +3101,14 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   const storiesNode = (
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
   );
-  const streakNode = (
-      <DailyStreakStrip streak={dailyPuzzleStreak} />
-  );
-  const modeNode = (
-      <div className="inline-flex items-center" style={{ marginBottom: 10, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }}>
-        <button onClick={() => setPuzzleMode("solve")} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "solve" ? T.ebony2 : "transparent", color: puzzleMode === "solve" ? T.brassHi : T.inkSoft }}>{t("퍼즐 풀기")}</button>
-        {/* (사용자 요청) 로그인하지 않은 상태에서는 퍼즐 만들기 기능 자체를 쓸 수 없게 막는다 — 만든
-            퍼즐은 myUid를 제작자로 기록해 공유되므로, 로그인 없이는 애초에 의미가 없다. */}
-        <button onClick={() => myUid && setPuzzleMode("create")} disabled={!myUid} title={!myUid ? t("로그인 후 이용 가능") : undefined} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: myUid ? "pointer" : "default", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: !myUid ? "rgba(244,238,226,.35)" : puzzleMode === "create" ? T.brassHi : T.inkSoft }}>{t("퍼즐 만들기")}</button>
-        {!myUid && <span style={{ fontSize: 11, color: T.inkSoft, padding: "0 8px" }}>{t("로그인 후 이용 가능")}</span>}
+  // (v0.7.7, 사용자 요청) "일일 퍼즐" 제목 자리 — 왼쪽은 연속 출석(불꽃 + 일수 숫자만), 오른쪽은 "+ 새 게시물"(전체 화면 작성기: 퍼즐·유산·대국).
+  //  예전 연속 기록 줄(배지 목록)과 "퍼즐 풀기/퍼즐 만들기" 전환은 없앴다 — 만들기는 새 게시물 작성기의 퍼즐 탭(기존 마법사 그대로)으로.
+  const [composeType, setComposeType] = useTabMemory("puzzle.composeType", "puzzle");
+  const openComposer = (type) => { if (!myUid) return; setComposeType(type || "puzzle"); setPuzzleMode("create"); };
+  const headerNode = (
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingLeft: 2, gap: 10 }}>
+        <StreakCount count={dailyPuzzleStreak ? dailyPuzzleStreak.count : 0} />
+        <NewPostButton onClick={() => openComposer(composeType)} disabled={!myUid} />
       </div>
   );
   const createNode = (
@@ -3319,7 +3276,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       )}
     </>
   );
-  const searchNode = puzzleMode === "solve" ? (
+  const searchNode = (
     <>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
@@ -3490,34 +3447,40 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
         </div>
       </div>
     </>
+  );
+  const composerNode = puzzleMode === "create" && myUid ? (
+      <PostComposer type={composeType} setType={setComposeType} onClose={() => setPuzzleMode("solve")} engine={engine} onPublish={onPublishPost || (() => ({ ok: false, reason: "invalid" }))} chesscom={chesscom} chesscomUsername={chesscomUsername}>
+        {createNode}
+      </PostComposer>
   ) : null;
-  const feedNode = puzzleMode === "solve" ? (
+  const feedNode = (
     <SocialFeed puzzles={feed} cardProps={puzzleCardProps} creatorOf={(p) => (creatorUsernames || {})[puzzleNo(p.id)] || null} solved={solved}
       onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
-  ) : null;
+  );
   if (socialWide) {
     return (
       <div className="social-tab" style={{ display: "grid", gridTemplateColumns: "minmax(0, 600px) 320px", justifyContent: "center", gap: 28, alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
+          {headerNode}
           {storiesNode}
-          {puzzleMode === "create" ? createNode : feedNode}
+          {feedNode}
         </div>
         <aside style={{ position: "sticky", top: 12, minWidth: 0, maxHeight: "calc(100dvh - 120px)", overflowY: "auto", paddingRight: 2 }}>
           {tierNode}
-          {streakNode}
-          {modeNode}
           {searchNode}
         </aside>
+        {composerNode}
       </div>
     );
   }
   return (
     <div className="social-tab" style={{ maxWidth: 600, margin: "0 auto" }}>
       {tierNode}
+      {headerNode}
       {storiesNode}
-      {streakNode}
-      {modeNode}
-      {puzzleMode === "create" ? createNode : <>{searchNode}{feedNode}</>}
+      {searchNode}
+      {feedNode}
+      {composerNode}
     </div>
   );
 }

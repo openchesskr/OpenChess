@@ -7,8 +7,8 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect, useContext } fro
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
-import { badgeIcon } from "../components/badges.jsx";
-import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { badgeIcon, postBadge } from "../components/badges.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
@@ -214,22 +214,24 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
 export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const [ref, w] = useSquareWidth();
   const { entry, kind, ownerInfo } = post;
-  const info = LEGACY_TYPES.find((x) => x.key === kind);
+  const info = postTypeInfo(kind);
+  const isGame = kind === "game";   // (v0.7.7) 대국 게시물 — 마지막 수를 보여 주고, 캡션은 "백 vs 흑 · 결과"
   const name = ownerInfo.username || "";   // (v0.7.6 사용자 요청) 닉네임 대신 아이디
   const before = useMemo(() => entry.sans.slice(0, entry.moveIndex), [entry]);
+  const root = useMemo(() => legacyRootOf(entry), [entry]);
   const open = () => { if (ownerInfo.mid && A.openPost) A.openPost({ mid: ownerInfo.mid, id: post.id }); };
   const liked = A.liked.has(post.owner + "|" + post.id), reposted = A.isReposted(post), canRepost = A.canRepost(post);
   const [armed, setArmed] = useState(false);
   const cachedPhoto = usePhotoOf(ownerInfo.photo ? null : name);   // 서버가 사진을 함께 주지 않은 옛 응답 대비
   return (
-    <PostShell label={t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
-      head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={t("유산")} detail={info ? info.label : ""} onOpenProfile={onOpenProfile} right={badgeIcon(kind, 22)} />}
+    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
+      head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
       media={<div style={{ background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", padding: 14 }}>
         {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다(머리·캡션·동작 줄은 퍼즐과 같은 형식) */}
         <div style={{ position: "relative", padding: 12 }}>
           <LegacyFrame />
           <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
-            <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={kind} />
+            <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
           </div>
         </div>
       </div>}
@@ -241,7 +243,7 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
         {isOwn && A.removeMine && <button type="button" onClick={() => { if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 2600); return; } A.removeMine(post.id); }} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ ...actBtn, color: armed ? T.blunder : SOFT, fontSize: 11.5, fontWeight: 800 }}><Trash2 size={18} color={armed ? T.blunder : SOFT} />{armed ? t("한 번 더 누르면 삭제") : null}</button>}
         <button type="button" onClick={open} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
       </>}>
-      <Caption name={name}><span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</Caption>
+      <Caption name={name}><span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{isGame ? gamePostTitle(entry) : legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</Caption>
       <div style={{ fontSize: 11, color: SOFT }}>{fmtDate(post.savedAt)}</div>
     </PostShell>
   );
@@ -268,7 +270,7 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
     return () => io.disconnect();
   });
   const list = items.slice(0, shown);
-  const kindLabel = { all: t("전체"), puzzle: t("퍼즐"), legacy: t("유산") };
+  const kindLabel = { all: t("전체"), puzzle: t("퍼즐"), legacy: t("유산"), game: t("대국") };
   return (
     <div>
       <div role="tablist" aria-label={t("게시물 종류")} style={{ display: "flex", gap: 6, marginBottom: 12 }}>

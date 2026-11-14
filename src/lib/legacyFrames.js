@@ -1,13 +1,14 @@
 // (v0.7.4) 유산 재생기용 수순 → 기물 위치 계산 — 화면과 분리된 순수 함수(scripts/check-legacy-player.mjs가 검사).
-import { startBoard, applySan, sanSrc } from "./chessRules.js";
+import { startBoard, applySan, sanSrc, plyIsWhite } from "./chessRules.js";
 
 /* frames[i] = i수를 둔 직후의 기물 목록 [{ id, t, col, r, c }](기물마다 고유 id라 화면이 같은 기물을 이어서 움직인다), moves[i] = i번째 수 { from, to, piece, capture, castle, promo } | null. */
-export function buildFrames(sans) {
-  const b0 = startBoard(), first = []; let n = 0;
+// root: (v0.7.7) FEN에서 시작한 게시물이면 parseFenFull 결과 — 그 배치·차례부터 둔다.
+export function buildFrames(sans, root = null) {
+  const b0 = root ? root.board : startBoard(), first = []; let n = 0;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (b0[r][c]) first.push({ id: "p" + n++, t: b0[r][c].t, col: b0[r][c].c, r, c });
   const frames = [first], moves = []; let board = b0;
   for (let i = 0; i < sans.length; i++) {
-    const color = i % 2 === 0 ? "w" : "b", cur = frames[i].map((p) => ({ ...p })); let mv = null;
+    const color = plyIsWhite(i, root ? root.turn : "w") ? "w" : "b", cur = frames[i].map((p) => ({ ...p })); let mv = null;
     try {
       const info = sanSrc(board, sans[i], color);
       if (info) {

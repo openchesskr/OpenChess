@@ -6674,9 +6674,23 @@ export const LEGACY_TYPES = [
 // (사용자 요청) 그랜드마스터 보너스 슬롯 키(예: "best2")에서 기반 종류 키("best")를 뽑아낸다 —
 // LEGACY_TYPES는 여전히 종류 3개뿐이라, 저장/조회 키와 등급 정보(kind/label/short) 조회 키를 분리한다.
 export function legacyBaseKey(slotKey) { return slotKey && slotKey.endsWith("2") ? slotKey.slice(0, -1) : slotKey; }
+// (v0.7.7, 사용자 요청 "새 게시물") FEN에서 시작한 게시물은 그 포지션의 차례·수 번호로 센다.
+export function legacyRootOf(entry) {
+  if (!entry || typeof entry.fen !== "string" || !entry.fen) return null;
+  try { return parseFenFull(entry.fen); } catch { return null; }
+}
 export function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
-  return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
+  const root = legacyRootOf(entry);
+  return moveNumber(entry.moveIndex, root ? root.turn : "w") + entry.sans[entry.moveIndex];
+}
+// (v0.7.7) 게시물 종류 정보 — 유산 3종은 LEGACY_TYPES, 대국 게시물(game)은 따로. 모르는 종류는 null.
+export const GAME_POST_TYPE = { key: "game", kind: "game", get label() { return t("대국"); }, get short() { return t("대국"); } };
+export function postTypeInfo(kind) { return kind === "game" ? GAME_POST_TYPE : LEGACY_TYPES.find((x) => x.key === kind) || null; }
+// 대국 게시물 제목 — "백 이름 vs 흑 이름 · 결과"(이름이 비면 백·흑).
+export function gamePostTitle(entry) {
+  const m = (entry && entry.meta) || {};
+  return (m.white || t("백")) + " vs " + (m.black || t("흑")) + (m.result && m.result !== "*" ? " · " + m.result : "");
 }
 // 유산 블록 공통 스타일 — 채워진 칸(LegacyStoneTile)과 빈 칸(LegacyEmptySlot)이 완전히 같은 크기·
 // 재질(어보니+브래스)을 쓰도록 버튼 자체의 스타일을 하나로 공유한다(사용자 요청: 추가 전후로 블록
@@ -6732,9 +6746,10 @@ export function legacyEntryPosition(entry) {
   if (!entry || !Array.isArray(entry.sans) || entry.sans[entry.moveIndex] == null) return null;
   // 들어오는 곳에서 normalizeLegacyEntry로 거르지만(BUG-130), 미리보기 하나 때문에 화면 전체가 깨지지 않도록 여기서도 막는다.
   try {
-    const before = boardFromSans(entry.sans.slice(0, entry.moveIndex));
-    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex) ? "w" : "b");
-    return { board: boardFromSans(entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
+    const root = legacyRootOf(entry);   // (v0.7.7) FEN에서 시작한 게시물
+    const before = boardOfRoot(root, entry.sans.slice(0, entry.moveIndex));
+    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex, root ? root.turn : "w") ? "w" : "b");
+    return { board: boardOfRoot(root, entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
   } catch { return null; }
 }
 export function LegacyMiniBoard({ entry, color }) {
@@ -6777,11 +6792,12 @@ export function LegacyMiniBoard({ entry, color }) {
 const LEGACY_TILE_ICON_BTN = { position: "absolute", bottom: 5, zIndex: 2, width: 18, height: 18, borderRadius: 6, background: "rgba(14,9,5,.7)", color: T.brassHi, border: "1px solid rgba(196,154,80,.35)",
   cursor: "pointer", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 };
 export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size, likeCount, isLiked, onToggleLike }) {
-  const color = QCOLOR[typeInfo.kind];
+  const color = QCOLOR[typeInfo.kind] || "#D4AF5F";   // (v0.7.7) 대국 게시물(game)은 금색
+  const moveLabel = typeInfo.kind === "game" ? gamePostTitle(entry) : legacyMoveLabel(entry);
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
       {/* (v0.7.1, 사용자 요청) 수 이름 대신 유산 수를 둔 직후의 포지션 전체를 보드로 보여 준다. 수 이름은 아래 띠에 작게. */}
-      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + legacyMoveLabel(entry)}
+      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + moveLabel}
         style={{ ...LEGACY_BLOCK_BTN_STYLE, padding: "20px 8px 4px", gap: 0, justifyContent: "flex-start" }}>
         <LegacyBlockDecor />
         <div style={{ position: "relative", width: "100%", flexShrink: 0 }}><LegacyMiniBoard entry={entry} color={color} /></div>
@@ -6789,12 +6805,12 @@ export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size
         <div style={{ position: "relative", flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: "0 16px", boxSizing: "border-box", borderTop: "1px solid rgba(212,175,95,.35)", marginTop: 6 }}>
           <LaurelBranch size={13} />
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 13, lineHeight: 1, color,
-            textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{legacyMoveLabel(entry)}</span>
+            textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{moveLabel}</span>
           <LaurelBranch size={13} flip />
         </div>
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
-      <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
+      <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{typeInfo.kind === "game" ? <Swords size={26} color="#D4AF5F" /> : badgeIcon(typeInfo.kind, 26)}</span>
       {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. 보드를 덜 가리도록 작은 알약으로. */}
       {onToggleLike && (
         <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label={t("유산 좋아요")} title={t("좋아요")} className="press"

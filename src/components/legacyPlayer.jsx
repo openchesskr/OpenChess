@@ -12,9 +12,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, Play, Pause, SkipBack, SkipForward, RotateCcw } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { t } from "../lib/i18n.js";
 import { QCOLOR } from "../lib/moveKinds.js";
-import { badgeIcon, QLABEL } from "./badges.jsx";
+import { badgeIcon, postBadge, QLABEL } from "./badges.jsx";
 import { PieceGlyph } from "./pieces.jsx";
-import { moveNumber } from "../lib/chessRules.js";
+import { moveNumber as moveNumberAt } from "../lib/chessRules.js";
+import { entryRoot } from "../lib/legacyEntry.js";
 import { buildFrames } from "../lib/legacyFrames.js";
 import { isLite } from "../lib/perfMode.js";
 import { LegacyFrame, LEGACY_GOLD, LEGACY_GOLD_HI } from "./legacyFrame.jsx";
@@ -118,13 +119,20 @@ const para5 = para(7);
 const hudBtn = (primary, disabled) => ({ clipPath: para5, height: primary ? 42 : 34, minWidth: primary ? 74 : 54, padding: "0 16px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: MONO, fontWeight: 900, fontSize: 11, letterSpacing: ".1em",
   background: primary ? "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")" : "rgba(236,203,134,.12)", color: primary ? "#241509" : K.brassHi });
 
-/* kind: 등급(best|only|brilliant), entry: 검증된 유산 항목. 모달·페이지 어디서든 같은 재생기. */
-export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
+/* kind: 등급(best|only|brilliant), entry: 검증된 유산 항목. 모달·페이지 어디서든 같은 재생기.
+   (v0.7.7) 대국 게시물(kind "game")은 한 수를 주목하는 연출 대신 처음부터 끝까지 넘겨 보는 기보 재생기(GamePostPlayer)로. */
+export function LegacyPlayer(props) {
+  const k = props.kind || (props.entry && props.entry.kind);
+  return k === "game" ? <GamePostPlayer entry={props.entry} onKey={props.onKey} /> : <LegacyMovePlayer {...props} />;
+}
+function LegacyMovePlayer({ kind, entry, autoPlay = true, onKey }) {
   const { sans, moveIndex, playCount } = entry;
   const lite = isLite();
+  const root = useMemo(() => entryRoot(entry), [entry]);
+  const moveNumber = (ply) => moveNumberAt(ply, root ? root.turn : "w");
   const startCount = Math.max(0, moveIndex - (entry.beforeCount || 0));
   const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount || 1));
-  const { frames, moves } = useMemo(() => buildFrames(sans.slice(0, endCount)), [sans, endCount]);
+  const { frames, moves } = useMemo(() => buildFrames(sans.slice(0, endCount), root), [sans, endCount, root]);
   const [step, setStep] = useState(startCount), [playing, setPlaying] = useState(false), [introDone, setIntroDone] = useState(false), [epoch, setEpoch] = useState(0);
   const flip = entry.side === "b", color = QCOLOR[kind] || LEGACY_GOLD_HI;
   const total = endCount - startCount;
@@ -232,9 +240,79 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
   );
 }
 
+/* (v0.7.7, 사용자 요청 "대국도 게시물로") 대국 게시물 재생기 — 같은 HUD 보드로 첫 수부터 마지막 수까지 넘겨 본다.
+   진행은 막대(input range) 하나 + 이전·재생·다음, 아래에 기보(누르면 그 수로). 키보드 ←/→, 스페이스. */
+function GamePostPlayer({ entry, onKey }) {
+  const { sans } = entry;
+  const root = useMemo(() => entryRoot(entry), [entry]);
+  const turn = root ? root.turn : "w";
+  const { frames, moves } = useMemo(() => buildFrames(sans, root), [sans, root]);
+  const [step, setStep] = useState(0), [playing, setPlaying] = useState(false), [epoch, setEpoch] = useState(0);
+  const end = sans.length, finished = step >= end;
+  useEffect(() => {
+    if (!playing) return undefined;
+    if (step >= end) { setPlaying(false); return undefined; }
+    const id = setTimeout(() => setStep((n) => Math.min(end, n + 1)), 900);
+    return () => clearTimeout(id);
+  }, [playing, step, end]);
+  const go = useCallback((n) => { setPlaying(false); setStep(Math.max(0, Math.min(end, n))); setEpoch((e) => e + 1); }, [end]);
+  const toggle = () => { if (finished) { setStep(0); setEpoch((e) => e + 1); setPlaying(true); } else setPlaying((p) => !p); };
+  useEffect(() => {
+    if (!onKey) return undefined;
+    const h = (e) => {
+      if (e.key === "ArrowRight") { e.preventDefault(); go(step + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); go(step - 1); }
+      else if (e.key === " ") { e.preventDefault(); toggle(); }
+    };
+    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
+  });
+  const listRef = useRef(null);
+  useEffect(() => { const el = listRef.current && listRef.current.querySelector("[data-cur='1']"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [step]);
+  const m = entry.meta || {};
+  const status = finished ? "GAME OVER ▸ " + (m.result || "*") : "MOVE ▸ " + String(step).padStart(3, "0") + " / " + String(end).padStart(3, "0");
+  const statusTxt = useScramble(status, true, 22, finished ? 3 : 0);
+  return (
+    <div style={{ width: "100%" }}>
+      <style>{KIT_CSS}</style>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, minHeight: 16 }}>
+        <span className="ab-caret" aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: finished ? K.brass : "#8FB55E", boxShadow: "0 0 8px " + (finished ? K.brass : "#8FB55E") }} />
+        <Sys color={K.brass} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{statusTxt}</Sys>
+        {playing && <EqBars n={4} />}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <Tag color={K.ivoryHi}>{t("백") + " · " + (m.white || "?")}</Tag>
+        <Tag color={K.ivoryHi}>{t("흑") + " · " + (m.black || "?")}</Tag>
+        {m.result && m.result !== "*" && <Tag solid color={K.brassHi} style={{ background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509" }}>{m.result}</Tag>}
+      </div>
+      <div style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)" }}>
+        <LegacyFrame draw live />
+        <Board frame={frames[Math.min(step, frames.length - 1)]} move={step > 0 ? moves[step - 1] : null} flip={entry.side === "b"} heroMove={null} heroKind={null} spotlight={false} landed={false} epoch={epoch} isHeroStep={false} step={step} introDone lastKind={null} />
+      </div>
+      <input type="range" min={0} max={end} value={step} onChange={(e) => go(parseInt(e.target.value, 10) || 0)} aria-label={t("수 이동")} style={{ width: "100%", margin: "10px 0 6px", accentColor: K.brass }} />
+      <div ref={listRef} style={{ display: "flex", flexWrap: "wrap", gap: "2px 4px", maxHeight: 92, overflowY: "auto", padding: "6px 8px", marginBottom: 12, background: "rgba(0,0,0,.28)", border: "1px solid rgba(212,175,95,.25)", fontFamily: MONO, fontSize: 12 }}>
+        {sans.map((san, i) => {
+          const cur = i + 1 === step, white = (turn === "w") === (i % 2 === 0);
+          return (
+            <button key={i} type="button" data-cur={cur ? "1" : "0"} onClick={() => go(i + 1)} style={{ border: "none", background: cur ? "rgba(236,203,134,.25)" : "transparent", color: cur ? K.brassHi : K.ivory, padding: "1px 4px", borderRadius: 3, cursor: "pointer", fontFamily: MONO, fontSize: 12, fontWeight: cur ? 900 : 600 }}>
+              {white || i === 0 ? moveNumberAt(i, turn) : ""}{san}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+        <button type="button" onClick={() => go(step - 1)} disabled={step <= 0} aria-label={t("이전 수")} className="press" style={hudBtn(false, step <= 0)}><SkipBack size={14} /></button>
+        <button type="button" onClick={toggle} aria-label={playing ? t("일시정지") : finished ? t("다시 재생") : t("재생")} className="press ab-glint" style={hudBtn(true, false)}>
+          {playing ? <Pause size={17} fill="#241509" /> : finished ? <RotateCcw size={16} /> : <Play size={17} fill="#241509" />}
+        </button>
+        <button type="button" onClick={() => go(step + 1)} disabled={finished} aria-label={t("다음 수")} className="press" style={hudBtn(false, finished)}><SkipForward size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
 /* 전체 화면 재생 — 기존 호출부(프로필·채팅·피드)가 그대로 쓰는 이름. */
 export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
-  const kind = (typeInfo && typeInfo.kind) || entry.kind || "best";
+  const kind = entry.kind === "game" ? "game" : (typeInfo && typeInfo.kind) || entry.kind || "best";
   const color = QCOLOR[kind] || LEGACY_GOLD_HI, lite = isLite();
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onClose(); };
@@ -249,7 +327,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
         style={{ width: "100%", maxWidth: 520, margin: "auto", position: "relative", zIndex: 5 }}>
         <CutPanel cutSize={18} accent={color} chase={!lite} bodyStyle={{ padding: "14px 14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 10px" }}>
-            <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + LEGACY_GOLD }}>{badgeIcon(kind, 22)}</span>
+            <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + LEGACY_GOLD }}>{postBadge(kind, 22)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi }}>{typeInfo ? typeInfo.label : ""}</div>
             </div>
