@@ -20,9 +20,9 @@ import { parsePgnSans, sanSequenceValid, sansToPgnText, parsePgnMoves } from "..
 import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { SEARCH_BLOCK, SearchBlock, MasterResultInner } from "../components/searchResultRow.jsx";
 import { QCOLOR } from "../lib/moveKinds.js";
-import { badgeIcon, QLABEL } from "../components/badges.jsx";
+import { badgeIcon, postBadge, QLABEL } from "../components/badges.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
-import { SeriesGlyph, livePuzzleName, ALL_TITLE_IDS, seriesLabelText, titleNameText, ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
+import { SeriesGlyph, livePuzzleName, ALL_TITLE_IDS, seriesLabelText, titleNameText, ExternalShareRow, Board, CONTENT, SNAP, TitleBadge, TITLE_SCALE, titleDef, ChesscomLogo, DEV_ACCOUNT, FadeIn, FriendSendList, InviteLinkBox, LEGACY_TYPES, postTypeInfo, gamePostTitle, LegacyStoneTile, LegacyMiniBoard, LEGACY_FONT, MoveLongPressPreview, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, ShareSheetFrame, PuzzleCard, PuzzleShareSheet, REVIEW_DEPTH, REVIEW_MOVETIME_MS, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, analyzeGame, chatConvPrefsFetch, chatFetchAll, chatMarkRead, fetchChesscomProfile, fmtClock, fmtFull, friendAccept, friendEdges, friendRemove, getAnalysisPool, inviteFailText, isPuzzlePlayable, legacyBaseKey, legacyMoveLabel, notifyCreate, notifySetResult, openingNameOf, poolWorker, presenceLabel, puzzleFetch, puzzleNo, puzzleShareSend, relTime, relTimeFromMs, resolveReviewIdentifier, reviewGameIdentifier, reviewPlayerInfo, reviewShareSend, reviewedGameFetch, reviewedGameShare, roleIcon, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { kindOfPost } from "../lib/legacyPosts.js";
 import { AccountChessStats, LegacyRevealScreen, ProfileStatsPanel, PublicProfileStats, TierRatingRow } from "./profile.jsx";
 import { PLAY_SPECIAL_GAMES } from "./play.jsx";
@@ -894,7 +894,7 @@ function ChatPanel({ hideBack, myUid, myUsername, otherUid, otherUsername, other
           const pub = (profiles[fu] && profiles[fu].pub) || {};
           const entry = normalizeLegacyEntry(pub.legacies && pub.legacies[slot]);   // (BUG-130) 상대가 써 넣은 값 — 검증 후에만 표시
           const kind = entry ? kindOfPost(slot, entry) : null;   // (v0.7.4) 게시물 아이디(p…)는 entry.kind, 옛 슬롯은 키로
-          const typeInfo = kind ? LEGACY_TYPES.find((t) => t.key === kind) : null;
+          const typeInfo = kind ? postTypeInfo(kind) : null;   // (v0.7.7) 대국 게시물(game) 포함
           n[k] = (entry && typeInfo) ? { entry, typeInfo } : null;
         });
         return n;
@@ -1974,17 +1974,19 @@ const LEGACY_SLOT_ORDER = ["best", "only", "brilliant", "best2", "only2", "brill
 // (사용자 요청) 유산 공유 — 퍼즐 공유(PuzzleShareSheet)와 같은 패턴의 친구 선택 시트. 위쪽에 공유할
 // 유산 미리보기(등급 배지+새겨진 수)를 보여주고, 아래 친구 목록에서 보낼 대상을 고른다.
 export function LegacyShareSheet({ slotKey, typeInfo, entry, myUid, ownerUid, zIndex, link, onClose, onShared }) {
-  const color = QCOLOR[typeInfo.kind];
+  const isGame = typeInfo.kind === "game";   // (v0.7.7) 대국 게시물
+  const color = QCOLOR[typeInfo.kind] || "#8A6A2E";
+  const title = isGame ? gamePostTitle(entry) : legacyMoveLabel(entry);
   return (
     <ShareSheetFrame title={t("유산 공유")} zIndex={zIndex} onClose={onClose}>
       <div className="flex items-center gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid #E4D5B6", background: "rgba(0,0,0,.03)" }}>
-        <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(typeInfo.kind, 20)}</span>
+        <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{postBadge(typeInfo.kind, 20)}</span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{legacyMoveLabel(entry)}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontFamily: SITE_FONT }}>{title}</div>
           <div style={{ fontSize: 10.5, color: T.inkSoft }}>{typeInfo.label}</div>
         </div>
       </div>
-      {link && <ExternalShareRow url={link} title={t("OpenChess 유산")} text={t("OpenChess 유산: {0}", legacyMoveLabel(entry))} />}
+      {link && <ExternalShareRow url={link} title={isGame ? t("OpenChess 대국") : t("OpenChess 유산")} text={isGame ? t("OpenChess 대국: {0}", title) : t("OpenChess 유산: {0}", title)} />}
       <FriendSendList myUid={myUid} send={(toUid) => legacyShareSend(myUid, toUid, slotKey, ownerUid)} onSent={onShared} blockedReason={myUid ? null : t("로그인하면 친구에게 보낼 수 있음")} />
     </ShareSheetFrame>
   );

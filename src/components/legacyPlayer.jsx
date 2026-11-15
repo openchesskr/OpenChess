@@ -12,9 +12,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, Play, Pause, SkipBack, SkipForward, RotateCcw } from "./ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { t } from "../lib/i18n.js";
 import { QCOLOR } from "../lib/moveKinds.js";
-import { badgeIcon, QLABEL } from "./badges.jsx";
+import { badgeIcon, postBadge, QLABEL } from "./badges.jsx";
 import { PieceGlyph } from "./pieces.jsx";
-import { moveNumber } from "../lib/chessRules.js";
+import { moveNumber as moveNumberAt } from "../lib/chessRules.js";
+import { entryRoot } from "../lib/legacyEntry.js";
 import { buildFrames } from "../lib/legacyFrames.js";
 import { isLite } from "../lib/perfMode.js";
 import { LegacyFrame, LEGACY_GOLD, LEGACY_GOLD_HI } from "./legacyFrame.jsx";
@@ -61,7 +62,8 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         <motion.div aria-hidden="true" initial={{ scaleY: 1 }} animate={{ scaleY: 0 }} transition={{ duration: 1, delay: 0.25, ease: [0.65, 0, 0.35, 1] }} style={{ position: "absolute", inset: 0, zIndex: 8, transformOrigin: "50% 100%", background: "#0A0603", borderTop: "2px solid " + LEGACY_GOLD_HI, boxShadow: "0 -6px 18px " + LEGACY_GOLD_HI + "99" }} />
       )}
       {/* 표적 고정: 십자선 + 코너 브래킷 + 스캔 라인 */}
-      {heroPiece && !lite && (
+      {/* (v0.7.7 버그 수정, 사용자 제보 "탁월한 수 이펙트가 안 나옴") 표적 고정·도착 연출은 유산의 핵심이라 가벼운 모드에서도 보인다(한 번만 재생되는 짧은 효과). 계속 도는 장식만 가벼운 모드에서 끈다. */}
+      {heroPiece && (
         <>
           <motion.span aria-hidden="true" key={"rowl" + epoch} initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", left: 0, right: 0, top: sy(heroPiece.r) + 6.25 + "%", height: 1, background: "linear-gradient(90deg,transparent," + heroColor + "88,transparent)" }} />
           <motion.span aria-hidden="true" key={"coll" + epoch} initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: "absolute", top: 0, bottom: 0, left: sx(heroPiece.c) + 6.25 + "%", width: 1, background: "linear-gradient(180deg,transparent," + heroColor + "88,transparent)" }} />
@@ -82,7 +84,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
           const sp = isHeroMover ? HERO_SPRING : SPRING;
           return (
             <motion.div key={p.id} initial={false} animate={{ left: sx(p.c) + "%", top: sy(p.r) + "%", opacity: dim ? 0.38 : 1, scale: 1 }} exit={{ opacity: 0, scale: 0.35 }}
-              transition={lite ? { duration: 0 } : { left: sp, top: sp, opacity: { duration: 0.5 }, scale: { duration: 0.28 } }}
+              transition={lite ? { left: { duration: 0.35, ease: "easeOut" }, top: { duration: 0.35, ease: "easeOut" }, opacity: { duration: 0.3 }, scale: { duration: 0.2 } } : { left: sp, top: sp, opacity: { duration: 0.5 }, scale: { duration: 0.28 } }}   // (v0.7.7) 가벼운 모드도 순간이동 대신 짧게 미끄러진다
               style={{ position: "absolute", width: "12.5%", height: "12.5%", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: heroPiece && p.id === heroPiece.id ? 3 : 2 }}>
               <PieceGlyph type={p.t} color={p.col} size={cell * 0.9} pieceSkin="classic" />
             </motion.div>
@@ -90,7 +92,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
         })}
       </AnimatePresence>
       {/* 도착: 섬광 → 파문 두 겹 + 8방향 광선 → 등급 배지 */}
-      {landed && move && !lite && (
+      {landed && move && (
         <>
           <motion.span key={"fl" + epoch} aria-hidden="true" initial={{ opacity: 0.7 }} animate={{ opacity: 0 }} transition={{ duration: 0.8, ease: "easeOut" }}
             style={{ position: "absolute", inset: 0, zIndex: 6, pointerEvents: "none", background: "radial-gradient(circle at " + (sx(move.to[1]) + 6.25) + "% " + (sy(move.to[0]) + 6.25) + "%, rgba(255,240,200,.75), transparent 48%)" }} />
@@ -106,7 +108,7 @@ function Board({ frame, move, flip, heroMove, heroKind, spotlight, landed, epoch
       )}
       {/* 수 아이콘 — 리뷰 보드와 같은 자리(도착 칸 우상단 모서리)·같은 크기(칸의 44%). 유산 수는 도착할 때 한 번 튀어 오른다 */}
       {move && lastKind && (
-        <motion.span key={"bd" + epoch + "-" + step} aria-hidden="true" className={landed ? "ab-glint" : undefined} initial={isLite() || !landed ? false : { opacity: 0, scale: 0.2, rotate: -25 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: landed && !isLite() ? 0.3 : 0 }}
+        <motion.span key={"bd" + epoch + "-" + step} aria-hidden="true" className={landed ? "ab-glint" : undefined} initial={!landed ? false : { opacity: 0, scale: 0.2, rotate: -25 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 420, damping: 16, delay: landed ? 0.3 : 0 }}
           style={{ position: "absolute", left: "calc(" + (sx(move.to[1]) + 12.5) + "% - " + cell * 0.26 + "px)", top: "calc(" + sy(move.to[0]) + "% - " + cell * 0.18 + "px)", width: cell * 0.44, height: cell * 0.44, zIndex: 7, borderRadius: "50%", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }}>{badgeIcon(lastKind, Math.max(12, cell * 0.44))}</motion.span>
       )}
     </div>
@@ -117,21 +119,29 @@ const para5 = para(7);
 const hudBtn = (primary, disabled) => ({ clipPath: para5, height: primary ? 42 : 34, minWidth: primary ? 74 : 54, padding: "0 16px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, fontFamily: MONO, fontWeight: 900, fontSize: 11, letterSpacing: ".1em",
   background: primary ? "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")" : "rgba(236,203,134,.12)", color: primary ? "#241509" : K.brassHi });
 
-/* kind: 등급(best|only|brilliant), entry: 검증된 유산 항목. 모달·페이지 어디서든 같은 재생기. */
-export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
+/* kind: 등급(best|only|brilliant), entry: 검증된 유산 항목. 모달·페이지 어디서든 같은 재생기.
+   (v0.7.7) 대국 게시물(kind "game")은 한 수를 주목하는 연출 대신 처음부터 끝까지 넘겨 보는 기보 재생기(GamePostPlayer)로. */
+export function LegacyPlayer(props) {
+  const k = props.kind || (props.entry && props.entry.kind);
+  return k === "game" ? <GamePostPlayer entry={props.entry} onKey={props.onKey} /> : <LegacyMovePlayer {...props} />;
+}
+function LegacyMovePlayer({ kind, entry, autoPlay = true, onKey }) {
   const { sans, moveIndex, playCount } = entry;
   const lite = isLite();
+  const root = useMemo(() => entryRoot(entry), [entry]);
+  const moveNumber = (ply) => moveNumberAt(ply, root ? root.turn : "w");
   const startCount = Math.max(0, moveIndex - (entry.beforeCount || 0));
   const endCount = Math.min(sans.length, moveIndex + Math.max(1, playCount || 1));
-  const { frames, moves } = useMemo(() => buildFrames(sans.slice(0, endCount)), [sans, endCount]);
+  const { frames, moves } = useMemo(() => buildFrames(sans.slice(0, endCount), root), [sans, endCount, root]);
   const [step, setStep] = useState(startCount), [playing, setPlaying] = useState(false), [introDone, setIntroDone] = useState(false), [epoch, setEpoch] = useState(0);
   const flip = entry.side === "b", color = QCOLOR[kind] || LEGACY_GOLD_HI;
   const total = endCount - startCount;
-  useEffect(() => { const id = setTimeout(() => { setIntroDone(true); if (autoPlay) setPlaying(true); }, lite ? 0 : 1300); return () => clearTimeout(id); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const id = setTimeout(() => { setIntroDone(true); if (autoPlay) setPlaying(true); }, lite ? 500 : 1300); return () => clearTimeout(id); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!playing || !introDone) return undefined;
     if (step >= endCount) { setPlaying(false); return undefined; }
-    const delay = lite ? 250 : step === moveIndex ? 1700 : step === moveIndex + 1 ? 2100 : 950;
+    // (v0.7.7 버그 수정, 사용자 제보 "유산 재생이 지나치게 빠름") 가벼운 모드(렉이 감지된 기기)에서 한 수 250ms로 4배 빨리 넘어갔다 — 재생 속도는 장식이 아니라 내용이라 모드와 무관하게 같은 박자.
+    const delay = step === moveIndex ? 1700 : step === moveIndex + 1 ? 2100 : 950;
     const id = setTimeout(() => setStep((s) => Math.min(endCount, s + 1)), delay);
     return () => clearTimeout(id);
   }, [playing, introDone, step, endCount, moveIndex, lite]);
@@ -177,7 +187,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
       </motion.div>
       <div style={{ position: "relative" }}>
         <motion.div initial={lite ? false : { opacity: 0, y: 16, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: lite ? 1 : spotlight ? 1.1 : landed ? 1.05 : 1 }}
+          animate={{ opacity: 1, y: 0, scale: spotlight ? 1.1 : landed ? 1.05 : 1 }}
           transition={{ opacity: { duration: 0.7, delay: lite || introDone ? 0 : 0.15 }, y: { duration: 0.7, delay: lite || introDone ? 0 : 0.15, ease: [0.22, 0.9, 0.32, 1] }, scale: { type: "spring", stiffness: spotlight ? 55 : 90, damping: 18 } }}
           style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)", transformOrigin: heroOrigin, filter: (spotlight || landed) && !lite ? "drop-shadow(0 0 24px " + color + "66)" : "none", transition: "filter .6s" }}>
           <LegacyFrame draw live />
@@ -186,7 +196,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
         {!lite && <Brackets color={color} size={14} inset={2} pulse />}
         {/* 키 무브 배너 — 도착하면 대각선 띠가 보드를 가로질러 지나간다 */}
         <AnimatePresence>
-          {landed && !lite && (
+          {landed && (
             <motion.div key={"bn" + epoch} aria-hidden="true" initial={{ x: "-110%", opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: "110%", opacity: 0 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
               style={{ position: "absolute", left: 0, right: 0, top: "42%", height: 56, zIndex: 12, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(90deg,transparent,rgba(8,5,3,.82) 12%,rgba(8,5,3,.82) 88%,transparent)", borderTop: "1px solid " + color, borderBottom: "1px solid " + color, boxShadow: "0 0 24px " + color + "55" }}>
               <span className="ab-burst-glow" style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 24, letterSpacing: ".18em", color, textShadow: "0 2px 0 rgba(0,0,0,.8), 0 0 18px " + color + "88" }}>{kindName}</span>
@@ -199,7 +209,7 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={step + ":" + epoch} initial={lite ? false : { opacity: 0, y: 8, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }} style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {landed && badgeIcon(kind, 24)}
-            <span className={landed && !lite ? "ab-burst-glow" : undefined} style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 22, letterSpacing: ".02em", color: landed ? color : K.ivoryHi, textShadow: "0 1px 0 rgba(0,0,0,.8)" }}>{label}</span>
+            <span className={landed ? "ab-burst-glow" : undefined} style={{ fontFamily: MONO, fontStyle: "italic", fontWeight: 900, fontSize: 22, letterSpacing: ".02em", color: landed ? color : K.ivoryHi, textShadow: "0 1px 0 rgba(0,0,0,.8)" }}>{label}</span>
             {landed && <Tag solid color={color} style={{ background: "linear-gradient(180deg," + color + "," + color + "CC)", color: "#10161F" }}>{kindName}</Tag>}
             {spotlight && <Tag color={K.brassHi}>{t("이 수에 주목")}</Tag>}
           </motion.div>
@@ -230,9 +240,79 @@ export function LegacyPlayer({ kind, entry, autoPlay = true, onKey }) {
   );
 }
 
+/* (v0.7.7, 사용자 요청 "대국도 게시물로") 대국 게시물 재생기 — 같은 HUD 보드로 첫 수부터 마지막 수까지 넘겨 본다.
+   진행은 막대(input range) 하나 + 이전·재생·다음, 아래에 기보(누르면 그 수로). 키보드 ←/→, 스페이스. */
+function GamePostPlayer({ entry, onKey }) {
+  const { sans } = entry;
+  const root = useMemo(() => entryRoot(entry), [entry]);
+  const turn = root ? root.turn : "w";
+  const { frames, moves } = useMemo(() => buildFrames(sans, root), [sans, root]);
+  const [step, setStep] = useState(0), [playing, setPlaying] = useState(false), [epoch, setEpoch] = useState(0);
+  const end = sans.length, finished = step >= end;
+  useEffect(() => {
+    if (!playing) return undefined;
+    if (step >= end) { setPlaying(false); return undefined; }
+    const id = setTimeout(() => setStep((n) => Math.min(end, n + 1)), 900);
+    return () => clearTimeout(id);
+  }, [playing, step, end]);
+  const go = useCallback((n) => { setPlaying(false); setStep(Math.max(0, Math.min(end, n))); setEpoch((e) => e + 1); }, [end]);
+  const toggle = () => { if (finished) { setStep(0); setEpoch((e) => e + 1); setPlaying(true); } else setPlaying((p) => !p); };
+  useEffect(() => {
+    if (!onKey) return undefined;
+    const h = (e) => {
+      if (e.key === "ArrowRight") { e.preventDefault(); go(step + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); go(step - 1); }
+      else if (e.key === " ") { e.preventDefault(); toggle(); }
+    };
+    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
+  });
+  const listRef = useRef(null);
+  useEffect(() => { const el = listRef.current && listRef.current.querySelector("[data-cur='1']"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [step]);
+  const m = entry.meta || {};
+  const status = finished ? "GAME OVER ▸ " + (m.result || "*") : "MOVE ▸ " + String(step).padStart(3, "0") + " / " + String(end).padStart(3, "0");
+  const statusTxt = useScramble(status, true, 22, finished ? 3 : 0);
+  return (
+    <div style={{ width: "100%" }}>
+      <style>{KIT_CSS}</style>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, minHeight: 16 }}>
+        <span className="ab-caret" aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: finished ? K.brass : "#8FB55E", boxShadow: "0 0 8px " + (finished ? K.brass : "#8FB55E") }} />
+        <Sys color={K.brass} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{statusTxt}</Sys>
+        {playing && <EqBars n={4} />}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <Tag color={K.ivoryHi}>{t("백") + " · " + (m.white || "?")}</Tag>
+        <Tag color={K.ivoryHi}>{t("흑") + " · " + (m.black || "?")}</Tag>
+        {m.result && m.result !== "*" && <Tag solid color={K.brassHi} style={{ background: "linear-gradient(180deg," + K.brassHi + "," + K.brass + ")", color: "#241509" }}>{m.result}</Tag>}
+      </div>
+      <div style={{ position: "relative", padding: "clamp(12px, 4vw, 20px)" }}>
+        <LegacyFrame draw live />
+        <Board frame={frames[Math.min(step, frames.length - 1)]} move={step > 0 ? moves[step - 1] : null} flip={entry.side === "b"} heroMove={null} heroKind={null} spotlight={false} landed={false} epoch={epoch} isHeroStep={false} step={step} introDone lastKind={null} />
+      </div>
+      <input type="range" min={0} max={end} value={step} onChange={(e) => go(parseInt(e.target.value, 10) || 0)} aria-label={t("수 이동")} style={{ width: "100%", margin: "10px 0 6px", accentColor: K.brass }} />
+      <div ref={listRef} style={{ display: "flex", flexWrap: "wrap", gap: "2px 4px", maxHeight: 92, overflowY: "auto", padding: "6px 8px", marginBottom: 12, background: "rgba(0,0,0,.28)", border: "1px solid rgba(212,175,95,.25)", fontFamily: MONO, fontSize: 12 }}>
+        {sans.map((san, i) => {
+          const cur = i + 1 === step, white = (turn === "w") === (i % 2 === 0);
+          return (
+            <button key={i} type="button" data-cur={cur ? "1" : "0"} onClick={() => go(i + 1)} style={{ border: "none", background: cur ? "rgba(236,203,134,.25)" : "transparent", color: cur ? K.brassHi : K.ivory, padding: "1px 4px", borderRadius: 3, cursor: "pointer", fontFamily: MONO, fontSize: 12, fontWeight: cur ? 900 : 600 }}>
+              {white || i === 0 ? moveNumberAt(i, turn) : ""}{san}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+        <button type="button" onClick={() => go(step - 1)} disabled={step <= 0} aria-label={t("이전 수")} className="press" style={hudBtn(false, step <= 0)}><SkipBack size={14} /></button>
+        <button type="button" onClick={toggle} aria-label={playing ? t("일시정지") : finished ? t("다시 재생") : t("재생")} className="press ab-glint" style={hudBtn(true, false)}>
+          {playing ? <Pause size={17} fill="#241509" /> : finished ? <RotateCcw size={16} /> : <Play size={17} fill="#241509" />}
+        </button>
+        <button type="button" onClick={() => go(step + 1)} disabled={finished} aria-label={t("다음 수")} className="press" style={hudBtn(false, finished)}><SkipForward size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
 /* 전체 화면 재생 — 기존 호출부(프로필·채팅·피드)가 그대로 쓰는 이름. */
 export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
-  const kind = (typeInfo && typeInfo.kind) || entry.kind || "best";
+  const kind = entry.kind === "game" ? "game" : (typeInfo && typeInfo.kind) || entry.kind || "best";
   const color = QCOLOR[kind] || LEGACY_GOLD_HI, lite = isLite();
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onClose(); };
@@ -247,7 +327,7 @@ export function LegacyRevealScreen({ typeInfo, entry, onClose }) {
         style={{ width: "100%", maxWidth: 520, margin: "auto", position: "relative", zIndex: 5 }}>
         <CutPanel cutSize={18} accent={color} chase={!lite} bodyStyle={{ padding: "14px 14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 2px 10px" }}>
-            <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + LEGACY_GOLD }}>{badgeIcon(kind, 22)}</span>
+            <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", border: "1px solid " + LEGACY_GOLD }}>{postBadge(kind, 22)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: K.ivoryHi }}>{typeInfo ? typeInfo.label : ""}</div>
             </div>

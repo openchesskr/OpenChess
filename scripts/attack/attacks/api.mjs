@@ -35,7 +35,7 @@ const base = [
       const bad = passed > 90 || leaksParam || puz.code !== 401 || puzUser.code !== 403 || puzzleCalls > 0 || bodyLeak;
       return { breached: bad, evidence: `150회 중 통과 ${passed}·차단 ${blocked}(상한 90/분) · 밖 파라미터 ${leaksParam ? "전달됨" : "버려짐"} · 퍼즐 경로: 비로그인 ${puz.code}, 일반 로그인 ${puzUser.code}, 외부 호출 ${puzzleCalls}회` };
     } },
-  { id: "BUG-116b", kind: "attack", title: "/api/scan-board 남용: 익명이 같은 IP에서 40회 · 초대형 이미지 · 로그인 사용자는 정상 한도",
+  { id: "BUG-116b", kind: "attack", title: "/api/scan-board 남용: 익명 40회(v0.7.7부터 로그인 필수 — 전부 401, Gemini 호출 0) · 초대형 이미지 · 로그인 사용자는 정상 한도",
     async run() {
       Object.assign(process.env, { GEMINI_API_KEY: "gk", VITE_SUPABASE_URL: "https://sb.test", VITE_SUPABASE_ANON_KEY: "anon", SUPABASE_SERVICE_ROLE_KEY: "svc" });
       const { default: handler } = await load("scan-board.js");
@@ -47,14 +47,16 @@ const base = [
         gemini++; if (u.includes("key=")) keyInUrl = true;
         return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ kind: "none", confidence: "low" }) }] }, finishReason: "STOP" }] }), { status: 200 });
       };
-      let anonPassed = 0, userBlocked = 0; const big = mkRes();
+      let anonPassed = 0, userBlocked = 0, anonGemini = -1; const big = mkRes();
       await withFetch(impl, async () => {
-        for (let i = 0; i < 40; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "7.7.7.7", "x-forwarded-for": "10.0.0." + i }, body: { image: "AAAA", mediaType: "image/png" } }, r); if (r.code !== 429) anonPassed++; }
+        for (let i = 0; i < 40; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "7.7.7.7", "x-forwarded-for": "10.0.0." + i }, body: { image: "AAAA", mediaType: "image/png" } }, r); if (r.code !== 429 && r.code !== 401) anonPassed++; }
+        const geminiByAnon = gemini;
         for (let i = 0; i < 20; i++) { const r = mkRes(); await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "7.7.7.7", authorization: "Bearer t" }, body: { image: "AAAA", mediaType: "image/png" } }, r); if (r.code === 429) userBlocked++; }
-        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "8.8.8.8" }, body: { image: "A".repeat(6_000_000), mediaType: "image/png" } }, big);
+        await handler({ method: "POST", headers: { "x-vercel-forwarded-for": "8.8.8.8", authorization: "Bearer t" }, body: { image: "A".repeat(6_000_000), mediaType: "image/png" } }, big);
+        anonGemini = geminiByAnon;
       });
-      const bad = anonPassed > 6 || userBlocked > 0 || big.code !== 413 || keyInUrl;
-      return { breached: bad, evidence: `익명 40회 중 통과 ${anonPassed}(상한 6/10분, 헤더 위조 무시) · 로그인 20회 중 차단 ${userBlocked} · 초대형 이미지 ${big.code} · API 키가 URL에 ${keyInUrl ? "있음" : "없음"}` };
+      const bad = anonPassed > 0 || anonGemini > 0 || userBlocked > 0 || big.code !== 413 || keyInUrl;
+      return { breached: bad, evidence: `익명 40회 중 통과 ${anonPassed}·Gemini 호출 ${anonGemini}(로그인 필수, BUG-072) · 로그인 20회 중 차단 ${userBlocked} · 초대형 이미지 ${big.code} · API 키가 URL에 ${keyInUrl ? "있음" : "없음"}` };
     } },
   { id: "A1", kind: "hold", title: "/api/translate: 토큰 없이 호출",
     async run() {

@@ -2,6 +2,7 @@
 // 위→아래가 시간 순서(1886 → 현재)이고, 챔피언 노드 옆에는 그 챔피언에게 도전했다가 타이틀전에서 탈락한 마스터가 붙는다.
 // 1993~2006 분열기에는 정통 계보가 PCA→클래식(왼쪽)·FIDE(오른쪽) 두 줄로 갈라졌다가 통합전에서 다시 합쳐진다.
 // 데이터: src/data/worldChampions.js · 배치: src/lib/masterTreeLayout.js · 팬/줌: 오프닝 모식도와 같은 기하 함수(src/lib/schematicGeometry.js).
+import { readTabMemory, writeTabMemory } from "../lib/tabMemory.js";
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from "react";
 import { X, Cpu, Crown, Swords, Trophy, CalendarDays, User, RotateCcw } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { T } from "../lib/theme.js";
@@ -472,9 +473,13 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   // (v0.6.5, 렉 수정) 시점(viewRef)이 항상 최신이다. 드래그·휠 중에는 캔버스 변환만 직접 바꾸고(paint) React는 다시 그리지 않는다 — 예전엔 포인터가 움직일 때마다
   // setState로 노드 2,600여 개·선 수천 개를 통째로 다시 그려 프레임당 0.6초가 걸렸다. 배율 표시와 "화면 밖 노드 제외" 범위(cull)는 필요할 때만 state로 반영한다.
   // (v0.6.6, 사용자 요청) 시작 연출: 50% 배율에서 칩부터 트리가 그려진 뒤(INTRO_HOLD_MS) 100%로 서서히 확대된다(src/lib/treeIntro.js). 사용자가 건드리면 바로 끝낸다.
-  const [introOn, setIntroOn] = useState(true);
+  // (v0.7.7, 사용자 요청) 도감 탭을 떠났다 돌아오면 보던 위치·배율 그대로(탭 메모리). 저장된 값이 있으면 시작 연출을 건너뛴다.
+  const savedViewRef = useRef(undefined);
+  if (savedViewRef.current === undefined) { const v = readTabMemory("dex.masters.view", null); savedViewRef.current = v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? v : null; }
+  const [introOn, setIntroOn] = useState(!savedViewRef.current);
   const [flying, setFlying] = useState(false);
-  const [view, setView] = useState({ x: 0, y: 0, z: baseZ * INTRO_FROM });
+  const [view, setView] = useState(() => savedViewRef.current || { x: 0, y: 0, z: baseZ * INTRO_FROM });
+  useEffect(() => { if (!introOn) writeTabMemory("dex.masters.view", { x: view.x, y: view.y, z: view.z }); }, [view, introOn]);
   const viewRef = useRef(view), canvasRef = useRef(null), commitTimerRef = useRef(null), cullRef = useRef(null);
   const [pick, setPick] = useState(null);
   // 오프닝 트리와 같은 "회로에 전류 흘리기" — 중심 칩을 누르면 모든 선·노드에 칩에서의 거리 비례 지연으로 전기 서지가 한 번 퍼진다.
@@ -541,7 +546,7 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
       introRafRef.current = requestAnimationFrame(step);
     }, INTRO_HOLD_MS);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { startIntro(); return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); }; }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (savedViewRef.current) return undefined; startIntro(); return () => { if (introTimerRef.current) clearTimeout(introTimerRef.current); if (introRafRef.current) cancelAnimationFrame(introRafRef.current); }; }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.6.6) "처음으로" 버튼 — 시작 연출을 다시 재생한다(50% 배율로 돌아가 칩부터 다시 그려진 뒤 100%로 확대).
   const replayIntro = useCallback(() => {
     const z = baseZ * INTRO_FROM, r = rect(), L = layoutRef.current;
@@ -551,7 +556,8 @@ export function MastersSchematic({ vertical, tabsSlot, onOpenGame, onOpenGameAna
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const resetView = useCallback(() => { endIntro(); const r = rect(), L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * baseZ, y: r.height / 2 - L.chip.cy * baseZ }, baseZ); }, [apply]);   // eslint-disable-line react-hooks/exhaustive-deps
   const toTop = useCallback(() => { const r = rect(), z = viewRef.current.z, L = layoutRef.current; apply({ x: r.width / 2 - L.chip.cx * z, y: r.height / 2 - L.chip.cy * z }, z); }, [apply]);
-  useLayoutEffect(() => { toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
+  const skipFirstTopRef = useRef(!!savedViewRef.current);
+  useLayoutEffect(() => { if (skipFirstTopRef.current) { skipFirstTopRef.current = false; paint(viewRef.current); return; } toTop(); }, [panelH, !!idx]);   // 연도 블록을 펼쳐 배치가 바뀔 때는 화면 위치를 건드리지 않는다 // eslint-disable-line react-hooks/exhaustive-deps
   // 휠은 세로 이동, Ctrl/⌘+휠은 확대·축소(브라우저 페이지 스크롤은 막는다 — 네이티브 리스너로 passive:false).
   useEffect(() => {
     const el = boxRef.current; if (!el) return undefined;

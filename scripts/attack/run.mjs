@@ -13,6 +13,7 @@ import apiAttacks from "./attacks/api.mjs";
 import regress from "./attacks/db-regress.mjs";
 import economy from "./attacks/db-economy.mjs";
 import chatCards from "./attacks/db-chat-cards.mjs";
+import deletion from "./attacks/db-deletion.mjs";
 import { idForNo } from "./ids.mjs";
 const PID = idForNo(111111);
 // 라인 3개짜리 퍼즐: e4 → (e5 Nf3) | (c5 Nf3) | (e6 d4)
@@ -20,7 +21,7 @@ const PUZZLE_DATA = JSON.stringify({ orig: true, id: PID, tree: { children: [{ s
 
 const args = process.argv.slice(2);
 const only = (args.includes("--only") ? args[args.indexOf("--only") + 1] : "").split(",").filter(Boolean);
-const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds, ...regress, ...economy, ...chatCards];
+const ALL = [...dbP1, ...dbP2, ...apiAttacks, ...dbHolds, ...regress, ...economy, ...chatCards, ...deletion];
 if (args.includes("--list")) { for (const a of ALL) console.log(a.id.padEnd(9), a.kind.padEnd(7), a.title); process.exit(0); }
 
 export const U = { victim: "11111111-1111-1111-1111-111111111111", mallory: "22222222-2222-2222-2222-222222222222", bob: "33333333-3333-3333-3333-333333333333", dev: "44444444-4444-4444-4444-444444444444" };
@@ -59,6 +60,8 @@ try {
     delete from public.notifications; delete from public.text_translations;
     delete from public.friend_edges where not (from_uid='${U.victim}' and to_uid='${U.bob}');
     delete from public.app_content;
+    select set_config('oc.allow_deletion_flag','1',false); update public.profiles set deletion_scheduled_at=null where deletion_scheduled_at is not null; select set_config('oc.allow_deletion_flag','',false);
+    delete from public.move_notes; delete from public.minigame_stats; delete from public.pvp_games where id > 2; delete from public.pvp_queue; delete from public.pvp_invites;
     delete from public.economy_ledger; delete from public.economy_claims; delete from public.economy_anomalies; delete from public.economy; delete from public.rate_limits;
     delete from public.user_progress where id<>'${U.victim}';
     update public.profiles set pub='{}'::jsonb;

@@ -105,6 +105,28 @@ export const OPENING_HERO = {
   kid: { piece: "B", color: "b", sig: "Bg7", aim: "a1" },
   nimzo: { piece: "B", color: "b", sig: "Bb4", aim: "c3" },
   grunfeld: { piece: "P", color: "b", sig: "d5", aim: "d4" },
+  // (v0.7.7) 새 오프닝 레슨
+  berlin: { piece: "N", color: "b", sig: "Nf6", aim: "e4" },
+  twoKnights: { piece: "N", color: "b", sig: "Nf6", aim: "e4" },
+  petrov: { piece: "N", color: "b", sig: "Nf6", aim: "e4" },
+  philidor: { piece: "P", color: "b", sig: "d6", aim: "e5" },
+  kingsGambit: { piece: "P", color: "w", sig: "f4", aim: "e5" },
+  vienna: { piece: "N", color: "w", sig: "Nc3", aim: "d5" },
+  dragon: { piece: "P", color: "b", sig: "g6", aim: "g7" },
+  scheveningen: { piece: "P", color: "b", sig: "e6", aim: "d5" },
+  sveshnikov: { piece: "P", color: "b", sig: "e5", aim: "d4" },
+  alapin: { piece: "P", color: "w", sig: "c3", aim: "d4" },
+  closedSicilian: { piece: "B", color: "w", sig: "Bg2", aim: "b7" },
+  pirc: { piece: "B", color: "b", sig: "Bg7", aim: "d4" },
+  alekhine: { piece: "N", color: "b", sig: "Nf6", aim: "e4" },
+  qga: { piece: "P", color: "b", sig: "dxc4", aim: "c4" },
+  semiSlav: { piece: "P", color: "b", sig: "e6", aim: "d5" },
+  qid: { piece: "P", color: "b", sig: "b6", aim: "b7" },
+  catalan: { piece: "B", color: "w", sig: "Bg2", aim: "b7" },
+  benko: { piece: "P", color: "b", sig: "b5", aim: "c4" },
+  dutch: { piece: "P", color: "b", sig: "f5", aim: "e4" },
+  english: { piece: "P", color: "w", sig: "c4", aim: "d5" },
+  reti: { piece: "N", color: "w", sig: "Nf3", aim: "d4" },
 };
 const GOLD = "#E2B45A";
 const BAND_FADE_X = "linear-gradient(90deg, transparent 0%, #000 12%, rgba(0,0,0,.45) 36%, rgba(0,0,0,.45) 64%, #000 88%, transparent 100%)";

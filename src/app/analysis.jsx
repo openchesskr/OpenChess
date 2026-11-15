@@ -3554,7 +3554,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
             {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
             <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
             <MoveTileWindow enabled={tileWindowOn} resetKey={sans.join(" ") + "|" + (fenRoot ? "fen" : "")}>
-            {shown.map((m) => <FadeIn key={m.san} layout><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {shown.map((m, i) => <FadeIn key={m.san} layout layoutDependency={i}><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
             </MoveTileWindow>
           </>
         );

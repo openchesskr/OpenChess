@@ -176,3 +176,7 @@ html[data-perf="lite"] .press:hover { filter: none; }
 /* 크림색 카드 위 스켈레톤(밝은 배경용) */
 .oc-skel.oc-skel-light { background: linear-gradient(100deg, rgba(90,58,34,.07) 30%, rgba(196,154,80,.22) 50%, rgba(90,58,34,.07) 70%); background-size: 200% 100%; }
 html[data-perf="lite"] .oc-skel.oc-skel-light { animation: none; }
+
+/* (v0.7.7 렉 수정) 화면 밖(스크롤로 벗어남·옆 페이지·숨은 탭)에 있는 영역의 무한 반복 애니메이션을 멈춘다 — OffscreenPause(src/components/offscreenPause.jsx)가 붙인다.
+   예전엔 분석 탭 아래 성장 분석의 장식 애니메이션(격자 이동·글자 빛·스캔 줄 등)이 화면에 안 보여도 계속 돌아 메인 스레드의 절반 가까이를 썼다. */
+.oc-paused, .oc-paused *, .oc-paused *::before, .oc-paused *::after { animation-play-state: paused !important; }

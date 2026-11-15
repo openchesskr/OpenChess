@@ -244,17 +244,19 @@ async function callGeminiResilient(apiKey, safeMediaType, image) {
 // 쿼터는 번역(api/translate.js) 등 다른 기능도 같이 쓴다. 호출자(IP)당 분당 호출 수를 제한한다 — 서버리스 인스턴스 안에서의 최선 노력이라 완전한 차단은 아니다
 // (로그인 필수화·엣지 제한은 제품 결정이 필요해 BUGS.md에 남김). 한 번의 스캔이 Gemini를 최대 3번 부르므로 한도는 넉넉하게 둔다.
 // (v0.7.0 보안, BUG-116·072) 호출 제한 — DB 카운터(서버리스 인스턴스가 여럿이어도 함께 센다, 실패하면 인스턴스 메모리로 대신한다).
-//  · 비로그인: IP당 10분에 6회·하루 20회 / 로그인: 사용자당 10분에 30회·하루 200회 / 전체: 하루 3000회(공유 Gemini 쿼터 보호).
+//  · (v0.7.7부터 로그인 필수) 사용자당 10분에 30회·하루 200회 / IP당 하루 400회 / 전체: 하루 3000회(공유 Gemini 쿼터 보호).
 //  · 한 번의 스캔이 Gemini를 최대 3번 부르므로 위 숫자는 '스캔 요청' 기준이다.
 //  · 이미지는 base64 5.5MB 이하만 받는다.
 const MAX_IMAGE_B64 = 5_500_000;
+// (v0.7.7 BUG-072 근본 대책) 로그인한 사용자만 쓴다. 예전엔 비로그인도 IP 기준 한도로 열어 뒀는데, IP를 바꿔 가며
+//  부르면 사람별 한도를 피해 전체 하루 한도(scan:global)를 다 써 버려 모든 사용자의 보드 인식·번역(같은 키)을 막을 수 있었다.
+//  로그인 확인은 Supabase Auth에 위임하고, 사용자별 한도(10분 30회·하루 200회)와 전체 하루 한도를 DB(rate_limit_hit)에서 함께 센다.
+//  IP 한도도 남겨 한 곳에서 계정을 여러 개 만들어 돌리는 경우를 막는다.
 async function scanLimited(env, req) {
   const user = await authUser(env, req);
+  if (!user) return "auth";
   const ip = clientIp(req);
-  const who = user
-    ? [["scan:u:" + user.id, 30, 600], ["scan:ud:" + user.id, 200, 86400]]
-    : [["scan:ip:" + ip, 6, 600], ["scan:ipd:" + ip, 20, 86400]];
-  if (await rateLimited(env, who)) return "user";
+  if (await rateLimited(env, [["scan:u:" + user.id, 30, 600], ["scan:ud:" + user.id, 200, 86400], ["scan:ipd:" + ip, 400, 86400]])) return "user";
   if (await rateLimited(env, [["scan:global", 3000, 86400]])) return "global";
   return null;
 }
@@ -262,6 +264,7 @@ async function scanLimited(env, req) {
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 지원합니다." }); return; }
   const limited = await scanLimited(supabaseEnv(), req);
+  if (limited === "auth") { res.status(401).json({ error: "로그인이 필요해요.", code: "login_required" }); return; }
   if (limited === "user") { res.status(429).json({ error: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요." }); return; }
   if (limited === "global") { res.status(503).json({ error: "오늘 이미지 인식 사용량이 한도에 도달했어요. 내일 다시 시도해 주세요." }); return; }
   const apiKey = process.env.GEMINI_API_KEY;

@@ -279,5 +279,8 @@ ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(gr
 { ok(/export const RECENT_PERF_N = GROWTH_RECENT_GAMES;/.test(rd("src/lib/recentPerformance.js")), "퍼포먼스 레이팅 합산 판 수가 성장 분석 판 수(GROWTH_RECENT_GAMES, 5판)와 다름");
   ok(/<PerfHero\b/.test(growth) && /recentPerformance\(items, GROWTH_RECENT_GAMES\)/.test(growth) && /<Overview g=\{g\}[^>]*perf=\{perf\}/.test(growth), "성장 요약 섹션에 퍼포먼스 레이팅(PerfHero, 최근 5판)이 없음");
   ok(!/RecentPerformanceRow|recentPerf\.jsx|recentPerformance\(/.test(rd("src/app/profile.jsx") + rd("src/app/gameHistory.jsx")), "/user 프로필에 퍼포먼스 레이팅이 다시 들어감"); }
+// (v0.7.7 BUG-161) 성장 곡선의 축 숫자는 SVG 밖 HTML(고정 px) — SVG <text>는 viewBox 확대 비율을 따라 넓은 화면에서 커진다
+{ const m = growth.match(/function GrowthCurve\([\s\S]*?\n}\n/); const body = m ? m[0] : "";
+  ok(body && !/<text\b/.test(body), "GrowthCurve SVG 안에 <text>가 있음(BUG-161) — 축 숫자는 SVG 밖 HTML로 그릴 것"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 최근 5판 자동 리뷰(대국 선택·엔진 분석 연결·게이지), 승률 하락 원인 설명기, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

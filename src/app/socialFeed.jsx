@@ -7,8 +7,8 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect, useContext } fro
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
-import { badgeIcon } from "../components/badges.jsx";
-import { AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, LEGACY_TYPES, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { badgeIcon, postBadge } from "../components/badges.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
@@ -21,7 +21,7 @@ import { t, fmtDateOnly } from "../lib/i18n.js";
 
 const PAGE = 10;
 const INK = "#2A1B0E", SOFT = "#7A6648", LINE = "#D6C29A";
-const THEME_LABEL = () => ({ sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") });
+const THEME_LABEL = () => Object.fromEntries(PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]));   // (v0.7.7) 테마 목록 공용
 const fmtDate = (ms) => (ms ? fmtDateOnly(ms, { year: "numeric", month: "2-digit", day: "2-digit" }) : "");
 
 /* 서버 응답 한 줄 → 유산 게시물 { owner, id, entry, kind, likes, reposts, at, ownerInfo } (모양이 틀리면 null). 피드·프로필 소셜 섹션이 같이 쓴다. */
@@ -94,6 +94,31 @@ function useLegacyFeed(enabled) {
   return { posts, more, loading, loadMore };
 }
 
+/* (v0.7.7, 사용자 요청) 퍼즐 작성자도 프로필 사진을 보인다 — 퍼즐에는 작성자 아이디만 있어 아이디로 사진을 모아 읽는다(모듈 캐시, 한 번에 최대 40명). */
+const photoCache = new Map();   // username → 사진 data URL | "" (없음)
+const photoWait = new Set(), photoSubs = new Set();
+let photoTimer = null;
+function requestPhotos(names) {
+  for (const n of names) if (n && !photoCache.has(n)) photoWait.add(n);
+  if (!photoWait.size || photoTimer || !SB_ON) return;
+  photoTimer = setTimeout(async () => {
+    photoTimer = null;
+    const batch = [...photoWait].slice(0, 40); batch.forEach((n) => photoWait.delete(n));
+    try {
+      const rows = await sbSelect("profiles?username=in.(" + batch.map(encodeURIComponent).join(",") + ")&select=username,photo:pub->>photo");
+      const got = new Map((rows || []).map((r) => [r.username, typeof r.photo === "string" ? r.photo : ""]));
+      batch.forEach((n) => photoCache.set(n, got.get(n) || ""));
+    } catch { batch.forEach((n) => photoCache.set(n, "")); }
+    photoSubs.forEach((f) => f());
+    if (photoWait.size) requestPhotos([]);
+  }, 60);
+}
+function usePhotoOf(username) {
+  const [, bump] = useState(0);
+  useEffect(() => { if (!username) return undefined; const f = () => bump((x) => x + 1); photoSubs.add(f); requestPhotos([username]); return () => { photoSubs.delete(f); }; }, [username]);
+  return username ? photoCache.get(username) || null : null;
+}
+
 function useSquareWidth() {
   const ref = useRef(null); const [w, setW] = useState(320);
   useLayoutEffect(() => {
@@ -114,6 +139,22 @@ function Avatar({ name, photo }) {
     </span>
   );
 }
+/* (v0.7.7, 사용자 요청) 게시물 머리 — 퍼즐·유산이 같은 모양: 프로필 사진(없으면 아이디 첫 글자) · 아이디(닉네임 아님) · "종류 · 세부" · 오른쪽 표지 */
+function PostHead({ username, photo, kindLabel, detail, right, onOpenProfile }) {
+  const name = username || "OpenChess";
+  return (
+    <>
+      <button type="button" onClick={() => username && onOpenProfile && onOpenProfile(username)} disabled={!username} aria-label={username ? t("{0} 프로필", username) : undefined} className="press" style={{ background: "none", border: "none", padding: 0, cursor: username ? "pointer" : "default", display: "inline-flex" }}><Avatar name={name} photo={photo} /></button>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <button type="button" onClick={() => username && onOpenProfile && onOpenProfile(username)} disabled={!username} className="press" style={{ display: "block", maxWidth: "100%", background: "none", border: "none", padding: 0, textAlign: "left", cursor: username ? "pointer" : "default", fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: SITE_FONT }}>{name}</button>
+        <div style={{ fontSize: 11, color: SOFT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kindLabel}{detail ? " · " + detail : ""}</div>
+      </div>
+      <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{right}</span>
+    </>
+  );
+}
+/* 게시물 본문 첫 줄 — 아이디 + 제목(같은 모양) */
+const Caption = ({ name, children }) => <div style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}><b style={{ fontWeight: 900 }}>{name || "OpenChess"}</b> {children}</div>;
 const actBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minWidth: 36, height: 36, padding: "0 6px", background: "none", border: "none", cursor: "pointer" };
 // (v0.7.6 사용자 요청) 숫자는 따로 줄을 두지 않고 아이콘 바로 옆에 숫자만
 const Num = ({ n, color }) => <span style={{ fontSize: 13, fontWeight: 800, color: color || INK, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{n || 0}</span>;
@@ -143,16 +184,11 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
   const themes = sortedThemesOf(p), labels = THEME_LABEL();
   const opening = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "";
   const solvers = solveCountText(solveCount, friendSolverNames);
+  const photo = usePhotoOf(creator);
   return (
     <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen}
-      head={<>
-        <button type="button" onClick={() => creator && onOpenProfile && onOpenProfile(creator)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: creator ? "pointer" : "default", display: "inline-flex" }}><Avatar name={creator || "O"} /></button>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creator || "OpenChess"}</div>
-          <div style={{ fontSize: 11, color: SOFT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opening}</div>
-        </div>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: themeAccentColor(themes), fontFamily: SITE_FONT, flexShrink: 0 }}><PuzzleIcon size={14} color={themeAccentColor(themes)} />#{puzzleNo(p.id)}</span>
-      </>}
+      head={<PostHead username={creator} photo={photo} kindLabel={t("퍼즐")} detail={opening} onOpenProfile={onOpenProfile}
+        right={<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: themeAccentColor(themes), fontFamily: SITE_FONT }}><PuzzleIcon size={14} color={themeAccentColor(themes)} />#{puzzleNo(p.id)}</span>} />}
       media={<div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", background: "rgba(0,0,0,.06)" }}>
         {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
           : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
@@ -165,7 +201,7 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
         <LineStars total={3} solved={stars} />
         <button type="button" onClick={onOpen} className="press" style={{ ...ctaBtn, marginLeft: 8 }}>{isSolved ? t("다시 풀기") : t("풀기")}</button>
       </>}>
-      <div style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}><b style={{ fontWeight: 900 }}>{creator || "OpenChess"}</b> {livePuzzleName(p) || opening}</div>
+      <Caption name={creator}>{livePuzzleName(p) || opening}</Caption>
       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
         <GamePhaseBadge p={p} compact />
         {themes.map((k) => <span key={k} style={{ fontSize: 11, fontWeight: 800, color: themeAccentColor([k]) }}>#{labels[k] || k}</span>)}
@@ -178,27 +214,24 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
 export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const [ref, w] = useSquareWidth();
   const { entry, kind, ownerInfo } = post;
-  const info = LEGACY_TYPES.find((x) => x.key === kind);
+  const info = postTypeInfo(kind);
+  const isGame = kind === "game";   // (v0.7.7) 대국 게시물 — 마지막 수를 보여 주고, 캡션은 "백 vs 흑 · 결과"
   const name = ownerInfo.username || "";   // (v0.7.6 사용자 요청) 닉네임 대신 아이디
   const before = useMemo(() => entry.sans.slice(0, entry.moveIndex), [entry]);
+  const root = useMemo(() => legacyRootOf(entry), [entry]);
   const open = () => { if (ownerInfo.mid && A.openPost) A.openPost({ mid: ownerInfo.mid, id: post.id }); };
   const liked = A.liked.has(post.owner + "|" + post.id), reposted = A.isReposted(post), canRepost = A.canRepost(post);
   const [armed, setArmed] = useState(false);
+  const cachedPhoto = usePhotoOf(ownerInfo.photo ? null : name);   // 서버가 사진을 함께 주지 않은 옛 응답 대비
   return (
-    <PostShell label={t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
-      head={<>
-        <button type="button" onClick={() => ownerInfo.username && onOpenProfile && onOpenProfile(ownerInfo.username)} className="press" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex" }}><Avatar name={name} photo={ownerInfo.photo} /></button>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 900, color: INK, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-          <div style={{ fontSize: 11, color: SOFT }}>{t("유산")} · {info ? info.label : ""}</div>
-        </div>
-        <span style={{ flexShrink: 0, display: "inline-flex" }}>{badgeIcon(kind, 22)}</span>
-      </>}
+    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
+      head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
       media={<div style={{ background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", padding: 14 }}>
+        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다(머리·캡션·동작 줄은 퍼즐과 같은 형식) */}
         <div style={{ position: "relative", padding: 12 }}>
           <LegacyFrame />
           <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
-            <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={kind} />
+            <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
           </div>
         </div>
       </div>}
@@ -210,7 +243,7 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
         {isOwn && A.removeMine && <button type="button" onClick={() => { if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 2600); return; } A.removeMine(post.id); }} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ ...actBtn, color: armed ? T.blunder : SOFT, fontSize: 11.5, fontWeight: 800 }}><Trash2 size={18} color={armed ? T.blunder : SOFT} />{armed ? t("한 번 더 누르면 삭제") : null}</button>}
         <button type="button" onClick={open} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
       </>}>
-      <div style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}><b style={{ fontWeight: 900 }}>{name}</b> <span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</div>
+      <Caption name={name}><span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{isGame ? gamePostTitle(entry) : legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</Caption>
       <div style={{ fontSize: 11, color: SOFT }}>{fmtDate(post.savedAt)}</div>
     </PostShell>
   );
@@ -237,7 +270,7 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
     return () => io.disconnect();
   });
   const list = items.slice(0, shown);
-  const kindLabel = { all: t("전체"), puzzle: t("퍼즐"), legacy: t("유산") };
+  const kindLabel = { all: t("전체"), puzzle: t("퍼즐"), legacy: t("유산"), game: t("대국") };
   return (
     <div>
       <div role="tablist" aria-label={t("게시물 종류")} style={{ display: "flex", gap: 6, marginBottom: 12 }}>

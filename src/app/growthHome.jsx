@@ -15,6 +15,8 @@ import { LoadingRows } from "../components/motionKit.jsx";
 import { pickRecentGames } from "../lib/recentGames.js";
 import { t } from "../lib/i18n.js";
 import { SwipePager } from "../components/swipePager.jsx";
+import { OffscreenPause } from "../components/offscreenPause.jsx";
+import { FacetDiamond } from "../components/facetIcons.jsx";
 
 export function useRecentSources({ user, uid, chesscom, ccName }) {
   const [rows, setRows] = useState(null);
@@ -88,6 +90,23 @@ function useSeenOnce(ref) {
   return seen;
 }
 
+/* (v0.7.7) 데스크톱 분석 탭: 보드 분석 영역과 성장 분석 영역을 나누는 금색 선.
+   선은 가운데로 갈수록 진해지는 금빛 머리카락 선 두 갈래(바깥쪽은 투명하게 사라짐)이고, 가운데에 파셋 마름모 보석과 작은 보석 둘을 둔다(아이콘 규칙: 면 분할·왼쪽 위 광원). */
+function GoldDivider() {
+  const line = (dir) => ({ flex: 1, height: 1, background: "linear-gradient(" + dir + ", rgba(196,154,80,0), rgba(196,154,80,.55) 70%, #ECCB86)", boxShadow: "0 0 6px rgba(236,203,134,.18)" });
+  return (
+    <div role="separator" aria-hidden="true" style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 auto", maxWidth: 980, padding: "0 24px" }}>
+      <span style={line("90deg")} />
+      <svg width="64" height="16" viewBox="0 0 64 16" style={{ flexShrink: 0, display: "block" }}>
+        <FacetDiamond cx={10} cy={8} r={3} gem={false} />
+        <FacetDiamond cx={32} cy={8} r={7} />
+        <FacetDiamond cx={54} cy={8} r={3} gem={false} />
+      </svg>
+      <span style={line("270deg")} />
+    </div>
+  );
+}
+
 /* 분석 탭 전체 — analysisNode(기존 분석 화면)에 성장 분석·최근 대국을 붙인다. focusActive(집중 분석 중)면 성장 분석은 숨긴다(모바일은 1페이지만).
    props: user, uid, openAuth, chesscom, ccName, onOpenGame, onOpenGameAnalyze, growthUid, growthGames, me, onOpenTitle, engine, reviewSpeed, quickReview */
 export function AnalysisWithGrowth({ analysisNode, focusActive, ...p }) {
@@ -112,11 +131,14 @@ export function AnalysisWithGrowth({ analysisNode, focusActive, ...p }) {
     <>
       {analysisNode}
       {!focusActive && (
-        <section ref={deskRef} aria-label={t("성장 분석")} className="analysis-growth" style={{ marginTop: 28 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 20, height: H, minHeight: 520 }}>
+        <section ref={deskRef} aria-label={t("성장 분석")} className="analysis-growth" style={{ marginTop: 44 }}>
+          {/* (v0.7.7, 사용자 요청) 보드 분석과 성장 분석 사이의 금색 구분선 — 가운데 마름모 보석에서 양쪽으로 가늘게 사라지는 선 */}
+          <GoldDivider />
+          {/* (v0.7.7 렉 수정) 스크롤로 화면 밖에 있을 때는 장식 애니메이션·반복 타이머를 멈춘다 */}
+          <OffscreenPause style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 20, height: H, minHeight: 520, marginTop: 36 }}>
             <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{growthNode}</div>
             <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{gamesNode}</div>
-          </div>
+          </OffscreenPause>
         </section>
       )}
     </>

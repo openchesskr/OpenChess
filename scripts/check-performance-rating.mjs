@@ -170,5 +170,8 @@ ok(performanceRating({ acc: 90, counts: { evidence: 0, book: 10 } }) === null, "
   } else ok(file && file.anchors === null, "performanceCurve.json 형식 오류(보정 전이면 anchors는 null)");
 }
 
+// (v0.7.7 BUG-095) 성장 분석의 퍼포먼스 레이팅은 곡선을 맞춘 깊이(REVIEW_DEPTH) 이상으로 분석한 판만 합산한다
+{ const { readFileSync: rf2 } = await import("node:fs"); const gsrc = rf2(new URL("../src/app/growth.jsx", import.meta.url), "utf8");
+  if (!/auto\.records\.filter\(\(r\) => \(loadCachedReviewDepth\(r\.key\) \?\? 0\) >= REVIEW_DEPTH\)[\s\S]{0,200}recentPerformance\(items/.test(gsrc)) fails.push("growth.jsx: 퍼포먼스 레이팅이 분석 깊이를 확인하지 않고 합산함(BUG-095) — 얕은 분석이 섞이면 값이 어긋난다"); }
 if (fails.length) { console.error("퍼포먼스 레이팅 검사 실패:\n- " + fails.join("\n- ")); process.exit(1); }
 console.log("퍼포먼스 레이팅 검사 통과");

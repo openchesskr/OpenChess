@@ -21,9 +21,18 @@ const SET_NULL_OK = {
   "daily_puzzles_dev.created_by": "개발자 콘텐츠의 작성자 표시",
   "attack_positions.created_by": "개발자 콘텐츠의 작성자 표시",
   "puzzles.creator_uid": "퍼즐은 _erase_account가 직접 지운다(남은 행은 탈퇴 전 데이터)",
-  "pvp_games.draw_offered_by": "대국 행 자체가 참가자 cascade로 지워진다",
-  "pvp_games.rematch_offered_by": "대국 행 자체가 참가자 cascade로 지워진다",
+  "pvp_games.draw_offered_by": "탈퇴한 쪽 칸만 비운다(대국 행은 상대 기록으로 남음, BUG-065)",
+  "pvp_games.rematch_offered_by": "탈퇴한 쪽 칸만 비운다(대국 행은 상대 기록으로 남음, BUG-065)",
+  "pvp_games.white_uid": "상대의 대국 기록(기보) 보존 — 탈퇴한 쪽 칸만 비움(BUG-065). 두 사람 모두 탈퇴한 대국은 _erase_account가 지운다",
+  "pvp_games.black_uid": "상대의 대국 기록(기보) 보존 — 탈퇴한 쪽 칸만 비움(BUG-065). 두 사람 모두 탈퇴한 대국은 _erase_account가 지운다",
 };
+// (v0.7.7 BUG-064) 외래키 없이 사용자 uid를 값으로 남기는 컬럼 — 보관 기간이 정해져 있고 정리 함수·cron이 있어야 한다.
+//  방침(개인정보처리방침 "신고 내역은 처리 완료 후 일정 기간 보관 후 삭제")에 따라 탈퇴 뒤에도 기간 동안 남는 표. 표 → 정리 함수(매일 cron).
+const RETAINED_TABLES = { user_reports: "purge_old_reports" };
+for (const [tbl, fn] of Object.entries(RETAINED_TABLES)) {
+  if (!new RegExp("create or replace function public\\." + fn + "\\(\\)[\\s\\S]*?delete from public\\." + tbl).test(sql)) fails.push(tbl + ": 탈퇴 후 보관하는 표인데 정리 함수 " + fn + "가 행을 지우지 않음 — 영구히 남는다");
+  if (!new RegExp("cron\\.schedule\\([\\s\\S]{0,200}?public\\." + fn + "\\(\\)").test(sql)) fails.push(tbl + ": 정리 함수 " + fn + "를 실행하는 cron이 없음");
+}
 // 아이디 사본 컬럼: 표 → 이유. 표 자체가 cascade로 지워지면 자동 통과, 아니면 여기에 등록하고 _erase_account가 지워야 한다.
 const USERNAME_COPY_HANDLED_BY_FUNCTION = { puzzles: ["creator_username"] };
 
@@ -42,6 +51,7 @@ const refsUser = (r) => /references auth\.users/.test(r);
 const cascades = (r) => /on delete cascade/.test(r);
 const usedSetNull = new Set();
 for (const [tbl, cols] of tables) {
+  if (tbl in RETAINED_TABLES) continue;
   for (const { col, type, rest } of cols) {
     const key = tbl + "." + col;
     if (refsUser(rest)) {
@@ -58,7 +68,7 @@ for (const k of Object.keys(SET_NULL_OK)) if (!usedSetNull.has(k)) fails.push("S
 // ③ 아이디 사본
 for (const [tbl, cols] of tables) {
   const copies = cols.filter((c) => c.type === "text" && /username$/.test(c.col) && c.col !== "username");
-  if (!copies.length) continue;
+  if (!copies.length || tbl in RETAINED_TABLES) continue;
   const rowCascades = cols.some((c) => refsUser(c.rest) && cascades(c.rest));
   for (const c of copies) {
     if (rowCascades) continue;
@@ -91,6 +101,22 @@ if (!/new\.deletion_scheduled_at := old\.deletion_scheduled_at/.test(sql) || !/o
 const settingsSrc = readFileSync(new URL("../src/app/settings.jsx", import.meta.url), "utf8");
 if (/delete_own_account/.test(settingsSrc) || !/request_account_deletion/.test(settingsSrc) || !/cancel_account_deletion/.test(settingsSrc)) fails.push("settings.jsx가 request_account_deletion·cancel_account_deletion을 쓰지 않음");
 if (!/my_account_deletion/.test(readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"))) fails.push("App.jsx가 로그인 후 my_account_deletion을 조회하지 않음 — 유예 중 계정에 취소 창이 뜨지 않는다");
+
+// ⑤-2 (v0.7.7 BUG-136) 유예 중인 계정은 서버가 새 행동을 막고, SECURITY DEFINER 조회(정책 우회)에서도 숨긴다.
+{
+  const fnBody = (name) => { const m = sql.match(new RegExp("create or replace function public\\." + name + "\\([\\s\\S]*?\\$\\$;")); return m ? m[0] : ""; };
+  if (!/deletion_scheduled_at is not null/.test(fnBody("chat_blocked_between"))) fails.push("chat_blocked_between이 탈퇴 유예 계정을 연락 불가로 보지 않음(BUG-136) — 친구 요청·도전장·채팅이 서버에서 막히지 않는다");
+  for (const fn of ["pvp_queue_join", "puzzle_like_toggle", "puzzle_repost_toggle", "legacy_like_toggle", "legacy_repost_toggle"]) if (!/my_deletion_pending\(\)/.test(fnBody(fn))) fails.push(fn + "가 탈퇴 유예 중인 호출자를 막지 않음(BUG-136)");
+  for (const fn of ["friend_accept", "pvp_invite_respond"]) if (!/chat_blocked_between\(/.test(fnBody(fn))) fails.push(fn + "가 유예·차단 관계를 확인하지 않음(BUG-136)");
+  for (const pol of ["likes insert", "reposts insert", "move notes insert", "legacy likes insert", "reactions insert", "poll votes insert", "quiz answers insert"]) {
+    const m = sql.match(new RegExp('create policy "' + pol + '"[^;]*;'));
+    if (!m || !/not public\.my_deletion_pending\(\)/.test(m[0])) fails.push('정책 "' + pol + '"가 탈퇴 유예 계정의 쓰기를 막지 않음(BUG-136)');
+  }
+  for (const fn of ["friend_suggestions", "minigame_leaderboard", "profile_recent_games"]) if (!/deletion_scheduled_at is (not )?null/.test(fnBody(fn))) fails.push(fn + "(SECURITY DEFINER)가 탈퇴 유예 계정을 숨기지 않음(BUG-136)");
+  if (!/'my_deletion_pending'/.test(sql)) fails.push("my_deletion_pending이 함수 허용 목록에 없음 — 이 함수를 부르는 정책이 permission denied로 깨진다");
+  const iCol = sql.indexOf("add column if not exists deletion_scheduled_at"), iUse = sql.indexOf("create or replace function public.chat_blocked_between");
+  if (iCol < 0 || iCol > iUse) fails.push("deletion_scheduled_at 컬럼이 chat_blocked_between보다 뒤에 생김 — 처음 실행 때 함수 생성이 실패한다");
+}
 
 // ⑥ 삭제 안내 페이지
 const main = readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");

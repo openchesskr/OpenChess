@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useOnScreen } from "./offscreenPause.jsx";
 import { useInView } from "framer-motion";
 import { isLite } from "../lib/perfMode.js";
 
@@ -64,7 +65,8 @@ export function ScrambleText({ text, style, className, loopMs = 0 }) {
   const seen = useInView(ref, { amount: 0.6 });
   // loopMs가 있으면 화면에 보이는 동안 그 간격마다 글자가 다시 노이즈에서 풀려 나온다(자동 반복).
   const [round, setRound] = useState(0);
-  useEffect(() => { if (!loopMs || !seen || isLite()) return undefined; const id = setInterval(() => setRound((v) => v + 1), loopMs); return () => clearInterval(id); }, [loopMs, seen]);
+  const onScreen = useOnScreen();   // (v0.7.7 렉 수정) 감싼 영역이 화면 밖이면 반복을 멈춘다
+  useEffect(() => { if (!loopMs || !seen || !onScreen || isLite()) return undefined; const id = setInterval(() => setRound((v) => v + 1), loopMs); return () => clearInterval(id); }, [loopMs, seen, onScreen]);
   const out = useScramble(text, seen, 34, round);
   return <span ref={ref} className={className} style={{ fontFamily: MONO, ...style }}>{out}</span>;
 }

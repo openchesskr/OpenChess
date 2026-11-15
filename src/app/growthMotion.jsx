@@ -3,6 +3,7 @@
 //  · 분석 중에는 실제로 엔진이 채점하고 있는 판의 포지션을 수 단위로 보여 준다(autoReview.js의 진행 스트림). 아직 5판이 안 됐으면 데모 수순을 반복 재생한다.
 //  · 기기의 "애니메이션 줄이기" 설정은 보지 않는다(check-reduced-motion). 가벼운 모드(isLite)면 무한 반복을 끄고 한 번만 재생한다(index.css가 CSS 무한 애니메이션을 끈다).
 //  · 아이콘·장식은 파셋 부품(FacetDiamond)만 쓴다 — 선으로 그린 장식 없음(scripts/check-facet-icons.mjs ZONES 등록).
+import { useOnScreen } from "../components/offscreenPause.jsx";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "../lib/theme.js";
@@ -19,8 +20,8 @@ import { reviewKeyOf, reviewProgressOf, subscribeReviewProgress } from "./autoRe
 
 /* ── 연출 전용 CSS(gx-) — KIT_CSS(/about)와 함께 한 번 넣는다 ── */
 const GX_CSS = `
-@keyframes gx-grid{from{background-position:0 0}to{background-position:28px 28px}}
-.gx-grid{position:absolute;inset:0;pointer-events:none;opacity:.07;background-image:repeating-conic-gradient(#ECCB86 0 25%,transparent 0 50%);background-size:28px 28px;animation:gx-grid 9s linear infinite;-webkit-mask-image:radial-gradient(120% 90% at 30% 20%,#000 30%,transparent 80%);mask-image:radial-gradient(120% 90% at 30% 20%,#000 30%,transparent 80%)}
+@keyframes gx-grid{from{transform:translate(0,0)}to{transform:translate(28px,28px)}}
+.gx-grid{position:absolute;inset:-28px 0 0 -28px;pointer-events:none;opacity:.07;background-image:repeating-conic-gradient(#ECCB86 0 25%,transparent 0 50%);background-size:28px 28px;animation:gx-grid 9s linear infinite;will-change:transform;-webkit-mask-image:radial-gradient(120% 90% at 30% 20%,#000 30%,transparent 80%);mask-image:radial-gradient(120% 90% at 30% 20%,#000 30%,transparent 80%)}
 @keyframes gx-scan{0%{transform:translateY(-100%)}100%{transform:translateY(500%)}}
 .gx-scan{position:absolute;left:0;right:0;top:0;height:20%;pointer-events:none;z-index:3;background:linear-gradient(180deg,transparent,rgba(236,203,134,.0) 20%,rgba(236,203,134,.35) 85%,rgba(255,247,220,.75) 100%);mix-blend-mode:screen;animation:gx-scan 2.6s cubic-bezier(.45,.05,.55,.95) infinite}
 @keyframes gx-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.18);opacity:.75}}
@@ -103,11 +104,12 @@ function BoardStage({ game, live }) {
   const [demoPly, setDemoPly] = useState(0);
   const demo = !live || !game;
   const sans = demo ? DEMO : game.sans;
+  const onScreen = useOnScreen();   // (v0.7.7 렉 수정) 화면 밖이면 데모 보드 반복 재생을 멈춘다(0.65초마다 보드 전체를 다시 그렸다)
   useEffect(() => {
-    if (!demo) return undefined;
+    if (!demo || !onScreen) return undefined;
     const id = setInterval(() => setDemoPly((p) => (p >= DEMO.length ? 0 : p + 1)), isLite() ? 1600 : 650);
     return () => clearInterval(id);
-  }, [demo]);
+  }, [demo, onScreen]);
   const ply = demo ? demoPly : Math.min(sans.length, live.done);
   const board = useMemo(() => { try { return boardFromSans(sans.slice(0, ply)); } catch { return null; } }, [sans, ply]);
   const mv = !demo && live.moves && live.moves[ply - 1];
@@ -148,7 +150,8 @@ function BoardStage({ game, live }) {
 /* 상태 줄 — 노이즈에서 풀려 나오며 순환하는 시스템 문구(장식, 고정 영문 표기) */
 function Ticker({ lines }) {
   const [i, setI] = useState(0);
-  useEffect(() => { if (isLite()) return undefined; const id = setInterval(() => setI((v) => (v + 1) % lines.length), 2600); return () => clearInterval(id); }, [lines.length]);
+  const onScreen = useOnScreen();
+  useEffect(() => { if (isLite() || !onScreen) return undefined; const id = setInterval(() => setI((v) => (v + 1) % lines.length), 2600); return () => clearInterval(id); }, [lines.length, onScreen]);
   const txt = useScramble(lines[i % lines.length], true, 22);
   return <span aria-hidden style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".14em", color: K.brass, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{txt}</span>;
 }

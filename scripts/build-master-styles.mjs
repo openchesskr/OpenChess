@@ -5,21 +5,22 @@
  *  실행: node scripts/build-master-styles.mjs  (build-db-masters.mjs 뒤에) */
 import { readFileSync, writeFileSync } from "node:fs";
 import { styleFeatures, STYLE_KEYS, RETREAT_GAMES_BUILD } from "../src/lib/masterStyle.js";
+import { peopleIndex, bestName } from "./lib/masterNames.mjs";
 
 const MIN_GAMES = 120;
 const db = JSON.parse(readFileSync(new URL("../public/master-games.json", import.meta.url), "utf8")).games;
 const top = JSON.parse(readFileSync(new URL("../src/data/dbMasters.json", import.meta.url), "utf8")).masters;
-// build-db-masters.mjs와 같은 이름 합치기(성 + 이름 첫 글자)
-const ascii = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim();
-const clean = (raw) => String(raw).replace(/\d+/g, "").replace(/\s+[A-Z]{3}$/, "").replace(/\.$/, "").replace(/\s+/g, " ").trim();
-const split = (raw0) => { const raw = clean(raw0), i = raw.indexOf(","); if (i >= 0) return [raw.slice(0, i).trim(), raw.slice(i + 1).trim()]; const t = raw.split(" "); return t.length > 1 ? [t[0], t.slice(1).join(" ")] : [raw, ""]; };
-const keyOf = (raw) => { const [s, g] = split(raw); return ascii(s) + "|" + ascii(g).slice(0, 1); };
-const want = new Map(top.map(([name, games, elo]) => [keyOf(name), { name, games, elo, list: [] }]));
+// build-db-masters.mjs와 같은 이름 합치기(scripts/lib/masterNames.mjs — v0.7.7 BUG-152부터 FIDE 동명이인 숫자 표지·활동 연도까지 같은 규칙)
+const ix = peopleIndex();
+for (const g of db) { const y = String(g.date || "").slice(0, 4); ix.add(g.white, g.whiteElo, y); ix.add(g.black, g.blackElo, y); }
+const people = ix.finish(), dexNames = new Map(top.map(([name, games, elo]) => [name, { name, games, elo, list: [] }]));
+const want = new Map();
+for (const [key, p] of people) { const m = dexNames.get(bestName(p)); if (m && !m.taken) { m.taken = true; want.set(key, m); } }
 const res = (r, color) => (r === "1/2-1/2" ? "draw" : r === "1-0" ? (color === "w" ? "win" : "loss") : r === "0-1" ? (color === "b" ? "win" : "loss") : null);
 for (const g of db) {
   const mv = g.moves ? g.moves.split(" ") : null; if (!mv) continue;
   for (const [raw, color] of [[g.white, "w"], [g.black, "b"]]) {
-    const m = want.get(keyOf(raw)); if (m) m.list.push({ moves: mv, color, result: res(g.result, color) });
+    const m = want.get(ix.resolve(raw)); if (m) m.list.push({ moves: mv, color, result: res(g.result, color) });
   }
 }
 const rows = [];

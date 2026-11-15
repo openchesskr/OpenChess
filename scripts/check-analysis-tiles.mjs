@@ -6,7 +6,7 @@ import fs from "node:fs";
 const src = fs.readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
 ok(/export const MOVE_TILE_WINDOW = 6;/.test(src), "MOVE_TILE_WINDOW(보이는 블록 수)가 6이 아님");
-ok(/<MoveTileWindow enabled=\{tileWindowOn\}[^>]*>\s*\{shown\.map\(\(m\) => <FadeIn key=\{m\.san\} layout><MoveTile /.test(src), "다음 수 블록 목록(shown.map → MoveTile)을 MoveTileWindow가 감싸지 않음");
+ok(/<MoveTileWindow enabled=\{tileWindowOn\}[^>]*>\s*\{shown\.map\(\(m, i\) => <FadeIn key=\{m\.san\} layout layoutDependency=\{i\}><MoveTile /.test(src), "다음 수 블록 목록(shown.map → MoveTile)을 MoveTileWindow가 감싸지 않음");
 ok(/const tileWindowOn = !useNarrow\(1023\);/.test(src), "6개 창은 데스크톱(1024px 이상, lg 두 칼럼)에서만 켜야 함");
 const comp = /function MoveTileWindow[\s\S]*?\n\}\n/.exec(src);
 ok(comp && /kids\[MOVE_TILE_WINDOW\]\.offsetTop - kids\[0\]\.offsetTop/.test(comp[0]), "창 높이를 7번째 블록 위치(블록 6개 + 간격)로 재지 않음");

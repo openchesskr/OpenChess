@@ -38,16 +38,19 @@ import { SCHEMATIC_BOX_W, SCHEMATIC_BOX_H, ROOT_ORDER, DIR_OF_ROOT, SCHEMATIC_ZO
 import { layoutDexTree, DEX_LAYOUT, dexEdgeGeometry, placeDexLabels } from "../lib/dexTreeLayout.js";
 import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
-import { poolFallbackWorker } from "../lib/enginePool.js";
+import { poolFallbackWorker, isConstrainedDevice, poolSizeFor } from "../lib/enginePool.js";
 
 import { t, tx, lcLatin } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
 // 냈다(분석 탭 수 블록 목록에서 발견). forwardRef로 감싸 motion.div에 그대로 전달한다.
-export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = true, lift = false, className, style }, ref) {
+// (v0.7.7 렉 수정) layout 기본값을 끔 — framer-motion의 layout은 감싼 컴포넌트가 다시 그려질 때마다 위치를 재려고 강제 레이아웃(getBoundingClientRect)을
+//  일으킨다. 엔진 평가가 초당 10번씩 분석 탭을 다시 그리면서 FadeIn마다 매번 레이아웃을 재 분석 탭이 초당 70번 레이아웃을 계산했다(메인 스레드 70~80% 점유).
+//  순위 이동 애니메이션이 필요한 곳만 layout과 layoutDependency(순서가 바뀔 때만 재라는 값)를 함께 넘긴다.
+export const FadeIn = React.forwardRef(function FadeIn({ children, index = 0, y = 12, layout = false, layoutDependency, lift = false, className, style }, ref) {
   return (
-    <motion.div ref={ref} layout={layout} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
+    <motion.div ref={ref} layout={layout} layoutDependency={layoutDependency} initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
       whileHover={lift && !isLite() ? { y: -3, transition: { duration: 0.18, ease: MOTION_EASE } } : undefined}
       transition={{ duration: 0.32, delay: Math.min(index, 12) * 0.035, ease: MOTION_EASE }} className={className} style={style}>
       {children}
@@ -225,6 +228,8 @@ async function downscaleImageFile(file, maxSide = 768, quality = 0.72) {
 // 실제 응답이 오면 그제서야 100%로 점프) — 업로드 구간까지는 실측값, 그 뒤는 추정치라는 걸 분명히
 // 해 둔다.
 export async function scanImageFile(file, onProgress) {
+  // (v0.7.7 BUG-072) 이미지 인식은 로그인 사용자 전용(서버가 401로 거절) — 보내기 전에 안내한다.
+  if (!SB_TOKEN) throw new Error(t("이미지 인식은 로그인 후 사용 가능"));
   const report = (p) => onProgress && onProgress(Math.max(0, Math.min(100, Math.round(p))));
   report(2);
   const shrunk = await downscaleImageFile(file);
@@ -245,7 +250,7 @@ export async function scanImageFile(file, onProgress) {
     let simTimer = null;
     xhr.open("POST", apiUrl("/api/scan-board"));
     xhr.setRequestHeader("content-type", "application/json");
-    if (SB_TOKEN) xhr.setRequestHeader("Authorization", "Bearer " + SB_TOKEN);   // (v0.7.0 BUG-116) 로그인하면 더 넉넉한 호출 한도
+    xhr.setRequestHeader("Authorization", "Bearer " + SB_TOKEN);   // (v0.7.7 BUG-072) 로그인 필수
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
       report(14 + (e.loaded / e.total) * 36); // 업로드 구간: 14~50% (실측)
@@ -260,7 +265,7 @@ export async function scanImageFile(file, onProgress) {
       if (simTimer) clearInterval(simTimer);
       let parsed = null;
       try { parsed = JSON.parse(xhr.responseText); } catch { }
-      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error((parsed && parsed.error) || "이미지 인식 실패")); return; }
+      if (xhr.status < 200 || xhr.status >= 300 || !parsed) { reject(new Error(xhr.status === 401 ? t("이미지 인식은 로그인 후 사용 가능") : (parsed && parsed.error) || t("이미지 인식 실패"))); return; }
       report(100);
       resolve(parsed);
     };
@@ -294,6 +299,8 @@ const PUZZLE_THEME_OPTS = {
   punish: { target: 170, maxPlies: 8, requireCapture: true, puzzleType: "positional" },
   advantage: { target: 220, maxPlies: 8, puzzleType: "positional" },
   sacrifice: { target: 110, maxPlies: 8, requireMaterialRecovery: true, puzzleType: "positional" },
+  // (v0.7.7, 사용자 요청) 게임 끝내기 — 체크메이트 수순의 한 수(firstSan)부터 실제 체크메이트(#)까지. 모든 정답 라인이 체크메이트로 끝나야 한다(lib/matePuzzle.js).
+  checkmate: { target: 0, maxPlies: 16, requireMate: true, maxNodes: 60, puzzleType: "mate" },
 };
 export function puzzleThemeOpts(theme, overrideTarget, overridePuzzleType) {
   const base = PUZZLE_THEME_OPTS[theme] || PUZZLE_THEME_OPTS.punish;
@@ -351,7 +358,7 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
     // 중복 태그하지 않는다"는 규칙이 빠져 있었다 — 사이트 전체가 같은 기준으로 탁월한 수를 매기도록 통일한다.
     // (v0.5.9 BUG-037) 등급 규칙은 gradeMoveKind 하나로 — 퍼즐 후보는 유일한 수를 따로 매기지 않는다(secondCp 생략).
     const kind = await gradeMoveKindConfirmed({ loss, matched: i === 0, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
-    cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci });
+    cands.push({ san, kind, loss, adopt: adoptBy[k] ?? null, ev: puzzlePvEvToWhite(pv, moverWhite), uci: pv.uci, mate: pv.mate != null ? pv.mate : null });   // (v0.7.7) mate: 둘 차례 관점 메이트 수(게임 끝내기)
   }
   // 엔진 후보에 없는 실전 최다 채택 수 1개 보강(채택률 10% 이상일 때만) — 자식 포지션 1회 평가로 등급 판정
   const topAdopt = Object.entries(adoptBy).filter(([k]) => !seen.has(k)).sort((a, b) => b[1] - a[1])[0];
@@ -363,7 +370,7 @@ export async function puzzleCandidatesAt(engine, cur, pvsIn, fenRoot) {
         const mvCp = evc.mate != null ? (evc.mate > 0 ? -100000 : 100000) : -(evc.cp || 0);   // 자식 평가는 상대 관점 → 부호 반전
         const loss = Math.max(0, bestCp - mvCp);
         const kind = await gradeMoveKindConfirmed({ loss, matched: false, bestCp, playedCp: mvCp, priorSac: ownPriorMoveWasSacrifice(cur, color, fenRoot), san }, { fenRoot, prevSans: cur, san, color, evaluate: sacEval });
-        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color) });
+        cands.push({ san, kind, loss, adopt: topAdopt[1], ev: posEvalToWhite(evc, [...cur, san], fenRoot), uci: puzzleUciOf(brd, san, color), mate: evc.mate != null && evc.mate < 0 ? -evc.mate : null });
       }
     } catch { }
   }
@@ -420,7 +427,9 @@ export async function findSacrificeFirstMove(engine, preSans, fenRoot) {
 // "퍼즐을 생성하는 중입니다" 게이지가 완전히 멈춰 있지 않고 자연스럽게 움직이는 정도로는 충분하다.
 export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) {
   const { maxPlies = 8, target = 160, requireMaterialRecovery = false, requireCapture = false,
-    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional" } = opts || {};
+    firstSan = null, maxNodes = 34, tagSeq = 0, puzzleType = "positional", requireMate = false } = opts || {};
+  // (v0.7.7) 게임 끝내기(requireMate)도 첫 수(체크메이트 수순에서 고른 수)가 있어야 한다.
+  if (requireMate && !firstSan) return null;
   // (v0.6.2 BUG-055) 희생 테마(requireMaterialRecovery)는 첫 수가 탁월한 수로 지정돼야만 의미가 있다 — 지정 없이 부르면 희생이 아닌 최선수로
   // "희생 퍼즐"이 만들어지므로(1.Rg7 사례) 만들지 않는다. 호출부는 findSacrificeFirstMove(FEN) 또는 게임 채점(PGN)으로 firstSan을 넘긴다.
   if (requireMaterialRecovery && !firstSan) return null;
@@ -503,19 +512,21 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
     // 걸러졌다. 남은 후보 중 최상위가 무조건 plausible[0]으로 채택되니, 진짜 최선 응수가
     // 사라지고 훨씬 나쁜(때론 블런더급) 수만 유일한 갈래로 남는 원인이었다 — 이 필터는
     // 사용자 차례에만 적용한다.
-    if (isUserTurn && (depth >= 1 || firstSan) && !settling) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));   // (v0.7.3) 정리 중에는 전개·캐슬링도 필요한 응수일 수 있어 거르지 않는다
+    if (isUserTurn && (depth >= 1 || firstSan) && !settling && !requireMate) cands = cands.filter((c) => !isDevelopingMove(c.uci, c.san));   // (v0.7.7) 메이트 수순에서는 캐슬링·전개도 메이트 수일 수 있다   // (v0.7.3) 정리 중에는 전개·캐슬링도 필요한 응수일 수 있어 거르지 않는다
     if (!cands.length) return [];
     const canBranch = nodeCount + 2 < maxNodes;
     let chosen;
     if (isUserTurn) {
-      const passables = cands.filter((c) => PUZZLE_PASS_KINDS.includes(c.kind));
+      let passables = cands.filter((c) => PUZZLE_PASS_KINDS.includes(c.kind));
+      // (v0.7.7) 게임 끝내기: 강제 메이트를 이어 가는 수만, 가장 빠른 메이트부터
+      if (requireMate) passables = passables.filter((c) => c.mate != null && c.mate > 0).sort((a, b) => a.mate - b.mate);
       if (!passables.length) return [];
       // 통과 가능한 대안 수 분기는 퍼즐의 핵심인 첫 수(depth 0)에서만 — 깊은 수에서까지 사용자 대안으로
       // 분기하면 "상대 응수가 다른" 라인 대신 "내 수만 다른" 라인이 늘어나 대응력 훈련 목적이 흐려진다.
       // (버그 수정, 사용자 제보) FEN 기반 사용자 생성 퍼즐은 첫 수에서까지 이렇게 2갈래로 갈라지면
       // "정답이 두 개"인 것처럼 보여 혼란스럽다 — FEN 퍼즐(fenRoot 있음)은 항상 최선 수 1갈래로만
       // 진행하고, 기존 방식(자동 생성 퍼즐, 표준 시작 위치)은 그대로 둔다.
-      chosen = passables.slice(0, canBranch && depth === 0 && !fenRoot ? 2 : 1);
+      chosen = passables.slice(0, canBranch && depth === 0 && !fenRoot && !requireMate ? 2 : 1);
       // (버그 수정) 예전엔 여기서 "유혹 수"(실전에서 자주 두어지지만 통과할 수 없는 수)를 모식도에
       // 막힌 가지로 보여주려고 일부러 끼워 넣었는데, 실제로는 사용자가 그 가지를 시도해 보면(고스트를
       // 눌러 두어 보게 되므로) 어디로도 이어지지 않는 리프가 그대로 모식도에 남아 "풀 수 없는 라인이
@@ -604,6 +615,7 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
             }
           }
         }
+        if (requireMate && !terminal && !childForceMate) return null;   // (v0.7.7) 게임 끝내기: 메이트가 풀린 가지는 버린다
         if (!terminal) node.children = await expand(cur2, depth + 1, captured, childForceMate, pvs2, settleHere);
         // 상대 응수가 만들어지지 않아도(깊이 상한 등) 사용자 수로 끝나는 리프이므로 그대로 둔다
         return node;
@@ -621,19 +633,32 @@ export async function genPuzzleTree(engine, preSans, opts, onProgress, fenRoot) 
     const brd = boardOfRoot(fenRoot, preSans);
     const color = plyIsWhite(preSans.length, fenRoot ? fenRoot.turn : "w") ? "w" : "b";
     if (!sanSrc(brd, stripSuffix(firstSan), color)) return null;
-    const node = { san: firstSan, kind: "brilliant", ev: null, adopt: null, pass: true, children: [] };
+    const node = { san: firstSan, kind: requireMate ? "best" : "brilliant", ev: null, adopt: null, pass: true, children: [] };
     const cur2 = [...preSans, firstSan];
     bumpNode(cur2);
-    try { const ev2 = await nextWorker().evaluate(fenOfRoot(fenRoot, cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(ev2, cur2, fenRoot); } catch { }
+    let firstEv = null;
+    try { firstEv = await nextWorker().evaluate(fenOfRoot(fenRoot, cur2), REVIEW_DEPTH, undefined, REVIEW_MOVETIME_MS); node.ev = posEvalToWhite(firstEv, cur2, fenRoot); } catch { }
+    // (v0.7.7) 게임 끝내기: 고른 수 뒤에 상대가 강제 메이트를 당해야 한다(아니면 만들지 않는다)
+    if (requireMate && !/#$/.test(firstSan) && !(firstEv && firstEv.mate != null && firstEv.mate < 0)) return null;
     try {
       const lc = fenRoot ? null : await fetchLichess(preSans, false);
       const hit = lc && lc.moves && lc.moves.find((m) => stripSuffix(m.san) === stripSuffix(firstSan));
       if (hit) node.adopt = hit.adopt;
     } catch { }
-    if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"));
+    if (!/#$/.test(firstSan)) node.children = await expand(cur2, 1, firstSan.includes("x"), requireMate || undefined);
     children = [node];
   } else {
     children = await expand(preSans, 0, false, undefined, rootPvs);
+  }
+  // (v0.7.7) 게임 끝내기: 모든 정답 라인이 체크메이트(#)로 끝나야 한다 — 노드 예산에 걸려 메이트 전에 끊긴 가지는 잘라 낸다.
+  if (requireMate && children) {
+    const keep = (n, userTurn) => {
+      if (n.pass === false) return false;
+      const kids = (n.children || []).filter((k) => keep(k, !userTurn));
+      n.children = kids;
+      return userTurn ? (/#$/.test(n.san) || kids.length > 0) : kids.length > 0;
+    };
+    children = children.filter((n) => keep(n, true));
   }
   if (!children || !children.some((n) => n.pass !== false)) return null;
   const tree = { children };
@@ -1205,9 +1230,9 @@ const cpOfLine = (l) => l ? (l.mate != null ? (l.mate > 0 ? 100000 : -100000) : 
 // 있다. 원래는 analyzeGame(게임 리뷰) 전용으로 evaluateMulti만 지원했는데, 분석 탭의 실시간 후보 수
 // 평가(useMergedMoves)도 같은 방식의 병렬 풀이 필요해져 useEngine과 동일한 프로토콜(단일 PV
 // evaluate + onProgress, MultiPV evaluateMulti)을 둘 다 지원하도록 넓혔다.
-export function bootAnalysisWorker(urls) {
+export function bootAnalysisWorker(urls, bootTimeoutMs = 4000) {
   return new Promise((resolve) => {
-    let idx = 0, booted = false, worker = null;
+    let idx = 0, booted = false, worker = null, handle = null;
     const queue = []; let running = false, swallowBest = 0;
     // (버그 수정) analyzeGame(게임 리뷰)는 배치 하나가 끝나면 풀을 바로 버려서, 작업 하나가 응답 없이
     // 멈춰도(엔진 hiccup 등) 그 배치만 늦어질 뿐이었다 — 분석 탭 실시간 평가(useMergedMoves)는 같은
@@ -1322,7 +1347,8 @@ export function bootAnalysisWorker(urls) {
           const line = typeof e.data === "string" ? e.data : "";
           if (!booted && (line.includes("uciok") || line.includes("Stockfish"))) {
             booted = true; worker = w;
-            resolve({
+            resolve(handle = {
+              dead: false,   // (v0.7.7) 부팅 뒤 워커가 죽으면(메모리 부족 등) true — getAnalysisPool이 빼고 새로 띄운다
               evaluate(fen, d, onProgress, mt, slot) {
                 return new Promise((res) => {
                   supersede(slot);
@@ -1339,19 +1365,28 @@ export function bootAnalysisWorker(urls) {
                   pump();
                 });
               },
-              terminate() { try { w.terminate(); } catch (_) { } },
+              terminate() { handle.dead = true; try { w.terminate(); } catch (_) { } while (queue.length) { const j = queue.shift(); settle(j, j.multi ? [] : null); } running = false; },   // (v0.7.7) 기다리던 작업이 영영 멈추지 않게
             });
           }
           handleLine(line);
         };
-        w.onerror = () => { try { w.terminate(); } catch (_) { } if (!booted) tryNext(); };
+        // (v0.7.7 엔진 끊김 수정) 부팅이 끝난 뒤 죽은 워커(모바일 메모리 부족으로 브라우저가 종료 등)는 예전엔 풀에 그대로 남아,
+        //  그 워커로 가는 작업이 전부 워치독 시간(수 초)을 기다렸다 빈 결과로 끝났다 — 자동 리뷰·실시간 분석이 멈춘 것처럼 보였다.
+        //  죽었다고 표시하고 대기 중 작업을 즉시 빈 결과로 돌려준다(getAnalysisPool이 이 워커를 빼고 새로 띄운다).
+        w.onerror = () => {
+          try { w.terminate(); } catch (_) { }
+          if (!booted) { tryNext(); return; }
+          if (handle) handle.dead = true;
+          while (queue.length) { const j = queue.shift(); settle(j, j.multi ? [] : null); }
+          running = false;
+        };
         w.postMessage("uci");
         // (성능) useEngine 싱글턴과 동일한 이유(위 Hash 주석 참고) — 다만 이 풀은 기기 코어 수만큼
         // 워커를 띄우므로(analyzePoolSize) 워커당 크기를 32MB로 더 보수적으로 잡아, 코어가 많은
         // 기기에서도 총 메모리 사용량이 과하게 불어나지 않게 한다.
         w.postMessage("setoption name Hash value 32");
         w.postMessage("isready");
-        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, 4000);
+        setTimeout(() => { if (!booted) { try { w.terminate(); } catch (_) { } tryNext(); } }, bootTimeoutMs);
       } catch (_) { tryNext(); }
     }
     tryNext();
@@ -1391,31 +1426,58 @@ const analysisPoolCache = new Map(); // profile -> Promise<worker[]>
 // 있다. 부팅 경합(동시에 몇 개나 100MB급 파일을 받고 컴파일하는지)과 최종 처리량(풀 크기)을 분리해,
 // 최종 풀은 좀 더 키우되(4) 실제 부팅은 한 번에 HEAVY_ENGINE_BOOT_BATCH개씩만 순차적으로 진행한다 —
 // 동시 경합은 예전 2워커 수준으로 낮게 유지하면서, 다 부팅된 뒤의 처리량은 2배로 키운 절충안이다.
-const HEAVY_ENGINE_POOL_SIZE = 4;
 const HEAVY_ENGINE_BOOT_BATCH = 2;
+// (v0.7.7 렉·엔진 끊김·모바일 성장 분석 수정) 풀 크기를 기기에 맞춘다.
+//  실측(Chromium): Lite 워커 하나가 약 75~95MB, 정식 대형 신경망(17·18·19) 워커 하나가 약 580MB를 쓴다. 예전엔 Lite를 코어 수만큼(휴대폰 8개 = 약 600MB,
+//  16코어 데스크톱 16개), 대형을 4개(약 2.3GB) 띄웠고 앱 시작 직후 미리 부팅까지 했다. 휴대폰에서는 메모리 부족으로 브라우저가 워커나 탭 자체를 강제로
+//  종료해 "엔진 연결 끊김 → 새로고침"과 "모바일 성장 분석이 아예 안 됨"이 됐고, 데스크톱에서는 모든 코어가 동시에 탐색해 화면(메인 스레드)이 밀렸다.
+//  · 화면과 메인 엔진 몫으로 코어 2개를 남긴다(데스크톱 Lite 최대 8).
+//  · 휴대폰·메모리 4GB 이하: Lite 2개, 대형 신경망은 풀 없이 메인 엔진 하나로(0 → 호출부가 메인 엔진으로 대신한다).
+//  · 기기 메모리(navigator.deviceMemory)의 1/4을 풀 전체 상한으로 둔다.
+// poolSizeFor·isConstrainedDevice는 순수 함수라 src/lib/enginePool.js에 둔다(scripts/check-engine-health.mjs가 검사).
+export { isConstrainedDevice, poolSizeFor };
 export function analyzePoolSize(profile) {
-  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4;
   const prof = ENGINE_PROFILES[profile];
-  if (prof && prof.parts) return HEAVY_ENGINE_POOL_SIZE;
-  return Math.max(2, Math.min(cores, 32));
+  return poolSizeFor({
+    cores: (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4,
+    heavy: !!(prof && prof.parts),
+    constrained: isConstrainedDevice(),
+    memGB: typeof navigator !== "undefined" && typeof navigator.deviceMemory === "number" ? navigator.deviceMemory : null,
+  });
 }
-async function bootWorkersStaggered(urls, size, batch) {
+const poolBootTimeout = (prof) => (prof && prof.bootTimeoutMs) || (prof && prof.parts ? 45000 : 4000);   // (v0.7.7) 대형 신경망은 4초 안에 부팅이 안 돼 늘 실패했다
+async function bootWorkersStaggered(urls, size, batch, timeoutMs) {
   const out = [];
   for (let i = 0; i < size; i += batch) {
     const n = Math.min(batch, size - i);
-    const group = await Promise.all(Array.from({ length: n }, () => bootAnalysisWorker(urls)));
+    const group = await Promise.all(Array.from({ length: n }, () => bootAnalysisWorker(urls, timeoutMs)));
     out.push(...group);
   }
   return out.filter(Boolean);
 }
 export function getAnalysisPool(profile, urls) {
   const cached = analysisPoolCache.get(profile);
-  if (cached) return cached;
+  if (cached) {
+    // (v0.7.7) 죽은 워커는 빼고, 빈자리는 뒤에서 새로 띄워 채운다. 모두 죽었으면 풀을 처음부터 다시 만든다.
+    return cached.then((ws) => {
+      const alive = ws.filter((w) => w && !w.dead);
+      if (alive.length === ws.length) return ws;
+      if (!alive.length) { analysisPoolCache.delete(profile); return getAnalysisPool(profile, urls); }
+      const missing = ws.length - alive.length, prof = ENGINE_PROFILES[profile];
+      ws.splice(0, ws.length, ...alive);
+      Promise.all(Array.from({ length: missing }, () => bootAnalysisWorker(urls, poolBootTimeout(prof)))).then((nw) => { for (const w of nw) if (w) ws.push(w); });
+      return ws;
+    });
+  }
+  // (v0.7.7) 메모리가 빠듯한 기기에서는 다른 프로필의 풀(엔진을 바꾸기 전 것)을 정리해 두 벌이 동시에 메모리를 차지하지 않게 한다.
+  //  풀이 없는 프로필(휴대폰의 대형 신경망 = 크기 0)을 부를 때는 다른 풀을 건드리지 않는다(자동 리뷰가 쓰는 Lite 풀을 죽이지 않게).
   const size = analyzePoolSize(profile);
+  if (size > 0 && isConstrainedDevice()) for (const [k, pr] of analysisPoolCache) if (k !== profile) pr.then((ws) => { if (!ws.length) return; analysisPoolCache.delete(k); ws.forEach((w) => w && w.terminate && w.terminate()); }).catch(() => {});
   const prof = ENGINE_PROFILES[profile];
-  const promise = (prof && prof.parts)
-    ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH)
-    : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls))).then((ws) => ws.filter(Boolean));
+  const promise = size <= 0 ? Promise.resolve([])
+    : (prof && prof.parts)
+      ? bootWorkersStaggered(urls, size, HEAVY_ENGINE_BOOT_BATCH, poolBootTimeout(prof))
+      : Promise.all(Array.from({ length: size }, () => bootAnalysisWorker(urls, poolBootTimeout(prof)))).then((ws) => ws.filter(Boolean));
   analysisPoolCache.set(profile, promise);
   return promise;
 }
@@ -4908,7 +4970,10 @@ export const PIECE_KOR = { K: lcLatin(t("킹")), Q: lcLatin(t("퀸")), R: lcLati
 // 포지션+수 하나로만 정해지고(useFocusAnalysis 참고), 같은 포지션에 여러 테마가 동시에 해당하면
 // 퍼즐 하나에 themes 배열로 전부 태그를 얹는다. 구버전 데이터(단일 theme 문자열)도 안전하게 읽도록
 // themesOf가 두 형태를 모두 흡수한다.
-const THEME_PRIORITY = ["sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저
+const THEME_PRIORITY = ["checkmate", "sacrifice", "advantage", "punish"]; // 표시 우선순위 — 더 구체적인 테마가 먼저 (v0.7.7 게임 끝내기 추가)
+// (v0.7.7) 퍼즐 테마 목록·이름을 한 곳에 — 필터 칩·만들기 화면·소셜 피드가 같은 목록을 쓴다(테마를 더하면 여기만 고친다).
+export const PUZZLE_THEME_KEYS = ["checkmate", "sacrifice", "advantage", "punish"];
+export function puzzleThemeLabel(k) { return k === "checkmate" ? t("게임 끝내기") : k === "sacrifice" ? t("기물 희생하기") : k === "advantage" ? t("우위 점하기") : k === "punish" ? t("실수 응징하기") : k; }
 export function themesOf(p) {
   if (Array.isArray(p.themes) && p.themes.length) return p.themes;
   if (p.theme) return [p.theme];
@@ -4923,6 +4988,7 @@ const PUZZLE_THEME_STYLE = {
   sacrifice: { accent: T.brilliant },
   advantage: { accent: T.inaccuracy },
   punish: { accent: T.blunder },
+  checkmate: { accent: T.only },   // (v0.7.7) 게임 끝내기
 };
 // (v0.1.1) 태그 2개짜리 퍼즐(예: 실수 응징하기 + 기물 희생하기)의 색을 "반씩 섞어" 표현하기 위한
 // 헬퍼. 두 색의 RGB 평균(#no 텍스트처럼 단일 색이 필요한 자리)과, 절반씩 하드 스플릿한 그라데이션
@@ -6608,9 +6674,23 @@ export const LEGACY_TYPES = [
 // (사용자 요청) 그랜드마스터 보너스 슬롯 키(예: "best2")에서 기반 종류 키("best")를 뽑아낸다 —
 // LEGACY_TYPES는 여전히 종류 3개뿐이라, 저장/조회 키와 등급 정보(kind/label/short) 조회 키를 분리한다.
 export function legacyBaseKey(slotKey) { return slotKey && slotKey.endsWith("2") ? slotKey.slice(0, -1) : slotKey; }
+// (v0.7.7, 사용자 요청 "새 게시물") FEN에서 시작한 게시물은 그 포지션의 차례·수 번호로 센다.
+export function legacyRootOf(entry) {
+  if (!entry || typeof entry.fen !== "string" || !entry.fen) return null;
+  try { return parseFenFull(entry.fen); } catch { return null; }
+}
 export function legacyMoveLabel(entry) {
   if (!entry || !entry.sans || entry.sans[entry.moveIndex] == null) return "";
-  return moveNumber(entry.moveIndex) + entry.sans[entry.moveIndex];
+  const root = legacyRootOf(entry);
+  return moveNumber(entry.moveIndex, root ? root.turn : "w") + entry.sans[entry.moveIndex];
+}
+// (v0.7.7) 게시물 종류 정보 — 유산 3종은 LEGACY_TYPES, 대국 게시물(game)은 따로. 모르는 종류는 null.
+export const GAME_POST_TYPE = { key: "game", kind: "game", get label() { return t("대국"); }, get short() { return t("대국"); } };
+export function postTypeInfo(kind) { return kind === "game" ? GAME_POST_TYPE : LEGACY_TYPES.find((x) => x.key === kind) || null; }
+// 대국 게시물 제목 — "백 이름 vs 흑 이름 · 결과"(이름이 비면 백·흑).
+export function gamePostTitle(entry) {
+  const m = (entry && entry.meta) || {};
+  return (m.white || t("백")) + " vs " + (m.black || t("흑")) + (m.result && m.result !== "*" ? " · " + m.result : "");
 }
 // 유산 블록 공통 스타일 — 채워진 칸(LegacyStoneTile)과 빈 칸(LegacyEmptySlot)이 완전히 같은 크기·
 // 재질(어보니+브래스)을 쓰도록 버튼 자체의 스타일을 하나로 공유한다(사용자 요청: 추가 전후로 블록
@@ -6666,9 +6746,10 @@ export function legacyEntryPosition(entry) {
   if (!entry || !Array.isArray(entry.sans) || entry.sans[entry.moveIndex] == null) return null;
   // 들어오는 곳에서 normalizeLegacyEntry로 거르지만(BUG-130), 미리보기 하나 때문에 화면 전체가 깨지지 않도록 여기서도 막는다.
   try {
-    const before = boardFromSans(entry.sans.slice(0, entry.moveIndex));
-    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex) ? "w" : "b");
-    return { board: boardFromSans(entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
+    const root = legacyRootOf(entry);   // (v0.7.7) FEN에서 시작한 게시물
+    const before = boardOfRoot(root, entry.sans.slice(0, entry.moveIndex));
+    const info = sanSrc(before, stripSuffix(entry.sans[entry.moveIndex]), plyIsWhite(entry.moveIndex, root ? root.turn : "w") ? "w" : "b");
+    return { board: boardOfRoot(root, entry.sans.slice(0, entry.moveIndex + 1)), from: info ? info.from : null, to: info ? info.to : null };
   } catch { return null; }
 }
 export function LegacyMiniBoard({ entry, color }) {
@@ -6711,11 +6792,12 @@ export function LegacyMiniBoard({ entry, color }) {
 const LEGACY_TILE_ICON_BTN = { position: "absolute", bottom: 5, zIndex: 2, width: 18, height: 18, borderRadius: 6, background: "rgba(14,9,5,.7)", color: T.brassHi, border: "1px solid rgba(196,154,80,.35)",
   cursor: "pointer", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 };
 export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size, likeCount, isLiked, onToggleLike }) {
-  const color = QCOLOR[typeInfo.kind];
+  const color = QCOLOR[typeInfo.kind] || "#D4AF5F";   // (v0.7.7) 대국 게시물(game)은 금색
+  const moveLabel = typeInfo.kind === "game" ? gamePostTitle(entry) : legacyMoveLabel(entry);
   return (
     <div style={{ position: "relative", flex: size ? "0 0 auto" : LEGACY_TILE_FLEX, width: size || undefined, minWidth: 0 }}>
       {/* (v0.7.1, 사용자 요청) 수 이름 대신 유산 수를 둔 직후의 포지션 전체를 보드로 보여 준다. 수 이름은 아래 띠에 작게. */}
-      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + legacyMoveLabel(entry)}
+      <button onClick={onOpen} className="press" title={t("{0} (눌러서 재생)", (typeInfo.label))} aria-label={typeInfo.label + " " + moveLabel}
         style={{ ...LEGACY_BLOCK_BTN_STYLE, padding: "20px 8px 4px", gap: 0, justifyContent: "flex-start" }}>
         <LegacyBlockDecor />
         <div style={{ position: "relative", width: "100%", flexShrink: 0 }}><LegacyMiniBoard entry={entry} color={color} /></div>
@@ -6723,12 +6805,12 @@ export function LegacyStoneTile({ typeInfo, entry, onOpen, onEdit, onShare, size
         <div style={{ position: "relative", flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 3, padding: "0 16px", boxSizing: "border-box", borderTop: "1px solid rgba(212,175,95,.35)", marginTop: 6 }}>
           <LaurelBranch size={13} />
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: LEGACY_FONT, fontWeight: 900, fontSize: 13, lineHeight: 1, color,
-            textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{legacyMoveLabel(entry)}</span>
+            textShadow: "0 1px 0 rgba(0,0,0,.9), 0 0 8px " + color + "77" }}>{moveLabel}</span>
           <LaurelBranch size={13} flip />
         </div>
       </button>
       {/* 버튼(overflow:hidden) 바깥의 형제로 둬야 살짝 삐져나오는 효과가 실제로 잘리지 않는다. */}
-      <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{badgeIcon(typeInfo.kind, 26)}</span>
+      <span aria-hidden="true" style={{ position: "absolute", top: -9, right: -9, zIndex: 2, pointerEvents: "none", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.65))" }}>{typeInfo.kind === "game" ? <Swords size={26} color="#D4AF5F" /> : badgeIcon(typeInfo.kind, 26)}</span>
       {/* (사용자 요청) 좌상단에 좋아요 — 아이콘 + 수를 표시하고, 눌러서 좋아요를 토글한다. 보드를 덜 가리도록 작은 알약으로. */}
       {onToggleLike && (
         <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }} aria-label={t("유산 좋아요")} title={t("좋아요")} className="press"

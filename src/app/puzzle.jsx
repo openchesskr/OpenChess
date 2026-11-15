@@ -13,17 +13,19 @@ import { tierFromXp, tierDisplayLabelArabic, tierGradientCss } from "../lib/tier
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
-import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, Flame, Medal, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Check, Trash2, Star, Bookmark, Pencil, Heart, Repeat2, Send, Lightbulb, ChevronLeft, ChevronRight, X, Filter } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { playMoveSfx } from "../lib/prefs.js";
 import { parsePgnMoves, sansToPgnText } from "../lib/pgn.js";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
-import { AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, moveFxKindOn, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, CONTENT, ClickInfoBadge, FadeIn, GamePhaseBadge, ImageSourceMenu, LineStars, moveFxKindOn, MOVE_FX_MS, Mascot, MascotBubble, MaterialIcon, MoveLongPressPreview, PIECE_KOR, PUZZLE_PASS_KINDS, PuzzleCard, REVIEW_DEPTH, REVIEW_MOVETIME_MS, ReviewPromoPrompt, SNAP, VisualPrefsContext, analyzeGame, callEvaluateMulti, canonicalPositionFen, containsBannedWord, effectiveOpeningNameAt, fetchLichess, findSacrificeFirstMove, firstNamedOpening, fmtFull, genPuzzleTree, gradeMoveKindConfirmed, hangingPieceArrows, isPuzzlePlayable, livePuzzleName, mecFacts, primaryTheme, puzzleCandidatesAt, puzzleDifficultyTier, puzzleFetch, puzzleLineBaseRating, puzzleName, puzzleNo, puzzlePhase, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, resolveDailyPuzzleCached, sacVerdict, scanImageFile, singleRecaptureCheck, solveCountText, sortedThemesOf, starsOf, tensionFacts, themesOf, todayStr, treeLinesOf, useBoardSize, useNarrow } from "./common.jsx";
 import { AccountChessStats } from "./profile.jsx";
+import { PostComposer, NewPostButton, StreakCount } from "./postComposer.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
 import { SocialFeed } from "./socialFeed.jsx";
+import { mateCandidates, mateKeyOfFen, mateDuplicateVerdict, MATE_PUZZLE_MIN_PLIES } from "../lib/matePuzzle.js";
 // (기능) 퍼즐 탭 오프닝 검색을 도감(CollectionTab) 트리와 똑같이 "이 게임에 존재하는 모든 개별
 // 오프닝 이름"까지 검색 가능하게 하기 위한 전역 오프닝 이름 목록 — SNAP.tree의 모든 키(=모든
 // 포지션)를 훑어 effectiveOpeningNameAt(오버라이드 우선)으로 각 위치의 '진짜' 이름을 구하고, 같은
@@ -141,7 +143,7 @@ function PuzzlePgnBox({ text, sans, startColor, onPick }) {
     </div>
   );
 }
-const THEME_LABEL = { sacrifice: t("기물 희생하기"), advantage: t("우위 점하기"), punish: t("실수 응징하기") };
+const THEME_LABEL = Object.fromEntries(PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]));   // (v0.7.7) 테마 목록은 common.jsx PUZZLE_THEME_KEYS 하나로
 function themeLabelsOf(p) { return sortedThemesOf(p).map((t) => THEME_LABEL[t]).join(", "); }
 // (기능) firstNamedOpening/lastNamedOpening은 각각 "가장 처음"/"가장 마지막" 이름 하나만 골라
 // 반환한다 — 퍼즐 탭에서 세부 갈래 이름(예: "Sicilian Defense: Najdorf Variation, English Attack")
@@ -1582,7 +1584,7 @@ function PuzzleSolver({ puzzle, onClose, onLineSolved, onPuzzleSolveEvent, onPuz
   // (UX2) 마스코트 캐릭터는 둘 차례(백=MILKU, 흑=KOKOA), 표정은 풀이 상태에 따름
   const fullyComplete = solvedNow.size >= totalLines;
   const pmEmotion = intro ? "think" : done ? "celebrate" : wrong ? "angry" : reply ? "wink" : hintLevel > 0 ? "wink"
-    : theme === "sacrifice" ? "great" : theme === "advantage" ? "think" : "surprise";
+    : theme === "sacrifice" || theme === "checkmate" ? "great" : theme === "advantage" ? "think" : "surprise";
   const pm = [color === "w" ? "milku" : "kokoa", pmEmotion];
   // (기능) 퍼즐 코치도 게임 리뷰와 같은 MEC(mecFacts) 설명을 쓴다 — "직전 수를 살펴보는 중이에요…"
   // 같은 막연한 안내 대신, 방금 두어진 수가 실제로 뭘 위협·방어·예방·전개했는지 구체적으로 짚어준다.
@@ -2294,46 +2296,7 @@ const DAILY_SLOT_W = DAILY_CARD_W + 28; // 카드 폭 + 여백 28px = 카드 사
 // (기능) 사용자 요청 — 오프닝명·"일일 퍼즐" 라벨 등 텍스트를 다 빼고, 정사각형 블록 안에 체스보드만
 // 기존(68px)보다 약 3배 크게 보여준 뒤, 그 아래에 작게 "N명이 풀었습니다"만 표시한다.
 const DAILY_BOARD_SIZE = 190;
-// (신규 기능, 사용자 요청) 일일 퍼즐 스트릭 배지 — best(역대 최고 연속 일수)가 이 문턱을 넘으면
-// 그 즉시 영구히 "획득"으로 취급한다(count가 나중에 끊겨도 배지는 그대로 남는다 — 별도의 획득
-// 여부 저장이 필요 없는 이유). days는 오름차순으로 정렬돼 있어야 한다.
-const STREAK_BADGES = [
-  { days: 3, label: t("3일 연속") },
-  { days: 7, label: t("일주일 연속") },
-  { days: 14, label: t("2주 연속") },
-  { days: 30, label: t("한 달 연속") },
-  { days: 100, label: t("100일 연속") },
-];
-// 퍼즐 탭 오늘의 퍼즐 캐러셀 바로 아래에 붙는 스트릭 표시줄 — 지금 이어지는 연속 일수(불꽃 아이콘)와
-// 배지 목록(달성한 건 금색, 못한 건 회색)을 한 줄로 보여준다. (버그 수정, 코드 리뷰 지적) dailyPuzzleStreak는
-// useState 초깃값이 이미 { count:0, best:0, lastDate:null }라 절대 null/undefined가 되지 않으므로
-// "streak가 없으면 숨긴다"는 없는 조건이었다 — 일일 퍼즐을 한 번도 안 푼 신규 유저에게 "0일 연속"이
-// 영구히 보이지 않도록, count·best가 둘 다 0인(아직 기록이 전혀 없는) 경우에만 숨긴다.
-function DailyStreakStrip({ streak }) {
-  if (!streak || (!streak.count && !streak.best)) return null;
-  const { count, best } = streak;
-  return (
-    <div className="flex items-center gap-2" style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: "rgba(0,0,0,.22)", border: "1px solid #5A4630", flexWrap: "wrap" }}>
-      <span className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-        <Flame size={16} color={count > 0 ? "#E8874A" : "rgba(235,221,196,.35)"} fill={count > 0 ? "#E8874A" : "none"} />
-        <span style={{ fontSize: 13, fontWeight: 800, color: count > 0 ? T.ivoryHi : "rgba(235,221,196,.5)" }}>{tx("{0}일 연속", count)}</span>
-      </span>
-      {best > 0 && <span style={{ fontSize: 11.5, color: "rgba(235,221,196,.5)", flexShrink: 0 }}>{tx("최고 {0}일", best)}</span>}
-      <span style={{ width: 1, alignSelf: "stretch", background: "#5A4630", flexShrink: 0 }} />
-      <div className="flex items-center gap-1" style={{ flexWrap: "wrap" }}>
-        {STREAK_BADGES.map((b) => {
-          const earned = best >= b.days;
-          return (
-            <span key={b.days} title={b.label + (earned ? t(" 달성") : t(" ({0}일 필요)", b.days))} className="flex items-center gap-1" style={{ padding: "3px 7px", borderRadius: 999, background: earned ? "rgba(236,203,134,.18)" : "rgba(255,255,255,.05)", border: "1px solid " + (earned ? T.brass : "rgba(255,255,255,.1)") }}>
-              <Medal size={11} color={earned ? T.brassHi : "rgba(235,221,196,.3)"} />
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: earned ? T.brassHi : "rgba(235,221,196,.3)" }}>{tx("{0}일", b.days)}</span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// (v0.7.7, 사용자 요청) 연속 기록 줄(DailyStreakStrip·배지 목록)은 없앴다 — 소셜 탭 머리줄의 StreakCount(불꽃 + 일수)만 남는다.
 function DailyPuzzleCarouselItem({ dateStr, isToday, puzzle, isActive, distance, isSolved, solveCount, onOpen }) {
   const label = dateStr.slice(5).replace("-", ".") + (isToday ? t(", 오늘") : "");
   const flip = puzzle ? ((puzzle.setupSans ? puzzle.setupSans.length : 0) + 1) % 2 !== 0 : false;
@@ -2466,10 +2429,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
   const spacer = Math.max(0, containerW / 2 - DAILY_SLOT_W / 2);
   return (
     <div style={{ marginBottom: 16 }}>
-      <div className="flex items-center gap-1" style={{ marginBottom: 6, paddingLeft: 2 }}>
-        <span style={{ fontSize: 13, lineHeight: 1 }}>📅</span>
-        <span style={{ fontSize: 12.5, fontWeight: 800, color: T.brassHi }}>{t("일일 퍼즐")}</span>
-      </div>
+      {/* (v0.7.7, 사용자 요청) "일일 퍼즐" 제목 줄은 없앴다 — 그 자리는 PuzzleTab의 머리줄(연속 출석 + 새 게시물). */}
       {/* (v0.2.7 버그 수정) touchAction을 "pan-y"(수직만 브라우저가 처리)로 막아 두고 커스텀 드래그가
           가로를 대신 처리하게 했었는데, 그 커스텀 드래그를 마우스 전용으로 좁히면서 터치에서는 아무도
           가로 스크롤을 처리하지 않게 돼 버렸다 — touchAction을 지정하지 않아(기본값 auto) 터치는
@@ -2490,7 +2450,7 @@ function DailyPuzzleCarousel({ engine, solved, solveCounts, onOpen }) {
     </div>
   );
 }
-export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum }) {
+export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLineSolved, onPuzzleSolveEvent, onPuzzleRatingEvent, onSavePuzzle, onDeletePuzzle, onPuzzleRenamed, solveCounts, puzzleSolvers, friendUids, solverNames, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, popularityScores, myUid, myUsername, puzzleRating, chesscom, chesscomUsername, active, setActive, engine, liveOn, canEdit, bumpContent, totalXp, onOpenTierMap, targetLineNo, onLineChange, onOpenAnalysis, creatorUsernames, lineClearOn, puzzleClearOn, coachBubbleOn, contentVer, createSeed, onConsumeCreateSeed, onOpenProfile, onOpenAnalysisFen, dailyPuzzleStreak, puzzleMomentum, onPublishPost }) {
   // (사용자 요청) "빠른 필터"를 제외한 나머지 필터 구획(테마·시작 포지션·좋아요/리포스트)은 모두
   // 중복 선택(다중 선택)이 가능해야 한다 — 단일 값 대신 배열로 관리한다. 빈 배열은 "전체"(필터 없음).
   const [selectedThemes, setSelectedThemes] = useState([]); // 예: ["sacrifice","punish"]
@@ -2526,12 +2486,14 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   const chesscomReady = !!(chesscom && chesscom.status === "ready" && chesscom.games && chesscom.games.length);
   const [pcParsed, setPcParsed] = useState(null); // { kind:"fen", fenRoot, raw } | { kind:"pgn", sans, raw }
   const [pcErr, setPcErr] = useState("");
-  const [pcTheme, setPcTheme] = useState(null); // "sacrifice" | "advantage" | "punish"
+  const [pcTheme, setPcTheme] = useState(null); // "checkmate" | "sacrifice" | "advantage" | "punish"
   // (사용자 요청) PGN 마지막 수를 무조건 "다루는 수"로 삼던 것 대신, 유산 만들기처럼 그 유형(등급)에
   // 실제로 해당하는 수들을 나열해 직접 고르게 한다. 유형 버튼을 먼저 눌러야만 후보가 뜨던 것도
   // 없애고, PGN이 확인되는 즉시 analyzeGame으로 전체 기보를 한 번 채점해(진행률을 %로 보여준다)
   // 세 유형의 후보를 한꺼번에 미리 불러와 각 유형 아래에 나열한다.
-  const PC_THEME_KINDS = { sacrifice: ["brilliant"], advantage: ["inaccuracy"], punish: ["mistake", "blunder"] };
+  const PC_THEME_KINDS = { checkmate: ["best"], sacrifice: ["brilliant"], advantage: ["inaccuracy"], punish: ["mistake", "blunder"] };
+  // (v0.7.7, 사용자 요청) 게임 끝내기 — "선택한 수 자체를 풀이자가 찾는" 테마(희생과 같은 방식: 시작 포지션은 그 수 직전)
+  const firstMoveTheme = (th) => th === "sacrifice" || th === "checkmate";
   const [pcAnalyzing, setPcAnalyzing] = useState(false);
   const [pcAnalyzeProgress, setPcAnalyzeProgress] = useState(0); // 0~1
   // (사용자 요청) 3단계(전술 라인 생성) 중에도 2단계 채점처럼 박스 우상단에 실시간 진행률(%)을
@@ -2659,6 +2621,20 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     }
     return null;
   };
+  // (v0.7.7) 게임 끝내기 중복 방지 — 같은 체크메이트 장면(mateKey)으로 끝나는 퍼즐들(lib/matePuzzle.js 설계 참고).
+  //  내 퍼즐·보관함 + 서버에서 같은 키를 모아 mateDuplicateVerdict로 판정한다. 서버(api/puzzle-share.js)도 저장할 때 같은 규칙을 다시 적용한다.
+  const mateKeyPuzzles = async (mateKey) => {
+    const local = [...puzzles, ...Object.values(archivedPuzzles || {})].filter((p) => p && p.mateKey === mateKey);
+    let remote = [];
+    if (SB_ON && mateKey) { try { const rows = await sbSelect("puzzles?select=data&data->>mateKey=eq." + encodeURIComponent(mateKey) + "&limit=10"); remote = (rows || []).map((r) => r.data).filter(Boolean); } catch { } }
+    const seen = new Set(); return [...local, ...remote].filter((p) => p.id && !seen.has(p.id) && seen.add(p.id)).map((p) => ({ ...p, mateLen: Number(p.mateLen) }));
+  };
+  // 생성된 트리의 정답 주 라인(lines[0])이 끝나는 체크메이트 포지션 → { mateKey, mateLen }
+  const mateInfoOfGen = (gen, setupSans, fenRoot) => {
+    const sol = gen && gen.lines && gen.lines[0] && gen.lines[0].solution;
+    if (!sol || !sol.length || !/#$/.test(sol[sol.length - 1])) return null;
+    try { return { mateKey: mateKeyOfFen(fenOfRoot(fenRoot || null, [...setupSans, ...sol])), mateLen: sol.length }; } catch { return null; }
+  };
   // 실제 전술 트리 생성 — FEN 포지션이거나(그 자체가 시작점), PGN에서 고른 특정 수(setupSans+mistakeSan)일 때 호출한다.
   const runPcGenerate = async (theme, setupSans, mistakeSan, fenRoot) => {
     setPcGen(null); setPcGenErr(""); setPcGenProgress(0);
@@ -2674,16 +2650,38 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
           firstSan = await findSacrificeFirstMove(engine, [], fenRoot);
           if (!firstSan) { setPcGenErr(t("이 포지션에서 탁월한 수(희생)를 찾지 못함. 다른 유형이나 포지션으로 시도")); return; }
         }
+        if (theme === "checkmate") {
+          // (v0.7.7) 이 포지션에서 둘 차례가 강제 메이트(사용자 수 2수 이상)를 가질 때만 — 첫 수는 엔진의 메이트 수
+          const pv = await callEvaluateMulti(engine, fenOfRoot(fenRoot, []), REVIEW_DEPTH, 1, REVIEW_MOVETIME_MS * 2, "pc-mate").catch(() => null);
+          const top = pv && pv[0];
+          const color = fenRoot.turn;
+          if (!top || top.mate == null || top.mate <= 0) { setPcGenErr(t("이 포지션에는 강제 체크메이트 수순 없음")); return; }
+          if (2 * top.mate - 1 < MATE_PUZZLE_MIN_PLIES) { setPcGenErr(t("메이트 인 1은 퍼즐로 만들지 않음. 더 앞선 포지션으로 시도")); return; }
+          firstSan = uciToSan(fenRoot.board, top.uci, color);
+          if (!firstSan) { setPcGenErr(t("퍼즐 생성 실패. 잠시 후 다시 시도")); return; }
+        }
         gen = await genPuzzleTree(engine, [], { ...puzzleThemeOpts(theme), firstSan }, onProgress, fenRoot);
-      } else if (theme === "sacrifice") {
-        // (기존 자동 생성 규칙과 동일) 희생 테마는 "그 수 자체"가 첫 수로 고정되며, 그 직전
+      } else if (firstMoveTheme(theme)) {
+        // (기존 자동 생성 규칙과 동일) 희생·게임 끝내기 테마는 "그 수 자체"가 첫 수로 고정되며, 그 직전
         // 위치부터 트리를 만든다 — 풀이자는 이 수를 스스로 찾아내야 한다.
-        gen = await genPuzzleTree(engine, setupSans, { ...puzzleThemeOpts("sacrifice"), firstSan: mistakeSan }, onProgress);
+        gen = await genPuzzleTree(engine, setupSans, { ...puzzleThemeOpts(theme), firstSan: mistakeSan }, onProgress);
       } else {
         // 실수 응징하기/우위 점하기는 "그 수(실수)가 이미 두어진 뒤" 포지션부터 트리를 만든다.
         gen = await genPuzzleTree(engine, [...setupSans, mistakeSan], puzzleThemeOpts(theme), onProgress);
       }
-      if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr(t("뚜렷한 전술 라인 없음. 다른 PGN·FEN이나 유형으로 시도")); return; }
+      if (!gen || !gen.lines || !gen.lines.length) { setPcGenErr(theme === "checkmate" ? t("체크메이트까지 이어지는 수순을 만들지 못함. 다른 수로 시도") : t("뚜렷한 전술 라인 없음. 다른 PGN·FEN이나 유형으로 시도")); return; }
+      if (theme === "checkmate") {
+        // (v0.7.7) 중복 방지 ②③ — 같은 체크메이트 장면으로 끝나는 퍼즐이 이미 있고 그쪽이 같거나 더 길면(또는 상한) 새로 만들지 않고 기존 퍼즐로 안내
+        const info = mateInfoOfGen(gen, fenRoot ? [] : setupSans, fenRoot);
+        if (!info) { setPcGenErr(t("체크메이트까지 이어지는 수순을 만들지 못함. 다른 수로 시도")); return; }
+        const verdict = mateDuplicateVerdict(await mateKeyPuzzles(info.mateKey), info.mateLen);
+        if (!verdict.ok) {
+          const cinfo = await puzzleCreatorInfo(puzzleNo(verdict.existing.id)).catch(() => null);
+          setPcExisting({ puzzle: verdict.existing, creatorUsername: cinfo && cinfo.username, sameMate: true });
+          return;
+        }
+        gen = { ...gen, mateKey: info.mateKey, mateLen: info.mateLen };
+      }
       setPcGen(gen);
     } catch { setPcGenErr(t("퍼즐 생성 실패. 잠시 후 다시 시도")); }
     finally { setPcGenerating(false); }
@@ -2710,7 +2708,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     // 희생 테마는 "선택한 수(mistakeSan) 자체"가 풀이자가 찾아야 할 첫 수라 그 직전 위치가 실제
     // 풀이 시작 국면이다(submitPuzzleCreate의 fullSetupSans/isSacrifice 분기와 같은 기준) — 다른
     // 테마는 mistakeSan까지 이미 두어진 뒤가 시작 국면이다.
-    const posKey = canonicalPositionFen(null, theme === "sacrifice" ? setupSans : [...setupSans, mistakeSan]);
+    const posKey = canonicalPositionFen(null, firstMoveTheme(theme) ? setupSans : [...setupSans, mistakeSan]);
     setPcTheme(theme); setPcSelectedMove(m); setPcGen(null); setPcGenErr(""); setPcExisting(null);
     // (v0.4.4 개편, 사용자 요청) 같은 포지션에 이미 다른 사람이 만든 퍼즐이 있으면, 다시 만드는 대신
     // "~님이 이미 이 퍼즐을 만들었어요!"를 보여주고 곧장 풀 수 있게 한다 — 굳이 새로 생성할
@@ -2732,7 +2730,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     setPcCreating(true);
     let pz;
     if (pcParsed.kind === "fen") {
-      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: t("FEN 포지션 퍼즐"), fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(pcParsed.fenRoot, []) };
+      pz = { id: "fen:" + pcParsed.raw, themes: [pcTheme], name: t("FEN 포지션 퍼즐"), fen: pcParsed.raw, setupSans: [], solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(pcParsed.fenRoot, []), ...(pcGen.mateKey ? { mateKey: pcGen.mateKey, mateLen: pcGen.mateLen } : null) };
     } else {
       const fullSetupSans = pcParsed.sans.slice(0, pcSelectedMove.ply), sacSan = pcSelectedMove.san;
       // (v0.4.3 변경, 사용자 요청) 희생 테마는 "선택한 수(희생 수) 직전 수"를 컴퓨터의 응수로 자동
@@ -2741,10 +2739,10 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       // 인트로가 이 수를 그대로 자동 재생한다). fullSetupSans는 [...setupSans, mistakeSan]과 정확히
       // 같은 위치를 가리키므로(mistakeSan이 fullSetupSans의 마지막 수), 트리를 생성한 위치와
       // 어긋나지 않는다. id·이름은 선택한 수(희생 수) 자체를 기준으로 그대로 둔다(정체성·표시용).
-      const isSacrifice = pcTheme === "sacrifice";
+      const isSacrifice = firstMoveTheme(pcTheme);   // (v0.7.7) 게임 끝내기도 같은 방식
       const setupSans = isSacrifice ? fullSetupSans.slice(0, -1) : fullSetupSans;
       const mistakeSan = isSacrifice ? (fullSetupSans.length ? fullSetupSans[fullSetupSans.length - 1] : null) : sacSan;
-      pz = { id: fullSetupSans.join(" ") + "|" + sacSan, themes: [pcTheme], name: puzzleName(pcTheme, fullSetupSans, sacSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(null, [...setupSans, mistakeSan].filter(Boolean)) };
+      pz = { id: fullSetupSans.join(" ") + "|" + sacSan, themes: [pcTheme], name: puzzleName(pcTheme, fullSetupSans, sacSan), setupSans, mistakeSan, solution: pcGen.lines[0].solution, lines: pcGen.lines, tree: pcGen.tree, steps: [], auto: true, public: pcPublic, positionKey: canonicalPositionFen(null, [...setupSans, mistakeSan].filter(Boolean)), ...(pcGen.mateKey ? { mateKey: pcGen.mateKey, mateLen: pcGen.mateLen } : null) };
     }
     onSavePuzzle(pz);
     resetPuzzleCreate();
@@ -3068,7 +3066,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   };
   const feed = sortPuzzles(themed);
   const puzzleCardProps = (p) => ({ solveCount: solveCountFor(p), solvedTags: lineSolves ? lineSolves[p.id] : null, friendSolverNames: friendNamesFor(p.id), isLiked: likedPuzzles.has(p.id), likeCount: (likeCounts && likeCounts[puzzleNo(p.id)]) || 0, onToggleLike, isReposted: repostedPuzzles ? repostedPuzzles.has(p.id) : false, repostCount: (repostCounts && repostCounts[puzzleNo(p.id)]) || 0, onToggleRepost, shareCount: (shareCounts && shareCounts[puzzleNo(p.id)]) || 0, onShare, myPuzzleRating });
-  const chips = [["all", t("전체")], ["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]];
+  const chips = [["all", t("전체")], ...PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)])];
   // (사용자 요청) 오프닝·생성자 필터가 걸려 있으면 테마 칩의 개수도 그 필터가 적용된 상태를 반영한다.
   const filteredForCount = playablePuzzles.filter((p) => matchesOpeningFilter(p) && matchesCreatorFilter(p));
   const count = (k) => (k === "all" ? filteredForCount.length : filteredForCount.filter((p) => themesOf(p).includes(k)).length);
@@ -3103,16 +3101,14 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   const storiesNode = (
       <DailyPuzzleCarousel engine={engine} solved={solved} solveCounts={solveCounts} onOpen={setActive} />
   );
-  const streakNode = (
-      <DailyStreakStrip streak={dailyPuzzleStreak} />
-  );
-  const modeNode = (
-      <div className="inline-flex items-center" style={{ marginBottom: 10, borderRadius: 9, background: "rgba(0,0,0,.25)", border: "1px solid #5A4630", padding: 3, gap: 3 }}>
-        <button onClick={() => setPuzzleMode("solve")} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: puzzleMode === "solve" ? T.ebony2 : "transparent", color: puzzleMode === "solve" ? T.brassHi : T.inkSoft }}>{t("퍼즐 풀기")}</button>
-        {/* (사용자 요청) 로그인하지 않은 상태에서는 퍼즐 만들기 기능 자체를 쓸 수 없게 막는다 — 만든
-            퍼즐은 myUid를 제작자로 기록해 공유되므로, 로그인 없이는 애초에 의미가 없다. */}
-        <button onClick={() => myUid && setPuzzleMode("create")} disabled={!myUid} title={!myUid ? t("로그인 후 이용 가능") : undefined} className="press" style={{ padding: "10px 16px", borderRadius: 7, border: "none", cursor: myUid ? "pointer" : "default", fontSize: 12, fontWeight: 800, background: puzzleMode === "create" ? T.ebony2 : "transparent", color: !myUid ? "rgba(244,238,226,.35)" : puzzleMode === "create" ? T.brassHi : T.inkSoft }}>{t("퍼즐 만들기")}</button>
-        {!myUid && <span style={{ fontSize: 11, color: T.inkSoft, padding: "0 8px" }}>{t("로그인 후 이용 가능")}</span>}
+  // (v0.7.7, 사용자 요청) "일일 퍼즐" 제목 자리 — 왼쪽은 연속 출석(불꽃 + 일수 숫자만), 오른쪽은 "+ 새 게시물"(전체 화면 작성기: 퍼즐·유산·대국).
+  //  예전 연속 기록 줄(배지 목록)과 "퍼즐 풀기/퍼즐 만들기" 전환은 없앴다 — 만들기는 새 게시물 작성기의 퍼즐 탭(기존 마법사 그대로)으로.
+  const [composeType, setComposeType] = useTabMemory("puzzle.composeType", "puzzle");
+  const openComposer = (type) => { if (!myUid) return; setComposeType(type || "puzzle"); setPuzzleMode("create"); };
+  const headerNode = (
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingLeft: 2, gap: 10 }}>
+        <StreakCount count={dailyPuzzleStreak ? dailyPuzzleStreak.count : 0} />
+        <NewPostButton onClick={() => openComposer(composeType)} disabled={!myUid} />
       </div>
   );
   const createNode = (
@@ -3168,7 +3164,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
               {pcParsed.kind === "fen" ? (
                 // FEN은 고를 후보 수 자체가 없다(포지션 자체가 시작점) — 유형을 고르면 곧바로 생성한다.
                 <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-                  {[["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]].map(([k, lb]) => (
+                  {PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]).map(([k, lb]) => (
                     <button key={k} onClick={() => pickPcThemeFen(k)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", borderRadius: 999, border: "1px solid " + (pcTheme === k ? T.brass : "#C9B58C"), background: pcTheme === k ? "linear-gradient(180deg," + T.brass + ",#A8842F)" : "transparent", color: pcTheme === k ? "#241509" : T.ink, fontWeight: 800, fontSize: 12, cursor: pcGenerating ? "default" : "pointer" }}>
                       <span style={{ display: "inline-flex", alignItems: "center" }}>
                         {PC_THEME_KINDS[k].map((kind, i) => (
@@ -3185,9 +3181,10 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                   {pcAnalyzing && !pcAnalyzeResult && <div style={{ fontSize: 11.5, color: T.inkSoft }}>{t("기보를 채점하는 중...")}</div>}
                   {/* (사용자 요청) 유형 버튼을 먼저 고르게 하지 않고, 세 유형 모두 후보를 한꺼번에
                       나열한다 — 아이콘으로 각 유형이 어떤 등급을 다루는지 보여준다. */}
-                  {pcAnalyzeResult && [["sacrifice", t("기물 희생하기")], ["advantage", t("우위 점하기")], ["punish", t("실수 응징하기")]].map(([k, lb]) => {
+                  {pcAnalyzeResult && PUZZLE_THEME_KEYS.map((k) => [k, puzzleThemeLabel(k)]).map(([k, lb]) => {
                     const kinds = PC_THEME_KINDS[k];
-                    const qualifying = pcAnalyzeResult.moves.filter((m) => kinds.includes(m.kind));
+                    // (v0.7.7) 게임 끝내기: 강제 메이트를 이어 간 수(메이트 인 2 이상). 같은 수순끼리 묶어 보여 준다(lib/matePuzzle.js)
+                    const qualifying = k === "checkmate" ? mateCandidates(pcAnalyzeResult, pcParsed.sans).map((c) => ({ ...c, kind: "best" })) : pcAnalyzeResult.moves.filter((m) => kinds.includes(m.kind));
                     return (
                       <div key={k} style={{ marginBottom: 12 }}>
                         <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
@@ -3200,7 +3197,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                           <span style={{ fontSize: 11.5, color: T.inkSoft }}>{tx("{0}개", qualifying.length)}</span>
                         </div>
                         {qualifying.length === 0 ? (
-                          <div style={{ fontSize: 11, color: T.inkSoft }}>{tx("이 기보에는 \"{0}\" 등급의 수 없음", kinds.map((kk) => QLABEL[kk]).join("·"))}</div>
+                          <div style={{ fontSize: 11, color: T.inkSoft }}>{k === "checkmate" ? t("이 기보에는 메이트 인 2 이상의 체크메이트 수순 없음") : tx("이 기보에는 \"{0}\" 등급의 수 없음", kinds.map((kk) => QLABEL[kk]).join("·"))}</div>
                         ) : (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                             {qualifying.map((m) => (
@@ -3208,6 +3205,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
                                 <button onClick={() => pickPcMove(k, m)} disabled={pcGenerating} className="press" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, border: "1px solid " + (pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? T.brass : QCOLOR[m.kind]), background: pcSelectedMove && pcSelectedMove.ply === m.ply && pcTheme === k ? "rgba(196,154,80,.14)" : "#fff", cursor: pcGenerating ? "default" : "pointer" }}>
                                   <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, background: QCOLOR[m.kind], color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badgeIcon(m.kind, 12)}</span>
                                   <span style={{ fontFamily: SITE_FONT, fontWeight: 800, fontSize: 12.5, color: T.ink }}>{moveNumber(m.ply)}{m.san}</span>
+                                  {m.mateIn != null && <span style={{ fontFamily: SITE_FONT, fontSize: 10.5, fontWeight: 800, color: QCOLOR.only }}>M{m.mateIn}</span>}
                                 </button>
                               </MoveLongPressPreview>
                             ))}
@@ -3225,6 +3223,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
               {pcExisting && (
                 <div style={{ marginTop: 10, padding: "10px 13px", borderRadius: 10, background: "rgba(196,154,80,.14)", border: "1px solid " + T.brass, color: T.ink, fontWeight: 700, fontSize: 12.5 }}>
                   {pcExisting.creatorUsername ? t("@{0}님이 이미 만든 퍼즐", pcExisting.creatorUsername) : t("이미 존재하는 퍼즐")}
+                  {pcExisting.sameMate && <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 3 }}>{t("같은 체크메이트 장면으로 끝나는 같거나 더 긴 수순의 퍼즐이 이미 있어 새로 만들지 않음")}</div>}
                 </div>
               )}
             </div>
@@ -3239,10 +3238,10 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
               {/* (버그 수정, 사용자 제보) 기물 희생하기 테마는 선택한 수 자체가 풀이자가 찾아야 할
                   첫 수(firstSan)라 시작 포지션을 그 수 이전(직전 수까지)으로 둬야 하는데, 이 미리보기가
                   다른 테마와 똑같이 선택한 수까지 이미 둔 위치를 시작 포지션으로 보여주고 있었다. */}
-              <PuzzleSchematic tree={pcGen.tree} rootLabel={pcParsed.kind === "pgn" && pcSelectedMove && pcTheme !== "sacrifice" ? pcSelectedMove.san : null} meta={{}}
+              <PuzzleSchematic tree={pcGen.tree} rootLabel={pcParsed.kind === "pgn" && pcSelectedMove && !firstMoveTheme(pcTheme) ? pcSelectedMove.san : null} meta={{}}
                 allLines={pcGen.lines} solvedNow={new Set()} curKeys={[]} exploredKeys={new Set()}
-                setupSans={pcParsed.kind === "pgn" && pcSelectedMove ? pcParsed.sans.slice(0, pcTheme === "sacrifice" ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : []}
-                setupLen={pcParsed.kind === "pgn" && pcSelectedMove ? (pcTheme === "sacrifice" ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : 0}
+                setupSans={pcParsed.kind === "pgn" && pcSelectedMove ? pcParsed.sans.slice(0, firstMoveTheme(pcTheme) ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : []}
+                setupLen={pcParsed.kind === "pgn" && pcSelectedMove ? (firstMoveTheme(pcTheme) ? pcSelectedMove.ply : pcSelectedMove.ply + 1) : 0}
                 onPick={() => {}} canEdit={false} revealAll
                 fenRoot={pcParsed.kind === "fen" ? pcParsed.fenRoot : null} />
               <button onClick={() => (pcParsed.kind === "fen" ? runPcGenerate(pcTheme, [], "", pcParsed.fenRoot) : pcSelectedMove && pickPcMove(pcTheme, pcSelectedMove))} className="press" style={{ marginTop: 8, padding: "6px 12px", borderRadius: 9, background: "transparent", border: "1px solid #C9B58C", color: T.inkSoft, fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>{t("다시 생성")}</button>
@@ -3277,7 +3276,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
       )}
     </>
   );
-  const searchNode = puzzleMode === "solve" ? (
+  const searchNode = (
     <>
       <div style={{ position: "relative", marginBottom: 10 }}>
         <div className="flex items-center gap-2">
@@ -3448,34 +3447,40 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
         </div>
       </div>
     </>
+  );
+  const composerNode = puzzleMode === "create" && myUid ? (
+      <PostComposer type={composeType} setType={setComposeType} onClose={() => setPuzzleMode("solve")} engine={engine} onPublish={onPublishPost || (() => ({ ok: false, reason: "invalid" }))} chesscom={chesscom} chesscomUsername={chesscomUsername}>
+        {createNode}
+      </PostComposer>
   ) : null;
-  const feedNode = puzzleMode === "solve" ? (
+  const feedNode = (
     <SocialFeed puzzles={feed} cardProps={puzzleCardProps} creatorOf={(p) => (creatorUsernames || {})[puzzleNo(p.id)] || null} solved={solved}
       onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
-  ) : null;
+  );
   if (socialWide) {
     return (
       <div className="social-tab" style={{ display: "grid", gridTemplateColumns: "minmax(0, 600px) 320px", justifyContent: "center", gap: 28, alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
+          {headerNode}
           {storiesNode}
-          {puzzleMode === "create" ? createNode : feedNode}
+          {feedNode}
         </div>
         <aside style={{ position: "sticky", top: 12, minWidth: 0, maxHeight: "calc(100dvh - 120px)", overflowY: "auto", paddingRight: 2 }}>
           {tierNode}
-          {streakNode}
-          {modeNode}
           {searchNode}
         </aside>
+        {composerNode}
       </div>
     );
   }
   return (
     <div className="social-tab" style={{ maxWidth: 600, margin: "0 auto" }}>
       {tierNode}
+      {headerNode}
       {storiesNode}
-      {streakNode}
-      {modeNode}
-      {puzzleMode === "create" ? createNode : <>{searchNode}{feedNode}</>}
+      {searchNode}
+      {feedNode}
+      {composerNode}
     </div>
   );
 }

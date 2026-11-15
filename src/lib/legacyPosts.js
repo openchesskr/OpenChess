@@ -2,7 +2,7 @@
 // 저장 형태는 예전과 같은 { 아이디: 항목 } 묶음(profile.legacies → pub.legacies)이다. 옛 슬롯 키(best, only, brilliant, best2 …)는 그대로 유효한 게시물 아이디라
 // 변환 없이 이어지고(좋아요·채팅 공유가 키로 묶여 있다), 새 게시물은 "p…" 아이디를 쓴다. 종류는 항목의 kind 태그, 없으면 옛 키로 알아낸다.
 // 프로필 JSON은 서버에서 30만 자로 제한되므로, 항목은 필요한 수순까지만 잘라 담고(compactEntry) 전체 크기에도 상한을 둔다.
-import { normalizeLegacyEntry, POST_ID_RE } from "./legacyEntry.js";
+import { normalizeLegacyEntry, POST_ID_RE, POST_KINDS } from "./legacyEntry.js";
 
 export const LEGACY_MAX_POSTS = 200;
 export const LEGACY_MAX_CHARS = 170000;   // 직렬화한 유산 묶음의 상한(프로필 전체 300000자 중 나머지는 다른 정보 몫)
@@ -10,7 +10,7 @@ export const LEGACY_KINDS = ["best", "only", "brilliant"];
 
 export const legacyBaseOf = (id) => (typeof id === "string" && id.endsWith("2") ? id.slice(0, -1) : id);
 export function kindOfPost(id, entry) {
-  if (entry && LEGACY_KINDS.includes(entry.kind)) return entry.kind;
+  if (entry && POST_KINDS.includes(entry.kind)) return entry.kind;   // (v0.7.7) 대국 게시물(game) 포함
   const b = legacyBaseOf(id);
   return LEGACY_KINDS.includes(b) ? b : null;
 }
@@ -22,11 +22,13 @@ export function compactEntry(entry) {
   const end = Math.min(entry.sans.length, entry.moveIndex + Math.max(1, entry.playCount || 1));
   return { ...entry, sans: entry.sans.slice(0, end), kinds: entry.kinds ? entry.kinds.slice(0, end) : null };
 }
-const sameMoves = (a, b) => a.moveIndex === b.moveIndex && a.sans.length >= a.moveIndex + 1 && b.sans.length >= b.moveIndex + 1 && a.sans.slice(0, a.moveIndex + 1).join(" ") === b.sans.slice(0, b.moveIndex + 1).join(" ");
+// (v0.7.7) 시작 포지션(fen)과 대국/유산 구분까지 같아야 같은 게시물이다.
+const isGame = (e) => !!(e && e.kind === "game");
+const sameMoves = (a, b) => (a.fen || "") === (b.fen || "") && isGame(a) === isGame(b) && a.moveIndex === b.moveIndex && a.sans.length >= a.moveIndex + 1 && b.sans.length >= b.moveIndex + 1 && a.sans.slice(0, a.moveIndex + 1).join(" ") === b.sans.slice(0, b.moveIndex + 1).join(" ");
 // 이 대국의 이 수가 이미 게시물인가 — 리뷰 화면의 "저장됨" 표시. 게시물 아이디(없으면 null).
-export function findPost(map, sans, moveIndex) {
+export function findPost(map, sans, moveIndex, extra) {
   if (!map) return null;
-  const probe = { sans, moveIndex };
+  const probe = { sans, moveIndex, fen: extra && extra.fen, kind: extra && extra.kind };
   for (const id of Object.keys(map)) { const e = map[id]; if (e && Array.isArray(e.sans) && sameMoves(e, probe)) return id; }
   return null;
 }
@@ -46,7 +48,7 @@ export function addPost(map, entry, now = Date.now(), rnd = Math.random) {
   const base = map && typeof map === "object" ? map : {};
   const valid = normalizeLegacyEntry({ ...entry, kind: entry && entry.kind });
   if (!valid || !kindOfPost("", valid)) return { ok: false, reason: "invalid" };
-  const dup = findPost(base, valid.sans, valid.moveIndex);
+  const dup = findPost(base, valid.sans, valid.moveIndex, valid);
   if (dup) return { ok: false, reason: "dup", id: dup };
   const live = Object.keys(base).filter((k) => base[k]);
   if (live.length >= LEGACY_MAX_POSTS) return { ok: false, reason: "full" };
