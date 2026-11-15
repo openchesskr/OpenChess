@@ -1,5 +1,5 @@
 // (v0.7.8, 사용자 요청) 집중 분석 해설 화면의 "커뮤니티" 블록 — 댓글 블록 아래에, 그 수의 오프닝 이름(없으면 그 수까지의 PGN 수순)으로 찾은
-// 웹 검색 결과와 관련 YouTube 영상을 함께 보여 준다. 웹 검색은 api/web-search.js, 영상은 api/youtube.js(기존 "영상" 블록을 bare로 넣음).
+// 웹 검색 결과와 관련 YouTube 영상을 함께 보여 준다. 웹 검색은 api/youtube.js?web=1(api/_lib/webSearchHandler.js), 영상은 api/youtube.js(기존 "영상" 블록을 bare로 넣음).
 // 서버에 두 키가 모두 없으면 블록 전체를 숨기고, 하나만 있으면 그 칸만 보인다. 링크는 새 창(noopener)으로 연다 — 사이트 안에 끼워 넣지 않는다.
 import React, { useEffect, useState } from "react";
 import { Users, Globe, RefreshCw } from "./ocIcons.jsx";

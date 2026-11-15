@@ -1,4 +1,4 @@
-// (v0.7.8, 사용자 요청) 집중 분석 "전체 통계"(api/explorer-games.js)의 순수 계산 — 수순 검증, Lichess 탐색기 응답 정리, 화면에 줄 값 만들기.
+// (v0.7.8, 사용자 요청) 집중 분석 "전체 통계"(api/lichess.js?games=1 → api/_lib/explorerGames.js)의 순수 계산 — 수순 검증, Lichess 탐색기 응답 정리, 화면에 줄 값 만들기.
 // scripts/check-explorer-games.mjs가 검사한다.
 import { Chess } from "chess.js";
 

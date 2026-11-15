@@ -1,4 +1,4 @@
-// (v0.7.8, 사용자 요청) 집중 분석 해설 화면 "커뮤니티" 블록의 웹 검색 — 실제 검색은 서버(api/web-search.js)가 API 키로 한다.
+// (v0.7.8, 사용자 요청) 집중 분석 해설 화면 "커뮤니티" 블록의 웹 검색 — 실제 검색은 서버(api/youtube.js ?web=1 → api/_lib/webSearchHandler.js)가 API 키로 한다.
 // 같은 검색은 이 탭 안에서 다시 묻지 않는다(엣지 캐시도 7일). 서버에 키가 없으면 "off"로 웹 검색 칸을 숨긴다.
 import { apiUrl } from "./siteConfig.js";
 import { YT_MAX_PLIES } from "./youtubeSearch.js";
@@ -13,7 +13,7 @@ export function searchWeb(sans, name) {
   if (cache.has(k)) return cache.get(k);
   const p = (async () => {
     try {
-      const r = await fetch(apiUrl("/api/web-search?moves=" + encodeURIComponent(moves) + (nm ? "&name=" + encodeURIComponent(nm) : "")));
+      const r = await fetch(apiUrl("/api/youtube?web=1&moves=" + encodeURIComponent(moves) + (nm ? "&name=" + encodeURIComponent(nm) : "")));
       if (r.status === 503) return { status: "off", results: [], query: "" };
       if (r.status === 429) return { status: "busy", results: [], query: "" };
       if (!r.ok) return { status: "error", results: [], query: "" };

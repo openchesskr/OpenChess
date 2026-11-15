@@ -1,4 +1,4 @@
-// (v0.7.8, 사용자 요청) 집중 분석 해설 화면 "커뮤니티" 블록의 웹 검색 프록시(api/web-search.js) 순수 계산 — 오프닝 이름 검증, 검색어 만들기, 응답 정리.
+// (v0.7.8, 사용자 요청) 집중 분석 해설 화면 "커뮤니티" 블록의 웹 검색 프록시(api/youtube.js?web=1 → api/_lib/webSearchHandler.js) 순수 계산 — 오프닝 이름 검증, 검색어 만들기, 응답 정리.
 // scripts/check-web-search.mjs가 검사한다. 수순 검증은 영상 검색과 같은 규칙(api/_lib/youtube.js parseMovesParam)을 쓴다.
 import { pgnQuery } from "./youtube.js";
 

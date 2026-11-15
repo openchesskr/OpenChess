@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-178 | P1 | (배포 전) 프리뷰·운영 배포 실패 — v0.7.8에서 서버리스 함수 2개(api/explorer-games.js·api/web-search.js)를 새로 만들어 14개가 돼 Vercel Hobby 한도(배포당 12개)를 넘음. npm run build는 통과해 개발 중 알아채지 못함 | 수정 완료(v0.7.8) · 두 기능을 기존 함수 안의 경로(api/lichess.js?games=1·api/youtube.js?web=1)로 합침, 처리기는 api/_lib/ · `check-serverless-count`(prebuild) | 2026-11-15 |
 | BUG-177 | P1 | 분석 탭에서 탁월한 수(예: Open Ruy Lopez Riga 9...Bxh2+)가 엔진 depth가 깊어질 때마다 탁월 ↔ 유일한 수·최선으로 번갈아 바뀜 — 엔진 1순위 희생에도 "둔 뒤 평가 -1.5 이상" 하한을 적용(1순위의 둔 뒤 평가 = 두기 전 평가라 원래 포지션이 -1.5 근처면 depth마다 경계를 넘나듦), 라이브 재채점마다 처음부터 다시 매김 | 수정 완료(v0.7.8) · 1순위 희생은 하한 대신 두기 전 -2.0(badlyLosing)만, 탁월 고정(stickyBrilliant) · `check-move-grading` | 2026-11-15 |
 | BUG-176 | P1 | (개발 중 발견·수정, 배포 전) /api/puzzle-share 합법성 검사 우회 — 게임 끝내기 검사를 tree→lines→solution else-if 사슬 가운데 끼워 넣어, mateKey·mateLen 필드나 checkmate 테마를 붙이면 lines·solution 퍼즐의 수순 합법성 검사를 건너뜀 | 수정 완료(v0.7.7, 배포 전) · 검사 사슬 분리 · `check-mate-puzzle` 우회 회귀 검사 | 2026-11-15 |
 | BUG-175 | P2 | 유산 재생에서 탁월한 수 연출(표적 고정·섬광·파문·광선·배너)이 나오지 않음 — 가벼운 모드에서 연출을 통째로 끔. 가벼운 모드는 접속 직후 렉(엔진 부팅 부하)을 "느린 기기"로 오판해 켜짐 | 수정 완료(v0.7.7) · 유산 수 연출은 모드와 무관하게 표시, 성능 판정을 4초 뒤부터·4구간 연속으로 · `check-legacy-player` | 2026-11-14 |
@@ -191,6 +192,14 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-178 · [P1] (배포 전) 서버리스 함수 14개로 Vercel 배포 실패
+- **상태**: 수정 완료(v0.7.8, 사용자 제보 — "Deployment 오류로 프리뷰가 작동하지 않음")
+- **발견일**: 2026-11-15
+- **근본 원인**: Vercel Hobby 요금제는 배포 하나에 서버리스 함수를 12개까지만 만든다. v0.7.8의 "전체 통계"(api/explorer-games.js)·"커뮤니티 웹 검색"(api/web-search.js)을 새 함수 파일로 추가해 api/ 바로 아래 함수가 12 → 14개가 됐다. 로컬 `npm run build`(Vite)는 api/를 보지 않아 통과했고, 배포 단계에서만 실패했다.
+- **수정 내용**: 두 기능을 기존 함수 안의 경로로 합쳤다 — 전체 통계는 `api/lichess.js?games=1`, 웹 검색은 `api/youtube.js?web=1`(YouTube 키 확인보다 먼저 분기). 처리 코드는 함수로 노출되지 않는 `api/_lib/explorerGames.js`·`api/_lib/webSearchHandler.js`로 옮기고 브라우저 호출 주소를 바꿨다. 수순 검증·호출 한도·캐시 규칙은 그대로다. 함수 수 12/12.
+- **재발 방지 안전장치**: `scripts/check-serverless-count.mjs`(prebuild 첫 단계) — api/ 아래 함수(밑줄 폴더·파일 제외)가 12개를 넘으면 빌드 실패. check-web-search·check-explorer-games가 새 경로 연결을 검사.
+- **검증**: 수정 전 상태(14개)에서 안전장치가 빌드를 막는 것 확인 → 수정 후 12개로 통과. 합친 두 경로를 모의 요청으로 호출해 키 없음 503·잘못된 수순 400 확인. `npm run build` 통과.
 
 ### BUG-177 · [P1] 분석 탭 탁월한 수가 depth마다 유일한 수·최선으로 바뀜
 - **상태**: 수정 완료(v0.7.8, 사용자 제보)

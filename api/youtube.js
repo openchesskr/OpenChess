@@ -7,8 +7,11 @@
 //  · 응답은 영상 id·제목·채널·날짜·썸네일만 모양을 확인해 돌려준다(api/_lib/youtube.js, scripts/check-youtube-search.mjs).
 import { clientIp, supabaseEnv, rateLimited } from "./_lib/server.js";
 import { parseMovesParam, pgnQuery, cleanResults, YT_MAX_RESULTS } from "./_lib/youtube.js";
+import { webSearchHandler } from "./_lib/webSearchHandler.js";
 
 export default async function handler(req, res) {
+  // (v0.7.8 BUG-178) 커뮤니티 블록 웹 검색 — 함수 개수 제한 때문에 이 함수 안의 경로로 둔다(YouTube 키 확인보다 먼저: 웹 검색은 자기 키를 본다)
+  if ((req.query || {}).web === "1") return webSearchHandler(req, res);
   if (req.method !== "GET") { res.status(405).json({ error: "method" }); return; }
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) { res.status(503).json({ error: "not_configured" }); return; }

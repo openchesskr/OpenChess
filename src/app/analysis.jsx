@@ -2256,7 +2256,7 @@ function useExplorerGames(active, path) {
     if (hit) { setSt({ loading: false, data: hit, error: false }); return undefined; }
     let off = false;
     setSt({ loading: true, data: null, error: false });
-    fetch(apiUrl("/api/explorer-games?moves=" + encodeURIComponent(key))).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    fetch(apiUrl("/api/lichess?games=1&moves=" + encodeURIComponent(key))).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => { if (d && Array.isArray(d.games)) { if (explorerCache.size > 200) explorerCache.clear(); explorerCache.set(key, d); } if (!off) setSt({ loading: false, data: d, error: false }); })
       .catch(() => { if (!off) setSt({ loading: false, data: null, error: true }); });
     return () => { off = true; };

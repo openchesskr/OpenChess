@@ -40,7 +40,7 @@ ok(cleanExplorer(null) === null && cleanExplorer("x") === null, "응답이 객�
 ok(needsRefresh(null) && needsRefresh({ position: { fetched_at: "x" } }), "쌓인 값이 없으면 Lichess에서 받는다");
 ok(!needsRefresh({ position: { fetched_at: new Date(Date.now() - 60e3).toISOString() } }) && needsRefresh({ position: { fetched_at: new Date(Date.now() - EXPLORER_REFRESH_MS - 1).toISOString() } }), "6시간 안에는 다시 받지 않는다");
 // ⑤ 연결
-const api = rd("api/explorer-games.js"), sql = rd("supabase-setup.sql"), an = rd("src/app/analysis.jsx");
+const api = rd("api/_lib/explorerGames.js"), lich = rd("api/lichess.js"), sql = rd("supabase-setup.sql"), an = rd("src/app/analysis.jsx");
 ok(/parseExplorerMoves\(\(req\.query \|\| \{\}\)\.moves\)/.test(api) && /if \(!parsed\) \{ res\.status\(400\)/.test(api), "서버가 수순을 검증하지 않음");
 ok(/rateLimited\(env, \[\["explorer:ip:"/.test(api) && /\["explorer:upstream", 600, 3600\]/.test(api), "IP당·Lichess 호출 한도가 없음");
 ok(/topGames: "4", recentGames: "4"/.test(api) && /explorer\.lichess\.org\/lichess\?/.test(api), "Lichess 탐색기(lichess DB)의 최고 레이팅·최근 대국을 받지 않음");
@@ -48,7 +48,7 @@ ok(/rpc\(env, "explorer_record"/.test(api) && /needsRefresh\(stored\)/.test(api)
 ok(/create table if not exists public\.explorer_games/.test(sql) && /primary key \(pos_key, game_id\)/.test(sql) && /revoke all on public\.explorer_games from public, anon, authenticated;/.test(sql), "explorer_games 표·권한 차단이 없음");
 const acl = (/do \$acl\$([\s\S]*?)end \$acl\$/.exec(sql) || [""])[0];
 ok(!/explorer_record|explorer_read/.test(acl), "explorer_record·explorer_read가 브라우저 허용 목록에 있음(서버 전용이어야 함)");
-ok(/<ExplorerStatsCard path=\{\[\.\.\.sans, san\]\}/.test(an) && /fetch\(apiUrl\("\/api\/explorer-games\?moves=" \+ encodeURIComponent\(key\)\)\)/.test(an), "집중 분석 유저 통계에 전체 통계 블록이 없음");
+ok(/<ExplorerStatsCard path=\{\[\.\.\.sans, san\]\}/.test(an) && /fetch\(apiUrl\("\/api\/lichess\?games=1&moves=" \+ encodeURIComponent\(key\)\)\)/.test(an) && /if \(\(req\.query \|\| \{\}\)\.games === "1"\) return explorerGamesHandler\(req, res\);/.test(lich), "집중 분석 유저 통계에 전체 통계 블록이 없음");
 const myIdx = an.indexOf('t("내 통계")'), exIdx = an.indexOf("<ExplorerStatsCard "), masterIdx = an.indexOf('t("마스터 통계")}</span>');
 ok(myIdx > 0 && exIdx > myIdx && masterIdx > exIdx, "전체 통계 블록은 내 통계 블록 아래(유저 통계 페이지 안)에 있어야 함");
 if (fails.length) { console.error("✗ check-explorer-games 실패:\n  " + fails.join("\n  ")); process.exit(1); }
