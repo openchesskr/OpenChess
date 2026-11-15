@@ -1,7 +1,7 @@
 // (v0.7.4, 사용자 요청) 일일 퀘스트 카드 — 학습 탭에서 플레이 탭으로 옮기면서 학습 탭 전용 파일(learn.jsx)에서 분리했다.
 // KST 자정 갱신 카운트다운, 오프닝 퀘스트 개별 리롤, 완료 표기는 이 카드가 화면에 나타날 때 애니메이션으로 공개(seen 플래그). 로직·디자인은 v0.7.3 그대로.
 import { useState, useEffect, useMemo } from "react";
-import { Check, RotateCcw, Puzzle, CalendarCheck, BookMarked, Timer, Gem, Sparkles, ListChecks, Swords } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Check, RotateCcw, Puzzle, CalendarCheck, BookMarked, Timer, Sparkles, ListChecks, Swords, Lock, ChevronLeft, ChevronRight } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { motion } from "framer-motion";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { CoinIcon, DEFAULT_QUEST_OPENINGS, questLabelNode, questOpeningMovesText } from "./common.jsx";
@@ -37,7 +37,8 @@ function fmtRemainHMS(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return String(Math.floor(s / 3600)).padStart(2, "0") + ":" + String(Math.floor((s % 3600) / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 }
-export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight }) {
+// fill(v0.7.8): 데스크톱 플레이 탭에서 옆의 일반 대국·데크메이트 블록과 위아래 끝을 맞추려고 칸 높이를 채운다(남는 높이는 퀘스트 줄 사이에 고르게).
+export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOpenOpening, hasChesscom, highlight, fill = false }) {
   const dq = dailyQuest;
   const [remain, setRemain] = useState(msUntilKstMidnight());
   useEffect(() => { const iv = setInterval(() => setRemain(msUntilKstMidnight()), 1000); return () => clearInterval(iv); }, []);
@@ -95,7 +96,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
     );
   };
   return (
-    <div style={{ marginBottom: 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E" }}>
+    <div style={{ marginBottom: fill ? 0 : 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E", ...(fill ? { height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" } : null) }}>
       <style>{"@keyframes dqSpark{0%{transform:scale(.3) rotate(0);opacity:0}40%{opacity:1}100%{transform:scale(1.4) rotate(90deg);opacity:0}} .dq-spark{animation:dqSpark .9s ease-out 1} @keyframes dqHi{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 5px rgba(201,164,92,.4)}} .dq-hi{animation:dqHi 1.1s ease-in-out 3} @keyframes dqGlow{0%,100%{box-shadow:0 0 0 0 rgba(201,164,92,0)}50%{box-shadow:0 0 0 4px rgba(201,164,92,.32)}} .dq-glow{animation:dqGlow 2.2s ease-in-out infinite} html[data-perf=\"lite\"] .dq-glow{animation:none}"}</style>
       {/* 머리띠 */}
       <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE, flexWrap: "wrap" }}>
@@ -112,7 +113,7 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
           <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 600, fontFamily: SITE_FONT, color: MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}><Timer size={12} strokeWidth={1.9} />{fmtRemainHMS(remain)}</span>
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, ...(fill ? { flex: 1, justifyContent: "space-evenly" } : null) }}>
         {row({ k: "puzzle", Icon: Puzzle, hue: "#3E7CC4", title: t("새 퍼즐 {0}회 풀기", dq.puzzleTarget), sub: dq.puzzleCount + "/" + dq.puzzleTarget, progress: dq.puzzleTarget ? Math.min(1, dq.puzzleCount / dq.puzzleTarget) : 0 })}
         {/* (v0.2.2 UI#4) 두 번째 퀘스트는 항상 '오늘의 퍼즐 풀기'로 고정 — 퍼즐 탭 맨 위 오늘의 퍼즐을 풀면 완료된다. */}
         {row({ k: "dailypuzzle", Icon: CalendarCheck, hue: "#C47A1E", title: t("일일 퍼즐 풀기"), sub: t("소셜 탭 맨 위 ‘일일 퍼즐’ 풀기") })}
@@ -137,10 +138,8 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
       {/* (버그) 모든 퀘스트 완료 보상 — 일일 퀘스트 목록 아래 별도 블록으로 시각화(OC 나이트 코인 100) */}
       <div className={allDone ? "dq-glow" : undefined} style={{ margin: "0 12px 12px", padding: "12px 14px", borderRadius: 12, display: "flex", alignItems: "center", gap: 12,
         border: "1px solid " + (allDone ? BRASS : LINE), background: SURFACE }}>
-        <span style={{ position: "relative", flexShrink: 0, width: 48, height: 48, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}>
-          <Gem size={24} color={BRASS} strokeWidth={1.6} />
-          <span style={{ position: "absolute", right: -6, bottom: -6 }}><CoinIcon size={22} /></span>
-        </span>
+        {/* (v0.7.8, 사용자 요청) 보상 아이콘(보석)을 없애고 OC 나이트 코인을 그 자리에 크게 */}
+        <span style={{ flexShrink: 0, width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center" }}><CoinIcon size={44} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13.5, fontWeight: 800, color: allDone ? "#8A6C2F" : "#3A2516" }}>{t("모든 퀘스트 완료 보상")}</div>
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{tx("OC 나이트 코인 {0}, {1}/5 완료", <b style={{ color: "#8A6C2F" }}>{t("100개")}</b>, doneCount)}</div>
@@ -156,14 +155,28 @@ export function DailyQuestCard({ dailyQuest, setDailyQuest, recentOpenings, onOp
 
 // (v0.7.4, 사용자 요청) 플레이 퀘스트 — 일일 퀘스트 바로 아래의 같은 크림색 블록. 일반 대국·미니게임에서 조건을 달성하면 클리어된다.
 // (v0.7.6, 사용자 요청) 초기화 없는 한 번짜리 목표 + 퀘스트당 코인 보상. 로그인했으면 서버가 센 진행값(playQuest.server)과 수령 여부(claimed)를 보여 준다(lib/playQuest.js).
-import { PLAY_QUESTS, PLAY_QUEST_COINS, normalizePlayQuest, questDone, clearedCount } from "../lib/playQuest.js";
-export function PlayQuestCard({ playQuest, loggedIn }) {
+// (v0.7.8, 사용자 요청) "장" 단위 — 우상단 "n장"과 < > 버튼으로 앞뒤 장을 넘겨 보고, 앞 장을 모두 깨야 열리는 장은 자물쇠로 잠가 보여 준다. 처음엔 지금 진행 중인 장을 연다.
+//  fill: 데스크톱 플레이 탭에서 옆의 미니게임 블록과 위아래를 맞추려고 칸 높이를 채운다(퀘스트 줄이 남는 높이를 나눠 가짐).
+import { PLAY_QUEST_CHAPTERS, normalizePlayQuest, questDone, clearedCount, chapterUnlocked, currentChapter } from "../lib/playQuest.js";
+export function PlayQuestCard({ playQuest, loggedIn, fill = false }) {
   const INK = "rgba(90,58,34,.10)", LINE = "#D6C29A", BRASS = "#A8842F", SAGE = "#3F7A3A", MUTED = "#7A6648";
   const s = playQuest && playQuest.server ? playQuest : normalizePlayQuest(playQuest);
   const claimed = new Set((s.server && s.claimed) || []);
-  const done = clearedCount(s), all = done === PLAY_QUESTS.length;
+  const cur = currentChapter(s), total = PLAY_QUEST_CHAPTERS.length;
+  const [view, setView] = useState(cur);
+  useEffect(() => { setView(cur); }, [cur]);   // 장을 다 깨면 다음 장으로 넘어간다
+  const quests = PLAY_QUEST_CHAPTERS[view - 1] || [];
+  const locked = !chapterUnlocked(s, view);
+  const done = clearedCount(s, view), all = !locked && done === quests.length;
+  const navBtn = (dir, disabled) => {
+    const Icon = dir < 0 ? ChevronLeft : ChevronRight;
+    return (
+      <button onClick={() => !disabled && setView((v) => Math.min(total, Math.max(1, v + dir)))} disabled={disabled} className="press" aria-label={dir < 0 ? t("이전 장") : t("다음 장")} title={dir < 0 ? t("이전 장") : t("다음 장")}
+        style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid " + LINE, background: INK, color: disabled ? "#BFAE8C" : "#5A3A22", cursor: disabled ? "default" : "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: disabled ? 0.5 : 1, flexShrink: 0 }}><Icon size={14} /></button>
+    );
+  };
   return (
-    <div style={{ marginBottom: 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E" }}>
+    <div style={{ marginBottom: fill ? 0 : 16, borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, background: "#F1E6D0", boxShadow: "0 3px 0 #B59A6E", ...(fill ? { height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" } : null) }}>
       <div className="flex items-center justify-between" style={{ gap: 8, padding: "13px 14px", background: "rgba(255,255,255,.35)", borderBottom: "1px solid " + LINE }}>
         <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
           <span style={{ width: 36, height: 36, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", background: BRASS + "24", border: "1px solid " + BRASS + "66" }}><Swords size={19} color={BRASS} strokeWidth={1.75} /></span>
@@ -172,33 +185,40 @@ export function PlayQuestCard({ playQuest, loggedIn }) {
             <div style={{ fontSize: 16, fontWeight: 800, color: "#2A1B0E", lineHeight: 1.15 }}>{t("플레이 퀘스트")}</div>
           </div>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: all ? SAGE : "#8A6C2F", background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap" }}>{done}/{PLAY_QUESTS.length}{all ? " · " + t("모두 완료") : ""}</span>
+        {/* (v0.7.8, 사용자 요청) n/5 대신 "n장" + 이전·다음 장 버튼 */}
+        <div className="flex items-center" style={{ gap: 6, flexShrink: 0 }}>
+          {navBtn(-1, view <= 1)}
+          <span className="flex items-center gap-1" style={{ minWidth: 46, justifyContent: "center", fontSize: 12.5, fontWeight: 800, fontFamily: SITE_FONT, color: locked ? MUTED : all ? SAGE : "#8A6C2F", background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap" }}>
+            {locked && <Lock size={11} color={MUTED} />}{t("{0}장", view)}
+          </span>
+          {navBtn(1, view >= total)}
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
-        {PLAY_QUESTS.map((q) => {
-          const cur = Math.min(q.target, q.count(s)), ok = questDone(q, s), tone = ok ? SAGE : "#3E7CC4";
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, ...(fill ? { flex: 1, minHeight: 0, overflowY: "auto" } : null) }}>
+        {quests.map((q) => {
+          const curN = Math.min(q.target, q.count(s)), ok = !locked && questDone(q, s), tone = locked ? "#9A8A6E" : ok ? SAGE : "#3E7CC4";
           return (
-            <div key={q.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12, background: ok ? "#E4EFD8" : "rgba(255,255,255,.55)", border: "1px solid " + (ok ? "#A9C589" : LINE) }}>
+            <div key={q.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 12, background: locked ? "rgba(90,58,34,.06)" : ok ? "#E4EFD8" : "rgba(255,255,255,.55)", border: "1px solid " + (ok ? "#A9C589" : LINE), ...(fill ? { flex: 1 } : null) }}>
               <span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: tone + "24", border: "1px solid " + tone + "66" }}>
-                {ok ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Swords size={20} color={tone} strokeWidth={1.75} />}
+                {locked ? <Lock size={18} color={tone} /> : ok ? <Check size={20} strokeWidth={2.4} color={SAGE} /> : <Swords size={20} color={tone} strokeWidth={1.75} />}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: ok ? "#3F7A3A" : "#3A2516", lineHeight: 1.3 }}>{q.title()}</div>
-                {!ok && (
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: locked ? MUTED : ok ? "#3F7A3A" : "#3A2516", lineHeight: 1.3 }}>{q.title()}</div>
+                {locked ? <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{t("{0}장을 모두 클리어하면 열림", view - 1)}</div> : !ok && (
                   <div style={{ height: 5, borderRadius: 3, background: INK, marginTop: 8, overflow: "hidden" }}>
-                    <motion.div initial={false} animate={{ width: Math.round((cur / q.target) * 100) + "%" }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: "100%", background: tone, borderRadius: 3 }} />
+                    <motion.div initial={false} animate={{ width: Math.round((curN / q.target) * 100) + "%" }} transition={{ duration: 0.6, ease: [0.22, 0.9, 0.32, 1] }} style={{ height: "100%", background: tone, borderRadius: 3 }} />
                   </div>
                 )}
               </div>
               <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: ok ? "#5E8A52" : MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}>{ok ? (claimed.has(q.key) ? t("보상 받음") : t("클리어")) : cur + "/" + q.target}</span>
-                <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 700, fontFamily: SITE_FONT, color: claimed.has(q.key) ? "#5E8A52" : "#8A6C2F", opacity: claimed.has(q.key) ? 0.75 : 1 }}>+{PLAY_QUEST_COINS} <CoinIcon size={13} /></span>
+                {!locked && <span style={{ fontSize: 12, fontWeight: 700, fontFamily: SITE_FONT, color: ok ? "#5E8A52" : MUTED, background: INK, border: "1px solid " + LINE, borderRadius: 999, padding: "3px 10px" }}>{ok ? (claimed.has(q.key) ? t("완료") : t("클리어")) : curN + "/" + q.target}</span>}
+                <span className="flex items-center gap-1" style={{ fontSize: 11.5, fontWeight: 700, fontFamily: SITE_FONT, color: claimed.has(q.key) ? "#5E8A52" : locked ? MUTED : "#8A6C2F", opacity: claimed.has(q.key) || locked ? 0.75 : 1 }}>+{q.coins} <CoinIcon size={13} /></span>
               </div>
             </div>
           );
         })}
       </div>
-      <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("한 번 달성하면 끝나는 목표, 퀘스트마다 코인 보상. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
+      <p style={{ margin: 0, padding: "0 14px 12px", fontSize: 11, lineHeight: 1.5, color: MUTED }}>{t("장의 퀘스트를 모두 클리어하면 더 어려운 다음 장이 열림. 일반 대국은 10수(양쪽 합 20수) 이상 두고 끝내야 인정됨")}{!loggedIn ? " · " + t("보상은 로그인 후 지급") : ""}</p>
     </div>
   );
 }

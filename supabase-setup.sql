@@ -4440,7 +4440,7 @@ returns jsonb language sql immutable as $$
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
     "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20},
-    "playQuests": {"game": {"target": 1, "coins": 50}, "win": {"target": 1, "coins": 50}, "long": {"target": 1, "coins": 50}, "mg": {"target": 2, "coins": 50}, "kinds": {"target": 2, "coins": 50}},
+    "playQuests": {"game": {"chapter": 1, "metric": "game", "target": 1, "coins": 50}, "win": {"chapter": 1, "metric": "win", "target": 1, "coins": 50}, "long": {"chapter": 1, "metric": "long", "target": 1, "coins": 50}, "mg": {"chapter": 1, "metric": "mg", "target": 2, "coins": 50}, "kinds": {"chapter": 1, "metric": "kinds", "target": 2, "coins": 50}, "ctwogame": {"chapter": 2, "metric": "game", "target": 5, "coins": 80}, "ctwowin": {"chapter": 2, "metric": "win", "target": 3, "coins": 80}, "ctwolong": {"chapter": 2, "metric": "long", "target": 3, "coins": 80}, "ctwomg": {"chapter": 2, "metric": "mg", "target": 5, "coins": 80}, "ctwokinds": {"chapter": 2, "metric": "kinds", "target": 4, "coins": 80}, "cthreegame": {"chapter": 3, "metric": "game", "target": 20, "coins": 120}, "cthreewin": {"chapter": 3, "metric": "win", "target": 10, "coins": 120}, "cthreelong": {"chapter": 3, "metric": "long", "target": 8, "coins": 120}, "cthreemg": {"chapter": 3, "metric": "mg", "target": 15, "coins": 120}, "cthreemgwin": {"chapter": 3, "metric": "mgwin", "target": 5, "coins": 120}},
     "devBonusCoins": 10000
   }'::jsonb;
 $$;
@@ -4719,7 +4719,7 @@ $$;
 -- (v0.7.6, 사용자 요청) 플레이 퀘스트 — 날마다 초기화하지 않는 한 번짜리 목표, 달성하면 퀘스트당 1회 코인 보상(economy_params의 playQuests).
 -- 진행 값은 브라우저가 세지 않고 서버가 직접 센다: 일반 대국 = 서버가 검증해 저장한 끝난 대국(pvp_games game_type 'chess' + bot_games, 20수(양쪽 합) 이상),
 -- 미니게임 = 끝난 미니게임 대전(pvp_games game_type coord·knight·rush·attack, 중단 제외). 그래서 보상을 받으려고 숫자를 꾸며 보낼 수 없다.
--- 반환: { game, win, long, mg, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
+-- 반환: { game, win, long, mg, mgwin, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
 create or replace function public._play_quest_counts(p_uid uuid)
 returns jsonb language sql stable security definer set search_path = public as $$
   with chess as (
@@ -4731,7 +4731,7 @@ returns jsonb language sql stable security definer set search_path = public as $
     select coalesce(array_length(b.sans, 1), 0), b.result = 'win' from public.bot_games b where b.uid = p_uid
   ), ok as (select * from chess where plies >= 20),
   mg as (
-    select g.game_type from public.pvp_games g
+    select g.game_type, ((g.status = 'white_won' and g.white_uid = p_uid) or (g.status = 'black_won' and g.black_uid = p_uid)) as won from public.pvp_games g
     where g.game_type in ('coord', 'knight', 'rush', 'attack') and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
   )
   select jsonb_build_object(
@@ -4739,6 +4739,7 @@ returns jsonb language sql stable security definer set search_path = public as $
     'win', least(99, (select count(*) from ok where won)),
     'long', least(99, (select count(*) from ok where plies >= 80)),
     'mg', least(99, (select count(*) from mg)),
+    'mgwin', least(99, (select count(*) from mg where won)),   -- (v0.7.8) 3장 "미니게임 대전 승리"
     'kinds', (select count(distinct game_type) from mg));
 $$;
 create or replace function public.play_quest_status()
@@ -4751,15 +4752,21 @@ begin
 end; $$;
 create or replace function public.economy_claim_play_quest(p_key text)
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy;
+declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy; v_counts jsonb; v_prev jsonb;
 begin
   if v_uid is null then raise exception 'auth required'; end if;
   if p_key is null or p_key !~ '^[a-z]{1,16}$' then raise exception 'invalid quest'; end if;
   v_q := public.economy_params() -> 'playQuests' -> p_key;
   if v_q is null then return jsonb_build_object('error', 'unknown quest'); end if;
   if public.rate_limit_hit('playquest:' || v_uid, 30, 3600) then return jsonb_build_object('error', 'rate limited'); end if;
-  v_have := (public._play_quest_counts(v_uid) ->> p_key)::bigint;
+  v_counts := public._play_quest_counts(v_uid);
+  v_have := (v_counts ->> coalesce(v_q ->> 'metric', p_key))::bigint;
   if coalesce(v_have, 0) < (v_q ->> 'target')::bigint then return jsonb_build_object('error', 'not complete'); end if;
+  -- (v0.7.8, 사용자 요청) 장 단위 — 앞 장의 퀘스트를 모두 클리어해야 다음 장 보상을 받을 수 있다(진행 값은 누적이라 앞 장을 건너뛸 수 없게).
+  for v_prev in select value from jsonb_each(public.economy_params() -> 'playQuests')
+    where coalesce((value ->> 'chapter')::int, 1) < coalesce((v_q ->> 'chapter')::int, 1) loop
+    if coalesce((v_counts ->> coalesce(v_prev ->> 'metric', ''))::bigint, 0) < (v_prev ->> 'target')::bigint then return jsonb_build_object('error', 'chapter locked'); end if;
+  end loop;
   perform public._economy_ensure(v_uid);
   insert into public.economy_claims(uid, kind, ref) values (v_uid, 'playquest', p_key) on conflict do nothing;
   get diagnostics v_ins = row_count;

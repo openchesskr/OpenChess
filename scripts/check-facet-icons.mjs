@@ -17,6 +17,7 @@ const ZONES = [
   ["src/components/titleEmblems.jsx", "const FacetSquare", "// 그림자(검정 단색"],
   ["src/app/analysis.jsx", "function CrownIcon(", "\n}\n"],
   ["src/app/play.jsx", "function MgCrosshair(", "\n}\n"],
+  ["src/app/play.jsx", "function DeckmateCard(", "\n}\n"],   // (v0.7.8) 플레이 탭 데크메이트(출시 예정) 블록의 기보 카드
   ["src/app/dexMasters.jsx", "function Laurel(", "\n}\n"],
   ["src/app/common.jsx", "export function LaurelBranch(", "\n}\n"],
   ["src/app/common.jsx", "export function SeriesGlyph(", "</svg>"],   // 뒤따르는 lucide 아이콘은 예외
