@@ -9,8 +9,10 @@ import { SEQ_FONT, SITE_FONT, EvalBar } from "../components/engineLines.jsx";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 import { SB_ON, sbSelect, sbRpc, sbInsert } from "../lib/supabaseClient.js";
 import { SkinContext, PieceGlyph, TierLogoDisc } from "../components/pieces.jsx";
-import { tierFromXp, tierDisplayLabelArabic, tierGradientCss, TIER_COLORS } from "../lib/tierSystem.js";
-import { FacetDiamond, facetRamp } from "../components/facetIcons.jsx";
+import { tierFromXp, tierDisplayLabelArabic, tierGradientCss } from "../lib/tierSystem.js";
+import { tierTheme, TierBackdrop, TIER_BACKDROP_CSS } from "../components/tierJourney.jsx";
+import { PuzzleSidePanels } from "./puzzleSide.jsx";
+import { SwipePager } from "../components/swipePager.jsx";
 import { PUZZLE_ZOOM_LABEL_BASE, snapPuzzleZoom, clampSchematicPan, anchoredZoomPan, PUZZLE_ZOOM_STEP, puzzleZoomLabel } from "../lib/schematicGeometry.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { badgeIcon, QLABEL } from "../components/badges.jsx";
@@ -518,59 +520,22 @@ function RevertSlide({ board, from, to, size = 380, flip = false }) {
 // (v0.1.1) 다른 화면들과 달리 여기만 "아이언 5"처럼 티어를 텍스트로도 다시 보여준다(아라비아
 // 숫자 사용) — 이미지는 흰 원 배경 정중앙에 크게 둔다.
 // (v0.1.2) 다음 구간을 미리 보여주던 작은 배지들을 없앴다 — 여정 지도에서 이미 볼 수 있어 중복.
-// (v0.7.8, 사용자 요청) 퍼즐 티어 박스 — 예전 알약 모양과 같은 가로·세로 비율의 육각형(좌우 끝이 뾰족한 길쭉한 육각형).
-//  티어가 오를수록 테두리·면·연출이 단계적으로 화려해진다(TIER_COLORS 색 언어 그대로):
-//   아이언 얇은 강철 테두리 → 브론즈 따뜻한 2겹 → 실버 윗면 광택 → 골드 이중 테두리 + 빛줄기 →
-//   다이아몬드 파셋 면(왼쪽 위 광원) + 발광 → 마스터 맥동 발광 + 양끝 보석 → 그랜드마스터 홀로그램 테두리가 흐르고 반짝임.
-//  면 분할은 장식 규칙(윤곽선 없이 채운 면·왼쪽 위 광원)을 따른다 — 테두리도 선이 아니라 바깥 육각형 면 위에 안쪽 육각형을 겹친 것.
-const TIER_HEX_INSET = 22;   // 좌우 뾰족한 끝의 깊이(px) — 높이 약 61px의 박스에서 약 36°
-const tierHexClip = (inset) => "polygon(" + inset + "px 0, calc(100% - " + inset + "px) 0, 100% 50%, calc(100% - " + inset + "px) 100%, " + inset + "px 100%, 0 50%)";
-const TIER_HEX_CSS = "@keyframes tierHexSweep{0%{transform:translateX(-140%) skewX(-22deg)}60%,100%{transform:translateX(560%) skewX(-22deg)}}"
-  + "@keyframes tierHexPulse{0%,100%{filter:drop-shadow(0 0 4px var(--tier-glow))}50%{filter:drop-shadow(0 0 13px var(--tier-glow))}}"
-  + "@keyframes tierHexHolo{0%{background-position:0% 50%}100%{background-position:200% 50%}}"
-  + "@keyframes tierHexTwinkle{0%,100%{opacity:0;transform:scale(.4)}50%{opacity:1;transform:scale(1)}}";
-const TIER_RANK = { iron: 0, bronze: 1, silver: 2, gold: 3, diamond: 4, master: 5, grandmaster: 6 };
-export function TierHexFrame({ tierKey, onClick, children }) {
-  const rank = TIER_RANK[tierKey] ?? 0;
-  const c = TIER_COLORS[tierKey] || TIER_COLORS.iron;
-  const lo = c.lo || (c.stops && c.stops[0]) || "#5B6169", hi = c.hi || (c.stops && c.stops[1]) || "#9AA1AA";
-  const border = rank >= 3 ? 2.5 : rank >= 1 ? 2 : 1.5;
-  // 바깥 면(테두리): 아이언은 단색, 브론즈부터 그러데이션, 그랜드마스터는 홀로그램이 흐른다
-  const frameBg = rank === 6 ? "linear-gradient(90deg," + c.stops.join(",") + "," + c.stops[0] + ")"
-    : rank === 0 ? lo : "linear-gradient(160deg," + hi + " 0%," + lo + " 55%," + hi + " 100%)";
-  // 안쪽 면: 어두운 갈색 판에 티어 색을 점점 더 진하게 물들인다
-  const tint = ["0f", "1a", "22", "2a", "33", "3d", "40"][rank];
-  const panelBg = "linear-gradient(160deg," + lo + tint + " 0%, #2A1B10 45%, #1A100A 100%)";
+// (v0.7.8, 사용자 요청) 퍼즐 티어 박스 — 팔각형, 디자인은 티어 여정(components/tierJourney.jsx)과 같은 형식:
+//  어두운 전시실 배경(위에서 떨어지는 티어 색 조명 · 티어별 고유 연출 · 윤곽광을 받은 큰 티어 기물 실루엣 · 빛 먼지 · 필름 질감)을 그대로 쓰고(TierBackdrop compact),
+//  테두리는 티어 그러데이션, 티어 이름은 장 표지(TierMark)처럼 티어 그러데이션 글자, 진행 막대는 티어 팔레트(tierTheme) 색.
+const TIER_OCT_CUT = 13;   // 팔각형 모서리를 깎는 길이(px)
+const octClip = (c) => "polygon(" + c + "px 0, calc(100% - " + c + "px) 0, 100% " + c + "px, 100% calc(100% - " + c + "px), calc(100% - " + c + "px) 100%, " + c + "px 100%, 0 calc(100% - " + c + "px), 0 " + c + "px)";
+export function TierOctFrame({ tierKey, onClick, children }) {
+  const th = tierTheme(tierKey);
   return (
-    <div onClick={onClick} className="press" style={{ position: "relative", marginBottom: 14, cursor: onClick ? "pointer" : "default", "--tier-glow": hi + "aa",
-      ...(rank >= 5 ? { animation: "tierHexPulse 2.8s ease-in-out infinite" } : rank === 4 ? { filter: "drop-shadow(0 0 6px " + hi + "88)" } : rank >= 2 ? { filter: "drop-shadow(0 2px 6px rgba(0,0,0,.45))" } : null) }}>
-      <style>{TIER_HEX_CSS}</style>
-      {/* 바깥 육각형 = 테두리 면 */}
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, clipPath: tierHexClip(TIER_HEX_INSET), background: frameBg, ...(rank === 6 ? { backgroundSize: "200% 100%", animation: "tierHexHolo 4s linear infinite" } : null) }} />
-      {/* 골드부터 이중 테두리 — 안쪽에 한 겹 더(어두운 틈 + 밝은 금선 면) */}
-      {rank >= 3 && <div aria-hidden="true" style={{ position: "absolute", inset: border + 1.5, clipPath: tierHexClip(TIER_HEX_INSET - 2), background: "#140B05" }} />}
-      {rank >= 3 && <div aria-hidden="true" style={{ position: "absolute", inset: border + 2.5, clipPath: tierHexClip(TIER_HEX_INSET - 3), background: "linear-gradient(160deg," + hi + "," + lo + ")" }} />}
-      {/* 안쪽 판 */}
-      <div style={{ position: "relative", margin: rank >= 3 ? border + 3.5 : border, clipPath: tierHexClip(TIER_HEX_INSET - (rank >= 3 ? 4 : 1)), background: panelBg, overflow: "hidden" }}>
-        {/* 실버부터 윗면 광택(왼쪽 위 광원) */}
-        {rank >= 2 && <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top: 0, height: "46%", background: "linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,0))", pointerEvents: "none" }} />}
-        {/* 다이아몬드부터 파셋 면 — 왼쪽 위 밝은 삼각 면 / 오른쪽 아래 어두운 삼각 면 */}
-        {rank >= 4 && <span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(118deg, " + hi + "26 0 22%, transparent 22% 70%, rgba(0,0,0,.22) 70% 100%)", pointerEvents: "none" }} />}
-        {/* 골드부터 빛줄기가 주기적으로 스쳐 지나감 */}
-        {rank >= 3 && <span aria-hidden="true" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: "18%", background: "linear-gradient(90deg, rgba(255,250,230,0), rgba(255,250,230," + (rank >= 5 ? ".32" : ".22") + "), rgba(255,250,230,0))", animation: "tierHexSweep " + (rank >= 5 ? 3.2 : 4.6) + "s ease-in-out infinite", pointerEvents: "none" }} />}
-        {/* 바깥 높이를 예전 알약(위아래 6px + 1px 테두리)과 같게 — 테두리가 두꺼워진 만큼 안쪽 위아래 여백을 줄인다 */}
-        <div style={{ position: "relative", padding: Math.max(0, 7 - (rank >= 3 ? border + 3.5 : border)) + "px " + (TIER_HEX_INSET + 2) + "px" }}>{children}</div>
+    <div onClick={onClick} className="press" style={{ position: "relative", marginBottom: 14, cursor: onClick ? "pointer" : "default", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }}>
+      <style>{TIER_BACKDROP_CSS}</style>
+      {/* 테두리 = 바깥 팔각형 면(티어 그러데이션) */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, clipPath: octClip(TIER_OCT_CUT), background: th.grad }} />
+      <div style={{ position: "relative", margin: 1.5, clipPath: octClip(TIER_OCT_CUT - 0.6), overflow: "hidden", background: th.bg }}>
+        <TierBackdrop tierKey={tierKey} on narrow={false} compact />
+        <div style={{ position: "relative", padding: "6px 16px 6px 12px" }}>{children}</div>
       </div>
-      {/* 마스터부터 양 끝 꼭짓점에 보석 */}
-      {rank >= 5 && [0, 1].map((side) => (
-        <svg key={side} aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" style={{ position: "absolute", top: "50%", [side ? "right" : "left"]: -3, transform: "translateY(-50%)", pointerEvents: "none" }}>
-          <FacetDiamond cx={7} cy={7} r={6} R={rank === 6 ? facetRamp("#B983FF") : facetRamp(lo)} />
-        </svg>
-      ))}
-      {/* 그랜드마스터 — 반짝이는 별빛 몇 점 */}
-      {rank === 6 && [[18, 22, 0], [62, 12, 0.7], [84, 70, 1.3], [40, 78, 1.9]].map(([x, y, d], i) => (
-        <span key={i} aria-hidden="true" style={{ position: "absolute", left: x + "%", top: y + "%", width: 5, height: 5, borderRadius: "50%", background: "#FFFFFF", boxShadow: "0 0 6px #FFF, 0 0 10px #B983FF", animation: "tierHexTwinkle 2.4s ease-in-out " + d + "s infinite", pointerEvents: "none" }} />
-      ))}
     </div>
   );
 }
@@ -581,25 +546,26 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
   const isGM = tier.key === "grandmaster";
   return (
     // (v0.1.2) 퍼즐 탭 티어 스트립 크기 축소(특히 높이) — 패딩·로고·글자·진행바를 모두 한 단계씩 줄임.
-    <TierHexFrame tierKey={tier.key} onClick={onOpen}>
+    <TierOctFrame tierKey={tier.key} onClick={onOpen}>
     <div className="flex items-center" style={{ gap: 2 }}>
       <TierLogoDisc tierKey={tier.key} division={division} size={46} discSize={49} />
       {/* (사용자 요청) 퍼즐 레이팅 배지를 티어 도형 바로 옆이 아니라 여백을 두고 우측에 — 이 가운데
           정보 칼럼에 flex:1을 줘 남는 공간을 모두 차지하게 해서, 배지가 티어 텍스트에 붙지 않고
           스트립 우측 끝에 자연스러운 간격을 두고 자리하게 한다. */}
       <div style={{ minWidth: 96, flex: 1, marginLeft: 9, marginRight: 4 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 900, color: T.brassHi, whiteSpace: "nowrap" }}>{tierDisplayLabelArabic(info)}</div>
+        {/* 티어 이름 — 티어 여정 장 표지처럼 티어 그러데이션 글자 */}
+        <div style={{ fontSize: 14, fontWeight: 900, letterSpacing: "-.01em", whiteSpace: "nowrap", background: tierTheme(tier.key).grad, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }}>{tierDisplayLabelArabic(info)}</div>
         {/* (사용자 요청) 그랜드마스터 별 개수가 티어 명칭 글자와 겹쳐 보이던 문제 — 명칭 줄이 아니라
             게이지 바와 같은 줄, 그 우측에 배치한다. */}
         <div className="flex items-center" style={{ gap: 5, marginTop: 3 }}>
           <div style={{ flex: 1, minWidth: 0, height: 5, borderRadius: 999, background: "rgba(255,255,255,.15)", overflow: "hidden" }}>
-            <div style={{ width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : T.brass, transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
+            <div style={{ width: pct + "%", height: "100%", background: isGM ? tierGradientCss("grandmaster") : "linear-gradient(90deg," + tierTheme(tier.key).lo + "," + tierTheme(tier.key).hi + ")", transition: "width 700ms cubic-bezier(.22,.9,.32,1)" }} />
           </div>
           {isGM && maxed && gmStars > 0 && (
             <span style={{ fontSize: 11.5, fontWeight: 900, whiteSpace: "nowrap", flexShrink: 0, background: tierGradientCss("grandmaster"), WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>★{gmStars}</span>
           )}
         </div>
-        <div style={{ fontSize: 9.5, color: T.brassHi, opacity: .75, marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
+        <div style={{ fontSize: 9.5, fontWeight: 600, color: "rgba(255,246,226,.62)", marginTop: 1 }}>{xpInDivision}/{xpForNextDivision} XP</div>
       </div>
       {/* (사용자 요청) 퍼즐 레이팅을 티어를 표시하는 도형(TierLogoDisc) 우측에 표시 — 누르면 "퍼즐
           레이팅 : n" 말풍선이 뜬다(모바일 안전 영역 클램프는 ClickInfoBadge가 담당). */}
@@ -611,7 +577,7 @@ function TierProgressStrip({ totalXp, onOpen, puzzleRating }) {
         </ClickInfoBadge>
       )}
     </div>
-    </TierHexFrame>
+    </TierOctFrame>
   );
 }
 const LINE_TAG_LABEL = { best: t("최선의 응수"), eval2: t("차선의 응수"), adopt: t("실전에서 가장 많이 둔 응수"), eval3: t("세 번째로 좋은 응수") };
@@ -3566,11 +3532,22 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
     </>
   );
   const headerNode = (
-      <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingLeft: 2, gap: 10 }}>
-        <StreakCount count={dailyPuzzleStreak ? dailyPuzzleStreak.count : 0} />
-        {searchBarNode}
-        <NewPostButton onClick={() => openComposer(composeType)} disabled={!myUid} />
-      </div>
+      <>
+        {/* (v0.7.8, 사용자 요청) 1줄: 왼쪽 연속 출석 · 오른쪽 새 게시물 / 2줄: 검색창 + 필터 */}
+        <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingLeft: 2, gap: 10 }}>
+          <StreakCount count={dailyPuzzleStreak ? dailyPuzzleStreak.count : 0} />
+          <NewPostButton onClick={() => openComposer(composeType)} disabled={!myUid} />
+        </div>
+        <div style={{ display: "flex", marginBottom: 10 }}>{searchBarNode}</div>
+      </>
+  );
+  // (v0.7.8, 사용자 요청) 오른쪽 영역 — 퍼즐 티어 박스 + 퍼즐 XP·퍼즐 레이팅 리더보드 + 친구 퍼즐 현황(app/puzzleSide.jsx)
+  const sideNode = (
+    <>
+      {tierNode}
+      <PuzzleSidePanels myUid={myUid} friendUids={friendUids} onOpenProfile={onOpenProfile}
+        me={myUid ? { uid: myUid, username: myUsername, xp: totalXp || 0, rating: puzzleRating || 800, solved: solved ? solved.size : 0 } : null} />
+    </>
   );
   const composerNode = puzzleMode === "create" && myUid ? (
       <PostComposer type={composeType} setType={setComposeType} onClose={() => setPuzzleMode("solve")} engine={engine} onPublish={onPublishPost || (() => ({ ok: false, reason: "invalid" }))} chesscom={chesscom} chesscomUsername={chesscomUsername}>
@@ -3579,7 +3556,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   ) : null;
   const feedNode = (
     <SocialFeed puzzles={feed} cardProps={puzzleCardProps} creatorOf={(p) => (creatorUsernames || {})[puzzleNo(p.id)] || null} solved={solved}
-      onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
+      onOpenPuzzle={(p) => setActive(p)} viewerUid={myUid} viewerName={myUsername} onDeletePuzzle={onDeletePuzzle} onOpenProfile={onOpenProfile} kind={feedKind} setKind={setFeedKind} />
   );
   if (socialWide) {
     return (
@@ -3593,19 +3570,19 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
           {feedNode}
         </div>
         <aside style={{ position: "sticky", top: 12, minWidth: 0, maxHeight: "calc(100dvh - 120px)", overflowY: "auto", paddingLeft: 18, paddingRight: 2, maxWidth: 420 }}>
-          {tierNode}
+          {sideNode}
         </aside>
         {composerNode}
       </div>
     );
   }
+  // (v0.7.8, 사용자 요청) 모바일은 오른쪽 영역(티어·리더보드·친구 퍼즐 현황)을 옆으로 넘기는 2페이지로 — 1페이지는 머리줄·검색·일일 퍼즐·피드
   return (
     <div className="social-tab" style={{ maxWidth: 600, margin: "0 auto" }}>
-      {tierNode}
-      {headerNode}
-      {searchNode}
-      {storiesNode}
-      {feedNode}
+      <SwipePager pages={[
+        { key: "feed", node: <div style={{ minWidth: 0 }}>{headerNode}{searchNode}{storiesNode}{feedNode}</div> },
+        { key: "side", node: <div style={{ minWidth: 0 }}>{sideNode}</div> },
+      ]} />
       {composerNode}
     </div>
   );

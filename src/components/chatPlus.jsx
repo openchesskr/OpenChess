@@ -123,7 +123,8 @@ export function Sheet({ title, onClose, children, width = 360 }) {
 export const primaryBtn = (on = true) => ({ width: "100%", padding: "10px 0", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: on ? "pointer" : "default", opacity: on ? 1 : 0.5, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509" });
 
 // ---- 신고 시트 — 사유 + 자세한 내용(선택) + "차단도 하기" ----
-export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlocked }) {
+// note(v0.7.8): 맨 아래 안내 문구 — 소셜 탭 게시물 신고처럼 대화가 아닌 대상을 신고할 때 바꿔 준다
+export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlocked, note }) {
   // (v0.6.1, 사용자 요청) 사유를 체크박스로 여러 개 고를 수 있다 — 서버에는 "spam,abuse"처럼 쉼표로 이어 보낸다.
   const [reasons, setReasons] = useState([]);
   const toggleReason = (k) => setReasons((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]));
@@ -162,7 +163,7 @@ export function ReportSheet({ targetName, snippet, onSubmit, onClose, alreadyBlo
       )}
       {msg && <p style={{ fontSize: 11.5, color: T.blunder, fontWeight: 700, margin: "0 0 8px" }}>{msg}</p>}
       <button onClick={submit} disabled={!reasons.length || busy} className="press" style={primaryBtn(!!reasons.length && !busy)}>{busy ? t("보내는 중…") : t("신고하기")}</button>
-      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>{t("신고한 메시지와 최근 대화는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")}</p>
+      <p style={{ fontSize: 10.5, color: T.inkSoft, margin: "8px 0 0", lineHeight: 1.5 }}>{note || t("신고한 메시지와 최근 대화는 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")}</p>
     </Sheet>
   );
 }

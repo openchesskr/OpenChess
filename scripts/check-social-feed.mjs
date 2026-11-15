@@ -51,7 +51,7 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   const pz = fsR("src/app/puzzle.jsx"), feed = fsR("src/app/socialFeed.jsx"), pc = fsR("src/app/postComposer.jsx"), bd = fsR("src/components/puzzleThemeBackdrop.jsx");
   ok(/\{t\("\{0\}일", n\)\}/.test(pc), "연속 출석 숫자 뒤에 \"일\"이 없음");
   const hdr = (pz.match(/const headerNode = \([\s\S]*?\n  \);/) || [""])[0];
-  ok(/<StreakCount [\s\S]*\{searchBarNode\}[\s\S]*<NewPostButton /.test(hdr), "검색창·필터가 연속 출석과 새 게시물 버튼 사이에 없음");
+  ok(/<StreakCount [^\n]*\n\s*<NewPostButton [\s\S]*\{searchBarNode\}/.test(hdr), "1줄 연속 출석(왼쪽)·새 게시물(오른쪽), 2줄 검색창·필터 배치가 아님");
   ok(pz.indexOf("const searchBarNode = (") > 0 && pz.indexOf("const searchBarNode = (") < pz.indexOf("const headerNode = ("), "headerNode가 searchBarNode보다 먼저 만들어짐(정의 전 참조)");
   ok(/placeholder=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz) && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
   ok(/const numInput = useMemo\(\(\) => \{ const q = searchQuery\.trim\(\)/.test(pz) && /if \(e\.key === "Enter" && numInput\) solveByInput\(\)/.test(pz), "검색어가 번호·날짜면 번호로 풀기로 동작해야 함");
@@ -60,6 +60,16 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   ok(!/>#\{labels\[k\] \|\| k\}</.test(feed), "퍼즐 테마를 # 대신 박스로 표기해야 함");
   ok(/const POST_BOARD_FRAC = 0\.6;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 축소·세로로 긴 미디어 칸이 없음");
   ok(/<PuzzleThemeBackdrop theme=\{bdTheme\} \/>/.test(feed) && ["CheckmateArt", "SacrificeArt", "AdvantageArt", "PunishArt"].every((f) => bd.includes("function " + f + "(")), "퍼즐 테마별 배경 그림이 없음");
-  ok(/<TierHexFrame tierKey=\{tier\.key\}/.test(pz) && /const tierHexClip = /.test(pz), "퍼즐 티어 박스가 육각형(TierHexFrame)이 아님"); }
+  ok(/<TierOctFrame tierKey=\{tier\.key\}/.test(pz) && /const octClip = /.test(pz) && /<TierBackdrop tierKey=\{tierKey\} on narrow=\{false\} compact \/>/.test(pz), "퍼즐 티어 박스가 팔각형 + 티어 여정 디자인(TierOctFrame·TierBackdrop)이 아님"); }
+// (v0.7.8, 사용자 요청 2차) 게시물 ⋮ 메뉴(남: 신고·관심 없음 / 나: 삭제), 재생·풀기 버튼 제거, 오른쪽 영역(모바일 2페이지)·리더보드·친구 퍼즐 현황
+{ const feed = rd("src/app/socialFeed.jsx"), pz = rd("src/app/puzzle.jsx"), side = rd("src/app/puzzleSide.jsx"), sql = rd("supabase-setup.sql");
+  ok(/function PostMenu\(/.test(feed) && (feed.match(/menu=\{<PostMenu /g) || []).length === 2, "퍼즐·유산 게시물 모두 우상단 세로 점 메뉴(PostMenu)가 있어야 함");
+  ok(/t\("신고하기"\)/.test(feed) && /t\("관심 없음"\)/.test(feed) && /t\("삭제"\)/.test(feed) && /<ReportSheet /.test(feed) && /userReport\(uid, null, reason/.test(feed), "메뉴: 남의 게시물은 신고·관심 없음, 내 게시물은 삭제");
+  ok(!/t\("풀기"\)\}/.test(feed) && !/t\("재생"\)\}/.test(feed) && !/ctaBtn/.test(feed), "게시물에 재생·풀기 버튼이 남아 있음");
+  ok(/filter\(\(it\) => !isHiddenPost\(it\.key\)/.test(feed) && /hidePost\(postKey\)/.test(feed), "관심 없음으로 숨긴 게시물을 피드에서 빼지 않음");
+  ok(/<SwipePager pages=\{\[\s*\{ key: "feed"[\s\S]*\{ key: "side", node: <div style=\{\{ minWidth: 0 \}\}>\{sideNode\}/.test(pz), "모바일 오른쪽 영역이 옆으로 넘기는 2페이지가 아님");
+  ok(/const sideNode = \(\s*<>\s*\{tierNode\}\s*<PuzzleSidePanels /.test(pz), "오른쪽 영역에 티어 박스 아래 리더보드·친구 현황이 없음");
+  ok(/useRpcRows\("leaderboard_top"/.test(side) && /useRpcRows\("puzzle_rating_leaderboard"/.test(side) && /function FriendsPuzzle\(/.test(side), "퍼즐 XP·레이팅 리더보드·친구 퍼즐 현황이 없음");
+  ok(/create or replace function public\.puzzle_rating_leaderboard\(/.test(sql) && /'puzzle_rating_leaderboard'/.test(sql), "퍼즐 레이팅 리더보드 RPC(또는 권한 목록)가 없음"); }
 if (fails.length) { console.error("✗ check-social-feed 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-social-feed: 소셜 탭(/social) 피드 섞기·종류 토글·유산 피드 RPC 유지");

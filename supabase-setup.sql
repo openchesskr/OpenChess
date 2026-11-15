@@ -880,6 +880,18 @@ returns table(id uuid, username text, pub jsonb) language sql stable as $$
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
 
+-- (v0.7.8, 사용자 요청) 소셜 탭 오른쪽 영역의 "퍼즐 레이팅 리더보드" — leaderboard_top(퍼즐 XP 순)과 같은 모양으로, 퍼즐 레이팅(profiles.pub.puzzleRating) 높은 순.
+--  pub은 jsonb라 PostgREST 문자열 정렬로는 "1000" < "900"이 되므로 서버에서 숫자로 바꿔 정렬한다. 숫자가 아니면(기록 없음) 기본 800으로 본다.
+drop function if exists public.puzzle_rating_leaderboard(int) cascade;
+create or replace function public.puzzle_rating_leaderboard(p_limit int default 20)
+returns table(id uuid, username text, pub jsonb) language sql stable as $$
+  select id, username, pub
+  from public.profiles
+  order by (case when jsonb_typeof(pub -> 'puzzleRating') = 'number' then (pub ->> 'puzzleRating')::numeric else 800 end) desc, username asc
+  limit least(greatest(coalesce(p_limit, 20), 1), 100);
+$$;
+grant execute on function public.puzzle_rating_leaderboard(int) to anon, authenticated;
+
 -- (사용자 요청) /user 페이지에 "이 유저의 티어 리더보드 순위"를 작게 표시하기 위한 RPC — 위
 -- leaderboard_top(상위 N명만)과 달리 특정 한 명의 정확한 순위를 구해야 한다. leaderboard_top과
 -- 같은 정렬 기준(XP 내림차순, 동률이면 아이디순)으로 매긴 순위를 window 함수로 계산한다.
@@ -5026,7 +5038,7 @@ do $acl$
 declare
   r record;
   v_anon text[] := array[
-    'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
+    'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'puzzle_rating_leaderboard', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
     'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve', 'social_legacy_feed', 'social_profile',
     'search_puzzles_prefix', 'username_available', 'my_deletion_pending'

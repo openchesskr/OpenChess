@@ -23,9 +23,21 @@ const hex = (a) => "#" + a.map((v) => Math.round(Math.max(0, Math.min(255, v))).
 const mix = (a, b, k) => { const A = rgb(a), B = rgb(b); return hex(A.map((v, i) => v + (B[i] - v) * k)); };
 const alpha = (h, a) => "rgba(" + rgb(h).join(",") + "," + a + ")";
 
+// (v0.7.8) 배경 연출 애니메이션 — 소셜 탭 퍼즐 티어 박스(app/puzzle.jsx TierOctBox)도 같은 배경을 쓰므로 내보낸다
+export const TIER_BACKDROP_CSS = `@keyframes tjDust{0%{transform:translate(0,0);opacity:0}10%{opacity:var(--o,.5)}85%{opacity:var(--o,.5)}100%{transform:translate(24px,-105vh);opacity:0}}
+.tj-dust{animation:tjDust linear infinite}
+@keyframes tjSheen{from{left:-45%}to{left:110%}}
+.tj-sheen{animation:tjSheen 14s ease-in-out infinite}
+@keyframes tjRays{0%,100%{transform:rotate(-4deg);opacity:.8}50%{transform:rotate(4deg);opacity:1}}
+.tj-rays{animation:tjRays 18s ease-in-out infinite}
+@keyframes tjGlint{0%,70%,100%{transform:scale(0) rotate(0);opacity:0}80%{transform:scale(1.4) rotate(45deg);opacity:1}90%{transform:scale(.6) rotate(90deg);opacity:.6}}
+.tj-glint{animation:tjGlint 5.2s ease-in-out infinite}
+@keyframes tjAurora{0%,100%{translate:-6% 0;opacity:.75}50%{translate:6% 0;opacity:1}}
+.tj-aurora{animation:tjAurora 18s ease-in-out infinite}
+`;
 /* 티어 팔레트 — 레슨 단계 팔레트(stageTheme)와 같은 규칙으로 티어 색 하나에서 만든다 */
 const themeCache = {};
-function tierTheme(key) {
+export function tierTheme(key) {
   if (themeCache[key]) return themeCache[key];
   const c0 = TIER_COLORS[key] || TIER_COLORS.iron;
   const c = c0.stops ? c0.stops[0] : mix(c0.hi, c0.lo, 0.45);
@@ -63,7 +75,8 @@ function TierSignature({ tierKey, th, lite }) {
     </>;
   }
 }
-function TierBackdrop({ tierKey, on, narrow }) {
+// compact(v0.7.8): 소셜 탭 퍼즐 티어 박스처럼 낮은 박스 — 바닥·지평선은 빼고, 큰 기물 실루엣은 오른쪽에 박스 높이에 맞춰 둔다
+export function TierBackdrop({ tierKey, on, narrow, compact = false }) {
   const th = tierTheme(tierKey), lite = isLite();
   const c0 = TIER_COLORS[tierKey] || {};
   const light = c0.stops ? c0.stops[0] : c0.hi;      // 조명 색
@@ -76,15 +89,15 @@ function TierBackdrop({ tierKey, on, narrow }) {
       <div style={{ ...L, left: "50%", top: "-20%", width: "130%", height: "95%", marginLeft: "-65%", background: "radial-gradient(50% 60% at 50% 0%, " + alpha(light, 0.26) + " 0%, " + alpha(light, 0.08) + " 45%, transparent 75%)" }} />
       {on && <TierSignature tierKey={tierKey} th={th} lite={lite} />}
       {/* 큰 티어 기물 — 어둠 속 조각상처럼 검은 실루엣에 티어 색 윤곽광 */}
-      <img src={tierPieceSrc(tierKey, null)} alt="" draggable={false} style={{ ...L, right: narrow ? "-24%" : "-9%", bottom: narrow ? "16%" : "13%", height: narrow ? "46%" : "58%", maxHeight: 560, objectFit: "contain",
+      <img src={tierPieceSrc(tierKey, null)} alt="" draggable={false} style={{ ...L, right: compact ? "3%" : narrow ? "-24%" : "-9%", bottom: compact ? "-18%" : narrow ? "16%" : "13%", height: compact ? "150%" : narrow ? "46%" : "58%", maxHeight: 560, objectFit: "contain",
         filter: "brightness(0) drop-shadow(0 0 1.5px " + alpha(light, 0.9) + ") drop-shadow(0 0 18px " + alpha(light, 0.35) + ")", opacity: narrow ? 0.4 : 0.55,
         WebkitMaskImage: "linear-gradient(180deg, #000 30%, transparent 92%)", maskImage: "linear-gradient(180deg, #000 30%, transparent 92%)" }} />
       {/* 대리석 체스판 바닥 — 낮은 대비의 칸 + 위쪽 조명이 비친 광택, 멀어질수록 사라진다 */}
-      <div style={{ ...L, left: "-50%", right: "-50%", bottom: 0, height: "46%", transform: "perspective(600px) rotateX(64deg)", transformOrigin: "50% 100%",
+      {!compact && <div style={{ ...L, left: "-50%", right: "-50%", bottom: 0, height: "46%", transform: "perspective(600px) rotateX(64deg)", transformOrigin: "50% 100%",
         backgroundImage: "radial-gradient(40% 60% at 50% 0%, " + alpha(light, 0.16) + ", transparent 70%), repeating-conic-gradient(rgba(255,255,255,.045) 0 25%, rgba(0,0,0,.25) 0 50%)", backgroundSize: "100% 100%, 110px 110px", backgroundPosition: "center, center bottom",
-        WebkitMaskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)", maskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)" }} />
+        WebkitMaskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)", maskImage: "linear-gradient(0deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,.35) 50%, transparent 100%)" }} />}
       {/* 지평선의 은은한 빛 띠 */}
-      <div style={{ ...L, left: 0, right: 0, bottom: "44%", height: 60, marginBottom: -30, background: "radial-gradient(50% 50% at 50% 50%, " + alpha(light, 0.05) + ", transparent 70%)" }} />
+      {!compact && <div style={{ ...L, left: 0, right: 0, bottom: "44%", height: 60, marginBottom: -30, background: "radial-gradient(50% 50% at 50% 50%, " + alpha(light, 0.05) + ", transparent 70%)" }} />}
       {/* 빛 먼지 */}
       {on && !lite && DUST.map((p, i) => <span key={i} className="tj-dust" style={{ ...L, left: p.x + "%", bottom: -10, width: p.s, height: p.s, borderRadius: "50%", background: light, boxShadow: "0 0 " + p.s * 3 + "px " + alpha(light, 0.8), "--o": p.o, animationDuration: p.d + "s", animationDelay: p.delay + "s" }} />)}
       {/* 필름 질감 + 비네트 */}
@@ -265,16 +278,7 @@ export default function TierJourney({ totalXp, onClose }) {
         .tier-tile:focus-visible{outline:2px solid #FFF6E2;outline-offset:4px;border-radius:14px}
         .tier-scroll{scrollbar-width:none}.tier-scroll::-webkit-scrollbar{display:none}
         .tier-glass{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-        @keyframes tjDust{0%{transform:translate(0,0);opacity:0}10%{opacity:var(--o,.5)}85%{opacity:var(--o,.5)}100%{transform:translate(24px,-105vh);opacity:0}}
-        .tj-dust{animation:tjDust linear infinite}
-        @keyframes tjSheen{from{left:-45%}to{left:110%}}
-        .tj-sheen{animation:tjSheen 14s ease-in-out infinite}
-        @keyframes tjRays{0%,100%{transform:rotate(-4deg);opacity:.8}50%{transform:rotate(4deg);opacity:1}}
-        .tj-rays{animation:tjRays 18s ease-in-out infinite}
-        @keyframes tjGlint{0%,70%,100%{transform:scale(0) rotate(0);opacity:0}80%{transform:scale(1.4) rotate(45deg);opacity:1}90%{transform:scale(.6) rotate(90deg);opacity:.6}}
-        .tj-glint{animation:tjGlint 5.2s ease-in-out infinite}
-        @keyframes tjAurora{0%,100%{translate:-6% 0;opacity:.75}50%{translate:6% 0;opacity:1}}
-        .tj-aurora{animation:tjAurora 18s ease-in-out infinite}
+        ${TIER_BACKDROP_CSS}
       `}</style>
       {TIERS.map((tier) => <TierBackdrop key={tier.key} tierKey={tier.key} on={tier.key === viewTier} narrow={narrow} />)}
       {/* 경로 */}
