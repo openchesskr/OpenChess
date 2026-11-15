@@ -1,6 +1,6 @@
 import {
   canMove, exposesKing, sanSrc, applySan, kingPos, isAttacked, plyIsWhite, boardOfRoot, legalDests, buildSan,
-  startBoard, epTargetFromMoveInfo, countLegalMoves,
+  startBoard, epTargetFromMoveInfo, countLegalMoves, fenOfRoot, stripSuffix,
 } from "./chessRules.js";
 
 export const PIECE_VAL_MAT = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
@@ -526,7 +526,11 @@ export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac
   // 탁월 — 희생이면서 둔 뒤 포지션이 나쁘지 않고(BRILLIANT_MIN_PLAYED_CP), 두기 전 이미 2점 이상 지고 있지 않을 때.
   // (v0.7.3, 사용자 요청) 직전 자기 희생을 잇는 수(priorSac)도 희생이면 탁월로 인정한다 — 예전엔 연속 희생의 두 번째 수부터 탁월에서 빠졌다. priorSac 인자는 호출부 호환용으로 남겨 두되 판정에는 쓰지 않는다.
   const badlyLosing = bestCp <= -200;
-  if (["best", "excellent", "good"].includes(kind) && playedCp >= BRILLIANT_MIN_PLAYED_CP && !badlyLosing) {
+  // (v0.7.8 BUG-177) 엔진 1순위를 그대로 둔 희생이면 "둔 뒤 평가" 하한을 보지 않는다 — 1순위 수의 둔 뒤 평가는 두기 전 최선 평가와 같아서,
+  //   이 하한(-1.5)은 "희생 때문에 나빠졌는가"가 아니라 "원래 포지션이 얼마나 나빴는가"를 재게 된다. 두기 전 포지션 기준은 badlyLosing(-2.0) 하나로 충분하다.
+  //   예전엔 두 기준(-1.5·-2.0)이 겹쳐, 9...Bxh2+(Riga 변화)처럼 -0.9~-1.6을 오가는 포지션의 1순위 희생이 depth마다 탁월 ↔ 유일한 수·최선으로 바뀌었다.
+  const playedOk = playedCp >= BRILLIANT_MIN_PLAYED_CP || (matched && loss <= 0);
+  if (["best", "excellent", "good"].includes(kind) && playedOk && !badlyLosing) {
     try { if (isSac && isSac()) kind = "brilliant"; } catch { /* 판정 실패는 희생 아님 */ }
   }
   // 승부가 난 포지션 — 둔 뒤에도 크게 이기고 있거나(playedCp ≥ +4) 두기 전부터 크게 지고 있었으면(bestCp ≤ -4) 손실이 아무리 커도(예: +9 → +6) 그 수로 승부가 바뀌지 않는다.
@@ -554,6 +558,23 @@ export function gradeMoveKind({ loss, matched, bestCp, playedCp, secondCp, isSac
   return kind;
 }
 
+// (v0.7.8 BUG-177) 탁월 고정(래치) — 라이브 분석은 depth가 깊어질 때마다 같은 수를 다시 매겨, 기준선(둔 뒤 하한·유일한 수 1.2점 차이)
+//   근처를 오가는 수는 탁월 ↔ 유일한 수·최선이 번갈아 보였다. 엔진 확인을 통과해 한 번 탁월로 매겨진 "포지션|수"는, 그 뒤 depth에서
+//   좋은 수 이상(최선·우수·좋은·유일)으로 남는 한 계속 탁월로 둔다. 부정확 이하로 떨어지면(엔진이 수 자체를 다시 본 것) 고정을 풀지 않고 그 등급을 따른다.
+//   키는 표준 시작이면 수순, FEN 시작이면 FEN — 분석 탭 다음 수 블록·현재 수 블록·집중 분석이 같은 값을 공유한다.
+const brilliantLatch = new Map();
+const BRILLIANT_LATCH_MAX = 4000;
+const latchKey = (fenRoot, prevSans, san) => (fenRoot ? fenOfRoot(fenRoot, prevSans) : (prevSans || []).join(" ")) + "|" + stripSuffix(san);
+export function stickyBrilliant(fenRoot, prevSans, san, kind) {
+  if (!san || !kind) return kind;
+  const k = latchKey(fenRoot, prevSans, san);
+  if (kind === "brilliant") {
+    if (!brilliantLatch.has(k)) { if (brilliantLatch.size >= BRILLIANT_LATCH_MAX) brilliantLatch.delete(brilliantLatch.keys().next().value); brilliantLatch.set(k, true); }
+    return kind;
+  }
+  return brilliantLatch.has(k) && STICKY_BRILLIANT_FROM.includes(kind) ? "brilliant" : kind;
+}
+export const STICKY_BRILLIANT_FROM = ["best", "excellent", "good", "only"];
 /* (v0.7.5, 사용자 요청) 저장된 리뷰 결과 바로잡기 — 강제 수(합법 수 하나뿐)를 "유일한 수"로 매긴 예전 결과.
    gradeMoveKind가 바뀌기 전에 분석돼 이 기기 캐시·서버 공유 캐시에 남은 결과는 다시 분석하지 않고(캐시 버전을 올리면 프로필 퍼포먼스 레이팅 등
    모든 저장 분석이 한꺼번에 무효가 된다), 읽을 때 기보를 다시 두어 보며 그 수 직전의 합법 수가 하나뿐이었던 "only"만 "best"로 고친다.

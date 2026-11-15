@@ -1,6 +1,6 @@
 // (v0.7.6, 사용자 요청) 수 키워드 자동 부여 — 개발자가 수마다 키워드를 손으로 지정하던 기능(analysis.jsx 이름·키워드 편집, CONTENT.keywords)을 없애고,
-// 수 블록으로 표시되는 모든 수에 그 포지션을 직접 분석해 키워드 "하나"를 붙인다. 순수 함수라 scripts/check-move-keywords.mjs가 시험한다.
-// 규칙(위에서부터 먼저 맞는 하나) — 2차안(SHARP를 "날카로운 수"로 바꾸고 18종 모두 사용), 사용자와 협의하며 조정한다:
+// 수 블록으로 표시되는 모든 수에 그 포지션을 직접 분석해 키워드를 붙인다(v0.7.8: 하나가 아니라 조건에 맞는 키워드 전부, 아래 우선순위 순). 순수 함수라 scripts/check-move-keywords.mjs가 시험한다.
+// 규칙(v0.7.8부터 맞는 것 전부를 이 순서로 — 하나도 없을 때만 NORMAL) — 2차안(SHARP를 "날카로운 수"로 바꾸고 18종 모두 사용), 사용자와 협의하며 조정한다:
 //   1. LOW-LEVEL      최선보다 1.5 이상 나쁨 — 낮은 레벨에서 주로 보이는 수
 //   2. TRICKY         기물 희생인데 최선과의 차이 0.5 이하 — 함정·희생을 노리는 까다로운 수
 //   3. SHARP          최선(0.2 이내)인데 다른 모든 수가 0.8 이상 나쁨, 또는 유일한 수 — 정확히 둬야 하는 날카로운 수
@@ -36,8 +36,9 @@ const mirror = (san) => strip(san).replace(/[1-8]/g, (d) => String(9 - Number(d)
    nearBest: 최선 0.3 이내 수의 개수(모르면 null) · evalCp: 이 수를 둔 뒤 두는 쪽 관점 평가(모르면 null) · kind: 수 등급(only 등)
    adopt·masterAdopt: 채택률(%) · masterTop: 마스터 상위 3수 · book: 이론 수 · name: 이 수의 오프닝 이름
    prevSan: 직전 상대 수 · history: 지금까지 나온 포지션 배치 키 Set(placementKey) */
-export function autoMoveKeyword({ san, color, board, lossCp = null, isBest = false, gapCp = null, nearBest = null, evalCp = null, kind = null, adopt = null, masterAdopt = null, masterTop = false, book = false, name = null, prevSan = null, history = null }) {
-  if (!san) return "NORMAL";
+export function autoMoveKeywords({ san, color, board, lossCp = null, isBest = false, gapCp = null, nearBest = null, evalCp = null, kind = null, adopt = null, masterAdopt = null, masterTop = false, book = false, name = null, prevSan = null, history = null }) {
+  if (!san) return ["NORMAL"];
+  const out = []; const add = (k) => { if (!out.includes(k)) out.push(k); };
   let info = null, check = false, sac = false, after = null, captured = null;
   try {
     if (board) {
@@ -56,31 +57,33 @@ export function autoMoveKeyword({ san, color, board, lossCp = null, isBest = fal
   const enemy = color === "w" ? "b" : "w", fwd = color === "w" ? -1 : 1;
   const quiet = !capture && !check;
 
-  if (lossCp != null && lossCp >= 150) return "LOW-LEVEL";
-  if (sac && lossCp != null && lossCp <= 50) return "TRICKY";
-  if (kind === "only" || (lossCp != null && lossCp <= 20 && gapCp != null && gapCp >= 80)) return "SHARP";
-  if (isBest && (masterTop || (masterAdopt != null && masterAdopt >= 25))) return "TOP LEVEL";
-  if (after && history && history.has(placementKey(after, enemy))) return "DRAWING-WEAPON";
-  if (piece === "Q" && captured && captured.t === "Q" && evalCp != null && Math.abs(evalCp) <= 40) return "DRAWING-WEAPON";
-  if (name && /\bAnti[-\s]/i.test(name)) return "ANTI-";
-  if (captured && ((piece === "B" && captured.t === "N") || (piece === "N" && captured.t === "B"))) return "IMBALANCE";
-  if (piece === "P" && capture) return "OPEN";
+  if (lossCp != null && lossCp >= 150) add("LOW-LEVEL");
+  if (sac && lossCp != null && lossCp <= 50) add("TRICKY");
+  if (kind === "only" || (lossCp != null && lossCp <= 20 && gapCp != null && gapCp >= 80)) add("SHARP");
+  if (isBest && (masterTop || (masterAdopt != null && masterAdopt >= 25))) add("TOP LEVEL");
+  if (after && history && history.has(placementKey(after, enemy))) add("DRAWING-WEAPON");
+  if (piece === "Q" && captured && captured.t === "Q" && evalCp != null && Math.abs(evalCp) <= 40) add("DRAWING-WEAPON");
+  if (name && /\bAnti[-\s]/i.test(name)) add("ANTI-");
+  if (captured && ((piece === "B" && captured.t === "N") || (piece === "N" && captured.t === "B"))) add("IMBALANCE");
+  if (piece === "P" && capture) add("OPEN");
   if (piece === "P" && !capture && info && after) {
     const [r, c] = info.to, front = after[r + fwd] && after[r + fwd][c];
     const own = (rr, cc) => cc >= 0 && cc < 8 && after[rr] && after[rr][cc] && after[rr][cc].t === "P" && after[rr][cc].c === color;
-    if (front && front.t === "P" && front.c === enemy && (own(r - fwd, c - 1) || own(r - fwd, c + 1))) return "CLOSED";   // 막힌 데다 뒤에서 내 폰이 받쳐 사슬이 됨
+    if (front && front.t === "P" && front.c === enemy && (own(r - fwd, c - 1) || own(r - fwd, c + 1))) add("CLOSED");   // 막힌 데다 뒤에서 내 폰이 받쳐 사슬이 됨
     const hits = [c - 1, c + 1].some((cc) => cc >= 0 && cc < 8 && after[r + fwd] && after[r + fwd][cc] && after[r + fwd][cc].t === "P" && after[r + fwd][cc].c === enemy);
-    if (hits) return "SWITCH";
+    if (hits) add("SWITCH");
   }
-  if (check || capture) return "STRAIGHT-LINE";
-  if (/^O-O/.test(san)) return "INTUITIVE";
-  if (info && /^[NB]/.test(san) && info.from && info.from[0] === (color === "w" ? 7 : 0)) return "INTUITIVE";
-  if (prevSan && mirror(prevSan) === strip(san)) return "BALANCE";
-  if (book && adopt != null && adopt >= 30) return "MAIN-LINE";
-  if (book && adopt != null && adopt < 5) return "SIDESTEPPING";
-  if (quiet && lossCp != null && lossCp <= 30 && nearBest != null && nearBest >= 3) return "FLEXIBLE";
-  if (quiet && lossCp != null && lossCp <= 30) return "QUIET";
-  return "NORMAL";
+  if (check || capture) add("STRAIGHT-LINE");
+  if (/^O-O/.test(san)) add("INTUITIVE");
+  if (info && /^[NB]/.test(san) && info.from && info.from[0] === (color === "w" ? 7 : 0)) add("INTUITIVE");
+  if (prevSan && mirror(prevSan) === strip(san)) add("BALANCE");
+  if (book && adopt != null && adopt >= 30) add("MAIN-LINE");
+  if (book && adopt != null && adopt < 5) add("SIDESTEPPING");
+  if (quiet && lossCp != null && lossCp <= 30 && nearBest != null && nearBest >= 3) add("FLEXIBLE");
+  if (quiet && lossCp != null && lossCp <= 30) add("QUIET");
+  if (out.includes("FLEXIBLE")) return out.filter((k) => k !== "QUIET");   // FLEXIBLE은 "좋은 수가 여럿인 포지션의 조용한 수"라 QUIET을 이미 담고 있다 — 같은 뜻 두 번 표시하지 않음
+  return out.length ? out : ["NORMAL"];
 }
-// 수 블록·현재 수 블록·집중 분석·도감이 함께 쓰는 표시용 목록(키워드 하나). assignTiers가 붙인 m.kwAuto만 쓴다 — 예전 m.kw(개발자 지정·정적 데이터)는 보지 않는다.
-export const blockKeywords = (m) => (m && typeof m.kwAuto === "string" ? [m.kwAuto] : []);
+export const autoMoveKeyword = (args) => autoMoveKeywords(args)[0];   // 가장 앞선(우선순위 높은) 키워드 하나
+// 수 블록·현재 수 블록·집중 분석·도감이 함께 쓰는 표시용 목록(v0.7.8: 맞는 키워드 전부). assignTiers가 붙인 m.kwAutoAll(없으면 m.kwAuto)만 쓴다 — 예전 m.kw(개발자 지정·정적 데이터)는 보지 않는다.
+export const blockKeywords = (m) => (m && Array.isArray(m.kwAutoAll) && m.kwAutoAll.length ? m.kwAutoAll : m && typeof m.kwAuto === "string" ? [m.kwAuto] : []);

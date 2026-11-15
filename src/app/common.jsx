@@ -1,7 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
-import { autoMoveKeyword, placementKey } from "../lib/moveKeywords.js";
+import { autoMoveKeywords, placementKey } from "../lib/moveKeywords.js";
 import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
@@ -20,7 +20,7 @@ import { structureFactInGame } from "../lib/mecPawnStructure.js";
 import { structurePhrase } from "../lib/mecStructureText.js";
 import { openingMoveFact } from "../lib/mecOpenings.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva, fixForcedOnlyMoves } from "../lib/moveQuality.js";
+import { matePliesOf, stickyBrilliant, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva, fixForcedOnlyMoves } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -1892,7 +1892,7 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   const pendingSibling = moves.some((m) => moverEval(m, ply) == null);
   const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
-  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드 하나(kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
+  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드(v0.7.8: 맞는 것 전부 kwAutoAll, 대표 kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
   //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
   const evs = moves.map((m) => moverEval(m, ply));
   const allEval = evs.every((v) => v != null);
@@ -1903,8 +1903,9 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
     const mv = evs[i];
     const others = evs.filter((v, k) => k !== i && v != null);
     const gapCp = allEval && others.length ? mv - Math.max(...others) : null;
-    return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
-      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history }) };
+    const kwAutoAll = autoMoveKeywords({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
+      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history });
+    return { ...out, kwAuto: kwAutoAll[0], kwAutoAll };   // (v0.7.8, 사용자 요청) 조건에 맞는 키워드 전부 — kwAuto는 대표(첫) 키워드
   };
   return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
   function gradeTier(m, i) {
@@ -1923,7 +1924,7 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
       isSac: () => !!(board && sans) && sacCheckSync(null, sans, m.san, color, board)(), priorSac: !!sans && ownPriorMoveWasSacrifice(sans, color),
       singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
     });
-    return { ...m, kind, book: false };
+    return { ...m, kind: sans ? stickyBrilliant(null, sans, m.san, kind) : kind, book: false };   // (v0.7.8 BUG-177) depth가 바뀌어도 탁월 유지
   }
 }
 /* (UI2) 화면 폭에 맞춰 보드 크기를 산출 — 모바일에서 보드가 잘리지 않게 함 */

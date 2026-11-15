@@ -62,3 +62,22 @@ export function mateDuplicateVerdict(existing, newLen) {
   if (list.length >= MATE_KEY_MAX_PUZZLES) return { ok: false, reason: "cap", existing: longest };
   return { ok: true };
 }
+
+/**
+ * (v0.7.8, 사용자 요청) 분석 탭 다음 수 블록의 "+ 퍼즐 생성" — 이 수로 퍼즐 마법사가 만들 수 있는 테마(없으면 null).
+ *  · 게임 끝내기(checkmate): 이 수를 둔 뒤에도 둔 쪽의 강제 메이트가 이어지고, 두기 전 남은 반수가 MATE_PUZZLE_MIN_PLIES~MAX (mateCandidates와 같은 기준 — 메이트 인 1·바로 #은 제외)
+ *  · 기물 희생하기(sacrifice): 탁월한 수(첫 수부터는 마법사가 직전 수를 응수로 떼어 낼 수 없어 ply ≥ 1)
+ *  · 실수 응징하기(punish): 실수·블런더
+ *  mate: 이 수를 둔 뒤 평가(백 관점 { mate, win, plies } — plies = 남은 반수). mover: 둔 쪽 "w"|"b". ply: 이 수 직전까지의 반수.
+ *  메이트 수순이 탁월한 희생으로 시작하면 게임 끝내기를 고른다(마법사는 테마 하나로 시작한다).
+ */
+export function tilePuzzleTheme({ kind, mover, ply, mate }) {
+  if (mate && mate.mate != null && Number.isFinite(mate.plies)) {
+    const win = mate.win || (mate.mate > 0 ? "w" : "b");
+    const before = mate.plies + 1;
+    if (win === mover && before >= MATE_PUZZLE_MIN_PLIES && before <= MATE_PUZZLE_MAX_PLIES) return "checkmate";
+  }
+  if (kind === "brilliant" && ply >= 1) return "sacrifice";
+  if (kind === "mistake" || kind === "blunder") return "punish";
+  return null;
+}

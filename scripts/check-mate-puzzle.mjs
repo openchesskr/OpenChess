@@ -100,5 +100,21 @@ ok(/if p_public and v_key is not null[\s\S]{0,600}pg_advisory_xact_lock\(hashtex
 ok(/insert into public\.puzzles\(no, data, is_public, creator_uid\) values \(p_no, p_data, coalesce\(p_public, true\), p_actor\)/.test(sql), "새 퍼즐 저장 때 생성자를 함께 기록하지 않음");
 ok(/create index if not exists idx_puzzles_mate_key/.test(sql), "mateKey 색인이 없음");
 
+// (v0.7.8, 사용자 요청) 분석 탭 다음 수 블록 "+ 퍼즐 생성" — 조건(탁월·실수·블런더·체크메이트 수순)과 연결
+{
+  const T = lib.tilePuzzleTheme;
+  ok(T({ kind: "best", mover: "w", ply: 10, mate: { mate: 2, win: "w", plies: 2 } }) === "checkmate", "둔 뒤에도 내 메이트 인 2(남은 반수 2 → 두기 전 3) → 게임 끝내기");
+  ok(T({ kind: "best", mover: "w", ply: 10, mate: { mate: 1, win: "w", plies: 0 } }) === null, "바로 체크메이트(#)·메이트 인 1은 퍼즐 생성 대상 아님");
+  ok(T({ kind: "best", mover: "w", ply: 10, mate: { mate: 9, win: "w", plies: 16 } }) === null, "남은 반수가 최대(15)를 넘으면 게임 끝내기 아님");
+  ok(T({ kind: "blunder", mover: "w", ply: 10, mate: { mate: -2, win: "b", plies: 3 } }) === "punish", "상대에게 메이트를 내준 블런더 → 실수 응징하기");
+  ok(T({ kind: "brilliant", mover: "b", ply: 17, mate: null }) === "sacrifice", "탁월한 수 → 기물 희생하기");
+  ok(T({ kind: "brilliant", mover: "w", ply: 0, mate: null }) === null, "첫 수의 탁월은 마법사가 직전 수를 떼어 낼 수 없어 제외");
+  ok(T({ kind: "mistake", mover: "w", ply: 4, mate: null }) === "punish", "실수 → 실수 응징하기");
+  ok(["best", "excellent", "good", "only", "inaccuracy", "book", "pending"].every((k) => T({ kind: k, mover: "w", ply: 4, mate: null }) === null), "그 밖의 등급에는 퍼즐 생성 버튼이 없음");
+  const an = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
+  ok(/onCreatePuzzle=\{tilePuzzleSeed\(m\)\}/.test(an) && /tilePuzzleTheme\(\{ kind: m\.kind/.test(an), "다음 수 블록이 퍼즐 생성 조건(tilePuzzleTheme)으로 버튼을 달지 않음");
+  ok(/onOpenPuzzleWizard\(\{ pgn: sansToPgnText\(\[\.\.\.sans, m\.san\], "w"\), targetPly: sans\.length, theme \}\)/.test(an), "+ 퍼즐 생성이 그 수부터 퍼즐 마법사 seed를 넘기지 않음");
+  ok(/setComposeType\("puzzle"\);[^\n]*\n\s*setPuzzleMode\("create"\);\n\s*setPcInput\(createSeed\.pgn\)/.test(puzzle), "퍼즐 마법사 seed가 작성기를 퍼즐 탭으로 열지 않음");
+}
 if (fails.length) { console.error("✖ check-mate-puzzle 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-mate-puzzle: 게임 끝내기 후보(메이트 인 2 이상·수순 묶음), 체크메이트 장면 중복 방지(클라이언트·서버 같은 규칙, 서버 재계산), 화면·생성·SQL 연결이 유지된다");

@@ -234,7 +234,7 @@ ok(/pickRecentGames\(/.test(ghome) && /recent=\{src\.recent\}/.test(ghome), "분
   ok(/engine\.status !== "ready"/.test(auto), "자동 리뷰: 엔진이 준비되지 않았으면 분석하지 않음");
   const ti = app.indexOf("<AnalysisWithGrowth ");
   ok(/engine=\{engine\} reviewSpeed=\{reviewSpeed\} quickReview=\{quickReview\}/.test(app.slice(ti, ti + 6000)), "App이 분석 탭 성장 분석에 엔진·리뷰 속도 설정을 넘기지 않음");
-  ok(/paused: !active/.test(growth) && /if \(!ready \|\| paused\) return;/.test(growth), "성장 분석: 화면에 보이기 전(active=false)에는 엔진 자동 리뷰를 미뤄야 함(분석 탭 실시간 평가와 대기열 경쟁)"); }
+  ok(/paused: !active/.test(growth) && /if \(!ready \|\| paused\) return;/.test(growth), "성장 분석: active=false(접속 직후 대기 중)에는 엔진 자동 리뷰를 미뤄야 함(엔진 부팅·분석 탭 첫 평가와 대기열 경쟁)"); }
 { const gh2 = rd("src/app/gameHistory.jsx");
   ok(/noBoard=\{narrow\}/.test(gh2) && /\{!noBoard && \(/.test(gh2), "최근 대국 박스: 모바일에서는 체스보드 미리보기를 없애야 함");
   ok(/noBoard=\{narrow\}/.test(growth) && /\{!noBoard && <MiniBoard /.test(growth), "실수 기록·고칠 한 가지 예시: 모바일에서는 체스보드 미리보기를 없애야 함");
@@ -282,5 +282,12 @@ ok(/levelLabel\(byKey\[k\]\.level\)/.test(growth) && /LEVEL_COLOR\[lv\]/.test(gr
 // (v0.7.7 BUG-161) 성장 곡선의 축 숫자는 SVG 밖 HTML(고정 px) — SVG <text>는 viewBox 확대 비율을 따라 넓은 화면에서 커진다
 { const m = growth.match(/function GrowthCurve\([\s\S]*?\n}\n/); const body = m ? m[0] : "";
   ok(body && !/<text\b/.test(body), "GrowthCurve SVG 안에 <text>가 있음(BUG-161) — 축 숫자는 SVG 밖 HTML로 그릴 것"); }
+// (v0.7.8, 사용자 요청) 스크롤하지 않아도 백그라운드 자동 수집·분석, 다 끝난 상태로 처음 보이면 약 5초 보여 주기 연출 뒤 결과
+{ const gh = rd("src/app/growthHome.jsx"), gm = rd("src/app/growthMotion.jsx");
+  ok(/const auto = useGrowthAutoReview\(\{[^}]*active: bgOn \|\| visible \}\)/.test(gh) && /setTimeout\(\(\) => setBgOn\(true\), GROWTH_BG_DELAY_MS\)/.test(gh), "분석 탭이 화면에 보이지 않아도 백그라운드 자동 리뷰를 시작해야 함(bgOn)");
+  ok(/<GrowthPanel [^>]*auto=\{auto\}/.test(gh) && !/<GrowthPanel [^>]*active=\{/.test(gh), "자동 리뷰는 분석 탭 전체(AnalysisWithGrowth)가 들고 GrowthPanel에 넘겨야 함(집중 분석 중에도 멈추지 않게)");
+  ok(/export const SHOWCASE_MS = 5000;/.test(gm) && /export function useShowcaseReplay\(/.test(gm), "보여 주기 연출 길이(SHOWCASE_MS = 5000)·재생 훅이 없음");
+  ok(/showcase !== "done" \? \(\s*<AnalysisScanner phase="analyze" showcase /.test(growth) && /setShowcase\(sawLiveRef\.current \? "done" : "run"\)/.test(growth), "분석이 끝난 뒤 처음 보일 때 보여 주기 연출을 먼저 재생하지 않음(진행을 직접 본 경우는 건너뜀)");
+  ok(/const live = showcase \? \(liveOverride \|\| null\) : liveReal;/.test(gm), "AnalysisScanner가 보여 주기 연출의 재생 진행을 쓰지 않음"); }
 if (fails.length) { console.error("✖ check-growth 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-growth: 최근 5판 자동 리뷰(대국 선택·엔진 분석 연결·게이지), 승률 하락 원인 설명기, 하이라이트 선정, 마스터 스타일 매칭과 화면 연결이 유지된다");

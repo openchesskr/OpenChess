@@ -4922,6 +4922,91 @@ update public.notifications set reward_amount = least(greatest(coalesce((payload
   where kind = 'daily_puzzle_selected' and reward_amount is null and jsonb_typeof(payload -> 'reward') = 'number';
 
 -- ============================================================================
+-- (v0.7.8, 사용자 요청) 집중 분석 유저 통계 "전체 통계" — Lichess 오프닝 탐색기(lichess DB)의 이 수순 최고 레이팅 대국·최근 대국을 서버가 받을 때마다 쌓는다(빅데이터).
+--  · 쓰기·읽기는 서버리스 함수(api/explorer-games.js, service_role)만 — 브라우저는 표·함수에 직접 접근할 수 없다(아래 $acl$ 허용 목록에 없음).
+--    서버가 수순을 chess.js로 검증하고 Lichess에서 직접 받은 값만 넣으므로, 브라우저가 가짜 대국을 섞어 넣을 수 없다.
+--  · pos_key: 표준 시작부터의 UCI 수순(쉼표 구분, 시작 포지션은 ''). 같은 대국이 여러 수순에 나타나므로 키는 (pos_key, game_id).
+--  · explorer_positions.fetched_at: 마지막으로 Lichess에서 받은 시각 — 서버가 이 간격(6시간) 안에는 Lichess를 다시 부르지 않는다(토큰 호출 한도 보호).
+-- ============================================================================
+create table if not exists public.explorer_positions (
+  pos_key text primary key,
+  white bigint not null default 0,
+  draws bigint not null default 0,
+  black bigint not null default 0,
+  moves jsonb not null default '[]'::jsonb,
+  fetched_at timestamptz not null default now()
+);
+create table if not exists public.explorer_games (
+  pos_key text not null,
+  game_id text not null,
+  white_name text,
+  white_rating int,
+  black_name text,
+  black_rating int,
+  winner text,
+  speed text,
+  month text,
+  next_uci text,
+  source text not null default 'recent',
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  primary key (pos_key, game_id)
+);
+create index if not exists idx_explorer_games_pos_rating on public.explorer_games (pos_key, greatest(coalesce(white_rating, 0), coalesce(black_rating, 0)) desc);
+create index if not exists idx_explorer_games_pos_seen on public.explorer_games (pos_key, first_seen desc);
+alter table public.explorer_positions enable row level security;
+alter table public.explorer_games enable row level security;
+revoke all on public.explorer_positions from public, anon, authenticated;
+revoke all on public.explorer_games from public, anon, authenticated;
+
+-- 서버가 Lichess 응답(전체 승·무·패, 다음 수 통계, 대국 목록)을 저장한다. 대국은 모양을 다시 확인해 넣고, 이미 있으면 last_seen만 갱신한다.
+create or replace function public.explorer_record(p_pos text, p_white bigint, p_draws bigint, p_black bigint, p_moves jsonb, p_games jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare g jsonb; v_n int := 0;
+begin
+  if p_pos is null or length(p_pos) > 1200 or p_pos !~ '^([a-h][1-8][a-h][1-8][qrbn]?(,[a-h][1-8][a-h][1-8][qrbn]?)*)?$' then raise exception 'invalid pos'; end if;
+  if coalesce(p_white, 0) < 0 or coalesce(p_draws, 0) < 0 or coalesce(p_black, 0) < 0 then raise exception 'invalid totals'; end if;
+  if p_moves is not null and (jsonb_typeof(p_moves) <> 'array' or jsonb_array_length(p_moves) > 30 or length(p_moves::text) > 8000) then raise exception 'invalid moves'; end if;
+  if p_games is null or jsonb_typeof(p_games) <> 'array' or jsonb_array_length(p_games) > 12 then raise exception 'invalid games'; end if;
+  insert into public.explorer_positions(pos_key, white, draws, black, moves, fetched_at)
+    values (p_pos, coalesce(p_white, 0), coalesce(p_draws, 0), coalesce(p_black, 0), coalesce(p_moves, '[]'::jsonb), now())
+  on conflict (pos_key) do update set white = excluded.white, draws = excluded.draws, black = excluded.black, moves = excluded.moves, fetched_at = now();
+  for g in select * from jsonb_array_elements(p_games) loop
+    if coalesce(g ->> 'id', '') !~ '^[A-Za-z0-9]{8}$' then continue; end if;
+    insert into public.explorer_games(pos_key, game_id, white_name, white_rating, black_name, black_rating, winner, speed, month, next_uci, source)
+    values (p_pos, g ->> 'id', left(g ->> 'white_name', 40), case when (g ->> 'white_rating') ~ '^\d{1,4}$' then (g ->> 'white_rating')::int end,
+            left(g ->> 'black_name', 40), case when (g ->> 'black_rating') ~ '^\d{1,4}$' then (g ->> 'black_rating')::int end,
+            case when g ->> 'winner' in ('white', 'black') then g ->> 'winner' end,
+            case when (g ->> 'speed') ~ '^[a-z]{3,16}$' then g ->> 'speed' end,
+            case when (g ->> 'month') ~ '^\d{4}-\d\d$' then g ->> 'month' end,
+            case when (g ->> 'next_uci') ~ '^[a-h][1-8][a-h][1-8][qrbn]?$' then g ->> 'next_uci' end,
+            case when g ->> 'source' = 'top' then 'top' else 'recent' end)
+    on conflict (pos_key, game_id) do update set last_seen = now(),
+      source = case when excluded.source = 'top' then 'top' else public.explorer_games.source end;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+
+-- 서버가 화면에 줄 값 — 전체 집계 + 쌓인 대국(레이팅 높은 순 p_top개 + 최근 순 p_recent개, 중복 제거) + 쌓인 대국 수.
+create or replace function public.explorer_read(p_pos text, p_top int default 30, p_recent int default 30)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'position', (select to_jsonb(p) - 'pos_key' from public.explorer_positions p where p.pos_key = p_pos),
+    'stored', (select count(*) from public.explorer_games where pos_key = p_pos),
+    'games', coalesce((select jsonb_agg(to_jsonb(x) - 'pos_key') from (
+        (select * from public.explorer_games where pos_key = p_pos order by greatest(coalesce(white_rating, 0), coalesce(black_rating, 0)) desc limit least(greatest(p_top, 0), 100))
+        union
+        (select * from public.explorer_games where pos_key = p_pos order by first_seen desc limit least(greatest(p_recent, 0), 100))
+      ) x), '[]'::jsonb)
+  );
+$$;
+revoke all on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.explorer_read(text, int, int) from public, anon, authenticated;
+grant execute on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) to service_role;
+grant execute on function public.explorer_read(text, int, int) to service_role;
+
+-- ============================================================================
 -- 함수 실행 권한 최종 확정 (v0.7.0 보안, BUG-108·118) — 기본 차단 + 허용 목록
 -- ============================================================================
 -- PostgreSQL은 새 함수에 PUBLIC 실행 권한을 기본으로 주고 Supabase도 anon/authenticated에 기본 부여한다. 그래서 위에서 'service_role에만 준다'고

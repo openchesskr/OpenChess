@@ -2544,6 +2544,7 @@ export function PuzzleTab({ puzzles, archivedPuzzles, solved, lineSolves, onLine
   useEffect(() => {
     if (!createSeed) return;
     resetPuzzleCreate();
+    setComposeType("puzzle");   // (v0.7.8) 작성기가 마지막에 유산·대국 탭에 있었어도 퍼즐 마법사로 연다(분석 탭 "+ 퍼즐 생성"·집중 분석 "퍼즐 만들기")
     setPuzzleMode("create");
     setPcInput(createSeed.pgn);
     parsePcInput(createSeed.pgn);
