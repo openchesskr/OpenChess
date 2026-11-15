@@ -5,7 +5,7 @@
  *   · 화면: 커뮤니티 블록이 웹 검색 + 영상을 함께 보이고, 둘 다 꺼져 있으면 숨으며, 링크는 새 창(noopener)
  *  실행: node scripts/check-web-search.mjs (prebuild) */
 import { readFileSync } from "node:fs";
-import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS } from "../api/_lib/websearch.js";
+import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS, WEB_DAILY_CAP } from "../api/_lib/websearch.js";
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
 const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8");
 
@@ -24,11 +24,15 @@ ok(webQuery(["e4", "e5", "Nf3"], null) === "1. e4 e5 2. Nf3 chess opening", "이
   ok(r[0].title === "Riga & more" && r[0].snippet === "The Open variation" && r[0].site === "Wikipedia", "태그 제거·엔티티 풀기·사이트 이름");
   ok(r.every((x) => /^https?:\/\//.test(x.url)), "http(s) 주소만");
   ok(r[1].site === "site0.com", "사이트 이름이 없으면 주소에서(www 제외)"); }
+// (v0.7.8) Tavily 응답 모양 — 사이트 이름은 주소의 호스트, 요약은 content
+{ const r = cleanWebResults({ results: [{ title: "Ruy Lopez - Wikipedia", url: "https://en.wikipedia.org/wiki/Ruy_Lopez", content: "The Ruy Lopez &amp; more" }, { title: "x", url: "javascript:alert(1)", content: "" }] });
+  ok(r.length === 1 && r[0].site === "en.wikipedia.org" && r[0].snippet === "The Ruy Lopez & more", "Tavily 응답 정리"); }
+ok(WEB_DAILY_CAP * 31 <= 1000, "하루 상한이 Tavily 무료 1,000회/월을 넘음");
 ok(cleanWebResults(null).length === 0 && cleanWebResults({ web: {} }).length === 0, "빈 응답");
 const api = rd("api/_lib/webSearchHandler.js"), yt = rd("api/youtube.js"), block = rd("src/components/communityBlock.jsx");
-ok(/process\.env\.BRAVE_SEARCH_API_KEY/.test(api) && /res\.status\(503\)\.json\(\{ error: "not_configured" \}\)/.test(api), "키가 없으면 503(블록이 조용히 숨음)");
+ok(/process\.env\.TAVILY_API_KEY/.test(api) && /api\.tavily\.com\/search/.test(api) && /search_depth: "basic"/.test(api) && !/BRAVE/.test(api) && /res\.status\(503\)\.json\(\{ error: "not_configured" \}\)/.test(api), "키가 없으면 503(블록이 조용히 숨음)");
 ok(/parseMovesParam\(\(req\.query \|\| \{\}\)\.moves\)/.test(api) && /parseNameParam\(/.test(api), "서버가 수순·이름을 검증하지 않음");
-ok(/\["websearch:ip:" \+ clientIp\(req\), 20, 60\], \["websearch:global", 400, 86400\]/.test(api) && /safesearch: "strict"/.test(api), "호출 한도·안전 검색이 없음");
+ok(/\["websearch:ip:" \+ clientIp\(req\), 20, 60\], \["websearch:global", WEB_DAILY_CAP, 86400\]/.test(api), "호출 한도가 없음");
 ok(/if \(!sans \|\| !sans\.length \|\| sans\.length > YT_MAX_PLIES \|\| \(off\.web && off\.yt\)\) return null;/.test(block), "웹 검색·영상이 모두 꺼져 있으면 커뮤니티 블록을 숨겨야 함");
 ok(/target="_blank" rel="noopener noreferrer nofollow"/.test(block) && !/<iframe/i.test(block), "웹 검색 링크는 새 창·noopener, 끼워 넣기 금지");
 ok(/if \(\(req\.query \|\| \{\}\)\.web === "1"\) return webSearchHandler\(req, res\);/.test(yt) && yt.indexOf("webSearchHandler(req, res)") < yt.indexOf("process.env.YOUTUBE_API_KEY"), "api/youtube.js가 ?web=1을 YouTube 키 확인보다 먼저 웹 검색 처리기로 넘기지 않음");

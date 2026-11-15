@@ -3,6 +3,7 @@
 import { pgnQuery } from "./youtube.js";
 
 export const WEB_MAX_RESULTS = 6;
+export const WEB_DAILY_CAP = 30;   // 사이트 전체 하루 검색 상한 — Tavily 무료 1,000회/월(약 33회/일) 안쪽. 같은 검색은 엣지 7일 캐시라 실제 호출은 더 적다
 // 오프닝 이름 — Lichess 오프닝 이름에 쓰이는 글자(영문·숫자·공백·' ’ : , . ( ) - /)만, 2~80자. 그 밖의 글자가 있으면 이름 없이(수순으로) 검색한다.
 export function parseNameParam(raw) {
   if (typeof raw !== "string") return null;
@@ -16,9 +17,10 @@ export function webQuery(sans, name) {
 }
 const ENT = { "&amp;": "&", "&quot;": "\"", "&#39;": "'", "&#x27;": "'", "&lt;": "<", "&gt;": ">", "&nbsp;": " " };
 const plain = (s, n) => String(s || "").replace(/<[^>]*>/g, "").replace(/&(amp|quot|#39|#x27|lt|gt|nbsp);/g, (m) => ENT[m]).replace(/\s+/g, " ").trim().slice(0, n);
-// Brave Search API(web) 응답 → 화면 값(제목·주소·사이트·요약). http(s) 주소만.
+// 검색 응답 → 화면 값(제목·주소·사이트·요약). http(s) 주소만.
+//  Tavily: { results: [{ title, url, content }] } — 사이트 이름이 없어 주소의 호스트로. (예전 Brave 모양 { web: { results: [{ title, url, description, profile }] } }도 읽는다)
 export function cleanWebResults(data) {
-  const list = data && data.web && Array.isArray(data.web.results) ? data.web.results : [];
+  const list = data && Array.isArray(data.results) ? data.results : data && data.web && Array.isArray(data.web.results) ? data.web.results : [];
   const out = [];
   for (const r of list) {
     if (!r || typeof r.url !== "string") continue;
@@ -26,7 +28,7 @@ export function cleanWebResults(data) {
     if (u.protocol !== "https:" && u.protocol !== "http:") continue;
     const title = plain(r.title, 140);
     if (!title) continue;
-    out.push({ title, url: u.href, site: plain((r.profile && r.profile.name) || u.hostname.replace(/^www\./, ""), 60), snippet: plain(r.description, 220) });
+    out.push({ title, url: u.href, site: plain((r.profile && r.profile.name) || u.hostname.replace(/^www\./, ""), 60), snippet: plain(r.content || r.description, 220) });
     if (out.length >= WEB_MAX_RESULTS) break;
   }
   return out;
