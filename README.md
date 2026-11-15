@@ -82,6 +82,36 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.7 - 2026/11/15
+
+테마: 새 게시물 작성기(퍼즐·유산·대국), 게임 끝내기 퍼즐 테마와 체크메이트 장면 중복 방지, 레슨 대폭 확장(42 → 87개), 렉·엔진 끊김·모바일 성장 분석 수정, 도감 첫 화면 제거. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`seedChapters` 레슨 보상 45개 추가, `puzzle_share_put_verified`·공개 전환의 게임 끝내기 중복 재검사와 advisory lock, mateKey 인덱스).
+
+**기능**
+- 새 게시물 작성기(`app/postComposer.jsx`, `lib/postInput.js`): 소셜 탭 머리줄의 "+ 새 게시물"로 여는 전체 화면. 퍼즐 탭은 기존 퍼즐 마법사(`createNode`) 재사용, 유산 탭은 PGN·FEN(+수순)·chess.com 대국 → `analyzeGame`(FEN 시작 포지션 전달) 채점 → 최선·유일·탁월 수 선택 → 앞뒤 재생 수·보드 방향 → 게시, 대국 탭은 대국자·결과(PGN 헤더 자동 채움)·방향 → 게시. FEN만 넣으면 보드에서 이어 둘 수를 직접 둔다(`MoveEntryBoard`). 대국자 이름 금지어 검사.
+- 대국 게시물: 유산 묶음(`pub.legacies`)에 `kind: "game"`으로 저장해 좋아요·리포스트·피드·`social_profile`을 그대로 공유(SQL 변경 없음). `legacyEntry.js`에 `fen`(FEN 시작)·`meta`(대국자 정리·결과 값 제한) 검증 추가, `legacyPosts.js` 중복 판정에 시작 FEN·대국/유산 구분 포함. 피드 "대국" 필터(`socialMix.js`), 재생기 `GamePostPlayer`(진행 막대·기보·←/→), 공유 시트·채팅 카드·프로필 타일 대응. FEN 시작 게시물은 `legacyFrames.buildFrames(sans, root)`·`legacyEntryPosition`·`AnimatedMove fenRoot`로 그린다.
+- 게임 끝내기(checkmate) 퍼즐 테마(`lib/matePuzzle.js`, `api/puzzle-share.js`): 채점 결과로 체크메이트 수순 후보를 찾아 수를 골라 퍼즐 생성. 중복 방지는 끝나는 체크메이트 장면(mateKey) 기준, 반수 3~15, 키마다 최대 2개 + 더 긴 수순만 허용. 서버가 정답 트리 끝을 chess.js로 재검증해 mateKey·mateLen을 덮어쓰고, SQL에서 장면별 advisory lock 아래 재검사(저장·공개 전환 모두).
+- 레슨 확장(`lib/lessons/curriculum.js`): 단계 7~10(전술 심화·중반 전략·엔드게임 심화·체크메이트 패턴, 등급 색 놓친 수·부정확·실수·블런더) 신설, 레슨 42 → 87개(오프닝 13 → 34개, MEC 계열 21종 추가 + 설명 없는 수 보충 문장), 스텝 230 → 474개. 오프닝 레슨에 첫 수 맞히기·설명 없이 복습 스텝 추가, 일반 레슨 5스텝 이상.
+
+**UI**
+- 소셜 탭 머리줄: "일일 퍼즐" 제목 대신 연속 출석(불꽃 + 일수)과 "+ 새 게시물". 옛 연속 기록 줄(배지)과 "퍼즐 풀기/퍼즐 만들기" 전환 제거.
+- 소셜 탭 게시물 형식 통일(퍼즐·유산 모두 작성자 프로필 사진 + 아이디), 유산 미리보기 남색 액자 복원, 데스크톱 분석 탭의 보드 분석/성장 분석 사이 금색 구분선과 여백.
+
+**UX**
+- 도감 첫 화면(DexHub) 제거: 처음엔 오프닝 도감, 이후엔 마지막 구역으로 열고 열린 블록·모식도 위치·배율 기억(`lib/dexRoutes.js` `loadDexView`/`saveDexView`).
+
+**성능**
+- 렉·엔진 끊김(BUG-171~173): 엔진 감시 오탐 방지(숨긴 탭 판정 중지, 프로필별 부팅 제한, readyok 2회 누락 기준, 재시작 상한 후 재시도), 분석 풀 크기 기기 맞춤(`lib/enginePool.js` `poolSizeFor`), 죽은 워커 교체, 화면 밖 애니메이션 정지(`OffscreenPause`), FadeIn layout 측정 기본 끔.
+
+**버그 수정**
+- BUG-064·065(탈퇴 시 신고 보관·상대 기보 보존), BUG-072(보드 인식 로그인 필수), BUG-095(퍼포먼스 깊이 필터), BUG-136(탈퇴 유예 계정 서버 차단), BUG-145(소개 페이지 캡처), BUG-152·167·170(마스터 동명이인·대표 이름·이름 데이터), BUG-161(성장 곡선 축 글자), BUG-168(도감 해금률), BUG-171~173(렉·엔진 끊김·모바일 성장 분석), BUG-174·175(유산 재생 속도·탁월한 수 연출), BUG-176(P1, 배포 전: puzzle-share 합법성 검사 사슬 우회).
+
+**보안**
+- 게임 끝내기 중복 조회는 공개 + 로그인 작성 퍼즐만(비공개 노출·게스트 선점 방지), 테마 합치기로 checkmate 추가·삭제 금지, 비공개→공개 전환·빈 행·개발자 경로까지 SQL 재검사. 번역 API 호출 제한. 모의 공격 MATE-1·MATE-2 추가.
+
+**시스템**
+- prebuild 검사 추가: `check-post-composer`, `check-mate-puzzle`, `check-engine-health`. `check-lessons`(10단계, 레슨 85개 이상, 일반 5·오프닝 6스텝 이상)·`check-social-feed`·`check-dex-hub`·`check-legacy-*` 갱신.
+- `package.json` 0.7.7, 새 문구 5개 언어 번역.
+
 ### OpenChess v0.7.6 - 2026/11/14
 
 테마: 퍼즐 탭의 소셜 탭 전환(유산 포함), 학습·분석 탭 재배치와 맞춤 학습, 마스터 페이지, 수 키워드 자동 부여, 도감 첫 화면 재설계. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`play_quest_status`·`economy_claim_play_quest` 플레이 퀘스트 보상, `social_legacy_feed`, `social_profile` RPC).
