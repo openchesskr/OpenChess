@@ -1875,7 +1875,9 @@ function keywordHistory(sans, board) {
   _kwHistCache.set(key, out);
   return out;
 }
-export function assignTiers(moves, ply, board, keyStr, sans) {
+// kwPool(v0.7.8 BUG-180): 수 키워드의 형제 비교(날카로운 수 gap·유연한 수 nearBest·손실)에 쓸 후보 묶음 — 분석 탭은 이 포지션에서 지금까지 평가된 모든 수
+//  (기준 전체/마스터 목록의 합집합)를 넘겨, 기준을 바꿔 목록이 달라져도 키워드가 같게 나오게 한다. 없으면 moves 자신.
+export function assignTiers(moves, ply, board, keyStr, sans, kwPool) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
@@ -1896,15 +1898,21 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
   const evs = moves.map((m) => moverEval(m, ply));
   const allEval = evs.every((v) => v != null);
-  const nearBest = best == null ? null : evs.filter((v) => v != null && best - v <= 30).length;
+  // 키워드용 비교 묶음 — 지금 목록 + kwPool(목록에 없는 수만 더함, 지금 목록의 최신 평가가 우선)
+  const poolEv = new Map(moves.map((m, i) => [stripSuffix(m.san), evs[i]]));
+  for (const pm of kwPool || []) { const k = stripSuffix(pm.san); if (!poolEv.has(k)) { const v = moverEval(pm, ply); if (v != null) poolEv.set(k, v); } }
+  const poolVals = [...poolEv.values()].filter((v) => v != null);
+  const kwBest = poolVals.length ? Math.max(...poolVals) : best;
+  const nearBest = kwBest == null ? null : poolVals.filter((v) => kwBest - v <= 30).length;
   const history = keywordHistory(sans, board);
   const prevSan = sans && sans.length ? sans[sans.length - 1] : null;
   const withKw = (m, i, out) => {
     const mv = evs[i];
-    const others = evs.filter((v, k) => k !== i && v != null);
-    const gapCp = allEval && others.length ? mv - Math.max(...others) : null;
-    const kwAutoAll = autoMoveKeywords({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
-      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history });
+    const self = stripSuffix(m.san);
+    const others = [...poolEv.entries()].filter(([k, v]) => k !== self && v != null).map(([, v]) => v);
+    const gapCp = allEval && mv != null && others.length ? mv - Math.max(...others) : null;
+    const kwAutoAll = autoMoveKeywords({ san: m.san, color, board, lossCp: mv != null && kwBest != null ? Math.max(0, kwBest - mv) : null, isBest: mv != null && kwBest != null && mv >= kwBest, gapCp, nearBest, evalCp: mv, kind: out.kind,
+      adopt: m.allAdopt !== undefined ? m.allAdopt : m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history });   // (v0.7.8 BUG-180) 기준(전체/마스터)과 무관한 전체 채택률
     return { ...out, kwAuto: kwAutoAll[0], kwAutoAll };   // (v0.7.8, 사용자 요청) 조건에 맞는 키워드 전부 — kwAuto는 대표(첫) 키워드
   };
   return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));

@@ -198,8 +198,12 @@ export default function App() {
   // 퀘스트 오프닝 항목을 명시적으로 표시하는 애니메이션을 재생한다 — nonce는 같은 오프닝을 연달아
   // 눌러도 매번 새로 애니메이션이 재생되도록(리마운트 트리거) 클릭마다 값을 바꾼다.
   const [questHighlight, setQuestHighlight] = useState(null); // { opening, nonce } | null
+  // (v0.7.8 BUG-181) 배지가 setTab("store")만 직접 불러, 하단 탭과 달리 주소(/play)·urlTabRef가 바뀌지 않았다 — 플레이 탭에 한 번 다녀와 playGame이 이미 있으면
+  //  /play로 옮겨 주던 openPlay도 건너뛰어, 화면만 바뀌고 주소는 /analysis에 남은 채 탭 상태가 어긋났다(배지만 사라지고 플레이 탭으로 가지 않은 것처럼 보임).
+  //  하단 탭과 똑같은 switchTab으로 옮긴다(switchTab은 아래에서 정의되므로 렌더마다 최신 함수를 ref로 넘겨받는다).
+  const switchTabRef = useRef(null);
   const onQuestBadgeClick = useCallback((openingName) => {
-    setTab("store");   // (v0.7.4) 일일 퀘스트는 플레이 탭으로 옮겼다.
+    if (switchTabRef.current) switchTabRef.current("store"); else setTab("store");   // (v0.7.4) 일일 퀘스트는 플레이 탭으로 옮겼다.
     if (openingName) setQuestHighlight({ opening: openingName, nonce: Date.now() });
   }, []);
   // (20차 UI4) 하단 "퀘스트" 탭 아이콘 상태 — 전부 클리어하면 assignment_turned_in, 클리어했지만
@@ -1256,6 +1260,7 @@ export default function App() {
     // 사용자가 직접 다른 탭을 골랐으니, 집중 분석을 닫을 때 도감으로 자동으로 되돌아가는 예약은 취소한다.
     setFocusReturnTab(null);
   };
+  switchTabRef.current = switchTab;
   // (v0.5.0 개편, 사용자 요청) 분석 탭 PLAY 버튼 — 예전엔 openPlay를 곧장 호출해 "분석 탭 위에 겹쳐
   // 뜨는 별도 화면"처럼 동작했다(뒤로가기·닫기를 누르면 분석 탭으로 돌아옴). 이제 플레이 탭과 완전히
   // 같은 경로(switchTab("store"))로 실제 탭 전환을 일으켜, 다른 탭에서 플레이 탭을 누르는 것과

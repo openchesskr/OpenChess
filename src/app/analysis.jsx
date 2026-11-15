@@ -1007,13 +1007,16 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const devAddsBy = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
       const masterAdoptBy = master ? Object.fromEntries(master.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
       const masterTopSans = master ? master.moves.slice(0, 3).map((m) => stripSuffix(m.san)) : [];
+      // (v0.7.8 BUG-180) 수 키워드는 기준(전체/마스터)과 상관없이 늘 같은 값으로 — 키워드 규칙(MAIN-LINE·SIDESTEPPING)은 전체 DB 채택률(allAdopt)을 쓴다.
+      //  마스터 기준에서는 adopt가 마스터 채택률로 바뀌어, 같은 수의 키워드가 기준을 바꿀 때마다 달라졌다.
+      const normalAdoptBy = normal ? Object.fromEntries(normal.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
       const mk = (l) => {
         const k = stripSuffix(l.san);
         const s = snapBy[k] || {};
         const dev = devAddsBy[k];
         const unb = isUnbooked(key, l.san);
         const book = !unb && (!!s.book || !!(dev && dev.theory));
-        return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
+        return { san: l.san, adopt: l.adopt, allAdopt: normal ? (normalAdoptBy[k] ?? null) : (isMaster ? null : l.adopt), games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
       };
       const all = active.moves.map(mk);
       // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
@@ -1026,7 +1029,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         const k = stripSuffix(s.san);
         if (coveredSans.has(k)) continue;
         const dev = devAddsBy[k];
-        all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
+        all.push({ san: s.san, adopt: null, allAdopt: normalAdoptBy[k] ?? null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
         coveredSans.add(k);
       }
       const books = all.filter((m) => m.book);
@@ -1047,6 +1050,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const top = master.moves.slice(0, 3).map((m) => stripSuffix(m.san));
       setMoves((prev) => prev.map((m) => { const k = stripSuffix(m.san); return { ...m, masterAdopt: adoptBy[k] ?? m.masterAdopt ?? null, masterTop: top.includes(k) }; }));
     };
+    // (v0.7.8 BUG-180) 마스터 기준에서 전체 통계가 늦게 오면 키워드용 전체 채택률만 덧붙인다
+    const patchNormal = () => {
+      const adoptBy = Object.fromEntries(normal.moves.map((m) => [stripSuffix(m.san), m.adopt]));
+      setMoves((prev) => prev.map((m) => ({ ...m, allAdopt: adoptBy[stripSuffix(m.san)] ?? null })));
+    };
     const onArrive = () => {
       if (cancelled) return;
       if (!applied) {
@@ -1057,6 +1065,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         setStatsLoading(false);
       } else if (!isMaster && master && mDone) {
         patchMaster();
+      } else if (isMaster && normal && nDone) {
+        patchNormal();
       }
     };
     // (v0.6.1 버그 수정) 포지션 통계 조회가 레이트리밋·일시 오류로 한 번 실패하면 posGames·채택률이 비어 "회수 / —"와
@@ -1374,10 +1384,14 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
 
   const board = useMemo(() => boardFromSans(sans), [key]);
   const sacTick = useSacConfirmTick();   // 희생 엔진 확인이 끝나면 등급을 다시 매긴다(v0.5.9 BUG-038)
+  // (v0.7.8 BUG-180) 이 포지션에서 평가된 모든 수(기준 전체/마스터 목록의 합집합) — 수 키워드가 기준과 무관하게 같은 비교 묶음을 쓰게
+  const kwPoolRef = useRef({ key: null, by: new Map() });
   const tiled = useMemo(() => {
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
-    let t = assignTiers(uniq, ply, board, key, sans).map((m) => {
+    if (kwPoolRef.current.key !== key) kwPoolRef.current = { key, by: new Map() };
+    uniq.forEach((m) => { if (moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
+    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()]).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), disp: decorateSan(board, m.san, color) };
@@ -3569,7 +3583,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   // (v0.7.6) 블록을 거치지 않고 도달했으면(기보 이동 등) 직전 포지션에서 같은 자동 규칙으로 계산한다(평가·채택률을 모르면 그 조건만 건너뜀).
-  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? curMove.adopt : null }) : []);
+  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);

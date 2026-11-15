@@ -69,7 +69,7 @@ if (!/RecentGameBoxes/.test(gh0)) fails.push("growthHome.jsx: 최근 대국 큰 
   if (!/<DailyQuestCard /.test(play) || !/showQuest/.test(play)) fails.push("PlayPage: 일일 퀘스트 카드(DailyQuestCard)가 없음");
   if (!/step === "setup"/.test((play.match(/const showQuest[^\n]*/) || [""])[0])) fails.push("PlayPage: 대국 중(step=playing)에는 퀘스트를 숨겨야 함");
   if (!/gridTemplateColumns: "minmax\(0, " \+ hubMaxW \+ "px\) minmax\(0, 1fr\)"/.test(play)) fails.push("PlayPage: 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트 좌우 분할이어야 함");
-  if (!/onQuestBadgeClick = useCallback\(\(openingName\) => \{\s*setTab\("store"\)/.test(app)) fails.push("App: 분석 탭 퀘스트 배지는 플레이 탭(store)으로 이동해야 함");
+  if (!/onQuestBadgeClick = useCallback\(\(openingName\) => \{\s*if \(switchTabRef\.current\) switchTabRef\.current\("store"\)/.test(app)) fails.push("App: 분석 탭 퀘스트 배지는 하단 탭과 같은 switchTab으로 플레이 탭(store)에 가야 함(BUG-181)");
   if (!/questActive=\{tab === "store"\}/.test(app)) fails.push("App: 퀘스트는 플레이 탭이 보일 때만 마운트(questActive)해야 함 — 숨겨진 탭에서 완료 공개 연출이 먼저 끝나면 안 됨");
   const gh = rd("src/app/gameHistory.jsx"), box = (gh.match(/function GameBox[\s\S]*?\nexport function RecentGameBoxes/) || [""])[0];
   if (!box) fails.push("GameBox를 찾지 못함");

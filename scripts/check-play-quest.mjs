@@ -66,5 +66,8 @@ ok(/playQuestStatus\(\)/.test(app) && /economyClaimPlayQuest\(key\)/.test(app) &
   ok(!/보상 받음/.test(dq) && /t\("완료"\)/.test(dq), "퀘스트 클리어 문구는 \"완료\"");
   ok(/t\("\{0\}장", view\)/.test(dq) && /t\("이전 장"\)/.test(dq) && /t\("다음 장"\)/.test(dq) && /<Lock /.test(dq) && !/\{done\}\/\{PLAY_QUESTS\.length\}/.test(dq), "플레이 퀘스트 우상단은 n/5 대신 n장 + 이전·다음 장 버튼, 잠긴 장은 자물쇠");
   ok(!/<Gem /.test(dq) && /<CoinIcon size=\{44\} \/>/.test(dq), "일일 퀘스트 완료 보상 아이콘 자리에 큰 OC 나이트 코인"); }
+// (v0.7.8 BUG-181) 분석 탭 수 블록의 퀘스트 배지 → 플레이 탭: 하단 탭과 같은 switchTab으로(주소 /play·urlTabRef까지). setTab만 부르면 플레이 탭에 한 번 다녀온 뒤엔 주소가 안 바뀌어 탭 상태가 어긋난다.
+{ const qb = (app.match(/const onQuestBadgeClick = useCallback\([\s\S]*?\}, \[\]\);/) || [""])[0];
+  ok(/switchTabRef\.current\("store"\)/.test(qb) && /switchTabRef\.current = switchTab;/.test(app), "퀘스트 배지가 switchTab(주소·탭 동기화)으로 플레이 탭에 가지 않음"); }
 if (fails.length) { console.error("✗ play-quest check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ play-quest check: 이벤트 집계·초기화 없음·서버 진행값·보상표 일치·연결 통과");
