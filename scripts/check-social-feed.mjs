@@ -46,5 +46,20 @@ ok(/deletion_scheduled_at is null/.test((sql.match(/function public\.social_lega
   ok(/const name = ownerInfo\.username \|\| ""/.test(sf) && !/ownerInfo\.nickname/.test(sf), "유산 게시물이 아이디 대신 닉네임을 씀");
   ok((sf.match(/<Caption name=/g) || []).length === 2, "퍼즐·유산 캡션 형식이 다름");
   ok(/<LegacyFrame \/>/.test(sf), "유산 미리보기의 남색 바탕·금색 액자가 사라짐(사용자 요청으로 유지)"); }
+// (v0.7.8, 사용자 요청) 소셜 탭 개편 — 연속 출석 "n일", 검색창(번호로 풀기 통합)·필터를 머리줄로, 데스크톱 절반 분할, 게시물 날짜·키워드 박스, 퍼즐 테마별 배경, 티어 육각형
+{ const fsR = rd;
+  const pz = fsR("src/app/puzzle.jsx"), feed = fsR("src/app/socialFeed.jsx"), pc = fsR("src/app/postComposer.jsx"), bd = fsR("src/components/puzzleThemeBackdrop.jsx");
+  ok(/\{t\("\{0\}일", n\)\}/.test(pc), "연속 출석 숫자 뒤에 \"일\"이 없음");
+  const hdr = (pz.match(/const headerNode = \([\s\S]*?\n  \);/) || [""])[0];
+  ok(/<StreakCount [\s\S]*\{searchBarNode\}[\s\S]*<NewPostButton /.test(hdr), "검색창·필터가 연속 출석과 새 게시물 버튼 사이에 없음");
+  ok(pz.indexOf("const searchBarNode = (") > 0 && pz.indexOf("const searchBarNode = (") < pz.indexOf("const headerNode = ("), "headerNode가 searchBarNode보다 먼저 만들어짐(정의 전 참조)");
+  ok(/placeholder=\{t\("오프닝\/생성자 검색 또는 퍼즐 번호\/일일 퍼즐 날짜 입력"\)\}/.test(pz) && !/onChange=\{\(e\) => setNumInput\(e\.target\.value/.test(pz), "번호로 풀기 입력창이 검색창에 통합되지 않음");
+  ok(/const numInput = useMemo\(\(\) => \{ const q = searchQuery\.trim\(\)/.test(pz) && /if \(e\.key === "Enter" && numInput\) solveByInput\(\)/.test(pz), "검색어가 번호·날짜면 번호로 풀기로 동작해야 함");
+  ok(/gridTemplateColumns: "minmax\(0, 1fr\) minmax\(0, 1fr\)"[^}]*width: "calc\(100vw - 32px\)"/.test(pz), "데스크톱 소셜 탭이 뷰포트 절반으로 나뉘지 않음");
+  ok(/date=\{fmtDate\(createdAt\)\} keywords=\{keywords\}/.test(feed) && /date=\{fmtDate\(post\.savedAt\)\}/.test(feed) && /<KwBox key=/.test(feed), "게시물 좌하단 날짜 + 키워드 박스가 없음");
+  ok(!/>#\{labels\[k\] \|\| k\}</.test(feed), "퍼즐 테마를 # 대신 박스로 표기해야 함");
+  ok(/const POST_BOARD_FRAC = 0\.6;/.test(feed) && /aspectRatio: PUZZLE_MEDIA_RATIO/.test(feed), "게시물 보드 축소·세로로 긴 미디어 칸이 없음");
+  ok(/<PuzzleThemeBackdrop theme=\{bdTheme\} \/>/.test(feed) && ["CheckmateArt", "SacrificeArt", "AdvantageArt", "PunishArt"].every((f) => bd.includes("function " + f + "(")), "퍼즐 테마별 배경 그림이 없음");
+  ok(/<TierHexFrame tierKey=\{tier\.key\}/.test(pz) && /const tierHexClip = /.test(pz), "퍼즐 티어 박스가 육각형(TierHexFrame)이 아님"); }
 if (fails.length) { console.error("✗ check-social-feed 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✓ check-social-feed: 소셜 탭(/social) 피드 섞기·종류 토글·유산 피드 RPC 유지");

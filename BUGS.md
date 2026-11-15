@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-179 | P1 | 소셜 탭에서 퍼즐을 누르면 오류 화면(React error #300) — v0.7.7에서 PuzzleTab의 새 게시물 작성기 종류 기억 훅(useTabMemory)을 "퍼즐을 열면 PuzzleSolver를 돌려주는" 조기 반환 뒤에 추가해, 퍼즐을 여는 렌더에서 훅 수가 줄어듦(같은 종류 세 번째) | 수정 완료(v0.7.8) · 훅을 조기 반환 위로 · `check-hook-order`(prebuild, src 전체 컴포넌트 검사) | 2026-11-15 |
 | BUG-178 | P1 | (배포 전) 프리뷰·운영 배포 실패 — v0.7.8에서 서버리스 함수 2개(api/explorer-games.js·api/web-search.js)를 새로 만들어 14개가 돼 Vercel Hobby 한도(배포당 12개)를 넘음. npm run build는 통과해 개발 중 알아채지 못함 | 수정 완료(v0.7.8) · 두 기능을 기존 함수 안의 경로(api/lichess.js?games=1·api/youtube.js?web=1)로 합침, 처리기는 api/_lib/ · `check-serverless-count`(prebuild) | 2026-11-15 |
 | BUG-177 | P1 | 분석 탭에서 탁월한 수(예: Open Ruy Lopez Riga 9...Bxh2+)가 엔진 depth가 깊어질 때마다 탁월 ↔ 유일한 수·최선으로 번갈아 바뀜 — 엔진 1순위 희생에도 "둔 뒤 평가 -1.5 이상" 하한을 적용(1순위의 둔 뒤 평가 = 두기 전 평가라 원래 포지션이 -1.5 근처면 depth마다 경계를 넘나듦), 라이브 재채점마다 처음부터 다시 매김 | 수정 완료(v0.7.8) · 1순위 희생은 하한 대신 두기 전 -2.0(badlyLosing)만, 탁월 고정(stickyBrilliant) · `check-move-grading` | 2026-11-15 |
 | BUG-176 | P1 | (개발 중 발견·수정, 배포 전) /api/puzzle-share 합법성 검사 우회 — 게임 끝내기 검사를 tree→lines→solution else-if 사슬 가운데 끼워 넣어, mateKey·mateLen 필드나 checkmate 테마를 붙이면 lines·solution 퍼즐의 수순 합법성 검사를 건너뜀 | 수정 완료(v0.7.7, 배포 전) · 검사 사슬 분리 · `check-mate-puzzle` 우회 회귀 검사 | 2026-11-15 |
@@ -192,6 +193,14 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-179 · [P1] 퍼즐을 누르면 오류 화면(React error #300)
+- **상태**: 수정 완료(v0.7.8, 사용자 제보 — 운영 사이트 v0.7.7)
+- **발견일**: 2026-11-15
+- **근본 원인**: React #300은 "Rendered fewer hooks than expected" — 렌더마다 훅 호출 수가 같아야 하는 규칙 위반이다. `src/app/puzzle.jsx` PuzzleTab은 퍼즐을 열면(active) `if (active) return <PuzzleSolver …/>`로 조기 반환하는데, v0.7.7에서 새 게시물 작성기 종류를 기억하는 `useTabMemory("puzzle.composeType")`를 그 조기 반환 **뒤**에 추가했다. 목록 화면에서는 이 훅이 호출되다가 퍼즐을 여는 순간 건너뛰어져 화면 전체가 오류로 무너졌다. 같은 컴포넌트에서 v0.4.1에 같은 원인(useMemo 두 건)이 이미 두 번 있었고, 주석으로만 경고해 다시 생겼다.
+- **수정 내용**: 훅을 조기 반환 위로 옮겼다(그 뒤에 남은 훅 없음 확인).
+- **재발 방지 안전장치**: `scripts/check-hook-order.mjs`(prebuild) — src/의 모든 컴포넌트·커스텀 훅 함수(620개)에서 최상위 조기 반환 뒤의 최상위 훅 호출을 찾아 빌드를 막는다. 주석이 아니라 빌드 단계로 막는다.
+- **검증**: 수정 전 코드에서 검사가 puzzle.jsx:3107을 잡아 실패 → 수정 후 통과. `npm run build` 통과.
 
 ### BUG-178 · [P1] (배포 전) 서버리스 함수 14개로 Vercel 배포 실패
 - **상태**: 수정 완료(v0.7.8, 사용자 제보 — "Deployment 오류로 프리뷰가 작동하지 않음")

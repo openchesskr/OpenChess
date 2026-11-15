@@ -5109,7 +5109,7 @@ function gamePhaseOf(board, ply) {
   return "endgame";
 }
 export function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p), puzzleStartPly(p)); } catch { return null; } }
-const GAME_PHASE_LABEL = { opening: t("오프닝"), middlegame: t("미들게임"), endgame: t("엔드게임") };
+export const GAME_PHASE_LABEL = { opening: t("오프닝"), middlegame: t("미들게임"), endgame: t("엔드게임") };
 // PGN/FEN 배지와 완전히 같은 크기·색으로 국면 배지를 그린다(요청: "PGN 박스와 같은 크기의 박스").
 export function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);

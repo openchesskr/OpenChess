@@ -339,13 +339,13 @@ export function NewPostButton({ onClick, disabled }) {
   );
 }
 
-/* 연속 출석 — 불꽃 아이콘 + 연속 일수(숫자만). 기록이 없으면 0. */
+/* 연속 출석 — 불꽃 아이콘 + 연속 일수("n일", v0.7.8). 기록이 없으면 0일. */
 export function StreakCount({ count }) {
   const n = Math.max(0, count | 0), lit = n > 0;
   return (
     <span className="flex items-center" title={tx("{0}일 연속", n)} aria-label={tx("{0}일 연속", n)} style={{ gap: 5, flexShrink: 0 }}>
       <span style={{ display: "inline-flex", color: lit ? "#E8874A" : "rgba(235,221,196,.35)" }}><FlameIcon size={20} /></span>
-      <span style={{ fontSize: 16, fontWeight: 900, color: lit ? T.ivoryHi : "rgba(235,221,196,.5)", fontFamily: SITE_FONT, lineHeight: 1 }}>{n}</span>
+      <span style={{ fontSize: 16, fontWeight: 900, color: lit ? T.ivoryHi : "rgba(235,221,196,.5)", fontFamily: SITE_FONT, lineHeight: 1 }}>{t("{0}일", n)}</span>
     </span>
   );
 }

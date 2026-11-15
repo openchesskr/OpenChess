@@ -8,13 +8,14 @@ import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
 import { badgeIcon, postBadge } from "../components/badges.jsx";
-import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzlePhase, GAME_PHASE_LABEL, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { kindOfPost, isSaved } from "../lib/legacyPosts.js";
 import { LegacyActionsCtx } from "./legacyFeed.jsx";
 import { LegacyFrame } from "../components/legacyFrame.jsx";
+import { PuzzleThemeBackdrop, puzzleBackdropTheme, puzzleBackdropBg, PUZZLE_MEDIA_RATIO } from "../components/puzzleThemeBackdrop.jsx";
 import { legacyLikeToggle } from "./profile.jsx";
 import { mixFeed, FEED_KINDS } from "../lib/socialMix.js";
 import { t, fmtDateOnly } from "../lib/i18n.js";
@@ -161,15 +162,54 @@ const Num = ({ n, color }) => <span style={{ fontSize: 13, fontWeight: 800, colo
 const ctaBtn = { display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 10, border: "none", background: T.ebony2, color: T.brassHi, fontSize: 12.5, fontWeight: 800, fontFamily: SITE_FONT, cursor: "pointer" };
 
 /* 게시물 틀(공용) */
-function PostShell({ head, media, actions, children, onOpen, label }) {
+// (v0.7.8, 사용자 요청) 모든 게시물 맨 아래 줄 — 왼쪽에 게시 날짜, 그 오른쪽에 키워드 박스를 차례대로(퍼즐 테마도 # 대신 박스).
+function PostShell({ head, media, actions, children, onOpen, label, date, keywords }) {
   return (
     <article aria-label={label} style={{ contain: "inline-size", minWidth: 0, background: T.ivoryHi, borderRadius: 16, border: "1px solid " + LINE, boxShadow: "0 3px 0 #B59A6E", overflow: "hidden" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>{head}</header>
       <div onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} className="press" style={{ cursor: "pointer" }}>{media}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 8px 0" }}>{actions}</div>
-      <div style={{ padding: "2px 14px 14px", display: "flex", flexDirection: "column", gap: 4 }}>{children}</div>
+      <div style={{ padding: "2px 14px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {children}
+        <div className="post-foot" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: SOFT, fontFamily: SITE_FONT, marginRight: 3, whiteSpace: "nowrap" }}>{date || "\u00A0"}</span>
+          {(keywords || []).filter(Boolean).map((k, i) => <KwBox key={i} {...k} />)}
+        </div>
+      </div>
     </article>
   );
+}
+/* 키워드 박스 — 색 테두리 + 옅은 같은 색 면 */
+function KwBox({ label, color = SOFT, title }) {
+  return <span title={title} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 5, border: "1px solid " + color + "88", background: color + "1a", color, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{label}</span>;
+}
+// 게시물 미디어 칸 — 보드를 칸 폭의 POST_BOARD_FRAC로 줄여 가운데에, 칸은 PUZZLE_MEDIA_RATIO(위아래로 조금 길게). bg·backdrop: 보드 뒤 배경
+const POST_BOARD_FRAC = 0.6;
+function PostMedia({ bg, backdrop, children }) {
+  return (
+    <div style={{ position: "relative", width: "100%", aspectRatio: PUZZLE_MEDIA_RATIO, background: bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      {backdrop}
+      <div style={{ position: "relative", width: POST_BOARD_FRAC * 100 + "%", zIndex: 1 }}>{children}</div>
+    </div>
+  );
+}
+// (v0.7.8) 퍼즐 게시 날짜 — 퍼즐 데이터에는 만든 시각이 없어, 화면에 보이는 퍼즐 번호만 모아 서버(puzzles.created_at)에서 한 번에 읽어 둔다
+const createdAtCache = new Map(); const createdSubs = new Set(); let createdPending = new Set(), createdTimer = null;
+function requestCreatedAt(no) {
+  if (!SB_ON || no == null || createdAtCache.has(no) || createdPending.has(no)) return;
+  createdPending.add(no);
+  clearTimeout(createdTimer);
+  createdTimer = setTimeout(async () => {
+    const nos = [...createdPending].slice(0, 60); createdPending = new Set([...createdPending].slice(60));
+    try { const rows = await sbSelect("puzzles?select=no,created_at&no=in.(" + nos.join(",") + ")"); (rows || []).forEach((r) => createdAtCache.set(r.no, Date.parse(r.created_at) || null)); } catch { /* 날짜 없이 표시 */ }
+    nos.forEach((n) => { if (!createdAtCache.has(n)) createdAtCache.set(n, null); });
+    createdSubs.forEach((f) => f());
+  }, 120);
+}
+function usePuzzleCreatedAt(p) {
+  const no = puzzleNo(p.id), [, bump] = useState(0);
+  useEffect(() => { const f = () => bump((x) => x + 1); createdSubs.add(f); requestCreatedAt(no); return () => { createdSubs.delete(f); }; }, [no]);
+  return p.createdAt || createdAtCache.get(no) || null;
 }
 
 export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
@@ -185,14 +225,22 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
   const opening = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "";
   const solvers = solveCountText(solveCount, friendSolverNames);
   const photo = usePhotoOf(creator);
+  const bdTheme = puzzleBackdropTheme(themes);
+  const createdAt = usePuzzleCreatedAt(p);
+  const phase = useMemo(() => puzzlePhase(p), [p.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 키워드 박스: 포지션 단계 → 테마들(# 없이 박스)
+  const keywords = [phase ? { label: GAME_PHASE_LABEL[phase], color: "#1B4C86", title: t("{0} 포지션에서 시작", GAME_PHASE_LABEL[phase]) } : null, ...themes.map((k) => ({ label: labels[k] || k, color: themeAccentColor([k]) }))];
   return (
-    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen}
+    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen} date={fmtDate(createdAt)} keywords={keywords}
       head={<PostHead username={creator} photo={photo} kindLabel={t("퍼즐")} detail={opening} onOpenProfile={onOpenProfile}
         right={<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: themeAccentColor(themes), fontFamily: SITE_FONT }}><PuzzleIcon size={14} color={themeAccentColor(themes)} />#{puzzleNo(p.id)}</span>} />}
-      media={<div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", background: "rgba(0,0,0,.06)" }}>
-        {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
-          : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
-      </div>}
+      media={<PostMedia bg={puzzleBackdropBg(bdTheme)} backdrop={<PuzzleThemeBackdrop theme={bdTheme} />}>
+        {/* (v0.7.8, 사용자 요청) 유산처럼 보드를 줄이고 테마별 배경·애니메이션을 뒤에 깐다 */}
+        <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", boxShadow: "0 10px 26px -10px rgba(0,0,0,.8)" }}>
+          {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
+            : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
+        </div>
+      </PostMedia>}
       actions={<>
         <button type="button" onClick={onToggleLike ? () => onToggleLike(p.id) : undefined} disabled={!onToggleLike} aria-label={t("좋아요")} aria-pressed={!!isLiked} className="press" style={actBtn}><Heart size={24} color={isLiked ? "#D9534F" : INK} fill={isLiked ? "#D9534F" : "none"} /><Num n={likeCount} color={isLiked ? "#D9534F" : INK} /></button>
         <button type="button" onClick={onToggleRepost ? () => onToggleRepost(p.id) : undefined} disabled={!onToggleRepost} aria-label={t("리포스트")} aria-pressed={!!isReposted} className="press" style={actBtn}><Repeat2 size={25} color={isReposted ? T.brilliant : INK} /><Num n={repostCount} color={isReposted ? T.brilliant : INK} /></button>
@@ -202,10 +250,6 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
         <button type="button" onClick={onOpen} className="press" style={{ ...ctaBtn, marginLeft: 8 }}>{isSolved ? t("다시 풀기") : t("풀기")}</button>
       </>}>
       <Caption name={creator}>{livePuzzleName(p) || opening}</Caption>
-      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-        <GamePhaseBadge p={p} compact />
-        {themes.map((k) => <span key={k} style={{ fontSize: 11, fontWeight: 800, color: themeAccentColor([k]) }}>#{labels[k] || k}</span>)}
-      </div>
       {solvers && <div style={{ fontSize: 11.5, color: "#2E6E2E", fontWeight: 700 }}>{solvers}</div>}
     </PostShell>
   );
@@ -224,17 +268,18 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const [armed, setArmed] = useState(false);
   const cachedPhoto = usePhotoOf(ownerInfo.photo ? null : name);   // 서버가 사진을 함께 주지 않은 옛 응답 대비
   return (
-    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
+    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open} date={fmtDate(post.savedAt)}
+      keywords={isGame ? [{ label: t("대국"), color: "#2E5A8A" }, { label: t("{0}수", Math.ceil(entry.sans.length / 2)), color: SOFT }] : [info ? { label: info.label, color: T[info.kind] || "#2E5A8A" } : null, entry.opening ? { label: entry.opening.split(":")[0], color: "#8A6C2F", title: entry.opening } : null]}
       head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
-      media={<div style={{ background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", padding: 14 }}>
-        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다(머리·캡션·동작 줄은 퍼즐과 같은 형식) */}
-        <div style={{ position: "relative", padding: 12 }}>
+      media={<PostMedia bg="linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)">
+        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다. (v0.7.8) 보드를 퍼즐과 같은 크기로 줄였다 */}
+        <div style={{ position: "relative", padding: 10 }}>
           <LegacyFrame />
           <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
             <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
           </div>
         </div>
-      </div>}
+      </PostMedia>}
       actions={<>
         <button type="button" onClick={A.toggleLike ? () => A.toggleLike(post) : undefined} disabled={!A.toggleLike} aria-label={t("좋아요")} aria-pressed={liked} className="press" style={actBtn}><Heart size={24} color={liked ? "#D9534F" : INK} fill={liked ? "#D9534F" : "none"} /><Num n={A.likeCount(post)} color={liked ? "#D9534F" : INK} /></button>
         <button type="button" onClick={canRepost ? () => A.toggleRepost(post) : undefined} disabled={!canRepost} title={!canRepost && post.owner && isOwn ? t("내 게시물은 리포스트할 수 없음") : undefined} aria-label={t("리포스트")} aria-pressed={reposted} className="press" style={actBtn}><Repeat2 size={25} color={reposted ? T.brilliant : INK} /><Num n={A.repostCount(post)} color={reposted ? T.brilliant : INK} /></button>
@@ -244,7 +289,6 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
         <button type="button" onClick={open} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
       </>}>
       <Caption name={name}><span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{isGame ? gamePostTitle(entry) : legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</Caption>
-      <div style={{ fontSize: 11, color: SOFT }}>{fmtDate(post.savedAt)}</div>
     </PostShell>
   );
 }
