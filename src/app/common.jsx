@@ -40,7 +40,8 @@ import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 import { poolFallbackWorker, isConstrainedDevice, poolSizeFor } from "../lib/enginePool.js";
 
-import { t, tx, lcLatin } from "../lib/i18n.js";
+import { t, tx, lcLatin, lang } from "../lib/i18n.js";
+import { KO_TITLE_TEXT, KO_TITLE_CATEGORY, KO_OPENING_TIERS } from "../lib/titleKoText.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
@@ -5878,11 +5879,21 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
 });
 // 히든 칭호 계열은 하나도 못 얻었으면 이름을 "???"로 가린다(earnedCount = 그 계열에서 얻은 칭호 수).
 export function seriesDisplayLabel(series, earnedCount) { return series.cat === "rare" && !earnedCount ? "???" : seriesLabelText(series); }
-export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
+// (v0.7.8, 사용자 요청) 한국어 화면은 다듬은 칭호 표기(lib/titleKoText.js)로 — 원문은 저장·번역 키로 남겨 다른 언어 번역은 그대로 쓴다
+const koTitle = (s) => (lang === "ko" ? (KO_TITLE_TEXT[s] || s) : null);
+export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (koTitle(series.label) || titleTextMap()[series.label] || series.label); }
 export function titleNameText(def) {
-  if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
+  if (def.series.cat !== "opening") return koTitle(def.name) || titleTextMap()[def.name] || def.name;
+  if (lang === "ko") return KO_OPENING_TIERS[def.tier - 1];
   return [t("초급"), t("중급"), t("상급"), t("마스터"), t("그랜드마스터")][def.tier - 1];
 }
+// 업적 4분류 이름 — key: opening | activity | game | rare
+const TITLE_CATEGORY_SRC = { opening: "오프닝 숙련", activity: "활동", game: "대국·레이팅", rare: "히든 칭호" };
+export const titleCategoryText = (key) => {
+  const src = TITLE_CATEGORY_SRC[key] || key;
+  if (lang === "ko") return KO_TITLE_CATEGORY[src] || src;
+  return { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("히든 칭호") }[key] || src;
+};
 // 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
 const TITLE_BORDER_W = [1, 1.5, 2, 2.5, 3];
 const TITLE_PIECE = ["P", "N", "B", "R", "Q"];   // 단계가 오를수록 큰 기물이 중심부 바탕에 흐리게 깔린다(희귀는 킹)

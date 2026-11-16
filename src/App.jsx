@@ -1270,12 +1270,12 @@ export default function App() {
   // (v0.6.6, 사용자 요청) 집중 분석 마스터 통계의 대회 이름을 누르면 도감 마스터 트리로 가서 시작 연출 뒤 그 대회(연도 블록)까지 회로선을 따라 찾아간다.
   const onOpenTournament = (target) => { setMasterNav(target); switchTab("dex"); };
   // (v0.7.5) 통합 검색에서 고른 마스터·대회 — 도감 마스터 트리로 가서 그 노드로 찾아간다(masterNav focusId).
-  const onOpenMasterNode = (focusId) => { setMasterNav({ focusId }); switchTab("dex", "/master"); };
+  const onOpenMasterNode = (focusId) => { setMasterNav({ focusId }); switchTab("dex", "/book"); };
   // (v0.6.9, 사용자 요청) 프로필의 장착 칭호를 누르면 도감 업적 화면으로 가서 그 칭호가 보이는 위치까지 이동하고 흔들어 보여 준다.
   const onOpenTitle = (id) => {
     setSearchOpen(false); setFriendsOpen(false); setProfileWinOpen(false);
     setViewedProfileMid(null); setViewedProfileAutoInvite(false);
-    setTitleNav(id); switchTab("dex", "/achievement");
+    setTitleNav(id); switchTab("dex", "/book");
   };
   backRef.current.goHome = () => {
     setNavNonce((n) => n + 1); setTab("analysis"); urlTabRef.current = "analysis"; setFocusReturnTab(null);

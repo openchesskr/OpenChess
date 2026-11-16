@@ -10,6 +10,7 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-182 | P3 | 업적 도감 왼쪽 목록의 계열 이름 글자 스타일에 display가 두 번(block·-webkit-box) 들어가 빌드 경고(esbuild duplicate-object-key) — 뒤의 값이 이겨 화면은 정상 | 수정 완료(v0.7.8) · 앞의 display 삭제(화면 변화 없음) | 2026-11-16 |
 | BUG-181 | P2 | 분석 탭 수 블록의 퀘스트 배지를 누르면 플레이 탭으로 가지 않고 배지만 사라짐 — 배지가 하단 탭과 달리 setTab("store")만 불러 주소(/play)·urlTabRef가 바뀌지 않음. 플레이 탭에 한 번 다녀와 playGame이 이미 있으면 /play로 옮겨 주던 openPlay도 건너뛰어 화면·주소·탭 상태가 어긋남 | 수정 완료(v0.7.8) · 하단 탭과 같은 switchTab · `check-play-quest` | 2026-11-15 |
 | BUG-180 | P2 | 분석 탭 수 블록의 키워드가 기준(전체/마스터)을 바꿀 때마다 달라짐 — 마스터 기준에서 adopt가 마스터 채택률로 바뀌어 MAIN-LINE·SIDESTEPPING이 갈리고, 후보 목록도 달라 FLEXIBLE(좋은 수 개수)·SHARP(2순위와 차이)·손실 비교 대상이 바뀜 | 수정 완료(v0.7.8) · 키워드는 전체 채택률(allAdopt) + 이 포지션에서 평가된 모든 수의 합집합(kwPool)으로 · `check-move-keywords` | 2026-11-15 |
 | BUG-179 | P1 | 소셜 탭에서 퍼즐을 누르면 오류 화면(React error #300) — v0.7.7에서 PuzzleTab의 새 게시물 작성기 종류 기억 훅(useTabMemory)을 "퍼즐을 열면 PuzzleSolver를 돌려주는" 조기 반환 뒤에 추가해, 퍼즐을 여는 렌더에서 훅 수가 줄어듦(같은 종류 세 번째) | 수정 완료(v0.7.8) · 훅을 조기 반환 위로 · `check-hook-order`(prebuild, src 전체 컴포넌트 검사) | 2026-11-15 |
@@ -195,6 +196,14 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 ---
 
 ## 상세 기록
+
+### BUG-182 · [P3] 업적 목록 계열 이름 스타일의 display 중복
+- **상태**: 수정 완료(v0.7.8, 도감 작업 중 발견)
+- **발견일**: 2026-11-16
+- **위치**: `src/app/dex.jsx` AchievementsPane 왼쪽 목록의 계열 이름 span
+- **내용**: style 객체에 `display: "block"`과 `display: "-webkit-box"`가 함께 있어 esbuild가 duplicate-object-key 경고를 냈다. 뒤의 값이 적용돼 화면은 정상(두 줄 말줄임).
+- **수정 내용**: 앞의 `display: "block"`을 지웠다(실제 적용 값 그대로).
+- **검증**: esbuild 경고 사라짐, `npm run build` 통과.
 
 ### BUG-181 · [P2] 퀘스트 배지를 누르면 플레이 탭으로 가지 않고 배지만 사라짐
 - **상태**: 수정 완료(v0.7.8, 사용자 제보)

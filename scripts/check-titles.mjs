@@ -93,5 +93,15 @@ const st2 = ccTitleStats([
 ]);
 for (const [k, v] of Object.entries({ ccBlitzWins: 1, ccRapidWins: 1, ccPromos: 1 })) if (st2[k] !== v) fail("ccTitleStats." + k + " = " + st2[k] + " (기대 " + v + ")");
 if (ccTitleStats([]).ccPlayed !== 0 || ccTitleStats(null).ccWins !== 0) fail("빈 목록 집계");
+// (v0.7.8, 사용자 요청) 한국어 칭호 표기표(lib/titleKoText.js) — 모든 계열·칭호 이름을 덮고, 없는 원문(오타)을 가리키지 않는다. 오프닝 5단계·4분류도.
+{ const KO = await import("../src/lib/titleKoText.js");
+  const words = new Set();
+  for (const s of TITLE_SERIES) { if (s.cat === "opening") continue; words.add(s.label); (s.names || []).forEach((n) => words.add(n)); }
+  for (const w of words) if (!(w in KO.KO_TITLE_TEXT) && !["커뮤니티", "보물창고", "퍼즐 레이팅", "승리", "연승", "체크메이트", "지구력", "백의 길", "흑의 길", "거인 사냥꾼", "올빼미", "탐험가", "외길 인생", "나이트의 해", "완벽주의자", "퍼즐 신동", "정점"].includes(w)) fail("한국어 칭호 표기표에 없음: " + w);
+  for (const k of Object.keys(KO.KO_TITLE_TEXT)) if (!words.has(k)) fail("한국어 칭호 표기표의 원문이 칭호 데이터에 없음(오타?): " + k);
+  if (KO.KO_OPENING_TIERS.length !== 5) fail("오프닝 5단계 한국어 표기 개수");
+  for (const c of TITLE_CATEGORIES) if (!(c.label in KO.KO_TITLE_CATEGORY)) fail("분류 한국어 표기 없음: " + c.label);
+  const cm = fs.readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8");
+  if (!/koTitle\(def\.name\) \|\| titleTextMap\(\)\[def\.name\]/.test(cm) || !/if \(lang === "ko"\) return KO_OPENING_TIERS\[def\.tier - 1\];/.test(cm)) fail("칭호 이름 표시가 한국어 표기표를 거치지 않음"); }
 if (fails.length) { console.error("check-titles 실패 (" + fails.length + "건):\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-titles: 계열 " + TITLE_SERIES.length + "개 · 칭호 " + ALL_TITLE_IDS.length + "개, 조건 문구·아이콘·판정·chess.com 집계 정상");

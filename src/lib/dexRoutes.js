@@ -1,6 +1,9 @@
-// (v0.6.8) 도감 탭의 하위 주소 — 구역마다 자기 주소를 가진다: /opening(오프닝), /master(마스터), /achievement(업적), /skin(스킨).
+// (v0.6.8) 도감 탭의 하위 주소 — 구역마다 자기 주소를 가졌다: /opening(오프닝), /master(마스터), /achievement(업적), /skin(스킨). (v0.7.8부터 모두 /book)
 //  내부 구역 키(openings·masters·titles·skins)는 그대로 두고 주소와 화면 이름만 바꿨다. /book은 테마 카드를 고르는 첫 화면.
-export const DEX_VIEW_PATH = { hub: "/book", openings: "/opening", masters: "/master", titles: "/achievement", skins: "/skin" };
+// (v0.7.8, 사용자 요청) 모든 구역이 /book 한 주소를 쓴다 — 구역을 바꿔도 주소는 그대로. 옛 하위 주소(/opening·/master·/achievement·/skin)는
+//  링크 호환용으로 그 구역을 연 뒤 주소를 /book으로 바꾼다(VIEW_OF_PATH).
+export const DEX_PATH = "/book";
+export const DEX_VIEW_PATH = { hub: DEX_PATH, openings: DEX_PATH, masters: DEX_PATH, titles: DEX_PATH, skins: DEX_PATH };
 export const DEX_HUB_PATH = "/book";   // 옛 첫 화면 주소 — v0.7.7부터 첫 화면이 없어 마지막에 보던 구역으로 연다(링크 호환용으로 남김)
 const VIEW_OF_PATH = { "/opening": "openings", "/master": "masters", "/achievement": "titles", "/skin": "skins", "/book": "hub" };
 export const DEX_PATHS = Object.keys(VIEW_OF_PATH);

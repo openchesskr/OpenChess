@@ -16,7 +16,8 @@ import { peekMasterNav } from "../lib/masterNav.js";
 import { peekTitleNav, takeTitleNav } from "../lib/titleNav.js";
 import { GachaSection } from "./gacha.jsx";
 import { SkinBook, ownedSetCount, bookSets } from "./skinbook.jsx";
-import { DEX_VIEW_PATH, dexViewFromPath, loadDexView, saveDexView } from "../lib/dexRoutes.js";
+import { DEX_PATH, dexViewFromPath, loadDexView, saveDexView } from "../lib/dexRoutes.js";
+import { BRASS_SCROLLBAR, BrassScrollStyle } from "../components/brassScroll.jsx";
 import { useTabMemory, readTabMemory, writeTabMemory } from "../lib/tabMemory.js";
 import { SEQ_FONT } from "../components/engineLines.jsx";
 import { DexSectionNav } from "../components/dexHub.jsx";
@@ -26,7 +27,7 @@ import { playSfx } from "../lib/prefs.js";
 import { useFitPanelHeight } from "../lib/dexPanel.js";
 import { MastersSchematic, masterPlayerCount } from "./dexMasters.jsx";
 import { sansToPgnText } from "../lib/pgn.js";
-import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
+import { AnimatedMove, CONTENT, CircleBadge, FadeIn, SNAP, TITLE_CATEGORIES, TITLE_SERIES, TitleBadge, titleDef, titleCategoryText, SeriesGlyph, seriesLabelText, seriesDisplayLabel, seriesProgress, WinBar, addsFor, assignTiers, computeDexLayout, fmtFull, forceKindFor, isBookMoveAt, mergeDevAdds, nameOverride, openingNameOf, snapNode, titleId, useNarrow, useSacConfirmTick } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { useSchematicFullscreen, SchematicFsButton } from "../components/schematicFullscreen.jsx";
@@ -375,7 +376,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   // 한 번에 계산된다. 이렇게 박스가 항상 뷰포트 안에 통째로 들어오면, 나침반 중심 칩을 "박스 자신의
   // 중심"에 맞추는 것만으로도 항상 뷰포트 정중앙에 오게 된다(visibleBoxCenter류의 별도 보정 불필요).
   // (v0.6.3) 높이 계산은 src/lib/dexPanel.js(오프닝·마스터 모식도 공용).
-  const UNLOCK_BAR_H = rightSlot ? 40 : 0;   // (v0.6.6) 박스 아래 도감 해금률 줄 높이(여백 포함)
+  const UNLOCK_BAR_H = rightSlot ? 40 : 0;   // (v0.6.6) 박스 아래 도감 해금률 줄 높이(여백 포함) — v0.7.8부터 줄이 없어 0
   const panelH = useFitPanelHeight(boxRef, vertical, 640, UNLOCK_BAR_H);
   // (기능) 검색·클릭으로 오프닝을 선택하면 화면 중앙으로 이동시키고 살짝 확대해 강조하는데, 이후
   // 사용자가 직접 드래그·휠로 그 노드를 중앙에서 멀리 치워버리면(즉 더 이상 "선택 직후" 뷰가 아니게
@@ -1120,7 +1121,7 @@ function OpeningSchematic({ tabsSlot, treeData, treeVersion, openKey, onToggleOp
   const searchHeader = (<>
     <div style={{ display: "flex", alignItems: vertical ? "flex-start" : "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: vertical ? "wrap" : "nowrap" }}>
       {tabsSlot}
-      <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: vertical ? "1 1 0" : "0 1 260px", minWidth: vertical ? 120 : 150, marginRight: "auto" }}>
+      <div className="no-pan" style={{ position: "relative", zIndex: 80, flex: "1 1 0", minWidth: 120 }}>   {/* (v0.7.8, 사용자 요청) 검색 바는 오른쪽 여백 없이 줄 전체 */}
         <div style={{ display: "flex", gap: 4 }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("오프닝 이름으로 찾기")}
             style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "6px 9px", borderRadius: 9, border: "1px solid #5A4630", background: "rgba(0,0,0,.25)", color: T.ivoryHi, fontSize: 12 }} />
@@ -1300,7 +1301,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
   const seen = seenTitles || earned;
-  const catOf = { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("히든 칭호") };
+  const catOf = { opening: titleCategoryText("opening"), activity: titleCategoryText("activity"), game: titleCategoryText("game"), rare: titleCategoryText("rare") };   // (v0.7.8) 한국어는 다듬은 표기
   const earnedOf = (s) => s.mins.filter((_, i) => earned.has(s.key + ":" + (i + 1))).length;
   const freshOf = (s) => s.mins.some((_, i) => earned.has(s.key + ":" + (i + 1)) && !seen.has(s.key + ":" + (i + 1)));
   const cur = TITLE_SERIES.find((x) => x.key === sel) || TITLE_SERIES[0];
@@ -1348,7 +1349,9 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
         </div>
       )}
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-        {!narrow && <aside style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", paddingRight: 2, scrollbarWidth: "thin" }}>
+        {/* (v0.7.8, 사용자 요청) 업적 목록 스크롤바 — 분석 탭과 같은 사이트 자체 황동 스크롤바(components/brassScroll.jsx) */}
+        {!narrow && <BrassScrollStyle />}
+        {!narrow && <aside className="oc-brass-scroll" style={{ width: asideW, flexShrink: 0, position: "sticky", top: 8, maxHeight: "calc(100dvh - 230px)", overflowY: "auto", overscrollBehavior: "contain", paddingRight: 8, ...BRASS_SCROLLBAR }}>
           {TITLE_CATEGORIES.map((cat) => {
             const list = TITLE_SERIES.filter((x) => x.cat === cat.key && (!ql || seriesDisplayLabel(x, earnedOf(x)).toLowerCase().includes(ql) || (!(x.cat === "rare" && !earnedOf(x)) && x.label.toLowerCase().includes(ql))));
             if (!list.length) return null;
@@ -1362,7 +1365,7 @@ function AchievementsPane({ backBtn, earned, seenTitles, onSeeTitle, currentTitl
                       style={{ position: "relative", display: "flex", alignItems: "center", gap: narrow ? 6 : 9, width: "100%", textAlign: "left", padding: narrow ? "6px 6px" : "7px 9px", marginBottom: 3, borderRadius: 8, border: "1px solid " + (on ? T.brass : "transparent"), borderLeft: "3px solid " + (on ? T.brassHi : "transparent"), background: on ? "linear-gradient(90deg,rgba(196,154,80,.3),rgba(196,154,80,.08))" : "rgba(255,255,255,.03)", cursor: "pointer", color: T.ivory }}>
                       <SeriesGlyph series={x} size={narrow ? 26 : 32} masked={x.cat === "rare" && !n} />
                       <span style={{ minWidth: 0, flex: 1 }}>
-                        <span style={{ display: "block", fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{seriesDisplayLabel(x, n)}</span>
+                        <span style={{ fontSize: narrow ? 10.5 : 12, fontWeight: 800, lineHeight: 1.2, color: on ? T.ivoryHi : T.ivory, overflow: "hidden", textOverflow: narrow ? "clip" : "ellipsis", whiteSpace: narrow ? "normal" : "nowrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{seriesDisplayLabel(x, n)}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
                           <span style={{ flex: 1, height: 3, borderRadius: 2, background: "rgba(255,255,255,.12)", overflow: "hidden" }}><span style={{ display: "block", width: (100 * n) / x.mins.length + "%", height: "100%", background: "linear-gradient(90deg,#A8842F,#F3DFAE)" }} /></span>
                           <span style={{ fontSize: 9.5, fontWeight: 800, color: "#D9C189", fontVariantNumeric: "tabular-nums" }}>{n}/{x.mins.length}</span>
@@ -1396,14 +1399,14 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   // (v0.7.7, 사용자 요청) 첫 화면(테마 카드)을 없앴다 — 처음엔 오프닝 도감, 그 뒤로는 마지막에 보던 구역(localStorage)으로 연다. 옛 주소 /book도 마지막 구역으로.
   const [dexView, setDexView] = useState(() => { const fromPath = typeof window !== "undefined" ? dexViewFromPath(window.location.pathname) : null; return peekMasterNav() ? "masters" : peekTitleNav() ? "titles" : (fromPath && fromPath !== "hub" ? fromPath : loadDexView()); });   // (v0.6.6) 대회 이름 링크로 왔으면 마스터 트리로 시작 // (기능4) 오프닝 / 칭호 / (20차 UX1) 스킨
   // (v0.6.8) 구역(오프닝·마스터·업적·스킨)마다 하위 주소: 눌러서 바꾸면 주소도 바뀌고(뒤로가기로 이전 구역 복귀), 그 주소로 바로 들어와도 그 구역이 열린다.
+  // (v0.7.8, 사용자 요청) 구역을 바꿔도 주소는 /book 그대로 — 주소를 쌓지 않는다.
   const selectDexView = useCallback((k) => {
     if (k === "hub") k = "openings";
     setDexView(k); saveDexView(k);
-    try { const p = DEX_VIEW_PATH[k]; if (p && window.location.pathname !== p) window.history.pushState({ screens: (window.history.state && window.history.state.screens) || [] }, "", p); } catch { }
   }, []);
   useEffect(() => {
-    try { const p = DEX_VIEW_PATH[dexView]; if (p && dexViewFromPath(window.location.pathname) !== dexView) window.history.replaceState(window.history.state, "", p); } catch { }   // 마스터 링크 등으로 시작했을 때 주소를 맞춘다
-    const onPop = () => { const v = dexViewFromPath(window.location.pathname); if (v) setDexView(v); };
+    try { if (dexViewFromPath(window.location.pathname) && window.location.pathname !== DEX_PATH) window.history.replaceState(window.history.state, "", DEX_PATH); } catch { }   // 옛 하위 주소로 들어오면 /book으로
+    const onPop = () => { const v = dexViewFromPath(window.location.pathname); if (v && v !== "hub") setDexView(v); };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -1463,7 +1466,7 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
   const ownedSkinN = ownedSetCount(ownedSkins);
   const hubItems = [
     // (v0.7.6, BUG-168) 해금률은 오프닝 모식도가 한 번 계산해야 알 수 있다 — 아직 모르면 0% 대신 "탐색 전"으로(예전엔 첫 화면에서 늘 0%로 보였다)
-    { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : null, detail: unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(1) + "%" : t("탐색 전") },
+    { key: "openings", label: t("오프닝"), Icon: BookOpen, accent: "#7A5A34", percent: unlockStats && unlockStats.total ? (100 * unlockStats.unlocked) / unlockStats.total : null, detail: unlockStats && unlockStats.total ? fmtFull(unlockStats.unlocked) + "/" + fmtFull(unlockStats.total) : t("탐색 전") },   // (v0.7.8, 사용자 요청) 해금률(%) 대신 해금 수/전체 수
     { key: "masters", label: t("마스터"), Icon: Crown, accent: "#2A4F9A", percent: null, detail: t("선수 {0}명", fmtFull(masterPlayerCount())) },   // (v0.7.5) 수록 선수 수
     { key: "titles", label: t("업적"), Icon: Trophy, accent: "#7A3E8A", percent: (100 * earned.size) / totalTitles, detail: fmtFull(earned.size) + "/" + fmtFull(totalTitles) },
     { key: "skins", label: t("스킨"), Icon: Palette, accent: "#2A7A6A", percent: (100 * ownedSkinN) / totalSkins, detail: ownedSkinN + "/" + totalSkins },
@@ -1488,20 +1491,9 @@ export function CollectionTab({ unlockAll, liveOn, contentVer, chesscom, earnedT
       ) : dexView === "titles" ? (
         <AchievementsPane backBtn={backBtn} titleMetrics={titleMetrics} earned={earned} seenTitles={seenTitles} onSeeTitle={onSeeTitle} currentTitle={currentTitle} onEquipTitle={onEquipTitle} />
       ) : (<>
-      {/* (사용자 요청) "검색+새로고침" 헤더 줄과 같은 자리에 도감 해금률을 우측 배치하고(좌:검색,
-          우:해금률), 예전의 작은 회색 캡션(11.5px)보다 "훨씬 더 크고 선명하게" — 굵고 큼직한
-          브라스/금색 강조 숫자로 보이도록 스타일을 키운다. 실제 렌더 위치는 OpeningSchematic이
-          캔버스 밖 헤더 줄에 rightSlot으로 꽂아 넣는다(검색창 옆 좌우 배치를 그 컴포넌트가 담당). */}
+      {/* (v0.7.8, 사용자 요청) 도감 영역 아래의 도감 해금률 줄은 없앴다 — 해금 수/전체 수는 위쪽 구획 전환 줄의 오프닝 칸에 */}
       <OpeningSchematic tabsSlot={backBtn} treeData={treeData} treeVersion={treeVersion} openKey={openKey} onToggleOpen={onToggleOpen} chesscom={chesscom} ccReady={ccReady} unlockAll={unlockAll} vertical={vertical} onOpenOpening={onOpenOpening} onOpenAnalysis={onOpenAnalysis} priorityRef={genPriorityRef} onUnlockStats={setUnlockStats} contentVer={contentVer} canAdd={canAdd} bumpContent={bumpContent}
-        rightSlot={
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: T.brassHi, lineHeight: 1.15, letterSpacing: .2, textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>
-              {unlockStats && unlockStats.total ? ((100 * unlockStats.unlocked) / unlockStats.total).toFixed(2) : "0.00"}<span style={{ fontSize: 14 }}>%</span>
-            </div>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: T.ivory }}>{tx("도감 해금률 {0}", <span style={{ fontFamily: SITE_FONT, fontWeight: 600 }}>({fmtFull((unlockStats && unlockStats.unlocked) || 0)}/{fmtFull((unlockStats && unlockStats.total) || 0)})</span>)}
-            </div>
-          </div>
-        } />
+      />
       </>)}
     </div>
   );
