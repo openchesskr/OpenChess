@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check, Settings, materialIcon } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Search, GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check, Settings, materialIcon } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
 import { t, tx, lang } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
-import { FacetDiamond, GOLD } from "./components/facetIcons.jsx";
+import { FacetDiamond, FacetCrown, GOLD, facetRamp } from "./components/facetIcons.jsx";
+import { QCOLOR } from "./lib/moveKinds.js";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -479,36 +480,85 @@ const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27
 
 
 
-// 이번 버전(최신)의 핵심 — 벤토 그리드.
-const NEW_CARDS = [
-  { Icon: ShieldCheck, color: "#8FB55E", wide: true, tag: t("공정한 랭킹"), title: t("경험치와 코인은 서버가 계산합니다"), desc: t("퍼즐 풀이 경험치, 퀘스트 코인, 티어 승급 코인, 가진 스킨을 전부 서버가 규칙을 확인하고 저장합니다. 개발자 도구로 값을 고쳐도 반영되지 않습니다. 리더보드에는 서버가 확인한 값만 올라갑니다.") },
-  { Icon: Gem, color: T.brassHi, tag: t("스킨 뽑기"), title: t("추첨도 서버에서 합니다"), desc: t("상자 추첨, 가격, 중복 환급, 보드 해금까지 서버가 처리합니다. 누구에게나 확률은 같습니다.") },
-  { Icon: Scale, color: "#6FA8DC", tag: t("서버 검증"), title: t("체스 규칙으로 한 번 더 확인합니다"), desc: t("봇 대국 결과, 공유한 퍼즐, 저장한 복기를 기록하기 전에 서버가 체스 규칙으로 다시 검증합니다.") },
-  { Icon: Lock, color: "#D9736A", wide: true, tag: t("접속 보안"), title: t("기본은 막고 필요한 것만 엽니다"), desc: t("데이터베이스 함수는 전부 기본 차단으로 잠그고 필요한 것만 열었습니다. 로그인, 계정 복구, 번역 같은 요청에는 횟수 제한을 걸었고, 브라우저에는 엄격한 보안 정책(CSP)과 HSTS를 적용했습니다. 모의 공격 84건은 빌드할 때마다 돌립니다.") },
-];
-function NewCard({ c, i }) {
+// (v0.7.8) 이번 버전(최신)의 핵심 — 학습 버전. 왼쪽 큰 카드에 수 등급 11단계 레슨 사다리(파셋 마름모, 마지막 단계는 금빛 왕관을 얹은 이론 수),
+//  오른쪽에 테마 퍼즐(미니 보드)·친구 진척도(프로필 스택), 아래 줄 전체에 집중 분석 커뮤니티. 장식은 모두 채운 면(CLAUDE.md 파셋 규칙).
+const LADDER = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"];
+function GradeLadder() {
+  const W = 520, H = 230, n = LADDER.length;
+  const pts = LADDER.map((g, i) => ({ g, x: 26 + i * ((W - 52) / (n - 1)), y: H - 34 - i * ((H - 80) / (n - 1)) - (i % 2 ? 12 : 0) }));
+  return (
+    <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block", maxHeight: 240 }} aria-hidden="true">
+      {pts.slice(1).map((p, i) => { const q = pts[i]; const dx = p.x - q.x, dy = p.y - q.y, len = Math.hypot(dx, dy), nx = -dy / len * 1.6, ny = dx / len * 1.6;
+        return <polygon key={i} points={[q.x + nx, q.y + ny, p.x + nx * 0.4, p.y + ny * 0.4, p.x - nx * 0.4, p.y - ny * 0.4, q.x - nx, q.y - ny].join(" ")} fill="rgba(196,154,80,.32)" />; })}
+      {pts.map((p, i) => {
+        const last = i === n - 1, R = last ? GOLD : facetRamp(QCOLOR[p.g] || "#8FB55E"), r = last ? 19 : 14;
+        return (
+          <motion.g key={i} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ delay: i * 0.06, duration: 0.35 }} style={{ transformOrigin: p.x + "px " + p.y + "px" }}>
+            <FacetDiamond cx={p.x} cy={p.y} r={r} R={R} gem={last || p.g === "brilliant"} />
+            {last && <FacetCrown x={p.x} y={p.y - r - 7} s={18} R={GOLD} />}
+          </motion.g>
+        );
+      })}
+    </svg>
+  );
+}
+function MiniBoard() {
+  const sq = 22, hl = { 1: "rgba(235,198,99,.75)", 6: "rgba(143,181,94,.8)" };
+  return (
+    <svg viewBox="0 0 88 88" width={88} height={88} aria-hidden="true" style={{ flexShrink: 0, borderRadius: 8 }}>
+      {Array.from({ length: 16 }, (_, k) => { const r = Math.floor(k / 4), c = k % 4; return <rect key={k} x={c * sq} y={r * sq} width={sq} height={sq} fill={hl[k] || ((r + c) % 2 ? "#7C4F2E" : "#E8D3AE")} />; })}
+      <FacetDiamond cx={sq * 2.5} cy={sq * 1.5} r={7} R={facetRamp("#8FB55E")} gem />
+    </svg>
+  );
+}
+function FriendDots() {
+  const fr = [["M", "#B07A2E"], ["K", "#5E8FB8"], ["J", "#8FB55E"]];
+  return (
+    <div className="flex items-center" style={{ marginTop: 14 }}>
+      {fr.map(([ch, c], i) => <span key={ch} style={{ width: 34, height: 34, marginLeft: i ? -10 : 0, borderRadius: "50%", background: "linear-gradient(150deg," + c + ",#2A1B0E)", border: "2px solid #F1E6D0", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#F1E6D0", fontWeight: 900, fontSize: 13, zIndex: 3 - i }}>{ch}</span>)}
+      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 900, color: T.ivoryHi }}>+2</span>
+      <svg viewBox="0 0 40 40" width={34} height={34} aria-hidden="true" style={{ marginLeft: 12 }}><FacetDiamond cx={20} cy={20} r={15} R={facetRamp(QCOLOR.good)} gem={false} /></svg>
+    </div>
+  );
+}
+function NewPanel({ color, i, span = 1, rows = 1, Icon, tag, title, desc, children }) {
   return (
     <motion.div initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
-      whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: c.wide ? "span 2" : "span 1", minWidth: 0 }} className="about-bento">
-      <CutPanel chase tilt accent={c.color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
-        <Brackets color={c.color} />
-        <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
+      whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: "span " + span, gridRow: "span " + rows, minWidth: 0 }} className="about-bento">
+      <CutPanel chase tilt accent={color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box", height: "100%" }}>
+        <Brackets color={color} />
+        <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + color + "30, transparent 70%)" }} />
         <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
-          <span style={{ width: 40, height: 40, clipPath: octagon(10), background: c.color + "33", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={20} color={c.color} /></span>
-          <Tag color={c.color}>{c.tag}</Tag>
+          <span style={{ width: 40, height: 40, clipPath: octagon(10), background: color + "33", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon size={20} color={color} /></span>
+          <Tag color={color}>{tag}</Tag>
         </div>
-        <h3 style={{ fontSize: 18, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{c.title}</h3>
-        <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{c.desc}</p>
+        <h3 style={{ fontSize: 18, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{title}</h3>
+        <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{desc}</p>
+        {children && <div style={{ position: "relative" }}>{children}</div>}
       </CutPanel>
     </motion.div>
   );
 }
 function WhatsNew({ version }) {
+  const chip = (Icon, label, c) => <span key={label} className="inline-flex items-center" style={{ gap: 6, padding: "6px 12px", clipPath: octagon(6), background: c + "26", color: T.ivoryHi, fontSize: 12, fontWeight: 800 }}><Icon size={14} color={c} />{label}</span>;
   return (
     <section id="new" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 보안입니다")} desc={t("눈에 띄는 기능은 거의 없습니다. 대신 경험치와 코인을 조작할 수 있던 구멍을 전부 찾아서 막았습니다.")} />
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 학습입니다")} desc={t("레슨 트리를 수 등급의 의미대로 다시 짰습니다. 배운 테마는 바로 퍼즐로 풀고, 친구가 어디까지 왔는지 레슨 경로에서 보입니다.")} />
       <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
-        {NEW_CARDS.map((c, i) => <NewCard key={c.title} c={c} i={i} />)}
+        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={GraduationCap} tag={t("레슨 트리")} title={t("수 등급이 곧 커리큘럼입니다")}
+          desc={t("이론 수는 규칙과 기초 이론, 블런더는 두면 안 되는 실수, 탁월한 수는 희생과 메이트 패턴입니다. 11단계 133개 레슨을 차례로 오르고, 마지막 단계에서 오프닝 레파토리를 배웁니다.")}>
+          <div style={{ marginTop: 16 }}><GradeLadder /></div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".2em", color: T.brassHi, marginTop: 6 }}>{t("11단계 · 레슨 133개")}</div>
+        </NewPanel>
+        <NewPanel i={1} color="#8FB55E" Icon={Puzzle} tag={t("테마 퍼즐")} title={t("배운 테마를 바로 풉니다")} desc={t("최근에 본 레슨의 테마에 맞는 퍼즐을 Lichess와 OpenChess 퍼즐에서 골라 그 자리에서 풉니다.")}>
+          <div style={{ marginTop: 14 }}><MiniBoard /></div>
+        </NewPanel>
+        <NewPanel i={2} color="#6FA8DC" Icon={Users} tag={t("친구 진척도")} title={t("친구와 함께 오르는 길")} desc={t("친구가 지금 배우는 레슨 옆에 친구의 프로필 사진이 표시됩니다.")}>
+          <FriendDots />
+        </NewPanel>
+        <NewPanel i={3} span={3} color="#D9736A" Icon={Compass} tag={t("집중 분석")} title={t("그 수를 다룬 글과 영상")} desc={t("집중 분석에서 그 수의 오프닝 이름으로 찾은 웹 문서와 YouTube 영상, Lichess 대국으로 모은 전체 통계를 함께 봅니다.")}>
+          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Search, t("웹 검색"), "#D9736A")}{chip(Play, "YouTube", "#E06B5B")}{chip(BarChart3, t("전체 통계"), T.brassHi)}</div>
+        </NewPanel>
       </div>
     </section>
   );
@@ -979,11 +1029,11 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           extra={<PuzzleDemo />} />
 
         <TabChapter id="learn" no="04" Icon={TabSchool} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
-          lead={t("학습 탭은 레슨과 맞춤 학습을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("맞춤 학습") }]}
+          lead={t("학습 탭은 레슨과 실수 복습, 테마 퍼즐을 모아 둔 곳입니다.")}
+          shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("실수 복습과 테마 퍼즐") }]}
           blocks={[
-            [t("레슨"), t("체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.")],
-            [t("맞춤 학습"), t("최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.")],
+            [t("레슨"), t("수 등급의 의미대로 짠 11단계 133개 레슨을 하나씩 엽니다. 마지막 단계는 오프닝 레파토리이고, 친구가 배우는 레슨도 경로에 보입니다.")],
+            [t("실수 복습과 테마 퍼즐"), t("최근 대국에서 실수한 포지션을 다시 풀고, 최근에 본 레슨의 테마에 맞는 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>

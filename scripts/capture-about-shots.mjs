@@ -92,10 +92,13 @@ for (const lang of LANGS) {
       try {
         localStorage.setItem("occ_lang", lang); localStorage.removeItem("occ_lang_auto");
         localStorage.setItem("oc_learn_pager_seen", "1");
+        localStorage.setItem("oc_recent_lessons_v1", JSON.stringify(["m_backrank", "t_fork", "m_smothered"]));   // (v0.7.8) 학습 탭 테마 퍼즐 블록이 비지 않게
         const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
         localStorage.setItem("chess_state_v5:guest", JSON.stringify({ dismissedAnnounceVersion: version, dailyPuzzleHideDate: today, analysisSans: sans }));
       } catch { /* 무시 */ }
     }, { lang, version, sans: ANALYSIS_SANS });
+    // (v0.7.8) 테마 퍼즐: 캡처 환경은 Lichess에 닿지 않으므로 같은 모양의 예시 응답(백랭크 메이트 1수)을 돌려준다
+    await ctx.route(/\/api\/lichess\?puzzles=1/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ puzzles: { backRankMate: [{ id: "demo1", fen: "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1", sol: ["Ra8#"], rating: 812, themes: ["backRankMate"] }], fork: [], smotheredMate: [] } }) }));
     const page = await ctx.newPage();
     await page.goto(BASE + s.route, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(2500);
