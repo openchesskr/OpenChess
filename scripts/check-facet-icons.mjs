@@ -25,7 +25,9 @@ const ZONES = [
   ["src/app/common.jsx", "{/* 양옆 끝 마름모", "</div>\n      )}"],
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
   ["src/app/growthHome.jsx", "function GoldDivider(", "</svg>"],   // (v0.7.7) 분석 탭 보드 분석·성장 분석 사이 금색 구분선의 보석
-  ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
+  ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],
+  ["src/components/AboutKit.jsx", "function DriftShape(", "\n}\n"],   // (v0.7.8) /about 배경에 떠오르는 파셋 기물·보석·방패
+  ["src/AboutPage.jsx", "function Diamond(", "\n}\n"],   // (v0.7.8) /about 배경 마름모(예전 선 마름모 → 파셋)   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];
 let n = 0;
 for (const [file, from, to] of ZONES) {

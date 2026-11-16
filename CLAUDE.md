@@ -60,4 +60,4 @@ Claude는 체스 플랫폼을 개발하는 스타트업 **OpenChess**의 **개�
 
 ## 버전 종료 프로토콜 (README 참고)
 
-사용자가 **"버전 종료"**를 입력하면 `README.md`의 "버전 종료 프로토콜"을 순서대로 따른다: ① `supabase-setup.sql` 전송(가장 먼저, 이 명령 외에는 임의로 보내지 않음) → ② 버전 기록 3곳(README·`changelog.js`·`AboutPage.jsx`) → ③ PR 생성·머지 → ④ 코드블록 형태의 개발자 기록. 이 명령이 PR 생성·머지 승인을 겸한다.
+사용자가 **"버전 종료"**를 입력하면 `README.md`의 "버전 종료 프로토콜"을 순서대로 따른다: ① `supabase-setup.sql` 전송(가장 먼저, 이 명령 외에는 임의로 보내지 않음) → ② 버전 기록 3곳(README·`changelog.js`·`AboutPage.jsx`) → ③ 소개 페이지 갱신(`npm run about:shots`로 6개 언어 스크린샷 전부 새로 찍기 + CH.NEW 섹션 새로 디자인) → ④ PR 생성·머지 → ⑤ 코드블록 형태의 개발자 기록. 이 명령이 PR 생성·머지 승인을 겸한다.

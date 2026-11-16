@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ScrambleText, MONO, useScramble } from "./OpenTextArt.jsx";
 import { isLite } from "../lib/perfMode.js";
+import { FacetDiamond, FacetPawn, FacetRook, FacetBishop, FacetCrown, FacetShield, facetRamp, GOLD } from "./facetIcons.jsx";
 
 // /about 디자인 키트 — OPEN 텍스트 아트 섹션에서 정한 시각 언어를 페이지 전체에 쓰기 위한 부품.
-//  · 모서리를 비스듬히 자른 패널(CutPanel) · 평행사변형 라벨/버튼 · 모노스페이스 `// 라벨` · 블록 문자 구분선 · 호버 글리치
+//  · 모서리를 비스듬히 자른 패널(CutPanel) · 평행사변형 라벨/버튼 · 모노스페이스 라벨 · 블록 문자 구분선 · 호버 글리치
 // 색은 AboutPage의 T와 같은 값이다(이 페이지는 App.jsx의 모듈을 가져오지 않는 독립된 정적 페이지라 옮겨 적는다).
 export const K = { ebony: "#1B1009", ebony2: "#2E1B10", panel: "#3A2516", deep: "#20140B", ivory: "#EBDDC4", ivoryHi: "#FAF2E2", soft: "#B8A78C", brass: "#C49A50", brassHi: "#ECCB86", line: "rgba(196,154,80,.28)" };
 
@@ -27,6 +28,14 @@ export const KIT_CSS = `
 @keyframes ab-sweep{from{transform:translateY(-120%)}to{transform:translateY(420%)}}
 .ab-sweep{position:absolute;left:0;right:0;top:0;height:22%;pointer-events:none;background:linear-gradient(180deg,transparent,rgba(236,203,134,.16) 50%,transparent);animation:ab-sweep 5.2s linear infinite}
 @keyframes ab-drift{from{transform:translateY(105vh)}to{transform:translateY(-12vh)}}
+@keyframes ab-dglitch{0%,86%,100%{transform:none;opacity:1}87%{transform:translateX(-7px) skewX(-16deg);opacity:.35}89%{transform:translateX(6px) skewX(12deg) scaleY(.82);opacity:1}91%{transform:translateX(-2px) scaleX(1.3);opacity:.12}93%{transform:translateX(4px);opacity:.9}95%{transform:none;opacity:1}}
+.ab-dglitch{animation:ab-dglitch 6s steps(1,end) infinite}
+@keyframes ab-dglitch-t{0%,84%,100%{transform:none;opacity:1;text-shadow:none}85%{transform:translateX(-5px) skewX(-12deg);opacity:.5;text-shadow:-3px 0 rgba(217,115,106,.9),3px 0 rgba(111,168,220,.9)}88%{transform:translateX(4px);opacity:1;text-shadow:3px 0 rgba(217,115,106,.9),-3px 0 rgba(111,168,220,.9)}90%{transform:none;opacity:.15;text-shadow:none}92%{opacity:1}}
+.ab-dglitch-t{animation:ab-dglitch-t 7s steps(1,end) infinite}
+@keyframes ab-dspin{to{transform:rotate(360deg)}}
+.ab-dspin{animation:ab-dspin 18s linear infinite}
+@keyframes ab-tear{0%,90%,100%{opacity:0;transform:translateY(20vh) scaleX(.4)}91%{opacity:1;transform:translateY(20vh) scaleX(1)}92%{opacity:.6;transform:translateY(58vh) scaleX(.8)}93%{opacity:1;transform:translateY(36vh) scaleX(1.1)}94%{opacity:0;transform:translateY(80vh)}}
+.ab-tear{position:fixed;left:0;right:0;top:0;height:3px;z-index:1;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(217,115,106,.35) 25%,rgba(236,203,134,.45) 55%,transparent);animation:ab-tear 9s steps(1,end) infinite}
 .ab-drift{position:fixed;bottom:0;font-family:ui-monospace,monospace;font-weight:700;color:#C49A50;opacity:.07;pointer-events:none;white-space:pre;line-height:1.1;animation:ab-drift linear infinite}
 .ab-sheen{position:relative;overflow:hidden}
 .ab-sheen::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);pointer-events:none}
@@ -135,7 +144,8 @@ export function AsciiRule({ label = "OPENCHESS", style }) {
 }
 
 // 상단 상태 줄 — 엔진·오프닝·퍼즐·코치가 "준비됨"을 알리듯 문구가 노이즈에서 풀려 나오며 순환한다.
-const STATUS = ["ENGINE ▸ STOCKFISH 18 READY", "OPENINGS ▸ 4 BRANCHES SYNCED", "PUZZLES ▸ YOUR MISTAKES LOADED", "REVIEW ▸ COACH ONLINE", "NEXT LEVEL ▸ LOADING"];
+// (v0.7.8, 사용자 요청) OpenChess의 네 글자 O·P·E·N — 히어로의 O·P·E·N 카드와 같은 순서
+const STATUS = ["OBSERVE YOUR MOVES", "PRACTICE YOUR SKILLS", "EVALUATE YOUR GAMES", "NEXT LEVEL IN YOUR DREAMS"];
 export function StatusTicker({ style }) {
   const [i, setI] = useState(0);
   useEffect(() => { const id = setInterval(() => setI((v) => (v + 1) % STATUS.length), 2800); return () => clearInterval(id); }, []);
@@ -151,22 +161,65 @@ export function StatusTicker({ style }) {
 // 배경에 천천히 떠오르는 텍스트 아트 기둥(체스 기물·0/1·블록 문자)과 필름 그레인·비네트.
 const DRIFT = [["♜\n0\n1\n▒\n♞\n░\n1\n♝", 6, 14, 70, -10], ["░\n♛\n1\n0\n▓\n♚\n0", 17, 11, 95, -40], ["1\n♟\n▒\n0\n♝\n░\n1\n♜\n0", 31, 13, 80, -25], ["0\n♞\n░\n1\n♛\n▓", 48, 12, 110, -60], ["♚\n1\n▒\n♟\n0\n░\n♜", 63, 15, 75, -5], ["▓\n0\n♝\n1\n░\n♞\n0\n1", 78, 11, 100, -50], ["1\n♜\n░\n0\n♛\n▒\n♟", 91, 13, 85, -30]];
 const GRAIN = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
-export function AmbientLayer() {
+export function AmbientLayer({ rich = false }) {
+  const more = rich && !isLite();
   return (
     <>
-      {DRIFT.map(([txt, left, size, dur, delay], i) => <span key={i} aria-hidden="true" className="ab-drift" style={{ left: left + "%", fontSize: size, animationDuration: dur + "s", animationDelay: delay + "s" }}>{txt}</span>)}
+      {DRIFT.map(([txt, left, size, dur, delay], i) => <span key={i} aria-hidden="true" className="ab-drift" style={{ left: left + "%", fontSize: size, animationDuration: dur + "s", animationDelay: delay + "s" }}><span className={more ? "ab-dglitch-t" : undefined} style={more ? { display: "block", animationDuration: (5 + (i % 4) * 1.7) + "s", animationDelay: -(i * 1.3) + "s" } : undefined}>{txt}</span></span>)}
+      {more && <RichDrift />}
       <div aria-hidden="true" className="ab-grain" style={{ backgroundImage: GRAIN }} />
       <div aria-hidden="true" className="ab-vignette" />
     </>
   );
 }
+// (v0.7.8, 사용자 요청) /about 배경 — 떠오르는 요소를 늘리고 모양을 다양하게(텍스트 기둥 + 파셋 기물·보석·방패), 가끔 글리치(어긋남·깜빡임)와 화면을 가로지르는 찢김 띠.
+//  움직임은 transform·opacity만 쓴다(컴포지터 처리). 가벼운 모드에서는 그리지 않는다.
+const DRIFT2 = [["♞\n▓\n0\n1\n░\n♟", 3, 12, 88, -15], ["0\n1\n1\n0\n▒\n♛\n░", 12, 10, 104, -70], ["♝\n░\n1\n♜\n0", 24, 12, 92, -45], ["▒\n0\n♚\n1\n▓\n0\n♞", 39, 11, 118, -85], ["1\n0\n♟\n░\n♝", 55, 13, 96, -20], ["♛\n▓\n1\n0\n░\n♜\n1", 71, 10, 112, -95], ["░\n♟\n0\n▒\n1", 85, 12, 90, -55], ["0\n♜\n1\n▓\n♞\n0", 97, 11, 108, -35]];
+// [모양, 왼쪽 %, 크기 px, 떠오르는 시간 s, 시작 지연 s, 투명도]
+const PARTICLES = [
+  ["diamond", 5, 26, 70, -5, 0.16], ["pawn", 15, 34, 95, -40, 0.12], ["hex", 22, 30, 82, -62, 0.13], ["rook", 33, 38, 110, -20, 0.1], ["shard", 44, 22, 66, -33, 0.16],
+  ["crown", 52, 36, 100, -75, 0.11], ["diamond", 60, 18, 58, -12, 0.18], ["bishop", 67, 36, 104, -50, 0.11], ["shield", 76, 30, 90, -8, 0.12], ["hex", 83, 24, 76, -44, 0.14],
+  ["pawn", 92, 28, 86, -66, 0.12], ["shard", 9, 18, 62, -28, 0.15], ["diamond", 28, 32, 92, -88, 0.12], ["crown", 47, 24, 72, -3, 0.13], ["rook", 88, 26, 80, -36, 0.12],
+  ["bishop", 18, 24, 74, -58, 0.13], ["diamond", 72, 40, 120, -100, 0.1], ["shield", 37, 22, 68, -47, 0.14], ["hex", 57, 20, 64, -25, 0.15], ["shard", 95, 28, 84, -70, 0.13],
+];
+const BRASS_R = facetRamp("#C49A50");
+function DriftShape({ kind, size }) {
+  return (
+    <svg viewBox="0 0 40 40" width={size} height={size} style={{ display: "block", overflow: "visible" }}>
+      {kind === "diamond" && <FacetDiamond cx={20} cy={20} r={16} R={GOLD} />}
+      {kind === "pawn" && <FacetPawn x={20} y={20} s={30} R={BRASS_R} />}
+      {kind === "rook" && <FacetRook x={20} y={20} s={30} R={BRASS_R} />}
+      {kind === "bishop" && <FacetBishop x={20} y={20} s={30} R={GOLD} />}
+      {kind === "crown" && <FacetCrown x={20} y={18} s={30} R={GOLD} />}
+      {kind === "shield" && <FacetShield cx={20} cy={20} w={26} h={30} R={BRASS_R} />}
+      {kind === "shard" && <g><path d="M20 3 L31 21 L20 37Z" fill={GOLD.l3} /><path d="M20 3 L9 19 L20 37Z" fill={GOLD.l1} /><path d="M20 3 L13 13 L17 15Z" fill={GOLD.hi} /></g>}
+      {kind === "hex" && <g><path d="M20 3 L35 11.5 L20 20Z" fill={BRASS_R.l2} /><path d="M35 11.5 L35 28.5 L20 20Z" fill={BRASS_R.l3} /><path d="M35 28.5 L20 37 L20 20Z" fill={BRASS_R.base} /><path d="M20 37 L5 28.5 L20 20Z" fill={BRASS_R.l4} /><path d="M5 28.5 L5 11.5 L20 20Z" fill={BRASS_R.l1} /><path d="M5 11.5 L20 3 L20 20Z" fill={BRASS_R.l1} /><path d="M9 12 L16 8 L13 14Z" fill={BRASS_R.hi} /></g>}
+    </svg>
+  );
+}
+function RichDrift() {
+  return (
+    <>
+      {DRIFT2.map(([txt, left, size, dur, delay], i) => <span key={"t" + i} aria-hidden="true" className="ab-drift" style={{ left: left + "%", fontSize: size, animationDuration: dur + "s", animationDelay: delay + "s" }}><span className="ab-dglitch-t" style={{ display: "block", animationDuration: (6.5 + (i % 3) * 2.1) + "s", animationDelay: -(i * 1.9) + "s" }}>{txt}</span></span>)}
+      {PARTICLES.map(([kind, left, size, dur, delay, op], i) => (
+        <span key={"p" + i} aria-hidden="true" className="ab-drift" style={{ left: left + "%", opacity: op, animationDuration: dur + "s", animationDelay: delay + "s" }}>
+          <span className="ab-dglitch" style={{ display: "block", animationDuration: (4.5 + (i % 5) * 1.6) + "s", animationDelay: -(i * 2.3) + "s" }}>
+            <span className="ab-dspin" style={{ display: "block", animationDuration: (14 + (i % 4) * 6) + "s", animationDirection: i % 2 ? "reverse" : "normal" }}><DriftShape kind={kind} size={size} /></span>
+          </span>
+        </span>
+      ))}
+      <div aria-hidden="true" className="ab-tear" style={{ animationDuration: "9s" }} />
+      <div aria-hidden="true" className="ab-tear" style={{ animationDuration: "13s", animationDelay: "-5s", height: 2, background: "linear-gradient(90deg,transparent,rgba(111,168,220,.35) 30%,rgba(236,203,134,.4) 60%,transparent)" }} />
+    </>
+  );
+}
 
-// 페이지 맨 아래 워드마크 — 외곽선 큰 글자와 상태 줄.
-export function FooterMark({ note = "© OpenChess" }) {
+// 페이지 맨 아래 — (v0.7.8, 사용자 요청) 외곽선 글자 "OPENCHESS" 대신 같은 크기의 OpenChess 로고, 그 아래는 "OpenChess"만.
+export function FooterMark({ note = "OpenChess" }) {
   return (
     <div style={{ textAlign: "center", padding: "44px 0 8px", userSelect: "none" }}>
-      <div aria-hidden="true" className="ab-flicker" style={{ fontFamily: MONO, fontSize: "clamp(40px, 11vw, 104px)", fontWeight: 900, fontStyle: "italic", letterSpacing: "-.02em", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.35)", maskImage: "linear-gradient(180deg,#000 30%,transparent 100%)", WebkitMaskImage: "linear-gradient(180deg,#000 30%,transparent 100%)" }}>OPENCHESS</div>
-      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note} · SYSTEM OK <EqBars n={3} style={{ marginLeft: 6, verticalAlign: "middle" }} /></div>
+      <img className="ab-flicker" src="/OpenChessLogo.png" alt="OpenChess" draggable={false} style={{ display: "block", margin: "0 auto", height: "clamp(40px, 11vw, 104px)", width: "auto", maxWidth: "100%", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />
+      <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".2em", color: K.soft, opacity: 0.8 }}>{note}</div>
     </div>
   );
 }
