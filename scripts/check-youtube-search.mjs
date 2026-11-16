@@ -31,11 +31,20 @@ const learn = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), 
 const block = readFileSync(new URL("../src/components/youtubeVideos.jsx", import.meta.url), "utf8");
 // (v0.7.8) 영상 블록은 댓글 아래 "커뮤니티" 블록(웹 검색 + 영상) 안으로 옮겼다
 const community = readFileSync(new URL("../src/components/communityBlock.jsx", import.meta.url), "utf8");
-ok("해설 페이지에 댓글 블록 + 커뮤니티 블록", /<MoveExplainBlock [^>]*\/>\s*<CommunityBlock sans=\{focusVideoSans\} name=\{dispName \|\| null\} \/>/.test(learn));
-ok("커뮤니티 블록 안에 영상 블록", /<YoutubeVideosBlock sans=\{sans\} bare first=\{off\.web\} \/>/.test(community));
+ok("해설 페이지에 댓글 블록 + 커뮤니티 블록", /<MoveExplainBlock [^>]*\/>\s*<CommunityBlock sans=\{focusVideoSans\} name=\{dispName \|\| null\}[^>]*\/>/.test(learn));
+ok("커뮤니티 블록 안에 영상 블록", /<YoutubeVideosBlock sans=\{q\} bare first=\{off\.web\} \/>/.test(community));
 ok("댓글 블록 제목이 \"댓글\"", learn.includes('{t("댓글")}</span>'));
 ok("영상 블록에 iframe 없음(CSP frame 제한 유지)", !/<iframe/i.test(block));
 ok("영상 링크는 새 창·noopener", /target="_blank" rel="noopener noreferrer"/.test(block));
+
+// (v0.7.8 BUG-189·190) 커뮤니티 블록: 40수가 넘는 대국에서도 앞 40수로 검색(블록을 숨기지 않음), 서버 키가 없으면 개발자에게 어떤 환경변수가 없는지 보여 줌
+{
+  const cb = readFileSync(new URL("../src/components/communityBlock.jsx", import.meta.url), "utf8");
+  ok("커뮤니티 블록은 수순을 YT_MAX_PLIES로 잘라 검색(긴 대국에서 숨기지 않음)", /slice\(0, YT_MAX_PLIES\)/.test(cb) && !/length > YT_MAX_PLIES/.test(cb));
+  ok("커뮤니티 블록은 서버 키가 없을 때 개발자에게 환경변수 이름을 보여 줌", /YOUTUBE_API_KEY/.test(cb) && /TAVILY_API_KEY/.test(cb) && /dev/.test(cb));
+  const an = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
+  ok("분석 탭이 커뮤니티 블록에 dev(개발자) 여부를 넘김", /<CommunityBlock [^>]*dev=/.test(an));
+}
 
 if (fails.length) { console.error("✗ YouTube 영상 블록 검사 실패:"); fails.forEach((x) => console.error("  · " + x)); process.exit(1); }
 console.log("✓ youtube search check: 수순 검증·PGN 검색어·응답 정리, 해설 페이지의 댓글+영상 블록 연결");

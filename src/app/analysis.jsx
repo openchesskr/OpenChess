@@ -2815,7 +2815,7 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         <div>
           {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + (v0.7.8) 커뮤니티 블록 — 그 수의 오프닝 이름(없으면 PGN 수순)으로 찾은 웹 검색 결과 + YouTube 영상 */}
           <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
-          <CommunityBlock sans={focusVideoSans} name={dispName || null} />
+          <CommunityBlock sans={focusVideoSans} name={dispName || null} dev={!!canEdit} />
         </div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>

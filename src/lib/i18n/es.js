@@ -6275,4 +6275,5 @@ export default {
   "비기기": "Hacer tablas",
   "짧은 퍼즐": "Puzle corto",
   "긴 퍼즐": "Puzle largo",
+  "개발자 안내: 이 배포에 서버 환경변수 {0}이 없어 검색을 숨겼습니다. Vercel 환경변수(이 배포 환경 범위)에 추가한 뒤 다시 배포하세요.": "Nota para desarrolladores: a este despliegue le falta la variable de entorno del servidor {0}, así que la búsqueda está oculta. Añádela en las variables de entorno de Vercel (para este entorno de despliegue) y vuelve a desplegar.",
 };

@@ -6275,4 +6275,5 @@ export default {
   "비기기": "Drawing",
   "짧은 퍼즐": "Short Puzzle",
   "긴 퍼즐": "Long Puzzle",
+  "개발자 안내: 이 배포에 서버 환경변수 {0}이 없어 검색을 숨겼습니다. Vercel 환경변수(이 배포 환경 범위)에 추가한 뒤 다시 배포하세요.": "Developer note: this deployment is missing the server environment variable {0}, so search is hidden. Add it in Vercel environment variables (for this deployment environment) and redeploy.",
 };

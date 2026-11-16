@@ -60,17 +60,22 @@ function WebResults({ sans, name }) {
   );
 }
 
-/* sans: 그 수까지의 수순(SAN), name: 그 수의 오프닝 이름(없으면 null — 수순으로 검색) */
-export function CommunityBlock({ sans, name }) {
-  const key = (sans || []).join(" ") + "|" + (name || "");
+/* sans: 그 수까지의 수순(SAN), name: 그 수의 오프닝 이름(없으면 null — 수순으로 검색), dev: 개발자·공동개발자(서버 설정 진단 표시)
+   (v0.7.8 BUG-189) 수순이 40수(YT_MAX_PLIES)를 넘으면 블록 전체를 숨기던 것을, 앞 40수(오프닝 부분)로 검색하도록 바꿨다 — 실전 대국 21수째부터 블록이 사라졌다.
+   (v0.7.8 BUG-190) 서버 키가 없으면(503) 아무 표시 없이 숨어서 원인을 알 수 없었다 — 개발자에게는 어떤 환경변수가 없는지 보여 준다. */
+export function CommunityBlock({ sans, name, dev = false }) {
+  const q = Array.isArray(sans) ? sans.slice(0, YT_MAX_PLIES) : [];
+  const key = q.join(" ") + "|" + (name || "");
   const [off, setOff] = useState({ web: false, yt: false });
   useEffect(() => {
     let dead = false;
     setOff({ web: false, yt: false });
-    Promise.all([searchWeb(sans || [], name || ""), searchYoutube(sans || [])]).then(([w, y]) => { if (!dead) setOff({ web: w.status === "off", yt: y.status === "off" }); });
+    Promise.all([searchWeb(q, name || ""), searchYoutube(q)]).then(([w, y]) => { if (!dead) setOff({ web: w.status === "off", yt: y.status === "off" }); });
     return () => { dead = true; };
   }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
-  if (!sans || !sans.length || sans.length > YT_MAX_PLIES || (off.web && off.yt)) return null;
+  if (!q.length) return null;
+  const missing = [off.yt && "YOUTUBE_API_KEY", off.web && "TAVILY_API_KEY"].filter(Boolean);
+  if (off.web && off.yt && !dev) return null;
   return (
     <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box", marginTop: 10 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
@@ -78,8 +83,11 @@ export function CommunityBlock({ sans, name }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("커뮤니티")}</span>
         {name && <span style={{ fontSize: 11.5, color: T.inkSoft, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>}
       </div>
-      {!off.web && <WebResults sans={sans} name={name} />}
-      <YoutubeVideosBlock sans={sans} bare first={off.web} />
+      {dev && missing.length > 0 && (
+        <p style={{ fontSize: 11.5, color: T.blunder, margin: "0 0 8px", lineHeight: 1.5 }}>{t("개발자 안내: 이 배포에 서버 환경변수 {0}이 없어 검색을 숨겼습니다. Vercel 환경변수(이 배포 환경 범위)에 추가한 뒤 다시 배포하세요.", missing.join(", "))}</p>
+      )}
+      {!off.web && <WebResults sans={q} name={name} />}
+      <YoutubeVideosBlock sans={q} bare first={off.web} />
     </div>
   );
 }

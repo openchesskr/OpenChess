@@ -72,5 +72,6 @@
   "app/changelog.js",
   "lib/lessons/curriculumMore.js",
   "app/themePuzzles.jsx",
-  "lib/lessonPuzzles.js"
+  "lib/lessonPuzzles.js",
+  "components/communityBlock.jsx"
 ]

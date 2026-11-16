@@ -33,7 +33,7 @@ const api = rd("api/_lib/webSearchHandler.js"), yt = rd("api/youtube.js"), block
 ok(/process\.env\.TAVILY_API_KEY/.test(api) && /api\.tavily\.com\/search/.test(api) && /search_depth: "basic"/.test(api) && !/BRAVE/.test(api) && /res\.status\(503\)\.json\(\{ error: "not_configured" \}\)/.test(api), "키가 없으면 503(블록이 조용히 숨음)");
 ok(/parseMovesParam\(\(req\.query \|\| \{\}\)\.moves\)/.test(api) && /parseNameParam\(/.test(api), "서버가 수순·이름을 검증하지 않음");
 ok(/\["websearch:ip:" \+ clientIp\(req\), 20, 60\], \["websearch:global", WEB_DAILY_CAP, 86400\]/.test(api), "호출 한도가 없음");
-ok(/if \(!sans \|\| !sans\.length \|\| sans\.length > YT_MAX_PLIES \|\| \(off\.web && off\.yt\)\) return null;/.test(block), "웹 검색·영상이 모두 꺼져 있으면 커뮤니티 블록을 숨겨야 함");
+ok(/if \(off\.web && off\.yt && !dev\) return null;/.test(block), "웹 검색·영상이 모두 꺼져 있으면 일반 사용자에게는 커뮤니티 블록을 숨겨야 함(개발자에게는 진단 표시, BUG-190)");
 ok(/target="_blank" rel="noopener noreferrer nofollow"/.test(block) && !/<iframe/i.test(block), "웹 검색 링크는 새 창·noopener, 끼워 넣기 금지");
 ok(/if \(\(req\.query \|\| \{\}\)\.web === "1"\) return webSearchHandler\(req, res\);/.test(yt) && yt.indexOf("webSearchHandler(req, res)") < yt.indexOf("process.env.YOUTUBE_API_KEY"), "api/youtube.js가 ?web=1을 YouTube 키 확인보다 먼저 웹 검색 처리기로 넘기지 않음");
 ok(/apiUrl\("\/api\/youtube\?web=1&moves="/.test(rd("src/lib/webSearch.js")), "브라우저가 웹 검색을 /api/youtube?web=1로 부르지 않음");
