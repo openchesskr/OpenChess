@@ -26,7 +26,7 @@ function useFriendLessons(friendUids) {
     if (!SB_ON || !ids.length) { setRows([]); return undefined; }
     let off = false;
     sbSelect("profiles?select=id,username,photo:pub->>photo,lessonsDone:pub->lessonsDone&id=in.(" + ids.join(",") + ")")
-      .then((r) => { if (off || !Array.isArray(r)) return; setRows(r.filter((x) => x && x.id && Array.isArray(x.lessonsDone) && x.lessonsDone.length).map((x) => ({ id: x.id, username: x.username || "", photo: typeof x.photo === "string" ? x.photo : "", nextId: friendNextLesson(x.lessonsDone) }))); })
+      .then((r) => { if (off || !Array.isArray(r)) return; setRows(r.filter((x) => x && x.id && Array.isArray(x.lessonsDone))   /* 완료 0개(막 시작한 친구)도 첫 레슨에 표시 */.map((x) => ({ id: x.id, username: x.username || "", photo: typeof x.photo === "string" ? x.photo : "", nextId: friendNextLesson(x.lessonsDone.filter((v) => typeof v === "string")) }))); })
       .catch(() => { if (!off) setRows([]); });
     return () => { off = true; };
   }, [ids.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
