@@ -31,6 +31,12 @@ if (sug < 0 || !/user_blocks/.test(sql.slice(sug, sql.indexOf("$$;", sug)))) fai
 const app = readAppSource();
 // (v0.7.5) 프로필의 신고·차단은 내 페이지와 같은 점 세 개 메뉴(ProfileMoreMenu)에 들어 있다
 if (!/<ProfileMoreMenu\b[\s\S]{0,900}setReportOpen\(true\)[\s\S]{0,400}setBlocked\(/.test(app)) fails.push("프로필 화면의 점 세 개 메뉴(ProfileMoreMenu)에 신고·차단 없음");
-if (!/<BlockListSheet\b/.test(app)) fails.push("설정에 BlockListSheet(차단 목록) 없음");
+// (v0.7.8, 사용자 요청) 차단 목록은 설정 블록 안에 바로(최대 BLOCK_INLINE_MAX명) + 더보기 → 모바일 전체 화면 / 데스크톱 도킹 창
+{ const set = readFileSync(new URL("../src/app/settings.jsx", import.meta.url), "utf8"), root = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"), bl = readFileSync(new URL("../src/components/blockList.jsx", import.meta.url), "utf8");
+  if (!/<BlockListBody myUid=\{myUid\} limit=\{BLOCK_INLINE_MAX\} onMore=\{openBlockMore\} \/>/.test(set)) fails.push("설정 차단 목록이 블록 안에 바로 보이지 않음(BlockListBody)");
+  if (!/<BlockListPage /.test(set) || !/onOpenBlockWindow/.test(set)) fails.push("차단 목록 더보기: 모바일 전체 화면(BlockListPage)·데스크톱 창(onOpenBlockWindow) 연결이 없음");
+  if (!/w\.type === "blocklist" \? <BlockListDocked myUid=\{uid\} \/>/.test(root) || !/dock\.open\(\{ id: "blocklist", type: "blocklist" \}\)/.test(root)) fails.push("App 도킹 창에 차단 목록(blocklist)이 없음");
+  if (!/chatBlockSet\(myUid, uid, false\)/.test(bl)) fails.push("차단 목록에서 차단 해제가 안 됨");
+  if (/" \/ Language"/.test(set) || /t\("선택하면 페이지가 새로고침됨"\)/.test(set) || /Stockfish 19 Lite, depth 15로 고정/.test(set) || /번역 서비스\(Google Gemini\)로 전송됨/.test(set)) fails.push("설정 탭에 삭제한 설명 문구가 남아 있음"); }
 if (fails.length) { console.error("check-block-enforcement 실패:\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-block-enforcement: 연락 경로 4곳 + 친구 추천이 차단을 서버에서 강제, 프로필 신고·차단과 차단 목록 UI 있음");

@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Search, GraduationCap, Library, Puzzle, Target, Crown, Users, ArrowRight, Sparkles, Palette, MousePointer, Zap, Wrench, Shield, ChevronLeft, ChevronRight, Send, Compass, Rocket, Star, Gem, Pin, Share2, Pencil, Play, Trophy, Lock, ChevronDown, Server, ShieldCheck, Scale, Eye, BookOpen, History, BarChart3, ClipboardList, Check, Settings, materialIcon } from "./components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 
-import { t, tx } from "./lib/i18n.js";
+import { t, tx, lang } from "./lib/i18n.js";
 import { LOOP, usePerfLite, isLite } from "./lib/perfMode.js";
 import LangSwitch from "./components/LangSwitch.jsx";
 import { AsciiMarquee, ScrambleText } from "./components/OpenTextArt.jsx";
+import { FacetDiamond, FacetCrown, GOLD, facetRamp } from "./components/facetIcons.jsx";
+import { QCOLOR } from "./lib/moveKinds.js";
 import { CutPanel, Tag, Sys, Brackets, AsciiRule, KIT_CSS, StatusTicker, AmbientLayer, FooterMark, useAutoCycle, FloatGlyph, EqBars, cut, para, octagon } from "./components/AboutKit.jsx";
 // (v0.1.2 기능) 사이트를 소개하는 별도 페이지(/about) — App.jsx의 무거운 초기화(엔진 워커, Supabase
 // 클라이언트, 계정 상태 등)와 완전히 분리된 가벼운 정적 컴포넌트로 둔다(main.jsx에서 경로에 따라
@@ -75,7 +77,7 @@ function TierBadgeShape({ size, children }) {
 }
 
 function Diamond({ x, y, size = 16, opacity = 0.18 }) {
-  return <g className="ab-diamond" style={{ transformBox: "fill-box", transformOrigin: "center", animationDelay: -((x * 7 + y * 3) % 9) + "s" }}><rect x={x} y={y} width={size} height={size} transform={"rotate(45 " + (x + size / 2) + " " + (y + size / 2) + ")"} fill="none" stroke={T.brass} strokeWidth="1.2" opacity={opacity} /></g>;
+  return <g className="ab-diamond" opacity={opacity} style={{ transformBox: "fill-box", transformOrigin: "center", animationDelay: -((x * 7 + y * 3) % 9) + "s" }}><FacetDiamond cx={x + size / 2} cy={y + size / 2} r={size * 0.7} R={GOLD} /></g>;
 }
 // (기존 GeoBackdrop과 같은 계열의 옅은 와이어프레임 다이아몬드 배경 — 톤을 맞추되 더 절제된 밀도로.
 function Backdrop() {
@@ -128,7 +130,7 @@ function SpeechBubble({ mascot, name, children, align = "left" }) {
           <div style={{ position: "relative", margin: 2, height: "calc(100% - 4px)", clipPath: octagon(13), display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(70% 70% at 32% 28%,#5A3A22,#20140B)" }}><Mascot char={mascot.char} expr={mascot.expr} size={62} /></div>
         </div>
         <CutPanel chase cutSize={12} style={{ flex: 1 }} bodyStyle={{ padding: "11px 16px 14px" }}>
-          <div style={{ marginBottom: 4 }}><Sys color={T.brassHi}>{"// "}{name}</Sys></div>
+          <div style={{ marginBottom: 4 }}><Sys color={T.brassHi}>{name}</Sys></div>
           <p style={{ color: T.ivory, fontSize: 13, lineHeight: 1.7, margin: 0 }}>{children}</p>
         </CutPanel>
       </div>
@@ -463,7 +465,7 @@ function Chapter({ no, eyebrow, title, desc, id }) {
         <span aria-hidden="true" className="ab-flicker" style={{ position: "absolute", left: "50%", top: -40, transform: "translateX(-50%) skewX(-8deg)", fontSize: 120, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.2)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none", whiteSpace: "nowrap" }}>{no}</span>
         <div style={{ position: "relative" }}>
           <div className="flex items-center justify-center" style={{ gap: 10, marginBottom: 12 }}>
-            <Sys style={{ opacity: 0.7 }}>{"// CH."}{no}</Sys>
+            <Sys style={{ opacity: 0.7 }}>{"CH."}{no}</Sys>
             <Tag solid><ScrambleText text={String(eyebrow)} loopMs={9000} /></Tag>
           </div>
           <h2 className="ab-glitch ab-burst" style={{ fontSize: "clamp(25px, 4.2vw, 34px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 12px", letterSpacing: "-.015em", lineHeight: 1.25, display: "inline-block" }}>{title}</h2>
@@ -478,36 +480,85 @@ const GLASS = { background: "linear-gradient(155deg, rgba(58,37,22,.62), rgba(27
 
 
 
-// 이번 버전(최신)의 핵심 — 벤토 그리드.
-const NEW_CARDS = [
-  { Icon: ShieldCheck, color: "#8FB55E", wide: true, tag: t("공정한 랭킹"), title: t("경험치와 코인은 서버가 계산합니다"), desc: t("퍼즐 풀이 경험치, 퀘스트 코인, 티어 승급 코인, 가진 스킨을 전부 서버가 규칙을 확인하고 저장합니다. 개발자 도구로 값을 고쳐도 반영되지 않습니다. 리더보드에는 서버가 확인한 값만 올라갑니다.") },
-  { Icon: Gem, color: T.brassHi, tag: t("스킨 뽑기"), title: t("추첨도 서버에서 합니다"), desc: t("상자 추첨, 가격, 중복 환급, 보드 해금까지 서버가 처리합니다. 누구에게나 확률은 같습니다.") },
-  { Icon: Scale, color: "#6FA8DC", tag: t("서버 검증"), title: t("체스 규칙으로 한 번 더 확인합니다"), desc: t("봇 대국 결과, 공유한 퍼즐, 저장한 복기를 기록하기 전에 서버가 체스 규칙으로 다시 검증합니다.") },
-  { Icon: Lock, color: "#D9736A", wide: true, tag: t("접속 보안"), title: t("기본은 막고 필요한 것만 엽니다"), desc: t("데이터베이스 함수는 전부 기본 차단으로 잠그고 필요한 것만 열었습니다. 로그인, 계정 복구, 번역 같은 요청에는 횟수 제한을 걸었고, 브라우저에는 엄격한 보안 정책(CSP)과 HSTS를 적용했습니다. 모의 공격 84건은 빌드할 때마다 돌립니다.") },
-];
-function NewCard({ c, i }) {
+// (v0.7.8) 이번 버전(최신)의 핵심 — 학습 버전. 왼쪽 큰 카드에 수 등급 11단계 레슨 사다리(파셋 마름모, 마지막 단계는 금빛 왕관을 얹은 이론 수),
+//  오른쪽에 테마 퍼즐(미니 보드)·친구 진척도(프로필 스택), 아래 줄 전체에 집중 분석 커뮤니티. 장식은 모두 채운 면(CLAUDE.md 파셋 규칙).
+const LADDER = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"];
+function GradeLadder() {
+  const W = 520, H = 230, n = LADDER.length;
+  const pts = LADDER.map((g, i) => ({ g, x: 26 + i * ((W - 52) / (n - 1)), y: H - 34 - i * ((H - 80) / (n - 1)) - (i % 2 ? 12 : 0) }));
+  return (
+    <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block", maxHeight: 240 }} aria-hidden="true">
+      {pts.slice(1).map((p, i) => { const q = pts[i]; const dx = p.x - q.x, dy = p.y - q.y, len = Math.hypot(dx, dy), nx = -dy / len * 1.6, ny = dx / len * 1.6;
+        return <polygon key={i} points={[q.x + nx, q.y + ny, p.x + nx * 0.4, p.y + ny * 0.4, p.x - nx * 0.4, p.y - ny * 0.4, q.x - nx, q.y - ny].join(" ")} fill="rgba(196,154,80,.32)" />; })}
+      {pts.map((p, i) => {
+        const last = i === n - 1, R = last ? GOLD : facetRamp(QCOLOR[p.g] || "#8FB55E"), r = last ? 19 : 14;
+        return (
+          <motion.g key={i} initial={{ opacity: 0, scale: 0.6 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: false, amount: 0.4 }} transition={{ delay: i * 0.06, duration: 0.35 }} style={{ transformOrigin: p.x + "px " + p.y + "px" }}>
+            <FacetDiamond cx={p.x} cy={p.y} r={r} R={R} gem={last || p.g === "brilliant"} />
+            {last && <FacetCrown x={p.x} y={p.y - r - 7} s={18} R={GOLD} />}
+          </motion.g>
+        );
+      })}
+    </svg>
+  );
+}
+function MiniBoard() {
+  const sq = 22, hl = { 1: "rgba(235,198,99,.75)", 6: "rgba(143,181,94,.8)" };
+  return (
+    <svg viewBox="0 0 88 88" width={88} height={88} aria-hidden="true" style={{ flexShrink: 0, borderRadius: 8 }}>
+      {Array.from({ length: 16 }, (_, k) => { const r = Math.floor(k / 4), c = k % 4; return <rect key={k} x={c * sq} y={r * sq} width={sq} height={sq} fill={hl[k] || ((r + c) % 2 ? "#7C4F2E" : "#E8D3AE")} />; })}
+      <FacetDiamond cx={sq * 2.5} cy={sq * 1.5} r={7} R={facetRamp("#8FB55E")} gem />
+    </svg>
+  );
+}
+function FriendDots() {
+  const fr = [["M", "#B07A2E"], ["K", "#5E8FB8"], ["J", "#8FB55E"]];
+  return (
+    <div className="flex items-center" style={{ marginTop: 14 }}>
+      {fr.map(([ch, c], i) => <span key={ch} style={{ width: 34, height: 34, marginLeft: i ? -10 : 0, borderRadius: "50%", background: "linear-gradient(150deg," + c + ",#2A1B0E)", border: "2px solid #F1E6D0", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#F1E6D0", fontWeight: 900, fontSize: 13, zIndex: 3 - i }}>{ch}</span>)}
+      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 900, color: T.ivoryHi }}>+2</span>
+      <svg viewBox="0 0 40 40" width={34} height={34} aria-hidden="true" style={{ marginLeft: 12 }}><FacetDiamond cx={20} cy={20} r={15} R={facetRamp(QCOLOR.good)} gem={false} /></svg>
+    </div>
+  );
+}
+function NewPanel({ color, i, span = 1, rows = 1, Icon, tag, title, desc, children }) {
   return (
     <motion.div initial={{ opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: false, amount: 0.3 }} transition={{ duration: 0.5, delay: i * 0.07, ease: [0.22, 0.9, 0.32, 1] }}
-      whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: c.wide ? "span 2" : "span 1", minWidth: 0 }} className="about-bento">
-      <CutPanel chase tilt accent={c.color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box" }}>
-        <Brackets color={c.color} />
-        <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + c.color + "30, transparent 70%)" }} />
+      whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ gridColumn: "span " + span, gridRow: "span " + rows, minWidth: 0 }} className="about-bento">
+      <CutPanel chase tilt accent={color} cutSize={20} style={{ height: "100%" }} className="ab-glitch" bodyStyle={{ padding: "22px 22px 24px", position: "relative", overflow: "hidden", boxSizing: "border-box", height: "100%" }}>
+        <Brackets color={color} />
+        <div aria-hidden="true" style={{ position: "absolute", right: -30, top: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, " + color + "30, transparent 70%)" }} />
         <div className="flex items-center" style={{ gap: 10, marginBottom: 14, position: "relative" }}>
-          <span style={{ width: 40, height: 40, clipPath: octagon(10), background: c.color + "33", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><c.Icon size={20} color={c.color} /></span>
-          <Tag color={c.color}>{c.tag}</Tag>
+          <span style={{ width: 40, height: 40, clipPath: octagon(10), background: color + "33", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon size={20} color={color} /></span>
+          <Tag color={color}>{tag}</Tag>
         </div>
-        <h3 style={{ fontSize: 18, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{c.title}</h3>
-        <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{c.desc}</p>
+        <h3 style={{ fontSize: 18, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, margin: "0 0 8px", position: "relative", lineHeight: 1.35 }}>{title}</h3>
+        <p style={{ fontSize: 12.8, color: T.inkSoft, lineHeight: 1.8, margin: 0, position: "relative" }}>{desc}</p>
+        {children && <div style={{ position: "relative" }}>{children}</div>}
       </CutPanel>
     </motion.div>
   );
 }
 function WhatsNew({ version }) {
+  const chip = (Icon, label, c) => <span key={label} className="inline-flex items-center" style={{ gap: 6, padding: "6px 12px", clipPath: octagon(6), background: c + "26", color: T.ivoryHi, fontSize: 12, fontWeight: 800 }}><Icon size={14} color={c} />{label}</span>;
   return (
     <section id="new" style={{ scrollMarginTop: 80 }}>
-      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 보안입니다")} desc={t("눈에 띄는 기능은 거의 없습니다. 대신 경험치와 코인을 조작할 수 있던 구멍을 전부 찾아서 막았습니다.")} />
+      <Chapter no="NEW" eyebrow={"v" + version + " " + t("업데이트")} title={t("이번 버전은 학습입니다")} desc={t("레슨 트리를 수 등급의 의미대로 다시 짰습니다. 배운 테마는 바로 퍼즐로 풀고, 친구가 어디까지 왔는지 레슨 경로에서 보입니다.")} />
       <div className="about-bento-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 14 }}>
-        {NEW_CARDS.map((c, i) => <NewCard key={c.title} c={c} i={i} />)}
+        <NewPanel i={0} span={2} rows={2} color={T.brassHi} Icon={GraduationCap} tag={t("레슨 트리")} title={t("수 등급이 곧 커리큘럼입니다")}
+          desc={t("이론 수는 규칙과 기초 이론, 블런더는 두면 안 되는 실수, 탁월한 수는 희생과 메이트 패턴입니다. 11단계 133개 레슨을 차례로 오르고, 마지막 단계에서 오프닝 레파토리를 배웁니다.")}>
+          <div style={{ marginTop: 16 }}><GradeLadder /></div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".2em", color: T.brassHi, marginTop: 6 }}>{t("11단계 · 레슨 133개")}</div>
+        </NewPanel>
+        <NewPanel i={1} color="#8FB55E" Icon={Puzzle} tag={t("테마 퍼즐")} title={t("배운 테마를 바로 풉니다")} desc={t("최근에 본 레슨의 테마에 맞는 퍼즐을 Lichess와 OpenChess 퍼즐에서 골라 그 자리에서 풉니다.")}>
+          <div style={{ marginTop: 14 }}><MiniBoard /></div>
+        </NewPanel>
+        <NewPanel i={2} color="#6FA8DC" Icon={Users} tag={t("친구 진척도")} title={t("친구와 함께 오르는 길")} desc={t("친구가 지금 배우는 레슨 옆에 친구의 프로필 사진이 표시됩니다.")}>
+          <FriendDots />
+        </NewPanel>
+        <NewPanel i={3} span={3} color="#D9736A" Icon={Compass} tag={t("집중 분석")} title={t("그 수를 다룬 글과 영상")} desc={t("집중 분석에서 그 수의 오프닝 이름으로 찾은 웹 문서와 YouTube 영상, Lichess 대국으로 모은 전체 통계를 함께 봅니다.")}>
+          <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>{chip(Search, t("웹 검색"), "#D9736A")}{chip(Play, "YouTube", "#E06B5B")}{chip(BarChart3, t("전체 통계"), T.brassHi)}</div>
+        </NewPanel>
       </div>
     </section>
   );
@@ -539,7 +590,8 @@ function SkinSets() {
 
 // ---------- 폰 액자 · 실제 앱 화면 ----------
 // 실제 사이트(게스트 모드)에서 찍은 스크린샷을 폰 액자에 담는다. 마우스를 올리면 살짝 기울어지는 3D 틸트.
-const SHOT = (n) => "/about/v2/" + n + ".webp";
+// (v0.7.8, 사용자 요청) 언어마다 그 언어로 찍은 화면을 보여 준다 — public/about/v3/<언어>/<이름>.webp (scripts/capture-about-shots.mjs로 매 버전 다시 찍음, check-about-shots가 빠진 파일 검사)
+const SHOT = (n) => "/about/v3/" + lang + "/" + n + ".webp";
 function Phone({ src, alt, width = 240, tilt = 0, style, children }) {
   const mx = useMotionValue(0), my = useMotionValue(0);
   const rx = useSpring(useTransform(my, [-0.5, 0.5], [7, -7]), { stiffness: 140, damping: 16 });
@@ -621,7 +673,7 @@ function HeroPhones() {
 
 // 스크린샷 띠(천천히 흘러가는 갤러리)
 function ShotStrip() {
-  const names = ["study-board", "dex-tree", "play", "dex-skin", "learn", "dex-ach", "study-moves", "dex-pieces", "settings", "learn-2", "dex-home", "dex-sets"];
+  const names = ["study-board", "dex-tree", "play", "dex-skin", "learn", "dex-ach", "study-moves", "dex-pieces", "settings", "learn-2", "dex-masters", "dex-sets"];
   const row = [...names, ...names];
   return (
     <div style={{ position: "relative", overflow: "hidden", margin: "0 -20px", padding: "26px 0 34px", maskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)", WebkitMaskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)" }}>
@@ -789,9 +841,11 @@ function RarityDemo() {
 
 // ---------- 탭 챕터 ----------
 // 하단 바와 같은 6개 탭을 챕터 하나씩으로 풀어서 소개한다. 위쪽의 탭 바를 누르면 해당 챕터로 이동한다.
+// (v0.7.8, 사용자 요청) 아이콘·이름을 실제 하단 탭바(app/shell.jsx TABS, App.jsx 탭 버튼)와 똑같이 — 분석 analytics · 플레이 Play · 소셜 groups · 학습 school · 도감 Library · 설정 Settings.
+const TabAnalytics = materialIcon("analytics"), TabSocial = materialIcon("groups"), TabSchool = materialIcon("school");
 const TAB_META = [
-  { id: "study", Icon: BarChart3, label: t("분석") }, { id: "play", Icon: Play, label: t("플레이") }, { id: "puzzle", Icon: Puzzle, label: t("퍼즐") },
-  { id: "learn", Icon: ClipboardList, label: t("학습") }, { id: "dex", Icon: Library, label: t("도감") }, { id: "settings", Icon: Wrench, label: t("설정") },
+  { id: "study", Icon: TabAnalytics, label: t("분석") }, { id: "play", Icon: Play, label: t("플레이") }, { id: "puzzle", Icon: TabSocial, label: t("소셜") },
+  { id: "learn", Icon: TabSchool, label: t("학습") }, { id: "dex", Icon: Library, label: t("도감") }, { id: "settings", Icon: Settings, label: t("설정") },
 ];
 function ChapterNav({ scrollRef }) {
   const [cur, setCur] = useState(-1);
@@ -867,6 +921,30 @@ function TabChapter({ id, no, Icon, label, title, lead, shots = [], blocks, extr
   );
 }
 
+// (v0.7.8, 사용자 요청) 최상단 소개 — OpenChess의 네 글자 O·P·E·N으로 사이트 전체를 설명한다(위쪽 상태 줄의 네 문구와 같은 순서).
+const OPEN_ROWS = [
+  { ch: "O", word: "OBSERVE", title: t("내 수를 봅니다"), desc: t("두는 즉시 엔진 평가와 수 등급이 나옵니다.") },
+  { ch: "P", word: "PRACTICE", title: t("실력을 익힙니다"), desc: t("내 실수로 만든 퍼즐, 레슨, 미니게임으로 연습합니다.") },
+  { ch: "E", word: "EVALUATE", title: t("대국을 평가합니다"), desc: t("게임 리뷰와 성장 분석으로 강점과 약점을 짚습니다.") },
+  { ch: "N", word: "NEXT LEVEL", title: t("다음 단계로 갑니다"), desc: t("티어, 칭호, 친구와 함께 꾸준히 올라갑니다.") },
+];
+function OpenInitials() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8, maxWidth: 500, marginBottom: 26 }}>
+      {OPEN_ROWS.map((r, i) => (
+        <div key={r.ch} className="ab-glitch" style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 10px", clipPath: cut(8), background: "linear-gradient(150deg, rgba(58,37,22,.75), rgba(27,16,9,.6))", border: "1px solid rgba(196,154,80,.22)", minWidth: 0 }}>
+          <span className="ab-burst" style={{ flexShrink: 0, width: 34, height: 34, clipPath: para(5), display: "inline-flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontSize: 20, fontWeight: 900, fontStyle: "italic", animationDelay: -(i * 1.7) + "s" }}>{r.ch}</span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontFamily: "ui-monospace,monospace", fontSize: 9.5, fontWeight: 800, letterSpacing: ".14em", color: T.brass }}>{r.word}</span>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 900, color: T.ivoryHi, lineHeight: 1.3 }}>{r.title}</span>
+            <span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, lineHeight: 1.5, marginTop: 2 }}>{r.desc}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function IntroPage({ version, onOpenHistory, scrollRef }) {
   return (
     <div>
@@ -884,8 +962,10 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
                 <span style={{ background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", clipPath: para(5), padding: "2px 12px", fontSize: 11, fontWeight: 900 }}>v{version}</span>
                 {"▸ "}{t("새 소식 보기")} <ArrowRight size={13} />
               </button></Reveal>
-              <Reveal delay={0.05}><h1 className="ab-burst-b" style={{ fontSize: "clamp(36px, 6.4vw, 60px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, lineHeight: 1.12, margin: "0 0 20px", letterSpacing: "-.025em" }}>{tx("오프닝 학습,{0}내 실수는 {1}로{2}복습", <br />, <span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>{t("퍼즐")}</span>, <br />)}</h1></Reveal>
-              <Reveal delay={0.1}><p style={{ fontSize: 15, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 30px", maxWidth: 470 }}>{t("오프닝을 외우는 대신 직접 두면서 익히고, 내가 틀린 수는 퍼즐로 다시 푸는 체스 학습 사이트입니다. 가입하지 않아도 쓸 수 있고 전부 무료입니다.")}</p></Reveal>
+              <Reveal delay={0.05}><h1 className="ab-burst-b" style={{ fontSize: "clamp(40px, 7vw, 66px)", fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, lineHeight: 1.05, margin: "0 0 12px", letterSpacing: "-.025em" }}>Open<span style={{ background: "linear-gradient(100deg," + T.brassHi + "," + T.brass + ")", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Chess</span></h1></Reveal>
+              <Reveal delay={0.08}><p style={{ fontSize: "clamp(17px, 2.3vw, 21px)", fontWeight: 800, color: T.ivoryHi, lineHeight: 1.45, margin: "0 0 14px", maxWidth: 480 }}>{t("내 수를 보고, 익히고, 평가해서 다음 단계로 가는 체스 플랫폼")}</p></Reveal>
+              <Reveal delay={0.1}><p style={{ fontSize: 14.5, color: T.ivory, opacity: 0.85, lineHeight: 1.85, margin: "0 0 20px", maxWidth: 480 }}>{t("OpenChess는 분석, 플레이, 소셜, 학습, 도감을 한곳에 모은 체스 플랫폼입니다. 이름의 네 글자 O·P·E·N이 실력을 키우는 순서입니다. 가입하지 않아도 쓸 수 있고 모두 무료입니다.")}</p></Reveal>
+              <Reveal delay={0.12}><OpenInitials /></Reveal>
               <Reveal delay={0.15}><div className="flex items-center flex-wrap" style={{ gap: 10, marginBottom: 30 }}>
                 <a href="/" className="press ab-sheen ab-glint ab-breathe" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "15px 28px", borderRadius: 0, clipPath: "polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%)", fontStyle: "italic", background: "linear-gradient(180deg," + T.brassHi + "," + T.brass + ")", color: "#241509", fontWeight: 900, fontSize: 15, textDecoration: "none", boxShadow: "0 4px 0 #7A5E22, 0 16px 34px -10px rgba(236,203,134,.5)" }}>{tx("무료로 시작하기 {0}", <ArrowRight size={16} />)}</a>
                 <a href="#ch-study" onClick={(e) => { e.preventDefault(); const el = document.getElementById("ch-study"); if (el) el.scrollIntoView({ behavior: "smooth" }); }} className="press" style={{ display: "inline-flex", alignItems: "center", padding: "15px 22px", borderRadius: 2, border: "1px solid rgba(196,154,80,.45)", background: "rgba(27,16,9,.45)", backdropFilter: "blur(6px)", color: T.ivory, fontWeight: 700, fontSize: 14, textDecoration: "none" }}>{t("앱 둘러보기")}</a>
@@ -901,22 +981,22 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
         <div style={{ margin: "-4px -20px 40px" }}><AsciiMarquee /></div>
         <ShotStrip />
 
-        <section style={{ maxWidth: 640, margin: "20px auto 72px" }}>
-          <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name="MILKU 코치">{t("그냥 두기만 해서는 실력이 늘지 않습니다. 그 수가 왜 좋았고 왜 나빴는지까지 같이 봐야 합니다. 앱의 탭 여섯 개를 차례로 소개합니다.")}</SpeechBubble>
-        </section>
-
+        <div style={{ height: 24 }} />
         <WhatsNew version={version} />
 
-        <div style={{ height: 72 }} />
+        <section style={{ maxWidth: 640, margin: "72px auto 72px" }}>
+          <SpeechBubble mascot={{ char: "milku", expr: "wink" }} name={t("MILKU 코치")}>{t("그냥 두기만 해서는 실력이 늘지 않습니다. 그 수가 왜 좋았고 왜 나빴는지까지 같이 봐야 합니다. 앱의 탭 여섯 개를 차례로 소개합니다.")}</SpeechBubble>
+        </section>
+
         <div style={{ margin: "0 -20px 28px" }}><AsciiMarquee reverse dim /></div>
         <ChapterNav scrollRef={scrollRef} />
         <div style={{ height: 40 }} />
 
-        <TabChapter id="study" no="01" Icon={BarChart3} label={t("분석")} title={t("두는 즉시 평가가 나옵니다")}
+        <TabChapter id="study" no="01" Icon={TabAnalytics} label={t("분석")} title={t("두는 즉시 평가가 나옵니다")}
           lead={t("분석 탭이 사이트의 기본 화면입니다. 보드에서 수를 두면 엔진이 바로 평가를 계산합니다.")}
           shots={[{ n: "study-board", cap: t("수를 두면 평가 바가 움직입니다") }, { n: "study-moves", cap: t("추천 수와 오프닝 이름") }, { n: "study-3", cap: t("평가치순으로 정렬된 수 목록") }]}
           blocks={[
-            [t("평가 바"), t("보드 위의 막대가 지금 누가 얼마나 유리한지 보여줍니다. 수를 둘 때마다 숫자가 바뀝니다. 엔진은 Stockfish 18이고, 기기가 느리면 설정에서 Lite로 바꿀 수 있습니다.")],
+            [t("평가 바"), t("보드 위의 막대가 지금 누가 얼마나 유리한지 보여 줍니다. 수를 둘 때마다 숫자가 바뀝니다. 엔진은 Stockfish 19이고, 기기가 느리면 설정에서 Lite로 바꿀 수 있습니다.")],
             [t("이론 수와 오프닝 이름"), t("둔 수가 이론이면 오프닝 이름이 같이 뜹니다. 1.e4 다음에는 King's Pawn Game이 나오는 식입니다. 이론에서 벗어난 시점도 바로 보입니다.")],
             [t("수 추천과 수 등급"), t("다음에 둘 만한 수를 목록으로 보여주고, 둔 수에는 탁월한 수부터 블런더까지 등급이 붙습니다. 아이콘은 직접 그렸습니다.")],
             [t("외부 사이트 연동"), t("설정에서 외부 사이트 아이디를 연결하면 실제로 둔 대국을 불러옵니다. 어디서 수가 무너졌는지 그 대국에서 바로 확인할 수 있습니다.")],
@@ -938,8 +1018,8 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             [t("일일 퀘스트"), t("매일 갱신됩니다. 퍼즐 풀기, 일일 퍼즐 풀기, 외부 사이트 대국 같은 항목을 끝내면 코인을 받고, 전부 끝내면 보너스 코인이 나옵니다.")],
           ]} />
 
-        <TabChapter id="puzzle" no="03" Icon={Puzzle} label={t("퍼즐")} title={t("내가 틀린 수가 퍼즐이 됩니다")}
-          lead={t("퍼즐 탭에는 매일 하나씩 나오는 일일 퍼즐, 번호로 찾는 퍼즐, 직접 만드는 퍼즐이 있습니다.")}
+        <TabChapter id="puzzle" no="03" Icon={TabSocial} label={t("소셜")} title={t("내가 틀린 수가 퍼즐이 됩니다")}
+          lead={t("소셜 탭에서는 매일 하나씩 나오는 일일 퍼즐, 번호로 찾는 퍼즐, 직접 만든 퍼즐을 풀고 친구들과 게시물을 나눕니다.")}
           blocks={[
             [t("세 가지 테마"), t("기물 희생하기, 우위 점하기, 실수 응징하기. 실전에서 나온 실수에서 자동으로 만들어집니다.")],
             [t("라인 단위로 풉니다"), t("정답 한 수만 맞히는 방식이 아닙니다. 이어지는 라인을 끝까지 풀어야 경험치가 들어옵니다.")],
@@ -948,12 +1028,12 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
           ]}
           extra={<PuzzleDemo />} />
 
-        <TabChapter id="learn" no="04" Icon={ClipboardList} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
-          lead={t("학습 탭은 레슨과 맞춤 학습을 모아 둔 곳입니다.")}
-          shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("맞춤 학습") }]}
+        <TabChapter id="learn" no="04" Icon={TabSchool} label={t("학습")} title={t("매일 조금씩 하게 됩니다")} flip
+          lead={t("학습 탭은 레슨과 실수 복습, 테마 퍼즐을 모아 둔 곳입니다.")}
+          shots={[{ n: "learn", cap: t("레슨") }, { n: "learn-2", cap: t("실수 복습과 테마 퍼즐") }]}
           blocks={[
-            [t("레슨"), t("체스판과 좌표부터 오프닝 원칙까지 단계별 경로를 따라 하나씩 엽니다. 다음에 할 레슨을 코치가 알려 줍니다.")],
-            [t("맞춤 학습"), t("최근 대국에서 실수한 포지션을 다시 풀어 보고, 약점에 맞는 레슨을 추천받습니다. 성장 분석은 분석 탭에서 봅니다.")],
+            [t("레슨"), t("수 등급의 의미대로 짠 11단계 133개 레슨을 하나씩 엽니다. 마지막 단계는 오프닝 레파토리이고, 친구가 배우는 레슨도 경로에 보입니다.")],
+            [t("실수 복습과 테마 퍼즐"), t("최근 대국에서 실수한 포지션을 다시 풀고, 최근에 본 레슨의 테마에 맞는 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.")],
           ]}
           extra={<div className="about-kit" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
             <KitCell><QuestDemo /></KitCell>
@@ -975,7 +1055,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             <div className="flex items-center justify-center flex-wrap" style={{ gap: 20, marginBottom: 44 }}>
               <Phone src={SHOT("dex-pieces")} alt={t("기물 도감")} width={200} tilt={-2} />
               <Phone src={SHOT("dex-sets")} alt={t("세트 도감")} width={200} tilt={2} style={{ marginTop: 30 }} />
-              <Phone src={SHOT("dex-home")} alt={t("도감 첫 화면")} width={200} tilt={-1} />
+              <Phone src={SHOT("dex-masters")} alt={t("마스터 도감")} width={200} tilt={-1} />
             </div>
             <SkinSets />
             <div className="flex justify-center" style={{ marginTop: 22 }}><div style={{ maxWidth: 420, width: "100%" }}><RarityDemo /></div></div>
@@ -986,12 +1066,12 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
             <div style={{ marginTop: 44 }}><GrandmasterCard /></div>
           </div>} />
 
-        <TabChapter id="settings" no="06" Icon={Wrench} label={t("설정")} title={t("내 환경에 맞춥니다")} flip
+        <TabChapter id="settings" no="06" Icon={Settings} label={t("설정")} title={t("내 환경에 맞춥니다")} flip
           lead={t("설정 탭에서 바꿀 수 있는 것들입니다.")}
           shots={[{ n: "settings", cap: t("언어와 분석 엔진") }, { n: "settings-2", cap: t("리뷰 속도와 시각 효과") }, { n: "settings-3", cap: t("소리와 계정 정보") }]}
           blocks={[
             [t("계정과 언어"), t("로그인하면 진도가 계정에 저장되어 다른 기기에서도 이어서 할 수 있습니다. 한국어를 포함해 6개 언어를 지원하고, 다른 언어로 쓴 글은 자동으로 번역됩니다.")],
-            [t("분석 엔진"), t("Stockfish 18, 18 Lite, 17.1 중에서 고릅니다. 기기가 느리면 Lite가 낫습니다. 리뷰 속도도 더 빠르게와 더 정확하게 중에서 정할 수 있습니다.")],
+            [t("분석 엔진"), t("Stockfish 19, 19 Lite, 18, 18 Lite, 17.1 중에서 고릅니다. 기기가 느리면 Lite가 낫습니다. 리뷰 속도는 더 빠르게, 평균, 더 정확하게 중에서 정합니다.")],
             [t("시각 효과와 소리"), t("수 등급 이펙트, 퍼즐 클리어 애니메이션, 배경음악, 효과음을 각각 켜고 끌 수 있습니다.")],
             [t("외부 사이트 연동"), t("아이디를 연결하면 대국이 동기화되고, 퀘스트와 칭호 조건에도 반영됩니다.")],
           ]} />
@@ -1007,7 +1087,7 @@ function IntroPage({ version, onOpenHistory, scrollRef }) {
 
         <section className="flex items-center flex-wrap" style={{ gap: 28, maxWidth: 760, margin: "56px auto 0" }}>
           <div style={{ flex: "1 1 300px", minWidth: 260 }}>
-            <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name="KOKOA 코치" align="right">{t("친구를 추가해서 채팅하고, 프로필에서 서로의 풀이 수와 칭호를 볼 수 있습니다. 퍼즐을 공유하면 친구가 푼 만큼 경험치도 일부 받습니다.")}</SpeechBubble>
+            <SpeechBubble mascot={{ char: "kokoa", expr: "happy" }} name={t("KOKOA 코치")} align="right">{t("친구를 추가해서 채팅하고, 프로필에서 서로의 풀이 수와 칭호를 볼 수 있습니다. 퍼즐을 공유하면 친구가 푼 만큼 경험치도 일부 받습니다.")}</SpeechBubble>
           </div>
           <motion.div initial={{ opacity: 0, scale: 0.85, rotate: 5 }} whileInView={{ opacity: 1, scale: 1, rotate: 0 }} viewport={{ once: false, amount: 0.4 }} transition={{ duration: 0.55, ease: [0.22, 0.9, 0.32, 1] }}
             style={{ flex: "0 0 auto", width: 190, maxWidth: "100%", margin: "0 auto", borderRadius: 2, overflow: "hidden", ...GLOSS_BORDER }}>
@@ -1052,6 +1132,46 @@ const CAT = {
   security: { label: t("보안"), Icon: Shield, color: "#D9736A" },
 };
 const VERSION_HISTORY = [
+  {
+    version: "0.7.8", date: "2026.11.16",
+    summary: t("학습 탭을 수 등급에 맞춘 11단계 레슨 트리로 다시 짜고 레슨을 133개로 늘렸습니다. 최근 본 레슨의 테마 퍼즐과 집중 분석의 전체 통계, 커뮤니티 블록이 생겼습니다."),
+    highlight: { kind: "icon", Icon: GraduationCap, color: T.brassHi, label: t("레슨 133개, 수 등급에 맞춘 11단계 레슨 트리.") },
+    sections: [
+      { cat: "feature", items: [
+        t("학습 탭의 레슨 트리를 수 등급의 의미에 맞춰 11단계로 다시 짰습니다. 규칙과 기초 이론에서 시작해 좋은 습관, 흔한 실수, 기본 전술, 전략, 정확한 엔드게임, 희생과 메이트 패턴을 거쳐 마지막에 오프닝 레파토리를 배웁니다."),
+        t("레슨이 87개에서 133개로 늘었고 모든 레슨이 더 길어졌습니다. 확인 문제와 설명 없이 다시 푸는 복습이 붙었습니다."),
+        t("학습 탭 추가 학습에서 최근에 본 레슨의 테마에 맞는 퍼즐을 바로 풉니다. Lichess의 테마별 퍼즐과 OpenChess 퍼즐을 함께 씁니다."),
+        t("레슨 경로에서 친구들이 지금 배우는 레슨 옆에 친구의 프로필 사진이 표시됩니다."),
+        t("분석 탭 집중 분석에 전체 통계가 생겼습니다. Lichess의 최고 레이팅 대국과 최근 대국을 모아 보여 줍니다."),
+        t("집중 분석 해설에 커뮤니티 블록이 생겼습니다. 그 수의 오프닝 이름으로 찾은 웹 문서와 YouTube 영상을 함께 보여 줍니다."),
+        t("분석 탭의 탁월한 수, 실수, 블런더, 체크메이트 수순 블록에서 바로 퍼즐을 만듭니다."),
+        t("플레이 퀘스트가 3장으로 늘었습니다. 앞 장을 모두 깨면 다음 장이 열립니다."),
+        t("소셜 탭 오른쪽에 퍼즐 XP와 퍼즐 레이팅 리더보드, 친구들의 퍼즐 현황이 생겼습니다."),
+        t("게시물 메뉴에서 남의 게시물을 신고하거나 숨기고, 내 게시물을 삭제합니다."),
+        t("퍼즐 만들기의 라인 편집에서 실시간 엔진 평가와 후보 수를 보며 수를 추가합니다."),
+      ] },
+      { cat: "ui", items: [
+        t("학습 탭 오른쪽은 실수 복습과 추가 학습 두 블록만 남겼고, 두 블록 모두 체스보드를 맨 위에 크게 보여 줍니다."),
+        t("분석 탭 수 블록에 조건에 맞는 키워드를 모두 표시하고 수 블록의 높이를 통일했습니다."),
+        t("소셜 탭 퍼즐 티어 박스를 티어 여정과 같은 팔각형 디자인으로 바꾸고, 퍼즐 게시물에 테마별 배경 애니메이션과 게시 날짜를 더했습니다."),
+        t("플레이 탭에 출시 예정인 데크메이트 블록을 두고, 일일 퀘스트 완료 보상 자리에 코인을 크게 표시합니다."),
+        t("도감 탭의 모든 구역이 /book 한 주소를 쓰고 도감 영역이 더 높아졌습니다."),
+        t("소개 페이지에 OpenChess 네 글자 카드와 언어별 스크린샷, 새 배경 효과를 더했습니다."),
+      ] },
+      { cat: "ux", items: [
+        t("학습 탭 코치는 눌러야 말풍선이 열리고, 다음에 배울 레슨을 알려 줍니다."),
+        t("성장 분석이 화면에 보이지 않아도 백그라운드에서 최근 대국을 분석합니다."),
+        t("설정 탭의 차단 목록을 블록 안에서 바로 보고, 더보기로 전체 목록을 엽니다."),
+        t("버전 기록의 문장을 자연스럽게 다듬고 5개 언어로 번역했습니다."),
+      ] },
+      { cat: "fix", items: [
+        t("분석 탭에서 탁월한 수가 엔진 깊이에 따라 다른 등급으로 바뀌던 문제를 고쳤습니다."),
+        t("소셜 탭에서 퍼즐을 누르면 오류 화면이 뜨던 문제를 고쳤습니다."),
+        t("수 키워드가 기준을 바꿀 때마다 달라지던 문제와 퀘스트 배지를 눌러도 플레이 탭으로 가지 않던 문제를 고쳤습니다."),
+        t("긴 대국의 집중 분석에서 커뮤니티 블록이 사라지던 문제를 고쳤습니다."),
+      ] },
+    ],
+  },
   {
     version: "0.7.7", date: "2026.11.15",
     summary: t("새 게시물 버튼으로 퍼즐, 유산, 대국을 한 화면에서 올리고, 레슨이 87개로 크게 늘었습니다. 게임 끝내기 퍼즐 테마가 생기고 렉과 엔진 끊김도 고쳤습니다."),
@@ -1560,14 +1680,14 @@ const VERSION_HISTORY = [
       { cat: "feature", items: [
         t("다국어 지원합니다. 설정 탭에서 English·日本語·中文(简体)·Español·हिन्दी 선택했습니다."),
         t("체스 용어(체크메이트·앙파상·캐슬링 등)를 언어별 표준 용어로 번역 추가했습니다."),
-        t("프로필 화면에서 사용자 신고· 차단했습니다. 설정 탭 '차단 목록'에서 차단 해제했습니다."),
-        t("개인정보처리방침(/privacy)·이용약관(/terms) 페이지 추가했습니다. 회원가입 화면·설정 탭에서 이동했습니다."),
+        t("프로필 화면에서 사용자를 신고하거나 차단할 수 있습니다. 차단은 설정 탭의 '차단 목록'에서 풀 수 있습니다."),
+        t("개인정보처리방침(/privacy)과 이용약관(/terms) 페이지를 만들었습니다. 회원가입 화면과 설정 탭에서 바로 갈 수 있습니다."),
       ] },
       { cat: "ui", items: [
         t("분석 탭 보드를 더 크게 표시합니다. 엔진 라인·평가치 막대도 같은 폭으로 확대했습니다."),
         t("수 블록의 키워드가 끝에서 되돌아오지 않고 같은 순서로 계속 흘러갑니다."),
         t("설정 탭 정리했습니다. 계정·언어 카드를 맨 위로 이동, '통제 칸 표시'를 시각 효과로 통합했습니다."),
-        t("외부 사이트 로고 이미지를 글자 표기로 변경했습니다."),
+        t("외부 사이트 로고 이미지를 글자 표기로 바꿨습니다."),
       ] },
       { cat: "ux", items: [
         t("날짜·숫자 표기가 선택한 언어에 맞춰 표시됩니다."),
@@ -1577,1498 +1697,1498 @@ const VERSION_HISTORY = [
       ] },
       { cat: "perf", items: [
         t("수 블록의 공개 데이터 통계를 위쪽 블록부터 도착하는 대로 표시합니다."),
-        t("화면별 파일 분리로 내부 구조 개선했습니다. 사용 방식 변화 없습니다."),
+        t("화면마다 파일을 나눠 내부 구조를 정리했습니다. 쓰는 방법은 그대로입니다."),
       ] },
       { cat: "fix", items: [
         t("번역 화면의 복수형·대소문자·문장 연결 오류를 수정했습니다. 체스 용어 표기 전수 점검 추가했습니다."),
-        t("차단이 채팅에만 적용되던 문제를 수정했습니다. 차단하면 친구 요청·도전장도 불가, 친구 추천에도 표시되지 않습니다."),
-        t("공유·초대 링크를 항상 openchess.kr 주소로 생성했습니다."),
+        t("차단이 채팅에만 적용되던 문제를 고쳤습니다. 이제 차단하면 친구 요청과 도전장도 막히고, 친구 추천에도 나오지 않습니다."),
+        t("공유 링크와 초대 링크가 항상 openchess.kr 주소로 만들어집니다."),
       ] },
     ],
   },
   {
     version: "0.5.9", date: "2026.9.30",
-    summary: t("도전장 전송 오류 수정, 수 등급 판정 개선, 사이트 문구 개조식 통일했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("도전장 전송 수정, 탁월한 수·유일한 수 판정, 이론 수 판정, 문구 개조식 통일했습니다.") },
+    summary: t("도전장 전송 오류를 고치고, 수 등급 판정을 다듬고, 사이트 문구를 한 형식으로 맞췄습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("도전장 전송을 고치고, 탁월한 수·유일한 수와 이론 수 판정을 바로잡고, 문구 형식을 통일했습니다.") },
     sections: [
       { cat: "ux", items: [
-        t("사이트 전체 문구를 명사형·개조식으로 통일했습니다. 중요도가 낮은 안내 문구 삭제했습니다."),
-        t("업데이트 내역·FAQ·공지 문구 전면 정리했습니다."),
+        t("사이트 전체 문구를 짧은 명사형으로 통일하고, 중요하지 않은 안내 문구는 지웠습니다."),
+        t("업데이트 내역, FAQ, 공지 문구를 전부 다시 정리했습니다."),
       ] },
       { cat: "fix", items: [
-        t("친구에게 대국·미니게임 도전장이 전송되지 않던 문제를 수정했습니다."),
-        t("게임 리뷰·분석에서 탁월한 수·유일한 수가 누락되던 문제를 수정했습니다. 탁월한 수는 엔진이 희생 이후 수순을 확인해 판정했습니다."),
-        t("게임 리뷰에서 이론 수가 비이론 수로 표시되던 문제를 수정했습니다. 수순 전환과 이름 있는 오프닝(ECO) 포지션도 이론으로 인식 추가했습니다."),
-        t("나이트 레이스 '최소 수' 표시가 실제보다 크던 문제를 수정했습니다. 기물을 잡는 지름길이 있는 라운드는 출제하지 않습니다."),
-        t("친구와 미니게임 중 새로고침하면 사이트가 멈추고 패배 처리되던 문제를 수정했습니다. 새로고침 후 미니게임 화면으로 복귀했습니다."),
+        t("친구에게 대국·미니게임 도전장이 전송되지 않던 문제를 고쳤습니다."),
+        t("게임 리뷰와 분석에서 탁월한 수·유일한 수가 빠지던 문제를 고쳤습니다. 탁월한 수는 엔진이 희생 뒤의 수순까지 확인한 다음 판정합니다."),
+        t("게임 리뷰에서 이론 수가 비이론 수로 나오던 문제를 고쳤습니다. 수순이 바뀌어 같은 포지션에 온 경우와 이름 있는 오프닝(ECO) 포지션도 이론으로 인식합니다."),
+        t("나이트 레이스의 '최소 수'가 실제보다 크게 표시되던 문제를 고쳤습니다. 기물을 잡아 지름길이 생기는 라운드는 내지 않습니다."),
+        t("친구와 미니게임을 하다가 새로고침하면 사이트가 멈추고 패배로 처리되던 문제를 고쳤습니다. 새로고침해도 미니게임 화면으로 돌아옵니다."),
       ] },
     ],
   },
   {
     version: "0.5.8", date: "2026.9.27",
-    summary: t("미니게임 재대국, 상대 프로필 표시, 7전 4선승 나이트 레이스 추가했습니다."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 재대국, 상대 프로필 표시, 좌표 난이도 ×1·×2·×3, 나이트 레이스 Bo7·거리 판정 연출했습니다.") },
+    summary: t("미니게임 재대국, 상대 프로필 표시, 7전 4선승제 나이트 레이스를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 재대국과 상대 프로필 표시, 좌표 게임 난이도(×1·×2·×3), 나이트 레이스 7전 4선승제와 거리 판정 연출을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("미니게임 대전 결과 화면에서 재대국 신청 추가했습니다. 받은 사람은 화면 위 알림으로 수락·거절 추가했습니다."),
-        t("좌표 인지 게임 혼자 플레이 난이도 추가했습니다. 하(×1), 중(좌표 없음, ×2), 상(좌표 없음 + 흑 시점, ×3) 추가했습니다. 기록은 개수 × 배율 추가했습니다."),
-        t("나이트 레이스 7전 4선승제 추가했습니다. 1·2라운드 방해 기물 없음, 7라운드 상대 퀸 등장 추가했습니다. 제한시간 10초에서 라운드마다 2.5초 증가했습니다."),
+        t("미니게임 대전 결과 화면에서 재대국을 신청할 수 있습니다. 받은 사람은 화면 위 알림에서 수락하거나 거절합니다."),
+        t("좌표 인지 게임 혼자 하기에 난이도가 생겼습니다. 하(×1), 중(좌표 없음, ×2), 상(좌표 없음, 흑 시점, ×3)이고, 기록은 맞힌 개수에 배율을 곱합니다."),
+        t("나이트 레이스가 7전 4선승제가 됐습니다. 1·2라운드는 방해 기물이 없고 7라운드에는 상대 퀸이 나옵니다. 제한 시간은 10초에서 시작해 라운드마다 2.5초씩 늘어납니다."),
       ] },
       { cat: "ui", items: [
-        t("상대가 누른 칸·상대 나이트·상대 점수 옆에 상대 프로필 사진 표시합니다."),
-        t("나이트 레이스에서 둘 다 목표에 못 가면 금색이 퍼지며 더 가까운 나이트에 왕관 표시합니다."),
-        t("게임 리뷰 정확도 그래프를 폰·데스크톱 모두 한 화면에 표시합니다."),
-        t("좌표 인지 게임 정산 화면에 개수 × 배율 애니메이션 추가했습니다. 보드 아래 색 범례 삭제했습니다."),
+        t("상대가 누른 칸, 상대 나이트, 상대 점수 옆에 상대의 프로필 사진을 보여 줍니다."),
+        t("나이트 레이스에서 둘 다 목표에 닿지 못하면 금빛이 퍼지며 더 가까이 간 나이트에 왕관이 씌워집니다."),
+        t("게임 리뷰의 정확도 그래프가 휴대폰과 데스크톱 모두에서 한 화면에 들어옵니다."),
+        t("좌표 인지 게임 결과 화면에 '맞힌 개수 × 배율' 애니메이션을 넣고, 보드 아래 색 범례는 뺐습니다."),
       ] },
       { cat: "ux", items: [
-        t("좌표 인지 게임 혼자 플레이 중 다시하기 지원합니다."),
-        t("좌표 인지 게임에서 여러 칸 동시 클릭 차단했습니다."),
-        t("채팅 도전장 실패 시 사유 표시합니다. 백랭크 러시아워 안내 문구 가독성 개선했습니다."),
+        t("좌표 인지 게임을 혼자 하는 중에도 다시 시작할 수 있습니다."),
+        t("좌표 인지 게임에서 여러 칸을 한꺼번에 누르지 못하게 막았습니다."),
+        t("채팅 도전장이 실패하면 이유를 보여 줍니다. 백랭크 러시아워 안내 문구도 읽기 쉽게 고쳤습니다."),
       ] },
       { cat: "fix", items: [
-        t("좌표 인지 게임 대전에서 마지막 라운드 뒤 결과 화면이 뜨지 않던 문제를 수정했습니다."),
-        t("채팅 /play에 화면에 보이는 미니게임 이름을 쓰면 신청되지 않던 문제를 수정했습니다."),
-        t("신규 가입 계정의 회원 번호가 비어 친구 검색에 안 잡히던 문제를 수정했습니다."),
+        t("좌표 인지 게임 대전에서 마지막 라운드가 끝나도 결과 화면이 뜨지 않던 문제를 고쳤습니다."),
+        t("채팅 /play에 화면에 보이는 미니게임 이름을 쓰면 신청이 되지 않던 문제를 고쳤습니다."),
+        t("새로 가입한 계정의 회원 번호가 비어 친구 검색에 나오지 않던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.5.7", date: "2026.9.27",
-    summary: t("채팅 메신저화 추가했습니다. 답장·반응·검색, 보드 미리보기·수 투표·같이 보기, /play 미니게임 대결 추가했습니다."),
-    highlight: { kind: "icon", Icon: Send, color: T.brassHi, label: t("채팅 답장·반응·검색, 보드 미리보기·수 투표·같이 보기, 명령어 자동완성, /play 미니게임, 빠른 첫 로딩 추가했습니다.") },
+    summary: t("채팅을 메신저처럼 바꿨습니다. 답장, 반응, 검색, 보드 미리보기, 수 투표, 같이 보기, /play 미니게임 대결이 생겼습니다."),
+    highlight: { kind: "icon", Icon: Send, color: T.brassHi, label: t("채팅에 답장, 반응, 검색, 보드 미리보기, 수 투표, 같이 보기, 명령어 자동 완성, /play 미니게임을 넣고 첫 로딩을 빠르게 했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("채팅 메시지 꾹 누르기 추가했습니다. 답장·이모지 반응·복사·신고 추가했습니다. 위로 올려 이전 메시지 로딩, 대화 내 검색 추가했습니다."),
-        t("FEN·수순 전송 시 작은 보드로 표시합니다. 수 투표와 친구와 함께 두는 같이 보기 보드 추가했습니다."),
-        t("/play knight처럼 대화 중인 친구에게 미니게임 4종 대결 신청 추가했습니다. 수락 시 바로 입장 추가했습니다."),
-        t("분석 탭 FEN 모드에서도 추천 화살표 표시합니다."),
-        t("나이트 레이스 5라운드에 상대 퀸이 나오는 고난도 포지션 고정했습니다."),
+        t("채팅 메시지를 길게 누르면 답장, 이모지 반응, 복사, 신고를 할 수 있습니다. 위로 올리면 이전 메시지를 불러오고, 대화 안에서 검색도 됩니다."),
+        t("FEN이나 수순을 보내면 작은 보드로 보여 줍니다. 수 투표와 친구와 함께 두는 같이 보기 보드도 생겼습니다."),
+        t("/play knight처럼 입력하면 대화 중인 친구에게 미니게임 4종 중 하나로 대결을 신청합니다. 친구가 수락하면 바로 시작합니다."),
+        t("분석 탭 FEN 모드에서도 추천 화살표가 나옵니다."),
+        t("나이트 레이스 5라운드를 상대 퀸이 나오는 어려운 포지션으로 고정했습니다."),
       ] },
       { cat: "ui", items: [
-        t("블라인드 대국의 수를 말풍선으로 표시합니다. 백은 크림색, 흑은 갈색, 금색 글씨와 기물 아이콘 추가했습니다."),
-        t("체스 대국·미니게임 도전장 카드 디자인 통일했습니다."),
-        t("데스크톱 미니게임·랭킹·설정 화면과 플레이 탭 상점 레이아웃 정리했습니다."),
-        t("대국 요약 알림에서 바뀐 전적 숫자 강조합니다. 분석 탭 퀘스트 표시를 금빛 고리와 광택으로 변경했습니다."),
+        t("블라인드 대국의 수를 말풍선으로 보여 줍니다. 백은 크림색, 흑은 갈색 바탕에 금색 글씨와 기물 아이콘을 씁니다."),
+        t("체스 대국과 미니게임 도전장 카드 디자인을 하나로 맞췄습니다."),
+        t("데스크톱의 미니게임·랭킹·설정 화면과 플레이 탭 상점 배치를 정리했습니다."),
+        t("대국 요약 알림에서 바뀐 전적 숫자를 강조합니다. 분석 탭의 퀘스트 표시는 금빛 고리와 광택으로 바꿨습니다."),
       ] },
       { cat: "ux", items: [
-        t("채팅 명령어 정리했습니다. '/' 입력 시 명령어 필터링, /help는 본인에게만 표시, 블라인드 대국은 /blind로 준비 후 시작했습니다."),
-        t("FEN 모드에서 흑부터 두면 기보를 1...부터 표시합니다."),
-        t("좋은 수 이펙트에서 기물이 한 번 더 움직이던 연출 삭제했습니다."),
-        t("사용자 차단, 불쾌한 메시지 신고 기능 추가했습니다."),
+        t("채팅 명령어를 정리했습니다. '/'를 입력하면 명령어가 걸러 보이고, /help는 나에게만 보이며, 블라인드 대국은 /blind로 준비한 뒤 시작합니다."),
+        t("FEN 모드에서 흑이 먼저 두면 기보가 1...부터 시작합니다."),
+        t("좋은 수 이펙트에서 기물이 한 번 더 움직이던 연출을 없앴습니다."),
+        t("사용자 차단과 불쾌한 메시지 신고 기능을 넣었습니다."),
       ] },
       { cat: "perf", items: [
-        t("초기 접속 용량 절반 이하로 축소했습니다."),
+        t("처음 접속할 때 받는 용량을 절반 이하로 줄였습니다."),
       ] },
       { cat: "security", items: [
-        t("채팅 메시지·리뷰 기록을 타인이 수정하지 못하도록 차단했습니다."),
+        t("채팅 메시지와 리뷰 기록을 다른 사람이 고칠 수 없게 막았습니다."),
       ] },
       { cat: "fix", items: [
-        t("메시지가 많은 대화에서 최신 메시지가 안 보이던 문제를 수정했습니다."),
-        t("채팅 도전장 수락 후 대국에 못 들어가거나 엉뚱한 화면이 열리던 문제를 수정했습니다."),
-        t("나이트 레이스에서 답이 없던 라운드 수정했습니다. 지키는 칸을 실제 체스 규칙과 동일하게 계산 추가했습니다."),
+        t("메시지가 많은 대화에서 최신 메시지가 보이지 않던 문제를 고쳤습니다."),
+        t("채팅 도전장을 수락해도 대국에 들어가지 못하거나 엉뚱한 화면이 열리던 문제를 고쳤습니다."),
+        t("나이트 레이스에서 풀 수 없던 라운드를 고쳤습니다. 기물이 지키는 칸을 실제 체스 규칙과 똑같이 계산합니다."),
       ] },
     ],
   },
   {
     version: "0.5.6", date: "2026.9.26",
-    summary: t("외부 사이트 대국 요약 알림, 도감 오프닝 트리 개선했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("대국 요약 알림, 새 도감 트리, 전적 칩, 대국 종료 이펙트, 미니게임 드래그 무브 추가했습니다.") },
+    summary: t("외부 사이트 대국 요약 알림을 넣고 도감 오프닝 트리를 다듬었습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("대국 요약 알림, 새 도감 트리, 전적 칩, 대국 종료 이펙트, 미니게임 드래그 이동을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("외부 사이트 대국 종료 시 요약 알림 추가했습니다. 결과·상대·오프닝과 해당 오프닝 전적·승률 변화 표시, 검색·리뷰 버튼 제공합니다. 미접속 중 둔 대국은 다음 접속 때 순서대로 표시합니다."),
-        t("대국 종료 이펙트 추가했습니다. 체크메이트(승자·패자), 스테일메이트, 3회 동형 반복 추가했습니다."),
-        t("도감 수 블록에 내 외부 사이트 전적·승률 표시합니다."),
-        t("미니게임 보드 기물 드래그 이동했습니다."),
+        t("외부 사이트 대국이 끝나면 요약 알림이 뜹니다. 결과, 상대, 오프닝과 그 오프닝의 전적·승률 변화를 보여 주고 검색·리뷰 버튼을 줍니다. 접속하지 않은 동안 둔 대국은 다음 접속 때 차례로 보여 줍니다."),
+        t("대국 종료 이펙트를 넣었습니다. 체크메이트(승자·패자), 스테일메이트, 3회 동형 반복마다 다른 연출이 나옵니다."),
+        t("도감 수 블록에 외부 사이트에서 내가 둔 전적과 승률을 보여 줍니다."),
+        t("미니게임 보드에서 기물을 끌어서 옮길 수 있습니다."),
       ] },
       { cat: "ui", items: [
-        t("도감 오프닝 트리 블록·이름표·연결선 재배치했습니다. 겹침 제거, 이름표는 항상 블록 위 추가했습니다."),
-        t("수 이펙트 이름표를 '탁월한 수'로 변경, 가운데 정렬했습니다. 칸 기호를 수 체계 아이콘과 통일했습니다."),
-        t("미니게임 준비 화면 정리했습니다. 규칙 설명은 오른쪽 위 ? 버튼의 말풍선 추가했습니다."),
-        t("분석 탭 수 블록 일일 퀘스트 표시를 두루마리 형태로 변경했습니다."),
-        t("도감 수 카드와 데스크톱 플레이 탭 버튼 축소했습니다."),
+        t("도감 오프닝 트리의 블록, 이름표, 연결선을 다시 배치했습니다. 겹치지 않게 하고 이름표는 늘 블록 위에 둡니다."),
+        t("수 이펙트 이름표를 '탁월한 수'처럼 바꾸고 가운데에 맞췄습니다. 칸에 뜨는 기호도 수 등급 아이콘과 같게 했습니다."),
+        t("미니게임 준비 화면을 정리했습니다. 규칙 설명은 오른쪽 위 ? 버튼을 누르면 말풍선으로 나옵니다."),
+        t("분석 탭 수 블록의 일일 퀘스트 표시를 두루마리 모양으로 바꿨습니다."),
+        t("도감 수 카드와 데스크톱 플레이 탭 버튼을 작게 줄였습니다."),
       ] },
       { cat: "ux", items: [
-        t("내 퍼즐이 오늘의 퍼즐로 뽑히면 팝업 대신 알림 창에 번호와 함께 표시합니다. 도감 잠금 해제 알림 삭제했습니다."),
-        t("퍼즐 오답 시 빨간 X 이펙트 추가했습니다. 좋은 수 이펙트는 끝까지 재생 후 다음 수 진행 추가했습니다."),
-        t("도감 트리 드래그 관성, 핀치·Ctrl+휠·더블클릭 확대했습니다. 백랭크 러시아워 힌트 삭제했습니다."),
+        t("내 퍼즐이 오늘의 퍼즐로 뽑히면 팝업 대신 알림 창에 번호와 함께 알려 줍니다. 도감 잠금 해제 알림은 없앴습니다."),
+        t("퍼즐을 틀리면 빨간 X 이펙트가 나옵니다. 좋은 수 이펙트는 끝까지 재생한 뒤 다음 수로 넘어갑니다."),
+        t("도감 트리를 끌면 관성으로 미끄러지고, 두 손가락·Ctrl+휠·더블클릭으로 확대할 수 있습니다. 백랭크 러시아워의 힌트는 없앴습니다."),
       ] },
       { cat: "perf", items: [
-        t("도감 오프닝 트리 로딩 시간 대폭 단축했습니다."),
-        t("수 이펙트·대국 종료 이펙트 GPU 재생했습니다. 20% 속도 향상 추가했습니다."),
+        t("도감 오프닝 트리를 여는 시간을 크게 줄였습니다."),
+        t("수 이펙트와 대국 종료 이펙트를 GPU로 재생해 20% 빨라졌습니다."),
       ] },
       { cat: "fix", items: [
-        t("기기의 '애니메이션 줄이기' 설정 시 사이트 애니메이션이 멈추던 문제를 수정했습니다. 배포 전 자동 검사 추가했습니다."),
-        t("개발자가 추가한 이론 수가 도감에서 이론으로 표시되지 않던 문제를 수정했습니다. 배포 전 자동 검사 추가했습니다."),
-        t("도감 수 카드가 화면 밖으로 잘리던 문제, 최근 대국 레이팅 변화 오표시 수정했습니다."),
+        t("기기에서 '애니메이션 줄이기'를 켜면 사이트 애니메이션이 멈추던 문제를 고쳤습니다. 배포 전에 자동으로 검사합니다."),
+        t("개발자가 추가한 이론 수가 도감에서 이론으로 표시되지 않던 문제를 고쳤습니다. 배포 전에 자동으로 검사합니다."),
+        t("도감 수 카드가 화면 밖으로 잘리던 문제와 최근 대국의 레이팅 변화가 잘못 나오던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.5.5", date: "2026.9.25",
-    summary: t("플레이 탭 개편, 수 등급 이펙트, 상대 나이트 잡기 추가했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 플레이 탭, 수 등급 이펙트, 상대 나이트 잡기, 라운드별 제한시간, 시각 효과·미니게임 설정 추가했습니다.") },
+    summary: t("플레이 탭을 새로 꾸미고, 수 등급 이펙트와 상대 나이트 잡기를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 플레이 탭, 수 등급 이펙트, 상대 나이트 잡기, 라운드별 제한 시간, 시각 효과·미니게임 설정을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("탁월한 수·유일한 수·최선의 수를 두면 칸이 등급 색으로 빛나고 이름표가 뜬 뒤 작은 배지로 축소했습니다. 분석·학습·퍼즐 탭, 게임 리뷰, 무한 체크메이트 게임에서 표시합니다."),
-        t("무한 체크메이트 게임에서 둔 수를 엔진이 즉시 채점 추가했습니다. 탁월·유일·최선이면 이펙트 표시합니다."),
-        t("나이트 레이스에서 상대 나이트 잡기 추가했습니다. 잡힌 쪽은 해당 라운드 종료했습니다."),
-        t("설정 탭에 '시각 효과'(수 등급 이펙트, 기본 켜짐)와 '미니게임 설정'(상대 기물이 지키는 칸 표시, 기본 꺼짐) 추가했습니다."),
+        t("탁월한 수·유일한 수·최선의 수를 두면 칸이 등급 색으로 빛나고, 이름표가 떴다가 작은 배지로 줄어듭니다. 분석·학습·퍼즐 탭, 게임 리뷰, 무한 체크메이트 게임에서 나옵니다."),
+        t("무한 체크메이트 게임에서 둔 수를 엔진이 바로 채점합니다. 탁월·유일·최선이면 이펙트가 나옵니다."),
+        t("나이트 레이스에서 상대 나이트를 잡을 수 있습니다. 잡힌 쪽은 그 라운드가 끝납니다."),
+        t("설정 탭에 '시각 효과'(수 등급 이펙트, 기본 켜짐)와 '미니게임 설정'(상대 기물이 지키는 칸 표시, 기본 꺼짐)을 넣었습니다."),
       ] },
       { cat: "ui", items: [
-        t("일반 대국과 미니게임을 한 화면으로 통합했습니다. 미니게임 4종은 가운데 로고 주변 버튼으로 배치, 버튼 안 보드에 각 게임 장면 재생했습니다."),
-        t("일반 대국 버튼 보드에서 마스터 대국을 랜덤 재생했습니다. 클릭 시 별도 창에서 시간 선택했습니다."),
-        t("미니게임 이름 변경했습니다. 나이트 레이스·백랭크 러시아워·무한 체크메이트 게임 추가했습니다. 미니게임 화면 배경을 크림색으로 통일했습니다."),
-        t("좌표 인지 게임 추가했습니다. 칸 선택 시 조준경, 정답 초록 체크, 오답 빨간 X 추가했습니다. 무한 체크메이트 게임도 둔 칸에 체크·X 표시, 등급은 보드 위 아이콘 추가했습니다."),
-        t("나이트 레이스에서 나이트가 잡히면 지키던 기물이 날아와 잡는 연출했습니다. 목표 칸은 금색 별 추가했습니다."),
+        t("일반 대국과 미니게임을 한 화면에 모았습니다. 미니게임 4종은 가운데 로고 둘레의 버튼으로 두고, 버튼 안의 보드에서 각 게임 장면이 재생됩니다."),
+        t("일반 대국 버튼의 보드에서 마스터 대국이 무작위로 재생됩니다. 누르면 따로 뜨는 창에서 시간을 고릅니다."),
+        t("미니게임 이름을 나이트 레이스, 백랭크 러시아워, 무한 체크메이트 게임으로 바꾸고, 미니게임 화면 배경을 크림색으로 통일했습니다."),
+        t("좌표 인지 게임을 넣었습니다. 칸을 고르면 조준경이 뜨고, 정답은 초록 ✓, 오답은 빨간 X로 나옵니다. 무한 체크메이트 게임도 둔 칸에 ✓·X를 띄우고 등급은 보드 위 아이콘으로 보여 줍니다."),
+        t("나이트 레이스에서 나이트가 잡히면 지키던 기물이 날아와 잡는 연출이 나옵니다. 목표 칸은 금색 별로 표시합니다."),
       ] },
       { cat: "ux", items: [
-        t("나이트 레이스 제한시간 1라운드 5초에서 라운드마다 증가(최대 17초) 추가했습니다. 후반부는 기물 최대 5쌍, 목표 거리 증가했습니다."),
-        t("나이트 레이스는 도착·포획 장면을 끝까지 보여준 뒤 정산 화면 표시합니다. 혼자 플레이에서는 내 진영 기물 미 표시합니다."),
-        t("나이트 레이스·백랭크 러시아워에서 상대 기물이 지키는 칸을 기본 숨김했습니다."),
+        t("나이트 레이스 제한 시간이 1라운드 5초에서 라운드마다 늘어납니다(최대 17초). 후반에는 기물이 최대 5쌍 나오고 목표까지 거리도 멀어집니다."),
+        t("나이트 레이스는 도착·포획 장면을 끝까지 보여 준 뒤 결과 화면을 띄웁니다. 혼자 할 때는 내 진영 기물을 보여 주지 않습니다."),
+        t("나이트 레이스와 백랭크 러시아워에서 상대 기물이 지키는 칸은 기본으로 숨깁니다."),
       ] },
       { cat: "fix", items: [
-        t("미니게임 랜덤 매칭이 대기열 없이 곧장 패배 처리되던 문제를 수정했습니다. 배포 전 자동 검사 추가했습니다."),
-        t("무한 체크메이트 게임이 시작하자마자 동작하지 않던 문제를 수정했습니다."),
-        t("무한 체크메이트 버튼 속 장면이 메이트가 아닌데 메이트로 넘어가던 문제를 수정했습니다."),
-        t("백랭크 러시아워 봇 대전 결과가 늦게 뜨던 문제를 수정했습니다."),
+        t("미니게임 무작위 매칭이 대기 없이 곧바로 패배로 처리되던 문제를 고쳤습니다. 배포 전에 자동으로 검사합니다."),
+        t("무한 체크메이트 게임이 시작하자마자 멈추던 문제를 고쳤습니다."),
+        t("무한 체크메이트 버튼 속 장면이 메이트가 아닌데도 메이트로 넘어가던 문제를 고쳤습니다."),
+        t("백랭크 러시아워 봇 대전의 결과가 늦게 뜨던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.5.4", date: "2026.9.24",
-    summary: t("미니게임 레이팅·전적·랭킹 추가했습니다."),
-    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 레이팅, 전체·친구 랭킹, 로비 전적 바, 결과 화면 레이팅 변화 추가했습니다.") },
+    summary: t("미니게임 레이팅, 전적, 랭킹을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Trophy, color: T.brassHi, label: t("미니게임 레이팅, 전체·친구 랭킹, 로비 전적 바, 결과 화면 레이팅 변화를 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("미니게임별 레이팅 추가했습니다. 1200점 시작, 랜덤 매칭 승패로 변동, 처음 20판은 변동폭 확대했습니다."),
-        t("미니게임 랭킹 추가했습니다. 시작 화면 '랭킹' 버튼에서 레이팅·혼자 플레이 기록 순위를 전체·친구 기준으로 확인했습니다. 레이팅 순위는 랜덤 매칭 3판 완료 후 등재 추가했습니다."),
-        t("혼자 플레이 최고 기록 계정 저장했습니다. 기기 간 연동, 로그인 전 기록은 로그인 시 반영했습니다."),
-        t("친구 도전은 친선전 추가했습니다. 전적만 반영, 레이팅 변동 없습니다."),
-        t("나이트 경주 규칙 추가했습니다. 상대 기물 칸 도달 시 포획(해당 기물이 막던 칸 해제), 상대 기물이 지배하는 빨간 칸 진입 시 라운드 종료, 내 색 기물 칸 진입 불가 추가했습니다."),
-        t("나이트 경주 승패 규칙 추가했습니다. 더 적은 수로 도착한 쪽 승, 같으면 먼저 도착한 쪽 승 추가했습니다."),
-        t("러시아워 규칙 추가했습니다. 주인공 룩이 상대 기물 지배 칸에 진입하면 즉시 포획, 라운드 종료(혼자 풀기는 실패 화면에서 재도전) 추가했습니다."),
+        t("미니게임마다 레이팅이 생겼습니다. 1200점에서 시작해 무작위 매칭 승패로 오르내리고, 처음 20판은 변동 폭이 큽니다."),
+        t("미니게임 랭킹이 생겼습니다. 시작 화면의 '랭킹' 버튼에서 레이팅과 혼자 하기 기록 순위를 전체·친구 기준으로 봅니다. 레이팅 순위에는 무작위 매칭을 3판 마쳐야 오릅니다."),
+        t("혼자 하기 최고 기록을 계정에 저장해 다른 기기에서도 이어집니다. 로그인 전에 세운 기록은 로그인할 때 합쳐집니다."),
+        t("친구에게 하는 도전은 친선전입니다. 전적에만 남고 레이팅은 바뀌지 않습니다."),
+        t("나이트 레이스 규칙을 넣었습니다. 상대 기물 칸에 닿으면 그 기물을 잡고(그 기물이 막던 칸이 풀림), 상대 기물이 지키는 빨간 칸에 들어가면 라운드가 끝나며, 내 색 기물이 있는 칸에는 들어갈 수 없습니다."),
+        t("나이트 레이스 승패 규칙을 넣었습니다. 더 적은 수로 도착한 쪽이 이기고, 같으면 먼저 도착한 쪽이 이깁니다."),
+        t("러시아워 규칙을 넣었습니다. 주인공 룩이 상대 기물이 지키는 칸에 들어가면 바로 잡히고 라운드가 끝납니다(혼자 할 때는 실패 화면에서 다시 도전)."),
       ] },
       { cat: "ux", items: [
-        t("나이트 경주 난이도 상향 추가했습니다. 첫 라운드부터 상대 기물 등장, 목표까지 최소 3~6수 추가했습니다. 2라운드부터 최단 경로가 위협 칸으로 막혀 우회 또는 포획 필요 추가했습니다. 이동 수 제한은 최소 수 +1, 제한시간 25초에서 15초로 단축했습니다."),
+        t("나이트 레이스를 더 어렵게 했습니다. 첫 라운드부터 상대 기물이 나오고 목표까지 최소 3~6수가 걸립니다. 2라운드부터는 가장 짧은 길이 위험한 칸으로 막혀 돌아가거나 잡아야 합니다. 이동 수 제한은 최소 수 +1이고, 제한 시간은 25초에서 15초로 줄였습니다."),
       ] },
       { cat: "ui", items: [
-        t("미니게임 시작 화면 상단에 내 레이팅·전적(승·패·무, 연승)·혼자 플레이 최고 기록과 랭킹 버튼 추가했습니다."),
-        t("실시간 대전 결과 화면에 레이팅 변동 수치 표시합니다."),
-        t("프로필에 미니게임별 레이팅·전적·혼자 최고 기록 표시합니다. 스페셜 미니게임 목록에 게임별 레이팅 표시합니다."),
-        t("나이트 경주에서 포획 가능한 상대 기물은 금색 고리로 깜빡임, 잡힌 나이트는 흐려지며 빨간 X 표시합니다."),
-        t("나이트 경주·러시아워 라운드 종료 시 정산 화면 표시합니다. 결과·이동 수·소요 시간 비교, 승리 사유, 누적 점수, 다음 라운드까지 남은 시간 추가했습니다."),
+        t("미니게임 시작 화면 위쪽에 내 레이팅, 전적(승·패·무, 연승), 혼자 하기 최고 기록과 랭킹 버튼을 두었습니다."),
+        t("실시간 대전 결과 화면에 레이팅 변동 폭을 보여 줍니다."),
+        t("프로필에 미니게임별 레이팅, 전적, 혼자 하기 최고 기록이 나옵니다. 스페셜 미니게임 목록에도 게임별 레이팅을 보여 줍니다."),
+        t("나이트 레이스에서 잡을 수 있는 상대 기물은 금빛 고리로 깜빡이고, 잡힌 나이트는 흐려지며 빨간 X가 뜹니다."),
+        t("나이트 레이스와 러시아워는 라운드가 끝나면 결과 화면을 띄웁니다. 결과, 이동 수, 걸린 시간을 비교하고 승리 이유, 누적 점수, 다음 라운드까지 남은 시간을 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("일일 퍼즐이 뜨지 않던 문제를 수정했습니다. 오늘의 퍼즐이 비어 있으면 퍼즐 탭 진입 시 즉시 채움 추가했습니다."),
-        t("분석 탭에서 FEN 모드 종료 시 사이트가 멈추던 문제를 수정했습니다."),
+        t("일일 퍼즐이 뜨지 않던 문제를 고쳤습니다. 오늘의 퍼즐이 비어 있으면 퍼즐 탭에 들어갈 때 바로 채웁니다."),
+        t("분석 탭에서 FEN 모드를 끝내면 사이트가 멈추던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.5.3", date: "2026.9.24",
-    summary: t("신규 미니게임 러시아워·공격 모드, 미니게임 연출 강화했습니다."),
-    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("새 미니게임 러시아워, 새 미니게임 공격 모드, 미니게임 카운트다운·효과음·진동·애니메이션, 새 결과 화면 추가했습니다.") },
+    summary: t("새 미니게임 러시아워와 공격 모드를 넣고, 미니게임 연출을 강화했습니다."),
+    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("새 미니게임 러시아워와 공격 모드, 미니게임 카운트다운·효과음·진동·애니메이션, 새 결과 화면을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("신규 미니게임 '러시아워' 추가했습니다. 내 기물 사이에 갇힌 룩(왕관 표시)을 빼내 상대 백랭크에서 체크메이트 추가했습니다. 다른 기물은 실제 규칙대로 이동, 상대 수비 기물은 방금 움직인 내 기물이 공격 범위에 들어오면 포획 추가했습니다."),
-        t("러시아워 모드 추가했습니다. 혼자 풀기(쉬움·보통·어려움 46레벨, 최단 수 기준 별 3개, 되돌리기·처음부터·위험 칸 보기·힌트), 봇 대전, 실시간 대전, 친구 도전 추가했습니다. 대전은 3라운드 2선승, 같은 퍼즐을 동시에 풀어 적은 수(같으면 빠른 쪽) 승리 추가했습니다."),
-        t("신규 미니게임 '공격 모드' 추가했습니다. 3분간 강제 체크메이트 포지션('공격 기회')이 반복 출제, 더 많이 메이트시킨 쪽 승리 추가했습니다. 오답 시 정답 칸 표시 후 다음 기회로 이동했습니다."),
-        t("공격 기회 등급 추가했습니다. S 1수·A 2수·B 3수·C 4수 추가했습니다. 퍼즐 레이팅이 낮을수록 높은 등급 확률 상승했습니다. 동점 시 낮은 등급 성공 수부터 비교, 그래도 같으면 레이팅 높은 쪽 승 추가했습니다. 봇 대전은 쉬움·보통·어려움 추가했습니다."),
-        t("미니게임 4종 혼자 플레이하기 추가했습니다. 좌표 인지 게임 30초 정답 수, 나이트 경주 5라운드 도달 횟수(같으면 소요 시간), 공격 모드 3분 메이트 수, 러시아워 레벨 풀이 추가했습니다. 최고 기록은 기기에 저장, 신기록 시 화면 표시합니다."),
-        t("공격 기회 포지션 295개로 시작했습니다. 마스터 대국에서 추출해 엔진 검증했습니다. 개발자가 공개 데이터 퍼즐·FEN으로 추가 가능 추가했습니다."),
+        t("새 미니게임 '러시아워'를 넣었습니다. 내 기물 사이에 갇힌 룩(왕관 표시)을 빼내 상대 백랭크에서 체크메이트하는 게임입니다. 다른 기물은 실제 규칙대로 움직이고, 상대 수비 기물은 방금 움직인 내 기물이 공격 범위에 들어오면 잡습니다."),
+        t("러시아워 모드를 넣었습니다. 혼자 풀기(쉬움·보통·어려움 46레벨, 최단 수 기준 별 3개, 되돌리기·처음부터·위험 칸 보기·힌트), 봇 대전, 실시간 대전, 친구 도전이 있습니다. 대전은 3판 2선승제로, 같은 퍼즐을 동시에 풀어 더 적은 수로(같으면 더 빨리) 푼 쪽이 이깁니다."),
+        t("새 미니게임 '공격 모드'를 넣었습니다. 3분 동안 강제 체크메이트 포지션('공격 기회')이 계속 나오고, 메이트를 더 많이 시킨 쪽이 이깁니다. 틀리면 정답 칸을 보여 주고 다음 기회로 넘어갑니다."),
+        t("공격 기회에 등급을 매겼습니다. S는 1수, A는 2수, B는 3수, C는 4수 메이트이고, 퍼즐 레이팅이 낮을수록 높은 등급이 나올 확률이 큽니다. 동점이면 낮은 등급 성공 수부터 비교하고, 그래도 같으면 레이팅이 높은 쪽이 이깁니다. 봇 대전은 쉬움·보통·어려움으로 나눴습니다."),
+        t("미니게임 4종에 혼자 하기를 넣었습니다. 좌표 인지 게임은 30초 동안 맞힌 수, 나이트 경주는 5라운드 동안 도착한 횟수(같으면 걸린 시간), 공격 모드는 3분 동안 메이트한 수, 러시아워는 레벨 풀이로 겨룹니다. 최고 기록은 기기에 저장하고 새 기록을 세우면 화면에 알려 줍니다."),
+        t("공격 기회 포지션 295개로 시작했습니다. 마스터 대국에서 뽑아 엔진으로 검증했고, 개발자가 공개 퍼즐 데이터나 FEN으로 더 넣을 수 있습니다."),
       ] },
       { cat: "ui", items: [
-        t("미니게임 4종 시작 화면 배치 통일했습니다. 규칙 안내 아래 '혼자 플레이하기, 봇과 플레이하기, 랜덤 매칭', 그 아래 '친구와 플레이하기' 목록 추가했습니다."),
-        t("미니게임 4종 라운드 시작 전 3·2·1 카운트다운 추가했습니다. 실시간 대전은 동시 시작했습니다."),
-        t("점수 상승 시 숫자가 튀는 점수판, 라운드 종료 결과 배너, 남은 시간이 적으면 빨갛게 깜빡이는 시간 막대 추가했습니다."),
-        t("나이트 경주의 나이트와 러시아워 기물이 칸 사이를 미끄러지듯 이동했습니다."),
-        t("결과 화면 개편했습니다. 승리 시 금빛 파티클, 라운드별 기록, 게임별 통계(평균·최고 반응속도, 평균 이동 수, 최단 도달 시간, 등급별 성공 수) 추가했습니다. 봇 대전은 '다시 하기' 지원합니다."),
+        t("미니게임 4종의 시작 화면 배치를 통일했습니다. 규칙 안내 아래에 '혼자 하기, 봇과 하기, 무작위 매칭'을, 그 아래에 '친구와 하기' 목록을 둡니다."),
+        t("미니게임 4종의 라운드가 시작되기 전에 3·2·1 카운트다운이 나옵니다. 실시간 대전은 두 사람이 동시에 시작합니다."),
+        t("점수가 오르면 숫자가 튀어 오르는 점수판, 라운드 결과 배너, 남은 시간이 적으면 빨갛게 깜빡이는 시간 막대를 넣었습니다."),
+        t("나이트 경주의 나이트와 러시아워의 기물이 칸 사이를 미끄러지듯 움직입니다."),
+        t("결과 화면을 새로 만들었습니다. 이기면 금빛 입자가 흩날리고, 라운드별 기록과 게임별 통계(평균·최고 반응 속도, 평균 이동 수, 최단 도착 시간, 등급별 성공 수)를 보여 줍니다. 봇 대전은 '다시 하기'를 지원합니다."),
       ] },
       { cat: "ux", items: [
-        t("미니게임 효과음·진동 추가했습니다. 카운트다운, 정답·오답, 라운드 승패, 최종 승리 추가했습니다. 설정의 효과음 켜기/끄기·볼륨 연동했습니다."),
-        t("오답이나 위험 칸 이동 시 보드 좌우 흔들림 추가했습니다."),
-        t("미니게임 4종 봇 난이도 하향 추가했습니다. 좌표 인지 봇은 반응 지연, 나이트 경주 봇은 이동 속도 저하와 오류 추가, 러시아워·공격 모드 봇은 소요 시간·실패율 증가했습니다."),
+        t("미니게임에 효과음과 진동을 넣었습니다. 카운트다운, 정답·오답, 라운드 승패, 최종 승리에 나오고, 설정의 효과음 켜기·끄기와 볼륨을 따릅니다."),
+        t("틀리거나 위험한 칸으로 가면 보드가 좌우로 흔들립니다."),
+        t("미니게임 4종의 봇을 쉽게 조정했습니다. 좌표 인지 봇은 반응이 느려지고, 나이트 경주 봇은 느리게 움직이며 실수도 하고, 러시아워·공격 모드 봇은 시간이 더 걸리고 더 자주 실패합니다."),
       ] },
       { cat: "fix", items: [
-        t("좌표 인지 게임 봇 대전에서 앞 라운드 봇 클릭이 다음 라운드로 넘어가 새 라운드가 봇 득점으로 끝나던 문제를 수정했습니다."),
+        t("좌표 인지 게임 봇 대전에서 앞 라운드의 봇 클릭이 다음 라운드로 넘어가 새 라운드가 봇 득점으로 끝나던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.5.2", date: "2026.9.22",
-    summary: t("캐슬링 권리 검증 수정, 퍼즐 포지션 분류 개선, 신규 기능 6종 추가했습니다."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("캐슬링 권리 검증 누락 수정, 퍼즐 국면 판정 개선, 일일 퍼즐 스트릭·배지, 적응형 퍼즐 난이도, 오프닝 트리 내 승률 오버레이, 프로필 약점 리포트, 리뷰 공유 이미지 카드, PvP 관전 모드 추가했습니다.") },
+    summary: t("캐슬링 권리 검증을 고치고, 퍼즐 포지션 분류를 다듬고, 새 기능 6가지를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("캐슬링 권리 검증 누락을 고치고 퍼즐 국면 판정을 다듬었습니다. 일일 퍼즐 연속 기록과 배지, 실력에 맞춘 퍼즐 난이도, 오프닝 트리의 내 승률 표시, 프로필 약점 리포트, 리뷰 공유 이미지 카드, PvP 관전 모드를 넣었습니다.") },
     sections: [
       { cat: "security", items: [
-        t("표준 시작 위치의 모든 대국·퍼즐에서 킹이 제자리를 벗어났다가 돌아오면 캐슬링이 재개되던 규칙 위반 수정했습니다. 실시간 대국에서 악용 가능했던 문제 추가했습니다."),
+        t("표준 시작 위치의 모든 대국과 퍼즐에서 킹이 제자리를 떠났다 돌아오면 캐슬링이 다시 가능해지던 규칙 위반을 고쳤습니다. 실시간 대국에서 악용될 수 있던 문제였습니다."),
       ] },
       { cat: "fix", items: [
-        t("퍼즐의 오프닝·미들게임·엔드게임 분류 기준 개선했습니다. 실전 대국 퍼즐은 진행 수 반영, 남은 기물이 적으면 항상 엔드게임 추가했습니다."),
-        t("퍼즐 탭 풀이 카드를 닫으면 목록 맨 위로 이동하던 문제를 수정했습니다. 스크롤 위치 유지합니다."),
-        t("FEN 퍼즐 이름 변경 후 카드를 닫으면 원래 이름으로 돌아가던 문제를 수정했습니다."),
-        t("개발자·공동개발자의 퍼즐 생성자 회수·양도가 성공으로 표시되나 반영되지 않던 문제를 수정했습니다."),
-        t("같은 포지션 퍼즐이 다른 번호로 중복 생성되던 문제를 수정했습니다. 수순 전위·FEN 표기 차이가 있어도 기존 퍼즐로 안내합니다. 개발자 도구 '퍼즐 컨트롤 센터'에 중복 정리 기능 추가했습니다."),
-        t("FEN 퍼즐의 모든 라인을 풀어도 카드가 초록색으로 바뀌지 않던 문제를 수정했습니다."),
-        t("퍼즐 자동 생성 시 캐슬링 이후 룩·킹의 재이동을 '기물 꺼내기'로 오판해 후보에서 제외하던 문제를 수정했습니다."),
+        t("퍼즐을 오프닝·미들게임·엔드게임으로 나누는 기준을 다듬었습니다. 실전 대국에서 나온 퍼즐은 진행된 수를 반영하고, 남은 기물이 적으면 늘 엔드게임으로 봅니다."),
+        t("퍼즐 탭에서 풀이 카드를 닫으면 목록 맨 위로 올라가던 문제를 고쳤습니다. 이제 스크롤 위치를 그대로 둡니다."),
+        t("FEN 퍼즐 이름을 바꾼 뒤 카드를 닫으면 원래 이름으로 돌아가던 문제를 고쳤습니다."),
+        t("개발자와 공동 개발자가 퍼즐 작성자를 회수하거나 넘기면 성공으로 표시되지만 실제로는 바뀌지 않던 문제를 고쳤습니다."),
+        t("같은 포지션의 퍼즐이 다른 번호로 또 만들어지던 문제를 고쳤습니다. 수순이 달라도, FEN 표기가 달라도 기존 퍼즐로 안내합니다. 개발자 도구 '퍼즐 컨트롤 센터'에 중복 정리 기능을 넣었습니다."),
+        t("FEN 퍼즐의 라인을 모두 풀어도 카드가 초록색으로 바뀌지 않던 문제를 고쳤습니다."),
+        t("퍼즐을 자동으로 만들 때 캐슬링 뒤 룩·킹이 다시 움직이는 수를 '기물 꺼내기'로 잘못 보고 후보에서 빼던 문제를 고쳤습니다."),
       ] },
       { cat: "feature", items: [
-        t("게임 리뷰 코치 카드에 '계획' 버튼 추가했습니다. 엔진으로 이후 포지션을 분석해 여러 수에 걸친 기물 재배치 경로 제시 추가했습니다."),
-        t("일일 퍼즐 스트릭·배지 추가했습니다. 퍼즐 탭에 불꽃 아이콘 표시, 최고 기록 별도 저장했습니다."),
-        t("적응형 퍼즐 난이도 추가했습니다. 최근 정답률과 풀이 경험치에 맞춰 목표 레이팅 자동 조정했습니다."),
-        t("도감 오프닝 트리 블록에 외부 사이트 전적 기준 내 승률을 색으로 표시합니다."),
-        t("프로필 외부 사이트 통계에 '약점 리포트' 추가했습니다. 리뷰한 대국을 모아 블런더가 잦은 오프닝 표시합니다."),
-        t("리뷰 공유 이미지 카드 추가했습니다. OpenChess 로고, 기물 아이콘, 상대 프로필 사진·레이팅, 수별 색상 흐름, 수 등급별 목록 포합니다."),
-        t("PvP 관전 모드 추가했습니다. 친구 목록에서 대국 중인 친구의 관전 버튼으로 진입했습니다."),
+        t("게임 리뷰 코치 카드에 '계획' 버튼을 넣었습니다. 엔진이 이후 포지션을 분석해 여러 수에 걸친 기물 재배치 경로를 보여 줍니다."),
+        t("일일 퍼즐 연속 기록과 배지를 넣었습니다. 퍼즐 탭에 불꽃 아이콘이 나오고 최고 기록도 따로 저장합니다."),
+        t("실력에 맞춘 퍼즐 난이도를 넣었습니다. 최근 정답률과 풀이 경험치에 맞춰 목표 레이팅을 자동으로 조정합니다."),
+        t("도감 오프닝 트리 블록에 외부 사이트 전적으로 계산한 내 승률을 색으로 보여 줍니다."),
+        t("프로필의 외부 사이트 통계에 '약점 리포트'를 넣었습니다. 리뷰한 대국을 모아 블런더가 잦은 오프닝을 보여 줍니다."),
+        t("리뷰 공유 이미지 카드를 넣었습니다. OpenChess 로고, 기물 아이콘, 상대 프로필 사진과 레이팅, 수별 색 흐름, 수 등급별 목록이 들어갑니다."),
+        t("PvP 관전 모드를 넣었습니다. 친구 목록에서 대국 중인 친구의 관전 버튼을 누르면 들어갑니다."),
       ] },
     ],
   },
   {
     version: "0.5.1", date: "2026.9.13",
-    summary: t("Stockfish 18 연결 실패 수정, 서버 기준 시간 초과 판정, 미니게임 전체 화면 추가했습니다."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Stockfish 18 연결 실패, 퍼즐 이름 되돌림, 실시간 대국 시간 초과 좀비 대국 근본 수정, FEN 모드 다음 수·수 체계 아이콘 정확도 개선, 이미지 스캔 속도·진행률 개선, 캐슬링 권리 자동 해제, 승격 선택 창 색상·크기·위치 개선, 미니게임 전체화면 레이아웃 재설계했습니다.") },
+    summary: t("Stockfish 18 연결 실패를 고치고, 시간 초과를 서버가 판정하게 하고, 미니게임 전체 화면을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("Stockfish 18 연결 실패, 퍼즐 이름이 되돌아가는 문제, 실시간 대국 시간 초과 뒤 남는 대국을 근본적으로 고쳤습니다. FEN 모드 다음 수와 수 등급 아이콘의 정확도, 이미지 스캔 속도와 진행률을 개선하고, 캐슬링 권리 자동 해제, 승격 선택 창의 색·크기·위치 개선, 미니게임 전체 화면 레이아웃 재설계를 했습니다.") },
     sections: [
       { cat: "fix", items: [
-        t("Stockfish 18 선택 시 항상 '연결 실패'로 멈추던 문제를 수정했습니다. 신경망 파일을 사이트와 같은 곳에서 직접 받도록 변경, 설정 탭에 부팅 안내 추가했습니다."),
-        t("퍼즐 이름 변경 후 '내가 만든 퍼즐'·오늘의 퍼즐에서 예전 이름이 보이던 문제를 수정했습니다."),
-        t("실시간 대국에서 시간 초과 후 상대가 결과를 보고하지 않고 이탈하면 대국이 서버에 남던 문제를 수정했습니다. 서버가 양측 남은 시간을 직접 기억해 접속 여부와 관계없이 결과 확정 추가했습니다."),
-        t("분석 탭 FEN 모드의 '다음 수' 칸이 비거나 무관한 오프닝 문구가 섞이던 문제를 수정했습니다. 엔진 후보 수 표시합니다."),
-        t("FEN 모드 '다음 수' 블록과 현재 수 블록의 등급이 서로 다르던 문제를 수정했습니다."),
-        t("이미지 스캔 중 일시적 인식 엔진 과부하 오류 시 자동 재시도했습니다."),
-        t("폰 승격 선택 창이 항상 검은 기물만 표시하던 문제를 수정했습니다. 승격 진영 색으로 표시합니다."),
+        t("Stockfish 18을 고르면 늘 '연결 실패'로 멈추던 문제를 고쳤습니다. 신경망 파일을 사이트와 같은 곳에서 직접 받도록 바꾸고, 설정 탭에 시작 안내를 넣었습니다."),
+        t("퍼즐 이름을 바꾼 뒤에도 '내가 만든 퍼즐'과 오늘의 퍼즐에 예전 이름이 보이던 문제를 고쳤습니다."),
+        t("실시간 대국에서 시간이 다 된 뒤 상대가 결과를 알리지 않고 나가면 대국이 서버에 남던 문제를 고쳤습니다. 서버가 두 사람의 남은 시간을 직접 기억해, 접속 여부와 관계없이 결과를 확정합니다."),
+        t("분석 탭 FEN 모드의 '다음 수' 칸이 비거나 상관없는 오프닝 문구가 섞이던 문제를 고쳤습니다. 이제 엔진 후보 수를 보여 줍니다."),
+        t("FEN 모드에서 '다음 수' 블록과 현재 수 블록의 등급이 서로 다르던 문제를 고쳤습니다."),
+        t("이미지 스캔 중 인식 엔진이 잠시 과부하로 실패하면 자동으로 다시 시도합니다."),
+        t("폰 승격 선택 창에 늘 검은 기물만 나오던 문제를 고쳤습니다. 승격하는 쪽의 색으로 보여 줍니다."),
       ] },
       { cat: "perf", items: [
-        t("이미지 스캔 속도 개선했습니다. 사진 축소·압축률 상향, 재시도 병렬 처리했습니다."),
+        t("이미지 스캔을 빠르게 했습니다. 사진을 줄이고 더 압축하며, 다시 시도는 동시에 처리합니다."),
       ] },
       { cat: "feature", items: [
-        t("이미지 스캔 진행률(%) 실시간 표시합니다."),
-        t("보드 편집기에서 킹·룩이 시작 칸을 벗어나면 캐슬링 권리 자동 해제했습니다. 제자리로 돌아와도 복구되지 않습니다."),
+        t("이미지 스캔 진행률(%)을 실시간으로 보여 줍니다."),
+        t("보드 편집기에서 킹이나 룩이 시작 칸을 벗어나면 캐슬링 권리가 자동으로 꺼집니다. 제자리로 돌아와도 되살아나지 않습니다."),
       ] },
       { cat: "ui", items: [
-        t("FEN 모드 상단 안내 박스 삭제했습니다. 종료 버튼을 FEN 코드 줄로 이동했습니다."),
-        t("폰 승격 선택 창 버튼 확대, 8x8 판 정중앙에 표시합니다."),
-        t("수가 1~2개뿐인 포지션에서 엔진 상위 줄이 불필요한 빈 공간을 차지하던 문제를 수정했습니다."),
-        t("좌표 인지 게임·나이트 경주를 전체 화면 별도 레이아웃으로 재설계했습니다. 모바일은 내 보드 아래, 상대 보드 위, 스크롤 없이 두 보드 표시합니다."),
-        t("좌표 인지 게임 추가했습니다. 보드 하나로 통합, 내 클릭은 금색 테두리·상대 클릭은 파란 테두리 추가했습니다. 좌표축과 시작 배치 기물 표시합니다. 오답으로는 라운드가 끝나지 않습니다."),
-        t("나이트 경주 추가했습니다. 보드 하나로 통합, 목표 칸 기준 점대칭 배치했습니다. 방해 칸 대신 상대 색 기물(비숍·룩) 배치, 공격 칸은 빨간색 표시합니다."),
+        t("FEN 모드 위쪽의 안내 상자를 없애고, 종료 버튼을 FEN 코드 줄로 옮겼습니다."),
+        t("폰 승격 선택 창의 버튼을 키우고 8×8 판 한가운데에 띄웁니다."),
+        t("둘 수 있는 수가 1~2개뿐인 포지션에서 엔진 상위 줄이 쓸데없이 빈 공간을 차지하던 문제를 고쳤습니다."),
+        t("좌표 인지 게임과 나이트 경주를 전체 화면 레이아웃으로 새로 짰습니다. 모바일에서는 내 보드는 아래, 상대 보드는 위에 두어 스크롤 없이 두 보드가 다 보입니다."),
+        t("좌표 인지 게임을 보드 하나로 합쳤습니다. 내 클릭은 금색 테두리, 상대 클릭은 파란 테두리로 보이고, 좌표축과 시작 배치 기물을 보여 줍니다. 틀려도 라운드는 끝나지 않습니다."),
+        t("나이트 경주를 보드 하나로 합치고, 목표 칸을 중심으로 대칭 배치했습니다. 방해 칸 대신 상대 색 기물(비숍·룩)을 두고, 그 기물이 공격하는 칸은 빨갛게 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.5.0", date: "2026.9.12",
-    summary: t("상점 탭을 플레이 탭으로 개편, 실시간 미니게임 2종 추가했습니다."),
-    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("상점 탭 → 플레이 탭 개편, 실시간 미니게임 '좌표 인지 게임'·'나이트 경주', 채택률·모바일 엔진 라인 등 버그를 수정했습니다.") },
+    summary: t("상점 탭을 플레이 탭으로 바꾸고 실시간 미니게임 2가지를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("상점 탭을 플레이 탭으로 바꾸고, 실시간 미니게임 '좌표 인지 게임'과 '나이트 경주'를 넣었습니다. 채택률과 모바일 엔진 라인 표시 등의 버그도 고쳤습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("상점 탭을 플레이 탭으로 변경했습니다. 분석 탭 PLAY 버튼과 같은 대국 설정 화면으로 진입, 아래로 내리면 기존 상점(보드·기물 스킨) 추가했습니다."),
-        t("플레이 페이지 상단에 일반/스페셜 토글 추가했습니다."),
-        t("스페셜 미니게임 '좌표 인지 게임' 추가했습니다. 보드 아래에 표시된 좌표를 읽고 상대보다 먼저 클릭 추가했습니다."),
-        t("스페셜 미니게임 '나이트 경주' 추가했습니다. 5전 3선승, 목표 칸에 먼저 도달 추가했습니다. 라운드가 갈수록 방해 칸 증가했습니다."),
-        t("미니게임 2종에 봇 대전·친구 도전 추가했습니다. 봇은 서버 없이 바로 대전 추가했습니다."),
+        t("상점 탭을 플레이 탭으로 바꿨습니다. 분석 탭의 PLAY 버튼과 같은 대국 설정 화면이 열리고, 아래로 내리면 기존 상점(보드·기물 스킨)이 나옵니다."),
+        t("플레이 페이지 위쪽에 일반/스페셜 전환 버튼을 넣었습니다."),
+        t("스페셜 미니게임 '좌표 인지 게임'을 넣었습니다. 보드 아래에 나온 좌표를 읽고 상대보다 먼저 그 칸을 누르는 게임입니다."),
+        t("스페셜 미니게임 '나이트 경주'를 넣었습니다. 5판 3선승제로 목표 칸에 먼저 닿으면 이기고, 라운드가 갈수록 방해 칸이 늘어납니다."),
+        t("미니게임 2가지에 봇 대전과 친구 도전을 넣었습니다. 봇과는 서버를 거치지 않고 바로 겨룹니다."),
       ] },
       { cat: "ui", items: [
-        t("플레이 탭에도 상단 헤더·하단 탭바 표시합니다. 대국 중 탭을 이동해도 대국 유지합니다."),
-        t("스페셜 미니게임 목록을 한 줄 1게임 형태로 변경했습니다. 게임별 아이콘 색 구분 추가했습니다."),
-        t("미니게임 보드·기물에 장착 중인 스킨 적용했습니다."),
-        t("좌표 인지 게임 정답 초록·오답 빨강 반짝임 추가했습니다. 오답은 계속 시도 가능 추가했습니다."),
-        t("나이트 경주에 상대 보드 추가했습니다. 봇도 한 수씩 이동했습니다."),
-        t("미니게임 점수 아래 라운드별 승패 점 표시합니다."),
-        t("하단 탭 순서 변경했습니다. 분석·플레이·퍼즐·학습·도감·설정 추가했습니다."),
-        t("도감 탭 오프닝 모식도 영역 확대(데스크톱) 추가했습니다."),
+        t("플레이 탭에도 위쪽 헤더와 아래쪽 탭 바가 나옵니다. 대국 중에 다른 탭으로 가도 대국은 이어집니다."),
+        t("스페셜 미니게임 목록을 한 줄에 한 게임씩 보여 주고, 게임마다 아이콘 색을 다르게 했습니다."),
+        t("미니게임 보드와 기물에 지금 장착한 스킨을 씁니다."),
+        t("좌표 인지 게임에서 정답은 초록, 오답은 빨강으로 반짝입니다. 틀려도 계속 시도할 수 있습니다."),
+        t("나이트 경주에 상대 보드를 넣었습니다. 봇도 한 수씩 움직입니다."),
+        t("미니게임 점수 아래에 라운드별 승패를 점으로 보여 줍니다."),
+        t("아래쪽 탭 순서를 분석·플레이·퍼즐·학습·도감·설정으로 바꿨습니다."),
+        t("데스크톱 도감 탭의 오프닝 모식도 영역을 넓혔습니다."),
       ] },
       { cat: "fix", items: [
-        t("분석 탭 공개 데이터 채택률(%) 반올림 오차를 수정했습니다. 소수점 둘째 자리까지 표시합니다."),
-        t("모바일 분석 탭 엔진 라인(상위 3줄) 미표시 문제를 수정했습니다."),
-        t("퍼즐 삭제 버튼 무동작, FEN 퍼즐 이름 변경 미저장 문제를 수정했습니다."),
-        t("같은 원인으로 실패하던 계정 탈퇴, 채팅 메시지 수정·대화 삭제, 실시간 대국 대기열·초대 취소 정상화 추가했습니다."),
-        t("내 퍼즐이 오늘의 퍼즐로 선정돼도 알림이 오지 않던 문제를 수정했습니다."),
-        t("퍼즐 만들기 1단계에서 PGN·FEN 입력 후 '확인'이 무반응이던 문제를 수정했습니다."),
+        t("분석 탭 공개 데이터 채택률(%)의 반올림 오차를 고쳤습니다. 소수점 둘째 자리까지 보여 줍니다."),
+        t("모바일 분석 탭에 엔진 라인(상위 3줄)이 나오지 않던 문제를 고쳤습니다."),
+        t("퍼즐 삭제 버튼이 듣지 않던 문제와 FEN 퍼즐 이름 변경이 저장되지 않던 문제를 고쳤습니다."),
+        t("같은 원인으로 실패하던 계정 탈퇴, 채팅 메시지 수정과 대화 삭제, 실시간 대국 대기열과 초대 취소도 이제 제대로 됩니다."),
+        t("내 퍼즐이 오늘의 퍼즐로 뽑혀도 알림이 오지 않던 문제를 고쳤습니다."),
+        t("퍼즐 만들기 1단계에서 PGN·FEN을 넣고 '확인'을 눌러도 반응이 없던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.4.9", date: "2026.9.9",
-    summary: t("일일 퍼즐 커뮤니티 자동 선정, FEN 퍼즐 이름, 분석 탭 보드 확대했습니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("일일 퍼즐 커뮤니티 자동 선정, FEN 퍼즐 이름·표시, 분석 탭 보드 확대·흔들림 고정했습니다.") },
+    summary: t("일일 퍼즐을 커뮤니티 퍼즐에서 자동으로 뽑고, FEN 퍼즐에 이름을 붙이고, 분석 탭 보드를 키웠습니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("일일 퍼즐을 커뮤니티에서 자동으로 뽑고, FEN 퍼즐 이름을 정해 보여 주며, 분석 탭 보드를 키우고 흔들림을 잡았습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("FEN 퍼즐 이름을 생성자·개발자가 직접 지정 가능 추가했습니다. 수 설명과 같은 금칙어 검사 적용했습니다."),
-        t("FEN 퍼즐 풀이 카드에 FEN 코드 표시합니다. 클릭 시 학습 탭으로 이동해 포지션 로드 추가했습니다."),
-        t("일일 퍼즐 선정 방식 변경했습니다. 오프닝 테마 사전 등록 대신, 공개된 커뮤니티 퍼즐 중 인기 점수가 가장 높은 미선정 퍼즐을 매일 선정 추가했습니다."),
-        t("내 퍼즐이 일일 퍼즐로 선정되면 알림과 OC 나이트 코인 지급했습니다. 미접속 상태였으면 다음 접속 때 '받기' 팝업 추가했습니다."),
+        t("FEN 퍼즐 이름을 만든 사람과 개발자가 직접 정할 수 있습니다. 수 설명과 같은 금칙어 검사를 거칩니다."),
+        t("FEN 퍼즐 풀이 카드에 FEN 코드를 보여 주고, 누르면 학습 탭에서 그 포지션을 엽니다."),
+        t("일일 퍼즐을 뽑는 방식을 바꿨습니다. 오프닝 테마를 미리 등록하는 대신, 공개된 커뮤니티 퍼즐 가운데 아직 뽑히지 않았고 인기 점수가 가장 높은 퍼즐을 매일 고릅니다."),
+        t("내 퍼즐이 일일 퍼즐로 뽑히면 알림과 함께 OC 나이트 코인을 줍니다. 접속하지 않은 동안 뽑혔다면 다음 접속 때 '받기' 팝업이 뜹니다."),
       ] },
       { cat: "ui", items: [
-        t("분석 탭 메인 보드가 모바일에서 360px로 고정되던 문제를 수정했습니다. 카드 폭에 맞춰 확대, 보드 아래 버튼도 확대했습니다."),
-        t("퍼즐 카드 레이팅 배지를 풀이 카드와 통일했습니다."),
-        t("퍼즐 테마 카드 배경의 장식용 수 기호 삭제했습니다."),
-        t("퍼즐 풀이 카드 제작자 ID 확대, 클릭 시 프로필로 이동했습니다."),
-        t("퍼즐 풀이 카드의 코치 말풍선 토글 삭제했습니다. 기본 숨김, 설정 탭에서만 변경했습니다."),
-        t("채팅 말풍선 최대 폭 제한, 자동 줄바꿈 추가했습니다."),
-        t("/user 페이지 친구 요청 상태 문구 삭제, 아이콘만 표시합니다."),
-        t("설정 탭 개발자 패널의 '2주 오프닝 테마' 등록 화면을 자동 선정 내역 확인·즉시 실행 버튼으로 교체했습니다."),
+        t("분석 탭 메인 보드가 모바일에서 360px로 고정되던 문제를 고쳤습니다. 카드 폭에 맞춰 커지고, 보드 아래 버튼도 커졌습니다."),
+        t("퍼즐 카드의 레이팅 배지를 풀이 카드와 같은 모양으로 맞췄습니다."),
+        t("퍼즐 테마 카드 배경에 있던 장식용 수 기호를 없앴습니다."),
+        t("퍼즐 풀이 카드의 제작자 아이디를 키우고, 누르면 프로필로 갑니다."),
+        t("퍼즐 풀이 카드의 코치 말풍선 토글을 없앴습니다. 기본으로 숨기고 설정 탭에서만 바꿉니다."),
+        t("채팅 말풍선에 최대 폭을 두고 자동으로 줄을 바꿉니다."),
+        t("/user 페이지의 친구 요청 상태 문구를 없애고 아이콘만 보여 줍니다."),
+        t("설정 탭 개발자 패널의 '2주 오프닝 테마' 등록 화면을 자동 선정 내역 확인과 즉시 실행 버튼으로 바꿨습니다."),
       ] },
       { cat: "perf", items: [
-        t("채택률 상위 후보 수의 공개 데이터 통계를 클릭 전 백그라운드에서 미리 로딩 추가했습니다."),
-        t("일일 퍼즐이 기존 커뮤니티 퍼즐 데이터를 재사용해 로컬 엔진 재계산 제거했습니다."),
-        t("Stockfish 18 엔진 파일을 외부 저장소로 이전해 배포 용량 절감했습니다."),
+        t("채택률 상위 후보 수의 공개 데이터 통계를 누르기 전에 미리 불러 둡니다."),
+        t("일일 퍼즐이 기존 커뮤니티 퍼즐 데이터를 그대로 써서, 기기에서 엔진을 다시 돌리지 않습니다."),
+        t("Stockfish 18 엔진 파일을 외부 저장소로 옮겨 배포 용량을 줄였습니다."),
       ] },
       { cat: "ux", items: [
-        t("공개 데이터 통계 도착 전 회수·채택률 자리에 로딩 인디케이터 표시합니다."),
-        t("채팅 블라인드 대국에서 같은 사람의 연속 입력 차단했습니다."),
+        t("공개 데이터 통계가 오기 전에는 판수·채택률 자리에 로딩 표시가 나옵니다."),
+        t("채팅 블라인드 대국에서 같은 사람이 연달아 수를 입력하지 못하게 막았습니다."),
       ] },
       { cat: "fix", items: [
-        t("분석 탭 회수(a/b) 표기가 말줄임으로 잘리고 채택률 오른쪽 여백이 부족하던 문제를 수정했습니다."),
-        t("평가치 막대·엔진 라인 표시 여부에 따라 보드가 흔들리던 문제를 수정했습니다. 높이 고정했습니다."),
-        t("엔진 라인 생성·순위 변경 시 보드가 흔들리던 문제, 수 블록 키워드 수에 따른 보드 크기 변동 수정했습니다."),
-        t("평가치 막대 '탐색 상태' 말풍선 미표시 수정했습니다."),
-        t("일일 퍼즐 팝업·풀이 카드에서 집중 분석 진입 후 나가면 학습 탭 첫 화면으로 가던 문제를 수정했습니다. 진입 화면으로 복귀했습니다."),
-        t("퍼즐 카드 수 재생 애니메이션에서 기물 포획 순간이 표시되지 않던 문제를 수정했습니다."),
-        t("FEN 퍼즐 컴퓨터 응수 시 전체 기물이 순간 표시되던 문제, 풀이 카드 FEN 코드 첫 클릭이 무반응이던 문제를 수정했습니다."),
-        t("짧고 단순한 퍼즐 레이팅이 과대 산정되던 문제를 완화했습니다. 기물 수 비중 축소, 라인 길이·응수 갈래 수 비중 확대했습니다."),
-        t("채팅 블라인드 대국 /draw가 상대 동의 없이 무승부 처리되던 문제를 수정했습니다."),
-        t("About 페이지 버전 기록의 v0.4.8 항목 누락 보완 추가했습니다."),
+        t("분석 탭의 판수(a/b) 표기가 말줄임으로 잘리고 채택률 오른쪽 여백이 모자라던 문제를 고쳤습니다."),
+        t("평가 막대와 엔진 라인이 나타나고 사라질 때 보드가 흔들리던 문제를 고쳤습니다. 높이를 고정했습니다."),
+        t("엔진 라인이 생기거나 순위가 바뀔 때 보드가 흔들리던 문제와, 수 블록 키워드 개수에 따라 보드 크기가 달라지던 문제를 고쳤습니다."),
+        t("평가 막대의 '탐색 상태' 말풍선이 나오지 않던 문제를 고쳤습니다."),
+        t("일일 퍼즐 팝업이나 풀이 카드에서 집중 분석에 들어갔다 나오면 학습 탭 첫 화면으로 가던 문제를 고쳤습니다. 들어오기 전 화면으로 돌아갑니다."),
+        t("퍼즐 카드의 수 재생 애니메이션에서 기물을 잡는 순간이 보이지 않던 문제를 고쳤습니다."),
+        t("FEN 퍼즐에서 컴퓨터가 응수할 때 모든 기물이 잠깐 보이던 문제와, 풀이 카드의 FEN 코드를 처음 누르면 반응이 없던 문제를 고쳤습니다."),
+        t("짧고 단순한 퍼즐의 레이팅이 지나치게 높게 매겨지던 문제를 줄였습니다. 기물 수의 비중을 낮추고, 라인 길이와 응수 갈래 수의 비중을 높였습니다."),
+        t("채팅 블라인드 대국에서 /draw가 상대 동의 없이 무승부로 처리되던 문제를 고쳤습니다."),
+        t("소개 페이지 버전 기록에 빠져 있던 v0.4.8 항목을 채웠습니다."),
       ] },
     ],
   },
   {
     version: "0.4.8", date: "2026.9.6",
-    summary: t("채팅 블라인드 대국, FEN 모드 리뷰 복원, 리뷰 카드 통일했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("채팅으로 블라인드 대국, FEN 모드 리뷰 복원, 리뷰 카드 통일했습니다.") },
+    summary: t("채팅 블라인드 대국을 넣고, FEN 모드 리뷰를 되살리고, 리뷰 카드를 통일했습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("채팅으로 두는 블라인드 대국을 넣고, FEN 모드 리뷰를 되살리고, 리뷰 카드를 통일했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("채팅 블라인드 대국 추가했습니다. '1.e4'처럼 수순 번호가 붙은 SAN을 보내면 시작, 차례에 맞는 합법 수만 인식 추가했습니다. 체크메이트·무승부 자동 판정, /resign·/draw·/eval 지원합니다."),
-        t("블라인드 대국 중 백그라운드에서 depth를 높여가며 분석했습니다. /eval 입력 시 현재까지 계산된 평가치와 depth 표시합니다."),
+        t("채팅 블라인드 대국을 넣었습니다. '1.e4'처럼 수 번호를 붙인 SAN을 보내면 시작하고, 차례에 맞는 합법 수만 받습니다. 체크메이트와 무승부를 자동으로 판정하고 /resign·/draw·/eval을 지원합니다."),
+        t("블라인드 대국 중에는 뒤에서 depth를 높여 가며 분석합니다. /eval을 입력하면 그때까지 계산한 평가치와 depth를 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("학습 탭 FEN 모드에서 대국 리뷰(/review) 진입 복원했습니다."),
-        t("채팅 입력창에 '/'만 입력해도 사용 가능한 명령어 안내 표시합니다."),
-        t("퍼즐 컨트롤 센터 손상 검사 강화했습니다. 트리·라인 구조는 정상이나 수순이 불법인 퍼즐까지 검출 추가했습니다."),
+        t("학습 탭 FEN 모드에서 대국 리뷰(/review)로 들어가는 기능을 되살렸습니다."),
+        t("채팅 입력창에 '/'만 쳐도 쓸 수 있는 명령어를 안내합니다."),
+        t("퍼즐 컨트롤 센터의 손상 검사를 강화했습니다. 트리와 라인 구조는 멀쩡해도 수순이 불법인 퍼즐까지 찾아냅니다."),
       ] },
       { cat: "ui", items: [
-        t("채팅 리뷰 카드의 외부 사이트 대국 표시를 /user 프로필 외부 사이트 통계 행과 동일하게 통일했습니다."),
+        t("채팅 리뷰 카드의 외부 사이트 대국 표시를 /user 프로필의 외부 사이트 통계 행과 같게 맞췄습니다."),
       ] },
     ],
   },
   {
     version: "0.4.7", date: "2026.9.5",
-    summary: t("실시간 대국 무승부·재대결, 수 설명 좋아요/싫어요."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("실시간 대국 무승부·재대결, 수 설명 좋아요/싫어요, 여러 버그를 수정했습니다.") },
+    summary: t("실시간 대국 무승부와 재대국, 수 설명 좋아요·싫어요를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("실시간 대국 무승부와 재대국, 수 설명 좋아요·싫어요를 넣고 여러 버그를 고쳤습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("실시간 대국 무승부 제안 추가했습니다. 상대가 봇이 아닐 때 '다시 설정' 대신 무승부 제안 버튼 표시, 제안받은 쪽은 하단 수락/거절 알림 추가했습니다."),
-        t("실시간 대국 중 이탈 시 즉시 기권 처리 대신 확인 창 표시합니다."),
-        t("대국 결과 팝업 '재대결' 버튼 작동 추가했습니다. 봇은 같은 조건으로 즉시 시작, 실시간은 상대에게 신청 추가했습니다."),
-        t("채팅 이모티콘 박스 확대했습니다. MILKU·KOKOA 12개씩 한 판(6×4)에서 선택했습니다."),
-        t("수 설명 좋아요·싫어요. 인기순·오래된 순·최신순 정렬했습니다."),
-        t("개발자 도구 '퍼즐 컨트롤 센터' 추가했습니다. 손상된 퍼즐 일괄 검사·말소, 번호 지정 퍼즐 관리 추가했습니다."),
+        t("실시간 대국에 무승부 제안을 넣었습니다. 상대가 봇이 아니면 '다시 설정' 대신 무승부 제안 버튼이 나오고, 제안받은 쪽은 아래쪽 알림에서 수락하거나 거절합니다."),
+        t("실시간 대국 중에 나가려고 하면 바로 기권 처리하지 않고 확인 창을 띄웁니다."),
+        t("대국 결과 팝업의 '재대국' 버튼이 작동합니다. 봇과는 같은 조건으로 바로 시작하고, 실시간 대국은 상대에게 신청합니다."),
+        t("채팅 이모티콘 상자를 키웠습니다. MILKU와 KOKOA 이모티콘 12개씩을 한 판(6×4)에서 고릅니다."),
+        t("수 설명에 좋아요·싫어요를 누를 수 있고, 인기순·오래된 순·최신순으로 정렬합니다."),
+        t("개발자 도구 '퍼즐 컨트롤 센터'를 넣었습니다. 손상된 퍼즐을 한꺼번에 검사해 지우고, 번호를 지정한 퍼즐을 관리합니다."),
       ] },
       { cat: "ui", items: [
-        t("수 키워드(TOP LEVEL 등) 말풍선을 키워드 옆에 꼬리와 함께 표시합니다."),
-        t("OC 나이트 코인 아이콘 교체했습니다."),
+        t("수 키워드(TOP LEVEL 등) 설명 말풍선을 키워드 옆에 꼬리를 달아 띄웁니다."),
+        t("OC 나이트 코인 아이콘을 바꿨습니다."),
       ] },
       { cat: "fix", items: [
-        t("분석 탭 체스보드가 수를 둘 때마다 미세하게 흔들리던 문제를 수정했습니다. 크기 고정했습니다."),
-        t("상단 헤더 버튼 테두리 잘림 수정, 프로필 버튼 y좌표를 알림 버튼과 일치 추가했습니다."),
-        t("이미 친구인 상대 프로필에서 '친구 요청' 버튼 미 표시합니다."),
-        t("친구 요청 문구가 길어질 때 /user 페이지 요소가 밀리던 문제를 수정했습니다."),
-        t("대상 아이디에 대문자가 있으면 퍼즐 생성자 양도가 실패하던 문제를 수정했습니다."),
+        t("분석 탭 체스보드가 수를 둘 때마다 살짝 흔들리던 문제를 고쳤습니다. 크기를 고정했습니다."),
+        t("위쪽 헤더 버튼의 테두리가 잘리던 문제를 고치고, 프로필 버튼 높이를 알림 버튼과 맞췄습니다."),
+        t("이미 친구인 사람의 프로필에서는 '친구 요청' 버튼이 나오지 않습니다."),
+        t("친구 요청 문구가 길어지면 /user 페이지 요소가 밀리던 문제를 고쳤습니다."),
+        t("받을 사람 아이디에 대문자가 있으면 퍼즐 작성자 넘기기가 실패하던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.4.6", date: "2026.9.4",
-    summary: t("/play 앙파상 버그 수정, 표준 시작 위치 고정, 친구 초대 링크, 프로필 개편했습니다."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("/play 앙파상 버그 수정, 친구 초대 링크·프로필·채팅 개선했습니다.") },
+    summary: t("/play 앙파상 버그를 고치고, 표준 시작 위치로 고정하고, 친구 초대 링크와 새 프로필을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("/play 앙파상 버그를 고치고, 친구 초대 링크와 프로필, 채팅을 개선했습니다.") },
     sections: [
       { cat: "security", items: [
-        t("/play는 항상 표준 시작 위치에서만 시작했습니다. 보드 편집이나 FEN/PGN 로드로 위치가 달라지면 PLAY 버튼 비활성화 추가했습니다."),
+        t("/play는 항상 표준 시작 위치에서만 시작합니다. 보드 편집이나 FEN·PGN 불러오기로 위치가 달라지면 PLAY 버튼이 꺼집니다."),
       ] },
       { cat: "fix", items: [
-        t("보드 편집기에서 앙파상이 가능한 포지션을 만들어 /play를 열면 앙파상이 잘못 적용되던 문제를 수정했습니다."),
-        t("이미지 스캔 모델 이름이 바뀌어도 자동으로 다른 모델로 전환했습니다."),
-        t("'푼 퍼즐' 카드에 좋아요·리포스트·공유 버튼이 없고 클릭 시 이동하지 않던 문제를 수정했습니다."),
-        t("채팅창 고정은 한 번에 하나만 가능 추가했습니다."),
-        t("개발자가 타인 퍼즐을 삭제하지 못하던 문제, 퍼즐 생성자 양도·회수 실패 문제를 수정했습니다."),
-        t("외부 사이트 대국 리뷰의 오프닝 이름이 사이트 다른 곳과 다르던 문제를 수정했습니다."),
-        t("퍼즐 탭 말풍선이 화면 가장자리에서 잘리던 문제를 수정했습니다."),
-        t("퍼즐 오프닝·미들게임·엔드게임 분류 기준 조정했습니다."),
-        t("프로필 버튼 정렬, /user 티어 여정 화면 겹침을 수정했습니다."),
-        t("/analysis, /learn 주소가 뒤바뀌어 있던 문제를 수정했습니다."),
-        t("학습 탭 첫 진입 시 화면이 순간 확대되던 문제를 수정했습니다."),
-        t("공개 데이터 통계 서버 캐싱 추가했습니다. 학습 탭 채택률 애니메이션 시작 지연 5~10초 대폭 단축했습니다."),
+        t("보드 편집기에서 앙파상이 가능한 포지션을 만들고 /play를 열면 앙파상이 잘못 적용되던 문제를 고쳤습니다."),
+        t("이미지 스캔 모델 이름이 바뀌어도 자동으로 다른 모델로 넘어갑니다."),
+        t("'푼 퍼즐' 카드에 좋아요·리포스트·공유 버튼이 없고 눌러도 이동하지 않던 문제를 고쳤습니다."),
+        t("채팅방 고정은 한 번에 하나만 할 수 있습니다."),
+        t("개발자가 다른 사람의 퍼즐을 지우지 못하던 문제와 퍼즐 작성자 넘기기·회수가 실패하던 문제를 고쳤습니다."),
+        t("외부 사이트 대국 리뷰의 오프닝 이름이 사이트의 다른 곳과 다르던 문제를 고쳤습니다."),
+        t("퍼즐 탭 말풍선이 화면 가장자리에서 잘리던 문제를 고쳤습니다."),
+        t("퍼즐을 오프닝·미들게임·엔드게임으로 나누는 기준을 조정했습니다."),
+        t("프로필 버튼 정렬과 /user 티어 여정 화면이 겹치던 문제를 고쳤습니다."),
+        t("/analysis와 /learn 주소가 서로 뒤바뀌어 있던 문제를 고쳤습니다."),
+        t("학습 탭에 처음 들어갈 때 화면이 순간적으로 확대되던 문제를 고쳤습니다."),
+        t("공개 데이터 통계를 서버에 캐시합니다. 학습 탭 채택률 애니메이션이 시작되기까지 걸리던 5~10초를 크게 줄였습니다."),
       ] },
       { cat: "feature", items: [
-        t("친구 초대 링크 개선했습니다. 전체 링크 표시, 복사 버튼 아래 공유 버튼 추가했습니다."),
-        t("채팅에 프로필 사진의 접속 표시 추가했습니다."),
-        t("퍼즐 정렬 '인기순' 추가했습니다. 좋아요·리포스트·공유를 사람 단위로 결합해 점수 산정 추가했습니다."),
-        t("학습·집중 분석·도감의 수 키워드(NORMAL·TOP LEVEL 등) 클릭 시 뜻 말풍선 추가했습니다."),
-        t("유저 검색 접두어 실시간 후보 표시합니다. '#MID' 9자 전체 입력 불필요 추가했습니다."),
+        t("친구 초대 링크를 개선했습니다. 전체 링크를 보여 주고, 복사 버튼 아래에 공유 버튼을 두었습니다."),
+        t("채팅 프로필 사진에 접속 중 표시를 넣었습니다."),
+        t("퍼즐 정렬에 '인기순'을 넣었습니다. 좋아요·리포스트·공유를 사람 단위로 합쳐 점수를 매깁니다."),
+        t("학습·집중 분석·도감의 수 키워드(NORMAL·TOP LEVEL 등)를 누르면 뜻을 말풍선으로 보여 줍니다."),
+        t("사용자 검색에서 앞글자만 쳐도 후보가 바로 나옵니다. '#MID' 9자를 다 입력하지 않아도 됩니다."),
       ] },
       { cat: "ui", items: [
-        t("MID를 프로필 사진 아래 '#ABCDE1234' 형태로 표시합니다."),
-        t("'푼 퍼즐'을 가로 스크롤로 전체 표시합니다."),
-        t("상단 헤더 금색 경계선 추가, 버튼 높이·정렬 통일했습니다."),
-        t("학습 탭 수 블록 채택률 게이지 폭 축소, 회수·채택률 간격 확대했습니다."),
-        t("도감 오프닝 모식도 수 블록 상세 카드 2배 확대했습니다."),
-        t("설정 탭 개발진 블록 추가했습니다. 왕관 아이콘 삭제, 개발자·공동 개발자 표시를 아이콘으로 변경했습니다."),
-        t("십각형 티어 이미지 확대, 꼭짓점 둥글게 추가했습니다. 티어 여정 화면을 뷰포트 전체 비율로 표시합니다."),
-        t("채팅창 상단 프로필 사진·아이디 1.5배 확대, 클릭 시 프로필 이동했습니다."),
-        t("채팅 리뷰 공유 카드를 프로필 '최근 대국' 행과 같은 비율로 변경했습니다. /help는 명령어 목록 카드로 기록했습니다."),
-        t("설정 탭 프로필 카드의 '문제 a/b개 정답' 문구 삭제했습니다."),
-        t("/user 페이지 순위 배지, 국적 박스 삭제했습니다. 데스크톱은 티어·퍼즐 레이팅을 왼쪽 유저 정보 아래 상시 표시합니다."),
+        t("MID를 프로필 사진 아래에 '#ABCDE1234' 형태로 보여 줍니다."),
+        t("'푼 퍼즐'을 가로로 넘겨 모두 볼 수 있습니다."),
+        t("위쪽 헤더에 금색 경계선을 넣고, 버튼 높이와 정렬을 맞췄습니다."),
+        t("학습 탭 수 블록의 채택률 게이지 폭을 줄이고, 판수와 채택률 사이 간격을 넓혔습니다."),
+        t("도감 오프닝 모식도의 수 블록 상세 카드를 두 배로 키웠습니다."),
+        t("설정 탭에 개발진 블록을 넣었습니다. 왕관 아이콘을 없애고 개발자·공동 개발자 표시를 아이콘으로 바꿨습니다."),
+        t("십각형 티어 이미지를 키우고 꼭짓점을 둥글게 다듬었습니다. 티어 여정 화면은 화면 전체 비율로 보여 줍니다."),
+        t("채팅방 위쪽의 프로필 사진과 아이디를 1.5배로 키우고, 누르면 프로필로 갑니다."),
+        t("채팅 리뷰 공유 카드를 프로필 '최근 대국' 행과 같은 비율로 바꿨습니다. /help는 명령어 목록 카드로 남깁니다."),
+        t("설정 탭 프로필 카드의 '문제 a/b개 정답' 문구를 없앴습니다."),
+        t("/user 페이지의 순위 배지와 국적 상자를 없앴습니다. 데스크톱에서는 티어와 퍼즐 레이팅을 왼쪽 사용자 정보 아래에 늘 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.4.5", date: "2026.9.3",
-    summary: t("매칭 대기 화면 궤도 애니메이션, 상대 찾기 즉시 패배 버그를 수정했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brilliant, label: t("매칭 대기 화면 궤도 애니메이션, 대국 상대 찾기 즉시 패배 버그를 수정했습니다.") },
+    summary: t("매칭 대기 화면에 궤도 애니메이션을 넣고, 상대 찾기가 곧바로 패배로 끝나던 버그를 고쳤습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brilliant, label: t("매칭 대기 화면에 궤도 애니메이션을 넣고, '대국 상대 찾기'가 곧바로 패배로 끝나던 버그를 고쳤습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("매칭 대기 화면 궤도 애니메이션 개선했습니다. 반지름이 다른 궤도 위를 수 아이콘이 천체처럼 회전, 구성은 직전 대국 반영했습니다."),
+        t("매칭 대기 화면의 궤도 애니메이션을 다듬었습니다. 반지름이 다른 궤도 위를 수 아이콘이 천체처럼 돌고, 구성은 직전 대국을 반영합니다."),
       ] },
       { cat: "fix", items: [
-        t("'동작 줄이기' 설정 시 궤도 애니메이션이 멈추던 문제를 수정했습니다."),
-        t("도감 탭이 오프닝 정보를 한꺼번에 요청해 에러가 반복되던 문제를 수정했습니다."),
-        t("'대국 상대 찾기' 클릭 시 대기 화면 없이 곧장 '패배' 화면이 뜨던 문제를 수정했습니다."),
-        t("대기열 대기 중 '대기열 합류에 실패했어요' 오류가 뜨던 문제를 수정했습니다."),
-        t("동시에 친구 요청을 보내 자동 친구가 된 경우 먼저 보낸 쪽에도 알림 전송 추가했습니다."),
-        t("상대가 오래 생각 중인데 새로고침·화면 이동 후 복귀하면 기권 처리되던 문제를 수정했습니다."),
-        t("결과 팝업 '대국 리뷰 보기' 버튼이 무반응이던 문제를 수정했습니다."),
-        t("체크메이트로 끝난 대국에 상대가 결과 확인 없이 나가면 '대국 상대 찾기'가 종료된 대국으로 돌아가던 문제 서버에서 수정했습니다."),
-        t("친구 검색창에 #MID 검색 안내 추가했습니다."),
-        t("일부 화면 글꼴이 IBM Plex Sans KR이 아니던 문제를 수정했습니다."),
+        t("'동작 줄이기' 설정을 켜면 궤도 애니메이션이 멈추던 문제를 고쳤습니다."),
+        t("도감 탭이 오프닝 정보를 한꺼번에 요청해 오류가 되풀이되던 문제를 고쳤습니다."),
+        t("'대국 상대 찾기'를 누르면 대기 화면 없이 곧바로 '패배' 화면이 뜨던 문제를 고쳤습니다."),
+        t("대기열에서 기다리는 중에 '대기열 합류에 실패했어요' 오류가 뜨던 문제를 고쳤습니다."),
+        t("서로 동시에 친구 요청을 보내 자동으로 친구가 되면, 먼저 보낸 사람에게도 알림을 보냅니다."),
+        t("상대가 오래 생각하는 동안 새로고침하거나 다른 화면에 갔다 오면 기권 처리되던 문제를 고쳤습니다."),
+        t("결과 팝업의 '대국 리뷰 보기' 버튼이 반응하지 않던 문제를 고쳤습니다."),
+        t("체크메이트로 끝난 대국에서 상대가 결과를 확인하지 않고 나가면 '대국 상대 찾기'가 끝난 대국으로 돌아가던 문제를 서버에서 고쳤습니다."),
+        t("친구 검색창에 #MID로 찾는 방법을 안내합니다."),
+        t("일부 화면의 글꼴이 IBM Plex Sans KR이 아니던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("'대국 리뷰 보기' 버튼을 연두색과 흰색 별 아이콘으로 변경했습니다."),
-        t("학습 탭 수 블록 공개 데이터 대국 수 통계 카운트업 애니메이션 추가했습니다. 채택률 소수 둘째 자리 표시합니다."),
+        t("'대국 리뷰 보기' 버튼을 연두색 바탕에 흰 별 아이콘으로 바꿨습니다."),
+        t("학습 탭 수 블록에서 공개 데이터 대국 수 통계가 숫자가 올라가는 애니메이션으로 나옵니다. 채택률은 소수점 둘째 자리까지 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.4.4", date: "2026.9.2",
-    summary: t("퍼즐 만들기 핵심 버그 수정, 언더프로모션, MID 친구 초대 링크, 프로필 페이지 추가했습니다."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐 만들기 핵심 버그, 언더프로모션, MID 친구 초대 링크, 프로필 페이지 추가했습니다.") },
+    summary: t("퍼즐 만들기의 핵심 버그를 고치고, 언더프로모션, MID 친구 초대 링크, 프로필 페이지를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐 만들기 핵심 버그 수정과 함께 언더프로모션, MID 친구 초대 링크, 프로필 페이지를 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("집중 분석에서 실수·부정확한 수·탁월한 수의 '퍼즐 만들기' 클릭 시 퍼즐 카드로 바로 진입했습니다."),
-        t("계정 센터 MID(회원 번호) 형식 고정했습니다. 영문 5자리 + 숫자 4자리(예 추가했습니다. ABCDE1234) 추가했습니다."),
-        t("유저 검색창에서 '#MID'로 검색 추가했습니다."),
-        t("계정 센터에 친구 초대 링크 추가했습니다."),
-        t("다른 유저 프로필을 고유 주소(openchess.kr/user/회원번호) 페이지로 표시합니다."),
-        t("/play 대국 종료 시 결과 팝업 추가했습니다. 결과·사유, 상대 정보, 코치 한마디, 대국 리뷰 버튼 추가했습니다."),
+        t("집중 분석에서 실수·부정확한 수·탁월한 수의 '퍼즐 만들기'를 누르면 퍼즐 카드로 바로 들어갑니다."),
+        t("계정 센터의 MID(회원 번호) 형식을 영문 5자리와 숫자 4자리(예: ABCDE1234)로 정했습니다."),
+        t("사용자 검색창에서 '#MID'로 찾을 수 있습니다."),
+        t("계정 센터에 친구 초대 링크를 넣었습니다."),
+        t("다른 사용자의 프로필을 고유 주소(openchess.kr/user/회원번호) 페이지로 보여 줍니다."),
+        t("/play 대국이 끝나면 결과 팝업이 뜹니다. 결과와 이유, 상대 정보, 코치 한마디, 대국 리뷰 버튼이 들어 있습니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 카드 배지(오프닝·PGN·국면·FEN) 그룹화 추가했습니다. 6자리 번호 왼쪽, 레이팅 오른쪽 추가했습니다. 공유 버튼 우하단 추가했습니다."),
-        t("프로필 페이지 데스크톱 2단 배치했습니다. 접속 중인 사용자는 사진 테두리에 파동 표시합니다."),
-        t("/play 매칭 대기 화면을 전체 화면 전용 화면으로 변경했습니다."),
-        t("/play 친구 목록을 드롭다운 대신 상시 표시합니다."),
+        t("퍼즐 카드 배지(오프닝·PGN·국면·FEN)를 한데 모으고, 6자리 번호는 왼쪽, 레이팅은 오른쪽, 공유 버튼은 오른쪽 아래에 두었습니다."),
+        t("프로필 페이지를 데스크톱에서 2단으로 배치했습니다. 접속 중인 사용자는 사진 테두리에 물결이 퍼집니다."),
+        t("/play 매칭 대기 화면을 전체 화면 전용 화면으로 바꿨습니다."),
+        t("/play 친구 목록을 드롭다운 대신 늘 펼쳐 둡니다."),
       ] },
       { cat: "fix", items: [
-        t("새 포지션인데 '이미 존재하는 퍼즐'로 거부되던 퍼즐 만들기 핵심 문제를 수정했습니다."),
-        t("퍼즐 풀이 중 폰이 마지막 줄에 닿으면 승격 기물(퀸·룩·비숍·나이트) 선택 가능 추가했습니다."),
-        t("채팅 '/play 3' 명령이 무반응이던 문제를 수정했습니다. 시간을 잘못 입력하면 안내 표시합니다."),
-        t("실시간 대국 중 새로고침·화면 이동 후 /play 복귀 시 대국 이어하기 추가했습니다."),
-        t("실시간 대국에서 수가 서버에 반영되지 않고 화면만 어긋나던 문제를 수정했습니다."),
-        t("방금 만든 퍼즐의 생성자 표시가 비던 문제를 수정했습니다."),
-        t("미완료 실시간 대국이 남아 /play 진입 시 매칭 화면에 못 들어가던 문제를 수정했습니다."),
+        t("새 포지션인데도 '이미 있는 퍼즐'이라며 거부되던 퍼즐 만들기의 핵심 문제를 고쳤습니다."),
+        t("퍼즐을 풀다가 폰이 마지막 줄에 닿으면 승격할 기물(퀸·룩·비숍·나이트)을 고를 수 있습니다."),
+        t("채팅 '/play 3' 명령이 반응하지 않던 문제를 고쳤습니다. 시간을 잘못 입력하면 안내를 보여 줍니다."),
+        t("실시간 대국 중에 새로고침하거나 다른 화면에 갔다가 /play로 돌아오면 대국을 이어서 둡니다."),
+        t("실시간 대국에서 수가 서버에 반영되지 않고 화면만 어긋나던 문제를 고쳤습니다."),
+        t("방금 만든 퍼즐의 작성자 표시가 비어 있던 문제를 고쳤습니다."),
+        t("끝나지 않은 실시간 대국이 남아 /play에 들어가도 매칭 화면으로 가지 못하던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.4.3", date: "2026.8.31",
-    summary: t("소셜 로그인, 계정 센터, /play 재설계했습니다."),
-    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("소셜 로그인, 계정 센터(MID), /play 재설계했습니다.") },
+    summary: t("소셜 로그인과 계정 센터를 넣고 /play를 새로 설계했습니다."),
+    highlight: { kind: "icon", Icon: Shield, color: T.brassHi, label: t("소셜 로그인과 계정 센터(MID)를 넣고 /play를 새로 설계했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("소셜 로그인 추가했습니다."),
-        t("계정 센터 추가했습니다. 로그인 수단(이메일·소셜 계정) 연결·해제, 로그아웃, 계정 탈퇴 추가했습니다. 헤더 프로필 메뉴와 설정 탭에서 진입했습니다."),
-        t("/play 설정 화면 재설계했습니다. 불렛·블리츠·래피드·스탠다드 타임 컨트롤을 한 화면에 배치했습니다."),
-        t("친구와 플레이하기를 드롭다운 대신 카드 확장 목록으로 변경했습니다."),
-        t("친구에게 대국 신청 시 사이트 어디서든 상단 알림 배너 표시, 채팅에도 카드로 기록했습니다."),
-        t("실시간 대국 매칭 대기 화면에 레이더 애니메이션·경과 시간 표시합니다."),
-        t("/faq 페이지 추가했습니다. 설정 탭 '문의 / FAQ' 카드에서 진입했습니다."),
+        t("소셜 로그인을 넣었습니다."),
+        t("계정 센터를 넣었습니다. 로그인 수단(이메일·소셜 계정)을 연결하거나 해제하고, 로그아웃과 계정 탈퇴를 할 수 있습니다. 헤더의 프로필 메뉴와 설정 탭에서 들어갑니다."),
+        t("/play 설정 화면을 새로 설계했습니다. 불릿·블리츠·래피드·스탠더드 시간 설정을 한 화면에 모았습니다."),
+        t("'친구와 플레이하기'를 드롭다운 대신 펼쳐지는 카드 목록으로 바꿨습니다."),
+        t("친구에게 대국을 신청하면 사이트 어디에 있든 위쪽에 알림 배너가 뜨고, 채팅에도 카드로 남습니다."),
+        t("실시간 대국 매칭 대기 화면에 레이더 애니메이션과 기다린 시간을 보여 줍니다."),
+        t("/faq 페이지를 만들었습니다. 설정 탭의 '문의 / FAQ' 카드에서 들어갑니다."),
       ] },
       { cat: "ux", items: [
-        t("30분 미활동 자동 로그아웃 폐지 추가했습니다. 같은 기기에서 로그인 유지합니다."),
-        t("채팅 명령어 미리보기를 정확히 '/help' 입력 시에만 표시합니다."),
+        t("30분 동안 활동이 없으면 자동으로 로그아웃되던 규칙을 없앴습니다. 같은 기기에서는 로그인이 유지됩니다."),
+        t("채팅 명령어 미리보기는 정확히 '/help'를 입력했을 때만 보여 줍니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 카드 높이 고정했습니다."),
+        t("퍼즐 카드 높이를 고정했습니다."),
       ] },
       { cat: "fix", items: [
-        t("친구 초대 수락 시 실제 상대 대신 로컬 봇과 대국하던 문제를 수정했습니다."),
-        t("방치된 실시간 대국 때문에 랜덤 매칭이 응답 없는 상대에 연결되던 문제를 수정했습니다."),
-        t("학습 탭 이미지 스캔 소스 선택 메뉴 무반응 수정했습니다."),
-        t("'내 파일에서 선택'이 사진 앱로 연결되던 문제를 수정했습니다."),
-        t("기물 희생하기 테마 퍼즐이 저장되지 않던 문제를 수정했습니다. 선택한 수 직전 수는 컴퓨터가 자동 진행 추가했습니다."),
-        t("실시간 대국 적용·재대국 시 화면이 멈추던 문제를 수정했습니다."),
+        t("친구 초대를 수락하면 실제 상대 대신 기기 안의 봇과 대국하던 문제를 고쳤습니다."),
+        t("방치된 실시간 대국 때문에 무작위 매칭이 응답 없는 상대와 이어지던 문제를 고쳤습니다."),
+        t("학습 탭 이미지 스캔의 불러올 곳 선택 메뉴가 반응하지 않던 문제를 고쳤습니다."),
+        t("'내 파일에서 선택'을 누르면 사진 앱이 열리던 문제를 고쳤습니다."),
+        t("기물 희생하기 테마 퍼즐이 저장되지 않던 문제를 고쳤습니다. 고른 수의 바로 앞 수는 컴퓨터가 자동으로 둡니다."),
+        t("실시간 대국에서 신청을 받아들이거나 재대국할 때 화면이 멈추던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.4.2", date: "2026.8.30",
-    summary: t("/play 실시간 대국, 접속 표시합니다."),
-    highlight: { kind: "icon", Icon: Users, color: T.brassHi, label: t("/play 실시간 대국(랜덤 매칭·친구 초대), 실시간 접속 표시합니다.") },
+    summary: t("/play 실시간 대국과 접속 중 표시를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Users, color: T.brassHi, label: t("/play 실시간 대국(무작위 매칭·친구 초대)과 실시간 접속 표시를 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("/play 실시간 대국 추가했습니다. 랜덤 매칭 또는 친구 목록에서 선택했습니다."),
-        t("봇·실시간 대국 모두 타임 컨트롤(불릿·블리츠·래피드·클래식·무제한)을 상단에서 선택했습니다."),
-        t("친구·프로필 카드에 실시간 접속 여부(초록 점)와 최근 접속 시간 표시합니다. 외부 사이트 최근 접속 시간 포합니다."),
-        t("프로필 카드에서 외부 사이트 통계 선택 시 사진·아이디·소개·국적·시간 규정별 레이팅을 외부 사이트 기준으로 표시합니다."),
-        t("퍼즐 공개·비공개 설정 추가했습니다. 생성 후에도 풀이 화면에서 변경 가능 추가했습니다."),
-        t("퍼즐 시작 포지션(오프닝·미들게임·엔드게임) 배지, 정렬·필터 기준으로 사용 추가했습니다."),
-        t("/about 첫 화면에 스크롤 반응형 타이포그래피 문구 추가했습니다."),
+        t("/play 실시간 대국을 넣었습니다. 무작위 매칭이나 친구 목록에서 상대를 고릅니다."),
+        t("봇 대국과 실시간 대국 모두 위쪽에서 시간 설정(불릿·블리츠·래피드·클래식·무제한)을 고릅니다."),
+        t("친구와 프로필 카드에 실시간 접속 여부(초록 점)와 최근 접속 시간을 보여 줍니다. 외부 사이트 최근 접속 시간도 함께 나옵니다."),
+        t("프로필 카드에서 외부 사이트 통계를 고르면 사진, 아이디, 소개, 국적, 시간 규정별 레이팅을 그 사이트 기준으로 보여 줍니다."),
+        t("퍼즐을 공개·비공개로 정할 수 있습니다. 만든 뒤에도 풀이 화면에서 바꿀 수 있습니다."),
+        t("퍼즐 시작 포지션(오프닝·미들게임·엔드게임) 배지를 달고, 정렬과 필터 기준으로도 씁니다."),
+        t("/about 첫 화면에 스크롤하면 움직이는 큰 타이포그래피 문구를 넣었습니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 카드·풀이 화면 좋아요·리포스트·공유 버튼 왼쪽 정렬, 순서 통일했습니다."),
-        t("학습 탭 PLAY 버튼 디자인 통일했습니다."),
-        t("프로필 카드의 칭호 표시 삭제했습니다. 획득 축하 팝업은 유지합니다."),
+        t("퍼즐 카드와 풀이 화면의 좋아요·리포스트·공유 버튼을 왼쪽에 모으고 순서를 맞췄습니다."),
+        t("학습 탭 PLAY 버튼 디자인을 통일했습니다."),
+        t("프로필 카드의 칭호 표시를 없앴습니다. 칭호를 얻을 때 뜨는 축하 팝업은 그대로입니다."),
       ] },
       { cat: "fix", items: [
-        t("이미지 스캔이 항상 실패하던 문제를 수정했습니다."),
-        t("이미지 스캔 '내 파일에서 선택'이 사진 앱로 연결되던 문제를 수정했습니다."),
-        t("모바일에서 말풍선·드롭다운이 화면 가장자리에서 잘리던 문제를 수정했습니다."),
-        t("퍼즐 만들기 마법사에서 기물 희생하기 테마 선택 시 3단계 미리보기가 그 수 직전 위치를 표시합니다."),
+        t("이미지 스캔이 늘 실패하던 문제를 고쳤습니다."),
+        t("이미지 스캔에서 '내 파일에서 선택'을 누르면 사진 앱이 열리던 문제를 고쳤습니다."),
+        t("모바일에서 말풍선과 드롭다운이 화면 가장자리에서 잘리던 문제를 고쳤습니다."),
+        t("퍼즐 만들기 마법사에서 기물 희생하기 테마를 고르면 3단계 미리보기가 그 수 직전의 위치를 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.4.1", date: "2026.8.28",
-    summary: t("About 페이지 리디자인, 버전 표시 버그 수정, FEN 퍼즐·리뷰, 퍼즐 레이팅, 퍼즐 탭 개편했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("/about 페이지 리디자인, 버전 표시 버그 수정, FEN 퍼즐·리뷰 동등화, 퍼즐 레이팅, 퍼즐 탭 개편했습니다.") },
+    summary: t("소개 페이지를 새로 디자인하고, 버전 표시 버그를 고치고, FEN 퍼즐·리뷰, 퍼즐 레이팅, 새 퍼즐 탭을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("/about 페이지를 새로 디자인하고, 버전 표시 버그를 고치고, FEN 퍼즐·리뷰를 일반 대국과 같게 맞추고, 퍼즐 레이팅과 새 퍼즐 탭을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰·분석 탭에서 FEN(임의 포지션) 시작 시에도 최선·탁월·유일한 수 판정을 대국과 동일하게 적용했습니다."),
-        t("모든 퍼즐에 시작 포지션 FEN 코드 추가했습니다."),
-        t("공개 퍼즐 레이팅 추가했습니다. 라인을 끝까지 풀면 상승, 오답 시 하락했습니다. 프로필 카드에 표시합니다."),
-        t("퍼즐 탭 개편했습니다. 추천/미해결/해결 완료 3분할과 오프닝별 가로 스크롤 삭제, 난이도 적합순 목록 도입했습니다."),
-        t("퍼즐 만들기를 분석 탭 보드 편집기에서 퍼즐 탭으로 이동했습니다. '퍼즐 풀기/퍼즐 만들기' 선택 박스 추가했습니다."),
-        t("퍼즐 만들기에서 선택한 외부 사이트 대국을 '선택됨'으로 표시합니다."),
-        t("유산 만들기 화면을 퍼즐 만들기 마법사와 같은 레이아웃으로 통일했습니다."),
-        t("퍼즐 생성자가 풀이 화면 2페이지(모식도)에서 자신의 퍼즐 삭제했습니다. 삭제 전 확인했습니다."),
-        t("이미지 스캔이 PGN 기보·FEN 코드 사진(책, 스크린샷, 메모)도 인식 추가했습니다."),
-        t("집중 분석에서 탁월한 수(희생) 시 금색 화살표 삭제, 희생된 기물이 공격받는 빨간 화살표 표시합니다."),
-        t("PLAY 버튼 추가했습니다. 학습 탭 보드 아래, 뒤집기·초기화·뒤로·앞으로 버튼과 같은 줄에서 현재 보드로 대국 시작했습니다."),
-        t("PLAY 페이지 상단 로고, 보드 아래 내 정보 줄에 프로필 사진·아이디 표시합니다."),
+        t("게임 리뷰와 분석 탭에서 FEN(임의 포지션)으로 시작해도 최선·탁월·유일한 수 판정을 일반 대국과 똑같이 합니다."),
+        t("모든 퍼즐에 시작 포지션의 FEN 코드를 붙였습니다."),
+        t("공개 퍼즐 레이팅을 넣었습니다. 라인을 끝까지 풀면 오르고 틀리면 내려가며, 프로필 카드에 나옵니다."),
+        t("퍼즐 탭을 새로 꾸몄습니다. 추천·미해결·해결 완료 3분할과 오프닝별 가로 스크롤을 없애고, 난이도에 맞는 순서로 보여 주는 목록을 들였습니다."),
+        t("퍼즐 만들기를 분석 탭 보드 편집기에서 퍼즐 탭으로 옮기고, '퍼즐 풀기/퍼즐 만들기' 선택 상자를 넣었습니다."),
+        t("퍼즐 만들기에서 고른 외부 사이트 대국에 '선택됨' 표시를 합니다."),
+        t("유산 만들기 화면을 퍼즐 만들기 마법사와 같은 배치로 맞췄습니다."),
+        t("퍼즐을 만든 사람은 풀이 화면 2페이지(모식도)에서 자기 퍼즐을 지울 수 있습니다. 지우기 전에 한 번 더 확인합니다."),
+        t("이미지 스캔이 PGN 기보와 FEN 코드 사진(책, 스크린샷, 메모)도 읽어 냅니다."),
+        t("집중 분석에서 탁월한 수(희생)일 때 금색 화살표를 없애고, 희생된 기물이 공격받는 빨간 화살표를 보여 줍니다."),
+        t("PLAY 버튼을 넣었습니다. 학습 탭 보드 아래 뒤집기·초기화·뒤로·앞으로 버튼과 같은 줄에 있고, 지금 보드로 대국을 시작합니다."),
+        t("PLAY 페이지 위쪽에 로고를, 보드 아래 내 정보 줄에 프로필 사진과 아이디를 보여 줍니다."),
       ] },
       { cat: "ui", items: [
-        t("/about 첫 화면(히어로) 리디자인했습니다. '기능 둘러보기' 버튼 추가했습니다."),
-        t("퍼즐 카드 세로 확대, 미리보기 보드를 카드 폭에 맞는 정사각형으로 확대했습니다."),
-        t("퍼즐 탭 정렬 UI 정리했습니다. 검색창 옆 깔때기 아이콘으로 정렬 기준(추천순·최신순·레이팅순) 선택했습니다."),
-        t("PGN·FEN 퍼즐은 레이팅 배지 왼쪽에 강조 표시합니다."),
-        t("퍼즐 레이팅 아이콘을 하단 탭 퍼즐 아이콘과 통일했습니다."),
-        t("'번호로 풀기'·오프닝/생성자 검색창·필터 버튼 높이 통일했습니다."),
-        t("퍼즐 풀이 화면 제작자 표시에서 '제작 ·' 삭제, 아이디만 표시합니다."),
-        t("학습 탭 수 블록 키워드를 한 줄로 표시, 넘치면 천천히 스크롤 추가했습니다."),
+        t("/about 첫 화면(히어로)을 새로 디자인하고 '기능 둘러보기' 버튼을 넣었습니다."),
+        t("퍼즐 카드를 세로로 늘리고, 미리보기 보드를 카드 폭에 맞는 정사각형으로 키웠습니다."),
+        t("퍼즐 탭 정렬 화면을 정리했습니다. 검색창 옆 깔때기 아이콘에서 정렬 기준(추천순·최신순·레이팅순)을 고릅니다."),
+        t("PGN·FEN 퍼즐은 레이팅 배지 왼쪽에 눈에 띄게 표시합니다."),
+        t("퍼즐 레이팅 아이콘을 아래쪽 탭의 퍼즐 아이콘과 같게 맞췄습니다."),
+        t("'번호로 풀기', 오프닝·작성자 검색창, 필터 버튼의 높이를 맞췄습니다."),
+        t("퍼즐 풀이 화면의 작성자 표시에서 '제작 ·'을 빼고 아이디만 보여 줍니다."),
+        t("학습 탭 수 블록의 키워드를 한 줄로 보여 주고, 넘치면 천천히 흘러가게 했습니다."),
       ] },
       { cat: "fix", items: [
-        t("화면 구석과 /about에 표시되는 버전 번호가 실제 배포 버전보다 뒤처지던 문제를 수정했습니다."),
-        t("퍼즐 탭에서 퍼즐 클릭 시 화면이 멈추던 문제를 수정했습니다."),
-        t("FEN 기반 퍼즐 클릭 시 화면이 멈추던 문제를 수정했습니다."),
-        t("정렬·필터 드롭다운과 말풍선이 화면 가장자리에서 잘리거나 잔상이 남던 문제를 수정했습니다."),
-        t("퍼즐 카드 레이팅 말풍선이 잘못된 위치에 잠깐 표시되던 문제를 수정했습니다."),
-        t("퍼즐 만들기 1단계에서 인식되지 않는 입력에 '잘못된 기보 형식입니다.' 표시합니다."),
-        t("게임 리뷰 희생 경고 화살표에서 폰의 포획 방향이 반대로 표시되던 문제를 수정했습니다."),
-        t("집중 분석 수 설명에서 수 번호 없는 SAN이 링크로 잡히던 문제를 수정했습니다."),
-        t("PLAY 페이지 봇이 '생각하는 중...'에서 멈추던 문제를 수정했습니다."),
-        t("레이팅 2800 봇이 나쁜 수를 자주 두던 문제를 수정했습니다. 레이팅이 높을수록 최선의 수에 가깝게 진행 추가했습니다."),
-        t("퍼즐 삭제가 서버에서도 실제로 반영되도록 수정했습니다. 타인 퍼즐을 삭제할 수 있던 권한 오류를 차단했습니다."),
-        t("집중 분석에서 다른 수로 이동 후 '←'를 누르면 홈 대신 직전 집중 분석으로 복귀했습니다."),
+        t("화면 구석과 /about에 나오는 버전 번호가 실제 배포 버전보다 늦던 문제를 고쳤습니다."),
+        t("퍼즐 탭에서 퍼즐을 누르면 화면이 멈추던 문제를 고쳤습니다."),
+        t("FEN으로 만든 퍼즐을 누르면 화면이 멈추던 문제를 고쳤습니다."),
+        t("정렬·필터 드롭다운과 말풍선이 화면 가장자리에서 잘리거나 잔상이 남던 문제를 고쳤습니다."),
+        t("퍼즐 카드 레이팅 말풍선이 엉뚱한 자리에 잠깐 나타나던 문제를 고쳤습니다."),
+        t("퍼즐 만들기 1단계에서 알아볼 수 없는 입력에는 '잘못된 기보 형식입니다.'라고 안내합니다."),
+        t("게임 리뷰의 희생 경고 화살표에서 폰이 잡는 방향이 반대로 그려지던 문제를 고쳤습니다."),
+        t("집중 분석 수 설명에서 수 번호 없는 SAN이 링크로 잡히던 문제를 고쳤습니다."),
+        t("PLAY 페이지 봇이 '생각하는 중...'에서 멈추던 문제를 고쳤습니다."),
+        t("레이팅 2800 봇이 나쁜 수를 자주 두던 문제를 고쳤습니다. 레이팅이 높을수록 최선의 수에 가깝게 둡니다."),
+        t("퍼즐 삭제가 서버에서도 실제로 적용되도록 고치고, 다른 사람의 퍼즐을 지울 수 있던 권한 오류를 막았습니다."),
+        t("집중 분석에서 다른 수로 옮긴 뒤 '←'를 누르면 홈이 아니라 바로 전 집중 분석으로 돌아갑니다."),
       ] },
     ],
   },
   {
     version: "0.4.0", date: "2026.8.28",
-    summary: t("탭 이름 변경, 메인 퀘스트 레슨 시스템 개편했습니다."),
-    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("메인 퀘스트 전면 개편, 레슨 시스템 추가했습니다.") },
+    summary: t("탭 이름을 바꾸고, 메인 퀘스트를 레슨 시스템으로 새로 짰습니다."),
+    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("메인 퀘스트를 전부 새로 짜고 레슨 시스템을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("탭 이름 변경했습니다. 기존 '학습'은 '분석', 기존 '퀘스트'는 '학습' 추가했습니다."),
-        t("메인 퀘스트를 챕터 목록에서 갈래가 있는 나무형 로드맵의 순차 해금 '레슨' 시스템으로 개편했습니다."),
-        t("퍼즐 탭 오프닝 검색과 생성자 검색을 하나의 검색창으로 통합, 정렬 옵션 추가했습니다."),
-        t("수 설명에서 언급된 수를 누르면 해당 수까지 이동했습니다."),
-        t("퍼즐 카드·오늘의 퍼즐 팝업 기보의 수를 누르면 집중 분석 진입했습니다."),
-        t("검색·친구·채팅·프로필 창 등을 브라우저 뒤로가기로 닫기 추가했습니다."),
+        t("탭 이름을 바꿨습니다. 예전 '학습'은 '분석'으로, 예전 '퀘스트'는 '학습'으로 부릅니다."),
+        t("메인 퀘스트를 챕터 목록에서, 갈래가 있는 나무 모양 로드맵을 차례로 여는 '레슨' 시스템으로 바꿨습니다."),
+        t("퍼즐 탭의 오프닝 검색과 작성자 검색을 검색창 하나로 합치고 정렬 옵션을 넣었습니다."),
+        t("수 설명에 나온 수를 누르면 그 수까지 이동합니다."),
+        t("퍼즐 카드와 오늘의 퍼즐 팝업의 기보에서 수를 누르면 집중 분석으로 들어갑니다."),
+        t("검색, 친구, 채팅, 프로필 창 등을 브라우저 뒤로 가기로 닫을 수 있습니다."),
       ] },
       { cat: "fix", items: [
-        t("수 등급 판정을 여러 화면에서 하나로 통일했습니다. 탁월한 수 판정 규칙 일부 보완 추가했습니다."),
-        t("퍼즐 탭 일일 퍼즐 클릭 시 버벅임·멈춤 수정했습니다."),
+        t("여러 화면에서 따로 하던 수 등급 판정을 하나로 합치고, 탁월한 수 판정 규칙 일부를 보완했습니다."),
+        t("퍼즐 탭에서 일일 퍼즐을 누르면 버벅이거나 멈추던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 카드·일일 퍼즐 팝업 기보 밑줄 삭제했습니다. 분석 탭 아이콘 교체했습니다."),
+        t("퍼즐 카드와 일일 퍼즐 팝업 기보의 밑줄을 없애고, 분석 탭 아이콘을 바꿨습니다."),
       ] },
     ],
   },
   {
     version: "0.3.9", date: "2026.8.21",
-    summary: t("데스크톱 리뷰 레이아웃 개편했습니다."),
-    highlight: { kind: "icon", Icon: Rocket, color: T.brassHi, label: t("데스크톱 리뷰 레이아웃 개편했습니다.") },
+    summary: t("데스크톱 리뷰 화면의 배치를 새로 짰습니다."),
+    highlight: { kind: "icon", Icon: Rocket, color: T.brassHi, label: t("데스크톱 리뷰 화면의 배치를 새로 짰습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰를 데스크톱 전체 화면 전용 레이아웃으로 변경했습니다. 체스보드 확대했습니다."),
-        t("리뷰 정확도 그래프 개편했습니다. 계산 중 안내, 확정 토스트, 구간별 등급 표시합니다."),
-        t("체스판 기물 드래그 조작 개선했습니다. 방향·속도로 목적지 칸 판단 추가했습니다."),
-        t("Stockfish 18(정식) 분석 엔진 추가, 목록 최상단 배치했습니다."),
+        t("게임 리뷰를 데스크톱 전체 화면 전용 배치로 바꾸고 체스보드를 키웠습니다."),
+        t("리뷰 정확도 그래프를 새로 꾸몄습니다. 계산 중 안내, 확정 알림, 구간별 등급을 보여 줍니다."),
+        t("체스판에서 기물을 끄는 조작을 다듬었습니다. 끄는 방향과 속도로 도착 칸을 판단합니다."),
+        t("Stockfish 18(정식) 분석 엔진을 넣고 목록 맨 위에 두었습니다."),
       ] },
       { cat: "fix", items: [
-        t("오프닝 이름 수정 시 해당 오프닝 퍼즐 이름에 즉시 반영했습니다."),
-        t("도감 오프닝 트리에 이론 수 추가 시 즉시 반영했습니다."),
-        t("게임 리뷰를 같은 수순으로 다시 열어도 진입 애니메이션 재생했습니다."),
-        t("체스판 사진 스캔 복구했습니다."),
-        t("일일 퀘스트 외부 사이트 링크가 앱을 열지 못하던 문제를 수정했습니다."),
+        t("오프닝 이름을 고치면 그 오프닝의 퍼즐 이름에도 바로 반영합니다."),
+        t("도감 오프닝 트리에 이론 수를 더하면 바로 반영합니다."),
+        t("같은 수순으로 게임 리뷰를 다시 열어도 진입 애니메이션이 재생됩니다."),
+        t("체스판 사진 스캔을 되살렸습니다."),
+        t("일일 퀘스트의 외부 사이트 링크가 앱을 열지 못하던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("사이트 전체 글꼴을 IBM Plex Sans KR로 통일했습니다. 로그인 상태에서 설정 탭 프로필 미리보기 표시합니다."),
+        t("사이트 전체 글꼴을 IBM Plex Sans KR로 통일했습니다. 로그인하면 설정 탭에서 프로필 미리보기를 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.3.8", date: "2026.8.19",
-    summary: t("리뷰 진입 애니메이션, 정확도 체계 개편했습니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("리뷰 진입 애니메이션, 정확도 체계 전면 개편했습니다.") },
+    summary: t("리뷰 진입 애니메이션과 정확도 체계를 새로 만들었습니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("리뷰 진입 애니메이션과 정확도 체계를 전면 개편했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰 진입 화면 개편했습니다. 일러스트가 순차 등장하고 수마다 등급 아이콘 표시합니다."),
-        t("리뷰 정확도 계산 방식 재설계했습니다. 대국이 길수록 수 하나가 정확도에 미치는 영향 완화했습니다. /about에 수식·그래프 소개 섹션 추가했습니다."),
-        t("리뷰 화면 새로고침 시 보던 수에서 이어보기 추가했습니다."),
-        t("프로필 소개글 추가했습니다. 프로필 카드와 유저 검색 결과에 표시합니다."),
-        t("설정 탭 '리뷰 설정' 카드 추가했습니다. 리뷰 속도 '더 빠르게'(depth=20) / '더 정확하게' 선택했습니다."),
-        t("설정 탭 '퍼즐 설정' 카드 추가했습니다. LINE CLEAR·PUZZLE CLEAR 애니메이션, 퍼즐 풀이 중 코치 표시 설정 추가했습니다."),
-        t("프로필 카드 상단 OpenChess/외부 사이트 아이콘으로 통계 전환했습니다. 내 프로필 카드는 헤더의 내 아이디에서 진입했습니다."),
-        t("LINE CLEAR 배너를 PUZZLE CLEAR와 같은 디자인으로 통일했습니다."),
+        t("게임 리뷰 진입 화면을 새로 꾸몄습니다. 일러스트가 차례로 나타나고 수마다 등급 아이콘이 뜹니다."),
+        t("리뷰 정확도 계산 방식을 새로 설계했습니다. 대국이 길수록 수 하나가 정확도에 미치는 영향을 줄였습니다. /about에 수식과 그래프를 소개하는 섹션을 넣었습니다."),
+        t("리뷰 화면을 새로고침하면 보던 수에서 이어 봅니다."),
+        t("프로필 소개글을 넣었습니다. 프로필 카드와 사용자 검색 결과에 나옵니다."),
+        t("설정 탭에 '리뷰 설정' 카드를 넣었습니다. 리뷰 속도를 '더 빠르게'(depth=20)와 '더 정확하게' 중에서 고릅니다."),
+        t("설정 탭에 '퍼즐 설정' 카드를 넣었습니다. LINE CLEAR·PUZZLE CLEAR 애니메이션과 퍼즐 풀이 중 코치 표시를 설정합니다."),
+        t("프로필 카드 위쪽의 OpenChess·외부 사이트 아이콘으로 통계를 바꿔 봅니다. 내 프로필 카드는 헤더의 내 아이디를 눌러 엽니다."),
+        t("LINE CLEAR 배너를 PUZZLE CLEAR와 같은 디자인으로 맞췄습니다."),
       ] },
       { cat: "perf", items: [
-        t("게임 리뷰 포지션당 분석 시간 확대했습니다. 복잡한 포지션 정확도 개선했습니다."),
-        t("체스판 사진 이미지 스캔 인식률 개선했습니다."),
+        t("게임 리뷰에서 포지션마다 분석하는 시간을 늘려 복잡한 포지션의 정확도를 높였습니다."),
+        t("체스판 사진 스캔의 인식률을 높였습니다."),
       ] },
       { cat: "ui", items: [
-        t("라인/퍼즐 클리어 배너 전용 폰트, 화면 중앙 표시합니다. PUZZLE CLEAR 글자 튕김 연출했습니다."),
-        t("모바일 리뷰 엔진 라인 글자 확대·왼쪽 정렬했습니다. 단계별 정확도 말풍선 잘림을 수정했습니다."),
-        t("모바일에서 백·흑 정확도 그래프를 각각 별도 줄에 확대 표시합니다."),
-        t("평가치 그래프 0.0 점선 강조합니다."),
-        t("설정 탭 내 프로필 카드 상단 라벨을 내 아이디로 표시합니다."),
+        t("라인·퍼즐 클리어 배너에 전용 글꼴을 쓰고 화면 가운데에 띄웁니다. PUZZLE CLEAR 글자가 튕기는 연출을 넣었습니다."),
+        t("모바일 리뷰의 엔진 라인 글자를 키우고 왼쪽에 맞췄습니다. 단계별 정확도 말풍선이 잘리던 문제를 고쳤습니다."),
+        t("모바일에서 백과 흑의 정확도 그래프를 각각 다른 줄에 크게 보여 줍니다."),
+        t("평가치 그래프의 0.0 점선을 더 눈에 띄게 했습니다."),
+        t("설정 탭의 내 프로필 카드 위쪽 라벨에 내 아이디를 보여 줍니다."),
       ] },
       { cat: "ux", items: [
-        t("리뷰 요약 화면의 '기다리지 않고 바로 리뷰 시작' 버튼 삭제했습니다."),
-        t("정확도 증감 숫자에 % 표시, 백·흑 정확도 박스 우하단에도 표시합니다."),
+        t("리뷰 요약 화면의 '기다리지 않고 바로 리뷰 시작' 버튼을 없앴습니다."),
+        t("정확도 증감 숫자에 %를 붙이고, 백·흑 정확도 상자 오른쪽 아래에도 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("리뷰 페이지를 닫았다가 다시 열면 화면이 멈추던 문제를 수정했습니다."),
-        t("리뷰 진입 화면 그래프가 특정 대국에서 멈췄다가 한꺼번에 그려지던 문제를 수정했습니다."),
-        t("평가치 그래프 마커를 빠르게 끌면 엔진 라인이 멈추던 문제를 수정했습니다."),
-        t("정확도가 실제보다 높고 백·흑 차이가 작게 나오던 문제를 수정했습니다."),
-        t("체크메이트 대국 리뷰에서 마지막 수 아이콘이 '분석 중'에서 멈추던 문제를 수정했습니다."),
-        t("같은 대국을 다시 열 때 정확도가 미세하게 달라지던 문제를 수정했습니다."),
-        t("일부 포지션 분석 실패로 정확도 계산에서 빠지던 문제를 완화했습니다."),
-        t("LINE CLEAR와 PUZZLE CLEAR 애니메이션이 겹치던 문제를 수정했습니다."),
-        t("무난한 수가 대부분인 대국에서 블런더 하나로 정확도가 과도하게 떨어지던 문제를 수정했습니다."),
+        t("리뷰 페이지를 닫았다가 다시 열면 화면이 멈추던 문제를 고쳤습니다."),
+        t("리뷰 진입 화면의 그래프가 특정 대국에서 멈췄다가 한꺼번에 그려지던 문제를 고쳤습니다."),
+        t("평가치 그래프의 표시를 빠르게 끌면 엔진 라인이 멈추던 문제를 고쳤습니다."),
+        t("정확도가 실제보다 높게 나오고 백·흑 차이가 작게 나오던 문제를 고쳤습니다."),
+        t("체크메이트로 끝난 대국의 리뷰에서 마지막 수 아이콘이 '분석 중'에 멈춰 있던 문제를 고쳤습니다."),
+        t("같은 대국을 다시 열면 정확도가 조금씩 달라지던 문제를 고쳤습니다."),
+        t("일부 포지션의 분석이 실패해 정확도 계산에서 빠지던 문제를 줄였습니다."),
+        t("LINE CLEAR와 PUZZLE CLEAR 애니메이션이 겹치던 문제를 고쳤습니다."),
+        t("무난한 수가 대부분인 대국에서 블런더 하나로 정확도가 지나치게 떨어지던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.7", date: "2026.8.18",
-    summary: t("퍼즐 클릭 시 흰 화면 오류를 수정했습니다."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐 클릭 시 흰 화면 오류를 수정했습니다.") },
+    summary: t("퍼즐을 누르면 흰 화면이 뜨던 오류를 고쳤습니다."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("퍼즐을 누르면 흰 화면이 뜨던 오류를 고쳤습니다.") },
     sections: [
       { cat: "fix", items: [
-        t("퍼즐 탭에서 퍼즐 클릭 시 흰 화면이 뜨며 사이트가 멈추던 문제를 수정했습니다."),
-        t("헤더 로고 아래 버전 표기가 실제 배포 버전보다 뒤처지던 문제를 수정했습니다."),
+        t("퍼즐 탭에서 퍼즐을 누르면 흰 화면이 뜨며 사이트가 멈추던 문제를 고쳤습니다."),
+        t("헤더 로고 아래 버전 표기가 실제 배포 버전보다 늦던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.6", date: "2026.8.18",
-    summary: t("기보 클릭 이동, 라인·퍼즐 클리어 애니메이션 추가했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("기보 클릭 이동, 라인·퍼즐 클리어 애니메이션 추가했습니다.") },
+    summary: t("기보에서 수를 눌러 이동하는 기능과 라인·퍼즐 클리어 애니메이션을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("기보에서 수를 눌러 이동하는 기능과 라인·퍼즐 클리어 애니메이션을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("퍼즐 풀이 화면·일일 퍼즐 팝업·도감 오프닝 트리의 기보에서 수 클릭 시 해당 수순이 입력된 학습 탭으로 이동했습니다."),
-        t("라인 클리어 시 LINE CLEAR 배너, 퍼즐 전체 클리어 시 별 3개와 PUZZLE CLEAR 연출했습니다."),
-        t("퍼즐 탭 오프닝·생성자 필터 추가했습니다. 태그 다중 선택했습니다."),
-        t("유산(Legacy) 블록 좋아요."),
-        t("이론 수 이름 변경 시 그 이름을 접두사로 쓰는 하위 오프닝 이름도 자동 변경했습니다."),
+        t("퍼즐 풀이 화면, 일일 퍼즐 팝업, 도감 오프닝 트리의 기보에서 수를 누르면 그 수순이 들어간 학습 탭으로 갑니다."),
+        t("라인을 깨면 LINE CLEAR 배너가, 퍼즐을 모두 깨면 별 3개와 PUZZLE CLEAR 연출이 나옵니다."),
+        t("퍼즐 탭에 오프닝·작성자 필터를 넣었습니다. 태그를 여러 개 고를 수 있습니다."),
+        t("유산(Legacy) 블록에 좋아요를 누를 수 있습니다."),
+        t("이론 수 이름을 바꾸면 그 이름을 앞에 붙여 쓰는 하위 오프닝 이름도 자동으로 바뀝니다."),
       ] },
       { cat: "ui", items: [
-        t("학습 탭 펜/리뷰 버튼을 복사·붙여넣기 버튼과 크기·간격 통일했습니다."),
-        t("채팅 공유 퍼즐 블록을 퍼즐 탭과 같은 카드 UI로 변경했습니다."),
-        t("프로필 카드 외부 사이트 레이팅 표기 정리, 레이팅 변동 그래프에 '1일' 옵션 추가했습니다."),
-        t("모바일 리뷰 화면 코치 말풍선 축소, 평가치 그래프 추가했습니다."),
-        t("좌상단 OpenChess 로고 클릭 시 openchess.kr 이동했습니다."),
+        t("학습 탭의 펜·리뷰 버튼을 복사·붙여넣기 버튼과 같은 크기와 간격으로 맞췄습니다."),
+        t("채팅에 공유한 퍼즐 블록을 퍼즐 탭과 같은 카드 모양으로 바꿨습니다."),
+        t("프로필 카드의 외부 사이트 레이팅 표기를 정리하고, 레이팅 변동 그래프에 '1일' 옵션을 넣었습니다."),
+        t("모바일 리뷰 화면의 코치 말풍선을 줄이고 평가치 그래프를 넣었습니다."),
+        t("왼쪽 위 OpenChess 로고를 누르면 openchess.kr로 갑니다."),
       ] },
       { cat: "ux", items: [
-        t("퀘스트 탭에서 일일 퀘스트를 메인 퀘스트 위에 표시합니다."),
-        t("학습 탭에서 수가 1~2개뿐인 포지션은 엔진 라인·평가치 바 미 표시합니다."),
-        t("보드 편집기 이미지 스캔에서 기존 사진(갤러리) 선택 지원합니다."),
+        t("퀘스트 탭에서 일일 퀘스트를 메인 퀘스트 위에 보여 줍니다."),
+        t("학습 탭에서 둘 수 있는 수가 1~2개뿐인 포지션은 엔진 라인과 평가 바를 보여 주지 않습니다."),
+        t("보드 편집기 이미지 스캔에서 이미 찍어 둔 사진(갤러리)을 고를 수 있습니다."),
       ] },
       { cat: "perf", items: [
-        t("집중 학습 오프닝 실수 분석 속도 개선했습니다."),
+        t("집중 학습의 오프닝 실수 분석을 빠르게 했습니다."),
       ] },
       { cat: "security", items: [
-        t("유산 좋아요를 타인 명의로 등록·취소할 수 있던 권한 우회 차단했습니다."),
+        t("다른 사람 이름으로 유산 좋아요를 누르거나 취소할 수 있던 권한 우회를 막았습니다."),
       ] },
     ],
   },
   {
     version: "0.3.5", date: "2026.8.16",
-    summary: t("보드 편집기, FEN 리뷰 자유 탐색 추가했습니다."),
-    highlight: { kind: "icon", Icon: Pencil, color: T.brassHi, label: t("보드 편집기, FEN 리뷰 자유 탐색 추가했습니다.") },
+    summary: t("보드 편집기와 FEN 리뷰 자유 탐색을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Pencil, color: T.brassHi, label: t("보드 편집기와 FEN 리뷰 자유 탐색을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("학습 탭 체스보드 편집기(펜 아이콘) 추가했습니다. 팔레트에서 기물을 골라 배치·드래그 추가했습니다."),
-        t("보드 편집기 이미지 스캔 추가했습니다. 체스판 사진 업로드(모바일은 카메라 촬영) 후 포지션 인식 추가했습니다."),
-        t("FEN 포지션 리뷰에서도 보드를 직접 조작해 가상의 수를 자유롭게 탐색 추가했습니다."),
-        t("학습 탭 FEN 모드에서도 평가치 바·엔진 상위 줄 표시합니다."),
-        t("게임 리뷰가 설정 탭 '분석 엔진'에서 고른 엔진(Stockfish 18 Lite / 17.1) 사용 추가했습니다."),
-        t("리뷰 티켓 제도 폐지 추가했습니다. 게임 리뷰 횟수 제한 없습니다."),
+        t("학습 탭에 체스보드 편집기(펜 아이콘)를 넣었습니다. 팔레트에서 기물을 골라 놓거나 끌어서 옮깁니다."),
+        t("보드 편집기에 이미지 스캔을 넣었습니다. 체스판 사진을 올리면(모바일은 카메라 촬영) 포지션을 알아봅니다."),
+        t("FEN 포지션 리뷰에서도 보드를 직접 움직여 가상의 수를 자유롭게 따라가 볼 수 있습니다."),
+        t("학습 탭 FEN 모드에서도 평가 바와 엔진 상위 줄을 보여 줍니다."),
+        t("게임 리뷰가 설정 탭 '분석 엔진'에서 고른 엔진(Stockfish 18 Lite / 17.1)을 씁니다."),
+        t("리뷰 티켓 제도를 없앴습니다. 게임 리뷰 횟수에 제한이 없습니다."),
       ] },
       { cat: "ui", items: [
-        t("설정 탭에 흩어진 개발자 전용 도구를 한 곳으로 정리했습니다."),
-        t("(개발자 전용) 퍼즐 모식도 라인 수 추가 시 평가치 순 후보 수 선택했습니다."),
-        t("퍼즐 풀이 화면 '다음 라인 풀기' 버튼 삭제했습니다."),
-        t("채팅 목록에서 알림을 끈 상대에 알림 해제 아이콘 표시합니다."),
-        t("학습 탭 FEN 모드 스테일메이트·3회 동형 반복 무승부 판정 정상화 추가했습니다."),
-        t("학습 탭 보드 위 '분석' 버튼을 연두색 별 모양 리뷰 버튼으로 변경했습니다."),
-        t("퍼즐 공유 링크를 openchess.kr/puzzle/(번호)-(라인)으로 변경했습니다."),
+        t("설정 탭 여기저기에 흩어져 있던 개발자 전용 도구를 한곳에 모았습니다."),
+        t("(개발자 전용) 퍼즐 모식도에 라인 수를 더할 때 평가치 순으로 정렬된 후보 수에서 고릅니다."),
+        t("퍼즐 풀이 화면의 '다음 라인 풀기' 버튼을 없앴습니다."),
+        t("채팅 목록에서 알림을 끈 상대에게 알림 꺼짐 아이콘을 보여 줍니다."),
+        t("학습 탭 FEN 모드의 스테일메이트와 3회 동형 반복 무승부 판정이 제대로 작동합니다."),
+        t("학습 탭 보드 위의 '분석' 버튼을 연두색 별 모양 리뷰 버튼으로 바꿨습니다."),
+        t("퍼즐 공유 링크를 openchess.kr/puzzle/(번호)-(라인) 형식으로 바꿨습니다."),
       ] },
       { cat: "fix", items: [
-        t("채팅 공유 리뷰 카드의 openchess.kr/review/.. 추가했습니다. 주소 직접 진입 오류를 수정했습니다."),
-        t("내 퍼즐 편집 저장 직후 재편집이 실패하던 문제를 수정했습니다."),
-        t("유산 재생에서 유산 수 등장 후 위아래로 흔들리던 문제를 수정했습니다."),
+        t("채팅에 공유한 리뷰 카드에 openchess.kr/review/.. 주소를 넣고, 그 주소로 바로 들어갈 때 생기던 오류를 고쳤습니다."),
+        t("내 퍼즐을 편집해 저장한 직후 다시 편집하면 실패하던 문제를 고쳤습니다."),
+        t("유산 재생에서 유산 수가 나타난 뒤 위아래로 흔들리던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.4", date: "2026.8.13",
-    summary: t("게임 리뷰 공유, 정확도 개선했습니다."),
-    highlight: { kind: "icon", Icon: Share2, color: T.brassHi, label: t("게임 리뷰 공유, 정확도 개선했습니다.") },
+    summary: t("게임 리뷰 공유를 넣고 정확도를 다듬었습니다."),
+    highlight: { kind: "icon", Icon: Share2, color: T.brassHi, label: t("게임 리뷰 공유를 넣고 정확도를 다듬었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰 공유 버튼(모바일·데스크톱) 추가했습니다. 메신저·SNS 등 외부 앱 공유했습니다."),
-        t("채팅 /review 명령어 추가했습니다. '/review -recent'는 가장 최근 외부 사이트 대국 리뷰 추가했습니다."),
-        t("채팅 대화 목록 꾹 누르기(데스크톱은 우클릭)로 고정/고정 해제했습니다."),
-        t("퍼즐 라인 클리어 후 자동으로 다음 라인 진행 추가했습니다."),
-        t("신규 퍼즐 생성 기준 강화했습니다. 3점 이상 기물 이득이 몇 수 뒤까지 유지될 것 추가했습니다."),
-        t("코치 코멘트에 체크메이트 전용 설명 추가했습니다."),
-        t("퍼즐 풀이 카드에 최초 제작자 표시합니다."),
-        t("게임 리뷰·퍼즐 풀이 창 고유 주소 공유했습니다."),
-        t("퍼즐 공유 시트에서 메신저·SNS 직접 공유했습니다."),
-        t("학습 탭 '수 설명' 개수 제한을 등급별로 차등 적용했습니다."),
+        t("게임 리뷰 공유 버튼(모바일·데스크톱)을 넣었습니다. 메신저나 SNS 같은 다른 앱으로 보낼 수 있습니다."),
+        t("채팅 /review 명령어를 넣었습니다. '/review -recent'를 입력하면 가장 최근 외부 사이트 대국을 리뷰합니다."),
+        t("채팅 대화 목록을 길게 누르면(데스크톱은 오른쪽 클릭) 고정하거나 고정을 풉니다."),
+        t("퍼즐 라인을 깨면 자동으로 다음 라인으로 넘어갑니다."),
+        t("새 퍼즐을 만드는 기준을 강화했습니다. 3점 이상의 기물 이득이 몇 수 뒤까지 유지되어야 합니다."),
+        t("코치 코멘트에 체크메이트 전용 설명을 넣었습니다."),
+        t("퍼즐 풀이 카드에 처음 만든 사람을 보여 줍니다."),
+        t("게임 리뷰와 퍼즐 풀이 창의 고유 주소를 공유할 수 있습니다."),
+        t("퍼즐 공유 시트에서 메신저나 SNS로 바로 공유합니다."),
+        t("학습 탭 '수 설명' 개수 제한을 등급마다 다르게 적용합니다."),
       ] },
       { cat: "ui", items: [
-        t("코치 코멘트의 유일한 수·탁월한 수 문장 끝에 기보 표기(!, !!) 추가했습니다."),
-        t("유산 만들기·전체 보기·공유 창을 모바일 전체 화면으로 표시합니다."),
-        t("채팅 메시지 수정/삭제 메뉴 위치 변경했습니다."),
-        t("채팅 공유 유산 카드를 프로필 카드와 같은 디자인으로 통일했습니다."),
-        t("유산 재생 애니메이션에서 유산 수가 위에서 떨어지는 연출했습니다."),
-        t("퍼즐 라인 버튼에서 푼 라인은 초록 체크, 진행 중인 라인은 금색 테두리 추가했습니다."),
+        t("코치 코멘트에서 유일한 수·탁월한 수 문장 끝에 기보 표기(!, !!)를 붙입니다."),
+        t("유산 만들기, 전체 보기, 공유 창을 모바일에서 전체 화면으로 보여 줍니다."),
+        t("채팅 메시지 수정·삭제 메뉴의 위치를 바꿨습니다."),
+        t("채팅에 공유한 유산 카드를 프로필 카드와 같은 디자인으로 맞췄습니다."),
+        t("유산 재생 애니메이션에서 유산 수가 위에서 떨어지듯 나타납니다."),
+        t("퍼즐 라인 버튼에서 푼 라인은 초록 ✓로, 풀고 있는 라인은 금색 테두리로 보여 줍니다."),
       ] },
       { cat: "perf", items: [
-        t("게임 리뷰 depth 20 도달 안정성 개선했습니다. 시간 배분 방식 변경했습니다."),
+        t("게임 리뷰가 depth 20에 더 안정적으로 닿도록 시간 배분 방식을 바꿨습니다."),
       ] },
       { cat: "fix", items: [
-        t("리뷰 수의 등급·평가치가 늦게 뜨던 문제를 수정했습니다."),
-        t("집중 학습에서 '탁월한 수'가 처음에 '좋은 수'로 표시되던 문제를 수정했습니다."),
-        t("채팅 메시지 수정/삭제 실패 시 안내 없이 원복되던 문제를 수정했습니다."),
-        t("유산 재생에서 타이핑 전환 시 위치가 어긋나던 문제를 수정했습니다."),
-        t("일일 퀘스트 외부 사이트 링크가 모바일에서 웹사이트로만 열리던 문제를 수정했습니다."),
-        t("리뷰한 대국이 '리뷰한 대국만' 필터에서 안 보이던 문제를 수정했습니다."),
-        t("퍼즐 오답 시 상대 응징 수가 표시되지 않던 문제를 수정했습니다."),
-        t("유산 수가 다 등장하기 전에 주변 수 무너짐 연출이 시작되던 문제를 수정했습니다."),
-        t("도감 오프닝 트리 수 설명 카드가 화면 밖으로 잘리던 문제를 수정했습니다."),
+        t("리뷰에서 수의 등급과 평가치가 늦게 뜨던 문제를 고쳤습니다."),
+        t("집중 학습에서 탁월한 수가 처음에 좋은 수로 표시되던 문제를 고쳤습니다."),
+        t("채팅 메시지 수정·삭제가 실패하면 아무 안내 없이 되돌아가던 문제를 고쳤습니다."),
+        t("유산 재생에서 타이핑 화면으로 바뀔 때 위치가 어긋나던 문제를 고쳤습니다."),
+        t("일일 퀘스트의 외부 사이트 링크가 모바일에서 웹사이트로만 열리던 문제를 고쳤습니다."),
+        t("리뷰한 대국이 '리뷰한 대국만' 필터에서 보이지 않던 문제를 고쳤습니다."),
+        t("퍼즐을 틀렸을 때 상대가 응징하는 수가 보이지 않던 문제를 고쳤습니다."),
+        t("유산 수가 다 나타나기 전에 주변 수가 무너지는 연출이 시작되던 문제를 고쳤습니다."),
+        t("도감 오프닝 트리의 수 설명 카드가 화면 밖으로 잘리던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.3", date: "2026.8.12",
-    summary: t("프로필 유산(Legacy) 도입했습니다."),
-    highlight: { kind: "icon", Icon: Gem, color: T.brassHi, label: t("프로필 유산(Legacy) 도입했습니다.") },
+    summary: t("프로필에 유산(Legacy)을 들였습니다."),
+    highlight: { kind: "icon", Icon: Gem, color: T.brassHi, label: t("프로필에 유산(Legacy)을 들였습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("프로필 '유산' 추가했습니다. 자랑스러운 대국의 한 수를 암석판에 룬 문자처럼 새겨 전시 추가했습니다."),
-        t("퍼즐·라인별 난이도 레이팅(100~3000) 추가했습니다. 수순 길이·얽힌 기물 수 등 반영했습니다."),
-        t("퍼즐 풀이 화면에 라인 번호 선택 버튼 추가했습니다."),
-        t("퍼즐 모식도에서 미해결 라인도 끝까지 형태 확인했습니다."),
-        t("기물 드래그 인식 개선했습니다. 빠르고 부정확한 이동도 인식 추가했습니다."),
-        t("티어 리더보드에 경험치가 없는 계정도 표시합니다."),
-        t("유산 재생했습니다. PGN 기보 타이핑 연출 후 체스보드 재생, 재생된 모든 수의 등급 아이콘 표시합니다."),
-        t("유산 시작 수 지정(지정 수 앞 1~7수 선택) 추가했습니다."),
-        t("유산 이력 추가했습니다. 삭제되거나 덮어써진 유산 열람('더보기') 추가했습니다."),
-        t("유산 채팅 공유했습니다. 유산 블록에 공유(종이비행기) 아이콘 추가했습니다."),
-        t("학습 탭 FEN 붙여넣기 시 해당 포지션부터 이어두는 FEN 모드 추가했습니다."),
-        t("그랜드마스터 티어 도달 시 프로필 사진·티어 로고 십각형 테두리에 무지개 그라데이션 추가했습니다."),
-        t("일일 퀘스트 오프닝 문구에 백·흑 색 표시합니다."),
+        t("프로필에 '유산'을 넣었습니다. 자랑스러운 대국의 한 수를 암석판에 룬 문자처럼 새겨 전시합니다."),
+        t("퍼즐과 라인마다 난이도 레이팅(100~3000)을 매겼습니다. 수순 길이와 얽힌 기물 수 등을 반영합니다."),
+        t("퍼즐 풀이 화면에 라인 번호를 고르는 버튼을 넣었습니다."),
+        t("퍼즐 모식도에서 아직 풀지 않은 라인도 끝까지 모양을 확인할 수 있습니다."),
+        t("기물 끌기 인식을 다듬어, 빠르고 대충 끈 움직임도 알아봅니다."),
+        t("티어 리더보드에 경험치가 없는 계정도 보여 줍니다."),
+        t("유산 재생을 넣었습니다. PGN 기보를 타이핑하는 연출 뒤에 체스보드로 재생하고, 재생한 모든 수의 등급 아이콘을 보여 줍니다."),
+        t("유산을 어느 수부터 보여 줄지(지정한 수 앞 1~7수) 정할 수 있습니다."),
+        t("유산 이력을 넣었습니다. 지워지거나 덮어쓴 유산을 '더보기'에서 볼 수 있습니다."),
+        t("유산을 채팅으로 공유할 수 있습니다. 유산 블록에 공유(종이비행기) 아이콘을 넣었습니다."),
+        t("학습 탭에 FEN을 붙여 넣으면 그 포지션부터 이어 두는 FEN 모드를 넣었습니다."),
+        t("그랜드마스터 티어에 오르면 프로필 사진과 티어 로고의 십각형 테두리에 무지개 그라데이션이 들어갑니다."),
+        t("일일 퀘스트의 오프닝 문구에 백·흑 색을 표시합니다."),
       ] },
       { cat: "perf", items: [
-        t("도감 오프닝 트리 모바일 버벅임 수정했습니다. 화면에 보이는 블록만 렌더링 추가했습니다."),
-        t("빠른 스크롤 시 블록 사전 렌더링 범위 확대했습니다."),
+        t("모바일에서 도감 오프닝 트리가 버벅이던 문제를 고쳤습니다. 화면에 보이는 블록만 그립니다."),
+        t("빠르게 스크롤할 때 미리 그려 두는 블록 범위를 넓혔습니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 모식도 기본 배율 조정, 평가치 숫자 대신 등급 이름 표시합니다."),
-        t("추천 퍼즐을 데스크톱에서도 한 줄 가로 스크롤로 표시합니다."),
-        t("친구 창 모바일 전체 화면 추가했습니다."),
-        t("채팅 대화 진입 시 상단에 뒤로가기·상대 프로필 사진·아이디만 표시합니다."),
-        t("유산 블록을 금색·갈색 라운딩 사각형으로 변경했습니다. 종류별 세로 3열, 같은 종류는 같은 줄 추가했습니다."),
-        t("퀘스트 클리어·칭호 획득·티어 승급 팝업 제목 글꼴 변경했습니다."),
-        t("도감 탭 모식도 위 안내 문구 삭제, 도감 해금률 소수점 둘째 자리 표시합니다."),
-        t("퍼즐 탭 '일일 퍼즐' 글자 크기를 '추천 퍼즐'과 통일, 아이콘을 달력으로 변경했습니다."),
-        t("유산 재생 화면 정리했습니다. 배경·안내 문구·등급 이름·서체를 기보 서체와 통일했습니다. 체스보드 칸 밝기 반짝임 연출했습니다."),
-        t("프로필 '자주 두는 첫 수' 데스크톱 크기 수정했습니다."),
-        t("유산 블록 편집(✎) 아이콘 좌하단, 공유 아이콘 우하단 추가했습니다."),
+        t("퍼즐 모식도의 기본 배율을 조정하고, 평가치 숫자 대신 등급 이름을 보여 줍니다."),
+        t("추천 퍼즐을 데스크톱에서도 한 줄 가로 스크롤로 보여 줍니다."),
+        t("친구 창을 모바일에서 전체 화면으로 엽니다."),
+        t("채팅 대화에 들어가면 위쪽에 뒤로 가기, 상대 프로필 사진, 아이디만 보여 줍니다."),
+        t("유산 블록을 금색·갈색의 둥근 사각형으로 바꿨습니다. 종류별로 세로 3열에 두고 같은 종류는 같은 줄에 놓습니다."),
+        t("퀘스트 완료, 칭호 획득, 티어 승급 팝업의 제목 글꼴을 바꿨습니다."),
+        t("도감 탭 모식도 위 안내 문구를 없애고, 도감 해금률을 소수점 둘째 자리까지 보여 줍니다."),
+        t("퍼즐 탭 '일일 퍼즐' 글자 크기를 '추천 퍼즐'과 같게 맞추고, 아이콘을 달력으로 바꿨습니다."),
+        t("유산 재생 화면을 정리했습니다. 배경, 안내 문구, 등급 이름, 서체를 기보 서체와 맞추고, 체스보드 칸이 반짝이는 연출을 넣었습니다."),
+        t("데스크톱 프로필의 '자주 두는 첫 수' 크기를 고쳤습니다."),
+        t("유산 블록의 편집(✎) 아이콘은 왼쪽 아래, 공유 아이콘은 오른쪽 아래에 두었습니다."),
       ] },
       { cat: "ux", items: [
-        t("도감 오프닝 트리 빈 공간 진입 시 스크롤 속도 급증 완화했습니다."),
-        t("유산 만들기에서 '외부 사이트 대국에서 선택' 시 추가 창 대신 아래에 최근 대국 표시합니다."),
-        t("도감 수 카드에서 오프닝 이름을 눌러 집중 학습 진입 후 닫으면 도감 탭으로 복귀했습니다."),
-        t("체스보드에서 기물이 있는 칸 어디를 눌러도 드래그 시작했습니다."),
-        t("채팅 메시지 수정/삭제 메뉴를 데스크톱 우클릭으로도 열기 추가했습니다."),
+        t("도감 오프닝 트리의 빈 공간에 들어가면 스크롤이 갑자기 빨라지던 현상을 줄였습니다."),
+        t("유산 만들기에서 '외부 사이트 대국에서 선택'을 누르면 새 창 대신 아래에 최근 대국을 보여 줍니다."),
+        t("도감 수 카드에서 오프닝 이름을 눌러 집중 학습에 들어갔다가 닫으면 도감 탭으로 돌아옵니다."),
+        t("체스보드에서 기물이 있는 칸이면 어디를 눌러도 끌기를 시작합니다."),
+        t("데스크톱에서는 오른쪽 클릭으로도 채팅 메시지 수정·삭제 메뉴를 엽니다."),
       ] },
       { cat: "fix", items: [
-        t("채팅 메시지 메뉴가 가려지거나 겹치던 문제를 수정했습니다."),
-        t("도감 오프닝 트리 수 카드가 하단 메뉴 위로 삐져나오던 문제를 수정했습니다."),
-        t("퍼즐 탭 기물 드래그 불량 수정했습니다."),
-        t("개발자가 추가한 이론 수가 도감 모식도에 안 나타나던 문제를 수정했습니다."),
-        t("퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹치던 문제를 수정했습니다."),
-        t("도감 오프닝 트리 첫 진입 시 중앙 회로 칩 위치 수정했습니다."),
-        t("모바일에서 외부 사이트 링크가 항상 같은 화면에서 열리도록 수정했습니다."),
-        t("알림 카드·수 아이콘 말풍선 모바일 잘림을 수정했습니다."),
-        t("유산 수 아이콘 금색 테두리 크기·정렬·겹침 문제를 수정했습니다."),
-        t("유산 수 뒤 더 재생할 수가 없으면 체스보드 확대가 풀리지 않던 문제를 수정했습니다."),
-        t("채팅 퍼즐 '전달' 실패 시 안내 문구 표시합니다."),
+        t("채팅 메시지 메뉴가 가려지거나 겹치던 문제를 고쳤습니다."),
+        t("도감 오프닝 트리의 수 카드가 아래쪽 메뉴 위로 삐져나오던 문제를 고쳤습니다."),
+        t("퍼즐 탭에서 기물 끌기가 잘 안 되던 문제를 고쳤습니다."),
+        t("개발자가 추가한 이론 수가 도감 모식도에 나타나지 않던 문제를 고쳤습니다."),
+        t("퍼즐 탭 티어 표시에서 그랜드마스터 별 개수가 티어 이름과 겹치던 문제를 고쳤습니다."),
+        t("도감 오프닝 트리에 처음 들어갈 때 가운데 회로 칩 위치를 바로잡았습니다."),
+        t("모바일에서 외부 사이트 링크가 늘 같은 방식으로 열리도록 고쳤습니다."),
+        t("모바일에서 알림 카드와 수 아이콘 말풍선이 잘리던 문제를 고쳤습니다."),
+        t("유산 수 아이콘의 금색 테두리 크기, 정렬, 겹침 문제를 고쳤습니다."),
+        t("유산 수 뒤에 더 재생할 수가 없으면 체스보드 확대가 풀리지 않던 문제를 고쳤습니다."),
+        t("채팅에서 퍼즐 '전달'이 실패하면 안내 문구를 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.3.2", date: "2026.8.12",
-    summary: t("도감 오프닝 트리 재설계했습니다."),
-    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("도감 오프닝 트리 완전히 새로 디자인했습니다.") },
+    summary: t("도감 오프닝 트리를 새로 설계했습니다."),
+    highlight: { kind: "icon", Icon: Compass, color: T.brassHi, label: t("도감 오프닝 트리를 완전히 새로 디자인했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("도감 오프닝 트리 재설계했습니다. 블록 겹침 제거, 모든 수에 오프닝 이름 표시합니다."),
-        t("오프닝 트리에서 수를 클릭하면 중심에서 해당 수까지 파란 선이 흐르는 연출했습니다."),
-        t("일일 퍼즐로 선정된 적 있는 퍼즐에 선정 날짜 표시합니다."),
+        t("도감 오프닝 트리를 새로 설계했습니다. 블록이 겹치지 않고 모든 수에 오프닝 이름을 보여 줍니다."),
+        t("오프닝 트리에서 수를 누르면 가운데에서 그 수까지 파란 선이 흐릅니다."),
+        t("일일 퍼즐로 뽑힌 적 있는 퍼즐에는 뽑힌 날짜를 보여 줍니다."),
       ] },
       { cat: "ui", items: [
-        t("채팅·프로필·검색 창 모바일 전체 화면 추가했습니다."),
-        t("집중 학습 화면 평가치·등급 글자색을 진한 크림색으로 변경했습니다."),
-        t("모바일 추천 퍼즐 점선 테두리 한 줄 가로 스크롤 추가했습니다."),
-        t("일일 퍼즐 캐러셀 크림색 디자인 통일했습니다."),
-        t("말풍선(채팅 메시지 메뉴 포함) 화면 가장자리 잘림을 수정했습니다."),
-        t("오프닝 트리 드래그·스크롤 속도 상향 추가했습니다."),
-        t("퍼즐 카드 그리드 크기 통일했습니다."),
-        t("헤더 친구·채팅·알림 배지가 가려지던 문제를 수정했습니다."),
-        t("스테일메이트·3회 동형 반복 무승부를 기보 끝 ½-½로 표시합니다."),
+        t("채팅, 프로필, 검색 창을 모바일에서 전체 화면으로 엽니다."),
+        t("집중 학습 화면의 평가치와 등급 글자색을 진한 크림색으로 바꿨습니다."),
+        t("모바일 추천 퍼즐을 점선 테두리 안에서 한 줄 가로 스크롤로 보여 줍니다."),
+        t("일일 퍼즐 캐러셀을 크림색 디자인으로 맞췄습니다."),
+        t("말풍선(채팅 메시지 메뉴 포함)이 화면 가장자리에서 잘리던 문제를 고쳤습니다."),
+        t("오프닝 트리의 끌기와 스크롤 속도를 높였습니다."),
+        t("퍼즐 카드 격자의 크기를 맞췄습니다."),
+        t("헤더의 친구·채팅·알림 배지가 가려지던 문제를 고쳤습니다."),
+        t("스테일메이트와 3회 동형 반복 무승부는 기보 끝에 ½-½로 표시합니다."),
       ] },
       { cat: "fix", items: [
-        t("아군 폰이 지키는 칸으로 이동하는 수의 판정 오류를 수정했습니다."),
-        t("퍼즐 풀이 평가치 막대가 정답 후에도 계속 변하던 문제를 수정했습니다."),
-        t("채팅에서 @아이디로 연 프로필 창이 닫아도 다시 열리던 문제를 수정했습니다."),
-        t("친구 목록에서 채팅 시작 시 상대 프로필 사진이 안 뜨던 문제를 수정했습니다."),
-        t("오프닝 트리 드래그 중 화면이 튀던 문제를 수정했습니다."),
-        t("오프닝 트리 일부 수에서 이름이 안 보이거나 'Main Line'으로만 뜨던 문제를 수정했습니다."),
-        t("채팅 목록에서 읽은 대화의 안읽음 표시가 남던 문제를 수정했습니다."),
+        t("아군 폰이 지키는 칸으로 가는 수를 잘못 판정하던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 중 정답을 맞힌 뒤에도 평가 막대가 계속 움직이던 문제를 고쳤습니다."),
+        t("채팅에서 @아이디로 연 프로필 창이 닫아도 다시 열리던 문제를 고쳤습니다."),
+        t("친구 목록에서 채팅을 시작하면 상대 프로필 사진이 나오지 않던 문제를 고쳤습니다."),
+        t("오프닝 트리를 끄는 동안 화면이 튀던 문제를 고쳤습니다."),
+        t("오프닝 트리의 일부 수에서 이름이 보이지 않거나 'Main Line'으로만 나오던 문제를 고쳤습니다."),
+        t("채팅 목록에서 이미 읽은 대화에 안 읽음 표시가 남던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.1", date: "2026.8.10",
-    summary: t("퍼즐 생성·검색 속도 개선, 마스터 통계 검색 추가했습니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("퍼즐 생성·검색 속도 대폭 개선했습니다.") },
+    summary: t("퍼즐 만들기와 검색을 빠르게 하고 마스터 통계 검색을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("퍼즐 만들기와 검색 속도를 크게 높였습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("마스터 통계 선수 이름 검색 추가했습니다. 자동완성 지원합니다."),
-        t("외부 사이트 통계에서 리뷰한 대국만 모아 보는 체크박스 추가했습니다."),
-        t("퍼즐 번호·날짜 검색 시 열어보지 않은 퍼즐도 추천에 표시합니다."),
+        t("마스터 통계에서 선수 이름으로 검색할 수 있고, 자동 완성을 지원합니다."),
+        t("외부 사이트 통계에 리뷰한 대국만 모아 보는 체크박스를 넣었습니다."),
+        t("퍼즐을 번호나 날짜로 찾을 때 아직 열어 보지 않은 퍼즐도 추천에 나옵니다."),
       ] },
       { cat: "perf", items: [
-        t("마스터 대국을 얕은 오프닝일수록 다양하게, 깊을수록 적게 표시하도록 데이터 정리했습니다."),
-        t("일일 퍼즐 캐러셀 로딩 속도 개선했습니다."),
-        t("퍼즐 생성·검색 속도 개선했습니다."),
+        t("마스터 대국 데이터를 정리해, 오프닝 초반일수록 다양하게, 깊이 들어갈수록 적게 보여 줍니다."),
+        t("일일 퍼즐 캐러셀을 더 빨리 불러옵니다."),
+        t("퍼즐 만들기와 검색 속도를 높였습니다."),
       ] },
       { cat: "ui", items: [
-        t("'이 수가 두어진 마스터 대국'을 '마스터 통계'로 이름 변경했습니다."),
-        t("일일 퍼즐 캐러셀 카드 간격 고정했습니다. 일일 퍼즐 알림 팝업 확대했습니다."),
-        t("집중 학습 화면 평가치·등급을 크림색으로 수 이름 옆에 표시합니다."),
+        t("'이 수가 두어진 마스터 대국'을 '마스터 통계'로 이름을 바꿨습니다."),
+        t("일일 퍼즐 캐러셀 카드 간격을 고정하고, 일일 퍼즐 알림 팝업을 키웠습니다."),
+        t("집중 학습 화면의 평가치와 등급을 수 이름 옆에 크림색으로 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("집중 학습 '마스터 대국' 목록이 포지션과 무관하게 5판만 표시되던 문제를 수정했습니다."),
-        t("마스터 통계 정렬·페이지 버튼 무반응 수정했습니다."),
-        t("퍼즐 풀이 모식도 블록 겹침을 수정했습니다."),
+        t("집중 학습 '마스터 대국' 목록이 포지션과 상관없이 5판만 나오던 문제를 고쳤습니다."),
+        t("마스터 통계의 정렬·페이지 버튼이 반응하지 않던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 모식도의 블록이 겹치던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.3.0", date: "2026.8.9",
-    summary: t("마스터 대국 데이터 확대, 터치 드래그, 수비자 제거 전술 추가했습니다."),
-    highlight: { kind: "icon", Icon: Crown, color: T.brassHi, label: t("마스터 대국 데이터 대거 추가했습니다.") },
+    summary: t("마스터 대국 데이터를 늘리고, 터치 끌기와 '수비자 제거' 전술 설명을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Crown, color: T.brassHi, label: t("마스터 대국 데이터를 대거 추가했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("오프닝 실제 유명 변형 233개 추가(루이 로페즈 마셜, 시칠리안 나이도르프 6.Bg5 등) 추가했습니다."),
-        t("집중 학습 '마스터 대국' 목록에 GM 대국 수천 판 추가했습니다."),
-        t("모바일 터치로 기물 드래그 이동했습니다."),
-        t("코치 '수비자 제거' 전술 코멘트 추가했습니다."),
-        t("엔진 분석 중 순위 변동 시 수 블록이 끊기지 않고 부드럽게 이동했습니다."),
+        t("실제로 유명한 오프닝 변형 233개(루이 로페즈 마셜, 시칠리안 나이도르프 6.Bg5 등)를 넣었습니다."),
+        t("집중 학습 '마스터 대국' 목록에 GM 대국 수천 판을 넣었습니다."),
+        t("모바일에서 터치로 기물을 끌어 옮길 수 있습니다."),
+        t("코치에 '수비자 제거' 전술 코멘트를 넣었습니다."),
+        t("엔진 분석 중 순위가 바뀌면 수 블록이 끊기지 않고 부드럽게 자리를 옮깁니다."),
       ] },
       { cat: "fix", items: [
-        t("퍼즐에서 상대의 최선 수 대신 다른 수가 남던 문제를 수정했습니다."),
-        t("퍼즐이 체크메이트까지 정확히 끝나도록 종료 조건 보완 추가했습니다."),
+        t("퍼즐에서 상대의 최선 응수 대신 다른 수가 남던 문제를 고쳤습니다."),
+        t("퍼즐이 체크메이트까지 정확히 끝나도록 종료 조건을 보완했습니다."),
       ] },
       { cat: "perf", items: [
-        t("퍼즐 생성 속도 개선했습니다."),
-        t("게임 리뷰가 전체 분석 완료를 기다리지 않고 수별 채점 결과를 즉시 표시합니다."),
+        t("퍼즐을 더 빨리 만듭니다."),
+        t("게임 리뷰가 전체 분석이 끝나기를 기다리지 않고 수마다 채점 결과를 바로 보여 줍니다."),
       ] },
       { cat: "ui", items: [
-        t("학습 탭 '수 설명'을 해설 박스 안에 통합했습니다. 세로 자동 전환했습니다."),
-        t("OC 나이트 코인·리뷰 티켓 아이콘 확대했습니다."),
-        t("본문 글자색을 갈색 톤으로 변경, 굵기 상향 추가했습니다."),
+        t("학습 탭 '수 설명'을 해설 상자 안에 합치고, 세로 화면에 맞춰 자동으로 바뀝니다."),
+        t("OC 나이트 코인과 리뷰 티켓 아이콘을 키웠습니다."),
+        t("본문 글자색을 갈색 톤으로 바꾸고 조금 더 굵게 했습니다."),
       ] },
     ],
   },
   {
     version: "0.2.9", date: "2026.8.4",
-    summary: t("일일 퀘스트 클리어 팝업, 리뷰 실시간 평가치 추가했습니다."),
-    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("일일 퀘스트 클리어 팝업 추가했습니다.") },
+    summary: t("일일 퀘스트 완료 팝업과 리뷰 실시간 평가치를 넣었습니다."),
+    highlight: { kind: "icon", Icon: Target, color: T.brassHi, label: t("일일 퀘스트 완료 팝업을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰 평가치 막대가 실시간 엔진 1순위 평가를 따라 이동했습니다."),
-        t("일일 퀘스트 5개 모두 클리어 시 팝업 표시합니다. 퀘스트 1개 클리어 시에도 상단 팝업 추가했습니다."),
-        t("티어 승급·새 칭호 획득을 카드형 팝업으로 변경했습니다. 시간 경과·배경 클릭 시 닫힘 추가했습니다."),
-        t("사이트 기본 폰트를 IBM Plex Sans KR로 변경했습니다."),
-        t("리뷰 티켓 소모 규칙 추가했습니다. 대국을 리뷰로 열 때마다 1개 사용, 한 번 연 대국은 재열람 무료 추가했습니다."),
-        t("개발자 전용 설정 화면 통합했습니다. OC 코인·리뷰 티켓·경험치 직접 조정했습니다."),
-        t("리뷰 티켓 아이콘 이미지 교체했습니다. 리뷰 로딩 화면 삽화 3장 순차 표시합니다."),
-        t("학습 탭 '수 설명'을 로그인한 사용자 누구나 작성 가능 추가했습니다."),
+        t("게임 리뷰의 평가 막대가 실시간 엔진 1순위 평가를 따라 움직입니다."),
+        t("일일 퀘스트 5개를 모두 끝내면 팝업이 뜹니다. 퀘스트 하나를 끝낼 때도 위쪽에 알림이 나옵니다."),
+        t("티어 승급과 새 칭호 획득을 카드 모양 팝업으로 바꿨습니다. 시간이 지나거나 바깥을 누르면 닫힙니다."),
+        t("사이트 기본 글꼴을 IBM Plex Sans KR로 바꿨습니다."),
+        t("리뷰 티켓 사용 규칙을 정했습니다. 대국을 리뷰로 열 때마다 1장을 쓰고, 한 번 연 대국은 다시 볼 때 무료입니다."),
+        t("개발자 전용 설정 화면을 한데 모았습니다. OC 코인, 리뷰 티켓, 경험치를 직접 조정합니다."),
+        t("리뷰 티켓 아이콘 이미지를 바꾸고, 리뷰 로딩 화면에 삽화 3장을 차례로 보여 줍니다."),
+        t("로그인한 사용자라면 누구나 학습 탭 '수 설명'을 쓸 수 있습니다."),
       ] },
       { cat: "perf", items: [
-        t("학습 탭 엔진 분석 심화 추가했습니다. 첫 화면 확정(0.7초) 후 5초 심화 탐색 추가했습니다."),
-        t("게임 리뷰 화면에도 현재 포지션 엔진 라인·평가치 표시합니다."),
+        t("학습 탭 엔진 분석을 깊게 했습니다. 첫 결과를 0.7초 만에 보여 준 뒤 5초 동안 더 깊이 탐색합니다."),
+        t("게임 리뷰 화면에도 현재 포지션의 엔진 라인과 평가치를 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.2.8", date: "2026.8.2",
-    summary: t("MILKU·KOKOA 코멘트 강화(MEC) 추가했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("MILKU·KOKOA 코멘트 강화했습니다.") },
+    summary: t("MILKU와 KOKOA의 코멘트를 강화(MEC)했습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("MILKU와 KOKOA의 코멘트를 강화했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("MILKU·KOKOA가 정석 수를 제외한 거의 모든 수에 구체적 이유(MEC) 코멘트 추가했습니다. 위협·위협 대처·과보호·예방 수·연결·중첩·교환·재전개 등 추가했습니다."),
-        t("퍼즐 풀이 코치 말풍선에 걸린 기물을 짚는 실질적 힌트 표시합니다."),
-        t("애니메이션이 있는 설명(위협·위협 대처·과보호·예방 수·연결·중첩)에 밑줄 표시합니다. 클릭 시 해당 칸 강조합니다."),
-        t("기물이 걸렸을 때 정확한 칸 좌표 표시합니다. 예방 수 설명에 상대가 노리던 칸 좌표 표시합니다."),
-        t("체크메이트 강제 수순에서 메이트까지 남은 수 안내합니다."),
-        t("상대 기물을 되잡는 단순 수는 '유일한 수'로 표시하지 않습니다."),
-        t("탁월한 수 설명 상세화 추가했습니다. 희생 기물, 걸린 기물 구분 추가했습니다."),
-        t("게임 리뷰 자유 탐색 중 실제 기보의 수를 두면 재분석 없이 원래 결과 표시합니다."),
-        t("일일 퍼즐 캐러셀을 사용자 스케치대로 재설계했습니다. 카드 정사각형, 체스보드 약 3배 확대했습니다."),
-        t("모바일 게임 리뷰 기보 줄 스와이프 이동했습니다."),
-        t("퍼즐 풀이 화면 코치 말풍선 표시/숨김 버튼 추가했습니다."),
-        t("일일 퀘스트 알림 창 왼쪽 달력에 오늘의 퍼즐 포지션 표시합니다."),
+        t("MILKU와 KOKOA가 정석 수를 뺀 거의 모든 수에 구체적인 이유(MEC)를 설명합니다. 위협, 위협 대처, 과보호, 예방 수, 연결, 중첩, 교환, 재전개 등을 다룹니다."),
+        t("퍼즐 풀이 중 코치 말풍선이 걸린 기물을 짚어 주는 실질적인 힌트를 줍니다."),
+        t("애니메이션이 있는 설명(위협, 위협 대처, 과보호, 예방 수, 연결, 중첩)에 밑줄을 긋고, 누르면 해당 칸을 강조합니다."),
+        t("기물이 걸렸을 때 정확한 칸 좌표를 알려 주고, 예방 수 설명에는 상대가 노리던 칸 좌표를 보여 줍니다."),
+        t("체크메이트를 강제하는 수순에서는 메이트까지 남은 수를 알려 줍니다."),
+        t("상대 기물을 단순히 되잡는 수는 '유일한 수'로 표시하지 않습니다."),
+        t("탁월한 수 설명을 자세히 했습니다. 희생한 기물과 위험에 놓인 기물을 구분합니다."),
+        t("게임 리뷰 자유 탐색 중 실제 기보의 수를 두면 다시 분석하지 않고 원래 결과를 보여 줍니다."),
+        t("일일 퍼즐 캐러셀을 사용자가 그린 스케치대로 새로 짰습니다. 카드는 정사각형이고 체스보드는 약 3배 커졌습니다."),
+        t("모바일 게임 리뷰에서 기보 줄을 밀어 넘길 수 있습니다."),
+        t("퍼즐 풀이 화면에 코치 말풍선 보이기·숨기기 버튼을 넣었습니다."),
+        t("일일 퀘스트 알림 창 왼쪽 달력에 오늘의 퍼즐 포지션을 보여 줍니다."),
       ] },
       { cat: "perf", items: [
-        t("일일 퍼즐 캐러셀 미리보기 보드 로딩 시간 단축했습니다."),
-        t("엔진 추천 수 줄 타이핑 애니메이션 삭제했습니다. 계산된 수순 즉시 표시합니다."),
-        t("엔진 해시 테이블 확대했습니다. 짧은 시간에도 더 깊이 탐색 추가했습니다."),
-        t("학습 탭 엔진 계산 개선했습니다. 라인·평가치·아이콘 우선 표시 후 5초 심화 추가했습니다."),
-        t("'n수 후까지 탐색 중' depth 표시 오차를 수정했습니다."),
+        t("일일 퍼즐 캐러셀 미리보기 보드를 더 빨리 불러옵니다."),
+        t("엔진 추천 수 줄의 타이핑 애니메이션을 없애고, 계산한 수순을 바로 보여 줍니다."),
+        t("엔진 해시 테이블을 키워, 짧은 시간에도 더 깊이 탐색합니다."),
+        t("학습 탭 엔진 계산을 개선했습니다. 라인, 평가치, 아이콘을 먼저 보여 준 뒤 5초 동안 더 깊이 계산합니다."),
+        t("'n수 후까지 탐색 중'의 depth 표시 오차를 고쳤습니다."),
       ] },
       { cat: "fix", items: [
-        t("엔진 추천 수 줄이 2개만 표시되고 늘어나지 않던 문제, 끝까지 표시되지 않던 문제, 특정 수순(앙파상 포함)에서 끊기던 문제를 수정했습니다."),
-        t("엔진 추천 수 줄 스와이프 무반응 수정했습니다."),
-        t("퍼즐 풀이 평가치 막대가 0.00에서 멈추던 문제를 수정했습니다."),
-        t("일일 퍼즐 캐러셀 카드 모양이 스크롤 중 바뀌던 문제, 마우스 클릭 무반응 수정했습니다."),
-        t("이기고 있는데 교환을 피하라고 안내하던 문제를 수정했습니다."),
-        t("MILKU·KOKOA 코멘트의 조사(을/를, 이/가) 오류를 수정했습니다."),
-        t("'전체' 레이팅 그래프에서 대국이 적은 시간 규정이 수직선으로 표시되던 문제를 수정했습니다."),
-        t("퍼즐 창 X 버튼 클릭 시 사이트 전체가 멈추던 문제를 수정했습니다."),
-        t("게임 리뷰 기보 줄 드래그 스크롤이 뻑뻑하던 문제를 수정했습니다."),
-        t("상대 기물을 잡는 수에 '재전개' 설명이 붙던 문제를 수정했습니다."),
+        t("엔진 추천 수 줄이 2개만 나오고 늘어나지 않던 문제, 끝까지 나오지 않던 문제, 특정 수순(앙파상 포함)에서 끊기던 문제를 고쳤습니다."),
+        t("엔진 추천 수 줄을 밀어도 반응하지 않던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 중 평가 막대가 0.00에서 멈추던 문제를 고쳤습니다."),
+        t("일일 퍼즐 캐러셀 카드 모양이 스크롤 중에 바뀌던 문제와 마우스 클릭이 듣지 않던 문제를 고쳤습니다."),
+        t("이기고 있는데도 교환을 피하라고 안내하던 문제를 고쳤습니다."),
+        t("MILKU·KOKOA 코멘트의 조사(을/를, 이/가) 오류를 고쳤습니다."),
+        t("'전체' 레이팅 그래프에서 대국이 적은 시간 규정이 수직선으로 그려지던 문제를 고쳤습니다."),
+        t("퍼즐 창의 X 버튼을 누르면 사이트 전체가 멈추던 문제를 고쳤습니다."),
+        t("게임 리뷰 기보 줄을 끌어 스크롤할 때 뻑뻑하던 문제를 고쳤습니다."),
+        t("상대 기물을 잡는 수에 '재전개' 설명이 붙던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.2.7", date: "2026.7.29",
-    summary: t("일일 퍼즐 캐러셀 UI 추가했습니다."),
-    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("일일 퍼즐 캐러셀 UI 추가했습니다.") },
+    summary: t("일일 퍼즐 캐러셀 화면을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("일일 퍼즐 캐러셀 화면을 넣었습니다.") },
     sections: [
       { cat: "ui", items: [
-        t("일일 퍼즐 화면을 좌우 스크롤 캐러셀로 재설계했습니다. 날짜 선택했습니다."),
-        t("일일 퍼즐 알림 창을 달력 다이어리 형태로 변경했습니다."),
+        t("일일 퍼즐 화면을 좌우로 넘기는 캐러셀로 새로 짜고 날짜를 고를 수 있게 했습니다."),
+        t("일일 퍼즐 알림 창을 달력 다이어리 모양으로 바꿨습니다."),
       ] },
       { cat: "feature", items: [
-        t("캐러셀 선택 날짜 퍼즐 아래에 해결 인원수 표시합니다."),
-        t("일일 퍼즐 이름을 다른 퍼즐과 같은 방식으로 표시(예 추가했습니다. 'Italian Game, 4.Ng5') 추가했습니다."),
-        t("일일 퍼즐에도 고유 번호 부여했습니다. 채팅 공유·'번호로 풀기' 지원합니다."),
+        t("캐러셀에서 고른 날짜의 퍼즐 아래에 푼 사람 수를 보여 줍니다."),
+        t("일일 퍼즐 이름을 다른 퍼즐과 같은 방식(예: 'Italian Game, 4.Ng5')으로 보여 줍니다."),
+        t("일일 퍼즐에도 고유 번호를 붙였습니다. 채팅 공유와 '번호로 풀기'를 지원합니다."),
       ] },
       { cat: "fix", items: [
-        t("엔진 준비 전에 실제로 출제되지 않은 일일 퍼즐이 표시되던 문제를 수정했습니다."),
-        t("채팅 '/puzzle 000000'으로 없는 번호를 보내면 전송 자체를 차단했습니다."),
-        t("퍼즐 모식도에서 해결한 라인의 마지막 수가 '라인 N' 표시에 가려지던 문제를 수정했습니다."),
-        t("퍼즐 창 진입 시 평가치 막대가 즉시 동작 추가했습니다."),
-        t("일일 퍼즐 캐러셀 카드 클릭 무반응 수정했습니다."),
-        t("퍼즐 힌트 단계별 표시 겹침을 수정했습니다. 1단계는 도착 칸, 2단계는 기물 추가했습니다."),
-        t("리뷰 화면에서 수를 빠르게 넘길 때 엔진 추천 수 줄이 중간에 끊기던 문제를 수정했습니다."),
+        t("엔진이 준비되기 전에 실제로 출제되지 않은 일일 퍼즐이 보이던 문제를 고쳤습니다."),
+        t("채팅에서 '/puzzle 000000'으로 없는 번호를 보내면 아예 보내지지 않게 막았습니다."),
+        t("퍼즐 모식도에서 푼 라인의 마지막 수가 '라인 N' 표시에 가려지던 문제를 고쳤습니다."),
+        t("퍼즐 창에 들어가자마자 평가 막대가 작동합니다."),
+        t("일일 퍼즐 캐러셀 카드를 눌러도 반응이 없던 문제를 고쳤습니다."),
+        t("퍼즐 힌트가 단계마다 겹쳐 보이던 문제를 고쳤습니다. 1단계는 도착 칸, 2단계는 움직일 기물을 알려 줍니다."),
+        t("리뷰 화면에서 수를 빠르게 넘기면 엔진 추천 수 줄이 중간에 끊기던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.2.6", date: "2026.7.28",
-    summary: t("게임 리뷰 페이지 복구, 탁월한 수 판정 보완, 외부 사이트 통계 개선했습니다."),
-    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("게임 리뷰 페이지 복구했습니다.") },
+    summary: t("게임 리뷰 페이지를 되살리고, 탁월한 수 판정을 보완하고, 외부 사이트 통계를 개선했습니다."),
+    highlight: { kind: "icon", Icon: Wrench, color: T.brassHi, label: t("게임 리뷰 페이지를 되살렸습니다.") },
     sections: [
       { cat: "fix", items: [
-        t("게임 리뷰(/review) 진입 시 흰 화면만 뜨던 문제를 수정했습니다."),
-        t("'탁월한 수' 판정 보완 추가했습니다. 안전한 대안이 있는 희생 제외 추가했습니다."),
-        t("집중 학습 미니보드에서 캐슬링 재생 시 룩이 움직이지 않던 문제를 수정했습니다."),
-        t("엔진 추천 수 줄이 타이핑 중 멈추던 문제, 빠른 이동 시 줄이 어긋나던 문제를 수정했습니다."),
-        t("모바일에서 수 아이콘 설명·채팅 롱프레스 메뉴·알림 카드가 화면 가장자리에서 잘리던 문제를 수정했습니다."),
-        t("'가장 많이 둔 오프닝'의 '백 n수'/'흑 n수' 표시 불일치 수정했습니다."),
-        t("외부 사이트 통계가 많은 계정에서 특정 시간 규정 대국이 누락되던 문제, 특정 시간 규정 그래프가 안 그려지던 문제를 수정했습니다."),
+        t("게임 리뷰(/review)에 들어가면 흰 화면만 뜨던 문제를 고쳤습니다."),
+        t("탁월한 수 판정을 보완했습니다. 안전한 대안이 있는 희생은 탁월한 수에서 뺍니다."),
+        t("집중 학습 미니보드에서 캐슬링을 재생하면 룩이 움직이지 않던 문제를 고쳤습니다."),
+        t("엔진 추천 수 줄이 타이핑 도중 멈추던 문제와 빠르게 옮길 때 줄이 어긋나던 문제를 고쳤습니다."),
+        t("모바일에서 수 아이콘 설명, 채팅 길게 누르기 메뉴, 알림 카드가 화면 가장자리에서 잘리던 문제를 고쳤습니다."),
+        t("'가장 많이 둔 오프닝'의 '백 n수'·'흑 n수' 표시가 맞지 않던 문제를 고쳤습니다."),
+        t("외부 사이트 대국이 많은 계정에서 특정 시간 규정 대국이 빠지던 문제와 그 시간 규정 그래프가 그려지지 않던 문제를 고쳤습니다."),
       ] },
       { cat: "ux", items: [
-        t("도감·기보·엔진 추천 수 줄의 드래그 스크롤 반응성 개선했습니다."),
+        t("도감, 기보, 엔진 추천 수 줄을 끌어 스크롤할 때의 반응을 좋게 했습니다."),
       ] },
       { cat: "ui", items: [
-        t("'자주 두는 수'·집중 학습 수 표시에 새 서체 적용했습니다."),
-        t("'백 n수'/'흑 n수' 배지를 오프닝 이름 위 별도 줄에 금색으로 표시합니다."),
-        t("레이팅 변동 그래프 '전체' 모드 색칠 투명도 조정, 범례 글자 축소했습니다."),
-        t("퍼즐 탭 해결 완료 목록을 오프닝별 한 줄 가로 스크롤로 표시합니다."),
-        t("퍼즐 힌트 애니메이션 개선했습니다."),
+        t("'자주 두는 수'와 집중 학습의 수 표시에 새 서체를 썼습니다."),
+        t("'백 n수'·'흑 n수' 배지를 오프닝 이름 위 따로 된 줄에 금색으로 보여 줍니다."),
+        t("레이팅 변동 그래프 '전체' 모드의 색 투명도를 조정하고 범례 글자를 줄였습니다."),
+        t("퍼즐 탭의 푼 퍼즐 목록을 오프닝별로 한 줄씩 가로로 넘겨 봅니다."),
+        t("퍼즐 힌트 애니메이션을 다듬었습니다."),
       ] },
       { cat: "feature", items: [
-        t("가장 많이 둔 오프닝을 이름으로 표시, 아래에 흑 레퍼토리 오프닝 표시합니다."),
-        t("퍼즐 화면 개편했습니다. 해결한 퍼즐도 오프닝별 그룹화, 좋아요·리포스트 표시합니다."),
-        t("채팅 연속 메시지 묶음 첫 줄에 프로필 사진 표시, 클릭 시 프로필 이동했습니다."),
-        t("외부 사이트 통계를 시간 규정뿐 아니라 흑/백으로 구분 추가했습니다."),
-        t("'자주 두는 첫 수'를 백/흑 두 박스로 표시합니다."),
-        t("레이팅 변동 그래프 축·눈금선 추가, 아래 영역 채움 추가했습니다. 그래프를 끌면 해당 지점 정보 표시합니다."),
-        t("집중 학습 '이 수가 두어진 내 대국' 목록에 시간 규정·진영 선택 추가했습니다."),
-        t("외부 사이트 통계를 로그인 시에만 새로 불러오고 이후 캐시 사용 추가했습니다."),
+        t("가장 많이 둔 오프닝을 이름으로 보여 주고, 그 아래에 흑 레퍼토리 오프닝을 보여 줍니다."),
+        t("퍼즐 화면을 새로 꾸몄습니다. 푼 퍼즐도 오프닝별로 묶고 좋아요·리포스트를 보여 줍니다."),
+        t("채팅에서 연달아 보낸 메시지 묶음의 첫 줄에 프로필 사진을 보여 주고, 누르면 프로필로 갑니다."),
+        t("외부 사이트 통계를 시간 규정뿐 아니라 흑·백으로도 나눠 봅니다."),
+        t("'자주 두는 첫 수'를 백·흑 두 상자로 나눠 보여 줍니다."),
+        t("레이팅 변동 그래프에 축과 눈금선을 넣고 아래 영역을 채웠습니다. 그래프를 끌면 그 지점의 정보를 보여 줍니다."),
+        t("집중 학습 '이 수가 두어진 내 대국' 목록에서 시간 규정과 진영을 고를 수 있습니다."),
+        t("외부 사이트 통계는 로그인할 때만 새로 불러오고 그 뒤에는 캐시를 씁니다."),
       ] },
     ],
   },
   {
     version: "0.2.5", date: "2026.7.24",
-    summary: t("엔진 라인·기보 마우스 드래그 스크롤 추가했습니다."),
-    highlight: { kind: "icon", Icon: MousePointer, color: T.brassHi, label: t("엔진 라인·기보 마우스 드래그 스크롤 추가했습니다.") },
+    summary: t("엔진 라인과 기보를 마우스로 끌어 스크롤할 수 있습니다."),
+    highlight: { kind: "icon", Icon: MousePointer, color: T.brassHi, label: t("엔진 라인과 기보를 마우스로 끌어 스크롤할 수 있습니다.") },
     sections: [
       { cat: "fix", items: [
-        t("엔진 추천 수 줄과 학습 탭 기보 줄이 길 때 마우스 드래그 스크롤이 안 되던 문제를 수정했습니다."),
-        t("엔진이 깊이 계산해 줄이 길어질 때 화면은 그대로이고 뒷부분만 늘어나던 문제를 수정했습니다."),
-        t("줄을 끌다가 손을 떼면 수가 실행되던 문제를 수정했습니다."),
+        t("엔진 추천 수 줄과 학습 탭 기보 줄이 길 때 마우스로 끌어 스크롤되지 않던 문제를 고쳤습니다."),
+        t("엔진이 깊이 계산해 줄이 길어질 때 화면은 그대로 두고 뒷부분만 늘어나던 문제를 고쳤습니다."),
+        t("줄을 끌다가 손을 떼면 수가 실행되던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("엔진 추천 수 줄 뒷부분이 남아 있으면 오른쪽 끝에 그림자 표시합니다."),
-        t("티어 여정 지도 배경 이미지를 고화질로 교체했습니다."),
+        t("엔진 추천 수 줄의 뒷부분이 더 있으면 오른쪽 끝에 그림자를 보여 줍니다."),
+        t("티어 여정 지도의 배경 이미지를 고화질로 바꿨습니다."),
       ] },
     ],
   },
   {
     version: "0.2.4", date: "2026.7.24",
-    summary: t("공개 데이터 퍼즐 DB 기반 일일 퍼즐, 리뷰·학습 엔진 분리했습니다."),
-    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("공개 데이터 퍼즐 DB 기반 오늘의 퍼즐 추가했습니다.") },
+    summary: t("공개 데이터 퍼즐 DB로 일일 퍼즐을 만들고, 리뷰와 학습의 엔진을 나눴습니다."),
+    highlight: { kind: "icon", Icon: Puzzle, color: T.brassHi, label: t("공개 데이터 퍼즐 DB로 만드는 오늘의 퍼즐을 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰 전용 엔진 고정했습니다. 학습 탭과 엔진 분리했습니다."),
-        t("집중 학습 수 체계 아이콘 판정 깊이 확대(최대 5초) 추가했습니다."),
-        t("일일 퍼즐을 공개 데이터 퍼즐 데이터베이스 기반으로 재구성했습니다. 2주마다 테마 교체했습니다."),
+        t("게임 리뷰 전용 엔진을 고정하고 학습 탭과 엔진을 나눴습니다."),
+        t("집중 학습에서 수 등급 아이콘을 판정하는 깊이를 늘렸습니다(최대 5초)."),
+        t("일일 퍼즐을 공개 퍼즐 데이터베이스로 다시 짰습니다. 2주마다 테마가 바뀝니다."),
       ] },
       { cat: "perf", items: [
-        t("게임 리뷰 진입 속도 개선했습니다. 앱 실행 중 사전 준비 추가했습니다."),
-        t("긴 기보를 빠르게 넘길 때 이전 위치 계산이 밀리던 문제를 수정했습니다."),
+        t("게임 리뷰를 더 빨리 엽니다. 앱이 켜져 있는 동안 미리 준비해 둡니다."),
+        t("긴 기보를 빠르게 넘기면 이전 위치 계산이 밀리던 문제를 고쳤습니다."),
       ] },
       { cat: "fix", items: [
-        t("게임 리뷰에서 최선의 수를 두어도 평가치가 흔들리던 문제를 수정했습니다."),
-        t("엔진 추천 수가 타이핑 중 멈추던 문제를 수정했습니다."),
+        t("게임 리뷰에서 최선의 수를 두어도 평가치가 흔들리던 문제를 고쳤습니다."),
+        t("엔진 추천 수가 타이핑 도중 멈추던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("학습 탭 다음 수 블록이 평가치 순위 변동 시 부드럽게 이동했습니다."),
+        t("학습 탭 다음 수 블록이 평가치 순위가 바뀔 때 부드럽게 자리를 옮깁니다."),
       ] },
     ],
   },
   {
     version: "0.2.3", date: "2026.7.24",
-    summary: t("탁월한 수 판정 보완, 긴 대국 속도 유지합니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("긴 대국에서도 항상 일정한 속도 추가했습니다.") },
+    summary: t("탁월한 수 판정을 보완하고, 긴 대국에서도 속도를 유지합니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("긴 대국에서도 늘 같은 속도로 동작합니다.") },
     sections: [
       { cat: "fix", items: [
-        t("'탁월한 수' 판정을 4가지 상황별로 보완 추가했습니다."),
-        t("게임 리뷰에서 최선의 수를 두어도 평가치가 잠깐 바뀌었다 돌아오던 문제를 수정했습니다."),
-        t("리뷰 페이지 자유 탐색 수의 등급이 학습 탭과 다르던 문제를 수정했습니다."),
-        t("일일 퍼즐 탭 첫 화면에 전날 퍼즐이 남아 있던 문제를 수정했습니다."),
+        t("탁월한 수 판정을 4가지 상황별로 보완했습니다."),
+        t("게임 리뷰에서 최선의 수를 두어도 평가치가 잠깐 바뀌었다가 돌아오던 문제를 고쳤습니다."),
+        t("리뷰 페이지 자유 탐색 수의 등급이 학습 탭과 다르던 문제를 고쳤습니다."),
+        t("일일 퍼즐 탭 첫 화면에 전날 퍼즐이 남아 있던 문제를 고쳤습니다."),
       ] },
       { cat: "perf", items: [
-        t("긴 기보를 두거나 빠르게 넘길 때 뒤로 갈수록 느려지던 문제를 수정했습니다."),
+        t("긴 기보를 두거나 빠르게 넘기면 뒤로 갈수록 느려지던 문제를 고쳤습니다."),
       ] },
       { cat: "feature", items: [
-        t("스테일메이트·3회 동형 반복 무승부 인식 추가했습니다."),
-        t("티어 승급 시 여정 지도에서 나이트 OC 코인 보너스 지급했습니다."),
-        t("마스터 대국에 없는 유명 대국을 개발자가 직접 등록했습니다."),
+        t("스테일메이트와 3회 동형 반복 무승부를 알아봅니다."),
+        t("티어가 오르면 여정 지도에서 OC 나이트 코인 보너스를 줍니다."),
+        t("마스터 대국 목록에 없는 유명 대국을 개발자가 직접 등록할 수 있습니다."),
       ] },
       { cat: "ui", items: [
-        t("티어 여정 지도 닫기 버튼 우상단 고정했습니다."),
-        t("학습 탭 메인 체스판의 잡힌 기물·기물 점수 표시 삭제했습니다."),
-        t("집중 학습 미니보드 금색·빨간색 화살표 겹침을 수정했습니다."),
+        t("티어 여정 지도의 닫기 버튼을 오른쪽 위에 고정했습니다."),
+        t("학습 탭 메인 체스판의 잡힌 기물과 기물 점수 표시를 없앴습니다."),
+        t("집중 학습 미니보드에서 금색과 빨간색 화살표가 겹치던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.2.2", date: "2026.7.23",
-    summary: t("엔진 라인 계산 속도 개선했습니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("엔진 라인 계산 속도 개선했습니다.") },
+    summary: t("엔진 라인 계산을 빠르게 했습니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("엔진 라인 계산을 빠르게 했습니다.") },
     sections: [
       { cat: "perf", items: [
-        t("학습 탭 엔진 추천 수(엔진 라인) 계산 시간 대폭 단축했습니다."),
-        t("소개 페이지(/about) '유명한 오프닝들' 갤러리 다중 보드 동작 부하 개선했습니다."),
+        t("학습 탭 엔진 추천 수(엔진 라인) 계산 시간을 크게 줄였습니다."),
+        t("소개 페이지(/about) '유명한 오프닝들' 갤러리에서 여러 보드가 함께 움직일 때의 부하를 줄였습니다."),
       ] },
       { cat: "fix", items: [
-        t("학습 탭 다음 수 블록의 수 체계 아이콘과 실제로 둔 뒤의 아이콘이 다르던 문제를 수정했습니다."),
+        t("학습 탭 다음 수 블록의 수 등급 아이콘과 실제로 둔 뒤의 아이콘이 다르던 문제를 고쳤습니다."),
       ] },
       { cat: "feature", items: [
         t("오늘의 퀘스트 두 번째 항목을 '오늘의 퍼즐 풀기'로 고정했습니다."),
-        t("티어 리더보드에 내 순위를 금색 윤곽선으로 표시합니다."),
-        t("게임 리뷰에서 탁월한 수(언더프로모션 제외) 시 체스판 위 표시합니다."),
-        t("외부 사이트 연동 계정의 실제 대국 통계 기반 '자주 두는 첫 수' 표시합니다."),
+        t("티어 리더보드에서 내 순위를 금색 윤곽선으로 보여 줍니다."),
+        t("게임 리뷰에서 탁월한 수(언더프로모션 제외)를 두면 체스판 위에 표시합니다."),
+        t("외부 사이트를 연동한 계정은 실제 대국 통계로 '자주 두는 첫 수'를 보여 줍니다."),
       ] },
       { cat: "ui", items: [
-        t("프로필 카드 정리했습니다. 티어는 흰 십각형 로고 하나로 표시합니다."),
-        t("퍼즐 탭 미해결 퍼즐을 오프닝별 점선 영역 가로 스크롤로 표시합니다."),
-        t("학습 탭 제안 화살표를 모든 후보 수 중 상위 3수로 확대했습니다."),
-        t("게임 리뷰 코치 설명에서 탁월한 수의 희생 기물 지목 추가했습니다."),
+        t("프로필 카드를 정리했습니다. 티어는 흰 십각형 로고 하나로 보여 줍니다."),
+        t("퍼즐 탭에서 아직 안 푼 퍼즐을 오프닝별 점선 영역에 담아 가로로 넘겨 봅니다."),
+        t("학습 탭 제안 화살표를 모든 후보 수 가운데 상위 3수로 늘렸습니다."),
+        t("게임 리뷰 코치 설명에서 탁월한 수의 희생 기물을 짚어 줍니다."),
       ] },
       { cat: "ux", items: [
-        t("'가장 많이 둔 오프닝'을 백 1~6번째 수까지 반영했습니다."),
-        t("도감 오프닝 모식도 설명 카드가 블록을 가리지 않도록 이동했습니다."),
-        t("도감 오프닝 트리 중앙 회로 칩 클릭 시 전기 효과음 재생했습니다."),
-        t("그랜드마스터 보드 스킨에 주기적 광택 애니메이션 추가했습니다."),
-        t("설정 탭 사운드 카드 설명 문구 정리했습니다."),
+        t("'가장 많이 둔 오프닝'에 백의 1~6번째 수까지 반영합니다."),
+        t("도감 오프닝 모식도의 설명 카드가 블록을 가리지 않도록 옮겼습니다."),
+        t("도감 오프닝 트리 가운데 회로 칩을 누르면 전기 효과음이 납니다."),
+        t("그랜드마스터 보드 스킨에 주기적으로 빛이 스치는 애니메이션을 넣었습니다."),
+        t("설정 탭 사운드 카드의 설명 문구를 정리했습니다."),
       ] },
     ],
   },
   {
     version: "0.2.1", date: "2026.7.23",
-    summary: t("리뷰 보드 자유 탐색, 수 체계 아이콘 설명했습니다."),
-    highlight: { kind: "icon", Icon: MousePointer, color: "#B98CFF", label: t("리뷰 보드 자유 탐색 추가했습니다.") },
+    summary: t("리뷰 보드 자유 탐색과 수 등급 아이콘 설명을 넣었습니다."),
+    highlight: { kind: "icon", Icon: MousePointer, color: "#B98CFF", label: t("리뷰 보드에서 자유롭게 탐색할 수 있습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰 보드에서 기보에 없는 수를 자유롭게 두고 평가 확인했습니다."),
-        t("게임 리뷰·학습 탭·퍼즐의 수 체계 아이콘 클릭 시 등급 설명 표시합니다."),
-        t("게임 리뷰 요약에 두어지지 않은 수 등급, 오프닝·엔드게임 단계 항상 표시합니다."),
-        t("게임 리뷰 보드에 연동한 외부 사이트 프로필 사진 표시합니다."),
-        t("평가치 그래프 점을 수 체계에 맞춰 정리했습니다. 그래프 클릭·드래그로 해당 수 이동했습니다."),
-        t("세로 평가치 막대를 모든 화면에서 보드 옆에 상시 표시합니다."),
+        t("게임 리뷰 보드에서 기보에 없는 수를 자유롭게 두고 평가를 확인합니다."),
+        t("게임 리뷰, 학습 탭, 퍼즐의 수 등급 아이콘을 누르면 등급 설명을 보여 줍니다."),
+        t("게임 리뷰 요약에 나오지 않은 수 등급과 오프닝·엔드게임 단계도 늘 보여 줍니다."),
+        t("게임 리뷰 보드에 연동한 외부 사이트의 프로필 사진을 보여 줍니다."),
+        t("평가치 그래프의 점을 수 등급에 맞춰 정리했습니다. 그래프를 누르거나 끌면 그 수로 옮겨 갑니다."),
+        t("세로 평가 막대를 모든 화면에서 보드 옆에 늘 보여 줍니다."),
       ] },
       { cat: "ux", items: [
-        t("평가치를 +/- 부호 대신 유리한 쪽 위치로 표시합니다."),
-        t("게임 리뷰 뒤로가기 시 진입했던 화면으로 복귀했습니다."),
-        t("게임 리뷰 등급별 개수를 누르면 해당 등급이 처음 나온 수로 이동했습니다."),
-        t("코치 설명 카드의 Retry 버튼 삭제, Show 버튼 아이콘 변경했습니다."),
+        t("평가치를 +/- 부호 대신 유리한 쪽의 위치로 보여 줍니다."),
+        t("게임 리뷰에서 뒤로 가기를 누르면 들어왔던 화면으로 돌아갑니다."),
+        t("게임 리뷰의 등급별 개수를 누르면 그 등급이 처음 나온 수로 갑니다."),
+        t("코치 설명 카드의 Retry 버튼을 없애고 Show 버튼 아이콘을 바꿨습니다."),
       ] },
       { cat: "fix", items: [
-        t("평가치 그래프가 데스크톱에서 찌그러지던 문제를 수정했습니다."),
-        t("체크메이트로 끝난 대국의 평가치가 이상한 숫자로 표시되던 문제를 수정했습니다."),
-        t("엔진 추천 수가 잠깐 겹쳐 깜빡이던 문제를 수정했습니다."),
+        t("평가치 그래프가 데스크톱에서 찌그러지던 문제를 고쳤습니다."),
+        t("체크메이트로 끝난 대국의 평가치가 이상한 숫자로 나오던 문제를 고쳤습니다."),
+        t("엔진 추천 수가 잠깐 겹쳐 깜빡이던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.2.0", date: "2026.7.22",
-    summary: t("신규 게임 리뷰 페이지, 일일 퍼즐 추가했습니다."),
-    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 게임 리뷰 페이지 추가했습니다.") },
+    summary: t("새 게임 리뷰 페이지와 일일 퍼즐을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Sparkles, color: T.brassHi, label: t("새 게임 리뷰 페이지를 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("게임 리뷰를 외부 사이트 스타일 전체 화면 /review 페이지로 신규 제작 추가했습니다."),
-        t("일일 퍼즐 추가했습니다. 매일 자정 교체했습니다."),
-        t("업데이트 공지를 버전마다 최초 접속 시 1회만 표시합니다. 설정 탭 개발 기록에서 재열람 추가했습니다."),
-        t("게임 리뷰·프로필 최근 대국 목록에 양측 플레이어 실제 이름 표시합니다."),
-        t("게임 리뷰·학습 탭 체스판에 잡힌 기물과 기물 점수 차이 표시합니다."),
-        t("분석 엔진 선택지 확대했습니다. 기존 2종에 최강 엔진 추가했습니다."),
+        t("게임 리뷰를 외부 사이트 같은 전체 화면 /review 페이지로 새로 만들었습니다."),
+        t("일일 퍼즐을 넣었습니다. 매일 자정에 바뀝니다."),
+        t("업데이트 공지는 버전마다 처음 접속할 때 한 번만 보여 줍니다. 설정 탭 개발 기록에서 다시 볼 수 있습니다."),
+        t("게임 리뷰와 프로필 최근 대국 목록에 양쪽 선수의 실제 이름을 보여 줍니다."),
+        t("게임 리뷰와 학습 탭 체스판에 잡힌 기물과 기물 점수 차이를 보여 줍니다."),
+        t("분석 엔진 선택지를 늘렸습니다. 기존 2종에 가장 강한 엔진을 더했습니다."),
       ] },
       { cat: "perf", items: [
-        t("수 체계 아이콘 확정 속도 단축했습니다."),
-        t("게임 리뷰 소요 시간 대폭 단축했습니다."),
-        t("학습 탭 후보 수 블록 표시 속도 개선했습니다."),
+        t("수 등급 아이콘이 확정되는 속도를 앞당겼습니다."),
+        t("게임 리뷰에 걸리는 시간을 크게 줄였습니다."),
+        t("학습 탭 후보 수 블록이 더 빨리 나타납니다."),
       ] },
       { cat: "ux", items: [
-        t("학습 탭 '분석' 버튼 클릭 시 신규 게임 리뷰 화면으로 이동했습니다."),
+        t("학습 탭 '분석' 버튼을 누르면 새 게임 리뷰 화면으로 갑니다."),
       ] },
       { cat: "fix", items: [
-        t("백이 크게 우세할 때 평가치 막대 도움말 아이콘이 흰 배경에 묻히던 문제를 수정했습니다."),
-        t("연동한 외부 사이트 아이디의 대소문자 표기 오류를 수정했습니다."),
-        t("기물을 희생해 압박하는 탁월한 수 판정이 캐슬링·폰 이동에서 동작하지 않던 문제를 수정했습니다."),
-        t("모바일 문의하기에서 메일 양식이 채워지지 않던 문제를 수정했습니다."),
-        t("일일 퍼즐 알림과 업데이트 공지가 겹쳐 공지를 닫을 수 없던 문제를 수정했습니다."),
+        t("백이 크게 앞설 때 평가 막대 도움말 아이콘이 흰 바탕에 묻히던 문제를 고쳤습니다."),
+        t("연동한 외부 사이트 아이디의 대소문자가 잘못 표시되던 문제를 고쳤습니다."),
+        t("기물을 희생해 압박하는 탁월한 수 판정이 캐슬링과 폰 이동에서는 작동하지 않던 문제를 고쳤습니다."),
+        t("모바일 '문의하기'에서 메일 양식이 채워지지 않던 문제를 고쳤습니다."),
+        t("일일 퍼즐 알림과 업데이트 공지가 겹쳐 공지를 닫을 수 없던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.1.5", date: "2026.7.18",
-    summary: t("그랜드마스터 배지 복구, 애니메이션, 채팅 입력 표시합니다."),
-    highlight: { kind: "img", src: "/gm.png", label: t("그랜드마스터 배지 복구했습니다.") },
+    summary: t("그랜드마스터 배지를 되살리고, 애니메이션과 채팅 입력 중 표시를 넣었습니다."),
+    highlight: { kind: "img", src: "/gm.png", label: t("그랜드마스터 배지를 되살렸습니다.") },
     sections: [
       { cat: "ux", items: [
-        t("퍼즐 탭·퀘스트 탭·상점 탭·친구·검색 목록에 부드러운 등장 애니메이션 추가했습니다."),
-        t("친구 요청 수락·거절, 알림 삭제 시 항목이 자연스럽게 사라짐 추가했습니다."),
-        t("집중 학습 퍼즐 자동 생성 중 진행률 표시 개선했습니다."),
-        t("채팅에서 상대가 입력 중이면 말풍선 점 3개 표시합니다."),
+        t("퍼즐 탭, 퀘스트 탭, 상점 탭, 친구·검색 목록에 부드럽게 나타나는 애니메이션을 넣었습니다."),
+        t("친구 요청을 수락·거절하거나 알림을 지우면 항목이 자연스럽게 사라집니다."),
+        t("집중 학습에서 퍼즐을 자동으로 만드는 동안의 진행률 표시를 다듬었습니다."),
+        t("채팅에서 상대가 입력 중이면 말풍선에 점 3개를 보여 줍니다."),
       ] },
       { cat: "feature", items: [
-        t("체스판에 나무 결 질감과 파일(a~h)·랭크(1~8) 좌표 추가했습니다."),
-        t("체스판 장식에 폴스 메이트·스칼라스 메이트·레갈의 함정·프라이드 리버 어택 등 추가했습니다."),
-        t("외부 사이트 계정 연동 시 이용 가능 기능(대국 자동 동기화, 게임 리뷰 정확도 등) 안내합니다."),
-        t("채팅에서 내가 보낸 메시지를 꾹 눌러 수정· 삭제했습니다."),
-        t("채팅 공유 퍼즐 카드에 보낸 시각 표시, 꾹 눌러 삭제했습니다."),
-        t("배경음악(드뷔시 '달빛')과 블록·체스판 클릭 효과음 추가했습니다."),
-        t("버전 기록에서 누락된 v0.1.2·v0.1.3 항목 보완 추가했습니다."),
+        t("체스판에 나무 결 질감과 파일(a~h)·랭크(1~8) 좌표를 넣었습니다."),
+        t("체스판 장식에 폴스 메이트, 스칼라스 메이트, 레갈의 함정, 프라이드 리버 어택 등을 넣었습니다."),
+        t("외부 사이트 계정을 연동할 때 쓸 수 있는 기능(대국 자동 동기화, 게임 리뷰 정확도 등)을 안내합니다."),
+        t("채팅에서 내가 보낸 메시지를 길게 눌러 고치거나 지울 수 있습니다."),
+        t("채팅에 공유한 퍼즐 카드에 보낸 시각을 보여 주고, 길게 눌러 지울 수 있습니다."),
+        t("배경음악(드뷔시 '달빛')과 블록·체스판 클릭 효과음을 넣었습니다."),
+        t("버전 기록에서 빠져 있던 v0.1.2·v0.1.3 항목을 채웠습니다."),
       ] },
       { cat: "fix", items: [
-        t("그랜드마스터 티어 배지에 기물 대신 오로라 사진이 표시되던 문제를 수정했습니다."),
-        t("티어 여정 지도가 모바일에서 오른쪽으로 밀려 잘리던 문제를 수정했습니다."),
-        t("퍼즐 풀이·카드 '공유' 버튼 텍스트가 두 줄로 잘리던 문제를 수정했습니다."),
-        t("계정 변경·로그아웃 후 이전 계정의 퍼즐·프로필 기록이 남던 문제를 수정했습니다."),
+        t("그랜드마스터 티어 배지에 기물 대신 오로라 사진이 나오던 문제를 고쳤습니다."),
+        t("티어 여정 지도가 모바일에서 오른쪽으로 밀려 잘리던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 화면과 카드의 '공유' 버튼 글자가 두 줄로 잘리던 문제를 고쳤습니다."),
+        t("계정을 바꾸거나 로그아웃한 뒤에도 이전 계정의 퍼즐·프로필 기록이 남던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("마스코트 그림을 학습 탭 등 다른 화면과 통일했습니다."),
-        t("티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데로 강조합니다."),
+        t("마스코트 그림을 학습 탭 등 다른 화면과 맞췄습니다."),
+        t("티어 여정 지도에서 그랜드마스터(마지막 티어)를 가운데에 두어 강조합니다."),
       ] },
     ],
   },
   {
     version: "0.1.4", date: "2026.7.18",
-    summary: t("소개 페이지 유명 오프닝 갤러리, 그랜드마스터 카드 추가했습니다."),
-    highlight: { kind: "img", src: "/gm-trophy-web.webp", label: t("그랜드마스터 카드 추가했습니다.") },
+    summary: t("소개 페이지에 유명 오프닝 갤러리와 그랜드마스터 카드를 넣었습니다."),
+    highlight: { kind: "img", src: "/gm-trophy-web.webp", label: t("그랜드마스터 카드를 넣었습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("소개 페이지에 이탈리안 게임·루이 로페즈·시실리안 디펜스·그룬펠드 디펜스 등 유명 오프닝 갤러리 추가했습니다."),
-        t("그랜드마스터 티어 소개 카드 추가했습니다. 달성 조건(누적 200,000 XP 등) 안내합니다."),
-        t("그랜드마스터 도달 시 코인으로 살 수 없는 전용 체스보드·기물 스킨 지급했습니다."),
-        t("친구 목록·유저 검색·티어 리더보드에서 그랜드마스터에 골드 테두리 표시합니다."),
-        t("프로필 '오프닝별 승률' 목록을 갈래별로 접기/펼치기 추가했습니다."),
-        t("퍼즐 이름을 '오프닝 이름, 수'(예 추가했습니다. Italian Game, 4.Ng5) 형식으로 통일했습니다."),
+        t("소개 페이지에 이탈리안 게임, 루이 로페즈, 시실리안 디펜스, 그룬펠드 디펜스 등 유명 오프닝 갤러리를 넣었습니다."),
+        t("그랜드마스터 티어 소개 카드를 넣었습니다. 달성 조건(누적 200,000 XP 등)을 안내합니다."),
+        t("그랜드마스터에 오르면 코인으로 살 수 없는 전용 체스보드와 기물 스킨을 줍니다."),
+        t("친구 목록, 사용자 검색, 티어 리더보드에서 그랜드마스터에게 금색 테두리를 둘러 줍니다."),
+        t("프로필 '오프닝별 승률' 목록을 갈래마다 접거나 펼칠 수 있습니다."),
+        t("퍼즐 이름을 '오프닝 이름, 수'(예: Italian Game, 4.Ng5) 형식으로 통일했습니다."),
       ] },
       { cat: "ui", items: [
-        t("MILKU·KOKOA 일러스트 4장을 소개 페이지에 배치했습니다."),
-        t("상단 페이지 안내 바 삭제했습니다. 좌우 화살표 버튼으로 페이지 이동했습니다."),
-        t("퍼즐 카드 상단 라벨에 최상위 오프닝 이름만 표시합니다."),
-        t("헤더 로고 아래 버전 표기 위치 조정했습니다. 클릭 시 소개 페이지 이동했습니다."),
+        t("MILKU·KOKOA 일러스트 4장을 소개 페이지에 실었습니다."),
+        t("위쪽 페이지 안내 바를 없애고 좌우 화살표 버튼으로 페이지를 넘깁니다."),
+        t("퍼즐 카드 위쪽 라벨에 가장 상위의 오프닝 이름만 보여 줍니다."),
+        t("헤더 로고 아래 버전 표기 위치를 조정하고, 누르면 소개 페이지로 갑니다."),
       ] },
       { cat: "fix", items: [
-        t("긴 오프닝 이름에도 퍼즐 카드 높이 균일 유지합니다."),
-        t("티어 여정 지도에서 스크롤이 멈추면 등장 애니메이션이 깜빡이던 문제를 수정했습니다."),
+        t("오프닝 이름이 길어도 퍼즐 카드 높이를 똑같이 유지합니다."),
+        t("티어 여정 지도에서 스크롤이 멈추면 등장 애니메이션이 깜빡이던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.1.3", date: "2026.7.17",
-    summary: t("엔진 상위 3줄 분석, 티어 여정 지도 개편했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("엔진 상위 3줄 분석했습니다."), tilt: -3 },
+    summary: t("엔진 상위 3줄 분석을 넣고 티어 여정 지도를 새로 꾸몄습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("엔진 상위 3줄을 분석합니다."), tilt: -3 },
     sections: [
       { cat: "feature", items: [
-        t("학습 탭 메인 보드에 엔진 추천 상위 3줄과 평가치 표시합니다."),
-        t("평가치 바 소수점 둘째 자리 표시, 유리한 쪽에 맞는 위치·색 추가했습니다."),
-        t("상단 기보 가로 스크롤, 수가 늘면 최신 수로 자동 이동했습니다."),
-        t("프로필 버튼 카드에 메인 퀘스트 진척도와 푼 퍼즐 목록 표시합니다."),
-        t("소개 페이지(/about) 스크롤 애니메이션 확충 추가했습니다."),
-        t("티어 여정 지도 개편했습니다. 지나온 구간은 노란 선과 초록 체크 추가했습니다."),
+        t("학습 탭 메인 보드에 엔진이 추천하는 상위 3줄과 평가치를 보여 줍니다."),
+        t("평가 막대에 소수점 둘째 자리까지 보여 주고, 유리한 쪽에 맞춰 위치와 색을 바꿉니다."),
+        t("위쪽 기보를 가로로 넘기고, 수가 늘면 가장 최근 수로 자동으로 옮겨 갑니다."),
+        t("프로필 버튼 카드에 메인 퀘스트 진척도와 푼 퍼즐 목록을 보여 줍니다."),
+        t("소개 페이지(/about)의 스크롤 애니메이션을 늘렸습니다."),
+        t("티어 여정 지도를 새로 꾸몄습니다. 지나온 구간은 노란 선과 초록 ✓로 표시합니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 공유 버튼 강조합니다."),
-        t("헤더 티어 진행바 삭제했습니다. 상세 진행도는 로고 클릭으로 확인했습니다."),
+        t("퍼즐 공유 버튼을 더 눈에 띄게 했습니다."),
+        t("헤더의 티어 진행 막대를 없앴습니다. 자세한 진행도는 로고를 눌러 확인합니다."),
       ] },
       { cat: "fix", items: [
-        t("프로필 '푼 퍼즐' 블록 찌그러짐 수정했습니다. 5개까지 가로 스크롤 추가했습니다."),
-        t("퍼즐·도감 모식도 이동 중 멈춤 수정했습니다."),
-        t("퍼즐 컴퓨터 응징 수 아이콘 깜빡임 수정했습니다."),
-        t("학습 탭에서 같은 수의 평가치가 위치마다 다르던 문제를 수정했습니다."),
-        t("일부 스마트폰 기기에서 학습 탭 화면이 옆으로 밀려 잘리던 문제를 수정했습니다."),
-        t("일부 일일 퀘스트에서 클리어 조건 기보가 안 보이던 문제를 수정했습니다."),
+        t("프로필 '푼 퍼즐' 블록이 찌그러지던 문제를 고치고, 5개까지 가로로 넘겨 봅니다."),
+        t("퍼즐·도감 모식도를 옮기는 중에 멈추던 문제를 고쳤습니다."),
+        t("퍼즐에서 컴퓨터가 응징하는 수의 아이콘이 깜빡이던 문제를 고쳤습니다."),
+        t("학습 탭에서 같은 수의 평가치가 자리마다 다르게 나오던 문제를 고쳤습니다."),
+        t("일부 스마트폰에서 학습 탭 화면이 옆으로 밀려 잘리던 문제를 고쳤습니다."),
+        t("일부 일일 퀘스트에서 완료 조건 기보가 보이지 않던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.1.2", date: "2026.7.16",
-    summary: t("퍼즐 오답 응징 수 시연, /about 페이지 추가했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("오답 응징 수 시연 추가했습니다."), tilt: 3 },
+    summary: t("퍼즐 오답 때 응징 수를 보여 주는 시연과 /about 페이지를 넣었습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("오답 때 응징 수를 시연합니다."), tilt: 3 },
     sections: [
       { cat: "feature", items: [
-        t("퍼즐 오답 시 즉시 원위치 대신 상대의 응징 수 시연 추가했습니다."),
-        t("퍼즐 모식도·도감 오프닝 트리에서 빈 공간까지 드래그 이동했습니다."),
-        t("일일 퀘스트 4개 보상을 경험치 대신 OC 나이트 코인으로 변경했습니다."),
-        t("사이트 소개 /about 페이지 추가했습니다. 좌우로 넘기며 핵심 기능 확인했습니다."),
+        t("퍼즐을 틀리면 곧바로 되돌리지 않고 상대의 응징 수를 먼저 보여 줍니다."),
+        t("퍼즐 모식도와 도감 오프닝 트리에서 빈 공간을 잡고도 끌어 옮길 수 있습니다."),
+        t("일일 퀘스트 4개의 보상을 경험치에서 OC 나이트 코인으로 바꿨습니다."),
+        t("사이트 소개 /about 페이지를 만들었습니다. 좌우로 넘기며 핵심 기능을 살펴봅니다."),
       ] },
       { cat: "fix", items: [
-        t("일부 퀘스트 오프닝 이름 자리에 '오프닝'만 표시되던 문제를 수정했습니다."),
-        t("퍼즐 컴퓨터의 첫 수 아이콘이 계산 중으로 잠깐 표시되던 문제를 수정했습니다."),
+        t("일부 퀘스트에서 오프닝 이름 자리에 '오프닝'만 나오던 문제를 고쳤습니다."),
+        t("퍼즐에서 컴퓨터의 첫 수 아이콘이 잠깐 '계산 중'으로 나오던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("티어 로고 원 축소, 사이트 톤에 맞는 금색으로 변경했습니다."),
-        t("헤더 경험치 게이지를 로고 아래로 이동, 현재 버전 표시합니다."),
+        t("티어 로고 원을 줄이고 사이트 분위기에 맞는 금색으로 바꿨습니다."),
+        t("헤더 경험치 게이지를 로고 아래로 옮기고 현재 버전을 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.1.1", date: "2026.7.16",
-    summary: t("티어 UI 이미지 개편, 버그를 수정했습니다."),
+    summary: t("티어 UI 이미지를 새로 만들고 버그를 고쳤습니다."),
     highlight: { kind: "tierPromo" },
     sections: [
       { cat: "feature", items: [
-        t("퍼즐 카드·풀이 화면 공유 아이콘을 '공유 수 표시'와 '공유하기' 두 개로 분리했습니다."),
-        t("퍼즐이 테마 태그 두 개를 동시에 가지면 카드에 함께 표시합니다."),
-        t("티어 화면을 실제 기물 이미지로 재설계했습니다."),
-        t("티어 승급 시 화면이 어두워지며 기존 티어가 사라지고 새 티어 등장 추가했습니다."),
+        t("퍼즐 카드와 풀이 화면의 공유 아이콘을 '공유 수 표시'와 '공유하기' 두 개로 나눴습니다."),
+        t("퍼즐이 테마 태그를 두 개 함께 가지면 카드에 함께 보여 줍니다."),
+        t("티어 화면을 실제 기물 이미지로 새로 짰습니다."),
+        t("티어가 오르면 화면이 어두워지며 이전 티어가 사라지고 새 티어가 나타납니다."),
       ] },
       { cat: "fix", items: [
-        t("퍼즐 좋아요·리포스트 취소 시 숫자가 줄지 않던 문제를 수정했습니다."),
-        t("채팅 버튼 클릭 시 화면이 멈추던 문제를 수정했습니다."),
-        t("다른 사람이 같은 퍼즐을 올리면 먼저 올린 태그가 사라지던 문제를 수정했습니다."),
-        t("스마트폰 브라우저 홈 화면 추가 시 파비콘 대신 글자 아이콘이 뜨던 문제를 수정했습니다."),
+        t("퍼즐 좋아요·리포스트를 취소해도 숫자가 줄지 않던 문제를 고쳤습니다."),
+        t("채팅 버튼을 누르면 화면이 멈추던 문제를 고쳤습니다."),
+        t("다른 사람이 같은 퍼즐을 올리면 먼저 붙인 태그가 사라지던 문제를 고쳤습니다."),
+        t("스마트폰 브라우저에서 홈 화면에 추가하면 파비콘 대신 글자 아이콘이 뜨던 문제를 고쳤습니다."),
       ] },
       { cat: "ui", items: [
-        t("도감 탭 오프닝 트리 대표 이름표 위치 조정했습니다."),
+        t("도감 탭 오프닝 트리의 대표 이름표 위치를 조정했습니다."),
       ] },
     ],
   },
   {
     version: "0.1.0", date: "2026.7.16",
-    summary: t("퍼즐 공유, 리포스트, 공개 프로필 기록했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("퍼즐 공유하기 추가했습니다."), tilt: -3 },
+    summary: t("퍼즐 공유와 리포스트, 공개 프로필 기록을 넣었습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-puzzle.webp", label: t("퍼즐 공유하기를 넣었습니다."), tilt: -3 },
     sections: [
       { cat: "feature", items: [
-        t("퍼즐 친구 공유했습니다. 카드·풀이 화면 종이비행기 아이콘 추가했습니다."),
-        t("공유한 퍼즐을 친구가 풀면 친구 획득 경험치의 10%를 공유자에게 지급했습니다."),
-        t("퍼즐 리포스트 추가했습니다."),
-        t("메인 퀘스트 진척도·푼 퍼즐 목록을 유저 검색·프로필에서 열람 추가했습니다."),
+        t("퍼즐을 친구에게 공유할 수 있습니다. 카드와 풀이 화면에 종이비행기 아이콘을 넣었습니다."),
+        t("공유한 퍼즐을 친구가 풀면 친구가 얻은 경험치의 10%를 공유한 사람에게 줍니다."),
+        t("퍼즐 리포스트를 넣었습니다."),
+        t("사용자 검색과 프로필에서 메인 퀘스트 진척도와 푼 퍼즐 목록을 볼 수 있습니다."),
       ] },
       { cat: "ui", items: [
-        t("퍼즐 카드·풀이 화면에 리포스트 수·공유 수를 좋아요 수 옆에 표시합니다."),
-        t("퍼즐 테마 3종 카드 배경 패턴을 수 체계 배지와 같은 색·기호로 변경했습니다."),
+        t("퍼즐 카드와 풀이 화면에 리포스트 수와 공유 수를 좋아요 수 옆에 보여 줍니다."),
+        t("퍼즐 테마 3종의 카드 배경 무늬를 수 등급 배지와 같은 색과 기호로 바꿨습니다."),
       ] },
       { cat: "fix", items: [
-        t("도감 탭 대표 오프닝(이탈리안 게임, 루이 로페즈 등) 이름표 위치 오류를 수정했습니다."),
-        t("실수를 응징하는 수가 탁월한 수이기도 한 경우 같은 퍼즐이 중복 분류되던 문제를 수정했습니다."),
+        t("도감 탭 대표 오프닝(이탈리안 게임, 루이 로페즈 등) 이름표 위치가 어긋나던 문제를 고쳤습니다."),
+        t("실수를 응징하는 수가 탁월한 수이기도 하면 같은 퍼즐이 두 번 분류되던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.0.6", date: "2026.7.15",
-    summary: t("티어 시스템, 도감 탭 성능·안정성 개선했습니다."),
+    summary: t("티어 시스템을 넣고 도감 탭 성능과 안정성을 높였습니다."),
     highlight: { kind: "tierStrip" },
     sections: [
       { cat: "feature", items: [
-        t("레벨 시스템을 아이언~그랜드마스터 각 5단계 티어로 개편했습니다."),
-        t("유저 검색창에 친구의 친구, 상위 티어 플레이어 추천 추가했습니다."),
+        t("레벨 시스템을 아이언부터 그랜드마스터까지 각 5단계로 나뉜 티어로 바꿨습니다."),
+        t("사용자 검색창에서 친구의 친구와 상위 티어 선수를 추천합니다."),
       ] },
       { cat: "perf", items: [
-        t("외부 사이트 대국이 많은 계정의 도감 탭 오프닝 트리 버벅임 수정했습니다."),
-        t("학습 탭 실시간 평가 속도 여러 배 향상 추가했습니다."),
+        t("외부 사이트 대국이 많은 계정에서 도감 탭 오프닝 트리가 버벅이던 문제를 고쳤습니다."),
+        t("학습 탭 실시간 평가가 몇 배 빨라졌습니다."),
       ] },
       { cat: "ui", items: [
-        t("도감 탭 오프닝 검색 개선했습니다. 이름에 포함된 오프닝 전체 표시합니다."),
-        t("퍼즐 탭 아이콘을 퍼즐 조각 모양으로 변경했습니다."),
-        t("내 프로필에서 메인 퀘스트 진척도·푼 퍼즐 정보를 외부 사이트 대국 기록보다 앞에 표시합니다."),
+        t("도감 탭 오프닝 검색을 개선했습니다. 이름에 검색어가 들어간 오프닝을 모두 보여 줍니다."),
+        t("퍼즐 탭 아이콘을 퍼즐 조각 모양으로 바꿨습니다."),
+        t("내 프로필에서 메인 퀘스트 진척도와 푼 퍼즐 정보를 외부 사이트 대국 기록보다 앞에 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("오프닝·퍼즐 모식도 확대·축소 시 트리 전체가 사라지던 문제를 수정했습니다."),
-        t("도감 탭 수 클릭 시 화면이 흔들리거나 드래그 시 트리가 튀던 문제를 수정했습니다."),
-        t("체스 규칙 2건 수정했습니다. 폰이 한 칸씩 두 번 나눠 전진해도 앙파상이 가능하던 오류 등 추가했습니다."),
-        t("내 프로필 오프닝별 승률 목록에서 이름이 길고 깊게 중첩되면 글자가 겹치던 문제를 수정했습니다."),
-        t("학습 탭 수 등급 판정, 로그인·로그아웃 데이터 처리, 알림 반영 등 다수 오류를 수정했습니다."),
+        t("오프닝·퍼즐 모식도를 확대·축소하면 트리 전체가 사라지던 문제를 고쳤습니다."),
+        t("도감 탭에서 수를 누르면 화면이 흔들리거나 끌 때 트리가 튀던 문제를 고쳤습니다."),
+        t("체스 규칙 2건을 바로잡았습니다. 폰이 한 칸씩 두 번에 나눠 전진해도 앙파상이 되던 오류 등입니다."),
+        t("내 프로필 오프닝별 승률 목록에서 이름이 길고 깊게 중첩되면 글자가 겹치던 문제를 고쳤습니다."),
+        t("학습 탭 수 등급 판정, 로그인·로그아웃 때의 데이터 처리, 알림 반영 등 여러 오류를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.0.5", date: "2026.7.14",
-    summary: t("서버 보안 강화, 실시간 알림·채팅 추가했습니다."),
-    highlight: { kind: "icon", Icon: Shield, color: "#D9736A", label: t("서버 보안 강화했습니다.") },
+    summary: t("서버 보안을 강화하고 실시간 알림과 채팅을 넣었습니다."),
+    highlight: { kind: "icon", Icon: Shield, color: "#D9736A", label: t("서버 보안을 강화했습니다.") },
     sections: [
       { cat: "security", items: [
-        t("타인이 내 퍼즐 풀이수·좋아요 수를 조작할 수 있던 문제를 수정했습니다."),
-        t("타인 명의로 가짜 알림(칭호 획득, 레벨 업 등)을 보낼 수 있던 문제를 수정했습니다."),
-        t("친구가 아닌 사람에게 채팅을 보낼 수 있던 문제를 수정했습니다."),
+        t("다른 사람이 내 퍼즐의 풀이 수와 좋아요 수를 조작할 수 있던 문제를 고쳤습니다."),
+        t("다른 사람 이름으로 가짜 알림(칭호 획득, 레벨 업 등)을 보낼 수 있던 문제를 고쳤습니다."),
+        t("친구가 아닌 사람에게 채팅을 보낼 수 있던 문제를 고쳤습니다."),
       ] },
       { cat: "perf", items: [
-        t("알림·친구 요청·채팅창을 폴링 대신 실시간(Realtime) 구독으로 변경했습니다."),
+        t("알림, 친구 요청, 채팅창을 주기적으로 확인하는 대신 실시간(Realtime) 구독으로 바꿨습니다."),
       ] },
     ],
   },
   {
     version: "0.0.4", date: "2026.7.13",
-    summary: t("학습 탭 실시간 분석, 게임 리뷰 속도 개선했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("학습 탭 실시간 분석했습니다."), tilt: 3 },
+    summary: t("학습 탭 실시간 분석과 게임 리뷰 속도를 개선했습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-study.webp", label: t("학습 탭에서 실시간으로 분석합니다."), tilt: 3 },
     sections: [
       { cat: "perf", items: [
-        t("게임 리뷰(전체 기보 분석) 속도 대폭 향상 추가했습니다."),
+        t("게임 리뷰(전체 기보 분석) 속도가 크게 빨라졌습니다."),
         t("체스판에서 수를 둘 때마다 실시간 분석이 느려지던 문제를 개선했습니다."),
       ] },
       { cat: "fix", items: [
-        t("모바일에서 긴 오프닝 이름이 잘리던 문제를 수정했습니다."),
-        t("퍼즐 제작 중 다른 화면으로 이동하면 처음부터 다시 만들어야 하던 문제를 수정했습니다."),
-        t("퍼즐 풀이 화면에 풀 수 없는 수가 함께 표시되던 문제를 수정했습니다."),
-        t("퍼즐 컴퓨터의 첫 수 표시가 금방 사라지던 문제를 수정했습니다."),
-        t("퍼즐 풀이 중 '처음부터'를 누르면 살펴본 내용까지 사라지던 문제를 수정했습니다."),
+        t("모바일에서 긴 오프닝 이름이 잘리던 문제를 고쳤습니다."),
+        t("퍼즐을 만들다가 다른 화면으로 가면 처음부터 다시 만들어야 하던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 화면에 풀 수 없는 수가 함께 나오던 문제를 고쳤습니다."),
+        t("퍼즐에서 컴퓨터의 첫 수 표시가 금방 사라지던 문제를 고쳤습니다."),
+        t("퍼즐 풀이 중 '처음부터'를 누르면 살펴본 내용까지 사라지던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.0.3", date: "2026.7.13",
-    summary: t("나침반형 오프닝 트리 추가했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-dex.webp", label: t("나침반형 오프닝 트리 추가했습니다."), tilt: -3 },
+    summary: t("나침반 모양의 오프닝 트리를 넣었습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-dex.webp", label: t("나침반 모양의 오프닝 트리를 넣었습니다."), tilt: -3 },
     sections: [
       { cat: "ui", items: [
-        t("도감 탭 오프닝 트리를 나침반 형태로 재설계했습니다. 1.e4·1.d4·1.c4·1.Nf3이 동서남북 네 방향으로 확장했습니다."),
+        t("도감 탭 오프닝 트리를 나침반 모양으로 새로 짰습니다. 1.e4·1.d4·1.c4·1.Nf3이 동서남북 네 방향으로 뻗어 나갑니다."),
       ] },
       { cat: "fix", items: [
-        t("트리 렌더링 중 화면이 흔들리거나 버벅이던 문제를 수정했습니다."),
-        t("수 클릭 시 뜨는 설명 카드가 확대·축소 시 잘리거나 커지던 문제를 수정했습니다."),
+        t("트리를 그리는 동안 화면이 흔들리거나 버벅이던 문제를 고쳤습니다."),
+        t("수를 누르면 뜨는 설명 카드가 확대·축소할 때 잘리거나 커지던 문제를 고쳤습니다."),
       ] },
     ],
   },
   {
     version: "0.0.2", date: "2026.7.12",
-    summary: t("실시간 분석 성능 개선했습니다."),
-    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("실시간 분석 성능 개선했습니다.") },
+    summary: t("실시간 분석 성능을 높였습니다."),
+    highlight: { kind: "icon", Icon: Zap, color: T.brassHi, label: t("실시간 분석 성능을 높였습니다.") },
     sections: [
       { cat: "fix", items: [
-        t("게임 리뷰(전체 기보 분석)가 기보가 길수록 느려지다 멈추던 문제를 수정했습니다."),
+        t("게임 리뷰(전체 기보 분석)가 기보가 길수록 느려지다 멈추던 문제를 고쳤습니다."),
       ] },
       { cat: "perf", items: [
-        t("실시간 분석 정확도·속도 개선했습니다."),
+        t("실시간 분석의 정확도와 속도를 높였습니다."),
       ] },
     ],
   },
   {
     version: "0.0.1", date: "2026.7.11",
-    summary: t("모바일 UI 정리, 사용성 개선했습니다."),
-    highlight: { kind: "shot", src: "/about/screenshot-quest.webp", label: t("구석구석 다듬기 추가했습니다."), tilt: 3 },
+    summary: t("모바일 화면을 정리하고 쓰기 편하게 다듬었습니다."),
+    highlight: { kind: "shot", src: "/about/screenshot-quest.webp", label: t("곳곳을 세세하게 다듬었습니다."), tilt: 3 },
     sections: [
       { cat: "ui", items: [
-        t("모바일 상단 메뉴 잘림 수정, 전체 정리했습니다."),
-        t("학습 탭 체스판 확대했습니다."),
-        t("상점·설정 탭 화면 정리했습니다."),
-        t("로그인·회원가입 창 애니메이션 추가했습니다."),
+        t("모바일 위쪽 메뉴가 잘리던 문제를 고치고 전체를 정리했습니다."),
+        t("학습 탭 체스판을 키웠습니다."),
+        t("상점과 설정 탭 화면을 정리했습니다."),
+        t("로그인·회원가입 창에 애니메이션을 넣었습니다."),
       ] },
       { cat: "feature", items: [
-        t("대국 기록에 래피드·블리츠·불릿 시간 규정과 레이팅 변화 표시합니다."),
-        t("도감 탭에 오프닝 이름 표시합니다."),
+        t("대국 기록에 래피드·블리츠·불릿 시간 규정과 레이팅 변화를 보여 줍니다."),
+        t("도감 탭에 오프닝 이름을 보여 줍니다."),
       ] },
       { cat: "ux", items: [
-        t("집중 학습 모드에서 수를 클릭하면 해당 수의 학습 화면으로 이동했습니다."),
-        t("검색 입력 즉시 결과 표시합니다."),
+        t("집중 학습 모드에서 수를 누르면 그 수의 학습 화면으로 갑니다."),
+        t("검색어를 입력하자마자 결과를 보여 줍니다."),
       ] },
       { cat: "fix", items: [
-        t("마스터 대국 기록이 안 보이던 문제를 수정했습니다."),
-        t("퍼즐 탭에서 퍼즐이 하단 메뉴에 가려지던 문제, 모바일 추천 퍼즐 미표시 문제를 수정했습니다."),
+        t("마스터 대국 기록이 보이지 않던 문제를 고쳤습니다."),
+        t("퍼즐 탭에서 퍼즐이 아래쪽 메뉴에 가려지던 문제와 모바일에서 추천 퍼즐이 나오지 않던 문제를 고쳤습니다."),
       ] },
       { cat: "perf", items: [
-        t("외부 사이트 계정 연동 시 대국이 많아도 정보가 빠르게 표시합니다."),
+        t("외부 사이트 계정을 연동하면 대국이 많아도 정보를 빠르게 보여 줍니다."),
       ] },
     ],
   },
   {
     version: "0.0.0", date: "2026.7.10",
-    summary: t("OpenChess 베타 서비스 시작했습니다."),
-    highlight: { kind: "icon", Icon: Rocket, color: "#8FB55E", label: t("OpenChess 베타 출시 추가했습니다.") },
+    summary: t("OpenChess 베타 서비스를 시작했습니다."),
+    highlight: { kind: "icon", Icon: Rocket, color: "#8FB55E", label: t("OpenChess 베타를 출시했습니다.") },
     sections: [
       { cat: "feature", items: [
-        t("오프닝 학습과 퍼즐 풀이 핵심 기능으로 베타 서비스 시작했습니다."),
+        t("오프닝 학습과 퍼즐 풀이를 핵심 기능으로 베타 서비스를 시작했습니다."),
       ] },
     ],
   },
@@ -3170,7 +3290,7 @@ const dateNum = (d) => parseInt(d.replace(/\D/g, ""), 10);
 function HStat({ n, label, sub }) {
   return (
     <CutPanel chase tilt cutSize={12} className="ab-glitch" style={{ flex: "1 1 150px", minWidth: 140 }} bodyStyle={{ padding: "14px 18px 15px" }}>
-      <Sys style={{ opacity: 0.7 }}>{"// "}{label}</Sys>
+      <Sys style={{ opacity: 0.7 }}>{label}</Sys>
       <div style={{ fontSize: 32, fontWeight: 900, fontStyle: "italic", color: T.brassHi, fontFamily: "ui-monospace,monospace", lineHeight: 1, margin: "10px 0 6px", textShadow: "-2px 0 rgba(217,115,106,.35), 2px 0 rgba(111,168,220,.3)" }}><ScrambleText text={String(n)} style={{ fontSize: "inherit", fontWeight: "inherit" }} /></div>
       {sub && <div style={{ fontSize: 10.5, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{sub}</div>}
     </CutPanel>
@@ -3208,7 +3328,7 @@ function LatestCard({ v, secs }) {
         <span aria-hidden="true" style={{ position: "absolute", right: -10, top: -34, fontSize: 190, fontWeight: 900, fontStyle: "italic", lineHeight: 1, color: "transparent", WebkitTextStroke: "1px rgba(196,154,80,.16)", fontFamily: "ui-monospace,monospace", pointerEvents: "none", userSelect: "none" }}>{eraOf(v.version)}</span>
         <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 16, position: "relative" }}>
           <Tag solid>{t("최신")}</Tag>
-          <Sys style={{ opacity: 0.8 }}>{"// "}{v.date}</Sys>
+          <Sys style={{ opacity: 0.8 }}>{v.date}</Sys>
         </div>
         <div className="flex items-center flex-wrap" style={{ gap: 26, position: "relative" }}>
           <div style={{ flex: "1 1 320px", minWidth: 260 }}>
@@ -3234,7 +3354,7 @@ function EraBlock({ era, rows, openSet, toggle, forceOpen }) {
       <div className="flex items-end" style={{ gap: 16, marginBottom: 18, position: "relative" }}>
         <span className="ab-glitch ab-flicker" style={{ fontSize: 68, fontWeight: 900, fontStyle: "italic", lineHeight: 0.85, color: "transparent", WebkitTextStroke: "1.5px " + T.brass, letterSpacing: "-.03em", fontFamily: "ui-monospace,monospace" }}>{era}</span>
         <div style={{ paddingBottom: 4 }}>
-          <Sys style={{ opacity: 0.75 }}>{"// SERIES"}</Sys>
+          <Sys style={{ opacity: 0.75 }}>{"SERIES"}</Sys>
           <div style={{ fontSize: 14, fontWeight: 900, fontStyle: "italic", color: T.ivoryHi, marginTop: 2 }}>{tx("{0} 시리즈", era)}</div>
           <div style={{ fontSize: 11, color: T.inkSoft, fontFamily: "ui-monospace,monospace" }}>{tx("버전 {0}개", rows.length)} · {last}{last !== first ? " → " + first : ""}</div>
         </div>
@@ -3417,7 +3537,7 @@ export default function AboutPage() {
     <div style={{ position: "relative", height: "100vh", display: "flex", flexDirection: "column", background: "radial-gradient(70% 40% at 80% 0%, rgba(196,154,80,.1), transparent 70%), linear-gradient(180deg,#241509,#1B0F07 40%,#1B1009)", color: T.ivory, fontFamily: "'IBM Plex Sans KR', 'Noto Sans Devanagari', 'Noto Sans JP', 'Noto Sans SC', sans-serif", overflow: "hidden" }}>
       <style>{""+KIT_CSS+"@media (max-width: 560px){.about-era-body{padding-left:18px !important}}@keyframes about-strip{to{transform:translateX(-50%)}}.about-strip{animation:about-strip 70s linear infinite}.about-strip:hover{animation-play-state:paused}@media (max-width: 720px){.about-bento-grid{grid-template-columns:minmax(0,1fr) !important}.about-bento{grid-column:span 1 !important}.about-kit{grid-template-columns:minmax(0,1fr) !important}}"}</style>
       <Backdrop />
-      <AmbientLayer />
+      <AmbientLayer rich />
       <header style={{ position: "relative", zIndex: 2, flexShrink: 0, borderBottom: "1px solid rgba(0,0,0,.6)", background: "linear-gradient(180deg,#3A2516,#2A1810)" }}>
         <div className="flex items-center justify-between" style={{ maxWidth: 1000, margin: "0 auto", padding: "12px 20px" }}>
           <img className="ab-glitch" src="/OpenChessLogo.png" alt="OpenChess" style={{ display: "block", height: 32, width: "auto", filter: "drop-shadow(0 2px 3px rgba(0,0,0,.5))" }} />

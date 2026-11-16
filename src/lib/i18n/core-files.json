@@ -66,5 +66,12 @@
   "app/socialFeed.jsx",
   "app/masterPage.jsx",
   "components/masterLink.jsx",
-  "app/postComposer.jsx"
+  "app/postComposer.jsx",
+  "AboutPage.jsx",
+  "components/AboutKit.jsx",
+  "app/changelog.js",
+  "lib/lessons/curriculumMore.js",
+  "app/themePuzzles.jsx",
+  "lib/lessonPuzzles.js",
+  "components/communityBlock.jsx"
 ]

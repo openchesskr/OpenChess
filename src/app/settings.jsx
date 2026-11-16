@@ -13,9 +13,9 @@ import { loadUgcTranslatePref, saveUgcTranslatePref, REVIEW_SPEED_DEPTH, QUICK_R
 import { tierFromXp, TIER_XP_REQ, tierDisplayLabel, TIERS, DIVISION_ROMAN, xpForTierDivision, gmPhotoRingStyle } from "../lib/tierSystem.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { parsePgnMoves } from "../lib/pgn.js";
-import { chatBlocksFetch, chatBlockSet } from "../lib/chatApi.js";
 import { AnimatePresence, motion } from "framer-motion";
-import { BlockListSheet, ReportsDevPanel } from "../components/chatPlus.jsx";
+import { ReportsDevPanel } from "../components/chatPlus.jsx";
+import { BlockListBody, BlockListPage, BLOCK_INLINE_MAX } from "../components/blockList.jsx";
 import { ChesscomLogo, puzzleSharePut, normalizeMoveFxMode, ALNUM, ANALYSIS_ENGINE_IDS, AppleLogo, CONTENT, CoinIcon, DEV_ACCOUNT, ENGINE_PROFILES, FacebookLogo, GoogleG, InviteLinkBox, fmtFull, genPuzzleTree, primaryTheme, puzzleDeleteRemote, puzzleFetch, puzzlePositionKey, puzzleThemeOpts, puzzleTreeOf, roleIcon, treeLinesOf, userProfile, usersProfiles } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { t, tx, lang, LANGS, setLang, fmtDateOnly } from "../lib/i18n.js";
@@ -646,11 +646,9 @@ function UgcTranslateToggle() {
       <div className="flex items-center justify-between" style={{ gap: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{t("다른 언어로 쓴 글 자동 번역")}</div>
-          <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.5 }}>{t("수 설명·주요 분기점·프로필 소개글을 내 언어로 번역해 보여줌. 채팅 메시지는 번역하지 않음")}</div>
         </div>
         <button onClick={flip} role="switch" aria-checked={on} aria-label={t("다른 언어로 쓴 글 자동 번역")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: on ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
       </div>
-      <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{t("번역할 때 글이 번역 서비스(Google Gemini)로 전송됨")}</div>
     </div>
   );
 }
@@ -684,7 +682,7 @@ function DevGroup({ icon: Icon, title, desc, defaultOpen, children }) {
     </div>
   );
 }
-export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
+export function SettingsTab({ onOpenMyProfile, onOpenBlockWindow, profile, setProfile, engine, engineStatus, liveOn, setLiveOn, enginePref, setEnginePref, reviewSpeed, setReviewSpeed, quickReview, setQuickReview, sharpOn, setSharpOn, user, isDev, isCodev, devOn, setDevOn, codevOn, setCodevOn, canManageCodev, canEdit, bumpContent, contentVer, openAuth, totalXp, setTotalXp, ocCoins, setOcCoins, bgmOn, bgmVolume, onToggleBgm, onBgmVolumeChange, sfxOn, sfxVolume, onToggleSfx, onSfxVolumeChange, lineClearOn, setLineClearOn, puzzleClearOn, setPuzzleClearOn, coachBubbleOn, setCoachBubbleOn, mgDangerOn, setMgDangerOn, moveFxMode, setMoveFxMode,
   myUid, currentTitle, earnedTitles, onEquipTitle, onOpenOpening, onOpenGame, onOpenGameAnalyze, puzzleRating, solvedCount, lessonState, puzzles, solved, likedPuzzles, likeCounts, onToggleLike, repostedPuzzles, repostCounts, onToggleRepost, shareCounts, onShare, onOpenPuzzle, reviewUnlocked, chesscomStatus, chesscom, onOpenAccountCenter, loginShakeTick, onOpenUserProfile }) {
   // (v0.6.3, 앱) 엔진 내려받기 진행·완료 상태가 바뀌면 이 탭을 다시 그린다(웹에서는 상태가 안 바뀌어 아무 일도 안 함).
   const [, setEngineUiTick] = useState(0);
@@ -711,17 +709,9 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
     return () => { cancelled = true; };
   }, [contentVer]);
   // (v0.6.0, 스토어 심사 대비) 차단 목록 — 채팅·프로필에서 차단한 사용자를 한 곳에서 보고 해제한다.
-  const [blockListOpen, setBlockListOpen] = useState(false);
-  const [blockItems, setBlockItems] = useState([]);
-  const [blockLoading, setBlockLoading] = useState(false);
-  const openBlockList = async () => {
-    setBlockListOpen(true); setBlockLoading(true);
-    const uids = await chatBlocksFetch(myUid);
-    const prof = uids.length ? await usersProfiles(uids) : {};
-    setBlockItems(uids.map((uid) => ({ uid, name: (prof[uid] && ((prof[uid].pub && prof[uid].pub.nickname) || prof[uid].username)) || t("알 수 없는 사용자") })));
-    setBlockLoading(false);
-  };
-  const unblockFromList = async (uid) => { if (await chatBlockSet(myUid, uid, false)) setBlockItems((l) => l.filter((x) => x.uid !== uid)); };
+  // (v0.7.8, 사용자 요청) 블록 안에 바로 목록(BLOCK_INLINE_MAX명까지) + 더보기 → 모바일 전체 화면(BlockListPage) / 데스크톱 옮길 수 있는 작은 창(App 도킹 창 "blocklist")
+  const [blockPageOpen, setBlockPageOpen] = useState(false);
+  const openBlockMore = () => { if (onOpenBlockWindow && onOpenBlockWindow()) return; setBlockPageOpen(true); };
   const [devLogOpen, setDevLogOpen] = useState(false);
   // (v0.3.9 기능) 사용자 요청 — 로그아웃 상태에서 뜨는 "계정" 박스와 같은 자리에, 로그인 상태에서는
   // OpenChess 프로필의 상단 요소(아바타·칭호·닉네임·소개, MyProfileCard 최상단과 같은 구성)를 압축해
@@ -814,9 +804,9 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
       )}
       {/* (v0.6.0, 다국어) 언어 선택 — 바꾸면 저장 후 새로고침(모듈 최상위 문구까지 전부 새 언어로 다시 만들기 위해). 진행 중인 대국은 새로고침 후 이어받기. */}
       <div style={card}>
-        {cardTitle(Globe, lang === "en" ? t("언어") : t("언어") + " / Language")}
+        {/* (v0.7.8, 사용자 요청) "언어"만, 설명 문구 없음 */}
+        {cardTitle(Globe, t("언어"))}
         <LangPicker />
-        <p style={{ fontSize: 11, color: T.inkSoft, margin: "8px 2px 0" }}>{t("선택하면 페이지가 새로고침됨")}</p>
         <UgcTranslateToggle />
       </div>
 
@@ -843,7 +833,6 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
         <div className="flex items-center justify-between" style={{ gap: 10, padding: "10px 12px", marginBottom: 14, borderRadius: 10, border: "1.5px solid " + (quickReview ? T.brass : "#DCCBA8"), background: quickReview ? "rgba(196,154,80,.14)" : "#fff" }}>
           <div style={{ minWidth: 0 }}>
             <div className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><Zap size={14} style={{ color: T.brass }} />{t("빠른 리뷰")}</div>
-            <div style={{ fontSize: 11, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{t("Stockfish 19 Lite, depth 15로 고정. 연출 없이 분석이 끝나면 바로 리뷰 화면")}</div>
           </div>
           <button onClick={() => setQuickReview(!quickReview)} role="switch" aria-checked={!!quickReview} aria-label={t("빠른 리뷰")} className="press" style={{ width: 46, height: 26, borderRadius: 13, background: quickReview ? T.excellent : "#C9B58C", position: "relative", cursor: "pointer", border: "none", flexShrink: 0 }}><span style={{ position: "absolute", top: 3, left: quickReview ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .15s" }} /></button>
         </div>
@@ -870,7 +859,8 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
             <button key={"del-" + id} onClick={() => deleteDownloadedEngine(id).then(() => bumpEngineUi())} className="press" style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "2px 4px", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textDecoration: "underline", cursor: "pointer" }}>{ENGINE_PROFILES[id].label + " " + t("삭제")}</button>
           ))}
         </div>
-        <p style={{ fontSize: 11.5, color: quickReview ? T.brass : T.inkSoft, fontWeight: quickReview ? 700 : 400, marginTop: 8 }}>{quickReview ? t("빠른 리뷰 사용 중. 엔진과 리뷰 속도 고정") : t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>
+        {/* (v0.7.8, 사용자 요청) 빠른 리뷰 관련 설명 문구 삭제 — 빠른 리뷰가 꺼져 있을 때의 엔진 변경 안내만 남긴다 */}
+        {!quickReview && <p style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 8 }}>{t("변경 즉시 새 엔진으로 재연결. 게임 리뷰에도 적용, 이 기기에만 저장")}</p>}
 
         <div style={{ height: 1, background: "#E4D5B6", margin: "14px 0" }} />
 
@@ -992,10 +982,8 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
       {/* (v0.6.0) 차단 목록 — 로그인한 경우만 */}
       {myUid && (
         <div style={card}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2"><Users size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("차단 목록")}</span></div>
-            <button onClick={openBlockList} className="press" style={{ padding: "6px 13px", borderRadius: 8, background: T.ebony2, color: T.ivory, fontWeight: 700, fontSize: 12, border: "1px solid #000", cursor: "pointer" }}>{t("관리")}</button>
-          </div>
+          <div className="flex items-center gap-2"><Users size={15} style={{ color: T.brass }} /><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{t("차단 목록")}</span></div>
+          <BlockListBody myUid={myUid} limit={BLOCK_INLINE_MAX} onMore={openBlockMore} />
         </div>
       )}
       {/* (v0.6.5, 사용자 요청) 개발진은 푸터에서 떼어 별도 블록으로, (v0.6.7) 개발자 모드 토글은 맨 아래 "개발자 도구" 카드로 옮겼다. */}
@@ -1043,7 +1031,7 @@ export function SettingsTab({ onOpenMyProfile, profile, setProfile, engine, engi
       </div>
 
       <AnimatePresence>
-        {blockListOpen && <BlockListSheet key="block-list" items={blockItems} loading={blockLoading} onUnblock={unblockFromList} onClose={() => setBlockListOpen(false)} />}
+        {blockPageOpen && <BlockListPage key="block-list" myUid={myUid} onClose={() => setBlockPageOpen(false)} />}
       </AnimatePresence>
 
       {/* (v0.3.5 기능) 개발자 도구 — 예전엔 페이지 곳곳에 흩어져 있던 개발자 전용 패널을 관련 주제별로

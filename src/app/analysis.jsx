@@ -1,7 +1,11 @@
 // (v0.6.0, App.jsx 분할 · v0.7.3 learn.jsx → analysis.jsx) 'analysis'(분석 탭) 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { lichessFetchWithRetry, lichessForeground, LICHESS_API, loadMasterGameData, staticMasterGamesFor, staticMasterStatsFor } from "../lib/lichessApi.js";
-import { autoMoveKeyword, blockKeywords } from "../lib/moveKeywords.js";
+import { autoMoveKeywords, blockKeywords } from "../lib/moveKeywords.js";
+import { tilePuzzleTheme } from "../lib/matePuzzle.js";
+import { apiUrl } from "../lib/siteConfig.js";
+import { CommunityBlock } from "../components/communityBlock.jsx";
+import { BRASS_SCROLLBAR, BrassScrollStyle, MoreBelowHint } from "../components/brassScroll.jsx";
 import { MasterNameLink } from "../components/masterLink.jsx";   // (v0.7.6) 마스터 이름 → /master 페이지
 import { LOOP } from "../lib/perfMode.js";
 import CustomScroll from "../components/CustomScroll.jsx";
@@ -19,11 +23,11 @@ import { parsePgnMoves, sansToPgnText, parsePgnSans, autoResultFromPgn, splitPgn
 import { mateWhiteWins, SITE_FONT, dedupeEngineLines, SEQ_FONT, EngineLines } from "../components/engineLines.jsx";
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { T, BOARD_GLOSS } from "../lib/theme.js";
-import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Check, Copy, ClipboardPaste, RefreshCw, Trash2, Save, ChevronsLeft, RotateCcw, RotateCw, ChevronsRight, Play, X, ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, BookOpen, MessageSquare, ChevronUp, ChevronDown, ArrowLeft, Book, Pencil, Crown, Sparkles, Search, ArrowUpDown, Cpu, Plus } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { PieceGlyph } from "../components/pieces.jsx";
 import { motion } from "framer-motion";
 import { QCOLOR } from "../lib/moveKinds.js";
-import { fmtEvalCp, matePliesOf, ownPriorMoveWasSacrifice, gradeMoveKind, isSacrifice } from "../lib/moveQuality.js";
+import { fmtEvalCp, matePliesOf, ownPriorMoveWasSacrifice, gradeMoveKind, isSacrifice, stickyBrilliant } from "../lib/moveQuality.js";
 import { KeywordScroll, MarqueeText, KW } from "../components/keywordScroll.jsx";
 import { PendingDots, QLABEL } from "../components/badges.jsx";
 import { computeRatingChanges } from "../lib/chesscom.js";
@@ -33,7 +37,6 @@ import { AnimatedMove, BoardWithMaterial, CONTENT, ChesscomLogo, CircleBadge, Fa
 
 import { t, tx } from "../lib/i18n.js";
 import { LoadingRows } from "../components/motionKit.jsx";
-import { YoutubeVideosBlock } from "../components/youtubeVideos.jsx";
 import UgcText from "../components/UgcText.jsx";
 import { useTabMemory } from "../lib/tabMemory.js";
 async function lichessFetchText(url) {
@@ -799,7 +802,9 @@ function QuestTag({ onClick }) {
     </Tag>
   );
 }
-function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick }) {
+const WDL_PLACEHOLDER = { w: 1, d: 1, b: 1 };
+const wdlOk = (wdl) => !!(wdl && (wdl.w + wdl.d + wdl.b) > 0);   // WinBar가 실제로 그리는 경우(합계 0이면 WinBar는 아무것도 그리지 않는다)
+function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, statsLoading, questBadge, onQuestBadgeClick, onCreatePuzzle }) {
   const kind = m.kind || "good";
   const color = QCOLOR[kind];
   const kws = blockKeywords(m);   // (v0.7.6) 포지션을 분석해 붙인 자동 키워드 하나(lib/moveKeywords.js)
@@ -818,13 +823,18 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
             <div style={{ minWidth: 0, flex: 1, cursor: "pointer" }} onClick={onClick}>
               {/* (v0.6.6, 사용자 요청) 현재 수 블록과 높이·위치를 통일 — 키워드(최상단, 고정 높이) / 수 + 평가치 / 오프닝 이름(한 줄 고정, 길면 자동으로 흘러감) */}
-              {kws.length > 0 && <div style={{ marginBottom: 6, minHeight: 19 }}><KeywordScroll kws={kws} /></div>}   {/* 키워드·이름이 없는 수는 그 줄을 빼 블록이 그만큼 낮아진다 */}
+              {/* (v0.7.8, 사용자 요청) 모든 수 블록 높이 통일 — 키워드·오프닝 이름·승률 바가 없는 수도 그 줄 높이만큼 자리를 비워 둔다(예전엔 줄을 빼 블록이 낮아졌다) */}
+              <div style={{ marginBottom: 6, height: 19 }}>{kws.length > 0 && <KeywordScroll kws={kws} />}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{moveNumber(ply, startColor)}{m.disp || m.san}</span>
                 <span style={{ fontFamily: SITE_FONT, fontSize: 13, fontWeight: 700, color }}>{evTxt || (m.book ? t("이론") : "…")}</span>
               </div>
-              {(m.name || m.isMain) && <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || "Main Line"}</MarqueeText>}
+              <MarqueeText height={19} style={{ marginTop: 2, fontSize: 12.5, color: m.name ? T.ink : T.inkSoft, fontWeight: 600 }}>{m.name || (m.isMain ? "Main Line" : "\u00A0")}</MarqueeText>
             </div>
+            {/* (v0.7.8, 사용자 요청) 퍼즐 생성 조건(탁월·실수·블런더·체크메이트 수순)을 만족하는 수 — 분석 버튼 왼쪽에서 곧장 그 수부터 퍼즐 마법사로 */}
+            {onCreatePuzzle && (
+              <button onClick={(e) => { e.stopPropagation(); onCreatePuzzle(); }} className="press" title={t("이 수부터 퍼즐 생성")} style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 2, padding: "5px 8px", borderRadius: 8, background: "linear-gradient(180deg," + T.brass + ",#A8842F)", color: "#241509", fontSize: 11.5, fontWeight: 800, border: "1px solid #6E5424", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 퍼즐 생성", <Plus size={11} />)}</button>
+            )}
             {!hideFocus && (
               <button onClick={(e) => { e.stopPropagation(); onFocus && onFocus(); }} className="press" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "5px 9px", borderRadius: 8, background: T.ebony2, color: T.brassHi, fontSize: 11.5, fontWeight: 700, border: "1px solid #000", cursor: "pointer", whiteSpace: "nowrap" }}>{tx("{0} 분석", <Play size={11} />)}</button>
             )}
@@ -845,7 +855,8 @@ function MoveTile({ m, ply, startColor, onClick, onFocus, hideFocus, posGames, s
             </span>
           </div>
           {/* (UI) 도감 탭과 동일한 형식(백/무/흑 바 + %)으로 이 수의 승률 표기 */}
-          {m.wdl && <div onClick={onClick} style={{ marginTop: 7, cursor: "pointer" }}><WinBar wdl={m.wdl} height={6} /></div>}
+          {/* 승률 통계가 없는 수는 같은 모양의 승률 바를 보이지 않게 그려 높이만 맞춘다(글꼴·줄 높이가 바뀌어도 늘 같은 높이) */}
+          <div onClick={onClick} style={{ marginTop: 7, cursor: "pointer" }}>{wdlOk(m.wdl) ? <WinBar wdl={m.wdl} height={6} /> : <div aria-hidden="true" style={{ visibility: "hidden" }}><WinBar wdl={WDL_PLACEHOLDER} height={6} /></div>}</div>
         </div>
       </div>
     </div>
@@ -996,13 +1007,16 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const devAddsBy = Object.fromEntries(addsFor(key).map((a) => [stripSuffix(a.san), a]));
       const masterAdoptBy = master ? Object.fromEntries(master.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
       const masterTopSans = master ? master.moves.slice(0, 3).map((m) => stripSuffix(m.san)) : [];
+      // (v0.7.8 BUG-180) 수 키워드는 기준(전체/마스터)과 상관없이 늘 같은 값으로 — 키워드 규칙(MAIN-LINE·SIDESTEPPING)은 전체 DB 채택률(allAdopt)을 쓴다.
+      //  마스터 기준에서는 adopt가 마스터 채택률로 바뀌어, 같은 수의 키워드가 기준을 바꿀 때마다 달라졌다.
+      const normalAdoptBy = normal ? Object.fromEntries(normal.moves.map((m) => [stripSuffix(m.san), m.adopt])) : {};
       const mk = (l) => {
         const k = stripSuffix(l.san);
         const s = snapBy[k] || {};
         const dev = devAddsBy[k];
         const unb = isUnbooked(key, l.san);
         const book = !unb && (!!s.book || !!(dev && dev.theory));
-        return { san: l.san, adopt: l.adopt, games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
+        return { san: l.san, adopt: l.adopt, allAdopt: normal ? (normalAdoptBy[k] ?? null) : (isMaster ? null : l.adopt), games: l.games, wdl: l.wdl, book, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) };
       };
       const all = active.moves.map(mk);
       // (버그 수정) Lichess가 이 위치의 후보 수 목록에 큐레이션된 이론 수를 포함하지 않으면(희귀한
@@ -1015,7 +1029,7 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         const k = stripSuffix(s.san);
         if (coveredSans.has(k)) continue;
         const dev = devAddsBy[k];
-        all.push({ san: s.san, adopt: null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
+        all.push({ san: s.san, adopt: null, allAdopt: normalAdoptBy[k] ?? null, games: null, wdl: null, book: true, name: s.name ?? (dev && dev.name), kw: s.kw, evalCp: s.evalCp, isMain: s.isMain, masterAdopt: masterAdoptBy[k] ?? null, masterTop: masterTopSans.includes(k) });
         coveredSans.add(k);
       }
       const books = all.filter((m) => m.book);
@@ -1036,6 +1050,11 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
       const top = master.moves.slice(0, 3).map((m) => stripSuffix(m.san));
       setMoves((prev) => prev.map((m) => { const k = stripSuffix(m.san); return { ...m, masterAdopt: adoptBy[k] ?? m.masterAdopt ?? null, masterTop: top.includes(k) }; }));
     };
+    // (v0.7.8 BUG-180) 마스터 기준에서 전체 통계가 늦게 오면 키워드용 전체 채택률만 덧붙인다
+    const patchNormal = () => {
+      const adoptBy = Object.fromEntries(normal.moves.map((m) => [stripSuffix(m.san), m.adopt]));
+      setMoves((prev) => prev.map((m) => ({ ...m, allAdopt: adoptBy[stripSuffix(m.san)] ?? null })));
+    };
     const onArrive = () => {
       if (cancelled) return;
       if (!applied) {
@@ -1046,6 +1065,8 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
         setStatsLoading(false);
       } else if (!isMaster && master && mDone) {
         patchMaster();
+      } else if (isMaster && normal && nDone) {
+        patchNormal();
       }
     };
     // (v0.6.1 버그 수정) 포지션 통계 조회가 레이트리밋·일시 오류로 한 번 실패하면 posGames·채택률이 비어 "회수 / —"와
@@ -1363,10 +1384,14 @@ function useMergedMoves(sans, engine, liveOn, extraSans, contentVer, mode, sortB
 
   const board = useMemo(() => boardFromSans(sans), [key]);
   const sacTick = useSacConfirmTick();   // 희생 엔진 확인이 끝나면 등급을 다시 매긴다(v0.5.9 BUG-038)
+  // (v0.7.8 BUG-180) 이 포지션에서 평가된 모든 수(기준 전체/마스터 목록의 합집합) — 수 키워드가 기준과 무관하게 같은 비교 묶음을 쓰게
+  const kwPoolRef = useRef({ key: null, by: new Map() });
   const tiled = useMemo(() => {
     const seen = new Set();
     const uniq = moves.filter((m) => { const k = stripSuffix(m.san); if (seen.has(k)) return false; seen.add(k); return true; });
-    let t = assignTiers(uniq, ply, board, key, sans).map((m) => {
+    if (kwPoolRef.current.key !== key) kwPoolRef.current = { key, by: new Map() };
+    uniq.forEach((m) => { if (moverEval(m, ply) != null) kwPoolRef.current.by.set(stripSuffix(m.san), m); });
+    let t = assignTiers(uniq, ply, board, key, sans, [...kwPoolRef.current.by.values()]).map((m) => {
       const mainMain = isMainline(key, m.san) ? { isMain: true } : {};
       const nm = nameOverride(key, m.san);
       return { ...m, ...mainMain, ...(nm !== null ? { name: nm } : {}), disp: decorateSan(board, m.san, color) };
@@ -1516,7 +1541,7 @@ function useFocusAnalysis(focus, { chesscom, engine, canEdit, canAdd, bumpConten
         loss, matched, bestCp, playedCp: ourCp, secondCp,
         priorSac: ownPriorMoveWasSacrifice(sans, col),
         singleRecapture: singleRecaptureCheck(sans, san, col), san,
-      }, { fenRoot: null, prevSans: sans, san, color: col, evaluate: sacEvalRef.current });   // 탁월 후보는 엔진 확인(v0.5.9 BUG-038)
+      }, { fenRoot: null, prevSans: sans, san, color: col, evaluate: sacEvalRef.current }).then((k) => stickyBrilliant(null, sans, san, k));   // 탁월 후보는 엔진 확인(v0.5.9 BUG-038) · 탁월 고정(v0.7.8 BUG-177)
     };
     (async () => {
       // (버그 수정) best/after는 서로 다른 독립된 포지션이라 순서를 지킬 이유가 없는데도, 단일
@@ -2231,6 +2256,79 @@ function summarizeForStats(list, ply, bucket) {
   trend.splice(0, Math.max(0, trend.length - 8));
   return { w, d, b, n: w + d + b, trend };
 }
+/* (v0.7.8, 사용자 요청) 집중 분석 유저 통계의 "전체 통계" — Lichess 오프닝 탐색기(lichess DB)의 이 수순 최고 레이팅 대국·최근 대국을 서버(api/explorer-games.js)가
+   받을 때마다 OpenChess DB에 쌓고(빅데이터), 전체 승·무·패와 다음 수 통계, 지금까지 쌓인 대국 목록을 보여 준다. 대국을 누르면 lichess.org에서 그 대국을 연다. */
+const EXPLORER_PAGE = 10;
+const explorerCache = new Map();   // 수순 → 응답(같은 화면 안에서 오갈 때 다시 부르지 않음)
+function useExplorerGames(active, path) {
+  const key = path.join(",");
+  const [st, setSt] = useState({ loading: false, data: null, error: false });
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const hit = explorerCache.get(key);
+    if (hit) { setSt({ loading: false, data: hit, error: false }); return undefined; }
+    let off = false;
+    setSt({ loading: true, data: null, error: false });
+    fetch(apiUrl("/api/lichess?games=1&moves=" + encodeURIComponent(key))).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => { if (d && Array.isArray(d.games)) { if (explorerCache.size > 200) explorerCache.clear(); explorerCache.set(key, d); } if (!off) setSt({ loading: false, data: d, error: false }); })
+      .catch(() => { if (!off) setSt({ loading: false, data: null, error: true }); });
+    return () => { off = true; };
+  }, [active, key, retry]);
+  return { ...st, retry: () => { explorerCache.delete(key); setRetry((n) => n + 1); } };
+}
+const explorerSpeedLabel = (sp) => (sp === "ultraBullet" ? t("울트라불릿") : sp === "bullet" ? t("불릿") : sp === "blitz" ? t("블리츠") : sp === "rapid" ? t("래피드") : sp === "classical" ? t("클래시컬") : sp === "correspondence" ? t("통신") : sp);
+function ExplorerStatsCard({ path, ply, onPickMove }) {
+  const { loading, data, error, retry } = useExplorerGames(true, path);
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [path.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const games = useMemo(() => (data && data.games ? data.games : []).map((g) => {
+    const m = /^(\d{4})-(\d\d)$/.exec(g.month || "");
+    return { ...g, year: m ? +m[1] : null, _month: m ? (+m[1]) * 12 + (+m[2] - 1) : null };
+  }), [data]);
+  const summary = useMemo(() => {
+    const base = summarizeForStats(games.filter((g) => g._month != null), ply, MONTH_BUCKET);
+    const tt = data && data.totals, n = tt ? tt.white + tt.draws + tt.black : 0;
+    return n > 0 ? { ...base, w: tt.white, d: tt.draws, b: tt.black, n } : base;
+  }, [games, data, ply]);
+  const pageCount = Math.max(1, Math.ceil(games.length / EXPLORER_PAGE));
+  const items = games.slice(page * EXPLORER_PAGE, (page + 1) * EXPLORER_PAGE);
+  return (
+    <div style={{ marginTop: 12, background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 13 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 2, gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{t("전체 통계")}</span>
+        {data && data.stored > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, whiteSpace: "nowrap" }}>{tx("OpenChess에 쌓인 대국 {0}판", fmtFull(data.stored))}</span>}
+      </div>
+      <div style={{ fontSize: 11, color: T.inkSoft }}>{t("Lichess 전체 대국 기준. 이 수순의 최고 레이팅·최근 대국을 계속 모아 저장")}</div>
+      {error ? (
+        <p style={{ marginTop: 10, fontSize: 12, color: T.inkSoft }}>{t("전체 통계 로드 실패")}{" "}<button onClick={retry} className="press" style={{ fontSize: 11.5, fontWeight: 800, padding: "2px 8px", borderRadius: 6, border: "1px solid " + T.brass, background: "transparent", color: T.brass, cursor: "pointer", marginLeft: 4 }}>{t("다시 시도")}</button></p>
+      ) : (
+        <>
+          <StatsSummaryCard loading={loading} summary={summary} title={t("전체 승률")} moves={data ? data.moves : []} onPickMove={onPickMove} ply={ply} />
+          {!loading && data && (games.length === 0 ? <p style={{ marginTop: 10, fontSize: 12, color: T.inkSoft }}>{t("이 수순의 대국 없음")}</p> : (
+            <div style={{ marginTop: 8 }}>
+              {items.map((g) => (
+                <a key={g.id} href={"https://lichess.org/" + g.id} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", borderTop: "1px solid #E4D5B6", textDecoration: "none", color: "inherit" }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                        <MasterPlayerLine side="w" name={g.white.name} rating={g.white.rating} winner={g.winner === "white"} plain />
+                        <MasterPlayerLine side="b" name={g.black.name} rating={g.black.rating} winner={g.winner === "black"} plain />
+                      </div>
+                      <span style={{ flexShrink: 0, whiteSpace: "nowrap", marginRight: 4, fontWeight: 800, fontSize: 12.5, fontFamily: SITE_FONT, color: g.winner === "white" ? T.best : g.winner === "black" ? T.blunder : T.inkSoft }}>{g.winner === "white" ? "1–0" : g.winner === "black" ? "0–1" : "0.5–0.5"}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{[g.month ? g.month.replace("-", ".") : null, g.speed ? explorerSpeedLabel(g.speed) : null, g.source === "top" ? t("최고 레이팅") : t("최근 대국")].filter(Boolean).join(" · ")}</div>
+                  </div>
+                </a>
+              ))}
+              <ListPager page={page} setPage={setPage} pageCount={pageCount} />
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 // 통계 요약 카드 — 승률 바, 채택률(수 + 실제 판수(비중) + 승률 바), 승점 획득 확률 막대. 불러오는 동안은 같은 모양의 뼈대가 위에서부터 하나씩 그려진다.
 function StatsSummaryCard({ loading, summary, title, moves, onPickMove, ply, mine, forceShow }) {
   if (loading) {
@@ -2622,6 +2720,8 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
               </div>
             )}
       </div>
+      {/* (v0.7.8, 사용자 요청) 내 통계 아래 전체 통계 — Lichess 최고 레이팅·최근 대국을 OpenChess에 쌓아 보여 준다 */}
+      <ExplorerStatsCard path={[...sans, san]} ply={ply} onPickMove={(mvSan) => onJump && onJump([...sans, san], mvSan)} />
         </>,
         <>
       {/* 마스터 통계 — 클릭하면 집중분석을 종료하고 그 대국의 마지막 포지션 + 기보를 연다 (chess.com 통계 아래에 표시) */}
@@ -2713,9 +2813,9 @@ function FocusPanelBody({ boardSize, onOpenTournament, fa, onBack, onOpenPuzzleW
         </>,
         <>
         <div>
-          {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + 그 수까지의 PGN 수순으로 찾은 YouTube 영상 */}
+          {/* (v0.7.1, 사용자 요청) 해설 페이지 = 유저 댓글(MoveExplainBlock) + (v0.7.8) 커뮤니티 블록 — 그 수의 오프닝 이름(없으면 PGN 수순)으로 찾은 웹 검색 결과 + YouTube 영상 */}
           <MoveExplainBlock moveKey={mkKey} canModerate={canEdit} uid={uid} username={username} noteCap={noteCap} onJump={onJump} />
-          <YoutubeVideosBlock sans={focusVideoSans} />
+          <CommunityBlock sans={focusVideoSans} name={dispName || null} dev={!!canEdit} />
         </div>
       {(canEdit || canAdd) && (
         <div style={{ background: "linear-gradient(180deg,#3A2516,#241509)", border: "1px solid " + T.brass, borderRadius: 12, padding: 12, marginTop: 12 }}>
@@ -2864,11 +2964,12 @@ function MoveTileWindow({ enabled, resetKey, children }) {
   if (!enabled) return <>{children}</>;
   return (
     <div style={{ position: "relative" }}>
-      <div ref={ref} className="oc-tile-window" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
-        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", scrollbarWidth: "thin", scrollbarColor: "rgba(236,203,134,.45) transparent", marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
+      <BrassScrollStyle />
+      <div ref={ref} className="oc-tile-window oc-brass-scroll" onScroll={(e) => { const el = e.currentTarget; setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 2); }}
+        style={{ position: "relative", maxHeight: maxH != null ? maxH : undefined, overflowY: maxH != null ? "auto" : "visible", overscrollBehavior: "contain", ...BRASS_SCROLLBAR, marginRight: maxH != null ? -10 : 0, paddingRight: maxH != null ? 10 : 0 }}>
         {children}
       </div>
-      {maxH != null && !atEnd && <div aria-hidden style={{ position: "absolute", left: "50%", bottom: -11, transform: "translateX(-50%)", width: 44, height: 4, borderRadius: 2, pointerEvents: "none", background: "rgba(236,203,134,.45)" }} />}
+      <MoreBelowHint show={maxH != null && !atEnd} />
     </div>
   );
 }
@@ -2920,6 +3021,15 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 똑같은 패턴으로, 블록에 실제로 떴던 키워드 배열(순서까지)을 "이 위치 key + 수"로 pin해 두고
   // 현재 수 블록은 그 값을 그대로 재사용한다.
   const pinnedKwRef = useRef({});
+  // (v0.7.8, 사용자 요청) 다음 수 블록의 "+ 퍼즐 생성" — 조건(lib/matePuzzle.js tilePuzzleTheme)에 맞는 수면 그 수까지의 PGN·목표 수·테마로 퍼즐 마법사를 연다.
+  //  집중 분석의 "퍼즐 만들기"와 같은 seed 형식(onOpenPuzzleWizard → 퍼즐 탭 새 게시물 작성기의 퍼즐 마법사가 채점 후 그 수를 자동으로 고른다).
+  //  표준 시작 포지션 수순만(FEN 모드는 마법사가 PGN 목표 수를 짚을 수 없다), 로그인한 사람만(퍼즐 만들기는 로그인 필요).
+  const tilePuzzleSeed = (m) => {
+    if (fenRoot || !onOpenPuzzleWizard || !uid || !m || m.book) return undefined;
+    const theme = tilePuzzleTheme({ kind: m.kind, mover: color, ply: sans.length, mate: m.live && m.live.mate != null ? m.live : null });
+    if (!theme) return undefined;
+    return () => onOpenPuzzleWizard({ pgn: sansToPgnText([...sans, m.san], "w"), targetPly: sans.length, theme });
+  };
   // (사용자 요청) FEN 모드 — 분석 탭 메인 보드에 FEN을 붙여넣으면 표준 시작 위치 대신 그 포지션(차례·
   // 캐슬링 권리·앙파상까지)에서부터 이어서 둘 수 있다. fenRoot가 있는 동안 sans는 "표준 시작 위치부터의
   // 수순"이 아니라 "이 FEN부터 둔 수순"을 의미하도록 재해석된다 — 표준 시작을 가정하는 공용
@@ -3035,6 +3145,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
             isSac: sacCheckSync(fenRoot, sans, san, col, board), priorSac: ownPriorMoveWasSacrifice(sans, col, fenRoot),   // 엔진 확인된 희생만(v0.5.9 BUG-038)
             singleRecapture: singleRecaptureCheck(sans, san, col, fenRoot), san,
           });
+          kind = stickyBrilliant(fenRoot, sans, san, kind);   // (v0.7.8 BUG-177) depth가 바뀌어도 탁월 유지
         }
         out.push({ san, kind, evalCp: e.cp != null ? e.cp : null, mate: e.mate != null ? e.mate : null, adopt: null, games: null, book: false });
       });
@@ -3176,7 +3287,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
         singleRecapture: singleRecaptureCheck(prevSans, san, col, fenRootParam), san,
       };
     };
-    const computeKind = (after) => gradeMoveKind({ ...kindArgs(after), isSac: () => isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col) && sacVerdict(fenRootParam, prevSans, san) === true });
+    const computeKind = (after) => stickyBrilliant(fenRootParam, prevSans, san, gradeMoveKind({ ...kindArgs(after), isSac: () => isSacrifice(boardOfRoot(fenRootParam, prevSans), san, col) && sacVerdict(fenRootParam, prevSans, san) === true }));
     // (20차) '최선의 수'는 엔진 1순위 수와 일치할 때만 — depth 노이즈로 차선 수에 별이 붙던 문제 수정.
     // (v0.5.9 BUG-037) 유일한 수를 가리려면 2순위 평가가 필요해 MultiPV 2로 평가한다 — 예전엔 1순위만 봐서 분석 탭에서 직접 둔 수에는
     // 유일한 수가 절대 뜨지 않았다.
@@ -3195,7 +3306,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
     const afterPromise = wAfter.evaluate(fenOfRoot(fenRootParam, [...prevSans, san]), 13, onKind ? async (partial) => { await bestPromise; if (bestCp != null) onKind(computeKind(partial)); } : undefined, MOVETIME_MS);
     const [best, after] = await Promise.all([bestPromise, afterPromise]);
     if (!best || !after) return null;
-    return gradeMoveKindConfirmed(kindArgs(after), { fenRoot: fenRootParam, prevSans, san, color: col, evaluate: (fen) => wAfter.evaluate(fen, 13, undefined, MOVETIME_MS) });
+    return gradeMoveKindConfirmed(kindArgs(after), { fenRoot: fenRootParam, prevSans, san, color: col, evaluate: (fen) => wAfter.evaluate(fen, 13, undefined, MOVETIME_MS) }).then((k) => stickyBrilliant(fenRootParam, prevSans, san, k));
   }, [liveOn, engine.status, engine.profile, engine.urls]);
 
   const stampQ = useCallback((prevSans, brd, col, san, mm) => {
@@ -3472,7 +3583,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
   // 도달한 경우 등) 기존 방식으로 계산한다.
   const pinnedKw = lastSan ? pinnedKwRef.current[parentKey + "|" + stripSuffix(lastSan)] : null;
   // (v0.7.6) 블록을 거치지 않고 도달했으면(기보 이동 등) 직전 포지션에서 같은 자동 규칙으로 계산한다(평가·채택률을 모르면 그 조건만 건너뜀).
-  const curKws = pinnedKw || (lastSan && !fenRoot ? [autoMoveKeyword({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? curMove.adopt : null })] : []);
+  const curKws = pinnedKw || (lastSan && !fenRoot ? autoMoveKeywords({ san: lastSan, color: sans.length % 2 === 1 ? "w" : "b", board: (() => { try { return boardFromSans(sans.slice(0, -1)); } catch { return null; } })(), book: !!(curMove && curMove.book), adopt: curMove ? (curMove.allAdopt !== undefined ? curMove.allAdopt : curMove.adopt) : null }) : []);
   // (18차 UI9) 현재 수 블록에도 일반 수 블록과 동일한 통계(채택률 바·회수·승률 바)를 표기 —
   // 부모 포지션의 Lichess 통계에서 현재 수의 wdl/adopt/games를 가져온다.
   const [curStat, setCurStat] = useState(null);
@@ -3554,7 +3665,7 @@ export function AnalysisTab({ fenRoot = null, setFenRoot, onOpenTournament, engi
             {/* 집중 분석 하단 페이지들이 첫 수 블록과 위쪽 높이를 맞추는 기준점(FocusPages가 읽는다) */}
             <span data-fp-anchor="" style={{ display: "block", height: 0 }} />
             <MoveTileWindow enabled={tileWindowOn} resetKey={sans.join(" ") + "|" + (fenRoot ? "fen" : "")}>
-            {shown.map((m, i) => <FadeIn key={m.san} layout layoutDependency={i}><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} /></FadeIn>)}
+            {shown.map((m, i) => <FadeIn key={m.san} layout layoutDependency={i}><MoveTile m={m} ply={ply} startColor={startColor} posGames={posGames} statsLoading={statsLoading} onClick={() => (focus ? enterFocusAt(sans, m.san, { replace: true }) : fenRoot ? goFen(m.san) : go(m.san, false))} onFocus={fenRoot ? undefined : () => (focus ? enterFocusAt(sans, m.san, { replace: true }) : enterFocus(m))} hideFocus={!!fenRoot} questBadge={!fenRoot && matchesQuestPath([...sans, m.san])} onQuestBadgeClick={(!fenRoot && onQuestBadgeClick) ? () => onQuestBadgeClick(matchedQuestOpeningName([...sans, m.san])) : undefined} onCreatePuzzle={tilePuzzleSeed(m)} /></FadeIn>)}
             </MoveTileWindow>
           </>
         );

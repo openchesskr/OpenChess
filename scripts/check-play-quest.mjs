@@ -2,7 +2,7 @@
 /** (v0.7.4 재발 방지) 플레이 퀘스트: 일반 대국·미니게임 이벤트가 맞게 쌓이고, 초기화 없이 쌓이며(v0.7.6), 서버 보상표와 같으며, 잘못된 값은 거르는지 + play.jsx·App의 연결.
  *  실행: node scripts/check-play-quest.mjs (prebuild로 자동 실행) */
 import fs from "node:fs";
-import { applyPlayEvent, emptyPlayQuest, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, PLAY_QUESTS, PLAY_QUEST_COINS, questDone, clearedCount, GAME_MIN_PLIES, LONG_GAME_PLIES, emitPlayEvent, onPlayEvent } from "../src/lib/playQuest.js";
+import { applyPlayEvent, emptyPlayQuest, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, PLAY_QUESTS, PLAY_QUESTS_ALL, PLAY_QUEST_CHAPTERS, chapterUnlocked, currentChapter, PLAY_QUEST_COINS, questDone, clearedCount, GAME_MIN_PLIES, LONG_GAME_PLIES, emitPlayEvent, onPlayEvent } from "../src/lib/playQuest.js";
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
 let s = emptyPlayQuest();
 ok(clearedCount(s) === 0, "처음엔 하나도 클리어되지 않음");
@@ -25,13 +25,25 @@ ok(normalizePlayQuest({ game: "x", kinds: "no", mg: -3 }).mg === 0, "잘못된 �
 { const sv = normalizeServerPlayQuest({ game: 3, win: 0, long: 1, mg: 2, kinds: 1, claimed: ["game", "hack"] });
   ok(sv && sv.server && sv.claimed.join() === "game", "서버 진행값 검증(모르는 키 제거)");
   ok(unclaimedKeys(sv).join() === "long,mg", "수령 대상: 클리어했고 아직 안 받은 퀘스트만(" + unclaimedKeys(sv).join() + ")");
+  // (v0.7.8, 사용자 요청) 장 — 1장을 다 깨기 전에는 2장 보상을 요청하지 않는다(진행 값이 2장 목표를 넘어도)
+  const big = normalizeServerPlayQuest({ game: 30, win: 30, long: 30, mg: 30, mgwin: 0, kinds: 1, claimed: [] });
+  ok(!chapterUnlocked(big, 2) && currentChapter(big) === 1 && !unclaimedKeys(big).some((k) => k.startsWith("c")), "1장 미완료면 2장이 잠기고 2장 보상을 요청하지 않음");
+  const ch2 = normalizeServerPlayQuest({ game: 30, win: 30, long: 30, mg: 30, mgwin: 0, kinds: 4, claimed: [] });
+  ok(chapterUnlocked(ch2, 2) && chapterUnlocked(ch2, 3) && currentChapter(ch2) === 3 && unclaimedKeys(ch2).includes("cthreegame") && !unclaimedKeys(ch2).includes("cthreemgwin"), "1·2장을 다 깨면 3장이 열리고 그 장의 클리어 퀘스트만 수령");
+  ok(PLAY_QUEST_CHAPTERS.length >= 2 && PLAY_QUEST_CHAPTERS.every((ch) => ch.length === 5), "장마다 퀘스트 5개");
+  ok(applyPlayEvent(emptyPlayQuest(), { type: "minigame", game: "coord", won: true }).mgwin === 1 && applyPlayEvent(emptyPlayQuest(), { type: "minigame", game: "coord" }).mgwin === 0, "미니게임 대전 승리만 mgwin을 올림");
   ok(unclaimedKeys(s).length === 0, "이 기기 값(로그인 전)으로는 보상을 요청하지 않음");
   ok(normalizeServerPlayQuest({ error: "x" }) === null, "모양이 틀린 서버 응답은 null"); }
 // 서버 보상표(economy_params().playQuests)와 클라이언트 목표치·금액, 서버 집계 기준(20수·80수)이 같아야 한다.
 { const sql = fs.readFileSync(new URL("../supabase-setup.sql", import.meta.url), "utf8");
   const m = /"playQuests": (\{[^\n]*\}\}),/.exec(sql);
   const P = m ? JSON.parse(m[1]) : null;
-  ok(P && PLAY_QUESTS.every((q) => P[q.key] && P[q.key].target === q.target && P[q.key].coins === PLAY_QUEST_COINS) && Object.keys(P).length === PLAY_QUESTS.length, "서버 playQuests(목표·코인)와 클라이언트 PLAY_QUESTS·PLAY_QUEST_COINS가 다름");
+  ok(P && PLAY_QUESTS_ALL.every((q) => P[q.key] && P[q.key].target === q.target && P[q.key].coins === q.coins && P[q.key].metric === q.metric && P[q.key].chapter === q.chapter) && Object.keys(P).length === PLAY_QUESTS_ALL.length, "서버 playQuests(장·진행 필드·목표·코인)와 클라이언트 PLAY_QUEST_CHAPTERS가 다름");
+  ok(PLAY_QUESTS.every((q) => q.coins === PLAY_QUEST_COINS), "1장 코인이 PLAY_QUEST_COINS와 다름");
+  ok(PLAY_QUESTS_ALL.every((q) => /^[a-z]{1,16}$/.test(q.key)) && new Set(PLAY_QUESTS_ALL.map((q) => q.key)).size === PLAY_QUESTS_ALL.length, "퀘스트 키는 서버 형식(영문 소문자 1~16자)이고 겹치지 않아야 함");
+  ok(/v_have := \(v_counts ->> coalesce\(v_q ->> 'metric', p_key\)\)::bigint;/.test(sql) && /'chapter locked'/.test(sql), "서버 보상 수령이 진행 필드(metric)·장 잠금을 확인하지 않음");
+  const cnt = /function public\._play_quest_counts[\s\S]*?\$\$;/.exec(sql);
+  ok(cnt && [...new Set(PLAY_QUESTS_ALL.map((q) => q.metric))].every((mt) => cnt[0].includes("'" + mt + "'")), "서버 _play_quest_counts에 장 퀘스트의 진행 필드가 없음");
   const counts = /function public\._play_quest_counts[\s\S]*?\$\$;/.exec(sql);
   ok(counts && new RegExp("plies >= " + GAME_MIN_PLIES + "\\b").test(counts[0]) && new RegExp("plies >= " + LONG_GAME_PLIES + "\\b").test(counts[0]), "서버 _play_quest_counts의 대국 인정 기준(20수·80수)이 클라이언트와 다름");
   ok(/'economy_claim_play_quest', 'play_quest_status'/.test(sql), "플레이 퀘스트 RPC가 로그인 사용자 권한 목록(v_auth)에 없음"); }
@@ -44,5 +56,18 @@ ok(/emitPlayEvent\(\{ type: "game"/.test(play), "play.jsx: 일반 대국 종료 
 ok(/emitPlayEvent\(\{ type: "minigame"/.test(play), "play.jsx: 미니게임 종료 시 emitPlayEvent");
 ok(/onPlayEvent\(/.test(app) && /applyPlayEvent\(/.test(app) && /playQuest/.test(app.match(/progressSave\([^)]*\)/)?.[0] || "") , "App: 이벤트를 받아 쌓고 진행 정보에 저장");
 ok(/playQuestStatus\(\)/.test(app) && /economyClaimPlayQuest\(key\)/.test(app) && /unclaimedKeys\(st\)/.test(app), "App: 서버 진행값을 받아 클리어한 퀘스트 보상을 요청하지 않음");
+// (v0.7.8, 사용자 요청) 플레이 탭 — 일반 대국과 미니게임 사이 데크메이트(출시 예정), 데스크톱 2×2 정렬, 장 단위 플레이 퀘스트 화면, 일일 퀘스트 보상 코인
+{ const dq = rd("src/app/dailyQuest.jsx");
+  const i1 = play.indexOf("<PlayNormalButton "), i2 = play.indexOf("<DeckmateButton fill={gridMode} />"), i3 = play.indexOf("<PlaySpecialGames ");
+  ok(i1 > 0 && i2 > i1 && i3 > i2, "데크메이트 블록이 일반 대국과 미니게임 사이에 없음");
+  ok(/t\("출시 예정"\)/.test(play) && /background: "rgba\(24,14,7,\.58\)"/.test(play), "데크메이트에 어두운 반투명 막·출시 예정 표시가 없음");
+  ok(/gridTemplateAreas: '"hub dq" "mg pq"'/.test(play) && /alignItems: "stretch"/.test(play), "데스크톱 2×2 격자(일반 대국+데크메이트↔일일 퀘스트, 미니게임↔플레이 퀘스트)가 없음");
+  ok(/position: "absolute", inset: 0 \}\}><PlayQuestCard [^>]*fill \/>/.test(play) && /<DailyQuestCard [^>]*fill \/>/.test(play), "플레이 퀘스트는 미니게임 블록 높이에, 일일 퀘스트는 1줄 높이에 맞춰야 함(fill)");
+  ok(!/보상 받음/.test(dq) && /t\("완료"\)/.test(dq), "퀘스트 클리어 문구는 \"완료\"");
+  ok(/t\("\{0\}장", view\)/.test(dq) && /t\("이전 장"\)/.test(dq) && /t\("다음 장"\)/.test(dq) && /<Lock /.test(dq) && !/\{done\}\/\{PLAY_QUESTS\.length\}/.test(dq), "플레이 퀘스트 우상단은 n/5 대신 n장 + 이전·다음 장 버튼, 잠긴 장은 자물쇠");
+  ok(!/<Gem /.test(dq) && /<CoinIcon size=\{44\} \/>/.test(dq), "일일 퀘스트 완료 보상 아이콘 자리에 큰 OC 나이트 코인"); }
+// (v0.7.8 BUG-181) 분석 탭 수 블록의 퀘스트 배지 → 플레이 탭: 하단 탭과 같은 switchTab으로(주소 /play·urlTabRef까지). setTab만 부르면 플레이 탭에 한 번 다녀온 뒤엔 주소가 안 바뀌어 탭 상태가 어긋난다.
+{ const qb = (app.match(/const onQuestBadgeClick = useCallback\([\s\S]*?\}, \[\]\);/) || [""])[0];
+  ok(/switchTabRef\.current\("store"\)/.test(qb) && /switchTabRef\.current = switchTab;/.test(app), "퀘스트 배지가 switchTab(주소·탭 동기화)으로 플레이 탭에 가지 않음"); }
 if (fails.length) { console.error("✗ play-quest check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ play-quest check: 이벤트 집계·초기화 없음·서버 진행값·보상표 일치·연결 통과");

@@ -188,8 +188,29 @@ if (rawSac !== 1) fails.push("src/App.jsx — 엔진 확인 없이 isSacrifice�
   if (fen.moves[0].kind !== "only") fails.push("fixForcedOnlyMoves — 시작 포지션이 아닌 결과를 건드림");
   for (const f of ["src/app/reviewCache.js", "src/app/profile.jsx", "src/app/common.jsx"]) if (!/fixForcedOnlyMoves\(/.test(readFileSync(new URL("../" + f, import.meta.url), "utf8"))) fails.push(f + " — 저장된 리뷰 결과를 읽을 때 fixForcedOnlyMoves를 거치지 않음");
 }
+// ⑤ (v0.7.8 BUG-177) 9...Bxh2+(Open Ruy Lopez, Riga)처럼 1순위 희생의 평가가 depth마다 -0.9~-1.6을 오가도 탁월이 유일한 수·최선으로 바뀌지 않는다.
+{
+  const MQ = await import("../src/lib/moveQuality.js");
+  const sansR = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Nxe4 d4 exd4 Re1 d5 Nxd4 Bd6 Nxc6".split(" ");
+  // Stockfish 18 lite 실측(depth 8~18): 1순위 Bxh2+ 둔 쪽 관점 -11·-93·-89·-113·-159·-145·-140, 2순위와 차이 105~117
+  for (const cp of [-11, -93, -89, -113, -159, -145, -140, -195]) {
+    const k = MQ.gradeMoveKind({ loss: 0, matched: true, bestCp: cp, playedCp: cp, secondCp: cp - 125, isSac: () => true, san: "Bxh2+" });
+    if (k !== "brilliant") fails.push("BUG-177 — 1순위 희생(둔 뒤 " + cp + ")이 탁월이 아니라 " + k);
+  }
+  // 1순위가 아닌 희생은 여전히 둔 뒤 하한(-1.5)을 본다
+  if (MQ.gradeMoveKind({ loss: 30, matched: false, bestCp: -130, playedCp: -160, secondCp: undefined, isSac: () => true, san: "Bxh2+" }) === "brilliant") fails.push("BUG-177 — 1순위가 아닌 희생이 둔 뒤 -1.6에서 탁월");
+  if (MQ.gradeMoveKind({ loss: 0, matched: true, bestCp: -230, playedCp: -230, secondCp: -400, isSac: () => true, san: "Bxh2+" }) === "brilliant") fails.push("BUG-177 — 이미 2점 넘게 진 포지션의 희생이 탁월");
+  // 탁월 고정: 한 번 탁월이면 depth가 바뀌어 유일한 수·최선·우수·좋은 수로 매겨져도 탁월, 부정확 이하는 그 등급
+  const seq = ["brilliant", "only", "best", "excellent", "good"].map((k) => MQ.stickyBrilliant(null, sansR, "Bxh2+", k));
+  if (seq.some((k) => k !== "brilliant")) fails.push("BUG-177 — 탁월 고정이 풀림: " + seq.join(","));
+  if (MQ.stickyBrilliant(null, sansR, "Bxh2", "mistake") !== "mistake") fails.push("BUG-177 — 탁월 고정이 실수까지 덮음");
+  if (MQ.stickyBrilliant(null, sansR, "Qh4", "only") !== "only") fails.push("BUG-177 — 다른 수에 탁월 고정이 새어 나감");
+  const srcC = readFileSync(new URL("../src/app/common.jsx", import.meta.url), "utf8"), srcA = readFileSync(new URL("../src/app/analysis.jsx", import.meta.url), "utf8");
+  if (!/stickyBrilliant\(null, sans, m\.san, kind\)/.test(srcC)) fails.push("BUG-177 — assignTiers(다음 수 블록)가 탁월 고정을 쓰지 않음");
+  if ((srcA.match(/stickyBrilliant\(/g) || []).length < 4) fails.push("BUG-177 — 분석 탭 등급 경로(FEN 모드·현재 수 진행·최종·집중 분석) 중 탁월 고정을 빠뜨린 곳이 있음");
+}
 if (fails.length) {
-  console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038 재발 방지):\n  " + fails.join("\n  "));
+  console.error("✗ 수 등급 판정 검사 실패 (BUG-036·037·038·177 재발 방지):\n  " + fails.join("\n  "));
   process.exit(1);
 }
 console.log("✓ 수 등급 판정 검사 통과 (희생 " + SAC_CASES.length + "건 · 엔진 확인 " + (PV_CASES.length + 3 + POISON.length + 1) + "건 · 등급 규칙 " + G.length + "건 · App.jsx 규칙 복사 없음)");

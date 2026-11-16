@@ -156,13 +156,41 @@ function Ticker({ lines }) {
   return <span aria-hidden style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 800, letterSpacing: ".14em", color: K.brass, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{txt}</span>;
 }
 
+/* (v0.7.8, 사용자 요청) 보여 주기 연출 — 이미 분석이 끝난 최근 대국을 SHOWCASE_MS 동안 한 판씩 "다시 분석하는 것처럼" 재생한다(엔진은 쓰지 않는다).
+   판마다 같은 시간을 나눠, 그 판의 저장된 리뷰 결과(수 등급·승률 흐름)를 처음부터 끝까지 흘려 AnalysisScanner의 진행(states·activeKey·live)으로 넘긴다.
+   on=false면 아무 타이머도 돌지 않는다. resultOf(game) → 캐시된 리뷰 결과 { moves, evalWin }. */
+export const SHOWCASE_MS = 5000;
+export function useShowcaseReplay(on, games, resultOf) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!on) { setElapsed(0); return undefined; }
+    const t0 = performance.now();
+    const id = setInterval(() => { const e = performance.now() - t0; setElapsed(Math.min(SHOWCASE_MS, e)); if (e >= SHOWCASE_MS) clearInterval(id); }, isLite() ? 200 : 90);
+    return () => clearInterval(id);
+  }, [on]);
+  return useMemo(() => {
+    const states = {};
+    if (!on || !games.length) return { states, activeKey: null, live: null };
+    const slot = SHOWCASE_MS / games.length;
+    const idx = Math.min(games.length - 1, Math.floor(elapsed / slot));
+    const frac = elapsed >= SHOWCASE_MS ? 1 : (elapsed - idx * slot) / slot;
+    games.forEach((g, i) => { if (i < idx || (i === idx && frac >= 1)) states[reviewKeyOf(g)] = "done"; });
+    const g = games[idx], r = g ? resultOf(g) : null;
+    const total = (r && Array.isArray(r.moves) && r.moves.length) || (g && g.sans ? g.sans.length : 0);
+    const done = Math.round(frac * total);
+    const live = r && total ? { done, total, moves: r.moves.slice(0, done), evalWin: Array.isArray(r.evalWin) ? r.evalWin.slice(0, done + 1) : [] } : null;
+    return { states, activeKey: g && frac < 1 ? reviewKeyOf(g) : null, live };
+  }, [on, games, elapsed, resultOf]);
+}
+
 /**
  * 자동 분석 진행 화면.
  * phase: "loading"(대국 불러오는 중) | "need"(최근 대국 부족) | "analyze"(분석 중) | "off"(엔진 없음)
  * games: 최근 대국(최대 need개), states: 키 → "done" | "fail", activeKey: 지금 분석 중인 판
  */
-export function AnalysisScanner({ phase, games = [], states = {}, activeKey = null, need = 5, engineStatus }) {
-  const live = useLiveProgress(phase === "analyze" ? activeKey : null);
+export function AnalysisScanner({ phase, games = [], states = {}, activeKey = null, need = 5, engineStatus, showcase = false, liveOverride }) {
+  const liveReal = useLiveProgress(phase === "analyze" && !showcase ? activeKey : null);
+  const live = showcase ? (liveOverride || null) : liveReal;   // (v0.7.8) 보여 주기 연출은 저장된 결과를 재생한 진행(useShowcaseReplay)을 쓴다
   const doneN = phase === "analyze" ? games.filter((g) => states[reviewKeyOf(g)] === "done").length : Math.min(games.length, need);
   const activeGame = activeKey ? games.find((g) => reviewKeyOf(g) === activeKey) : null;
   const activePct = live && live.total ? live.done / live.total : 0;
@@ -170,6 +198,7 @@ export function AnalysisScanner({ phase, games = [], states = {}, activeKey = nu
   const msg = phase === "loading" ? t("불러오는 중…")
     : phase === "need" ? t("최근 대국이 {0}판 이상 쌓이면 성장 분석이 자동으로 시작됨", need)
     : phase === "off" || engineStatus === "off" ? t("분석 엔진을 쓸 수 없어 자동 분석을 할 수 없음")
+    : showcase ? t("최근 {0}판 분석 완료. 성장 리포트 정리 중", need)
     : engineStatus !== "ready" && !live ? t("분석 엔진 준비 중…") : t("리뷰하지 않아도 최근 {0}판을 자동으로 분석하는 중", need);
   const lines = phase === "analyze"
     ? ["AUTO REVIEW ▸ " + doneN + "/" + need + " GAMES", "ENGINE ▸ " + (engineStatus === "ready" ? "ONLINE" : "BOOTING"), live ? "GRADING ▸ MOVE " + live.done + "/" + live.total : "QUEUE ▸ STANDBY", "GROWTH MAP ▸ BUILDING"]

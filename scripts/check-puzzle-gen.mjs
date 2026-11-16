@@ -25,5 +25,12 @@ if (fsac) {
   if (!/\.sort\(\(a, b\) => sacScore\(b\) - sacScore\(a\)\)/.test(fsac)) fails.push("findSacrificeFirstMove: 희생 후보를 유망한 순서로 정렬해야 함(sacScore)");
   if (!/\/\[\+#\]\/\.test\(san\)/.test(fsac)) fails.push("findSacrificeFirstMove: 정렬 점수에 체크 여부가 있어야 함");
 }
+// (v0.7.8, 사용자 요청) 퍼즐 라인 편집 — 수 추가·갈래 추가 패널에 실시간 엔진·후보(평가치·손실·채택률)·보드 화살표, 특정 수부터 하위 갈래 잘라내기
+{ const pz = fs.readFileSync(new URL("../src/app/puzzle.jsx", import.meta.url), "utf8");
+  const ok2 = (c, m) => { if (!c) fails.push(m); };
+  ok2(/function LineEditAssist\(/.test(pz) && (pz.match(/<LineEditAssist /g) || []).length === 2, "수 추가·갈래 추가 패널 둘 다 LineEditAssist(실시간 엔진·후보)를 써야 함");
+  ok2(/engine\.evaluate\(fen, 22, onProg, 8000, "pz-edit"\)/.test(pz) && /tx\("깊이 \{0\}"/.test(pz), "라인 편집 패널에 깊이가 오르는 실시간 엔진이 없음");
+  ok2(/export function cutSubtreeAt\(/.test(pz) && /if \(!treeLinesOf\(clone\)\.length\) return \{ error:/.test(pz) && /onCutSubtree=\{cutSubtreeFrom\}/.test(pz), "하위 갈래 잘라내기가 없거나 라인이 모두 사라지는 것을 막지 않음");
+  ok2(/cutArm !== it\.key\) \{ setCutArm\(it\.key\)/.test(pz), "잘라내기는 두 번 눌러 확정해야 함"); }
 if (fails.length) { console.error("✗ puzzle-gen check 실패:\n" + fails.map((x) => "  " + x).join("\n")); process.exit(1); }
 console.log("✓ puzzle-gen check: 미해결 위치 정리·상대 노드 상한·희생 후보 정렬 유지");

@@ -1,7 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
-import { autoMoveKeyword, placementKey } from "../lib/moveKeywords.js";
+import { autoMoveKeywords, placementKey } from "../lib/moveKeywords.js";
 import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
 import React, { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext, useLayoutEffect, useId } from "react";
@@ -20,7 +20,7 @@ import { structureFactInGame } from "../lib/mecPawnStructure.js";
 import { structurePhrase } from "../lib/mecStructureText.js";
 import { openingMoveFact } from "../lib/mecOpenings.js";
 import { sanSrc, stripSuffix, fenOfRoot, boardOfRoot, plyIsWhite, uciToSan, decorateSan, pvUciToSans, sansToUci, boardFromSans, sansToFen, applySan, decorateLine, startBoard, boardToFen, castleRightsStr, sqName, countLegalMoves, updateCastleRights, epTargetFromMoveInfo, plyMoveNum, moveNumber, canMove, replayFromFen, replaySans, exposesKing, kingPos, legalDests, MAX_SEARCH_DEPTH, parseFenFull, looksLikeFen } from "../lib/chessRules.js";
-import { matePliesOf, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva, fixForcedOnlyMoves } from "../lib/moveQuality.js";
+import { matePliesOf, stickyBrilliant, ownPriorMoveWasSacrifice, posEvalToWhite, materialDiff, isDevelopingMove, pvLosesMaterial, sacrificeCaptureUci, sacPoisonVerdict, pvRegainsMaterial, isSacrifice, staticSacrificeSans, hangingLossSq, gradeMoveKind, winPctFromCp, NEW_ACC_PENALTY_MULT, stdev, newAccuracyFromAvgLoss, sharpLossMultiplier, newCumulativeAccuracy, VAL, seeSquare, canCaptureSquareLegally, countLegalCapturesOnSquare, lva, fixForcedOnlyMoves } from "../lib/moveQuality.js";
 import { lichessFetchWithRetry, LICHESS_API, lichessSinceParam, LICHESS_STATS_WINDOW_MONTHS, WIKI_API } from "../lib/lichessApi.js";
 import { bookPositionKey, isEcoBookPosition } from "../lib/ecoBook.js";
 import { chesscomDisplayUsername, extractChesscomGameId, loadChesscomCache, saveChesscomCache } from "../lib/chesscom.js";
@@ -40,7 +40,8 @@ import { tierFromXp, tierGradientCss, TIERS } from "../lib/tierSystem.js";
 import { puzzleAverageRating } from "../lib/puzzleRating.js";
 import { poolFallbackWorker, isConstrainedDevice, poolSizeFor } from "../lib/enginePool.js";
 
-import { t, tx, lcLatin } from "../lib/i18n.js";
+import { t, tx, lcLatin, lang } from "../lib/i18n.js";
+import { KO_TITLE_TEXT, KO_TITLE_CATEGORY, KO_OPENING_TIERS } from "../lib/titleKoText.js";
 import { LoadingRows } from "../components/motionKit.jsx";
 // (v0.1.4 버그 수정) AnimatePresence의 popLayout 모드는 퇴장 애니메이션 동안 레이아웃을 측정하려고
 // 직계 자식에 ref를 직접 꽂는다 — FadeIn이 일반 함수 컴포넌트라 그 ref를 못 받아 React가 경고를
@@ -1875,7 +1876,9 @@ function keywordHistory(sans, board) {
   _kwHistCache.set(key, out);
   return out;
 }
-export function assignTiers(moves, ply, board, keyStr, sans) {
+// kwPool(v0.7.8 BUG-180): 수 키워드의 형제 비교(날카로운 수 gap·유연한 수 nearBest·손실)에 쓸 후보 묶음 — 분석 탭은 이 포지션에서 지금까지 평가된 모든 수
+//  (기준 전체/마스터 목록의 합집합)를 넘겨, 기준을 바꿔 목록이 달라져도 키워드가 같게 나오게 한다. 없으면 moves 자신.
+export function assignTiers(moves, ply, board, keyStr, sans, kwPool) {
   const color = ply % 2 === 0 ? "w" : "b";
   const evals = moves.map((m) => moverEval(m, ply)).filter((v) => v != null);
   const best = evals.length ? Math.max(...evals) : null;
@@ -1892,19 +1895,26 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
   const pendingSibling = moves.some((m) => moverEval(m, ply) == null);
   const others = moves.filter((_, i) => i !== argmaxIdx).map((m) => moverEval(m, ply)).filter((v) => v != null);
   const secondCp = anyBook || pendingSibling || !others.length ? undefined : Math.max(...others);
-  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드 하나(kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
+  // (v0.7.6, 사용자 요청) 모든 수 블록에 그 포지션을 분석한 자동 키워드(v0.7.8: 맞는 것 전부 kwAutoAll, 대표 kwAuto)를 붙인다 — lib/moveKeywords.js. 개발자 지정 키워드는 없앴다.
   //  형제 수 평가로 "날카로운 수"(이 수만 좋음: gap)·"유연한 수"(좋은 수가 여럿: nearBest)를, 수순으로 반복·대칭(history·prevSan)을 판단한다.
   const evs = moves.map((m) => moverEval(m, ply));
   const allEval = evs.every((v) => v != null);
-  const nearBest = best == null ? null : evs.filter((v) => v != null && best - v <= 30).length;
+  // 키워드용 비교 묶음 — 지금 목록 + kwPool(목록에 없는 수만 더함, 지금 목록의 최신 평가가 우선)
+  const poolEv = new Map(moves.map((m, i) => [stripSuffix(m.san), evs[i]]));
+  for (const pm of kwPool || []) { const k = stripSuffix(pm.san); if (!poolEv.has(k)) { const v = moverEval(pm, ply); if (v != null) poolEv.set(k, v); } }
+  const poolVals = [...poolEv.values()].filter((v) => v != null);
+  const kwBest = poolVals.length ? Math.max(...poolVals) : best;
+  const nearBest = kwBest == null ? null : poolVals.filter((v) => kwBest - v <= 30).length;
   const history = keywordHistory(sans, board);
   const prevSan = sans && sans.length ? sans[sans.length - 1] : null;
   const withKw = (m, i, out) => {
     const mv = evs[i];
-    const others = evs.filter((v, k) => k !== i && v != null);
-    const gapCp = allEval && others.length ? mv - Math.max(...others) : null;
-    return { ...out, kwAuto: autoMoveKeyword({ san: m.san, color, board, lossCp: mv != null && best != null ? best - mv : null, isBest: i === argmaxIdx, gapCp, nearBest, evalCp: mv, kind: out.kind,
-      adopt: m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history }) };
+    const self = stripSuffix(m.san);
+    const others = [...poolEv.entries()].filter(([k, v]) => k !== self && v != null).map(([, v]) => v);
+    const gapCp = allEval && mv != null && others.length ? mv - Math.max(...others) : null;
+    const kwAutoAll = autoMoveKeywords({ san: m.san, color, board, lossCp: mv != null && kwBest != null ? Math.max(0, kwBest - mv) : null, isBest: mv != null && kwBest != null && mv >= kwBest, gapCp, nearBest, evalCp: mv, kind: out.kind,
+      adopt: m.allAdopt !== undefined ? m.allAdopt : m.adopt, masterAdopt: m.masterAdopt, masterTop: !!m.masterTop, book: !!out.book, name: m.name || null, prevSan, history });   // (v0.7.8 BUG-180) 기준(전체/마스터)과 무관한 전체 채택률
+    return { ...out, kwAuto: kwAutoAll[0], kwAutoAll };   // (v0.7.8, 사용자 요청) 조건에 맞는 키워드 전부 — kwAuto는 대표(첫) 키워드
   };
   return moves.map((m, i) => withKw(m, i, gradeTier(m, i)));
   function gradeTier(m, i) {
@@ -1923,7 +1933,7 @@ export function assignTiers(moves, ply, board, keyStr, sans) {
       isSac: () => !!(board && sans) && sacCheckSync(null, sans, m.san, color, board)(), priorSac: !!sans && ownPriorMoveWasSacrifice(sans, color),
       singleRecapture: () => { if (!sans) return false; const rc = recaptureFact(sans, m.san, color); return !!(rc && rc.onlyCandidate); }, san: m.san,
     });
-    return { ...m, kind, book: false };
+    return { ...m, kind: sans ? stickyBrilliant(null, sans, m.san, kind) : kind, book: false };   // (v0.7.8 BUG-177) depth가 바뀌어도 탁월 유지
   }
 }
 /* (UI2) 화면 폭에 맞춰 보드 크기를 산출 — 모바일에서 보드가 잘리지 않게 함 */
@@ -5108,7 +5118,7 @@ function gamePhaseOf(board, ply) {
   return "endgame";
 }
 export function puzzlePhase(p) { try { return gamePhaseOf(puzzleStartBoard(p), puzzleStartPly(p)); } catch { return null; } }
-const GAME_PHASE_LABEL = { opening: t("오프닝"), middlegame: t("미들게임"), endgame: t("엔드게임") };
+export const GAME_PHASE_LABEL = { opening: t("오프닝"), middlegame: t("미들게임"), endgame: t("엔드게임") };
 // PGN/FEN 배지와 완전히 같은 크기·색으로 국면 배지를 그린다(요청: "PGN 박스와 같은 크기의 박스").
 export function GamePhaseBadge({ p, compact }) {
   const phase = useMemo(() => puzzlePhase(p), [p.id]);
@@ -5869,11 +5879,21 @@ const titleTextMap = () => _titleTextMap || (_titleTextMap = {
 });
 // 히든 칭호 계열은 하나도 못 얻었으면 이름을 "???"로 가린다(earnedCount = 그 계열에서 얻은 칭호 수).
 export function seriesDisplayLabel(series, earnedCount) { return series.cat === "rare" && !earnedCount ? "???" : seriesLabelText(series); }
-export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (titleTextMap()[series.label] || series.label); }
+// (v0.7.8, 사용자 요청) 한국어 화면은 다듬은 칭호 표기(lib/titleKoText.js)로 — 원문은 저장·번역 키로 남겨 다른 언어 번역은 그대로 쓴다
+const koTitle = (s) => (lang === "ko" ? (KO_TITLE_TEXT[s] || s) : null);
+export function seriesLabelText(series) { return series.cat === "opening" ? series.label : (koTitle(series.label) || titleTextMap()[series.label] || series.label); }
 export function titleNameText(def) {
-  if (def.series.cat !== "opening") return titleTextMap()[def.name] || def.name;
+  if (def.series.cat !== "opening") return koTitle(def.name) || titleTextMap()[def.name] || def.name;
+  if (lang === "ko") return KO_OPENING_TIERS[def.tier - 1];
   return [t("초급"), t("중급"), t("상급"), t("마스터"), t("그랜드마스터")][def.tier - 1];
 }
+// 업적 4분류 이름 — key: opening | activity | game | rare
+const TITLE_CATEGORY_SRC = { opening: "오프닝 숙련", activity: "활동", game: "대국·레이팅", rare: "히든 칭호" };
+export const titleCategoryText = (key) => {
+  const src = TITLE_CATEGORY_SRC[key] || key;
+  if (lang === "ko") return KO_TITLE_CATEGORY[src] || src;
+  return { opening: t("오프닝 숙련"), activity: t("활동"), game: t("대국·레이팅"), rare: t("히든 칭호") }[key] || src;
+};
 // 단계별 윤곽 모양: 1단계는 네 모서리를 살짝 깎은 판, 2단계는 두 모서리, 3~5단계는 네 모서리를 크게 깎은 모양. 4·5단계는 같은 모양에 바깥 장식(모서리 쇠장식·옆 끝 마름모·왕관)을 더한다.
 const TITLE_BORDER_W = [1, 1.5, 2, 2.5, 3];
 const TITLE_PIECE = ["P", "N", "B", "R", "Q"];   // 단계가 오를수록 큰 기물이 중심부 바탕에 흐리게 깔린다(희귀는 킹)

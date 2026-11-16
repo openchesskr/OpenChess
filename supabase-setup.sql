@@ -880,6 +880,18 @@ returns table(id uuid, username text, pub jsonb) language sql stable as $$
 $$;
 grant execute on function public.leaderboard_top(int) to anon, authenticated;
 
+-- (v0.7.8, 사용자 요청) 소셜 탭 오른쪽 영역의 "퍼즐 레이팅 리더보드" — leaderboard_top(퍼즐 XP 순)과 같은 모양으로, 퍼즐 레이팅(profiles.pub.puzzleRating) 높은 순.
+--  pub은 jsonb라 PostgREST 문자열 정렬로는 "1000" < "900"이 되므로 서버에서 숫자로 바꿔 정렬한다. 숫자가 아니면(기록 없음) 기본 800으로 본다.
+drop function if exists public.puzzle_rating_leaderboard(int) cascade;
+create or replace function public.puzzle_rating_leaderboard(p_limit int default 20)
+returns table(id uuid, username text, pub jsonb) language sql stable as $$
+  select id, username, pub
+  from public.profiles
+  order by (case when jsonb_typeof(pub -> 'puzzleRating') = 'number' then (pub ->> 'puzzleRating')::numeric else 800 end) desc, username asc
+  limit least(greatest(coalesce(p_limit, 20), 1), 100);
+$$;
+grant execute on function public.puzzle_rating_leaderboard(int) to anon, authenticated;
+
 -- (사용자 요청) /user 페이지에 "이 유저의 티어 리더보드 순위"를 작게 표시하기 위한 RPC — 위
 -- leaderboard_top(상위 N명만)과 달리 특정 한 명의 정확한 순위를 구해야 한다. leaderboard_top과
 -- 같은 정렬 기준(XP 내림차순, 동률이면 아이디순)으로 매긴 순위를 window 함수로 계산한다.
@@ -4439,8 +4451,8 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
-    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20},
-    "playQuests": {"game": {"target": 1, "coins": 50}, "win": {"target": 1, "coins": 50}, "long": {"target": 1, "coins": 50}, "mg": {"target": 2, "coins": 50}, "kinds": {"target": 2, "coins": 50}},
+    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20, "r_promotion": 20, "r_draws": 20, "r_notation": 20, "o_tempo": 20, "g_protect": 20, "g_candidate": 20, "g_threat": 20, "g_trade": 20, "g_activity": 20, "g_rooks": 20, "i_twice": 20, "i_earlyqueen": 20, "i_kingpawns": 20, "i_passive": 20, "x_ignore": 20, "x_scholar": 20, "x_f7": 20, "x_greedy": 20, "x_recapture": 20, "z_foolsmate": 20, "z_queenhang": 20, "z_forksq": 20, "z_stalemate": 20, "z_holes": 20, "n_free": 20, "n_mate1": 20, "n_checks": 20, "n_punish": 20, "n_promo": 20, "t_decoy": 20, "t_deflection": 20, "t_overload": 20, "t_intermezzo": 20, "t_xray": 20, "t_interference": 20, "st_space": 20, "st_goodtrade": 20, "st_prophylaxis": 20, "st_kingattack": 20, "e_lucena": 20, "e_philidor": 20, "e_perpetual": 20, "b_greek": 20, "b_legal": 20, "b_queensac": 20, "b_exchsac": 20},
+    "playQuests": {"game": {"chapter": 1, "metric": "game", "target": 1, "coins": 50}, "win": {"chapter": 1, "metric": "win", "target": 1, "coins": 50}, "long": {"chapter": 1, "metric": "long", "target": 1, "coins": 50}, "mg": {"chapter": 1, "metric": "mg", "target": 2, "coins": 50}, "kinds": {"chapter": 1, "metric": "kinds", "target": 2, "coins": 50}, "ctwogame": {"chapter": 2, "metric": "game", "target": 5, "coins": 80}, "ctwowin": {"chapter": 2, "metric": "win", "target": 3, "coins": 80}, "ctwolong": {"chapter": 2, "metric": "long", "target": 3, "coins": 80}, "ctwomg": {"chapter": 2, "metric": "mg", "target": 5, "coins": 80}, "ctwokinds": {"chapter": 2, "metric": "kinds", "target": 4, "coins": 80}, "cthreegame": {"chapter": 3, "metric": "game", "target": 20, "coins": 120}, "cthreewin": {"chapter": 3, "metric": "win", "target": 10, "coins": 120}, "cthreelong": {"chapter": 3, "metric": "long", "target": 8, "coins": 120}, "cthreemg": {"chapter": 3, "metric": "mg", "target": 15, "coins": 120}, "cthreemgwin": {"chapter": 3, "metric": "mgwin", "target": 5, "coins": 120}},
     "devBonusCoins": 10000
   }'::jsonb;
 $$;
@@ -4719,7 +4731,7 @@ $$;
 -- (v0.7.6, 사용자 요청) 플레이 퀘스트 — 날마다 초기화하지 않는 한 번짜리 목표, 달성하면 퀘스트당 1회 코인 보상(economy_params의 playQuests).
 -- 진행 값은 브라우저가 세지 않고 서버가 직접 센다: 일반 대국 = 서버가 검증해 저장한 끝난 대국(pvp_games game_type 'chess' + bot_games, 20수(양쪽 합) 이상),
 -- 미니게임 = 끝난 미니게임 대전(pvp_games game_type coord·knight·rush·attack, 중단 제외). 그래서 보상을 받으려고 숫자를 꾸며 보낼 수 없다.
--- 반환: { game, win, long, mg, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
+-- 반환: { game, win, long, mg, mgwin, kinds, claimed: [받은 퀘스트 키] } — 값은 99에서 자른다(화면은 목표치까지만 쓴다).
 create or replace function public._play_quest_counts(p_uid uuid)
 returns jsonb language sql stable security definer set search_path = public as $$
   with chess as (
@@ -4731,7 +4743,7 @@ returns jsonb language sql stable security definer set search_path = public as $
     select coalesce(array_length(b.sans, 1), 0), b.result = 'win' from public.bot_games b where b.uid = p_uid
   ), ok as (select * from chess where plies >= 20),
   mg as (
-    select g.game_type from public.pvp_games g
+    select g.game_type, ((g.status = 'white_won' and g.white_uid = p_uid) or (g.status = 'black_won' and g.black_uid = p_uid)) as won from public.pvp_games g
     where g.game_type in ('coord', 'knight', 'rush', 'attack') and g.status in ('white_won', 'black_won', 'draw') and (g.white_uid = p_uid or g.black_uid = p_uid)
   )
   select jsonb_build_object(
@@ -4739,6 +4751,7 @@ returns jsonb language sql stable security definer set search_path = public as $
     'win', least(99, (select count(*) from ok where won)),
     'long', least(99, (select count(*) from ok where plies >= 80)),
     'mg', least(99, (select count(*) from mg)),
+    'mgwin', least(99, (select count(*) from mg where won)),   -- (v0.7.8) 3장 "미니게임 대전 승리"
     'kinds', (select count(distinct game_type) from mg));
 $$;
 create or replace function public.play_quest_status()
@@ -4751,15 +4764,21 @@ begin
 end; $$;
 create or replace function public.economy_claim_play_quest(p_key text)
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy;
+declare v_uid uuid := auth.uid(); v_q jsonb; v_have bigint; v_ins int; v_cur public.economy; v_counts jsonb; v_prev jsonb;
 begin
   if v_uid is null then raise exception 'auth required'; end if;
   if p_key is null or p_key !~ '^[a-z]{1,16}$' then raise exception 'invalid quest'; end if;
   v_q := public.economy_params() -> 'playQuests' -> p_key;
   if v_q is null then return jsonb_build_object('error', 'unknown quest'); end if;
   if public.rate_limit_hit('playquest:' || v_uid, 30, 3600) then return jsonb_build_object('error', 'rate limited'); end if;
-  v_have := (public._play_quest_counts(v_uid) ->> p_key)::bigint;
+  v_counts := public._play_quest_counts(v_uid);
+  v_have := (v_counts ->> coalesce(v_q ->> 'metric', p_key))::bigint;
   if coalesce(v_have, 0) < (v_q ->> 'target')::bigint then return jsonb_build_object('error', 'not complete'); end if;
+  -- (v0.7.8, 사용자 요청) 장 단위 — 앞 장의 퀘스트를 모두 클리어해야 다음 장 보상을 받을 수 있다(진행 값은 누적이라 앞 장을 건너뛸 수 없게).
+  for v_prev in select value from jsonb_each(public.economy_params() -> 'playQuests')
+    where coalesce((value ->> 'chapter')::int, 1) < coalesce((v_q ->> 'chapter')::int, 1) loop
+    if coalesce((v_counts ->> coalesce(v_prev ->> 'metric', ''))::bigint, 0) < (v_prev ->> 'target')::bigint then return jsonb_build_object('error', 'chapter locked'); end if;
+  end loop;
   perform public._economy_ensure(v_uid);
   insert into public.economy_claims(uid, kind, ref) values (v_uid, 'playquest', p_key) on conflict do nothing;
   get diagnostics v_ins = row_count;
@@ -4922,6 +4941,143 @@ update public.notifications set reward_amount = least(greatest(coalesce((payload
   where kind = 'daily_puzzle_selected' and reward_amount is null and jsonb_typeof(payload -> 'reward') = 'number';
 
 -- ============================================================================
+-- (v0.7.8, 사용자 요청) 집중 분석 유저 통계 "전체 통계" — Lichess 오프닝 탐색기(lichess DB)의 이 수순 최고 레이팅 대국·최근 대국을 서버가 받을 때마다 쌓는다(빅데이터).
+--  · 쓰기·읽기는 서버리스 함수(api/explorer-games.js, service_role)만 — 브라우저는 표·함수에 직접 접근할 수 없다(아래 $acl$ 허용 목록에 없음).
+--    서버가 수순을 chess.js로 검증하고 Lichess에서 직접 받은 값만 넣으므로, 브라우저가 가짜 대국을 섞어 넣을 수 없다.
+--  · pos_key: 표준 시작부터의 UCI 수순(쉼표 구분, 시작 포지션은 ''). 같은 대국이 여러 수순에 나타나므로 키는 (pos_key, game_id).
+--  · explorer_positions.fetched_at: 마지막으로 Lichess에서 받은 시각 — 서버가 이 간격(6시간) 안에는 Lichess를 다시 부르지 않는다(토큰 호출 한도 보호).
+-- ============================================================================
+create table if not exists public.explorer_positions (
+  pos_key text primary key,
+  white bigint not null default 0,
+  draws bigint not null default 0,
+  black bigint not null default 0,
+  moves jsonb not null default '[]'::jsonb,
+  fetched_at timestamptz not null default now()
+);
+create table if not exists public.explorer_games (
+  pos_key text not null,
+  game_id text not null,
+  white_name text,
+  white_rating int,
+  black_name text,
+  black_rating int,
+  winner text,
+  speed text,
+  month text,
+  next_uci text,
+  source text not null default 'recent',
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  primary key (pos_key, game_id)
+);
+create index if not exists idx_explorer_games_pos_rating on public.explorer_games (pos_key, greatest(coalesce(white_rating, 0), coalesce(black_rating, 0)) desc);
+create index if not exists idx_explorer_games_pos_seen on public.explorer_games (pos_key, first_seen desc);
+alter table public.explorer_positions enable row level security;
+alter table public.explorer_games enable row level security;
+revoke all on public.explorer_positions from public, anon, authenticated;
+revoke all on public.explorer_games from public, anon, authenticated;
+
+-- 서버가 Lichess 응답(전체 승·무·패, 다음 수 통계, 대국 목록)을 저장한다. 대국은 모양을 다시 확인해 넣고, 이미 있으면 last_seen만 갱신한다.
+create or replace function public.explorer_record(p_pos text, p_white bigint, p_draws bigint, p_black bigint, p_moves jsonb, p_games jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare g jsonb; v_n int := 0;
+begin
+  if p_pos is null or length(p_pos) > 1200 or p_pos !~ '^([a-h][1-8][a-h][1-8][qrbn]?(,[a-h][1-8][a-h][1-8][qrbn]?)*)?$' then raise exception 'invalid pos'; end if;
+  if coalesce(p_white, 0) < 0 or coalesce(p_draws, 0) < 0 or coalesce(p_black, 0) < 0 then raise exception 'invalid totals'; end if;
+  if p_moves is not null and (jsonb_typeof(p_moves) <> 'array' or jsonb_array_length(p_moves) > 30 or length(p_moves::text) > 8000) then raise exception 'invalid moves'; end if;
+  if p_games is null or jsonb_typeof(p_games) <> 'array' or jsonb_array_length(p_games) > 12 then raise exception 'invalid games'; end if;
+  insert into public.explorer_positions(pos_key, white, draws, black, moves, fetched_at)
+    values (p_pos, coalesce(p_white, 0), coalesce(p_draws, 0), coalesce(p_black, 0), coalesce(p_moves, '[]'::jsonb), now())
+  on conflict (pos_key) do update set white = excluded.white, draws = excluded.draws, black = excluded.black, moves = excluded.moves, fetched_at = now();
+  for g in select * from jsonb_array_elements(p_games) loop
+    if coalesce(g ->> 'id', '') !~ '^[A-Za-z0-9]{8}$' then continue; end if;
+    insert into public.explorer_games(pos_key, game_id, white_name, white_rating, black_name, black_rating, winner, speed, month, next_uci, source)
+    values (p_pos, g ->> 'id', left(g ->> 'white_name', 40), case when (g ->> 'white_rating') ~ '^\d{1,4}$' then (g ->> 'white_rating')::int end,
+            left(g ->> 'black_name', 40), case when (g ->> 'black_rating') ~ '^\d{1,4}$' then (g ->> 'black_rating')::int end,
+            case when g ->> 'winner' in ('white', 'black') then g ->> 'winner' end,
+            case when (g ->> 'speed') ~ '^[a-z]{3,16}$' then g ->> 'speed' end,
+            case when (g ->> 'month') ~ '^\d{4}-\d\d$' then g ->> 'month' end,
+            case when (g ->> 'next_uci') ~ '^[a-h][1-8][a-h][1-8][qrbn]?$' then g ->> 'next_uci' end,
+            case when g ->> 'source' = 'top' then 'top' else 'recent' end)
+    on conflict (pos_key, game_id) do update set last_seen = now(),
+      source = case when excluded.source = 'top' then 'top' else public.explorer_games.source end;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+
+-- 서버가 화면에 줄 값 — 전체 집계 + 쌓인 대국(레이팅 높은 순 p_top개 + 최근 순 p_recent개, 중복 제거) + 쌓인 대국 수.
+create or replace function public.explorer_read(p_pos text, p_top int default 30, p_recent int default 30)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'position', (select to_jsonb(p) - 'pos_key' from public.explorer_positions p where p.pos_key = p_pos),
+    'stored', (select count(*) from public.explorer_games where pos_key = p_pos),
+    'games', coalesce((select jsonb_agg(to_jsonb(x) - 'pos_key') from (
+        (select * from public.explorer_games where pos_key = p_pos order by greatest(coalesce(white_rating, 0), coalesce(black_rating, 0)) desc limit least(greatest(p_top, 0), 100))
+        union
+        (select * from public.explorer_games where pos_key = p_pos order by first_seen desc limit least(greatest(p_recent, 0), 100))
+      ) x), '[]'::jsonb)
+  );
+$$;
+revoke all on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.explorer_read(text, int, int) from public, anon, authenticated;
+grant execute on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) to service_role;
+grant execute on function public.explorer_read(text, int, int) to service_role;
+
+-- ============================================================================
+-- (v0.7.8, 사용자 요청) 학습 탭 "추가 학습" — 최근에 본 레슨의 테마(포크·핀·백랭크 메이트 …)에 맞는 Lichess 테마 퍼즐을 서버가 받을 때마다 쌓는다.
+--  · 쓰기·읽기는 서버리스 함수(api/lichess.js ?puzzles=1, service_role)만 — 브라우저는 표·함수에 직접 접근할 수 없다(아래 $acl$ 허용 목록에 없음).
+--    서버가 Lichess에서 직접 받은 퍼즐을 chess.js로 다시 두어 보며 검증한 뒤(시작 FEN·정답 SAN) 넣으므로 가짜 퍼즐을 섞어 넣을 수 없다.
+--  · 키는 (theme, puzzle_id) — 한 퍼즐이 여러 테마에 걸릴 수 있다.
+-- ============================================================================
+create table if not exists public.theme_puzzles (
+  theme text not null,
+  puzzle_id text not null,
+  fen text not null,
+  sol jsonb not null,
+  rating int,
+  themes jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  primary key (theme, puzzle_id)
+);
+alter table public.theme_puzzles enable row level security;
+revoke all on public.theme_puzzles from public, anon, authenticated;
+
+create or replace function public.theme_puzzle_record(p_theme text, p_puzzles jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare g jsonb; v_n int := 0;
+begin
+  if p_theme is null or p_theme !~ '^[A-Za-z0-9_]{2,40}$' then raise exception 'invalid theme'; end if;
+  if p_puzzles is null or jsonb_typeof(p_puzzles) <> 'array' or jsonb_array_length(p_puzzles) > 10 then raise exception 'invalid puzzles'; end if;
+  for g in select * from jsonb_array_elements(p_puzzles) loop
+    if coalesce(g ->> 'id', '') !~ '^[A-Za-z0-9]{4,10}$' then continue; end if;
+    if coalesce(g ->> 'fen', '') !~ '^[pnbrqkPNBRQK1-8/]{15,90} [wb] [KQkq-]{1,4} ([a-h][36]|-) \d{1,3} \d{1,4}$' then continue; end if;
+    if jsonb_typeof(g -> 'sol') <> 'array' or jsonb_array_length(g -> 'sol') not between 1 and 24 or length((g -> 'sol')::text) > 600 then continue; end if;
+    insert into public.theme_puzzles(theme, puzzle_id, fen, sol, rating, themes)
+    values (p_theme, g ->> 'id', g ->> 'fen', g -> 'sol', case when (g ->> 'rating') ~ '^\d{2,4}$' then (g ->> 'rating')::int end,
+            case when jsonb_typeof(g -> 'themes') = 'array' and length((g -> 'themes')::text) < 800 then g -> 'themes' else '[]'::jsonb end)
+    on conflict (theme, puzzle_id) do nothing;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+
+-- 서버가 화면에 줄 값 — 이 테마의 쌓인 퍼즐 수와 무작위 p_n개
+create or replace function public.theme_puzzle_read(p_theme text, p_n int default 8)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'stored', (select count(*) from public.theme_puzzles where theme = p_theme),
+    'puzzles', coalesce((select jsonb_agg(jsonb_build_object('id', puzzle_id, 'fen', fen, 'sol', sol, 'rating', rating, 'themes', themes)) from (
+        select * from public.theme_puzzles where theme = p_theme order by random() limit least(greatest(p_n, 0), 30)) x), '[]'::jsonb)
+  );
+$$;
+revoke all on function public.theme_puzzle_record(text, jsonb) from public, anon, authenticated;
+revoke all on function public.theme_puzzle_read(text, int) from public, anon, authenticated;
+grant execute on function public.theme_puzzle_record(text, jsonb) to service_role;
+grant execute on function public.theme_puzzle_read(text, int) to service_role;
+
+-- ============================================================================
 -- 함수 실행 권한 최종 확정 (v0.7.0 보안, BUG-108·118) — 기본 차단 + 허용 목록
 -- ============================================================================
 -- PostgreSQL은 새 함수에 PUBLIC 실행 권한을 기본으로 주고 Supabase도 anon/authenticated에 기본 부여한다. 그래서 위에서 'service_role에만 준다'고
@@ -4934,7 +5090,7 @@ do $acl$
 declare
   r record;
   v_anon text[] := array[
-    'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'minigame_leaderboard',
+    'am_content_editor', 'daily_puzzle_pick_ensure_today', 'leaderboard_top', 'puzzle_rating_leaderboard', 'minigame_leaderboard',
     'profile_rank', 'profile_recent_games', 'profiles_search_by_mid_prefix', 'puzzle_line_avg_solve_ms',
     'puzzle_popularity_all', 'puzzle_rank', 'puzzle_solve', 'social_legacy_feed', 'social_profile',
     'search_puzzles_prefix', 'username_available', 'my_deletion_pending'

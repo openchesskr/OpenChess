@@ -34,7 +34,10 @@ const home = (gh0.match(/export function AnalysisWithGrowth[\s\S]*?\n}\n/) || ["
 for (const k of ["analysis", "growth", "games"]) if (!new RegExp('key: "' + k + '"').test(home)) fails.push("AnalysisWithGrowth: 모바일 페이지 '" + k + "'가 없음");
 if (!/useNarrow\(720\)/.test(home)) fails.push("AnalysisWithGrowth: 모바일 기준(720px)이 바뀜");
 if (!/if \(!focusActive\) pages\.push/.test(home)) fails.push("AnalysisWithGrowth: 집중 분석 중에는 성장 분석 페이지를 숨겨야 함");
-if (!/active=\{active\}/.test(home) || !/onIndexChange=\{setPageIdx\}/.test(home) || !/useSeenOnce\(deskRef\)/.test(home)) fails.push("AnalysisWithGrowth: 성장 분석이 화면에 보일 때만 자동 리뷰(active)해야 함 — 분석 탭 실시간 평가와 엔진 대기열을 다툼");
+// (v0.7.8, 사용자 요청) 자동 리뷰는 화면에 보이지 않아도 백그라운드에서 — 접속 직후 GROWTH_BG_DELAY_MS 동안만 미뤄 엔진 부팅·분석 탭 첫 평가와 겹치지 않게 한다.
+//  보였는지(visible)는 보여 주기 연출(다 끝난 뒤 처음 보일 때 약 5초)에 쓴다.
+if (!/active: bgOn \|\| visible/.test(home) || !/onIndexChange=\{setPageIdx\}/.test(home) || !/useSeenOnce\(deskRef\)/.test(home) || !/visible=\{visible\}/.test(home)) fails.push("AnalysisWithGrowth: 자동 리뷰는 백그라운드(bgOn, 접속 뒤 지연) 또는 화면에 보일 때(visible) 돌고, 보였는지를 GrowthPanel에 넘겨야 함");
+if (!/export const GROWTH_BG_DELAY_MS = \d{4,5};/.test(gh0)) fails.push("AnalysisWithGrowth: 백그라운드 자동 리뷰 시작 지연(GROWTH_BG_DELAY_MS)이 없음 — 접속 직후 엔진 부팅과 겹침");
 if (!/<AnalysisWithGrowth focusActive=\{focusActive\} analysisNode=\{<AnalysisTab /.test(app)) fails.push("App: 분석 탭이 성장 분석 영역(AnalysisWithGrowth)으로 감싸져 있지 않음");
 if (/<UserProfilePage embedded/.test(app)) fails.push("App: 학습 탭에 /user 프로필 페이지가 다시 들어옴(프로필 정보는 성장 분석으로 대체됨)");
 { const dqs = rd("src/app/dailyQuest.jsx"), dq = (dqs.match(/export function DailyQuestCard[\s\S]*?\n}\n/) || [""])[0]; if (!dq) fails.push("DailyQuestCard(dailyQuest.jsx)를 찾지 못함"); else if (/gradient\(/.test(dq)) fails.push("DailyQuestCard: 그라데이션(linear/radial-gradient)을 쓰면 안 됨(단색 면 + 얇은 테두리)"); }
@@ -66,7 +69,7 @@ if (!/RecentGameBoxes/.test(gh0)) fails.push("growthHome.jsx: 최근 대국 큰 
   if (!/<DailyQuestCard /.test(play) || !/showQuest/.test(play)) fails.push("PlayPage: 일일 퀘스트 카드(DailyQuestCard)가 없음");
   if (!/step === "setup"/.test((play.match(/const showQuest[^\n]*/) || [""])[0])) fails.push("PlayPage: 대국 중(step=playing)에는 퀘스트를 숨겨야 함");
   if (!/gridTemplateColumns: "minmax\(0, " \+ hubMaxW \+ "px\) minmax\(0, 1fr\)"/.test(play)) fails.push("PlayPage: 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트 좌우 분할이어야 함");
-  if (!/onQuestBadgeClick = useCallback\(\(openingName\) => \{\s*setTab\("store"\)/.test(app)) fails.push("App: 분석 탭 퀘스트 배지는 플레이 탭(store)으로 이동해야 함");
+  if (!/onQuestBadgeClick = useCallback\(\(openingName\) => \{\s*if \(switchTabRef\.current\) switchTabRef\.current\("store"\)/.test(app)) fails.push("App: 분석 탭 퀘스트 배지는 하단 탭과 같은 switchTab으로 플레이 탭(store)에 가야 함(BUG-181)");
   if (!/questActive=\{tab === "store"\}/.test(app)) fails.push("App: 퀘스트는 플레이 탭이 보일 때만 마운트(questActive)해야 함 — 숨겨진 탭에서 완료 공개 연출이 먼저 끝나면 안 됨");
   const gh = rd("src/app/gameHistory.jsx"), box = (gh.match(/function GameBox[\s\S]*?\nexport function RecentGameBoxes/) || [""])[0];
   if (!box) fails.push("GameBox를 찾지 못함");

@@ -4,7 +4,8 @@
 import { useLayoutEffect, useState } from "react";
 export const DEX_NAV_H = 66;
 export function dexPanelHeight(innerHeight, boxTop, vertical, reserve = 0) {
-  return Math.max(360, Math.round(innerHeight - boxTop - reserve - (DEX_NAV_H + (vertical ? 16 : 4))));
+  // (v0.7.8, 사용자 요청) 도감 영역을 더 높게 — 아래 해금률 줄을 없앴고, 하단 내비게이션과의 여백도 줄였다(데스크톱 4→0, 모바일 16→8)
+  return Math.max(400, Math.round(innerHeight - boxTop - reserve - (DEX_NAV_H + (vertical ? 8 : 0))));
 }
 // reserve: 박스 아래에 따로 두는 요소(오프닝 트리의 도감 해금률 줄)가 차지하는 높이.
 export function useFitPanelHeight(boxRef, vertical, initial = 640, reserve = 0) {

@@ -3,18 +3,23 @@
 //  · 섞는 규칙(mixFeed, lib/socialMix.js): 퍼즐 2개마다 유산 1개. 종류 토글(전체·퍼즐·유산)로 하나만 볼 수도 있다.
 //  · 게시물 구성: 머리(프로필 원 + 이름 + 부제 + 종류 표시) → 정사각 미리보기 보드(가장자리까지) → 동작 줄(좋아요·리포스트·공유 / 오른쪽 풀기·재생) → 좋아요 수·캡션·날짜.
 //  · 화면 아래에 닿으면 10개씩 더 그린다(IntersectionObserver). 유산은 다 그리면 서버에서 다음 묶음(p_before)을 읽는다.
-import { useState, useEffect, useMemo, useRef, useLayoutEffect, useContext } from "react";
+import { useState, useEffect, useMemo, useRef, useLayoutEffect, useContext, createContext } from "react";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
-import { Heart, Repeat2, Send, Play, Trash2, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
+import { Heart, Repeat2, Send, Trash2, MoreVertical, Flag, EyeOff, Puzzle as PuzzleIcon } from "../components/ocIcons.jsx";
+import { createPortal } from "react-dom";
+import { ReportSheet } from "../components/chatPlus.jsx";
+import { userReport, chatBlockSet } from "../lib/chatApi.js";
+import { isHiddenPost, hidePost, unhidePost, onHiddenChange } from "../lib/hiddenPosts.js";
 import { badgeIcon, postBadge } from "../components/badges.jsx";
-import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
+import { PUZZLE_THEME_KEYS, puzzleThemeLabel, AnimatedMove, Board, LineStars, GamePhaseBadge, puzzlePhase, GAME_PHASE_LABEL, puzzleNo, livePuzzleName, sortedThemesOf, themeAccentColor, solveCountText, puzzleTreeOf, treeLinesOf, starsOf, solvedLineTagsOf, firstNamedOpening, postTypeInfo, legacyRootOf, gamePostTitle, legacyMoveLabel, LEGACY_FONT, FadeIn } from "./common.jsx";
 import { parseFenFull } from "../lib/chessRules.js";
 import { SB_ON, sbRpc, sbSelect } from "../lib/supabaseClient.js";
 import { normalizeLegacyEntry } from "../lib/legacyEntry.js";
 import { kindOfPost, isSaved } from "../lib/legacyPosts.js";
 import { LegacyActionsCtx } from "./legacyFeed.jsx";
 import { LegacyFrame } from "../components/legacyFrame.jsx";
+import { PuzzleThemeBackdrop, puzzleBackdropTheme, puzzleBackdropBg, PUZZLE_MEDIA_RATIO } from "../components/puzzleThemeBackdrop.jsx";
 import { legacyLikeToggle } from "./profile.jsx";
 import { mixFeed, FEED_KINDS } from "../lib/socialMix.js";
 import { t, fmtDateOnly } from "../lib/i18n.js";
@@ -140,7 +145,7 @@ function Avatar({ name, photo }) {
   );
 }
 /* (v0.7.7, 사용자 요청) 게시물 머리 — 퍼즐·유산이 같은 모양: 프로필 사진(없으면 아이디 첫 글자) · 아이디(닉네임 아님) · "종류 · 세부" · 오른쪽 표지 */
-function PostHead({ username, photo, kindLabel, detail, right, onOpenProfile }) {
+function PostHead({ username, photo, kindLabel, detail, right, onOpenProfile, menu }) {
   const name = username || "OpenChess";
   return (
     <>
@@ -150,6 +155,7 @@ function PostHead({ username, photo, kindLabel, detail, right, onOpenProfile }) 
         <div style={{ fontSize: 11, color: SOFT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kindLabel}{detail ? " · " + detail : ""}</div>
       </div>
       <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{right}</span>
+      {menu}
     </>
   );
 }
@@ -158,21 +164,110 @@ const Caption = ({ name, children }) => <div style={{ fontSize: 13.5, color: INK
 const actBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, minWidth: 36, height: 36, padding: "0 6px", background: "none", border: "none", cursor: "pointer" };
 // (v0.7.6 사용자 요청) 숫자는 따로 줄을 두지 않고 아이콘 바로 옆에 숫자만
 const Num = ({ n, color }) => <span style={{ fontSize: 13, fontWeight: 800, color: color || INK, fontFamily: SITE_FONT, fontVariantNumeric: "tabular-nums" }}>{n || 0}</span>;
-const ctaBtn = { display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 14px", borderRadius: 10, border: "none", background: T.ebony2, color: T.brassHi, fontSize: 12.5, fontWeight: 800, fontFamily: SITE_FONT, cursor: "pointer" };
+const ViewerUidCtx = createContext(null);   // (v0.7.8) 게시물 메뉴의 "신고 + 차단"이 쓰는 내 계정 id
 
 /* 게시물 틀(공용) */
-function PostShell({ head, media, actions, children, onOpen, label }) {
+/* (v0.7.8, 사용자 요청) 게시물 우상단 세로 점 3개 메뉴 — 재생·풀기 버튼 대신. 다른 사람의 게시물: 신고하기·관심 없음 / 내 게시물: 삭제(두 번 눌러 확정).
+   postKey: 피드 항목 키(관심 없음 저장용), targetName·resolveTargetUid: 신고 대상, refLabel: 신고에 덧붙일 게시물 표시("퍼즐 #123"). */
+function PostMenu({ isMine, postKey, targetName, resolveTargetUid, refLabel, onDelete }) {
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const [armed, setArmed] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const viewerUid = useContext(ViewerUidCtx);
+  const open = (e) => { e.stopPropagation(); const r = btnRef.current && btnRef.current.getBoundingClientRect(); if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) }); setArmed(false); };
+  const close = () => { setPos(null); setArmed(false); };
+  const items = isMine
+    ? (onDelete ? [{ key: "del", label: armed ? t("한 번 더 누르면 삭제") : t("삭제"), Icon: Trash2, danger: true, run: async () => { if (!armed) { setArmed(true); return; } setBusy(true); try { await onDelete(); } finally { setBusy(false); close(); } } }] : [])
+    : [
+      { key: "report", label: t("신고하기"), Icon: Flag, danger: true, run: () => { close(); setReportOpen(true); } },
+      { key: "hide", label: t("관심 없음"), Icon: EyeOff, run: () => { close(); hidePost(postKey); } },
+    ];
+  const submitReport = async (reason, detail, alsoBlock) => {
+    const uid = await resolveTargetUid();
+    if (!uid) return { ok: false, error: "failed" };
+    const r = await userReport(uid, null, reason, ("[" + refLabel + "] " + (detail || "")).trim().slice(0, 500));
+    if (r.ok && alsoBlock && viewerUid) { try { await chatBlockSet(viewerUid, uid, true); } catch { /* 신고는 접수됨 */ } }
+    return r;
+  };
+  if (!items.length) return null;
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={open} aria-label={t("게시물 메뉴")} aria-haspopup="menu" aria-expanded={!!pos} className="press"
+        style={{ flexShrink: 0, width: 30, height: 30, marginRight: -6, borderRadius: 8, border: "none", background: "transparent", color: INK, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><MoreVertical size={18} /></button>
+      {pos && typeof document !== "undefined" && createPortal(
+        <>
+          <div onClick={close} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
+          <div role="menu" style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 61, minWidth: 168, padding: 5, borderRadius: 11, background: T.paper, border: "1px solid #DCCBA8", boxShadow: "0 12px 28px -8px rgba(0,0,0,.55)" }}>
+            {items.map((it) => (
+              <button key={it.key} role="menuitem" type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); it.run(); }} className="press"
+                style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "9px 10px", borderRadius: 8, border: "none", background: it.danger && armed ? "rgba(200,69,59,.12)" : "transparent", color: it.danger ? T.blunder : INK, fontSize: 13, fontWeight: 800, cursor: "pointer", textAlign: "left", fontFamily: SITE_FONT }}>
+                <it.Icon size={16} />{it.label}
+              </button>
+            ))}
+          </div>
+        </>, document.body)}
+      {reportOpen && <ReportSheet targetName={targetName || "?"} snippet={refLabel} onSubmit={submitReport} onClose={() => setReportOpen(false)} note={t("신고한 게시물은 검토를 위해 운영진에게 전달. 상대에게는 알리지 않음")} />}
+    </>
+  );
+}
+// 퍼즐 게시물 신고 대상 — 생성자 아이디로 계정 id를 찾는다
+async function uidOfUsername(username) {
+  if (!SB_ON || !username) return null;
+  try { const rows = await sbSelect("profiles?username=eq." + encodeURIComponent(username) + "&select=id&limit=1"); return rows && rows[0] ? rows[0].id : null; } catch { return null; }
+}
+// (v0.7.8, 사용자 요청) 모든 게시물 맨 아래 줄 — 왼쪽에 게시 날짜, 그 오른쪽에 키워드 박스를 차례대로(퍼즐 테마도 # 대신 박스).
+function PostShell({ head, media, actions, children, onOpen, label, date, keywords }) {
   return (
     <article aria-label={label} style={{ contain: "inline-size", minWidth: 0, background: T.ivoryHi, borderRadius: 16, border: "1px solid " + LINE, boxShadow: "0 3px 0 #B59A6E", overflow: "hidden" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>{head}</header>
       <div onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} className="press" style={{ cursor: "pointer" }}>{media}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 8px 0" }}>{actions}</div>
-      <div style={{ padding: "2px 14px 14px", display: "flex", flexDirection: "column", gap: 4 }}>{children}</div>
+      <div style={{ padding: "2px 14px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {children}
+        <div className="post-foot" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: SOFT, fontFamily: SITE_FONT, marginRight: 3, whiteSpace: "nowrap" }}>{date || "\u00A0"}</span>
+          {(keywords || []).filter(Boolean).map((k, i) => <KwBox key={i} {...k} />)}
+        </div>
+      </div>
     </article>
   );
 }
+/* 키워드 박스 — 색 테두리 + 옅은 같은 색 면 */
+function KwBox({ label, color = SOFT, title }) {
+  return <span title={title} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 5, border: "1px solid " + color + "88", background: color + "1a", color, fontSize: 10.5, fontWeight: 800, fontFamily: SITE_FONT, whiteSpace: "nowrap" }}>{label}</span>;
+}
+// 게시물 미디어 칸 — 보드를 칸 폭의 POST_BOARD_FRAC로 줄여 가운데에, 칸은 PUZZLE_MEDIA_RATIO(위아래로 조금 길게). bg·backdrop: 보드 뒤 배경
+const POST_BOARD_FRAC = 0.6;
+function PostMedia({ bg, backdrop, children }) {
+  return (
+    <div style={{ position: "relative", width: "100%", aspectRatio: PUZZLE_MEDIA_RATIO, background: bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      {backdrop}
+      <div style={{ position: "relative", width: POST_BOARD_FRAC * 100 + "%", zIndex: 1 }}>{children}</div>
+    </div>
+  );
+}
+// (v0.7.8) 퍼즐 게시 날짜 — 퍼즐 데이터에는 만든 시각이 없어, 화면에 보이는 퍼즐 번호만 모아 서버(puzzles.created_at)에서 한 번에 읽어 둔다
+const createdAtCache = new Map(); const createdSubs = new Set(); let createdPending = new Set(), createdTimer = null;
+function requestCreatedAt(no) {
+  if (!SB_ON || no == null || createdAtCache.has(no) || createdPending.has(no)) return;
+  createdPending.add(no);
+  clearTimeout(createdTimer);
+  createdTimer = setTimeout(async () => {
+    const nos = [...createdPending].slice(0, 60); createdPending = new Set([...createdPending].slice(60));
+    try { const rows = await sbSelect("puzzles?select=no,created_at&no=in.(" + nos.join(",") + ")"); (rows || []).forEach((r) => createdAtCache.set(r.no, Date.parse(r.created_at) || null)); } catch { /* 날짜 없이 표시 */ }
+    nos.forEach((n) => { if (!createdAtCache.has(n)) createdAtCache.set(n, null); });
+    createdSubs.forEach((f) => f());
+  }, 120);
+}
+function usePuzzleCreatedAt(p) {
+  const no = puzzleNo(p.id), [, bump] = useState(0);
+  useEffect(() => { const f = () => bump((x) => x + 1); createdSubs.add(f); requestCreatedAt(no); return () => { createdSubs.delete(f); }; }, [no]);
+  return p.createdAt || createdAtCache.get(no) || null;
+}
 
-export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
+export function PuzzlePost({ p, creator, viewerName, onDelete, isSolved, onOpen, onOpenProfile, solveCount, solvedTags, friendSolverNames, isLiked, likeCount, onToggleLike, isReposted, repostCount, onToggleRepost, shareCount, onShare }) {
   const [ref, w] = useSquareWidth();
   const setupLen = (p.setupSans ? p.setupSans.length : 0) + 1;
   const hasPreview = !!(p.setupSans && p.mistakeSan);
@@ -185,27 +280,31 @@ export function PuzzlePost({ p, creator, isSolved, onOpen, onOpenProfile, solveC
   const opening = (p.setupSans && firstNamedOpening(p.setupSans)) || p.opening || "";
   const solvers = solveCountText(solveCount, friendSolverNames);
   const photo = usePhotoOf(creator);
+  const bdTheme = puzzleBackdropTheme(themes);
+  const createdAt = usePuzzleCreatedAt(p);
+  const phase = useMemo(() => puzzlePhase(p), [p.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // 키워드 박스: 포지션 단계 → 테마들(# 없이 박스)
+  const keywords = [phase ? { label: GAME_PHASE_LABEL[phase], color: "#1B4C86", title: t("{0} 포지션에서 시작", GAME_PHASE_LABEL[phase]) } : null, ...themes.map((k) => ({ label: labels[k] || k, color: themeAccentColor([k]) }))];
   return (
-    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen}
+    <PostShell label={t("퍼즐 #{0}", puzzleNo(p.id))} onOpen={onOpen} date={fmtDate(createdAt)} keywords={keywords}
       head={<PostHead username={creator} photo={photo} kindLabel={t("퍼즐")} detail={opening} onOpenProfile={onOpenProfile}
+        menu={<PostMenu isMine={!!viewerName && creator === viewerName} postKey={"p:" + p.id} targetName={creator} resolveTargetUid={() => uidOfUsername(creator)} refLabel={t("퍼즐 #{0}", puzzleNo(p.id))} onDelete={onDelete ? () => onDelete(p.id) : null} />}
         right={<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: themeAccentColor(themes), fontFamily: SITE_FONT }}><PuzzleIcon size={14} color={themeAccentColor(themes)} />#{puzzleNo(p.id)}</span>} />}
-      media={<div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", background: "rgba(0,0,0,.06)" }}>
-        {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
-          : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
-      </div>}
+      media={<PostMedia bg={puzzleBackdropBg(bdTheme)} backdrop={<PuzzleThemeBackdrop theme={bdTheme} />}>
+        {/* (v0.7.8, 사용자 요청) 유산처럼 보드를 줄이고 테마별 배경·애니메이션을 뒤에 깐다 */}
+        <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden", boxShadow: "0 10px 26px -10px rgba(0,0,0,.8)" }}>
+          {hasPreview ? <AnimatedMove sans={p.setupSans} san={p.mistakeSan} size={w} loopMs={2400} flip={fenOnly ? fenOnly.turn === "w" : setupLen % 2 !== 0} fenRoot={fenOnly} />
+            : fenRoot ? <Board board={fenRoot.board} flip={fenRoot.turn === "b"} size={w} showEval={false} showCoords={false} interactive={false} /> : null}
+        </div>
+      </PostMedia>}
       actions={<>
         <button type="button" onClick={onToggleLike ? () => onToggleLike(p.id) : undefined} disabled={!onToggleLike} aria-label={t("좋아요")} aria-pressed={!!isLiked} className="press" style={actBtn}><Heart size={24} color={isLiked ? "#D9534F" : INK} fill={isLiked ? "#D9534F" : "none"} /><Num n={likeCount} color={isLiked ? "#D9534F" : INK} /></button>
         <button type="button" onClick={onToggleRepost ? () => onToggleRepost(p.id) : undefined} disabled={!onToggleRepost} aria-label={t("리포스트")} aria-pressed={!!isReposted} className="press" style={actBtn}><Repeat2 size={25} color={isReposted ? T.brilliant : INK} /><Num n={repostCount} color={isReposted ? T.brilliant : INK} /></button>
         <button type="button" onClick={onShare ? () => onShare(p) : undefined} disabled={!onShare} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /><Num n={shareCount} /></button>
         <span style={{ flex: 1 }} />
         <LineStars total={3} solved={stars} />
-        <button type="button" onClick={onOpen} className="press" style={{ ...ctaBtn, marginLeft: 8 }}>{isSolved ? t("다시 풀기") : t("풀기")}</button>
       </>}>
       <Caption name={creator}>{livePuzzleName(p) || opening}</Caption>
-      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-        <GamePhaseBadge p={p} compact />
-        {themes.map((k) => <span key={k} style={{ fontSize: 11, fontWeight: 800, color: themeAccentColor([k]) }}>#{labels[k] || k}</span>)}
-      </div>
       {solvers && <div style={{ fontSize: 11.5, color: "#2E6E2E", fontWeight: 700 }}>{solvers}</div>}
     </PostShell>
   );
@@ -221,40 +320,42 @@ export function LegacyPost({ post, actions: A, onOpenProfile, isOwn }) {
   const root = useMemo(() => legacyRootOf(entry), [entry]);
   const open = () => { if (ownerInfo.mid && A.openPost) A.openPost({ mid: ownerInfo.mid, id: post.id }); };
   const liked = A.liked.has(post.owner + "|" + post.id), reposted = A.isReposted(post), canRepost = A.canRepost(post);
-  const [armed, setArmed] = useState(false);
   const cachedPhoto = usePhotoOf(ownerInfo.photo ? null : name);   // 서버가 사진을 함께 주지 않은 옛 응답 대비
   return (
-    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open}
-      head={<PostHead username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
-      media={<div style={{ background: "linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)", padding: 14 }}>
-        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다(머리·캡션·동작 줄은 퍼즐과 같은 형식) */}
-        <div style={{ position: "relative", padding: 12 }}>
+    <PostShell label={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onOpen={open} date={fmtDate(post.savedAt)}
+      keywords={isGame ? [{ label: t("대국"), color: "#2E5A8A" }, { label: t("{0}수", Math.ceil(entry.sans.length / 2)), color: SOFT }] : [info ? { label: info.label, color: T[info.kind] || "#2E5A8A" } : null, entry.opening ? { label: entry.opening.split(":")[0], color: "#8A6C2F", title: entry.opening } : null]}
+      head={<PostHead menu={<PostMenu isMine={!!isOwn} postKey={"l:" + post.owner + ":" + post.id} targetName={name} resolveTargetUid={async () => post.owner} refLabel={isGame ? t("대국 {0}", gamePostTitle(entry)) : t("유산 {0}", legacyMoveLabel(entry))} onDelete={isOwn && A.removeMine ? () => A.removeMine(post.id) : null} />} username={name} photo={ownerInfo.photo || cachedPhoto} kindLabel={isGame ? t("대국") : t("유산")} detail={isGame ? t("{0}수", Math.ceil(entry.sans.length / 2)) : info ? info.label : ""} onOpenProfile={onOpenProfile} right={postBadge(kind, 22)} />}
+      media={<PostMedia bg="linear-gradient(160deg,#20324D 0%,#14213A 55%,#0C1424 100%)">
+        {/* (v0.7.7, 사용자 요청) 유산 미리보기는 남색 바탕 + 금색 액자를 유지한다. (v0.7.8) 보드를 퍼즐과 같은 크기로 줄였다 */}
+        <div style={{ position: "relative", padding: 10 }}>
           <LegacyFrame />
           <div ref={ref} style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden" }}>
             <AnimatedMove sans={before} san={entry.sans[entry.moveIndex]} size={w} loopMs={2400} flip={entry.side === "b"} badge={isGame ? null : kind} fenRoot={root} />
           </div>
         </div>
-      </div>}
+      </PostMedia>}
       actions={<>
         <button type="button" onClick={A.toggleLike ? () => A.toggleLike(post) : undefined} disabled={!A.toggleLike} aria-label={t("좋아요")} aria-pressed={liked} className="press" style={actBtn}><Heart size={24} color={liked ? "#D9534F" : INK} fill={liked ? "#D9534F" : "none"} /><Num n={A.likeCount(post)} color={liked ? "#D9534F" : INK} /></button>
         <button type="button" onClick={canRepost ? () => A.toggleRepost(post) : undefined} disabled={!canRepost} title={!canRepost && post.owner && isOwn ? t("내 게시물은 리포스트할 수 없음") : undefined} aria-label={t("리포스트")} aria-pressed={reposted} className="press" style={actBtn}><Repeat2 size={25} color={reposted ? T.brilliant : INK} /><Num n={A.repostCount(post)} color={reposted ? T.brilliant : INK} /></button>
         <button type="button" onClick={open} aria-label={t("공유하기")} className="press" style={actBtn}><Send size={22} color={INK} /></button>
         <span style={{ flex: 1 }} />
-        {isOwn && A.removeMine && <button type="button" onClick={() => { if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 2600); return; } A.removeMine(post.id); }} aria-label={t("삭제")} title={armed ? t("한 번 더 누르면 삭제") : t("삭제")} className="press" style={{ ...actBtn, color: armed ? T.blunder : SOFT, fontSize: 11.5, fontWeight: 800 }}><Trash2 size={18} color={armed ? T.blunder : SOFT} />{armed ? t("한 번 더 누르면 삭제") : null}</button>}
-        <button type="button" onClick={open} className="press" style={ctaBtn}><Play size={13} />{t("재생")}</button>
       </>}>
       <Caption name={name}><span style={{ fontFamily: LEGACY_FONT, fontWeight: 900 }}>{isGame ? gamePostTitle(entry) : legacyMoveLabel(entry)}</span>{entry.opening ? " · " + entry.opening : ""}</Caption>
-      <div style={{ fontSize: 11, color: SOFT }}>{fmtDate(post.savedAt)}</div>
     </PostShell>
   );
 }
 
 /* puzzles: 정렬·필터가 끝난 퍼즐 목록, cardProps(p): PuzzleCard와 같은 좋아요·리포스트·공유 속성, creatorOf(p): 만든 사람 아이디
    onOpenPuzzle(p), onOpenProfile(username). 유산 열기·리포스트함은 LegacyActionsCtx(App)에서 받는다. */
-export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle, viewerUid, onOpenProfile, kind, setKind }) {
+export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle, viewerUid, viewerName, onDeletePuzzle, onOpenProfile, kind, setKind }) {
   const lf = useLegacyFeed(kind !== "puzzle");
   const la = useLegacyActions(viewerUid, lf.posts);
-  const items = useMemo(() => mixFeed(puzzles, lf.posts, kind), [puzzles, lf.posts, kind]);
+  // (v0.7.8) "관심 없음"으로 숨긴 게시물은 빼고 — 이번에 막 숨긴 것은 자리에 "숨김 · 되돌리기" 줄을 남긴다
+  const [hidTick, setHidTick] = useState(0);
+  useEffect(() => onHiddenChange(() => setHidTick((n) => n + 1)), []);
+  const justHid = useRef(new Set());
+  const items = useMemo(() => mixFeed(puzzles, lf.posts, kind).filter((it) => !isHiddenPost(it.key) || justHid.current.has(it.key)), [puzzles, lf.posts, kind, hidTick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { items.forEach((it) => { if (isHiddenPost(it.key)) justHid.current.add(it.key); }); });
   const [shown, setShown] = useState(PAGE);
   useEffect(() => { setShown(PAGE); }, [kind]);
   const sentinel = useRef(null);
@@ -272,6 +373,7 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
   const list = items.slice(0, shown);
   const kindLabel = { all: t("전체"), puzzle: t("퍼즐"), legacy: t("유산"), game: t("대국") };
   return (
+    <ViewerUidCtx.Provider value={viewerUid || null}>
     <div>
       <div role="tablist" aria-label={t("게시물 종류")} style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {FEED_KINDS.map((k) => (
@@ -285,8 +387,13 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {list.map((it, i) => (
             <FadeIn key={it.key} index={i % PAGE} lift>
-              {it.type === "puzzle"
-                ? <PuzzlePost p={it.p} creator={creatorOf(it.p)} isSolved={solved.has(it.p.id)} onOpen={() => onOpenPuzzle(it.p)} onOpenProfile={onOpenProfile} {...cardProps(it.p)} />
+              {isHiddenPost(it.key) ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", borderRadius: 14, background: T.paper, border: "1px dashed #C9B58C", fontSize: 12.5, color: T.inkSoft }}>
+                  <span>{t("관심 없음으로 숨김. 이 기기에서 다시 보이지 않음")}</span>
+                  <button type="button" onClick={() => { justHid.current.delete(it.key); unhidePost(it.key); }} className="press" style={{ flexShrink: 0, background: "none", border: "none", color: T.brass, fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{t("되돌리기")}</button>
+                </div>
+              ) : it.type === "puzzle"
+                ? <PuzzlePost p={it.p} creator={creatorOf(it.p)} viewerName={viewerName} onDelete={onDeletePuzzle} isSolved={solved.has(it.p.id)} onOpen={() => onOpenPuzzle(it.p)} onOpenProfile={onOpenProfile} {...cardProps(it.p)} />
                 : <LegacyPost post={it.post} actions={la} onOpenProfile={onOpenProfile} isOwn={!!viewerUid && it.post.owner === viewerUid} />}
             </FadeIn>
           ))}
@@ -295,6 +402,7 @@ export function SocialFeed({ puzzles, cardProps, creatorOf, solved, onOpenPuzzle
       <div ref={sentinel} style={{ height: 1 }} />
       {lf.loading && list.length > 0 && <div style={{ textAlign: "center", color: T.inkSoft, fontSize: 12, padding: 12 }}>{t("불러오는 중…")}</div>}
     </div>
+    </ViewerUidCtx.Provider>
   );
 }
 
@@ -341,10 +449,12 @@ export function ProfileSocial({ ownerUid, viewerUid, onOpenProfile, pz = {} }) {
     </div>
   );
   return (
+    <ViewerUidCtx.Provider value={viewerUid || null}>
     <section aria-label={t("소셜")} style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 900, color: T.ink, marginBottom: 10 }}>{t("소셜")}</div>
       {row(t("게시물"), data && data.posts, t("아직 올린 게시물 없음"))}
       {row(t("리포스트"), data && data.reposts, t("아직 리포스트한 게시물 없음"))}
     </section>
+    </ViewerUidCtx.Provider>
   );
 }

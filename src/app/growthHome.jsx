@@ -1,12 +1,14 @@
 // (v0.7.6, 사용자 요청) 성장 분석 영역 — 학습 탭에 있던 성장 분석(GrowthPanel)과 최근 대국 열을 분석 탭으로 옮겼다.
-//  · 데스크톱: 분석 탭 아래쪽에 두 칼럼(왼쪽 성장 분석 · 오른쪽 최근 대국, 각각 안쪽 스크롤). 화면에 들어온 뒤부터 자동 리뷰(엔진)를 돌린다.
-//  · 모바일: 분석 탭을 옆으로 넘기는 페이지로 — 1페이지 분석, 2페이지 성장 분석, 3페이지 최근 대국(SwipePager). 2페이지 이후를 한 번 본 뒤부터 자동 리뷰.
+//  · 데스크톱: 분석 탭 아래쪽에 두 칼럼(왼쪽 성장 분석 · 오른쪽 최근 대국, 각각 안쪽 스크롤). (v0.7.8) 자동 리뷰는 화면에 보이기 전부터 백그라운드에서 돈다.
+//  · 모바일: 분석 탭을 옆으로 넘기는 페이지로 — 1페이지 분석, 2페이지 성장 분석, 3페이지 최근 대국(SwipePager). 자동 리뷰는 넘겨 보기 전부터 백그라운드에서.
 //  학습 탭은 레슨과 맞춤 학습(복습·추천 레슨, practice.jsx)으로 바뀌었다. useRecentSources는 두 탭이 같이 쓴다.
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useTabMemory } from "../lib/tabMemory.js";
 import { T } from "../lib/theme.js";
 import { useNarrow } from "./common.jsx";
-import { GrowthPanel } from "./growth.jsx";
+import { GrowthPanel, useGrowthAutoReview } from "./growth.jsx";
+
+export const GROWTH_BG_DELAY_MS = 6000;   // (v0.7.8) 접속 뒤 백그라운드 자동 리뷰 시작까지(엔진 부팅·첫 평가와 겹치지 않게)
 import { SB_ON } from "../lib/supabaseClient.js";
 import { RecentGameBoxes, GameFilterPills, profileGameRowToGame, fetchProfileGameRows } from "./gameHistory.jsx";
 import { StatsViewToggle } from "../components/statsViewToggle.jsx";
@@ -17,6 +19,7 @@ import { t } from "../lib/i18n.js";
 import { SwipePager } from "../components/swipePager.jsx";
 import { OffscreenPause } from "../components/offscreenPause.jsx";
 import { FacetDiamond } from "../components/facetIcons.jsx";
+import { BrassScrollArea } from "../components/brassScroll.jsx";
 
 export function useRecentSources({ user, uid, chesscom, ccName }) {
   const [rows, setRows] = useState(null);
@@ -115,11 +118,17 @@ export function AnalysisWithGrowth({ analysisNode, focusActive, ...p }) {
   const [view, setView] = useTabMemory("growth.view", "oc");
   const [pageIdx, setPageIdx] = useState(0);
   const [mobileSeen, setMobileSeen] = useState(false);
-  useEffect(() => { if (pageIdx > 0) setMobileSeen(true); }, [pageIdx]);
+  useEffect(() => { if (pageIdx === 1) setMobileSeen(true); }, [pageIdx]);   // 2페이지(성장 분석)가 한 번이라도 보였는지
   const deskRef = useRef(null);
   const deskSeen = useSeenOnce(deskRef);
-  const active = mobile ? mobileSeen : deskSeen;
-  const growthNode = <GrowthPanel uid={p.growthUid || null} games={p.growthGames} me={p.me} onOpenTitle={p.onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={p.engine} reviewSpeed={p.reviewSpeed} quick={p.quickReview} onOpenGameAnalyze={p.onOpenGameAnalyze} onOpenGame={p.onOpenGame} active={active} />;
+  const visible = mobile ? mobileSeen : deskSeen;
+  // (v0.7.8, 사용자 요청) 성장 분석은 스크롤하지 않아도(화면에 보이기 전에도) 백그라운드에서 자동으로 대국을 모아 분석해 둔다.
+  //  접속 직후에는 엔진 부팅·분석 탭 첫 평가와 겹치지 않게 GROWTH_BG_DELAY_MS만 기다렸다가 시작한다(화면에 먼저 보이면 그때 바로 시작).
+  //  자동 리뷰는 이 컴포넌트(분석 탭 전체)가 들고 있어 집중 분석 중이라 성장 분석 영역이 빠져 있어도 멈추지 않는다.
+  const [bgOn, setBgOn] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setBgOn(true), GROWTH_BG_DELAY_MS); return () => clearTimeout(id); }, []);
+  const auto = useGrowthAutoReview({ recent: src.recent, engine: p.engine, reviewSpeed: p.reviewSpeed, quick: p.quickReview, active: bgOn || visible });
+  const growthNode = <GrowthPanel uid={p.growthUid || null} games={p.growthGames} me={p.me} onOpenTitle={p.onOpenTitle} recent={src.recent} gamesLoading={src.loading} engine={p.engine} auto={auto} visible={visible} onOpenGameAnalyze={p.onOpenGameAnalyze} onOpenGame={p.onOpenGame} />;
   const gamesNode = <GrowthGamesColumn view={view} setView={setView} user={p.user} ccName={p.ccName} src={src} onOpenGame={p.onOpenGame} onOpenGameAnalyze={p.onOpenGameAnalyze} loginCard={<LoginCard openAuth={p.openAuth} />} />;
   if (mobile) {
     const pages = [{ key: "analysis", node: analysisNode }];
@@ -136,8 +145,9 @@ export function AnalysisWithGrowth({ analysisNode, focusActive, ...p }) {
           <GoldDivider />
           {/* (v0.7.7 렉 수정) 스크롤로 화면 밖에 있을 때는 장식 애니메이션·반복 타이머를 멈춘다 */}
           <OffscreenPause style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 20, height: H, minHeight: 520, marginTop: 36 }}>
-            <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{growthNode}</div>
-            <div className="learn-dash-scroll" style={{ minHeight: 0, minWidth: 0, overflowY: "auto", paddingRight: 4 }}>{gamesNode}</div>
+            {/* (v0.7.8, 사용자 요청) 두 열 모두 다음 수 블록 창과 같은 황동 스크롤바(+ 아래에 더 있음 표시) — components/brassScroll.jsx */}
+            <BrassScrollArea className="learn-dash-scroll" style={{ paddingRight: 10 }}>{growthNode}</BrassScrollArea>
+            <BrassScrollArea className="learn-dash-scroll" style={{ paddingRight: 10 }}>{gamesNode}</BrassScrollArea>
           </OffscreenPause>
         </section>
       )}

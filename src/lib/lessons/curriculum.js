@@ -4,6 +4,7 @@
 import { t } from "../i18n.js";
 import { Chess } from "chess.js";
 import { openingFamily, openingIdeaAt } from "../mecOpenings.js";
+import { MORE_LESSONS, MORE_EXTRA } from "./curriculumMore.js";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const KK = "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
@@ -11,21 +12,38 @@ export const LESSON_REWARD = 20;   // 레슨 하나를 처음 끝내면 받는 �
 
 // (v0.7.5, 사용자 요청) 단계 테마 = 수 등급 색·아이콘을 좋음 → 우수 → 최선 → 유일 → 탁월 순서로 그대로 쓴다(grade = lib/moveKinds.js QCOLOR의 키).
 //  화면(app/lessons.jsx)이 grade 색에서 배경·칸·글자 색을 만든다. deco = 배경에 은은하게 깔리는 기물 실루엣 종류.
+// (v0.7.8, 사용자 요청) 레슨 트리 재설계 — 단계마다 수 등급의 "상징 의도"에 맞는 내용을 담는다.
+//  이론 = 체스 규칙·기초 이론 / 좋음 = 좋은 습관 / 부정확 = 작은 부정확 / 실수 = 흔한 실수 / 블런더 = 절대 두면 안 되는 수·만들면 안 되는 약점 /
+//  놓친 수 = 놓치면 안 되는 기회 / 우수 = 기본 전술 / 최선 = 전략과 계획 / 유일 = 정확해야 하는 엔드게임 / 탁월 = 희생과 메이트 패턴.
+//  오프닝별 레슨은 항상 마지막 단계(s_rep) — 이론 수 아이콘에 금빛 왕관을 더한 변형 아이콘(variant: "repertoire", app/lessons.jsx GradeBadge).
+//  단계 id는 진행 기록·보상과 무관하다(보상·기록은 레슨 id 기준). 레슨 순서는 아래 ORDER가 정한다(check-lessons가 빠짐·중복을 막는다).
 export const STAGES = [
-  { id: "s1", grade: "good", deco: ["R", "N", "B"], title: () => t("첫걸음"), desc: () => t("체스판과 기물이 움직이는 방법") },
-  { id: "s2", grade: "excellent", deco: ["K", "R", "P"], title: () => t("규칙 완성"), desc: () => t("체크·체크메이트와 특별한 규칙") },
-  { id: "s3", grade: "best", deco: ["P", "N", "B"], title: () => t("오프닝 원칙"), desc: () => t("첫 수부터 좋은 습관") },
-  { id: "s4", grade: "only", deco: ["N", "B", "Q"], title: () => t("전술 기초"), desc: () => t("기물을 얻는 기본 전술") },
-  { id: "s5", grade: "brilliant", deco: ["Q", "R", "K"], title: () => t("마무리 기술"), desc: () => t("체크메이트 패턴과 엔드게임") },
-  // (v0.7.5, 사용자 요청) 6단계: 주요 오프닝을 직접 두며 익힌다 — 다섯 등급 다음에 수 등급 "이론(책)"의 색·아이콘
-  { id: "s6", grade: "book", deco: ["N", "B", "P"], title: () => t("오프닝 레파토리"), desc: () => t("주요 오프닝을 직접 두며 익히기") },
-  // (v0.7.7, 사용자 요청) 테마 확장 — 전술 심화·중반 전략·엔드게임 심화. 색·아이콘은 남은 수 등급(놓친 수·부정확·실수)을 쓴다.
-  { id: "s7", grade: "miss", deco: ["Q", "N", "B"], title: () => t("전술 심화"), desc: () => t("이중 공격·수비수 제거·더블 체크") },
-  { id: "s8", grade: "inaccuracy", deco: ["R", "N", "P"], title: () => t("중반 전략"), desc: () => t("열린 파일·아웃포스트·통과한 폰") },
-  { id: "s9", grade: "mistake", deco: ["K", "R", "P"], title: () => t("엔드게임 심화"), desc: () => t("활동적인 킹과 룩 엔드게임") },
-  // (v0.7.7, 사용자 요청 "레슨 더") 10단계 — 마지막 수 등급 "블런더" 색: 이름 있는 체크메이트 패턴 모음
-  { id: "s10", grade: "blunder", deco: ["Q", "B", "N"], title: () => t("체크메이트 패턴"), desc: () => t("보든·에폴렛·아나스타시아 메이트") },
+  { id: "s_rules", grade: "book", deco: ["R", "N", "B"], title: () => t("규칙과 기초 이론"), desc: () => t("기물의 움직임부터 오프닝 원칙까지") },
+  { id: "s_good", grade: "good", deco: ["N", "B", "P"], title: () => t("좋은 습관"), desc: () => t("지키고, 살피고, 활동하는 수") },
+  { id: "s_inacc", grade: "inaccuracy", deco: ["P", "Q", "N"], title: () => t("작은 부정확"), desc: () => t("조금씩 손해가 쌓이는 수") },
+  { id: "s_mistake", grade: "mistake", deco: ["B", "Q", "P"], title: () => t("흔한 실수"), desc: () => t("누구나 한 번쯤 두는 실수") },
+  { id: "s_blunder", grade: "blunder", deco: ["K", "Q", "P"], title: () => t("치명적인 실수"), desc: () => t("절대 두면 안 되는 수와 약점") },
+  { id: "s_miss", grade: "miss", deco: ["Q", "N", "R"], title: () => t("놓치면 안 되는 기회"), desc: () => t("상대의 실수를 알아채고 벌주기") },
+  { id: "s_tactic", grade: "excellent", deco: ["N", "B", "Q"], title: () => t("기본 전술"), desc: () => t("기물을 얻는 전술의 모든 것") },
+  { id: "s_plan", grade: "best", deco: ["R", "N", "P"], title: () => t("전략과 계획"), desc: () => t("가장 좋은 수를 고르는 기준") },
+  { id: "s_endgame", grade: "only", deco: ["K", "R", "P"], title: () => t("정확한 엔드게임"), desc: () => t("단 하나의 정답을 찾는 기술") },
+  { id: "s_brill", grade: "brilliant", deco: ["Q", "R", "K"], title: () => t("희생과 메이트 패턴"), desc: () => t("탁월한 수를 만드는 희생") },
+  { id: "s_rep", grade: "book", variant: "repertoire", color: "#B07A2E", deco: ["N", "B", "P"], title: () => t("오프닝 레파토리"), desc: () => t("주요 오프닝을 직접 두며 익히기") },
 ];
+// 단계별 레슨 순서(앞에서부터). 오프닝 레슨(op_*)은 OPENINGS 순서대로 s_rep에 자동으로 들어간다.
+export const ORDER = {
+  s_rules: ["b_board", "b_rook", "b_bishop", "b_queen", "b_knight", "b_pawn", "b_king", "r_check", "r_mate", "r_stalemate", "r_castle", "r_enpassant", "r_promotion", "r_draws", "r_notation", "r_values", "o_center", "o_develop", "o_safety", "o_tempo"],
+  s_good: ["g_protect", "g_candidate", "g_threat", "t_counting", "g_trade", "g_activity", "g_rooks"],
+  s_inacc: ["i_twice", "i_earlyqueen", "i_kingpawns", "i_passive", "st_badbishop", "st_doubled", "st_isolated"],
+  s_mistake: ["t_hanging", "x_ignore", "x_scholar", "x_f7", "x_greedy", "x_recapture", "o_trap"],
+  s_blunder: ["z_foolsmate", "m_backrank", "t_trapped", "z_queenhang", "z_forksq", "z_stalemate", "z_holes"],
+  s_miss: ["n_free", "n_mate1", "n_checks", "n_punish", "n_promo"],
+  s_tactic: ["t_fork", "t_pin", "t_skewer", "t_discovered", "t_double", "t_removal", "t_doublecheck", "t_decoy", "t_deflection", "t_overload", "t_intermezzo", "t_xray", "t_interference"],
+  s_plan: ["st_openfile", "st_seventh", "st_outpost", "st_passed", "st_space", "st_goodtrade", "st_prophylaxis", "st_kingattack"],
+  s_endgame: ["m_queen", "m_ladder", "e_rookmate", "e_square", "e_opposition", "e_keysquare", "e_activeking", "e_rookbehind", "e_cutoff", "e_promote", "e_lucena", "e_philidor", "e_perpetual"],
+  s_brill: ["m_smothered", "m_arabian", "m_h7", "m_corridor", "m_boden", "m_epaulette", "m_anastasia", "t_breakthrough", "b_greek", "b_legal", "b_queensac", "b_exchsac"],
+};
+export const REPERTOIRE_STAGE = "s_rep";
 
 // 레슨: { id, stage, icon(lucide 이름 또는 "piece:R"), title, sub, steps }
 const L = (id, stage, icon, title, sub, steps) => ({ id, stage, icon, title, sub, steps });
@@ -281,7 +299,7 @@ const OPENINGS = [
 const FIRST_MOVE_POOL = ["e4", "d4", "c4", "Nf3", "e5", "d5", "c5", "e6", "c6", "Nf6", "g6", "d6", "f5", "b6"];
 function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
   const famName = () => (openingFamily(fam) || {}).name || fam;
-  return { motif: fam, line, side, ...L(id, "s6", "BookOpen", famName, () => (side === "w" ? t("백으로 두기") : t("흑으로 두기")), () => {
+  return { motif: fam, line, side, ...L(id, REPERTOIRE_STAGE, "BookOpen", famName, () => (side === "w" ? t("백으로 두기") : t("흑으로 두기")), () => {
     const sans = line.split(" "), c = new Chess(), ucis = [];
     for (const s of sans) { const m = c.move(s); ucis.push(m.from + m.to + (m.promotion || "")); }
     const first = side === "w" ? 0 : 1;   // 학습자의 첫 수 번호
@@ -313,6 +331,14 @@ function openingLesson([id, fam, side, line, wrong, extra = {}], k) {
       { kind: "choice", fen: endC.fen(), say: t("지금 둔 오프닝의 이름은?"), options, answer: ans },
       { kind: "choice", fen: startC.fen(), say: t("이 오프닝에서 {0}의 첫 수는?", side === "w" ? t("백") : t("흑")), options: firstOpts, answer: fAns },
       { kind: "move", fen: startC.fen(), say: review[0].say, line: review, hint: review[0].hint },
+      // (v0.7.8, 사용자 요청 "레슨 길이") 마지막 확인 — 주요 수순의 마지막 수(학습자의 수)를 그 직전 포지션에서 고르기
+      (() => {
+        const beforeC = new Chess(); sans.slice(0, -1).forEach((s) => beforeC.move(s));
+        const lastSan = sans[sans.length - 1];
+        const others = beforeC.moves().filter((m) => m !== lastSan).sort().slice(0, 2);
+        const la = (k + 2) % 3, lastOpts = [...others]; lastOpts.splice(la, 0, lastSan);
+        return { kind: "choice", fen: beforeC.fen(), say: t("주요 수순의 마지막 수는 무엇이었을까요?"), options: lastOpts, answer: la };
+      })(),
     ];
   }) };   // motif: 오프닝 계열, line·side: 주요 수순과 학습자 진영(레슨 경로 배경의 기보·대표 기물에 쓴다)
 }
@@ -668,13 +694,42 @@ for (const [id, extra] of Object.entries({
   m_corridor: [{ kind: "choice", say: t("복도 메이트를 미리 막는 가장 쉬운 방법은?"), options: [t("킹 앞 폰 하나를 밀어 숨 쉴 칸을 만든다"), t("퀸을 바꾼다"), t("룩을 버린다")], answer: 0 }],
 })) { const prev = EXTRA[id]; EXTRA[id] = prev ? () => [...prev(), ...extra] : () => extra; }
 
+// (v0.7.8, 사용자 요청 "레슨 길이") 기존 레슨 끝에 붙는 확인 문제(curriculumMore.js MORE_EXTRA)
+for (const [id, fn] of Object.entries(MORE_EXTRA)) { const prev = EXTRA[id]; EXTRA[id] = prev ? () => [...prev(), ...fn()] : fn; }
+/** (v0.7.8) 레슨 끝의 복습 — 그 레슨의 수 두기 스텝을 코치 설명 없이 한 번 더 둔다(오프닝 레슨은 자체 복습이 있어 제외). */
+function withReview(steps) {
+  const moves = steps.filter((s) => s.kind === "move" && !s.review);
+  if (!moves.length) return steps;
+  const rev = moves.map((s, i) => ({ ...s, review: true, say: i === 0 ? t("이번에는 설명 없이 이 레슨의 문제를 다시 풀어 보세요.") : t("설명 없이 다음 문제를 푸세요."),
+    line: s.line.map((g) => ({ ...g, say: g.say ? t("설명 없이 다음 수를 두세요.") : undefined })) }));
+  return [...steps, ...rev];
+}
+
 let _cache = null;
-/** 모든 레슨(순서대로) — 단계 정보 포함. steps는 처음 열 때 만든다(번역 반영). */
+/** 모든 레슨(순서대로) — 단계 정보 포함. steps는 처음 열 때 만든다(번역 반영).
+ *  (v0.7.8) 순서·단계는 ORDER가 정한다(레슨 데이터의 stage 값은 쓰지 않는다). 오프닝 레슨은 늘 마지막 단계(s_rep). */
 export function allLessons() {
   if (_cache) return _cache;
-  // (v0.7.7) EXTRA: 기존 레슨에 덧붙인 연습·확인 문제
-  _cache = LESSONS.map((l, i) => ({ id: l.id, stage: l.stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub, steps: EXTRA[l.id] ? () => [...l.steps(), ...EXTRA[l.id]()] : l.steps }));
+  const byId = new Map([...LESSONS, ...MORE_LESSONS].map((l) => [l.id, l]));
+  const seq = [];
+  for (const st of STAGES) {
+    const ids = st.id === REPERTOIRE_STAGE ? LESSONS.filter((l) => l.motif).map((l) => l.id) : (ORDER[st.id] || []);
+    for (const id of ids) { const l = byId.get(id); if (l) seq.push({ l, stage: st.id }); }
+  }
+  // (v0.7.7) EXTRA: 기존 레슨에 덧붙인 연습·확인 문제 · (v0.7.8) 오프닝이 아닌 기존 레슨은 끝에 설명 없는 복습(새 레슨은 각자 복습 스텝이 있다)
+  const isNew = new Set(MORE_LESSONS.map((l) => l.id));
+  _cache = seq.map(({ l, stage }, i) => {
+    const base = EXTRA[l.id] ? () => [...l.steps(), ...EXTRA[l.id]()] : l.steps;
+    return { id: l.id, stage, icon: l.icon, motif: l.motif || null, line: l.line || null, side: l.side || null, index: i, title: l.title, sub: l.sub,
+      steps: l.motif || isNew.has(l.id) ? base : () => withReview(base()) };
+  });
   return _cache;
+}
+/** check-lessons용: ORDER/오프닝에 빠졌거나 두 번 들어간 레슨 id. */
+export function orderProblems() {
+  const all = [...LESSONS, ...MORE_LESSONS].map((l) => l.id), seen = new Map();
+  for (const st of STAGES) for (const id of st.id === REPERTOIRE_STAGE ? LESSONS.filter((l) => l.motif).map((l) => l.id) : (ORDER[st.id] || [])) seen.set(id, (seen.get(id) || 0) + 1);
+  return { missing: all.filter((id) => !seen.has(id)), dup: [...seen].filter(([, n]) => n > 1).map(([id]) => id), unknown: [...seen.keys()].filter((id) => !all.includes(id)) };
 }
 export const stageOf = (id) => STAGES.find((s) => s.id === id) || STAGES[0];
 export const lessonById = (id) => allLessons().find((l) => l.id === id) || null;

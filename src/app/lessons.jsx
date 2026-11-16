@@ -6,16 +6,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { Lock, Check, List, X, ChevronDown, ChevronUp, Lightbulb, RotateCcw, Circle, Play, Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen, Handshake, FileText, Clock, ListChecks, Brain, TrendingUp, Route, Repeat2, Flame, Undo2, EyeOff, Timer, Crosshair, Gem, Shuffle, Ban, Swords, Hourglass, ScanLine, Star, Trophy, Sparkles, Sword, ChevronsUp, Compass, ArrowRight, Medal, Pause, Sun, Scissors, Maximize2, RefreshCw, ShieldCheck, Bookmark, BookMarked, RotateCw, Heart } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 // 레슨 아이콘(curriculum.js의 icon 이름) — 아이콘 전체를 번들에 싣지 않도록 쓰는 것만 가져온다(check-lessons가 빠진 이름을 막는다)
-export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen };
+export const LESSON_ICONS = { Grid3x3, Zap, Crown, Scale, Castle, MoveDiagonal, Coins, HandCoins, GitFork, Pin, ArrowRightLeft, Eye, PanelBottom, Rows3, Shell, Target, Rocket, Shield, ShieldAlert, Square, ArrowUpDown, Flag, BookOpen, Lock, Lightbulb,
+  Handshake, FileText, Clock, ListChecks, Brain, TrendingUp, Route, Repeat2, Flame, Undo2, EyeOff, Timer, Crosshair, Gem, Shuffle, Ban, Swords, Hourglass, ScanLine, Star, Trophy, Sparkles, Sword, ChevronsUp, Compass, ArrowRight, Medal, Pause, Sun, Scissors, Maximize2, RefreshCw, ShieldCheck, Bookmark, BookMarked, RotateCw, Heart };
 import { PIECE_IMG_SETS } from "../lib/theme.js";
 import { QCOLOR } from "../lib/moveKinds.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { FacetDiamond } from "../components/facetIcons.jsx";
+import { FacetDiamond, FacetCrown, GOLD as GOLD_FACET } from "../components/facetIcons.jsx";
+import { noteLessonViewed } from "../lib/lessonPuzzles.js";
 import { STAGES, allLessons, stageOf, lessonsOfStage, LESSON_REWARD } from "../lib/lessons/curriculum.js";
 import { lessonStatus, nextLesson, isLessonDone } from "../lib/lessons/progress.js";
 import { boardOf, turnOf, legalTargets, playMove, playUci, goalMet, tapAnswer, readMarks, sqToRc, rcToSq } from "../lib/lessons/engine.js";
@@ -29,7 +31,7 @@ const PAPER = "#F1E6D0", INK = "#2A1B0E";
 const themeCache = {};
 export function stageTheme(stage) {
   if (themeCache[stage.id]) return themeCache[stage.id];
-  const c = QCOLOR[stage.grade] || "#8FB55E";
+  const c = stage.color || QCOLOR[stage.grade] || "#8FB55E";   // (v0.7.8) 오프닝 레파토리는 이론 색을 금빛 쪽으로 살짝 옮긴 색
   return (themeCache[stage.id] = { c, hi: mix(c, "#FFFFFF", 0.42), lo: mix(c, "#000000", 0.32), edge: mix(c, "#000000", 0.58), bg: mix(c, "#0B0704", 0.88), bg2: mix(c, "#0B0704", 0.76), icon: "/move-fx/" + stage.grade + ".png" });
 }
 const stageNo = (id) => STAGES.findIndex((s) => s.id === id) + 1;
@@ -49,6 +51,12 @@ export function GradeBadge({ stage, size = 36, glow = false }) {
     <span aria-hidden="true" style={{ position: "relative", width: size, height: size, flexShrink: 0, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
       background: "radial-gradient(circle at 35% 30%, " + th.hi + ", " + th.c + " 62%, " + th.lo + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 " + Math.max(2, size / 14) + "px 0 " + th.edge + (glow ? ", 0 0 " + size * 0.6 + "px " + alpha(th.c, 0.55) : "") }}>
       <img src={th.icon} alt="" draggable={false} style={{ width: size * 0.58, height: size * 0.58, objectFit: "contain" }} />
+      {/* (v0.7.8, 사용자 요청) 오프닝 레파토리 단계 = 이론 수 아이콘 + 위에 얹은 금빛 파셋 왕관(변형 아이콘) */}
+      {stage.variant === "repertoire" && (
+        <svg viewBox="0 0 24 24" width={size * 0.52} height={size * 0.52} style={{ position: "absolute", top: -size * 0.22, right: -size * 0.12, overflow: "visible", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.45))" }}>
+          <FacetCrown x={12} y={12} s={20} R={GOLD_FACET} />
+        </svg>
+      )}
     </span>
   );
 }
@@ -208,7 +216,8 @@ function LessonTile({ lesson, status, stage, size, onOpen, flashLock }) {
         {lesson.motif ? <TileName name={lesson.title()} size={size} locked={locked} edge={th.edge} />
           : locked ? <Lock size={size * 0.2} color="rgba(255,255,255,.42)" /> : <LessonIcon icon={lesson.icon} size={size * 0.27} color="#FFFFFF" />}
       </span>
-      {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, right: size * 0.06, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
+      {/* (v0.7.8, 사용자 요청) 완료 체크는 마름모 위쪽 꼭짓점에 — 높이는 그대로 두고 가로만 가운데로 */}
+      {done && <span aria-hidden="true" style={{ position: "absolute", zIndex: 2, left: "50%", marginLeft: -10, top: size * 0.06, width: 20, height: 20, borderRadius: "50%", background: PAPER, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px rgba(0,0,0,.4)" }}><Check size={12} strokeWidth={3.4} color={th.lo} /></span>}
       {cur && (
         <span aria-hidden="true" style={{ position: "absolute", zIndex: 3, left: "50%", bottom: "100%", transform: "translate(-50%, 2px)", display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px 6px 9px", borderRadius: 10, background: PAPER, color: INK, fontFamily: SITE_FONT, whiteSpace: "nowrap", boxShadow: "0 6px 14px rgba(0,0,0,.45)" }}>
@@ -239,11 +248,29 @@ function ChapterMark({ stage, done, total }) {
 }
 
 /** 도감 탭의 레슨 경로. height: 이 판의 높이(CSS 값). coins: 로그인해 코인을 받을 수 있는지. */
-export function LessonPath({ lessonState, onComplete, height, coins }) {
+/** (v0.7.8, 사용자 요청) 친구 진척도 — 친구들의 프로필 사진을 그 친구가 지금 할 레슨 칸 옆에 띄운다(같은 칸에 여럿이면 겹쳐 쌓고 +N).
+ *  friends: [{ id, username, photo, nextId }] (learn.jsx useFriendLessons — 친구 공개 프로필의 lessonsDone으로 계산). */
+function FriendStack({ list, side, size }) {
+  const shown = list.slice(0, 3), more = list.length - shown.length, A = size;
+  return (
+    <div style={{ display: "flex", flexDirection: side < 0 ? "row-reverse" : "row", alignItems: "center", pointerEvents: "auto" }}>
+      {shown.map((f, i) => (
+        <span key={f.id} title={t("{0}님이 학습 중", f.username)} style={{ width: A, height: A, marginLeft: side > 0 && i ? -A * 0.34 : 0, marginRight: side < 0 && i ? -A * 0.34 : 0, borderRadius: "50%", overflow: "hidden", flexShrink: 0,
+          border: "2px solid " + PAPER, boxShadow: "0 3px 8px rgba(0,0,0,.5)", background: "linear-gradient(160deg,#5A3A22,#2A1B0E)", display: "inline-flex", alignItems: "center", justifyContent: "center", zIndex: 3 - i }}>
+          {f.photo ? <img src={f.photo} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: SITE_FONT, fontSize: A * 0.42, fontWeight: 900, color: "#F1E6D0" }}>{(f.username || "?").slice(0, 1).toUpperCase()}</span>}
+        </span>
+      ))}
+      {more > 0 && <span style={{ marginLeft: side > 0 ? 4 : 0, marginRight: side < 0 ? 4 : 0, fontFamily: SITE_FONT, fontSize: 11, fontWeight: 900, color: PAPER, textShadow: "0 1px 2px rgba(0,0,0,.6)" }}>+{more}</span>}
+    </div>
+  );
+}
+
+export function LessonPath({ lessonState, onComplete, height, coins, friends = [] }) {
   const lessons = allLessons();
   const narrow = useNarrow(640);
   const D = narrow ? 84 : 96;                    // 타일 크기
-  const DX = D * 0.62, ROW = D * 0.78, CH = 170;  // 지그재그 가로 폭 · 레슨 줄 높이 · 장 제목 높이
+  const DX = D * 0.62, ROW = D * 0.9, CH = 170;   // (v0.7.8, 사용자 요청) 레슨 줄 간격을 넓혀 블록 영역을 세로로 길게  // 지그재그 가로 폭 · 레슨 줄 높이 · 장 제목 높이
   const TOP = narrow ? 128 : 132, BOTTOM = narrow ? 168 : 120;
   // 위에서 아래로의 배치(맨 아래가 첫 레슨): 단계마다 [그 단계의 레슨(마지막→처음)], 그 아래 장 제목
   const layout = useMemo(() => {
@@ -262,7 +289,8 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
   const [viewStage, setViewStage] = useState(nxt ? nxt.stage : STAGES[STAGES.length - 1].id);
   const [listOpen, setListOpen] = useState(false);
   const [curDir, setCurDir] = useState(0);
-  const [coachMsg, setCoachMsg] = useState(null);
+  const [coachOpen, setCoachOpen] = useState(false);   // (v0.7.8, 사용자 요청) 코치를 눌러야만 말풍선이 열린다
+  useEffect(() => { if (!coachOpen) return undefined; const id = setTimeout(() => setCoachOpen(false), 6000); return () => clearTimeout(id); }, [coachOpen]);
   const vStage = stageOf(viewStage), vth = stageTheme(vStage);
 
   const scrollToLesson = useCallback((id, smooth = true) => {
@@ -283,11 +311,18 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
   useEffect(() => { onScroll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [layout]);
 
   const openLesson = (l) => {
-    if (lessonStatus(lessonState, l.id) === "locked") { setLockFlash(l.id); setCoachMsg(t("앞 레슨을 먼저 끝내면 열립니다.")); setTimeout(() => setLockFlash(null), 420); return; }
-    setCoachMsg(null); setOpen(l);
+    if (lessonStatus(lessonState, l.id) === "locked") { setLockFlash(l.id); setTimeout(() => setLockFlash(null), 420); return; }
+    setCoachOpen(false); setOpen(l);
   };
   const doneN = lessons.filter((l) => isLessonDone(lessonState, l.id)).length;
-  const coach = coachMsg || (nxt ? t("다음 레슨은 {0}입니다. {1}.", nxt.title(), nxt.sub()) : t("모든 레슨을 끝냈습니다. 원하는 레슨을 다시 복습해 보세요."));
+  // (v0.7.8, 사용자 요청) 말풍선 문구는 "<다음 레슨명>에 대해 배워보세요!" 하나로 통일
+  const coach = nxt ? t("{0}에 대해 배워보세요!", nxt.title()) : t("모든 레슨을 끝냈습니다. 원하는 레슨을 다시 복습해 보세요.");
+  // 친구들: 지금 할 레슨 id별로 묶는다(다 끝낸 친구는 마지막 레슨에)
+  const friendsAt = useMemo(() => {
+    const m = {}; const last = lessons[lessons.length - 1];
+    for (const f of friends || []) { const k = f.nextId || (last && last.id); if (!k) continue; (m[k] = m[k] || []).push(f); }
+    return m;
+  }, [friends, lessons]);
   const vLs = lessonsOfStage(viewStage), vDone = vLs.filter((l) => isLessonDone(lessonState, l.id)).length;
   // 경로 선: 레슨 순서대로 이웃한 두 칸을 잇는다(끝낸 레슨까지는 등급 색 실선, 그 뒤는 옅은 점선)
   const pts = layout.items.filter((x) => x.kind === "lesson").sort((a, b) => a.lesson.index - b.lesson.index);
@@ -340,21 +375,30 @@ export function LessonPath({ lessonState, onComplete, height, coins }) {
             return (
               <div key={it.lesson.id} ref={(el) => { tileRefs.current[it.lesson.id] = el; }} style={{ position: "absolute", left: "50%", top: it.y - D / 2, marginLeft: it.x - D / 2, width: D, height: D, zIndex: lessonStatus(lessonState, it.lesson.id) === "current" ? 2 : 1 }}>
                 <LessonTile lesson={it.lesson} status={lessonStatus(lessonState, it.lesson.id)} stage={it.stage} size={D} onOpen={openLesson} flashLock={lockFlash === it.lesson.id} />
+                {friendsAt[it.lesson.id] && (() => { const sd = it.x > 0 ? -1 : 1;   // 경로 바깥이 아니라 안쪽(가운데) 쪽 빈자리에
+                  return <div style={{ position: "absolute", top: D / 2 - (narrow ? 13 : 15), [sd > 0 ? "left" : "right"]: D * 0.86 }}><FriendStack list={friendsAt[it.lesson.id]} side={sd} size={narrow ? 26 : 30} /></div>; })()}
               </div>
             );
           })}
         </div>
       </div>
-      {/* 위: 코치 */}
-      <div className="lesson-glass" style={{ position: "absolute", left: 10, right: 10, top: 10, zIndex: 3, display: "flex", alignItems: "center", gap: 10, padding: "8px 10px 8px 8px", borderRadius: 14,
-        background: alpha(vth.bg, 0.62), border: "1px solid rgba(255,255,255,.08)", boxShadow: "0 10px 24px -12px rgba(0,0,0,.7)" }}>
-        <Mascot name="milku" emotion={coachMsg ? "think" : "great"} size={narrow ? 42 : 48} />
-        <div aria-live="polite" style={{ position: "relative", flex: "0 1 auto", maxWidth: 560, minWidth: 0, padding: "9px 12px", borderRadius: 11, background: PAPER, color: INK, fontSize: narrow ? 13 : 13.5, fontWeight: 700, lineHeight: 1.4 }}>
-          <span aria-hidden="true" style={{ position: "absolute", left: -5, top: "50%", marginTop: -5, width: 10, height: 10, background: PAPER, transform: "rotate(45deg)" }} />
-          <span style={{ position: "relative" }}>{coach}</span>
-        </div>
+      {/* 위: 코치 — (v0.7.8, 사용자 요청) 코치를 눌러야 말풍선이 열린다 */}
+      <div style={{ position: "absolute", left: 10, right: 10, top: 10, zIndex: 3, display: "flex", alignItems: "flex-start", gap: 10, pointerEvents: "none" }}>
+        <button type="button" onClick={() => setCoachOpen((v) => !v)} aria-label={t("코치")} aria-expanded={coachOpen} className="press lesson-glass"
+          style={{ pointerEvents: "auto", flexShrink: 0, padding: 4, borderRadius: 14, cursor: "pointer", background: alpha(vth.bg, 0.62), border: "1px solid rgba(255,255,255,.1)", boxShadow: "0 10px 24px -12px rgba(0,0,0,.7)" }}>
+          <Mascot name="milku" emotion={coachOpen ? "great" : "think"} size={narrow ? 42 : 48} />
+        </button>
+        <AnimatePresence>
+          {coachOpen && (
+            <motion.div key="bubble" initial={{ opacity: 0, x: -8, scale: 0.96 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: -8, scale: 0.96 }} transition={{ duration: 0.18 }} aria-live="polite" onClick={() => setCoachOpen(false)}
+              style={{ pointerEvents: "auto", position: "relative", alignSelf: "center", maxWidth: 520, minWidth: 0, padding: "10px 13px", borderRadius: 12, background: PAPER, color: INK, fontSize: narrow ? 13 : 14, fontWeight: 800, lineHeight: 1.4, boxShadow: "0 10px 22px -10px rgba(0,0,0,.7)", cursor: "pointer" }}>
+              <span aria-hidden="true" style={{ position: "absolute", left: -5, top: "50%", marginTop: -5, width: 10, height: 10, background: PAPER, transform: "rotate(45deg)" }} />
+              <span style={{ position: "relative" }}>{coach}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <span style={{ flex: 1 }} />
-        <ProgressRing done={doneN} total={lessons.length} color={vth.hi} size={narrow ? 42 : 48} />
+        <span className="lesson-glass" style={{ pointerEvents: "auto", padding: 4, borderRadius: 999, background: alpha(vth.bg, 0.62), border: "1px solid rgba(255,255,255,.08)" }}><ProgressRing done={doneN} total={lessons.length} color={vth.hi} size={narrow ? 42 : 48} /></span>
       </div>
       {/* 아래: 단계 정보 + 다음 레슨 */}
       <div className="lesson-glass" style={{ position: "absolute", left: 10, right: 10, bottom: 10, zIndex: 3, padding: 10, borderRadius: 16, background: alpha(vth.bg, 0.7), border: "1px solid rgba(255,255,255,.08)", boxShadow: "0 -6px 24px -12px rgba(0,0,0,.7)",
@@ -434,6 +478,7 @@ export function LessonPlayer({ lesson, lessonState, onClose, onComplete, onNext,
   const steps = useMemo(() => lesson.steps(), [lesson]);
   // 열었을 때 이미 끝낸 레슨이었는지 — 완료 순간 진행 기록이 바뀌어도 "복습"으로 잘못 바뀌지 않게 처음 값을 고정한다(BUG-154)
   const [wasDone] = useState(() => isLessonDone(lessonState, lesson.id));
+  useEffect(() => { noteLessonViewed(lesson.id); }, [lesson.id]);   // (v0.7.8) 추가 학습(최근 본 레슨의 테마 퍼즐)용 기록
   const narrow = useNarrow(860);
   const [si, setSi] = useState(0);
   const step = steps[si] || null;

@@ -309,5 +309,37 @@
     "detail",
     "status",
     "created_at"
+  ],
+  "explorer_positions": [
+    "pos_key",
+    "white",
+    "draws",
+    "black",
+    "moves",
+    "fetched_at"
+  ],
+  "explorer_games": [
+    "pos_key",
+    "game_id",
+    "white_name",
+    "white_rating",
+    "black_name",
+    "black_rating",
+    "winner",
+    "speed",
+    "month",
+    "next_uci",
+    "source",
+    "first_seen",
+    "last_seen"
+  ],
+  "theme_puzzles": [
+    "theme",
+    "puzzle_id",
+    "fen",
+    "sol",
+    "rating",
+    "themes",
+    "created_at"
   ]
 }

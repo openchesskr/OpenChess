@@ -181,6 +181,9 @@ const DEF = {
   ChevronsUp: () => [...bar([[6, 12], [12, 6], [18, 12]], 2.7), ...bar([[6, 19], [12, 13], [18, 19]], 2.7)],
   Plus: () => [...bar([[12, 4.5], [12, 19.5]], 3.1), ...bar([[4.5, 12], [10.4, 12]], 3.1), ...bar([[13.6, 12], [19.5, 12]], 3.1)],
   Minus: () => bar([[4.5, 12], [19.5, 12]], 3.1),
+  // (v0.7.8) 퍼즐 모식도 편집 — 잘라내기(가위: 끝이 가늘어지는 두 날 + 손잡이 고리 둘), 갈래 추가(줄기에서 갈라지는 가지 + 끝 마디)
+  Scissors: () => [...bar([[9, 15], [19.5, 4.5]], 2.6, { tipEnd: 1 }), ...bar([[15, 15], [4.5, 4.5]], 2.6, { tipEnd: 1 }), ...ring(6.5, 17.5, 2.9, 2.2, 14), ...ring(17.5, 17.5, 2.9, 2.2, 14)],
+  GitBranch: () => [...bar([[7, 3.5], [7, 18]], 2.6), ...bar([[7, 15], [7, 13], [17, 9.5]], 2.6), ...disc(7, 19.5, 2.6), ...disc(17, 7.5, 2.6)],
   ArrowLeft: () => [...bar([[20, 12], [10, 12]], 3), ...head([3.5, 12], -1, 0, 7.5, 6)],
   ArrowRight: () => [...bar([[4, 12], [14, 12]], 3), ...head([20.5, 12], 1, 0, 7.5, 6)],
   ArrowUpDown: () => [...bar([[8, 20.5], [8, 9]], 2.6), ...head([8, 3], 0, -1, 6.5, 4.6), ...bar([[16, 3.5], [16, 15]], 2.6), ...head([16, 21], 0, 1, 6.5, 4.6)],
@@ -388,7 +391,7 @@ export const materialIcon = (name) => mat[name] || mat.assignment;
 /** 아이콘 이름 목록(검사 스크립트·갤러리용). */
 export const OC_ICON_NAMES = Object.keys(made);
 
-export const { X, Check, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, ChevronsRight, ChevronsLeft, ChevronsUp, Plus, Minus, ArrowLeft, ArrowRight, ArrowUpDown, ArrowRightLeft,
+export const { X, Check, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, ChevronsRight, ChevronsLeft, ChevronsUp, Plus, Minus, Scissors, GitBranch, ArrowLeft, ArrowRight, ArrowUpDown, ArrowRightLeft,
   MoveDiagonal, Maximize2, Minimize2, ExternalLink, MoreVertical, Search, Filter, Circle, Square, Ban, Info, HelpCircle, RotateCcw, RotateCw, RefreshCw, Repeat2, Undo2, Reply, Shuffle, Route,
   User, Users, UserPlus, UserCheck, Lock, Shield, ShieldAlert, Crown, Trophy, Medal, Gem, Star, Sparkles, Heart, Flame, Zap, Coins, HandCoins, Sword, Swords, Castle, Target, Crosshair, Dices,
   Puzzle, Scale, GitFork, Pin, PinOff, Flag, Shell, BookOpen, Book, BookMarked, Bookmark, Library, FileText, FolderOpen, ClipboardPaste, Copy, Save, Pencil, Trash2, Image, Camera, ListChecks,

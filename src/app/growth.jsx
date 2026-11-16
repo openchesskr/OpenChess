@@ -1,12 +1,12 @@
 // (v0.7.4) 성장 분석 — 프로필 헤더(/user 상단 정보) + 리뷰 5판 게이트 + 마스터 스타일.
 // 약점 지도·복습 카드·오프닝 실수·실수 요약은 "리뷰하는 대로 약점을 분석하고 성장 가능성을 찾는다"는 방향으로 처음부터 다시 설계하려고 모두 삭제했다(전용 라이브러리 3개 포함).
 // 마스터 스타일 로직은 lib/masterStyle.js(순수 함수, scripts/check-growth.mjs가 검사).
-import { useState, useEffect, useMemo, Fragment, createContext, useContext } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment, createContext, useContext } from "react";
 import { motion } from "framer-motion";
 import { OC_EASE } from "../components/motionKit.jsx";
 import { isLite } from "../lib/perfMode.js";
 import { Search } from "../components/ocIcons.jsx";
-import { AnalysisScanner, GrowthFxStyle, Reveal, StatPop, CountDec, CountUpFrom0, ReportStrip } from "./growthMotion.jsx";
+import { AnalysisScanner, SHOWCASE_MS, useShowcaseReplay, GrowthFxStyle, Reveal, StatPop, CountDec, CountUpFrom0, ReportStrip } from "./growthMotion.jsx";
 import { T } from "../lib/theme.js";
 import { SITE_FONT } from "../components/engineLines.jsx";
 import { OnlineDot, Board, useNarrow, fmtFull, REVIEW_DEPTH, ENGINE_PROFILES, isConstrainedDevice } from "./common.jsx";
@@ -835,8 +835,9 @@ export { MiniBoard, tacLabel, reviewGameOf };
 /* 학습 탭의 성장 분석 — 프로필의 크림색 블록 하나 안에 헤더(칭호·사진·이름·소개)와 분석 구획이 모두 들어간다. 최근 5판이 자동 분석되기 전에는 게이지 바 안내만 보인다. */
 // (v0.7.6, 사용자 요청) 학습 탭에서 분석 탭(데스크톱: 아래쪽, 모바일: 옆으로 넘기는 2페이지)으로 옮겼다. active=false면(아직 화면에 안 보임) 엔진 자동 리뷰를 미뤄,
 // 분석 탭의 실시간 평가와 엔진 대기열을 다투지 않게 한다. 캐시에 있는 판은 그대로 보인다.
-export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, reviewSpeed, quick, onOpenGameAnalyze, onOpenGame, active = true }) {
-  useEffect(() => { purgeLegacyGrowthData(); }, []);
+// (v0.7.8, 사용자 요청) 자동 리뷰를 성장 분석 화면 바깥(분석 탭 전체, growthHome.jsx AnalysisWithGrowth)에서 돌린다 — 성장 분석을 스크롤해 보지 않아도,
+//  집중 분석 중이라 성장 분석 영역이 화면에서 빠져 있어도 백그라운드에서 최근 대국을 모아 분석해 둔다. active=false면(접속 직후 엔진 부팅 중 등) 미룬다.
+export function useGrowthAutoReview({ recent = [], engine, reviewSpeed, quick, active = true }) {
   const need = GROWTH_RECENT_GAMES;
   const enough = recent.length >= need;
   // (v0.7.7 모바일 성장 분석 수정) 휴대폰·메모리 적은 기기에서 정식 대형 신경망(17·18·19, 워커 하나 약 580MB)을 고른 경우, 보조 워커 풀을 띄울 수 없어
@@ -848,7 +849,25 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
     return lite ? { ...engine, profile: lite.id, urls: lite.urls } : engine;
   }, [engine]);
   const auto = useAutoReview({ recent: enough ? recent : [], engine: reviewEngine, reviewSpeed, quick, paused: !active });
+  return { ...auto, enough, need };
+}
+
+// visible: 성장 분석이 지금(또는 한 번이라도) 화면에 보였는지 — 이미 다 분석된 뒤 처음 보이면 분석 연출을 SHOWCASE_MS 동안 보여 준 뒤 결과를 낸다.
+export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoading, engine, auto, visible = true, onOpenGameAnalyze, onOpenGame }) {
+  useEffect(() => { purgeLegacyGrowthData(); }, []);
+  const { need, enough } = auto;
   const showResults = enough && auto.settled && auto.done >= 1;
+  // (v0.7.8, 사용자 요청) 보여 주기 연출 — 분석이 끝난 상태에서 처음 화면에 들어오면 예전 분석 애니메이션을 약 5초(SHOWCASE_MS) 재생한 뒤 결과를 보인다.
+  //  분석 진행을 화면에서 직접 지켜본 경우(보이는 동안 아직 분석 중이었음)는 이미 진짜 연출을 봤으므로 곧장 결과로 넘어간다.
+  const sawLiveRef = useRef(false);
+  const [showcase, setShowcase] = useState(null);   // null(아직 안 보임) | "run" | "done"
+  useEffect(() => {
+    if (showcase) return;
+    if (visible && enough && !showResults) sawLiveRef.current = true;
+    if (visible && showResults) setShowcase(sawLiveRef.current ? "done" : "run");
+  }, [visible, enough, showResults, showcase]);
+  useEffect(() => { if (showcase !== "run") return undefined; const id = setTimeout(() => setShowcase("done"), SHOWCASE_MS + 400); return () => clearTimeout(id); }, [showcase]);
+  const replay = useShowcaseReplay(showResults && showcase === "run", recent.slice(0, need), cachedReviewOf);
   const g = useGrowthData(showResults ? auto.records : []);
   // (v0.7.6) 퍼포먼스 레이팅: 자동 리뷰가 끝난 최근 5판(기록)을 원래 대국 객체(진영·시간 규정·레이팅)와 짝지어 합산한다.
   const perf = useMemo(() => {
@@ -866,6 +885,8 @@ export function GrowthPanel({ uid, games, me, onOpenTitle, recent = [], gamesLoa
       <ProfileBlock uid={uid} me={me} onOpenTitle={onOpenTitle}>
         {!showResults ? (
           <AnalysisScanner phase={gamesLoading && !enough ? "loading" : !enough ? "need" : "analyze"} games={recent.slice(0, need)} states={auto.states} activeKey={auto.activeKey} need={need} engineStatus={engine ? engine.status : "off"} />
+        ) : showcase !== "done" ? (
+          <AnalysisScanner phase="analyze" showcase games={recent.slice(0, need)} states={replay.states} activeKey={replay.activeKey} liveOverride={replay.live} need={need} engineStatus="ready" />
         ) : (
           <>
             {g ? (

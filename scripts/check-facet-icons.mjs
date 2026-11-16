@@ -17,13 +17,17 @@ const ZONES = [
   ["src/components/titleEmblems.jsx", "const FacetSquare", "// 그림자(검정 단색"],
   ["src/app/analysis.jsx", "function CrownIcon(", "\n}\n"],
   ["src/app/play.jsx", "function MgCrosshair(", "\n}\n"],
+  ["src/app/play.jsx", "function DeckmateCard(", "\n}\n"],
+  ["src/components/puzzleThemeBackdrop.jsx", "function CheckmateArt(", null],   // (v0.7.8) 소셜 탭 퍼즐 게시물 테마별 배경 그림   // (v0.7.8) 플레이 탭 데크메이트(출시 예정) 블록의 기보 카드
   ["src/app/dexMasters.jsx", "function Laurel(", "\n}\n"],
   ["src/app/common.jsx", "export function LaurelBranch(", "\n}\n"],
   ["src/app/common.jsx", "export function SeriesGlyph(", "</svg>"],   // 뒤따르는 lucide 아이콘은 예외
   ["src/app/common.jsx", "{/* 양옆 끝 마름모", "</div>\n      )}"],
   ["src/app/lessons.jsx", "{/* 노리는 칸:", "</svg>"],
   ["src/app/growthHome.jsx", "function GoldDivider(", "</svg>"],   // (v0.7.7) 분석 탭 보드 분석·성장 분석 사이 금색 구분선의 보석
-  ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
+  ["src/app/growthMotion.jsx", "function StateNode(", "\n}\n"],
+  ["src/components/AboutKit.jsx", "function DriftShape(", "\n}\n"],   // (v0.7.8) /about 배경에 떠오르는 파셋 기물·보석·방패
+  ["src/AboutPage.jsx", "function Diamond(", "\n}\n"],   // (v0.7.8) /about 배경 마름모(예전 선 마름모 → 파셋)   // (v0.7.5) 학습 탭 자동 분석 진행 화면의 상태 마름모
 ];
 let n = 0;
 for (const [file, from, to] of ZONES) {

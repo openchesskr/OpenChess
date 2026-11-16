@@ -10,7 +10,8 @@ import { SEQ_FONT } from "./engineLines.jsx";
 
 const pgnText = (sans) => sans.map((s, i) => (i % 2 === 0 ? (i / 2 + 1) + ". " : "") + s).join(" ");
 
-export function YoutubeVideosBlock({ sans }) {
+// bare: 커뮤니티 블록(communityBlock.jsx) 안에 넣을 때 — 바깥 카드 테두리·배경 없이 그 안의 한 칸으로 그린다(first면 위 구분선도 없이).
+export function YoutubeVideosBlock({ sans, bare = false, first = false }) {
   const key = (sans || []).join(" ");
   const [state, setState] = useState({ status: "loading", videos: [] });
   const [nonce, setNonce] = useState(0);
@@ -23,7 +24,7 @@ export function YoutubeVideosBlock({ sans }) {
   // 서버에 API 키가 없거나 수순이 너무 길면 블록 자체를 숨긴다.
   if (state.status === "off" || !sans || !sans.length || sans.length > YT_MAX_PLIES) return null;
   return (
-    <div style={{ background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box", marginTop: 10 }}>
+    <div style={bare ? (first ? {} : { marginTop: 12, paddingTop: 12, borderTop: "1px solid #E4D5B6" }) : { background: T.paper, border: "1px solid #DCCBA8", borderRadius: 12, padding: 12, boxSizing: "border-box", marginTop: 10 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
         <Youtube size={15} style={{ color: "#E2453C" }} />
         <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{t("영상")}</span>

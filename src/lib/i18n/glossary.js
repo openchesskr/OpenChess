@@ -45,7 +45,7 @@ export const GLOSSARY = [
   { id: "opening", ko: "오프닝", en: ["Opening"], hi: ["ओपनिंग"], ja: ["オープニング"], zh: ["开局"], es: ["Apertura"] },
   { id: "middlegame", ko: "미들게임", en: ["Middlegame"], hi: ["मिडिलगेम", "मिडलगेम"], ja: ["ミドルゲーム"], zh: ["中局"], es: ["Medio juego", "Mediojuego"] },
   { id: "endgame", ko: "엔드게임", en: ["Endgame"], hi: ["एंडगेम"], ja: ["エンドゲーム"], zh: ["残局"], es: ["Final", "Finales"] },
-  { id: "position", ko: "포지션", en: ["Position"], hi: ["पोज़ीशन", "पोजीशन", "स्थिति"], ja: ["ポジション"], zh: ["局面"], es: ["Posición", "Posicion"] },
+  { id: "position", ko: "(?<!오)포지션",   /* (v0.7.8) 오포지션(opposition)은 다른 용어 */ en: ["Position"], hi: ["पोज़ीशन", "पोजीशन", "स्थिति"], ja: ["ポジション"], zh: ["局面"], es: ["Posición", "Posicion"] },
   { id: "rating", ko: "레이팅", en: ["Rating"], hi: ["रेटिंग"], ja: ["レーティング"], zh: ["等级分"], es: ["Rating", "Elo", "Puntuación"] },
   { id: "accuracy", ko: "정확도|^정확성$", en: ["Accuracy"], hi: ["सटीकता"], ja: ["精度", "正確度"], zh: ["准确率", "准确度"], es: ["Precisión"] },
   { id: "engine", ko: "엔진", en: ["Engine"], hi: ["इंजन"], ja: ["エンジン"], zh: ["引擎"], es: ["Motor"] },
@@ -60,6 +60,9 @@ export const GLOSSARY = [
 export const LANG_CODES = ["en", "hi", "ja", "zh", "es"];
 // 용어집이 오탐하는 경우만 적는다: { "원문 키": ["용어 id", …] } — 반드시 이유를 주석으로 남길 것.
 export const GLOSSARY_EXEMPT = {
+  // (v0.7.8 /about 버전 기록 다듬기) 재화 이름 'OC 나이트 코인'·체크 표시(✓) 등 고유 이름·기호라 기물·체스 용어 표기를 요구하지 않는 문구
+  "내 퍼즐이 일일 퍼즐로 뽑히면 알림과 함께 OC 나이트 코인을 줍니다. 접속하지 않은 동안 뽑혔다면 다음 접속 때 '받기' 팝업이 뜹니다.": ["knight"],
+  "OC 나이트 코인 아이콘을 바꿨습니다.": ["knight"], "OC 나이트 코인과 리뷰 티켓 아이콘을 키웠습니다.": ["knight"], "티어가 오르면 여정 지도에서 OC 나이트 코인 보너스를 줍니다.": ["knight"], "일일 퀘스트 4개의 보상을 경험치에서 OC 나이트 코인으로 바꿨습니다.": ["knight"],
   // (v0.7.0 /about) 아래 세 문구의 "나이트"는 게임 모드 '나이트 레이스'·재화 'OC 나이트 코인'의 고유 이름이라 기물 용어 표기를 요구하지 않는다.
   "일반 대국부터 좌표 인지, 나이트 레이스, 무한 체크메이트, 백랭크 러시아워까지 다섯 가지 모드를 육각형 메뉴에서 바로 시작해요.": ["knight"], "매일 갱신되는 일일 퀘스트와 레슨 로드맵, 내 약점을 보여주는 성장 분석. 완료하면 OC 나이트 코인을 받아요.": ["knight"], "OC 나이트 코인 {0}개, {1}/{2} 완료": ["knight"], 
   "{0} OC 나이트 코인": ["knight"], "OC 나이트 코인": ["knight"], "OC 나이트 코인 {0}, {1}/5 완료": ["knight"], "보유 중인 OC 나이트 코인": ["knight"], "매일 갱신되는 일일 퀘스트와, 갈래를 따라 순서대로 열리는 메인 퀘스트 '레슨'을 완료하고 OC 나이트 코인 획득": ["knight"], // 재화 이름(OC Knight Coin)의 "나이트"는 기물이 아니라 브랜드 이름 — 번역에서 기물 표기를 쓰지 않는다

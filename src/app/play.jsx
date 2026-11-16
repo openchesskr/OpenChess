@@ -1,6 +1,6 @@
 // (v0.6.0, App.jsx 분할) 'play' 화면과 그 화면만 쓰는 조각
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
-import { FacetCrosshair } from "../components/facetIcons.jsx";
+import { FacetCrosshair, FacetDiamond, facetRamp } from "../components/facetIcons.jsx";
 import { plyIsWhite, fenOfRoot, MAX_SEARCH_DEPTH, uciToSan, boardOfRoot, stripSuffix, parseFenFull, replayFromFen, epTarget, colorOfRoot, gameEndState, pvpStatusFromEnd, safeGameEndState, fenLegalDests, liveLegalDests, buildSan, plyMoveNum } from "../lib/chessRules.js";
 import { DailyQuestCard, PlayQuestCard } from "./dailyQuest.jsx";
 import { SwipePager } from "../components/swipePager.jsx";
@@ -13,7 +13,7 @@ import { T, MOTION_EASE, BOARD_SKINS, boardSquareBg, BOARD_GLOSS } from "../lib/
 import { badgeIcon, PendingDots } from "../components/badges.jsx";
 import { motion, AnimatePresence, useAnimationControls, LayoutGroup } from "framer-motion";
 import { PieceGlyph, SkinContext } from "../components/pieces.jsx";
-import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2 } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
+import { X, Cpu, Star, User, Route, Puzzle, Swords, ArrowLeft, Crown, Play, Check, RotateCcw, Trophy, ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Shuffle, Undo2, Eye, Wrench, ChevronUp, ChevronDown, Trash2, Settings, Handshake, Repeat2, Lock } from "../components/ocIcons.jsx";   // (v0.7.5) OpenChess 파셋 아이콘(예전 lucide 대체)
 import { tierFromXp, tierGradientCss } from "../lib/tierSystem.js";
 import { apiUrl } from "../lib/siteConfig.js";
 import { sbRpc, sbSelect, SB_ON, SB_TOKEN, sbRpcRow, sbInsert, sbDelete, pvpFinishVerified } from "../lib/supabaseClient.js";
@@ -1184,6 +1184,55 @@ function MgMasterReplay({ cellPx, onGameChange }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+// (v0.7.8, 사용자 요청) "데크메이트" — 체스 기보 표기를 한 글자씩 잘라 카드 덱으로 만들고, 카드를 뽑아 조합한 기보로 수를 두는 체스 + 카드 게임(출시 예정).
+// 일반 대국 버튼과 같은 크림색 카드에, 왼쪽은 "N x f 7 +" 다섯 장이 부채꼴로 펼쳐져 Nxf7+를 이루는 카드 덱, 오른쪽은 오른쪽 정렬한 이름.
+// 아직 플레이할 수 없어 어두운 반투명 막과 "출시 예정" 표시를 덮고 누를 수 없게 둔다. fill이면 칸 높이를 채운다(데스크톱에서 일일 퀘스트 블록과 아래 끝을 맞춤).
+// 카드는 아이콘 규칙대로 윤곽선 없이 면으로만 — 두께 면(가장 어두움) 위에 앞면을 왼쪽 위 밝은 면 / 오른쪽 아래 어두운 면으로 나누고, 맨 앞 카드에만 금빛 보석 하이라이트.
+const DECK_IVORY = facetRamp("#E9D8B4");
+const deckCardPts = (x, y, w, h, c) => [[x + c, y], [x + w - c, y], [x + w, y + c], [x + w, y + h - c], [x + w - c, y + h], [x + c, y + h], [x, y + h - c], [x, y + c]];
+const deckPath = (pts) => "M" + pts.map((p) => p[0].toFixed(2) + " " + p[1].toFixed(2)).join("L") + "Z";
+function DeckmateCard({ x, y, rot, label, front }) {
+  const w = 22, h = 31, c = 2.6, R = DECK_IVORY;
+  const face = deckCardPts(x, y, w, h, c);
+  // 앞면을 왼쪽 아래 → 오른쪽 위 대각선으로 나눈 두 면(왼쪽 위가 밝다)
+  const upper = [face[7], face[0], face[1], face[2], [x + w, y + h * 0.42], [x, y + h * 0.78], face[6]];
+  const lower = [[x, y + h * 0.78], [x + w, y + h * 0.42], face[3], face[4], face[5], face[6]];
+  return (
+    <g transform={"rotate(" + rot + " " + (x + w / 2) + " " + (y + h + 26) + ")"}>
+      <path d={deckPath(deckCardPts(x - 1.6, y + 0.6, w, h, c))} fill={R.l4} opacity={0.55} />
+      <path d={deckPath(deckCardPts(x + 1.1, y + 1.3, w, h, c))} fill={R.base} />
+      <path d={deckPath(upper)} fill={R.hi} />
+      <path d={deckPath(lower)} fill={R.l1} />
+      {/* 부채꼴로 겹치면 보이는 곳은 각 카드의 왼쪽 위 — 실제 카드처럼 큰 모서리 표기, 맨 앞 카드만 가운데에도 크게 */}
+      <text x={x + 3.4} y={y + 10.5} fontSize="9.5" fontWeight="900" fontFamily={SITE_FONT} fill="#3A2516">{label}</text>
+      {front && <text x={x + w / 2} y={y + h * 0.7} textAnchor="middle" fontSize="15" fontWeight="900" fontFamily={SITE_FONT} fill="#8A6322">{label}</text>}
+      {front && <FacetDiamond cx={x + w - 4} cy={y + 4.5} r={2.6} />}
+    </g>
+  );
+}
+function DeckmateButton({ fill = false }) {
+  const cards = [["N", -32], ["x", -16], ["f", 0], ["7", 16], ["+", 32]];
+  return (
+    <div role="img" aria-label={t("데크메이트, 출시 예정")} style={{ containerType: "inline-size", position: "relative", display: "flex", width: "100%", marginTop: 14, ...(fill ? { flex: 1, minHeight: 150 } : { aspectRatio: "1 / 0.42" }), border: "1px solid #DCCBA8", borderRadius: 14, overflow: "hidden", background: T.paper, boxShadow: "0 4px 14px -4px rgba(0,0,0,.45)" }}>
+      <span style={{ position: "relative", width: "48%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(120% 90% at 30% 20%, #F7EEDC 0%, #E7D6B2 70%, #D8C399 100%)" }}>
+        <svg viewBox="0 0 100 72" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          {cards.map(([label, rot], i) => <DeckmateCard key={i} x={39} y={10} rot={rot} label={label} front={i === cards.length - 1} />)}
+        </svg>
+      </span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", gap: "1.6cqw", padding: "0 4.5cqw 0 3cqw", fontFamily: SITE_FONT, color: T.ink, textAlign: "right" }}>
+        <span style={{ fontSize: "clamp(9px, 2.1cqw, 13px)", fontWeight: 800, letterSpacing: ".22em", color: "#8A6C2F" }}>DECKMATE</span>
+        <span style={{ fontSize: "clamp(20px, 7.2cqw, 52px)", fontWeight: 900, letterSpacing: "-.03em", lineHeight: 1.05 }}>{t("데크메이트")}</span>
+        <span style={{ fontSize: "clamp(10px, 2.4cqw, 15px)", fontWeight: 700, color: "rgba(90,58,34,.7)", lineHeight: 1.35, wordBreak: "keep-all" }}>{t("기보 카드를 뽑아 조합해 수를 두는 체스 카드 게임")}</span>
+      </span>
+      {/* 출시 예정 — 어두운 반투명 막 */}
+      <span style={{ position: "absolute", inset: 0, zIndex: 3, background: "rgba(24,14,7,.58)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 999, background: "rgba(20,12,6,.72)", border: "1px solid rgba(236,203,134,.55)", color: T.brassHi, fontSize: "clamp(13px, 3.4cqw, 20px)", fontWeight: 900, letterSpacing: ".04em", boxShadow: "0 6px 18px -6px rgba(0,0,0,.7)" }}>
+          <Lock size={15} color={T.brassHi} />{t("출시 예정")}
+        </span>
+      </span>
     </div>
   );
 }
@@ -2519,7 +2568,9 @@ function MinigameHub({ title, gameType, myUid, onExit, onOpenProfile, initialGam
     const key = runKey + ":" + (m.game ? m.game.id : "x");
     if (mgDoneRef.current === key) return;
     mgDoneRef.current = key;
-    emitPlayEvent({ type: "minigame", game: gameType });
+    // (v0.7.8) 실시간 대전에서 이겼는지 — 플레이 퀘스트 3장 "미니게임 대전 승리"(서버도 실시간 대전 승리만 센다)
+    const g = m.game, won = !!(g && myUid && ((liveStatus === "white_won" && g.white_uid === myUid) || (liveStatus === "black_won" && g.black_uid === myUid)));
+    emitPlayEvent({ type: "minigame", game: gameType, won });
   }, [liveStatus, runKey, gameType, m.game]);   // eslint-disable-line react-hooks/exhaustive-deps
   // (v0.5.4) 로비로 돌아올 때마다 statsTick을 올려 방금 끝난 대전·기록이 로비 전적 바에 바로 반영되게 한다.
   const [statsTick, setStatsTick] = useState(0);
@@ -5415,13 +5466,17 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
   useEffect(() => { if (step === "playing") setSetupOpen(false); }, [step]);
   // (v0.7.4, 사용자 요청) 모바일에서는 게임과 일일 퀘스트를 학습 탭과 완전히 같은 가로 스와이프 2페이지(SwipePager)로 보여 준다. 데스크톱은 좌우 2열.
   const pagedPlay = narrow && showQuest;
-  const hubNode = (
-      <div style={{ minWidth: 0 }}>
-        <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto" }}>
+  // (v0.7.8, 사용자 요청) 데스크톱 2×2 격자 — [일반 대국 + 데크메이트 | 일일 퀘스트] / [미니게임 | 플레이 퀘스트]. 같은 줄의 두 블록은 위·아래 끝을 맞춘다:
+  //  1줄은 더 높은 쪽에 맞춰 데크메이트·일일 퀘스트가 늘어나고, 2줄은 미니게임 블록(그대로) 높이에 플레이 퀘스트가 맞춘다(fill).
+  const gridMode = showQuest && !narrow;
+  const hubTopNode = (
+        <div style={{ maxWidth: step === "setup" ? hubMaxW : 460, margin: "0 auto", ...(gridMode ? { height: "100%", display: "flex", flexDirection: "column" } : null) }}>
         {step === "setup" ? (
           <>
             {/* (v0.5.5, 사용자 요청) 일반 대국도 미니게임처럼 체스보드 버튼을 먼저 누르고, 별도 창에서 타임 컨트롤·상대를 고른다. */}
             <PlayNormalButton onClick={() => setSetupOpen(true)} ratings={chessAll} />
+            {/* (v0.7.8, 사용자 요청) 일반 대국과 미니게임 사이 — 데크메이트(출시 예정) */}
+            <DeckmateButton fill={gridMode} />
             {setupOpen && (
               <MinigameScreen title={t("일반 대국")} onBack={closeSetup}>
                 <div style={{ width: "100%", maxWidth: 460, margin: "0 auto", paddingTop: 4 }}>
@@ -5645,13 +5700,15 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
           </div>
         )}
         </div>
-        {/* (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
-            그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다). */}
-        <div style={{ display: step === "setup" ? "block" : "none", marginTop: 14 }}>
+  );
+  // (v0.5.5) 미니게임 — 일반 대국 설정 화면 아래에 이어서 보여준다. 대국 중에는 목록만 숨기고(PlaySpecialGames는
+  // 그대로 마운트 — 친구 도전장 수락 등으로 연 미니게임은 자체 전체화면이라 계속 보인다).
+  const specialNode = (
+        <div style={{ display: step === "setup" ? "block" : "none", marginTop: gridMode ? 0 : 14 }}>
           <PlaySpecialGames myUid={myUid} onOpenProfile={onOpenProfile} resume={specialResume} onConsumeResume={onConsumeSpecialResume} myRating={myPuzzleRating} canEditContent={canEditContent} hubMaxWidth={hubMaxW} />
         </div>
-      </div>
   );
+  const hubNode = <div style={{ minWidth: 0 }}>{hubTopNode}{specialNode}</div>;
   const questNode = showQuest ? (
         <div style={{ minWidth: 0, marginTop: narrow && !pagedPlay ? 18 : 0, maxWidth: narrow ? hubMaxW : undefined, marginLeft: narrow ? "auto" : undefined, marginRight: narrow ? "auto" : undefined, width: "100%" }}>
           <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} />
@@ -5664,8 +5721,21 @@ export function PlayPage({ seed, playQuest, loggedIn, onClose, engine, onOpenRev
     // 일반 대국 부분만 460px로 가운데에 둔다.
     // (v0.7.4, 사용자 요청) 일일 퀘스트는 학습 탭에서 이 탭으로 옮겼다. 데스크톱은 왼쪽 플레이 허브·오른쪽 일일 퀘스트로 나누고, 모바일은 허브 아래에 이어 붙인 세로 스크롤 페이지.
     // 대국 중(step === "playing")에는 퀘스트를 그리지 않는다. 숨겨진 탭에서 완료 공개 연출이 미리 끝나지 않도록 questActive(이 탭이 보일 때)만 마운트한다.
-    <div style={showQuest && !narrow ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gap: 28, alignItems: "start" } : { maxWidth: 880, margin: "0 auto" }}>
-      {pagedPlay ? <SwipePager pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} /> : <>{hubNode}{questNode}</>}
+    <div style={gridMode ? { maxWidth: 1040, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, " + hubMaxW + "px) minmax(0, 1fr)", gridTemplateAreas: '"hub dq" "mg pq"', columnGap: 28, rowGap: 14, alignItems: "stretch" } : { maxWidth: 880, margin: "0 auto" }}>
+      {pagedPlay ? <SwipePager pages={[{ key: "play", node: hubNode }, { key: "quest", node: questNode }]} />
+        : gridMode ? (
+          <>
+            <div style={{ gridArea: "hub", minWidth: 0 }}>{hubTopNode}</div>
+            <div style={{ gridArea: "dq", minWidth: 0 }}>
+              <DailyQuestCard dailyQuest={dailyQuest} setDailyQuest={setDailyQuest} recentOpenings={recentOpenings} onOpenOpening={onOpenOpening} hasChesscom={hasChesscom} highlight={questHighlight} fill />
+            </div>
+            <div style={{ gridArea: "mg", minWidth: 0 }}>{specialNode}</div>
+            {/* 플레이 퀘스트 칸은 높이를 갖지 않고(absolute) 줄 높이 = 미니게임 블록 높이에 맞춰 채운다 — 미니게임 블록은 그대로 둔다 */}
+            <div style={{ gridArea: "pq", minWidth: 0, position: "relative" }}>
+              <div style={{ position: "absolute", inset: 0 }}><PlayQuestCard playQuest={playQuest} loggedIn={loggedIn} fill /></div>
+            </div>
+          </>
+        ) : <>{hubNode}{questNode}</>}
       {/* (사용자 요청) 상대가 무승부를 제안하면, 지금 어느 화면(옵션 메뉴가 열려 있든 아니든)에 있든
           바로 보이도록 뷰포트 맨 아래에 고정된 알림 띠로 띄운다. */}
       <AnimatePresence>
