@@ -6,12 +6,15 @@
 //  · 퍼즐 가져오기(?puzzle=, 공격 모드 개발자 도구)는 개발자/공동개발자 로그인이 필요하다.
 import { clientIp, supabaseEnv, rateLimited, authUser, isEditor } from "./_lib/server.js";
 import { explorerGamesHandler } from "./_lib/explorerGames.js";
+import { themePuzzlesHandler } from "./_lib/themePuzzles.js";
 
 const EXPLORER_PARAMS = new Set(["fen", "play", "variant", "speeds", "ratings", "since", "until", "moves", "topGames", "recentGames", "history"]);
 
 export default async function handler(req, res) {
   // (v0.7.8 BUG-178) 집중 분석 "전체 통계" — 함수 개수 제한 때문에 이 함수 안의 경로로 둔다(자체 수순 검증·호출 한도는 처리기 안에서)
   if ((req.query || {}).games === "1") return explorerGamesHandler(req, res);
+  // (v0.7.8, 사용자 요청) 학습 탭 "추가 학습"의 레슨 테마 퍼즐 — Lichess 테마 퍼즐을 받아 쌓는다(api/_lib/themePuzzles.js)
+  if ((req.query || {}).puzzles === "1") return themePuzzlesHandler(req, res);
   const { master, pgn, ...params } = req.query || {};
   const env = supabaseEnv();
   if (await rateLimited(env, [["lichess:ip:" + clientIp(req), 90, 60]])) { res.status(429).json({ error: "rate_limited" }); return; }

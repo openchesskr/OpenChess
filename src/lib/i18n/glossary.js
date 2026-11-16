@@ -45,7 +45,7 @@ export const GLOSSARY = [
   { id: "opening", ko: "오프닝", en: ["Opening"], hi: ["ओपनिंग"], ja: ["オープニング"], zh: ["开局"], es: ["Apertura"] },
   { id: "middlegame", ko: "미들게임", en: ["Middlegame"], hi: ["मिडिलगेम", "मिडलगेम"], ja: ["ミドルゲーム"], zh: ["中局"], es: ["Medio juego", "Mediojuego"] },
   { id: "endgame", ko: "엔드게임", en: ["Endgame"], hi: ["एंडगेम"], ja: ["エンドゲーム"], zh: ["残局"], es: ["Final", "Finales"] },
-  { id: "position", ko: "포지션", en: ["Position"], hi: ["पोज़ीशन", "पोजीशन", "स्थिति"], ja: ["ポジション"], zh: ["局面"], es: ["Posición", "Posicion"] },
+  { id: "position", ko: "(?<!오)포지션",   /* (v0.7.8) 오포지션(opposition)은 다른 용어 */ en: ["Position"], hi: ["पोज़ीशन", "पोजीशन", "स्थिति"], ja: ["ポジション"], zh: ["局面"], es: ["Posición", "Posicion"] },
   { id: "rating", ko: "레이팅", en: ["Rating"], hi: ["रेटिंग"], ja: ["レーティング"], zh: ["等级分"], es: ["Rating", "Elo", "Puntuación"] },
   { id: "accuracy", ko: "정확도|^정확성$", en: ["Accuracy"], hi: ["सटीकता"], ja: ["精度", "正確度"], zh: ["准确率", "准确度"], es: ["Precisión"] },
   { id: "engine", ko: "엔진", en: ["Engine"], hi: ["इंजन"], ja: ["エンジン"], zh: ["引擎"], es: ["Motor"] },

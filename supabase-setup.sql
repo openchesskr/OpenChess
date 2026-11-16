@@ -4451,7 +4451,7 @@ returns jsonb language sql immutable as $$
     "pieces": ["P", "N", "B", "R", "Q", "K"],
     "questCoins": {"puzzle": 10, "dailypuzzle": 10, "cc_0": 10, "cc_1": 10, "cc_2": 10},
     "questBonus": {"xp": 20, "coins": 100},
-    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20},
+    "seedChapters": {"b_board": 20, "b_rook": 20, "b_bishop": 20, "b_queen": 20, "b_knight": 20, "b_pawn": 20, "b_king": 20, "r_check": 20, "r_mate": 20, "r_stalemate": 20, "r_castle": 20, "r_enpassant": 20, "r_values": 20, "t_hanging": 20, "t_fork": 20, "t_pin": 20, "t_skewer": 20, "t_discovered": 20, "m_backrank": 20, "m_queen": 20, "m_ladder": 20, "m_smothered": 20, "o_center": 20, "o_develop": 20, "o_safety": 20, "o_trap": 20, "e_square": 20, "e_opposition": 20, "e_rookmate": 20, "op_italian": 20, "op_ruy": 20, "op_scotch": 20, "op_qgd": 20, "op_london": 20, "op_najdorf": 20, "op_french": 20, "op_caro": 20, "op_scandi": 20, "op_slav": 20, "op_kid": 20, "op_nimzo": 20, "op_grunfeld": 20, "t_double": 20, "t_removal": 20, "t_doublecheck": 20, "m_arabian": 20, "st_openfile": 20, "st_outpost": 20, "st_passed": 20, "st_badbishop": 20, "e_activeking": 20, "e_rookbehind": 20, "e_keysquare": 20, "op_berlin": 20, "op_twoknights": 20, "op_petrov": 20, "op_philidor": 20, "op_kingsgambit": 20, "op_vienna": 20, "op_dragon": 20, "op_scheveningen": 20, "op_sveshnikov": 20, "op_alapin": 20, "op_closedsicilian": 20, "op_pirc": 20, "op_alekhine": 20, "op_qga": 20, "op_semislav": 20, "op_qid": 20, "op_catalan": 20, "op_benko": 20, "op_dutch": 20, "op_english": 20, "op_reti": 20, "t_trapped": 20, "t_counting": 20, "t_breakthrough": 20, "st_seventh": 20, "st_isolated": 20, "st_doubled": 20, "e_cutoff": 20, "e_promote": 20, "m_boden": 20, "m_epaulette": 20, "m_anastasia": 20, "m_h7": 20, "m_corridor": 20, "r_promotion": 20, "r_draws": 20, "r_notation": 20, "o_tempo": 20, "g_protect": 20, "g_candidate": 20, "g_threat": 20, "g_trade": 20, "g_activity": 20, "g_rooks": 20, "i_twice": 20, "i_earlyqueen": 20, "i_kingpawns": 20, "i_passive": 20, "x_ignore": 20, "x_scholar": 20, "x_f7": 20, "x_greedy": 20, "x_recapture": 20, "z_foolsmate": 20, "z_queenhang": 20, "z_forksq": 20, "z_stalemate": 20, "z_holes": 20, "n_free": 20, "n_mate1": 20, "n_checks": 20, "n_punish": 20, "n_promo": 20, "t_decoy": 20, "t_deflection": 20, "t_overload": 20, "t_intermezzo": 20, "t_xray": 20, "t_interference": 20, "st_space": 20, "st_goodtrade": 20, "st_prophylaxis": 20, "st_kingattack": 20, "e_lucena": 20, "e_philidor": 20, "e_perpetual": 20, "b_greek": 20, "b_legal": 20, "b_queensac": 20, "b_exchsac": 20},
     "playQuests": {"game": {"chapter": 1, "metric": "game", "target": 1, "coins": 50}, "win": {"chapter": 1, "metric": "win", "target": 1, "coins": 50}, "long": {"chapter": 1, "metric": "long", "target": 1, "coins": 50}, "mg": {"chapter": 1, "metric": "mg", "target": 2, "coins": 50}, "kinds": {"chapter": 1, "metric": "kinds", "target": 2, "coins": 50}, "ctwogame": {"chapter": 2, "metric": "game", "target": 5, "coins": 80}, "ctwowin": {"chapter": 2, "metric": "win", "target": 3, "coins": 80}, "ctwolong": {"chapter": 2, "metric": "long", "target": 3, "coins": 80}, "ctwomg": {"chapter": 2, "metric": "mg", "target": 5, "coins": 80}, "ctwokinds": {"chapter": 2, "metric": "kinds", "target": 4, "coins": 80}, "cthreegame": {"chapter": 3, "metric": "game", "target": 20, "coins": 120}, "cthreewin": {"chapter": 3, "metric": "win", "target": 10, "coins": 120}, "cthreelong": {"chapter": 3, "metric": "long", "target": 8, "coins": 120}, "cthreemg": {"chapter": 3, "metric": "mg", "target": 15, "coins": 120}, "cthreemgwin": {"chapter": 3, "metric": "mgwin", "target": 5, "coins": 120}},
     "devBonusCoins": 10000
   }'::jsonb;
@@ -5024,6 +5024,58 @@ revoke all on function public.explorer_record(text, bigint, bigint, bigint, json
 revoke all on function public.explorer_read(text, int, int) from public, anon, authenticated;
 grant execute on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) to service_role;
 grant execute on function public.explorer_read(text, int, int) to service_role;
+
+-- ============================================================================
+-- (v0.7.8, 사용자 요청) 학습 탭 "추가 학습" — 최근에 본 레슨의 테마(포크·핀·백랭크 메이트 …)에 맞는 Lichess 테마 퍼즐을 서버가 받을 때마다 쌓는다.
+--  · 쓰기·읽기는 서버리스 함수(api/lichess.js ?puzzles=1, service_role)만 — 브라우저는 표·함수에 직접 접근할 수 없다(아래 $acl$ 허용 목록에 없음).
+--    서버가 Lichess에서 직접 받은 퍼즐을 chess.js로 다시 두어 보며 검증한 뒤(시작 FEN·정답 SAN) 넣으므로 가짜 퍼즐을 섞어 넣을 수 없다.
+--  · 키는 (theme, puzzle_id) — 한 퍼즐이 여러 테마에 걸릴 수 있다.
+-- ============================================================================
+create table if not exists public.theme_puzzles (
+  theme text not null,
+  puzzle_id text not null,
+  fen text not null,
+  sol jsonb not null,
+  rating int,
+  themes jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  primary key (theme, puzzle_id)
+);
+alter table public.theme_puzzles enable row level security;
+revoke all on public.theme_puzzles from public, anon, authenticated;
+
+create or replace function public.theme_puzzle_record(p_theme text, p_puzzles jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare g jsonb; v_n int := 0;
+begin
+  if p_theme is null or p_theme !~ '^[A-Za-z0-9_]{2,40}$' then raise exception 'invalid theme'; end if;
+  if p_puzzles is null or jsonb_typeof(p_puzzles) <> 'array' or jsonb_array_length(p_puzzles) > 10 then raise exception 'invalid puzzles'; end if;
+  for g in select * from jsonb_array_elements(p_puzzles) loop
+    if coalesce(g ->> 'id', '') !~ '^[A-Za-z0-9]{4,10}$' then continue; end if;
+    if coalesce(g ->> 'fen', '') !~ '^[pnbrqkPNBRQK1-8/]{15,90} [wb] [KQkq-]{1,4} ([a-h][36]|-) \d{1,3} \d{1,4}$' then continue; end if;
+    if jsonb_typeof(g -> 'sol') <> 'array' or jsonb_array_length(g -> 'sol') not between 1 and 24 or length((g -> 'sol')::text) > 600 then continue; end if;
+    insert into public.theme_puzzles(theme, puzzle_id, fen, sol, rating, themes)
+    values (p_theme, g ->> 'id', g ->> 'fen', g -> 'sol', case when (g ->> 'rating') ~ '^\d{2,4}$' then (g ->> 'rating')::int end,
+            case when jsonb_typeof(g -> 'themes') = 'array' and length((g -> 'themes')::text) < 800 then g -> 'themes' else '[]'::jsonb end)
+    on conflict (theme, puzzle_id) do nothing;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end; $$;
+
+-- 서버가 화면에 줄 값 — 이 테마의 쌓인 퍼즐 수와 무작위 p_n개
+create or replace function public.theme_puzzle_read(p_theme text, p_n int default 8)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'stored', (select count(*) from public.theme_puzzles where theme = p_theme),
+    'puzzles', coalesce((select jsonb_agg(jsonb_build_object('id', puzzle_id, 'fen', fen, 'sol', sol, 'rating', rating, 'themes', themes)) from (
+        select * from public.theme_puzzles where theme = p_theme order by random() limit least(greatest(p_n, 0), 30)) x), '[]'::jsonb)
+  );
+$$;
+revoke all on function public.theme_puzzle_record(text, jsonb) from public, anon, authenticated;
+revoke all on function public.theme_puzzle_read(text, int) from public, anon, authenticated;
+grant execute on function public.theme_puzzle_record(text, jsonb) to service_role;
+grant execute on function public.theme_puzzle_read(text, int) to service_role;
 
 -- ============================================================================
 -- 함수 실행 권한 최종 확정 (v0.7.0 보안, BUG-108·118) — 기본 차단 + 허용 목록

@@ -332,5 +332,14 @@
     "source",
     "first_seen",
     "last_seen"
+  ],
+  "theme_puzzles": [
+    "theme",
+    "puzzle_id",
+    "fen",
+    "sol",
+    "rating",
+    "themes",
+    "created_at"
   ]
 }

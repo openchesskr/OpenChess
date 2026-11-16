@@ -10,7 +10,7 @@
  */
 import { readFileSync } from "node:fs";
 import { Chess } from "chess.js";
-import { allLessons, STAGES, LESSON_REWARD } from "../src/lib/lessons/curriculum.js";
+import { allLessons, STAGES, LESSON_REWARD, REPERTOIRE_STAGE, orderProblems } from "../src/lib/lessons/curriculum.js";
 import { t } from "../src/lib/i18n.js";
 import { playUci, goalMet, tapAnswer, readMarks, legalTargets } from "../src/lib/lessons/engine.js";
 import { normalizeLessonState, markLessonDone, lessonStatus, nextLesson, lessonSummary } from "../src/lib/lessons/progress.js";
@@ -79,12 +79,16 @@ for (const l of lessons) {
 //  (v0.7.5) 그 다음 6단계 오프닝 레파토리는 수 등급 "이론(책)"
 //  (v0.7.7, 사용자 요청) 7~9단계(전술 심화·중반 전략·엔드게임 심화)는 남은 등급 놓친 수·부정확·실수
 //  (v0.7.7, 사용자 요청 "레슨 더") 10단계(체크메이트 패턴)는 마지막 등급 블런더
-{ const want = ["good", "excellent", "best", "only", "brilliant", "book", "miss", "inaccuracy", "mistake", "blunder"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 좋음·우수·최선·유일·탁월·이론·놓친 수·부정확·실수·블런더가 아님: " + STAGES.map((s) => s.grade).join()); }
+//  (v0.7.8, 사용자 요청) 레슨 트리 재설계 — 등급의 상징대로: 이론(규칙·기초 이론) → 좋음(좋은 습관) → 부정확 → 실수(흔한 실수) → 블런더(두면 안 되는 실수·약점) → 놓친 수 → 우수(기본 전술) → 최선(전략) → 유일(정확한 엔드게임) → 탁월(희생·메이트 패턴) → 마지막은 항상 오프닝 레파토리(이론 수 변형)
+{ const want = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 설계와 다름: " + STAGES.map((s) => s.grade).join()); }
+if (STAGES[STAGES.length - 1].id !== REPERTOIRE_STAGE || STAGES[STAGES.length - 1].variant !== "repertoire") fails.push("오프닝 레파토리 단계가 마지막이 아님");
+{ const lastNonOpening = lessons.map((l) => l.stage).lastIndexOf(STAGES[STAGES.length - 2].id), firstOpening = lessons.findIndex((l) => l.stage === REPERTOIRE_STAGE); if (firstOpening < 0 || firstOpening < lastNonOpening) fails.push("오프닝별 레슨이 레슨 경로의 가장 마지막이 아님"); }
+{ const p = orderProblems(); for (const k of ["missing", "dup", "unknown"]) if (p[k].length) fails.push("레슨 트리(ORDER) " + k + ": " + p[k].join(", ")); }
 // (v0.7.7, 사용자 요청 "레슨 분량을 더") 6단계(오프닝, 자동 생성) 밖의 레슨은 스텝이 5개 이상, 오프닝 레슨은 6개(설명 → 두기 → 계획 → 이름 → 첫 수 → 설명 없이 복습)
-for (const l of lessons) { const n = l.steps().length, min = l.stage === "s6" ? 6 : 5; if (n < min) fails.push(l.id + ": 스텝 " + n + "개 — 레슨 분량이 너무 짧음(" + min + "개 이상)"); }
-if (lessons.length < 85) fails.push("레슨 수가 줄었음: " + lessons.length + "개(85개 이상이어야 함)");
+for (const l of lessons) { const n = l.steps().length, min = l.stage === REPERTOIRE_STAGE ? 7 : 8; if (n < min) fails.push(l.id + ": 스텝 " + n + "개 — 레슨 분량이 너무 짧음(" + min + "개 이상)"); }
+if (lessons.length < 130) fails.push("레슨 수가 줄었음: " + lessons.length + "개(130개 이상이어야 함)");
 // 오프닝 레슨: 수마다 설명이 있고(MEC 또는 보충), 이름 맞히기 보기가 서로 다르며 정답이 그 오프닝 이름이다
-for (const l of lessons.filter((x) => x.stage === "s6")) {
+for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
   const st = l.steps(), mv = st.find((x) => x.kind === "move"), ch = st.find((x) => x.kind === "choice");
   if (!mv || !ch) { fails.push(l.id + ": 오프닝 레슨에 수 두기·이름 맞히기 스텝이 없음"); continue; }
   mv.line.forEach((g, j) => { if (!g.hint) fails.push(l.id + " 목표" + (j + 1) + ": 힌트 없음"); if (g.say.includes(t("이 오프닝의 다음 수를 두세요."))) fails.push(l.id + " 목표" + (j + 1) + ": MEC 설명이 없는 수 — 수순을 바꾸거나 보충 설명을 넣을 것"); });
@@ -108,7 +112,7 @@ for (const l of lessons.filter((x) => x.stage === "s6")) {
   const m = /export const OPENING_HERO = \{([\s\S]*?)\n\};/.exec(ui);
   if (!m) fails.push("app/lessons.jsx에서 OPENING_HERO를 찾지 못함");
   const hero = {}; if (m) for (const x of m[1].matchAll(/(\w+): \{ piece: "([PNBRQK])", color: "([wb])", sig: "([^"]+)", aim: "([a-h][1-8])" \}/g)) hero[x[1]] = { color: x[3], sig: x[4] };
-  for (const l of lessons.filter((x) => x.stage === "s6")) {
+  for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
     const h = hero[l.motif]; if (!h) { fails.push(l.id + ": OPENING_HERO에 " + l.motif + " 없음"); continue; }
     if (!String(l.line).split(" ").some((san, i) => san.replace(/[+#]/g, "") === h.sig && (i % 2 ? "b" : "w") === h.color)) fails.push(l.id + ": 대표 수 " + h.sig + "가 수순에 없음");
   }
