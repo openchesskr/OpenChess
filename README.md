@@ -86,6 +86,33 @@
 
 ## 버전 기록
 
+### OpenChess v0.7.8 - 2026/11/16
+
+테마: 학습 탭 전면 개편(수 등급 상징 11단계 레슨 트리·133개 레슨·테마 퍼즐 추가 학습·친구 진척도), 분석 탭 집중 분석 전체 통계·커뮤니티 블록, 소셜·플레이·도감·설정 탭 다듬기, /about 개편. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`seedChapters` 레슨 보상 46개 추가, `theme_puzzles` 표·`theme_puzzle_record`·`theme_puzzle_read`, `explorer_games` 축적, `puzzle_rating_leaderboard`, 플레이 퀘스트 장 잠금). **Vercel 환경변수**: `YOUTUBE_API_KEY`(영상), `TAVILY_API_KEY`(웹 검색) — Production과 Preview 범위 모두.
+
+**기능**
+- 레슨 트리 재설계(`lib/lessons/curriculum.js` `STAGES`·`ORDER`, `lib/lessons/curriculumMore.js`): 수 등급 상징대로 11단계(이론=규칙·기초 이론 → 좋음=좋은 습관 → 부정확 → 실수=흔한 실수 → 블런더=치명적인 실수·약점 → 놓친 수 → 우수=기본 전술 → 최선=전략 → 유일=정확한 엔드게임 → 탁월=희생·메이트 패턴 → 오프닝 레파토리). 오프닝 레슨은 항상 마지막 단계(`REPERTOIRE_STAGE`), 이론 수 아이콘 + 금빛 파셋 왕관 변형 배지. 새 레슨 46개(8스텝), 기존 레슨에 확인 문제(`MORE_EXTRA`)·설명 없이 다시 풀기(`withReview`) — 133개·1034스텝. 레슨 id 유지(진도·보상 이월).
+- 학습 탭 추가 학습 = 테마 퍼즐(`app/themePuzzles.jsx`, `lib/lessonPuzzles.js`): 최근 본 레슨(이 기기, 8개) → Lichess 퍼즐 테마 + OpenChess 태그. `api/lichess.js?puzzles=1`(`api/_lib/themePuzzles.js`)이 허용 테마만 받아 `theme_puzzles`에 쌓고(테마당 40개까지 Lichess `/api/puzzle/next`에서 보충, chess.js로 기보 재생·정답 검증) 무작위로 답한다. OpenChess 공개 퍼즐은 정답을 끝까지 두어 메이트 패턴(백랭크·스머더드·아라비안·보덴, `mateShape`)과 오프닝 계열(`openingOfGame`)을 분석해 매칭.
+- 레슨 경로 친구 진척도: 공개 프로필 `pub.lessonsDone`으로 친구의 다음 레슨 옆에 프로필 사진 스택(최대 3 + N).
+- 분석 탭: 수 키워드 다중 표시(`autoMoveKeywords`), 탁월·실수·블런더·체크메이트 수순 블록의 "+ 퍼즐 생성", 성장 분석 백그라운드 수집·완료 연출. 집중 분석 전체 통계(`api/lichess.js?games=1`, `explorer_games`), 해설 커뮤니티 블록(웹 검색 Tavily `api/youtube.js?web=1` + YouTube).
+- 플레이 탭: 플레이 퀘스트 3장(앞 장 완료 시 열림, `economy_claim_play_quest` 장 잠금), 데크메이트(출시 예정) 블록.
+- 소셜 탭: 퍼즐 XP·퍼즐 레이팅 리더보드(`puzzle_rating_leaderboard`)·친구 퍼즐 현황, 게시물 ⋮ 메뉴(신고·관심 없음·삭제), 퍼즐 라인 편집 실시간 엔진·후보 수.
+
+**UI**
+- 학습 탭: 완료 체크를 마름모 상단 가운데로, 레슨 영역 높이 증가, 우측은 실수 복습·추가 학습만(되감기 시계 아이콘·황동색 / 호두나무색), 두 블록 모두 보드를 맨 위 전체 폭으로.
+- 소셜 탭: 티어 박스 팔각형(티어 여정 디자인), 머리줄 2줄, 게시물 보드 축소·날짜·키워드 박스, 퍼즐 테마별 배경 애니메이션. 플레이 탭 2×2 정렬·일일 퀘스트 완료 보상 코인 확대·"완료" 문구. 도감 탭 /book 한 주소·영역 높이·해금 수 표기·업적 황동 스크롤바·업적 한국어 표기. 수 블록 높이 통일.
+- /about: OpenChess O·P·E·N 히어로, CH.NEW 위치, 언어별 스크린샷(`npm run about:shots`), 배경 파셋 입자·글리치.
+
+**UX**
+- 코치는 눌러야 말풍선("<다음 레슨명>에 대해 배워보세요!"), 6초 뒤 닫힘. 설정 탭 차단 목록을 블록 안에서 + 더보기(모바일 전체 화면·데스크톱 도킹 창). 버전 기록 852문장 문어체 정리·5개 언어 번역.
+
+**버그 수정**
+- BUG-177(P1, 탁월 판정 깜빡임), BUG-178(P1, 서버리스 함수 14개로 배포 실패), BUG-179(P1, 퍼즐 열면 React #300), BUG-180·181(수 키워드 기준 의존·퀘스트 배지), BUG-182~188, BUG-189(긴 대국에서 커뮤니티 블록 사라짐), BUG-190(서버 키 누락 시 무표시 — 개발자에게 빠진 환경변수 표시).
+
+**시스템**
+- prebuild 검사 추가: `check-serverless-count`(12개 한도), `check-hook-order`, `check-explorer-games`, `check-web-search`, `check-about-shots`, `check-theme-puzzles`. `check-lessons`(11단계·오프닝 마지막·130개 이상·일반 8/오프닝 7스텝) 갱신.
+- `package.json` 0.7.8, 새 문구 5개 언어 번역(학습 탭 1,005개 포함).
+
 ### OpenChess v0.7.7 - 2026/11/15
 
 테마: 새 게시물 작성기(퍼즐·유산·대국), 게임 끝내기 퍼즐 테마와 체크메이트 장면 중복 방지, 레슨 대폭 확장(42 → 87개), 렉·엔진 끊김·모바일 성장 분석 수정, 도감 첫 화면 제거. **배포 순서: `supabase-setup.sql`을 먼저 실행한 뒤 코드를 배포한다**(`seedChapters` 레슨 보상 45개 추가, `puzzle_share_put_verified`·공개 전환의 게임 끝내기 중복 재검사와 advisory lock, mateKey 인덱스).
