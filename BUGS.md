@@ -10,6 +10,8 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-194 | P2 | SETUP_OAUTH.md의 Apple 설정 안내가 틀림 — "Supabase가 Team ID·Key ID·.p8로 매번 자동 서명하니 갱신 불필요"라고 적었지만, 대시보드에는 서명한 JWT(Secret Key for OAuth)를 넣고 이 값은 Apple 규칙상 최대 6개월 뒤 만료됨. 안내대로 하면 6개월 뒤 Apple 로그인만 조용히 끊김. Facebook 안내도 Meta의 바뀐 앱 만들기 화면(사용 사례)·email 권한·데이터 삭제 URL이 빠짐 | 수정 완료(v0.7.9) · 문서 정정, 만료 5개월 전 알림 체크리스트 추가 | 2026-11-17 |
+| BUG-193 | P2 | 로그인 창의 Apple·Facebook 버튼이 Supabase에서 해당 제공자를 켜지 않았는데도 항상 보여, 누르면 GoTrue 400 JSON("Unsupported provider: provider is not enabled") 화면으로 사이트를 벗어남. 계정 센터의 연결하기 버튼도 같음 | 수정 완료(v0.7.9) · /auth/v1/settings의 external 값으로 켜진 제공자만 표시 · `check-oauth-providers` | 2026-11-17 |
 | BUG-192 | P2 | 데스크톱(폭 900px 이상·마우스)에서 로그인하지 않은 채 헤더 검색 버튼을 누르면 아무 창도 열리지 않음 — 검색 버튼은 dock.enabled면 도킹 창으로 열지만 도킹 창 영역(DockHost)은 로그인했을 때만 그려짐. v0.7.8에서도 같음(기존 버그) | 기록함 · 수정 여부 결정 필요(로그아웃이면 기존 전체 화면 검색 창으로 열면 됨) | 2026-11-17 |
 | BUG-191 | P2 | 오프닝 데이터 갱신 도구(npm run refresh)가 항상 "SNAP 라인을 찾지 못함"으로 멈춤 — v0.6.0 App.jsx 분할로 SNAP이 common.jsx(export const)로 옮겨졌는데 도구는 계속 src/App.jsx의 'const SNAP = ' 줄을 찾음. 안전장치 덕에 데이터 손상은 없고 갱신만 불가 | 수정 완료(v0.7.9) · SNAP을 src/data/snapTree.js(별도 청크)로 옮기고 도구·검사 2개를 그 파일로 · `check-bundle-split`이 위치·형식 검사 | 2026-11-17 |
 | BUG-183 | P2 | /about 버전 기록의 v0.6.0 이전 852문장이 다른 언어에서 한국어 그대로 나옴(MILKU·KOKOA 코치 이름표, '평가 바' 등 소개 본문 일부 포함). v0.7.4에서 문장 끝을 기계적으로 "~했습니다"로 바꾸며 번역 키가 끊기고 "수락 시 바로 입장 추가했습니다" 같은 어색한 문장이 생김 | 수정 완료(v0.7.8) · 852문장 자연스러운 문어체로 다시 쓰고 5개 언어 번역, changelog.js 공지 문구도 함께 · 안전장치: AboutPage·AboutKit·changelog.js를 core-files.json에 넣어 check-i18n이 100% 번역을, check-lang-leaks가 t() 밖 한글을 빌드 전에 막음 | 2026-11-16 |
@@ -2009,4 +2011,18 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **재현**: 폭 1280px 브라우저, 로그인하지 않은 상태로 `/analysis` → 헤더 돋보기 버튼 클릭 → 아무 창도 뜨지 않음(콘솔 오류 없음). 폭 390px(모바일)에서는 전체 화면 검색 창이 정상으로 열림.
 - **원인**: 검색 버튼(`src/App.jsx` 헤더)은 `dock.enabled`(데스크톱·마우스)면 `dock.open({ type: "search" })`로 도킹 창을 열지만, 도킹 창 영역은 `{user && dock.enabled && ... <DockHost/>}`로 로그인했을 때만 그려짐. 열린 창 목록에만 추가되고 화면에는 나오지 않음.
 - **수정 방향(제안)**: 검색 버튼 조건을 `user && dock.enabled`로 바꿔 로그아웃이면 기존 전체 화면 검색 창(`searchOpen`)을 쓰게 함. 친구·채팅 버튼은 로그인했을 때만 보여 영향 없음.
+
+### BUG-193 · [P2] 켜지 않은 소셜 로그인 버튼이 오류 화면으로 보냄
+- **상태**: 수정 완료(v0.7.9)
+- **발견**: 사용자가 "Apple·Facebook OAuth를 아직 설정하지 않았다"고 알려 준 뒤 로그인 코드를 점검하다 발견.
+- **원인**: 로그인 창(`src/app/shell.jsx` AuthModal)과 계정 센터(`src/app/settings.jsx`)가 Google·Apple·Facebook 버튼을 고정으로 그림. Supabase에서 켜지 않은 제공자로 `/auth/v1/authorize`에 가면 GoTrue가 리다이렉트 대신 400 JSON을 돌려줘, 사용자는 사이트를 벗어나 오류 문구만 보게 됨(v0.4.3부터 운영 사이트에 노출).
+- **수정 내용**: `src/lib/authProviders.js` — GoTrue 공개 설정(`/auth/v1/settings`, anon 키)의 `external.<provider>`로 켜진 제공자만 버튼으로. 불러오는 동안은 Google만, 설정을 못 읽으면(오프라인 등) 예전처럼 모두. 계정 센터는 켜진 제공자 + 이미 연결된 제공자(해제할 수 있게). 대시보드에서 켜면 배포 없이 버튼이 나타남.
+- **안전장치**: `scripts/check-oauth-providers.mjs`(prebuild) — 응답 해석·표시 규칙 단위 시험과, 로그인 버튼·계정 센터 목록이 켜짐 여부로 가려 그려지는지 소스 검사.
+- **검증**: 가짜 Supabase 주소로 빌드하고 `/auth/v1/settings` 응답을 브라우저에서 바꿔 끼워 확인 — Google만 켜짐 → Google 버튼만, 셋 다 켜짐 → 세 버튼, 응답 500 → 세 버튼(예전 동작). 콘솔 오류 없음. `npm run build` 통과.
+
+### BUG-194 · [P2] OAuth 설정 가이드의 Apple 키 만료 안내 오류
+- **상태**: 수정 완료(v0.7.9)
+- **원인**: v0.4.3에 쓴 `SETUP_OAUTH.md`가 Supabase Apple 설정을 "4가지 값을 넣으면 Supabase가 매번 서명"한다고 설명. 실제 대시보드는 미리 서명한 JWT(Secret Key for OAuth)를 받고, Apple 규칙상 이 JWT는 최대 6개월 뒤 만료됨. 안내를 따르면 갱신 계획 없이 6개월 뒤 Apple 로그인만 끊긴다. Facebook 절차도 Meta 개발자 화면 개편(앱 유형 → 사용 사례) 이전 기준이고 `email` 권한·데이터 삭제 URL이 빠져 있었음.
+- **수정 내용**: 문서 정정(Client IDs·Secret Key JWT·6개월 만료와 달력 알림, 이름은 첫 로그인 때만·이메일 가리기 주소 안내, Facebook 사용 사례·email 권한·개인정보처리방침/약관/데이터 삭제 URL·게시 절차), 체크리스트 갱신.
+- **한계**: 이 환경에서 supabase.com·Meta 문서에 접속할 수 없어 공식 문서를 직접 대조하지 못함. 대시보드 칸 이름이 다르면 화면 안내를 우선하도록 문서에 적어 둠.
 
