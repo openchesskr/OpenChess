@@ -10,6 +10,8 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 
 | ID | 등급 | 제목 | 상태 | 발견일 |
 |---|---|---|---|---|
+| BUG-192 | P2 | 데스크톱(폭 900px 이상·마우스)에서 로그인하지 않은 채 헤더 검색 버튼을 누르면 아무 창도 열리지 않음 — 검색 버튼은 dock.enabled면 도킹 창으로 열지만 도킹 창 영역(DockHost)은 로그인했을 때만 그려짐. v0.7.8에서도 같음(기존 버그) | 기록함 · 수정 여부 결정 필요(로그아웃이면 기존 전체 화면 검색 창으로 열면 됨) | 2026-11-17 |
+| BUG-191 | P2 | 오프닝 데이터 갱신 도구(npm run refresh)가 항상 "SNAP 라인을 찾지 못함"으로 멈춤 — v0.6.0 App.jsx 분할로 SNAP이 common.jsx(export const)로 옮겨졌는데 도구는 계속 src/App.jsx의 'const SNAP = ' 줄을 찾음. 안전장치 덕에 데이터 손상은 없고 갱신만 불가 | 수정 완료(v0.7.9) · SNAP을 src/data/snapTree.js(별도 청크)로 옮기고 도구·검사 2개를 그 파일로 · `check-bundle-split`이 위치·형식 검사 | 2026-11-17 |
 | BUG-183 | P2 | /about 버전 기록의 v0.6.0 이전 852문장이 다른 언어에서 한국어 그대로 나옴(MILKU·KOKOA 코치 이름표, '평가 바' 등 소개 본문 일부 포함). v0.7.4에서 문장 끝을 기계적으로 "~했습니다"로 바꾸며 번역 키가 끊기고 "수락 시 바로 입장 추가했습니다" 같은 어색한 문장이 생김 | 수정 완료(v0.7.8) · 852문장 자연스러운 문어체로 다시 쓰고 5개 언어 번역, changelog.js 공지 문구도 함께 · 안전장치: AboutPage·AboutKit·changelog.js를 core-files.json에 넣어 check-i18n이 100% 번역을, check-lang-leaks가 t() 밖 한글을 빌드 전에 막음 | 2026-11-16 |
 | BUG-184 | P3 | /about 탭 소개 바의 아이콘·이름이 실제 하단 탭바와 다름(설정=렌치, 분석=막대 차트, 학습=클립보드, '퍼즐' 탭 이름은 v0.7.6에 '소셜'로 바뀜) | 수정 완료(v0.7.8) · 실제 탭바와 같은 analytics·Play·groups·school·Library·Settings 아이콘과 '소셜' 이름 | 2026-11-16 |
 | BUG-185 | P3 | /about 분석·설정 챕터의 엔진 설명이 옛 정보(Stockfish 18, 18 Lite, 17.1만 언급 — 지금은 19·19 Lite 포함 5종) | 수정 완료(v0.7.8) · 현재 엔진 목록·리뷰 속도 3단계로 고침 | 2026-11-16 |
@@ -1992,3 +1994,19 @@ OpenChess 개발 과정에서 발견된 모든 버그를 기록한다. 규칙은
 - **원인**: 503(not_configured)이면 블록을 조용히 숨기는 설계라, 키 누락(예: 환경변수가 Production 범위에만 있어 프리뷰 배포에 없음)을 화면에서 알 수 없었음.
 - **수정 내용**: 개발자·공동개발자에게는 빠진 환경변수 이름과 조치 방법을 블록 안에 표시. 일반 사용자에게는 그대로 숨김.
 - **안전장치**: `check-web-search`·`check-youtube-search`.
+
+### BUG-191 · [P2] 오프닝 데이터 갱신 도구가 항상 멈춤
+- **상태**: 수정 완료(v0.7.9)
+- **발견**: v0.7.9 번들 분할 작업 중 SNAP(오프닝 이론 트리 스냅샷)을 읽고 쓰는 곳을 찾다가 발견.
+- **원인**: `scripts/refresh-data.mjs`가 `src/App.jsx`에서 `const SNAP = ` 로 시작하는 줄을 찾아 고쳐 쓰는데, v0.6.0 App.jsx 분할 때 SNAP이 `src/app/common.jsx`로 옮겨지고 `export const SNAP = `로 바뀜. 도구는 줄을 못 찾아 "기존 스냅샷을 읽지 못해 안전 비교 불가"로 저장을 막음(fail-closed라 데이터 손상은 없음, 갱신만 불가). 검사 스크립트 2개(`check-book-transposition`·`check-dex-tree-layout`)는 앱 소스 전체에서 문자열로 찾아 영향이 없었음.
+- **수정 내용**: SNAP을 `src/data/snapTree.js`로 옮기고(첫 화면 번들에서 별도 청크 `data-snap`으로 분리, 재방문자 캐시 유지) `common.jsx`는 다시 내보내기만. `refresh-data.mjs`는 `SNAP_FILE` 상수 하나로 위치를 두고 `export const`/`const` 둘 다 인식. 두 검사는 데이터 모듈을 직접 import.
+- **안전장치**: `check-bundle-split`(prebuild)이 snapTree.js에 `export const SNAP = /*__DATA__*/ {...};` 한 줄이 정확히 하나 있고 JSON으로 읽히는지, common.jsx에 데이터가 다시 들어오지 않았는지, refresh-data의 `SNAP_FILE`이 이 파일인지, vite 청크 규칙이 있는지 검사.
+- **검증**: refresh-data의 읽기·쓰기 함수와 같은 방식(마커 뒤 JSON 파싱)으로 snapTree.js 한 줄을 읽어 3,346개 블록 트리 확인, `check-book-transposition`·`check-dex-tree-layout` 통과, `npm run build` 통과.
+
+### BUG-192 · [P2] 로그아웃 상태의 데스크톱에서 헤더 검색이 열리지 않음
+- **상태**: 기록함 · 수정 여부 결정 필요
+- **발견**: v0.7.9 번들 분할 후 지연 로딩 창을 브라우저로 점검하다 발견. v0.7.8(main) 빌드에서도 똑같이 재현돼 기존 버그.
+- **재현**: 폭 1280px 브라우저, 로그인하지 않은 상태로 `/analysis` → 헤더 돋보기 버튼 클릭 → 아무 창도 뜨지 않음(콘솔 오류 없음). 폭 390px(모바일)에서는 전체 화면 검색 창이 정상으로 열림.
+- **원인**: 검색 버튼(`src/App.jsx` 헤더)은 `dock.enabled`(데스크톱·마우스)면 `dock.open({ type: "search" })`로 도킹 창을 열지만, 도킹 창 영역은 `{user && dock.enabled && ... <DockHost/>}`로 로그인했을 때만 그려짐. 열린 창 목록에만 추가되고 화면에는 나오지 않음.
+- **수정 방향(제안)**: 검색 버튼 조건을 `user && dock.enabled`로 바꿔 로그아웃이면 기존 전체 화면 검색 창(`searchOpen`)을 쓰게 함. 친구·채팅 버튼은 로그인했을 때만 보여 영향 없음.
+

@@ -32,6 +32,7 @@ import { NavBtn } from "../components/uiPrimitives.jsx";
 import { Mascot, Board, COORD_GRID_CSS, COORD_NG_BG, COORD_OK_BG, DEFAULT_TIME_CONTROL, END_FX_GAP_MS, EngineContext, GAME_END_COLOR, GAME_END_MS, GameEndFx, MINIGAME_PLACEMENT, MgRatingChip, MOVE_FX_MS, moveFxKindOn, MgOppBadge, MinigamePrefsContext, MoveClassFx, ONLINE_WINDOW_MS, OnlineDot, PVP_GAME_TYPE, TIME_CONTROLS, VisualPrefsContext, fetchMinigameStats, fmtClock, fmtFull, friendEdges, gradeMoveKindConfirmed, inviteFailText, minigameBestFromServer, minigameBestLabel, minigameRecordText, presenceLabel, singleRecaptureCheck, timeControlFromKey, useNarrow, usePresenceMap, useRealtimeTable, usersProfiles, tcCatLabel, PIECE_KOR } from "./common.jsx";
 
 import { t, tx } from "../lib/i18n.js";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
 // (v0.5.5, 사용자 요청) 무한 체크메이트 게임의 수 등급 이펙트용 — 분석 탭 자유 탐색 채점(아래 AnalysisTab/리뷰의 grade)과 같은
 // 규칙으로 탁월·유일·최선까지 가린다(MultiPV 2로 2순위와의 차이를 봐야 "유일한 수"를 알 수 있다). 빠른 게임이라 movetime을
 // 짧게 잡고, 둔 수가 체크메이트면 둔 뒤 평가는 생략한다(엔진은 메이트 포지션에 수를 내지 못한다).
@@ -598,13 +599,9 @@ const MG_GOLD = "#A97A2C";
 // 필요하지 않아 걷어냈다.)
 // gameType 값은 아래 COORD_GAME_TYPE/KNIGHT_GAME_TYPE 상수와 반드시 같아야 한다 — 이 배열이 그
 // 상수들보다 먼저(모듈 로드 시점에) 평가되므로 상수 참조 대신 리터럴 문자열로 직접 적어 둔다.
-export const PLAY_SPECIAL_GAMES = [
-  { key: "coord-race", gameType: "coord", name: t("좌표 인지 게임"), desc: t("무작위 좌표가 뜨면 상대보다 먼저 그 칸 클릭. 실시간 대전"), Icon: CoordCrosshairIcon, accent: T.brilliant, Component: CoordRaceGame },
-  { key: "knight-race", gameType: "knight", name: t("나이트 레이스"), desc: t("나이트로 목표 칸에 먼저 도달. 7전 4선승, 라운드마다 방해 칸 증가"), Icon: Route, accent: T.only, Component: KnightRaceGame },
-  // (v0.5.3 신규, 사용자 설계) 3호·4호 — 혼자 풀기(러시아워)·봇·실시간 PvP·친구 도전 모두 지원.
-  { key: "rush-hour", gameType: "rush", name: t("백랭크 러시아워"), desc: t("엉킨 기물 사이에서 룩을 탈출시켜 백랭크 메이트. 비켜 주거나 희생으로 수비 기물 유인"), Icon: Puzzle, accent: "#B7793A", Component: RushHourGame, isNew: true },
-  { key: "attack-mode", gameType: "attack", name: t("무한 체크메이트 게임"), desc: t("3분 동안 강제 메이트 기회를 더 많이 성공시키는 쪽 승리. 짧은 메이트일수록 높은 등급"), Icon: Swords, accent: "#C2453A", Component: AttackModeGame, isNew: true },
-];
+// (v0.7.9) 이름표(PLAY_SPECIAL_GAMES)는 playSpecialGames.jsx로 옮겼다(첫 화면 번들에서 플레이 탭을 떼어 내려고). 여기서는 gameType → 게임 화면만 잇는다.
+export { PLAY_SPECIAL_GAMES };
+const SPECIAL_GAME_COMPONENTS = { coord: CoordRaceGame, knight: KnightRaceGame, rush: RushHourGame, attack: AttackModeGame };
 // (v0.5.1 리디자인, 사용자 요청) 미니게임을 Play 탭 안 좁은 카드 하나가 아니라 "별도의 화면"에서,
 // 뷰포트 전체를 다 쓰며 플레이할 수 있게 한다 — 예전엔 사이트 헤더·하단 탭바가 항상 함께 보이는
 // 좁은 스크롤 영역 안에 평범한 카드로 그려져, 내 보드·상대 보드를 세로로 쌓으면 필연적으로 스크롤이
@@ -754,7 +751,7 @@ function PlaySpecialGames({ myUid, onOpenProfile, resume, onConsumeResume, myRat
   }, [resume, onConsumeResume]);
   const active = PLAY_SPECIAL_GAMES.find((g) => g.key === activeKey) || null;
   if (active) {
-    const Game = active.Component;
+    const Game = SPECIAL_GAME_COMPONENTS[active.gameType];
     // (v0.5.7, BUG-025) 이미 같은 미니게임 준비 화면에 있을 때 도전장을 수락해도 새 대전으로 들어가도록, 재개할 대전마다 새로 마운트한다
     // (useMinigameMatch는 initialGame을 첫 마운트 때만 읽는다).
     return <Game key={resumeGame ? "resume-" + resumeGame.id : "lobby"} myUid={myUid} onExit={() => { setActiveKey(null); setResumeGame(null); }} onOpenProfile={onOpenProfile} initialGame={resumeGame} myRating={myRating} canEditContent={canEditContent} />;
@@ -873,9 +870,6 @@ const MG_PING_MS = 4000;
 function MgCrosshair({ size, color = "#fff", flat }) {
   return <FacetCrosshair size={size} color={color} style={{ filter: flat ? undefined : "drop-shadow(0 1px 1.5px rgba(0,0,0,.55))" }} />;
 }
-// (v0.7.1) 좌표 인지 게임의 얼굴 아이콘 — 허브 카드·게임 보드에서 쓰던 조준경 그대로. lucide 아이콘과 같은 규격(size·color)이라 PLAY_SPECIAL_GAMES의
-// Icon 자리(로비 배너·모드 행·프로필 전적)에 그대로 들어간다. 글자색(currentColor)을 따르고 그림자는 뺀다.
-function CoordCrosshairIcon({ size = 24, color = "currentColor" }) { return <MgCrosshair size={size} color={color} flat />; }
 function MgCoordPings({ cellPx }) {
   const w = 100 / MG_STRIP.cols, h = 100 / MG_STRIP.rows;
   return (

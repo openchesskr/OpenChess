@@ -1,7 +1,6 @@
 import { setMasterNav } from "./lib/masterNav.js";
 import { normalizeReviewGame } from "./lib/reviewGame.js";
 import { AnalysisWithGrowth } from "./app/growthHome.jsx";
-import { MasterPage } from "./app/masterPage.jsx";
 import { parseMasterPath, masterPath, setMasterPageHandler } from "./lib/masterPages.js";
 import { setTitleNav } from "./lib/titleNav.js";
 import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
@@ -24,25 +23,20 @@ import { CONTENT, CoinIcon, DEFAULT_MOVE_FX_MODE, DEV_ACCOUNT, ENGINE_PROFILES, 
 import { rememberTabPlace, tabLastPath, tabLastScroll } from "./lib/tabMemory.js";
 import { initialTabForPath, lastTabStored, rememberLastTab, isPendingDeepLink, ALL_TITLE_IDS, AnnouncementModal, AuthModal, CC_LIVE, ChesscomGameToast, DailyPuzzleNoticeModal, DailyQuestClearedModal, GeoBackdrop, GlobalMinigameRematchBanner, GlobalPvpInviteBanner, HeaderProfileMenu, NewPasswordModal, NotificationBell, TABS, TAB_PATH, TierBadge, TierUpOverlay, UsernameSetupModal, authFromHash, authLogout, authRestore, ccFamilyCounts, dailyQuestQuestsValid, defaultEnginePref, familyCounts, findOpeningPathByName, genDailyQuest, isSameLocalDay, loadEnginePref, localKeyFor, parseOAuthError, parseOAuthHash, parseRecoveryHash, preloadMascotArt, progressSave, publishProfile, puzzleCreatorUsernames, puzzleLikeCounts, puzzleLikeToggle, puzzlePopularityScores, puzzleRepostCounts, puzzleRepostToggle, puzzleShareCounts, puzzleSolveCounts, puzzleSolveEventAdd, puzzleSolveInc, puzzleSolverAdd, puzzleSolversBatch, questOpeningCleared, questSlotLabel, refreshAccessToken, saveContent, saveEnginePref, store, tabFromPath, useDailyPuzzle, useEngine, useOpeningTreeAuto, economyGet, economyLineSolved, economyClaimQuest, economyClaimChapter, economyClaimPlayQuest, playQuestStatus, economyClaimNotification, economyGacha, economyDevSet, economyDevBonus } from "./app/shell.jsx";
 import { APP_VERSION } from "./app/changelog.js";
-import { PLAY_SPECIAL_GAMES, PlayPage } from "./app/play.jsx";
-import { ChatsModal, ChatWindow, FriendsModal, UserProfilePage, UserSearchModal } from "./app/social.jsx";
-import { ProfileEditSheet } from "./app/profileEdit.jsx";   // (v0.7.5) 새 프로필 편집(BUG-156)
+import { PLAY_SPECIAL_GAMES } from "./app/playSpecialGames.jsx";
 import { DockHost, useDockWindows } from "./components/DockWindows.jsx";
 import { BlockListDocked } from "./components/blockList.jsx";
 import { TierJourneyMap } from "./app/profile.jsx";
-import { LegacyActionsCtx, LegacyPostPage } from "./app/legacyFeed.jsx";
+import { LegacyActionsCtx } from "./app/legacyCtx.js";
 import { addPost, removePost, toggleSaved, normalizeSaved, parseLegacyPath, legacyPath } from "./lib/legacyPosts.js";
 import { applyPlayEvent, normalizePlayQuest, normalizeServerPlayQuest, unclaimedKeys, onPlayEvent } from "./lib/playQuest.js";
-import { ReviewPage } from "./app/review.jsx";
-import { AccountCenterModal, DeletionPendingModal, SettingsTab } from "./app/settings.jsx";
 import { AnalysisTab } from "./app/analysis.jsx";
-import { CollectionTab } from "./app/dex.jsx";
-import { PuzzleTab } from "./app/puzzle.jsx";
-import { LearnTab } from "./app/learn.jsx";
+// (v0.7.9 성능) 분석 탭(기본 첫 화면) 밖의 탭·창은 처음 열 때 받는다 — src/app/lazyScreens.jsx
+import { PlayPage, PuzzleTab, LearnTab, CollectionTab, SettingsTab, AccountCenterModal, DeletionPendingModal, ReviewPage, MasterPage, LegacyPostPage, ChatsModal, ChatWindow, FriendsModal, UserProfilePage, UserSearchModal, ProfileEditSheet, prefetchScreens } from "./app/lazyScreens.jsx";
 
 import { t, tx } from "./lib/i18n.js";
 import { dexEntryPath } from "./lib/dexRoutes.js";
-import { normalizeLessonState, markLessonDone, lessonSummary } from "./lib/lessons/progress.js";
+import { normalizeLessonState, markLessonDone, lessonSummary } from "./lib/lessons/state.js";   // (v0.7.9) 레슨 본문 없이 진도만
 export default function App() {
   const narrowHeader = useNarrow(480);
   const tinyHeader = useNarrow(345);   // 320px대 폰, 로고·간격을 더 줄이지 않으면 계정 칩이 화면 오른쪽 밖으로 밀려난다
@@ -50,6 +44,8 @@ export default function App() {
   const urlTabRef = useRef(typeof window !== "undefined" ? tabFromPath(window.location.pathname) : null);
   // (v0.7.5, 사용자 요청 — 새로고침 UX) 첫 렌더부터 맞는 탭(shell.jsx initialTabForPath): 탭 주소 → 그 탭, 퍼즐 딥링크 → 퍼즐, 그 밖 → 마지막으로 보던 탭.
   const [tab, setTab] = useState(() => (typeof window !== "undefined" ? initialTabForPath(window.location.pathname) : "analysis"));
+  // (v0.7.9 성능) 첫 화면이 뜬 뒤 쉬는 시간에 나머지 탭·창 파일을 미리 받아 둔다(지금 탭 먼저) — 탭을 눌러도 기다림이 없게.
+  useEffect(() => prefetchScreens({ store: "play", puzzle: "puzzle", learn: "learn", dex: "dex", set: "settings" }[tab]), []);   // eslint-disable-line react-hooks/exhaustive-deps
   const lastTabKnownRef = useRef(typeof window !== "undefined" && !!lastTabStored());   // 동기 저장된 마지막 탭이 있으면 늦게 오는 저장 상태(d.tab)로 다시 바꾸지 않는다
   useEffect(() => { rememberLastTab(tab); }, [tab]);
   // 서버 응답을 기다려야 화면이 정해지는 딥링크(/puzzle/번호-라인·/review…·초대 링크)는 그동안 엉뚱한 탭 대신 불러오는 중 화면을 덮는다

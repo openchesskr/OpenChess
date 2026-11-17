@@ -5,12 +5,12 @@ import { sansToFen } from "./chessRules.js";
 import { bookPositionKey, isEcoBookPosition } from "./ecoBook.js";
 import { ecoHash } from "./ecoHash.js";
 import { PERF, countSideMoves, bookNodesOfLine, openingTermFromLine, timeProfile, pooledPerformance } from "./performanceRating.js";
-import { GROWTH_RECENT_GAMES } from "./recentGames.js";
+import { GROWTH_RECENT_GAMES, RECENT_PERF_MIN_GAMES } from "./recentGames.js";
 import PERF_CURVE from "../data/performanceCurve.json";
 import OPENING_STRENGTH from "../data/openingStrength.json";
 
 export const RECENT_PERF_N = GROWTH_RECENT_GAMES;   // 합산할 최근 대국 수 = 성장 분석이 자동 리뷰하는 최근 5판
-export const RECENT_PERF_MIN_GAMES = 3; // 이보다 적게 합쳐진 값은 보여주지 않는다, 한두 판은 오차가 너무 크다
+export { RECENT_PERF_MIN_GAMES };   // (v0.7.9) 값은 recentGames.js에 둔다(화면이 이 모듈 없이 쓰도록)
 
 // 분석된 대국 하나 → 합산 입력. moves = analyzeGame 결과의 moves(양 진영), mineWhite = 내가 백인지, game = { timeClass, white, black, … }.
 export function sidePerfInput(moves, mineWhite, game, curve = PERF_CURVE, strength = OPENING_STRENGTH) {

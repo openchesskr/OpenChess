@@ -21,7 +21,7 @@ import { BestMoveJumpButton } from "../components/uiPrimitives.jsx";
 import { ALNUM, ANALYSIS_ENGINE_IDS, AnimatedMove, AppleLogo, CONTENT, CoinIcon, DEFAULT_QUEST_OPENINGS, ENGINE_PROFILES, FacebookLogo, isConstrainedDevice, FadeIn, GoogleG, MASCOT_ART, Mascot, MascotBubble, MgOppBadge, SNAP, SequenceBar, TIME_CLASS_LABEL, OPENING_FAMILIES, ALL_TITLE_IDS as _ALL_TITLE_IDS, titleDef, titleNameText, seriesLabelText, TitleBadge, fetchChesscomProfile, fetchLichess, fxEase, hasBatchim, isBookMoveAt, livePuzzleName, mergeDevAdds, notifySetResult, openingNameOf, questLabel, questLabelNode, questOpeningMovesText, questOpeningSide, relTime, resolveDailyPuzzleCached, roleIcon, seedRand, snapNode, solveCountText, timeControlFromKey, todayStr, useNarrow, useRealtimeTable, usersProfiles, tcCatLabel } from "./common.jsx";
 import { CHANGELOG } from "./changelog.js";
 import { PublicProfileStats } from "./profile.jsx";
-import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
 
 import { t, tx } from "../lib/i18n.js";
 import { lichessForegroundBusy, whenLichessIdle } from "../lib/lichessApi.js";

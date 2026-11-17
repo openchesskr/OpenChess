@@ -17,7 +17,7 @@ import { PieceGlyph, TierPieceGlyph } from "../components/pieces.jsx";
 import { tierFromXp, TIER_STATIONS, TIER_COLORS, tierGlowHex } from "../lib/tierSystem.js";
 import { createPortal } from "react-dom";
 import { VisualPrefsContext, MoveClassFx, MOVE_FX, MOVE_FX_MS, moveFxKindOn, ChesscomLogo, ClickInfoBadge, LEGACY_BLOCK_BTN_STYLE, LEGACY_FONT, LEGACY_TILE_FLEX, LEGACY_TYPES, LegacyBlockDecor, LegacyStoneTile, MINIGAME_PLACEMENT, MaterialIcon, PuzzleCard, REVIEW_RESULT_CACHE_VERSION, SolvedPuzzlesBlock, TIME_CLASS_LABEL, TierStatPill, fetchChesscomProfile, isPlacedStat, tcCatLabel, fetchMinigameStats, fmtFull, legacyBaseKey, legacyMoveLabel, minigameBestFromServer, minigameBestLabel, minigameRecordText, puzzleFetch, puzzleNo, reviewGameKey, snapNode, useBoardSize, useChessCom, useNarrow } from "./common.jsx";
-import { PLAY_SPECIAL_GAMES } from "./play.jsx";
+import { PLAY_SPECIAL_GAMES } from "./playSpecialGames.jsx";
 import TierJourney from "../components/tierJourney.jsx";
 import { GameFilterPills, GameRecordSummary, OpenChessGameHistory, RatingHistoryChart, RecentGamesList } from "./gameHistory.jsx";
 import { CHESS_RATING_CATS, TC_KEY_CAT } from "../lib/chessRating.js";

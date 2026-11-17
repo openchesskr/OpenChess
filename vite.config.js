@@ -28,6 +28,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // (v0.7.9 성능) 오프닝 이론 트리 스냅샷(약 650KB)은 앱 코드와 다른 파일로 — 배포마다 바뀌는 index 파일과 달리 거의 안 바뀌어 브라우저 캐시에 남는다.
+          if (/[\\/]src[\\/]data[\\/]snapTree\.js$/.test(id)) return "data-snap";
           if (!id.includes("node_modules")) return undefined;
           if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
           if (id.includes("node_modules/framer-motion") || id.includes("node_modules/motion-")) return "vendor-motion";

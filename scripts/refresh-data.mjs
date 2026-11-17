@@ -34,15 +34,19 @@ const SINCE = sinceParam(STATS_WINDOW_MONTHS);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// src/App.jsx 에 인라인된 "const SNAP = ...DATA 마커... {...};" 블록을 최신 데이터로 교체.
+// src/data/snapTree.js 의 "export const SNAP = ...DATA 마커... {...};" 한 줄을 최신 데이터로 교체.
+// (v0.7.9, BUG-191) 예전엔 src/App.jsx 의 "const SNAP = " 줄을 찾았는데, v0.6.0 App.jsx 분할로 SNAP이 common.jsx(export const)로 옮겨진 뒤
+// 이 도구가 항상 "찾지 못함"으로 멈췄다. 지금은 위치를 SNAP_FILE 하나로 두고, check-snap-tree(prebuild)가 이 파일·마커를 검사한다.
 // 앱은 src/data/openings.json 을 런타임에 읽지 않고 이 인라인 블록만 사용하므로,
 // 이 동기화가 없으면 refresh 를 아무리 돌려도 화면에는 절대 반영되지 않는다(과거 버그의 원인).
 // Windows 체크아웃 시 CRLF로 바뀌어도(core.autocrlf) 안전하게 파싱되도록 \r\n/\n 모두 처리.
+const SNAP_FILE = "src/data/snapTree.js";
+const isSnapLine = (l) => /^(export )?const SNAP = /.test(l);
 function readAppSnap() {
-  const src = readFileSync("src/App.jsx", "utf8");
+  const src = readFileSync(SNAP_FILE, "utf8");
   const lines = src.split(/\r?\n/);
-  const idx = lines.findIndex((l) => l.startsWith("const SNAP = "));
-  if (idx === -1) return { error: "src/App.jsx 에서 'const SNAP = ' 라인을 찾지 못함" };
+  const idx = lines.findIndex(isSnapLine);
+  if (idx === -1) return { error: SNAP_FILE + " 에서 'export const SNAP = ' 라인을 찾지 못함" };
   const marker = "/*__DATA__*/ ";
   const mi = lines[idx].indexOf(marker);
   if (mi === -1) return { error: "/*__DATA__*/ 마커를 찾지 못함" };
@@ -50,11 +54,11 @@ function readAppSnap() {
   try { return { data: JSON.parse(jsonPart) }; } catch (e) { return { error: "SNAP JSON 파싱 실패: " + e.message }; }
 }
 function injectIntoApp(data) {
-  const appPath = "src/App.jsx";
+  const appPath = SNAP_FILE;
   const src = readFileSync(appPath, "utf8");
   const lines = src.split(/\r?\n/);
-  const idx = lines.findIndex((l) => l.startsWith("const SNAP = "));
-  if (idx === -1) { console.error("경고: src/App.jsx 에서 'const SNAP = ' 라인을 찾지 못해 인라인 동기화를 건너뜀"); return; }
+  const idx = lines.findIndex(isSnapLine);
+  if (idx === -1) { console.error("경고: " + SNAP_FILE + " 에서 'export const SNAP = ' 라인을 찾지 못해 동기화를 건너뜀"); return; }
   const marker = "/*__DATA__*/ ";
   const mi = lines[idx].indexOf(marker);
   if (mi === -1) { console.error("경고: /*__DATA__*/ 마커를 찾지 못해 인라인 동기화를 건너뜀"); return; }
@@ -72,7 +76,7 @@ function guardedSave(snapshot, { label }) {
     const baseline = readAppSnap();
     if (baseline.error) {
       console.error(
-        `중단(${label}): 기존 src/App.jsx 스냅샷을 읽지 못해 안전 비교를 할 수 없습니다 (${baseline.error}). ` +
+        `중단(${label}): 기존 ${SNAP_FILE} 스냅샷을 읽지 못해 안전 비교를 할 수 없습니다 (${baseline.error}). ` +
         `데이터 유실을 막기 위해 저장을 건너뜁니다. 정말로 이 결과로 덮어쓰려면 FORCE=1 환경변수를 설정하고 다시 실행하세요.`
       );
       return false;
@@ -217,6 +221,6 @@ async function main() {
   const finalSnapshot = { tree, roots: ["e4", "d4"], maxPly: MAX_PLY };
   const saved = guardedSave(finalSnapshot, { label: "최종 저장" });
   if (!saved) { console.error("실패: 데이터가 저장되지 않았습니다. 위 원인(주로 Lichess 응답 오류)을 먼저 해결하세요."); process.exit(1); }
-  console.error("DONE:", Object.keys(tree).length, "nodes,", count, "moves -> src/data/openings.json + src/App.jsx 인라인 동기화 완료");
+  console.error("DONE:", Object.keys(tree).length, "nodes,", count, "moves -> src/data/openings.json + " + SNAP_FILE + " 동기화 완료");
 }
 main().catch((e) => { console.error(e); process.exit(1); });
