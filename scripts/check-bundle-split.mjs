@@ -50,7 +50,7 @@ for (const f of LAZY_ONLY) {
 
 // 2. lazyScreens의 export 이름 확인
 const lazySrc = rd("src/app/lazyScreens.jsx");
-const loaders = Object.fromEntries([...lazySrc.matchAll(/^\s*(\w+): \(\) => import\("\.\/([\w.]+)"\)/gm)].map((m) => [m[1], "src/app/" + m[2]]));
+const loaders = Object.fromEntries([...lazySrc.matchAll(/^\s*(\w+): (?:afterFullCatalog\()?\(\) => import\("\.\/([\w.]+)"\)/gm)].map((m) => [m[1], "src/app/" + m[2]]));
 const screens = [...lazySrc.matchAll(/lazyScreen\("(\w+)", "(\w+)"/g)];
 if (screens.length < 10) fails.push("lazyScreens.jsx: lazyScreen 정의를 읽지 못함(" + screens.length + "개)");
 for (const [, key, name] of screens) {

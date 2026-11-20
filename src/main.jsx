@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { initPerfMode } from "./lib/perfMode.js";
+import { afterFullCatalog } from "./lib/i18n.js";   // (v0.7.9) 소개·FAQ·약관 페이지는 첫 화면 몫이 아닌 번역을 쓴다
 import App from "./App.jsx";
 import { AppErrorBoundary, reloadOnceForChunkError } from "./components/appErrorBoundary.jsx";
 
@@ -12,10 +13,10 @@ import { AppErrorBoundary, reloadOnceForChunkError } from "./components/appError
 // (v0.5.7 성능) 예전엔 세 페이지를 모두 정적으로 import해, 메인 화면에 들어와도 소개 페이지(버전 기록 전체 포함, 약 33만 자)와
 // FAQ를 함께 받았다. 두 페이지는 해당 경로에서만 받도록 동적 import로 나눈다. App은 거의 모든 방문이 들어오는 곳이라 정적으로
 // 둔다 — 동적으로 바꾸면 진입 스크립트를 받은 뒤에야 App을 요청하게 돼 왕복이 한 번 늘어난다.
-const AboutPage = lazy(() => import("./AboutPage.jsx"));
-const FaqPage = lazy(() => import("./FaqPage.jsx"));
+const AboutPage = lazy(afterFullCatalog(() => import("./AboutPage.jsx")));
+const FaqPage = lazy(afterFullCatalog(() => import("./FaqPage.jsx")));
 // (v0.6.0, 앱 출시 준비) 스토어 심사용 개인정보처리방침·이용약관 — 로그인 없이 열리는 정적 페이지.
-const LegalPage = lazy(() => import("./LegalPage.jsx"));
+const LegalPage = lazy(afterFullCatalog(() => import("./LegalPage.jsx")));
 
 const path = window.location.pathname.replace(/\/$/, "") || "/";
 // 배포 직후 예전 파일을 찾지 못해 동적 import가 실패하면 Vite가 이 이벤트를 보낸다. 한 번만 새로고침해서 새 파일로 바꾼다.

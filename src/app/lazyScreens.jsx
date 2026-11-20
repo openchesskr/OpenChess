@@ -5,18 +5,19 @@
 // 보통은 탭을 누를 때 기다림이 없다(데이터 절약 모드·느린 회선이면 미리 받기를 건너뛴다).
 // 새 화면을 App에 붙일 때: 탭·창 파일을 App.jsx에서 정적으로 import하지 말고 여기에 lazyScreen으로 추가한다(check-bundle-split이 검사).
 import { lazy, Suspense } from "react";
+import { afterFullCatalog } from "../lib/i18n.js";   // (v0.7.9) 화면 파일보다 그 화면 번역(나머지 번역)을 먼저 받는다
 
 const LOADERS = {
-  play: () => import("./play.jsx"),
-  puzzle: () => import("./puzzle.jsx"),
-  learn: () => import("./learn.jsx"),
-  dex: () => import("./dex.jsx"),
-  settings: () => import("./settings.jsx"),
-  review: () => import("./review.jsx"),
-  master: () => import("./masterPage.jsx"),
-  social: () => import("./social.jsx"),
-  profileEdit: () => import("./profileEdit.jsx"),
-  legacy: () => import("./legacyFeed.jsx"),
+  play: afterFullCatalog(() => import("./play.jsx")),
+  puzzle: afterFullCatalog(() => import("./puzzle.jsx")),
+  learn: afterFullCatalog(() => import("./learn.jsx")),
+  dex: afterFullCatalog(() => import("./dex.jsx")),
+  settings: afterFullCatalog(() => import("./settings.jsx")),
+  review: afterFullCatalog(() => import("./review.jsx")),
+  master: afterFullCatalog(() => import("./masterPage.jsx")),
+  social: afterFullCatalog(() => import("./social.jsx")),
+  profileEdit: afterFullCatalog(() => import("./profileEdit.jsx")),
+  legacy: afterFullCatalog(() => import("./legacyFeed.jsx")),
 };
 
 // 같은 파일을 두 번 요청하지 않도록 Promise를 기억한다(미리 받기와 실제 열기가 겹쳐도 한 번).
