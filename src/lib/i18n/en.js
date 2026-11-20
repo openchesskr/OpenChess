@@ -6322,4 +6322,14 @@ export default {
   "실수 복습과 테마 퍼즐": "Mistake review and Theme Puzzles",
   "수 등급의 의미대로 짠 11단계 133개 레슨을 하나씩 엽니다. 마지막 단계는 오프닝 레파토리이고, 친구가 배우는 레슨도 경로에 보입니다.": "Unlock 133 lessons in 11 stages built around what each move grade means. The final stage is your Opening repertoire, and the lessons your friends are on show up on the path too.",
   "최근 대국에서 실수한 포지션을 다시 풀고, 최근에 본 레슨의 테마에 맞는 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.": "Replay Positions where you went wrong in recent games, and solve Puzzles matching your recent lessons. Growth analysis is in the Analysis tab.",
+  // (v0.7.9) 집중 분석 댓글(유튜브식)·전체 통계 섹션
+  "싫어요": "Dislike",
+  "작업 더보기": "More actions",
+  "댓글 {0}개": "{0} {0|comment|comments}",
+  "정렬 기준": "Sort by",
+  "이미 작성함. 댓글의 ⋮ 메뉴에서 수정·삭제 가능": "Already written. Edit or delete it from the comment's ⋮ menu",
+  "댓글 추가…": "Add a comment…",
+  "댓글 {0}개 더보기": "Show {0} more {0|comment|comments}",
+  "추천 대국": "Featured games",
+  "이 수에 댓글 {0}개 작성함(최대 {1}개). 댓글의 ⋮ 메뉴에서 수정·삭제 가능": "{0} {0|comment|comments} written on this move (max {1}). Edit or delete from the comment's ⋮ menu",
 };

@@ -71,3 +71,28 @@ export const needsRefresh = (stored, now = Date.now()) => {
   const at = stored && stored.position && Date.parse(stored.position.fetched_at);
   return !Number.isFinite(at) || now - at >= EXPLORER_REFRESH_MS;
 };
+
+// ── (v0.7.9, 사용자 요청) 전체 통계 대국을 Lichess로 보내지 않고 OpenChess 안에서 보기·리뷰 — 대국 기보를 PGN으로 저장한다(explorer_game_pgns).
+// 서버가 lichess.org/game/export/{id}에서 받은 PGN을 chess.js로 처음부터 다시 둬 보고, 표준 체스·정상 수순인 것만 정해진 머리글과 함께 다시 써서 저장한다.
+export const EXPLORER_GAME_ID_RE = /^[A-Za-z0-9]{8}$/;
+export const EXPLORER_PGN_MAX = 30000;
+const PGN_KEEP_TAGS = ["Event", "Date", "White", "Black", "Result", "WhiteElo", "BlackElo", "TimeControl", "ECO", "Opening", "Termination"];
+/** Lichess PGN 원문 → { pgn, sans } (정리된 PGN·SAN 수순) 또는 null(변형 체스·시작 포지션 지정·불법 수·너무 김). */
+export function cleanGamePgn(text, id) {
+  if (typeof text !== "string" || !text.trim() || text.length > 200000 || !EXPLORER_GAME_ID_RE.test(String(id || ""))) return null;
+  const chess = new Chess();
+  try { chess.loadPgn(text, { strict: false }); } catch { return null; }
+  const tags = chess.getHeaders ? chess.getHeaders() : chess.header();
+  if ((tags.Variant && tags.Variant !== "Standard") || tags.SetUp === "1" || tags.FEN) return null;
+  const sans = chess.history();
+  if (!sans.length || sans.length > 600) return null;
+  const out = new Chess();
+  for (const k of PGN_KEEP_TAGS) {
+    const v = typeof tags[k] === "string" ? tags[k].replace(/[\r\n"\\]/g, "").slice(0, 120) : "";
+    if (v) out.setHeader ? out.setHeader(k, v) : out.header(k, v);
+  }
+  out.setHeader ? out.setHeader("Site", "https://lichess.org/" + id) : out.header("Site", "https://lichess.org/" + id);
+  for (const s of sans) out.move(s);
+  const pgn = out.pgn({ maxWidth: 0, newline: "\n" });
+  return pgn.length <= EXPLORER_PGN_MAX ? { pgn, sans } : null;
+}

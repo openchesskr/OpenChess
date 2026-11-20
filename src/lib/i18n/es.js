@@ -6322,4 +6322,14 @@ export default {
   "실수 복습과 테마 퍼즐": "Repaso de errores y Puzles temáticos",
   "수 등급의 의미대로 짠 11단계 133개 레슨을 하나씩 엽니다. 마지막 단계는 오프닝 레파토리이고, 친구가 배우는 레슨도 경로에 보입니다.": "Desbloquea una a una 133 lecciones en 11 etapas creadas según el significado de cada calificación. La última etapa es tu repertorio de Apertura, y en el camino también ves en qué lección van tus amigos.",
   "최근 대국에서 실수한 포지션을 다시 풀고, 최근에 본 레슨의 테마에 맞는 퍼즐을 풉니다. 성장 분석은 분석 탭에서 봅니다.": "Vuelve a resolver las Posiciones en que fallaste en tus partidas recientes y resuelve Puzles del tema de tus lecciones recientes. El análisis de progreso está en Análisis.",
+  // (v0.7.9) 집중 분석 댓글(유튜브식)·전체 통계 섹션
+  "싫어요": "No me gusta",
+  "작업 더보기": "Más acciones",
+  "댓글 {0}개": "{0} {0|comentario|comentarios}",
+  "정렬 기준": "Ordenar por",
+  "이미 작성함. 댓글의 ⋮ 메뉴에서 수정·삭제 가능": "Ya escrita. Puedes editarla o eliminarla desde el menú ⋮ del comentario",
+  "댓글 추가…": "Añade un comentario…",
+  "댓글 {0}개 더보기": "Ver {0} {0|comentario|comentarios} más",
+  "추천 대국": "Partidas destacadas",
+  "이 수에 댓글 {0}개 작성함(최대 {1}개). 댓글의 ⋮ 메뉴에서 수정·삭제 가능": "{0} {0|comentario|comentarios} en esta jugada (máx. {1}). Puedes editar o eliminar desde el menú ⋮ del comentario",
 };

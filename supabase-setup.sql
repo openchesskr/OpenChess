@@ -5025,6 +5025,39 @@ revoke all on function public.explorer_read(text, int, int) from public, anon, a
 grant execute on function public.explorer_record(text, bigint, bigint, bigint, jsonb, jsonb) to service_role;
 grant execute on function public.explorer_read(text, int, int) to service_role;
 
+-- (v0.7.9, 사용자 요청) 전체 통계 대국을 Lichess로 보내지 않고 OpenChess 안에서 보기·리뷰 — 대국 기보를 PGN으로 저장한다.
+--  · 쓰기·읽기는 서버리스 함수(api/lichess.js ?gpgn=1, service_role)만. 서버가 lichess.org에서 받은 PGN을 chess.js로 다시 둬 보고 정리해 넣는다.
+--  · explorer_games에 쌓인 대국(id)만 받는다 — 임의 대국 id로 Lichess 기보를 중계·저장할 수 없다.
+create table if not exists public.explorer_game_pgns (
+  game_id text primary key check (game_id ~ '^[A-Za-z0-9]{8}$'),
+  pgn text not null check (length(pgn) between 10 and 30000),
+  fetched_at timestamptz not null default now()
+);
+create index if not exists idx_explorer_games_game on public.explorer_games (game_id);
+alter table public.explorer_game_pgns enable row level security;
+revoke all on public.explorer_game_pgns from public, anon, authenticated;
+create or replace function public.explorer_pgn_read(p_game text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'known', exists (select 1 from public.explorer_games where game_id = p_game),
+    'pgn', (select pgn from public.explorer_game_pgns where game_id = p_game)
+  );
+$$;
+create or replace function public.explorer_pgn_save(p_game text, p_pgn text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if p_game is null or p_game !~ '^[A-Za-z0-9]{8}$' then raise exception 'invalid game'; end if;
+  if p_pgn is null or length(p_pgn) < 10 or length(p_pgn) > 30000 then raise exception 'invalid pgn'; end if;
+  if not exists (select 1 from public.explorer_games where game_id = p_game) then return false; end if;
+  insert into public.explorer_game_pgns(game_id, pgn) values (p_game, p_pgn)
+  on conflict (game_id) do update set pgn = excluded.pgn, fetched_at = now();
+  return true;
+end; $$;
+revoke all on function public.explorer_pgn_read(text) from public, anon, authenticated;
+revoke all on function public.explorer_pgn_save(text, text) from public, anon, authenticated;
+grant execute on function public.explorer_pgn_read(text) to service_role;
+grant execute on function public.explorer_pgn_save(text, text) to service_role;
+
 -- ============================================================================
 -- (v0.7.8, 사용자 요청) 학습 탭 "추가 학습" — 최근에 본 레슨의 테마(포크·핀·백랭크 메이트 …)에 맞는 Lichess 테마 퍼즐을 서버가 받을 때마다 쌓는다.
 --  · 쓰기·읽기는 서버리스 함수(api/lichess.js ?puzzles=1, service_role)만 — 브라우저는 표·함수에 직접 접근할 수 없다(아래 $acl$ 허용 목록에 없음).
