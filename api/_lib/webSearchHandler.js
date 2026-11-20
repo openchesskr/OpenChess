@@ -8,27 +8,53 @@
 //  · 같은 검색은 엣지에 7일 캐시, IP당 분당 20회·전체 하루 WEB_DAILY_CAP회(무료 1,000회/월 안쪽)로 제한한다. 기본 검색(1회 = 1크레딧)만 쓴다.
 import { clientIp, supabaseEnv, rateLimited } from "./server.js";
 import { parseMovesParam } from "./youtube.js";
-import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS, WEB_DAILY_CAP, isPublicHttpUrl, extractPreview, PREVIEW_TIMEOUT_MS, PREVIEW_MAX_BYTES } from "./websearch.js";
+import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS, WEB_DAILY_CAP, isPublicHttpUrl, isPrivateIp, extractPreview, PREVIEW_TIMEOUT_MS, PREVIEW_MAX_BYTES } from "./websearch.js";
+import http from "node:http";
+import https from "node:https";
+import dns from "node:dns";
 
 // (v0.7.9, 사용자 요청) 구글 검색 결과처럼 미리보기 이미지·아이콘 — 결과 페이지의 <head>를 읽는다. 공개 주소만(리디렉트도 매번 다시 확인, 최대 3번),
 // 페이지당 PREVIEW_TIMEOUT_MS, 앞부분 PREVIEW_MAX_BYTES만. 실패하면 미리보기 없이 결과만 둔다(검색 응답 자체는 막지 않는다).
+// (BUG-197) 이름 검사(isPublicHttpUrl)에 더해, DNS로 얻은 실제 IP를 isPrivateIp로 검사하고 그 IP로만 접속한다(safeLookup을 소켓 연결의 lookup으로
+// 넘기므로 검사와 접속이 같은 응답을 쓴다 — DNS 리바인딩으로 검사 뒤에 내부 IP로 바꿔치기할 수 없다). fetch 대신 node:https를 쓰는 이유.
+export function safeLookup(hostname, opts, cb) {
+  if (typeof opts === "function") { cb = opts; opts = {}; }
+  dns.lookup(hostname, { all: true }, (err, addrs) => {
+    if (err) { cb(err); return; }
+    if (!Array.isArray(addrs) || !addrs.length || addrs.some((a) => isPrivateIp(a.address))) { cb(Object.assign(new Error("blocked_address"), { code: "EBLOCKED" })); return; }
+    if (opts && opts.all) cb(null, addrs);
+    else cb(null, addrs[0].address, addrs[0].family);
+  });
+}
+function getOnce(url, deadline) {
+  return new Promise((resolve) => {
+    const u = new URL(url);
+    const lib = u.protocol === "https:" ? https : http;
+    const left = Math.max(1, deadline - Date.now());
+    const req = lib.get(u, { lookup: safeLookup, timeout: left, headers: { "User-Agent": "Mozilla/5.0 (compatible; OpenChessPreview/1.0; +https://openchess.kr)", Accept: "text/html,application/xhtml+xml", "Accept-Encoding": "identity" } }, (res) => {
+      const st = res.statusCode || 0;
+      if (st >= 300 && st < 400) { res.resume(); resolve({ redirect: res.headers.location || null }); return; }
+      if (st < 200 || st >= 300 || !/html/i.test(String(res.headers["content-type"] || ""))) { res.resume(); resolve(null); return; }
+      const dec = new TextDecoder(); let html = "", got = 0, done = false;
+      const finish = () => { if (done) return; done = true; res.destroy(); resolve({ html }); };
+      res.on("data", (chunk) => { got += chunk.length; html += dec.decode(chunk, { stream: true }); if (got >= PREVIEW_MAX_BYTES || /<\/head>/i.test(html)) finish(); });
+      res.on("end", finish); res.on("error", finish);
+    });
+    const timer = setTimeout(() => req.destroy(), left);
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(null));
+    req.on("close", () => clearTimeout(timer));
+  });
+}
 async function readHead(url) {
-  const signal = AbortSignal.timeout(PREVIEW_TIMEOUT_MS);
+  const deadline = Date.now() + PREVIEW_TIMEOUT_MS;
   let cur = url;
   for (let hop = 0; hop < 4; hop++) {
-    if (!isPublicHttpUrl(cur)) return null;
-    const r = await fetch(cur, { redirect: "manual", signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; OpenChessPreview/1.0; +https://openchess.kr)", Accept: "text/html,application/xhtml+xml" } });
-    if (r.status >= 300 && r.status < 400) { const loc = r.headers.get("location"); if (!loc) return null; cur = new URL(loc, cur).href; continue; }
-    if (!r.ok || !/html/i.test(r.headers.get("content-type") || "") || !r.body) return null;
-    const reader = r.body.getReader(); const dec = new TextDecoder(); let html = "", got = 0;
-    while (got < PREVIEW_MAX_BYTES) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      got += value.length; html += dec.decode(value, { stream: true });
-      if (/<\/head>/i.test(html)) break;
-    }
-    try { await reader.cancel(); } catch { /* 이미 닫힘 */ }
-    return { html, base: cur };
+    if (!isPublicHttpUrl(cur) || Date.now() >= deadline) return null;
+    const r = await getOnce(cur, deadline);
+    if (!r) return null;
+    if (r.redirect !== undefined) { if (!r.redirect) return null; cur = new URL(r.redirect, cur).href; continue; }
+    return { html: r.html, base: cur };
   }
   return null;
 }

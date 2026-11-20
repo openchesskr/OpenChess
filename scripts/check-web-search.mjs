@@ -5,7 +5,7 @@
  *   · 화면: 커뮤니티 블록이 웹 검색 + 영상을 함께 보이고, 둘 다 꺼져 있으면 숨으며, 링크는 새 창(noopener)
  *  실행: node scripts/check-web-search.mjs (prebuild) */
 import { readFileSync } from "node:fs";
-import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS, WEB_DAILY_CAP, isPublicHttpUrl, extractPreview, PREVIEW_TIMEOUT_MS, PREVIEW_MAX_BYTES } from "../api/_lib/websearch.js";
+import { parseNameParam, webQuery, cleanWebResults, WEB_MAX_RESULTS, WEB_DAILY_CAP, isPublicHttpUrl, isPrivateIp, extractPreview, PREVIEW_TIMEOUT_MS, PREVIEW_MAX_BYTES } from "../api/_lib/websearch.js";
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
 const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8");
 
@@ -45,8 +45,25 @@ ok(cleanWebResults({ results: [{ title: "x", url: "http://127.0.0.1/a", content:
   const evil = extractPreview('<meta property="og:image" content="http://127.0.0.1/x.png"><meta property="og:image" content="javascript:alert(1)">', "https://evil.com/");
   ok(evil.image === null && evil.icon === "https://evil.com/favicon.ico", "내부·http·스크립트 이미지 주소는 버리고 아이콘은 /favicon.ico로: " + JSON.stringify(evil));
   ok(extractPreview("", "https://a.com/").image === null && extractPreview(null, "https://a.com/").icon === null, "빈 HTML"); }
+// (BUG-197, P1 재발 방지) 이름만이 아니라 실제로 접속할 IP를 검사하고 그 IP로만 접속한다(DNS가 내부 IP를 가리키는 공개 도메인·리바인딩 차단)
+for (const a of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "::", "fc00::1", "fd12:3456::1", "fe80::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::10.0.0.1", "2001:db8::1", "x"]) ok(isPrivateIp(a), "내부·예약 IP를 막아야 함: " + a);
+for (const a of ["8.8.8.8", "172.32.0.1", "1.1.1.1", "2606:4700::1111", "2a00:1450:4001::200e", "::ffff:8.8.8.8"]) ok(!isPrivateIp(a), "공개 IP는 허용해야 함: " + a);
+ok(!isPublicHttpUrl("https://localhost./") && !isPublicHttpUrl("https://db.internal./"), "끝 점(localhost.)으로 이름 검사 우회 금지");
+{ const dns = (await import("node:dns")).default, http = (await import("node:http")).default;
+  const { safeLookup } = await import("../api/_lib/webSearchHandler.js");
+  let hits = 0;
+  const srv = http.createServer((q, r) => { hits++; r.end("x"); }).listen(0, "127.0.0.1");
+  await new Promise((r) => srv.once("listening", r));
+  const orig = dns.lookup;
+  dns.lookup = (h, o, cb) => { if (typeof o === "function") { cb = o; o = {}; } const v = h === "rebind.test" ? [{ address: "127.0.0.1", family: 4 }] : h === "public.test" ? [{ address: "93.184.216.34", family: 4 }] : null; if (!v) return orig(h, o, cb); return o.all ? cb(null, v) : cb(null, v[0].address, v[0].family); };
+  const blocked = await new Promise((res) => { const q = http.get({ host: "rebind.test", port: srv.address().port, path: "/", lookup: safeLookup }, (r) => { r.resume(); res(false); }); q.on("error", (e) => res(e.code === "EBLOCKED")); });
+  ok(blocked && hits === 0, "내부 IP로 풀리는 이름에 접속함(DNS 리바인딩·내부 IP 도메인)");
+  const pub = await new Promise((res) => safeLookup("public.test", { all: true }, (e, a) => res(!e && a && a[0].address === "93.184.216.34")));
+  ok(pub, "공개 IP로 풀리는 이름은 그 IP로 접속해야 함");
+  dns.lookup = orig; srv.close(); }
+ok(/lookup: safeLookup/.test(api) && !/await fetch\(cur/.test(api), "결과 페이지는 safeLookup(검사한 IP로만)으로 열어야 함 — fetch는 IP를 검사하지 않음");
 ok(PREVIEW_TIMEOUT_MS <= 3000 && PREVIEW_MAX_BYTES <= 262144, "미리보기는 페이지당 3초·256KB 안쪽");
-ok(/redirect: "manual"/.test(api) && /if \(!isPublicHttpUrl\(cur\)\) return null;/.test(api) && /hop < 4/.test(api), "리디렉트마다 공개 주소인지 다시 확인해야 함(최대 3번)");
+ok(/if \(!isPublicHttpUrl\(cur\) \|\| Date\.now\(\) >= deadline\) return null;/.test(api) && /hop < 4/.test(api), "리디렉트마다 공개 주소인지 다시 확인해야 함(최대 3번)");
 ok(/withPreviews\(cleanWebResults\(/.test(api), "검색 결과에 미리보기를 붙이지 않음");
 ok(/<WebResultCard key=\{r\.url\} r=\{r\} \/>/.test(block) && /referrerPolicy="no-referrer"/.test(block), "웹 검색 결과가 미리보기 카드로 그려지지 않음(이미지는 no-referrer)");
 { const an = rd("src/app/analysis.jsx"); const c = an.indexOf("<CommunityBlock sans={focusVideoSans}"), m = an.indexOf("<MoveExplainBlock moveKey={mkKey}");

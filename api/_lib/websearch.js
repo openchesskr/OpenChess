@@ -43,10 +43,43 @@ export function isPublicHttpUrl(u) {
   if (u.protocol !== "https:" && u.protocol !== "http:") return false;
   if (u.username || u.password) return false;
   if (u.port && u.port !== "80" && u.port !== "443") return false;
-  const h = u.hostname.toLowerCase();
+  const h = u.hostname.toLowerCase().replace(/\.+$/, "");   // (BUG-197) "localhost." 같은 끝 점 정규화
   if (!h || h.includes(":") || h.startsWith("[") || /^\d+(\.\d+){0,3}$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return false;   // IP 주소(10진·16진) 금지
   if (!h.includes(".") || PRIVATE_HOST.test(h)) return false;
   return true;
+}
+
+// (v0.7.9, BUG-197) 이름 검사만으로는 부족하다 — 공개 도메인이 DNS에서 내부 IP(127.0.0.1·10.x·169.254.169.254 등)를 가리킬 수 있다.
+// 실제로 접속할 IP를 이 함수로 검사하고, 검사한 그 IP로만 접속한다(webSearchHandler.js safeLookup — 검사 뒤 DNS 응답이 바뀌는 공격도 막음).
+const V4_BLOCK = [[0, 8], [10, 8], [100, 64, 10], [127, 8], [169, 254, 16], [172, 16, 12], [192, 0, 0, 24], [192, 0, 2, 24], [192, 88, 99, 24], [192, 168, 16], [198, 18, 15], [198, 51, 100, 24], [203, 0, 113, 24], [224, 4], [240, 4]];
+function v4Blocked(a) {
+  const p = a.split(".").map(Number);
+  if (p.length !== 4 || p.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return true;
+  const n = ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3];
+  for (const r of V4_BLOCK) {
+    const bits = r[r.length - 1], oct = r.slice(0, -1);
+    while (oct.length < 4) oct.push(0);
+    const base = ((oct[0] << 24) >>> 0) + (oct[1] << 16) + (oct[2] << 8) + oct[3];
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    if (((n & mask) >>> 0) === ((base & mask) >>> 0)) return true;
+  }
+  return false;
+}
+/** 접속하면 안 되는 IP(루프백·사설망·링크 로컬·CGNAT·예약·멀티캐스트, IPv6 ULA·링크 로컬·IPv4 매핑 포함)면 true. 형식이 이상해도 true. */
+export function isPrivateIp(addr) {
+  const a = String(addr || "").toLowerCase().replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(a)) return v4Blocked(a);
+  if (!a.includes(":")) return true;
+  const m4 = /(?:^|:)(\d+\.\d+\.\d+\.\d+)$/.exec(a);   // ::ffff:1.2.3.4, 64:ff9b::1.2.3.4 등 IPv4를 품은 주소
+  if (m4) return v4Blocked(m4[1]) || !/^(::ffff:|64:ff9b::)/.test(a) || false;
+  if (a === "::" || a === "::1") return true;
+  const first = parseInt(a.split(":")[0] || "0", 16);
+  if (/^::ffff:/.test(a) || /^64:ff9b:/.test(a)) return true;   // 16진 표기 IPv4 매핑 — 안전하게 막는다
+  if ((first & 0xfe00) === 0xfc00) return true;   // fc00::/7 ULA
+  if ((first & 0xffc0) === 0xfe80) return true;   // fe80::/10 링크 로컬
+  if ((first & 0xff00) === 0xff00) return true;   // ff00::/8 멀티캐스트
+  if (a.startsWith("2001:db8:") || a.startsWith("100::")) return true;   // 문서용·폐기용
+  return false;
 }
 const ATTR_RE = /([a-zA-Z_:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
 const attrsOf = (tag) => { const o = {}; for (const m of tag.matchAll(ATTR_RE)) o[m[1].toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? ""; return o; };
