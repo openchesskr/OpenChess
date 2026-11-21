@@ -5,6 +5,7 @@ import { t } from "../i18n.js";
 import { variantsOf, variantMoveStep } from "./variants.js";
 import { recapSteps, withTeach } from "./curriculumTalk.js";
 import { PRACTICE } from "./curriculumPractice.js";
+import { CALC_STAGE, CALC_LESSONS } from "./curriculumCalc.js";
 import { Chess } from "chess.js";
 import { openingFamily, openingIdeaAt } from "../mecOpenings.js";
 import { MORE_LESSONS, MORE_EXTRA } from "./curriculumMore.js";
@@ -28,6 +29,7 @@ export const STAGES = [
   { id: "s_blunder", grade: "blunder", deco: ["K", "Q", "P"], title: () => t("치명적인 실수"), desc: () => t("절대 두면 안 되는 수와 약점") },
   { id: "s_miss", grade: "miss", deco: ["Q", "N", "R"], title: () => t("놓치면 안 되는 기회"), desc: () => t("상대의 실수를 알아채고 벌주기") },
   { id: "s_tactic", grade: "excellent", deco: ["N", "B", "Q"], title: () => t("기본 전술"), desc: () => t("기물을 얻는 전술의 모든 것") },
+  CALC_STAGE,   // (v0.7.9) 새 단계 "계산과 조합" — curriculumCalc.js
   { id: "s_plan", grade: "best", deco: ["R", "N", "P"], title: () => t("전략과 계획"), desc: () => t("가장 좋은 수를 고르는 기준") },
   { id: "s_endgame", grade: "only", deco: ["K", "R", "P"], title: () => t("정확한 엔드게임"), desc: () => t("단 하나의 정답을 찾는 기술") },
   { id: "s_brill", grade: "brilliant", deco: ["Q", "R", "K"], title: () => t("새크리파이스와 메이트 패턴"), desc: () => t("탁월한 수를 만드는 새크리파이스") },
@@ -42,6 +44,7 @@ export const ORDER = {
   s_blunder: ["z_foolsmate", "m_backrank", "t_trapped", "z_queenhang", "z_forksq", "z_stalemate", "z_holes"],
   s_miss: ["n_free", "n_mate1", "n_checks", "n_punish", "n_promo"],
   s_tactic: ["t_fork", "t_pin", "t_skewer", "t_discovered", "t_double", "t_removal", "t_doublecheck", "t_decoy", "t_deflection", "t_overload", "t_intermezzo", "t_xray", "t_interference"],
+  s_calc: CALC_LESSONS.map((l) => l.id),
   s_plan: ["st_openfile", "st_seventh", "st_outpost", "st_passed", "st_space", "st_goodtrade", "st_prophylaxis", "st_kingattack"],
   s_endgame: ["m_queen", "m_ladder", "e_rookmate", "e_square", "e_opposition", "e_keysquare", "e_activeking", "e_rookbehind", "e_cutoff", "e_promote", "e_lucena", "e_philidor", "e_perpetual"],
   s_brill: ["m_smothered", "m_arabian", "m_h7", "m_corridor", "m_boden", "m_epaulette", "m_anastasia", "t_breakthrough", "b_greek", "b_legal", "b_queensac", "b_exchsac"],
@@ -737,7 +740,7 @@ let _cache = null;
  *  (v0.7.8) 순서·단계는 ORDER가 정한다(레슨 데이터의 stage 값은 쓰지 않는다). 오프닝 레슨은 늘 마지막 단계(s_rep). */
 export function allLessons() {
   if (_cache) return _cache;
-  const byId = new Map([...LESSONS, ...MORE_LESSONS].map((l) => [l.id, l]));
+  const byId = new Map([...LESSONS, ...MORE_LESSONS, ...CALC_LESSONS].map((l) => [l.id, l]));
   const seq = [];
   for (const st of STAGES) {
     const ids = st.id === REPERTOIRE_STAGE ? LESSONS.filter((l) => l.motif).map((l) => l.id) : (ORDER[st.id] || []);
@@ -762,7 +765,7 @@ export function allLessons() {
 }
 /** check-lessons용: ORDER/오프닝에 빠졌거나 두 번 들어간 레슨 id. */
 export function orderProblems() {
-  const all = [...LESSONS, ...MORE_LESSONS].map((l) => l.id), seen = new Map();
+  const all = [...LESSONS, ...MORE_LESSONS, ...CALC_LESSONS].map((l) => l.id), seen = new Map();
   for (const st of STAGES) for (const id of st.id === REPERTOIRE_STAGE ? LESSONS.filter((l) => l.motif).map((l) => l.id) : (ORDER[st.id] || [])) seen.set(id, (seen.get(id) || 0) + 1);
   return { missing: all.filter((id) => !seen.has(id)), dup: [...seen].filter(([, n]) => n > 1).map(([id]) => id), unknown: [...seen.keys()].filter((id) => !all.includes(id)) };
 }

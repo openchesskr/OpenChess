@@ -28,6 +28,7 @@ const MASTER = {
   n_mate1: { th: ["queenMate", "rookMate"], mateMax: 1 }, r_mate: { th: ["rookMate", "queenMate"], mateMax: 1, skip: 20 }, n_checks: { th: ["queenMate", "rookMate"], mateMax: 2, minMate: 2 },
   b_queensac: { th: ["queenMate"], mateMax: 3, minMate: 2, sac: true }, m_h7: { th: ["hookMate", "queenMate"], mateMax: 2, minMate: 2, skip: 5 },
   e_rookmate: { th: ["rookMate"], mateMax: 3, minMate: 2, few: 6 }, m_queen: { th: ["queenMate"], mateMax: 3, minMate: 2, few: 5 }, m_ladder: { th: ["rookMate"], mateMax: 3, minMate: 2, few: 6, skip: 3 },
+  c_mate2: { th: ["queenMate", "rookMate", "bishopMate", "knightMate"], mateMax: 2, minMate: 2, skip: 12 }, c_mate3: { th: ["queenMate", "rookMate"], mateMax: 3, minMate: 3, skip: 6 },
   b_board: { th: ["rookMate"], mateMax: 1, few: 6 }, r_check: { th: ["rookMate", "queenMate"], mateMax: 1, skip: 40 }, z_foolsmate: { th: ["queenMate"], mateMax: 1, skip: 60 },
 };
 

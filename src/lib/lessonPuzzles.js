@@ -36,6 +36,8 @@ const BY_LESSON = {
   t_double: T(["fork"], ["advantage"]), t_removal: T(["capturingDefender"], ["advantage"]), t_doublecheck: T(["doubleCheck"], ["mate"]), t_decoy: T(["attraction"], ["sacrifice"]),
   t_deflection: T(["deflection"], ["sacrifice"]), t_overload: T(["deflection", "capturingDefender"], ["advantage"]), t_intermezzo: T(["intermezzo"], ["advantage"]),
   t_xray: T(["xRayAttack"], ["advantage"]), t_interference: T(["interference"], ["sacrifice"]),
+  // (v0.7.9) 계산과 조합
+  c_mate2: T(["mateIn2"], ["mate"]), c_quiet: T(["quietMove", "mateIn2"], ["mate"]), c_mate3: T(["mateIn3"], ["mate"]), c_sac: T(["sacrifice", "mateIn2"], ["sacrifice", "mate"]), c_defense: T(["defensiveMove"], ["punish"]),
   // 전략과 계획
   st_openfile: T(["rookEndgame", "middlegame"], []), st_seventh: T(["rookEndgame"], []), st_outpost: T(["middlegame"], ["advantage"]), st_passed: T(["advancedPawn"], []),
   st_space: T(["middlegame", "quietMove"], ["advantage"]), st_goodtrade: T(["advantage"], ["advantage"]), st_prophylaxis: T(["quietMove", "defensiveMove"], []), st_kingattack: T(["kingsideAttack"], ["mate", "sacrifice"]),
@@ -52,7 +54,7 @@ const BY_LESSON = {
 };
 const STAGE_THEME = {
   s_rules: T(["mateIn1"], ["mate"]), s_good: T(["hangingPiece"], ["advantage"]), s_inacc: T(["middlegame"], ["punish"]), s_mistake: T(["hangingPiece"], ["punish"]),
-  s_blunder: T(["hangingPiece"], ["punish"]), s_miss: T(["advantage"], ["punish"]), s_tactic: T(["fork"], ["advantage"]), s_plan: T(["advantage"], ["advantage"]),
+  s_blunder: T(["hangingPiece"], ["punish"]), s_miss: T(["advantage"], ["punish"]), s_tactic: T(["fork"], ["advantage"]), s_calc: T(["mateIn2"], ["mate"]), s_plan: T(["advantage"], ["advantage"]),
   s_endgame: T(["endgame"], []), s_brill: T(["sacrifice"], ["sacrifice"]), s_rep: T(["opening"], []),
 };
 export const LESSON_THEME_IDS = Object.keys(BY_LESSON);

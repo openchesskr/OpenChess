@@ -12,11 +12,13 @@ const LANGS = ["en", "es", "hi", "ja", "zh"];
 const OUT = ROOT + "src/lib/lessons/curriculumTalkData.js";
 
 export function buildTalk() {
-  const link = {}, teach = {}, tr = {};
+  const link = {}, teach = {}, tr = {}, strings = {};
   for (const f of readdirSync(ROOT + "scripts/lessonTalk").filter((x) => x.endsWith(".json")).sort()) {
     const d = JSON.parse(readFileSync(ROOT + "scripts/lessonTalk/" + f, "utf8"));
     Object.assign(link, d.link || {});
     for (const [id, qs] of Object.entries(d.teach || {})) teach[id] = { ...(teach[id] || {}), ...qs };
+    // strings: 레슨 본문(curriculumCalc.js 등)의 새 문장 번역 — { 한국어: [en, es, hi, ja, zh] }
+    for (const [ko, vals] of Object.entries(d.strings || {})) strings[ko] = vals;
   }
   const q = (s) => JSON.stringify(s);
   const reg = (line) => {
@@ -30,6 +32,7 @@ export function buildTalk() {
   js.push("};", "", "export const TEACH = {");
   for (const id of Object.keys(teach).sort()) js.push("  " + id + ": { " + Object.keys(teach[id]).sort((a, b) => a - b).map((k) => +k + ": () => [" + teach[id][k].map(reg).join(", ") + "]").join(", ") + " },");
   js.push("};", "");
+  for (const [ko, vals] of Object.entries(strings)) { if (vals.length !== 5) throw new Error("번역 수 오류: " + ko); tr[ko] = Object.fromEntries(LANGS.map((l, i) => [l, vals[i]])); }
   return { js: js.join("\n"), tr, link, teach };
 }
 

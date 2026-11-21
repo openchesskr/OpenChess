@@ -80,7 +80,7 @@ for (const l of lessons) {
 //  (v0.7.7, 사용자 요청) 7~9단계(전술 심화·중반 전략·엔드게임 심화)는 남은 등급 놓친 수·부정확·실수
 //  (v0.7.7, 사용자 요청 "레슨 더") 10단계(체크메이트 패턴)는 마지막 등급 블런더
 //  (v0.7.8, 사용자 요청) 레슨 트리 재설계 — 등급의 상징대로: 이론(규칙·기초 이론) → 좋음(좋은 습관) → 부정확 → 실수(흔한 실수) → 블런더(두면 안 되는 실수·약점) → 놓친 수 → 우수(기본 전술) → 최선(전략) → 유일(정확한 엔드게임) → 탁월(희생·메이트 패턴) → 마지막은 항상 오프닝 레파토리(이론 수 변형)
-{ const want = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 설계와 다름: " + STAGES.map((s) => s.grade).join()); }
+{ const want = ["book", "good", "inaccuracy", "mistake", "blunder", "miss", "excellent", "excellent", "best", "only", "brilliant", "book"]; if (STAGES.map((s) => s.grade).join() !== want.join()) fails.push("단계 등급 순서가 설계와 다름: " + STAGES.map((s) => s.grade).join()); }
 if (STAGES[STAGES.length - 1].id !== REPERTOIRE_STAGE || STAGES[STAGES.length - 1].variant !== "repertoire") fails.push("오프닝 레파토리 단계가 마지막이 아님");
 { const lastNonOpening = lessons.map((l) => l.stage).lastIndexOf(STAGES[STAGES.length - 2].id), firstOpening = lessons.findIndex((l) => l.stage === REPERTOIRE_STAGE); if (firstOpening < 0 || firstOpening < lastNonOpening) fails.push("오프닝별 레슨이 레슨 경로의 가장 마지막이 아님"); }
 { const p = orderProblems(); for (const k of ["missing", "dup", "unknown"]) if (p[k].length) fails.push("레슨 트리(ORDER) " + k + ": " + p[k].join(", ")); }

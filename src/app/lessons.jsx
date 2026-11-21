@@ -16,7 +16,7 @@ import { SITE_FONT } from "../components/engineLines.jsx";
 import { t } from "../lib/i18n.js";
 import { playSfx } from "../lib/prefs.js";
 import { Board, CoinIcon, Mascot, useBoardSize, useNarrow } from "./common.jsx";
-import { FacetDiamond, FacetCrown, GOLD as GOLD_FACET, facetRamp } from "../components/facetIcons.jsx";
+import { FacetDiamond, FacetCrown, FacetCrosshair, GOLD as GOLD_FACET, facetRamp } from "../components/facetIcons.jsx";
 import { PieceIcon, BoardIcon } from "../components/pieceIcons.jsx";   // (v0.7.9) 새 파셋 기물·보드 아이콘
 import { noteLessonViewed } from "../lib/lessonPuzzles.js";
 import { ThemePuzzles } from "./themePuzzles.jsx";   // (v0.7.9) 레슨 완료 화면의 추가 학습
@@ -59,6 +59,8 @@ export const LESSON_GLYPH = {
   e_rookbehind: ["R", "Route"], e_cutoff: ["R", "PanelBottom"], e_promote: ["P", "Crown"], e_lucena: ["R", "Bookmark"], e_philidor: ["R", "BookMarked"], e_perpetual: ["Q", "RotateCw"],
   m_smothered: ["N", "Crown"], m_arabian: ["R", "Crown"], m_h7: ["Q", "Target"], m_corridor: ["R", "ArrowRightLeft"], m_boden: ["B", "MoveDiagonal"], m_epaulette: ["Q", "Shield"], m_anastasia: ["N", "Flag"],
   t_breakthrough: ["P", "Rocket"], b_greek: ["B", "Gem"], b_legal: ["N", "Lightbulb"], b_queensac: ["Q", "Heart"], b_exchsac: ["R", "Trophy"],
+  // (v0.7.9) 계산과 조합
+  c_mate2: ["Q", "Target"], c_quiet: ["K", "Pause"], c_mate3: ["Q", "Route"], c_sac: ["R", "Gem"], c_defense: ["K", "ShieldAlert"],
 };
 // 배지 바탕: 원을 대각선으로 두 면(왼쪽 위 밝게) — 단계 색
 function GlyphChip({ size, th }) {
@@ -98,6 +100,10 @@ export function GradeBadge({ stage, size = 36, glow = false }) {
       background: "radial-gradient(circle at 35% 30%, " + th.hi + ", " + th.c + " 62%, " + th.lo + ")", boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 0 " + Math.max(2, size / 14) + "px 0 " + th.edge + (glow ? ", 0 0 " + size * 0.6 + "px " + alpha(th.c, 0.55) : "") }}>
       <img src={th.icon} alt="" draggable={false} style={{ width: size * 0.58, height: size * 0.58, objectFit: "contain" }} />
       {/* (v0.7.8, 사용자 요청) 오프닝 레파토리 단계 = 이론 수 아이콘 + 위에 얹은 금빛 파셋 왕관(변형 아이콘) */}
+      {/* (v0.7.9) 계산과 조합 단계 = 우수한 수 아이콘 + 파셋 조준경(여러 수 앞을 겨눈다) */}
+      {stage.variant === "calc" && (
+        <FacetCrosshair size={size * 0.5} color={GOLD_FACET.l1} style={{ position: "absolute", top: -size * 0.2, right: -size * 0.12, filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.45))" }} />
+      )}
       {stage.variant === "repertoire" && (
         <svg viewBox="0 0 24 24" width={size * 0.52} height={size * 0.52} style={{ position: "absolute", top: -size * 0.22, right: -size * 0.12, overflow: "visible", filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.45))" }}>
           <FacetCrown x={12} y={12} s={20} R={GOLD_FACET} />
