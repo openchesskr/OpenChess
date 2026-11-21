@@ -2,7 +2,7 @@
 //  · 24×24 좌표. 윤곽선 없이 채운 면만, 빛은 왼쪽 위 — 가운데 세로선 왼쪽이 밝고(l1·l2) 오른쪽이 어둡다(l3·l4). 받침·밑단은 가장 어두운 톤(base).
 //  · 하이라이트는 기물마다 한 점(hi). 12~16px에서도 뭉개지지 않게 면은 4~6개, 면끼리 틈 없이 맞닿는다.
 //  · 레슨 아이콘(app/lessons.jsx LessonGlyph)·업적 아이콘(common.jsx SeriesGlyph 등)이 이 부품을 조합해 쓴다.
-import { GOLD, facetRamp } from "./facetIcons.jsx";
+import { GOLD, facetRamp, FacetArrow } from "./facetIcons.jsx";
 
 export const IVORY = { hi: "#FFFFFF", l1: "#FFF9EC", l2: "#F2E6CC", l3: "#DCC7A0", l4: "#BEA477", base: "#8C7350", gem: "#FFFFFF" };
 export const EBONY = { hi: "#E9C987", l1: "#6B5640", l2: "#54402C", l3: "#3E2E1F", l4: "#2C2016", base: "#1A120B", gem: "#E9C987" };
@@ -120,6 +120,33 @@ export function BoardIcon({ size = 24, style, title, light, dark }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} role={title ? "img" : undefined} aria-label={title} aria-hidden={title ? undefined : true} style={{ display: "block", ...style }}>
       <FacetBoardShape light={light} dark={dark} />
+    </svg>
+  );
+}
+
+// 기물 그림의 세로 범위(24×24 좌표 안에서 맨 위 y·맨 아래 y). FacetPieceAt이 높이를 맞출 때 쓴다.
+const PIECE_SPAN = { P: [3.8, 21], N: [2.6, 21], B: [1.9, 21], R: [3.4, 21], Q: [1.7, 21], K: [1.4, 21] };
+/** 다른 SVG 좌표계에 기물을 놓는다 — (cx, cy)가 기물 세로 가운데, h가 기물 높이(그 좌표계 단위). */
+export function FacetPieceAt({ type, cx, cy, h, R = GOLD, rot = 0 }) {
+  const T = String(type || "").toUpperCase(), [t0, t1] = PIECE_SPAN[T] || [2, 21], k = h / (t1 - t0);
+  return <g transform={`translate(${cx} ${cy}) rotate(${rot}) scale(${k}) translate(-12 ${-(t0 + t1) / 2})`}><FacetPieceShape type={T} R={R} /></g>;
+}
+
+// (v0.7.9, 사용자 요청) 업적(칭호) 아이콘 중 체스 기물로 그리는 것 — 계열 key → 24×24 그림. 나머지 계열은 ocIcons 아이콘 그대로.
+//  체크메이트: 킹 / 프로모션 마스터: 폰 + 위로 솟는 화살 / 나이트의 해: 나이트.
+const TITLE_PIECE_GLYPHS = {
+  ccmate: (R) => <FacetPieceShape type="K" R={R} />,
+  ccpromo: (R) => <g><g transform="translate(-2.4 0.6) scale(.95)"><FacetPieceShape type="P" R={R} /></g><FacetArrow pts={[[18.6, 16.5], [18.6, 7]]} w={3} head={5.2} R={R} /></g>,
+  r_year: (R) => <FacetPieceShape type="N" R={R} />,
+};
+export const hasTitlePieceGlyph = (key) => !!TITLE_PIECE_GLYPHS[key];
+/** 업적 기물 아이콘. color(단색)로 램프를 만든다 — 금빛 바탕 위 짙은 색, 어두운 바탕 위 금색 모두 같은 면 분할. */
+export function TitlePieceIcon({ seriesKey, size = 20, color = "#E3C477", style }) {
+  const f = TITLE_PIECE_GLYPHS[seriesKey];
+  if (!f) return null;
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", overflow: "visible", ...style }}>
+      {f(facetRamp(color))}
     </svg>
   );
 }

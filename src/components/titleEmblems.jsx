@@ -3,7 +3,8 @@
 //  · 이미지 파일·폰트 없이 SVG로 그린다(100×100 좌표, 마름모 안쪽 영역 12~88에 잘려 보임).
 ////  새 오프닝 계열을 더하면 여기에도 한 줄 추가(check-titles가 확인).
 import React from "react";
-import { FacetPawn, FacetRook, FacetBishop, FacetCrown, FacetShield, FacetArrow, FacetDiamond, facetRamp, flatRamp } from "./facetIcons.jsx";
+import { FacetPieceAt } from "./pieceIcons.jsx";
+import { FacetShield, FacetArrow, FacetDiamond, facetRamp, flatRamp } from "./facetIcons.jsx";
 
 const stripesV = (cols) => cols.map((c, i) => <rect key={i} x={(100 / cols.length) * i} y="0" width={100 / cols.length + 0.5} height="100" fill={c} />);
 const stripesH = (cols, ws) => { let y = 0; return cols.map((c, i) => { const h = ws[i]; const el = <rect key={i} x="0" y={y} width="100" height={h + 0.5} fill={c} />; y += h; return el; }); };
@@ -20,21 +21,21 @@ const FacetSquare = ({ x, y, w, R }) => {
 };
 const GLYPHS = {
   // 카로칸: 무너지지 않는 요새 — 벽돌 줄무늬가 든 룩.
-  carokann: (R) => <FacetRook x={50} y={51} s={46} R={R} />,
+  carokann: (R) => <FacetPieceAt type="R" cx={50} cy={46.9} h={43.7} R={R} />,
   // 킹스 갬빗: 왕관 아래 미끼로 내미는 폰.
-  kingsgambit: (R) => <g><FacetCrown x={50} y={33} s={30} R={R} /><FacetPawn x={50} y={66} s={25} R={R} rot={-10} /></g>,
+  kingsgambit: (R) => <g><FacetPieceAt type="K" cx={50} cy={32} h={36} R={R} /><FacetPieceAt type="P" cx={50} cy={68} h={26} R={R} rot={-10} /></g>,
   // 베노니: 한쪽으로 치우쳐 솟아오르는 비대칭 폰 사슬.
-  benoni: (R) => <g><FacetPawn x={34} y={65} s={16} R={R} /><FacetPawn x={50} y={54} s={20} R={R} /><FacetPawn x={66} y={43} s={24} R={R} /></g>,
+  benoni: (R) => <g><FacetPieceAt type="P" cx={34} cy={62.9} h={20.2} R={R} /><FacetPieceAt type="P" cx={50} cy={51.4} h={25.2} R={R} /><FacetPieceAt type="P" cx={66} cy={39.9} h={30.2} R={R} /></g>,
   // 그륀펠트: 중앙을 내주고 양쪽 날개에서 화살을 겨눈다.
   grunfeld: (R) => <g><FacetSquare x={39} y={56} w={22} R={R} /><FacetArrow pts={[[22, 27], [43, 48]]} w={5.5} head={12} R={R} /><FacetArrow pts={[[78, 27], [57, 48]]} w={5.5} head={12} R={R} /></g>,
   // 퀸스 갬빗: 퀸 쪽 왕관과 내주는 c-폰.
-  queensgambit: (R) => <g><FacetCrown x={50} y={42} s={44} R={R} /><FacetPawn x={50} y={76} s={15} R={R} /></g>,
+  queensgambit: (R) => <g><FacetPieceAt type="Q" cx={50} cy={39} h={46} R={R} /><FacetPieceAt type="P" cx={50} cy={74.0} h={18.9} R={R} /></g>,
   // 피르츠: 긴 대각선(보석 점선)에 놓은 피앙케토 비숍.
-  pirc: (R) => <g>{[0, 1, 2, 3, 4, 5, 6].filter((k) => k !== 3 && k !== 2 && k !== 4).map((k) => <FacetDiamond key={k} cx={21 + k * 9.67} cy={76 - k * 8.67} r={2.6} R={R} gem={false} />)}<FacetBishop x={50} y={52} s={46} R={R} /></g>,
+  pirc: (R) => <g>{[0, 1, 2, 3, 4, 5, 6].filter((k) => k !== 3 && k !== 2 && k !== 4).map((k) => <FacetDiamond key={k} cx={21 + k * 9.67} cy={76 - k * 8.67} r={2.6} R={R} gem={false} />)}<FacetPieceAt type="B" cx={50} cy={47.4} h={53.8} R={R} /></g>,
   // 알레킨: 나이트의 L자 도약이 폰을 몰아낸다.
-  alekhine: (R) => <g><FacetDiamond cx={29} cy={74} r={6} R={R} /><FacetArrow pts={[[29, 66], [29, 42], [55, 42]]} w={5.5} head={12} R={R} /><FacetPawn x={68} y={46} s={26} R={R} /></g>,
+  alekhine: (R) => <g><FacetDiamond cx={29} cy={74} r={6} R={R} /><FacetArrow pts={[[29, 66], [29, 42], [55, 42]]} w={5.5} head={12} R={R} /><FacetPieceAt type="P" cx={68} cy={42.6} h={32.8} R={R} /></g>,
   // 필리도어: 폰이 지키는 방패.
-  philidor: (R, Rk) => <g><FacetShield cx={50} cy={52} w={25} h={60} R={R} /><FacetPawn x={50} y={54} s={25} R={Rk} /></g>,
+  philidor: (R, Rk) => <g><FacetShield cx={50} cy={52} w={25} h={60} R={R} /><FacetPieceAt type="P" cx={50} cy={50.8} h={31.5} R={Rk} /></g>,
 };
 const glyph = (key, bgA, bgB) => ({
   bg: (gid) => <><defs><linearGradient id={gid} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={bgA} /><stop offset="1" stopColor={bgB} /></linearGradient></defs><rect width="100" height="100" fill={`url(#${gid})`} /></>,

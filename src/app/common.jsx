@@ -1,6 +1,7 @@
 // (v0.6.0, App.jsx 분할) 여러 탭이 함께 쓰는 공용 컴포넌트·훅·함수
 // 동작 변경 없이 App.jsx에서 그대로 옮겼다(REFACTOR_NOTES.md Phase 3 참고).
 import { FacetLeaf, FacetCrown, FacetDiamond, taperedStem, facetRamp, GOLD as FACET_GOLD } from "../components/facetIcons.jsx";
+import { TitlePieceIcon, hasTitlePieceGlyph } from "../components/pieceIcons.jsx";
 import { autoMoveKeywords, placementKey } from "../lib/moveKeywords.js";
 import { normalizeReviewGame } from "../lib/reviewGame.js";
 import { materialIcon } from "../components/ocIcons.jsx";
@@ -5715,7 +5716,7 @@ export function SeriesGlyph({ series, size = 30, masked = false }) {
         <path d="M14 47 L47 14 L47 17 L17 47Z" fill={FACET_GOLD.hi} opacity=".8" />
         {isOp && <OpeningEmblem seriesKey={series.key} clipId={"sk" + rid} textFill="#F6E3A6" />}
       </svg>
-      {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />)}
+      {!isOp && (masked ? <span style={{ position: "relative", color: "#E3C477", fontWeight: 900, fontSize: Math.round(size * 0.46), lineHeight: 1 }}>?</span> : (hasTitlePieceGlyph(series.key) ? <TitlePieceIcon seriesKey={series.key} size={Math.round(size * 0.5)} color="#E3C477" style={{ position: "relative" }} /> : <Icon size={Math.round(size * 0.42)} color="#E3C477" strokeWidth={2.2} style={{ position: "relative", display: "block" }} />))}
     </span>
   );
 }
@@ -5999,7 +6000,7 @@ export function TitleBadge({ id, earned = true, equipped = false, progress = nul
                 : <path d="M50 20 L80 50 L50 80 L20 50 Z" fill="none" stroke={filled ? "rgba(20,11,5,.45)" : g0} strokeWidth="1.6" opacity={filled ? 1 : 0.55} />}
               {isOpening && <path d="M50 12 L88 50 L50 88 L12 50 Z" fill="none" stroke="rgba(20,11,5,.5)" strokeWidth="1.4" />}
             </svg>
-            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : hiddenLock ? <span style={{ fontSize: ISZ + 2, fontWeight: 900, lineHeight: 1, fontFamily: SEQ_FONT }}>?</span> : <Icon size={ISZ} strokeWidth={2.3} />}</div>}
+            {!isOpening && <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", color: filled ? (rare ? "#5E0F1A" : "#2B1A0B") : GOLD[0] }}>{locked ? <Lock size={ISZ} /> : hiddenLock ? <span style={{ fontSize: ISZ + 2, fontWeight: 900, lineHeight: 1, fontFamily: SEQ_FONT }}>?</span> : (hasTitlePieceGlyph(def.series.key) ? <TitlePieceIcon seriesKey={def.series.key} size={Math.round(ISZ * 1.2)} color={filled ? (rare ? "#7A1A26" : "#4A2E12") : GOLD[0]} /> : <Icon size={ISZ} strokeWidth={2.3} />)}</div>}
             {isOpening && locked && <div style={{ position: "relative", color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 999, padding: 3, display: "flex" }}><Lock size={ISZ - 4} /></div>}
           </div>
           {/* 이름: 계열 이름(크게, 이탤릭) 아래에 칭호 이름(작게, 자간). 진척도 줄이 보일 때는 위쪽으로 붙는다. */}
