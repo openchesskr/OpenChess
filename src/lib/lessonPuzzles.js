@@ -66,15 +66,15 @@ export function lessonTheme(lesson) {
 
 /* ── 테마 이름(화면) ── */
 const ANGLE_LABEL = {
-  fork: () => t("포크"), pin: () => t("핀"), skewer: () => t("스큐어"), discoveredAttack: () => t("디스커버드 공격"), doubleCheck: () => t("더블 체크"), hangingPiece: () => t("공짜 기물"),
-  trappedPiece: () => t("갇힌 기물"), capturingDefender: () => t("수비수 제거"), deflection: () => t("유인해 내기"), attraction: () => t("끌어들이기"), clearance: () => t("길 비우기"), interference: () => t("차단"),
-  intermezzo: () => t("중간 수"), xRayAttack: () => t("엑스레이"), sacrifice: () => t("희생"), quietMove: () => t("조용한 수"), defensiveMove: () => t("수비"), zugzwang: () => t("추크츠방"),
-  exposedKing: () => t("드러난 킹"), kingsideAttack: () => t("킹사이드 공격"), attackingF2F7: () => t("f2·f7 공격"), advancedPawn: () => t("전진한 폰"), promotion: () => t("프로모션"),
-  underPromotion: () => t("언더프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("백랭크 메이트"), smotheredMate: () => t("스머더드 메이트"),
-  arabianMate: () => t("아라비안 메이트"), bodenMate: () => t("보덴 메이트"), anastasiaMate: () => t("아나스타샤 메이트"), hookMate: () => t("훅 메이트"), doubleBishopMate: () => t("두 비숍 메이트"),
+  fork: () => t("포크"), pin: () => t("핀"), skewer: () => t("스큐어"), discoveredAttack: () => t("디스커버드 공격"), doubleCheck: () => t("더블 체크"), hangingPiece: () => t("행잉 피스"),
+  trappedPiece: () => t("트랩드 피스"), capturingDefender: () => t("리무빙 더 디펜더"), deflection: () => t("디플렉션"), attraction: () => t("어트랙션"), clearance: () => t("클리어런스"), interference: () => t("인터피어런스"),
+  intermezzo: () => t("인터메조"), xRayAttack: () => t("엑스레이"), sacrifice: () => t("새크리파이스"), quietMove: () => t("콰이어트 무브"), defensiveMove: () => t("디펜시브 무브"), zugzwang: () => t("추크츠방"),
+  exposedKing: () => t("익스포즈드 킹"), kingsideAttack: () => t("킹사이드 어택"), attackingF2F7: () => t("f2·f7 어택"), advancedPawn: () => t("어드밴스드 폰"), promotion: () => t("프로모션"),
+  underPromotion: () => t("언더프로모션"), enPassant: () => t("앙파상"), castling: () => t("캐슬링"), backRankMate: () => t("백랭크 메이트"), smotheredMate: () => t("스모더드 메이트"),
+  arabianMate: () => t("아라비안 메이트"), bodenMate: () => t("보덴 메이트"), anastasiaMate: () => t("아나스타샤 메이트"), hookMate: () => t("훅 메이트"), doubleBishopMate: () => t("더블 비숍 메이트"),
   dovetailMate: () => t("도브테일 메이트"), mateIn1: () => t("1수 메이트"), mateIn2: () => t("2수 메이트"), mateIn3: () => t("3수 메이트"), mate: () => t("체크메이트"),
   endgame: () => t("엔드게임"), pawnEndgame: () => t("폰 엔드게임"), rookEndgame: () => t("룩 엔드게임"), queenEndgame: () => t("퀸 엔드게임"), bishopEndgame: () => t("비숍 엔드게임"),
-  knightEndgame: () => t("나이트 엔드게임"), opening: () => t("오프닝"), middlegame: () => t("미들게임"), advantage: () => t("우세 굳히기"), crushing: () => t("결정타"), equality: () => t("비기기"),
+  knightEndgame: () => t("나이트 엔드게임"), opening: () => t("오프닝"), middlegame: () => t("미들게임"), advantage: () => t("어드밴티지"), crushing: () => t("크러싱"), equality: () => t("이퀄리티"),
   short: () => t("짧은 퍼즐"), long: () => t("긴 퍼즐"),
 };
 export const angleLabel = (a) => (ANGLE_LABEL[a] ? ANGLE_LABEL[a]() : a);

@@ -128,5 +128,13 @@ for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
     for (const k of Object.keys(seed)) if (!ids.has(k)) fails.push("서버 seedChapters에 커리큘럼에 없는 레슨 " + k);
   }
 }
+// (v0.7.9, 사용자 요청) 레슨의 체스 용어는 원문 발음 그대로 — 예전 의역 용어가 다시 들어오면 실패(질식 메이트 → 스모더드 메이트 등)
+{
+  const { readFileSync: rf } = await import("node:fs");
+  const lessonSrc = ["src/lib/lessons/curriculum.js", "src/lib/lessons/curriculumMore.js", "src/lib/lessonPuzzles.js"].map((f) => rf(new URL("../" + f, import.meta.url), "utf8")).join("\n");
+  const strs = [...lessonSrc.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).filter((x) => /[가-힣]/.test(x));
+  const OLD = ["질식 메이트", "스머더드", "승격", "이중 공격", "빗나가게 하기", "과부하", "중간수", "수비수 제거", "복도 메이트", "보든 메이트", "아나스타시아", "그리스 선물", "교환 희생", "퀸 희생", "희생", "폰 돌파", "겹친 폰", "고립된 폰", "통과한 폰", "열린 파일", "예방 수", "공간 우위", "후보 수", "핵심 칸", "폰의 정사각형", "영구 체크", "사다리", "학자 메이트", "바보 메이트", "좋은 비숍", "나쁜 비숍", "킹 차단", "유인"];
+  for (const w of OLD) { const hit = strs.find((x) => x.includes(w)); if (hit) fails.push("레슨 용어는 원문 발음으로(예전 표기 \"" + w + "\"): " + hit.slice(0, 50)); }
+}
 if (fails.length) { console.error("✗ check-lessons 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-lessons: 단계 " + STAGES.length + "개 · 레슨 " + lessons.length + "개 · 스텝 " + steps + "개(수 두기 목표 " + moves + "개)가 모두 합법이고 정답·힌트·응수가 맞으며, 서버 보상 목록과 일치한다");

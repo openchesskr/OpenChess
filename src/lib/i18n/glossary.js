@@ -31,7 +31,7 @@ export const GLOSSARY = [
   { id: "resign", ko: "기권", en: ["Resign"], hi: ["हार मान", "रिज़ाइन", "इस्तीफ"], ja: ["投了"], zh: ["认输"], es: ["Abandon", "Rendi", "Rendición"] },
   { id: "castling", ko: "캐슬링", en: ["Castling", "Castle"], hi: ["कैसलिंग", "किलेबंदी", "कैसल"], ja: ["キャスリング"], zh: ["王车易位"], es: ["Enroque"] },
   { id: "enpassant", ko: "앙파상", en: ["En passant"], hi: ["एन पासां", "एन पासैंट", "एन पासेंट"], ja: ["アンパッサン"], zh: ["吃过路兵"], es: ["Captura al paso", "al paso"] },
-  { id: "promotion", ko: "프로모션", en: ["Promotion", "Promote"], hi: ["प्रमोशन", "पदोन्नति"], ja: ["プロモーション"], zh: ["升变"], es: ["Coronación", "Promoción", "Coronar", "Promocion"] },
+  { id: "promotion", ko: "프로모션", en: ["Promotion", "Promote", "Promoting", "Promotes"], hi: ["प्रमोशन", "पदोन्नति", "प्रमोट"], ja: ["プロモーション"], zh: ["升变"], es: ["Coronación", "Promoción", "Coronar", "Promocion", "Coron", "Corón"] },   // (v0.7.9) 레슨의 "승격"을 원문 발음 "프로모션"으로 바꾸며 동사형도 허용
   // ── 전술 ──
   { id: "fork", ko: "포크", en: ["Fork"], hi: ["फ़ोर्क", "फोर्क"], ja: ["フォーク"], zh: ["捉双", "双重攻击"], es: ["Horquilla"] },
   { id: "pin", ko: "(?<![가-힣])핀(?![가-힣]*[란트])", en: ["Pin"], hi: ["पिन"], ja: ["ピン"], zh: ["牵制"], es: ["Clavada"] },
