@@ -40,7 +40,7 @@ const sanLine = (fen, ucis) => {
 // ① 레슨 변형
 function lessonVariants(l) {
   const out = [], seen = new Set();
-  for (const s of l.steps()) {
+  for (const s of l.body()) {   // 본문만(맨 앞 복습 문제는 지난 레슨 것)
     if (s.kind !== "move" || s.review || !s.line || !s.line.length) continue;
     for (const v of variantsOf(s)) {
       if (seen.has(v.fen)) continue;

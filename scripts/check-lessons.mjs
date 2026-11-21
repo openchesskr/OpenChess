@@ -158,5 +158,26 @@ for (const l of lessons.filter((x) => x.stage === REPERTOIRE_STAGE)) {
   }
   for (const u of untaught) fails.push("설명 전에 묻는 질문 — " + u);
 }
+
+// (v0.7.9, 사용자 요청) 레슨 연계 — 첫 레슨을 뺀 모든 레슨에 지난 레슨과 이어지는 대사(LINK)가 있고, 여는 대화에 지난 레슨 복습 문제가 있다.
+//  대화 데이터(curriculumTalkData.js·번역)는 scripts/lessonTalk/*.json에서 만든 최신본이어야 한다.
+{
+  const { LINK, TEACH } = await import("../src/lib/lessons/curriculumTalk.js");
+  lessons.forEach((l, i) => {
+    if (i && !LINK[l.id]) fails.push(l.id + ": 지난 레슨과 이어지는 대사(LINK)가 없음 — scripts/lessonTalk/에 추가");
+    if (i && !l.steps().some((s) => s.recap)) fails.push(l.id + ": 여는 대화에 지난 레슨 복습 문제가 없음");
+  });
+  for (const id of [...Object.keys(LINK), ...Object.keys(TEACH)]) if (!lessons.some((l) => l.id === id)) fails.push("레슨 대화 데이터에 없는 레슨 id: " + id);
+  for (const [id, qs] of Object.entries(TEACH)) { const l = lessons.find((x) => x.id === id); if (!l) continue; const n = l.body().filter((s) => s.kind === "choice" && !s.review).length; for (const k of Object.keys(qs)) if (+k >= n) fails.push(id + ": TEACH " + k + "번 질문이 없음(질문 " + n + "개)"); }
+  const { execFileSync } = await import("node:child_process");
+  try { execFileSync(process.execPath, [new URL("./build-lesson-talk.mjs", import.meta.url).pathname, "--check"], { stdio: "pipe" }); }
+  catch (e) { fails.push(String(e.stderr || e.message).trim()); }
+}
+
+// (v0.7.9, 사용자 요청) 레슨 하나는 최소 1분 — 여는 대화(복습)를 뺀 본문만으로 예상 시간이 LESSON_MIN_SECONDS 이상(lessons/duration.js).
+{
+  const { lessonSeconds, LESSON_MIN_SECONDS } = await import("../src/lib/lessons/duration.js");
+  for (const l of lessons) { const sec = lessonSeconds(l.body()); if (sec < LESSON_MIN_SECONDS) fails.push(l.id + ": 예상 " + sec + "초 — 레슨이 1분보다 짧음(curriculumPractice.js에 연습 문제를 더할 것)"); }
+}
 if (fails.length) { console.error("✗ check-lessons 실패 (" + fails.length + "건)\n  " + fails.join("\n  ")); process.exit(1); }
 console.log("✔ check-lessons: 단계 " + STAGES.length + "개 · 레슨 " + lessons.length + "개 · 스텝 " + steps + "개(수 두기 목표 " + moves + "개)가 모두 합법이고 정답·힌트·응수가 맞으며, 서버 보상 목록과 일치한다");

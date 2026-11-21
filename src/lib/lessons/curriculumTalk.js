@@ -5,6 +5,7 @@
 //     레슨 본문에서 아직 설명하지 않은 내용을 상식으로 풀게 하지 않기 위해서다. scripts/check-lessons.mjs가 질문마다 앞선 설명이 있는지 검사한다.
 //  대사 형식: [누구, 문장] — "m" = MILKU(설명), "k" = KOKOA(질문·맞장구·정리). 문장은 t()로 번역된다.
 import { t } from "../i18n.js";
+import { variantsOf } from "./variants.js";
 
 export const WHO = { m: "milku", k: "kokoa" };
 /** 대사 목록 → 보드 없는 read 스텝들 */
@@ -28,6 +29,13 @@ export function recapSteps(lesson, prev, prevSteps, newStage) {
     const qs = (prevSteps || []).filter((s) => s.kind === "choice" && !s.review && !s.recap);
     const q = qs.find((s) => !s.fen) || qs[0];
     if (q) out.push(...talkSteps([["k", t("시작하기 전에 지난 레슨 복습 문제 하나!")]]), { ...q, recap: true, who: "kokoa" });
+    else {
+      // 지난 레슨에 객관식이 없으면 수 두기 문제 하나를 대칭 변형으로 복습한다.
+      const mv = (prevSteps || []).find((s) => s.kind === "move" && !s.review && s.fen);
+      const v = mv ? variantsOf(mv)[0] || mv : null;
+      if (v) out.push(...talkSteps([["k", t("시작하기 전에 지난 레슨 복습 문제 하나!")]]),
+        { ...v, recap: true, say: t("지난 레슨의 문제예요. 설명 없이 풀어 보세요."), line: v.line.map((g) => ({ ...g, say: g.say ? t("설명 없이 다음 수를 두세요.") : undefined })) });
+    }
   }
   out.push(...talkSteps([["m", t("좋아요. 이번 레슨 「{0}」, 시작할게요.", lesson.title())]]));
   return out;
